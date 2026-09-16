@@ -1,4 +1,18 @@
-/** The authored task-briefing contract shared by release and scheduling. */
+/**
+ * The authored task-briefing contract shared by release and scheduling.
+ *
+ * A STAGE NAMES COMMANDS OR BRIEFS AN AGENT, AND THE DOCUMENT SAYS WHICH. The
+ * work stage and each evaluation stage are two-kind blocks: one carries the
+ * lines the worker runs itself, the other the instructions an agent is briefed
+ * with. A block saying both or neither is refused rather than read as one of
+ * them, and a field a commanded block has no place for is refused rather than
+ * dropped, because a stage runs shell under whatever narrowing it was given.
+ *
+ * A TICKET'S OWN CHECK LINES ARE AN EVALUATION'S, WHICH IS WHY THE TWO KINDS
+ * SPELL THEIR LINES DIFFERENTLY. `checks` is what a ticket may append to and
+ * `commands` is not: a ticket widens what its change is held to, and never
+ * changes what the work is.
+ */
 
 import { z } from "zod";
 
@@ -9,20 +23,26 @@ export type TicketBrief = TaskConfigurationReadonly<
   z.output<typeof taskConfigurationHeaderSchema>["brief"]
 >;
 
-/** What one role is told beyond the shared brief, and what its blocks ask to narrow. */
+/**
+ * What one role is told beyond the shared brief, and what its blocks ask to
+ * narrow. Both command fields are declared absent here and on every other
+ * briefed kind, so the blocks a stage may be are one union a property tells
+ * apart.
+ */
 export type PurposeBlock = TaskConfigurationReadonly<
   z.output<typeof taskConfigurationPurposeSchema>
->;
+> & { readonly checks?: undefined; readonly commands?: undefined };
 
 /** What one indexed evaluation stage briefs an agent with, beyond the shared brief. */
 export type AgentEvaluationBlock = TaskConfigurationReadonly<
   z.output<typeof taskConfigurationAgentEvaluationSchema>
-> & { readonly checks?: undefined };
+> & { readonly checks?: undefined; readonly commands?: undefined };
 
 /** One check stage the worker runs itself: command lines, and no agent to brief. */
 export interface CommandEvaluationBlock {
   readonly purpose: "Check";
   readonly checks: readonly string[];
+  readonly commands?: undefined;
   readonly instructions?: undefined;
   readonly authority?: undefined;
 }
@@ -30,11 +50,36 @@ export interface CommandEvaluationBlock {
 /** One indexed evaluation stage, which is one of the two kinds a stage may be. */
 export type EvaluationBlock = AgentEvaluationBlock | CommandEvaluationBlock;
 
-/** Whether one block is the kind the worker runs itself rather than briefing an agent. */
+/** The work stage the worker runs itself: command lines, and no agent to brief. */
+export interface CommandWorkBlock {
+  readonly commands: readonly string[];
+  readonly checks?: undefined;
+  readonly instructions?: undefined;
+  readonly authority?: undefined;
+}
+
+/** The work stage, which is one of the two kinds a stage may be. */
+export type WorkBlock = PurposeBlock | CommandWorkBlock;
+
+/** Every block one composed stage resolves to, across both roles and both kinds. */
+export type StageBlock = WorkBlock | EvaluationBlock;
+
+/**
+ * The lines one stage hands its worker, or undefined where the stage briefs an
+ * agent instead. The two kinds spell them apart for the reason the header
+ * gives.
+ */
+export function blockCommandLines(
+  block: StageBlock,
+): readonly string[] | undefined {
+  return block.checks ?? block.commands;
+}
+
+/** Whether one evaluation stage is the kind the worker runs itself. */
 export function commandedEvaluationBlock(
-  block: PurposeBlock | EvaluationBlock,
+  block: EvaluationBlock,
 ): block is CommandEvaluationBlock {
-  return "checks" in block && block.checks !== undefined;
+  return block.checks !== undefined;
 }
 
 /**
@@ -117,6 +162,9 @@ export type TaskConfigurationFault =
   | "ConstraintsInvalid"
   | "PracticesInvalid"
   | "WorkInvalid"
+  | "CommandsInvalid"
+  | "WorkKindAmbiguous"
+  | "WorkFieldUnknown"
   | "ReviewInvalid"
   | "EvaluationsInvalid"
   | "ChecksInvalid"
@@ -140,6 +188,9 @@ export const allTaskConfigurationFaults: readonly TaskConfigurationFault[] = [
   "ConstraintsInvalid",
   "PracticesInvalid",
   "WorkInvalid",
+  "CommandsInvalid",
+  "WorkKindAmbiguous",
+  "WorkFieldUnknown",
   "ReviewInvalid",
   "EvaluationsInvalid",
   "ChecksInvalid",
@@ -279,7 +330,12 @@ const taskConfigurationHeaderSchema = z.object({
     constraints: z.array(z.string()),
   }),
   practices: z.array(z.string()),
-  work: taskConfigurationPurposeSchema,
+  work: z.unknown().transform((value, context) => {
+    const parsed = authoredTaskConfigurationWorkBlock(value);
+    if (parsed.parsed === "Block") return parsed.block;
+    context.addIssue({ code: "custom", message: parsed.fault });
+    return z.NEVER;
+  }),
   review: taskConfigurationPurposeSchema,
 });
 
@@ -388,9 +444,9 @@ function authoredWorkerMode(value: unknown): WorkerMode | undefined {
   return taskConfigurationParsed(taskConfigurationWorkerModeSchema, value);
 }
 
-/** One parsed evaluation stage, or the fault that names why it is not one. */
-type EvaluationBlockParsed =
-  | { readonly parsed: "Block"; readonly block: EvaluationBlock }
+/** One parsed stage, or the fault that names why it is not one. */
+type BlockParsed<Block> =
+  | { readonly parsed: "Block"; readonly block: Block }
   | { readonly parsed: "Refused"; readonly fault: TaskConfigurationFault };
 
 /** Every parsed evaluation stage, or the first fault one of them earned. */
@@ -400,7 +456,7 @@ type EvaluationBlocksParsed =
 
 function authoredTaskConfigurationAgentEvaluationBlock(
   value: unknown,
-): EvaluationBlockParsed {
+): BlockParsed<EvaluationBlock> {
   const block = taskConfigurationParsed(
     taskConfigurationAgentEvaluationSchema,
     value,
@@ -413,24 +469,75 @@ function authoredTaskConfigurationAgentEvaluationBlock(
 /** Every field a commanded check entry is made of, so any other is refused rather than dropped. */
 const commandEvaluationFields: readonly string[] = ["purpose", "checks"];
 
+/** Every field a commanded work entry is made of, read the same way. */
+const commandWorkFields: readonly string[] = ["commands"];
+
 /**
- * One commanded check stage. A field this kind has no place for is refused,
- * because a stage runs shell under whatever narrowing it was given, and a
- * dropped narrowing is the one reading of an authored line nobody asked for.
+ * Whether a commanded entry carries a field its kind has no place for. A stage
+ * runs shell under whatever narrowing it was given, and a dropped narrowing is
+ * the one reading of an authored line nobody asked for.
  */
+function authoredTaskConfigurationFieldUnknown(
+  record: Record<string, unknown>,
+  fields: readonly string[],
+): boolean {
+  return !Object.keys(record).every((key) => fields.includes(key));
+}
+
+/** The command lines a commanded entry names, or undefined where it names no list. */
+function authoredTaskConfigurationCommandLines(
+  value: unknown,
+): readonly string[] | undefined {
+  const lines = authoredTaskConfigurationStringArray(value);
+  return lines === undefined ||
+    lines.length === 0 ||
+    lines.length > commandLinesMax
+    ? undefined
+    : lines;
+}
+
+/** One commanded check stage, whose every field is one this kind has a place for. */
 function authoredTaskConfigurationCommandEvaluationBlock(
   record: Record<string, unknown>,
-): EvaluationBlockParsed {
-  if (
-    !Object.keys(record).every((key) => commandEvaluationFields.includes(key))
-  )
+): BlockParsed<EvaluationBlock> {
+  if (authoredTaskConfigurationFieldUnknown(record, commandEvaluationFields))
     return { parsed: "Refused", fault: "EvaluationFieldUnknown" };
-  const checks = authoredTaskConfigurationStringArray(record["checks"]);
-  return checks === undefined ||
-    checks.length === 0 ||
-    checks.length > commandLinesMax
+  const checks = authoredTaskConfigurationCommandLines(record["checks"]);
+  return checks === undefined
     ? { parsed: "Refused", fault: "ChecksInvalid" }
     : { parsed: "Block", block: { purpose: "Check", checks } };
+}
+
+/**
+ * The work stage, which names the commands the worker runs or briefs an agent
+ * with instructions. Naming both or neither says neither, and a commanded work
+ * stage has no place for an agent's narrowing.
+ */
+function authoredTaskConfigurationWorkBlock(
+  value: unknown,
+): BlockParsed<WorkBlock> {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return { parsed: "Refused", fault: "WorkInvalid" };
+  const record = value as Record<string, unknown>;
+  const commanded = Object.hasOwn(record, "commands");
+  const briefed = record["instructions"] !== undefined;
+  if (commanded === briefed)
+    return { parsed: "Refused", fault: "WorkKindAmbiguous" };
+  if (!commanded) {
+    const block = taskConfigurationParsed(
+      taskConfigurationPurposeSchema,
+      record,
+    );
+    return block === undefined
+      ? { parsed: "Refused", fault: "WorkInvalid" }
+      : { parsed: "Block", block };
+  }
+  if (authoredTaskConfigurationFieldUnknown(record, commandWorkFields))
+    return { parsed: "Refused", fault: "WorkFieldUnknown" };
+  const commands = authoredTaskConfigurationCommandLines(record["commands"]);
+  return commands === undefined
+    ? { parsed: "Refused", fault: "CommandsInvalid" }
+    : { parsed: "Block", block: { commands } };
 }
 
 /**
@@ -452,7 +559,7 @@ function authoredTaskConfigurationEvaluationKindFault(
 
 function authoredTaskConfigurationEvaluationBlock(
   value: unknown,
-): EvaluationBlockParsed {
+): BlockParsed<EvaluationBlock> {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return { parsed: "Refused", fault: "EvaluationsInvalid" };
   const record = value as Record<string, unknown>;
@@ -500,7 +607,9 @@ function authoredTaskConfigurationValidated(
     input.motivation,
     input.acceptanceCriteria,
     input.constraints,
-    input.work.instructions,
+    input.work.commands === undefined
+      ? input.work.instructions
+      : input.work.commands,
     input.review.instructions,
     ...(input.evaluations ?? []).map((evaluation) =>
       evaluation.checks === undefined
@@ -573,15 +682,25 @@ const taskConfigurationSchema = taskConfigurationObject({
     .optional(),
 });
 
+/** The fault a block's own parser named, or the field's when the issue is zod's. */
+function taskConfigurationNamedFault(
+  issue: z.core.$ZodIssue | undefined,
+  named: TaskConfigurationFault,
+): TaskConfigurationFault {
+  return (
+    allTaskConfigurationFaults.find((fault) => fault === issue?.message) ??
+    named
+  );
+}
+
 function taskConfigurationFault(
   issue: z.core.$ZodIssue | undefined,
 ): TaskConfigurationFault {
   switch (issue?.path[0] ?? "") {
+    case "work":
+      return taskConfigurationNamedFault(issue, "WorkInvalid");
     case "evaluations":
-      return (
-        allTaskConfigurationFaults.find((fault) => fault === issue?.message) ??
-        "EvaluationsInvalid"
-      );
+      return taskConfigurationNamedFault(issue, "EvaluationsInvalid");
     case "authority":
       return "AuthorityInvalid";
     case "worker":

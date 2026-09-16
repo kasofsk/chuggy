@@ -18,11 +18,13 @@
  * it must report — and they are the two that are never empty, so a briefing
  * that carries nothing else still says who is reading it and what comes back.
  *
- * A CARRIER SELECTS THE WORDING, NOT A SECOND TEMPLATE. A check stage whose
+ * A CARRIER SELECTS THE WORDING, NOT A SECOND TEMPLATE. A stage whose
  * configuration names commands is run by the worker itself, so its sections
  * state what the stage is and reports rather than addressing a reader. The two
  * sections a template owns are still never empty; under `Commands` they say
- * that nothing reads them, which is the honest version of the same claim.
+ * that nothing reads them, which is the honest version of the same claim. They
+ * say it for either role, because what a commanded stage is does not depend on
+ * whether the work or an evaluation of it was commanded.
  *
  * THE ORDER IS ONE ARRAY AND NOT A SEQUENCE OF STATEMENTS. `./taskBriefing.ts`
  * builds a body for every section identity, then walks `briefingSectionOrder`
@@ -100,7 +102,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 5;
+export const briefingTemplateVersion = 6;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -164,7 +166,7 @@ export const briefingReworkPreface: readonly string[] = [
 
 /** What a commanded stage is, stated rather than addressed to anyone. */
 const briefingCommandedRole: readonly string[] = [
-  "This evaluation stage is the command list below, run in order by the worker.",
+  "This stage is the command list below, run in order by the worker.",
   "No agent runs this stage and nothing reads this briefing.",
 ];
 

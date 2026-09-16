@@ -239,6 +239,17 @@ test("a configuration commanding no check stage refuses a brief that appends che
     "Incomplete",
     "a check stage that briefs an agent commands nothing for a ticket to join",
   );
+  assert.deepEqual(
+    releaseConfigurationReadiness(
+      canonicalConfigurationOf({
+        ...parsed,
+        work: { commands: [".chug/tasks/ci.sh"] },
+      }),
+      appending,
+    ),
+    { readiness: "Incomplete", fault: "BriefChecksUncommanded" },
+    "a commanded work stage is not a stage a ticket's check lines may join",
+  );
 });
 
 const firstRepository = asRepositoryId("repository-one");
@@ -368,6 +379,18 @@ test("configuration summaries expose registry fields without canonical content",
       canonical: asCanonicalConfiguration("{}"),
     }),
     { ...base, readiness: "Incomplete" },
+  );
+  const commanded = configurationRevisionSummary({
+    ...base,
+    canonical: canonicalConfigurationOf({
+      ...JSON.parse(readyConfiguration),
+      work: { commands: [".chug/tasks/ci.sh"] },
+    }),
+  });
+  assert.equal(
+    commanded.readiness === "Ready" ? commanded.workInstructionsCount : -1,
+    0,
+    "a work stage that briefs nobody is summarised rather than read for instructions",
   );
 });
 

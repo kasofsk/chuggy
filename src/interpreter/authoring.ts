@@ -394,7 +394,8 @@ export function configurationRevisionSummary(input: {
         readiness: "Ready",
         image: readiness.configuration.image,
         practices: readiness.configuration.practices,
-        workInstructionsCount: readiness.configuration.work.instructions.length,
+        workInstructionsCount:
+          readiness.configuration.work.instructions?.length ?? 0,
         reviewInstructionsCount:
           readiness.configuration.review.instructions.length,
         finalization: configurationFinalizationOf(

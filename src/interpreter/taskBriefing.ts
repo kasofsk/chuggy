@@ -21,17 +21,24 @@
  * registration. So a moving ticket row cannot reach a second attempt, and a
  * silently rewritten revision is a refusal rather than a different prompt.
  *
- * A CHECK STAGE THAT NAMES COMMANDS BRIEFS NOBODY. Its evaluation block
- * carries `checks` instead of instructions, and composition resolves that list
- * into the invocation's own worker mode. The worker runs the list it is handed
- * and never reads the configuration, so a later source of check lines is folded
- * in here rather than by a second path into the worker.
+ * A STAGE THAT NAMES COMMANDS BRIEFS NOBODY. Its block carries a command list
+ * instead of instructions, and composition resolves that list into the
+ * invocation's own worker mode. The worker runs the list it is handed and never
+ * reads the configuration, so a later source of command lines is folded in here
+ * rather than by a second path into the worker.
+ *
+ * SO A COMMANDED STAGE IS TOLD NOTHING AN AGENT WOULD HAVE READ. It carries no
+ * practices and neither report section, because the reports are for a reader to
+ * act on and this briefing has none — and because the reports are documents,
+ * which is what would otherwise take a reworked commanded stage past the
+ * carrier the invocation has.
  *
  * THE TICKET'S OWN CHECK LINES ARE THE SECOND SOURCE, AND THEY FOLLOW. They are
- * appended to the first stage the configuration commands, so the configuration's
- * list runs whatever the ticket says and a ticket can only widen what its work
- * is held to. The brief is frozen at release and this fold reads nothing else,
- * so a retry of the same stage runs the same list in the same order.
+ * appended to the first evaluation stage the configuration commands, so the
+ * configuration's list runs whatever the ticket says and a ticket can only
+ * widen what its change is held to, never change what its work is. The brief is
+ * frozen at release and this fold reads nothing else, so a retry of the same
+ * stage runs the same list in the same order.
  *
  * AUTHORITY IS NEVER COMPOSED FROM PROSE. `./taskAuthority.ts` holds the whole
  * of it, the requests folded into it are structured data, and a rendered
@@ -102,16 +109,14 @@ import {
 import {
   authoredTaskConfigurationReadiness,
   allPracticeIds,
+  blockCommandLines,
   briefingLinesMax,
   commandLinesMax,
-  commandedEvaluationBlock,
   firstCommandedCheckStage,
   taskConfigurationLineFault,
   type AuthoredTaskConfiguration,
-  type CommandEvaluationBlock,
-  type EvaluationBlock,
-  type PurposeBlock,
   type PracticeId,
+  type StageBlock,
   type TaskConfigurationFault,
   type TaskConfigurationReadFault,
   type TicketBrief,
@@ -119,6 +124,7 @@ import {
 export {
   authoredTaskConfigurationReadiness,
   allPracticeIds,
+  blockCommandLines,
   briefingLineCharsMax,
   briefingLinesMax,
   commandLinesMax,
@@ -127,13 +133,16 @@ export {
   type AgentEvaluationBlock,
   type AuthoredTaskConfiguration,
   type CommandEvaluationBlock,
+  type CommandWorkBlock,
   type CommandsWorkerMode,
   type EvaluationBlock,
-  type PurposeBlock,
   type PracticeId,
+  type PurposeBlock,
+  type StageBlock,
   type TaskConfigurationFault,
   type TaskConfigurationReadFault,
   type TicketBrief,
+  type WorkBlock,
   type WorkerConfiguration,
   type WorkerMode,
 } from "./taskConfiguration.ts";
@@ -346,12 +355,16 @@ function briefingLinesFault(
   return undefined;
 }
 
-/** The first fault in any of these lists, so one loop covers every authored slot. */
+/**
+ * The first fault in any of these lists, so one loop covers every authored
+ * slot. A slot the block being read has no list for is skipped.
+ */
 function briefingListsFault(
-  lists: readonly (readonly [readonly string[], number])[],
+  lists: readonly (readonly [readonly string[] | undefined, number])[],
 ): BriefingFault | undefined {
   for (const [lines, linesMax] of lists) {
-    const fault = briefingLinesFault(lines, linesMax);
+    const fault =
+      lines === undefined ? undefined : briefingLinesFault(lines, linesMax);
     if (fault !== undefined) return fault;
   }
   return undefined;
@@ -457,7 +470,7 @@ function purposeBlock(
   configuration: PinnedTaskConfiguration,
   purpose: TaskPurpose,
   stage?: number,
-): PurposeBlock | EvaluationBlock | undefined {
+): StageBlock | undefined {
   if (purpose === "Work") return configuration.work;
   if (configuration.evaluations === undefined) return configuration.review;
   return stage === undefined ? undefined : configuration.evaluations[stage];
@@ -465,10 +478,7 @@ function purposeBlock(
 
 /** The carrier one view renders under, which is the only thing the wording turns on. */
 function briefingCarrier(view: BriefingView): BriefingCarrier {
-  const block = purposeBlock(view.configuration, view.purpose, view.stage);
-  return block !== undefined && commandedEvaluationBlock(block)
-    ? "Commands"
-    : "Agent";
+  return briefingStageCommands(view) === undefined ? "Agent" : "Commands";
 }
 
 /**
@@ -480,33 +490,38 @@ export const stageCommandsMax = commandLinesMax + briefChecksMax;
 
 /**
  * The lines this ticket adds to the stage it is being composed for, which are
- * its own and only at the stage the configuration commands first. Every later
- * commanded stage runs the configuration's list alone, so one ticket's lines
- * run once however many stages the configuration commands.
+ * its own and only at the evaluation stage the configuration commands first.
+ * Every later commanded stage runs the configuration's list alone, and a work
+ * stage runs it alone whatever the ticket says: a ticket widens what its change
+ * is held to, and never changes what the work is.
  */
 function briefingTicketChecks(view: BriefingView): readonly string[] {
   const stage = firstCommandedCheckStage(view.configuration);
-  return stage !== undefined && view.stage === stage
+  return view.purpose !== "Work" && stage !== undefined && view.stage === stage
     ? (view.brief?.checks ?? [])
     : [];
 }
 
 /**
- * The whole list one commanded stage runs, the configuration's first. The order
- * is the rule: a ticket appends, so nothing it says can displace or precede a
- * line the configuration named.
+ * The whole list one commanded stage runs, the configuration's first, or
+ * undefined where the stage briefs an agent. The order is the rule: a ticket
+ * appends, so nothing it says can displace or precede a line the configuration
+ * named.
  */
 function briefingStageCommands(
   view: BriefingView,
-  block: CommandEvaluationBlock,
-): readonly string[] {
-  return [...block.checks, ...briefingTicketChecks(view)];
+): readonly string[] | undefined {
+  const block = purposeBlock(view.configuration, view.purpose, view.stage);
+  const commands = block === undefined ? undefined : blockCommandLines(block);
+  return commands === undefined
+    ? undefined
+    : [...commands, ...briefingTicketChecks(view)];
 }
 
 function purposePractices(view: BriefingView): readonly string[] | undefined {
   const block = purposeBlock(view.configuration, view.purpose, view.stage);
   if (block === undefined) return undefined;
-  if (commandedEvaluationBlock(block)) return [];
+  if (briefingStageCommands(view) !== undefined) return [];
   return "practices" in block ? block.practices : view.configuration.practices;
 }
 
@@ -539,9 +554,8 @@ function briefingConfigurationFault(
     [brief.motivation, briefingLinesMax],
     [brief.acceptanceCriteria, briefingLinesMax],
     [brief.constraints, briefingLinesMax],
-    commandedEvaluationBlock(block)
-      ? [briefingStageCommands(view, block), stageCommandsMax]
-      : [block.instructions, briefingLinesMax],
+    [block.instructions, briefingLinesMax],
+    [briefingStageCommands(view), stageCommandsMax],
   ]);
 }
 
@@ -659,8 +673,9 @@ function briefingBodies(
   practices: readonly BlessedPractice[],
 ): Record<BriefingSectionId, readonly string[]> {
   const block = purposeBlock(view.configuration, view.purpose, view.stage);
-  const commanded = block !== undefined && commandedEvaluationBlock(block);
+  const commands = briefingStageCommands(view);
   const carrier = briefingCarrier(view);
+  const briefed = carrier === "Agent";
   return {
     RoleInstructions: briefingRoleInstructions(view.purpose, carrier),
     TicketIntent:
@@ -670,20 +685,18 @@ function briefingBodies(
     WhyItMatters: view.configuration.brief.motivation,
     AcceptanceAndConstraints: briefingCriteriaLines(view.configuration.brief),
     PriorEvaluationReports:
-      view.purpose === "Work"
+      briefed && view.purpose === "Work"
         ? briefingEvaluationReportLines(view.priorEvaluationReports)
         : [],
     PriorWorkReports:
-      view.purpose === "Review"
+      briefed && view.purpose === "Review"
         ? briefingLabelled(
             briefingLabels.workReports,
             view.priorWorkReports.reports,
           )
         : [],
-    PurposeInstructions: commanded ? [] : (block?.instructions ?? []),
-    CheckCommands: commanded
-      ? briefingStageCommands(view, block).map(briefingBullet)
-      : [],
+    PurposeInstructions: block?.instructions ?? [],
+    CheckCommands: commands === undefined ? [] : commands.map(briefingBullet),
     Practices: practices.map((practice) =>
       briefingBullet(practice.instruction),
     ),
@@ -833,20 +846,19 @@ function briefingAuthorityRequests(
 }
 
 /**
- * The worker configuration this stage runs under, which for a commanded check
- * stage is the resolved command list — the configuration's, and the ticket's
- * after it — rather than the authored agent mode. The authored setup and files
- * are kept, because a stage prepares its workspace the same way whatever runs
- * in it.
+ * The worker configuration this stage runs under, which for a commanded stage
+ * is the resolved command list rather than the authored agent mode. The
+ * authored setup and files are kept, because a stage prepares its workspace the
+ * same way whatever runs in it.
  */
 function briefingWorker(
   view: BriefingView,
 ): AuthoredTaskConfiguration["worker"] {
-  const block = purposeBlock(view.configuration, view.purpose, view.stage);
+  const commands = briefingStageCommands(view);
   const worker = view.configuration.worker;
-  if (block === undefined || !commandedEvaluationBlock(block)) return worker;
+  if (commands === undefined) return worker;
   return {
-    mode: { type: "Commands", commands: briefingStageCommands(view, block) },
+    mode: { type: "Commands", commands },
     setup: worker?.setup ?? [],
     files: worker?.files ?? [],
   };

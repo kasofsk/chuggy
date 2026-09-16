@@ -58,12 +58,14 @@ import {
   type BriefingProvenanceSection,
   type BriefingSection,
   type BriefingView,
+  type CommandWorkBlock,
   type EvaluationBlock,
   type PurposeBlock,
   type RenderedBriefing,
   type RuntimeFacts,
   type TaskInvocation,
   type TicketBrief,
+  type WorkBlock,
   type WorkerConfiguration,
 } from "../../src/interpreter/taskBriefing.ts";
 import {
@@ -282,7 +284,7 @@ test("missing or mistyped authored fields are refused at their field", () => {
       "ConstraintsInvalid",
     ],
     [{ ...authoredConfiguration, practices: undefined }, "PracticesInvalid"],
-    [{ ...authoredConfiguration, work: {} }, "WorkInvalid"],
+    [{ ...authoredConfiguration, work: null }, "WorkInvalid"],
     [{ ...authoredConfiguration, review: undefined }, "ReviewInvalid"],
   ];
   for (const [variant, fault] of variants) {
@@ -364,26 +366,32 @@ test("the largest accepted authored collections fit the canonical storage bound"
   const lines = Array.from({ length: briefingLinesMax }, () =>
     "x".repeat(briefingLineCharsMax),
   );
-  const canonical = JSON.stringify({
-    authority: {
-      credentials: lines,
-      filesystem: "None",
-      mayCompleteTask: false,
-      network: false,
-      tools: lines,
-    },
-    brief: {
-      acceptanceCriteria: lines,
-      constraints: lines,
-      motivation: lines,
-    },
-    image: "worker:v1",
-    practices: [...allPracticeIds],
-    review: { instructions: lines },
-    version: 1,
-    work: { instructions: lines },
-  });
-  assert.doesNotThrow(() => asCanonicalConfiguration(canonical));
+  const canonical = (work: unknown): string =>
+    JSON.stringify({
+      authority: {
+        credentials: lines,
+        filesystem: "None",
+        mayCompleteTask: false,
+        network: false,
+        tools: lines,
+      },
+      brief: {
+        acceptanceCriteria: lines,
+        constraints: lines,
+        motivation: lines,
+      },
+      image: "worker:v1",
+      practices: [...allPracticeIds],
+      review: { instructions: lines },
+      version: 1,
+      work,
+    });
+  const commands = Array.from({ length: commandLinesMax }, () =>
+    "x".repeat(briefingLineCharsMax),
+  );
+  for (const work of [{ instructions: lines }, { commands }]) {
+    assert.doesNotThrow(() => asCanonicalConfiguration(canonical(work)));
+  }
 });
 
 /** One view, with the parts a case is about replacing the ordinary ones. */
@@ -396,6 +404,7 @@ function viewOf(parts: {
   readonly brief?: TicketBrief;
   readonly practices?: readonly string[];
   readonly block?: PurposeBlock;
+  readonly work?: WorkBlock;
   readonly blockReview?: PurposeBlock;
   readonly evaluations?: readonly EvaluationBlock[];
   readonly authority?: AuthorityRequest;
@@ -416,7 +425,7 @@ function viewOf(parts: {
       configurationDigest: parts.digest ?? pin.configurationDigest,
       brief: parts.brief ?? brief,
       practices: parts.practices ?? [],
-      work: block,
+      work: parts.work ?? block,
       review: parts.blockReview ?? block,
       ...(parts.evaluations === undefined
         ? {}
@@ -724,6 +733,77 @@ test("a check stage that names commands briefs no agent", () => {
   )) {
     assert.ok(!line.startsWith("You are"), line);
   }
+});
+
+/** The work stage a commanded-work case is composed against. */
+const commandedWork: CommandWorkBlock = {
+  commands: ["./request-build", "./await-build-results"],
+};
+
+test("a work stage that names commands hands the worker that resolved list", () => {
+  const worker: WorkerConfiguration = {
+    mode: { type: "SingleAgent", agent: "Claude", arguments: ["--model"] },
+    setup: ["npm ci"],
+    files: [{ path: ".env", content: "" }],
+  };
+  assert.deepEqual(composed(viewOf({ work: commandedWork, worker })).worker, {
+    mode: { type: "Commands", commands: commandedWork.commands },
+    setup: ["npm ci"],
+    files: [{ path: ".env", content: "" }],
+  });
+  assert.deepEqual(composed(viewOf({ work: commandedWork })).worker, {
+    mode: { type: "Commands", commands: commandedWork.commands },
+    setup: [],
+    files: [],
+  });
+});
+
+test("a work stage that names commands briefs no agent", () => {
+  const view = viewOf({ work: commandedWork, practices: [...allPracticeIds] });
+  assert.deepEqual(
+    sectionLines(view, "CheckCommands"),
+    commandedWork.commands.map((command) => `- ${command}`),
+  );
+  assert.equal(sectionLines(view, "PurposeInstructions"), undefined);
+  assert.equal(sectionLines(view, "Practices"), undefined);
+  assert.deepEqual(composed(view).provenance.practices, []);
+  assert.deepEqual(sectionLines(view, "RoleInstructions"), [
+    "This stage is the command list below, run in order by the worker.",
+    "No agent runs this stage and nothing reads this briefing.",
+  ]);
+});
+
+test("a ticket's check lines reach no commanded work stage, whatever stage it is composed for", () => {
+  const evaluations: readonly EvaluationBlock[] = [
+    { purpose: "Check", checks: ["./first.sh"] },
+  ];
+  const ticketBrief = briefAppending(["npm test"]);
+  for (const stage of [undefined, 0]) {
+    assert.deepEqual(
+      stageCommands(
+        viewOf({
+          work: commandedWork,
+          evaluations,
+          ticketBrief,
+          ...(stage === undefined ? {} : { stage }),
+        }),
+      ),
+      commandedWork.commands,
+      "a work task reads its work block whatever stage index it carries",
+    );
+  }
+  assert.deepEqual(
+    stageCommands(
+      viewOf({
+        purpose: "Check",
+        stage: 0,
+        work: commandedWork,
+        evaluations,
+        ticketBrief,
+      }),
+    ),
+    ["./first.sh", "npm test"],
+  );
 });
 
 test("a check stage briefed with instructions keeps the agent it always had", () => {
@@ -1652,4 +1732,30 @@ test("a maximal rework is inside the carrier or refused, never handed over unlau
   assert.ok(admitted > 0, "no maximal rework composed, so this proves nothing");
   assert.ok(admitted <= taskInvocationBytesMax);
   assert.equal(refused, "EnvelopeTooLong");
+});
+
+/** The same maximal rework, with the work stage naming commands instead of instructions. */
+function maximalCommandedReworkView(reports: number): BriefingView {
+  const view = maximalReworkView(reports);
+  return {
+    ...view,
+    configuration: { ...view.configuration, work: commandedWork },
+  };
+}
+
+test("a commanded work stage carries no evaluation report, so a maximal rework of one still composes", () => {
+  const view = maximalCommandedReworkView(priorEvaluationReportsMax);
+  const invocation = composed(view);
+  assert.equal(
+    invocation.briefing.sections.some(
+      (section) => section.section === "PriorEvaluationReports",
+    ),
+    false,
+  );
+  assert.ok(taskInvocationBytes(invocation) <= taskInvocationBytesMax);
+  assert.equal(
+    blockedFault(maximalReworkView(priorEvaluationReportsMax)),
+    "EnvelopeTooLong",
+    "the same reports are what a briefed stage is refused for carrying",
+  );
 });

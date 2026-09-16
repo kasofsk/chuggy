@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { authoredTaskConfigurationReadiness } from "../../src/interpreter/taskConfiguration.ts";
+import {
+  allTaskConfigurationFaults,
+  authoredTaskConfigurationReadiness,
+  briefingLineCharsMax,
+  commandLinesMax,
+} from "../../src/interpreter/taskConfiguration.ts";
 
 const configuration = {
   brief: {
@@ -98,5 +103,78 @@ test("worker compatibility distinguishes absent mode and legacy argument shapes"
       authoredTaskConfigurationReadiness({ ...configuration, worker: invalid }),
       { readiness: "Incomplete", fault: "WorkerInvalid" },
     );
+  }
+});
+
+/** The ready document with the work stage a case is about. */
+function workOf(work: unknown): unknown {
+  return { ...configuration, work };
+}
+
+test("a work stage names its commands or briefs an agent, never both or neither", () => {
+  const commanded = { commands: ["./request-build"] };
+  assert.deepEqual(authoredTaskConfigurationReadiness(workOf(commanded)), {
+    readiness: "Ready",
+    configuration: { ...configuration, work: commanded },
+  });
+  for (const work of [
+    {},
+    { ...commanded, instructions: ["Change the importer."] },
+    { authority: { network: true } },
+  ]) {
+    assert.deepEqual(
+      authoredTaskConfigurationReadiness(workOf(work)),
+      { readiness: "Incomplete", fault: "WorkKindAmbiguous" },
+      JSON.stringify(work),
+    );
+  }
+});
+
+test("a narrowing a commanded work stage cannot honour is refused, never dropped", () => {
+  for (const work of [
+    { commands: ["./request-build"], authority: { network: true } },
+    { commands: ["./request-build"], practices: [] },
+  ]) {
+    assert.deepEqual(
+      authoredTaskConfigurationReadiness(workOf(work)),
+      { readiness: "Incomplete", fault: "WorkFieldUnknown" },
+      JSON.stringify(work),
+    );
+  }
+});
+
+test("a commanded work stage's list is bounded and made of readable lines", () => {
+  for (const commands of [
+    [],
+    "./request-build",
+    [1],
+    Array.from({ length: commandLinesMax + 1 }, () => "./request-build"),
+  ]) {
+    assert.deepEqual(
+      authoredTaskConfigurationReadiness(workOf({ commands })),
+      { readiness: "Incomplete", fault: "CommandsInvalid" },
+      JSON.stringify(commands),
+    );
+  }
+  for (const [line, fault] of [
+    ["", "EmptyLine"],
+    ["x".repeat(briefingLineCharsMax + 1), "TextTooLong"],
+    ["./request-build\nrm -rf /", "TextUnreadable"],
+  ] as const) {
+    assert.deepEqual(
+      authoredTaskConfigurationReadiness(workOf({ commands: [line] })),
+      { readiness: "Incomplete", fault },
+      "a commanded work line is read like any other authored line",
+    );
+  }
+});
+
+test("every fault the work stage names is one a refusal can be recorded under", () => {
+  for (const fault of [
+    "CommandsInvalid",
+    "WorkKindAmbiguous",
+    "WorkFieldUnknown",
+  ] as const) {
+    assert.ok(allTaskConfigurationFaults.includes(fault), fault);
   }
 });
