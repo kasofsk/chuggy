@@ -177,8 +177,9 @@ module.exports = {
         "the server side and would have no reason to permit here — what a " +
         "browser fetches for one console would be decided by the other's " +
         "needs. So a constant two consoles both need is written twice, and " +
-        "test/ui/ holds the copies equal, which is the arrangement already " +
-        "in force between the console and the server. Capture group and " +
+        "a suite beside each holds the copies equal, which is the " +
+        "arrangement already in force between the console and the server. " +
+        "Capture group and " +
         "segment anchor for the same reasons no-adapter-sees-another states " +
         "them: the interesting violation is a reachable helper rather than " +
         "one console importing another by name, and an unanchored name " +

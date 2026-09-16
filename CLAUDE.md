@@ -6,7 +6,9 @@ work and decides nothing.
 
 New projects use the pinned Chuggernaut ticket, evaluation, task and processing
 models under `model/ticket-domain/`, `model/task-contract/` and
-`model/application/`. `vendor/chuggernaut/source.json` identifies their source.
+`model/application/`. The core they refine to is the
+`@kasofsk/chug-ticket-domain` dependency, pinned by the lockfile;
+`vendor/chuggernaut/source.json` pins the sources still vendored beside it.
 **This repo is unusual in one way that matters before you read anything else: the formal model leads the implementation.** A Quint model of the machine already exists and is proved; it emits golden traces, and this implementation grows up against them. When the model and the code disagree, the code is wrong.
 
 ## Where the knowledge is

@@ -9,9 +9,10 @@ New projects use the pinned Chuggernaut [ticket model](model/ticket-domain/ticke
 [evaluation model](model/ticket-domain/evaluation/evaluation.qnt),
 [task contract](model/task-contract/task.qnt), and
 [processing contract](model/application/project-decision-processing/processing.qnt).
-The [source manifest](vendor/chuggernaut/source.json) pins upstream bytes;
-`node scripts/build-ticket-domain.ts --check` verifies the generated TypeScript
-runtime and trace replay helpers. Existing legacy projects retain their data
+The domain core is the `@kasofsk/chug-ticket-domain` dependency the lockfile
+pins, and the [source manifest](vendor/chuggernaut/source.json) pins the bytes
+still vendored beside it; `node scripts/build-ticket-domain.ts --check` verifies
+the generated TypeScript runtime and trace replay helpers against both. Existing legacy projects retain their data
 and return `LegacyModelUnsupported`.
 
 Tickets use the [ticket/catalog schema](src/adapters/catalog/schemas/ticket.json)

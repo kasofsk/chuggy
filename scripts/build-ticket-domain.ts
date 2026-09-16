@@ -1,14 +1,37 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
+import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import ts from "typescript";
 import { format } from "prettier";
 
 const root = resolve(import.meta.dirname, "..");
-const upstream = resolve(root, "vendor/chuggernaut");
+const vendored = resolve(root, "vendor/chuggernaut");
 const checking = process.argv.includes("--check");
+
+/**
+ * THE DOMAIN IS A DEPENDENCY AND THE REST IS STILL VENDORED, so the compile
+ * reads one tree that is neither. `@kasofsk/chug-ticket-domain` publishes the
+ * core flat while the sources beside it import it nested, and a staged tree is
+ * what lets both resolve without rewriting either. The package is pinned by the
+ * lockfile, which is why its files carry no digest here.
+ */
+const packaged = dirname(
+  createRequire(import.meta.url).resolve(
+    "@kasofsk/chug-ticket-domain/package.json",
+  ),
+);
+const staging = resolve(root, "node_modules/.cache");
+mkdirSync(staging, { recursive: true });
+const upstream = mkdtempSync(resolve(staging, "chug-ticket-domain-"));
+cpSync(vendored, upstream, { recursive: true });
+for (const name of ["ticket", "task", "evaluation"])
+  cpSync(
+    resolve(packaged, "src", `${name}.ts`),
+    resolve(upstream, "chug/domain", `${name}.ts`),
+  );
 const manifest = JSON.parse(
-  readFileSync(resolve(upstream, "source.json"), "utf8"),
+  readFileSync(resolve(vendored, "source.json"), "utf8"),
 ) as {
   sha256: Record<string, string>;
 };
@@ -129,6 +152,7 @@ for (const [file, contents] of emitted) {
     writeFileSync(file, output);
   }
 }
+rmSync(upstream, { recursive: true, force: true });
 process.stdout.write(
   "ticket domain: pinned upstream sources and compiled core agree\n",
 );

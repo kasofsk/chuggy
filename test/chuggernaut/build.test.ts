@@ -63,7 +63,7 @@ test("compiled adoption matches pinned sources and detects modified generated ou
     assert.match(changed.stderr, /compiled core differs/);
     cpSync(join(root, "src/domain/chuggernaut/ticket.js"), generated);
     appendFileSync(
-      join(directory, "vendor/chuggernaut/chug/domain/ticket.ts"),
+      join(directory, "vendor/chuggernaut/chug/app/codec.ts"),
       "\nexport const changed = true;\n",
     );
     const modifiedSource = build(directory);
