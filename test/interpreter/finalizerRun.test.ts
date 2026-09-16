@@ -2297,7 +2297,7 @@ function promotingForHandoff(view: FinalizationView): FinalizationView {
   return { ...view, claim: { ...view.claim, kind: "PromoteForHandoff" } };
 }
 
-/** Catches a handoff promotion pushed straight onto the base its proposal opens into. */
+/** Catches a handoff promotion accepted while the proposal it asked for is still open. */
 test("a handoff promotion whose brief merges its proposal opens one and is accepted on the merge", async () => {
   const store = recordingStore([
     promotingForHandoff(proposedView("request-one", "PullRequestMerge")),

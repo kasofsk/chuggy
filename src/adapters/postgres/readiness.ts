@@ -351,7 +351,7 @@ async function finalizationAcceptedPromotion(
     attempt?.promoted_commit === null ||
     attempt?.promoted_commit === undefined
   )
-    throw new Error("accepted promotion has no immutable candidate");
+    throw new Error("accepted promotion has no promoted commit");
   return {
     repository: attempt.repository,
     commit: attempt.promoted_commit,

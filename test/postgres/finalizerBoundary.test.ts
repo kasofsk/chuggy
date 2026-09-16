@@ -153,7 +153,7 @@ test("promotion acceptance requires the same concluded promotion proof as succes
 });
 
 /** Which answer about merging carries the commit, each one the finalizer really records. */
-type ProposalMergeProof = "Answer" | "Reading" | "Creation";
+type ProposalMergeProof = "Answer" | "Reading" | "Creation" | "Reconciliation";
 
 /** The commit the attempt pinned, which is the proposal's head where one was opened. */
 async function candidateOf(
@@ -223,6 +223,16 @@ async function proposalMerged(
              'a ticket','its words',1)`,
     [...keys, held[0]?.["permit"], finalizerDigest(), head],
   );
+  if (carried === "Reconciliation") {
+    await rig.as(
+      `UPDATE finalization_change_proposal
+          SET reconciliation='Accepted', reconciliation_evidence=$4::jsonb,
+              reconciliations=1
+        WHERE tenant=$1 AND project=$2 AND request=$3`,
+      [...keys, proposalEvidence(head, mergeCommit)],
+    );
+    return mergeCommit;
+  }
   await rig.as(
     `UPDATE finalization_change_proposal
         SET creation='Created', creation_evidence=$4::jsonb
@@ -311,6 +321,13 @@ test("a merge nobody heard back from is proved by what the reading found", async
 test("a proposal found already merged proves the commit it left", async () => {
   const { project, attempt } = await handingOff("promotion-merged-already");
   const mergeCommit = await proposalMerged(project, attempt, "Creation");
+  assert.equal(await acceptedPromotion(project), mergeCommit);
+});
+
+/** Catches the same where the create went unheard and the reading found the merge. */
+test("a proposal reconciled onto a merge proves the commit it left", async () => {
+  const { project, attempt } = await handingOff("promotion-reconciled");
+  const mergeCommit = await proposalMerged(project, attempt, "Reconciliation");
   assert.equal(await acceptedPromotion(project), mergeCommit);
 });
 
