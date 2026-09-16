@@ -28,10 +28,10 @@
  * rather than by a second path into the worker.
  *
  * SO A COMMANDED STAGE IS TOLD NOTHING AN AGENT WOULD HAVE READ. It carries no
- * practices and neither report section, because the reports are for a reader to
- * act on and this briefing has none — and because the reports are documents,
- * which is what would otherwise take a reworked commanded stage past the
- * carrier the invocation has.
+ * practices and no report. The failed evaluation's reports are gated on the
+ * carrier, because they are documents rather than lines and would otherwise
+ * take a reworked commanded stage past the carrier the invocation has; the work
+ * reports are a review's, and no commanded stage is one.
  *
  * THE TICKET'S OWN CHECK LINES ARE THE SECOND SOURCE, AND THEY FOLLOW. They are
  * appended to the first evaluation stage the configuration commands, so the
@@ -128,7 +128,6 @@ export {
   briefingLineCharsMax,
   briefingLinesMax,
   commandLinesMax,
-  commandedEvaluationBlock,
   firstCommandedCheckStage,
   type AgentEvaluationBlock,
   type AuthoredTaskConfiguration,
@@ -689,7 +688,7 @@ function briefingBodies(
         ? briefingEvaluationReportLines(view.priorEvaluationReports)
         : [],
     PriorWorkReports:
-      briefed && view.purpose === "Review"
+      view.purpose === "Review"
         ? briefingLabelled(
             briefingLabels.workReports,
             view.priorWorkReports.reports,

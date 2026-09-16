@@ -12,6 +12,13 @@
  * SPELL THEIR LINES DIFFERENTLY. `checks` is what a ticket may append to and
  * `commands` is not: a ticket widens what its change is held to, and never
  * changes what the work is.
+ *
+ * A COMMANDED WORK STAGE IS EXPECTED TO BE ONE LINE INVOKING ONE SCRIPT THE
+ * REPOSITORY OWNS, which is where the argument for what that work does
+ * belongs rather than in a list of shell. The commands' exit status is the
+ * whole verdict, and an attempt whose commands changed nothing still declares
+ * a commit, so a repository's command must fail rather than produce an empty
+ * candidate.
  */
 
 import { z } from "zod";
@@ -76,7 +83,7 @@ export function blockCommandLines(
 }
 
 /** Whether one evaluation stage is the kind the worker runs itself. */
-export function commandedEvaluationBlock(
+function commandedEvaluationBlock(
   block: EvaluationBlock,
 ): block is CommandEvaluationBlock {
   return block.checks !== undefined;
@@ -357,8 +364,6 @@ function taskConfigurationHeaderFault(
   switch (path[0] ?? "") {
     case "practices":
       return "PracticesInvalid";
-    case "work":
-      return "WorkInvalid";
     case "review":
       return "ReviewInvalid";
     default:
