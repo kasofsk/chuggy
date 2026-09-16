@@ -1,3 +1,22 @@
+/**
+ * What one work attempt is given, what runs it, and what it leaves behind.
+ *
+ * THE CARRIER IS THE MODE AND THE CANDIDATE IS THE TASK KIND. Whether an agent
+ * or a list of commands runs the attempt is the worker mode the task carries;
+ * whether what ran leaves a branch behind is the task's kind and its verdict.
+ * Neither is read from the other, so a Work task carrying commands runs them
+ * with no agent and still pushes the candidate a passing run leaves.
+ *
+ * THE COMMANDS' EXIT STATUS IS THE WORK'S SUCCESS. Where an agent ran the
+ * attempt there is an account of the run to take a verdict from; where commands
+ * ran it there is nothing but what they exited with, and nothing else is asked
+ * for.
+ *
+ * AN EMPTY DIFF IS STILL A CANDIDATE, because the commit is `--allow-empty`. An
+ * attempt whose commands changed nothing declares the commit it made anyway,
+ * and a repository that wants that to fail says so in a command of its own.
+ */
+
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { Buffer } from "node:buffer";

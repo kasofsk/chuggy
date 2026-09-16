@@ -7,6 +7,11 @@
  * lines, so nothing here reads a configuration block, and a stage's lines can
  * gain another source without a second path into the worker.
  *
+ * THE TASK'S KIND NEVER REACHES HERE. A work task's commands are its work and
+ * their exit status is its verdict, exactly as an evaluation's are; what a
+ * passing stage then leaves behind is the entrypoint's, and is the one place
+ * the kind is read.
+ *
  * THE FIRST FAILURE STOPS THE STAGE, and a command killed by a signal is a
  * failure like any other. What follows a command that did not exit cleanly
  * cannot be trusted to mean anything, so the commands after it do not run and
