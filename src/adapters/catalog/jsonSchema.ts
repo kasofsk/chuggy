@@ -11,7 +11,8 @@ export function schema_validator(
     allErrors: true,
     validateFormats: false,
   };
-  const dialect = typeof schema.$schema === "string" ? schema.$schema : "";
+  const dialect =
+    typeof schema["$schema"] === "string" ? schema["$schema"] : "";
   if (dialect.includes("draft-04")) {
     const Draft4 = require("ajv-draft-04") as typeof Ajv;
     return new Draft4(options);
@@ -20,7 +21,11 @@ export function schema_validator(
   if (dialect.includes("draft-07")) return new Ajv(options);
   if (dialect.includes("draft-06")) {
     const engine = new Ajv(options);
-    engine.addMetaSchema(require("ajv/dist/refs/json-schema-draft-06.json"));
+    const draft6 = require("ajv/dist/refs/json-schema-draft-06.json") as Record<
+      string,
+      unknown
+    >;
+    engine.addMetaSchema(draft6);
     return engine;
   }
   return new Ajv2020(options);

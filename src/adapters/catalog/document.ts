@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { parseDocument, isScalar, type Tags } from "yaml";
-import { schema_validator } from "./chuggernaut/json_schema.js";
-import { set_number_token } from "../../interpreter/chuggernaut/json.js";
+import { schema_validator } from "./jsonSchema.ts";
+import { set_number_token } from "../../interpreter/json.ts";
 
 export type CatalogDocument = Record<string, unknown>;
 export { ticketCatalogDocumentBytesMax as catalogDocumentBytesMax } from "../../interpreter/ticketCatalog.ts";

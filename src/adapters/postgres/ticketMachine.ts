@@ -7,7 +7,7 @@ import {
   canonical_json,
   OBLIGATION,
   TICKET_DECISION,
-} from "../../interpreter/chuggernaut/codec.js";
+} from "../../interpreter/codec.ts";
 import type { Lease, Partition } from "../../interpreter/projectStore.ts";
 import type {
   TicketMachineInput,

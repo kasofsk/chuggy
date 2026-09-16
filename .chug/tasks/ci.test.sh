@@ -175,11 +175,11 @@ source_unit_change() { # <path> — changes one tracked source-unit input
 	set -e
 }
 
-source_unit_change vendor/chuggernaut/chug/runner/comments.ts
+source_unit_change src/adapters/runtime/comments.ts
 refute "a vendored source change selects generated verification" 0 "$RC" \
 	"check-source unit: SKIPPED"
 
-source_unit_change vendor/chuggernaut/source.json
+source_unit_change src/interpreter/codec.ts
 refute "a provenance manifest change selects generated verification" 0 "$RC" \
 	"check-source unit: SKIPPED"
 

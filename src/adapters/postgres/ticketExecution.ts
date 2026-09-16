@@ -2,11 +2,7 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 import { createHash } from "node:crypto";
 
-import {
-  decode,
-  encode,
-  canonical_json,
-} from "../../interpreter/chuggernaut/codec.js";
+import { decode, encode, canonical_json } from "../../interpreter/codec.ts";
 import * as task from "../../domain/chuggernaut/task.js";
 import {
   asRecoveryEpoch,

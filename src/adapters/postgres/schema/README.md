@@ -214,10 +214,10 @@ moves with it: an effect materializes one action, and an approval no effect
 produced is unique by the attempt it names instead.
 
 A QUESTION AND ITS ANSWERS ARE ONE ROSTER, AND THE SERVER HOLDS THEM TO IT.
-`src/adapters/postgres/schema/historicalTicketEnums.ts` pairs each action kind with the answers it
-admits, and `native_action_resolution_pairs_with_its_kind` refuses a row
-offering the other kind's answer — which a CHECK cannot see, because the kind
-is on the action and the answer is on a row of its own.
+`native_action_resolution_pairs_with_its_kind` pairs each action kind with
+the answers it admits and refuses a row offering the other kind's answer —
+which a CHECK cannot see, because the kind is on the action and the answer
+is on a row of its own.
 
 AN ANSWERED OPERATION IS TERMINAL WITH NO ENTRY BEHIND IT. `Approve` and
 `Decline` name no domain command, so the input that carried one settles

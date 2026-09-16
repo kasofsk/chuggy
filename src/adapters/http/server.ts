@@ -21,8 +21,9 @@ import type { RepositoryOnboarding } from "../../interpreter/repositoryOnboardin
 import type { TicketApplication } from "../../interpreter/ticketApplication.ts";
 import { TicketId as AdoptedTicketId } from "../../domain/chuggernaut/task.js";
 import { asGitObjectId, asRepositoryId } from "../../interpreter/finalizer.ts";
-import { encode as encodeChuggernaut } from "../../interpreter/chuggernaut/codec.js";
+import { encode as encodeChuggernaut } from "../../interpreter/codec.ts";
 import { nativeHttpContractDocument } from "../../contract/document.ts";
+import { integerField, textField } from "../../contract/fields.ts";
 import {
   nativeHttpBodyBytesMax,
   nativeHttpError,
@@ -135,30 +136,6 @@ function fieldsOnly(
   if (Object.keys(found).some((name) => !allowed.includes(name)))
     throw new TypeError("request has an unknown field");
   return found;
-}
-
-function textField(
-  fields: Readonly<Record<string, unknown>>,
-  name: string,
-): string {
-  const value = fields[name];
-  if (typeof value !== "string") throw new TypeError(`${name} is not text`);
-  return value;
-}
-
-function integerField(
-  fields: Readonly<Record<string, unknown>>,
-  name: string,
-  fallback?: number,
-): number {
-  const value = fields[name];
-  if (value === undefined && fallback !== undefined) return fallback;
-  if (typeof value !== "string" || !/^(?:0|[1-9][0-9]*)$/u.test(value))
-    throw new TypeError(`${name} is not a canonical non-negative integer`);
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed))
-    throw new RangeError(`${name} is too large`);
-  return parsed;
 }
 
 function bearer(authorization: string | undefined): string | undefined {

@@ -70,8 +70,8 @@ ENV DISABLE_AUTOUPDATER=1 \
 COPY images/worker/entrypoint.mjs /usr/local/lib/chuggy/worker.mjs
 COPY src/roots/ticketWorker.ts /usr/local/lib/chuggy/ticketWorker.ts
 COPY src/adapters/runtime/ticketWorker.ts /usr/local/lib/adapters/runtime/ticketWorker.ts
-COPY src/adapters/runtime/chuggernaut/comments.js /usr/local/lib/adapters/runtime/chuggernaut/comments.js
-COPY src/adapters/runtime/chuggernaut/commit_hooks.js /usr/local/lib/adapters/runtime/chuggernaut/commit_hooks.js
+COPY src/adapters/runtime/comments.ts /usr/local/lib/adapters/runtime/comments.ts
+COPY src/adapters/runtime/commitHooks.ts /usr/local/lib/adapters/runtime/commitHooks.ts
 COPY images/worker/chuggyApi.mjs /usr/local/lib/chuggy/chuggyApi.mjs
 COPY images/worker/chuggyTools.mjs /usr/local/lib/chuggy/chuggyTools.mjs
 COPY images/worker/credentialScrub.mjs /usr/local/lib/chuggy/credentialScrub.mjs

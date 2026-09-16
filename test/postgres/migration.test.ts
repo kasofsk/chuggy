@@ -263,10 +263,6 @@ test("the baseline opens five journal columns to the API and leaves the rest shu
   });
 });
 
-
-
-
-
 const leadSelectorDoorsPaged = "standing_agentic_refusals(text,text,bigint)";
 
 const leadSelectorDoorsAdded = [
@@ -542,12 +538,6 @@ test("a landing no roster names is refused by the column's own constraint", asyn
     );
   });
 });
-
-
-
-
-
-
 
 async function assertDoorsStandOwned(
   subject: pg.Pool,

@@ -9,7 +9,7 @@ import {
   encode,
   TICKET_COMMAND,
   TICKET_DECISION,
-} from "../../interpreter/chuggernaut/codec.js";
+} from "../../interpreter/codec.ts";
 import {
   ticketMachineOrigin,
   type TicketMachineInput,

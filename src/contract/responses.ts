@@ -1,37 +1,64 @@
 import { z } from "zod";
 import {
-  countSchema, forgeInstallationsAnsweredMax, forgeRefusalMessageCharsMax,
-  forgeRepositoriesAnsweredMax, identitySchema, inquiriesAnsweredMax,
-  inquiryQuestionCharsMax, instantSchema, leadTurnsAnsweredMax,
-  nativeHttpPageItemsMax, partitionSchema, projectRepositoriesAnsweredMax,
-  sessionStoreStreamCharsMax, sessionStoreStreamsAnswered,
-  sessionTranscriptEntriesMax, sessionTurnModelCharsMax,
-  sessionTurnResultCharsMax, sessionTurnToolNameCharsMax, sessionTurnToolsMax,
-  threadTitleCharsMax, threadTurnRecordedCharsMax, threadTurnsAnsweredMax,
+  countSchema,
+  forgeInstallationsAnsweredMax,
+  forgeRefusalMessageCharsMax,
+  forgeRepositoriesAnsweredMax,
+  identitySchema,
+  inquiriesAnsweredMax,
+  inquiryQuestionCharsMax,
+  instantSchema,
+  leadTurnsAnsweredMax,
+  nativeHttpPageItemsMax,
+  partitionSchema,
+  projectRepositoriesAnsweredMax,
+  sessionStoreStreamCharsMax,
+  sessionStoreStreamsAnswered,
+  sessionTranscriptEntriesMax,
+  sessionTurnModelCharsMax,
+  sessionTurnResultCharsMax,
+  sessionTurnToolNameCharsMax,
+  sessionTurnToolsMax,
+  threadTitleCharsMax,
+  threadTurnRecordedCharsMax,
+  threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "./http.ts";
 import { repositoryLandingSchema } from "./requests.ts";
 import {
-  forgeAccountKinds, forgeApps, sessionStates, sessionTurnFailures,
-  sessionTurnInputKinds, sessionTurnStates, threadStandings,
+  forgeAccountKinds,
+  forgeApps,
+  sessionStates,
+  sessionTurnFailures,
+  sessionTurnInputKinds,
+  sessionTurnStates,
+  threadStandings,
 } from "./rosters.ts";
 
-const page = <T extends z.ZodType>(item: T) => z.array(item).max(nativeHttpPageItemsMax);
+const page = <T extends z.ZodType>(item: T) =>
+  z.array(item).max(nativeHttpPageItemsMax);
 
-export const installationResponseSchema = z.object({ installation: identitySchema });
+export const installationResponseSchema = z.object({
+  installation: identitySchema,
+});
 export type InstallationResponse = z.infer<typeof installationResponseSchema>;
 export const projectInventoryResponseSchema = z.strictObject({
   projects: page(partitionSchema),
   nextCursor: z.string().optional(),
 });
-export type ProjectInventoryResponse = z.infer<typeof projectInventoryResponseSchema>;
+export type ProjectInventoryResponse = z.infer<
+  typeof projectInventoryResponseSchema
+>;
 
 const sessionTurnMeasureShape = {
   model: z.string().max(sessionTurnModelCharsMax).optional(),
   tokens: countSchema.optional(),
   costMicros: countSchema.optional(),
   durationMs: countSchema.optional(),
-  tools: z.array(z.string().max(sessionTurnToolNameCharsMax)).max(sessionTurnToolsMax).optional(),
+  tools: z
+    .array(z.string().max(sessionTurnToolNameCharsMax))
+    .max(sessionTurnToolsMax)
+    .optional(),
   batchFirst: countSchema.optional(),
   batchLast: countSchema.optional(),
 };
@@ -53,7 +80,9 @@ export const leadResponseSchema = z.object({
   state: z.enum(sessionStates),
   agentReference: identitySchema.optional(),
   turns: z.array(leadTurnResponseSchema).max(leadTurnsAnsweredMax),
-  streams: z.array(leadStoreStreamResponseSchema).max(sessionStoreStreamsAnswered),
+  streams: z
+    .array(leadStoreStreamResponseSchema)
+    .max(sessionStoreStreamsAnswered),
 });
 export type LeadResponse = z.infer<typeof leadResponseSchema>;
 export const leadTranscriptEntryResponseSchema = z.object({
@@ -64,15 +93,21 @@ export const leadTranscriptEntryResponseSchema = z.object({
 });
 export const leadTranscriptResponseSchema = z.object({
   stream: z.string().min(1).max(sessionStoreStreamCharsMax),
-  entries: z.array(leadTranscriptEntryResponseSchema).max(sessionTranscriptEntriesMax),
+  entries: z
+    .array(leadTranscriptEntryResponseSchema)
+    .max(sessionTranscriptEntriesMax),
   held: z.array(identitySchema).max(sessionTranscriptEntriesMax).optional(),
   cut: countSchema.optional(),
-  compaction: z.object({ boundary: identitySchema, at: instantSchema.optional() }).optional(),
+  compaction: z
+    .object({ boundary: identitySchema, at: instantSchema.optional() })
+    .optional(),
   elided: countSchema,
   truncated: z.boolean(),
   nextAfter: countSchema.optional(),
 });
-export type LeadTranscriptResponse = z.infer<typeof leadTranscriptResponseSchema>;
+export type LeadTranscriptResponse = z.infer<
+  typeof leadTranscriptResponseSchema
+>;
 
 export const threadEntryResponseSchema = z.object({
   session: identitySchema,
@@ -114,17 +149,27 @@ export const threadResponseSchema = z.object({
   hidden: z.boolean(),
   turns: z.array(threadTurnResponseSchema).max(threadTurnsAnsweredMax),
   nextBefore: countSchema.optional(),
-  streams: z.array(leadStoreStreamResponseSchema).max(sessionStoreStreamsAnswered),
+  streams: z
+    .array(leadStoreStreamResponseSchema)
+    .max(sessionStoreStreamsAnswered),
 });
 export type ThreadResponse = z.infer<typeof threadResponseSchema>;
 export const threadTranscriptResponseSchema = leadTranscriptResponseSchema;
 export type ThreadTranscriptResponse = LeadTranscriptResponse;
 export const threadRenameResponseSchema = threadEntryResponseSchema;
 export const threadHideResponseSchema = threadEntryResponseSchema;
-export const threadMessageAcceptedSchema = z.object({ turn: identitySchema, ordinal: countSchema });
+export const threadMessageAcceptedSchema = z.object({
+  turn: identitySchema,
+  ordinal: countSchema,
+});
 export type ThreadMessageAccepted = z.infer<typeof threadMessageAcceptedSchema>;
 
-const inquiryMeasureShape = leadTurnResponseSchema.pick({ model: true, tokens: true, costMicros: true, durationMs: true }).shape;
+const inquiryMeasureShape = leadTurnResponseSchema.pick({
+  model: true,
+  tokens: true,
+  costMicros: true,
+  durationMs: true,
+}).shape;
 export const leadInquiryResponseSchema = z.object({
   session: identitySchema,
   asker: identitySchema.optional(),
@@ -139,47 +184,134 @@ export const leadInquiryResponseSchema = z.object({
   ...inquiryMeasureShape,
 });
 export type LeadInquiryResponse = z.infer<typeof leadInquiryResponseSchema>;
-export const leadInquiriesResponseSchema = z.object({ inquiries: z.array(leadInquiryResponseSchema).max(inquiriesAnsweredMax) });
+export const leadInquiriesResponseSchema = z.object({
+  inquiries: z.array(leadInquiryResponseSchema).max(inquiriesAnsweredMax),
+});
 export type LeadInquiriesResponse = z.infer<typeof leadInquiriesResponseSchema>;
-export const leadInquiryAcceptedSchema = z.object({ session: identitySchema, turn: identitySchema, ordinal: countSchema });
+export const leadInquiryAcceptedSchema = z.object({
+  session: identitySchema,
+  turn: identitySchema,
+  ordinal: countSchema,
+});
 export type LeadInquiryAccepted = z.infer<typeof leadInquiryAcceptedSchema>;
 
-export const forgeAppResponseSchema = z.object({ app: z.enum(forgeApps), id: identitySchema, slug: identitySchema, installUrl: z.string().min(1) });
+export const forgeAppResponseSchema = z.object({
+  app: z.enum(forgeApps),
+  id: identitySchema,
+  slug: identitySchema,
+  installUrl: z.string().min(1),
+});
 export type ForgeAppResponse = z.infer<typeof forgeAppResponseSchema>;
-export const forgeAppsResponseSchema = z.object({ apps: z.array(forgeAppResponseSchema).max(forgeApps.length) });
+export const forgeAppsResponseSchema = z.object({
+  apps: z.array(forgeAppResponseSchema).max(forgeApps.length),
+});
 export type ForgeAppsResponse = z.infer<typeof forgeAppsResponseSchema>;
-export const forgeInstallationClaimedSchema = z.object({ forge: identitySchema, app: z.enum(forgeApps), account: identitySchema, accountKind: z.enum(forgeAccountKinds), installationId: identitySchema });
-export type ForgeInstallationClaimedResponse = z.infer<typeof forgeInstallationClaimedSchema>;
-export const forgeInstallationResponseSchema = forgeInstallationClaimedSchema.extend({ claimedAt: instantSchema });
-export type ForgeInstallationResponse = z.infer<typeof forgeInstallationResponseSchema>;
-export const forgeInstallationsResponseSchema = z.object({ installations: z.array(forgeInstallationResponseSchema).max(forgeInstallationsAnsweredMax), truncated: z.boolean() });
-export type ForgeInstallationsResponse = z.infer<typeof forgeInstallationsResponseSchema>;
-export const forgeRepositoryResponseSchema = z.object({ name: identitySchema, fullName: z.string().min(1), url: z.string().min(1), defaultBranch: z.string().min(1), private: z.boolean() });
-export type ForgeRepositoryResponse = z.infer<typeof forgeRepositoryResponseSchema>;
-export const forgeRepositoriesResponseSchema = z.object({ repositories: z.array(forgeRepositoryResponseSchema).max(forgeRepositoriesAnsweredMax), truncated: z.boolean() });
-export type ForgeRepositoriesResponse = z.infer<typeof forgeRepositoriesResponseSchema>;
+export const forgeInstallationClaimedSchema = z.object({
+  forge: identitySchema,
+  app: z.enum(forgeApps),
+  account: identitySchema,
+  accountKind: z.enum(forgeAccountKinds),
+  installationId: identitySchema,
+});
+export type ForgeInstallationClaimedResponse = z.infer<
+  typeof forgeInstallationClaimedSchema
+>;
+export const forgeInstallationResponseSchema =
+  forgeInstallationClaimedSchema.extend({ claimedAt: instantSchema });
+export type ForgeInstallationResponse = z.infer<
+  typeof forgeInstallationResponseSchema
+>;
+export const forgeInstallationsResponseSchema = z.object({
+  installations: z
+    .array(forgeInstallationResponseSchema)
+    .max(forgeInstallationsAnsweredMax),
+  truncated: z.boolean(),
+});
+export type ForgeInstallationsResponse = z.infer<
+  typeof forgeInstallationsResponseSchema
+>;
+export const forgeRepositoryResponseSchema = z.object({
+  name: identitySchema,
+  fullName: z.string().min(1),
+  url: z.string().min(1),
+  defaultBranch: z.string().min(1),
+  private: z.boolean(),
+});
+export type ForgeRepositoryResponse = z.infer<
+  typeof forgeRepositoryResponseSchema
+>;
+export const forgeRepositoriesResponseSchema = z.object({
+  repositories: z
+    .array(forgeRepositoryResponseSchema)
+    .max(forgeRepositoriesAnsweredMax),
+  truncated: z.boolean(),
+});
+export type ForgeRepositoriesResponse = z.infer<
+  typeof forgeRepositoriesResponseSchema
+>;
 
-export const projectRepositoryBoundSchema = z.object({ repository: z.string().min(1), landing: repositoryLandingSchema });
-export type ProjectRepositoryBoundResponse = z.infer<typeof projectRepositoryBoundSchema>;
-export const projectRepositoryAlreadyBoundSchema = z.object({ repository: z.string().min(1) });
-export type ProjectRepositoryAlreadyBoundResponse = z.infer<typeof projectRepositoryAlreadyBoundSchema>;
+export const projectRepositoryBoundSchema = z.object({
+  repository: z.string().min(1),
+  landing: repositoryLandingSchema,
+});
+export type ProjectRepositoryBoundResponse = z.infer<
+  typeof projectRepositoryBoundSchema
+>;
+export const projectRepositoryAlreadyBoundSchema = z.object({
+  repository: z.string().min(1),
+});
+export type ProjectRepositoryAlreadyBoundResponse = z.infer<
+  typeof projectRepositoryAlreadyBoundSchema
+>;
 export const projectRepositoryRulesetSchema = z.discriminatedUnion("result", [
   z.object({ result: z.literal("Created") }),
-  z.object({ result: z.literal("Refused"), message: z.string().max(forgeRefusalMessageCharsMax) }),
+  z.object({
+    result: z.literal("Refused"),
+    message: z.string().max(forgeRefusalMessageCharsMax),
+  }),
   z.object({ result: z.literal("Skipped") }),
   z.object({ result: z.literal("Unavailable") }),
 ]);
-export type ProjectRepositoryRulesetResponse = z.infer<typeof projectRepositoryRulesetSchema>;
+export type ProjectRepositoryRulesetResponse = z.infer<
+  typeof projectRepositoryRulesetSchema
+>;
 export const projectRepositoryCreatedSchema = z.object({
-  repository: z.string().min(1), landing: repositoryLandingSchema,
-  created: z.object({ account: identitySchema, name: identitySchema, url: z.string().min(1) }),
-  seeded: z.boolean(), ruleset: projectRepositoryRulesetSchema,
+  repository: z.string().min(1),
+  landing: repositoryLandingSchema,
+  created: z.object({
+    account: identitySchema,
+    name: identitySchema,
+    url: z.string().min(1),
+  }),
+  seeded: z.boolean(),
+  ruleset: projectRepositoryRulesetSchema,
 });
-export type ProjectRepositoryCreatedResponse = z.infer<typeof projectRepositoryCreatedSchema>;
-export const projectRepositoryResponseSchema = z.object({ repository: z.string().min(1), boundAt: instantSchema, landing: repositoryLandingSchema, retiredAt: instantSchema.optional() });
-export type ProjectRepositoryResponse = z.infer<typeof projectRepositoryResponseSchema>;
-export const projectRepositoryLandingWrittenSchema = z.object({ repository: projectRepositoryResponseSchema });
-export const projectRepositoryLandingConflictSchema = z.object({ repository: projectRepositoryResponseSchema });
-export const projectRepositoryRetiredSchema = z.object({ repository: projectRepositoryResponseSchema });
-export const projectRepositoriesResponseSchema = z.object({ repositories: z.array(projectRepositoryResponseSchema).max(projectRepositoriesAnsweredMax) });
-export type ProjectRepositoriesResponse = z.infer<typeof projectRepositoriesResponseSchema>;
+export type ProjectRepositoryCreatedResponse = z.infer<
+  typeof projectRepositoryCreatedSchema
+>;
+export const projectRepositoryResponseSchema = z.object({
+  repository: z.string().min(1),
+  boundAt: instantSchema,
+  landing: repositoryLandingSchema,
+  retiredAt: instantSchema.optional(),
+});
+export type ProjectRepositoryResponse = z.infer<
+  typeof projectRepositoryResponseSchema
+>;
+export const projectRepositoryLandingWrittenSchema = z.object({
+  repository: projectRepositoryResponseSchema,
+});
+export const projectRepositoryLandingConflictSchema = z.object({
+  repository: projectRepositoryResponseSchema,
+});
+export const projectRepositoryRetiredSchema = z.object({
+  repository: projectRepositoryResponseSchema,
+});
+export const projectRepositoriesResponseSchema = z.object({
+  repositories: z
+    .array(projectRepositoryResponseSchema)
+    .max(projectRepositoriesAnsweredMax),
+});
+export type ProjectRepositoriesResponse = z.infer<
+  typeof projectRepositoriesResponseSchema
+>;

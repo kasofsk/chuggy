@@ -187,9 +187,7 @@ test("the refusal names what this caller can lower, and says so where there is n
 test("an answer at the bound is served and one over it never reaches the model", async () => {
   const head = "HTTP 200\n";
   const room = chuggyToolAnswerBytesMax - chuggyToolAnswerBytes(head);
-  for (const [name, args] of [
-    ["read_thread", { session: "t-1", limit: 32 }],
-  ]) {
+  for (const [name, args] of [["read_thread", { session: "t-1", limit: 32 }]]) {
     const at = await routeOf(
       name,
       args,

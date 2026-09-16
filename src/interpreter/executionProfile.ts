@@ -21,7 +21,7 @@ export function execution_profile(value: unknown): ExecutionProfile {
       )
     )
       throw new Error(`unknown execution profile field: ${key}`);
-  const caps = value.required_capabilities;
+  const caps = value["required_capabilities"];
   if (
     !Array.isArray(caps) ||
     caps.some((c) => typeof c !== "string" || !PROFILE_NAME.test(c))
@@ -29,7 +29,7 @@ export function execution_profile(value: unknown): ExecutionProfile {
     throw new Error(
       "required_capabilities must be a list of capability tokens (letters, digits, underscore, hyphen; 1–63 characters)",
     );
-  const command = value.runner_command;
+  const command = value["runner_command"];
   if (
     !Array.isArray(command) ||
     command.length === 0 ||
@@ -40,8 +40,8 @@ export function execution_profile(value: unknown): ExecutionProfile {
     throw new Error(
       "runner_command must be a nonempty argv of nonempty strings without NUL",
     );
-  const cpu = value.cpu === undefined ? 1000 : value.cpu,
-    memory = value.memory_mb === undefined ? 1024 : value.memory_mb;
+  const cpu = value["cpu"] === undefined ? 1000 : value["cpu"],
+    memory = value["memory_mb"] === undefined ? 1024 : value["memory_mb"];
   for (const [key, v] of [
     ["cpu", cpu],
     ["memory_mb", memory],
@@ -60,8 +60,8 @@ export function frozen_execution_profile(
 ): FrozenExecutionProfile {
   if (
     !object(value) ||
-    typeof value.name !== "string" ||
-    !PROFILE_NAME.test(value.name)
+    typeof value["name"] !== "string" ||
+    !PROFILE_NAME.test(value["name"])
   )
     throw new Error("frozen execution profile requires a valid name");
   const { name, ...configuration } = value;

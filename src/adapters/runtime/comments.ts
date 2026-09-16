@@ -46,22 +46,40 @@ const DIRECTIVES =
 const LICENSE =
   /\b(?:SPDX-License-Identifier|copy(?:right)|licensed under|license notice)\b/i;
 export class CommentSpan {
+  readonly start: number;
+  readonly end: number;
+  readonly text: string;
+  readonly replacement: string;
+  readonly directive: boolean;
+  readonly documentation: boolean;
+  readonly syntax: string;
   constructor(
-    readonly start: number,
-    readonly end: number,
-    readonly text: string,
-    readonly replacement = "",
-    readonly directive = false,
-    readonly documentation = false,
-    readonly syntax = "",
-  ) {}
+    start: number,
+    end: number,
+    text: string,
+    replacement = "",
+    directive = false,
+    documentation = false,
+    syntax = "",
+  ) {
+    this.start = start;
+    this.end = end;
+    this.text = text;
+    this.replacement = replacement;
+    this.directive = directive;
+    this.documentation = documentation;
+    this.syntax = syntax;
+  }
 }
 export class Removal {
-  constructor(
-    readonly source: string,
-    readonly removed: number,
-    readonly preserved: number,
-  ) {}
+  readonly source: string;
+  readonly removed: number;
+  readonly preserved: number;
+  constructor(source: string, removed: number, preserved: number) {
+    this.source = source;
+    this.removed = removed;
+    this.preserved = preserved;
+  }
 }
 export function supported(path: string): boolean {
   const suffix = extname(path),
@@ -133,6 +151,17 @@ function embedded(node: SyntaxNode): string | null {
   }
   return ".js";
 }
+/** The grammar a suffix names, refusing a file no grammar covers. */
+function grammar_for(
+  table: Readonly<Record<string, string>>,
+  suffix: string,
+  path: string,
+): string {
+  const grammar = table[suffix];
+  if (grammar === undefined)
+    throw new Error(`comment hook has no grammar for ${path}`);
+  return grammar;
+}
 function walk(node: SyntaxNode): SyntaxNode[] {
   return [node, ...node.children.flatMap(walk)];
 }
@@ -141,12 +170,13 @@ async function syntax_spans(
   source: string,
 ): Promise<CommentSpan[]> {
   const suffix = extname(path),
-    tree = await parse(PARSERS[suffix]!, source, path),
+    tree = await parse(grammar_for(PARSERS, suffix, path), source, path),
     spans: CommentSpan[] = [];
   try {
     const pending = [tree.rootNode];
     while (pending.length) {
-      const node = pending.pop()!;
+      const node = pending.pop();
+      if (node === undefined) break;
       if (["comment", "hash_bang_line"].includes(node.type))
         spans.push(
           new CommentSpan(
@@ -192,7 +222,7 @@ function lex_spans(path: string, source: string): CommentSpan[] {
   const suffix = extname(path),
     language = basename(path).startsWith("Dockerfile")
       ? "docker"
-      : LANGUAGES[suffix]!;
+      : grammar_for(LANGUAGES, suffix, path);
   loadLanguages([language]);
   const grammar = Prism.languages[language];
   if (!grammar)
@@ -254,7 +284,7 @@ function shape(node: SyntaxNode): unknown {
 }
 async function syntax_shape(path: string, source: string): Promise<string> {
   const suffix = extname(path),
-    tree = await parse(PARSERS[suffix]!, source, path);
+    tree = await parse(grammar_for(PARSERS, suffix, path), source, path);
   try {
     if (suffix === ".html" || suffix === ".htm") {
       const nested: unknown[] = [];
@@ -271,6 +301,40 @@ async function syntax_shape(path: string, source: string): Promise<string> {
   } finally {
     tree.delete();
   }
+}
+/** Where one removed span reaches and what stands in its place. */
+function span_edit(
+  span: CommentSpan,
+  source: string,
+  path: string,
+): [number, number, string] {
+  let { start, end } = span,
+    replacement = span.replacement;
+  if ([".html", ".htm", ".css", ".scss"].includes(span.syntax || extname(path)))
+    replacement = span.text.startsWith("//")
+      ? span.text.replace(/[^\r\n]/g, "")
+      : "";
+  else if (!replacement) {
+    const line_start = source.lastIndexOf("\n", start - 1) + 1;
+    let line_end = source.indexOf("\n", end);
+    if (line_end < 0) line_end = source.length;
+    if (
+      !source.slice(line_start, start).trim() &&
+      !source.slice(end, line_end).trim()
+    ) {
+      start = line_start;
+      end = Math.min(line_end + 1, source.length);
+    } else if (span.documentation) replacement = "";
+    else if (
+      !source.slice(end, line_end).trim() &&
+      !source.slice(start, end).includes("\n")
+    ) {
+      while (start > line_start && /[ \t]/.test(source[start - 1] ?? ""))
+        start--;
+      end = line_end;
+    } else replacement = source.slice(start, end).replace(/[^\r\n]/g, " ");
+  }
+  return [start, end, replacement];
 }
 export async function remove_comments(
   path: string,
@@ -299,34 +363,8 @@ export async function remove_comments(
       preserved++;
       continue;
     }
-    let { start, end } = span,
-      replacement = span.replacement;
-    if (
-      [".html", ".htm", ".css", ".scss"].includes(span.syntax || extname(path))
-    )
-      replacement = span.text.startsWith("//")
-        ? span.text.replace(/[^\r\n]/g, "")
-        : "";
-    else if (!replacement) {
-      const line_start = source.lastIndexOf("\n", start - 1) + 1;
-      let line_end = source.indexOf("\n", end);
-      if (line_end < 0) line_end = source.length;
-      if (
-        !source.slice(line_start, start).trim() &&
-        !source.slice(end, line_end).trim()
-      ) {
-        start = line_start;
-        end = Math.min(line_end + 1, source.length);
-      } else if (span.documentation) replacement = "";
-      else if (
-        !source.slice(end, line_end).trim() &&
-        !source.slice(start, end).includes("\n")
-      ) {
-        while (start > line_start && /[ \t]/.test(source[start - 1]!)) start--;
-        end = line_end;
-      } else replacement = source.slice(start, end).replace(/[^\r\n]/g, " ");
-    }
-    edits.push([start, end, replacement]);
+    const edit = span_edit(span, source, path);
+    edits.push(edit);
   }
   let result = source;
   for (const [start, end, replacement] of edits.toReversed())
@@ -342,4 +380,3 @@ export async function remove_comments(
   }
   return new Removal(result, edits.length, preserved);
 }
-

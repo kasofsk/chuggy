@@ -5,7 +5,7 @@ import {
   canonical_json,
   copy_json_metadata,
   parse_json,
-} from "../../interpreter/chuggernaut/json.js";
+} from "../../interpreter/json.ts";
 import type {
   TicketCatalog,
   TicketCatalogSource,
@@ -13,7 +13,7 @@ import type {
   TicketCatalogRelease,
 } from "../../interpreter/ticketCatalog.ts";
 import type { TicketPullRequestConfiguration } from "../../interpreter/ticketPullRequest.ts";
-import { schema_validator } from "./chuggernaut/json_schema.js";
+import { schema_validator } from "./jsonSchema.ts";
 import {
   catalogCheck,
   catalogDocument,

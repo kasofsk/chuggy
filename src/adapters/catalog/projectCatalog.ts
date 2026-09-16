@@ -3,7 +3,7 @@ import {
   PROFILE_NAME,
   execution_profile,
   type ExecutionProfile,
-} from "../../interpreter/chuggernaut/execution_profile.js";
+} from "../../interpreter/executionProfile.ts";
 import type {
   TicketCatalogSnapshot,
   TicketCatalogSource,

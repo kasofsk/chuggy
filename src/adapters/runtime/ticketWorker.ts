@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { Ajv2020 } from "ajv/dist/2020.js";
 
-import { prepare_commit } from "./chuggernaut/commit_hooks.js";
+import { prepare_commit } from "./commitHooks.ts";
 
 interface TicketWorkerEnvelope {
   readonly taskKey: string;

@@ -18,7 +18,7 @@ import type {
   TicketExecutionView,
 } from "../../interpreter/ticketExecution.ts";
 import { asPlacementId } from "../../interpreter/schedulerIdentity.ts";
-import { execution_profile } from "../../interpreter/chuggernaut/execution_profile.js";
+import { execution_profile } from "../../interpreter/executionProfile.ts";
 import {
   kubernetesCancelPod,
   kubernetesCreatePod,

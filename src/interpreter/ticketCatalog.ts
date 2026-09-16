@@ -5,7 +5,7 @@ import type {
   TicketId,
 } from "../domain/chuggernaut/task.js";
 import type { ReleasedTicket } from "../domain/chuggernaut/ticket.js";
-import type { ExecutionProfile } from "./chuggernaut/execution_profile.js";
+import type { ExecutionProfile } from "./executionProfile.ts";
 import type { GitObjectId, RepositoryId } from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
 

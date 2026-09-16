@@ -1,11 +1,7 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
-import {
-  decode,
-  encode,
-  OBLIGATION,
-} from "../../interpreter/chuggernaut/codec.js";
+import { decode, encode, OBLIGATION } from "../../interpreter/codec.ts";
 import type {
   TicketFinalizerClaim,
   TicketFinalizerStore,

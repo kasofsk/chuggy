@@ -6,7 +6,7 @@ import {
   catalogReference,
 } from "../../src/adapters/catalog/document.ts";
 import { ContentRef, TicketId } from "../../src/domain/chuggernaut/task.js";
-import { execution_profile } from "../../src/interpreter/chuggernaut/execution_profile.js";
+import { execution_profile } from "../../src/interpreter/executionProfile.ts";
 import type {
   TicketContentStore,
   TicketCatalogSource,

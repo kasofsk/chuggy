@@ -6,7 +6,7 @@ import {
   decode,
   encode,
   TICKET_DECISION,
-} from "../../src/interpreter/chuggernaut/codec.js";
+} from "../../src/interpreter/codec.ts";
 import {
   ticketMachineEmpty,
   ticketMachineReplay,

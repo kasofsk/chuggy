@@ -8,15 +8,14 @@ export function parse_json(text: string): unknown {
   const tree = parseTree(text);
   function visit(node: Node, current: unknown): void {
     if (current === null || typeof current !== "object") return;
-    const children =
+    const children: (readonly [string, Node])[] =
       node.type === "object"
-        ? (node.children ?? []).map(
-            (property) =>
-              [
-                String(property.children![0]!.value),
-                property.children![1]!,
-              ] as const,
-          )
+        ? (node.children ?? []).flatMap((property) => {
+            const [key, child] = property.children ?? [];
+            return key === undefined || child === undefined
+              ? []
+              : [[String(key.value), child] as const];
+          })
         : (node.children ?? []).map(
             (child, index) => [String(index), child] as const,
           );
@@ -44,7 +43,10 @@ export function set_number_token(
   token: string,
 ): void {
   let tokens = numeric_tokens.get(container);
-  if (!tokens) numeric_tokens.set(container, (tokens = new Map()));
+  if (!tokens) {
+    tokens = new Map<string, string>();
+    numeric_tokens.set(container, tokens);
+  }
   tokens.set(String(key), token);
 }
 export function copy_json_metadata<T extends object>(
@@ -77,11 +79,14 @@ function float_repr(value: number): string {
     return `${mantissa}e${exponent < 0 ? "-" : "+"}${String(Math.abs(exponent)).padStart(2, "0")}`;
   return Number.isInteger(value) ? `${value}.0` : String(value);
 }
-function unicode_order(a: string, b: string): number {
-  const left = Array.from(a, (c) => c.codePointAt(0)!);
-  const right = Array.from(b, (c) => c.codePointAt(0)!);
-  for (let i = 0; i < Math.min(left.length, right.length); i++)
-    if (left[i] !== right[i]) return left[i]! - right[i]!;
+/** Order by code point, as canonical JSON's key order is defined over. */
+export function unicode_order(a: string, b: string): number {
+  const left = Array.from(a, (c) => c.codePointAt(0) ?? 0);
+  const right = Array.from(b, (c) => c.codePointAt(0) ?? 0);
+  for (let i = 0; i < Math.min(left.length, right.length); i++) {
+    const difference = (left[i] ?? 0) - (right[i] ?? 0);
+    if (difference !== 0) return difference;
+  }
   return left.length - right.length;
 }
 function serialize(value: unknown, sorted: boolean, token?: string): string {

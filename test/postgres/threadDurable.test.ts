@@ -52,9 +52,7 @@ import {
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "../../src/contract/http.ts";
-import {
-  asSessionId,
-} from "../../src/interpreter/agentSession.ts";
+import { asSessionId } from "../../src/interpreter/agentSession.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import { memberAuthorities } from "../../src/interpreter/projectAccess.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
@@ -64,9 +62,7 @@ import {
   threadSystemPromptCharsMax,
 } from "../../src/interpreter/thread.ts";
 import { threadEntry } from "../../src/interpreter/threadRead.ts";
-import {
-  postgresHarnessDenial,
-} from "./harness.ts";
+import { postgresHarnessDenial } from "./harness.ts";
 import { sessionRigProvision, sessionRigSession } from "./sessionHarness.ts";
 import {
   threadRigMember,
@@ -607,7 +603,6 @@ test("the close door is the API's, and the door it performs is no runtime role's
   );
 });
 
-
 /**
  * Why 062 does NOT replace the prompt check 061 generated. A thread's widest
  * objectives are shorter than a lead's, so the column already holds them; the
@@ -690,8 +685,6 @@ test("the widest objectives a thread composes are objectives the column takes", 
   );
 });
 
-
-
 /**
  * The durable half of "a thread is its owner's alone to write": the door
  * resolves the mailbox from the principal and refuses the session the caller
@@ -718,7 +711,6 @@ test("the widest objectives a thread composes are objectives the column takes", 
  * a client that read the retry-after would wait for a turn that had never
  * needed one.
  */
-
 
 /**
  * The doors ask nothing about access, because no row here holds any. A thread
@@ -761,12 +753,6 @@ test("the three standings a listing can name are the roster's own", async () => 
     [...allThreadStandings].sort(),
   );
 });
-
-
-
-
-
-
 
 /**
  * Most turns already recorded predate `threadTurnBoundaryHeading` and end on
@@ -812,7 +798,6 @@ test("the standing read admits a thread and refuses every other session", async 
   );
 });
 
-
 /**
  * Where the change log stands now. The cases of a suite share a database, so a
  * wake case that read from zero would be reading whatever an earlier case left
@@ -829,19 +814,11 @@ test("the standing read admits a thread and refuses every other session", async 
  * one of them agrees with a join deriving that reason from the other alone.
  */
 
-
 /**
  * A ticket's changes are events, and a later one may not rewrite what an
  * earlier one meant. Every arm of the derivation had that defect, so each has a
  * case (kasofsk/chuggy#542).
  */
-
-
-
-
-
-
-
 
 test("the wake cursor is one row and never a negative one", async () => {
   await assert.rejects(

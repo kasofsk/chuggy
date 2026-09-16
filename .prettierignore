@@ -40,8 +40,6 @@ model/
 package-lock.json
 ui/*/dist/
 
-# Pinned upstream sources are kept byte-for-byte.
-vendor/chuggernaut/
 src/adapters/catalog/schemas/workload.json
 src/adapters/catalog/schemas/evaluator.json
 src/adapters/catalog/schemas/evaluation-plan.json
