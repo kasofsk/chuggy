@@ -106,8 +106,8 @@ export const briefingLinesMax = 8;
 
 export const evaluationBlocksMax = 64;
 
-/** The most command lines one check stage may name. */
-export const evaluationChecksMax = 8;
+/** The most command lines one stage may name, whichever stage it is. */
+export const commandLinesMax = 8;
 
 /** Why an authored document cannot supply the briefing contract. */
 export type TaskConfigurationFault =
@@ -428,7 +428,7 @@ function authoredTaskConfigurationCommandEvaluationBlock(
   const checks = authoredTaskConfigurationStringArray(record["checks"]);
   return checks === undefined ||
     checks.length === 0 ||
-    checks.length > evaluationChecksMax
+    checks.length > commandLinesMax
     ? { parsed: "Refused", fault: "ChecksInvalid" }
     : { parsed: "Block", block: { purpose: "Check", checks } };
 }

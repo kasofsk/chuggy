@@ -103,8 +103,8 @@ import {
   authoredTaskConfigurationReadiness,
   allPracticeIds,
   briefingLinesMax,
+  commandLinesMax,
   commandedEvaluationBlock,
-  evaluationChecksMax,
   firstCommandedCheckStage,
   taskConfigurationLineFault,
   type AuthoredTaskConfiguration,
@@ -121,8 +121,8 @@ export {
   allPracticeIds,
   briefingLineCharsMax,
   briefingLinesMax,
+  commandLinesMax,
   commandedEvaluationBlock,
-  evaluationChecksMax,
   firstCommandedCheckStage,
   type AgentEvaluationBlock,
   type AuthoredTaskConfiguration,
@@ -476,7 +476,7 @@ function briefingCarrier(view: BriefingView): BriefingCarrier {
  * ticket's appended after them. It is the sum because a ticket only ever adds,
  * so a stage at both bounds is the longest list a worker ever runs.
  */
-export const stageCommandsMax = evaluationChecksMax + briefChecksMax;
+export const stageCommandsMax = commandLinesMax + briefChecksMax;
 
 /**
  * The lines this ticket adds to the stage it is being composed for, which are

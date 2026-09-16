@@ -39,7 +39,7 @@ import {
   blessedPracticeCatalog,
   briefingLineCharsMax,
   briefingLinesMax,
-  evaluationChecksMax,
+  commandLinesMax,
   stageCommandsMax,
   authoredTaskConfigurationReadiness,
   composeTaskInvocation,
@@ -888,7 +888,7 @@ test("a stage's command list is bounded and made of readable lines", () => {
     [],
     "./ci.sh",
     [1],
-    Array.from({ length: evaluationChecksMax + 1 }, () => "./ci.sh"),
+    Array.from({ length: commandLinesMax + 1 }, () => "./ci.sh"),
   ]) {
     assert.deepEqual(authoredTaskConfigurationReadiness(checksOf(checks)), {
       readiness: "Incomplete",
@@ -982,7 +982,7 @@ test("a ticket's check lines reach no stage its configuration briefs an agent fo
 });
 
 test("a stage runs no more command lines than its two sources together bound", () => {
-  const checks = Array.from({ length: evaluationChecksMax }, () => "./gate.sh");
+  const checks = Array.from({ length: commandLinesMax }, () => "./gate.sh");
   const appended = (count: number): DraftBrief =>
     briefAppending(Array.from({ length: count }, () => "npm test"));
   const viewAppending = (count: number): BriefingView =>
