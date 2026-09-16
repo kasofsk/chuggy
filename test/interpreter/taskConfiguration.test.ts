@@ -130,6 +130,17 @@ test("a work stage names its commands or briefs an agent, never both or neither"
   }
 });
 
+test("a document that names no work stage is refused at the field it lacks", () => {
+  const absent: Record<string, unknown> = { ...configuration };
+  delete absent["work"];
+  for (const document of [absent, workOf(undefined)]) {
+    assert.deepEqual(authoredTaskConfigurationReadiness(document), {
+      readiness: "Incomplete",
+      fault: "WorkInvalid",
+    });
+  }
+});
+
 test("a narrowing a commanded work stage cannot honour is refused, never dropped", () => {
   for (const work of [
     { commands: ["./request-build"], authority: { network: true } },
