@@ -1,7 +1,8 @@
 /**
- * The adapter behind `GitPromotionPort`: the remote reads a preparation pins,
- * the one conditional ref update a permit authorizes, and the ancestry proof
- * that says what the ref holds.
+ * The adapter behind `GitPromotionPort` and `PublicationWitnessPort`: the
+ * remote reads a preparation pins, the one conditional ref update a permit
+ * authorizes, the ancestry proof that says what the ref holds, and whether a
+ * handoff repository has come to hold what proves it took a publication up.
  *
  * A PROMOTION MAY BE AMBIGUOUS AND THAT IS AN ANSWER. The push either advanced
  * the ref, or was refused because the candidate was not a fast-forward of what
@@ -37,6 +38,9 @@ import type {
   CandidatePromotion,
   GitEvidence,
   GitPromotionPort,
+  PublicationWitnessObserved,
+  PublicationWitnessPort,
+  PublicationWitnessReading,
   RepositoryBinding,
   RepositoryCredential,
   RepositoryCredentialPort,
@@ -46,6 +50,7 @@ import { candidateIntegrate, candidatePrepare } from "./gitCandidate.ts";
 import {
   scratchFetchRef,
   scratchHasCommit,
+  scratchHasFile,
   scratchIsAncestor,
   scratchObserveHead,
   scratchPush,
@@ -339,8 +344,51 @@ async function gitPromotionProve(
     : { proved: "NotAncestor", observed };
 }
 
+/**
+ * Whether the handoff repository holds what proves a publication was taken up,
+ * read at the commit the caller observed rather than at one this resolves for
+ * itself. The ref is fetched for its objects, and a commit the fetch did not
+ * bring is unreadable rather than absent: a path cannot be missing from a tree
+ * nobody has.
+ */
+async function gitPromotionWitness(
+  own: GitPromotionState,
+  reading: PublicationWitnessReading,
+): Promise<PublicationWitnessObserved> {
+  const authorized = await gitPromotionCredentialOf(own, reading.repository);
+  if (authorized.authorized === "Refused") {
+    return { witnessed: "Unreadable", evidence: authorized.evidence };
+  }
+  const repository = reading.repository.repository;
+  const target = reading.target;
+  const fetched = await scratchFetchRef(
+    own.scratch,
+    repository,
+    authorized.credential,
+    target.baseRef ?? target.ref,
+  );
+  if (!fetched) {
+    return { witnessed: "Unreadable", evidence: "RemoteUnreachable" };
+  }
+  if (!(await scratchHasCommit(own.scratch, repository, target.commit))) {
+    return { witnessed: "Unreadable", evidence: "ObjectMissing" };
+  }
+  const held = await scratchHasFile(
+    own.scratch,
+    repository,
+    target.commit,
+    reading.path,
+  );
+  if (held === undefined) {
+    return { witnessed: "Unreadable", evidence: "ObjectMissing" };
+  }
+  return { witnessed: held ? "Present" : "Absent" };
+}
+
 /** The adapter over its options, refusing at construction what it could never serve. */
-export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
+export function gitPromotion(
+  options: GitPromotionOptions,
+): GitPromotionPort & PublicationWitnessPort {
   const own: GitPromotionState = {
     scratch: scratchOpen({
       directory: options.scratchDirectory,
@@ -367,5 +415,6 @@ export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
       gitPromotionIntegrate(own, integration),
     promoteCandidate: (promotion) => gitPromotionPromote(own, promotion),
     proveCandidateAncestry: (proof) => gitPromotionProve(own, proof),
+    observeWitness: (reading) => gitPromotionWitness(own, reading),
   };
 }

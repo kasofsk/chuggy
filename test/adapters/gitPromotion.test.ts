@@ -20,7 +20,13 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -53,6 +59,7 @@ import {
   type GitObjectId,
   type GitPromotionPort,
   type ObservedTarget,
+  type PublicationWitnessPort,
   type RepositoryBinding,
   type RepositoryCredentialPort,
 } from "../../src/interpreter/finalizer.ts";
@@ -133,7 +140,7 @@ const fixtureGranted: CredentialResolved = {
 function fixturePort(
   fixture: Fixture,
   resolved: CredentialResolved = fixtureGranted,
-): GitPromotionPort {
+): GitPromotionPort & PublicationWitnessPort {
   return gitPromotion({
     scratchDirectory: join(fixture.directory, "scratch"),
     identity: { name: "chug", email: "chug@example.test" },
@@ -168,7 +175,7 @@ function fixtureFiles(
 }
 
 async function fixtureTarget(
-  port: GitPromotionPort,
+  port: Pick<GitPromotionPort, "observeTarget">,
   binding: RepositoryBinding,
 ): Promise<ObservedTarget> {
   const observed = await port.observeTarget(binding);
@@ -239,6 +246,62 @@ test("a remote nobody can reach is unreadable, and one naming no branch is too",
     observed: "Unreadable",
     evidence: "RefUnreadable",
   });
+});
+
+test("a witness is a file standing in the commit that was observed, and nothing else", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const witness = "results/chuggy/request-one.json";
+  const before = await fixtureTarget(port, binding);
+  assert.deepEqual(
+    await port.observeWitness({ repository: binding, target: before, path: witness }),
+    { witnessed: "Absent" },
+  );
+  mkdirSync(join(fixture.seed, "results", "chuggy"), { recursive: true });
+  fixtureCommit(fixture, witness, '{"taken":"up"}\n', "take the request up");
+  const after = await fixtureTarget(port, binding);
+  assert.deepEqual(
+    await port.observeWitness({ repository: binding, target: after, path: witness }),
+    { witnessed: "Present" },
+  );
+  assert.deepEqual(
+    await port.observeWitness({ repository: binding, target: before, path: witness }),
+    { witnessed: "Absent" },
+    "the commit that was observed is what answers, not whatever the ref holds now",
+  );
+  assert.deepEqual(
+    await port.observeWitness({
+      repository: binding,
+      target: after,
+      path: "results/chuggy",
+    }),
+    { witnessed: "Absent" },
+    "a directory somebody created is not a record anybody wrote",
+  );
+});
+
+test("a handoff repository that cannot be read witnesses nothing either way", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const target = await fixtureTarget(fixturePort(fixture), binding);
+  const witness = "results/chuggy/request-one.json";
+  assert.deepEqual(
+    await fixturePort(fixture).observeWitness({
+      repository: fixtureBinding(join(fixture.directory, "missing.git")),
+      target,
+      path: witness,
+    }),
+    { witnessed: "Unreadable", evidence: "RemoteUnreachable" },
+  );
+  assert.deepEqual(
+    await fixturePort(fixture, { resolved: "Denied" }).observeWitness({
+      repository: binding,
+      target,
+      path: witness,
+    }),
+    { witnessed: "Unreadable", evidence: "RemoteDenied" },
+  );
 });
 
 test("a denial and an outage stay apart all the way into the evidence", async (t) => {

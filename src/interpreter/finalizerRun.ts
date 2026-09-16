@@ -214,6 +214,8 @@ import {
   type InputBundleId,
   type InputBundleReference,
   type ObservedTarget,
+  type PublicationWitnessObserved,
+  type PublicationWitnessPort,
   type RepositoryBinding,
   type RepositoryId,
   type TargetObserved,
@@ -254,6 +256,7 @@ export interface FinalizerService {
     FinalizerPreparationStore &
     FinalizerProposalStore;
   readonly git: GitPromotionPort;
+  readonly witnesses: PublicationWitnessPort;
   readonly forges: ChangeProposalForges;
   readonly ticketBriefs: TicketBriefPort;
   readonly handoffs: HandoffContentPort;
@@ -550,6 +553,35 @@ async function finalizerGatherProposalBase(
 }
 
 /**
+ * Whether the handoff repository already holds what proves this publication was
+ * taken up, asked of the target this pass just observed so the question is put
+ * to one tree and not to a ref that may move between two reads. Only a
+ * publication that declares a witness and has spent its permit asks: before the
+ * promotion there is nothing for the handoff repository to have taken up, and
+ * what the answer means is the pure pass's.
+ */
+async function finalizerGatherWitness(
+  service: FinalizerService,
+  view: FinalizationView,
+  target: ObservedTarget,
+): Promise<PublicationWitnessObserved | undefined> {
+  const request = view.handoffRequest;
+  const witness =
+    request?.kind === "PublishHandoff" ? request.publicationWitness : undefined;
+  if (
+    witness === undefined ||
+    view.repository === undefined ||
+    view.permit?.state !== "Concluded"
+  )
+    return undefined;
+  return service.witnesses.observeWitness({
+    repository: view.repository,
+    target,
+    path: witness.path,
+  });
+}
+
+/**
  * What one gathering came to: the view a decision is made from, or the reason
  * one could not be made from what was read. A request nothing durable answers
  * for at all is neither, and is left to the sweep that reopens it.
@@ -600,12 +632,16 @@ async function finalizerGather(
     branches,
     observed.target,
   );
+  const witnessed = await finalizerGatherWitness(service, view, observed.target);
   return {
     gathered: "View",
     view: {
       ...view,
       observedTarget: observed.target,
       ...(work === undefined ? {} : { observedWorkBranch: work }),
+      ...(witnessed === undefined
+        ? {}
+        : { observedPublicationWitness: witnessed }),
     },
   };
 }

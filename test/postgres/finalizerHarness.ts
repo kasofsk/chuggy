@@ -97,6 +97,8 @@ import {
   type CandidatePromotion,
   type FinalizationClaim,
   type GitPromotionPort,
+  type PublicationWitnessObserved,
+  type PublicationWitnessPort,
   type ObservedTarget,
   type TargetObserved,
 } from "../../src/interpreter/finalizer.ts";
@@ -298,7 +300,9 @@ export function finalizerRemoteOpen(
 }
 
 /** The real git adapter over one remote, with a credential no filesystem remote asks for. */
-export function finalizerRemotePort(rig: FinalizerRig): GitPromotionPort {
+export function finalizerRemotePort(
+  rig: FinalizerRig,
+): GitPromotionPort & PublicationWitnessPort {
   return gitPromotion({
     scratchDirectory: join(rig.gitRoot, "adapter"),
     identity: { name: "chug", email: "chug@example.test" },
@@ -318,9 +322,9 @@ export function finalizerRemotePort(rig: FinalizerRig): GitPromotionPort {
  * is built over and the re-reading the integration is answered against.
  */
 export function finalizerMovingPort(
-  port: GitPromotionPort,
+  port: GitPromotionPort & PublicationWitnessPort,
   move: () => void,
-): GitPromotionPort {
+): GitPromotionPort & PublicationWitnessPort {
   return {
     ...port,
     prepareCandidate: async (preparation) => {
@@ -336,9 +340,9 @@ export function finalizerMovingPort(
  * was decided against and the conditional ref update itself.
  */
 export function finalizerRacingPort(
-  port: GitPromotionPort,
+  port: GitPromotionPort & PublicationWitnessPort,
   race: () => void,
-): GitPromotionPort {
+): GitPromotionPort & PublicationWitnessPort {
   return {
     ...port,
     promoteCandidate: (promotion) => {
@@ -365,7 +369,7 @@ export async function finalizerQuiesce(
 export function finalizerPassOnce(
   rig: FinalizerRig,
   project: FinalizerProject,
-  git: GitPromotionPort,
+  git: GitPromotionPort & PublicationWitnessPort,
   label: string,
   forges?: ChangeProposalForges,
 ): Promise<FinalizerPassReport> {
@@ -942,9 +946,12 @@ export async function finalizerRequestApproval(
  * raise until a case scripts them, because a pass reaching them unscripted is
  * doing work the case did not mean to authorize.
  */
-export interface FinalizerGitFake extends GitPromotionPort {
+export interface FinalizerGitFake
+  extends GitPromotionPort,
+    PublicationWitnessPort {
   readonly acts: string[];
   target: TargetObserved;
+  witnessed: PublicationWitnessObserved;
   promotion: CandidatePromoted;
   ancestry: AncestryProved;
   preparation?: CandidatePrepared;
@@ -957,6 +964,7 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
   const fake: FinalizerGitFake = {
     acts: [],
     target: { observed: "Target", target },
+    witnessed: { witnessed: "Absent" },
     promotion: { promoted: "Advanced" },
     ancestry: { proved: "Ancestor", observed: target.commit },
     observeTarget: () => {
@@ -993,6 +1001,10 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
       fake.acts.push("prove");
       return Promise.resolve(fake.ancestry);
     },
+    observeWitness: () => {
+      fake.acts.push("witness");
+      return Promise.resolve(fake.witnessed);
+    },
   };
   return fake;
 }
@@ -1021,7 +1033,7 @@ export function finalizerDigestOf(canonical: CanonicalFinalization): string {
  */
 export function finalizerService(
   rig: FinalizerRig,
-  git: GitPromotionPort,
+  git: GitPromotionPort & PublicationWitnessPort,
   metrics: FinalizerTelemetry = silentFinalizerTelemetry,
   forges?: ChangeProposalForges,
 ): FinalizerService {
@@ -1029,6 +1041,7 @@ export function finalizerService(
   return {
     store: postgresFinalizer(rig.pool),
     git,
+    witnesses: git,
     forges: forges ?? finalizerNoForges,
     ticketBriefs: postgresTicketBrief(rig.pool),
     handoffs: artifacts,

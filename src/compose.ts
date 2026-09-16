@@ -118,6 +118,7 @@ import {
   finalizerDefaults,
   type FinalizerConfig,
   type GitPromotionPort,
+  type PublicationWitnessPort,
   type RepositoryCredentialPort,
 } from "./interpreter/finalizer.ts";
 import {
@@ -476,6 +477,7 @@ export function composeRepositoryOnboarding(
 /** What a finalizer deployment answers its own ports with, none of it read from an environment. */
 export interface FinalizerServiceRuntime {
   readonly git: GitPromotionPort;
+  readonly witnesses: PublicationWitnessPort;
   readonly forges: ChangeProposalForges;
   readonly artifactRoot: string;
   readonly artifacts?: ArtifactStoreOptions;
@@ -556,6 +558,7 @@ export function composeFinalizerService(
   return {
     store: postgresFinalizer(finalizerPool),
     git: runtime.git,
+    witnesses: runtime.witnesses,
     forges: runtime.forges,
     ticketBriefs: postgresTicketBrief(finalizerPool),
     handoffs: artifacts,
@@ -658,29 +661,36 @@ function finalizerServiceRuntime(
     credentialOptions,
     minting,
   );
+  /**
+   * One adapter answering both git ports, which read the same remotes under the
+   * same credential rule. A second scratch would be a second set of bounds to
+   * keep in step.
+   */
+  const promotion = gitPromotion({
+    scratchDirectory: git.scratchDirectory,
+    identity: { name: git.commitName, email: git.commitEmail },
+    environment: git.environment,
+    credentials,
+    ...(git.credentialUsername === undefined
+      ? {}
+      : { credentialUsername: git.credentialUsername }),
+    ...(git.localTimeoutSecsMax === undefined
+      ? {}
+      : { localTimeoutSecsMax: git.localTimeoutSecsMax }),
+    ...(git.remoteTimeoutSecsMax === undefined
+      ? {}
+      : { remoteTimeoutSecsMax: git.remoteTimeoutSecsMax }),
+    ...(git.promotionTimeoutSecsMax === undefined
+      ? {}
+      : { promotionTimeoutSecsMax: git.promotionTimeoutSecsMax }),
+  });
   return {
     forges: composeChangeProposalForges(
       settings.forges,
       composeFinalizerForgeCredentials(forgeOptions, minting),
     ),
-    git: gitPromotion({
-      scratchDirectory: git.scratchDirectory,
-      identity: { name: git.commitName, email: git.commitEmail },
-      environment: git.environment,
-      credentials,
-      ...(git.credentialUsername === undefined
-        ? {}
-        : { credentialUsername: git.credentialUsername }),
-      ...(git.localTimeoutSecsMax === undefined
-        ? {}
-        : { localTimeoutSecsMax: git.localTimeoutSecsMax }),
-      ...(git.remoteTimeoutSecsMax === undefined
-        ? {}
-        : { remoteTimeoutSecsMax: git.remoteTimeoutSecsMax }),
-      ...(git.promotionTimeoutSecsMax === undefined
-        ? {}
-        : { promotionTimeoutSecsMax: git.promotionTimeoutSecsMax }),
-    }),
+    git: promotion,
+    witnesses: promotion,
     artifactRoot: settings.artifactRoot,
   };
 }

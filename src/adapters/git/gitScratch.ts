@@ -131,6 +131,9 @@ const scratchNoMatchingRefCode = 2;
 /** The porcelain summary the receiving repository refuses a ref update with, which `[remote rejected]` and `[remote failure]` deliberately are not. */
 const scratchRefusedSummary = "[rejected]";
 
+/** The most `ls-tree` of one path answers with: its mode, type and object identity beside the path itself. */
+const scratchTreeEntryOutputBytesMax = 4 * 1024;
+
 /** The mode every entry this adapter writes takes, a handoff being a file and never a link or a program. */
 const scratchEntryMode = "100644";
 
@@ -344,6 +347,32 @@ export async function scratchHasCommit(
     argv: ["cat-file", "-e", `${commit}^{commit}`],
   });
   return ran.ran === "Exited" && ran.code === 0;
+}
+
+/**
+ * Whether one commit's tree holds a file at one path, and `undefined` where git
+ * could not answer. The entry is looked for and never opened, and a tree at the
+ * path is not a file: a directory somebody happened to create is not evidence
+ * that anything was written.
+ */
+export async function scratchHasFile(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  commit: GitObjectId,
+  path: string,
+): Promise<boolean | undefined> {
+  const ran = await scratchRun(scratch, {
+    repository,
+    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+    argv: ["ls-tree", "-z", commit, "--", path],
+    outputBytesMax: scratchTreeEntryOutputBytesMax,
+  });
+  if (ran.ran === "Stopped" || ran.code !== 0) return undefined;
+  for (const row of ran.stdout.split("\0")) {
+    const matched = /^\d{6} (\w+) [0-9a-f]+\t(.*)$/su.exec(row);
+    if (matched?.[1] === "blob" && matched[2] === path) return true;
+  }
+  return false;
 }
 
 /** Whether one commit is reachable from another, and `undefined` where git could not answer. */

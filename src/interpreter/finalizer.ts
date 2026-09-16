@@ -574,6 +574,12 @@ export interface FinalizationView {
    * been waiting is a column the store computes and never one a pass subtracts.
    */
   readonly permitConcludedElapsedSecs?: number;
+  /**
+   * What reading the handoff repository for a publication's witness found,
+   * present only where a publication that declares one has spent its permit.
+   * Nothing else is waiting on another system to act, so nothing else asks.
+   */
+  readonly observedPublicationWitness?: PublicationWitnessObserved;
   readonly attemptsMade: number;
 }
 
@@ -596,7 +602,9 @@ export type FinalizationHoldKind =
   | "ProposalHeadMoved"
   | "ProposalMergeBlocked"
   | "ProposalMergesExhausted"
-  | "ProposalUnaddressed";
+  | "ProposalUnaddressed"
+  | "HandoffPublicationUnwitnessed"
+  | "HandoffWitnessUnreadable";
 
 /** Every hold kind, so a suite iterates over them rather than restating them. */
 export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
@@ -618,6 +626,8 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "ProposalMergeBlocked",
   "ProposalMergesExhausted",
   "ProposalUnaddressed",
+  "HandoffPublicationUnwitnessed",
+  "HandoffWitnessUnreadable",
 ];
 
 /** The one conclusive thing `Core` is told, which carries a kind only where the model prices a failure. */
@@ -702,6 +712,14 @@ function finalizationNextAssertView(view: FinalizationView): void {
     );
   }
   if (
+    view.observedPublicationWitness !== undefined &&
+    finalizationPublicationWitness(view) === undefined
+  ) {
+    throw new RangeError(
+      "finalization view: a witness was observed for a publication that declares none",
+    );
+  }
+  if (
     view.permitConcludedElapsedSecs !== undefined &&
     permit?.state !== "Concluded"
   ) {
@@ -738,6 +756,46 @@ function finalizationNextRestart(
 }
 
 /**
+ * What a promoted publication concludes as, which is not the same question as
+ * whether its bytes landed. Until the handoff repository holds the witness the
+ * publication is held, spending nothing; once the seconds it was given have
+ * passed it is unproven, which is a conclusion `Core` prices.
+ */
+function finalizationNextPublished(
+  view: FinalizationView,
+  witness: HandoffPublicationWitness,
+): FinalizationDecision {
+  const observed = view.observedPublicationWitness;
+  if (observed === undefined || observed.witnessed === "Unreadable") {
+    return { decide: "Hold", hold: "HandoffWitnessUnreadable" };
+  }
+  if (observed.witnessed === "Present") {
+    return {
+      decide: "Conclude",
+      conclusion: { outcome: "FinalizationSucceeded" },
+    };
+  }
+  const waited = view.permitConcludedElapsedSecs;
+  if (waited !== undefined && waited >= witness.provenWithinSecs) {
+    return {
+      decide: "Conclude",
+      conclusion: { outcome: "HandoffPublicationUnproven" },
+    };
+  }
+  return { decide: "Hold", hold: "HandoffPublicationUnwitnessed" };
+}
+
+/** What a promoted publication is waiting to be taken up by, which a publication declaring none is not waiting at all. */
+function finalizationPublicationWitness(
+  view: FinalizationView,
+): HandoffPublicationWitness | undefined {
+  const request = view.handoffRequest;
+  return request?.kind === "PublishHandoff"
+    ? request.publicationWitness
+    : undefined;
+}
+
+/**
  * What a promoted candidate concludes as. A brief landing by pull request is
  * not finished when the branch moved — the proposal it asked for still has to
  * exist — where a handoff never proposes at all, its promotion being into a
@@ -748,6 +806,10 @@ function finalizationNextPromoted(
 ): FinalizationDecision {
   if (view.claim.kind === "PromoteForHandoff") {
     return { decide: "Conclude", conclusion: { outcome: "PromotionAccepted" } };
+  }
+  const witness = finalizationPublicationWitness(view);
+  if (view.claim.kind === "PublishHandoff" && witness !== undefined) {
+    return finalizationNextPublished(view, witness);
   }
   if (
     view.claim.kind === "RunFinalizer" &&
@@ -1013,6 +1075,37 @@ export interface GitPromotionPort {
 
   /** Reads back whether the target ref proves the candidate reached it. */
   proveCandidateAncestry(proof: AncestryProof): Promise<AncestryProved>;
+}
+
+/**
+ * One question put to a handoff repository: does the commit this pass already
+ * observed hold the path that proves the publication was taken up. The commit
+ * is the caller's and not a ref this read resolves for itself, so the answer
+ * is about one tree and not about whatever the ref moved to meanwhile.
+ */
+export interface PublicationWitnessReading {
+  readonly repository: RepositoryBinding;
+  readonly target: ObservedTarget;
+  readonly path: string;
+}
+
+/** What the handoff repository said, a repository it could not read kept apart from a path that is not there. */
+export type PublicationWitnessObserved =
+  | { readonly witnessed: "Present" }
+  | { readonly witnessed: "Absent" }
+  | { readonly witnessed: "Unreadable"; readonly evidence: GitEvidence };
+
+/**
+ * Whether a handoff repository has taken a publication up, behind its own port
+ * because this is a read and the promotion port is what writes. The path is
+ * looked for and never opened: what the file at it says is the handoff
+ * repository's own business, and reading it would make chuggy a second
+ * interpreter of another system's records.
+ */
+export interface PublicationWitnessPort {
+  observeWitness(
+    reading: PublicationWitnessReading,
+  ): Promise<PublicationWitnessObserved>;
 }
 
 /** What resolving a repository credential found, a denial kept apart from an outage. */

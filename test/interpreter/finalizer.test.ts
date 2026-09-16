@@ -38,10 +38,13 @@ import {
   type CommitPermit,
   type CommitPermitState,
   type FinalizationAttempt,
+  type FinalizationDecision,
   type FinalizationReconciliation,
   type FinalizationView,
   type FinalizerConfig,
+  type HandoffPublicationWitness,
   type ObservedTarget,
+  type PublishHandoffRequest,
   type ReconciliationVerdict,
 } from "../../src/interpreter/finalizer.ts";
 import {
@@ -683,6 +686,147 @@ test("publication concludes only from publication-specific durable evidence", ()
       decide: "Conclude",
       conclusion: { outcome: "HandoffPublicationUnproven" },
     },
+  );
+});
+
+/** The pinned publication a witnessed case is decided over, the witness it declares varied. */
+function publicationRequest(
+  witness: HandoffPublicationWitness | undefined,
+): PublishHandoffRequest {
+  return {
+    kind: "PublishHandoff",
+    configurationRevision: "revision-1",
+    configurationDigest: "d".repeat(64),
+    repository: { partition, repository, recoveryEpoch: epoch },
+    acceptedWorkRepository: repository,
+    acceptedWorkCommit: base,
+    destinationPath: "requests/chuggy/one.json",
+    ...(witness === undefined ? {} : { publicationWitness: witness }),
+    output: "{}",
+    requestDigest: "f".repeat(64),
+  };
+}
+
+/** What every witness case starts from: a publication whose promotion is spent and proved. */
+function publicationPromoted(
+  witness: HandoffPublicationWitness | undefined,
+): ViewOverrides {
+  return {
+    claim: { ...viewWith({}).claim, kind: "PublishHandoff" },
+    handoffRequest: publicationRequest(witness),
+    attempt: prepared,
+    attemptsMade: 1,
+    permit: permitIn("Concluded"),
+    reconciliation: reconciliationOf("Promoted"),
+  };
+}
+
+test("a publication waits for its witness, and is unproven once its deadline has gone by", () => {
+  const witness: HandoffPublicationWitness = {
+    path: "results/chuggy/request-one.json",
+    provenWithinSecs: 3_600,
+  };
+  const promoted = publicationPromoted(witness);
+  const succeeded: FinalizationDecision = {
+    decide: "Conclude",
+    conclusion: { outcome: "FinalizationSucceeded" },
+  };
+  const waiting: FinalizationDecision = {
+    decide: "Hold",
+    hold: "HandoffPublicationUnwitnessed",
+  };
+  const cases: readonly (readonly [
+    string,
+    ViewOverrides,
+    FinalizationDecision,
+  ])[] = [
+    [
+      "the handoff repository holds the path",
+      {
+        observedPublicationWitness: { witnessed: "Present" },
+        permitConcludedElapsedSecs: 0,
+      },
+      succeeded,
+    ],
+    [
+      "it holds it late, which is still taken up",
+      {
+        observedPublicationWitness: { witnessed: "Present" },
+        permitConcludedElapsedSecs: witness.provenWithinSecs * 2,
+      },
+      succeeded,
+    ],
+    [
+      "nothing has taken the publication up yet",
+      {
+        observedPublicationWitness: { witnessed: "Absent" },
+        permitConcludedElapsedSecs: 0,
+      },
+      waiting,
+    ],
+    [
+      "the last second of the wait is still a wait",
+      {
+        observedPublicationWitness: { witnessed: "Absent" },
+        permitConcludedElapsedSecs: witness.provenWithinSecs - 1,
+      },
+      waiting,
+    ],
+    [
+      "the deadline itself has gone by",
+      {
+        observedPublicationWitness: { witnessed: "Absent" },
+        permitConcludedElapsedSecs: witness.provenWithinSecs,
+      },
+      { decide: "Conclude", conclusion: { outcome: "HandoffPublicationUnproven" } },
+    ],
+    [
+      "the handoff repository could not be read",
+      {
+        observedPublicationWitness: {
+          witnessed: "Unreadable",
+          evidence: "RemoteUnreachable",
+        },
+        permitConcludedElapsedSecs: witness.provenWithinSecs * 2,
+      },
+      { decide: "Hold", hold: "HandoffWitnessUnreadable" },
+    ],
+    [
+      "nothing was read of it at all",
+      { permitConcludedElapsedSecs: witness.provenWithinSecs * 2 },
+      { decide: "Hold", hold: "HandoffWitnessUnreadable" },
+    ],
+  ];
+  for (const [named, varied, decided] of cases) {
+    assert.deepEqual(
+      finalizationNext(finalizerDefaults, viewWith({ ...promoted, ...varied })),
+      decided,
+      named,
+    );
+  }
+});
+
+test("a publication declaring no witness is finished by its promotion, and observes none", () => {
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...publicationPromoted(undefined),
+        permitConcludedElapsedSecs: 7_200,
+      }),
+    ),
+    { decide: "Conclude", conclusion: { outcome: "FinalizationSucceeded" } },
+  );
+  assert.throws(
+    () =>
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          ...publicationPromoted(undefined),
+          observedPublicationWitness: { witnessed: "Present" },
+        }),
+      ),
+    RangeError,
   );
 });
 

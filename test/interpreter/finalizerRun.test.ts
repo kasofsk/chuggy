@@ -75,6 +75,10 @@ import {
   type FinalizationView,
   type FinalizerStore,
   type GitPromotionPort,
+  type HandoffPublicationWitness,
+  type PublicationWitnessObserved,
+  type PublicationWitnessPort,
+  type PublicationWitnessReading,
   type HeldPermit,
   type PermitGranted,
   type PermitRequest,
@@ -637,18 +641,20 @@ function recordingStore(
 }
 
 /** What one fixture remote was asked for, answering whatever the case chose. */
-interface GitRecorder extends GitPromotionPort {
+interface GitRecorder extends GitPromotionPort, PublicationWitnessPort {
   readonly observations: RepositoryBinding[];
   readonly promotions: CandidatePromotion[];
   readonly proofs: AncestryProof[];
   readonly preparations: CandidatePreparation[];
   readonly sourcePreparations: CandidateSourcePreparation[];
   readonly integrations: CandidateIntegration[];
+  readonly witnessReadings: PublicationWitnessReading[];
   promoted: CandidatePromoted;
   proved: AncestryProved;
   observed: TargetObserved;
   prepared: CandidatePrepared;
   integrated: CandidateIntegrated;
+  witnessed: PublicationWitnessObserved;
 }
 
 /**
@@ -664,6 +670,7 @@ function recordingGit(): GitRecorder {
     preparations: [],
     sourcePreparations: [],
     integrations: [],
+    witnessReadings: [],
     promoted: { promoted: "Advanced" },
     proved: { proved: "Ancestor", observed: asGitObjectId(commitOf("c")) },
     observed: { observed: "Target", target: attemptOf("any").target },
@@ -674,6 +681,11 @@ function recordingGit(): GitRecorder {
     integrated: {
       integrated: "Candidate",
       candidate: asGitObjectId(commitOf("c")),
+    },
+    witnessed: { witnessed: "Absent" },
+    observeWitness: (reading) => {
+      own.witnessReadings.push(reading);
+      return Promise.resolve(own.witnessed);
     },
     observeTarget: (repository) => {
       own.observations.push(repository);
@@ -943,7 +955,7 @@ function proposedRequestOf(own: ForgeRecorder): ChangeProposalRequest {
 /** The service a case drives, over the ceilings it names. */
 function serviceOf(
   store: FinalizerRecorder,
-  git: GitPromotionPort,
+  git: GitPromotionPort & PublicationWitnessPort,
   bounds: Partial<typeof finalizerDefaults> = {},
   artifacts: ArtifactRecorder = recordingArtifacts(),
   metrics: FinalizerTelemetry = silentFinalizerTelemetry,
@@ -951,6 +963,7 @@ function serviceOf(
   return {
     store,
     git,
+    witnesses: git,
     forges: forgesOf(),
     ticketBriefs: briefsOf(),
     handoffs: artifacts,
@@ -1534,7 +1547,7 @@ function proposedView(
 /** The service every proposal case drives: the ticket's brief, and the forge it is bound to. */
 function proposingService(
   store: FinalizerRecorder,
-  git: GitPromotionPort,
+  git: GitPromotionPort & PublicationWitnessPort,
   forge: ForgeRecorder | undefined,
   bounds: Partial<typeof finalizerDefaults> = {},
   mode: BriefFinalizationMode = "PullRequest",
@@ -2525,6 +2538,85 @@ function publicationView(request: string): FinalizationView {
     attemptsMade: 0,
   };
 }
+
+/** That same publication, promoted and now waiting for the handoff repository to take it up. */
+function witnessedView(
+  request: string,
+  witness: HandoffPublicationWitness | undefined,
+  elapsedSecs: number,
+): FinalizationView {
+  const view = publicationView(request);
+  const publication = view.handoffRequest;
+  if (publication?.kind !== "PublishHandoff") {
+    throw new Error("the fixture publication is not a publication");
+  }
+  return {
+    ...view,
+    handoffRequest: {
+      ...publication,
+      ...(witness === undefined ? {} : { publicationWitness: witness }),
+    },
+    attempt: attemptOf(request),
+    attemptsMade: 1,
+    permit: { ...permitOf(request), state: "Concluded" },
+    reconciliation: {
+      permit: asCommitPermitId(`permit-${request}`),
+      candidate: asGitObjectId(commitOf("c")),
+      target: handoffRepository.targetRef ?? asGitRefName("refs/heads/main"),
+      verdict: "Promoted",
+      observed: asGitObjectId(commitOf("c")),
+    },
+    permitConcludedElapsedSecs: elapsedSecs,
+  };
+}
+
+test("a promoted publication is asked of the handoff repository at the target it observed", async () => {
+  const witness: HandoffPublicationWitness = {
+    path: "results/unrelated/request-one.json",
+    provenWithinSecs: 3_600,
+  };
+  const git = recordingGit();
+
+  const waiting = await passOver(
+    serviceOf(recordingStore([witnessedView("publish-waiting", witness, 0)]), git),
+  );
+
+  assert.equal(waiting.holds, 1, "a publication nothing has taken up holds");
+  assert.equal(waiting.conclusions, 0);
+  assert.deepEqual(
+    git.witnessReadings.map((each) => ({
+      repository: each.repository.repository,
+      ref: each.target.ref,
+      path: each.path,
+    })),
+    [
+      {
+        repository: handoffRepository.repository,
+        ref: handoffRepository.targetRef,
+        path: witness.path,
+      },
+    ],
+  );
+
+  git.witnessed = { witnessed: "Present" };
+  const taken = await passOver(
+    serviceOf(recordingStore([witnessedView("publish-taken", witness, 0)]), git),
+  );
+
+  assert.equal(taken.conclusions, 1);
+});
+
+test("a publication declaring no witness asks the handoff repository nothing", async () => {
+  const store = recordingStore([
+    witnessedView("publish-unwitnessed", undefined, 0),
+  ]);
+  const git = recordingGit();
+
+  const finished = await passOver(serviceOf(store, git));
+
+  assert.equal(finished.conclusions, 1);
+  assert.deepEqual(git.witnessReadings, []);
+});
 
 test("a publication prepares only its pinned request in the handoff repository", async () => {
   const store = recordingStore([publicationView("publish-unrelated-service")]);
