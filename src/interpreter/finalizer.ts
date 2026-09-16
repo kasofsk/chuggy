@@ -667,6 +667,35 @@ export type FinalizationDecision =
   | { readonly decide: "Hold"; readonly hold: FinalizationHoldKind }
   | { readonly decide: "Settled" };
 
+/**
+ * Refuses a view whose account of a waiting publication contradicts itself: a
+ * witness observed for a request that declares none, a wait nothing dates, and
+ * time elapsed since a permit that has not concluded.
+ */
+function finalizationAssertPublication(view: FinalizationView): void {
+  const declared = finalizationPublicationWitness(view);
+  const concluded = view.permit?.state === "Concluded";
+  if (view.observedPublicationWitness !== undefined && declared === undefined) {
+    throw new RangeError(
+      "finalization view: a witness was observed for a publication that declares none",
+    );
+  }
+  if (
+    declared !== undefined &&
+    concluded &&
+    view.permitConcludedElapsedSecs === undefined
+  ) {
+    throw new RangeError(
+      "finalization view: a publication is waiting on a witness and nothing says how long",
+    );
+  }
+  if (view.permitConcludedElapsedSecs !== undefined && !concluded) {
+    throw new RangeError(
+      "finalization view: time has elapsed since a permit that has not concluded",
+    );
+  }
+}
+
 /** Refuses a view whose durable rows contradict each other, which no later branch then has to re-ask. */
 function finalizationNextAssertView(view: FinalizationView): void {
   const { attempt, permit, reconciliation, attemptsMade } = view;
@@ -711,31 +740,7 @@ function finalizationNextAssertView(view: FinalizationView): void {
       "finalization view: a reconciliation is present with no permit to conclude",
     );
   }
-  if (
-    finalizationPublicationWitness(view) !== undefined &&
-    permit?.state === "Concluded" &&
-    view.permitConcludedElapsedSecs === undefined
-  ) {
-    throw new RangeError(
-      "finalization view: a publication is waiting on a witness and nothing says how long",
-    );
-  }
-  if (
-    view.observedPublicationWitness !== undefined &&
-    finalizationPublicationWitness(view) === undefined
-  ) {
-    throw new RangeError(
-      "finalization view: a witness was observed for a publication that declares none",
-    );
-  }
-  if (
-    view.permitConcludedElapsedSecs !== undefined &&
-    permit?.state !== "Concluded"
-  ) {
-    throw new RangeError(
-      "finalization view: time has elapsed since a permit that has not concluded",
-    );
-  }
+  finalizationAssertPublication(view);
   if (
     permit !== undefined &&
     reconciliation !== undefined &&
