@@ -27,7 +27,11 @@ import { promisify } from "node:util";
 import { createInterface } from "node:readline";
 
 import { workerAgent } from "./agent.mjs";
-import { runChecks, workerCheckCommands } from "./checks.mjs";
+import {
+  runChecks,
+  workerCheckCommands,
+  workerStageEnvironment,
+} from "./checks.mjs";
 import { keepWorkerLease } from "./lease.mjs";
 import { planeCredential, workerCredentialPath } from "./planeCredential.mjs";
 import { attemptDatabase } from "./postgres.mjs";
@@ -112,14 +116,18 @@ function workspaceFile(directory, path) {
   return target;
 }
 
-async function prepareWorker(task, directory) {
+/** The files and the setup lines a worker block asks for, in the workspace it runs in. */
+export async function prepareWorker(task, directory) {
   for (const file of task.worker?.files ?? []) {
     const target = workspaceFile(directory, file.path);
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, file.content, { flag: "wx" });
   }
   for (const setup of task.worker?.setup ?? []) {
-    await command("/bin/sh", ["-eu", "-c", setup], { cwd: directory });
+    await command("/bin/sh", ["-eu", "-c", setup], {
+      cwd: directory,
+      env: workerStageEnvironment(process.env),
+    });
   }
 }
 

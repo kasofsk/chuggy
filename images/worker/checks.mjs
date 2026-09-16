@@ -12,10 +12,14 @@
  * passing stage then leaves behind is the entrypoint's, and is the one place
  * the kind is read.
  *
- * A COMMAND INHERITS THE POD'S ENVIRONMENT, LESS THE TASK DOCUMENT. The pod is
- * placed with the whole document in a variable, and a command that read it
- * would be reading the prose its own stage was authored from; everything else
- * the pod was given is what a gate expects to find, and is passed on whole.
+ * THE SHELLS A STAGE'S BLOCK LAUNCHES INHERIT THE POD'S ENVIRONMENT, LESS THE
+ * TASK DOCUMENT. The pod is placed with the whole document in a variable, and a
+ * shell that read it would be reading the prose its own stage was authored
+ * from; everything else the pod was given is what a gate expects to find, and
+ * is passed on whole. The entrypoint takes the same environment from here for
+ * the setup lines of the same block, which run in the same workspace moments
+ * earlier: narrowing one shell and not the other leaves the document one `cp`
+ * away from the commands.
  *
  * THE FIRST FAILURE STOPS THE STAGE, and a command killed by a signal is a
  * failure like any other. What follows a command that did not exit cleanly
@@ -116,7 +120,7 @@ const checkTaskDocuments = ["CHUG_WORKER_TASK", "CHUG_SESSION_TASK"];
  * What the pod holds, less the document that placed it. Everything else stands,
  * the attempt's own database among it.
  */
-function checkCommandEnvironment(environment) {
+export function workerStageEnvironment(environment) {
   return Object.fromEntries(
     Object.entries(environment).filter(
       ([name]) => !checkTaskDocuments.includes(name),
@@ -128,7 +132,7 @@ function checkCommandEnvironment(environment) {
 async function runCheckCommand(command, room, services) {
   const child = services.spawnProcess("/bin/sh", ["-eu", "-c", command], {
     cwd: services.directory,
-    env: checkCommandEnvironment(process.env),
+    env: workerStageEnvironment(process.env),
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";

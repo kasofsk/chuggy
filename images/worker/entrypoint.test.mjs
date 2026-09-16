@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { readdir, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { workerCheckCommands } from "./checks.mjs";
 import {
+  prepareWorker,
   publishWorkerResult,
   reportWorkerFailure,
   runWorkerTask,
@@ -218,6 +220,37 @@ test("a commanded work task without network or workspace write is refused", asyn
   for (const ran of launches) {
     assert.equal(ran.code, 1);
     assert.match(ran.stderr, /requires network and workspace write authority/u);
+  }
+});
+
+/**
+ * The setup lines of a block are narrowed with its commands. Catches the
+ * document reaching the shell that runs in the workspace just before them,
+ * which could leave it in a file for the commands to read.
+ */
+test("a setup line sees the pod's environment but not the task document", async () => {
+  const database = "postgres://postgres@127.0.0.1:5432/postgres";
+  Object.assign(process.env, {
+    CHUG_WORKER_TASK: "{}",
+    CHUG_SESSION_TASK: "{}",
+    CHUG_PG_URL: database,
+  });
+  const directory = await mkdtemp(join(tmpdir(), "chuggy-setup-"));
+  try {
+    const setup =
+      'printf "%s|%s|%s" "${CHUG_WORKER_TASK-unset}" ' +
+      '"${CHUG_SESSION_TASK-unset}" "${CHUG_PG_URL-unset}" > inherited';
+
+    await prepareWorker({ worker: { setup: [setup] } }, directory);
+
+    assert.equal(
+      await readFile(join(directory, "inherited"), "utf8"),
+      `unset|unset|${database}`,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    for (const name of ["CHUG_WORKER_TASK", "CHUG_SESSION_TASK", "CHUG_PG_URL"])
+      delete process.env[name];
   }
 });
 
