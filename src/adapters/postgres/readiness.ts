@@ -312,6 +312,20 @@ async function finalizationRequestSource(
   };
 }
 
+/** What the attempt a submission pinned put on the reference, and under which configuration. */
+interface AcceptedPromotionRow {
+  readonly repository: string;
+  readonly configuration_revision: string;
+  readonly configuration_digest: string;
+  readonly promoted_commit: string | null;
+}
+
+/**
+ * The promotion an accepted result offers, read as the commit the finalization
+ * landed rather than as the candidate it pinned. Where the landing merged a
+ * proposal the two are different commits, and only the first of them is on the
+ * reference the handoff will be rendered from.
+ */
 async function finalizationAcceptedPromotion(
   pool: pg.Pool,
   partition: Partition,
@@ -324,23 +338,23 @@ async function finalizationAcceptedPromotion(
     >["finalizationRequest"]
   >["acceptedPromotion"]
 > {
-  const found = await pool.query<FinalizationAttemptRow>(
-    sql`SELECT a.attempt_digest, a.target_commit, a.conflict_manifest,
-            a.conflict_manifest_digest, a.input_bundle, a.repository,
-            a.candidate_commit, a.configuration_revision, a.configuration_digest
+  const found = await pool.query<AcceptedPromotionRow>(
+    sql`SELECT a.repository, a.configuration_revision, a.configuration_digest,
+            finalization_promoted_commit(a.tenant,a.project,a.request,
+              a.candidate_commit)::text AS promoted_commit
        FROM finalization_attempt a
       WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
         AND a.attempt=${command.attempt} AND a.request=${command.request}`,
   );
   const attempt = found.rows[0];
   if (
-    attempt?.candidate_commit === null ||
-    attempt?.candidate_commit === undefined
+    attempt?.promoted_commit === null ||
+    attempt?.promoted_commit === undefined
   )
     throw new Error("accepted promotion has no immutable candidate");
   return {
     repository: attempt.repository,
-    commit: attempt.candidate_commit,
+    commit: attempt.promoted_commit,
     configurationRevision: attempt.configuration_revision,
     configurationDigest: attempt.configuration_digest,
   };

@@ -231,14 +231,21 @@ test("only the ticket service publishes immutable handoff request configuration"
 });
 
 test("the ticket service reads accepted promotion only through its narrow door", async () => {
-  assert.equal(
-    await harness.attemptAs(
-      ticketServiceRole,
-      "SELECT * FROM read_accepted_handoff_promotion('t','p',1)",
-    ),
-    undefined,
-  );
-  for (const relation of ["commit_permit", "finalization_reconciliation"]) {
+  for (const door of [
+    "SELECT * FROM read_accepted_handoff_promotion('t','p',1)",
+    "SELECT finalization_promoted_commit('t','p','r',NULL)",
+  ]) {
+    assert.equal(
+      await harness.attemptAs(ticketServiceRole, door),
+      undefined,
+      door,
+    );
+  }
+  for (const relation of [
+    "commit_permit",
+    "finalization_reconciliation",
+    "finalization_change_proposal",
+  ]) {
     assert.match(
       (await harness.attemptAs(
         ticketServiceRole,

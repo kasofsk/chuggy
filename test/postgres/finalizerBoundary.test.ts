@@ -15,6 +15,7 @@ import { finalizationFunction } from "../../src/adapters/postgres/schema.ts";
 import {
   finalizerClaim,
   finalizerCommit,
+  finalizerDigest,
   finalizerGrantPermit,
   finalizerIdentity,
   finalizerPromote,
@@ -148,6 +149,188 @@ test("promotion acceptance requires the same concluded promotion proof as succes
   assert.equal(
     await submit(project, attempt, "PromotionAccepted", null),
     "Submitted",
+  );
+});
+
+/** Which answer about merging carries the commit, each one the finalizer really records. */
+type ProposalMergeProof = "Answer" | "Reading" | "Creation";
+
+/** The commit the attempt pinned, which is the proposal's head where one was opened. */
+async function candidateOf(
+  project: FinalizerProject,
+  attempt: string,
+): Promise<string> {
+  const rows = await rig.harness.query(
+    `SELECT candidate_commit FROM finalization_attempt
+      WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+    [project.partition.tenant, project.partition.project, attempt],
+  );
+  const candidate = rows[0]?.["candidate_commit"];
+  if (typeof candidate !== "string")
+    throw new Error("finalizer boundary: the attempt pinned no candidate");
+  return candidate;
+}
+
+/** One proposal's evidence as the store writes it, merged where a commit is named. */
+function proposalEvidence(
+  head: string,
+  mergeCommit: string | undefined,
+): string {
+  return JSON.stringify({
+    identity: {
+      forge: "forge-boundary",
+      remote: "owner/repository",
+      number: 7,
+    },
+    repository: "remote-boundary",
+    marker: "chuggy-proposal-boundary",
+    head: { ref: "refs/heads/chuggy/work", commit: head },
+    base: { ref: "refs/heads/main", commit: head },
+    title: "a ticket",
+    body: "its words",
+    status: mergeCommit === undefined ? "Open" : "Merged",
+    ...(mergeCommit === undefined ? {} : { mergeCommit }),
+  });
+}
+
+/**
+ * One change proposal this finalization opened and the forge merged, recorded
+ * through whichever answer carried the commit, and written as the role that
+ * records one so the column grants a real recording needs are exercised.
+ */
+async function proposalMerged(
+  project: FinalizerProject,
+  attempt: string,
+  carried: ProposalMergeProof,
+): Promise<string> {
+  const mergeCommit = finalizerCommit();
+  const head = await candidateOf(project, attempt);
+  const held = await rig.harness.query(
+    `SELECT permit FROM commit_permit
+      WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+    [project.partition.tenant, project.partition.project, attempt],
+  );
+  const keys = [
+    project.partition.tenant,
+    project.partition.project,
+    project.request,
+  ];
+  await rig.as(
+    `INSERT INTO finalization_change_proposal
+       (tenant, project, request, permit, proposal_request, head_ref,
+        head_commit, base_ref, base_commit, title, body, attempts)
+     VALUES ($1,$2,$3,$4,$5,'refs/heads/chuggy/work',$6,'refs/heads/main',$6,
+             'a ticket','its words',1)`,
+    [...keys, held[0]?.["permit"], finalizerDigest(), head],
+  );
+  await rig.as(
+    `UPDATE finalization_change_proposal
+        SET creation='Created', creation_evidence=$4::jsonb
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [
+      ...keys,
+      proposalEvidence(head, carried === "Creation" ? mergeCommit : undefined),
+    ],
+  );
+  if (carried === "Creation") return mergeCommit;
+  await rig.as(
+    `UPDATE finalization_change_proposal SET merge_attempts=1
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    keys,
+  );
+  await rig.as(
+    carried === "Answer"
+      ? `UPDATE finalization_change_proposal SET merge='Merged', merge_commit=$4
+           WHERE tenant=$1 AND project=$2 AND request=$3`
+      : `UPDATE finalization_change_proposal
+            SET merge_reading='Accepted', merge_reading_evidence=$4::jsonb,
+                merge_readings=1
+          WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [
+      ...keys,
+      carried === "Answer" ? mergeCommit : proposalEvidence(head, mergeCommit),
+    ],
+  );
+  return mergeCommit;
+}
+
+/** One promoted request claimed as the promotion half of a handoff. */
+async function handingOff(
+  label: string,
+): Promise<{ project: FinalizerProject; attempt: string }> {
+  const standing = await promoted(label);
+  await rig.harness.query(
+    `UPDATE finalization_request SET kind='PromoteForHandoff'
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [
+      standing.project.partition.tenant,
+      standing.project.partition.project,
+      standing.project.request,
+    ],
+  );
+  return standing;
+}
+
+/** What the door a handoff retry reads its accepted promotion back through answers. */
+async function acceptedPromotion(
+  project: FinalizerProject,
+): Promise<string | undefined> {
+  const rows = await rig.harness.query(
+    `SELECT promoted_commit FROM read_accepted_handoff_promotion($1,$2,$3)`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  );
+  const commit = rows[0]?.["promoted_commit"];
+  return typeof commit === "string" ? commit : undefined;
+}
+
+/**
+ * Catches building the proposal's head: a commit that is on no reference the
+ * fabric ships from, where the merge commit is what reached the base.
+ */
+test("the promotion a handoff renders against is the commit its merge left", async () => {
+  const { project, attempt } = await handingOff("promotion-merged");
+  const candidate = await candidateOf(project, attempt);
+  assert.equal(
+    await acceptedPromotion(project),
+    candidate,
+    "a finalization that opened no proposal promoted the candidate itself",
+  );
+  const mergeCommit = await proposalMerged(project, attempt, "Answer");
+  assert.notEqual(mergeCommit, candidate);
+  assert.equal(await acceptedPromotion(project), mergeCommit);
+});
+
+/** Catches a merge whose answer was lost being read back as the head it was asked about. */
+test("a merge nobody heard back from is proved by what the reading found", async () => {
+  const { project, attempt } = await handingOff("promotion-merge-read");
+  const mergeCommit = await proposalMerged(project, attempt, "Reading");
+  assert.equal(await acceptedPromotion(project), mergeCommit);
+});
+
+/** Catches the same for a proposal the create found the forge had already merged. */
+test("a proposal found already merged proves the commit it left", async () => {
+  const { project, attempt } = await handingOff("promotion-merged-already");
+  const mergeCommit = await proposalMerged(project, attempt, "Creation");
+  assert.equal(await acceptedPromotion(project), mergeCommit);
+});
+
+/**
+ * Catches the defect on the path that runs first: the promotion is offered by
+ * the submission itself, and the door above is only what a retry reads.
+ */
+test("the accepted promotion a submission offers is the commit its merge left", async () => {
+  const { project, attempt } = await handingOff("promotion-submitted");
+  const mergeCommit = await proposalMerged(project, attempt, "Answer");
+  assert.equal(
+    await submit(project, attempt, "PromotionAccepted", null),
+    "Submitted",
+  );
+  const input = await rig.harness.discovery.next(project.partition, 300);
+  assert.equal(
+    input?.source.kind === "Operation"
+      ? input.source.finalizationRequest?.acceptedPromotion?.commit
+      : undefined,
+    mergeCommit,
   );
 });
 

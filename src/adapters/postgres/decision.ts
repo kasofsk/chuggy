@@ -416,11 +416,11 @@ async function decisionAcceptedPromotion(
   if (offered !== undefined) return offered;
   const found = await client.query<{
     repository: string | null;
-    candidate_commit: string | null;
+    promoted_commit: string | null;
     configuration_revision: string | null;
     configuration_digest: string | null;
   }>(
-    sql`SELECT repository,candidate_commit,configuration_revision,configuration_digest
+    sql`SELECT repository,promoted_commit,configuration_revision,configuration_digest
       FROM read_accepted_handoff_promotion(
         ${partition.tenant},${partition.project},${ticket})`,
   );
@@ -428,14 +428,14 @@ async function decisionAcceptedPromotion(
   if (
     accepted === undefined ||
     accepted.repository === null ||
-    accepted.candidate_commit === null ||
+    accepted.promoted_commit === null ||
     accepted.configuration_revision === null ||
     accepted.configuration_digest === null
   )
     throw new Error("handoff retry has no accepted work promotion");
   return {
     repository: accepted.repository,
-    commit: accepted.candidate_commit,
+    commit: accepted.promoted_commit,
     configurationRevision: accepted.configuration_revision,
     configurationDigest: accepted.configuration_digest,
   };
