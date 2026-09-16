@@ -706,6 +706,55 @@ export async function finalizerBriefFinalizationTarget(
   }
 }
 
+/** What one publication request is pinned to beside the bytes it publishes. */
+export interface FinalizerPublication {
+  readonly destinationPath?: string;
+  readonly witnessPath?: string;
+  readonly provenWithinSecs?: number;
+}
+
+/**
+ * Turns the project's request into the publication of a handoff, with the
+ * pinned configuration the deciding transaction would have written beside it.
+ * That row is the ticket service's to write and the finalizer's only to read,
+ * so the fixture writes it as the owner and every case reads it back through
+ * the view.
+ */
+export async function finalizerPublishHandoff(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  publication: FinalizerPublication = {},
+): Promise<void> {
+  await rig.harness.query(
+    `UPDATE finalization_request SET kind='PublishHandoff'
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [project.partition.tenant, project.partition.project, project.request],
+  );
+  await rig.harness.query(
+    `INSERT INTO finalization_request_configuration
+       (tenant, project, request, kind, configuration_revision, configuration_digest,
+        repository, target_ref, credential_reference, accepted_work_repository,
+        accepted_work_commit, destination_path, output, request_digest,
+        witness_path, witness_proven_within_secs)
+     VALUES ($1,$2,$3,'PublishHandoff',$4,$5,$6,'refs/heads/main','handoff-writer',
+             $7,$8,$9,'{}',$10,$11,$12)`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      project.request,
+      project.configurationRevision,
+      project.configurationDigest,
+      project.repository,
+      `source-${project.repository}`,
+      finalizerCommit(),
+      publication.destinationPath ?? "requests/chuggy/request.json",
+      finalizerDigest(),
+      publication.witnessPath ?? null,
+      publication.provenWithinSecs ?? null,
+    ],
+  );
+}
+
 /** Hexadecimal no other call has produced, at least as long as the widest identity a case needs. */
 function finalizerHex(): string {
   return `${randomUUID()}${randomUUID()}`.replaceAll("-", "");

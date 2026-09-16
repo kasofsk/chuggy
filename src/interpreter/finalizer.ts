@@ -433,6 +433,7 @@ export interface PublishHandoffRequest {
   readonly acceptedWorkRepository: RepositoryId;
   readonly acceptedWorkCommit: GitObjectId;
   readonly destinationPath: string;
+  readonly publicationWitness?: HandoffPublicationWitness;
   readonly output: string;
   readonly requestDigest: string;
 }
@@ -567,6 +568,12 @@ export interface FinalizationView {
   readonly approval: ApprovalStanding;
   readonly permit?: CommitPermit;
   readonly reconciliation?: FinalizationReconciliation;
+  /**
+   * Whole seconds of database time since the permit concluded, absent until it
+   * has. Nothing in this process reads a clock, so how long a publication has
+   * been waiting is a column the store computes and never one a pass subtracts.
+   */
+  readonly permitConcludedElapsedSecs?: number;
   readonly attemptsMade: number;
 }
 
@@ -692,6 +699,14 @@ function finalizationNextAssertView(view: FinalizationView): void {
   if (permit === undefined && reconciliation !== undefined) {
     throw new RangeError(
       "finalization view: a reconciliation is present with no permit to conclude",
+    );
+  }
+  if (
+    view.permitConcludedElapsedSecs !== undefined &&
+    permit?.state !== "Concluded"
+  ) {
+    throw new RangeError(
+      "finalization view: time has elapsed since a permit that has not concluded",
     );
   }
   if (

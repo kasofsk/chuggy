@@ -83,6 +83,7 @@ import {
   type FinalizationSubmitted,
   type FinalizationView,
   type HandoffFinalizationRequest,
+  type PublishHandoffRequest,
   type FinalizerOwnerId,
   type FinalizerStore,
 } from "../../interpreter/finalizer.ts";
@@ -175,6 +176,7 @@ interface ViewRow {
   readonly approval_state: string | null;
   readonly approval_resolution: string | null;
   readonly attempts_made: string | null;
+  readonly permit_concluded_elapsed_secs: string | null;
   readonly request_configuration_kind: string | null;
   readonly request_configuration_revision: string | null;
   readonly request_configuration_digest: string | null;
@@ -185,6 +187,24 @@ interface ViewRow {
   readonly destination_path: string | null;
   readonly output: string | null;
   readonly request_digest: string | null;
+  readonly witness_path: string | null;
+  readonly witness_proven_within_secs: string | null;
+}
+
+/** The witness a publication is pinned to, which a request declaring none carries none of. */
+function finalizerRowWitness(
+  row: ViewRow,
+): Pick<PublishHandoffRequest, "publicationWitness"> {
+  if (row.witness_path === null) return {};
+  return {
+    publicationWitness: {
+      path: row.witness_path,
+      provenWithinSecs: projectRowCounter(
+        finalizerRowPresent(row.witness_proven_within_secs, "witness deadline"),
+        "witness deadline",
+      ),
+    },
+  };
 }
 
 function finalizerRowHandoffRequest(
@@ -220,6 +240,7 @@ function finalizerRowHandoffRequest(
     acceptedWorkRepository: asRepositoryId(row.accepted_work_repository),
     acceptedWorkCommit: asGitObjectId(row.accepted_work_commit),
     destinationPath: row.destination_path,
+    ...finalizerRowWitness(row),
     output: row.output,
     requestDigest: row.request_digest,
   };
@@ -265,6 +286,14 @@ function finalizerViewOf(
     ...(attempt === undefined ? {} : { attempt }),
     approval: finalizerRowApproval(row),
     ...finalizerRowPermit(row),
+    ...(row.permit_concluded_elapsed_secs === null
+      ? {}
+      : {
+          permitConcludedElapsedSecs: projectRowCounter(
+            row.permit_concluded_elapsed_secs,
+            "seconds since the permit concluded",
+          ),
+        }),
     attemptsMade: projectRowCounter(
       finalizerRowPresent(row.attempts_made, "attempts made"),
       "attempts made",
@@ -621,6 +650,7 @@ async function finalizerDurableView(
   h.configuration_digest AS request_configuration_digest,
   h.target_ref AS request_target_ref, h.credential_reference,
   h.accepted_work_repository, h.accepted_work_commit, h.destination_path, h.output, h.request_digest,
+  h.witness_path, h.witness_proven_within_secs::text AS witness_proven_within_secs,
   a.attempt, a.target_ref, a.target_commit, a.strategy,
   a.configuration_revision, a.configuration_digest, a.approval_required,
   a.outcome, a.candidate_commit, a.failure_kind, a.attempt_digest,
@@ -629,7 +659,9 @@ async function finalizerDurableView(
   r.verdict, r.candidate_commit AS reconciled_candidate,
   r.target_ref AS reconciled_ref, r.observed_commit,
   n.state AS approval_state, n.resolution AS approval_resolution,
-  c.made::text AS attempts_made
+  c.made::text AS attempts_made,
+  floor(extract(epoch FROM (now() - p.concluded_at)))::bigint::text
+    AS permit_concluded_elapsed_secs
       FROM finalization_request f
   JOIN project j ON j.tenant = f.tenant AND j.project = f.project
   LEFT JOIN finalization_request_configuration h

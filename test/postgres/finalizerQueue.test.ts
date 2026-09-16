@@ -44,6 +44,7 @@ import {
   finalizerPrepare,
   finalizerProject,
   finalizerPromote,
+  finalizerPublishHandoff,
   finalizerRigOpen,
   finalizerRolePool,
   type FinalizerProject,
@@ -382,6 +383,56 @@ test("the view is gathered from the rows, and a finalization needing git holds",
     decide: "Reconcile",
     permit,
   });
+});
+
+test("a publication carries the witness it was pinned to, or none", async () => {
+  const project = await finalizerProject(rig, "witness");
+  await finalizerPublishHandoff(rig, project, {
+    destinationPath: "requests/chuggy/beef/cafe.json",
+    witnessPath: "results/chuggy/beef/request-cafe.json",
+    provenWithinSecs: 3_600,
+  });
+  const claim = await drawn(project, "witness");
+  const request = (await store.durableView(claim))?.handoffRequest;
+  assert.ok(request?.kind === "PublishHandoff");
+  assert.equal(request.destinationPath, "requests/chuggy/beef/cafe.json");
+  assert.deepEqual(request.publicationWitness, {
+    path: "results/chuggy/beef/request-cafe.json",
+    provenWithinSecs: 3_600,
+  });
+  const bare = await finalizerProject(rig, "unwitnessed");
+  await finalizerPublishHandoff(rig, bare);
+  const unwitnessed = (
+    await store.durableView(await drawn(bare, "unwitnessed"))
+  )?.handoffRequest;
+  assert.ok(unwitnessed?.kind === "PublishHandoff");
+  assert.equal(unwitnessed.publicationWitness, undefined);
+});
+
+test("how long a publication has waited is measured from the permit's own row", async () => {
+  const project = await finalizerProject(rig, "waited");
+  await finalizerPublishHandoff(rig, project, {
+    witnessPath: "results/chuggy/waited.json",
+    provenWithinSecs: 3_600,
+  });
+  const claim = await drawn(project, "waited");
+  assert.equal(
+    (await store.durableView(claim))?.permitConcludedElapsedSecs,
+    undefined,
+  );
+  const attempt = await finalizerPrepare(rig, project, "waited");
+  const permit = await finalizerGrantPermit(rig, project, attempt, "waited");
+  await rig.as(
+    `UPDATE commit_permit
+        SET state='Concluded', concluded_at=now() - interval '90 seconds'
+      WHERE tenant=$1 AND project=$2 AND permit=$3`,
+    [project.partition.tenant, project.partition.project, permit],
+  );
+  const waited = (await store.durableView(claim))?.permitConcludedElapsedSecs;
+  assert.ok(
+    waited !== undefined && waited >= 90 && waited < 150,
+    `a publication that concluded a minute and a half ago has waited ${String(waited)} seconds`,
+  );
 });
 
 test("a submitted result is the request's fulfilment, and the claim is then given back", async () => {

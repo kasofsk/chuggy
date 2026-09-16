@@ -493,11 +493,16 @@ async function decisionHandoffConfiguration(
   request: string,
   configuration: DecisionHandoffConfiguration,
 ): Promise<void> {
+  const witness =
+    configuration.kind === "PublishHandoff"
+      ? configuration.publicationWitness
+      : undefined;
   await client.query(
     sql`INSERT INTO finalization_request_configuration
       (tenant,project,request,kind,configuration_revision,configuration_digest,
        repository,target_ref,credential_reference,accepted_work_repository,
-       accepted_work_commit,destination_path,output,request_digest)
+       accepted_work_commit,destination_path,output,request_digest,
+       witness_path,witness_proven_within_secs)
       VALUES (${partition.tenant},${partition.project},${request},${configuration.kind},
        ${configuration.pin.revision},${configuration.pin.digest},
        ${configuration.repository.repository},${configuration.repository.targetRef},
@@ -506,7 +511,8 @@ async function decisionHandoffConfiguration(
        ${configuration.kind === "PublishHandoff" ? configuration.acceptedWorkCommit : null},
        ${configuration.kind === "PublishHandoff" ? configuration.destinationPath : null},
        ${configuration.kind === "PublishHandoff" ? configuration.output : null},
-       ${configuration.kind === "PublishHandoff" ? configuration.requestDigest : null})`,
+       ${configuration.kind === "PublishHandoff" ? configuration.requestDigest : null},
+       ${witness?.path ?? null},${witness?.provenWithinSecs ?? null})`,
   );
 }
 
