@@ -2578,7 +2578,10 @@ test("a promoted publication is asked of the handoff repository at the target it
   const git = recordingGit();
 
   const waiting = await passOver(
-    serviceOf(recordingStore([witnessedView("publish-waiting", witness, 0)]), git),
+    serviceOf(
+      recordingStore([witnessedView("publish-waiting", witness, 0)]),
+      git,
+    ),
   );
 
   assert.equal(waiting.holds, 1, "a publication nothing has taken up holds");
@@ -2600,7 +2603,10 @@ test("a promoted publication is asked of the handoff repository at the target it
 
   git.witnessed = { witnessed: "Present" };
   const taken = await passOver(
-    serviceOf(recordingStore([witnessedView("publish-taken", witness, 0)]), git),
+    serviceOf(
+      recordingStore([witnessedView("publish-taken", witness, 0)]),
+      git,
+    ),
   );
 
   assert.equal(taken.conclusions, 1);

@@ -44,6 +44,7 @@ import {
   type FinalizerConfig,
   type HandoffPublicationWitness,
   type ObservedTarget,
+  type PublicationWitnessObserved,
   type PublishHandoffRequest,
   type ReconciliationVerdict,
 } from "../../src/interpreter/finalizer.ts";
@@ -721,12 +722,41 @@ function publicationPromoted(
   };
 }
 
-test("a publication waits for its witness, and is unproven once its deadline has gone by", () => {
-  const witness: HandoffPublicationWitness = {
-    path: "results/chuggy/request-one.json",
-    provenWithinSecs: 3_600,
-  };
-  const promoted = publicationPromoted(witness);
+/** The witness every case below is decided against, and the wait it allows. */
+const witnessed: HandoffPublicationWitness = {
+  path: "results/chuggy/request-one.json",
+  provenWithinSecs: 3_600,
+};
+
+/** One row of the table below: what was read of the handoff repository, and how long the publication has waited. */
+function witnessCase(
+  named: string,
+  observed: PublicationWitnessObserved | undefined,
+  elapsedSecs: number,
+  decided: FinalizationDecision,
+): readonly [string, ViewOverrides, FinalizationDecision] {
+  return [
+    named,
+    {
+      observedPublicationWitness: observed,
+      permitConcludedElapsedSecs: elapsedSecs,
+    },
+    decided,
+  ];
+}
+
+/**
+ * Every answer the handoff repository can give and every stretch of waiting it
+ * can give it in, each against the one decision it comes to. A row names
+ * itself, so a failure says which answer the machine got wrong.
+ */
+function publicationWitnessCases(): readonly (readonly [
+  string,
+  ViewOverrides,
+  FinalizationDecision,
+])[] {
+  const present: PublicationWitnessObserved = { witnessed: "Present" };
+  const absent: PublicationWitnessObserved = { witnessed: "Absent" };
   const succeeded: FinalizationDecision = {
     decide: "Conclude",
     conclusion: { outcome: "FinalizationSucceeded" },
@@ -735,69 +765,48 @@ test("a publication waits for its witness, and is unproven once its deadline has
     decide: "Hold",
     hold: "HandoffPublicationUnwitnessed",
   };
-  const cases: readonly (readonly [
-    string,
-    ViewOverrides,
-    FinalizationDecision,
-  ])[] = [
-    [
-      "the handoff repository holds the path",
-      {
-        observedPublicationWitness: { witnessed: "Present" },
-        permitConcludedElapsedSecs: 0,
-      },
+  const unreadable: FinalizationDecision = {
+    decide: "Hold",
+    hold: "HandoffWitnessUnreadable",
+  };
+  const deadline = witnessed.provenWithinSecs;
+  return [
+    witnessCase("the handoff repository holds the path", present, 0, succeeded),
+    witnessCase(
+      "it holds it late, which is taken up",
+      present,
+      deadline * 2,
       succeeded,
-    ],
-    [
-      "it holds it late, which is still taken up",
-      {
-        observedPublicationWitness: { witnessed: "Present" },
-        permitConcludedElapsedSecs: witness.provenWithinSecs * 2,
-      },
-      succeeded,
-    ],
-    [
-      "nothing has taken the publication up yet",
-      {
-        observedPublicationWitness: { witnessed: "Absent" },
-        permitConcludedElapsedSecs: 0,
-      },
+    ),
+    witnessCase("nothing has taken the publication up yet", absent, 0, waiting),
+    witnessCase(
+      "the last second of the wait is a wait",
+      absent,
+      deadline - 1,
       waiting,
-    ],
-    [
-      "the last second of the wait is still a wait",
-      {
-        observedPublicationWitness: { witnessed: "Absent" },
-        permitConcludedElapsedSecs: witness.provenWithinSecs - 1,
-      },
-      waiting,
-    ],
-    [
-      "the deadline itself has gone by",
-      {
-        observedPublicationWitness: { witnessed: "Absent" },
-        permitConcludedElapsedSecs: witness.provenWithinSecs,
-      },
-      { decide: "Conclude", conclusion: { outcome: "HandoffPublicationUnproven" } },
-    ],
-    [
+    ),
+    witnessCase("the deadline itself has gone by", absent, deadline, {
+      decide: "Conclude",
+      conclusion: { outcome: "HandoffPublicationUnproven" },
+    }),
+    witnessCase(
       "the handoff repository could not be read",
-      {
-        observedPublicationWitness: {
-          witnessed: "Unreadable",
-          evidence: "RemoteUnreachable",
-        },
-        permitConcludedElapsedSecs: witness.provenWithinSecs * 2,
-      },
-      { decide: "Hold", hold: "HandoffWitnessUnreadable" },
-    ],
-    [
+      { witnessed: "Unreadable", evidence: "RemoteUnreachable" },
+      deadline * 2,
+      unreadable,
+    ),
+    witnessCase(
       "nothing was read of it at all",
-      { permitConcludedElapsedSecs: witness.provenWithinSecs * 2 },
-      { decide: "Hold", hold: "HandoffWitnessUnreadable" },
-    ],
+      undefined,
+      deadline * 2,
+      unreadable,
+    ),
   ];
-  for (const [named, varied, decided] of cases) {
+}
+
+test("a publication waits for its witness, and is unproven once its deadline has gone by", () => {
+  const promoted = publicationPromoted(witnessed);
+  for (const [named, varied, decided] of publicationWitnessCases()) {
     assert.deepEqual(
       finalizationNext(finalizerDefaults, viewWith({ ...promoted, ...varied })),
       decided,

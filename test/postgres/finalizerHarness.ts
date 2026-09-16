@@ -947,8 +947,7 @@ export async function finalizerRequestApproval(
  * doing work the case did not mean to authorize.
  */
 export interface FinalizerGitFake
-  extends GitPromotionPort,
-    PublicationWitnessPort {
+  extends GitPromotionPort, PublicationWitnessPort {
   readonly acts: string[];
   target: TargetObserved;
   witnessed: PublicationWitnessObserved;

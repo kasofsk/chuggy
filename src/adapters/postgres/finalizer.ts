@@ -660,8 +660,7 @@ async function finalizerDurableView(
   r.target_ref AS reconciled_ref, r.observed_commit,
   n.state AS approval_state, n.resolution AS approval_resolution,
   c.made::text AS attempts_made,
-  floor(extract(epoch FROM (now() - p.concluded_at)))::bigint::text
-    AS permit_concluded_elapsed_secs
+  e.elapsed_secs::text AS permit_concluded_elapsed_secs
       FROM finalization_request f
   JOIN project j ON j.tenant = f.tenant AND j.project = f.project
   LEFT JOIN finalization_request_configuration h
@@ -683,6 +682,10 @@ async function finalizerDurableView(
     ON r.tenant = p.tenant AND r.project = p.project AND r.permit = p.permit
   LEFT JOIN native_action n
     ON n.tenant = a.tenant AND n.project = a.project AND n.attempt = a.attempt
+  LEFT JOIN LATERAL (
+    SELECT floor(extract(epoch FROM (now() - p.concluded_at)))::bigint
+             AS elapsed_secs
+     WHERE p.concluded_at IS NOT NULL) e ON true
   LEFT JOIN LATERAL (
     SELECT count(*) AS made FROM finalization_attempt y
      WHERE y.tenant = f.tenant AND y.project = f.project AND y.request = f.request) c

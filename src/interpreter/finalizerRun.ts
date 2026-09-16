@@ -632,7 +632,11 @@ async function finalizerGather(
     branches,
     observed.target,
   );
-  const witnessed = await finalizerGatherWitness(service, view, observed.target);
+  const witnessed = await finalizerGatherWitness(
+    service,
+    view,
+    observed.target,
+  );
   return {
     gathered: "View",
     view: {

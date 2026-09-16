@@ -255,18 +255,30 @@ test("a witness is a file standing in the commit that was observed, and nothing 
   const witness = "results/chuggy/request-one.json";
   const before = await fixtureTarget(port, binding);
   assert.deepEqual(
-    await port.observeWitness({ repository: binding, target: before, path: witness }),
+    await port.observeWitness({
+      repository: binding,
+      target: before,
+      path: witness,
+    }),
     { witnessed: "Absent" },
   );
   mkdirSync(join(fixture.seed, "results", "chuggy"), { recursive: true });
   fixtureCommit(fixture, witness, '{"taken":"up"}\n', "take the request up");
   const after = await fixtureTarget(port, binding);
   assert.deepEqual(
-    await port.observeWitness({ repository: binding, target: after, path: witness }),
+    await port.observeWitness({
+      repository: binding,
+      target: after,
+      path: witness,
+    }),
     { witnessed: "Present" },
   );
   assert.deepEqual(
-    await port.observeWitness({ repository: binding, target: before, path: witness }),
+    await port.observeWitness({
+      repository: binding,
+      target: before,
+      path: witness,
+    }),
     { witnessed: "Absent" },
     "the commit that was observed is what answers, not whatever the ref holds now",
   );
