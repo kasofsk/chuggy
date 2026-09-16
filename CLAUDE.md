@@ -4,20 +4,24 @@ A job orchestrator: tickets form a DAG, a durable project processor drives each
 through authoring → work → evaluation → completion, and the fabric runs the
 work and decides nothing.
 
-New projects use the pinned Chuggernaut ticket, evaluation, task and processing
-models under `model/ticket-domain/`, `model/task-contract/` and
-`model/application/`. The core they refine to is the
-`@kasofsk/chug-ticket-domain` dependency, pinned by the lockfile;
-`vendor/chuggernaut/source.json` pins the sources still vendored beside it.
+New projects use the ticket machine of the `@kasofsk/chug-ticket-domain`
+dependency, which the lockfile pins. Its Quint models are proved in that package
+and are not carried here, so nothing in this tree tests against them. What
+`model/` holds is this tree's own: `model/identity.qnt`, and the processing
+contract under `model/application/` together with the PostgreSQL refinement and
+suite that extend it. `vendor/chuggernaut/source.json` pins the sources still
+vendored beside the package.
 **This repo is unusual in one way that matters before you read anything else: the formal model leads the implementation.** A Quint model of the machine already exists and is proved; it emits golden traces, and this implementation grows up against them. When the model and the code disagree, the code is wrong.
 
 ## Where the knowledge is
 
 **`model/` is the specification.** The written standards that used to sit beside it were removed rather than maintained alongside it, and they have not come back. So the tree states what is true of itself in two places, and both are checkable:
 
-- **`model/`** — the adopted ticket machine and independent infrastructure
-  models with their suites. What they prove, they prove; nothing restates a
-  proved property in prose.
+- **`model/`** — this tree's own models with their suites: the identity
+  infrastructure, and the processing contract with the refinement that carries
+  it onto PostgreSQL. What they prove, they prove; nothing restates a proved
+  property in prose, and nothing here re-proves what the adopted package
+  already does.
 - **each gate's own header** — every script in `.chug/tasks/` opens by stating the rule it enforces. The rule and its enforcement cannot drift apart, because they are the same file, and the argument for either is in the commit that made it. `.chug/tasks/review-change.md` is the same arrangement for the rules no script can decide: a reviewer is what enforces them, so they are written in the reviewer's own brief.
 
 This file is the entry point: it routes to those two and holds the conventions neither can.

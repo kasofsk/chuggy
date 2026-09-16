@@ -15,7 +15,7 @@ import {
   Generation,
   TicketId,
 } from "../../src/domain/chuggernaut/task.js";
-import { source } from "../chuggernaut/domain/builders.js";
+import { source } from "../chuggernaut/domain/testing.js";
 import {
   postgresHarnessOpen,
   postgresHarnessNewEpoch,

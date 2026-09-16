@@ -25,7 +25,7 @@ const staging = resolve(root, "node_modules/.cache");
 mkdirSync(staging, { recursive: true });
 const upstream = mkdtempSync(resolve(staging, "chug-ticket-domain-"));
 cpSync(vendored, upstream, { recursive: true });
-for (const name of ["ticket", "task", "evaluation"])
+for (const name of ["ticket", "task", "evaluation", "testing"])
   cpSync(
     resolve(packaged, "src", `${name}.ts`),
     resolve(upstream, "chug/domain", `${name}.ts`),
@@ -42,11 +42,9 @@ for (const [file, expected] of Object.entries(manifest.sha256)) {
   if (actual !== expected) throw new Error(`upstream source differs: ${file}`);
 }
 const sources = [
-  ...["task", "evaluation", "ticket"].map((name) => `chug/domain/${name}.ts`),
-  ...["itf", "convert", "replay"].map(
-    (name) => `tests-ts/conformance/${name}.ts`,
+  ...["task", "evaluation", "ticket", "testing"].map(
+    (name) => `chug/domain/${name}.ts`,
   ),
-  "tests-ts/domain/builders.ts",
   "chug/app/codec.ts",
   "chug/app/codec_schema.ts",
   "chug/execution_profile.ts",
@@ -98,6 +96,12 @@ function destination(name: string): string {
       "src/adapters/runtime/chuggernaut",
       name.slice("chug/runner/".length),
     );
+  if (name === "chug/domain/testing.js" || name === "chug/domain/testing.d.ts")
+    return resolve(
+      root,
+      "test/chuggernaut/domain",
+      name.slice("chug/domain/".length),
+    );
   if (name.startsWith("chug/domain/"))
     return resolve(
       root,
@@ -116,8 +120,6 @@ function destination(name: string): string {
       "src/interpreter/chuggernaut",
       name.slice("chug/".length),
     );
-  if (name.startsWith("tests-ts/"))
-    return resolve(root, "test/chuggernaut", name.slice("tests-ts/".length));
   throw new Error(`unexpected upstream output: ${name}`);
 }
 const emitted = new Map<string, string>();
@@ -136,10 +138,7 @@ program.emit(undefined, (file, contents) => {
         return `${quote}${relocated.startsWith(".") ? relocated : `./${relocated}`}${quote}`;
       },
     )
-    .replace(
-      '"../../ticket-domain/traces"',
-      '"../../../model/ticket-domain/traces"',
-    );
+;
   emitted.set(target, rewritten);
 });
 for (const [file, contents] of emitted) {

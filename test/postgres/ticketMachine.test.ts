@@ -16,7 +16,7 @@ import {
   postgresTicketMachineInbox,
   postgresTicketMachineQueue,
 } from "../../src/adapters/postgres/ticketMachineInbox.ts";
-import { dispatch, released } from "../chuggernaut/domain/builders.js";
+import { dispatch, released } from "../chuggernaut/domain/testing.js";
 import {
   postgresHarnessOpen,
   postgresHarnessProject,

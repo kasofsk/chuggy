@@ -17,15 +17,12 @@ const paths = [
   "scripts/build-ticket-domain.ts",
   "package.json",
   "vendor/chuggernaut",
-  "model/task-contract",
-  "model/ticket-domain",
   "model/application",
   "src/domain/chuggernaut",
   "src/interpreter/chuggernaut",
   "src/adapters/catalog/chuggernaut",
   "src/adapters/runtime/chuggernaut",
   "src/adapters/catalog/schemas",
-  "test/chuggernaut/conformance",
   "test/chuggernaut/domain",
 ];
 

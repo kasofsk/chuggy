@@ -112,7 +112,6 @@ done
 unset IFS
 
 echo "--- unit suite"
-run_suite "model/ticket-domain/ticket_tests.qnt" model/ticket-domain/ticket_tests.qnt
 run_suite "model/application/project-decision-processing/processing_tests.qnt" model/application/project-decision-processing/processing_tests.qnt
 
 echo "check-model: $failed failure(s), $tests test(s) run"

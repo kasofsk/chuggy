@@ -5,15 +5,15 @@ the fabric runs the work and decides nothing.
 
 **The formal model leads.** A Quint model of the machine is proved first and emits golden traces; this implementation grows up against them. When the two disagree, the implementation is wrong.
 
-New projects use the pinned Chuggernaut [ticket model](model/ticket-domain/ticket.qnt),
-[evaluation model](model/ticket-domain/evaluation/evaluation.qnt),
-[task contract](model/task-contract/task.qnt), and
-[processing contract](model/application/project-decision-processing/processing.qnt).
-The domain core is the `@kasofsk/chug-ticket-domain` dependency the lockfile
-pins, and the [source manifest](vendor/chuggernaut/source.json) pins the bytes
-still vendored beside it; `node scripts/build-ticket-domain.ts --check` verifies
-the generated TypeScript runtime and trace replay helpers against both. Existing legacy projects retain their data
-and return `LegacyModelUnsupported`.
+New projects use the ticket machine of the `@kasofsk/chug-ticket-domain`
+dependency. Its Quint models, and the golden traces holding its core to them,
+are proved in that package and are not restated here. The lockfile pins it, the
+[source manifest](vendor/chuggernaut/source.json) pins the bytes still vendored
+beside it, and `node scripts/build-ticket-domain.ts --check` verifies the
+generated TypeScript runtime against both. The [processing
+contract](model/application/project-decision-processing/processing.qnt) is the
+one adopted model this tree still carries, because no package publishes it.
+Existing legacy projects retain their data and return `LegacyModelUnsupported`.
 
 Tickets use the [ticket/catalog schema](src/adapters/catalog/schemas/ticket.json)
 from an exact repository commit. The [PR finalizer](src/adapters/catalog/schemas/finalizer.json)

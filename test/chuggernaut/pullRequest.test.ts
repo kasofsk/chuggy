@@ -28,7 +28,7 @@ import {
   Generation,
   TicketId,
 } from "../../src/domain/chuggernaut/task.js";
-import { source } from "./domain/builders.js";
+import { source } from "./domain/testing.js";
 
 const request = changeProposalRequest({
   binding: {
