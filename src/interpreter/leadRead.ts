@@ -2,12 +2,6 @@
  * What a project's owner may read of its lead: the session's standing, the tail
  * of its mailbox, and a page of the transcript behind it.
  *
- * THE NOTE IS PREVIEWED RATHER THAN CARRIED. A handoff note may weigh a whole
- * wire body on its own, and this read carries a mailbox tail and a stream
- * listing beside it, so the note crosses as its size and its leading
- * characters. A reader that needs the note whole is the lead itself, and it is
- * given the note in its observation rather than over the wire.
- *
  * A BATCH THAT CANNOT BE DRAWN IS ELIDED, NOT FATAL. Only an outage on the
  * page's OWN batches refuses the page: a batch that is gone or fails its digest
  * is counted, because a run that died leaves exactly that and the batches beside
