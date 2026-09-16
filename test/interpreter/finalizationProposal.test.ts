@@ -112,12 +112,14 @@ const bounds = {
 
 /** The finalization every case below stands in unless it names another: one that only proposes. */
 const proposing: FinalizationProposalStanding = {
+  kind: "RunFinalizer",
   mode: "PullRequest",
   lifecycle: "Active",
 };
 
 /** The same finalization under the landing that merges what it proposed. */
 const merging: FinalizationProposalStanding = {
+  kind: "RunFinalizer",
   mode: "PullRequestMerge",
   lifecycle: "Active",
 };
@@ -174,7 +176,7 @@ test("a proposal the forge proves it holds is the one thing that concludes", () 
         }),
         bounds,
       ),
-      { decide: "Conclude" },
+      { decide: "Conclude", conclusion: { outcome: "FinalizationSucceeded" } },
       created,
     );
   }
@@ -186,7 +188,7 @@ test("a proposal the forge proves it holds is the one thing that concludes", () 
       ),
       bounds,
     ),
-    { decide: "Conclude" },
+    { decide: "Conclude", conclusion: { outcome: "FinalizationSucceeded" } },
   );
 });
 
@@ -387,9 +389,32 @@ function unheard(
   return { merging: "Unanswered", merges, readings, reading };
 }
 
+/** Catches an accepted promotion invented out of a proposal nobody merges. */
+test("a promotion for handoff whose landing merges nothing is refused rather than concluded", () => {
+  assert.throws(
+    () =>
+      finalizationProposalNext(
+        { ...proposing, kind: "PromoteForHandoff" },
+        proved(),
+        bounds,
+      ),
+    RangeError,
+  );
+  assert.deepEqual(
+    finalizationProposalNext(
+      { ...merging, kind: "PromoteForHandoff" },
+      proved({ merging: "Answered", merge: { merged: "Merged", mergeCommit } }),
+      bounds,
+    ),
+    { decide: "Conclude", conclusion: { outcome: "PromotionAccepted" } },
+    "and the landing that does merge accepts the promotion on the merge",
+  );
+});
+
 test("a proved proposal is merged only under the landing that merges it", () => {
   assert.deepEqual(finalizationProposalNext(proposing, proved(), bounds), {
     decide: "Conclude",
+    conclusion: { outcome: "FinalizationSucceeded" },
   });
   assert.deepEqual(finalizationProposalNext(merging, proved(), bounds), {
     decide: "MergeProposal",
@@ -435,6 +460,7 @@ test("a proposal somebody else already merged is the success only a merging land
     ),
     {
       decide: "Conclude",
+      conclusion: { outcome: "FinalizationSucceeded" },
     },
   );
   assert.deepEqual(
@@ -464,7 +490,7 @@ test("what the merge answered is what the finalization does next", () => {
   ][] = [
     [
       { merging: "Answered", merge: { merged: "Merged", mergeCommit } },
-      { decide: "Conclude" },
+      { decide: "Conclude", conclusion: { outcome: "FinalizationSucceeded" } },
     ],
     [
       { merging: "Answered", merge: { merged: "HeadMoved" } },
@@ -489,7 +515,7 @@ test("what the merge answered is what the finalization does next", () => {
         reconciled: "Accepted",
         evidence: evidence({ status: "Merged", mergeCommit }),
       }),
-      { decide: "Conclude" },
+      { decide: "Conclude", conclusion: { outcome: "FinalizationSucceeded" } },
     ],
     [
       unheard(1, 1, {
@@ -555,7 +581,7 @@ test("a project that will admit no further act aborts rather than merging", () =
   for (const lifecycle of allClosingLifecycles) {
     assert.deepEqual(
       finalizationProposalNext(
-        { mode: "PullRequestMerge", lifecycle },
+        { kind: "RunFinalizer", mode: "PullRequestMerge", lifecycle },
         proved(),
         bounds,
       ),
@@ -564,7 +590,7 @@ test("a project that will admit no further act aborts rather than merging", () =
     );
     assert.deepEqual(
       finalizationProposalNext(
-        { mode: "PullRequestMerge", lifecycle },
+        { kind: "RunFinalizer", mode: "PullRequestMerge", lifecycle },
         proved(unheard(1, 0)),
         bounds,
       ),
@@ -573,14 +599,14 @@ test("a project that will admit no further act aborts rather than merging", () =
     );
     assert.deepEqual(
       finalizationProposalNext(
-        { mode: "PullRequestMerge", lifecycle },
+        { kind: "RunFinalizer", mode: "PullRequestMerge", lifecycle },
         proved({
           merging: "Answered",
           merge: { merged: "Merged", mergeCommit },
         }),
         bounds,
       ),
-      { decide: "Conclude" },
+      { decide: "Conclude", conclusion: { outcome: "FinalizationSucceeded" } },
       "and a merge that landed is the success it is whatever became of the project",
     );
   }

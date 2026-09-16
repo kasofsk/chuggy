@@ -716,33 +716,56 @@ test("a promoted candidate whose brief proposes is not concluded by the promotio
   );
 });
 
-test("a handoff never proposes, whatever mode its ticket's brief names", () => {
-  for (const kind of ["PromoteForHandoff", "PublishHandoff"] as const) {
-    const decision = finalizationNext(
-      finalizerDefaults,
-      viewWith({
-        claim: { ...viewWith({}).claim, kind },
-        finalizationMode: "PullRequest",
-        attempt: prepared,
-        attemptsMade: 1,
-        permit: permitIn("Concluded"),
-        reconciliation: reconciliationOf("Promoted"),
-      }),
+/**
+ * Catches the silent push to main: a handoff promotion landing by proposal is
+ * accepted only once there is a proposal, where a publication proposes nothing
+ * whatever its ticket's brief says.
+ */
+test("a handoff promotion proposes where its brief does, and a publication never does", () => {
+  const promoted = {
+    attempt: prepared,
+    attemptsMade: 1,
+    permit: permitIn("Concluded"),
+    reconciliation: reconciliationOf("Promoted"),
+  };
+  for (const mode of ["PullRequest", "PullRequestMerge"] as const) {
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          ...promoted,
+          claim: { ...viewWith({}).claim, kind: "PromoteForHandoff" },
+          finalizationMode: mode,
+        }),
+      ),
+      { decide: "Propose" },
+      mode,
     );
     assert.deepEqual(
-      decision,
-      {
-        decide: "Conclude",
-        conclusion: {
-          outcome:
-            kind === "PromoteForHandoff"
-              ? "PromotionAccepted"
-              : "FinalizationSucceeded",
-        },
-      },
-      kind,
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          ...promoted,
+          claim: { ...viewWith({}).claim, kind: "PublishHandoff" },
+          finalizationMode: mode,
+        }),
+      ),
+      { decide: "Conclude", conclusion: { outcome: "FinalizationSucceeded" } },
+      mode,
     );
   }
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...promoted,
+        claim: { ...viewWith({}).claim, kind: "PromoteForHandoff" },
+        finalizationMode: "Push",
+      }),
+    ),
+    { decide: "Conclude", conclusion: { outcome: "PromotionAccepted" } },
+    "a pushed handoff is accepted on the promotion itself, as it always was",
+  );
 });
 
 test("nothing before the promotion is decided by the mode a brief names", () => {

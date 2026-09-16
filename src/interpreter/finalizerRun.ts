@@ -50,17 +50,17 @@
  * ticket never worked in.
  *
  * A PULL REQUEST MOVES THAT TARGET, AND ONLY FOR THE FINALIZATION THAT OPENS
- * ONE. Under `RunFinalizer` a brief that proposes lands on the branch its work
- * happened on, because that branch is the head the proposal is opened from and
- * the reference its finalization names is the base, the remote's own default
- * branch standing as that base where it names none. A handoff request narrows
- * by that reference exactly as a push does: its promotion is into a repository
- * the ticket never worked in and has nothing to do with the brief's mode. The
- * pairing is refused where the two are written — a configuration that hands off
- * will not release a brief that proposes — so this is a narrowing and not a
- * decision about which of them wins. A proposing brief naming no branch of its
- * own is a hold and never a fallback: the branch it does not name is the head
- * the proposal needs, and the binding's default is somebody else's line of
+ * ONE. A brief that proposes lands on the branch its work happened on, because
+ * that branch is the head the proposal is opened from and the reference its
+ * finalization names is the base, the remote's own default branch standing as
+ * that base where it names none. A promotion for handoff is that same
+ * finalization: it lands the ticket's own work, so its brief decides where,
+ * and the handoff renders against what the merge left on the base. Only the
+ * publication that follows narrows by the handoff's reference exactly as a
+ * push does — its destination is a repository the ticket never worked in and
+ * has nothing to do with the brief's mode. A proposing brief naming no branch
+ * of its own is a hold and never a fallback: the branch it does not name is the
+ * head the proposal needs, and the binding's default is somebody else's line of
  * development rather than a stand-in for it.
  *
  * A BRIEF NAMING BOTH IS READ TWICE, AND THE TWO READS DO DIFFERENT JOBS. The
@@ -460,15 +460,17 @@ interface FinalizerBranches {
 
 /**
  * Whether this claim lands its work by opening a proposal, which is what makes
- * the brief's branch the head rather than the destination. A handoff publishes
- * into a repository of its own, whatever the ticket's brief says.
+ * the brief's branch the head rather than the destination. A promotion for
+ * handoff lands the ticket's own work and reads its brief like any other; only
+ * the publication after it is exempt, publishing into a repository of its own
+ * whatever the ticket's brief says.
  */
 function finalizerProposes(
   view: FinalizationView,
   brief: DraftBrief | undefined,
 ): boolean {
   return (
-    view.claim.kind === "RunFinalizer" &&
+    view.claim.kind !== "PublishHandoff" &&
     briefFinalizationProposes(brief?.finalization?.mode)
   );
 }
@@ -1642,12 +1644,7 @@ async function finalizerProposalDecided(
       finalizerHold(service, tally, decision.hold);
       return;
     case "Conclude":
-      await finalizerConclude(
-        service,
-        view,
-        { outcome: "FinalizationSucceeded" },
-        tally,
-      );
+      await finalizerConclude(service, view, decision.conclusion, tally);
       return;
     case "RefuseProposalAttempt":
       await finalizerReleaseProposalAttempt(
@@ -1704,7 +1701,11 @@ async function finalizerProposal(
 ): Promise<void> {
   const config = checkedFinalizerConfig(service.config);
   const decision = finalizationProposalNext(
-    { mode: view.finalizationMode, lifecycle: view.lifecycle },
+    {
+      kind: view.claim.kind,
+      mode: view.finalizationMode,
+      lifecycle: view.lifecycle,
+    },
     await finalizerGatherProposal(service, view),
     {
       publication: {

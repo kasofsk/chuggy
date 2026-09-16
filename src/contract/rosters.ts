@@ -289,6 +289,18 @@ export function briefFinalizationProposes(mode: string | undefined): boolean {
 }
 
 /**
+ * Whether a mode opens a change proposal and leaves merging it to somebody
+ * else, so that nothing the finalization itself does puts the work on the
+ * reference the proposal names. It sits beside the predicate above because a
+ * mode added to the roster is a mode both of them have to be read against.
+ */
+export function briefFinalizationProposesOnly(
+  mode: string | undefined,
+): boolean {
+  return mode === "PullRequest";
+}
+
+/**
  * What a configuration hands its work off as, `None` standing for a
  * configuration that declares no handoff at all — the interpreter says that by
  * carrying no handoff shape rather than by a mode, so the wire names it.

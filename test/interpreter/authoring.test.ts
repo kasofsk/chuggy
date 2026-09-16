@@ -158,24 +158,38 @@ test("a present invalid worker mode is not interpreted as a legacy worker", () =
   );
 });
 
-test("a configuration that hands off refuses a brief that would propose a change", () => {
+/**
+ * Catches both a blanket refusal of every proposing brief and a blanket
+ * relaxation: the handoff renders against what is on the reference, which a
+ * proposal nobody merges never puts there.
+ */
+test("a configuration that hands off refuses only a brief that merges nothing it proposes", () => {
   const parsed = JSON.parse(readyConfiguration) as Record<string, unknown>;
   const handing = canonicalConfigurationOf({
     ...parsed,
     finalizationHandoff: handoffFixture(),
   });
-  for (const mode of ["PullRequest", "PullRequestMerge"] as const)
-    assert.deepEqual(
-      releaseConfigurationReadiness(handing, {
-        checks: [],
-        finalization: {
-          mode,
-          target: asBriefBranch("refs/heads/rt/landing"),
-        },
-      }),
-      { readiness: "Incomplete", fault: "HandoffProposesChange" },
-      mode,
-    );
+  assert.deepEqual(
+    releaseConfigurationReadiness(handing, {
+      checks: [],
+      finalization: {
+        mode: "PullRequest",
+        target: asBriefBranch("refs/heads/rt/landing"),
+      },
+    }),
+    { readiness: "Incomplete", fault: "HandoffProposesChange" },
+  );
+  assert.equal(
+    releaseConfigurationReadiness(handing, {
+      checks: [],
+      finalization: {
+        mode: "PullRequestMerge",
+        target: asBriefBranch("refs/heads/rt/landing"),
+      },
+    }).readiness,
+    "Ready",
+    "the landing that merges what it proposes is coherent with a handoff",
+  );
   assert.equal(
     releaseConfigurationReadiness(handing, {
       checks: [],

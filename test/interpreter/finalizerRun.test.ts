@@ -16,6 +16,7 @@ import { test } from "node:test";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   briefFinalizationModes,
+  briefFinalizationProposes,
   type BriefFinalizationMode,
 } from "../../src/contract/rosters.ts";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
@@ -2291,42 +2292,107 @@ test("a brief that pushes reaches no forge however the deployment is bound", asy
   assert.deepEqual(store.opened, []);
 });
 
-test("a handoff promotion never proposes, whatever mode its ticket's brief names", async () => {
+/** The same view claimed as a handoff's promotion rather than as a plain landing. */
+function promotingForHandoff(view: FinalizationView): FinalizationView {
+  return { ...view, claim: { ...view.claim, kind: "PromoteForHandoff" } };
+}
+
+/** Catches a handoff promotion pushed straight onto the base its proposal opens into. */
+test("a handoff promotion whose brief merges its proposal opens one and is accepted on the merge", async () => {
+  const store = recordingStore([
+    promotingForHandoff(proposedView("request-one", "PullRequestMerge")),
+  ]);
+  const forge = recordingForge(store);
+  forge.created = "Created";
+  const service = mergingService(store, forge);
+
+  const opening = await passOver(service);
+
+  assert.equal(opening.proposals, 1);
+  assert.equal(opening.conclusions, 0, "the promotion is not the end of it");
+  assert.equal(forge.creates[0]?.base.ref, landingBranch);
+
+  await passOver(service);
+  const proved = await passOver(service);
+
+  assert.equal(proved.conclusions, 1);
+  assert.deepEqual(store.concluded, [{ outcome: "PromotionAccepted" }]);
+});
+
+/** Catches a hardcoded outcome: the same proposal concludes differently for each claim. */
+test("a plain landing's merged proposal is a success where a handoff's is an accepted promotion", async () => {
+  const outcomes = [];
+  for (const view of [
+    proposedView("request-one", "PullRequestMerge"),
+    promotingForHandoff(proposedView("request-one", "PullRequestMerge")),
+  ]) {
+    const store = recordingStore([view]);
+    const forge = recordingForge(store);
+    forge.created = "Created";
+    const service = mergingService(store, forge);
+    await passOver(service);
+    await passOver(service);
+    await passOver(service);
+    outcomes.push(store.concluded);
+  }
+  assert.deepEqual(outcomes, [
+    [{ outcome: "FinalizationSucceeded" }],
+    [{ outcome: "PromotionAccepted" }],
+  ]);
+});
+
+test("a handoff promotion whose brief pushes is accepted with no forge asked", async () => {
+  const store = recordingStore([
+    promotingForHandoff({
+      ...proposedView("request-one"),
+      finalizationMode: "Push",
+    }),
+  ]);
+  const forge = recordingForge(store);
+  const git = recordingGit();
+
+  const report = await passOver({
+    ...proposingService(store, git, forge),
+    ticketBriefs: briefsOf(briefBranch, landingBranch),
+  });
+
+  assert.equal(report.conclusions, 1);
+  assert.equal(report.proposals, 0);
+  assert.deepEqual(forge.creates, []);
+  assert.deepEqual(store.concluded, [{ outcome: "PromotionAccepted" }]);
+  assert.equal(
+    git.observations[0]?.targetRef,
+    landingBranch,
+    "a pushed handoff promotes onto the reference its brief targets",
+  );
+});
+
+test("a publication never proposes, whatever mode its ticket's brief names", async () => {
   const store = recordingStore([
     {
-      ...proposedView("request-one"),
+      ...proposedView("request-one", "PullRequestMerge"),
       claim: {
         ...proposedView("request-one").claim,
-        kind: "PromoteForHandoff",
+        kind: "PublishHandoff",
       },
     },
   ]);
   const forge = recordingForge(store);
-  const git = recordingGit();
-  const report = await passOver(proposingService(store, git, forge));
+  const report = await passOver(mergingService(store, forge));
+
   assert.equal(report.conclusions, 1);
   assert.equal(report.proposals, 0);
   assert.deepEqual(forge.creates, []);
-  assert.equal(
-    git.observations[0]?.targetRef,
-    landingBranch,
-    "a handoff promotes onto the reference its brief targets, as it always did",
-  );
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
 });
 
-test("a handoff prepares onto the reference its brief targets whatever mode it names", async () => {
+test("a handoff promotion prepares onto the branch its brief lands the work on", async () => {
   for (const mode of populated<BriefFinalizationMode>(
     briefFinalizationModes,
     "briefFinalizationModes",
   )) {
     const store = recordingStore([
-      {
-        ...preparableView("request-one"),
-        claim: {
-          ...preparableView("request-one").claim,
-          kind: "PromoteForHandoff",
-        },
-      },
+      promotingForHandoff(preparableView("request-one")),
     ]);
     const git = recordingGit();
 
@@ -2337,8 +2403,8 @@ test("a handoff prepares onto the reference its brief targets whatever mode it n
 
     assert.equal(
       store.attempts[0]?.target.ref,
-      landingBranch,
-      `${mode}: a handoff is promoted onto the reference its brief targets`,
+      briefFinalizationProposes(mode) ? briefBranch : landingBranch,
+      `${mode}: a proposing handoff lands on the head its proposal is opened from`,
     );
   }
 });

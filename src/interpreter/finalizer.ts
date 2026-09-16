@@ -714,20 +714,22 @@ function finalizationNextRestart(
 /**
  * What a promoted candidate concludes as. A brief landing by pull request is
  * not finished when the branch moved — the proposal it asked for still has to
- * exist — where a handoff never proposes at all, its promotion being into a
- * repository the ticket never worked in.
+ * exist — and a promotion for handoff is read the same way, because what the
+ * handoff renders against is the commit the proposal left on the reference
+ * rather than the head it was opened from, where a publication proposes
+ * nothing, its promotion being into a repository the ticket never worked in.
  */
 function finalizationNextPromoted(
   view: FinalizationView,
 ): FinalizationDecision {
-  if (view.claim.kind === "PromoteForHandoff") {
-    return { decide: "Conclude", conclusion: { outcome: "PromotionAccepted" } };
-  }
   if (
-    view.claim.kind === "RunFinalizer" &&
+    view.claim.kind !== "PublishHandoff" &&
     briefFinalizationProposes(view.finalizationMode)
   ) {
     return { decide: "Propose" };
+  }
+  if (view.claim.kind === "PromoteForHandoff") {
+    return { decide: "Conclude", conclusion: { outcome: "PromotionAccepted" } };
   }
   return {
     decide: "Conclude",

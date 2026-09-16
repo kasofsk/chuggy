@@ -10,7 +10,7 @@ import {
   nativeHttpPageItemsMax,
 } from "../contract/http.ts";
 import {
-  briefFinalizationProposes,
+  briefFinalizationProposesOnly,
   type ConfigurationHandoff,
 } from "../contract/rosters.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
@@ -69,10 +69,12 @@ export type ReleaseConfiguration = Readonly<Record<string, unknown>> & {
  * `BriefChecksUncommanded`, `BriefNamesNoRepository` and
  * `ConfigurationFromAnotherRepository` are faults about the pairing rather than
  * the document, either document alone being fine: a configuration carrying a
- * handoff contradicts a brief that opens a change proposal, one commanding no
- * check stage contradicts a brief that appends check lines to it, a brief
- * naming no repository has nothing to pair with, and a configuration imported
- * from a repository contradicts a brief working in a different one.
+ * handoff contradicts a brief that opens a change proposal and merges none of
+ * it, the work it would hand off being on nothing but the proposal's own head
+ * until somebody else acts; one commanding no check stage contradicts a brief
+ * that appends check lines to it, a brief naming no repository has nothing to
+ * pair with, and a configuration imported from a repository contradicts a
+ * brief working in a different one.
  */
 export type ReleaseConfigurationFault =
   | "ReleaseShapeInvalid"
@@ -168,7 +170,7 @@ export function releaseConfigurationReadiness(
   if (
     (value as Record<string, unknown>)[handoffConfigurationField] !== undefined
   ) {
-    if (briefFinalizationProposes(brief?.finalization?.mode))
+    if (briefFinalizationProposesOnly(brief?.finalization?.mode))
       return { readiness: "Incomplete", fault: "HandoffProposesChange" };
     const handoff = authoredHandoffConfigurationReadiness(value);
     if (handoff.readiness === "Incomplete") return handoff;

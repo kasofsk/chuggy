@@ -32,10 +32,19 @@
  * the row exists the request is rebuilt from it, so a proposal already proved
  * concludes whatever became of the branch it was opened into afterwards.
  *
- * A HANDOFF NEVER PROPOSES. A handoff promotion lands in a repository the ticket
- * never worked in and carries its own publication afterwards, so the mode a
- * brief names says nothing about it and the promotion concludes as it always
- * has. This step is reached only under `RunFinalizer`.
+ * A PROMOTION FOR HANDOFF PROPOSES LIKE ANY OTHER LANDING, AND CONCLUDES
+ * DIFFERENTLY. It lands the ticket's own work on the ticket's own reference, so
+ * a brief that proposes proposes here too — and what the handoff then renders
+ * against is the commit the merge left on that reference, which is why the
+ * proposal has to be merged before the promotion is accepted at all. Only the
+ * publication that follows reaches no forge: it lands in a repository the
+ * ticket never worked in, and this step is never reached for one.
+ *
+ * A PROMOTION FOR HANDOFF THAT MERGES NOTHING IS REFUSED RATHER THAN CONCLUDED.
+ * `PullRequest` leaves the merge to somebody else, so accepting the promotion
+ * would hand off a commit that is on the proposal's head alone. The pairing is
+ * refused where a configuration and a brief are released together, and this
+ * step asserts it rather than inventing a promotion out of an open proposal.
  *
  * THIS STEP AWAITS NOTHING AND REACHES NO FORGE. The request, the durable row
  * and any observation they needed are gathered before it runs, so what it reads
@@ -76,7 +85,11 @@ import {
 } from "./changeProposal.ts";
 import { allClosingLifecycles } from "./finalizer.ts";
 import type { CommitPermitId, FinalizationClaim } from "./finalizer.ts";
-import type { FinalizationHoldKind } from "./finalizer.ts";
+import type {
+  FinalizationConclusion,
+  FinalizationHoldKind,
+  FinalizationRequestKind,
+} from "./finalizer.ts";
 import type { Lifecycle } from "./projectStore.ts";
 import {
   briefIntentLines,
@@ -130,11 +143,20 @@ export type FinalizationProposalDecision =
   | { readonly decide: "RefuseMergeAttempt" }
   | { readonly decide: "RecordMergeConflict" }
   | { readonly decide: "Abort" }
-  | { readonly decide: "Conclude" }
+  | {
+      readonly decide: "Conclude";
+      readonly conclusion: FinalizationConclusion;
+    }
   | { readonly decide: "Hold"; readonly hold: FinalizationHoldKind };
 
-/** What the finalization itself brings to this step: how its brief lands, and what its project will still admit. */
+/**
+ * What the finalization itself brings to this step: which durable request it
+ * answers, how its brief lands, and what its project will still admit. The
+ * request kind is here because it is what the proposal concludes as — a
+ * promotion for handoff is accepted, where every other landing has finished.
+ */
 export interface FinalizationProposalStanding {
+  readonly kind: FinalizationRequestKind;
   readonly mode: BriefFinalizationMode | undefined;
   readonly lifecycle: Lifecycle;
 }
@@ -195,16 +217,36 @@ function finalizationProposalMergeHeld(
 }
 
 /**
+ * What a proposal this step is finished with concludes the finalization as. A
+ * promotion for handoff is accepted, which is what carries the ticket into its
+ * publication; every other landing has finished.
+ */
+function finalizationProposalConcluded(
+  finalization: FinalizationProposalStanding,
+): FinalizationProposalDecision {
+  return {
+    decide: "Conclude",
+    conclusion: {
+      outcome:
+        finalization.kind === "PromoteForHandoff"
+          ? "PromotionAccepted"
+          : "FinalizationSucceeded",
+    },
+  };
+}
+
+/**
  * What one settled merge answer leaves the finalization to do. A head the forge
  * found moved is held rather than merged again, because the commit the permit
  * landed is the only one this request ever asked to have merged.
  */
 function finalizationProposalMerged(
+  finalization: FinalizationProposalStanding,
   merge: ChangeProposalMergeAnswer,
 ): FinalizationProposalDecision {
   switch (merge.merged) {
     case "Merged":
-      return { decide: "Conclude" };
+      return finalizationProposalConcluded(finalization);
     case "HeadMoved":
       return { decide: "Hold", hold: "ProposalHeadMoved" };
     case "NotMergeable":
@@ -256,7 +298,7 @@ function finalizationProposalMergeNext(
   bounds: ChangeProposalMergingBounds,
 ): FinalizationProposalDecision {
   if (evidence.status === "Merged" && evidence.mergeCommit !== undefined)
-    return { decide: "Conclude" };
+    return finalizationProposalConcluded(finalization);
   const next = changeProposalMergeNext(request, merging, bounds);
   switch (next.next) {
     case "Merge":
@@ -268,7 +310,7 @@ function finalizationProposalMergeNext(
     case "RefuseAttempt":
       return { decide: "RefuseMergeAttempt" };
     case "Concluded":
-      return finalizationProposalMerged(next.merge);
+      return finalizationProposalMerged(finalization, next.merge);
     case "Refused":
       return { decide: "Hold", hold: "ProposalRefused" };
     case "Held":
@@ -300,6 +342,11 @@ export function finalizationProposalNext(
   const { request } = gathered;
   const merged = finalizationProposalMergedStanding(finalization.mode);
   const merges = merged === "Accepted";
+  if (finalization.kind === "PromoteForHandoff" && !merges) {
+    throw new RangeError(
+      "finalization proposal: a promotion for handoff merges nothing",
+    );
+  }
   const next = changeProposalPublicationNext(
     request,
     gathered.publication,
@@ -322,7 +369,7 @@ export function finalizationProposalNext(
             gathered.merging,
             bounds.merging,
           )
-        : { decide: "Conclude" };
+        : finalizationProposalConcluded(finalization);
     case "Refused":
       return { decide: "Hold", hold: "ProposalRefused" };
     case "Held":
