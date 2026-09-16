@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { readdir, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { workerCheckCommands } from "./checks.mjs";
 import {
+  prepareWorker,
   publishWorkerResult,
   reportWorkerFailure,
   runWorkerTask,
@@ -15,6 +18,7 @@ import {
 } from "./entrypoint.mjs";
 import { workerCredentialPath } from "./planeCredential.mjs";
 import { credentialScrub, runEvidenceRecorder } from "./runEvidence.mjs";
+import { ticketBranch } from "./source.mjs";
 
 const task = { workerPlane: { url: "http://worker-plane.test:3001" } };
 const secret = "sk-ant-oat01-0123456789abcdefghijklmnop";
@@ -158,16 +162,26 @@ function launched(environment) {
   });
 }
 
+/**
+ * A work task the scheduler placed with commands rather than an agent, whose
+ * authority names no credential because no agent asks for one.
+ */
+function commandedWorkTask(authority = {}) {
+  return JSON.stringify({
+    taskKind: "Work",
+    worker: { mode: { type: "Commands", commands: ["true"] } },
+    authority: {
+      network: true,
+      filesystem: "WriteWorkspace",
+      credentials: [],
+      ...authority,
+    },
+  });
+}
+
 test("a pod placed with an empty repository map is given an empty one", async () => {
   const ran = await launched({
-    CHUG_WORKER_TASK: JSON.stringify({
-      worker: { mode: { type: "Commands", commands: ["true"] } },
-      authority: {
-        network: true,
-        filesystem: "WriteWorkspace",
-        credentials: [],
-      },
-    }),
+    CHUG_WORKER_TASK: commandedWorkTask(),
     CHUG_WORKER_REPOSITORIES: "",
   });
 
@@ -177,6 +191,67 @@ test("a pod placed with an empty repository map is given an empty one", async ()
     /^CHUG_WORKER_CREDENTIAL_FILES is required$/mu,
     "the map stood empty and the launch went on to the next variable",
   );
+});
+
+/**
+ * Admission reads the carrier, not the kind: a commanded work task mounts no
+ * agent credential, so demanding one — as a pod that built an agent for every
+ * Work task would — stops the launch before the variable below is ever read.
+ */
+test("a commanded work task is admitted with no agent credential mounted", async () => {
+  const ran = await launched({ CHUG_WORKER_TASK: commandedWorkTask() });
+
+  assert.match(
+    ran.stderr,
+    /^CHUG_WORKER_CREDENTIAL_FILES is required$/mu,
+    "a commanded work task asked for something an agent's credential answers",
+  );
+});
+
+/** Both halves of what a commanded work task must be granted before it runs. */
+test("a commanded work task without network or workspace write is refused", async () => {
+  const launches = [
+    await launched({ CHUG_WORKER_TASK: commandedWorkTask({ network: false }) }),
+    await launched({
+      CHUG_WORKER_TASK: commandedWorkTask({ filesystem: "ReadOnly" }),
+    }),
+  ];
+
+  for (const ran of launches) {
+    assert.equal(ran.code, 1);
+    assert.match(ran.stderr, /requires network and workspace write authority/u);
+  }
+});
+
+/**
+ * The setup lines of a block are narrowed with its commands. Catches the
+ * document reaching the shell that runs in the workspace just before them,
+ * which could leave it in a file for the commands to read.
+ */
+test("a setup line sees the pod's environment but not the task document", async () => {
+  const database = "postgres://postgres@127.0.0.1:5432/postgres";
+  Object.assign(process.env, {
+    CHUG_WORKER_TASK: "{}",
+    CHUG_SESSION_TASK: "{}",
+    CHUG_PG_URL: database,
+  });
+  const directory = await mkdtemp(join(tmpdir(), "chuggy-setup-"));
+  try {
+    const setup =
+      'printf "%s|%s|%s" "${CHUG_WORKER_TASK-unset}" ' +
+      '"${CHUG_SESSION_TASK-unset}" "${CHUG_PG_URL-unset}" > inherited';
+
+    await prepareWorker({ worker: { setup: [setup] } }, directory);
+
+    assert.equal(
+      await readFile(join(directory, "inherited"), "utf8"),
+      `unset|unset|${database}`,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    for (const name of ["CHUG_WORKER_TASK", "CHUG_SESSION_TASK", "CHUG_PG_URL"])
+      delete process.env[name];
+  }
 });
 
 test("a run that died posts its figures and ends the attempt", async () => {
@@ -284,6 +359,35 @@ test("a task carrying commands runs them and never reaches for an agent", async 
   assert.equal(run.diagnosticPath, ".chuggy/check-output.json");
   assert.equal(run.result.verdict, "Fail");
   assert.equal(run.result.summary, "exit 2 exited 2");
+});
+
+/**
+ * The carrier is the mode and never the kind. Catches a commanded run resolved
+ * from `taskKind`, which would send a work task to an agent that refuses it and
+ * leave an evaluation the only thing commands can run.
+ */
+test("a work task's commands are what runs it, and no agent is asked for", async () => {
+  const commanded = {
+    ...task,
+    taskKind: "Work",
+    worker: { mode: { type: "Commands", commands: ["exit 0"] } },
+  };
+  const commands = workerCheckCommands(commanded);
+
+  const run = await runWorkerTask(
+    {
+      task: commanded,
+      directory: process.cwd(),
+      get agent() {
+        throw new Error("a commanded work task reached for an agent");
+      },
+    },
+    commands,
+  );
+
+  assert.deepEqual(commands, ["exit 0"]);
+  assert.equal(run.result.verdict, "Pass");
+  assert.equal(run.diagnosticPath, ".chuggy/check-output.json");
 });
 
 test("a check stage's report is scrubbed with the context's own scrub before it is measured", async () => {
@@ -531,15 +635,29 @@ test("a workspace the launcher's mount answered carries no refresh", async () =>
   );
 });
 
-test("a passing work attempt pushes under the credential its workspace refreshes", async () => {
-  const cloned = { CHUG_WORKER_GIT_CREDENTIAL_FILE: "/minted/at-clone" };
-  const fresh = { CHUG_WORKER_GIT_CREDENTIAL_FILE: "/minted/at-push" };
+/** The attempt every work case below publishes, and the branch its push names. */
+const workAttempt = { taskKind: "Work", ticket: 7, attempt: "attempt-1" };
+const workCommit = "a".repeat(40);
+const pushCredential = { CHUG_WORKER_GIT_CREDENTIAL_FILE: "/minted/at-push" };
+
+/** The two carriers a work attempt can have run under. */
+const commandedWorker = {
+  mode: { type: "Commands", commands: [".chug/tasks/ci.sh"] },
+};
+const agentWorker = {
+  mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+};
+
+/**
+ * One finished work attempt reaching the plane, with git stood in for by a
+ * recorder: what the push would have run, and what the report carried.
+ */
+async function workPublished(worker, run) {
   const runs = [];
   const { calls, request } = planeCalls();
-
   await publishWorkerResult(
     {
-      task: { ...task, taskKind: "Work", ticket: 7, attempt: "attempt-1" },
+      task: { ...task, ...workAttempt, worker },
       bearer: "bearer",
       evidence: evidenceFor(request),
       scrub: (text) => text,
@@ -547,7 +665,7 @@ test("a passing work attempt pushes under the credential its workspace refreshes
       request,
       command: async (executable, args, options) => {
         runs.push({ executable, args, options });
-        return { stdout: `${"a".repeat(40)}\n` };
+        return { stdout: `${workCommit}\n` };
       },
     },
     {
@@ -555,18 +673,93 @@ test("a passing work attempt pushes under the credential its workspace refreshes
       repository: repositories["repository-1"].url,
       base: "0".repeat(40),
       directory: "/workspace/repository",
-      environment: cloned,
-      refresh: async () => fresh,
+      environment: { CHUG_WORKER_GIT_CREDENTIAL_FILE: "/minted/at-clone" },
+      refresh: async () => pushCredential,
     },
-    {
-      output: { type: "result", structured_output: { summary: "done" } },
-      result: { verdict: "Pass", summary: "the attempt passed" },
-      diagnosticPath: ".chuggy/agent-result.json",
+    run,
+  );
+  return { runs, reported: JSON.parse(reportedBody(calls)) };
+}
+
+function reportedBody(calls) {
+  return calls.find(({ path }) => path === "/v1/report").init.body;
+}
+
+/** The one git invocation of a verb the attempt made, and a legible miss where it made none. */
+function gitRun(runs, verb) {
+  const ran = runs.find(({ args }) => args[0] === verb);
+  assert.ok(ran, `the attempt ran no git ${verb}`);
+  return ran;
+}
+
+/** What a commanded stage hands the publisher, its exit status being its verdict. */
+function commandedRun(exitStatus) {
+  return {
+    output: { checks: [{ command: ".chug/tasks/ci.sh", exitStatus }] },
+    result: {
+      verdict: exitStatus === 0 ? "Pass" : "Fail",
+      summary: `.chug/tasks/ci.sh exited ${String(exitStatus)}`,
     },
+    diagnosticPath: ".chuggy/check-output.json",
+  };
+}
+
+test("a passing work attempt pushes under the credential its workspace refreshes", async () => {
+  const { runs } = await workPublished(agentWorker, {
+    output: { type: "result", structured_output: { summary: "done" } },
+    result: { verdict: "Pass", summary: "the attempt passed" },
+    diagnosticPath: ".chuggy/agent-result.json",
+  });
+
+  assert.deepEqual(gitRun(runs, "push").options.env, pushCredential);
+});
+
+/**
+ * A commanded work attempt leaves the same candidate an agent's would. Catches a
+ * push keyed on what ran rather than on the task's kind and verdict, and a
+ * commit that stopped being `--allow-empty` or stopped naming the attempt.
+ */
+test("a passing commanded work attempt commits and pushes what it declares", async () => {
+  const { runs, reported } = await workPublished(
+    commandedWorker,
+    commandedRun(0),
   );
 
-  const push = runs.find(({ args }) => args[0] === "push");
-  assert.deepEqual(push.options.env, fresh);
+  assert.deepEqual(gitRun(runs, "commit").args, [
+    "commit",
+    "--allow-empty",
+    "-m",
+    "ticket 7 attempt attempt-1",
+  ]);
+  const push = gitRun(runs, "push");
+  assert.deepEqual(push.args, [
+    "push",
+    repositories["repository-1"].url,
+    `HEAD:${ticketBranch(workAttempt)}`,
+  ]);
+  assert.deepEqual(push.options.env, pushCredential);
+  assert.deepEqual(reported.source, {
+    repository: "repository-1",
+    ref: ticketBranch(workAttempt),
+    commit: workCommit,
+    base: "0".repeat(40),
+  });
+});
+
+/**
+ * The commands' exit status is the work's success, and a failed one leaves
+ * nothing behind. Catches a push that stopped reading the verdict: the plane
+ * refuses a source on a Fail, so the attempt would crash rather than fail.
+ */
+test("a failing commanded work attempt pushes nothing and declares no source", async () => {
+  const { runs, reported } = await workPublished(
+    commandedWorker,
+    commandedRun(1),
+  );
+
+  assert.deepEqual(runs, []);
+  assert.equal(reported.verdict, "Fail");
+  assert.equal(reported.source, undefined);
 });
 
 test("a plane that stops minting mid-attempt fails it rather than pushing with a mount", async () => {

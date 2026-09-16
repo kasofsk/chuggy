@@ -1,3 +1,24 @@
+/**
+ * What one work attempt is given, what runs it, and what it leaves behind.
+ *
+ * THE CARRIER IS THE MODE AND THE CANDIDATE IS THE TASK KIND. Whether an agent
+ * or a list of commands runs the attempt is the worker mode the task carries;
+ * whether what ran leaves a branch behind is the task's kind and its verdict.
+ * Neither is read from the other, so a Work task carrying commands runs them
+ * with no agent and still pushes the candidate a passing run leaves.
+ *
+ * THE COMMANDS' EXIT STATUS IS THE WORK'S SUCCESS. Where an agent ran the
+ * attempt there is an account of the run to take a verdict from; where commands
+ * ran it there is nothing but what they exited with, and nothing else is asked
+ * for.
+ *
+ * AN EMPTY DIFF IS STILL A CANDIDATE IN THIS WORKER'S WORK MODE, because the
+ * commit it makes is `--allow-empty`: an attempt whose commands changed nothing
+ * declares the commit anyway. That is this worker's rule and not a property of
+ * the platform, so a configuration read across to another runner cannot assume
+ * it; a repository that wants an empty attempt to fail says so in a command.
+ */
+
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { Buffer } from "node:buffer";
@@ -8,7 +29,11 @@ import { promisify } from "node:util";
 import { createInterface } from "node:readline";
 
 import { workerAgent } from "./agent.mjs";
-import { runChecks, workerCheckCommands } from "./checks.mjs";
+import {
+  runChecks,
+  workerCheckCommands,
+  workerStageEnvironment,
+} from "./checks.mjs";
 import { keepWorkerLease } from "./lease.mjs";
 import { planeCredential, workerCredentialPath } from "./planeCredential.mjs";
 import { attemptDatabase } from "./postgres.mjs";
@@ -93,14 +118,18 @@ function workspaceFile(directory, path) {
   return target;
 }
 
-async function prepareWorker(task, directory) {
+/** The files and the setup lines a worker block asks for, in the workspace it runs in. */
+export async function prepareWorker(task, directory) {
   for (const file of task.worker?.files ?? []) {
     const target = workspaceFile(directory, file.path);
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, file.content, { flag: "wx" });
   }
   for (const setup of task.worker?.setup ?? []) {
-    await command("/bin/sh", ["-eu", "-c", setup], { cwd: directory });
+    await command("/bin/sh", ["-eu", "-c", setup], {
+      cwd: directory,
+      env: workerStageEnvironment(process.env),
+    });
   }
 }
 
