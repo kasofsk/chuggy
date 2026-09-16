@@ -12,9 +12,11 @@
  * ran it there is nothing but what they exited with, and nothing else is asked
  * for.
  *
- * AN EMPTY DIFF IS STILL A CANDIDATE, because the commit is `--allow-empty`. An
- * attempt whose commands changed nothing declares the commit it made anyway,
- * and a repository that wants that to fail says so in a command of its own.
+ * AN EMPTY DIFF IS STILL A CANDIDATE IN THIS WORKER'S WORK MODE, because the
+ * commit it makes is `--allow-empty`: an attempt whose commands changed nothing
+ * declares the commit anyway. That is this worker's rule and not a property of
+ * the platform, so a configuration read across to another runner cannot assume
+ * it; a repository that wants an empty attempt to fail says so in a command.
  */
 
 import { execFile, spawn } from "node:child_process";
