@@ -769,6 +769,14 @@ function publicationWitnessCases(): readonly (readonly [
     decide: "Hold",
     hold: "HandoffWitnessUnreadable",
   };
+  const unproven: FinalizationDecision = {
+    decide: "Conclude",
+    conclusion: { outcome: "HandoffPublicationUnproven" },
+  };
+  const unreachable: PublicationWitnessObserved = {
+    witnessed: "Unreadable",
+    evidence: "RemoteUnreachable",
+  };
   const deadline = witnessed.provenWithinSecs;
   return [
     witnessCase("the handoff repository holds the path", present, 0, succeeded),
@@ -785,21 +793,30 @@ function publicationWitnessCases(): readonly (readonly [
       deadline - 1,
       waiting,
     ),
-    witnessCase("the deadline itself has gone by", absent, deadline, {
-      decide: "Conclude",
-      conclusion: { outcome: "HandoffPublicationUnproven" },
-    }),
+    witnessCase("the deadline itself has gone by", absent, deadline, unproven),
     witnessCase(
-      "the handoff repository could not be read",
-      { witnessed: "Unreadable", evidence: "RemoteUnreachable" },
-      deadline * 2,
+      "the repository could not be read, and there is time yet",
+      unreachable,
+      0,
       unreadable,
     ),
     witnessCase(
-      "nothing was read of it at all",
+      "nothing was read of it, and there is time yet",
+      undefined,
+      deadline - 1,
+      unreadable,
+    ),
+    witnessCase(
+      "it could not be read and the wait is over",
+      unreachable,
+      deadline,
+      unproven,
+    ),
+    witnessCase(
+      "nothing was ever read of it and the wait is over",
       undefined,
       deadline * 2,
-      unreadable,
+      unproven,
     ),
   ];
 }
@@ -813,6 +830,21 @@ test("a publication waits for its witness, and is unproven once its deadline has
       named,
     );
   }
+});
+
+test("a publication waiting on a witness is refused when nothing says how long", () => {
+  assert.throws(
+    () =>
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          ...publicationPromoted(witnessed),
+          observedPublicationWitness: { witnessed: "Absent" },
+          permitConcludedElapsedSecs: undefined,
+        }),
+      ),
+    RangeError,
+  );
 });
 
 test("a publication declaring no witness is finished by its promotion, and observes none", () => {

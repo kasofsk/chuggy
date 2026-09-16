@@ -712,6 +712,15 @@ function finalizationNextAssertView(view: FinalizationView): void {
     );
   }
   if (
+    finalizationPublicationWitness(view) !== undefined &&
+    permit?.state === "Concluded" &&
+    view.permitConcludedElapsedSecs === undefined
+  ) {
+    throw new RangeError(
+      "finalization view: a publication is waiting on a witness and nothing says how long",
+    );
+  }
+  if (
     view.observedPublicationWitness !== undefined &&
     finalizationPublicationWitness(view) === undefined
   ) {
@@ -757,32 +766,33 @@ function finalizationNextRestart(
 
 /**
  * What a promoted publication concludes as, which is not the same question as
- * whether its bytes landed. Until the handoff repository holds the witness the
- * publication is held, spending nothing; once the seconds it was given have
- * passed it is unproven, which is a conclusion `Core` prices.
+ * whether its bytes landed. Everything but the witness standing is decided
+ * against the same deadline: before it the publication is held and spends
+ * nothing, at or past it it is unproven, and a repository nobody can read is
+ * ignorance rather than a reason to wait longer than a path that is simply not
+ * there.
  */
 function finalizationNextPublished(
   view: FinalizationView,
   witness: HandoffPublicationWitness,
 ): FinalizationDecision {
   const observed = view.observedPublicationWitness;
-  if (observed === undefined || observed.witnessed === "Unreadable") {
-    return { decide: "Hold", hold: "HandoffWitnessUnreadable" };
-  }
-  if (observed.witnessed === "Present") {
+  if (observed?.witnessed === "Present") {
     return {
       decide: "Conclude",
       conclusion: { outcome: "FinalizationSucceeded" },
     };
   }
   const waited = view.permitConcludedElapsedSecs;
-  if (waited !== undefined && waited >= witness.provenWithinSecs) {
+  if (waited === undefined || waited >= witness.provenWithinSecs) {
     return {
       decide: "Conclude",
       conclusion: { outcome: "HandoffPublicationUnproven" },
     };
   }
-  return { decide: "Hold", hold: "HandoffPublicationUnwitnessed" };
+  return observed?.witnessed === "Absent"
+    ? { decide: "Hold", hold: "HandoffPublicationUnwitnessed" }
+    : { decide: "Hold", hold: "HandoffWitnessUnreadable" };
 }
 
 /** What a promoted publication is waiting to be taken up by, which a publication declaring none is not waiting at all. */
