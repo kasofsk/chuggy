@@ -7,6 +7,7 @@ import { configurationRevisionDigest } from "../../src/adapters/postgres/digest.
 import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
+  canonicalConfigurationOf,
 } from "../../src/interpreter/authoring.ts";
 import {
   asAuthorityKind,
@@ -76,6 +77,43 @@ test("the scheduler role reads an authored pinned task configuration", async () 
         },
       },
     );
+  } finally {
+    await pool.end();
+    await harness.close();
+  }
+});
+
+test("a work stage that names commands survives the durable round trip", async () => {
+  const harness = await postgresHarnessOpen();
+  const pool = schedulerRolePool();
+  try {
+    const partition = await postgresHarnessProject(
+      harness.store,
+      "commanded-work",
+    );
+    const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+    const work = { commands: ["./request-build"] };
+    const created = await harness.authoring.createConfiguration({
+      partition,
+      authority,
+      revision,
+      canonical: canonicalConfigurationOf({
+        ...(JSON.parse(postgresHarnessConfiguration) as object),
+        work,
+      }),
+    });
+    assert.equal(created.created, "Created");
+    if (created.created !== "Created") return;
+    const read = await postgresPinnedConfigurations(pool).configuration(
+      partition,
+      {
+        configurationRevision: revision,
+        configurationDigest: created.revision.digest,
+      },
+    );
+    assert.equal(read.read, "Configuration");
+    if (read.read !== "Configuration") return;
+    assert.deepEqual(read.configuration.work, work);
   } finally {
     await pool.end();
     await harness.close();

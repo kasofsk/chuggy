@@ -19,7 +19,7 @@ import { workerPlaneUploadBytesMax } from "../../src/contract/http.ts";
 import { resultReportCharsMax } from "../../src/interpreter/resultManifest.ts";
 import {
   briefingLineCharsMax,
-  evaluationChecksMax,
+  commandLinesMax,
 } from "../../src/interpreter/taskConfiguration.ts";
 import { credentialScrub } from "./runEvidence.mjs";
 import {
@@ -250,9 +250,9 @@ test("the worker is written against the bounds the plane enforces", () => {
 test("the worst artifact a stage can produce is one the plane accepts", () => {
   const command = replacementCharacter.repeat(briefingLineCharsMax);
   const perCommand = Math.ceil(
-    workerCheckStageOutputCharsMax / evaluationChecksMax,
+    workerCheckStageOutputCharsMax / commandLinesMax,
   );
-  const checks = Array.from({ length: evaluationChecksMax }, () => ({
+  const checks = Array.from({ length: commandLinesMax }, () => ({
     command,
     exitStatus: null,
     signal: "SIGKILL",
