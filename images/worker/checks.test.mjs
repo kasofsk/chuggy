@@ -272,6 +272,28 @@ test("a stage handed no commands is a crashed run and never a pass", async () =>
   await assert.rejects(ran([]), /check stage was handed no commands to run/u);
 });
 
+/**
+ * Catches the narrowing being dropped: a stage's commands would again be handed
+ * the document that placed the pod, and with it the prose the stage was
+ * authored from.
+ */
+test("a stage's commands inherit the pod's environment but not the task document", async () => {
+  const placed = { CHUG_WORKER_TASK: "{}", CHUG_SESSION_TASK: "{}" };
+  const database = "postgres://postgres@127.0.0.1:5432/postgres";
+  Object.assign(process.env, placed, { CHUG_PG_URL: database });
+  try {
+    const { output } = await ran([
+      'printf "%s|%s|%s" "${CHUG_WORKER_TASK-unset}" ' +
+        '"${CHUG_SESSION_TASK-unset}" "${CHUG_PG_URL-unset}"',
+    ]);
+
+    assert.equal(output.checks[0].output, `unset|unset|${database}`);
+  } finally {
+    for (const name of [...Object.keys(placed), "CHUG_PG_URL"])
+      delete process.env[name];
+  }
+});
+
 test("each command runs in the workspace the stage was given", async () => {
   const { output } = await runChecks({ directory: "/" }, ["pwd"], {
     write: () => undefined,

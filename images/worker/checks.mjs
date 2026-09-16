@@ -12,6 +12,11 @@
  * passing stage then leaves behind is the entrypoint's, and is the one place
  * the kind is read.
  *
+ * A COMMAND INHERITS THE POD'S ENVIRONMENT, LESS THE TASK DOCUMENT. The pod is
+ * placed with the whole document in a variable, and a command that read it
+ * would be reading the prose its own stage was authored from; everything else
+ * the pod was given is what a gate expects to find, and is passed on whole.
+ *
  * THE FIRST FAILURE STOPS THE STAGE, and a command killed by a signal is a
  * failure like any other. What follows a command that did not exit cleanly
  * cannot be trusted to mean anything, so the commands after it do not run and
@@ -104,10 +109,26 @@ function checkPassed(outcome) {
   return outcome.exitStatus === 0;
 }
 
+/** The environment variables a launcher places a whole task document in. */
+const checkTaskDocuments = ["CHUG_WORKER_TASK", "CHUG_SESSION_TASK"];
+
+/**
+ * What the pod holds, less the document that placed it. Everything else stands,
+ * the attempt's own database among it.
+ */
+function checkCommandEnvironment(environment) {
+  return Object.fromEntries(
+    Object.entries(environment).filter(
+      ([name]) => !checkTaskDocuments.includes(name),
+    ),
+  );
+}
+
 /** One command's account: what ran, how it ended, and what it wrote. */
 async function runCheckCommand(command, room, services) {
   const child = services.spawnProcess("/bin/sh", ["-eu", "-c", command], {
     cwd: services.directory,
+    env: checkCommandEnvironment(process.env),
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";
