@@ -195,3 +195,24 @@ export interface ProjectStore {
    */
   fence(partition: Partition, lifecycle: Lifecycle): Promise<ProjectStanding>;
 }
+
+/**
+ * The administrative door that provisions a partition, narrower than
+ * `ProjectStore` because provisioning writes the row and reads nothing else.
+ *
+ * `writer` exists for the reason `RepositoryBindingAdministration`'s does: the
+ * `project` table grants INSERT to no runtime role, and a permission denied on
+ * a table says nothing about which identity a deployment should have named —
+ * so it is asked as a privilege rather than as a role name, because a
+ * deployment answering it with some other identity is answering it correctly.
+ */
+export interface ProjectProvisioning {
+  /** The identity the command connected as, and whether it may insert a partition. */
+  writer(): Promise<{ readonly role: string; readonly canInsert: boolean }>;
+
+  /** What the partition row says, or undefined when nothing provisioned it. */
+  standing(partition: Partition): Promise<ProjectStanding | undefined>;
+
+  /** Provisions an `Active` partition, absorbing a repeat on the composite key. */
+  create(partition: Partition): Promise<ProjectStanding>;
+}

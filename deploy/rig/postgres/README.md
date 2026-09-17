@@ -137,6 +137,33 @@ A ledger this checkout does not declare — a version it has never heard of, or
 one under another name — is a **could-not-run** that applies nothing and exits
 2. Both migration runners check the ledger before applying statements.
 
+## Create a project
+
+Nothing else in the estate provisions this row, and everything else presupposes
+it: a repository binding raises `repository binding project is absent` without
+one, a session is opened against a partition, and `GET /api/v1/projects` lists
+rows before the authority filters them — so a fresh installation whose console
+reports no project is reporting the truth.
+
+As `chuggy_owner`, over the same forwarded port, because the `project` table
+grants INSERT to no runtime role:
+
+```sh
+export CHUG_PROVISION_PROJECT_DATABASE_URL="$owner_url"
+export CHUG_PROVISION_PROJECT_TENANT="tenant"
+export CHUG_PROVISION_PROJECT_PROJECT="project"
+npm run provision:project
+```
+
+It reports `Provisioned` or `AlreadyProvisioned` and is safe to repeat: the
+write absorbs a repeat on the composite key. A partition whose lifecycle has
+moved past `Active` is refused instead, because provisioning does not revive
+one.
+
+This and the grant below are provisioned in either order — a tuple names an
+object rather than referencing a row — but a partition answers nobody until it
+has both.
+
 ## Grant a project access
 
 Not here any more. Access is a relation tuple in the authority rather than a

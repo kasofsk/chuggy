@@ -30,6 +30,7 @@
     "start:worker-plane": "node --experimental-strip-types src/roots/workerPlane.ts",
     "start:ticket-worker": "node --experimental-strip-types src/roots/ticketWorker.ts",
     "provision:forge-installation": "node --experimental-strip-types src/roots/provisionForgeInstallation.ts",
+    "provision:project": "node --experimental-strip-types src/roots/provisionProject.ts",
     "provision:project-access": "node --experimental-strip-types src/roots/provisionProjectAccess.ts",
     "provision:session": "node --experimental-strip-types src/roots/provisionAgentSession.ts",
     "bind:project-repository": "node --experimental-strip-types src/roots/bindProjectRepository.ts"
