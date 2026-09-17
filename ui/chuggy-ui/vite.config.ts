@@ -128,5 +128,14 @@ export default defineConfig({
     environment: "jsdom",
     execArgv: ["--no-experimental-webstorage"],
     include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
+    /**
+     * THE PER-TEST CAP IS SIZED FOR THE BUILDER, NOT A KEYBOARD: the roster
+     * also runs inside the worker image's build, where vitest runs the whole
+     * suite's files against each other on the profile's few CPUs, and the
+     * model walk past what a pane keeps went over vitest's default there
+     * while passing here in a fraction of it. What the cap is for is a test that
+     * hangs, and a hang is still caught at this one.
+     */
+    testTimeout: 60_000,
   },
 });
