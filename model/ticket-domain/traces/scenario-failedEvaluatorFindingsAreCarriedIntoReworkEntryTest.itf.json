@@ -1,0 +1,1 @@
+{"#meta":{"format":"ITF","format-description":"https://apalache-mc.org/docs/adr/015adr-trace.html","source":"ticket_tests.qnt","status":"ok","generator":"ticket-domain/export_traces.ts","kind":"scenario","scenario":"failedEvaluatorFindingsAreCarriedIntoReworkEntryTest"},"vars":[],"states":[{"#meta":{"index":0}}]}
