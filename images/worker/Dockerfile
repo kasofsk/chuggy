@@ -127,7 +127,12 @@ ENTRYPOINT ["node", "/usr/local/lib/chuggy/worker.mjs"]
 # THE PRACTICES THE TREE DECLARES ARE INSTALLED FOR THE IMAGE'S USER. An agent
 # here is told to invoke them by name, and `check-roster` refuses a tree whose
 # roster does not resolve, so the roster is read off the tree's own
-# `.claude/settings.json` rather than listed a second time here.
+# `.claude/settings.json` rather than listed a second time here. What is
+# pinned is the roster, not its content: CLAUDE.md states that a practice's
+# content is versioned outside this tree and moves without a commit here, and
+# the marketplace is fetched as a developer's machine fetches it. The listing
+# goes through a file so that a listing which fails is its own failure, rather
+# than a loop that read nothing and installed nothing.
 RUN --mount=type=bind,source=.claude/settings.json,target=/tmp/practices.json \
   node -e ' \
     const settings = require("/tmp/practices.json"); \
@@ -135,12 +140,14 @@ RUN --mount=type=bind,source=.claude/settings.json,target=/tmp/practices.json \
       console.log(`marketplace ${market.source.repo}`); \
     for (const [id, enabled] of Object.entries(settings.enabledPlugins ?? {})) \
       if (enabled === true) console.log(`plugin ${id}`); \
-  ' | while read -r kind name; do \
+  ' > /tmp/practices.txt \
+  && while read -r kind name; do \
        case "$kind" in \
        marketplace) claude plugin marketplace add "$name" || exit 1 ;; \
        plugin) claude plugin install "$name" || exit 1 ;; \
        esac; \
-     done
+     done < /tmp/practices.txt \
+  && rm /tmp/practices.txt
 
 # THE BUILD REFUSES AN IMAGE THAT CANNOT RUN THE GATES. Every attempt's Check
 # evaluation runs `.chug/tasks/ci.sh` inside this image, and the image a ticket
@@ -151,12 +158,24 @@ RUN --mount=type=bind,source=.claude/settings.json,target=/tmp/practices.json \
 # which is what makes the build depend on it. Nothing installed here ships: it
 # is a stage FROM the image, not the image.
 #
-# THE SERVER GATES ARE GIVEN SERVERS OF THE STAGE'S OWN, because a build has no
-# sidecars: Debian's PostgreSQL, started as the image's own user, and Ory Keto
-# from its release. The sqlite build of Keto is the one that runs, because
-# `dsn: memory` in `.chug/tasks/keto/keto.yml` is an in-memory sqlite, and the
-# release's own container image carries a binary linked against musl. The URLs
-# are the ones `_postgres.sh` and `_keto.sh` accept in place of a container.
+# WHAT THIS PROVES IS THE IMAGE, NOT THE POD. The server gates are given
+# servers of the stage's own, because a build has no sidecars: Debian's
+# PostgreSQL, started as the image's own user, and Ory Keto from its release.
+# The sqlite build of Keto is the one that runs, because `dsn: memory` in
+# `.chug/tasks/keto/keto.yml` is an in-memory sqlite, and the release's own
+# container image carries a binary linked against musl. The URLs are the ones
+# `_postgres.sh` and `_keto.sh` accept in place of a container. In a pod the
+# servers are the fabric's: its PostgreSQL sidecar reaches the gates as
+# `CHUG_PG_URL` through `postgres.mjs`, and nothing hands them a Keto yet
+# (kasofsk/chuggy#681), which a green build here does not say otherwise.
+#
+# THE SUITE BUDGET IS THE BUILD'S, NOT A LAPTOP'S. `ci.sh` bounds its shell
+# suites by default at figures chosen for a keyboard, and the whole set runs
+# close to that bound on a fast machine, so the bound is named here at what the
+# profile's hour affords; a build that reds on a slow builder for a reason that
+# is not the image is a control that gets bypassed. A server that does not
+# come up ends the stage with only the gate's could-not-run line, so the
+# servers' logs are printed on the way out.
 #
 # THE SERVER IS INITIALISED IN UTF-8 BY NAME. A build has no locale in its
 # environment, so `initdb` left to itself makes an SQL_ASCII cluster, under
@@ -196,11 +215,14 @@ RUN cd /workspace/tree \
     --message 'the tree this image is held to' \
   && npm ci \
   && CHUG_CI_FULL=1 \
+    CHUG_CI_SUITE_TIMEOUT_SECS=300 \
+    CHUG_CI_SUITES_BUDGET_SECS=900 \
     CHUG_PG_URL=postgres://postgres@127.0.0.1:5432/postgres \
     CHUG_KETO_READ_URL=http://127.0.0.1:4466/ \
     CHUG_KETO_WRITE_URL=http://127.0.0.1:4467/ \
     ./.chug/tasks/ci.sh \
-  && touch /workspace/roster-clean
+  && touch /workspace/roster-clean \
+  || { tail -n 50 /tmp/postgres.log /tmp/keto.log; exit 1; }
 
 # The image is the worker stage and nothing the roster stage added. The bind is
 # what makes the build refuse to finish without the roster's verdict, and it
