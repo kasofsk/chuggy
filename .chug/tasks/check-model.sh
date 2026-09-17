@@ -1,6 +1,8 @@
 #!/bin/sh
-# The model gate. Typechecks every Quint module, runs the unit suite, the
-# adopted ticket suites.
+# The model gate. Typechecks every Quint module this tree holds and runs the
+# suite over them. The adopted ticket machine's models are proved in
+# `@kasofsk/chug-ticket-domain` and are not carried here, so this gate says
+# nothing about them.
 #
 # Quint is pinned in package.json, and the local binary wins over anything on
 # PATH: a verdict that depends on which version happens to be installed is not

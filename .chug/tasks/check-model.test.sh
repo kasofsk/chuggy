@@ -33,21 +33,16 @@ ln -sf "$(command -v git)" "$GITBIN/git"
 # gate reads is what a caller's environment would have made of it.
 model_repo() { # <quint-version>
 	rm -rf "$R"
-	mkdir -p "$R/model/ticket-domain" "$R/node_modules/.bin"
+	mkdir -p "$R/model/application/project-decision-processing" "$R/node_modules/.bin"
 	git -C "$R" init -q -b main
 	git -C "$R" config user.email t@example.com
 	git -C "$R" config user.name t
-	: > "$R/model/ticket-domain/ticket_tests.qnt"
+	: > "$R/model/application/project-decision-processing/processing_tests.qnt"
 	: > "$R/model/identity.qnt"
 	cat > "$R/node_modules/.bin/quint" <<STUB
 #!/bin/sh
 if [ "\$1" = "--version" ]; then echo "$1"; exit 0; fi
 sub="\$1"
-if [ "\$sub" = test ] && [ "\${STUB_TICKET_FAILURE-0}" = 1 ]; then
-  case "\$*" in
-    *model/ticket-domain/ticket_tests.qnt*) echo '  1 failed'; exit 1 ;;
-  esac
-fi
 if [ "\$sub" = test ] && [ "\${STUB_PROCESSING_FAILURE-0}" = 1 ]; then
   case "\$*" in
     *model/application/project-decision-processing/processing_tests.qnt*) echo '  1 failed'; exit 1 ;;
@@ -81,18 +76,11 @@ run_in_repo() {
 }
 
 # THE COVERAGE FIGURE. The gate calls `quint test` once per model suite; the
-# stub reports one passing test for each, so
-# the total the success line prints is a fixture size this suite knows.
+# stub reports one passing test for each, so the total the success line prints
+# is a fixture size this suite knows.
 model_repo 0.32.0
 run_in_repo
-check "a clean model run exits 0" 0 "$RC" "0 failure(s), 2 test(s) run"
-
-model_repo 0.32.0
-STUB_TICKET_FAILURE=1
-export STUB_TICKET_FAILURE
-run_in_repo
-unset STUB_TICKET_FAILURE
-check "an adopted ticket model failure rejects the gate" 1 "$RC" "model/ticket-domain/ticket_tests.qnt failed"
+check "a clean model run exits 0" 0 "$RC" "0 failure(s), 1 test(s) run"
 
 model_repo 0.32.0
 STUB_PROCESSING_FAILURE=1
@@ -118,7 +106,7 @@ FORCE_COLOR=1
 export FORCE_COLOR
 run_in_repo
 unset FORCE_COLOR
-check "a caller's FORCE_COLOR does not hide a suite that ran" 0 "$RC" "2 test(s) run"
+check "a caller's FORCE_COLOR does not hide a suite that ran" 0 "$RC" "1 test(s) run"
 
 # A SUITE THAT SELECTED NOTHING IS NOT A SUITE THAT PASSED. Quint runs only the
 # names its match selects and exits 0 when that is none of them, so a renamed
