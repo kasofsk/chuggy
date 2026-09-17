@@ -8,7 +8,13 @@ import {
   type NativeHttpLimits,
   type NativeTicketApplication,
 } from "../../src/adapters/http/server.ts";
-import { TicketGraph } from "../../src/domain/chuggernaut/ticket.js";
+import {
+  Pending,
+  Ticket,
+  TicketGraph,
+} from "../../src/domain/chuggernaut/ticket.js";
+import { released } from "../chuggernaut/domain/testing.js";
+import { TicketId } from "../../src/domain/chuggernaut/task.js";
 import {
   asPrincipal,
   type NativeWeb,
@@ -470,6 +476,8 @@ function retiredTicketApp(
             ? { result: "Authorized", value: new TicketGraph(new Map()) }
             : { result },
         ),
+      definition: unavailable,
+      validate: unavailable,
       outcome: unavailable,
       create: unavailable,
       update: unavailable,
@@ -480,7 +488,7 @@ function retiredTicketApp(
   };
 }
 
-function retiredRouteApp(result: Parameters<typeof retiredTicketApp>[0]) {
+function adoptedTicketRouteApp(service: NativeTicketApplication) {
   return createNativeHttpApp(
     fakeWeb([]),
     {
@@ -495,8 +503,12 @@ function retiredRouteApp(result: Parameters<typeof retiredTicketApp>[0]) {
     undefined,
     undefined,
     undefined,
-    retiredTicketApp(result),
+    service,
   );
+}
+
+function retiredRouteApp(result: Parameters<typeof retiredTicketApp>[0]) {
+  return adoptedTicketRouteApp(retiredTicketApp(result));
 }
 
 test("retired lifecycle routes authorize before refusing legacy and fresh projects", async () => {
@@ -552,22 +564,7 @@ test("adopted authoring forwards YAML and pinned catalog identity", async () => 
       },
     },
   };
-  await using app = createNativeHttpApp(
-    fakeWeb([]),
-    {
-      authenticateBearer: () =>
-        Promise.resolve({
-          authenticated: "Bearer",
-          bearer: { principal: asPrincipal("member") },
-        }),
-    },
-    { ready: () => Promise.resolve(true) },
-    authority,
-    undefined,
-    undefined,
-    undefined,
-    application,
-  );
+  await using app = adoptedTicketRouteApp(application);
   const source = "title: Example\nwork: implement\n";
   const response = await app.inject({
     method: "POST",
@@ -595,4 +592,103 @@ test("adopted authoring forwards YAML and pinned catalog identity", async () => 
       repository: "github.com/acme/atlas",
     },
   ]);
+});
+
+test("a ticket point read carries the authored source beside its revision", async () => {
+  const service = retiredTicketApp("Fresh");
+  const held = new Ticket(released(TicketId(4)), 3, 0, new Pending());
+  const application: NativeTicketApplication = {
+    ...service,
+    application: {
+      ...service.application,
+      definition: (_principal, _partition, ticket) =>
+        Promise.resolve(
+          ticket === 4
+            ? {
+                result: "Authorized",
+                value: { held, source: "title: kept\n" },
+              }
+            : { result: "Authorized", value: undefined },
+        ),
+    },
+  };
+  await using app = adoptedTicketRouteApp(application);
+  const found = await app.inject({
+    method: "GET",
+    url: "/api/v1/tenants/acme/projects/atlas/ticket-machine/tickets/4",
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(found.statusCode, 200, found.body);
+  assert.deepEqual(found.json(), {
+    ticket: 4,
+    revision: 3,
+    workCyclesStarted: 0,
+    state: "Pending",
+    dependencies: [],
+    source: "title: kept\n",
+  });
+  const missing = await app.inject({
+    method: "GET",
+    url: "/api/v1/tenants/acme/projects/atlas/ticket-machine/tickets/5",
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(missing.statusCode, 404);
+});
+
+test("validation answers with findings and never reaches authoring", async () => {
+  const service = retiredTicketApp("Fresh");
+  const requests: unknown[] = [];
+  const application: NativeTicketApplication = {
+    ...service,
+    application: {
+      ...service.application,
+      validate: (_principal, request) => {
+        requests.push(request);
+        return Promise.resolve({
+          result: "Authorized",
+          value: {
+            valid: false,
+            findings: ["catalog document must be a mapping"],
+          },
+        });
+      },
+    },
+  };
+  await using app = adoptedTicketRouteApp(application);
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/tenants/acme/projects/atlas/ticket-machine/tickets/validate",
+    headers: {
+      authorization: "Bearer valid",
+      "content-type": "application/yaml",
+      "x-chug-catalog-commit": "a".repeat(40),
+    },
+    payload: "not a ticket",
+  });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.deepEqual(response.json(), {
+    valid: false,
+    findings: ["catalog document must be a mapping"],
+  });
+  assert.deepEqual(requests, [
+    {
+      partition: { tenant: "acme", project: "atlas" },
+      source: "not a ticket",
+      catalogCommit: "a".repeat(40),
+    },
+  ]);
+});
+
+test("validation still demands the pinned catalog identity", async () => {
+  await using app = adoptedTicketRouteApp(retiredTicketApp("Fresh"));
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/tenants/acme/projects/atlas/ticket-machine/tickets/validate",
+    headers: {
+      authorization: "Bearer valid",
+      "content-type": "application/yaml",
+    },
+    payload: "title: Example\n",
+  });
+  assert.equal(response.statusCode, 400);
 });

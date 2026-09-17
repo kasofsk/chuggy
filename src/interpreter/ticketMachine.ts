@@ -18,6 +18,8 @@ export interface TicketMachineReleaseMetadata {
   readonly stageNames: readonly (readonly [number, string])[];
   readonly evaluatorNames: readonly (readonly [number, string])[];
   readonly reworkLimit: number | null;
+  /** The content holding the authored YAML, absent for a release recorded before it was retained. */
+  readonly source?: number | undefined;
 }
 
 export interface TicketMachineInput {

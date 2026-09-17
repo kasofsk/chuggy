@@ -37,12 +37,20 @@ export type TicketApplicationSubmission =
     };
 export type TicketApplicationInbox = TicketMachineInbox;
 
+export interface PinnedTicketCatalogSelection {
+  readonly partition: Partition;
+  readonly repository?: RepositoryId;
+  readonly commit: GitObjectId;
+}
+
 export interface PinnedTicketCatalogs {
-  catalog(input: {
-    readonly partition: Partition;
-    readonly repository?: RepositoryId;
-    readonly commit: GitObjectId;
-  }): Promise<TicketCatalog | undefined>;
+  catalog(
+    selection: PinnedTicketCatalogSelection,
+  ): Promise<TicketCatalog | undefined>;
+  /** The same catalog over throwaway content, so validating a draft persists nothing. */
+  draft(
+    selection: PinnedTicketCatalogSelection,
+  ): Promise<TicketCatalog | undefined>;
 }
 
 export interface TicketGraphRead {
@@ -80,11 +88,38 @@ export interface TicketDispatchRequest extends TicketActionRequest {
   readonly commit: string;
 }
 
+export interface TicketValidationRequest {
+  readonly partition: Partition;
+  readonly source: string;
+  readonly catalogCommit: GitObjectId;
+  readonly repository?: RepositoryId;
+}
+
+export interface TicketValidation {
+  readonly valid: boolean;
+  readonly findings: readonly string[];
+}
+
+export interface TicketDefinitionRead {
+  readonly held: ticket.Ticket;
+  /** Absent when the release predates source retention, since nothing can reconstruct it. */
+  readonly source: string | undefined;
+}
+
 export interface TicketApplication {
   graph(
     principal: Principal,
     partition: Partition,
   ): Promise<TicketApplicationResult<ticket.TicketGraph>>;
+  definition(
+    principal: Principal,
+    partition: Partition,
+    held: task.TicketId,
+  ): Promise<TicketApplicationResult<TicketDefinitionRead | undefined>>;
+  validate(
+    principal: Principal,
+    request: TicketValidationRequest,
+  ): Promise<TicketApplicationResult<TicketValidation>>;
   outcome(
     principal: Principal,
     partition: Partition,
@@ -154,6 +189,7 @@ async function ticketApplicationAuthority(
 
 function ticketApplicationMetadata(
   release: TicketCatalogRelease,
+  source: task.ContentRef,
 ): TicketReleaseMetadata {
   return {
     stageNames: [...release.stageNames].map(([key, name]) => [key, name]),
@@ -162,12 +198,14 @@ function ticketApplicationMetadata(
       name,
     ]),
     reworkLimit: release.reworkLimit,
+    source,
   };
 }
 
 function ticketApplicationUpdateMetadata(
   release: TicketCatalogRelease,
   frozen: TicketReleaseMetadata,
+  source: task.ContentRef,
 ): TicketReleaseMetadata | TicketApplicationSubmission {
   if (release.reworkLimitDeclared && release.reworkLimit !== frozen.reworkLimit)
     return {
@@ -179,8 +217,20 @@ function ticketApplicationUpdateMetadata(
           : `rework_limit must remain ${String(frozen.reworkLimit)}`,
     };
   return {
-    ...ticketApplicationMetadata(release),
+    ...ticketApplicationMetadata(release, source),
     reworkLimit: frozen.reworkLimit,
+  };
+}
+
+function ticketApplicationSelection(
+  request: TicketAuthoringRequest | TicketValidationRequest,
+): PinnedTicketCatalogSelection {
+  return {
+    partition: request.partition,
+    commit: request.catalogCommit,
+    ...(request.repository === undefined
+      ? {}
+      : { repository: request.repository }),
   };
 }
 
@@ -188,13 +238,17 @@ async function ticketApplicationCatalog(
   ports: TicketApplicationPorts,
   request: TicketAuthoringRequest,
 ): Promise<TicketCatalog | undefined> {
-  return ports.catalogs.catalog({
-    partition: request.partition,
-    commit: request.catalogCommit,
-    ...(request.repository === undefined
-      ? {}
-      : { repository: request.repository }),
-  });
+  return ports.catalogs.catalog(ticketApplicationSelection(request));
+}
+
+/** The authored text the machine never sees, kept beside the release it produced. */
+function ticketApplicationSource(
+  ports: TicketApplicationPorts,
+  request: TicketAuthoringRequest,
+): Promise<task.ContentRef> {
+  return ports
+    .content(request.partition)
+    .put("application/yaml", request.source);
 }
 
 async function ticketApplicationSubmit(
@@ -219,6 +273,69 @@ async function ticketApplicationSubmit(
   )
     return { result: "NotFound" };
   return { result: "Authorized", value: submitted };
+}
+
+/** Any positive identity releases the same document, and a draft release is discarded. */
+const ticketValidationIdentity = task.TicketId(1);
+
+function ticketApplicationFinding(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function ticketApplicationValidate(
+  ports: TicketApplicationPorts,
+): TicketApplication["validate"] {
+  return async (principal, request) => {
+    const authorization = await ticketApplicationAuthority(
+      ports,
+      principal,
+      request.partition,
+      "Mutate",
+    );
+    if (authorization === undefined) return { result: "NotFound" };
+    const catalog = await ports.catalogs.draft(
+      ticketApplicationSelection(request),
+    );
+    if (catalog === undefined) return { result: "NotFound" };
+    try {
+      await catalog.release(ticketValidationIdentity, request.source);
+      return { result: "Authorized", value: { valid: true, findings: [] } };
+    } catch (error) {
+      return {
+        result: "Authorized",
+        value: { valid: false, findings: [ticketApplicationFinding(error)] },
+      };
+    }
+  };
+}
+
+function ticketApplicationDefinition(
+  ports: TicketApplicationPorts,
+): TicketApplication["definition"] {
+  return async (principal, partition, held) => {
+    const authorization = await ticketApplicationAuthority(
+      ports,
+      principal,
+      partition,
+      "Read",
+    );
+    if (authorization === undefined) return { result: "NotFound" };
+    const graph = await ports.graphs.read(partition);
+    if (graph === undefined) return { result: "NotFound" };
+    if (graph === "LegacyModelUnsupported") return { result: graph };
+    const found = graph.tickets.get(held);
+    if (found === undefined) return { result: "Authorized", value: undefined };
+    const metadata = await ports.inbox.releaseMetadata(partition, held);
+    const reference = metadata?.source;
+    const stored =
+      reference === undefined
+        ? undefined
+        : await ports.content(partition).read(task.ContentRef(reference));
+    return {
+      result: "Authorized",
+      value: { held: found, source: stored?.content },
+    };
+  };
 }
 
 function ticketApplicationReads(
@@ -305,7 +422,10 @@ function ticketApplicationCreate(
       request,
       authorization,
       new ticket.CreateTicket(release.definition),
-      ticketApplicationMetadata(release),
+      ticketApplicationMetadata(
+        release,
+        await ticketApplicationSource(ports, request),
+      ),
     );
   };
 }
@@ -334,7 +454,11 @@ function ticketApplicationUpdate(
       request.ticket,
     );
     if (frozen === undefined) return { result: "NotFound" };
-    const metadata = ticketApplicationUpdateMetadata(release, frozen);
+    const metadata = ticketApplicationUpdateMetadata(
+      release,
+      frozen,
+      await ticketApplicationSource(ports, request),
+    );
     if ("accepted" in metadata)
       return { result: "Authorized", value: metadata };
     return ticketApplicationSubmit(
@@ -411,6 +535,8 @@ export function ticketApplication(
 ): TicketApplication {
   return {
     ...ticketApplicationReads(ports),
+    definition: ticketApplicationDefinition(ports),
+    validate: ticketApplicationValidate(ports),
     create: ticketApplicationCreate(ports),
     update: ticketApplicationUpdate(ports),
     dispatch: ticketApplicationDispatch(ports),

@@ -20,6 +20,7 @@ import type { ForgeCredentialMinting } from "../../interpreter/forgeCredentials.
 import type { RepositoryOnboarding } from "../../interpreter/repositoryOnboarding.ts";
 import type { TicketApplication } from "../../interpreter/ticketApplication.ts";
 import { TicketId as AdoptedTicketId } from "../../domain/chuggernaut/task.js";
+import type { Ticket as AdoptedTicket } from "../../domain/chuggernaut/ticket.js";
 import { asGitObjectId, asRepositoryId } from "../../interpreter/finalizer.ts";
 import { encode as encodeChuggernaut } from "../../interpreter/codec.ts";
 import { nativeHttpContractDocument } from "../../contract/document.ts";
@@ -996,18 +997,74 @@ function registerAdoptedTicketReads(
     }
     void reply.code(200).send({
       tickets: [...result.value.tickets.values()]
-        .map((held) => ({
-          ticket: held.definition.id,
-          revision: held.revision,
-          workCyclesStarted: held.work_cycles_started,
-          state: held.state.kind,
-          dependencies: [...held.definition.dependencies].sort(
-            (left, right) => left - right,
-          ),
-        }))
+        .map(adoptedTicketView)
         .sort((left, right) => left.ticket - right.ticket),
     });
   });
+  app.get(`${root}/:ticket`, async (request, reply) => {
+    const result = await service.application.definition(
+      principalOf(request),
+      partitionOf(request),
+      adoptedTicketNumber(request),
+    );
+    if (result.result !== "Authorized") {
+      adoptedTicketReply(reply, result);
+      return;
+    }
+    if (result.value === undefined) {
+      void reply
+        .code(404)
+        .send(nativeHttpError("NotFound", "Ticket not found."));
+      return;
+    }
+    void reply.code(200).send({
+      ...adoptedTicketView(result.value.held),
+      /** Null rather than absent, so a release predating source retention still reads. */
+      source: result.value.source ?? null,
+    });
+  });
+}
+
+function adoptedTicketView(held: AdoptedTicket) {
+  return {
+    ticket: held.definition.id,
+    revision: held.revision,
+    workCyclesStarted: held.work_cycles_started,
+    state: held.state.kind,
+    dependencies: [...held.definition.dependencies].sort(
+      (left, right) => left - right,
+    ),
+  };
+}
+
+function registerAdoptedTicketValidation(
+  app: FastifyInstance,
+  service: NativeTicketApplication,
+): void {
+  app.post(
+    "/api/v1/tenants/:tenant/projects/:project/ticket-machine/tickets/validate",
+    async (request, reply) => {
+      if (typeof request.body !== "string")
+        throw new TypeError("ticket body must be YAML text");
+      const catalogCommit = request.headers["x-chug-catalog-commit"];
+      if (typeof catalogCommit !== "string")
+        throw new TypeError("X-Chug-Catalog-Commit is required");
+      const repository = request.headers["x-chug-repository"];
+      const result = await service.application.validate(principalOf(request), {
+        partition: partitionOf(request),
+        source: request.body,
+        catalogCommit: asGitObjectId(catalogCommit),
+        ...(typeof repository === "string"
+          ? { repository: asRepositoryId(repository) }
+          : {}),
+      });
+      if (result.result !== "Authorized") {
+        adoptedTicketReply(reply, result);
+        return;
+      }
+      void reply.code(200).send(result.value);
+    },
+  );
 }
 
 function registerAdoptedTicketAuthoring(
@@ -1109,6 +1166,7 @@ function registerAdoptedTickets(
   service: NativeTicketApplication,
 ): void {
   registerAdoptedTicketReads(app, service);
+  registerAdoptedTicketValidation(app, service);
   registerAdoptedTicketAuthoring(app, service);
   registerAdoptedTicketActions(app, service);
 }

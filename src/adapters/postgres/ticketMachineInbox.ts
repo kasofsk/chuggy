@@ -52,6 +52,7 @@ const metadata = z.strictObject({
     z.tuple([z.number().int().positive().safe(), z.string().min(1)]),
   ),
   reworkLimit: z.number().int().nonnegative().safe().nullable(),
+  source: z.number().int().positive().safe().optional(),
 });
 
 interface SubmissionRow {

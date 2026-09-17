@@ -19,7 +19,11 @@ import {
 } from "../../src/interpreter/operationInbox.ts";
 import { asTenantId, asProjectId } from "../../src/interpreter/projectStore.ts";
 import { asGitObjectId } from "../../src/interpreter/finalizer.ts";
-import { TicketGraph } from "../../src/domain/chuggernaut/ticket.js";
+import {
+  Pending,
+  Ticket,
+  TicketGraph,
+} from "../../src/domain/chuggernaut/ticket.js";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -50,6 +54,8 @@ function setup(
   frozen = 3,
   availability:
     "Available" | "LegacyModelUnsupported" | "Inactive" = "Available",
+  graph = new TicketGraph(new Map()),
+  stored: string | undefined = undefined,
 ) {
   const submitted: TicketMachineInput[] = [];
   const inbox: TicketApplicationInbox = {
@@ -65,10 +71,11 @@ function setup(
         stageNames: [[1, "old review"]],
         evaluatorNames: [[2, "old ci"]],
         reworkLimit: frozen,
+        source: 11,
       }),
   };
   let content = 0;
-  const effects = { catalogs: 0, content: 0 };
+  const effects = { catalogs: 0, content: 0, drafts: 0 };
   const application = ticketApplication({
     access: {
       authorize: (_principal, _partition, operation) =>
@@ -87,7 +94,7 @@ function setup(
       read: () =>
         Promise.resolve(
           availability === "Available"
-            ? new TicketGraph(new Map())
+            ? graph
             : availability === "Inactive"
               ? undefined
               : availability,
@@ -100,13 +107,29 @@ function setup(
           release: (identity) => catalogRelease(identity, release),
         });
       },
+      draft: () => {
+        effects.drafts += 1;
+        return Promise.resolve({
+          release: (identity, document) =>
+            document === "ticket"
+              ? catalogRelease(identity, release)
+              : Promise.reject(
+                  new TypeError("catalog document must be a mapping"),
+                ),
+        });
+      },
     },
     content: () => ({
       put: () => {
         effects.content += 1;
         return Promise.resolve(ContentRef(++content));
       },
-      read: () => Promise.resolve(undefined),
+      read: () =>
+        Promise.resolve(
+          stored === undefined
+            ? undefined
+            : { mediaType: "application/yaml", content: stored },
+        ),
     }),
   });
   return { application, submitted, effects };
@@ -131,6 +154,7 @@ test("create reserves an identity and submits the frozen catalog release", async
     stageNames: [[1, "review"]],
     evaluatorNames: [[2, "ci"]],
     reworkLimit: 3,
+    source: 1,
   });
 });
 
@@ -217,7 +241,7 @@ test("update and dispatch stop before side effects when the project is unavailab
         : "NotFound";
     assert.deepEqual(update, { result });
     assert.deepEqual(dispatch, { result });
-    assert.deepEqual(effects, { catalogs: 0, content: 0 });
+    assert.deepEqual(effects, { catalogs: 0, content: 0, drafts: 0 });
     assert.equal(submitted.length, 0);
   }
 });
@@ -252,5 +276,62 @@ test("operation reads reject legacy projects after authorization", async () => {
   assert.deepEqual(
     await current.application.outcome(principal, partition, "id"),
     { result: "Authorized", value: undefined },
+  );
+});
+
+test("a definition read returns the held ticket beside its retained source", async () => {
+  const held = new Ticket(released(TicketId(7)), 2, 0, new Pending());
+  const { application } = setup(
+    true,
+    undefined,
+    undefined,
+    "Available",
+    new TicketGraph(new Map([[TicketId(7), held]])),
+    "title: kept\n",
+  );
+  assert.deepEqual(
+    await application.definition(principal, partition, TicketId(7)),
+    { result: "Authorized", value: { held, source: "title: kept\n" } },
+  );
+  assert.deepEqual(
+    await application.definition(principal, partition, TicketId(8)),
+    { result: "Authorized", value: undefined },
+  );
+});
+
+test("validation reports findings over draft content and writes nothing", async () => {
+  const { application, effects, submitted } = setup();
+  assert.deepEqual(
+    await application.validate(principal, {
+      partition,
+      source: "ticket",
+      catalogCommit: commit,
+    }),
+    { result: "Authorized", value: { valid: true, findings: [] } },
+  );
+  assert.deepEqual(
+    await application.validate(principal, {
+      partition,
+      source: "not a ticket",
+      catalogCommit: commit,
+    }),
+    {
+      result: "Authorized",
+      value: { valid: false, findings: ["catalog document must be a mapping"] },
+    },
+  );
+  assert.deepEqual(effects, { catalogs: 0, content: 0, drafts: 2 });
+  assert.equal(submitted.length, 0);
+});
+
+test("validation refuses a principal that may not author", async () => {
+  const { application } = setup(false);
+  assert.deepEqual(
+    await application.validate(principal, {
+      partition,
+      source: "ticket",
+      catalogCommit: commit,
+    }),
+    { result: "NotFound" },
   );
 });
