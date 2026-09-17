@@ -45,20 +45,32 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
   && curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
     --location https://just.systems/install.sh \
     | bash -s -- --to /usr/local/bin \
+# ONE INSTALL, BECAUSE BOTH HALVES LAND IN THE SAME DIRECTORY. `npm root -g`
+# here is /usr/local/lib/node_modules, which is where `NODE_PATH` below points
+# and also what `npm install --prefix /usr/local/lib` writes to. A second
+# install into a directory npm treats as a project reconciles that directory
+# against its own dependency list, so it removed the agents the first install
+# had just put there. Installed together, npm reconciles once with every
+# package named, and the libraries the worker resolves through `NODE_PATH` sit
+# beside the executables the agents ship.
+#
 # THE AGENT IS NAMED TO --allow-scripts BECAUSE ITS BINARY IS WRITTEN BY ONE.
-# npm no longer runs a dependency's install scripts unless it is asked to, and
+# npm does not run a dependency's install script unless asked, and
 # `@anthropic-ai/claude-code` creates `claude` from its own postinstall -- so
 # without this the install exits clean, warns that the script was not covered,
 # and leaves no `claude` on PATH. The package is named rather than scripts
-# allowed wholesale: it is the one package in either install that has any.
-#   docker run --rm <the base above> npm --version
-# is the npm this is about, and `claude --version` below is what catches it.
+# allowed wholesale: npm reports it as the only one here that has any.
+#
+# `claude --version` and `codex --version` below are what catch either failure,
+# and they catch it at build rather than at the first attempt that wants an
+# agent. Nothing checks @cursorless/tree-sitter-wasms the same way: it ships
+# wasm files and declares no entry point, so there is nothing to run and
+# `require.resolve` on it fails whether or not it is there.
   && npm install --global --allow-scripts=@anthropic-ai/claude-code \
     "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     "@anthropic-ai/claude-agent-sdk@${AGENT_SDK_VERSION}" \
     "zod@${ZOD_VERSION}" \
     "@openai/codex@${CODEX_VERSION}" \
-  && npm install --prefix /usr/local/lib --omit=dev \
     "ajv@${AJV_VERSION}" \
     "@cursorless/tree-sitter-wasms@${TREE_SITTER_WASMS_VERSION}" \
     "prismjs@${PRISM_VERSION}" \
