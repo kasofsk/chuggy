@@ -18,12 +18,12 @@ suites:
         CHUG_CI_SHELL_SUITES=0 sh "$s"
     done
 # Release HEAD to the rig: gate it, build and publish what changed, and open
-# the chuggy-fabric pull request that selects it. `just deploy-to-gtr --merge`
-# lands that pull request and watches the rollout, and `just deploy-to-gtr
+# the chuggy-fabric pull request that selects it. `just deploy-to-rig --merge`
+# lands that pull request and watches the rollout, and `just deploy-to-rig
 # --console` does both in one run for a release that moves only the console.
 # The script's header is the procedure and names what it needs.
-deploy-to-gtr *ARGS:
-    ./deploy/rig/deploy-to-gtr.sh {{ ARGS }}
+deploy-to-rig *ARGS:
+    ./deploy/rig/deploy-to-rig.sh {{ ARGS }}
 
 # The console of a running installation, served from this machine, so a change
 # to it is a reload rather than a release. `ui/chuggy-ui/dev/README.md` is the

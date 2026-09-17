@@ -1,5 +1,5 @@
 #!/bin/sh
-# Shell test for deploy-to-gtr.sh, over what it decides and no more: what it
+# Shell test for deploy-to-rig.sh, over what it decides and no more: what it
 # refuses before touching anything, which images a change rebuilds, that a
 # digest comes from the registry's answer and not the push, what the fabric
 # change carries, and what `--merge` requires of the cluster before and after
@@ -15,12 +15,12 @@
 # defect wearing the other face, so each refusal has a case where the thing
 # being checked is there and the run goes on.
 #
-# Run:  ./deploy/rig/deploy-to-gtr.test.sh
+# Run:  ./deploy/rig/deploy-to-rig.test.sh
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/../../.chug/tasks/_suite.sh"
-SUT="$HERE/deploy-to-gtr.sh"
+SUT="$HERE/deploy-to-rig.sh"
 
 BIN="$WORK/bin"
 NOBIN="$WORK/nobin"
@@ -121,7 +121,20 @@ set -u
 printf 'gh %s\n' "$*" >>"$CHUG_STUB_LOG"
 case "$1 $2" in
 'repo clone')
-	git clone -q "$CHUG_STUB_FABRIC" "$4"
+	# The base is read off the command line rather than ignored: a stub that
+	# dropped --branch would let a case about which branch is live pass while
+	# the real clone took the default one.
+	base=""
+	prev=""
+	for word in "$@"; do
+		[ "$prev" = "--branch" ] && base="$word"
+		prev="$word"
+	done
+	if [ -n "$base" ]; then
+		git clone -q --branch "$base" "$CHUG_STUB_FABRIC" "$4" || exit 1
+	else
+		git clone -q "$CHUG_STUB_FABRIC" "$4"
+	fi
 	# A clone whose pushes go where this identity may not write.
 	[ -z "${CHUG_STUB_PUSH_DENIED:-}" ] || git -C "$4" remote set-url --push origin "$CHUG_STUB_PUSH_DENIED"
 	;;
@@ -179,7 +192,7 @@ printf 'build-and-import %s tag=%s prefix=%s\n' "$*" "${CHUG_IMAGE_TAG:-}" "${CH
 exit "${CHUG_STUB_BUILD_RC:-0}"
 STUB
 chmod +x "$REPO/.chug/tasks/ci.sh" "$REPO/deploy/rig/images/build-and-import.sh"
-cp "$SUT" "$REPO/deploy/rig/deploy-to-gtr.sh"
+cp "$SUT" "$REPO/deploy/rig/deploy-to-rig.sh"
 git -C "$REPO" add -A
 git -C "$REPO" commit -qm deployed
 git -C "$REPO" push -q origin main
@@ -247,6 +260,7 @@ fresh_case() {
 	unset CHUG_STUB_WORKER_PODS CHUG_STUB_SESSION_PODS CHUG_STUB_UNLABELLED_PODS CHUG_STUB_WORK_PODS_RC
 	unset CHUG_STUB_MERGE_RC CHUG_STUB_MERGED CHUG_STUB_JOB_RC CHUG_STUB_ROLLOUT_RC CHUG_STUB_STALE CHUG_STUB_BRANCH
 	unset CHUG_STUB_DUMP CHUG_STUB_NODE_RC CHUG_STUB_PUSH_DENIED
+	unset CHUG_FABRIC_BASE CHUG_RELEASE_REF
 	export CHUG_RIG_SSH=nobody@no-such-host
 	export CHUG_STUB_DIGEST="$NEW"
 }
@@ -272,6 +286,9 @@ rig_at() { # <short commit>
 	git -C "$WORK/rig-at" config user.email t@example.com
 	git -C "$WORK/rig-at" config user.name t
 	for name in $(ls "$WORK/rig-at/cluster/apps"); do
+		# `sed -i` takes its backup suffix as a separate word on GNU and as
+		# part of the flag on BSD; `-i.bak` is the one spelling both read the
+		# same way, so the suite runs on a developer's machine and on the rig.
 		sed -i.bak "s|source-commit: $DEPLOYED|source-commit: $1|; s|chuggy-migrate-$DEPLOYED-|chuggy-migrate-$1-|" "$WORK/rig-at/cluster/apps/$name"
 		rm -f "$WORK/rig-at/cluster/apps/$name.bak"
 	done
@@ -286,7 +303,7 @@ run() { # <argument...>
 		cd "$REPO" || exit 2
 		PATH="$BIN:$PATH" CHUG_STUB_LOG="$LOG" CHUG_STUB_FABRIC="$FABRIC_GIT" \
 			CHUG_STUB_STALE_DIGEST="$STALE" \
-			sh "$REPO/deploy/rig/deploy-to-gtr.sh" "$@"
+			sh "$REPO/deploy/rig/deploy-to-rig.sh" "$@"
 	) >"$OUT" 2>&1
 	RC=$?
 	set -e
@@ -343,6 +360,56 @@ git -C "$REPO" commit -qam "not pushed"
 run
 check "a HEAD main does not have is refused" 2 "$RC" "HEAD is not on origin/main"
 check "an unpushed HEAD builds nothing" 2 "$RC" "builds attempted: 0"
+
+# A SECOND RIG FOLLOWS A REF OF ITS OWN, AND NAMING ONE IS NOT WIDENING THE
+# PRODUCTION PATH. The default is still origin/main and still refuses -- the
+# case above is what holds that. These are about what happens when a caller
+# states a different one, which is how a box brought up to try a branch takes
+# a commit main does not have.
+
+fresh_case
+printf 'local\n' >>"$REPO/src/a.ts"
+git -C "$REPO" commit -qam "not pushed"
+CHUG_RELEASE_REF=main run
+check "a release ref naming no remote is refused" 2 "$RC" "must name a remote and a branch"
+check "a malformed release ref builds nothing" 2 "$RC" "builds attempted: 0"
+
+fresh_case
+printf 'local\n' >>"$REPO/src/a.ts"
+git -C "$REPO" commit -qam "no such ref"
+CHUG_RELEASE_REF=origin/nowhere run
+check "a release ref that does not exist could not be run" 2 "$RC" "origin/nowhere could not be fetched"
+
+# The ref exists and does not carry HEAD, which is the refusal proper rather
+# than the fetch failing above it.
+fresh_case
+git -C "$REPO" push -q -f origin "HEAD:refs/heads/trial"
+printf 'local\n' >>"$REPO/src/a.ts"
+git -C "$REPO" commit -qam "not on the trial ref"
+CHUG_RELEASE_REF=origin/trial run
+check "a HEAD the named ref does not have is refused" 2 "$RC" "HEAD is not on origin/trial"
+check "a HEAD off the named ref builds nothing" 2 "$RC" "builds attempted: 0"
+
+fresh_case
+advance src/a.ts
+git -C "$REPO" push -q -f origin HEAD:refs/heads/trial
+CHUG_RELEASE_REF=origin/trial run
+check "a HEAD the named ref has is released" 0 "$RC" "releasing $TAG over $DEPLOYED"
+
+# THE BASE IS TWO THINGS AT ONCE: which fabric branch is read for what is live,
+# and which one the release pull request targets. A run that cloned the default
+# branch and opened against another would report a release over the wrong live
+# commit, so both halves are checked on one run.
+fresh_case
+git --git-dir="$FABRIC_GIT" update-ref refs/heads/trial-fabric "$FABRIC_SEED_SHA"
+advance src/a.ts
+CHUG_FABRIC_BASE=trial-fabric run
+check "the fabric base is the branch cloned" 0 "$RC" "gh repo clone gdoteof/chuggy-fabric"
+printf 'clones at the base: %s\n' "$(grep -c -- '--branch trial-fabric' "$LOG" || true)" >"$OUT"
+check "the clone names the base" 0 "$RC" "clones at the base: 1"
+printf 'pull requests at the base: %s\n' "$(grep -c -- '--base trial-fabric' "$LOG" || true)" >"$OUT"
+check "the pull request targets the base" 0 "$RC" "pull requests at the base: 1"
+git --git-dir="$FABRIC_GIT" branch -q -D trial-fabric
 
 fresh_case
 run
@@ -741,10 +808,10 @@ OUT="$WORK/.out"
 set +e
 (
 	cd "$REPO" || exit 2
-	PATH="$NOBIN" CHUG_STUB_LOG="$LOG" sh "$REPO/deploy/rig/deploy-to-gtr.sh"
+	PATH="$NOBIN" CHUG_STUB_LOG="$LOG" sh "$REPO/deploy/rig/deploy-to-rig.sh"
 ) >"$OUT" 2>&1
 RC=$?
 set -e
 check "a missing tool could not run" 2 "$RC" "no \`docker\` on PATH"
 
-done_ "deploy-to-gtr.test.sh"
+done_ "deploy-to-rig.test.sh"

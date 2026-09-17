@@ -10,11 +10,20 @@
 # a release is a fabric commit that moves those digests, and this script is the
 # whole of the path from a commit on main to that fabric commit.
 #
-# WHAT IS RELEASED IS HEAD, AND HEAD MUST BE ON MAIN. The tag is the short
-# commit, which `deploy/rig/images/build-and-import.sh` refuses to derive from
-# a dirty tree; and a commit main does not have is one the configuration
-# importer, which tracks main, will never see. So a dirty tree and a HEAD off
-# `origin/main` are both refused before anything is built.
+# WHAT IS RELEASED IS HEAD, AND HEAD MUST BE ON THE RELEASE REF. The tag is the
+# short commit, which `deploy/rig/images/build-and-import.sh` refuses to derive
+# from a dirty tree; and a commit the ref does not have is one nothing that
+# tracks it will ever see. So a dirty tree and a HEAD off the release ref are
+# both refused before anything is built.
+#
+# THE REF IS A KNOB BECAUSE A RIG IS NOT ALWAYS THE ONE FOLLOWING MAIN. The
+# default is `origin/main`, which is the production rig and the case that must
+# stay hard to get wrong. A second rig — a box brought up to try a branch
+# before it merges — follows a fabric branch of its own, and releasing onto it
+# means naming both: `CHUG_RELEASE_REF` for which chuggy commits it will take,
+# and `CHUG_FABRIC_BASE` for which fabric branch is its live state and the base
+# its release pull request targets. Neither widens the production path: with
+# both unset this script refuses exactly what it refused before.
 #
 # ONLY WHAT MOVED IS REBUILT. The fabric's manifests say which commit is live,
 # and each image is rebuilt when a path its Dockerfile copies changed between
@@ -70,9 +79,9 @@
 # it has no change since the live commit to gate over.
 #
 # Usage:
-#   deploy/rig/deploy-to-gtr.sh            gate, build, publish, open the PR
-#   deploy/rig/deploy-to-gtr.sh --merge    merge HEAD's PR, reconcile, verify
-#   deploy/rig/deploy-to-gtr.sh --console  a console-only release, both phases
+#   deploy/rig/deploy-to-rig.sh            gate, build, publish, open the PR
+#   deploy/rig/deploy-to-rig.sh --merge    merge HEAD's PR, reconcile, verify
+#   deploy/rig/deploy-to-rig.sh --console  a console-only release, both phases
 #
 # Env:
 #   CHUG_RIG_SSH          the ssh destination of the k3s node. Required: the
@@ -84,6 +93,9 @@
 #   CHUG_RIG_ARCHIVE      where a pre-merge dump is kept. Required by --merge
 #                         when the release carries a migration; no default.
 #   CHUG_FABRIC_REPO      the fabric repository, default gdoteof/chuggy-fabric
+#   CHUG_FABRIC_BASE      the fabric branch this rig follows and the base its
+#                         release pull request targets, default main
+#   CHUG_RELEASE_REF      the ref HEAD must be on, default origin/main
 #   CHUG_RELEASE_GATE     0 skips the gate, and the pull request says so
 #   CHUG_RELEASE_WAIT_SECS  how long a landing run waits on each of Flux, the
 #                         migrate Job and a rollout
@@ -93,13 +105,13 @@
 set -eu
 export LC_ALL=C
 
-say() { printf 'deploy-to-gtr: %s\n' "$*"; }
+say() { printf 'deploy-to-rig: %s\n' "$*"; }
 refuse() {
-	printf 'deploy-to-gtr: LINTER ERROR — %s\n' "$*" >&2
+	printf 'deploy-to-rig: LINTER ERROR — %s\n' "$*" >&2
 	exit 2
 }
 fail() {
-	printf 'deploy-to-gtr: FAILED — %s\n' "$*" >&2
+	printf 'deploy-to-rig: FAILED — %s\n' "$*" >&2
 	exit 1
 }
 # A step's own protocol is kept: one is a finding, anything else could not run.
@@ -128,6 +140,8 @@ context="${CHUG_RIG_CONTEXT:-chuggy-fabric}"
 namespace="${CHUG_RIG_NAMESPACE:-chuggy}"
 database="${CHUG_RIG_DATABASE:-chuggy}"
 fabric_repo="${CHUG_FABRIC_REPO:-gdoteof/chuggy-fabric}"
+fabric_base="${CHUG_FABRIC_BASE:-main}"
+release_ref="${CHUG_RELEASE_REF:-origin/main}"
 wait_secs="${CHUG_RELEASE_WAIT_SECS:-600}"
 registry_prefix=registry.chuggy.internal/chuggy
 
@@ -156,8 +170,11 @@ root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 cd "$root" || exit 2
 [ -x deploy/rig/images/build-and-import.sh ] || refuse "deploy/rig/images/build-and-import.sh is not here to build with"
 [ -z "$(git status --porcelain)" ] || refuse "the working tree is dirty; commit first, because the tag names HEAD"
-git fetch --quiet origin main || refuse "origin/main could not be fetched, so whether HEAD is on main is unknown"
-git merge-base --is-ancestor HEAD origin/main || refuse "HEAD is not on origin/main; the rig follows main, so release a commit main has"
+release_remote="${release_ref%%/*}"
+release_branch="${release_ref#*/}"
+[ "$release_remote" != "$release_ref" ] || refuse "CHUG_RELEASE_REF must name a remote and a branch, as origin/main does; got $release_ref"
+git fetch --quiet "$release_remote" "$release_branch" || refuse "$release_ref could not be fetched, so whether HEAD is on it is unknown"
+git merge-base --is-ancestor HEAD "$release_ref" || refuse "HEAD is not on $release_ref; this rig follows it, so release a commit it has"
 tag="$(git rev-parse --short HEAD)"
 commit="$(git rev-parse HEAD)"
 branch="release/chuggy-$tag"
@@ -170,7 +187,7 @@ trap 'rm -rf "$work"' EXIT
 fabric="$work/fabric"
 apps="$fabric/cluster/apps"
 say "cloning $fabric_repo"
-gh repo clone "$fabric_repo" "$fabric" -- --quiet >/dev/null 2>&1 || refuse "$fabric_repo could not be cloned, so what is live is unknown"
+gh repo clone "$fabric_repo" "$fabric" -- --quiet --branch "$fabric_base" >/dev/null 2>&1 || refuse "$fabric_repo could not be cloned at $fabric_base, so what is live is unknown"
 
 deployed="$(manifest_source_commit chuggy-api.yaml)"
 [ -n "$deployed" ] || refuse "the fabric's api manifest names no source commit, so what is live is unknown"
@@ -469,7 +486,7 @@ fi
 sed -n '3,$p' "$work/message" >"$work/body"
 pr_url="$(gh pr list -R "$fabric_repo" --head "$branch" --state open --json url --jq '.[].url')"
 if [ -z "$pr_url" ]; then
-	pr_url="$(gh pr create -R "$fabric_repo" --base main --head "$branch" --title "release: chuggy $tag" --body-file "$work/body")"
+	pr_url="$(gh pr create -R "$fabric_repo" --base "$fabric_base" --head "$branch" --title "release: chuggy $tag" --body-file "$work/body")"
 fi
 [ -n "$pr_url" ] || fail "no pull request stands for $branch"
 say "pull request $pr_url"
@@ -477,4 +494,4 @@ if [ "$console" -eq 1 ]; then
 	land "$pr_url"
 fi
 say "not merged. Review it, then land it and roll it out with:"
-say "  CHUG_RIG_SSH=$node deploy/rig/deploy-to-gtr.sh --merge"
+say "  CHUG_RIG_SSH=$node deploy/rig/deploy-to-rig.sh --merge"
