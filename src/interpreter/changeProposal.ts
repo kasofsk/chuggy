@@ -31,7 +31,10 @@ import { assertNever } from "../domain/assertNever.ts";
 import { textCodePointsCount } from "../contract/http.ts";
 import { asBoundedText } from "./boundedText.ts";
 import type { GitObjectId, GitRefName, RepositoryId } from "./finalizer.ts";
-import { finalizerIdentityCharsMax } from "./finalizer.ts";
+import {
+  finalizerIdentityCharsMax,
+  repositoryCredentialCharsMax,
+} from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
 declare const forgeBindingIdBrand: unique symbol;
 declare const proposalRemoteIdentityBrand: unique symbol;
@@ -98,11 +101,16 @@ export function asProposalRemoteIdentity(
   ) as ProposalRemoteIdentity;
 }
 
+/**
+ * A forge credential is the token a mint or a mounted file answers with and is
+ * never stored, so it is held to the repository credential's bound rather than
+ * an identity's: the token a forge mints is longer than any stored identity.
+ */
 export function asForgeCredential(value: string): ForgeCredential {
   return asBoundedText(
     value,
     "forge credential",
-    finalizerIdentityCharsMax,
+    repositoryCredentialCharsMax,
   ) as ForgeCredential;
 }
 
