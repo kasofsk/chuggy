@@ -242,13 +242,29 @@ test("a forge resolves its own credential and never a repository's", async (t) =
   );
 });
 
+test("a forge credential larger than a stored identity remains available", async (t) => {
+  const root = directory(t);
+  const path = join(root, "forge");
+  const credential = "s".repeat(finalizerIdentityCharsMax + 1);
+  writeFileSync(path, credential);
+  assert.deepEqual(
+    await forgeCredentialFiles({ bindings: [forgeBinding(path)] }).credential(
+      forgeRequest("forge-alpha-proposals"),
+    ),
+    { resolved: "Credential", credential },
+  );
+});
+
 test("a forge credential is refused rather than quoted where the file is not one", async (t) => {
   const root = directory(t);
   const absent = join(root, "absent");
   const empty = join(root, "empty");
   writeFileSync(empty, "\n  \n");
   const oversized = join(root, "oversized");
-  writeFileSync(oversized, "s".repeat(finalizerIdentityCharsMax + 1));
+  writeFileSync(
+    oversized,
+    "s".repeat(credentialFilesDefaults.credentialBytesMax + 1),
+  );
   for (const path of [absent, empty, oversized]) {
     const resolved = await forgeCredentialFiles({
       bindings: [forgeBinding(path)],
@@ -261,7 +277,10 @@ test("a forge credential is refused rather than quoted where the file is not one
 test("a forge credential file the port would refuse fails the precondition too", async (t) => {
   const root = directory(t);
   const path = join(root, "forge");
-  writeFileSync(path, "s".repeat(finalizerIdentityCharsMax + 1));
+  writeFileSync(
+    path,
+    "s".repeat(credentialFilesDefaults.credentialBytesMax + 1),
+  );
   const signal = new AbortController().signal;
   const precondition = forgeCredentialFilesPrecondition({
     bindings: [forgeBinding(path)],
