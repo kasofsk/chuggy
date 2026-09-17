@@ -98,7 +98,12 @@ export function useTicketCatalog(
       { tenant, project },
       pinOf(catalogCommit, repository),
     ).then((result) => {
-      if (active) setFiles(result.outcome === "Ok" ? result.value.entries : []);
+      if (active)
+        setFiles(
+          result.outcome === "Ok"
+            ? result.value.entries.map((entry) => entry.path)
+            : [],
+        );
     });
     return () => {
       active = false;

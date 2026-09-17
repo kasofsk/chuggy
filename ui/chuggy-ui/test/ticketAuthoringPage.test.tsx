@@ -81,12 +81,18 @@ function drawn(): readonly Sent[] {
       url,
       ...(init?.body === undefined ? {} : { body: init.body }),
     } as Sent);
-    if (url.includes("/catalog/file"))
+    if (url.includes("/catalog") && url.includes("path="))
       return Promise.resolve(
-        answer({ reference: "workloads/work.yaml", content: "prompt: run\n" }),
+        answer({
+          path: "workloads/work.yaml",
+          origin: "Git",
+          content: "prompt: run\n",
+        }),
       );
     if (url.includes("/catalog"))
-      return Promise.resolve(answer({ entries: ["workloads/work.yaml"] }));
+      return Promise.resolve(
+        answer({ entries: [{ path: "workloads/work.yaml", origin: "Git" }] }),
+      );
     if (url.includes("/validate"))
       return Promise.resolve(answer({ valid: true, findings: [] }));
     return Promise.resolve(answer({ identity: "made", accepted: "Accepted" }));

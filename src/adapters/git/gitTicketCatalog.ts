@@ -1,7 +1,9 @@
 import { assertNever } from "../../domain/assertNever.ts";
 import type {
+  GitObjectId,
   RepositoryCredential,
   RepositoryCredentialPort,
+  RepositoryId,
 } from "../../interpreter/finalizer.ts";
 import type { ProjectRepositoryBindingRead } from "../../interpreter/repositoryConfiguration.ts";
 import type {
@@ -40,12 +42,22 @@ function gitTicketCatalogExited(
   return ran.ran === "Exited" && ran.code === 0;
 }
 
+/**
+ * Names a catalog read must never serve, even from inside the catalog
+ * directory: a repository keeps credentials under these, and a caller who can
+ * name a path is not thereby entitled to whatever a committer left there.
+ */
+const gitTicketCatalogDenied =
+  /(^|\/)(\.git|secrets?|credentials?|\.env[^/]*|[^/]+\.(?:pem|key))(\/|$)/u;
+
 function gitTicketCatalogPath(path: string): string {
   if (!path.startsWith(".chug/") || path.includes("\\") || path.startsWith("/"))
     throw new TypeError("catalog path must be inside .chug");
   const parts = path.split("/");
   if (parts.some((part) => part === "" || part === "." || part === ".."))
     throw new TypeError("catalog path must be normalized");
+  if (gitTicketCatalogDenied.test(path))
+    throw new TypeError("catalog path names a file that is never served");
   return path;
 }
 
@@ -110,45 +122,68 @@ export function gitTicketCatalog(
         ],
       });
       if (!gitTicketCatalogExited(fetched)) return undefined;
-      const entries = async (): Promise<readonly string[]> => {
-        const listed = await scratchRun(scratch, {
-          repository,
-          timeoutSecsMax: scratch.options.localTimeoutSecsMax,
-          argv: [
-            "ls-tree",
-            "-r",
-            "--name-only",
-            "-z",
-            input.commit,
-            "--",
-            ticketCatalogRoot,
-          ],
-          outputBytesMax: gitTicketCatalogListingBytesMax,
-        });
-        if (!gitTicketCatalogExited(listed))
-          throw new TypeError("catalog listing is unavailable");
-        return listed.stdout
-          .split("\0")
-          .filter((path) => path.startsWith(ticketCatalogRoot))
-          .map((path) => path.slice(ticketCatalogRoot.length));
+      const pinned = { scratch, repository, commit: input.commit };
+      return {
+        repository,
+        snapshot: gitTicketCatalogSnapshot(pinned),
+        entries: () => gitTicketCatalogEntries(pinned),
       };
-      const snapshot: TicketCatalogSnapshot = {
-        read: async (path) => {
-          const checked = gitTicketCatalogPath(path);
-          const read = await scratchRun(scratch, {
-            repository,
-            timeoutSecsMax: scratch.options.localTimeoutSecsMax,
-            argv: ["show", `${input.commit}:${checked}`],
-            outputBytesMax: ticketCatalogDocumentBytesMax + 1,
-          });
-          if (!gitTicketCatalogExited(read))
-            throw new TypeError(`catalog file is unavailable: ${checked}`);
-          if (Buffer.byteLength(read.stdout) > ticketCatalogDocumentBytesMax)
-            throw new RangeError("catalog file exceeds size limit");
-          return read.stdout;
-        },
-      };
-      return { repository, snapshot, entries };
+    },
+  };
+}
+
+interface GitTicketCatalogPinned {
+  readonly scratch: ReturnType<typeof scratchOpen>;
+  readonly repository: RepositoryId;
+  readonly commit: GitObjectId;
+}
+
+async function gitTicketCatalogEntries(
+  pinned: GitTicketCatalogPinned,
+): Promise<readonly string[]> {
+  const listed = await scratchRun(pinned.scratch, {
+    repository: pinned.repository,
+    timeoutSecsMax: pinned.scratch.options.localTimeoutSecsMax,
+    argv: [
+      "ls-tree",
+      "-r",
+      "--name-only",
+      "-z",
+      pinned.commit,
+      "--",
+      ticketCatalogRoot,
+    ],
+    outputBytesMax: gitTicketCatalogListingBytesMax,
+  });
+  if (!gitTicketCatalogExited(listed))
+    throw new TypeError("catalog listing is unavailable");
+  return listed.stdout
+    .split("\0")
+    .filter(
+      (path) =>
+        path.startsWith(ticketCatalogRoot) &&
+        !gitTicketCatalogDenied.test(path),
+    )
+    .map((path) => path.slice(ticketCatalogRoot.length));
+}
+
+function gitTicketCatalogSnapshot(
+  pinned: GitTicketCatalogPinned,
+): TicketCatalogSnapshot {
+  return {
+    read: async (path) => {
+      const checked = gitTicketCatalogPath(path);
+      const read = await scratchRun(pinned.scratch, {
+        repository: pinned.repository,
+        timeoutSecsMax: pinned.scratch.options.localTimeoutSecsMax,
+        argv: ["show", `${pinned.commit}:${checked}`],
+        outputBytesMax: ticketCatalogDocumentBytesMax + 1,
+      });
+      if (!gitTicketCatalogExited(read))
+        throw new TypeError(`catalog file is unavailable: ${checked}`);
+      if (Buffer.byteLength(read.stdout) > ticketCatalogDocumentBytesMax)
+        throw new RangeError("catalog file exceeds size limit");
+      return read.stdout;
     },
   };
 }

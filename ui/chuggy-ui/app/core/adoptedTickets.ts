@@ -72,13 +72,13 @@ export function adoptedCatalogFile(
   ports: ApiPorts,
   partition: PartitionIdentity,
   pin: CatalogPin,
-  reference: string,
+  path: string,
 ): Promise<ApiResult<AdoptedCatalogFile>> {
   return apiRead(
     ports,
     {
       method: "GET",
-      path: `${root(partition)}/catalog/file?${catalogQuery(pin)}&reference=${encodeURIComponent(reference)}`,
+      path: `${root(partition)}/catalog?${catalogQuery(pin)}&path=${encodeURIComponent(path)}`,
     },
     (value) => adoptedCatalogFileSchema.parse(value),
   );

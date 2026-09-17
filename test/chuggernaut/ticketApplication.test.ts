@@ -46,20 +46,49 @@ function catalogRelease(
   });
 }
 
-function setup(
-  authorized = true,
-  release: { readonly reworkLimit: number; readonly declared: boolean } = {
-    reworkLimit: 3,
-    declared: true,
-  },
-  frozen = 3,
-  availability:
-    "Available" | "LegacyModelUnsupported" | "Inactive" = "Available",
-  graph = new TicketGraph(new Map()),
-  stored: string | undefined = undefined,
+type Effects = {
+  catalogs: number;
+  content: number;
+  drafts: number;
+  snapshots: number;
+};
+
+/** The catalog port, whose draft refuses anything the create double accepts. */
+function catalogsDouble(
+  effects: Effects,
+  reads: string[],
+  release: { readonly reworkLimit: number; readonly declared: boolean },
 ) {
-  const submitted: TicketMachineInput[] = [];
-  const inbox: TicketApplicationInbox = {
+  return {
+    catalog: () => {
+      effects.catalogs += 1;
+      return Promise.resolve({
+        release: (identity: ReturnType<typeof TicketId>) =>
+          catalogRelease(identity, release),
+      });
+    },
+    snapshot: () => {
+      effects.snapshots += 1;
+      return Promise.resolve({
+        repository: "repository",
+        snapshot: {
+          read: (path: string) => {
+            reads.push(path);
+            return Promise.resolve("prompt: run\n");
+          },
+        },
+        entries: () =>
+          Promise.resolve(["workloads/work.yaml", "evaluators/ci.yaml"]),
+      });
+    },
+  };
+}
+
+function inboxDouble(
+  submitted: TicketMachineInput[],
+  frozen: number,
+): TicketApplicationInbox {
+  return {
     submit: (_partition, input) => {
       submitted.push(input);
       return Promise.resolve({ accepted: "Accepted" });
@@ -75,22 +104,42 @@ function setup(
         source: 11,
       }),
   };
+}
+
+function accessDouble(authorized: boolean) {
+  return {
+    authorize: (_principal: unknown, _partition: unknown, operation: string) =>
+      Promise.resolve(
+        authorized
+          ? {
+              kind: asAuthorityKind("Member"),
+              subject: asAuthoritySubject(`${principal}:${operation}`),
+            }
+          : undefined,
+      ),
+    authorizeTenant: () => Promise.resolve(undefined),
+  };
+}
+
+function setup(
+  authorized = true,
+  release: { readonly reworkLimit: number; readonly declared: boolean } = {
+    reworkLimit: 3,
+    declared: true,
+  },
+  frozen = 3,
+  availability:
+    "Available" | "LegacyModelUnsupported" | "Inactive" = "Available",
+  graph = new TicketGraph(new Map()),
+  stored: string | undefined = undefined,
+) {
+  const submitted: TicketMachineInput[] = [];
+  const inbox = inboxDouble(submitted, frozen);
   let content = 0;
   const effects = { catalogs: 0, content: 0, drafts: 0, snapshots: 0 };
   const reads: string[] = [];
   const application = ticketApplication({
-    access: {
-      authorize: (_principal, _partition, operation) =>
-        Promise.resolve(
-          authorized
-            ? {
-                kind: asAuthorityKind("Member"),
-                subject: asAuthoritySubject(`${principal}:${operation}`),
-              }
-            : undefined,
-        ),
-      authorizeTenant: () => Promise.resolve(undefined),
-    },
+    access: accessDouble(authorized),
     inbox,
     graphs: {
       read: () =>
@@ -103,26 +152,7 @@ function setup(
         ),
     },
     catalogs: {
-      catalog: () => {
-        effects.catalogs += 1;
-        return Promise.resolve({
-          release: (identity) => catalogRelease(identity, release),
-        });
-      },
-      snapshot: () => {
-        effects.snapshots += 1;
-        return Promise.resolve({
-          repository: "repository",
-          snapshot: {
-            read: (path: string) => {
-              reads.push(path);
-              return Promise.resolve("prompt: run\n");
-            },
-          },
-          entries: () =>
-            Promise.resolve(["workloads/work.yaml", "evaluators/ci.yaml"]),
-        });
-      },
+      ...catalogsDouble(effects, reads, release),
       draft: () => {
         effects.drafts += 1;
         return Promise.resolve({
@@ -368,7 +398,12 @@ test("a catalog read answers sorted references and one file's content", async ()
     await application.catalog(principal, { partition, catalogCommit: commit }),
     {
       result: "Authorized",
-      value: { entries: ["evaluators/ci.yaml", "workloads/work.yaml"] },
+      value: {
+        entries: [
+          { path: "evaluators/ci.yaml", origin: "Git" },
+          { path: "workloads/work.yaml", origin: "Git" },
+        ],
+      },
     },
   );
   assert.deepEqual(
@@ -379,7 +414,11 @@ test("a catalog read answers sorted references and one file's content", async ()
     ),
     {
       result: "Authorized",
-      value: { reference: "workloads/work.yaml", content: "prompt: run\n" },
+      value: {
+        path: "workloads/work.yaml",
+        origin: "Git",
+        content: "prompt: run\n",
+      },
     },
   );
   assert.deepEqual(reads, [`${ticketCatalogRoot}workloads/work.yaml`]);

@@ -1074,23 +1074,19 @@ function registerAdoptedTicketCatalog(
     }
     void reply.code(200).send(result.value);
   };
+  /** An absent path asks what the catalog holds, a present one asks for that file. */
   app.get(root, async (request, reply) => {
+    const path = record(request.query)["path"];
+    const catalog = adoptedCatalogRequest(request);
     answer(
       reply,
-      await service.application.catalog(
-        principalOf(request),
-        adoptedCatalogRequest(request),
-      ),
-    );
-  });
-  app.get(`${root}/file`, async (request, reply) => {
-    answer(
-      reply,
-      await service.application.catalogFile(
-        principalOf(request),
-        adoptedCatalogRequest(request),
-        textField(record(request.query), "reference"),
-      ),
+      typeof path === "string"
+        ? await service.application.catalogFile(
+            principalOf(request),
+            catalog,
+            path,
+          )
+        : await service.application.catalog(principalOf(request), catalog),
     );
   });
 }

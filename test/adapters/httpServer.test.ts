@@ -706,14 +706,16 @@ test("the catalog routes pass the pinned commit and answer its tree", async () =
         requests.push(request);
         return Promise.resolve({
           result: "Authorized",
-          value: { entries: ["workloads/work.yaml"] },
+          value: {
+            entries: [{ path: "workloads/work.yaml", origin: "Git" }],
+          },
         });
       },
-      catalogFile: (_principal, request, reference) => {
-        requests.push({ ...request, reference });
+      catalogFile: (_principal, request, path) => {
+        requests.push({ ...request, path });
         return Promise.resolve({
           result: "Authorized",
-          value: { reference, content: "prompt: run\n" },
+          value: { path, origin: "Git", content: "prompt: run\n" },
         });
       },
     },
@@ -727,15 +729,18 @@ test("the catalog routes pass the pinned commit and answer its tree", async () =
     headers,
   });
   assert.equal(listed.statusCode, 200, listed.body);
-  assert.deepEqual(listed.json(), { entries: ["workloads/work.yaml"] });
+  assert.deepEqual(listed.json(), {
+    entries: [{ path: "workloads/work.yaml", origin: "Git" }],
+  });
   const read = await app.inject({
     method: "GET",
-    url: `${root}/file?commit=${"a".repeat(40)}&reference=workloads/work.yaml`,
+    url: `${root}?commit=${"a".repeat(40)}&path=workloads/work.yaml`,
     headers,
   });
   assert.equal(read.statusCode, 200, read.body);
   assert.deepEqual(read.json(), {
-    reference: "workloads/work.yaml",
+    path: "workloads/work.yaml",
+    origin: "Git",
     content: "prompt: run\n",
   });
   assert.deepEqual(requests, [
@@ -747,7 +752,7 @@ test("the catalog routes pass the pinned commit and answer its tree", async () =
     {
       partition: { tenant: "acme", project: "atlas" },
       catalogCommit: "a".repeat(40),
-      reference: "workloads/work.yaml",
+      path: "workloads/work.yaml",
     },
   ]);
 });

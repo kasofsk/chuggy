@@ -106,12 +106,22 @@ export interface TicketValidation {
   readonly findings: readonly string[];
 }
 
-export interface TicketCatalogEntries {
-  readonly entries: readonly string[];
+/**
+ * Where an entry came from. The pinned repository tree is the only place a
+ * catalog is held today, and a reader is told rather than left to assume.
+ */
+export type TicketCatalogOrigin = "Git";
+
+export interface TicketCatalogEntry {
+  readonly path: string;
+  readonly origin: TicketCatalogOrigin;
 }
 
-export interface TicketCatalogFile {
-  readonly reference: string;
+export interface TicketCatalogEntries {
+  readonly entries: readonly TicketCatalogEntry[];
+}
+
+export interface TicketCatalogFile extends TicketCatalogEntry {
   readonly content: string;
 }
 
@@ -142,7 +152,7 @@ export interface TicketApplication {
   catalogFile(
     principal: Principal,
     request: TicketCatalogRequest,
-    reference: string,
+    path: string,
   ): Promise<TicketApplicationResult<TicketCatalogFile | undefined>>;
   outcome(
     principal: Principal,
@@ -359,7 +369,11 @@ function ticketApplicationCatalogEntries(
     if (pinned === undefined) return { result: "Authorized", value: undefined };
     return {
       result: "Authorized",
-      value: { entries: [...(await pinned.entries())].sort() },
+      value: {
+        entries: [...(await pinned.entries())]
+          .sort()
+          .map((path) => ({ path, origin: "Git" as const })),
+      },
     };
   };
 }
@@ -367,15 +381,16 @@ function ticketApplicationCatalogEntries(
 function ticketApplicationCatalogFile(
   ports: TicketApplicationPorts,
 ): TicketApplication["catalogFile"] {
-  return async (principal, request, reference) => {
+  return async (principal, request, path) => {
     const pinned = await ticketApplicationSnapshot(ports, principal, request);
     if (pinned === "Unauthorized") return { result: "NotFound" };
     if (pinned === undefined) return { result: "Authorized", value: undefined };
     return {
       result: "Authorized",
       value: {
-        reference,
-        content: await pinned.snapshot.read(`${ticketCatalogRoot}${reference}`),
+        path,
+        origin: "Git",
+        content: await pinned.snapshot.read(`${ticketCatalogRoot}${path}`),
       },
     };
   };
