@@ -625,10 +625,20 @@ test("ticketIdsWellFormed rejects an id off the universe and a fleet past its bo
   const overfull = coreOf([
     ...fleet,
     ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
   ]);
   assert.ok(
     !ticketIdsWellFormed(config, stateView(overfull)),
-    "releases are bounded by the fleet cap, which the id universe deliberately is not",
+    "tickets that can still move are bounded by the fleet cap, which the id universe deliberately is not",
+  );
+  const allDoneOverTheOldCap = coreOf(
+    Array.from({ length: config.nTickets + 1 }, () =>
+      ticketOn(config, "ManagedFinalizer", { phase: "Done" }),
+    ),
+  );
+  assert.ok(
+    ticketIdsWellFormed(config, stateView(allDoneOverTheOldCap)),
+    "Done is absorbing, so a fleet past the old cap can still be well-formed once every ticket has settled",
   );
   const sparse: Core = {
     tickets: new Map([
@@ -780,7 +790,7 @@ test("the cascade the revoke performs is what makes cascadeSafety hold in every 
     ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
     ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(2) }),
   ]);
-  const revoked = decideRevoke(config, chain, id(1));
+  const revoked = decideRevoke(chain, id(1));
   assert.equal(revoked.rec.transitions.length, 3);
   assert.ok(cascadeSafety(config, stateView(revoked.post)));
   assert.ok(noStructuralDeadlock(config, stateView(revoked.post)));
@@ -929,7 +939,7 @@ test("stepDescends exempts the desk-only flat revoke and no other", () => {
       resumeAt: "ResumeWorking",
     }),
   ]);
-  const settled = decideRevoke(config, parked, id(1));
+  const settled = decideRevoke(parked, id(1));
   const view: StepView = { pre: parked, rec: settled.rec, post: settled.post };
   assert.equal(
     sysMeasure(boundsOf(config), settled.post),
@@ -940,7 +950,7 @@ test("stepDescends exempts the desk-only flat revoke and no other", () => {
   const live = coreOf([
     ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
   ]);
-  const dropped = decideRevoke(config, live, id(1));
+  const dropped = decideRevoke(live, id(1));
   assert.ok(
     stepDescends(config, { pre: live, rec: dropped.rec, post: dropped.post }),
     "a live-rank revoke gets no exemption and descends on its own",

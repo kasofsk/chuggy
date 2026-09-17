@@ -23,6 +23,7 @@ import {
   type Config,
 } from "./config.ts";
 import { ticketAt, ticketIds } from "./core.ts";
+import { isTerminalPhase } from "./phase.ts";
 import type {
   ArtifactMark,
   Core,
@@ -105,8 +106,16 @@ export function depsDoneIn(core: Core, id: TicketId): boolean {
   );
 }
 
+/** Tickets that can still move: a settled Done, Abandoned or Revoked ticket holds no slot. */
+function nonTerminalCount(core: Core): number {
+  return ticketIds(core).filter(
+    (k) => !isTerminalPhase(ticketAt(core, k).phase),
+  ).length;
+}
+
 /**
- * May this id be claimed? The fleet has room, the id is one the universe
+ * May this id be claimed? The fleet has room — counting only tickets that can
+ * still move, since a settled one holds no slot — the id is one the universe
  * offers, and nothing holds it — including a ticket long since settled, since
  * an id is never reused.
  */
@@ -116,7 +125,7 @@ export function canReleaseIn(
   id: TicketId,
 ): boolean {
   return (
-    core.tickets.size < config.nTickets &&
+    nonTerminalCount(core) < config.nTickets &&
     ticketIdUniverse(config).includes(id) &&
     !core.tickets.has(id)
   );
@@ -293,7 +302,7 @@ export function releasableIdsIn(
   config: Config,
   core: Core,
 ): readonly TicketId[] {
-  if (core.tickets.size >= config.nTickets) return [];
+  if (nonTerminalCount(core) >= config.nTickets) return [];
   return ticketIdUniverse(config).filter((j) => !core.tickets.has(j));
 }
 

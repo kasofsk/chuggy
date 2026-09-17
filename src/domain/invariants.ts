@@ -25,7 +25,7 @@ import {
 import type { Core, StepRecord, Task, Ticket } from "./generated/modelTypes.ts";
 import { firstTaskId, type TicketId } from "./ids.ts";
 import { sysMeasure } from "./measure.ts";
-import { phaseRank, rankSettled } from "./phase.ts";
+import { isTerminalPhase, phaseRank, rankSettled } from "./phase.ts";
 import { finalizationBudget, reworkBudget } from "./pricing.ts";
 import { evalStage, tasksInIdOrder, taskEquals } from "./task.ts";
 import { hasOpenHumanTask, modeledResumeExists } from "./ticket.ts";
@@ -257,15 +257,18 @@ export const depsAcyclic: Invariant = (_config, view) =>
 
 /**
  * Ids come from the universe a release draws from, and the fleet stays within
- * its bound. They are sparse by construction, so this is a membership claim
- * rather than a density one.
+ * its bound. They are sparse by construction, so membership is a set claim
+ * rather than a density one; the count is of tickets that can still move, not
+ * tickets that ever existed — a settled Done, Abandoned or Revoked ticket
+ * holds no slot.
  */
 export const ticketIdsWellFormed: Invariant = (config, view) => {
   const universeCeiling = config.nTickets * 2;
   const live = liveTickets(view.post);
   return (
     live.every((id) => id >= 1 && id <= universeCeiling) &&
-    live.length <= config.nTickets
+    live.filter((id) => !isTerminalPhase(ticketAt(view.post, id).phase))
+      .length <= config.nTickets
   );
 };
 

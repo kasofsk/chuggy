@@ -419,30 +419,30 @@ test("a release draws every authored value from a universe, and is refused outsi
   );
 });
 
-test("the stutter is enabled exactly on a fully-released fleet of terminals", () => {
-  const settled = [
-    ticketOn(config, "ManagedFinalizer", {
-      phase: "Done",
-      artifact: produced(2),
-      completions: 1,
-    }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Revoked" }),
-    ticketOn(config, "ManagedFinalizer", {
-      phase: "Done",
-      artifact: produced(2),
-      completions: 1,
-    }),
-  ];
-  assert.ok(quietIn(config, coreOf(settled)));
+test("the stutter is enabled exactly when the fleet is genuinely out of room", () => {
+  const terminal = (i: number) =>
+    ticketOn(
+      config,
+      "ManagedFinalizer",
+      i % 2 === 0
+        ? { phase: "Done", artifact: produced(2), completions: 1 }
+        : { phase: "Revoked" },
+    );
+  // Every id the universe holds, all settled: a settled ticket holds no slot, but
+  // there is no id left to claim one with, so nothing can ever release again.
+  const exhausted = Array.from({ length: config.nTickets * 2 }, (_, i) =>
+    terminal(i),
+  );
+  assert.ok(quietIn(config, coreOf(exhausted)));
   assert.ok(
-    !quietIn(config, coreOf(settled.slice(0, -1))),
-    "room for a release means the author can still act",
+    !quietIn(config, coreOf(exhausted.slice(0, -1))),
+    "a settled ticket holds no slot, so an id left in the universe is still room",
   );
   assert.ok(
     !quietIn(
       config,
       coreOf([
-        ...settled.slice(0, -1),
+        ...exhausted.slice(0, -1),
         ticketOn(config, "ManagedFinalizer", { phase: "Working" }),
       ]),
     ),
@@ -452,7 +452,7 @@ test("the stutter is enabled exactly on a fully-released fleet of terminals", ()
     !quietIn(
       config,
       coreOf([
-        ...settled.slice(0, -1),
+        ...exhausted.slice(0, -1),
         ticketOn(config, "ManagedFinalizer", {
           phase: "Escalated",
           reason: "WorkFailed",
@@ -461,5 +461,30 @@ test("the stutter is enabled exactly on a fully-released fleet of terminals", ()
       ]),
     ),
     "a parked ticket is still revocable, so the desk can act",
+  );
+});
+
+test("a fleet at the release bound admits more once its tickets settle, unless the settlement leaves it resumable", () => {
+  const doneFleet = Array.from({ length: config.nTickets }, () =>
+    ticketOn(config, "ManagedFinalizer", {
+      phase: "Done",
+      artifact: produced(2),
+      completions: 1,
+    }),
+  );
+  assert.ok(
+    canReleaseIn(config, coreOf(doneFleet), id(config.nTickets + 1)),
+    "Done is absorbing, so a fleet of nothing but Done tickets holds no slot",
+  );
+  const escalatedFleet = Array.from({ length: config.nTickets }, () =>
+    ticketOn(config, "ManagedFinalizer", {
+      phase: "Escalated",
+      reason: "WorkFailed",
+      resumeAt: "ResumeWorking",
+    }),
+  );
+  assert.ok(
+    !canReleaseIn(config, coreOf(escalatedFleet), id(config.nTickets + 1)),
+    "a resume takes Escalated back into Working, so it keeps its slot",
   );
 });

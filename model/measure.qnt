@@ -237,8 +237,9 @@
 ///   AUTHORING (author churn above the
 ///   released pipeline; each member is bounded by name):
 ///     ticket-released      (+ the fresh Pending's whole ticketMeasure: a ticket enters
-///                       never reused, and capped by the N_TICKETS release
-///                       bound — at most N_TICKETS arrivals ever. The release
+///                       never reused, and ticketIdUniverse is 1.to(N_TICKETS * 2),
+///                       so arrivals are capped by the id universe — at most
+///                       N_TICKETS * 2 arrivals ever, still finite. The release
 ///                       also fixes the ticket's eval PROGRAM, but a Pending's
 ///                       stage digit is 0, so the climb bound is unchanged.)
 ///                       Release is this set's ONLY climbing member: an

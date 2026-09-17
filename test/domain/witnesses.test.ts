@@ -120,7 +120,7 @@ const cascade = ((): StepView => {
       deps: depsOf(1),
     }),
   ]);
-  return stepped(pre, decideRevoke(config, pre, id(1)));
+  return stepped(pre, decideRevoke(pre, id(1)));
 })();
 
 const advance = stepped(midProgram, decideEvalStageReduce(midProgram, id(1)));
@@ -155,7 +155,7 @@ test("a revoke parks its pre-flight dependents, which is what keeps cascadeSafet
     ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
   ]);
   assert.ok(
-    cascadeParkNever(config, stepped(lone, decideRevoke(config, lone, id(1)))),
+    cascadeParkNever(config, stepped(lone, decideRevoke(lone, id(1)))),
     "a revoke with nothing hanging off it parks nobody",
   );
 });

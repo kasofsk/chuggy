@@ -680,7 +680,7 @@ test("a revoke retires what was running and settles without completing", () => {
       gasLeft: 2,
     }),
   ]);
-  const revoked = decideRevoke(config, running, id(1));
+  const revoked = decideRevoke(running, id(1));
   assert.deepEqual(revoked.rec.transitions, [
     { ticket: id(1), from: "Working", to: "Revoked" },
   ]);
@@ -724,10 +724,10 @@ const chain: Core = {
     ],
   ]),
 };
-const cascaded = decideRevoke(config, chain, id(6)).post;
+const cascaded = decideRevoke(chain, id(6)).post;
 
 test("the cascade parks every transitive dependent in the one decision, spending nothing", () => {
-  const decision = decideRevoke(config, chain, id(6));
+  const decision = decideRevoke(chain, id(6));
   assert.equal(decision.rec.label, "ticket-revoked");
   assert.deepEqual(decision.rec.transitions, [
     { ticket: id(6), from: "Pending", to: "Revoked" },
@@ -749,7 +749,7 @@ test("the cascade parks every transitive dependent in the one decision, spending
 });
 
 test("a desk revoke is flat, and it re-parks nobody", () => {
-  const settled = decideRevoke(config, cascaded, id(4));
+  const settled = decideRevoke(cascaded, id(4));
   assert.deepEqual(settled.rec.transitions, [
     { ticket: id(4), from: "Escalated", to: "Revoked" },
   ]);
@@ -761,6 +761,58 @@ test("a desk revoke is flat, and it re-parks nobody", () => {
   );
   assert.equal(ticketAt(settled.post, id(1)).phase, "Escalated");
   assert.equal(ticketAt(settled.post, id(1)).reason, "DependencyRevoked");
+});
+
+/**
+ * A dependency chain longer than nTickets: the round count used to be
+ * `config.nTickets`, and a chain deeper than that under-iterated the fixpoint,
+ * leaving the doomed dependent farthest from the revoked root unparked.
+ */
+const longChain: Core = {
+  tickets: new Map([
+    [id(6), ticketOn(config, "ManagedFinalizer", { phase: "Pending" })],
+    [
+      id(5),
+      ticketOn(config, "ManagedFinalizer", {
+        phase: "Pending",
+        deps: depsOf(6),
+      }),
+    ],
+    [
+      id(4),
+      ticketOn(config, "ManagedFinalizer", {
+        phase: "Pending",
+        deps: depsOf(5),
+      }),
+    ],
+    [
+      id(2),
+      ticketOn(config, "ManagedFinalizer", {
+        phase: "Pending",
+        deps: depsOf(4),
+      }),
+    ],
+    [
+      id(1),
+      ticketOn(config, "ManagedFinalizer", {
+        phase: "Pending",
+        deps: depsOf(2),
+      }),
+    ],
+  ]),
+};
+
+test("the cascade reaches every transitive dependent past a chain longer than the fleet's old round cap", () => {
+  const decision = decideRevoke(longChain, id(6));
+  const parked = decision.rec.transitions
+    .filter((t) => t.to === "Escalated")
+    .map((t) => t.ticket)
+    .sort((a, b) => a - b);
+  assert.deepEqual(parked, [id(1), id(2), id(4), id(5)]);
+  for (const each of [id(1), id(2), id(4), id(5)]) {
+    assert.equal(ticketAt(decision.post, each).phase, "Escalated");
+    assert.equal(ticketAt(decision.post, each).reason, "DependencyRevoked");
+  }
 });
 
 test("the quiet fleet's stutter records that nothing moved", () => {

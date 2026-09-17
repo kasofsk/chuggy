@@ -780,6 +780,25 @@ module chuggy_test {
     not(DB::canReleaseIn(sparseCore, 4))
   })
 
+  // The release bound counts tickets that can still move, not tickets that
+  // ever existed: Done is absorbing and frees its slot, but Escalated does
+  // not, because a resume takes it back into Working.
+  pure val doneAtBound: Core = { tickets: Map(
+    1 -> { ...freshB(Set(), progU2, ManagedFinalizer), phase: Done },
+    2 -> { ...freshB(Set(), progU2, ManagedFinalizer), phase: Done }
+  ) }
+  pure val escalatedAtBound: Core = { tickets: Map(
+    1 -> { ...freshB(Set(), progU2, ManagedFinalizer),
+      phase: Escalated, reason: WorkFailed, resumeAt: ResumeWorking },
+    2 -> { ...freshB(Set(), progU2, ManagedFinalizer),
+      phase: Escalated, reason: WorkFailed, resumeAt: ResumeWorking }
+  ) }
+
+  run releaseCountsNonTerminalOnlyTest = assert(and {
+    DB::canReleaseIn(doneAtBound, 3),
+    not(DB::canReleaseIn(escalatedAtBound, 3))
+  })
+
   pure val localPolicy = DB::decideReleaseTicket(cEmpty, 2, Set(), progStaged,
     1, BudgetedRework(0), DeadlineOnly, RetryFree, NoFinalizer).post.tickets.get(2)
 
@@ -968,6 +987,32 @@ module chuggy_test {
     mB(dSettle2.post) == mB(cParked),              // desk revoke: flat, pinned
     dSettle2.post.tickets.get(3).phase == Escalated, // 3 untouched, still covered
     hasOpenHumanTask(dSettle2.post.tickets.get(3))
+  })
+
+  // === THE CASCADE PAST THE FLEET'S OLD ROUND CAP ==========================
+  // 1 <- 2 <- 3 <- 4, one link deeper than N_TICKETS (2): the round count
+  // used to BE N_TICKETS, which reached only as far as ticket 3 and left
+  // ticket 4 doomed but never parked. The bound is the fleet's own size now,
+  // so every dependent is reached regardless of chain depth.
+
+  pure val cLongChain: Core = { tickets: Map(
+    1 -> { ...freshB(Set(), progU2, ManagedFinalizer), phase: Pending },
+    2 -> { ...freshB(Set(1), progU2, ManagedFinalizer), phase: Pending },
+    3 -> { ...freshB(Set(2), progU2, ManagedFinalizer), phase: Pending },
+    4 -> freshB(Set(3), progU2, ManagedFinalizer)
+  ) }
+  pure val dLongCascade = DB::decideRevoke(cLongChain, 1)
+
+  run cascadeReachesPastOldRoundCapTest = assert(and {
+    dLongCascade.rec.transitions == [
+      { ticket: 1, from: Pending, to: Revoked },
+      { ticket: 2, from: Pending, to: Escalated },
+      { ticket: 3, from: Pending, to: Escalated },
+      { ticket: 4, from: Pending, to: Escalated }
+    ],
+    dLongCascade.post.tickets.get(4).phase == Escalated,
+    dLongCascade.post.tickets.get(4).reason == DependencyRevoked,
+    hasOpenHumanTask(dLongCascade.post.tickets.get(4))
   })
 
   // === Finalization is not a Core lease protocol ===========================

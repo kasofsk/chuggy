@@ -443,14 +443,14 @@ const drives: readonly Drive[] = [
     before: toPending,
     event: revokeEvent(id(1)),
     at: pending,
-    decided: decideRevoke(config, pending, id(1)),
+    decided: decideRevoke(pending, id(1)),
   },
   {
     arm: "Revoke/cascade",
     before: toDependent,
     event: revokeEvent(id(1)),
     at: dependent,
-    decided: decideRevoke(config, dependent, id(1)),
+    decided: decideRevoke(dependent, id(1)),
   },
   {
     arm: "ExecutionBlocked",

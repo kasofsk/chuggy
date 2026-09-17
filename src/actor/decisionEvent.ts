@@ -170,7 +170,7 @@ export function execDecisionEvent(
       });
     }
     case "Revoke":
-      return decideRevoke(config, core, asTicketId(event.value));
+      return decideRevoke(core, asTicketId(event.value));
     case "Dispatch":
       return decideDispatch(core, asTicketId(event.value));
     case "TaskDone":
