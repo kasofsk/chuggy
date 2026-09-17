@@ -11,9 +11,15 @@
 # apt's peer verification would have kept the slim base and traded the transport
 # away for it, which is a weakening nothing here needs.
 #
-# The digest is the multi-architecture index's, read on 2026-08-27 with
-#   docker buildx imagetools inspect node:26.7.0-bookworm
-FROM node:26.7.0-bookworm@sha256:e929171d35b9df7773a3ec5b068e387fa109441dc90f91e6560af5d39b7e9bf1
+# THE BASE IS TRIXIE BECAUSE THE MODEL GATE NEEDS ITS LIBC. `quint test` and
+# `quint run` execute through the Rust evaluator quint fetches on first use, a
+# binary linked against a glibc newer than bookworm's: on bookworm every model
+# suite ends in QNT516 and `check-model` cannot run, which is not a pass, so no
+# ticket touching the model could ever pass evaluation here.
+#
+# The digest is the multi-architecture index's, read on 2026-09-17 with
+#   docker buildx imagetools inspect node:26.7.0-trixie
+FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599cd76a7a6caad48b
 
 # THE IMAGE RUNS TWO CLAUDE CODES AND THEY MUST BE THE SAME ONE. A work attempt
 # spawns the global `claude`; a session's Agent SDK spawns a copy of its own,
