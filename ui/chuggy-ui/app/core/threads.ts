@@ -103,24 +103,18 @@ export function threadLabel(
   return thread.title ?? "New thread";
 }
 
-export const threadRowActionNames = [
-  "Rename",
-  "Close",
-  "Hide",
-  "Show",
-] as const;
-export type ThreadRowAction = (typeof threadRowActionNames)[number];
+export const threadActionNames = ["Rename", "Close"] as const;
+export type ThreadAction = (typeof threadActionNames)[number];
 
-/** The actions one thread's row menu offers: Rename and Hide/Show are the
- * owner's alone, Close is anyone's while the thread still stands. Empty on a
- * stranger's closed row, which is a row with nothing for its menu to draw. */
-export function threadRowActions(
-  thread: Pick<ThreadEntryResponse, "mine" | "state" | "hidden">,
-): readonly ThreadRowAction[] {
+/** The actions offered on the thread the pane holds: Rename is the owner's
+ * alone, Close is anyone's while the thread still stands. Empty on a
+ * stranger's closed thread, which offers neither. */
+export function threadActions(
+  thread: Pick<ThreadEntryResponse, "mine" | "state">,
+): readonly ThreadAction[] {
   return [
     ...(thread.mine ? (["Rename"] as const) : []),
     ...(threadClosable(thread) ? (["Close"] as const) : []),
-    ...(thread.mine ? ([thread.hidden ? "Show" : "Hide"] as const) : []),
   ];
 }
 

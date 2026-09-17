@@ -735,15 +735,6 @@ export const apiRenameThread = apiProjectEndpoint(
   }),
 );
 
-/** Takes one thread off the reader's rail, or puts it back. Nothing is deleted. */
-export const apiHideThread = apiProjectEndpoint(
-  nativeHttpEndpoints.hideThread,
-  (partition, session: string, hidden: boolean) => ({
-    parameters: { ...partition, session },
-    body: { hidden },
-  }),
-);
-
 /**
  * A question asked aside, which opens one fork and one turn.
  *

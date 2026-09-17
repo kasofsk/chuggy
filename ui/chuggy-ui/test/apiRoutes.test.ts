@@ -24,7 +24,6 @@ import {
   apiForgeApps,
   apiForgeInstallationRepositories,
   apiForgeInstallations,
-  apiHideThread,
   apiLead,
   apiLeadInquiries,
   apiLeadInquiry,
@@ -425,9 +424,9 @@ test("opening a thread posts the versioned empty object", async () => {
   ).toBe(nativeHttpMediaType);
 });
 
-/** The rail's two row writes, each posting the one field it writes to the door
- * that names it, and each answered the entry as it now stands. */
-test("naming and hiding a thread each post one field to their own door", async () => {
+/** Naming a thread posts the one field it writes to the door that names it,
+ * and is answered the entry as it now stands. */
+test("naming a thread posts one field to its own door", async () => {
   const entry = {
     session: "thread-1",
     state: "Open",
@@ -437,7 +436,7 @@ test("naming and hiding a thread each post one field to their own door", async (
     title: "the footer",
     openedAt: "2026-09-02T09:00:00Z",
     lastActivityAt: "2026-09-02T10:00:00Z",
-    hidden: true,
+    hidden: false,
   };
   const held = recordingRequests(() => entry);
 
@@ -447,17 +446,13 @@ test("naming and hiding a thread each post one field to their own door", async (
     "thread-1",
     "the footer",
   );
-  const hid = await apiHideThread(held.ports, partition, "thread-1", true);
 
   expect(named.outcome).toBe("Ok");
-  expect(hid.outcome).toBe("Ok");
   expect(held.requests.map((request) => request.url)).toStrictEqual([
     `${partitionPath}/threads/thread-1/rename`,
-    `${partitionPath}/threads/thread-1/hide`,
   ]);
   expect(held.requests.map((request) => request.init.body)).toStrictEqual([
     JSON.stringify({ title: "the footer" }),
-    JSON.stringify({ hidden: true }),
   ]);
   for (const request of held.requests) {
     expect(request.init.method).toBe("POST");
