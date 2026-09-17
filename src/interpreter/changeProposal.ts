@@ -104,7 +104,7 @@ export function asProposalRemoteIdentity(
 /**
  * A forge credential is the token a mint or a mounted file answers with and is
  * never stored, so it is held to the repository credential's bound rather than
- * an identity's: the token a forge mints is longer than any stored identity.
+ * an identity's: the token GitHub mints is longer than any stored identity.
  */
 export function asForgeCredential(value: string): ForgeCredential {
   return asBoundedText(
