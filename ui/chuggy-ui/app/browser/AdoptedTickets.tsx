@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { AdoptedTicket } from "../../../../src/contract/adoptedTickets.ts";
 import type { ApiFailure } from "../core/apiRequest.ts";
@@ -8,11 +8,21 @@ import {
   assertAdoptedOperationSucceeded,
   adoptedTicketAction,
   adoptedTicketCreate,
+  adoptedTicketDefinition,
   adoptedTicketUpdate,
   adoptedTickets,
 } from "../core/adoptedTickets.ts";
 import { useApiPorts } from "./api.ts";
+import {
+  useTicketCatalog,
+  useTicketValidation,
+} from "./editor/useTicketAuthoring.ts";
 import { Button, ButtonLink } from "./ui/Button.tsx";
+
+/** CodeMirror is the largest thing the console bundles and only authoring wants it. */
+const TicketEditor = lazy(async () => ({
+  default: (await import("./editor/TicketEditor.tsx")).TicketEditor,
+}));
 
 const operationPollAttemptsMax = 60;
 const operationPollDelayMs = 1_000;
@@ -112,17 +122,66 @@ function AuthoringSubmit(props: {
   );
 }
 
+function AuthoringPin(props: {
+  readonly fields: AuthoringFields;
+  readonly setFields: (fields: AuthoringFields) => void;
+}): ReactNode {
+  return (
+    <>
+      <label className="grid gap-1">
+        <span>Catalog commit</span>
+        <input
+          required
+          value={props.fields.catalogCommit}
+          onChange={(event) => {
+            props.setFields({
+              ...props.fields,
+              catalogCommit: event.target.value,
+            });
+          }}
+        />
+      </label>
+      <label className="grid gap-1">
+        <span>Repository binding (optional)</span>
+        <input
+          value={props.fields.repository}
+          onChange={(event) => {
+            props.setFields({
+              ...props.fields,
+              repository: event.target.value,
+            });
+          }}
+        />
+      </label>
+    </>
+  );
+}
+
 function AuthoringForm(props: {
   readonly submitLabel: string;
+  readonly initial?: AuthoringFields;
   readonly onSubmit: (fields: AuthoringFields) => Promise<void>;
 }): ReactNode {
-  const [fields, setFields] = useState<AuthoringFields>({
-    source: ticketDocumentExample,
-    catalogCommit: "",
-    repository: "",
-  });
+  const partition = useParams({ from: "/$tenant/$project" });
+  const [fields, setFields] = useState<AuthoringFields>(
+    props.initial ?? {
+      source: ticketDocumentExample,
+      catalogCommit: "",
+      repository: "",
+    },
+  );
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string>();
+  const findings = useTicketValidation(partition, fields);
+  const { files, catalog } = useTicketCatalog(
+    partition,
+    { catalogCommit: fields.catalogCommit, repository: fields.repository },
+    (error: unknown) => {
+      setFailure(
+        error instanceof Error ? error.message : "The catalog failed.",
+      );
+    },
+  );
   return (
     <form
       className="grid gap-3"
@@ -141,36 +200,21 @@ function AuthoringForm(props: {
           });
       }}
     >
-      <label className="grid gap-1">
-        <span>Catalog commit</span>
-        <input
-          required
-          value={fields.catalogCommit}
-          onChange={(event) => {
-            setFields({ ...fields, catalogCommit: event.target.value });
-          }}
-        />
-      </label>
-      <label className="grid gap-1">
-        <span>Repository binding (optional)</span>
-        <input
-          value={fields.repository}
-          onChange={(event) => {
-            setFields({ ...fields, repository: event.target.value });
-          }}
-        />
-      </label>
-      <label className="grid gap-1">
+      <AuthoringPin fields={fields} setFields={setFields} />
+      <div className="grid gap-1">
         <span>Ticket YAML</span>
-        <textarea
-          required
-          rows={18}
-          value={fields.source}
-          onChange={(event) => {
-            setFields({ ...fields, source: event.target.value });
-          }}
-        />
-      </label>
+        <Suspense fallback={<p className="panel-note">Loading the editor…</p>}>
+          <TicketEditor
+            value={fields.source}
+            onChange={(source) => {
+              setFields({ ...fields, source });
+            }}
+            findings={findings}
+            files={files}
+            catalog={catalog}
+          />
+        </Suspense>
+      </div>
       <AuthoringSubmit busy={busy} label={props.submitLabel} />
       {failure === undefined ? null : (
         <p className="text-tone-fail">{failure}</p>
@@ -325,13 +369,31 @@ function TicketDispatch(props: {
   );
 }
 
+/** The form opens on the authored text, so an update starts where the last one ended. */
 function TicketUpdate(props: {
+  readonly source: string | null | undefined;
   readonly submit: (fields: AuthoringFields) => Promise<void>;
 }): ReactNode {
   return (
     <section className="grid gap-3">
       <h2>Update definition</h2>
-      <AuthoringForm submitLabel="Update ticket" onSubmit={props.submit} />
+      {props.source === undefined ? (
+        <p className="panel-note">Loading the authored definition…</p>
+      ) : (
+        <AuthoringForm
+          submitLabel="Update ticket"
+          onSubmit={props.submit}
+          {...(props.source === null
+            ? {}
+            : {
+                initial: {
+                  source: props.source,
+                  catalogCommit: "",
+                  repository: "",
+                },
+              })}
+        />
+      )}
     </section>
   );
 }
@@ -361,6 +423,29 @@ async function runTicketUpdate(input: {
   await waitForOperation(input.ports, input.partition, result.value.identity);
 }
 
+/** Undefined while the read is in flight, null when the release retained no source. */
+function useTicketSource(
+  tenant: string,
+  project: string,
+  ticket: number,
+): string | null | undefined {
+  const ports = useApiPorts();
+  const [source, setSource] = useState<string | null>();
+  useEffect(() => {
+    let active = true;
+    void adoptedTicketDefinition(ports, { tenant, project }, ticket).then(
+      (result) => {
+        if (active)
+          setSource(result.outcome === "Ok" ? result.value.source : null);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [ports, tenant, project, ticket]);
+  return source;
+}
+
 export function AdoptedTicketPage(): ReactNode {
   const params = useParams({ from: "/$tenant/$project/tickets/$ticket" });
   const partition = { tenant: params.tenant, project: params.project };
@@ -369,6 +454,7 @@ export function AdoptedTicketPage(): ReactNode {
   const [ticket, setTicket] = useState<AdoptedTicket>();
   const [failure, setFailure] = useState<string>();
   const [dispatch, setDispatch] = useState({ repository: "", commit: "" });
+  const source = useTicketSource(params.tenant, params.project, ticketNumber);
   const refresh = async (): Promise<void> => {
     const result = await adoptedTickets(ports, partition);
     if (result.outcome !== "Ok") {
@@ -420,14 +506,34 @@ export function AdoptedTicketPage(): ReactNode {
   if (ticket === undefined)
     return <main className="p-4">{failure ?? "Loading ticket…"}</main>;
   return (
+    <TicketBody
+      {...{ ticket, failure, dispatch, setDispatch, act, source, update }}
+    />
+  );
+}
+
+function TicketBody(props: {
+  readonly ticket: AdoptedTicket;
+  readonly failure: string | undefined;
+  readonly dispatch: { readonly repository: string; readonly commit: string };
+  readonly setDispatch: (value: { repository: string; commit: string }) => void;
+  readonly act: (action: "dispatch" | "revoke" | "resume") => Promise<void>;
+  readonly source: string | null | undefined;
+  readonly update: (fields: AuthoringFields) => Promise<void>;
+}): ReactNode {
+  return (
     <main className="grid gap-5 p-4">
-      <h1>Ticket {ticket.ticket}</h1>
-      <TicketFacts ticket={ticket} />
-      {failure === undefined ? null : (
-        <p className="text-tone-fail">{failure}</p>
+      <h1>Ticket {props.ticket.ticket}</h1>
+      <TicketFacts ticket={props.ticket} />
+      {props.failure === undefined ? null : (
+        <p className="text-tone-fail">{props.failure}</p>
       )}
-      <TicketDispatch dispatch={dispatch} setDispatch={setDispatch} act={act} />
-      <TicketUpdate submit={update} />
+      <TicketDispatch
+        dispatch={props.dispatch}
+        setDispatch={props.setDispatch}
+        act={props.act}
+      />
+      <TicketUpdate source={props.source} submit={props.update} />
     </main>
   );
 }

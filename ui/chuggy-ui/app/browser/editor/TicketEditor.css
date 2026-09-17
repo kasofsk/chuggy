@@ -1,0 +1,35 @@
+@layer ui {
+  .ticket-editor {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .ticket-editor-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+  }
+
+  .ticket-editor-actions button {
+    border: var(--hairline) solid var(--edge-control);
+    border-radius: var(--radius-2);
+    padding: var(--space-1) var(--space-2);
+    color: var(--ink-2);
+  }
+
+  .ticket-editor-actions label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--ink-3);
+  }
+
+  .ticket-editor-host {
+    max-height: var(--height-clip);
+    overflow: auto;
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+  }
+}

@@ -1,10 +1,18 @@
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import {
+  adoptedCatalogEntriesSchema,
+  adoptedCatalogFileSchema,
   adoptedOperationAcceptanceSchema,
   adoptedOperationOutcomeSchema,
+  adoptedTicketDefinitionSchema,
+  adoptedTicketValidationSchema,
   adoptedTicketsSchema,
+  type AdoptedCatalogEntries,
+  type AdoptedCatalogFile,
   type AdoptedOperationAcceptance,
   type AdoptedOperationOutcome,
+  type AdoptedTicketDefinition,
+  type AdoptedTicketValidation,
   type AdoptedTickets,
 } from "../../../../src/contract/adoptedTickets.ts";
 import type { ApiPorts, ApiResult } from "./apiRequest.ts";
@@ -25,20 +33,87 @@ export function adoptedTickets(
   );
 }
 
-interface AuthoringRequest {
-  readonly source: string;
+export function adoptedTicketDefinition(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  ticket: number,
+): Promise<ApiResult<AdoptedTicketDefinition>> {
+  return apiRead(
+    ports,
+    { method: "GET", path: `${root(partition)}/tickets/${String(ticket)}` },
+    (value) => adoptedTicketDefinitionSchema.parse(value),
+  );
+}
+
+export interface CatalogPin {
   readonly catalogCommit: string;
   readonly repository?: string;
+}
+
+function catalogQuery(pin: CatalogPin): string {
+  const query = new URLSearchParams({ commit: pin.catalogCommit });
+  if (pin.repository !== undefined) query.set("repository", pin.repository);
+  return query.toString();
+}
+
+export function adoptedCatalog(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  pin: CatalogPin,
+): Promise<ApiResult<AdoptedCatalogEntries>> {
+  return apiRead(
+    ports,
+    { method: "GET", path: `${root(partition)}/catalog?${catalogQuery(pin)}` },
+    (value) => adoptedCatalogEntriesSchema.parse(value),
+  );
+}
+
+export function adoptedCatalogFile(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  pin: CatalogPin,
+  reference: string,
+): Promise<ApiResult<AdoptedCatalogFile>> {
+  return apiRead(
+    ports,
+    {
+      method: "GET",
+      path: `${root(partition)}/catalog/file?${catalogQuery(pin)}&reference=${encodeURIComponent(reference)}`,
+    },
+    (value) => adoptedCatalogFileSchema.parse(value),
+  );
+}
+
+interface AuthoringRequest extends CatalogPin {
+  readonly source: string;
   readonly idempotencyKey: string;
 }
 
-function authoringHeaders(request: AuthoringRequest): Record<string, string> {
+function authoringHeaders(request: CatalogPin): Record<string, string> {
   return {
     "x-chug-catalog-commit": request.catalogCommit,
     ...(request.repository === undefined
       ? {}
       : { "x-chug-repository": request.repository }),
   };
+}
+
+export function adoptedTicketValidate(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  request: Omit<AuthoringRequest, "idempotencyKey">,
+): Promise<ApiResult<AdoptedTicketValidation>> {
+  return apiRead(
+    ports,
+    {
+      method: "POST",
+      path: `${root(partition)}/tickets/validate`,
+      rawBody: request.source,
+      contentType: "application/yaml",
+      headers: authoringHeaders(request),
+    },
+    (value) => adoptedTicketValidationSchema.parse(value),
+  );
 }
 
 export function adoptedTicketCreate(
