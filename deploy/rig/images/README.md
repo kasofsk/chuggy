@@ -99,7 +99,6 @@ to start without the required ones.
 | Variable | | |
 |---|---|---|
 | `CHUG_API_DATABASE_URL` | required | see below |
-| `CHUG_API_SELECTOR_REVIEW_DATABASE_URL` | required | see below |
 | `CHUG_API_IDEMPOTENCY_KEYING` | required | JSON: a `current` version and the `versions` that may still be verified |
 | `CHUG_API_OIDC_ISSUER` | required | an HTTPS URL with no credentials, query or fragment |
 | `CHUG_API_OIDC_AUDIENCE` | required | |
@@ -116,7 +115,6 @@ to start without the required ones.
 | `CHUG_API_FORGE_API_URL` | `https://api.github.com` | where the mint request is sent |
 | `CHUG_API_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
 | `CHUG_API_FORGE_REPOSITORIES_MAX` | 500 | how many repositories one installation listing pages for before it answers `truncated`; it may not exceed what the response schema answers |
-| `CHUG_API_BOOTSTRAP_WORKER_IMAGE` | | the image a bootstrap configuration commands, which `deploy/rig/forge/README.md` describes; a deployment naming none authors no bootstrap and the bind reports its configuration step deferred |
 | `CHUG_API_FORGE_TEMPLATE_REPOSITORY` | | `<owner>/<name>`, the template a personal account's repository is generated from; a deployment naming none answers such a create `PersonalAccountCreatesOnGitHub` |
 | `CHUG_API_HOST` | `0.0.0.0` in the image | the source default is loopback, which no kubelet can reach |
 | `CHUG_API_PORT` | 3000 | |
@@ -124,14 +122,6 @@ to start without the required ones.
 | `CHUG_API_OIDC_DISCOVERY_TIMEOUT_MS` | | |
 | `CHUG_API_OIDC_JWKS_TIMEOUT_MS` | | |
 | `CHUG_API_KETO_TIMEOUT_MS` | | how long one project access question may take before it is undecided |
-| `CHUG_API_STREAM_CONNECTIONS_MAX` | | how many project event streams one process holds open at once |
-| `CHUG_API_STREAM_MAX_AGE_MS` | | how long one stream lives before the client is made to reconnect |
-| `CHUG_API_STREAM_HEARTBEAT_MS` | | keeps a quiet stream from reading as idle to the Cloudflare edge in front of the rig, whose cutoff was measured by holding `curl -N` on the route until the edge closed it |
-| `CHUG_API_STREAM_SWEEP_MS` | | how often the API trims the change log, which is also how often it reads the log without being rung |
-| `CHUG_API_STREAM_SWEEP_ROWS_MAX` | | how many rows one trim may remove; this and the interval above are the whole of the log's retention, because the API is the only process that trims it, so their quotient must outpace the installation's appends — a sweeper that falls behind grows the log rather than resetting a consumer, which is the direction to fall behind in |
-| `CHUG_API_SELECTOR_FEEDBACK_MAX` | | how much review feedback one operational context carries |
-| `CHUG_SCHEDULER_PROJECT_BACKLOG_MAX` | | how much of a project's backlog it carries |
-| `CHUG_SCHEDULER_INSTALLATION_BACKLOG_MAX` | | how much of the installation's it carries |
 
 **The app id and the key file are named together or not at all.** A deployment
 naming neither mints nothing: every repository credential is read from
@@ -141,21 +131,12 @@ it refuses to start rather than reporting an outage at every mint for as long as
 it runs. Where both are named, repositories on the forge the app is installed on
 are minted for and every other repository is still read from the files.
 
-**Both database URLs must become a group role, and they become different ones.**
-The API authenticates as `chuggy_api_login` for each and refuses to start unless
-`current_user` is `chuggy_api` on the first and `chuggy_selector_review` on the
-second, which the login role holds by grant rather than by default. Each
-connection string carries its own switch:
+**The database URL must select the API group role.** The API authenticates as
+`chuggy_api_login` and requires `current_user` to be `chuggy_api`:
 
 ```
 postgres://chuggy_api_login:<password>@postgres.chuggy.svc.cluster.local:5432/chuggy_rehearsal?options=-c%20role%3Dchuggy_api
-postgres://chuggy_api_login:<password>@postgres.chuggy.svc.cluster.local:5432/chuggy_rehearsal?options=-c%20role%3Dchuggy_selector_review
 ```
-
-The second carries the selector's proposal reviews both ways — the operational
-context the API serves reads them, and a reviewer's approval or rejection is
-recorded through them — over a surface `chuggy_api` is granted nothing on: the
-split is the privilege, not a second credential.
 
 **The artifact root is data, not image content.** It is a filesystem path the
 API only ever reads — the web composition passes the store to one read port —
@@ -198,10 +179,44 @@ is where the image writes the password it is answered with, at mode `0600`. That
 volume is the pod document's, so nothing about it is configured here; a
 deployment that mints nothing simply never writes to it.
 
+## Ticket service
+
+`CHUG_TICKET_SERVICE_CONFIG` contains `database`, `runtime`, `owner` and `pass`.
+The pass configuration includes `projectsPerPassMax`, `projectLeaseSeconds`,
+`inputsPerProjectMax` and `obligationsPerProjectMax`. The ticket service
+processes immutable accepted commands and delivers their obligations; catalog
+and source resolution happen at the API and execution boundaries.
+
+The scheduler requires `CHUG_SCHEDULER_TICKET_EXECUTION` for the adopted ticket
+worker. It is a JSON object whose `image` is pinned as
+`<reference>@sha256:<64 lowercase hexadecimal characters>`. Optional
+`capabilities` and `credentialSources` arrays default to empty. Each credential
+source names `repository`, `path`, `permissions` (`read` or `write`), and an
+optional `credentialReference`. File credentials must carry their declared scope;
+forge credentials are minted with the access required by the task.
+`credentialUsername` defaults to `x-access-token`.
+
+The optional `forge` object names `appId`, `keyFile`, and optional `apiUrl` and
+`requestTimeoutMs`. It uses the worker App key and installation so task tokens
+retain the worker App's branch restrictions. Worker controls and their defaults are defined in
+[src/roots/schedulerConfig.ts](../../../src/roots/schedulerConfig.ts).
+
+The ticket launcher applies a frozen execution profile directly to its pod:
+`cpu` is Kubernetes millicores, `memory_mb` is MiB, and `runner_command`
+replaces the image command and arguments. Codex receives only `codex-auth` and
+Claude receives only `claude-code`, each as its configured projected Secret
+file. Publishing runs the adopted comment removal and bounded pre-commit hooks
+before committing. Cloud identity is reported unavailable because this
+deployment has no worker cloud-assertion boundary. A resumed attempt starts
+without a prior agent session because the ticket worker has no session store.
+
 ## Configuring the control plane's minting
 
-The finalizer, the ticket service and the importer each hold the portal App key
-and mint for themselves, exactly as the API does. Each still reads whatever
+The finalizer requires `CHUG_FINALIZER_RECOVERY_EPOCH` naming the issued
+recovery epoch. Claims and subsequent mutations are fenced by that epoch.
+
+The finalizer holds the portal App key
+and mints for itself, exactly as the API does. It reads whatever
 credential files it is given, and the host in a repository's own address is what
 selects between the two: a repository on the forge the key covers is minted for,
 and every other repository is read from a file as before.
@@ -214,30 +229,15 @@ and every other repository is read from a file as before.
 | `CHUG_FINALIZER_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
 | `CHUG_FINALIZER_CREDENTIAL_SOURCES` | with the app key, or either | JSON repository-to-credential-file mappings; absent or `[]` is a finalizer that mounts nothing |
 | `CHUG_FINALIZER_FORGE_BINDINGS` | | JSON forge bindings; an entry's `path` is named where the forge credential is mounted and left out where it is minted |
-| `CHUG_TICKET_SERVICE_CONFIG` `.forge` | with `source.sources`, or either | `{appId, keyFile, apiUrl?, timeoutMs?}`, the portal App the ticket service observes a source under |
-| `CHUG_TICKET_SERVICE_CONFIG` `.source.sources` | with `.forge`, or either | absent or `[]` is a ticket service that mounts nothing |
-| `CHUG_CONFIGURATION_IMPORT_CONFIG` `.forge` | with `git.credentialSources`, or either | the same block, the portal App the importer reads a snapshot under |
-| `CHUG_CONFIGURATION_IMPORT_CONFIG` `.git.credentialSources` | with `.forge`, or either | `[]` is an importer that mounts nothing |
 
 **A service naming neither a key nor a file list is refused at start-up**, in
 each case by the configuration rather than at the first act: it could resolve no
 credential for any repository, which is not an outage that might clear.
 
-**Each service mints only what it does.** The ticket service mints `read`, the
-importer `read`, and the finalizer `write` for its git promotion and `propose`
-for its pull-request path. All three mint under the portal App, which the branch
+**Each service mints only what it does.** The finalizer mints `write` for its git promotion and `propose` for its pull-request path.
+It mints under the portal App, which the branch
 ruleset admits to protected `main` — a promotion and a proposal both need that,
 and `deploy/rig/forge/README.md` says which pods now hold that key.
-
-**The importer names no repository at all.** `CHUG_CONFIGURATION_IMPORT_CONFIG`
-no longer carries `repository`, `commit` or `partitions`: the run reads every
-binding in the database and imports each at its own default-branch head. A
-repository holding no commit, or none at its head's configuration directory, is
-skipped; one binding's failure does not stop the others, a port that raised
-included, and the run exits non-zero if any failed. One run reads a bounded
-listing, oldest binding first: a run whose listing came back at that bound
-imported a prefix of the estate and exits non-zero naming the bound, so only a
-run that exits zero imported every binding there is.
 
 **A worker or session pod needs no roster.** `CHUG_WORKER_REPOSITORIES` is
 optional for both pods: on the minted arm a repository the map does not name is

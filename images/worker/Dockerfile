@@ -32,6 +32,10 @@ ARG CLAUDE_CODE_VERSION=2.1.258
 ARG CODEX_VERSION=0.151.0
 ARG AGENT_SDK_VERSION=0.3.258
 ARG ZOD_VERSION=4.4.3
+ARG AJV_VERSION=8.20.0
+ARG TREE_SITTER_WASMS_VERSION=0.10.0
+ARG PRISM_VERSION=1.30.0
+ARG WEB_TREE_SITTER_VERSION=0.27.0
 
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
     /etc/apt/sources.list.d/debian.sources \
@@ -46,6 +50,11 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
     "@anthropic-ai/claude-agent-sdk@${AGENT_SDK_VERSION}" \
     "zod@${ZOD_VERSION}" \
     "@openai/codex@${CODEX_VERSION}" \
+  && npm install --prefix /usr/local/lib --omit=dev \
+    "ajv@${AJV_VERSION}" \
+    "@cursorless/tree-sitter-wasms@${TREE_SITTER_WASMS_VERSION}" \
+    "prismjs@${PRISM_VERSION}" \
+    "web-tree-sitter@${WEB_TREE_SITTER_VERSION}" \
   && claude --version \
   && codex --version \
   && psql --version \
@@ -54,37 +63,36 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
 
 ENV DISABLE_AUTOUPDATER=1 \
     CHUG_WORKER_WORKSPACE=/workspace \
+    CHUG_TICKET_WORKER_ENTRYPOINT=/usr/local/lib/chuggy/ticketWorker.ts \
     NODE_PATH=/usr/local/lib/node_modules \
     TMPDIR=/tmp
 
 COPY images/worker/entrypoint.mjs /usr/local/lib/chuggy/worker.mjs
-COPY images/worker/agent.mjs /usr/local/lib/chuggy/agent.mjs
-COPY images/worker/checks.mjs /usr/local/lib/chuggy/checks.mjs
+COPY src/roots/ticketWorker.ts /usr/local/lib/chuggy/ticketWorker.ts
+COPY src/adapters/runtime/ticketWorker.ts /usr/local/lib/adapters/runtime/ticketWorker.ts
+COPY src/adapters/runtime/chuggernaut/comments.js /usr/local/lib/adapters/runtime/chuggernaut/comments.js
+COPY src/adapters/runtime/chuggernaut/commit_hooks.js /usr/local/lib/adapters/runtime/chuggernaut/commit_hooks.js
 COPY images/worker/chuggyApi.mjs /usr/local/lib/chuggy/chuggyApi.mjs
 COPY images/worker/chuggyTools.mjs /usr/local/lib/chuggy/chuggyTools.mjs
-COPY images/worker/claude.mjs /usr/local/lib/chuggy/claude.mjs
-COPY images/worker/codex.mjs /usr/local/lib/chuggy/codex.mjs
-COPY images/worker/leadDecision.mjs /usr/local/lib/chuggy/leadDecision.mjs
+COPY images/worker/credentialScrub.mjs /usr/local/lib/chuggy/credentialScrub.mjs
 COPY images/worker/lease.mjs /usr/local/lib/chuggy/lease.mjs
 COPY images/worker/planeCredential.mjs /usr/local/lib/chuggy/planeCredential.mjs
-COPY images/worker/postgres.mjs /usr/local/lib/chuggy/postgres.mjs
 COPY images/worker/rateLimit.mjs /usr/local/lib/chuggy/rateLimit.mjs
 COPY images/worker/repository.mjs /usr/local/lib/chuggy/repository.mjs
-COPY images/worker/result.mjs /usr/local/lib/chuggy/result.mjs
-COPY images/worker/runEvidence.mjs /usr/local/lib/chuggy/runEvidence.mjs
 COPY images/worker/sdkProbe.mjs /usr/local/lib/chuggy/sdkProbe.mjs
 COPY images/worker/session.mjs /usr/local/lib/chuggy/session.mjs
 COPY images/worker/sessionCheckout.mjs /usr/local/lib/chuggy/sessionCheckout.mjs
 COPY images/worker/sessionMailbox.mjs /usr/local/lib/chuggy/sessionMailbox.mjs
 COPY images/worker/sessionStore.mjs /usr/local/lib/chuggy/sessionStore.mjs
 COPY images/worker/sessionTransport.mjs /usr/local/lib/chuggy/sessionTransport.mjs
-COPY images/worker/snapshot.mjs /usr/local/lib/chuggy/snapshot.mjs
-COPY images/worker/source.mjs /usr/local/lib/chuggy/source.mjs
 COPY images/worker/toolListing.mjs /usr/local/lib/chuggy/toolListing.mjs
 COPY images/worker/toolProbe.mjs /usr/local/lib/chuggy/toolProbe.mjs
 COPY images/worker/transcriptPage.mjs /usr/local/lib/chuggy/transcriptPage.mjs
 COPY images/worker/transport.mjs /usr/local/lib/chuggy/transport.mjs
 COPY --chmod=0555 images/worker/git-askpass.sh /usr/local/lib/chuggy/git-askpass.sh
+
+RUN node --experimental-strip-types -e \
+  "import('/usr/local/lib/chuggy/ticketWorker.ts')"
 
 # What the session mode needs, read off the image rather than off this file. The
 # import runs from the directory the scripts live in, because that is what

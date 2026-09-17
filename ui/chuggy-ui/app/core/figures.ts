@@ -27,7 +27,6 @@
  * `Freshness`'s and is not a figure.
  */
 
-import type { RunTotals } from "../../../../src/contract/responses.ts";
 import type { RunRollupBasis, RunSpan } from "./runTotals.ts";
 
 export const figureKinds = [
@@ -167,13 +166,15 @@ function scaledUnit(
 }
 
 /** The four counts a token figure adds, which is every kind the wire reports. */
-export type TokenCounts = Pick<
-  RunTotals,
-  "tokensInput" | "tokensOutput" | "tokensCacheCreation" | "tokensCacheRead"
->;
+export interface TokenCounts {
+  readonly tokensInput: number;
+  readonly tokensOutput: number;
+  readonly tokensCacheCreation: number;
+  readonly tokensCacheRead: number;
+}
 
 /** What a spend figure needs of a run or of a rollup over runs. */
-export type SpentTotals = TokenCounts & Pick<RunTotals, "costUsdMicros">;
+export type SpentTotals = TokenCounts & { readonly costUsdMicros: number };
 
 /** One count on its own scale, which is what a column of one kind is read in. */
 export function tokenCountText(count: number): string {

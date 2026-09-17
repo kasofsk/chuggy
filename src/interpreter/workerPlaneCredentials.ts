@@ -19,8 +19,7 @@
  */
 
 import { assertNever } from "../domain/assertNever.ts";
-import type { ExecutionTaskKind } from "./executionRequirement.ts";
-import { asRepositoryId, type RepositoryId } from "./finalizer.ts";
+import type { RepositoryId } from "./finalizer.ts";
 import type {
   ForgeInstallationToken,
   ForgePermissionSet,
@@ -28,21 +27,12 @@ import type {
 } from "./forgeInstallation.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
-import type { WorkerAttemptAuthority } from "./workerPlane.ts";
 
 /**
  * The username a minted installation token is presented to git under, which is
  * the forge's own spelling and the one a mounted credential is configured with.
  */
 export const forgeCredentialUsername = "x-access-token";
-
-/** The input reference kind that names the repository an attempt works against. */
-const repositoryReferenceKind = "Repository";
-
-/** What each task kind's pod does to its repository, which is what it is minted for. */
-const workerPlaneCredentialPermissions: Readonly<
-  Record<ExecutionTaskKind, ForgePermissionSet>
-> = { Work: "write", Evaluation: "read" };
 
 /** One git credential as a pod presents it: a username, a token, and when it stops working. */
 export interface WorkerPlaneCredential {
@@ -59,9 +49,6 @@ export type WorkerPlaneCredentialMinted =
 
 /** Mints the credential one pod needs, each half answering only its own bearer. */
 export interface WorkerPlaneCredentialMinting {
-  attempt(
-    authority: WorkerAttemptAuthority,
-  ): Promise<WorkerPlaneCredentialMinted>;
   session(
     partition: Partition,
     repository: RepositoryId,
@@ -72,23 +59,6 @@ export interface WorkerPlaneCredentialMinting {
 export interface WorkerPlaneCredentialOptions {
   readonly tokens: ForgeRepositoryTokens;
   readonly bindings: ProjectRepositoryBindingRead;
-}
-
-/**
- * The repository an attempt's input bundle pinned, or nothing where the bundle
- * does not pin exactly one: a bundle naming none has no repository to mint for,
- * and one naming several leaves the choice to the pod.
- */
-function workerPlaneCredentialRepository(
-  authority: WorkerAttemptAuthority,
-): RepositoryId | undefined {
-  const named = authority.inputs.filter(
-    (input) => input.kind === repositoryReferenceKind,
-  );
-  const only = named[0];
-  return named.length === 1 && only !== undefined
-    ? asRepositoryId(only.reference)
-    : undefined;
 }
 
 /** One mint, a store or a forge that raised being an outage rather than an answer. */
@@ -147,17 +117,6 @@ export function workerPlaneCredentialMinting(
   options: WorkerPlaneCredentialOptions,
 ): WorkerPlaneCredentialMinting {
   return {
-    attempt: async (authority) => {
-      const repository = workerPlaneCredentialRepository(authority);
-      return repository === undefined
-        ? { minted: "NotFound" }
-        : workerPlaneCredentialMinted(
-            options.tokens,
-            repository,
-            authority.partition,
-            workerPlaneCredentialPermissions[authority.taskKind],
-          );
-    },
     session: async (partition, repository) => {
       const bound = await workerPlaneCredentialBound(
         options.bindings,

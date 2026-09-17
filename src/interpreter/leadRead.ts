@@ -45,8 +45,6 @@ import {
   sessionStorePageBatchesMax,
   sessionTranscriptEntriesMax,
   sessionTranscriptHeldBatchesMax,
-  selectorHandoffNotePreviewCharsMax,
-  textCodePointsCount,
 } from "../contract/http.ts";
 import type {
   SessionId,
@@ -64,7 +62,6 @@ import type {
 } from "./sessionPlane.ts";
 import type { SessionStoreRead } from "./sessionStore.ts";
 import type { Partition } from "./projectStore.ts";
-import type { JsonValue, SelectorProjectState } from "./selector.ts";
 
 /** One turn of the lead's mailbox as a reader sees it; its input is not a reader's business. */
 export interface LeadTurnRecord {
@@ -83,9 +80,6 @@ export interface LeadStanding {
   readonly session: SessionId;
   readonly state: SessionState;
   readonly agentReference?: string;
-  readonly attention: SelectorProjectState["attention"];
-  readonly notificationCursor: number;
-  readonly handoffNote: JsonValue;
   readonly turns: readonly LeadTurnRecord[];
 }
 
@@ -135,13 +129,6 @@ export interface LeadReadStore extends SessionStoreRowsRead {
   ): Promise<readonly SessionStoreStreamRow[]>;
 }
 
-/** How large the handoff note is, and as much of it as the lead read carries. */
-export interface HandoffNotePreview {
-  readonly bytes: number;
-  readonly preview: string;
-  readonly truncated: boolean;
-}
-
 export type LeadRead =
   | { readonly result: "NotFound" }
   | {
@@ -177,16 +164,6 @@ export type LeadTranscriptRead =
   | { readonly read: "NotFound" }
   | { readonly read: "Unavailable"; readonly retryAfterSeconds: number }
   | { readonly read: "Page"; readonly page: LeadTranscriptPage };
-
-/** The note as the lead read carries it: its whole size, and its leading characters. */
-export function handoffNotePreview(note: JsonValue): HandoffNotePreview {
-  const text = JSON.stringify(note ?? null) ?? "null";
-  return {
-    bytes: new TextEncoder().encode(text).byteLength,
-    preview: [...text].slice(0, selectorHandoffNotePreviewCharsMax).join(""),
-    truncated: textCodePointsCount(text) > selectorHandoffNotePreviewCharsMax,
-  };
-}
 
 export function checkedLeadTranscriptQuery(
   query: LeadTranscriptQuery,

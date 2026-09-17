@@ -45,7 +45,6 @@ import {
   sessionTurnInputCharsMax,
   sessionTurnResultCharsMax,
 } from "../../src/contract/http.ts";
-import { briefFinalizationDefault } from "../../src/interpreter/ticketBrief.ts";
 import { allSessionCapabilities } from "../../src/interpreter/agentSession.ts";
 import { allSessionTurnFailures } from "../../src/interpreter/agentSession.ts";
 import { allSessionAttemptEvidences } from "../../src/interpreter/sessionScheduler.ts";
@@ -53,13 +52,6 @@ import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import { schemaCompatibilityPrecondition } from "../../src/interpreter/serviceRuntime.ts";
 import { postgresHarnessUrl } from "./harness.ts";
 import type pg from "pg";
-import { postgresHarnessEpoch, postgresHarnessProject } from "./harness.ts";
-import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
-import { asTicketId } from "../../src/domain/ids.ts";
-import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
-import { encodeDraftAuthoring } from "../../src/interpreter/authoring.ts";
-import { plainAuthoring } from "../actor/harness.ts";
-import type { ProjectRead } from "../../src/interpreter/nativeWeb.ts";
 
 function databaseUrl(database: string): string {
   const url = new URL(postgresHarnessUrl());
@@ -271,142 +263,9 @@ test("the baseline opens five journal columns to the API and leaves the rest shu
   });
 });
 
-const journalInstantsReleases = 400;
 
-const journalInstantsEvents = [
-  "ReleaseTicket",
-  "TaskDone",
-  "FinalizationResult",
-];
 
-function releasedPage(read: ProjectRead): readonly (string | undefined)[] {
-  if (read.result !== "Found")
-    throw new Error("migration case: the project has no page");
-  return read.project.tickets.map((ticket) => ticket.releasedAt);
-}
 
-async function seedReleasedTickets(
-  subject: pg.Pool,
-  partition: { readonly tenant: string; readonly project: string },
-  epoch: string,
-): Promise<void> {
-  const kinds = journalInstantsEvents
-    .map((type, step) => `(${String(step)},'${type}')`)
-    .join(",");
-  const entries = journalInstantsReleases * journalInstantsEvents.length;
-  await subject.query("BEGIN");
-  await subject.query(
-    `INSERT INTO decision_input
-       (tenant,project,ordinal,input_kind,input_id,base_priority,
-        lifecycle_generation,state,decided_seq,terminal_at)
-     SELECT $1,$2,k.step*$3+n,'Continuation','entry-'||(k.step*$3+n),
-            'Continuation',1,'Journaled',k.step*$3+n,now()
-       FROM generate_series(1,$3::bigint) n, (VALUES ${kinds}) AS k(step,type)`,
-    [partition.tenant, partition.project, journalInstantsReleases],
-  );
-  await subject.query(
-    `INSERT INTO journal_entry
-       (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
-        recovery_epoch,cause_kind,cause_id)
-     SELECT $1,$2,k.step*$3+n,
-       format('{"seq":%s,"event":{"type":"%s","value":{"ticket":%s}},"rec":{}}',
-              k.step*$3+n,k.type,n),
-       'digest-'||(k.step*$3+n),'previous-'||(k.step*$3+n),'owner',1,$4,
-       'Continuation','entry-'||(k.step*$3+n)
-       FROM generate_series(1,$3::bigint) n, (VALUES ${kinds}) AS k(step,type)`,
-    [partition.tenant, partition.project, journalInstantsReleases, epoch],
-  );
-  await subject.query(
-    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
-     SELECT $1,$2,n,'Pending',n FROM generate_series(1,$3::bigint) n`,
-    [partition.tenant, partition.project, journalInstantsReleases],
-  );
-  await subject.query(
-    "UPDATE project SET head=$3 WHERE tenant=$1 AND project=$2",
-    [partition.tenant, partition.project, entries],
-  );
-  await subject.query("COMMIT");
-  await subject.query("ANALYZE journal_entry");
-}
-
-async function releaseIndexUse(
-  subject: pg.Pool,
-): Promise<{ scans: number; tuples: number }> {
-  const found = await subject.query<{ scans: string; tuples: string }>(
-    `SELECT idx_scan::text AS scans, idx_tup_read::text AS tuples
-       FROM pg_stat_all_indexes
-      WHERE relname='journal_entry'
-        AND indexrelname='journal_entry_release_ticket'`,
-  );
-  const row = found.rows[0];
-  if (row === undefined)
-    throw new Error("migration case: there is no release index to use");
-  return { scans: Number(row.scans), tuples: Number(row.tuples) };
-}
-
-test("the baseline's index is what answers every read of a ticket's release", async () => {
-  await migrationDatabase("journal_instants_index", async (subject, url) => {
-    await postgresMigrate(subject);
-    const store = postgresProjectStore(subject);
-    const epoch = await postgresHarnessEpoch(store);
-    const partition = await postgresHarnessProject(store, "journal-instants");
-    await seedReleasedTickets(subject, partition, epoch);
-    const single = postgresPool(url, {
-      connectionsMax: 1,
-      connectionWaitMs: 5_000,
-      statementTimeoutMs: 10_000,
-    });
-    const reads = postgresNativeReads(single);
-    try {
-      for (const [what, read] of [
-        [
-          "the ticket's own read",
-          async () => [(await reads.ticket(partition, asTicketId(1)))?.phase],
-        ],
-        [
-          "the page in identity order",
-          async () =>
-            releasedPage(await reads.project(partition, { limit: 10 })),
-        ],
-        [
-          "the page in recent-activity order",
-          async () =>
-            releasedPage(
-              await reads.project(partition, {
-                limit: 10,
-                order: "RecentActivity",
-              }),
-            ),
-        ],
-      ] as const) {
-        const before = await releaseIndexUse(subject);
-        const listed = await read();
-        assert.ok(listed.length >= 1, `${what} listed no ticket`);
-        for (const each of listed)
-          assert.ok(each !== undefined, `${what} left a ticket unread`);
-        await single.query("SELECT pg_stat_force_next_flush()");
-        assert.ok(
-          (await releaseIndexUse(subject)).scans > before.scans,
-          `${what} was answered without the index that exists for it`,
-        );
-      }
-      const before = await releaseIndexUse(subject);
-      assert.ok(
-        (await reads.ticket(partition, asTicketId(1)))?.releasedAt !==
-          undefined,
-        "the ticket read carries the release instant",
-      );
-      await single.query("SELECT pg_stat_force_next_flush()");
-      const after = await releaseIndexUse(subject);
-      assert.ok(
-        after.tuples - before.tuples <= 1,
-        `one ticket's release cost ${String(after.tuples - before.tuples)} entries out of the index, so it was scanned for rather than looked up`,
-      );
-    } finally {
-      await single.end();
-    }
-  });
-});
 
 const leadSelectorDoorsPaged = "standing_agentic_refusals(text,text,bigint)";
 
@@ -684,120 +543,11 @@ test("a landing no roster names is refused by the column's own constraint", asyn
   });
 });
 
-async function seedProposingBinding(subject: pg.Pool): Promise<void> {
-  await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-91')`);
-  await subject.query(
-    `INSERT INTO project(tenant,project,lifecycle,head,ingress_next,ticket_next)
-     VALUES('tenant-91','project-91','Active',0,1,1)`,
-  );
-  await subject.query(
-    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch,landing_mode)
-     VALUES('tenant-91','project-91','bound-91','epoch-91','PullRequest')`,
-  );
-  await subject.query(
-    `INSERT INTO configuration_revision
-       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
-     VALUES('tenant-91','project-91','revision-91','{}','digest-91','User','author')`,
-  );
-}
 
-async function createdProposingDraft(subject: pg.Pool, branch: string | null) {
-  return (
-    await subject.query<{ result: string; ticket: string | null }>(
-      `SELECT result,ticket::text AS ticket FROM ${draftCreateFunction}(
-         'tenant-91','project-91','revision-91','digest-91',0,$1,
-         NULL,'Land it.','{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91','User','author')`,
-      [
-        encodeDraftAuthoring({
-          ...plainAuthoring,
-          finalizer: "ManagedFinalizer",
-        }),
-        branch,
-      ],
-    )
-  ).rows;
-}
 
-async function createdUnboundDraft(subject: pg.Pool) {
-  return (
-    await subject.query<{ result: string }>(
-      `SELECT result FROM ${draftCreateFunction}(
-         'tenant-91','project-91','revision-91','digest-91',0,$1,
-         NULL,'Land it.','{}'::text[],'{}'::text[],NULL,NULL,NULL,NULL,'User','author')`,
-      [
-        encodeDraftAuthoring({
-          ...plainAuthoring,
-          finalizer: "ManagedFinalizer",
-        }),
-      ],
-    )
-  ).rows;
-}
 
-test("the draft door falls back to the landing this tree defaults to", async () => {
-  assert.equal(briefFinalizationDefault.mode, "Push");
-  await migrationDatabase("i91fallback", async (subject) => {
-    await postgresMigrate(subject);
-    await seedProposingBinding(subject);
-    assert.deepEqual(await createdUnboundDraft(subject), [
-      { result: "Created" },
-    ]);
-    assert.deepEqual(
-      (
-        await subject.query<{ finalization_mode: string }>(
-          `SELECT finalization_mode FROM draft_brief`,
-        )
-      ).rows,
-      [{ finalization_mode: briefFinalizationDefault.mode }],
-    );
-  });
-});
 
-test("the baseline's door refuses the brief its own resolution left with no head", async () => {
-  await migrationDatabase("i91unbranched", async (subject) => {
-    await postgresMigrate(subject);
-    await seedProposingBinding(subject);
 
-    assert.deepEqual(await createdProposingDraft(subject, null), [
-      { result: "LandingUnbranched", ticket: null },
-    ]);
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT ticket FROM draft WHERE tenant='tenant-91' AND project='project-91'`,
-        )
-      ).rows,
-      [],
-      "a refused brief mints no ticket",
-    );
-  });
-});
-
-test("a pull request may default its base but requires a distinct head", async () => {
-  await migrationDatabase("i91pairing", async (subject) => {
-    await postgresMigrate(subject);
-    await seedProposingBinding(subject);
-
-    const created = await createdProposingDraft(subject, "refs/heads/rt/work");
-    assert.equal(created[0]?.result, "Created");
-    for (const [written, why] of [
-      ["branch=NULL", "names no branch to open from"],
-      ["finalization_target=branch", "opens from its own base"],
-    ] as const)
-      await assert.rejects(
-        subject.query(
-          `UPDATE draft_brief SET ${written}
-            WHERE tenant='tenant-91' AND project='project-91'`,
-        ),
-        /draft_brief_finalization_is_whole/u,
-        `no pull request ${why}`,
-      );
-    await subject.query(
-      `UPDATE draft_brief SET finalization_target='refs/heads/rt/landing'
-        WHERE tenant='tenant-91' AND project='project-91'`,
-    );
-  });
-});
 
 async function assertDoorsStandOwned(
   subject: pg.Pool,

@@ -205,18 +205,15 @@ check "a checkout nested under .claude/ is not this tree's source" 0 "$RC" "0 st
 
 # --- What the unit stage runs ------------------------------------------------
 #
-# `check-conformance.sh`, `check-random.sh`, `check-postgres.sh` and
-# `check-keto.sh` own their directories, and a suite of theirs failing here
-# would mean this stage had discovered it anyway. So every one of them is made
+# `check-postgres.sh` and `check-keto.sh` own their directories, and a suite of
+# theirs failing here would mean this stage had discovered it anyway. Both are made
 # to fail and the gate is required to pass regardless. The last two also cannot
 # run here at all — they need a server — which is the second reason their
 # directories are subtracted.
 
 fixture
 clean_source
-mkdir -p "$R/test/conformance" "$R/test/random" "$R/test/postgres" "$R/test/keto"
-failing_suite "$R/test/conformance/replay.test.ts" "the corpus gate's own"
-failing_suite "$R/test/random/walk.test.ts" "the walk gate's own"
+mkdir -p "$R/test/postgres" "$R/test/keto"
 failing_suite "$R/test/postgres/journal.test.ts" "the server gate's own"
 failing_suite "$R/test/keto/access.test.ts" "the authority gate's own"
 seal
@@ -224,7 +221,7 @@ seal
 check "the owning gates' suites are not this stage's" 0 "$RC" "0 stage(s) failed"
 # The split is asserted against a fixture whose suites this file wrote, so the
 # line cannot report a scope the run did not have.
-check "the clean line reports the split it ran" 0 "$RC" "unit ran 1 suite(s); 4 left to check-conformance, check-random, check-postgres, check-keto and check-console"
+check "the clean line reports the split it ran" 0 "$RC" "unit ran 1 suite(s); 2 left to check-postgres, check-keto and check-console"
 
 # A console's own suite is written for the runner its manifest pins, so this
 # runner is not merely a second one for it - it is the wrong one, and the
@@ -285,13 +282,6 @@ clean_source
 	printf '%s\n' 'import { join } from "node:path";'
 	printf '%s\n' 'export const p = join("a", "b");'
 } > "$R/src/domain/imports.ts"
-# The actor carries the same ambient ban under its own claim, so the same
-# constructs must be findings one directory over and named for that layer.
-mkdir -p "$R/src/actor"
-{
-	printf '%s\n' 'export const stamped = Date.now();'
-	printf '%s\n' 'export const drawn = Math.random();'
-} > "$R/src/actor/ambient.ts"
 # And the interpreter, whose ports are its only capability: a scoped block that
 # named a path nothing matches would read exactly like a working one.
 mkdir -p "$R/src/interpreter"
@@ -371,8 +361,6 @@ check "house rule 2: the domain may not import a platform module" 1 "$RC" "impor
 check "house rule 3: a non-total switch is a finding" 1 "$RC" "Switch is not exhaustive"
 check "house rule 4: a floating promise is a finding" 1 "$RC" "Promises must be awaited"
 check "house rule 5: a function over the cap is a finding" 1 "$RC" "Maximum allowed is 70"
-check "the actor may not read a clock either" 1 "$RC" "the journaled actor takes time as an argument"
-check "the actor may not draw randomness either" 1 "$RC" "the journaled actor takes its draws as arguments"
 check "the interpreter may not read a clock either" 1 "$RC" "the interpreter takes time as an argument"
 check "the interpreter may not draw randomness either" 1 "$RC" "the interpreter takes its draws as arguments"
 check "the contract may not read a clock" 1 "$RC" "the public contract takes time"
@@ -460,21 +448,19 @@ clean_source
 printf '%s\n' 'export const  spaced   =    1;' > "$R/src/domain/ugly.ts"
 printf '%s\n' 'export const wrong: number = "a string";' > "$R/src/domain/mistyped.ts"
 failing_suite "$R/test/domain/failing.test.ts" "this one is meant to fail"
-# test/golden carries the corpus's own coverage suite, which neither the corpus
-# gate nor the walk gate discovers: a failure there surfaces in this stage or
-# in none at all.
-mkdir -p "$R/test/golden"
-failing_suite "$R/test/golden/coverage.test.ts" "this golden one is meant to fail"
+# A nested suite not owned by a server gate still belongs to this stage.
+mkdir -p "$R/test/misc"
+failing_suite "$R/test/misc/coverage.test.ts" "this nested one is meant to fail"
 # The discovery is the whole tree, not test/: a suite beside its source runs
 # here or nowhere.
-mkdir -p "$R/src/actor"
-failing_suite "$R/src/actor/stray.test.ts" "this stray one is meant to fail"
+mkdir -p "$R/src/interpreter"
+failing_suite "$R/src/interpreter/stray.test.ts" "this stray one is meant to fail"
 seal
 
 check "house rule 6: unformatted source is a finding" 1 "$RC" "Code style issues found"
 check "a type error is a finding" 1 "$RC" "not assignable"
 check "a failing unit test is a finding" 1 "$RC" "this one is meant to fail"
-check "a test/golden suite is this stage's own" 1 "$RC" "this golden one is meant to fail"
+check "a nested suite is this stage's own" 1 "$RC" "this nested one is meant to fail"
 check "a suite outside test/ is this stage's own" 1 "$RC" "this stray one is meant to fail"
 check "each stage reports independently of the others" 1 "$RC" "3 stage(s) failed"
 

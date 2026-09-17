@@ -29,13 +29,8 @@ import {
   kubernetesSessionBudgetUsdMin,
   type KubernetesSessionBounds,
 } from "../../src/adapters/kubernetes/sessionPod.ts";
-import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
 import { sessionSchedulerDefaults } from "../../src/interpreter/sessionScheduler.ts";
-import {
-  finalizerDefaults,
-  finalizerIdentityCharsMax,
-} from "../../src/interpreter/finalizer.ts";
-import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
+import { finalizerIdentityCharsMax } from "../../src/interpreter/finalizer.ts";
 import {
   admittedImagesMax,
   workerImageCharsMax,
@@ -53,6 +48,7 @@ const tokenFile = join(root, "token");
 writeFileSync(tokenFile, "cluster-token-value\n");
 
 const workerImage = "registry.invalid/worker:1";
+const ticketImage = `registry.invalid/ticket-worker@sha256:${"a".repeat(64)}`;
 
 const images = [workerImage];
 
@@ -72,30 +68,11 @@ const grant = {
   mayCompleteTask: false,
 };
 
-const policy = {
-  Work: { profile: "standard", runtimeVersion: "1", grant },
-};
-
 const sessionPolicy = {
   image: workerImage,
   profile: "session",
   runtimeVersion: "1",
   grant,
-};
-
-const configuration = {
-  tenant: "tenant",
-  project: "project",
-  configurationRevision: "revision",
-  configurationDigest: "digest",
-  brief: {
-    motivation: ["The importer drops rows."],
-    acceptanceCriteria: ["A dropped row is reported."],
-    constraints: [],
-  },
-  practices: ["AcceptanceCriteria"],
-  work: { instructions: ["Change the importer."] },
-  review: { instructions: ["Walk the call paths."] },
 };
 
 /** A complete environment, so a case can make one variable at a time the subject. */
@@ -113,11 +90,11 @@ const environment: Readonly<Record<string, string>> = {
   CHUG_SCHEDULER_WORKER_SERVICE_ACCOUNT: "chuggy-worker",
   CHUG_SCHEDULER_ADMITTED_IMAGES: JSON.stringify(images),
   CHUG_SCHEDULER_WORKER_RESOURCES: JSON.stringify(resources),
-  CHUG_SCHEDULER_EXECUTION_POLICY: JSON.stringify(policy),
   CHUG_SCHEDULER_SESSION_RESOURCES: JSON.stringify(resources),
   CHUG_SCHEDULER_SESSION_POLICY: JSON.stringify(sessionPolicy),
   CHUG_SCHEDULER_SESSION_MODEL: "claude-opus-4-5",
   CHUG_SCHEDULER_SESSION_API_URL: "http://chuggy-api.invalid:3000",
+  CHUG_SCHEDULER_TICKET_EXECUTION: JSON.stringify({ image: ticketImage }),
 };
 
 /** Every variable the command refuses to start without. */
@@ -141,7 +118,7 @@ function parseProgram(named: Readonly<Record<string, string>>): string {
     try {
       const parsed = config.schedulerCommandConfig(environment);
       process.stdout.write(JSON.stringify({
-        parsed: { ...parsed, policy: { ...parsed.policy, profiles: Object.fromEntries(parsed.policy.profiles) } },
+        parsed,
       }));
     } catch (failure) {
       process.stdout.write(JSON.stringify({ refused: failure.message }));
@@ -164,9 +141,6 @@ const parsed = {
     recoveryEpoch: "epoch-one",
     cluster: "default",
   },
-  scheduler: executionSchedulerDefaults,
-  ticketService: ticketServiceDefaults,
-  finalizer: finalizerDefaults,
   workers: {
     podLabels: {},
     podAnnotations: {},
@@ -188,17 +162,7 @@ const parsed = {
     requestTimeoutSecsMax: 30,
     unavailableRetryAfterSecs: 15,
   },
-  policy: {
-    profiles: {
-      Work: {
-        profile: { profile: "standard", runtimeVersion: "1" },
-        grant,
-      },
-    },
-    imagesAdmitted: images,
-  },
   workerCatalog: [],
-  runtimeFacts: {},
   sessions: {
     apiBaseUrl: "https://cluster.invalid:6443",
     namespace: "chuggy-workers",
@@ -229,6 +193,17 @@ const parsed = {
     profile: { profile: "session", runtimeVersion: "1" },
     grant,
     mirrors: {},
+  },
+  tickets: {
+    image: ticketImage,
+    capabilities: [],
+    credentialSources: [],
+    credentialUsername: "x-access-token",
+    leaseSecs: 300,
+    attemptsMax: 3,
+    outputBytesMax: 1_048_576,
+    outcomePollMs: 1_000,
+    claimsPerPassMax: 1,
   },
 };
 
@@ -474,7 +449,6 @@ test("a key the session policy does not publish is refused rather than ignored",
 /** What one admitted-images list parses into: the images admitted and the catalog. */
 interface AdmittedImagesParsed {
   readonly parsed?: {
-    readonly policy: { readonly imagesAdmitted: readonly unknown[] };
     readonly workerCatalog: readonly unknown[];
   };
   readonly refused?: string;
@@ -501,22 +475,16 @@ const namedWorker = {
 
 test("a bare admitted image is admitted and named in no catalog", async () => {
   const found = await parsedAdmittedImages([workerImage]);
-  assert.deepEqual(found.parsed?.policy.imagesAdmitted, [workerImage]);
   assert.deepEqual(found.parsed?.workerCatalog, []);
 });
 
 test("a named admitted image is admitted and published to the catalog", async () => {
   const found = await parsedAdmittedImages([namedWorker]);
-  assert.deepEqual(found.parsed?.policy.imagesAdmitted, [namedWorker.image]);
   assert.deepEqual(found.parsed?.workerCatalog, [namedWorker]);
 });
 
 test("both shapes mix, and admission never learns which entry was named", async () => {
   const found = await parsedAdmittedImages([workerImage, namedWorker]);
-  assert.deepEqual(found.parsed?.policy.imagesAdmitted, [
-    workerImage,
-    namedWorker.image,
-  ]);
   assert.deepEqual(found.parsed?.workerCatalog, [namedWorker]);
 });
 
@@ -528,14 +496,6 @@ test("an admitted image publishes the execution capabilities it provides", async
     capabilities: ["Agent:Claude", "Agent:Codex"],
   };
   const found = await parsedAdmittedImages([capable]);
-  assert.deepEqual(found.parsed?.policy.imagesAdmitted, [
-    {
-      image: capable.image,
-      operatingSystem: capable.operatingSystem,
-      architecture: capable.architecture,
-      capabilities: capable.capabilities,
-    },
-  ]);
   assert.deepEqual(found.parsed?.workerCatalog, [namedWorker]);
 });
 
@@ -594,36 +554,74 @@ test("an admitted-images list longer than its bound is refused", async () => {
   assert.equal(found.parsed, undefined);
 });
 
-test("a worker's database sidecar is site data a placement carries, and is optional", async () => {
-  const database = {
-    image: "registry.invalid/postgres:18",
-    resources: {
-      cpuRequest: "250m",
-      cpuLimit: "1",
-      memoryRequest: "256Mi",
-      memoryLimit: "1Gi",
-      ephemeralStorageLimit: "4Gi",
-    },
+async function parsedTicketExecution(value: unknown): Promise<{
+  readonly parsed?: { readonly tickets: unknown };
+  readonly refused?: string;
+}> {
+  return JSON.parse(
+    await schedulerProgram(
+      parseProgram({
+        ...environment,
+        CHUG_SCHEDULER_TICKET_EXECUTION: JSON.stringify(value),
+      }),
+    ),
+  ) as {
+    readonly parsed?: { readonly tickets: unknown };
+    readonly refused?: string;
   };
-  const found = JSON.parse(
-    await schedulerProgram(
-      parseProgram({
-        ...environment,
-        CHUG_SCHEDULER_WORKER_DATABASE: JSON.stringify(database),
-      }),
-    ),
-  ) as { readonly parsed?: { readonly workers?: Record<string, unknown> } };
-  assert.deepEqual(found.parsed?.workers?.["database"], database);
+}
 
-  const refused = JSON.parse(
-    await schedulerProgram(
-      parseProgram({
-        ...environment,
-        CHUG_SCHEDULER_WORKER_DATABASE: JSON.stringify({ image: "i" }),
-      }),
-    ),
-  ) as { readonly refused?: string };
-  assert.match(refused.refused ?? "", /CHUG_SCHEDULER_WORKER_DATABASE/u);
+test("ticket execution accepts the complete deployment configuration", async () => {
+  const configured = {
+    image: ticketImage,
+    capabilities: ["git", "pull-request"],
+    credentialSources: [
+      {
+        repository: "https://forge.invalid/acme/repository.git",
+        credentialReference: "installation-42",
+        permissions: "write",
+        path: "/run/credentials/repository",
+      },
+    ],
+    forge: {
+      appId: "42",
+      keyFile: "/run/credentials/forge-key.pem",
+      apiUrl: "https://forge.invalid/api",
+      requestTimeoutMs: 5_000,
+    },
+    credentialUsername: "git",
+    leaseSecs: 60,
+    attemptsMax: 5,
+    outputBytesMax: 2_000_000,
+    outcomePollMs: 250,
+    claimsPerPassMax: 4,
+  };
+  const found = await parsedTicketExecution(configured);
+  assert.deepEqual(found.parsed?.tickets, configured);
+});
+
+test("ticket execution requires a digest-pinned image and bounded positive integers", async () => {
+  for (const value of [
+    { image: "registry.invalid/ticket-worker:latest" },
+    { image: ticketImage, leaseSecs: 0 },
+    { image: ticketImage, outputBytesMax: Number.MAX_SAFE_INTEGER + 1 },
+    { image: ticketImage, attemptsMax: 1_001 },
+    { image: ticketImage, claimsPerPassMax: 1_001 },
+    {
+      image: ticketImage,
+      credentialSources: [
+        {
+          repository: "https://forge.invalid/acme/repository.git",
+          path: "/run/credentials/repository",
+        },
+      ],
+    },
+    { image: ticketImage, forge: { appId: "42", keyFile: "" } },
+  ]) {
+    const found = await parsedTicketExecution(value);
+    assert.equal(found.parsed, undefined, JSON.stringify(value));
+    assert.match(found.refused ?? "", /CHUG_SCHEDULER_TICKET_EXECUTION/u);
+  }
 });
 
 test("every prerequisite variable is refused by its own name", async () => {
@@ -643,7 +641,9 @@ test("a bound no configuration publishes is refused rather than ignored", async 
     await schedulerProgram(
       parseProgram({
         ...environment,
-        CHUG_SCHEDULER_PASS_BOUNDS: JSON.stringify({ admissionsPerPass: 4 }),
+        CHUG_SCHEDULER_SESSION_PASS_BOUNDS: JSON.stringify({
+          admissionsPerPass: 4,
+        }),
       }),
     ),
   ) as { readonly refused?: string };
@@ -656,7 +656,7 @@ test("a bound named on the prototype of the defaults is refused too", async () =
       await schedulerProgram(
         parseProgram({
           ...environment,
-          CHUG_SCHEDULER_PASS_BOUNDS: JSON.stringify({ [bound]: 4 }),
+          CHUG_SCHEDULER_SESSION_PASS_BOUNDS: JSON.stringify({ [bound]: 4 }),
         }),
       ),
     ) as { readonly refused?: string };
@@ -669,369 +669,21 @@ test("a stated bound is taken and the rest stay the published defaults", async (
     await schedulerProgram(
       parseProgram({
         ...environment,
-        CHUG_SCHEDULER_PASS_BOUNDS: JSON.stringify({ admissionsPerPassMax: 4 }),
+        CHUG_SCHEDULER_SESSION_PASS_BOUNDS: JSON.stringify({
+          placementsPerPassMax: 4,
+        }),
         CHUG_SCHEDULER_IDLE_INTERVAL_MS: "50",
       }),
     ),
-  ) as { readonly parsed: { readonly scheduler: Record<string, number> } };
-  assert.deepEqual(found.parsed.scheduler, {
-    ...executionSchedulerDefaults,
-    admissionsPerPassMax: 4,
-  });
-});
-
-/**
- * The cluster a case answers for, reachable or not, and the site each half
- * stands on. Both halves place against that one site, so what is recorded is
- * the pod or Secret name, which carries the prefix its own launcher was
- * configured with and is therefore the only thing that says which half asked.
- */
-function processCluster(reachable: boolean): string {
-  return `
-    const cluster = {
-      apiBaseUrl: 'https://cluster.invalid:6443',
-      namespace: 'chuggy-workers',
-      tokenFile: ${JSON.stringify(tokenFile)},
-      workerPlaneUrl: 'https://worker-plane.invalid',
-      capabilityFile: '/run/chuggy/capability',
-      workspacePath: '/workspace',
-      credentialMounts: {},
-      environment: {},
-      serviceAccountName: 'chuggy-worker',
-      podNamePrefix: 'chuggy-worker',
-      resources: ${JSON.stringify(resources)},
-      podLabels: {}, podAnnotations: {}, nodeSelector: {},
-      podSecurityContext: {}, containerSecurityContext: {},
-      activeDeadlineSecs: 3600,
-      requestTimeoutSecsMax: 5,
-      unavailableRetryAfterSecs: 15,
-    };
-    const sessionSite = {
-      ...cluster,
-      credentialMounts: { 'claude-code': {
-        secretName: 'claude-code', key: 'token',
-        mountPath: '/var/run/chuggy/credentials/claude-code',
-      } },
-      podNamePrefix: 'chuggy-session',
-      activeDeadlineSecs: 86400,
-      bounds: ${JSON.stringify(kubernetesSessionBoundsDefaults)},
-      model: 'claude-haiku-4-5',
-      apiUrl: 'https://chuggy-api.invalid',
-    };
-    const asked = [];
-    const sessionTasks = [];
-    const half = (init) => {
-      const named = init && init.body ? JSON.parse(init.body).metadata.name : '';
-      if (named.startsWith(cluster.podNamePrefix)) return ' worker';
-      if (named.startsWith(sessionSite.podNamePrefix)) return ' session';
-      return '';
-    };
-    const fetcher = (input, init) => {
-      asked.push(((init && init.method) || 'GET') + ' ' + String(input) + half(init));
-      if (!${String(reachable)}) return Promise.reject(new Error('connection refused'));
-      const path = new URL(String(input)).pathname;
-      if ((!init || (init.method || 'GET') === 'GET')
-          && path.includes('/pods/' + sessionSite.podNamePrefix))
-        return Promise.resolve(Response.json({ status: { phase: 'Failed' } }));
-      if (init && init.method === 'POST' && String(input).endsWith('/pods')) {
-        const submitted = JSON.parse(init.body);
-        if (submitted.metadata.name.startsWith(sessionSite.podNamePrefix))
-          sessionTasks.push(JSON.parse(submitted.spec.containers[0].env
-            .find((variable) => variable.name === 'CHUG_SESSION_TASK').value));
-        return Promise.resolve(Response.json({
-          metadata: { ...submitted.metadata, uid: 'pod-uid-one' },
-        }, { status: 201 }));
-      }
-      return Promise.resolve(new Response(null, { status: init && init.method === 'POST' ? 201 : 200 }));
-    };
-
-  `;
-}
-
-/** The durable rows the execution half of one pass is given to move. */
-function processExecutionFakes(): string {
-  return `
-    const partition = { tenant: 'tenant', project: 'project' };
-    const execution = {
-      partition, execution: 'execution-one', ticket: 1, task: 1, taskKind: 'Work',
-      sourceRequest: '1:0:SpawnWork', sourceSeq: 1, sourceEffect: 0, ticketVersion: 1,
-      account: 'project', cluster: 'cluster',
-      configurationRevision: 'revision', configurationDigest: 'digest',
-      requirementIdentity: 'requirement-one',
-      requirement: { mode: 'Container', operatingSystem: 'Linux', architecture: 'Amd64', image: ${JSON.stringify(workerImage)} },
-      requirementDigest: 'requirement-digest',
-      requirementSource: 'PlatformDefault', platformDefaultVersion: 1,
-      status: 'Admitted', attemptsOpened: 0, retriesSpent: 0,
-    };
-    const attempt = {
-      partition, execution: 'execution-one', attempt: 'attempt-one', generation: 1,
-      attemptNumber: 1, recoveryEpoch: 'epoch-one', state: 'Placing', authoritative: true,
-      capability: { id: 'capability-one', secret: 'secret-one', manifest: 'manifest-one' },
-    };
-    const placed = [];
-    const store = {
-      fenceOldEpochAttempts: async () => 0,
-      claimRequests: async () => [],
-      admit: async () => ({ admitted: 'NoCandidate' }),
-      reapLapsedAttempts: async () => 0,
-      attemptsAwaitingCleanup: async () => [],
-      attemptCleanupCompleted: async () => true,
-      unlaunched: async () => [execution],
-      openAttempt: async () => ({ opened: 'Opened', attempt }),
-      attemptPlaced: async (_attempt, placement) => { placed.push(placement); return true; },
-      attemptEnded: async () => true,
-    };
-    const configuration = ${JSON.stringify(configuration)};
-  `;
-}
-
-/**
- * The durable rows the session half of the same pass is given to move. A case
- * that is not about observation offers no attempt to observe, so the exchange
- * every other case asserts is the placement's alone.
- */
-function processSessionFakes(observing: boolean): string {
-  return `
-    const sessionGrant = { ...${JSON.stringify(grant)}, credentials: ['claude-code'] };
-    const agentSession = {
-      partition, session: 'session-one', kind: 'Lead',
-      principal: '21:https://auth.invalid4:lead',
-      capabilities: ['RepositoryRead', 'RunCommands'],
-      credentialSlot: 'claude-code', account: 'project', cluster: 'cluster', state: 'Open',
-    };
-    const sessionFence = {
-      partition, session: 'session-one', attempt: 'session-attempt-one', generation: 1,
-    };
-    const sessionPlaced = [];
-    const sessionEnded = [];
-    const sessionStore = {
-      fenceOldEpochAttempts: async () => 0,
-      attemptsAwaitingCleanup: async () => [],
-      attemptCleanupCompleted: async () => true,
-      attemptsAwaitingObservation: async () => ${observing ? "[sessionFence]" : "[]"},
-      attemptTurnFailure: async () => ${observing ? "'StoreRefused'" : "undefined"},
-      reapLapsedAttempts: async () => 0,
-      reapIdleAttempts: async () => 0,
-      awaitingPlacement: async () => [agentSession],
-      openAttempt: async () => ({ opened: 'Opened', attempt: sessionFence }),
-      attemptPlaced: async (_attempt, placement) => { sessionPlaced.push(placement); return true; },
-      attemptEnded: async (_attempt, evidence) => { sessionEnded.push(evidence); return true; },
-    };
-    const sessionBindings = {
-      binding: async (asked) => ({
-        partition: asked, repository: 'chuggy', recoveryEpoch: 'epoch-one',
-      }),
-    };
-  `;
-}
-
-/** Everything one driven pass calls out through, cluster and rows alike. */
-function processFakes(reachable: boolean, observing: boolean): string {
-  return `
-    ${processCluster(reachable)}
-    ${processExecutionFakes()}
-    ${processSessionFakes(observing)}
-  `;
-}
-
-/** A report port that answers no reports, as the program spells one for both report kinds. */
-const reportsNone =
-  "{ reports: async () => ({ read: 'Reports', reports: { reports: [] } }) }";
-
-/**
- * One scheduler process against fakes for the two authorities it does not own:
- * a pool that answers the schema query, and a cluster that answers the probe
- * and the create. Both halves of the process are driven, because both are one
- * tick of one pacing loop.
- */
-function processProgram(
-  reachable: boolean,
-  mirrors: Readonly<Record<string, string>> = {},
-  observing = false,
-): string {
-  return `
-    const roots = await import('./src/roots/controlPlane.ts');
-    const schema = await import('./src/adapters/postgres/runtimeSchema.ts');
-    const launch = await import('./src/adapters/kubernetes/workerLaunch.ts');
-    const sessionLaunch = await import('./src/adapters/kubernetes/sessionLaunch.ts');
-    const mint = await import('./src/adapters/crypto/sessionAttemptMint.ts');
-    const supplied = await import('./src/adapters/supplied/schedulerPorts.ts');
-    const scheduler = await import('./src/interpreter/executionScheduler.ts');
-    const sessions = await import('./src/interpreter/sessionScheduler.ts');
-    const briefing = await import('./src/interpreter/taskBriefing.ts');
-    const tickets = await import('./src/interpreter/ticketService.ts');
-    const finalizer = await import('./src/interpreter/finalizer.ts');
-    ${processFakes(reachable, observing)}
-    const service = {
-      store,
-      placement: launch.kubernetesWorkerLaunch(cluster, fetcher),
-      policy: supplied.suppliedExecutionPolicy({
-        profiles: new Map([['Work', {
-          profile: { profile: 'standard', runtimeVersion: '1' },
-          grant: ${JSON.stringify(grant)},
-        }]]),
-        imagesAdmitted: ${JSON.stringify(images)},
-      }),
-      configurations: {
-        configuration: async () => ({ read: 'Configuration', configuration }),
-      },
-      runtimeFacts: supplied.suppliedRuntimeFacts({ workspace: '/workspace' }),
-      priorWorkReports: ${reportsNone}, priorEvaluationReports: ${reportsNone},
-      ticketBriefs: { brief: async () => undefined },
-      practices: briefing.blessedPracticeCatalog,
-      config: scheduler.executionSchedulerDefaults,
-      ticketService: tickets.ticketServiceDefaults,
-      finalizer: finalizer.finalizerDefaults,
-      metrics: scheduler.silentSchedulerTelemetry,
-    };
-    const sessionService = {
-      store: sessionStore,
-      bindings: sessionBindings,
-      placement: sessionLaunch.kubernetesSessionLaunch(sessionSite, fetcher),
-      bearers: mint.sessionAttemptMint(),
-      policy: {
-        image: ${JSON.stringify(workerImage)},
-        profile: { profile: 'session', runtimeVersion: '1' },
-        grant: sessionGrant,
-        mirrors: ${JSON.stringify(mirrors)},
-      },
-      config: sessions.sessionSchedulerDefaults,
-    };
-    const pool = { query: async () => ({ rows: schema.currentRuntimeSchemaContract.required }) };
-    const runtime = roots.schedulerProcess(
-      service,
-      sessionService,
-      { owner: 'scheduler-one', recoveryEpoch: 'epoch-one', cluster: 'cluster' },
-      { pool, additional: [launch.kubernetesNamespacePrecondition(cluster, fetcher)] },
-      { idleIntervalMilliseconds: 1000, shutdownDrainMilliseconds: 1000 },
-    );
-    const started = await runtime.start();
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const health = runtime.health();
-    const stopped = await runtime.stop();
-    process.stdout.write(JSON.stringify({
-      started, health, stopped, placed, sessionPlaced, sessionEnded, sessionTasks, asked,
-    }));
-  `;
-}
-
-/** What one driven scheduler process reported of itself and of the cluster it asked. */
-interface ProcessRan {
-  readonly started: {
-    readonly started: string;
-    readonly precondition?: string;
-    readonly verdict?: string;
+  ) as {
+    readonly parsed: { readonly sessionScheduler: Record<string, number> };
   };
-  readonly health: { readonly live?: boolean; readonly ready: boolean };
-  readonly stopped?: unknown;
-  readonly placed: readonly string[];
-  readonly sessionPlaced: readonly string[];
-  readonly sessionEnded: readonly string[];
-  readonly sessionTasks: readonly {
-    readonly repository?: { readonly reference: string };
-  }[];
-  readonly asked: readonly string[];
-}
-
-const namespaceUrl =
-  "https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers";
-
-test("the scheduler process starts, places one worker, reports health and stops", async () => {
-  const found = JSON.parse(
-    await schedulerProgram(processProgram(true)),
-  ) as ProcessRan;
-  assert.deepEqual(found.started, { started: "Started" });
-  assert.deepEqual(found.health, { live: true, ready: true });
-  assert.deepEqual(found.stopped, { stopped: "Stopped" });
-  assert.equal(found.placed.length, 1);
-  assert.deepEqual(found.asked.slice(0, 3), [
-    `GET ${namespaceUrl}`,
-    `POST ${namespaceUrl}/pods worker`,
-    `POST ${namespaceUrl}/secrets worker`,
-  ]);
-});
-
-/**
- * The session half of the same tick, and the order of the two. A pass nobody
- * calls would leave this untouched while the process reported itself healthy,
- * so the cluster is asked for the pod rather than the store merely told a
- * placement happened, and each request says which half named it.
- */
-test("the same tick places the session waiting for a pod, after the worker", async () => {
-  const found = JSON.parse(
-    await schedulerProgram(processProgram(true)),
-  ) as ProcessRan;
-  assert.equal(found.sessionPlaced.length, 1);
-  assert.deepEqual(found.asked, [
-    `GET ${namespaceUrl}`,
-    `POST ${namespaceUrl}/pods worker`,
-    `POST ${namespaceUrl}/secrets worker`,
-    `POST ${namespaceUrl}/pods session`,
-    `POST ${namespaceUrl}/secrets session`,
-  ]);
-});
-
-/**
- * The binding reaches the pod, which neither tier alone can say. Which adapter
- * the real root reaches for is `test/postgres/schedulerRoot.test.ts`, since the
- * `bindings` here is this case's own fake.
- */
-test("the session pod is handed the repository its project binds", async () => {
-  const found = JSON.parse(
-    await schedulerProgram(processProgram(true)),
-  ) as ProcessRan;
-  assert.equal(found.sessionTasks.length, 1);
-  assert.deepEqual(found.sessionTasks[0]?.repository, { reference: "chuggy" });
-});
-
-/**
- * The other half of the same claim: what the pod is handed is the binding put
- * through the site's mirrors, and the site is the only place that says so.
- */
-test("the session pod is handed the mirror the site names for the binding", async () => {
-  const found = JSON.parse(
-    await schedulerProgram(
-      processProgram(true, { chuggy: "http://git.invalid./chuggy.git" }),
-    ),
-  ) as ProcessRan;
-  assert.deepEqual(found.sessionTasks[0]?.repository, {
-    reference: "http://git.invalid./chuggy.git",
+  assert.deepEqual(found.parsed.sessionScheduler, {
+    ...sessionSchedulerDefaults,
+    placementsPerPassMax: 4,
   });
 });
 
-/**
- * The pod's end reaches the durable row through the whole process. The cluster
- * is what says the pod finished — the case answers the read of that pod with a
- * `Failed` phase — and the evidence recorded is the refusal the last turn
- * named, which is the defect: an attempt that stood until its lease lapsed and
- * then recorded `LeaseExpired` over a store refusal (kasofsk/chuggy#509).
- */
-test("a session pod the cluster says failed ends its attempt on the turn's own reason", async () => {
-  const found = JSON.parse(
-    await schedulerProgram(processProgram(true, {}, true)),
-  ) as ProcessRan;
-  assert.deepEqual(found.sessionEnded, ["StoreRefused"]);
-  assert.deepEqual(
-    found.asked.filter(
-      (one) => one.startsWith("GET") && one.includes("/pods/"),
-    ),
-    [`GET ${namespaceUrl}/pods/${found.sessionPlaced[0] ?? ""}`],
-  );
-});
-
-test("a cluster that does not answer is a named could-not-run and never readiness", async () => {
-  const found = JSON.parse(
-    await schedulerProgram(processProgram(false)),
-  ) as ProcessRan;
-  assert.equal(found.started.started, "CouldNotRun");
-  assert.equal(found.started.precondition, "cluster-namespace-reachable");
-  assert.equal(found.started.verdict, "Undecided");
-  assert.equal(found.health.ready, false);
-  assert.deepEqual(found.placed, []);
-  assert.deepEqual(found.sessionPlaced, []);
-});
-
-/** What running the command itself produced, a refusal being an exit code and a line. */
 interface CommandRan {
   readonly code: number | null;
   readonly stderr: string;

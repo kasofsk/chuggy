@@ -1,34 +1,20 @@
-/**
- * The identifiers this machine counts with, each branded so the compiler can
- * tell them apart. In a structurally typed language two aliases of `number`
- * are the same type, so a ticket id and a task id would be silently
- * interchangeable — and the model uses both, in the same records, one line
- * apart.
- *
- * Every one of them is a `number` rather than a `bigint`, and the model's
- * `int` is unbounded, so that choice is an assumption and is checked rather
- * than assumed: `asSafeInteger` refuses anything outside the range JavaScript
- * represents exactly, and every value entering the domain from a trace or a
- * boundary passes through it. The alternative — `bigint` throughout — buys
- * exactness the accounts do not need (`accountsBounded` bounds every digit by
- * a declared constant) and pays for it at every arithmetic site.
- */
+/** Validated identifiers shared by installation and project boundaries. */
 
 declare const ticketIdBrand: unique symbol;
 declare const taskIdBrand: unique symbol;
 declare const stageIndexBrand: unique symbol;
 declare const installationIdBrand: unique symbol;
 
-/** A ticket's identity: supplied at release from a bounded universe, sparse, never reused. */
+/** A project-local ticket identity. */
 export type TicketId = number & { readonly [ticketIdBrand]: true };
 
-/** A task's identity: sequential within its ticket, across the ticket's whole history. */
+/** A numeric task identity. */
 export type TaskId = number & { readonly [taskIdBrand]: true };
 
 /** A zero-based index into a ticket's authored program. */
 export type StageIndex = number & { readonly [stageIndexBrand]: true };
 
-/** The durable authority whose journal gives local ticket identities meaning. */
+/** The installation authority for project-local identities. */
 export type InstallationId = string & {
   readonly [installationIdBrand]: true;
 };
@@ -50,11 +36,7 @@ export function asInstallationId(value: string): InstallationId {
   return value as InstallationId;
 }
 
-/**
- * Refuses a number JavaScript cannot represent exactly. Every quantity here is
- * bounded by a declared constant, so this failing means a bound was wrong
- * rather than that the arithmetic overflowed.
- */
+/** Refuses a number JavaScript cannot represent exactly. */
 export function asSafeInteger(value: number, what: string): number {
   if (!Number.isSafeInteger(value)) {
     throw new RangeError(

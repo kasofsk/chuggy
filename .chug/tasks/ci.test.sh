@@ -158,6 +158,35 @@ set -e
 refute "a script-only change runs the suites, not just the static checks" 0 "$RC" "check-source unit: SKIPPED"
 check "a script-only change still skips Quint" 0 "$RC" "check-model: SKIPPED"
 
+source_unit_change() { # <path> — changes one tracked source-unit input
+	stub_repo 0
+	mkdir -p "$R/$(dirname "$1")"
+	printf 'before\n' > "$R/$1"
+	git -C "$R" add -A
+	git -C "$R" commit -qm baseline
+	printf 'after\n' > "$R/$1"
+	git -C "$R" add -A
+	git -C "$R" commit -qm source-unit
+	OUT="$WORK/.out"
+	set +e
+	(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+		./.chug/tasks/ci.sh) >"$OUT" 2>&1
+	RC=$?
+	set -e
+}
+
+source_unit_change vendor/chuggernaut/chug/runner/comments.ts
+refute "a vendored source change selects generated verification" 0 "$RC" \
+	"check-source unit: SKIPPED"
+
+source_unit_change vendor/chuggernaut/source.json
+refute "a provenance manifest change selects generated verification" 0 "$RC" \
+	"check-source unit: SKIPPED"
+
+source_unit_change model/ticket-domain/ticket.qnt
+refute "an adopted model change selects generated verification" 0 "$RC" \
+	"check-source unit: SKIPPED"
+
 # `check-keto`'s end-to-end suite composes the boundary over the postgres
 # harnesses, so a cone naming only the Keto adapter leaves the one suite that
 # proves a derived owner against a real authority unrun on a changed run.
@@ -178,11 +207,11 @@ set -e
 check "a postgres harness change selects the authority gate" 0 "$RC" "stub check-keto"
 
 stub_repo 0
-mkdir -p "$R/model"
-printf 'module before {}\n' > "$R/model/domain.qnt"
+mkdir -p "$R/model/ticket-domain"
+printf 'module before {}\n' > "$R/model/ticket-domain/ticket.qnt"
 git -C "$R" add -A
 git -C "$R" commit -qm baseline
-printf 'module after {}\n' > "$R/model/domain.qnt"
+printf 'module after {}\n' > "$R/model/ticket-domain/ticket.qnt"
 git -C "$R" add -A
 git -C "$R" commit -qm model
 OUT="$WORK/.out"
@@ -192,7 +221,6 @@ set +e
 RC=$?
 set -e
 check "a model change selects Quint" 0 "$RC" "stub check-model"
-check "a model change selects model API generation" 0 "$RC" "stub check-model-api"
 
 # An unresolvable base fails open to complete coverage, never to no coverage.
 stub_repo 0
@@ -227,11 +255,11 @@ check "the missing gate is named" 2 "$RC" "check-gates.sh is missing"
 
 # The half a diff hides in a mode line.
 stub_repo 0
-chmod -x "$R/.chug/tasks/check-conformance.sh"
+chmod -x "$R/.chug/tasks/check-model.sh"
 git -C "$R" add -A
 run_gates_only
 check "a non-executable named gate exits 2, not 0" 2 "$RC" "1 gate(s) could not run"
-check "the non-executable gate is named" 2 "$RC" "check-conformance.sh is not executable"
+check "the non-executable gate is named" 2 "$RC" "check-model.sh is not executable"
 
 stub_repo 0
 printf '#!/bin/sh\nexit 1\n' > "$R/.chug/tasks/failing.test.sh"

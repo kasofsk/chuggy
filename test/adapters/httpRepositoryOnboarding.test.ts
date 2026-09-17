@@ -76,7 +76,6 @@ import type {
 } from "../../src/interpreter/repositoryBinding.ts";
 import {
   repositoryOnboarding,
-  type RepositoryConfigurationsPorts,
   type RepositoryCreationPorts,
   type RepositoryOnboarding,
 } from "../../src/interpreter/repositoryOnboarding.ts";
@@ -281,35 +280,6 @@ function fixtureServiceHalf(
   };
 }
 
-/**
- * The half a bind's configuration step runs through. Every port in it defers,
- * so a case asserting a route's own answer never asserts a read of a repository
- * this suite does not have.
- */
-function fixtureServiceConfigurations(
-  image: string,
-): RepositoryConfigurationsPorts {
-  return {
-    heads: { defaultBranch: () => Promise.resolve({ read: "Absent" }) },
-    imports: {
-      bindings: { binding: () => Promise.resolve(undefined) },
-      snapshots: {
-        snapshot: () =>
-          Promise.resolve({ read: "Unavailable", unavailable: "Repository" }),
-      },
-      store: {
-        importRepositoryConfigurations: () =>
-          Promise.resolve({ imported: "StaleBinding" }),
-      },
-    },
-    authoring: {
-      createConfiguration: () =>
-        Promise.resolve({ created: "IdentityConflict" }),
-    },
-    bootstrapImage: image,
-  };
-}
-
 /** The half the create route makes repositories through, over the same fetch. */
 function fixtureServiceCreation(
   recorder: ForgeRecorder,
@@ -332,7 +302,6 @@ function fixtureService(
   access: ReturnType<typeof memoryProjectAccess>,
   apps: readonly ForgeApp[],
   creating: boolean,
-  image: string | undefined,
 ): RepositoryOnboarding {
   const privateKeyPath = keyFile(t);
   const credentials: RepositoryCredentialPort = {
@@ -363,9 +332,6 @@ function fixtureService(
     binding: fixtureBinding(store),
     landing: fixtureLanding(store),
     retirement: fixtureRetirement(store),
-    ...(image === undefined
-      ? {}
-      : { configurations: fixtureServiceConfigurations(image) }),
     ...(creating
       ? {
           creation: fixtureServiceCreation(recorder),
@@ -471,7 +437,6 @@ function fixtureCase(
     readonly store?: OnboardingStore;
     readonly apps?: readonly ForgeApp[];
     readonly creating?: boolean;
-    readonly image?: string;
   } = {},
 ) {
   const store = given.store ?? fixtureStore();
@@ -496,7 +461,6 @@ function fixtureCase(
       access,
       given.apps ?? bothApps,
       given.creating ?? false,
-      given.image,
     ),
   );
   t.after(() => app.close());
@@ -830,7 +794,6 @@ test("a bind is created at its own address and read back by the listing", async 
   assert.deepEqual(served.json(), {
     repository,
     landing: { mode: "Push" },
-    configurations: { result: "Deferred", reason: "NotConfigured" },
   });
   const listed = await binding.app.inject({
     url: repositoriesRoot,
@@ -1009,7 +972,6 @@ test("every route this slice adds answers an unauthenticated caller with 401", a
 });
 
 const createRoot = `${repositoriesRoot}/new`;
-const bootstrapImage = `ghcr.io/acme/chuggy-worker@sha256:${"e".repeat(64)}`;
 const creationKeyed = { ...versioned, "idempotency-key": "create-engine-1" };
 const creating = { account: "acme", name: "engine", visibility: "private" };
 
@@ -1072,57 +1034,7 @@ test("a creation with no idempotency key is refused before the forge is asked", 
   assert.deepEqual(composed.recorder.calls, []);
 });
 
-test("a repository is made, seeded, reserved and bound, and the answer locates it", async (t) => {
-  const composed = fixtureCase(t, {
-    answers: [
-      madeAnswer(),
-      answer(201, { content: {} }),
-      answer(201, { id: 1 }),
-    ],
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-    creating: true,
-    image: bootstrapImage,
-  });
-  const served = await composed.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 201);
-  const body = served.json<{
-    repository: string;
-    created: { account: string; name: string; url: string };
-    seeded: boolean;
-    ruleset: { result: string };
-  }>();
-  assert.equal(body.repository, repository);
-  assert.deepEqual(body.created, {
-    account: "acme",
-    name: "engine",
-    url: repository,
-  });
-  assert.equal(body.seeded, true);
-  assert.deepEqual(body.ruleset, { result: "Created" });
-  assert.equal(
-    served.headers["location"],
-    `${repositoriesRoot}/${encodeURIComponent(repository)}`,
-  );
-  assert.deepEqual(
-    composed.recorder.calls.map((call) => call.url),
-    [
-      `${fixtureApiUrl}/orgs/acme/repos`,
-      `${fixtureApiUrl}/repos/acme/engine/contents/.chug/configurations/bootstrap.json`,
-      `${fixtureApiUrl}/repos/acme/engine/rulesets`,
-    ],
-  );
-  assert.deepEqual(composed.store.bound, [
-    { repository, boundAt: "2026-09-11T01:00:00Z", landing: { mode: "Push" } },
-  ]);
-});
-
-test("a deployment naming no bootstrap image makes the repository unseeded", async (t) => {
+test("a repository is made unseeded, reserved and bound", async (t) => {
   const composed = fixtureCase(t, {
     answers: [madeAnswer()],
     granted: ["Administer"],
@@ -1136,13 +1048,24 @@ test("a deployment naming no bootstrap image makes the repository unseeded", asy
     payload: creating,
   });
   assert.equal(served.statusCode, 201);
-  const body = served.json<{ seeded: boolean; ruleset: { result: string } }>();
-  assert.equal(body.seeded, false);
-  assert.deepEqual(body.ruleset, { result: "Skipped" });
+  assert.deepEqual(served.json(), {
+    repository,
+    landing: { mode: "Push" },
+    created: { account: "acme", name: "engine", url: repository },
+    seeded: false,
+    ruleset: { result: "Skipped" },
+  });
+  assert.equal(
+    served.headers["location"],
+    `${repositoriesRoot}/${encodeURIComponent(repository)}`,
+  );
   assert.deepEqual(
     composed.recorder.calls.map((call) => call.url),
     [`${fixtureApiUrl}/orgs/acme/repos`],
   );
+  assert.deepEqual(composed.store.bound, [
+    { repository, boundAt: "2026-09-11T01:00:00Z", landing: { mode: "Push" } },
+  ]);
 });
 
 test("the identity a creation is decided under is the one the caller keyed it with", async (t) => {

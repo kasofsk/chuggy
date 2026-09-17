@@ -35,14 +35,12 @@ import {
   leadInquiryResponseSchema,
 } from "../../src/contract/responses.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
-import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { composeNativeWeb } from "../../src/compose.ts";
 import {
   oidcPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import { postgresHarnessKeying } from "./harness.ts";
 import {
   inquiryRigLead,
   inquiryRigMember,
@@ -77,9 +75,9 @@ function inquiryApp(principal: Principal) {
   return createNativeHttpApp(
     composeNativeWeb(
       pool,
-      postgresHarnessKeying(),
       rig.sessions.harness.access,
-      postgresExecutionBacklogGuard(pool),
+      {} as Parameters<typeof composeNativeWeb>[2],
+      {} as Parameters<typeof composeNativeWeb>[3],
     ),
     {
       authenticateBearer: () =>

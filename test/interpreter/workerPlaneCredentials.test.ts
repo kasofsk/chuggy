@@ -10,14 +10,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  allForgeApps,
   asForgeInstallationToken,
-  workerPodForgeApp,
   type ForgePermissionSet,
   type ForgeTokenMinted,
   type ForgeRepositoryTokens,
 } from "../../src/interpreter/forgeInstallation.ts";
-import type { ExecutionTaskKind } from "../../src/interpreter/executionRequirement.ts";
 import {
   asRepositoryId,
   type RepositoryBinding,
@@ -30,12 +27,6 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import type { ProjectRepositoryBindingRead } from "../../src/interpreter/repositoryConfiguration.ts";
-import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
-import {
-  asAttemptId,
-  asExecutionId,
-} from "../../src/interpreter/schedulerIdentity.ts";
-import type { WorkerAttemptAuthority } from "../../src/interpreter/workerPlane.ts";
 import {
   forgeCredentialUsername,
   workerPlaneCredentialMinting,
@@ -101,115 +92,6 @@ function bindingsOf(
 function bindingOf(bound: RepositoryId): RepositoryBinding {
   return { partition, repository: bound, recoveryEpoch: asRecoveryEpoch("1") };
 }
-
-function authorityOf(
-  taskKind: ExecutionTaskKind,
-  inputs: readonly { kind: string; reference: string }[] = [
-    { kind: "Repository", reference: repository },
-  ],
-): WorkerAttemptAuthority {
-  return {
-    live: true,
-    partition,
-    execution: asExecutionId("execution-1"),
-    attempt: asAttemptId("attempt-1"),
-    generation: 1,
-    taskKind,
-    manifest: asResultManifestId("manifest-1"),
-    inputBundle: "bundle-1",
-    inputBundleDigest: "digest-1",
-    inputs: inputs.map((input, ordinal) => ({ ordinal, ...input })),
-  };
-}
-
-/**
- * A work attempt is minted `write`, and the branch ruleset admits the portal
- * App to update a protected branch. Minting a pod's credential under that app
- * would therefore hand an agent-executed pod a push to main, so the app a pod
- * is minted under is the one the ruleset refuses and is not a deployment's to
- * choose.
- */
-test("a pod is minted under the app the branch ruleset refuses, never the portal's", () => {
-  assert.equal(workerPodForgeApp, "worker");
-  assert.notEqual(workerPodForgeApp, "portal");
-  assert.ok(allForgeApps.includes(workerPodForgeApp));
-});
-
-test("a work attempt is minted write on the repository its own bundle pinned", async () => {
-  const asked: Asked[] = [];
-  const minting = workerPlaneCredentialMinting({
-    tokens: tokensOf(granted, asked),
-    bindings: bindingsOf(undefined),
-  });
-
-  assert.deepEqual(await minting.attempt(authorityOf("Work")), {
-    minted: "Credential",
-    value: { username: forgeCredentialUsername, password: token, expiresAtMs },
-  });
-  assert.deepEqual(asked, [
-    { repository, tenant: partition.tenant, permissions: "write" },
-  ]);
-});
-
-test("an evaluation attempt is minted read, because an evaluation pushes nothing", async () => {
-  const asked: Asked[] = [];
-  const minting = workerPlaneCredentialMinting({
-    tokens: tokensOf(granted, asked),
-    bindings: bindingsOf(undefined),
-  });
-
-  await minting.attempt(authorityOf("Evaluation"));
-
-  assert.equal(asked[0]?.permissions, "read");
-});
-
-test("a bundle pinning no single repository is minted nothing at all", async () => {
-  const asked: Asked[] = [];
-  const minting = workerPlaneCredentialMinting({
-    tokens: tokensOf(granted, asked),
-    bindings: bindingsOf(undefined),
-  });
-
-  for (const inputs of [
-    [],
-    [{ kind: "TargetCommit", reference: "abc123" }],
-    [
-      { kind: "Repository", reference: repository },
-      { kind: "Repository", reference: mirror },
-    ],
-  ])
-    assert.deepEqual(await minting.attempt(authorityOf("Work", inputs)), {
-      minted: "NotFound",
-    });
-  assert.deepEqual(asked, [], "a bundle that pinned no one repository minted");
-});
-
-test("a forge that refused this app is a refusal the pod falls back from", async () => {
-  const minting = workerPlaneCredentialMinting({
-    tokens: tokensOf({ minted: "Denied" }, []),
-    bindings: bindingsOf(undefined),
-  });
-
-  assert.deepEqual(await minting.attempt(authorityOf("Work")), {
-    minted: "NotFound",
-  });
-});
-
-test("a forge that could not be reached is an outage and never a fallback", async () => {
-  for (const minted of [
-    { minted: "Unavailable" } as const,
-    new Error("the forge did not answer"),
-  ]) {
-    const minting = workerPlaneCredentialMinting({
-      tokens: tokensOf(minted, []),
-      bindings: bindingsOf(undefined),
-    });
-
-    assert.deepEqual(await minting.attempt(authorityOf("Work")), {
-      minted: "Unavailable",
-    });
-  }
-});
 
 test("a session is minted read on what its own project binds, never on what it named", async () => {
   const asked: Asked[] = [];

@@ -967,6 +967,17 @@ const schedulerWritePrivileges = [
     columns:
       "attempt,evidence,execution,incident,kind,observed_at,project,tenant",
   },
+  {
+    table_name: "ticket_execution",
+    privilege_type: "UPDATE",
+    columns:
+      "attempt,available_at,capability_digest,claim_expires_at,claim_owner,recovery_epoch,state,terminal_input_identity,worker_outcome",
+  },
+  {
+    table_name: "ticket_machine_content",
+    privilege_type: "INSERT",
+    columns: "content,digest,media_type,project,reference,tenant",
+  },
 ];
 
 test("the scheduler's write surface is exactly the columns execution and capacity need", async () => {
@@ -1012,16 +1023,23 @@ test("the scheduler reads execution and capacity, and of the project only its li
       "execution_result_artifact",
       "execution_result_report",
       "execution_result_source",
+      "forge_installation",
       "input_bundle_reference",
       "project",
       "recovery_epoch",
       "scheduler_incident",
       "schema_migration",
+      "ticket_execution",
+      "ticket_machine_content",
     ],
   );
   assert.equal(
+    read.find((row) => row.relation === "forge_installation")?.columns,
+    "account,app,forge,installation_id,tenant",
+  );
+  assert.equal(
     read.find((row) => row.relation === "project")?.columns,
-    "lifecycle,lifecycle_generation,manifest_next,project,tenant",
+    "lifecycle,lifecycle_generation,manifest_next,project,tenant,ticket_model",
   );
 });
 

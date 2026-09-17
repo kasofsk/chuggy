@@ -13,13 +13,8 @@ import {
   leadInquirySchema,
 } from "./requests.ts";
 import {
-  operationalStatusResponseSchema,
-  executionResponseSchema,
   leadResponseSchema,
   leadTranscriptResponseSchema,
-  runTurnsResponseSchema,
-  runTranscriptResponseSchema,
-  runConfigurationResponseSchema,
   threadsResponseSchema,
   threadResponseSchema,
   threadTranscriptResponseSchema,
@@ -61,16 +56,6 @@ const transcriptQuery = endpointQuery({
 const emptyBody = z.preprocess((value) => value ?? {}, endpointQuery({}));
 
 export const nativeHttpEndpoints = {
-  operationalStatus: {
-    method: "GET",
-    path: nativeHttpRoutes.operationalStatus,
-    response: operationalStatusResponseSchema,
-  },
-  execution: {
-    method: "GET",
-    path: nativeHttpRoutes.execution,
-    response: executionResponseSchema,
-  },
   lead: {
     method: "GET",
     path: nativeHttpRoutes.lead,
@@ -81,26 +66,6 @@ export const nativeHttpEndpoints = {
     path: nativeHttpRoutes.leadTranscript,
     query: transcriptQuery,
     response: leadTranscriptResponseSchema,
-  },
-  runTurns: {
-    method: "GET",
-    path: nativeHttpRoutes.runTurns,
-    query: endpointQuery({
-      after: endpointInteger("after").optional(),
-      limit: endpointInteger("limit", 50),
-    }),
-    response: runTurnsResponseSchema,
-  },
-  runTranscript: {
-    method: "GET",
-    path: nativeHttpRoutes.runTranscript,
-    query: endpointQuery({ after: endpointInteger("after", 0) }),
-    response: runTranscriptResponseSchema,
-  },
-  runConfiguration: {
-    method: "GET",
-    path: nativeHttpRoutes.runConfiguration,
-    response: runConfigurationResponseSchema,
   },
   threads: {
     method: "GET",

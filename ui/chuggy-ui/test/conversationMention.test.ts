@@ -12,7 +12,7 @@
 import { describe, expect, test } from "vitest";
 
 import { ticketReferenceSplit } from "../../../src/contract/ticketReference.ts";
-import type { TicketResponse } from "../../../src/contract/responses.ts";
+import type { AdoptedTicket } from "../../../src/contract/adoptedTickets.ts";
 import {
   conversationMentionFiltered,
   conversationMentionFormatter,
@@ -22,20 +22,23 @@ import {
   conversationMentionQueryCharsMax,
 } from "../app/core/conversationMention.ts";
 
-function ticketOf(ticket: number, title: string | undefined): TicketResponse {
+function ticketOf(
+  ticket: number,
+  state: AdoptedTicket["state"],
+): AdoptedTicket {
   return {
     ticket,
-    title,
-    phase: "Working",
-    sequence: 1,
-    changedAt: "2026-09-11T00:00:00.000Z",
+    revision: 1,
+    workCyclesStarted: 0,
+    state,
+    dependencies: [],
   };
 }
 
 const offered = [
-  ticketOf(15, "Fix the thing"),
-  ticketOf(16, "Ship the console"),
-  ticketOf(150, "Fix the other thing"),
+  ticketOf(15, "Work"),
+  ticketOf(16, "Evaluation"),
+  ticketOf(150, "Finalization"),
 ].map(conversationMentionItem);
 
 describe("the query a member's typing leaves", () => {
@@ -65,12 +68,12 @@ describe("what a query answers with", () => {
     ).toEqual(["15", "150"]);
   });
 
-  test("a title matches on the words inside it", () => {
+  test("a state matches its tickets", () => {
     expect(
-      conversationMentionFiltered(offered, "the thing").map((item) => item.id),
-    ).toEqual(["15", "150"]);
+      conversationMentionFiltered(offered, "work").map((item) => item.id),
+    ).toEqual(["15"]);
     expect(
-      conversationMentionFiltered(offered, "console").map((item) => item.id),
+      conversationMentionFiltered(offered, "evaluation").map((item) => item.id),
     ).toEqual(["16"]);
   });
 
@@ -80,10 +83,10 @@ describe("what a query answers with", () => {
     ).toEqual(["15", "16", "150"]);
   });
 
-  test("a ticket with no title is still offered, and says its phase", () => {
-    const untitled = conversationMentionItem(ticketOf(7, undefined));
-    expect(untitled.description).toBe("Working");
-    expect(conversationMentionFiltered([untitled], "7")).toHaveLength(1);
+  test("an adopted ticket is offered with its state", () => {
+    const item = conversationMentionItem(ticketOf(7, "Pending"));
+    expect(item.description).toBe("Pending");
+    expect(conversationMentionFiltered([item], "7")).toHaveLength(1);
   });
 });
 

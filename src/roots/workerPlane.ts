@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -22,20 +21,8 @@ import { postgresPool } from "../adapters/postgres/pool.ts";
 import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
 import { workerPlaneRole } from "../adapters/postgres/schema.ts";
 import { postgresSessionPlane } from "../adapters/postgres/sessionPlane.ts";
-import {
-  postgresWorkerPlaneAuthority,
-  postgresWorkerAttemptHeartbeats,
-  postgresWorkerArtifactReservations,
-  postgresWorkerReportStore,
-  postgresWorkerRunConfiguration,
-  postgresWorkerRunEnded,
-  postgresWorkerRunTotal,
-  postgresWorkerRunTranscript,
-  postgresWorkerRunTurns,
-} from "../adapters/postgres/workerPlane.ts";
+import { postgresTicketExecutionTerminals } from "../adapters/postgres/ticketExecution.ts";
 import { workerPlaneUploadBytesMax } from "../contract/http.ts";
-import { silentSchedulerTelemetry } from "../interpreter/executionScheduler.ts";
-import { executionSchedulerIngest } from "../interpreter/executionSchedulerReport.ts";
 import {
   githubForgeId,
   workerPodForgeApp,
@@ -179,34 +166,9 @@ async function main(): Promise<void> {
   });
   const credentials = await planeCredentials(pool);
   const app = createWorkerPlaneApp({
-    authority: postgresWorkerPlaneAuthority(pool),
-    heartbeats: postgresWorkerAttemptHeartbeats(pool),
-    heartbeatLeaseSecs: positive("CHUG_WORKER_PLANE_HEARTBEAT_LEASE_SECS", 300),
-    reservations: postgresWorkerArtifactReservations(pool),
-    artifacts,
-    runEvidence: {
-      configurations: postgresWorkerRunConfiguration(pool),
-      transcripts: postgresWorkerRunTranscript(pool),
-      turns: postgresWorkerRunTurns(pool),
-      totals: postgresWorkerRunTotal(pool),
-      endings: postgresWorkerRunEnded(pool),
-    },
-    reports: {
-      report: (secret, submission) =>
-        executionSchedulerIngest(
-          {
-            store: postgresWorkerReportStore(pool, secret),
-            artifacts,
-            digestOf: (canonical) =>
-              createHash("sha256").update(canonical, "utf8").digest("hex"),
-            metrics: silentSchedulerTelemetry,
-          },
-          submission,
-        ),
-    },
+    ticketExecutions: postgresTicketExecutionTerminals(pool),
     sessions: planeSessions(pool, artifacts),
     ...(credentials === undefined ? {} : { credentials }),
-    uploadBytesMax,
     ready: async () => {
       try {
         const found = await pool.query<{ current_role: string }>(

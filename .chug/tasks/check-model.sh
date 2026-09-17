@@ -1,7 +1,6 @@
 #!/bin/sh
 # The model gate. Typechecks every Quint module, runs the unit suite, the
-# deterministic witness modules, the refinement suites, and the randomized
-# invariant runs over each instance.
+# adopted ticket suites.
 #
 # Quint is pinned in package.json, and the local binary wins over anything on
 # PATH: a verdict that depends on which version happens to be installed is not
@@ -43,7 +42,9 @@ if [ "$have" != "$QUINT_VERSION" ]; then
 	exit 2
 fi
 
-modules="$(git ls-files 'model/*.qnt' 'model/mc/*.qnt' 'model/tests/*.qnt' || true)"
+modules="$(git ls-files 'model/*.qnt' 'model/**/*.qnt' | while IFS= read -r module; do
+	[ ! -f "$module" ] || printf '%s\n' "$module"
+done)"
 if [ -z "$modules" ]; then
 	echo "check-model: LINTER ERROR — no model modules found; the glob matched nothing"
 	exit 2
@@ -111,51 +112,8 @@ done
 unset IFS
 
 echo "--- unit suite"
-run_suite "model/tests/chuggy_test.qnt" model/tests/chuggy_test.qnt
-run_suite "model/tests/capacity_test.qnt" model/tests/capacity_test.qnt
-run_suite "model/tests/runner_test.qnt" model/tests/runner_test.qnt
-run_suite "model/tests/execution_requirement_test.qnt" model/tests/execution_requirement_test.qnt
-
-# The witness modules prove each named shape reachable and assert every
-# invariant after every step. `wrapup_none` is the odd one out: it witnesses
-# something the machine deliberately does not guarantee.
-#
-# They name their runs for what they are, so the selection is named here too:
-# quint's default takes `Test` and would take none of them.
-echo "--- witnesses"
-for w in free rework cascade stage sparse gate gate_deadline dependency wrapup_none; do
-	run_suite "witness $w" --match 'Witness$' \
-		--main="chuggy_witness_${w}_test" \
-		model/tests/chuggy_witness_test.qnt
-done
-
-echo "--- refinement"
-for r in unit witness hazard; do
-	run_suite "refinement $r" --main="chuggy_refinement_${r}_test" \
-		model/tests/chuggy_refinement_test.qnt
-done
-
-echo "--- invariants (randomized)"
-for i in budgeted deadline_only retryfree; do
-	if out="$("$QUINT" run model/mc/mc_chuggy.qnt --main="mc_chuggy_${i}" \
-		--invariant=allInvariants --max-samples=2000 --max-steps=40 2>&1)"; then
-		continue
-	else
-		rc=$?
-	fi
-	# A refuted invariant announces itself and carries the seed to reproduce it.
-	verdict "instance $i" "$rc" "$out" '\[violation\]' \
-		"instance $i violated an invariant"
-done
-
-if out="$("$QUINT" run model/mc/mc_runner.qnt --main=mc_registered_runner \
-		--invariant=allInvariants --max-samples=2000 --max-steps=30 2>&1)"; then
-	:
-else
-	rc=$?
-	verdict "registered runner instance" "$rc" "$out" '\[violation\]' \
-		"registered runner instance violated an invariant"
-fi
+run_suite "model/ticket-domain/ticket_tests.qnt" model/ticket-domain/ticket_tests.qnt
+run_suite "model/application/project-decision-processing/processing_tests.qnt" model/application/project-decision-processing/processing_tests.qnt
 
 echo "check-model: $failed failure(s), $tests test(s) run"
 if [ "$errored" -ne 0 ]; then

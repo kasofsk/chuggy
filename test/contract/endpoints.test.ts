@@ -28,10 +28,6 @@ test("query defaults and absent cursors retain their transport meaning", () => {
     after: 0,
     limit: sessionStorePageBatchesMax,
   });
-  assert.deepEqual(nativeHttpEndpoints.runTurns.query.parse({}), { limit: 50 });
-  assert.deepEqual(nativeHttpEndpoints.runTranscript.query.parse({}), {
-    after: 0,
-  });
   assert.deepEqual(
     nativeHttpEndpoints.thread.query.parse({ before: "0", limit: "1" }),
     { before: 0, limit: 1 },

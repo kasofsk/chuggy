@@ -62,19 +62,20 @@
  * the server said it could not tell.
  */
 
-import { sessionChangeResourceSchema } from "../../../../src/contract/events.ts";
-import type { SessionChangeResource } from "../../../../src/contract/events.ts";
+import { sessionChangeResourceSchema } from "../../../../src/contract/sessionEvents.ts";
+import type { SessionChangeResource } from "../../../../src/contract/sessionEvents.ts";
 import { sessionStorePageBatchesMax } from "../../../../src/contract/http.ts";
-import type { OperationState } from "../../../../src/contract/rosters.ts";
 import type {
-  AgenticRefusalResponse,
   LeadResponse,
   LeadTranscriptResponse,
-  SelectorDecisionResponse,
 } from "../../../../src/contract/responses.ts";
 
 /** As much of the note the lead left its successor as the lead read carries. */
-export type LeadHandoffNote = LeadResponse["handoffNote"];
+export interface LeadHandoffNote {
+  readonly bytes: number;
+  readonly preview: string;
+  readonly truncated: boolean;
+}
 
 /** The most entries a pane keeps, past which the oldest leave. */
 export const leadTranscriptEntriesHeldMax = 4096;
@@ -527,68 +528,3 @@ export function sessionChangeKindNamed(resource: string): string | undefined {
  * route answering the log's other end cannot put a months-old decision at the
  * top of the panel and have it drawn as the one that just ran.
  */
-export function leadDecisionsNewestFirst(
-  decisions: readonly SelectorDecisionResponse[],
-): readonly SelectorDecisionResponse[] {
-  return [...decisions].sort((left, right) => right.ordinal - left.ordinal);
-}
-
-/** One of a decision's dispatches, as the log's own answer carries it. */
-export type LeadDispatch = SelectorDecisionResponse["dispatches"][number];
-
-/**
- * The one word a settled dispatch's outcome can carry that says the writer took
- * it. It is the operation state a journaled command reaches, named from the
- * wire's own roster so a rename of it stops compiling here.
- */
-const leadDispatchAccepted: OperationState = "Succeeded";
-
-/**
- * Whether the record says this dispatch reached the journal. A delivery still
- * moving has not, and neither has one that settled on anything else — a refusal
- * code, a cancellation, a command the door would not read — so the acceptance
- * is the closed set and everything else is a dispatch that did not land.
- */
-export function leadDispatchLanded(dispatch: LeadDispatch): boolean {
-  return (
-    dispatch.state === "Terminal" && dispatch.outcome === leadDispatchAccepted
-  );
-}
-
-/**
- * What one decision did, as the one line the log is scanned down. The
- * dispatches are counted twice over — what landed, of what was named — because
- * a decision that named three and landed one did not dispatch three, and the
- * retained result cannot tell the two apart.
- */
-export function leadDecisionSummary(
-  decision: SelectorDecisionResponse,
-): string {
-  const named = decision.dispatches.length;
-  const landed = decision.dispatches.filter(leadDispatchLanded).length;
-  const counts = [
-    { count: decision.refused.length, noun: "refused" },
-    { count: decision.lifted.length, noun: "lifted" },
-  ].flatMap((part) =>
-    part.count === 0 ? [] : [`${String(part.count)} ${part.noun}`],
-  );
-  const said = [
-    ...(decision.attention === undefined ? [] : [decision.attention]),
-    ...(named === 0
-      ? []
-      : [`${String(landed)} of ${String(named)} dispatched`]),
-    ...counts,
-  ];
-  return said.length === 0 ? "None" : said.join(" · ");
-}
-
-/** Whether a refusal still binds, or the ticket has been authored again since. */
-export const agenticRefusalStandings = ["Standing", "Superseded"] as const;
-
-export type AgenticRefusalStanding = (typeof agenticRefusalStandings)[number];
-
-export function agenticRefusalStanding(
-  refusal: AgenticRefusalResponse,
-): AgenticRefusalStanding {
-  return refusal.superseded ? "Superseded" : "Standing";
-}

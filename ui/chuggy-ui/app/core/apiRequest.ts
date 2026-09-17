@@ -54,6 +54,9 @@ export interface ApiRequest {
   readonly method: string;
   readonly path: string;
   readonly body?: unknown;
+  readonly rawBody?: string;
+  readonly contentType?: string;
+  readonly headers?: Readonly<Record<string, string>>;
   readonly idempotencyKey?: string;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
@@ -132,9 +135,13 @@ function apiHeaders(
   request: ApiRequest,
   hasBody: boolean,
 ): Record<string, string> {
-  const headers: Record<string, string> = { accept: nativeHttpMediaType };
+  const headers: Record<string, string> = {
+    accept: nativeHttpMediaType,
+    ...request.headers,
+  };
   if (bearer !== undefined) headers["authorization"] = `Bearer ${bearer}`;
-  if (hasBody) headers["content-type"] = nativeHttpMediaType;
+  if (hasBody)
+    headers["content-type"] = request.contentType ?? nativeHttpMediaType;
   if (request.idempotencyKey !== undefined)
     headers["idempotency-key"] = request.idempotencyKey;
   return headers;
@@ -156,7 +163,8 @@ async function apiOnce(
   );
   try {
     const body =
-      request.body === undefined ? undefined : JSON.stringify(request.body);
+      request.rawBody ??
+      (request.body === undefined ? undefined : JSON.stringify(request.body));
     const response = await ports.fetch(request.path, {
       method: request.method,
       headers: apiHeaders(await ports.bearer(), request, body !== undefined),

@@ -2,13 +2,11 @@
  * The `ProjectStore` answered by PostgreSQL: the durable authority a
  * ticket service holds one project partition under.
  *
- * IT ASSEMBLES AND DECIDES NOTHING. Ownership is `./ownership.ts`'s and the
- * load is `./journal.ts`'s, and this file exists so the port has one
+ * IT ASSEMBLES AND DECIDES NOTHING. Ownership is `./ownership.ts`'s, and this file exists so the port has one
  * implementation to name rather than a caller assembling six functions and
  * getting the argument order wrong once. The split is by transaction:
  * every function this file names opens and closes its own, and the helpers
- * those modules share take the client rather than the pool, so the row lock a
- * load holds is the one its own transaction took.
+ * those modules share take the client rather than the pool.
  *
  * THE POOL IS THE CALLER'S. A store that opened its own connection would put a
  * deployment choice inside the adapter, and a process root is the only place
@@ -17,7 +15,6 @@
 
 import type pg from "pg";
 
-import type { StoredEntry } from "../../actor/journal.ts";
 import type {
   Acquired,
   Lease,
@@ -29,11 +26,6 @@ import type {
   RecoveryEpoch,
   Renewed,
 } from "../../interpreter/projectStore.ts";
-import type { Parsed } from "../../interpreter/wire.ts";
-import {
-  postgresJournalDispatchContracts,
-  postgresJournalLoad,
-} from "./journal.ts";
 import {
   postgresOwnershipAcquire,
   postgresOwnershipCreate,
@@ -75,12 +67,6 @@ export function postgresProjectStore(pool: pg.Pool): ProjectStore {
 
     release: (lease: Lease): Promise<void> =>
       postgresOwnershipRelease(pool, lease),
-
-    load: (lease: Lease): Promise<Parsed<readonly StoredEntry[]>> =>
-      postgresJournalLoad(pool, lease),
-
-    loadDispatchContracts: (lease) =>
-      postgresJournalDispatchContracts(pool, lease),
 
     fence: (
       partition: Partition,

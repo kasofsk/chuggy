@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "runner",
+    "result_contract"
+  ],
+  "properties": {
+    "kind": {
+      "const": "workload"
+    },
+    "execution_profile": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$",
+      "description": "Project execution profile selected independently by work and each evaluator."
+    },
+    "runner": {
+      "enum": [
+        "codex",
+        "claude",
+        "script"
+      ]
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "effort": {
+      "enum": ["low", "medium", "high", "xhigh", "max"]
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "permission_mode": {
+      "type": "string"
+    },
+    "allowed_tools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "max_budget_usd": {
+      "type": "number"
+    },
+    "command": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "environment": {
+      "type": "object",
+      "propertyNames": {
+        "not": {
+          "enum": [
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "GOOGLE_CREDENTIALS",
+            "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE"
+          ]
+        }
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "cloud_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workload", "identity"],
+      "properties": {
+        "workload": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$"
+        },
+        "identity": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$"
+        }
+      }
+    },
+    "result_contract": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object"
+        }
+      ]
+    },
+    "network_access": {
+      "type": "boolean",
+      "description": "Whether the agent's sandboxed commands may reach the network (default false)."
+    },
+    "strip_comments": {
+      "type": "boolean",
+      "default": true,
+      "description": "Remove added comments before publishing repository results."
+    },
+    "comment_directives": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "Additional regular expressions identifying comments consumed by project tools."
+    },
+    "pre_commit_hooks": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "items": {"type": "string", "minLength": 1}
+      },
+      "description": "Ordered commands run after comment removal and before the harness commit. Each command has a 120-second timeout and must not introduce removable comments."
+    },
+    "resume": {
+      "type": "boolean",
+      "description": "Whether a rework cycle resumes the previous cycle's agent session instead of starting a fresh one (default true). Only meaningful for the codex and claude runners."
+    },
+    "publishes_repository_result": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether the work task receives publication access to the repository (default true). An evaluator's workload may not set it: its access is always read-only."
+    }
+  },
+  "allOf": [
+    {
+      "if": {"required": ["effort"]},
+      "then": {"properties": {"runner": {"const": "claude"}}}
+    },
+    {
+      "if": {
+        "properties": {
+          "runner": {
+            "enum": [
+              "codex",
+              "claude"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "model",
+          "prompt"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "command"
+              ]
+            },
+            {
+              "required": [
+                "environment"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "runner": {
+            "const": "script"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "command"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "model"
+              ]
+            },
+            {
+              "required": [
+                "prompt"
+              ]
+            },
+            {
+              "required": [
+                "permission_mode"
+              ]
+            },
+            {
+              "required": [
+                "allowed_tools"
+              ]
+            },
+            {
+              "required": [
+                "max_budget_usd"
+              ]
+            },
+            {
+              "required": [
+                "resume"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

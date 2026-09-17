@@ -2,17 +2,9 @@ import { pathToFileURL } from "node:url";
 
 import { sessionAttemptMint } from "../adapters/crypto/sessionAttemptMint.ts";
 import { kubernetesSessionLaunch } from "../adapters/kubernetes/sessionLaunch.ts";
-import {
-  kubernetesNamespacePrecondition,
-  kubernetesWorkerLaunch,
-} from "../adapters/kubernetes/workerLaunch.ts";
-import {
-  suppliedExecutionPolicy,
-  suppliedRuntimeFacts,
-} from "../adapters/supplied/schedulerPorts.ts";
-import { silentSchedulerTelemetry } from "../interpreter/executionScheduler.ts";
+import { kubernetesNamespacePrecondition } from "../adapters/kubernetes/namespacePrecondition.ts";
 import type { ServiceRuntime } from "../interpreter/serviceRuntime.ts";
-import { blessedPracticeCatalog } from "../interpreter/taskBriefing.ts";
+import { ticketExecutionRuntime } from "./ticketExecution.ts";
 import { schedulerProcessRoot } from "./controlPlane.ts";
 import {
   schedulerCommandConfig,
@@ -24,16 +16,7 @@ function schedulerRuntime(config: SchedulerCommandConfig): ServiceRuntime {
     database: config.database,
     runtime: config.runtime,
     identity: config.identity,
-    service: {
-      placement: kubernetesWorkerLaunch(config.workers),
-      policy: suppliedExecutionPolicy(config.policy),
-      runtimeFacts: suppliedRuntimeFacts(config.runtimeFacts),
-      practices: blessedPracticeCatalog,
-      config: config.scheduler,
-      ticketService: config.ticketService,
-      finalizer: config.finalizer,
-      metrics: silentSchedulerTelemetry,
-    },
+    tickets: (pool) => ticketExecutionRuntime(pool, config),
     sessions: {
       placement: kubernetesSessionLaunch(config.sessions),
       bearers: sessionAttemptMint(),

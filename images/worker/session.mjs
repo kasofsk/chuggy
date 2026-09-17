@@ -56,7 +56,6 @@ import {
   chuggyToolServerName,
   sessionAllowedTools,
 } from "./chuggyTools.mjs";
-import { leadDecisionStaging } from "./leadDecision.mjs";
 import { keepWorkerLease } from "./lease.mjs";
 import {
   observeRateLimit,
@@ -65,7 +64,7 @@ import {
 } from "./rateLimit.mjs";
 import { planeCredential, sessionCredentialPath } from "./planeCredential.mjs";
 import { workerRepositories } from "./repository.mjs";
-import { credentialScrub } from "./runEvidence.mjs";
+import { credentialScrub } from "./credentialScrub.mjs";
 import { sessionCheckout } from "./sessionCheckout.mjs";
 import { sessionMailbox } from "./sessionMailbox.mjs";
 import { sessionStoreAdapter } from "./sessionStore.mjs";
@@ -655,14 +654,8 @@ async function settleTurn(context, turn, result) {
  * to an observation: a user's message and a wake are answered to a reader, not
  * to the selector.
  */
-function sessionAnswerText(context, turn, result) {
-  const document =
-    turn.inputKind === "Observation" ? context.staging?.document() : undefined;
-  return document === undefined
-    ? sessionResultText(result, context.scrub)
-    : context
-        .scrub(JSON.stringify(document))
-        .slice(0, sessionTurnResultCharsMax);
+function sessionAnswerText(context, _turn, result) {
+  return sessionResultText(result, context.scrub);
 }
 
 /** Every turn the mailbox hands over, until it stops handing them over. */
@@ -844,7 +837,6 @@ function sessionToolServers(context, facts, environment, services, sdk) {
         capabilities: facts.capabilities,
         version: environment.CHUG_SESSION_IMAGE_VERSION ?? "1",
         turn: () => context.mailbox.claimed()?.turn,
-        staging: context.staging,
         ...(services.chuggyRequest === undefined
           ? {}
           : { request: services.chuggyRequest }),
@@ -860,13 +852,10 @@ function sessionToolServers(context, facts, environment, services, sdk) {
  * nothing for the next one to inherit.
  */
 function sessionStagedMailbox(context, { request, wait: pause, now }) {
-  const staging = leadDecisionStaging();
-  context.staging = staging;
   context.mailbox = sessionMailbox(context.task, context.bearer, {
     request,
     wait: pause,
     now,
-    claim: (turn) => staging.reset(turn.input),
   });
 }
 

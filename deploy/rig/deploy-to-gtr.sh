@@ -399,7 +399,7 @@ if [ "$ui_moved" -eq 1 ]; then publish chuggy-ui web "chuggy-ui-$tag"; ui_digest
 
 # --- the manifests --------------------------------------------------------------
 
-api_manifests="chuggy-api.yaml chuggy-configuration-importer.yaml chuggy-finalizer.yaml chuggy-migrate.yaml chuggy-scheduler.yaml chuggy-selector.yaml chuggy-ticket-service.yaml chuggy-worker-plane.yaml"
+api_manifests="chuggy-api.yaml chuggy-finalizer.yaml chuggy-migrate.yaml chuggy-scheduler.yaml chuggy-ticket-service.yaml chuggy-worker-plane.yaml"
 console_manifests="chuggy-ui.yaml"
 
 rewrite() { # <manifest> <sed expression>

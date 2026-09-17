@@ -9,10 +9,7 @@
 
 import { expect, test } from "vitest";
 
-import type {
-  ForgeRepositoryResponse,
-  ProjectRepositoryConfigurationsResponse,
-} from "../../../src/contract/responses.ts";
+import type { ForgeRepositoryResponse } from "../../../src/contract/responses.ts";
 import type { ApiResult } from "../app/core/apiRequest.ts";
 import type { ProjectRepositoryBindAnswer } from "../app/core/apiRoutes.ts";
 import {
@@ -68,15 +65,12 @@ function status(result: ApiResult<ProjectRepositoryBindAnswer>): string {
   return repositoryBindStatus(repositoryBindOutcome(result));
 }
 
-function answered(
-  configurations: ProjectRepositoryConfigurationsResponse,
-): ApiResult<ProjectRepositoryBindAnswer> {
+function answered(): ApiResult<ProjectRepositoryBindAnswer> {
   return {
     outcome: "Ok",
     value: {
       repository: "https://forge.test/kasofsk/chuggy",
       landing: { mode: "Push" },
-      configurations,
     },
   };
 }
@@ -90,33 +84,17 @@ const alreadyBound: ApiResult<ProjectRepositoryBindAnswer> = {
  * repository alone, and the classifier keeps neither status, so the body is
  * what tells the two apart. */
 test("a bind of a repository already bound says so", () => {
-  expect(status(answered({ result: "Imported", count: 2 }))).toBe("Bound");
+  expect(status(answered())).toBe("Bound");
   expect(status(alreadyBound)).toBe("Already bound");
 });
 
-test("a new binding draws what its own configurations came to", () => {
+test("a new binding draws its status", () => {
   expect(repositoryBindLines(repositoryBindOutcome(alreadyBound))).toEqual([
     "Already bound",
   ]);
-  expect(
-    repositoryBindLines(
-      repositoryBindOutcome(answered({ result: "Imported", count: 3 })),
-    ),
-  ).toEqual(["Bound", "Imported"]);
-  expect(
-    repositoryBindLines(
-      repositoryBindOutcome(
-        answered({ result: "Bootstrapped", revision: "r1" }),
-      ),
-    ),
-  ).toEqual(["Bound", "Bootstrapped"]);
-  expect(
-    repositoryBindLines(
-      repositoryBindOutcome(
-        answered({ result: "Deferred", reason: "StepFailed" }),
-      ),
-    ),
-  ).toEqual(["Bound", "Deferred · StepFailed"]);
+  expect(repositoryBindLines(repositoryBindOutcome(answered()))).toEqual([
+    "Bound",
+  ]);
 });
 
 test("each refusal is the one line the picker draws under itself", () => {

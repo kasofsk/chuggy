@@ -1,8 +1,22 @@
 # chuggy
 
-A job orchestrator. Tickets form a DAG; one journaled actor decides everything; the fabric runs the work and decides nothing.
+A job orchestrator. Tickets form a DAG; one durable project processor decides;
+the fabric runs the work and decides nothing.
 
 **The formal model leads.** A Quint model of the machine is proved first and emits golden traces; this implementation grows up against them. When the two disagree, the implementation is wrong.
+
+New projects use the pinned Chuggernaut [ticket model](model/ticket-domain/ticket.qnt),
+[evaluation model](model/ticket-domain/evaluation/evaluation.qnt),
+[task contract](model/task-contract/task.qnt), and
+[processing contract](model/application/project-decision-processing/processing.qnt).
+The [source manifest](vendor/chuggernaut/source.json) pins upstream bytes;
+`node scripts/build-ticket-domain.ts --check` verifies the generated TypeScript
+runtime and trace replay helpers. Existing legacy projects retain their data
+and return `LegacyModelUnsupported`.
+
+Tickets use the [ticket/catalog schema](src/adapters/catalog/schemas/ticket.json)
+from an exact repository commit. The [PR finalizer](src/adapters/catalog/schemas/finalizer.json)
+opens a pull request; `merge: true` also merges it before reporting success.
 
 Start at [CLAUDE.md](./CLAUDE.md) — it is the entry point for humans and agents alike, and routes to the rest.
 

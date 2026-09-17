@@ -1,28 +1,4 @@
-/**
- * The scheduler command's whole runtime configuration, parsed out of a plain
- * environment record into the values its process root and its adapters take.
- *
- * IT READS NO ENVIRONMENT OF ITS OWN. The record is an argument, so the shell
- * that owns `process.env` is one file and this one is a total function from
- * text to parsed data — which is what lets a suite drive every refusal without
- * a process to set variables on.
- *
- * EVERY SITE DECISION ARRIVES AS DATA AND NONE IS DECIDED HERE. Admitted worker
- * images, resource budgets, the namespace, the service account, the node
- * selector and both security contexts are read and handed on unread; what this
- * module decides is whether a deployment named them at all, and whether the
- * admitted-images list names one image, or one worker label, twice.
- *
- * A BOUND IS EITHER THE DEFAULT OR AN OVERRIDE OF ONE THAT EXISTS. The three
- * pass configurations are merged over the defaults their own modules publish,
- * and an override naming a bound those defaults do not carry is refused rather
- * than ignored — a misspelled bound that silently kept the default is the shape
- * a deployment cannot see.
- *
- * NO CREDENTIAL IS PARSED. The cluster credential is named by the file it is
- * read from per act, so no token reaches this configuration, the process
- * arguments or any diagnostic either raises.
- */
+/** Parses the scheduler deployment configuration without reading ambient state. */
 
 import { z } from "zod";
 
@@ -37,28 +13,16 @@ import {
   type KubernetesSessionBounds,
   type KubernetesSessionLaunchConfig,
 } from "../adapters/kubernetes/sessionPod.ts";
-import type { KubernetesWorkerLaunchConfig } from "../adapters/kubernetes/workerPod.ts";
-import type {
-  SuppliedExecutionPolicyConfig,
-  SuppliedExecutionProfile,
-  SuppliedRuntime,
-  SuppliedRuntimeFactsConfig,
-} from "../adapters/supplied/schedulerPorts.ts";
+import type { KubernetesWorkloadSiteConfig } from "../adapters/kubernetes/kubernetesSite.ts";
 import {
   asClusterId,
   asSchedulerOwnerId,
-  executionCapacityDefaults,
-  executionSchedulerDefaults,
   type ClusterId,
-  type ExecutionSchedulerConfig,
-  type ExecutionTaskKind,
   type SchedulerOwnerId,
-} from "../interpreter/executionScheduler.ts";
+} from "../interpreter/schedulerIdentity.ts";
 import {
   asRepositoryId,
-  finalizerDefaults,
   finalizerIdentityCharsMax,
-  type FinalizerConfig,
 } from "../interpreter/finalizer.ts";
 import {
   sessionSchedulerDefaults,
@@ -71,20 +35,16 @@ import {
   type RecoveryEpoch,
 } from "../interpreter/projectStore.ts";
 import type { ServiceRuntimeConfig } from "../interpreter/serviceRuntime.ts";
-import { repositoryConfigurationNameCharsMax } from "../interpreter/repositoryConfigurationIdentity.ts";
 import {
   admittedImagesMax,
   asWorkerName,
+  workerNameCharsMax,
   asWorkerVersion,
   workerImageCharsMax,
   workerVersionCharsMax,
   type AdmittedWorker,
 } from "../interpreter/workerCatalog.ts";
 import type { FilesystemAccess } from "../interpreter/taskAuthority.ts";
-import {
-  ticketServiceDefaults,
-  type TicketServiceConfig,
-} from "../interpreter/ticketService.ts";
 import type { ProcessDatabaseConfig } from "./controlPlane.ts";
 
 /** Everything the scheduler command composes itself from, as parsed plain data. */
@@ -96,16 +56,35 @@ export interface SchedulerCommandConfig {
     readonly recoveryEpoch: RecoveryEpoch;
     readonly cluster: ClusterId;
   };
-  readonly scheduler: ExecutionSchedulerConfig;
-  readonly ticketService: TicketServiceConfig;
-  readonly finalizer: FinalizerConfig;
-  readonly workers: KubernetesWorkerLaunchConfig;
-  readonly policy: SuppliedExecutionPolicyConfig;
+  readonly workers: KubernetesWorkloadSiteConfig;
   readonly workerCatalog: readonly AdmittedWorker[];
-  readonly runtimeFacts: SuppliedRuntimeFactsConfig;
   readonly sessions: KubernetesSessionLaunchConfig;
   readonly sessionScheduler: SessionSchedulerConfig;
   readonly sessionPolicy: SessionPolicy;
+  readonly tickets: SchedulerTicketExecutionConfig;
+}
+
+export interface SchedulerTicketExecutionConfig {
+  readonly image: string;
+  readonly capabilities: readonly string[];
+  readonly credentialSources: readonly {
+    readonly repository: string;
+    readonly permissions: "read" | "write";
+    readonly credentialReference?: string;
+    readonly path: string;
+  }[];
+  readonly forge?: {
+    readonly appId: string;
+    readonly keyFile: string;
+    readonly apiUrl?: string;
+    readonly requestTimeoutMs?: number;
+  };
+  readonly credentialUsername: string;
+  readonly leaseSecs: number;
+  readonly attemptsMax: number;
+  readonly outputBytesMax: number;
+  readonly outcomePollMs: number;
+  readonly claimsPerPassMax: number;
 }
 
 /** The one prefix every variable this command reads is spelled with. */
@@ -130,6 +109,10 @@ const schedulerTextSchema = z.string().min(1);
 
 const schedulerBoundSchema = z.number().int().positive();
 
+const schedulerSafePositiveSchema = z.number().int().positive().safe();
+
+const schedulerCountSchema = schedulerSafePositiveSchema.max(1_000);
+
 const schedulerTextMapSchema = z.record(schedulerTextSchema, z.string());
 
 const schedulerRecordSchema = z.record(schedulerTextSchema, z.unknown());
@@ -146,12 +129,6 @@ const schedulerGrantSchema = z.strictObject({
   network: z.boolean(),
   filesystem: schedulerFilesystemSchema,
   mayCompleteTask: z.boolean(),
-});
-
-const schedulerProfileSchema = z.strictObject({
-  profile: schedulerTextSchema,
-  runtimeVersion: schedulerTextSchema,
-  grant: schedulerGrantSchema,
 });
 
 /**
@@ -182,17 +159,37 @@ const schedulerSessionPolicySchema = z.strictObject({
   mirrors: schedulerMirrorsSchema.optional(),
 });
 
-const schedulerPolicyShape = {
-  Work: schedulerProfileSchema.optional(),
-  Evaluation: schedulerProfileSchema.optional(),
-} satisfies Record<ExecutionTaskKind, z.ZodType>;
-
-const schedulerPolicySchema = z.strictObject(schedulerPolicyShape);
-
-/** Every task kind the policy above states a profile for, read off the shape that states them. */
-const schedulerTaskKinds = Object.keys(
-  schedulerPolicyShape,
-) as readonly ExecutionTaskKind[];
+const schedulerTicketExecutionSchema = z.strictObject({
+  image: schedulerTextSchema.regex(
+    /^.+@sha256:[0-9a-f]{64}$/u,
+    "must be pinned by a sha256 digest",
+  ),
+  capabilities: z.array(schedulerTextSchema).default([]),
+  credentialSources: z
+    .array(
+      z.strictObject({
+        repository: schedulerTextSchema,
+        permissions: z.enum(["read", "write"]),
+        credentialReference: schedulerTextSchema.optional(),
+        path: schedulerTextSchema,
+      }),
+    )
+    .default([]),
+  forge: z
+    .strictObject({
+      appId: schedulerTextSchema,
+      keyFile: schedulerTextSchema,
+      apiUrl: schedulerTextSchema.optional(),
+      requestTimeoutMs: schedulerSafePositiveSchema.optional(),
+    })
+    .optional(),
+  credentialUsername: schedulerTextSchema.default("x-access-token"),
+  leaseSecs: schedulerSafePositiveSchema.default(300),
+  attemptsMax: schedulerCountSchema.default(3),
+  outputBytesMax: schedulerSafePositiveSchema.default(1_048_576),
+  outcomePollMs: schedulerSafePositiveSchema.default(1_000),
+  claimsPerPassMax: schedulerCountSchema.default(1),
+});
 
 /**
  * One admitted image, either the bare reference a deployment has always written
@@ -205,7 +202,7 @@ const schedulerAdmittedImageSchema = z.union([
     .strictObject({
       image: schedulerTextSchema.max(workerImageCharsMax),
       name: z.string().refine((value) => asWorkerName(value) !== undefined, {
-        message: `is not a worker name of at most ${String(repositoryConfigurationNameCharsMax)} characters`,
+        message: `is not a worker name of at most ${String(workerNameCharsMax)} characters`,
       }),
       version: z
         .string()
@@ -242,19 +239,6 @@ type SchedulerAdmittedImage = z.infer<typeof schedulerAdmittedImageSchema>;
 /** The image one entry admits, whichever of the two shapes it was written in. */
 function schedulerAdmittedImage(entry: SchedulerAdmittedImage): string {
   return typeof entry === "string" ? entry : entry.image;
-}
-
-function schedulerRuntime(
-  entry: SchedulerAdmittedImage,
-): string | SuppliedRuntime {
-  if (typeof entry === "string" || entry.capabilities === undefined)
-    return schedulerAdmittedImage(entry);
-  return {
-    image: entry.image,
-    operatingSystem: entry.operatingSystem ?? "Linux",
-    architecture: entry.architecture ?? "Amd64",
-    capabilities: entry.capabilities,
-  };
 }
 
 /**
@@ -301,11 +285,6 @@ const schedulerResourcesSchema = z.strictObject({
   memoryRequest: schedulerTextSchema,
   memoryLimit: schedulerTextSchema,
   ephemeralStorageLimit: schedulerTextSchema,
-});
-
-const schedulerWorkerDatabaseSchema = z.strictObject({
-  image: schedulerTextSchema,
-  resources: schedulerResourcesSchema,
 });
 
 const schedulerCredentialMountsSchema = z.record(
@@ -469,36 +448,11 @@ function schedulerWorkerCatalog(
     }));
 }
 
-/** The execution policy this deployment states, one profile and grant per task kind. */
-function schedulerPolicy(
-  environment: SchedulerEnvironment,
-  admitted: readonly SchedulerAdmittedImage[],
-): SuppliedExecutionPolicyConfig {
-  const parsed = schedulerJson(
-    environment,
-    "EXECUTION_POLICY",
-    schedulerPolicySchema,
-  );
-  const profiles = new Map<ExecutionTaskKind, SuppliedExecutionProfile>();
-  for (const kind of schedulerTaskKinds) {
-    const supplied = parsed[kind];
-    if (supplied === undefined) continue;
-    profiles.set(kind, {
-      profile: {
-        profile: supplied.profile,
-        runtimeVersion: supplied.runtimeVersion,
-      },
-      grant: supplied.grant,
-    });
-  }
-  return { profiles, imagesAdmitted: admitted.map(schedulerRuntime) };
-}
-
 /** The site policy a placed pod carries, every value of it read and handed on unread. */
 function schedulerWorkerSite(
   environment: SchedulerEnvironment,
 ): Pick<
-  KubernetesWorkerLaunchConfig,
+  KubernetesWorkloadSiteConfig,
   | "podLabels"
   | "podAnnotations"
   | "nodeSelector"
@@ -542,19 +496,9 @@ function schedulerWorkerSite(
 /** The cluster this deployment places workers in, and the bounds each placement has. */
 function schedulerWorkers(
   environment: SchedulerEnvironment,
-): KubernetesWorkerLaunchConfig {
-  const database = schedulerOptional(environment, "WORKER_DATABASE");
+): KubernetesWorkloadSiteConfig {
   return {
     ...schedulerWorkerSite(environment),
-    ...(database === undefined
-      ? {}
-      : {
-          database: schedulerDocument(
-            "WORKER_DATABASE",
-            schedulerWorkerDatabaseSchema,
-            database,
-          ),
-        }),
     apiBaseUrl: schedulerRequired(environment, "CLUSTER_API_URL"),
     namespace: schedulerRequired(environment, "CLUSTER_NAMESPACE"),
     tokenFile: schedulerRequired(environment, "CLUSTER_TOKEN_FILE"),
@@ -688,9 +632,43 @@ function schedulerSessionPolicy(
   };
 }
 
+function schedulerTicketExecution(
+  environment: SchedulerEnvironment,
+): SchedulerTicketExecutionConfig {
+  const parsed = schedulerJson(
+    environment,
+    "TICKET_EXECUTION",
+    schedulerTicketExecutionSchema,
+  );
+  const { credentialSources, forge, ...settings } = parsed;
+  return {
+    ...settings,
+    credentialSources: credentialSources.map((source) => ({
+      repository: source.repository,
+      permissions: source.permissions,
+      path: source.path,
+      ...(source.credentialReference === undefined
+        ? {}
+        : { credentialReference: source.credentialReference }),
+    })),
+    ...(forge === undefined
+      ? {}
+      : {
+          forge: {
+            appId: forge.appId,
+            keyFile: forge.keyFile,
+            ...(forge.apiUrl === undefined ? {} : { apiUrl: forge.apiUrl }),
+            ...(forge.requestTimeoutMs === undefined
+              ? {}
+              : { requestTimeoutMs: forge.requestTimeoutMs }),
+          },
+        }),
+  };
+}
+
 /** Only the cluster half of a worker configuration, which is the site both halves share. */
 function schedulerPodSite(
-  workers: KubernetesWorkerLaunchConfig,
+  workers: KubernetesWorkloadSiteConfig,
 ): KubernetesPodSite {
   return {
     apiBaseUrl: workers.apiBaseUrl,
@@ -727,7 +705,6 @@ function schedulerDatabase(
 export function schedulerCommandConfig(
   environment: SchedulerEnvironment,
 ): SchedulerCommandConfig {
-  const workspace = schedulerOptional(environment, "WORKER_WORKSPACE");
   const admitted = schedulerJson(
     environment,
     "ADMITTED_IMAGES",
@@ -754,29 +731,11 @@ export function schedulerCommandConfig(
         schedulerRequired(environment, "RECOVERY_EPOCH"),
       ),
       cluster: asClusterId(
-        schedulerOptional(environment, "CLUSTER") ??
-          executionCapacityDefaults.cluster,
+        schedulerOptional(environment, "CLUSTER") ?? "default",
       ),
     },
-    scheduler: schedulerBounds(
-      environment,
-      "PASS_BOUNDS",
-      executionSchedulerDefaults,
-    ),
-    ticketService: schedulerBounds(
-      environment,
-      "TICKET_SERVICE_BOUNDS",
-      ticketServiceDefaults,
-    ),
-    finalizer: schedulerBounds(
-      environment,
-      "FINALIZER_BOUNDS",
-      finalizerDefaults,
-    ),
     workers,
-    policy: schedulerPolicy(environment, admitted),
     workerCatalog: schedulerWorkerCatalog(admitted),
-    runtimeFacts: workspace === undefined ? {} : { workspace },
     sessions: schedulerSessions(environment, schedulerPodSite(workers)),
     sessionScheduler: schedulerBounds(
       environment,
@@ -784,5 +743,6 @@ export function schedulerCommandConfig(
       sessionSchedulerDefaults,
     ),
     sessionPolicy: schedulerSessionPolicy(environment),
+    tickets: schedulerTicketExecution(environment),
   };
 }

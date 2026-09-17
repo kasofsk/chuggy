@@ -26,17 +26,16 @@ import { usePanelInventory } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { Footer } from "./Footer.tsx";
 import { ForgeSetupPage } from "./ForgeSetupPage.tsx";
-import { Inbox } from "./Inbox.tsx";
 import { LeadPage } from "./LeadPage.tsx";
 import { persistentStore } from "./ports.ts";
-import { ProjectTable } from "./ProjectTable.tsx";
 import { RepositoriesPage } from "./RepositoriesPage.tsx";
 import { RepositoryPage } from "./repositories/RepositoryPage.tsx";
-import { SelectorSettingsPage } from "./SelectorSettingsPage.tsx";
 import { Shell } from "./Shell.tsx";
-import { ProjectStreamProvider } from "./stream.tsx";
-import { TicketCreation } from "./TicketCreation.tsx";
-import { TicketPage } from "./TicketPage.tsx";
+import {
+  AdoptedTicketCreation,
+  AdoptedTicketPage,
+  AdoptedTickets,
+} from "./AdoptedTickets.tsx";
 
 export function Landing(): ReactNode {
   const navigate = useNavigate();
@@ -77,11 +76,7 @@ export function Landing(): ReactNode {
 
 function PartitionLayout(): ReactNode {
   const partition = useParams({ from: "/$tenant/$project" });
-  return (
-    <ProjectStreamProvider partition={partition}>
-      <Shell partition={partition} />
-    </ProjectStreamProvider>
-  );
+  return <Shell partition={partition} />;
 }
 
 const rootRoute = createRootRoute({ component: Outlet });
@@ -101,25 +96,13 @@ const partitionRoute = createRoute({
 const projectRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/",
-  component: ProjectTable,
-});
-
-const inboxRoute = createRoute({
-  getParentRoute: () => partitionRoute,
-  path: "/inbox",
-  component: Inbox,
+  component: AdoptedTickets,
 });
 
 const leadRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/lead",
   component: LeadPage,
-});
-
-const selectorRoute = createRoute({
-  getParentRoute: () => partitionRoute,
-  path: "/selector",
-  component: SelectorSettingsPage,
 });
 
 /** What the setup landing sends back: one word about the claim it made, and
@@ -165,13 +148,13 @@ const forgeSetupRoute = createRoute({
 const ticketCreationRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/tickets/new",
-  component: TicketCreation,
+  component: AdoptedTicketCreation,
 });
 
 const ticketRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/tickets/$ticket",
-  component: TicketPage,
+  component: AdoptedTicketPage,
 });
 
 const routeTree = rootRoute.addChildren([
@@ -179,9 +162,7 @@ const routeTree = rootRoute.addChildren([
   forgeSetupRoute,
   partitionRoute.addChildren([
     projectRoute,
-    inboxRoute,
     leadRoute,
-    selectorRoute,
     repositoriesRoute,
     repositoryRoute,
     ticketCreationRoute,

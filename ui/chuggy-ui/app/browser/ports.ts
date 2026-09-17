@@ -10,7 +10,6 @@
 
 import type { FormRequest } from "../core/authorization.ts";
 import type { ApiFetchInit } from "../core/apiRequest.ts";
-import type { StreamResponse } from "../core/projectStream.ts";
 import type { KeyValuePort } from "../core/sessionHolder.ts";
 
 export function nowMs(): number {
@@ -54,29 +53,6 @@ export function apiFetch(url: string, init: ApiFetchInit): Promise<Response> {
     credentials: "omit",
     redirect: "error",
   });
-}
-
-/** The response is narrowed to what the stream reads, so a suite can fake it. */
-export async function streamFetch(
-  url: string,
-  init: {
-    readonly headers: Record<string, string>;
-    readonly signal: AbortSignal;
-  },
-): Promise<StreamResponse> {
-  const response = await fetch(url, {
-    method: "GET",
-    headers: init.headers,
-    signal: init.signal,
-    credentials: "omit",
-    redirect: "error",
-    cache: "no-store",
-  });
-  const body = response.body;
-  return {
-    status: response.status,
-    body: body === null ? null : { getReader: () => body.getReader() },
-  };
 }
 
 /** The token endpoints speak form encoding; `/config.json` and discovery, GET. */

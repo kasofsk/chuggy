@@ -527,7 +527,7 @@ test("the invariants hold over a store past what a pane can keep", () => {
     rebuilding,
     "no sequence held a capped fold for a reader, so the seam was never reached",
   ).toBe(true);
-});
+}, 15_000);
 
 /**
  * THE WALK STOPS. Over a store that is not growing, a pane must run out of

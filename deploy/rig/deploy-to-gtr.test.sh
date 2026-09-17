@@ -206,7 +206,7 @@ manifest() { # <name> <kind> <repository> <digest>
 	MANIFEST
 }
 mkdir -p "$FABRIC_SEED/cluster/apps" "$FABRIC_SEED/scripts"
-for name in chuggy-api chuggy-configuration-importer chuggy-finalizer chuggy-scheduler chuggy-selector \
+for name in chuggy-api chuggy-finalizer chuggy-scheduler \
 	chuggy-ticket-service chuggy-worker-plane; do
 	manifest "$name" Deployment api "$OLD_API" >"$FABRIC_SEED/cluster/apps/$name.yaml"
 done
@@ -272,7 +272,8 @@ rig_at() { # <short commit>
 	git -C "$WORK/rig-at" config user.email t@example.com
 	git -C "$WORK/rig-at" config user.name t
 	for name in $(ls "$WORK/rig-at/cluster/apps"); do
-		sed -i "s|source-commit: $DEPLOYED|source-commit: $1|; s|chuggy-migrate-$DEPLOYED-|chuggy-migrate-$1-|" "$WORK/rig-at/cluster/apps/$name"
+		sed -i.bak "s|source-commit: $DEPLOYED|source-commit: $1|; s|chuggy-migrate-$DEPLOYED-|chuggy-migrate-$1-|" "$WORK/rig-at/cluster/apps/$name"
+		rm -f "$WORK/rig-at/cluster/apps/$name.bak"
 	done
 	git -C "$WORK/rig-at" commit -qam "release: chuggy $1"
 	git -C "$WORK/rig-at" push -q origin main
@@ -387,7 +388,7 @@ check "the console manifest selects the registry's digest" 0 "$RC" "chuggy/web@$
 released chuggy-api.yaml >"$OUT"
 check "the api manifest keeps its digest" 0 "$RC" "chuggy/api@$OLD_API"
 printf 'source commits moved: %s\n' "$(count_in_release "source-commit: $TAG")" >"$OUT"
-check "the source commit moves on every manifest" 0 "$RC" "source commits moved: 9"
+check "the source commit moves on every manifest" 0 "$RC" "source commits moved: 7"
 printf 'stale source commits: %s\n' "$(count_in_release "source-commit: $DEPLOYED")" >"$OUT"
 check "no manifest keeps the old source commit" 0 "$RC" "stale source commits: 0"
 released chuggy-migrate.yaml >"$OUT"
@@ -412,7 +413,7 @@ check "a server change builds only the api" 0 "$RC" "builds attempted: 1"
 check "the gate is not handed the builder's prefix" 0 "$RC" "ci prefix=<>"
 OUT="$WORK/.release"
 printf 'api digests moved: %s\n' "$(count_in_release "chuggy/api@$NEW")" >"$OUT"
-check "every control-plane manifest selects the new api" 0 "$RC" "api digests moved: 8"
+check "every control-plane manifest selects the new api" 0 "$RC" "api digests moved: 6"
 released chuggy-ui.yaml >"$OUT"
 check "the console keeps its digest on a server change" 0 "$RC" "chuggy/web@$OLD_UI"
 

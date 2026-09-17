@@ -34,7 +34,13 @@
  * the same bytes.
  */
 
-import type { JsonValue } from "./selector.ts";
+export type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly JsonValue[]
+  | { readonly [key: string]: JsonValue };
 
 /** One entry of the raw store, parsed no further than a reader draws it. */
 export interface SessionStoreEntry {

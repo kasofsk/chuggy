@@ -20,7 +20,8 @@
 
 import type { MouseEvent, ReactNode } from "react";
 
-import { phaseTone } from "../../core/tones.ts";
+import type { AdoptedTicket } from "../../../../../src/contract/adoptedTickets.ts";
+import type { Tone } from "../../core/tones.ts";
 import { useTicketReferenceHeld } from "./ticketReferenceHeld.tsx";
 import type { TicketReferenceHeld } from "./ticketReferenceHeld.tsx";
 
@@ -30,6 +31,23 @@ import "./TicketReference.css";
  * row name the same ticket the same way. */
 function ticketReferenceWord(ticket: number): string {
   return `#${String(ticket)}`;
+}
+
+function ticketReferenceTone(state: AdoptedTicket["state"]): Tone {
+  switch (state) {
+    case "Pending":
+      return "queued";
+    case "Work":
+    case "Evaluation":
+    case "Finalization":
+      return "live";
+    case "Escalated":
+      return "parked";
+    case "Done":
+      return "pass";
+    case "Revoked":
+      return "retired";
+  }
 }
 
 /** A press the shell can answer, which is every press but the ones a reader
@@ -50,7 +68,8 @@ function TicketReferenceChip(props: {
 }): ReactNode {
   const ticket = props.ticket;
   const facts = props.held.factsOf(ticket);
-  const tone = facts === undefined ? "neutral" : phaseTone(facts.phase);
+  const tone =
+    facts === undefined ? "neutral" : ticketReferenceTone(facts.state);
   return (
     <a
       href={props.held.hrefOf(ticket)}
@@ -67,7 +86,7 @@ function TicketReferenceChip(props: {
         <span className="ticket-reference-title">{facts.title}</span>
       )}
       {facts === undefined ? null : (
-        <span className="visually-hidden">{facts.phase}</span>
+        <span className="visually-hidden">{facts.state}</span>
       )}
     </a>
   );

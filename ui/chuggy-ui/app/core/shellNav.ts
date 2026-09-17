@@ -13,9 +13,7 @@ import type { Tone } from "./tones.ts";
 
 export const navRoutes = {
   overview: "/$tenant/$project",
-  inbox: "/$tenant/$project/inbox",
   lead: "/$tenant/$project/lead",
-  selector: "/$tenant/$project/selector",
   repositories: "/$tenant/$project/repositories",
   ticketNew: "/$tenant/$project/tickets/new",
 } as const;
@@ -47,7 +45,6 @@ export interface NavEntry {
 export interface ShellNavInput {
   readonly partition: PartitionIdentity;
   readonly leadStanding?: NavStanding | undefined;
-  readonly inboxCount?: string | undefined;
 }
 
 export function shellNav(input: ShellNavInput): readonly NavEntry[] {
@@ -58,20 +55,12 @@ export function shellNav(input: ShellNavInput): readonly NavEntry[] {
   return [
     { id: "overview", label: "Tickets", to: navRoutes.overview, params },
     {
-      id: "inbox",
-      label: "Inbox",
-      to: navRoutes.inbox,
-      params,
-      count: input.inboxCount,
-    },
-    {
       id: "lead",
       label: "Lead",
       to: navRoutes.lead,
       params,
       standing: input.leadStanding,
     },
-    { id: "selector", label: "Selector", to: navRoutes.selector, params },
     {
       id: "repositories",
       label: "Repositories",

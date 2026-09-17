@@ -29,16 +29,17 @@ import {
 import {
   asFinalizerOwnerId,
   asRepositoryId,
-  checkedFinalizerConfig,
-  finalizerDefaults,
   finalizerIdentityCharsMax,
-  type FinalizerConfig,
   type FinalizerOwnerId,
   type RepositoryId,
 } from "./finalizer.ts";
 import { forgeAppKeyOf, type ForgeAppKey } from "./forgeInstallation.ts";
-import { asRecoveryEpoch, type RecoveryEpoch } from "./projectStore.ts";
+import {
+  ticketFinalizerDefaults,
+  type TicketFinalizerConfig,
+} from "./ticketFinalizer.ts";
 import type { ServiceRuntimeConfig } from "./serviceRuntime.ts";
+import { asRecoveryEpoch, type RecoveryEpoch } from "./projectStore.ts";
 
 /** An environment as this layer takes it: names to values, and never a global. */
 export type FinalizerEnvironment = Readonly<Record<string, string | undefined>>;
@@ -98,14 +99,13 @@ export interface FinalizerSettings {
   readonly databaseUrl: string;
   readonly owner: FinalizerOwnerId;
   readonly recoveryEpoch: RecoveryEpoch;
-  readonly artifactRoot: string;
   readonly git: FinalizerGitSettings;
   readonly credentials: readonly RepositoryCredentialFile[];
   readonly forges: readonly ForgeBindingFile[];
   readonly forge?: ForgeAppKey;
   readonly credentialBytesMax?: number;
   readonly runtime: ServiceRuntimeConfig;
-  readonly finalizer: FinalizerConfig;
+  readonly finalizer: TicketFinalizerConfig;
 }
 
 /** The pace and the drain a deployment gets when it names neither. */
@@ -135,7 +135,6 @@ export const finalizerGitEnvironmentNames: readonly string[] = [
 const databaseUrlVariable = "CHUG_FINALIZER_DATABASE_URL";
 const ownerVariable = "CHUG_FINALIZER_OWNER";
 const recoveryEpochVariable = "CHUG_FINALIZER_RECOVERY_EPOCH";
-const artifactRootVariable = "CHUG_FINALIZER_ARTIFACT_ROOT";
 const credentialSourcesVariable = "CHUG_FINALIZER_CREDENTIAL_SOURCES";
 const forgeBindingsVariable = "CHUG_FINALIZER_FORGE_BINDINGS";
 const forgeAppIdVariable = "CHUG_FINALIZER_FORGE_APP_ID";
@@ -155,13 +154,6 @@ const idleIntervalVariable = "CHUG_FINALIZER_IDLE_INTERVAL_MS";
 const shutdownDrainVariable = "CHUG_FINALIZER_SHUTDOWN_DRAIN_MS";
 const requestClaimLeaseVariable = "CHUG_FINALIZER_REQUEST_CLAIM_LEASE_SECS";
 const requestsPerPassVariable = "CHUG_FINALIZER_REQUESTS_PER_PASS_MAX";
-const preparationRestartsVariable = "CHUG_FINALIZER_PREPARATION_RESTARTS_MAX";
-const preparationsPerPassVariable = "CHUG_FINALIZER_PREPARATIONS_PER_PASS_MAX";
-const promotionsPerPassVariable = "CHUG_FINALIZER_PROMOTIONS_PER_PASS_MAX";
-const reconciliationsPerPassVariable =
-  "CHUG_FINALIZER_RECONCILIATIONS_PER_PASS_MAX";
-const heldPermitsPerPassVariable = "CHUG_FINALIZER_HELD_PERMITS_PER_PASS_MAX";
-const proposalsPerPassVariable = "CHUG_FINALIZER_PROPOSALS_PER_PASS_MAX";
 const proposalCreationsVariable = "CHUG_FINALIZER_PROPOSAL_CREATIONS_MAX";
 const proposalReconciliationsVariable =
   "CHUG_FINALIZER_PROPOSAL_RECONCILIATIONS_MAX";
@@ -442,69 +434,39 @@ function finalizerSettingsGit(
 /** Every pass bound the finalizer decides under, defaulted from the layer that declares them. */
 function finalizerSettingsFinalizer(
   environment: FinalizerEnvironment,
-): FinalizerConfig {
-  return checkedFinalizerConfig({
+): TicketFinalizerConfig {
+  return {
     requestClaimLeaseSecs: finalizerSettingsBoundOr(
       environment,
       requestClaimLeaseVariable,
-      finalizerDefaults.requestClaimLeaseSecs,
+      ticketFinalizerDefaults.requestClaimLeaseSecs,
     ),
     requestsPerPassMax: finalizerSettingsBoundOr(
       environment,
       requestsPerPassVariable,
-      finalizerDefaults.requestsPerPassMax,
-    ),
-    preparationRestartsMax: finalizerSettingsBoundOr(
-      environment,
-      preparationRestartsVariable,
-      finalizerDefaults.preparationRestartsMax,
-    ),
-    preparationsPerPassMax: finalizerSettingsBoundOr(
-      environment,
-      preparationsPerPassVariable,
-      finalizerDefaults.preparationsPerPassMax,
-    ),
-    promotionsPerPassMax: finalizerSettingsBoundOr(
-      environment,
-      promotionsPerPassVariable,
-      finalizerDefaults.promotionsPerPassMax,
-    ),
-    reconciliationsPerPassMax: finalizerSettingsBoundOr(
-      environment,
-      reconciliationsPerPassVariable,
-      finalizerDefaults.reconciliationsPerPassMax,
-    ),
-    heldPermitsPerPassMax: finalizerSettingsBoundOr(
-      environment,
-      heldPermitsPerPassVariable,
-      finalizerDefaults.heldPermitsPerPassMax,
-    ),
-    proposalsPerPassMax: finalizerSettingsBoundOr(
-      environment,
-      proposalsPerPassVariable,
-      finalizerDefaults.proposalsPerPassMax,
+      ticketFinalizerDefaults.requestsPerPassMax,
     ),
     proposalCreationsMax: finalizerSettingsBoundOr(
       environment,
       proposalCreationsVariable,
-      finalizerDefaults.proposalCreationsMax,
+      ticketFinalizerDefaults.proposalCreationsMax,
     ),
     proposalReconciliationsMax: finalizerSettingsBoundOr(
       environment,
       proposalReconciliationsVariable,
-      finalizerDefaults.proposalReconciliationsMax,
+      ticketFinalizerDefaults.proposalReconciliationsMax,
     ),
     proposalMergesMax: finalizerSettingsBoundOr(
       environment,
       proposalMergesVariable,
-      finalizerDefaults.proposalMergesMax,
+      ticketFinalizerDefaults.proposalMergesMax,
     ),
     proposalMergeReadingsMax: finalizerSettingsBoundOr(
       environment,
       proposalMergeReadingsVariable,
-      finalizerDefaults.proposalMergeReadingsMax,
+      ticketFinalizerDefaults.proposalMergeReadingsMax,
     ),
-  });
+  };
 }
 
 /**
@@ -534,7 +496,6 @@ export function finalizerSettingsOf(
     recoveryEpoch: asRecoveryEpoch(
       finalizerSettingsRequired(environment, recoveryEpochVariable),
     ),
-    artifactRoot: finalizerSettingsRequired(environment, artifactRootVariable),
     git: finalizerSettingsGit(environment),
     credentials,
     forges: finalizerSettingsForges(environment),

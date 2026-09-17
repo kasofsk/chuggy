@@ -18,9 +18,8 @@ import {
   invalidRequestReasonCharsMax,
 } from "../../src/adapters/http/outcomes.ts";
 import type { NativeHttpResponse } from "../../src/adapters/http/outcomes.ts";
-import { briefLineCharsMax, briefSchema } from "../../src/contract/brief.ts";
 import { ProjectAccessUnavailable } from "../../src/interpreter/projectAccess.ts";
-import { asBriefIntent } from "../../src/interpreter/ticketBrief.ts";
+import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import {
   classify,
   retryAfterSeconds,
@@ -117,16 +116,16 @@ test("an authority that could not be reached is retryable, never a refusal", () 
 });
 
 test("a brand's refusal reaches the caller in the brand's own words", () => {
-  const failure = raised(() => asBriefIntent("a line with a \u0007 in it"));
+  const failure = raised(() => asOperationId("a line with a \u0000 in it"));
   assert.ok(failure instanceof RangeError);
   assert.equal(refusalMessage(failure), failure.message);
-  assert.match(refusalMessage(failure), /intent/u);
+  assert.match(refusalMessage(failure), /NUL/u);
 });
 
 test("a wire refusal names the field each issue was found at", () => {
   const failure = raised(() =>
-    briefSchema.parse({
-      intent: "x".repeat(briefLineCharsMax + 1),
+    z.object({ intent: z.string().max(10), links: z.array(z.url()) }).parse({
+      intent: "x".repeat(11),
       links: ["not a link"],
     }),
   );

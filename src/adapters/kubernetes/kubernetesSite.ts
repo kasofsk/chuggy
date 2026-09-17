@@ -29,7 +29,7 @@
 import { createHash } from "node:crypto";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 
-import type { BlockedReason } from "../../interpreter/executionScheduler.ts";
+import type { BlockedReason } from "../../interpreter/workloadPlacement.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { PolicyAuthorityGrant } from "../../interpreter/taskAuthority.ts";
 
@@ -40,6 +40,16 @@ export interface KubernetesResourceBudget {
   readonly memoryRequest: string;
   readonly memoryLimit: string;
   readonly ephemeralStorageLimit: string;
+}
+
+/** Site data shared by workload launchers that create one bounded pod. */
+export interface KubernetesWorkloadSiteConfig extends KubernetesPodSite {
+  readonly environment: Readonly<Record<string, string>>;
+  readonly podNamePrefix: string;
+  readonly resources: KubernetesResourceBudget;
+  readonly podLabels: Readonly<Record<string, string>>;
+  readonly podAnnotations: Readonly<Record<string, string>>;
+  readonly activeDeadlineSecs: number;
 }
 
 /** One site-owned Secret key that may satisfy a policy's named credential. */
@@ -95,6 +105,7 @@ export type KubernetesContainerVariable =
 export interface KubernetesContainer {
   readonly name: string;
   readonly image: string;
+  readonly command?: readonly string[];
   readonly args?: readonly string[];
   readonly restartPolicy?: "Always";
   readonly startupProbe?: {
@@ -133,7 +144,7 @@ export interface KubernetesSecret {
       readonly blockOwnerDeletion: true;
     }[];
   };
-  readonly stringData: { readonly bearer: string };
+  readonly stringData: Readonly<Record<string, string>>;
 }
 
 /** One placed pod, as the cluster API is given it. */

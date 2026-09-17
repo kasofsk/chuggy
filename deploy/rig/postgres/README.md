@@ -43,7 +43,6 @@ kubectl -n chuggy create secret generic chuggy-postgres-credentials \
 owner-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 ticket-service-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 api-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
-selector-service-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 scheduler-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 finalizer-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 worker-plane-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
@@ -76,7 +75,6 @@ export PGPASSWORD="$(secret postgres-superuser password)"
 export CHUG_PG_OWNER_PASSWORD="$(secret chuggy-postgres-credentials owner-password)"
 export CHUG_PG_TICKET_SERVICE_PASSWORD="$(secret chuggy-postgres-credentials ticket-service-password)"
 export CHUG_PG_API_PASSWORD="$(secret chuggy-postgres-credentials api-password)"
-export CHUG_PG_SELECTOR_SERVICE_PASSWORD="$(secret chuggy-postgres-credentials selector-service-password)"
 export CHUG_PG_SCHEDULER_PASSWORD="$(secret chuggy-postgres-credentials scheduler-password)"
 export CHUG_PG_FINALIZER_PASSWORD="$(secret chuggy-postgres-credentials finalizer-password)"
 export CHUG_PG_WORKER_PLANE_PASSWORD="$(secret chuggy-postgres-credentials worker-plane-password)"
@@ -85,7 +83,6 @@ export CHUG_PG_WORKER_PLANE_PASSWORD="$(secret chuggy-postgres-credentials worke
   "${CHUG_PG_OWNER_PASSWORD:?owner-password did not read back}" \
   "${CHUG_PG_TICKET_SERVICE_PASSWORD:?ticket-service-password did not read back}" \
   "${CHUG_PG_API_PASSWORD:?api-password did not read back}" \
-  "${CHUG_PG_SELECTOR_SERVICE_PASSWORD:?selector-service-password did not read back}" \
   "${CHUG_PG_SCHEDULER_PASSWORD:?scheduler-password did not read back}" \
   "${CHUG_PG_FINALIZER_PASSWORD:?finalizer-password did not read back}" \
   "${CHUG_PG_WORKER_PLANE_PASSWORD:?worker-plane-password did not read back}" &&
@@ -239,9 +236,6 @@ spec:
         - name: CHUG_PG_API_PASSWORD
           valueFrom:
             secretKeyRef: { name: chuggy-postgres-credentials, key: api-password }
-        - name: CHUG_PG_SELECTOR_SERVICE_PASSWORD
-          valueFrom:
-            secretKeyRef: { name: chuggy-postgres-credentials, key: selector-service-password }
         - name: CHUG_PG_SCHEDULER_PASSWORD
           valueFrom:
             secretKeyRef: { name: chuggy-postgres-credentials, key: scheduler-password }
@@ -325,8 +319,6 @@ kubectl -n chuggy label pod probe chuggy.dev/postgres-client=true
 as chuggy_owner CHUG_PG_OWNER_PASSWORD chuggy_boundary_owner
 as chuggy_ticket_service_login CHUG_PG_TICKET_SERVICE_PASSWORD chuggy_ticket_service
 as chuggy_api_login CHUG_PG_API_PASSWORD chuggy_api
-as chuggy_api_login CHUG_PG_API_PASSWORD chuggy_selector_review
-as chuggy_selector_service_login CHUG_PG_SELECTOR_SERVICE_PASSWORD chuggy_selector_service
 as chuggy_scheduler_login CHUG_PG_SCHEDULER_PASSWORD chuggy_scheduler
 as chuggy_finalizer_login CHUG_PG_FINALIZER_PASSWORD chuggy_finalizer
 as chuggy_worker_plane_login CHUG_PG_WORKER_PLANE_PASSWORD chuggy_worker_plane
@@ -473,32 +465,6 @@ kill "$forward"
 
 `chuggy` and `chuggy_rehearsal` match neither of those, which is what keeps
 this from being a command that drops the deployment.
-
-## The workers' database
-
-**A server per attempt, beside the worker, and no role for it here.** Work runs
-agent-authored code and needs PostgreSQL to run a repository's own gates
-against, and those gates migrate whatever server they are pointed at: they make
-and alter cluster-wide roles, which is an authority over the whole server that
-nothing agent-authored can be given on a server shared with this deployment.
-So the scheduler places the server with the worker, as a sidecar of the
-attempt's pod that listens on the pod's loopback alone, trusts what connects
-there, holds nothing before the attempt and is gone with it. This server keeps
-no login for workers, no worker namespace needs a route to it, and nothing
-below runs against it.
-
-**The scheduler names the image, and the worker is told a fixed address.**
-`CHUG_SCHEDULER_WORKER_DATABASE` carries `{"image": ..., "resources": ...}`:
-the PostgreSQL image the sidecar runs and what that container may use. Every
-worker pod then gets `CHUG_WORKER_DATABASE_URL` as a plain value naming the
-sidecar's superuser on loopback, and `images/worker/postgres.mjs` hands that to
-the gates as `CHUG_PG_URL`. A site that names no image places workers with no
-sidecar that are told of no server, and work that then needs one fails in the
-container.
-
-**The worker never waits for it.** The sidecar carries a startup probe, and the
-pod starts the worker container only once that probe has seen the server
-accept a connection.
 
 ## Reversing it
 

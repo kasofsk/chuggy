@@ -390,6 +390,17 @@ const writeSurface = [
     columns:
       "bundle,ordinal,project,reference_digest,reference_id,reference_kind,tenant",
   },
+  {
+    table_name: "ticket_machine_content",
+    privilege_type: "INSERT",
+    columns: "content,digest,media_type,project,reference,tenant",
+  },
+  {
+    table_name: "ticket_machine_finalization",
+    privilege_type: "UPDATE",
+    columns:
+      "base_commit,base_ref,candidate,claim_generation,claim_owner,claim_recovery_epoch,claim_until,evidence_ref,head_ref,merging,outcome,promotion,publication,recovery_epoch,repository,request,state,updated_at",
+  },
 ];
 
 test("the finalizer's write surface is exactly the columns its moves need", async () => {
@@ -447,8 +458,32 @@ test("the finalizer's read surface is exactly the relations its view is gathered
       "project_repository",
       "recovery_epoch",
       "schema_migration",
+      "ticket_machine_content",
+      "ticket_machine_finalization",
     ],
   );
+});
+
+test("the finalizer can execute but cannot create or redefine an obligation", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      finalizerRole,
+      "SELECT * FROM ticket_machine_finalization LIMIT 1",
+    ),
+    undefined,
+  );
+  for (const statement of [
+    "INSERT INTO ticket_machine_finalization DEFAULT VALUES",
+    "UPDATE ticket_machine_finalization SET obligation='forged'",
+    "UPDATE ticket_machine_finalization SET identity='forged'",
+    "DELETE FROM ticket_machine_finalization",
+  ]) {
+    assert.match(
+      (await harness.attemptAs(finalizerRole, statement)) ?? "",
+      postgresHarnessDenial("ticket_machine_finalization"),
+      statement,
+    );
+  }
 });
 
 test("the finalizer's two doors are its own and no prior role may open them", async () => {

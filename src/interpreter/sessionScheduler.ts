@@ -64,7 +64,7 @@ import type {
 import type {
   AttemptPlacementOutcome,
   ExecutionProfile,
-} from "./executionScheduler.ts";
+} from "./workloadPlacement.ts";
 import type { RepositoryId } from "./finalizer.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import type { PlacementId } from "./schedulerIdentity.ts";

@@ -1,0 +1,29 @@
+{
+  "repository": "https://github.com/kasofsk/chuggernaut",
+  "commit": "47e066548baf509cf906a54ac7c5a1d19e300a36",
+  "sha256": {
+    "vendor/chuggernaut/ticket-domain/export_traces.ts": "ac460d8c9038e087d6fca724be383eadb4de9c7e90099ea1ffb7a6152ce89532",
+    "vendor/chuggernaut/chug/app/codec.ts": "27f5b5898755031d69756c9783bd8c1c5f35a2d78806fc28732fa1d4d80b49ed",
+    "vendor/chuggernaut/chug/app/codec_schema.ts": "e5248beae495b4ad6b38ea048a16040e0073a59d9a4bc2f572f71c46fd6d2901",
+    "vendor/chuggernaut/chug/domain/evaluation.ts": "ed3797a6d7804b427dfd2409ee8b0548f895c12bcb65f80a393bd1034b8069eb",
+    "vendor/chuggernaut/chug/domain/ticket.ts": "c51ae7f3e60ae639b86b2bb7bdcd2df9f50bcea69acdefa9d9d07711d89585f8",
+    "vendor/chuggernaut/chug/domain/task.ts": "b78181ec3419c6b1d53316e2976de1a55940da09a133927bcb0898c3f89172c8",
+    "vendor/chuggernaut/tests-ts/domain/builders.ts": "2d6f35cd861c37ce2712236f8ce5bf93f0d8c1a77bfed1ee116123322897e4c5",
+    "vendor/chuggernaut/tests-ts/conformance/replay.ts": "c9ea216ff32e75886446f4316667264a1b6eab3fea41da802a7bcddee6ea273d",
+    "vendor/chuggernaut/tests-ts/conformance/itf.ts": "9470b6998862b26903d9e1205a5ff861db19ba011902c9481608251b4b2477fc",
+    "vendor/chuggernaut/tests-ts/conformance/convert.ts": "70061470e84e7573e53e20fd7ce0ff3f5dbd36e724d087c6531668bf36d55d7e",
+    "model/ticket-domain/ticket.qnt": "fd02f8691fb9e1da0fdb036f16a48869dd57d56455f83bf745d88e64fa89a62d",
+    "model/ticket-domain/ticket_tests.qnt": "f28bd438607963051b79ef8667ed3b5752d73e7ec233f4efc7e3df64125d7dbe",
+    "model/ticket-domain/evaluation/evaluation.qnt": "2982b18680408880d3f96c34be8e60d3f40f459fcdcc1efcc24204d335a2108a",
+    "model/task-contract/task.qnt": "e814cc6f4be1d6d4bcb175c8a7d9667c6d4a6fff171cfb654ad12d9ba3c41737",
+    "vendor/chuggernaut/chug/json.ts": "553a9f4ee85c25f996c2ef811351a05ad2fc4c975b66ddf6dcdde68dd585cc60",
+    "src/adapters/catalog/schemas/workload.json": "d7048782fbae731b7dc41065cbe6df688a1d77a97a65233d8aa6532b0f67228b",
+    "src/adapters/catalog/schemas/evaluator.json": "223a13426b73bf34733d20bb55d1c3b50f12697762dc11616115d62e5b16d217",
+    "src/adapters/catalog/schemas/evaluation-plan.json": "880a6d1b352180a2a5be0e3c31487f2e4328e769c802bc066054f19add351cd4",
+    "vendor/chuggernaut/chug/execution_profile.ts": "7323a9cd2f86cce038b0888a492da587bbd7c3ea1d40beba619c261f38e16477",
+    "vendor/chuggernaut/chug/json_schema.ts": "bf6ebe981a894cfdb62695b787c68d277b05278a0427863929e31c53ab9a7cc6",
+    "vendor/chuggernaut/chug/runner/comments.ts": "05b37c7bb40838577c809b80efed3d4e414b7529b96d583d4a2d2f9c64d846c7",
+    "vendor/chuggernaut/chug/runner/commit_hooks.ts": "362c4aecf2969ec297c12d1cf6d8cf48f1ae57bdd1764b045305feab4784f382",
+    "model/application/project-decision-processing/processing.qnt": "18993c4781c2dcb49896a8ccf6556ba5b6feb39e26f93b8359c80334f831e097"
+  }
+}

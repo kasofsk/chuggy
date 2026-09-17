@@ -38,7 +38,7 @@
 
 import { readFile } from "node:fs/promises";
 
-import type { AttemptPlacementOutcome } from "../../interpreter/executionScheduler.ts";
+import type { AttemptPlacementOutcome } from "../../interpreter/workloadPlacement.ts";
 import {
   asPlacementId,
   type PlacementId,
@@ -130,7 +130,7 @@ export function kubernetesSecretMatches(
         readonly namespace?: unknown;
         readonly ownerReferences?: unknown;
       };
-      readonly data?: { readonly bearer?: unknown };
+      readonly data?: Readonly<Record<string, unknown>>;
     };
     return (
       document.apiVersion === expected.apiVersion &&
@@ -141,9 +141,12 @@ export function kubernetesSecretMatches(
       JSON.stringify(document.metadata.ownerReferences) ===
         JSON.stringify(expected.metadata.ownerReferences) &&
       document.data !== undefined &&
-      Object.keys(document.data).length === 1 &&
-      document.data.bearer ===
-        Buffer.from(expected.stringData.bearer).toString("base64")
+      Object.keys(document.data).length ===
+        Object.keys(expected.stringData).length &&
+      Object.entries(expected.stringData).every(
+        ([name, value]) =>
+          document.data?.[name] === Buffer.from(value).toString("base64"),
+      )
     );
   } catch {
     return false;

@@ -81,15 +81,12 @@ ci_gate_selected() { # <gate id>
 	check-roster) ci_changed CLAUDE.md '.agents/**' '.codex/**' .chug/tasks/check-roster.sh ;;
 	check-boundaries) ci_changed 'src/*.ts' 'src/**/*.ts' 'test/*.ts' 'test/**/*.ts' 'ui/*.js' 'ui/**/*.js' 'ui/**/*.ts' 'ui/**/*.tsx' .dependency-cruiser.cjs .chug/tasks/check-boundaries.sh || ci_toolchain_changed ;;
 	source-static) ci_changed '*.ts' '*.tsx' '*.js' '*.json' '*.cjs' '*.mjs' '*.yaml' '*.yml' .chug/tasks/check-source.sh || ci_toolchain_changed ;;
-	source-unit) ci_changed 'src/**' 'test/**' 'ui/**' 'images/**' 'scripts/**' .chug/tasks/check-source.sh || ci_toolchain_changed ;;
+	source-unit) ci_changed 'src/**' 'test/**' 'ui/**' 'images/**' 'scripts/**' 'vendor/**' 'model/**' .chug/tasks/check-source.sh || ci_toolchain_changed ;;
 	check-console) ci_changed 'ui/**' 'src/contract/**' 'scripts/console-policy.ts' 'scripts/check-console-policy.ts' .chug/tasks/check-console.sh ;;
-	check-conformance) ci_changed 'src/domain/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'test/golden/**' 'model/domain.qnt' 'model/measure.qnt' .chug/tasks/check-conformance.sh ;;
-	check-random) ci_changed 'src/domain/**' 'test/random/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'model/domain.qnt' 'model/measure.qnt' 'model/mc/mc_chuggy.qnt' .chug/tasks/check-random.sh ;;
 	check-postgres) ci_changed 'src/**' 'test/postgres/**' .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh || ci_toolchain_changed ;;
 	check-queries) ci_changed 'src/adapters/postgres/**' 'src/domain/**' 'src/interpreter/**' eslint.config.js .chug/tasks/_postgres.sh .chug/tasks/check-queries.sh || ci_toolchain_changed ;;
 	check-keto) ci_changed 'src/**' 'test/keto/**' 'test/postgres/**' '.chug/tasks/keto/**' .chug/tasks/_keto.sh .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-keto.sh || ci_toolchain_changed ;;
 	check-model) ci_changed 'model/**' .chug/tasks/check-model.sh package.json package-lock.json ;;
-	check-model-api) ci_changed 'model/**' scripts/generate-model-api.ts src/generated/model-api.ts .chug/tasks/check-model-api.sh package.json package-lock.json ;;
 	*) return 0 ;;
 	esac
 }

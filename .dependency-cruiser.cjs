@@ -76,23 +76,6 @@ module.exports = {
       },
     },
     {
-      name: "actor-sees-domain-only",
-      comment:
-        "The actor is the journaled decision layer: it reads the domain and " +
-        "nothing else, transitively, by any path in the module graph. What " +
-        "that buys is the crash-seam demonstration — every actor step is a " +
-        "pure function of its state and picks, so crashing at every " +
-        "observable seam is exhaustive. This rule is the graph half of that " +
-        "and the ambient half is `eslint.config.js`, because a step that " +
-        "reads a clock takes no path anywhere for a graph rule to find.",
-      severity: "error",
-      from: { path: "^src/actor/" },
-      to: {
-        reachable: true,
-        path: "^(?!src/(domain|actor)/)",
-      },
-    },
-    {
       name: "interpreter-constructs-no-adapter",
       comment:
         "The interpreter declares the ports and never picks who answers them: " +
@@ -101,8 +84,7 @@ module.exports = {
         "second fabric change the core. Stated as reachability rather than as " +
         "an import, because the shape that breaks it is a relay — a module " +
         "belonging to neither directory that one imports and the other " +
-        "answers, which is what the domain and the actor are each already " +
-        "forbidden to be.",
+        "answers, which is what the domain is already forbidden to be.",
       severity: "error",
       from: { path: "^src/interpreter/" },
       to: { reachable: true, path: "^src/adapters/" },

@@ -176,16 +176,11 @@ run_selected_gate source-static "check-source static" ./.chug/tasks/check-source
 run_selected_gate source-unit "check-source unit" ./.chug/tasks/check-source.sh --unit
 run_selected_gate check-console "check-console" ./.chug/tasks/check-console.sh
 
-run_selected_gate check-conformance "check-conformance" ./.chug/tasks/check-conformance.sh
-
-run_selected_gate check-random "check-random" ./.chug/tasks/check-random.sh
-
 run_selected_gate check-postgres "check-postgres" ./.chug/tasks/check-postgres.sh
 run_selected_gate check-queries "check-queries" ./.chug/tasks/check-queries.sh
 run_selected_gate check-keto "check-keto" ./.chug/tasks/check-keto.sh
 
 run_selected_gate check-model "check-model" ./.chug/tasks/check-model.sh
-run_selected_gate check-model-api "check-model-api" ./.chug/tasks/check-model-api.sh
 
 printf '\n'
 if [ "$errored" -gt 0 ]; then

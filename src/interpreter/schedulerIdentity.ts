@@ -3,14 +3,6 @@
  * module of their own so the ports that name them do not have to name each
  * other.
  *
- * WHY THEY ARE NOT IN `./executionScheduler.ts`. `./resultManifest.ts` binds a
- * manifest to the execution and attempt that produced it, and that port already
- * imports the manifest — so the identities living beside the ports would make
- * the two modules import each other. `.dependency-cruiser.cjs` refuses a cycle
- * at all, and `tsPreCompilationDeps` makes a type-only import an edge like any
- * other, so a shared leaf is the shape rather than a preference. `Partition` is
- * in `./projectStore.ts` for the same reason.
- *
  * EVERY ONE OF THEM IS OPAQUE, AND OPAQUE MEANS BOUNDED. They are minted
  * outside this tree's arithmetic and their only operation is equality, so the
  * one thing this module does with them is refuse the two shapes a stored row

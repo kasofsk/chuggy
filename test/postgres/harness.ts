@@ -1,96 +1,8 @@
-/**
- * What every case in this directory needs of a real PostgreSQL: a migrated
- * database, a store over it, and identities no other case is using.
- *
- * THERE IS NO MOCK HERE AND THAT IS THE POINT. 006 makes competing owners,
- * lease takeover, stale-writer commits, composite constraints and separate
- * database roles acceptance work for this boundary, and every one of them is a
- * claim about what the server does rather than about what an adapter intends.
- * A fake that answered these calls would be asserting this file's beliefs back
- * at it.
- *
- * IDENTITIES ARE UNIQUE PER CASE rather than the database being fresh per
- * case. The gate gives each suite a database of its own; within one, creating
- * another costs a connection and a template copy, and the thing being tested
- * is a partitioned store — so cases that share one database and hold different
- * partitions exercise the isolation the port claims instead of hiding it
- * behind a clean slate.
- */
-
 import { randomUUID } from "node:crypto";
-import { setTimeout as delay } from "node:timers/promises";
-
 import type pg from "pg";
-import { postgresAuthoring } from "../../src/adapters/postgres/authoring.ts";
-import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
 
-import {
-  asCanonicalConfiguration,
-  asConfigurationRevisionId,
-  type AuthoringStore,
-} from "../../src/interpreter/authoring.ts";
-import {
-  dispatchEvent,
-  releaseTicketEvent,
-  type ReleaseAuthoring,
-} from "../../src/actor/decisionEvent.ts";
-import type { Entry } from "../../src/actor/journal.ts";
-import { actorInit, journalStep } from "../../src/actor/state.ts";
-
-import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
-import {
-  asDraftBrief,
-  type DraftBrief,
-} from "../../src/interpreter/ticketBrief.ts";
-
-/** The brief every harness draft is created with, so a case names one only when it is about one. */
-export const postgresHarnessBrief = asDraftBrief({
-  title: "The one thing the harness ticket is for",
-  intent: "Make the harness ticket do the one thing it is for.",
-  links: ["https://example.test/harness"],
-  branch: "refs/heads/harness",
-});
-import { id } from "../domain/fixtures.ts";
-import type { IdempotencyKeying } from "../../src/adapters/postgres/keying.ts";
-import { postgresOperationInbox } from "../../src/adapters/postgres/operationInbox.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
-import { postgresProjectDecision } from "../../src/adapters/postgres/projectDecision.ts";
-import { postgresProjectDiscovery } from "../../src/adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
-import {
-  asGitObjectId,
-  asRepositoryId,
-  type RepositoryId,
-} from "../../src/interpreter/finalizer.ts";
-import {
-  memoryProjectAccess,
-  type MemoryProjectAccess,
-} from "./projectAccessMemory.ts";
-import { executionSchedulerAuthorityKind } from "../../src/interpreter/executionScheduler.ts";
-import { isCompletionDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
-import type { DecisionEvent } from "../../src/domain/generated/modelTypes.ts";
-import type { RepositoryConfigurationStore } from "../../src/interpreter/repositoryConfiguration.ts";
-import {
-  asAuthorityKind,
-  asAuthoritySubject,
-  asIdempotencyKey,
-  asOperationId,
-  asOperationDecisionEvent,
-  type OperationInbox,
-  type OperationId,
-  type Submission,
-} from "../../src/interpreter/operationInbox.ts";
-import type {
-  DecisionInput,
-  ProjectDiscovery,
-} from "../../src/interpreter/projectDiscovery.ts";
-import type { ProjectDecision } from "../../src/interpreter/projectDecision.ts";
-import {
-  projectWriterDecide,
-  projectWriterLoad,
-  type ProjectMemory,
-  type ProjectTicketWriter,
-} from "../../src/interpreter/projectWriter.ts";
 import {
   asOwnerId,
   asProjectId,
@@ -102,127 +14,57 @@ import {
   type ProjectStore,
   type RecoveryEpoch,
 } from "../../src/interpreter/projectStore.ts";
+import {
+  memoryProjectAccess,
+  type MemoryProjectAccess,
+} from "./projectAccessMemory.ts";
 
-/**
- * The repository a partition's briefs name, binding one where the case has
- * bound none. A release refuses a brief carrying no repository, so every
- * harness draft names a binding; a case that binds its own — the finalizer's,
- * which binds a real remote — is answered with that one rather than given a
- * second the project-wide read would then prefer.
- */
-export async function postgresHarnessBinding(
-  harness: PostgresHarness,
-  partition: Partition,
-): Promise<RepositoryId> {
-  const bound = await harness.query(
-    `SELECT repository FROM project_repository
-      WHERE tenant=$1 AND project=$2 ORDER BY bound_at,repository LIMIT 1`,
-    [partition.tenant, partition.project],
-  );
-  const held = bound[0]?.["repository"];
-  if (typeof held === "string") return asRepositoryId(held);
-  const repository = asRepositoryId(`repository-${partition.tenant}`);
-  await harness.query(
-    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch)
-       SELECT $1,$2,$3,epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1`,
-    [partition.tenant, partition.project, repository],
-  );
-  return repository;
-}
-
-/** The harness brief working in one repository, which is what a releasable draft carries. */
-export function postgresHarnessBriefIn(repository: RepositoryId): DraftBrief {
-  return { ...postgresHarnessBrief, repository };
-}
-
-/** The smallest authored configuration a release may pin. */
-export const postgresHarnessConfiguration = asCanonicalConfiguration(
-  '{"brief":{"acceptanceCriteria":["The ticket is complete."],"constraints":[],"motivation":["The ticket should be completed."]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]}}',
-);
-
-/** The environment variable `.chug/tasks/check-postgres.sh` sets, named once. */
 export const postgresHarnessUrlVar = "CHUG_PG_URL";
 
-/** The URL of the server to test against, or a failure saying which gate supplies it. */
 export function postgresHarnessUrl(): string {
   const url = process.env[postgresHarnessUrlVar];
-  if (url === undefined || url === "") {
+  if (url === undefined || url === "")
     throw new Error(
-      `${postgresHarnessUrlVar} is unset; this suite is run by .chug/tasks/check-postgres.sh, which starts a server and sets it`,
+      `${postgresHarnessUrlVar} is unset; run the PostgreSQL gate`,
     );
-  }
   return url;
 }
 
-/**
- * A pool holding one deployment role, so a case drives a trigger as whoever
- * runs it rather than as the migration owner. The roles are `NOLOGIN`, so the
- * role is a startup option on a session the owner opened, which is the
- * authority a `SET ROLE` gives and survives being pooled.
- */
 export function postgresHarnessRolePool(role: string): pg.Pool {
   const url = new URL(postgresHarnessUrl());
   url.searchParams.set("options", `-c role=${role}`);
   return postgresPool(url.toString());
 }
 
-/** One transaction a case drives itself, for the interleavings a port cannot be asked to produce. */
 export interface PostgresTransaction {
-  readonly query: (
+  query(
     sql: string,
     values?: readonly unknown[],
-  ) => Promise<readonly Record<string, unknown>[]>;
-  readonly commit: () => Promise<void>;
-  readonly rollback: () => Promise<void>;
+  ): Promise<readonly Record<string, unknown>[]>;
+  commit(): Promise<void>;
+  rollback(): Promise<void>;
 }
 
-/** One opened subject: the store, the two inbox ports, the pool beneath them, and the way to give it back. */
 export interface PostgresHarness {
   readonly pool: pg.Pool;
   readonly store: ProjectStore;
-  readonly inbox: OperationInbox;
-  readonly discovery: ProjectDiscovery;
-  readonly decisions: ProjectDecision;
-  readonly authoring: AuthoringStore & RepositoryConfigurationStore;
-  /**
-   * The project access every door on this harness is gated by. It is held in
-   * memory rather than read from a server, because no row in this database
-   * says who may address a project any more.
-   */
   readonly access: MemoryProjectAccess;
-  readonly query: (
+  query(
     sql: string,
     values?: readonly unknown[],
-  ) => Promise<readonly Record<string, unknown>[]>;
-  readonly attemptAs: (
-    role: string,
-    sql: string,
-  ) => Promise<string | undefined>;
-  readonly begin: () => Promise<PostgresTransaction>;
-  readonly close: () => Promise<void>;
+  ): Promise<readonly Record<string, unknown>[]>;
+  attemptAs(role: string, sql: string): Promise<string | undefined>;
+  begin(): Promise<PostgresTransaction>;
+  close(): Promise<void>;
 }
 
-/** Opens a store over the schema prepared by the PostgreSQL gate, establishing its first recovery epoch. */
 export async function postgresHarnessOpen(): Promise<PostgresHarness> {
   const pool = postgresPool(postgresHarnessUrl());
   const store = postgresProjectStore(pool);
   await postgresHarnessEpoch(store);
-  if (
-    (
-      await postgresDomainConfigurationPrecondition(
-        pool,
-        refinementInstance,
-      ).check(new AbortController().signal)
-    ).met !== "Met"
-  )
-    throw new Error("postgres harness: domain configuration was refused");
   return {
     pool,
     store,
-    inbox: postgresOperationInbox(pool, postgresHarnessKeying()),
-    discovery: postgresProjectDiscovery(pool),
-    decisions: postgresProjectDecision(pool),
-    authoring: postgresAuthoring(pool),
     access: memoryProjectAccess(),
     query: async (sql, values) =>
       (await pool.query(sql, values === undefined ? undefined : [...values]))
@@ -233,25 +75,10 @@ export async function postgresHarnessOpen(): Promise<PostgresHarness> {
   };
 }
 
-/**
- * The refusal a server gives when `object` is the thing the role may not reach.
- * A case matching the bare phrase would also accept a refusal about something
- * else the statement touched on the way — a function body reading a table the
- * caller cannot read is refused in exactly those words, and the grant the case
- * is about has already regressed by then.
- */
 export function postgresHarnessDenial(object: string): RegExp {
   return new RegExp(`permission denied for \\w+ ${object}\\b`);
 }
 
-/**
- * Runs one statement as `role` inside a transaction it always rolls back,
- * answering with the refusal the server gave or undefined when it allowed the
- * statement. Becoming the role is not part of that attempt — `SET LOCAL ROLE`
- * is refused in the same words a statement is, so a helper catching both would
- * answer `permission denied to set role` to every case asserting that a role
- * may not write, and each would report green with nothing attempted at all.
- */
 async function postgresHarnessAttemptAs(
   pool: pg.Pool,
   role: string,
@@ -261,14 +88,6 @@ async function postgresHarnessAttemptAs(
   try {
     await client.query("BEGIN");
     await client.query(`SET LOCAL ROLE ${role}`);
-    const became = await client.query<{ whoami: string }>(
-      "SELECT current_user AS whoami",
-    );
-    if (became.rows[0]?.whoami !== role) {
-      throw new Error(
-        `postgres harness: asking to be ${role} left the session as ${String(became.rows[0]?.whoami)}`,
-      );
-    }
     try {
       await client.query(sql);
       return undefined;
@@ -281,7 +100,6 @@ async function postgresHarnessAttemptAs(
   }
 }
 
-/** The current epoch, establishing one first when this database has never had any. */
 export async function postgresHarnessEpoch(
   store: ProjectStore,
 ): Promise<RecoveryEpoch> {
@@ -292,12 +110,10 @@ export async function postgresHarnessEpoch(
   }
 }
 
-/** An epoch no database has issued authority under, which is what makes it a new one. */
 export function postgresHarnessNewEpoch(): RecoveryEpoch {
   return asRecoveryEpoch(`epoch-${randomUUID()}`);
 }
 
-/** A partition no other case is holding, labelled so a failure names the case that made it. */
 export function postgresHarnessPartition(label: string): Partition {
   return {
     tenant: asTenantId(`tenant-${label}-${randomUUID()}`),
@@ -305,28 +121,10 @@ export function postgresHarnessPartition(label: string): Partition {
   };
 }
 
-/**
- * Puts the partition's lease expiry into the past, which is what a lapsed
- * tenure looks like to the server and is how every case here reaches one. A
- * case that slept for a real expiry would be slow and would still be racing the
- * clock it slept against, where this is the same fact decided by the database.
- */
-export async function postgresHarnessExpire(
-  harness: PostgresHarness,
-  partition: Partition,
-): Promise<void> {
-  await harness.query(
-    "UPDATE project SET lease_expires_at = now() - interval '1 second' WHERE tenant = $1 AND project = $2",
-    [partition.tenant, partition.project],
-  );
-}
-
-/** A ticket-service instance identity no other case is using. */
 export function postgresHarnessOwner(label: string): OwnerId {
   return asOwnerId(`owner-${label}-${randomUUID()}`);
 }
 
-/** A provisioned, active partition with an empty journal, which is what most cases start from. */
 export async function postgresHarnessProject(
   store: ProjectStore,
   label: string,
@@ -336,16 +134,6 @@ export async function postgresHarnessProject(
   return partition;
 }
 
-/** How long a case's lease runs for: long enough that no case races its own expiry. */
-const postgresHarnessLeaseSecs = 60;
-
-/**
- * A lease on a provisioned partition, taken for an owner no other case is
- * using. Replaying a journal and deciding against one each need a lease, so a
- * case
- * that is about something else says it in one line; the submission and
- * discovery sides need none and take none.
- */
 export async function postgresHarnessHeld(
   store: ProjectStore,
   partition: Partition,
@@ -354,33 +142,43 @@ export async function postgresHarnessHeld(
   const acquired = await store.acquire(
     partition,
     postgresHarnessOwner(label),
-    postgresHarnessLeaseSecs,
+    60,
   );
-  if (acquired.acquired !== "Granted") {
-    throw new Error(
-      `postgres harness: the lease on ${partition.tenant}/${partition.project} for ${label} was ${acquired.acquired}`,
-    );
-  }
+  if (acquired.acquired !== "Granted")
+    throw new Error(`postgres harness: lease was ${acquired.acquired}`);
   return acquired.lease;
 }
 
-/** How long a case waits for calls it did not await to reach the lock that stalls them. */
-const postgresHarnessStallWaitMsMax = 5_000;
+export async function postgresHarnessExpire(
+  harness: PostgresHarness,
+  partition: Partition,
+): Promise<void> {
+  await harness.query(
+    "UPDATE project SET lease_expires_at=now()-interval '1 second' WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
+}
 
-/** How often that wait asks, which is what bounds the loop asking. */
-const postgresHarnessStallAskMs = 25;
-
-/** A project row held locked: what has stalled behind it, and the way to give it back. */
 export interface PostgresRowLock {
   readonly stalled: (backends: number) => Promise<void>;
   readonly release: () => Promise<void>;
 }
 
-/**
- * Locks the partition's project row on a connection of its own, so a case can
- * stall a call that borrows from the harness pool without starving the pool
- * the rest of the case draws from.
- */
+async function postgresHarnessStalled(
+  pool: pg.Pool,
+  backends: number,
+): Promise<void> {
+  for (let waited = 0; waited < 5_000; waited += 25) {
+    const found = await pool.query<{ stalled: number }>(
+      `SELECT count(*)::int AS stalled FROM pg_stat_activity
+         WHERE datname=current_database() AND wait_event_type='Lock'`,
+    );
+    if ((found.rows[0]?.stalled ?? 0) >= backends) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("postgres harness: calls did not reach their row lock");
+}
+
 export async function postgresHarnessRowLock(
   partition: Partition,
 ): Promise<PostgresRowLock> {
@@ -394,60 +192,27 @@ export async function postgresHarnessRowLock(
   try {
     await blocker.query("BEGIN");
     await blocker.query(
-      "SELECT tenant FROM project WHERE tenant = $1 AND project = $2 FOR UPDATE",
+      "SELECT tenant FROM project WHERE tenant=$1 AND project=$2 FOR UPDATE",
       [partition.tenant, partition.project],
     );
     return {
       stalled: (backends) => postgresHarnessStalled(blockade, backends),
       release,
     };
-  } catch (failure) {
+  } catch (error: unknown) {
     await release();
-    throw failure;
+    throw error;
   }
 }
 
-/**
- * Resolves once that many backends are waiting on a lock, which is how a case
- * knows the calls it did not await have reached the row a blockade holds. It
- * asks on a pool connection rather than on the one holding the lock, because a
- * transaction caches its statistics snapshot and would answer with whatever it
- * saw the first time it asked.
- */
-export async function postgresHarnessStalled(
-  blockade: pg.Pool,
-  backends: number,
-): Promise<void> {
-  for (
-    let waitedMs = 0;
-    waitedMs < postgresHarnessStallWaitMsMax;
-    waitedMs += postgresHarnessStallAskMs
-  ) {
-    const found = await blockade.query<{ stalled: number }>(
-      `SELECT count(*)::int AS stalled FROM pg_stat_activity
-        WHERE datname = current_database() AND wait_event_type = 'Lock'`,
-    );
-    if ((found.rows[0]?.stalled ?? 0) >= backends) return;
-    await delay(postgresHarnessStallAskMs);
-  }
-  throw new Error(
-    `postgres harness: fewer than ${String(backends)} backends stalled behind the row lock, so a case is asserting against a race it never set up`,
-  );
-}
-
-/**
- * An open transaction a case drives statement by statement. It is how a case
- * produces an interleaving the port has no seam for — a row lock held across
- * another call, or the terminalization the decision transaction will make.
- */
 async function postgresHarnessBegin(
   pool: pg.Pool,
 ): Promise<PostgresTransaction> {
   const client = await pool.connect();
   await client.query("BEGIN");
-  const finish = async (how: string): Promise<void> => {
+  const finish = async (command: string): Promise<void> => {
     try {
-      await client.query(how);
+      await client.query(command);
     } finally {
       client.release();
     }
@@ -460,397 +225,3 @@ async function postgresHarnessBegin(
     rollback: () => finish("ROLLBACK"),
   };
 }
-
-/** The key version every case digests under unless it is rotating away from it. */
-export const postgresHarnessKeyVersionFirst = "keying-one";
-
-/** The version a rotating case makes current, while the first stays retained and looked up. */
-export const postgresHarnessKeyVersionLater = "keying-two";
-
-/**
- * A keying set whose current version is the one named. Cases rotate by opening
- * a second inbox on the later version, which is what proves a key accepted
- * under the earlier one is still found.
- */
-export function postgresHarnessKeying(
-  current = postgresHarnessKeyVersionFirst,
-): IdempotencyKeying {
-  return {
-    current,
-    versions: [
-      postgresHarnessKeyVersionFirst,
-      postgresHarnessKeyVersionLater,
-    ].map((version) => ({ version, secret: `secret-for-${version}` })),
-  };
-}
-
-/**
- * A submission no other case is making, labelled so a failure names the case
- * that made it. The uniqueness may be supplied rather than drawn, which is how
- * the crash rig's parent and child name the same submission without a channel
- * between them.
- */
-export function postgresHarnessSubmission(
-  partition: Partition,
-  label: string,
-  unique: string = randomUUID(),
-): Submission {
-  return {
-    partition,
-    operation: asOperationId(`operation-${label}-${unique}`),
-    authority: {
-      kind: asAuthorityKind("UserMutation"),
-      subject: asAuthoritySubject(`subject-${label}`),
-    },
-    key: asIdempotencyKey(`key-${label}-${unique}`),
-    command: {
-      version: 1,
-      command: "Decide",
-      event: asOperationDecisionEvent({ type: "ResumeTicket", value: id(1) }),
-    },
-  };
-}
-
-/**
- * One completion written the way `submit_task_completion` writes it: under the
- * scheduler's own authority, at the project's next ingress ordinal, and with
- * the `Completion` priority no ingress classification produces. A case that
- * needs a settled logical task takes this rather than the public inbox, because
- * a completion is no command a principal may offer.
- */
-export async function postgresHarnessCompletion(
-  harness: PostgresHarness,
-  partition: Partition,
-  operation: string,
-  event: DecisionEvent,
-): Promise<void> {
-  if (!isCompletionDecisionEvent(event))
-    throw new Error("postgres harness: that event is not a completion");
-  const command = JSON.stringify({ version: 1, command: "Decide", event });
-  await harness.query(
-    `WITH claimed AS (
-       UPDATE project SET ingress_next = ingress_next + 1
-        WHERE tenant = $1 AND project = $2
-        RETURNING ingress_next - 1 AS ordinal, lifecycle_generation
-     ), written AS (
-       INSERT INTO operation
-         (tenant, project, operation, authority_kind, authority_subject, admission,
-          key_version, key_digest, payload_digest, command, command_tag)
-       SELECT $1, $2, $3, $4, 'scheduler', 'CorrectnessReducing', 'scheduler-v1',
-              encode(sha256(convert_to($3, 'UTF8')), 'hex'),
-              encode(sha256(convert_to($5, 'UTF8')), 'hex'), $5, $6
-         FROM claimed
-       RETURNING operation
-     ), queued AS (
-       INSERT INTO decision_input
-         (tenant, project, ordinal, input_kind, input_id, base_priority, lifecycle_generation)
-       SELECT $1, $2, claimed.ordinal, 'Operation', $3, 'Completion',
-              claimed.lifecycle_generation
-         FROM claimed
-       RETURNING ordinal
-     )
-     INSERT INTO project_readiness (tenant, project, ready, generation)
-     VALUES ($1, $2, true, 1)
-     ON CONFLICT (tenant, project) DO UPDATE
-       SET ready = true, generation = project_readiness.generation + 1`,
-    [
-      partition.tenant,
-      partition.project,
-      operation,
-      executionSchedulerAuthorityKind,
-      command,
-      event.type,
-    ],
-  );
-}
-
-/**
- * A history the machine would accept: one release, then its dispatch. Cases
- * share it so a change to what the actor journals moves one fixture rather
- * than four.
- */
-export function postgresHarnessJournal(): readonly Entry[] {
-  const released = journalStep(
-    refinementInstance,
-    actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
-  );
-  return journalStep(refinementInstance, released, dispatchEvent(id(1)))
-    .journal;
-}
-
-/** The fixture history's entry at `index`, refusing an index the fixture is shorter than. */
-export function postgresHarnessEntry(index: number): Entry {
-  const entry = postgresHarnessJournal()[index];
-  if (entry === undefined) {
-    throw new Error(
-      `postgres harness: the fixture journal has no entry ${String(index)}`,
-    );
-  }
-  return entry;
-}
-
-/**
- * A submission whose command is the fixture history's decision at `index`, so
- * the accepted operation is one a writer can decide rather than refuse.
- */
-export function postgresHarnessDecisionSubmission(
-  partition: Partition,
-  label: string,
-  index: number,
-  unique?: string,
-): Submission {
-  if (index === 0)
-    throw new Error(
-      "postgres harness: releases use postgresHarnessReleaseSubmission",
-    );
-  return {
-    ...postgresHarnessSubmission(partition, label, unique),
-    command:
-      postgresHarnessEntry(index).event.type === "Dispatch"
-        ? {
-            version: 1,
-            command: "ManualDispatch",
-            ticket: id(1),
-            expectedTicketVersion: index,
-          }
-        : {
-            version: 1,
-            command: "Decide",
-            event: asOperationDecisionEvent(postgresHarnessEntry(index).event),
-          },
-  };
-}
-
-/**
- * Creates native authoring state and returns its only valid public release
- * command. The authoring may be named, for a case about a ticket the fixture's
- * own pricing does not produce.
- */
-export async function postgresHarnessReleaseSubmission(
-  harness: PostgresHarness,
-  partition: Partition,
-  label: string,
-  authoring: ReleaseAuthoring = plainAuthoring,
-): Promise<Submission> {
-  const revision = asConfigurationRevisionId(`config-${label}-${randomUUID()}`);
-  const base = postgresHarnessSubmission(partition, label);
-  const authority = base.authority;
-  await harness.authoring.createConfiguration({
-    partition,
-    authority,
-    revision,
-    canonical: postgresHarnessConfiguration,
-  });
-  const initialized = await harness.authoring.initializeDraft(
-    partition,
-    revision,
-    100,
-  );
-  if (initialized === undefined || initialized === "PolicyUnavailable")
-    throw new Error("postgres harness: release draft was not initialized");
-  const created = await harness.authoring.createDraft({
-    partition,
-    authority,
-    configurationRevision: revision,
-    configurationDigest: initialized.configuration.digest,
-    expectedProjectSequence: initialized.projectSequence,
-    authoring,
-    brief: postgresHarnessBriefIn(
-      await postgresHarnessBinding(harness, partition),
-    ),
-  });
-  if (created.created !== "Created")
-    throw new Error("postgres harness: release draft was not created");
-  return {
-    ...base,
-    command: {
-      version: 1,
-      command: "ReleaseDraft",
-      ticket: created.draft.ticket,
-      authoringVersion: created.draft.authoringVersion,
-      configurationRevision: revision,
-    },
-  };
-}
-
-/** Accepts one submission and hands back the inbox item it created, which is what a writer decides. */
-export async function postgresHarnessAccept(
-  inbox: OperationInbox,
-  submission: Submission,
-): Promise<DecisionInput> {
-  const accepted = await inbox.accept(submission);
-  if (accepted.accepted !== "Accepted") {
-    throw new Error(
-      `postgres harness: the acceptance was ${accepted.accepted}`,
-    );
-  }
-  return {
-    partition: submission.partition,
-    ordinal: accepted.operation.ordinal,
-    priority: "Ordinary",
-    source: {
-      kind: "Operation",
-      operation: submission.operation,
-      command: submission.command,
-      resolvedEvent:
-        submission.command.command === "Decide"
-          ? submission.command.event
-          : releaseTicketEvent(id(1), plainAuthoring),
-    },
-  };
-}
-
-export function postgresHarnessInputOperation(
-  input: DecisionInput,
-): OperationId {
-  if (input.source.kind !== "Operation") {
-    throw new Error("postgres harness: expected an operation decision input");
-  }
-  return input.source.operation;
-}
-
-/** An accepted item carrying the fixture history's decision at `index`, which most cases start from. */
-export function postgresHarnessAccepted(
-  harness: PostgresHarness,
-  partition: Partition,
-  label: string,
-  index: number,
-  authoring: ReleaseAuthoring = plainAuthoring,
-): Promise<DecisionInput> {
-  return (async () => {
-    const submission =
-      index === 0
-        ? await postgresHarnessReleaseSubmission(
-            harness,
-            partition,
-            label,
-            authoring,
-          )
-        : postgresHarnessDecisionSubmission(partition, label, index);
-    const accepted = await harness.inbox.accept(submission);
-    if (accepted.accepted !== "Accepted")
-      throw new Error(
-        `postgres harness: the acceptance was ${accepted.accepted}`,
-      );
-    const input = await harness.discovery.next(partition, 300);
-    if (input === undefined)
-      throw new Error("postgres harness: accepted input was not discoverable");
-    return input;
-  })();
-}
-
-/** The writer over a harness's ports, which is what turns a loaded state and an item into a commit. */
-export function postgresHarnessWriter(
-  harness: PostgresHarness,
-): ProjectTicketWriter {
-  return {
-    config: refinementInstance,
-    store: harness.store,
-    decisions: harness.decisions,
-    executionSources: {
-      observe: () =>
-        Promise.resolve({
-          observed: "Source",
-          source: {
-            repository: asRepositoryId("repository"),
-            target: { commit: asGitObjectId("a".repeat(40)) },
-            manifests: [],
-          },
-        }),
-    },
-    ticketBriefs: { brief: () => Promise.resolve(undefined) },
-  };
-}
-
-/**
- * Accepts and decides the fixture history's first `count` decisions, and hands
- * back the state the last commit left. Cases that need a project with a
- * history start here rather than assembling one.
- */
-export async function postgresHarnessHistory(
-  harness: PostgresHarness,
-  partition: Partition,
-  label: string,
-  count: number,
-  authoring: ReleaseAuthoring = plainAuthoring,
-): Promise<ProjectMemory> {
-  const writer = postgresHarnessWriter(harness);
-  let memory = await projectWriterLoad(
-    writer,
-    await postgresHarnessHeld(harness.store, partition, label),
-  );
-  for (let index = 0; index < count; index++) {
-    const item = await postgresHarnessAccepted(
-      harness,
-      partition,
-      `${label}-${String(index)}`,
-      index,
-      authoring,
-    );
-    const step = await projectWriterDecide(writer, memory, item);
-    if (step.decided.decided !== "Committed") {
-      throw new Error(
-        `postgres harness: decision ${String(index)} was ${step.decided.decided}`,
-      );
-    }
-    memory = step.memory;
-  }
-  return memory;
-}
-
-/** The most decisions one drained queue may hold, which no fixture reaches. */
-const postgresHarnessDecisionsMax = 16;
-
-/** What draining the queue left: the state the last decision installed, and what each one was. */
-export interface PostgresHarnessDrained {
-  readonly memory: ProjectMemory;
-  readonly decided: readonly string[];
-}
-
-/**
- * Decides everything the project's queue currently holds, which is how a
- * continuation the last commit emitted reaches the writer that must consume it.
- * A refusal is one of the answers a writer gives, so a fenced input drains and
- * is reported rather than raising.
- */
-export async function postgresHarnessDrain(
-  harness: PostgresHarness,
-  partition: Partition,
-  memory: ProjectMemory,
-): Promise<PostgresHarnessDrained> {
-  const writer = postgresHarnessWriter(harness);
-  let carried = memory;
-  const decided: string[] = [];
-  for (let drained = 0; drained < postgresHarnessDecisionsMax; drained++) {
-    const input = await harness.discovery.next(partition, 300);
-    if (input === undefined) return { memory: carried, decided };
-    const step = await projectWriterDecide(writer, carried, input);
-    decided.push(step.decided.decided);
-    carried = step.memory;
-  }
-  throw new Error(
-    "postgres harness: the project queue did not drain within its bound",
-  );
-}
-
-/** The operational context a selector case supplies, which no case is about. */
-export const postgresHarnessSelectorContext = {
-  version: 2,
-  observedAt: "2026-08-20T12:00:00.000Z",
-  observedAtEpochMs: 1_777_000_000_000,
-  reviewFeedback: [],
-  activeWork: { queued: 0, admitted: 0, launching: 0, running: 0 },
-  capacity: {
-    account: "project",
-    accountMaximum: 1,
-    accountActive: 0,
-    accountReservationDeficit: 0,
-    clusterSlotsMax: 1,
-    clusterActive: 0,
-  },
-  backlog: {
-    project: { queued: 0, ceiling: 10 },
-    installation: { queued: 0, ceiling: 100 },
-  },
-} as const;

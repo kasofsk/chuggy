@@ -149,42 +149,6 @@ printf '%s\n' 'import { wire } from "../src/contract/wire.ts"' 'import { x } fro
 seal
 check "a relay out of the contract is caught like any other module" 1 "$RC" "contract-reaches-only-zod:"
 
-# --- actor-sees-domain-only --------------------------------------------------
-
-# The actor importing the domain is the allowed direction, so the rule's clean
-# side is proved before its bite: a red here would mean the rule over-fires on
-# the one edge the layer exists to take.
-fixture
-mkdir -p "$R/src/actor"
-printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
-printf '%s\n' 'import { x } from "../domain/a.ts"' 'export const y = x' > "$R/src/actor/b.ts"
-printf '%s\n' 'import { y } from "../src/actor/b.ts"' 'export const z = y' > "$R/test/a.test.ts"
-seal
-check "the actor importing the domain is clean" 0 "$RC" "graph clean"
-check "the clean actor graph counts every module cruised" 0 "$RC" "across 3 module(s)"
-
-# The same tree with one platform import added: the domain edge stays innocent,
-# so only the actor's own rule can catch it.
-fixture
-mkdir -p "$R/src/actor"
-printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
-printf '%s\n' 'import { x } from "../domain/a.ts"' 'import { join } from "node:path"' 'export const y = join("a", String(x))' > "$R/src/actor/b.ts"
-printf '%s\n' 'import { y } from "../src/actor/b.ts"' 'export const z = y' > "$R/test/a.test.ts"
-seal
-check "the actor may not import a platform module" 1 "$RC" "actor-sees-domain-only:"
-
-# The one edge leaving the actor is the domain import the layer exists to take,
-# so nothing but a path through the graph reaches node:path. Without
-# `reachable: true` on the rule, domain-is-pure fires here alone and this is the
-# only case that notices.
-fixture
-mkdir -p "$R/src/actor"
-printf '%s\n' 'import { join } from "node:path"' 'export const x = join("a", "b")' > "$R/src/domain/a.ts"
-printf '%s\n' 'import { x } from "../domain/a.ts"' 'export const y = x' > "$R/src/actor/b.ts"
-printf '%s\n' 'import { y } from "../src/actor/b.ts"' 'export const z = y' > "$R/test/a.test.ts"
-seal
-check "the actor may not REACH a platform module transitively" 1 "$RC" "actor-sees-domain-only:"
-
 # --- The layer boundaries ----------------------------------------------------
 
 # The suites are downstream of every part of src/. From the domain the broader
@@ -197,14 +161,13 @@ seal
 check "a source reaching a suite is a finding" 1 "$RC" "domain-is-pure:"
 
 # The whole allowed direction in one tree: an adapter answers a port the
-# interpreter declared, the interpreter reads the actor, the actor reads the
-# domain, and the composition root imports the adapter. A red here would mean a
+# interpreter declared, the interpreter reads the domain, and the composition
+# root imports the adapter. A red here would mean a
 # rule below over-fires on the shape the split exists to permit.
 fixture
-mkdir -p "$R/src/actor" "$R/src/interpreter" "$R/src/adapters"
+mkdir -p "$R/src/interpreter" "$R/src/adapters"
 printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
-printf '%s\n' 'import { x } from "../domain/a.ts"' 'export const decided = x' > "$R/src/actor/b.ts"
-printf '%s\n' 'import { decided } from "../actor/b.ts"' 'export const port = decided' > "$R/src/interpreter/port.ts"
+printf '%s\n' 'import { x } from "../domain/a.ts"' 'export const port = x' > "$R/src/interpreter/port.ts"
 printf '%s\n' 'import { port } from "../interpreter/port.ts"' 'export const stub = port' > "$R/src/adapters/stub.ts"
 printf '%s\n' 'import { stub } from "./adapters/stub.ts"' 'export const wired = stub' > "$R/src/compose.ts"
 printf '%s\n' 'import { stub } from "../src/adapters/stub.ts"' 'export const z = stub' > "$R/test/a.test.ts"
@@ -213,7 +176,7 @@ check "the layers below the composition root import inward and stay clean" 0 "$R
 # The count is what says the root was cruised rather than skipped. It is the
 # only module here nothing imports, and it is clean because a module with
 # dependencies is not an orphan however little depends on it.
-check "the composition root is cruised, not absent" 0 "$RC" "across 6 module(s)"
+check "the composition root is cruised, not absent" 0 "$RC" "across 5 module(s)"
 
 # --- interpreter-constructs-no-adapter ---------------------------------------
 

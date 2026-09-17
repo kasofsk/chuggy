@@ -51,8 +51,6 @@ function fixture(t: TestContext, overrides: Environment = {}): Fixture {
   });
   const credential = join(root, "credential");
   writeFileSync(credential, `${fixtureSecret}\n`);
-  const artifacts = join(root, "artifacts");
-  mkdirSync(artifacts);
   return {
     root,
     environment: {
@@ -61,7 +59,6 @@ function fixture(t: TestContext, overrides: Environment = {}): Fixture {
       CHUG_FINALIZER_DATABASE_URL: refusedDatabase,
       CHUG_FINALIZER_OWNER: "finalizer-1",
       CHUG_FINALIZER_RECOVERY_EPOCH: "epoch-1",
-      CHUG_FINALIZER_ARTIFACT_ROOT: artifacts,
       CHUG_FINALIZER_GIT_SCRATCH_ROOT: join(root, "scratch"),
       CHUG_FINALIZER_GIT_COMMIT_NAME: "chuggy",
       CHUG_FINALIZER_GIT_COMMIT_EMAIL: "chuggy@example.invalid",
@@ -174,12 +171,6 @@ test("each local prerequisite this deployment lacks is named on the way out", as
       "undecided",
       /EACCES/u,
       { CHUG_FINALIZER_GIT_SCRATCH_ROOT: join(locked, "scratch") },
-    ],
-    [
-      "artifact-root-writable",
-      "undecided",
-      /ENOENT/u,
-      { CHUG_FINALIZER_ARTIFACT_ROOT: join(root, "unmounted") },
     ],
     [
       "repository-credentials-available",

@@ -7,9 +7,7 @@ import {
   type AccessTokenSource,
 } from "../../src/adapters/http/accessToken.ts";
 import { checkedPositiveBound } from "../../src/adapters/http/bounds.ts";
-import { nativeHttpClient } from "../../src/adapters/http/client.ts";
 import { clientCredentialsTokenSource } from "../../src/adapters/http/clientCredentials.ts";
-import { selectorContextHttp } from "../../src/adapters/http/selectorContext.ts";
 
 function countingSource(started: { count: number }): AccessTokenSource {
   return {
@@ -64,29 +62,7 @@ test("a bound that is not a positive safe integer is refused", () => {
     );
 });
 
-test("every client here narrows its bounds through that one check", () => {
-  const accessToken = countingSource({ count: 0 });
-  assert.throws(
-    () =>
-      nativeHttpClient({
-        baseUrl: "https://native.example/",
-        accessToken,
-        requestTimeoutMs: 0,
-        responseBytesMax: 1_000,
-      }),
-    /must be a positive safe integer/u,
-  );
-  assert.throws(
-    () =>
-      selectorContextHttp({
-        baseUrl: "https://native.example/",
-        accessToken,
-        requestTimeoutMs: 1_000,
-        responseBytesMax: 1_000,
-        responseReadsMax: 0,
-      }),
-    /must be a positive safe integer/u,
-  );
+test("the credential client narrows its bounds through the shared check", () => {
   assert.throws(
     () =>
       clientCredentialsTokenSource({

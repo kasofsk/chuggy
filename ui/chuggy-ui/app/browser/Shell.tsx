@@ -28,10 +28,6 @@ import {
   chatPaneStripped,
 } from "../core/chatPane.ts";
 import type { ChatPanePlacement, ChatPaneState } from "../core/chatPane.ts";
-import {
-  projectStreamCarrying,
-  projectStreamUnanswered,
-} from "../core/projectStream.ts";
 import { ChatPane } from "./shell/ChatPane.tsx";
 import { ChatPaneProvider, useChatPane } from "./shell/chatPaneHeld.tsx";
 import { DetailsPane } from "./shell/DetailsPane.tsx";
@@ -39,11 +35,6 @@ import { TicketReferenceWiring } from "./ticket/TicketReferenceWiring.tsx";
 import { ShellSlots } from "./shell/slots.tsx";
 import { TopBar } from "./shell/TopBar.tsx";
 import { useViewportAtLeastEm, viewportTwoColumnEm } from "./shell/viewport.ts";
-import {
-  useProjectFallbackExhausted,
-  useProjectStreamStatus,
-} from "./stream.tsx";
-import { Notice } from "./ui/Notice.tsx";
 import "./shell/shell.css";
 
 /**
@@ -53,24 +44,6 @@ import "./shell/shell.css";
  * the screen is stale and the reader should know it — and a first paint is not,
  * because nothing has stopped arriving yet.
  */
-export function StreamBanner(): ReactNode {
-  const status = useProjectStreamStatus();
-  const exhausted = useProjectFallbackExhausted();
-  if (projectStreamCarrying(status) || projectStreamUnanswered(status))
-    return null;
-  const detail =
-    status.reason ??
-    (status.source === "degraded" ? "Change log degraded" : "Stream not open");
-  return (
-    <Notice
-      tone="parked"
-      role="status"
-      heading="Not live"
-      detail={exhausted ? "Stream closed · fallback exhausted" : detail}
-    />
-  );
-}
-
 /** The tracks the body below the bar takes, total over the placements so a
  * placement the roster grows stops compiling rather than drawing one column. */
 const shellBodyTracks: Readonly<Record<ChatPanePlacement, string>> = {
@@ -112,12 +85,8 @@ function shellBodyTracksDrawn(chat: ChatPaneState): string {
  * lengthening the document below it.
  */
 export function ShellFrame(props: { readonly children: ReactNode }): ReactNode {
-  const carrying = projectStreamCarrying(useProjectStreamStatus());
   return (
-    <div
-      data-stream={carrying ? "live" : "not-live"}
-      className="bg-surface-0 relative grid h-dvh grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
-    >
+    <div className="bg-surface-0 relative grid h-dvh grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
       {props.children}
     </div>
   );
@@ -131,9 +100,6 @@ function ShellHeader(props: {
 }): ReactNode {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)]">
-      <div className="shell-banner">
-        <StreamBanner />
-      </div>
       <TopBar partition={props.partition} />
       <Separator.Root decorative className="h-px bg-edge" />
     </div>

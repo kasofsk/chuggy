@@ -25,7 +25,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
-import { sessionChangeResourceSchema } from "../../src/contract/events.ts";
+import { sessionChangeResourceSchema } from "../../src/contract/sessionEvents.ts";
 import {
   apiRole,
   boundaryOwnerRole,

@@ -8,14 +8,12 @@
  * over — a catalogued name is read out of the catalog by image and is absent
  * where the image was never published.
  *
- * A NAME IS A REPOSITORY CONFIGURATION NAME, spelled by that module's own rule
- * rather than by a copy of it. A version is only bounded text: it is whatever
- * the release that admitted the image calls itself, and no reader picks an
- * entry out of a list by it.
+ * A name is bounded portable text. A version is only bounded text: it is
+ * whatever the release that admitted the image calls itself, and no reader
+ * picks an entry out of a list by it.
  */
 
 import { textCodePointsCount } from "../contract/http.ts";
-import { asRepositoryConfigurationName } from "./repositoryConfigurationIdentity.ts";
 
 /** The label an image carries in front of a reader, as the catalog holds it. */
 export interface Worker {
@@ -29,13 +27,20 @@ export interface AdmittedWorker extends Worker {
 }
 
 export const workerImageCharsMax = 512;
+export const workerNameCharsMax = 128;
 export const workerVersionCharsMax = 64;
 
 /** The most entries one deployment's admitted-images list may carry. */
 export const admittedImagesMax = 100;
 
 export function asWorkerName(value: unknown): string | undefined {
-  return asRepositoryConfigurationName(value);
+  return typeof value === "string" &&
+    value.length > 0 &&
+    textCodePointsCount(value) <= workerNameCharsMax &&
+    value.isWellFormed() &&
+    /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/u.test(value)
+    ? value
+    : undefined;
 }
 
 export function asWorkerVersion(value: unknown): string | undefined {

@@ -25,7 +25,6 @@ export const leadRoster: readonly SessionCapability[] = [
   "RepositoryRead",
   "ProjectRead",
   "DraftAuthor",
-  "LeadDecision",
 ];
 
 /** A copy of `threadCapabilitiesDefault`, asserted to be it by the contract suite. */

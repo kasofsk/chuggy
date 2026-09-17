@@ -8,27 +8,12 @@ import {
   ketoProjectAccess,
   ketoReadiness,
 } from "../adapters/keto/projectAccess.ts";
-import { postgresExecutionBacklogGuard } from "../adapters/postgres/schedulerContext.ts";
 import {
   createNativeHttpApp,
   nativeHttpLimitsDefault,
+  type NativeTicketApplication,
   type PrincipalAuthentication,
 } from "../adapters/http/server.ts";
-import { projectResourceReader } from "../adapters/http/eventStream.ts";
-import {
-  postgresProjectChangeDoorbell,
-  postgresProjectChangeLog,
-} from "../adapters/postgres/projectChangeLog.ts";
-import { systemStreamTimers } from "../adapters/runtime/systemStreamTimers.ts";
-import {
-  projectStreamHub,
-  projectStreamLimitsDefault,
-  type ProjectStreamHub,
-  type ProjectStreamLimits,
-  type ProjectStreamNote,
-  type ProjectStreamReport,
-} from "../interpreter/projectStream.ts";
-import { assertNever } from "../domain/assertNever.ts";
 import {
   oidcAuthentication,
   type OidcAuthenticationConfig,
@@ -41,13 +26,15 @@ import {
   composeForgeRepositoryMinting,
   composeNativeWeb,
   composeRepositoryOnboarding,
-  composeSelectorProjectSettings,
   type RepositoryCredentialMinting,
 } from "../compose.ts";
-import type { IdempotencyKeying } from "../adapters/postgres/keying.ts";
+import {
+  idempotencyKeyDigestCurrent,
+  type IdempotencyKeying,
+} from "../adapters/postgres/keying.ts";
+import { asIdempotencyKey } from "../interpreter/operationInbox.ts";
 import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
 import { postgresLeadReads } from "../adapters/postgres/leadReads.ts";
-import { postgresAgenticRefusalReads } from "../adapters/postgres/agenticRefusal.ts";
 import type {
   NativeLeadPorts,
   NativeThreadPorts,
@@ -70,13 +57,15 @@ import {
   projectAccessTimeoutMsDefault,
   type ProjectAccessSettings,
 } from "../interpreter/projectAccess.ts";
-import { postgresExecutionContextRead } from "../adapters/postgres/schedulerContext.ts";
-import { postgresSelectorProposalReviews } from "../adapters/postgres/selector.ts";
-import { selectorOperationalContextRead } from "../interpreter/selectorOperationalContext.ts";
-import { selectorReviewRole } from "../adapters/postgres/schema.ts";
-import { postgresSelectorContextReady } from "../adapters/postgres/selectorContextReadiness.ts";
 import { pathToFileURL } from "node:url";
-import { gitRepositoryConfiguration } from "../adapters/git/gitRepositoryConfiguration.ts";
+import { gitTicketCatalog } from "../adapters/git/gitTicketCatalog.ts";
+import { pinnedTicketCatalogs } from "../adapters/catalog/pinnedTicketCatalog.ts";
+import { ticketApplication } from "../interpreter/ticketApplication.ts";
+import { postgresTicketMachineInbox } from "../adapters/postgres/ticketMachineInbox.ts";
+import { postgresTicketMachine } from "../adapters/postgres/ticketMachine.ts";
+import { postgresTicketContent } from "../adapters/postgres/ticketContent.ts";
+import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
+import { memberAuthorityKind } from "../interpreter/projectAccess.ts";
 import {
   finalizerGitEnvironmentNames,
   repositoryCredentialFilesOf,
@@ -114,10 +103,13 @@ import {
 } from "../interpreter/forgeInstallation.ts";
 import type { ForgeTemplateRepository } from "../interpreter/forgeRepositoryCreation.ts";
 import { githubRepositoryCreation } from "../adapters/forge/githubRepositoryCreation.ts";
-import type {
-  RepositoryConfigurationSnapshotPort,
-  RepositoryDefaultBranchPort,
-} from "../interpreter/repositoryConfiguration.ts";
+import { postgresProjectChangeRetention } from "../adapters/postgres/projectChangeRetention.ts";
+import { systemPacing } from "../adapters/runtime/systemPacing.ts";
+import {
+  projectChangeRetentionDefaults,
+  projectChangeRetentionMaintenance,
+} from "../interpreter/projectChangeRetention.ts";
+
 import type { RepositoryCreationPorts } from "../interpreter/repositoryOnboarding.ts";
 import type { ProjectAccess } from "../interpreter/projectAccess.ts";
 
@@ -136,8 +128,6 @@ const ketoTimeoutVariable = "CHUG_API_KETO_TIMEOUT_MS";
  * lead happens to use while reading as though somebody had chosen it.
  */
 const threadCredentialSlotVariable = "CHUG_API_THREAD_CREDENTIAL_SLOT";
-const selectorReviewDatabaseUrlVariable =
-  "CHUG_API_SELECTOR_REVIEW_DATABASE_URL";
 const gitScratchRootVariable = "CHUG_API_GIT_SCRATCH_ROOT";
 const repositoryCredentialSourcesVariable =
   "CHUG_API_REPOSITORY_CREDENTIAL_SOURCES";
@@ -155,15 +145,6 @@ const forgeWorkerAppKeyFileVariable = "CHUG_API_FORGE_WORKER_APP_KEY_FILE";
 const forgeApiUrlVariable = "CHUG_API_FORGE_API_URL";
 const forgeTimeoutVariable = "CHUG_API_FORGE_TIMEOUT_MS";
 const forgeRepositoriesMaxVariable = "CHUG_API_FORGE_REPOSITORIES_MAX";
-/**
- * The worker image a bootstrap configuration commands, and the repository a
- * personal account's is copied from. Both are optional and each withholds one
- * thing — a deployment naming no image authors no bootstrap, and one naming no
- * template creates for organizations only — and the image is not looked up
- * here, the api holding no admitted list, so an image the rig will not run
- * fails at placement where every other refused image does.
- */
-const bootstrapWorkerImageVariable = "CHUG_API_BOOTSTRAP_WORKER_IMAGE";
 const forgeTemplateRepositoryVariable = "CHUG_API_FORGE_TEMPLATE_REPOSITORY";
 
 function requiredEnvironment(name: string): string {
@@ -265,44 +246,8 @@ async function apiDatabaseReady(
   }
 }
 
-function selectorContextSource(
-  pool: ReturnType<typeof postgresPool>,
-  selectorReviewPool: ReturnType<typeof postgresPool>,
-) {
-  return selectorOperationalContextRead(
-    postgresExecutionContextRead(pool),
-    postgresSelectorProposalReviews(selectorReviewPool),
-    {
-      now: () => {
-        const instant = new Date();
-        return {
-          instant: instant.toISOString(),
-          epochMilliseconds: instant.getTime(),
-        };
-      },
-    },
-    {
-      reviewFeedbackMax: positiveEnvironment(
-        "CHUG_API_SELECTOR_FEEDBACK_MAX",
-        100,
-      ),
-      projectBacklogMax: positiveEnvironment(
-        "CHUG_SCHEDULER_PROJECT_BACKLOG_MAX",
-        200,
-      ),
-      installationBacklogMax: positiveEnvironment(
-        "CHUG_SCHEDULER_INSTALLATION_BACKLOG_MAX",
-        5_000,
-      ),
-    },
-  );
-}
-
-function closePools(
-  pool: ReturnType<typeof postgresPool>,
-  selectorReviewPool: ReturnType<typeof postgresPool>,
-): Promise<unknown[]> {
-  return Promise.all([pool.end(), selectorReviewPool.end()]);
+function closePool(pool: ReturnType<typeof postgresPool>): Promise<void> {
+  return pool.end();
 }
 
 /**
@@ -312,37 +257,29 @@ function closePools(
  */
 function nativeReadiness(
   pool: ReturnType<typeof postgresPool>,
-  selectorReviewPool: ReturnType<typeof postgresPool>,
   access: ProjectAccessSettings,
 ) {
   return {
     ready: async () =>
-      (await apiDatabaseReady(pool)) &&
-      (await postgresSelectorContextReady(selectorReviewPool)) &&
-      (await ketoReadiness(access).ready()),
+      (await apiDatabaseReady(pool)) && (await ketoReadiness(access).ready()),
   };
 }
 
-/** The two pools this process owns, each proved to connect as a different role. */
+/** The API-role database pool owned by this process. */
 export interface NativePools {
   readonly pool: ReturnType<typeof postgresPool>;
-  readonly selectorReviewPool: ReturnType<typeof postgresPool>;
 }
 
 function nativePools(): NativePools {
   return {
     pool: postgresPool(requiredEnvironment(databaseUrlVariable)),
-    selectorReviewPool: postgresPool(
-      requiredEnvironment(selectorReviewDatabaseUrlVariable),
-    ),
   };
 }
 
 /**
  * Where a repository's credential comes from in this process: the minting
  * source for a host that has one, and the mounted files for every other. The
- * onboarding routes prove a binding against it and the configuration importer
- * clones with it, so a repository one of them can reach is one the other can.
+ * onboarding and catalog readers use the same repository credentials.
  */
 function nativeRepositoryCredentials(
   minting: RepositoryCredentialMinting | undefined,
@@ -356,28 +293,6 @@ function nativeRepositoryCredentials(
           repositoryCredentialSourcesVariable,
         );
   return composeApiRepositoryCredentials({ sources }, minting);
-}
-
-function repositoryConfigurationSnapshots(
-  credentials: RepositoryCredentialPort,
-) {
-  const scratchDirectory = process.env[gitScratchRootVariable];
-  if (scratchDirectory === undefined || scratchDirectory.length === 0)
-    return undefined;
-  const environment = Object.fromEntries(
-    finalizerGitEnvironmentNames
-      .filter((name) => process.env[name] !== undefined)
-      .map((name) => [name, process.env[name]]),
-  );
-  return gitRepositoryConfiguration({
-    scratchDirectory,
-    identity: {
-      name: "Chuggy configuration importer",
-      email: "configuration-importer@chuggy.invalid",
-    },
-    environment,
-    credentials,
-  });
 }
 
 /**
@@ -507,7 +422,7 @@ async function forgeKeysReady(
 ): Promise<void> {
   const unusable = await forgeKeysUnusable(pairs);
   if (unusable === undefined) return;
-  await closePools(pools.pool, pools.selectorReviewPool);
+  await closePool(pools.pool);
   throw new Error(unusable);
 }
 
@@ -526,12 +441,6 @@ function forgeRepositoriesMax(): number {
       `${forgeRepositoriesMaxVariable} must be at most ${String(forgeRepositoriesAnsweredMax)}`,
     );
   return asked;
-}
-
-/** The image a bootstrap configuration commands, or nothing where this deployment names none. */
-function bootstrapWorkerImage(): string | undefined {
-  const image = process.env[bootstrapWorkerImageVariable];
-  return image === undefined || image.length === 0 ? undefined : image;
 }
 
 /**
@@ -572,16 +481,12 @@ function forgeRepositoryCreation(
 /**
  * The forge this process talks to: the credential source its own reads take,
  * the minting route's service, onboarding's, and the one adapter that reads a
- * repository — composed once because it opens one scratch, and handed to the
- * import route as well as to the bind's configuration step.
+ * repository catalog from an immutable commit.
  */
 export interface NativeForge {
   readonly credentials: RepositoryCredentialPort;
   readonly minting: ForgeCredentialMinting | undefined;
   readonly onboarding: RepositoryOnboarding;
-  readonly repositories:
-    | (RepositoryConfigurationSnapshotPort & RepositoryDefaultBranchPort)
-    | undefined;
 }
 
 /**
@@ -602,10 +507,8 @@ async function nativeForge(
   const others = otherForgeAppHalves(
     pairs.filter((pair) => pair.app !== portalForgeApp),
   );
-  const image = bootstrapWorkerImage();
   const minting = composeForgeRepositoryMinting(pools.pool, portal?.key);
   const credentials = nativeRepositoryCredentials(minting);
-  const repositories = repositoryConfigurationSnapshots(credentials);
   const half = nativePortalHalf(portal, minting);
   return {
     credentials,
@@ -613,14 +516,11 @@ async function nativeForge(
       minting === undefined
         ? undefined
         : composeForgeCredentialMinting(pools.pool, access, minting.tokens),
-    repositories,
     onboarding: composeRepositoryOnboarding({
       apiPool: pools.pool,
       access,
       credentials,
       forgeApps: half === undefined ? others : [half.onboarding, ...others],
-      ...(repositories === undefined ? {} : { repositories }),
-      ...(image === undefined ? {} : { bootstrapImage: image }),
       ...(half === undefined ? {} : { creation: half.creation }),
     }),
   };
@@ -648,88 +548,15 @@ function nativePortalHalf(
   };
 }
 
-function streamNoteText(note: ProjectStreamNote): string {
-  const totals = `streams=${String(note.streamsOpen)} rows=${String(note.rowsRead)}`;
-  switch (note.note) {
-    case "Sourced":
-      return `source is ${note.state}, ${totals}`;
-    case "Refused":
-      return `refused a stream at capacity, ${totals}`;
-    case "SlowClientClosed":
-      return `closed a stream that stopped reading, ${totals}`;
-    case "Swept":
-      return `swept ${String(note.removed)} change rows, ${totals}`;
-    case "ReadFailed":
-      return `the change log read failed: ${note.failure}, ${totals}`;
-    default:
-      return assertNever(note);
-  }
-}
-
-/** The stream hub reports where the rest of this root does: the process's own error stream. */
-const nativeStreamReport: ProjectStreamReport = {
-  noted: (note) => {
-    process.stderr.write(`project stream: ${streamNoteText(note)}\n`);
-  },
-};
-
-function nativeStreamLimits(): ProjectStreamLimits {
-  return {
-    ...projectStreamLimitsDefault,
-    connectionsMax: positiveEnvironment(
-      "CHUG_API_STREAM_CONNECTIONS_MAX",
-      projectStreamLimitsDefault.connectionsMax,
-    ),
-    maxAgeMs: positiveEnvironment(
-      "CHUG_API_STREAM_MAX_AGE_MS",
-      projectStreamLimitsDefault.maxAgeMs,
-    ),
-    heartbeatMs: positiveEnvironment(
-      "CHUG_API_STREAM_HEARTBEAT_MS",
-      projectStreamLimitsDefault.heartbeatMs,
-    ),
-    sweepMs: positiveEnvironment(
-      "CHUG_API_STREAM_SWEEP_MS",
-      projectStreamLimitsDefault.sweepMs,
-    ),
-    sweepRowsMax: positiveEnvironment(
-      "CHUG_API_STREAM_SWEEP_ROWS_MAX",
-      projectStreamLimitsDefault.sweepRowsMax,
-    ),
-  };
-}
-
-function nativeStreamHub(
-  pool: ReturnType<typeof postgresPool>,
-  web: Parameters<typeof projectResourceReader>[0],
-): ProjectStreamHub {
-  return projectStreamHub({
-    log: postgresProjectChangeLog(pool),
-    doorbell: postgresProjectChangeDoorbell(
-      requiredEnvironment(databaseUrlVariable),
-    ),
-    reader: projectResourceReader(web),
-    timers: systemStreamTimers,
-    report: nativeStreamReport,
-    limits: nativeStreamLimits(),
-  });
-}
-
-/**
- * Ends every stream before the drain begins, because a stream is a response
- * that never finishes and a drain that waited for one would wait out its
- * deadline.
- */
+/** Closes the server within the configured drain bound. */
 function nativeShutdown(
   app: ReturnType<typeof createNativeHttpApp>,
-  hub: ProjectStreamHub,
   drainMs: number,
 ): () => Promise<void> {
   let started = false;
   return async () => {
     if (started) return;
     started = true;
-    await hub.close();
     const force = setTimeout(() => {
       app.server.closeAllConnections();
     }, drainMs);
@@ -755,15 +582,7 @@ function nativeShutdownSignals(shutdown: () => Promise<void>): void {
   }
 }
 
-/**
- * The two bearer kinds this API accepts: the issuer's, and the session bearers
- * the API pool is the authority on — the one pool holding `EXECUTE` on
- * `authenticate_session_bearer`, where the review pool would raise permission
- * denied and every session bearer would read on the wire as this server's
- * outage rather than as a deployment that bound the wrong credential. It takes
- * both pools and chooses, rather than being handed one, so a case can observe
- * which was reached.
- */
+/** Authenticates issuer and session bearers through the API-role pool. */
 export function nativeAuthentication(
   oidc: PrincipalAuthentication,
   pools: NativePools,
@@ -774,34 +593,19 @@ export function nativeAuthentication(
   );
 }
 
-/**
- * Refuses to start on either pool this process must have, naming which one, and
- * leaves neither open behind the refusal.
- */
+/** Refuses startup and closes the pool unless the API database is ready. */
 async function nativeDatabasesReady(
   pool: ReturnType<typeof postgresPool>,
-  selectorReviewPool: ReturnType<typeof postgresPool>,
 ): Promise<void> {
   if (!(await apiDatabaseReady(pool))) {
-    await closePools(pool, selectorReviewPool);
+    await closePool(pool);
     throw new Error(
       `the native HTTP database must be migrated and connect as ${apiRole}`,
     );
   }
-  if (!(await postgresSelectorContextReady(selectorReviewPool))) {
-    await closePools(pool, selectorReviewPool);
-    throw new Error(
-      `the selector review database must connect as ${selectorReviewRole}`,
-    );
-  }
 }
 
-/**
- * The lead's read side over the API pool and the artifact volume, taking both
- * pools and choosing for the reason `nativeAuthentication` does: only the API
- * role holds `EXECUTE` on 059's doors, and choosing here is what lets a case
- * observe which pool was reached.
- */
+/** Composes lead reads and transcript storage through the API-role pool. */
 export function nativeLeadPorts(
   pools: NativePools,
   artifacts: SessionStoreReadPort,
@@ -810,8 +614,6 @@ export function nativeLeadPorts(
   return {
     leads,
     store: artifacts,
-    refusals: postgresAgenticRefusalReads(pools.pool),
-    history: leads,
   };
 }
 
@@ -836,16 +638,58 @@ export function nativeThreadPorts(
   };
 }
 
+function nativeTicketApplication(
+  pools: NativePools,
+  access: ProjectAccess,
+  forge: NativeForge,
+  keying: IdempotencyKeying,
+): NativeTicketApplication {
+  const { pool } = pools;
+  const catalogSnapshots = gitTicketCatalog({
+    scratchDirectory: requiredEnvironment(gitScratchRootVariable),
+    identity: {
+      name: "Chuggy ticket authoring",
+      email: "ticket-authoring@chuggy.invalid",
+    },
+    environment: Object.fromEntries(
+      finalizerGitEnvironmentNames
+        .filter((name) => process.env[name] !== undefined)
+        .map((name) => [name, process.env[name]]),
+    ),
+    credentials: forge.credentials,
+    bindings: postgresProjectRepositoryBinding(pool),
+  });
+  const content = (partition: Parameters<typeof postgresTicketContent>[1]) =>
+    postgresTicketContent(pool, partition);
+  return {
+    application: ticketApplication({
+      access,
+      inbox: postgresTicketMachineInbox(pool),
+      graphs: postgresTicketMachine(pool),
+      catalogs: pinnedTicketCatalogs(catalogSnapshots, content),
+      content,
+    }),
+    identity: ({ principal, partition, key, operation }) =>
+      idempotencyKeyDigestCurrent(
+        keying,
+        { partition, authorityKind: memberAuthorityKind },
+        asIdempotencyKey(
+          `${String(Buffer.byteLength(principal))}:${principal}${String(Buffer.byteLength(operation))}:${operation}${key}`,
+        ),
+      ),
+  };
+}
+
 async function main(): Promise<void> {
   const keying = idempotencyKeying();
   const authenticationConfig = oidcConfig();
   const pools = nativePools();
-  const { pool, selectorReviewPool } = pools;
-  await nativeDatabasesReady(pool, selectorReviewPool);
+  const { pool } = pools;
+  await nativeDatabasesReady(pool);
   const authentication = nativeAuthentication(
     await oidcAuthentication(authenticationConfig).catch(
       async (failure: unknown) => {
-        await closePools(pool, selectorReviewPool);
+        await closePool(pool);
         throw failure;
       },
     ),
@@ -859,44 +703,49 @@ async function main(): Promise<void> {
   const forge = await nativeForge(pools, access);
   const web = composeNativeWeb(
     pool,
-    keying,
     access,
-    postgresExecutionBacklogGuard(pool),
-    undefined,
-    undefined,
-    undefined,
-    artifacts,
-    selectorContextSource(pool, selectorReviewPool),
-    forge.repositories,
     nativeLeadPorts(pools, artifacts),
     nativeThreadPorts(pools, artifacts),
   );
-  const hub = nativeStreamHub(pool, web);
   const app = createNativeHttpApp(
     web,
     authentication,
-    nativeReadiness(pool, selectorReviewPool, accessSettings),
+    nativeReadiness(pool, accessSettings),
     postgresInstallationAuthority(pool),
     nativeHttpLimitsDefault,
-    hub,
-    composeSelectorProjectSettings(pool, access),
     forge.minting,
     forge.onboarding,
+    nativeTicketApplication(pools, access, forge, keying),
+  );
+  const retention = projectChangeRetentionMaintenance(
+    postgresProjectChangeRetention(pool),
+    systemPacing,
+    projectChangeRetentionDefaults,
+    (failure) => {
+      const message =
+        failure instanceof Error ? failure.message : "unknown failure";
+      process.stderr.write(`project change retention: ${message}\n`);
+    },
   );
   app.addHook("onClose", async () => {
-    await hub.close();
-    await closePools(pool, selectorReviewPool);
+    await retention.stop();
+    await closePool(pool);
   });
   const shutdown = nativeShutdown(
     app,
-    hub,
     positiveEnvironment("CHUG_API_SHUTDOWN_DRAIN_MS", 15_000),
   );
   nativeShutdownSignals(shutdown);
-  await app.listen({
-    host: process.env["CHUG_API_HOST"] ?? "127.0.0.1",
-    port: positiveEnvironment("CHUG_API_PORT", 3_000),
-  });
+  retention.start();
+  try {
+    await app.listen({
+      host: process.env["CHUG_API_HOST"] ?? "127.0.0.1",
+      port: positiveEnvironment("CHUG_API_PORT", 3_000),
+    });
+  } catch (failure: unknown) {
+    await app.close();
+    throw failure;
+  }
 }
 
 if (

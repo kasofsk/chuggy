@@ -17,48 +17,27 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
-import {
-  agenticRefusalsResponseSchema,
-  leadResponseSchema,
-  leadTranscriptResponseSchema,
-  selectorHistoryResponseSchema,
-  ticketAgenticRefusalsResponseSchema,
-} from "../../src/contract/responses.ts";
+import { leadTranscriptResponseSchema } from "../../src/contract/responses.ts";
 import {
   asPrincipal,
-  asPublicInstant,
   nativeWeb,
   type NativeLeadPorts,
-  type NativeReadStore,
   type ProjectAccess,
 } from "../../src/interpreter/nativeWeb.ts";
-import type { AgenticRefusalEntry } from "../../src/interpreter/agenticRefusal.ts";
 import type { LeadStanding } from "../../src/interpreter/leadRead.ts";
-import type { SelectorInteractionRecord } from "../../src/interpreter/selector.ts";
-import type { SelectorHistoryStore } from "../../src/interpreter/selectorHistory.ts";
 import type { SessionStoreRead } from "../../src/interpreter/sessionStore.ts";
-import { openExecutionBacklogGuard } from "../../src/interpreter/schedulerContext.ts";
 import {
   asSessionId,
   asSessionStoreStream,
   asSessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
-import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
-import { asTicketId } from "../../src/domain/ids.ts";
-import {
-  agenticRefusalLedgerAnsweredMax,
-  agenticRefusalsAnsweredMax,
-  sessionTranscriptHeldBatchesMax,
-} from "../../src/contract/http.ts";
+import { asTenantId } from "../../src/interpreter/projectStore.ts";
+import { sessionTranscriptHeldBatchesMax } from "../../src/contract/http.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
-  type OperationInbox,
 } from "../../src/interpreter/operationInbox.ts";
-import type { AuthoringStore } from "../../src/interpreter/authoring.ts";
-import type { NotificationStore } from "../../src/interpreter/notifications.ts";
 
-const partition = { tenant: asTenantId("acme"), project: asProjectId("atlas") };
 const root = "/api/v1/tenants/acme/projects/atlas";
 const authorized = { authorization: "Bearer valid" };
 const authority = {
@@ -96,9 +75,6 @@ const leadStanding: LeadStanding = {
   session: asSessionId("lead-atlas"),
   state: "Open",
   agentReference: stream,
-  attention: "Monitoring",
-  notificationCursor: 1204,
-  handoffNote: { watching: "the dependency" },
   turns: [
     {
       turn: asSessionTurnId("selector-decision-one"),
@@ -118,144 +94,14 @@ const leadStanding: LeadStanding = {
   ],
 };
 
-const refusalEntries: readonly AgenticRefusalEntry[] = [
-  {
-    ordinal: 91,
-    partition,
-    ticket: asTicketId(42),
-    event: "Refused",
-    ticketVersion: 2,
-    reason: "the dependency is still failing",
-    decision: "selector-decision-one",
-    recordedAt: "2026-09-02T00:00:00.000Z",
-  },
-];
-
-const interaction: SelectorInteractionRecord = {
-  ordinal: 11,
-  decision: "selector-decision-one",
-  partition,
-  instructionsVersion: "12.4",
-  instructions: "x".repeat(4_096),
-  observedView: [],
-  context: {
-    operationalContext: {
-      version: 1,
-      observedAt: "2026-09-02T00:00:00.000Z",
-      observedAtEpochMs: 0,
-      reviewFeedback: [],
-      activeWork: [],
-      projectCapacity: {
-        account: "acme",
-        allocated: 0,
-        limit: 1,
-        available: 1,
-      },
-      clusterCapacity: {
-        visibility: "AuthorizedAggregate",
-        allocated: 0,
-        limit: 1,
-        available: 1,
-        pressure: "Normal",
-      },
-      executionBacklog: { queued: 0, ceiling: 1, dispatchAllowed: true },
-    },
-    handoffNote: {},
-  },
-  toolActivity: [],
-  result: {
-    dispatches: [{ ticket: 41, expectedTicketVersion: 3 }],
-    refusals: [{ ticket: 42, ticketVersion: 2, reason: "still failing" }],
-    lifts: [{ ticket: 40 }],
-    attention: "Attention",
-  },
-  implementationRevision: "build",
-  modelRevision: "claude-haiku-4-5",
-  policyRevision: stream,
-  accounting: { tokens: 41_234, durationMs: 74_210, costMicros: 182_000 },
-  deliveries: [
-    {
-      ticket: asTicketId(41),
-      state: "Terminal",
-      outcome: { state: "Refused", code: "SelectionChanged" },
-    },
-  ],
-  startedAt: "2026-09-02T00:00:00.000Z",
-  completedAt: "2026-09-02T00:01:14.210Z",
-};
-
-/** Three decisions, oldest first, so both ends of the log are distinguishable. */
-const decisions: readonly SelectorInteractionRecord[] = [
-  { ...interaction, ordinal: 9, decision: "selector-decision-nine" },
-  { ...interaction, ordinal: 10, decision: "selector-decision-ten" },
-  interaction,
-];
-
 interface LeadCase {
   readonly allowed?: boolean;
   readonly standing?: LeadStanding | undefined;
   readonly draws?: readonly SessionStoreRead[];
-  readonly ticketVersion?: number;
-  /** How many rows each refusal read answers, so a short page can be driven. */
-  readonly refusalRows?: number;
-  /** Whether the ledger's newest entry lifts the refusal before it. */
-  readonly lifted?: boolean;
-}
-
-/**
- * A ledger of `rows` entries, oldest first, alternating so the newest is a lift
- * where a case asks for one. The port answers one past the page bound the way
- * the definer function does, which is what lets `more` be true at all.
- */
-function ledgerOf(
-  rows: number,
-  lifted: boolean,
-): readonly AgenticRefusalEntry[] {
-  return Array.from({ length: rows }, (_unused, index) => ({
-    ordinal: index + 1,
-    partition,
-    ticket: asTicketId(42),
-    event:
-      lifted && index === rows - 1 ? ("Lifted" as const) : ("Refused" as const),
-    ticketVersion: 2,
-    reason: "the dependency is still failing",
-    decision: `selector-decision-${String(index)}`,
-    recordedAt: "2026-09-02T00:00:00.000Z",
-  }));
-}
-
-function readStore(ticketVersion: number): NativeReadStore {
-  return {
-    operation: () => Promise.resolve(undefined),
-    project: () =>
-      Promise.resolve({
-        result: "Found",
-        project: { partition, sequence: 0, tickets: [] },
-      }),
-    ticket: (_partition, ticket) =>
-      Promise.resolve({
-        ticket,
-        phase: "Working",
-        sequence: ticketVersion,
-        changedAt: asPublicInstant("2026-09-02T00:00:00Z"),
-      }),
-    ticketNativeActions: () => Promise.resolve([]),
-    nativeActions: () => Promise.resolve({ actions: [] }),
-  };
 }
 
 function leadPorts(shape: LeadCase): NativeLeadPorts {
   const draws = shape.draws ?? [];
-  const history: SelectorHistoryStore = {
-    history: (_partition, query) =>
-      Promise.resolve(
-        query.order === "newest"
-          ? [...decisions].reverse().slice(0, query.limit)
-          : decisions
-              .filter((each) => each.ordinal > (query.after ?? 0))
-              .slice(0, query.limit),
-      ),
-  };
   return {
     leads: {
       standing: () =>
@@ -277,31 +123,6 @@ function leadPorts(shape: LeadCase): NativeLeadPorts {
       readBatch: (object) =>
         Promise.resolve(draws[object.batch - 1] ?? { read: "NotFound" }),
     },
-    refusals: {
-      standing: (_partition, limit) =>
-        Promise.resolve(
-          Array.from(
-            { length: Math.min(shape.refusalRows ?? 1, limit) },
-            (_unused, index) => ({
-              ticket: asTicketId(42 + index),
-              ticketVersion: 2,
-              reason: "the dependency is still failing",
-              decision: "selector-decision-one",
-              recordedAt: "2026-09-02T00:00:00.000Z",
-            }),
-          ),
-        ),
-      ledger: (_partition, _ticket, limit) =>
-        Promise.resolve(
-          shape.refusalRows === undefined
-            ? refusalEntries
-            : ledgerOf(shape.refusalRows, shape.lifted ?? false).slice(
-                0,
-                limit,
-              ),
-        ),
-    },
-    history,
   };
 }
 
@@ -311,30 +132,12 @@ function appOf(shape: LeadCase = {}) {
       Promise.resolve((shape.allowed ?? true) ? authority : undefined),
     authorizeTenant: () => Promise.resolve(undefined),
   };
-  const inbox: OperationInbox = {
-    accept: () => Promise.resolve({ accepted: "InvalidCommand" }),
-    cancel: () => Promise.resolve({ cancelled: "Unknown" }),
-    operation: () => Promise.resolve(undefined),
-  };
-  const notifications: NotificationStore = {
-    read: () => Promise.resolve({ result: "Events", cursor: 0, events: [] }),
-  };
   const web = nativeWeb(
     access,
-    readStore(shape.ticketVersion ?? 2),
-    inbox,
-    {} as AuthoringStore,
-    notifications,
-    openExecutionBacklogGuard,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
+    { projects: () => Promise.resolve({ projects: [] }) },
     leadPorts(shape),
+    {} as Parameters<typeof nativeWeb>[3],
+    {} as Parameters<typeof nativeWeb>[4],
   );
   return createNativeHttpApp(
     web,
@@ -360,16 +163,14 @@ test("the lead read carries its standing, its mailbox tail and its streams", asy
     headers: authorized,
   });
   assert.equal(found.statusCode, 200);
-  const body = leadResponseSchema.parse(found.json());
+  const body = found.json<{
+    session: string;
+    turns: readonly { decision?: string; tokens?: number }[];
+    streams: readonly { batches: number }[];
+  }>();
   assert.equal(body.session, "lead-atlas");
-  assert.equal(body.attention, "Monitoring");
   assert.equal(body.turns[0]?.decision, "selector-decision-one");
   assert.equal(body.turns[0]?.tokens, 41_234);
-  assert.equal(body.handoffNote.truncated, false);
-  assert.equal(
-    body.handoffNote.preview,
-    JSON.stringify(leadStanding.handoffNote),
-  );
   assert.equal(body.streams[0]?.batches, 14);
 });
 
@@ -381,13 +182,7 @@ test("a project with no lead answers not found, as does one nobody may read", as
     404,
   );
   await using refused = appOf({ allowed: false });
-  for (const path of [
-    `${root}/lead`,
-    `${root}/lead/transcript`,
-    `${root}/agentic-refusals`,
-    `${root}/tickets/42/agentic-refusals`,
-    `${root}/selector-history`,
-  ]) {
+  for (const path of [`${root}/lead`, `${root}/lead/transcript`]) {
     const found = await refused.inject({ url: path, headers: authorized });
     assert.equal(found.statusCode, 404, path);
   }
@@ -681,171 +476,17 @@ test("a lead that has bound no stream has no transcript to answer", async () => 
   assert.equal(found.statusCode, 404);
 });
 
-test("standing refusals carry the supersession the reader computes", async () => {
-  await using standing = appOf({ ticketVersion: 2 });
-  const held = agenticRefusalsResponseSchema.parse(
-    (
-      await standing.inject({
-        url: `${root}/agentic-refusals`,
-        headers: authorized,
-      })
-    ).json(),
-  );
-  assert.equal(held.refusals[0]?.superseded, false);
-  assert.equal(held.more, false);
-  await using authored = appOf({ ticketVersion: 3 });
-  const cleared = agenticRefusalsResponseSchema.parse(
-    (
-      await authored.inject({
-        url: `${root}/agentic-refusals`,
-        headers: authorized,
-      })
-    ).json(),
-  );
-  assert.equal(cleared.refusals[0]?.superseded, true);
-});
-
-test("a page that stops short of the ledger says so and claims no standing", async () => {
-  await using app = appOf({
-    refusalRows: agenticRefusalLedgerAnsweredMax + 5,
-    lifted: true,
-  });
-  const body = ticketAgenticRefusalsResponseSchema.parse(
-    (
-      await app.inject({
-        url: `${root}/tickets/42/agentic-refusals`,
-        headers: authorized,
-      })
-    ).json(),
-  );
-  assert.equal(body.more, true, "more must be able to come out true");
-  assert.equal(body.entries.length, agenticRefusalLedgerAnsweredMax);
-  assert.ok(
-    body.entries.every((entry) => entry.event === "Refused"),
-    "the page ends on a refusal the ledger's own latest entry has lifted",
-  );
-  assert.equal(
-    body.standing,
-    undefined,
-    "standing is not read off a page that stops short of the latest entry",
-  );
-});
-
-test("a standing page that stops short says so", async () => {
-  await using app = appOf({ refusalRows: agenticRefusalsAnsweredMax + 1 });
-  const body = agenticRefusalsResponseSchema.parse(
-    (
-      await app.inject({ url: `${root}/agentic-refusals`, headers: authorized })
-    ).json(),
-  );
-  assert.equal(body.more, true, "more must be able to come out true");
-  assert.equal(body.refusals.length, agenticRefusalsAnsweredMax);
-});
-
-test("a ticket's ledger answers its entries and the refusal it stands on", async () => {
-  await using app = appOf();
-  const found = await app.inject({
-    url: `${root}/tickets/42/agentic-refusals`,
-    headers: authorized,
-  });
-  assert.equal(found.statusCode, 200);
-  const body = ticketAgenticRefusalsResponseSchema.parse(found.json());
-  assert.equal(body.ticket, 42);
-  assert.equal(body.entries[0]?.event, "Refused");
-  assert.equal(body.standing?.ticketVersion, 2);
-  assert.equal(body.more, false);
-});
-
-test("the decision log draws what a decision did, never what it saw", async () => {
-  await using app = appOf();
-  const found = await app.inject({
-    url: `${root}/selector-history?limit=1`,
-    headers: authorized,
-  });
-  assert.equal(found.statusCode, 200);
-  const body = selectorHistoryResponseSchema.parse(found.json());
-  assert.equal(body.decisions.length, 1);
-  const decision = body.decisions.at(-1);
-  assert.deepEqual(decision?.dispatches, [
-    { ticket: 41, state: "Terminal", outcome: "SelectionChanged" },
-  ]);
-  assert.deepEqual(decision?.refused, [42]);
-  assert.deepEqual(decision?.lifted, [40]);
-  assert.equal(decision?.attention, "Attention");
-  assert.equal(decision?.costMicros, 182_000);
-  assert.equal(
-    body.nextAfter,
-    9,
-    "a full page names where the next one starts",
-  );
-  assert.ok(!found.body.includes(interaction.instructions));
-});
-
-test("the newest arm answers one page of the log, from its far end", async () => {
-  await using app = appOf();
-  const newest = selectorHistoryResponseSchema.parse(
-    (
-      await app.inject({
-        url: `${root}/selector-history?order=newest&limit=2`,
-        headers: authorized,
-      })
-    ).json(),
-  );
-  assert.deepEqual(
-    newest.decisions.map((each) => each.ordinal),
-    [11, 10],
-    "the last decisions, newest first",
-  );
-  assert.equal(
-    newest.nextAfter,
-    undefined,
-    "the newest page is one page and continues nowhere",
-  );
-  const oldest = selectorHistoryResponseSchema.parse(
-    (
-      await app.inject({
-        url: `${root}/selector-history?limit=2`,
-        headers: authorized,
-      })
-    ).json(),
-  );
-  assert.deepEqual(
-    oldest.decisions.map((each) => each.ordinal),
-    [9, 10],
-    "and the default arm still walks forward",
-  );
-  assert.equal(oldest.nextAfter, 10);
-});
-
-test("a cursor into the newest page, and an order nobody knows, are refused", async () => {
-  await using app = appOf();
-  for (const query of [
-    "order=newest&after=10",
-    "order=sideways",
-    "order=Newest",
-  ]) {
-    const found = await app.inject({
-      url: `${root}/selector-history?${query}`,
-      headers: authorized,
-    });
-    assert.equal(found.statusCode, 400, query);
-  }
-});
-
-test("a page bound the wire does not admit is refused, never clamped", async () => {
+test("a transcript page bound the wire does not admit is refused", async () => {
   await using app = appOf({
     draws: storedBatches(stream, 2).map(
       (content) => ({ read: "Content", content }) as const,
     ),
   });
-  for (const path of [
-    `${root}/lead/transcript?limit=99`,
-    `${root}/agentic-refusals?limit=99`,
-    `${root}/selector-history?limit=999`,
-  ]) {
-    const found = await app.inject({ url: path, headers: authorized });
-    assert.equal(found.statusCode, 400, path);
-  }
+  const found = await app.inject({
+    url: `${root}/lead/transcript?limit=99`,
+    headers: authorized,
+  });
+  assert.equal(found.statusCode, 400);
 });
 
 test("a full page of batches names where the next one starts", async () => {

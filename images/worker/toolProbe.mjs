@@ -27,7 +27,6 @@ import {
   chuggyToolServer,
   sessionCapabilityTools,
 } from "./chuggyTools.mjs";
-import { leadDecisionStaging } from "./leadDecision.mjs";
 import { sessionSdk } from "./session.mjs";
 import { chuggyListedTools } from "./toolListing.mjs";
 
@@ -37,12 +36,12 @@ import { chuggyListedTools } from "./toolListing.mjs";
  * a lead is what this installation places today and a probe that only ever saw
  * the union would not notice the filter falling open. `every` is derived from
  * the image's own capability map rather than written a third time, so a tool
- * admitted by a capability no shipped roster carries yet — `create_draft` under
+ * admitted by a capability no lead roster carries — `create_ticket` under
  * `DraftOriginate` — still has its shape rendered by the runtime's converter
  * here, which is where the failure this probe exists for would otherwise hide.
  */
 const rosters = {
-  lead: ["RepositoryRead", "ProjectRead", "DraftAuthor", "LeadDecision"],
+  lead: ["RepositoryRead", "ProjectRead", "DraftAuthor"],
   every: Object.keys(sessionCapabilityTools),
 };
 
@@ -52,7 +51,7 @@ for (const [roster, capabilities] of Object.entries(rosters)) {
   const context = chuggyToolContext(
     { tenant: "probe", project: "probe", api: { url: "http://127.0.0.1:1" } },
     "probe",
-    { capabilities, staging: leadDecisionStaging() },
+    { capabilities },
   );
   const admitted = chuggyToolDefinitions(context).map(({ name }) => name);
   const server = chuggyToolServer(context, { z, tool, createSdkMcpServer });

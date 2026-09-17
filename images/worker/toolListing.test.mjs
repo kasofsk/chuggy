@@ -48,7 +48,7 @@ function serverOf(tools, answer) {
   };
 }
 
-const admitted = ["read_ticket", "create_draft", "list_threads"];
+const admitted = ["read_ticket", "create_ticket", "list_threads"];
 
 test("a server that lists every admitted tool answers with their names", async () => {
   const named = await chuggyListedTools(serverOf(admitted), admitted, wait);
@@ -59,7 +59,7 @@ test("a server that lists every admitted tool answers with their names", async (
 test("a server that lists nothing is the failure this probe exists for", async () => {
   await assert.rejects(
     chuggyListedTools(serverOf([]), admitted, wait),
-    /did not list read_ticket, create_draft, list_threads/u,
+    /did not list read_ticket, create_ticket, list_threads/u,
   );
 });
 
@@ -70,7 +70,7 @@ test("a listing missing one admitted tool names the one it is missing", async ()
       admitted,
       wait,
     ),
-    /did not list create_draft$/u,
+    /did not list create_ticket$/u,
   );
 });
 
@@ -116,7 +116,7 @@ test("a tool whose input schema is not an object is a tool nothing can call", as
     result: {
       tools: [
         { name: "read_ticket", inputSchema: objectSchema },
-        { name: "create_draft", inputSchema: { type: "string" } },
+        { name: "create_ticket", inputSchema: { type: "string" } },
         { name: "list_threads", inputSchema: objectSchema },
       ],
     },
@@ -124,7 +124,7 @@ test("a tool whose input schema is not an object is a tool nothing can call", as
 
   assert.throws(
     () => chuggyListingChecked(admitted, answer),
-    /create_draft published no object input schema/u,
+    /create_ticket published no object input schema/u,
   );
 });
 

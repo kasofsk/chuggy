@@ -36,13 +36,8 @@ naming no worker pair answers a worker claim `ForgeNotConfigured`.
 `deploy/rig/images/README.md` carries these rows and the two bounds beside
 them.
 
-**The finalizer, the ticket service and the importer mount the portal key too**
-and mint for themselves rather than asking the API, which widens the key from
-the API's pod to theirs: each of them can now do anything the portal App's
-installation may on any account a tenant claimed it under — the ruleset admits
-it to protected `main`, which is what a promotion and a proposal both need —
-where each was previously bounded by the per-repository tokens its deployment
-mounted.
+The API and finalizer mount the portal App key and mint credentials for their
+repository operations. The scheduler uses the worker App key for ticket execution.
 
 The key is read once per mint rather than held, and the process refuses to start
 unless the file it names is a readable RSA private key — so a Secret mounted at
@@ -128,7 +123,7 @@ POST /api/v1/tenants/<tenant>/forge-installations
 ```
 
 Onboarding installs **two** Apps on the account, and the claim names which: the
-portal App the API, finalizer, ticket service and importer act as, and the
+portal App the API and finalizer act as, and the
 worker App the plane mints under. Each has its own installation id on the same
 account, so a claim is made twice — once per App.
 

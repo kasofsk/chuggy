@@ -151,9 +151,10 @@ test("the layers a build declares are what a document is asked for", () => {
 });
 
 test("a layer the system does not order is a finding wherever it sits", () => {
-  assert.match(
-    consoleCascadeFindings(emitted(["tokens", "base", "vendor"]))[0] ?? "",
-    /a layer named vendor/u,
+  assert.ok(
+    consoleCascadeFindings(emitted(["tokens", "base", "vendor"]))[0]?.includes(
+      "a layer named vendor",
+    ),
   );
 });
 

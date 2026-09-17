@@ -10,8 +10,6 @@ import { z } from "zod";
 
 import {
   allChuggyTools,
-  chuggyBriefIntentLineCharsMax,
-  chuggyOperationIdentity,
   chuggyToolAnswerBytes,
   chuggyToolAnswerBytesMax,
   chuggyToolAnswerCopiesInEntry,
@@ -23,13 +21,11 @@ import {
   chuggyToolPrefix,
   chuggyToolResponseBytesMax,
   chuggyToolServer,
-  chuggyToolsNotYetServed,
   chuggyToolTimeoutMs,
   sessionAllowedTools,
   sessionBuiltInTools,
   sessionCapabilityTools,
 } from "./chuggyTools.mjs";
-import { leadDecisionStaging } from "./leadDecision.mjs";
 import {
   sessionStoreAdapter,
   sessionStoreBatchBytesMax,
@@ -60,104 +56,37 @@ function apiOf(answer) {
 
 function toolsOf(services = {}, answer) {
   const api = apiOf(answer);
-  const staging = services.staging ?? leadDecisionStaging();
   const context = chuggyToolContext(task, bearer, {
     capabilities: everyCapability,
     request: api.request,
     turn: () => "turn-1",
-    staging,
     ...services,
   });
+  const registered = chuggyToolDefinitions(context);
+  const definitions = [
+    ...registered,
+    ...chuggyProjectTools
+      .filter(
+        (definition) =>
+          !registered.some((held) => held.name === definition.name),
+      )
+      .map((definition) => ({
+        ...definition,
+        call: (args) => definition.call(context, args),
+      })),
+  ];
   const held = new Map(
-    chuggyToolDefinitions(context).map((definition) => [
+    definitions.map((definition) => [
       definition.name,
       chuggyToolHandler(definition, z),
     ]),
   );
-  return { api, staging, context, call: (name, args) => held.get(name)(args) };
+  return { api, context, call: (name, args) => held.get(name)(args) };
 }
 
 function textOf(answer) {
   return answer.content[0].text;
 }
-
-test("a tool the roster does not grant is never registered", () => {
-  const registered = (capabilities) =>
-    chuggyToolDefinitions(
-      chuggyToolContext(task, bearer, {
-        capabilities,
-        staging: leadDecisionStaging(),
-      }),
-    ).map(({ name }) => name);
-
-  assert.deepEqual(registered([]), []);
-  assert.deepEqual(registered(["RepositoryRead"]), []);
-  assert.deepEqual(
-    registered(["LeadDecision"]),
-    sessionCapabilityTools.LeadDecision,
-  );
-  assert.deepEqual(
-    registered(everyCapability).sort(),
-    [...allChuggyTools].sort(),
-  );
-});
-
-/**
- * `brief` is an open object on the wire, so a session learns what one carries
- * from the description alone. A tool that takes one and does not name the title
- * is a tool that files untitled tickets.
- */
-test("every tool that takes a brief names the title it carries", () => {
-  const taking = chuggyToolDefinitions(
-    chuggyToolContext(task, bearer, {
-      capabilities: everyCapability,
-      staging: leadDecisionStaging(),
-    }),
-  ).filter((definition) => "brief" in definition.shape(z));
-
-  assert.deepEqual(taking.map(({ name }) => name).sort(), [
-    "create_draft",
-    "file_dependent",
-    "revise_draft",
-  ]);
-  for (const { name, description } of taking) {
-    assert.ok(description.includes("`title`"), `${name} names no title`);
-    assert.ok(
-      description.includes("always give one"),
-      `${name} does not ask for one`,
-    );
-  }
-});
-
-/**
- * The bound a model cannot infer from an open object. An intent is refused a
- * line at a time, so a description that calls it a paragraph steers the model
- * into the one shape the door will not take.
- */
-test("every tool that takes a brief names the line bound an intent is held to", () => {
-  const taking = chuggyToolDefinitions(
-    chuggyToolContext(task, bearer, {
-      capabilities: everyCapability,
-      staging: leadDecisionStaging(),
-    }),
-  ).filter((definition) => "brief" in definition.shape(z));
-
-  for (const { name, description } of taking) {
-    assert.ok(
-      description.includes(String(chuggyBriefIntentLineCharsMax)),
-      `${name} names no line bound`,
-    );
-    assert.ok(
-      description.includes("break a sentence across lines"),
-      `${name} does not say how to stay under it`,
-    );
-    assert.equal(
-      description.includes("`intent` is the paragraph"),
-      false,
-      `${name} still asks for one long line`,
-    );
-  }
-});
 
 test("the server the runtime is handed carries exactly the tools the roster admits", () => {
   const seen = [];
@@ -178,7 +107,6 @@ test("the server the runtime is handed carries exactly the tools the roster admi
   const server = chuggyToolServer(
     chuggyToolContext(task, bearer, {
       capabilities: ["ProjectRead"],
-      staging: leadDecisionStaging(),
     }),
     sdk,
   );
@@ -193,41 +121,16 @@ test("the server the runtime is handed carries exactly the tools the roster admi
     assert.ok(description.length > 0, "a registered tool describes nothing");
 });
 
-/**
- * The decision channel through the server's own registration, which is where a
- * staged answer meets the protocol. The tools' own suite holds each answer's
- * text; this holds the bridge that carries it.
- */
-test("a decision tool the server registers answers a well-formed result", async () => {
-  const staging = leadDecisionStaging();
-  staging.reset(
-    JSON.stringify({ candidates: [{ ticket: 4, ticketVersion: 2 }] }),
-  );
-  const { api, call } = toolsOf({ staging });
-
-  const answer = await call("dispatch", {
-    ticket: 4,
-    expectedTicketVersion: 2,
-  });
-
-  assert.deepEqual(answer.content, [
-    { type: "text", text: "dispatch staged for ticket 4" },
-  ]);
-  assert.ok(answer.isError === undefined);
-  assert.equal(api.calls.length, 0, "a decision tool wrote something");
-  assert.equal(staging.document().dispatches.length, 1);
-});
-
-test("every read answers one page, relays the route's own body and names its cursor", async () => {
-  const body = JSON.stringify({ tickets: [], nextAfter: 41 });
+test("the adopted ticket graph is read once and relayed whole", async () => {
+  const body = JSON.stringify({ tickets: [] });
   const { api, call } = toolsOf({}, () => ({ status: 200, body }));
 
-  const answer = await call("list_tickets", { after: 40, limit: 25 });
+  const answer = await call("list_tickets", {});
 
   assert.equal(api.calls.length, 1, "one tool call walked more than one page");
   assert.equal(
     api.calls[0].path,
-    "/api/v1/tenants/vteng/projects/chuggy?after=40&limit=25",
+    "/api/v1/tenants/vteng/projects/chuggy/ticket-machine/tickets",
   );
   assert.equal(api.calls[0].method, "GET");
   assert.equal(textOf(answer), `HTTP 200\n${body}`);
@@ -244,7 +147,7 @@ test("a page larger than the pod draws is refused rather than answered cut", asy
     body: "x".repeat(70_000),
   }));
 
-  const answer = await call("read_ticket", { ticket: 7 });
+  const answer = await call("list_tickets", {});
 
   assert.equal(answer.isError, true);
   assert.match(textOf(answer), /larger than the/);
@@ -259,21 +162,10 @@ test("a page larger than the pod draws is refused rather than answered cut", asy
 test("the refusal names what this caller can lower, and says so where there is nothing", async () => {
   const body = "x".repeat(70_000);
   for (const [name, args, remedy] of [
-    ["list_executions", { limit: 100 }, /ask again with a smaller limit\.$/],
     [
       "read_thread",
       { session: "t-1", limit: 1 },
       /read_thread is already asking for one; move past it with before\.$/,
-    ],
-    [
-      "read_execution",
-      { execution: "e-1" },
-      /read_execution takes no limit, so this one cannot be answered\.$/,
-    ],
-    [
-      "read_run_transcript",
-      { execution: "e-1", attempt: "a-1" },
-      /read_run_transcript takes no limit, so this one cannot be answered\.$/,
     ],
   ]) {
     const answer = await routeOf(
@@ -296,7 +188,6 @@ test("an answer at the bound is served and one over it never reaches the model",
   const head = "HTTP 200\n";
   const room = chuggyToolAnswerBytesMax - chuggyToolAnswerBytes(head);
   for (const [name, args] of [
-    ["list_executions", { limit: 100 }],
     ["read_thread", { session: "t-1", limit: 32 }],
   ]) {
     const at = await routeOf(
@@ -477,113 +368,6 @@ function routeOf(name, args, api) {
   )(args);
 }
 
-test("each read reaches the route its roster names, and only it", async () => {
-  const cases = [
-    [["read_ticket", { ticket: 7 }], "/tickets/7"],
-    [["read_draft", { ticket: 7 }], "/drafts/7"],
-    [["list_drafts", { limit: 5 }], "/drafts?limit=5"],
-    [["list_configurations", { limit: 5 }], "/configurations?limit=5"],
-    [["read_configuration", { revision: "r/1" }], "/configurations/r%2F1"],
-    [
-      ["read_decision_log", { after: 3, limit: 2 }],
-      "/selector-history?after=3&limit=2",
-    ],
-    [["read_refusals", { limit: 4 }], "/agentic-refusals?limit=4"],
-    [["read_ticket_refusals", { ticket: 9 }], "/tickets/9/agentic-refusals"],
-    [["read_lead", {}], "/lead"],
-    [
-      ["read_lead_transcript", { after: 2, entry: 3 }],
-      "/lead/transcript?after=2&limit=1",
-    ],
-    [
-      ["list_executions", { ticket: 3, state: ["Running"] }],
-      "/executions?ticket=3&state=Running",
-    ],
-    [["read_execution", { execution: "e-1" }], "/executions/e-1"],
-    [
-      ["read_run_transcript", { execution: "e-1", attempt: "a-1", after: 0 }],
-      "/executions/e-1/attempts/a-1/transcript?after=0",
-    ],
-    [["read_operation", { operation: "o-1" }], "/operations/o-1"],
-    [["initialize_draft", { revision: "r1" }], "/draft-initializations/r1"],
-    [["list_threads", {}], "/threads"],
-    [["read_thread", { session: "thread-1/a" }], "/threads/thread-1%2Fa"],
-    [
-      ["read_thread", { session: "thread-1", before: 7, limit: 32 }],
-      "/threads/thread-1?before=7&limit=32",
-    ],
-    [
-      ["read_thread_transcript", { session: "thread-1", after: 2, entry: 3 }],
-      "/threads/thread-1/transcript?after=2&limit=1",
-    ],
-  ];
-  for (const [[name, args], suffix] of cases) {
-    const api = apiOf();
-
-    await routeOf(name, args, api);
-
-    assert.equal(
-      api.calls[0].path,
-      `/api/v1/tenants/vteng/projects/chuggy${suffix}`,
-      name,
-    );
-  }
-});
-
-/**
- * Every identity a tool puts in a path segment, given one that carries the
- * separator. A segment is model-chosen text bounded only by `identity(z)`, so
- * an unencoded one is a tool that reaches a route its roster does not name:
- * `new URL(path, origin)` resolves `..` before the request is made, which is
- * how `…/threads/../lead/transcript` becomes the lead's route. The assertion is
- * on the RESOLVED pathname rather than on the string this file built, because
- * the string is not what the API is asked for.
- */
-test("an identity carrying a separator stays inside the route its tool names", async () => {
-  const escaping = "../lead";
-  const escaped = "..%2Flead";
-  const partition = "/api/v1/tenants/vteng/projects/chuggy";
-  const cases = [
-    [
-      ["read_configuration", { revision: escaping }],
-      `/configurations/${escaped}`,
-    ],
-    [["read_execution", { execution: escaping }], `/executions/${escaped}`],
-    [
-      ["read_run_transcript", { execution: escaping, attempt: escaping }],
-      `/executions/${escaped}/attempts/${escaped}/transcript`,
-    ],
-    [["read_operation", { operation: escaping }], `/operations/${escaped}`],
-    [
-      ["initialize_draft", { revision: escaping }],
-      `/draft-initializations/${escaped}`,
-    ],
-    [["read_thread", { session: escaping }], `/threads/${escaped}`],
-    [
-      ["read_thread_transcript", { session: escaping }],
-      `/threads/${escaped}/transcript`,
-    ],
-  ];
-  for (const [[name, args], suffix] of cases) {
-    const api = apiOf();
-
-    await routeOf(name, args, api);
-
-    assert.equal(api.calls.length, 1, name);
-    assert.equal(
-      new URL(api.calls[0].path, "https://api.test").pathname,
-      `${partition}${suffix}`,
-      name,
-    );
-  }
-});
-
-/**
- * The thread reads' own bounds, driven past the unserved table. Their entries
- * there answer `isError` for any argument at all, so a bound checked through a
- * session's handler would pass with the bound deleted; `routeOf` is what makes
- * the refusal the shape's rather than the table's.
- */
 test("a thread read past its bound is refused before it asks, and within it asks", async () => {
   for (const [name, args] of [
     ["read_thread", { session: "" }],
@@ -620,364 +404,13 @@ test("an argument past its bound is refused before any call is made", async () =
 
   for (const [name, args] of [
     ["read_ticket", { ticket: 0 }],
-    ["list_tickets", { limit: 101 }],
-    ["read_decision_log", { limit: 51 }],
-    ["read_refusals", { limit: 33 }],
     ["read_lead_transcript", { after: -1 }],
-    ["read_execution", { execution: "" }],
   ]) {
     const answer = await call(name, args);
 
     assert.equal(answer.isError, true, name);
   }
   assert.equal(api.calls.length, 0, "a refused argument still reached the API");
-});
-
-test("a write relays the status and the body the API answered, unaltered", async () => {
-  for (const status of [409, 422, 429]) {
-    const body = JSON.stringify({ error: "Stale", status });
-    const { api, call } = toolsOf({}, () => ({ status, body }));
-
-    const answer = await call("delete_draft", {
-      ticket: 4,
-      expectedVersion: 2,
-    });
-
-    assert.equal(textOf(answer), `HTTP ${String(status)}\n${body}`);
-    assert.equal(answer.isError, true);
-    assert.equal(api.calls.length, 1, "a refused write was asked again");
-    assert.equal(
-      api.calls[0].path,
-      "/api/v1/tenants/vteng/projects/chuggy/drafts/4?expectedVersion=2",
-    );
-    assert.equal(api.calls[0].method, "DELETE");
-  }
-});
-
-test("a write is written in the versioned media type the API requires", async () => {
-  const { api, call } = toolsOf();
-
-  await call("revise_draft", {
-    ticket: 4,
-    expectedVersion: 2,
-    configurationRevision: "r1",
-    authoring: { dependencies: [] },
-    brief: { title: "t" },
-  });
-
-  assert.equal(api.calls[0].method, "PUT");
-  assert.equal(
-    api.calls[0].init.headers["content-type"],
-    "application/vnd.chuggy.v1+json",
-  );
-  assert.deepEqual(JSON.parse(api.calls[0].init.body), {
-    expectedVersion: 2,
-    configurationRevision: "r1",
-    authoring: { dependencies: [] },
-    brief: { title: "t" },
-  });
-});
-
-const dependent = {
-  parent: 7,
-  relation: "FollowUp",
-  configurationRevision: "r1",
-  configurationDigest: "d1",
-  expectedProjectSequence: 12,
-  authoring: { dependencies: [7] },
-  brief: { title: "t" },
-};
-
-test("a dependent is filed with its parent among the draft's dependencies", async () => {
-  const { api, call } = toolsOf();
-
-  await call("file_dependent", dependent);
-
-  assert.equal(api.calls[0].method, "POST");
-  assert.equal(
-    api.calls[0].path,
-    "/api/v1/tenants/vteng/projects/chuggy/drafts",
-  );
-  assert.deepEqual(JSON.parse(api.calls[0].init.body).authoring, {
-    dependencies: [7],
-  });
-});
-
-test("a prerequisite is refused, and the refusal names dependency immutability", async () => {
-  const { api, call } = toolsOf();
-
-  const answer = await call("file_dependent", {
-    ...dependent,
-    relation: "Prerequisite",
-  });
-
-  assert.equal(answer.isError, true);
-  assert.match(textOf(answer), /dependencies are immutable/);
-  assert.match(textOf(answer), /FollowUp/);
-  assert.equal(api.calls.length, 0);
-});
-
-test("a dependent that does not carry its parent is refused", async () => {
-  const { api, call } = toolsOf();
-
-  const answer = await call("file_dependent", {
-    ...dependent,
-    authoring: { dependencies: [8] },
-  });
-
-  assert.equal(answer.isError, true);
-  assert.match(textOf(answer), /does not name ticket 7/);
-  assert.equal(api.calls.length, 0);
-});
-
-test("a relation outside the roster never reaches the refusal that explains one", async () => {
-  const { call } = toolsOf();
-
-  const answer = await call("file_dependent", {
-    ...dependent,
-    relation: "Supersedes",
-  });
-
-  assert.equal(answer.isError, true);
-});
-
-test("releasing a draft submits one operation and answers its id, not an outcome", async () => {
-  const accepted = JSON.stringify({ operation: "o", state: "Accepted" });
-  const { api, call } = toolsOf({}, () => ({ status: 202, body: accepted }));
-
-  const answer = await call("release_draft", {
-    ticket: 4,
-    authoringVersion: 3,
-    configurationRevision: "r1",
-  });
-
-  const body = JSON.parse(api.calls[0].init.body);
-  assert.deepEqual(body.mutation, {
-    mutation: "ReleaseDraft",
-    ticket: 4,
-    authoringVersion: 3,
-    configurationRevision: "r1",
-  });
-  assert.equal(api.calls[0].init.headers["idempotency-key"], body.operation);
-  assert.equal(textOf(answer), `HTTP 202\n${accepted}`);
-});
-
-test("two releases in one turn are two operations, and one repeated is one", async () => {
-  const { api, call } = toolsOf({}, () => ({ status: 202, body: "{}" }));
-  const release = (ticket) =>
-    call("release_draft", {
-      ticket,
-      authoringVersion: 3,
-      configurationRevision: "r1",
-    });
-
-  await release(4);
-  await release(9);
-  await release(4);
-
-  const ids = api.calls.map(({ init }) => JSON.parse(init.body).operation);
-  const keys = api.calls.map(({ init }) => init.headers["idempotency-key"]);
-  assert.notEqual(
-    ids[0],
-    ids[1],
-    "two releases of different drafts in one turn collide on one operation, and the second is an idempotency conflict naming nothing the lead can act on",
-  );
-  assert.equal(ids[0], ids[2], "one call repeated minted a second operation");
-  assert.deepEqual(keys, ids, "the key and the operation are not the same");
-});
-
-test("a command's identity is a value the caller cannot have guessed", () => {
-  const mutation = {
-    mutation: "ReleaseDraft",
-    ticket: 4,
-    authoringVersion: 3,
-    configurationRevision: "r1",
-  };
-
-  assert.notEqual(
-    chuggyOperationIdentity("turn-1", mutation),
-    chuggyOperationIdentity("turn-1", { ...mutation, ticket: 9 }),
-  );
-  assert.notEqual(
-    chuggyOperationIdentity("turn-1", mutation),
-    chuggyOperationIdentity("turn-1", { ...mutation, authoringVersion: 4 }),
-  );
-  assert.notEqual(
-    chuggyOperationIdentity("turn-1", mutation),
-    chuggyOperationIdentity("turn-2", mutation),
-  );
-});
-
-test("the same release repeated in one turn is the same operation, and a new turn is a new one", async () => {
-  let turn = "turn-1";
-  const { api, call } = toolsOf({ turn: () => turn }, () => ({
-    status: 202,
-    body: "{}",
-  }));
-  const args = { ticket: 4, authoringVersion: 3, configurationRevision: "r1" };
-
-  await call("release_draft", args);
-  await call("release_draft", args);
-  turn = "turn-2";
-  await call("release_draft", args);
-
-  const ids = api.calls.map(({ init }) => JSON.parse(init.body).operation);
-  assert.equal(ids[0], ids[1]);
-  assert.notEqual(ids[1], ids[2]);
-});
-
-test("a command submitted with no turn claimed is refused rather than minted", async () => {
-  const { api, call } = toolsOf({ turn: () => undefined });
-
-  const answer = await call("release_draft", {
-    ticket: 4,
-    authoringVersion: 3,
-    configurationRevision: "r1",
-  });
-
-  assert.equal(answer.isError, true);
-  assert.match(textOf(answer), /no turn is claimed/);
-  assert.equal(api.calls.length, 0);
-});
-
-const origination = {
-  configurationRevision: "r1",
-  configurationDigest: "d1",
-  expectedProjectSequence: 12,
-  authoring: { dependencies: [] },
-  brief: { title: "what the member asked for" },
-};
-
-test("an originated draft is filed at the drafts route, fenced and derived from nothing", async () => {
-  const filed = JSON.stringify({ ticket: 14, version: 1 });
-  const { api, call } = toolsOf({}, () => ({ status: 201, body: filed }));
-
-  const answer = await call("create_draft", origination);
-
-  assert.equal(api.calls.length, 1);
-  assert.equal(api.calls[0].method, "POST");
-  assert.equal(
-    api.calls[0].path,
-    "/api/v1/tenants/vteng/projects/chuggy/drafts",
-  );
-  assert.equal(
-    api.calls[0].init.headers["content-type"],
-    "application/vnd.chuggy.v1+json",
-  );
-  assert.deepEqual(JSON.parse(api.calls[0].init.body), origination);
-  assert.equal(textOf(answer), `HTTP 201\n${filed}`);
-  assert.ok(answer.isError === undefined);
-});
-
-test("an origination the API refuses is relayed unaltered and never asked again", async () => {
-  const body = JSON.stringify({ error: "StaleProjectSequence" });
-  const { api, call } = toolsOf({}, () => ({ status: 409, body }));
-
-  const answer = await call("create_draft", origination);
-
-  assert.equal(textOf(answer), `HTTP 409\n${body}`);
-  assert.equal(answer.isError, true);
-  assert.equal(api.calls.length, 1);
-});
-
-test("an origination without the fence the route requires never reaches it", async () => {
-  const { api, call } = toolsOf();
-
-  for (const missing of [
-    "configurationRevision",
-    "configurationDigest",
-    "expectedProjectSequence",
-    "authoring",
-    "brief",
-  ]) {
-    const answer = await call(
-      "create_draft",
-      Object.fromEntries(
-        Object.entries(origination).filter(([field]) => field !== missing),
-      ),
-    );
-
-    assert.equal(answer.isError, true, missing);
-  }
-  assert.equal(api.calls.length, 0);
-});
-
-test("origination is registered for a thread's roster and for no lead's", () => {
-  const registered = (capabilities) =>
-    chuggyToolDefinitions(
-      chuggyToolContext(task, bearer, {
-        capabilities,
-        staging: leadDecisionStaging(),
-      }),
-    ).map(({ name }) => name);
-
-  assert.ok(registered(["DraftOriginate"]).includes("create_draft"));
-  assert.deepEqual(registered(["DraftOriginate"]), ["create_draft"]);
-  assert.ok(
-    !registered([...leadRoster]).includes("create_draft"),
-    "a lead's roster registered the tool that files from nothing",
-  );
-});
-
-/**
- * The reads whose route `src/adapters/http/server.ts` does not register.
- * Written here rather than read off the table under test, so a table that lost
- * an entry is a failure rather than a change of expectation.
- */
-const unservedOnThisInstallation = [
-  "read_decision_log",
-  "read_refusals",
-  "read_ticket_refusals",
-  "read_lead",
-  "read_lead_transcript",
-];
-
-test("the table names exactly the reads this installation does not serve", () => {
-  assert.deepEqual(
-    Object.keys(chuggyToolsNotYetServed).sort(),
-    [...unservedOnThisInstallation].sort(),
-  );
-});
-
-test("every tool whose route is unserved refuses before it asks, and no other does", async () => {
-  const arguments_ = {
-    list_drafts: {},
-    read_decision_log: {},
-    read_refusals: {},
-    read_ticket_refusals: { ticket: 4 },
-    read_lead: {},
-    read_lead_transcript: {},
-    list_threads: {},
-    read_thread: { session: "t-1" },
-    read_thread_transcript: { session: "t-1" },
-    read_ticket: { ticket: 4 },
-    list_tickets: {},
-    read_operation: { operation: "o-1" },
-    create_draft: origination,
-  };
-  for (const [name, args] of Object.entries(arguments_)) {
-    const unserved = unservedOnThisInstallation.includes(name);
-    const { api, call } = toolsOf();
-
-    const answer = await call(name, args);
-
-    assert.equal(answer.isError, unserved ? true : undefined, name);
-    assert.equal(api.calls.length, unserved ? 0 : 1, name);
-    if (unserved) {
-      assert.ok(textOf(answer).length > 0, name);
-      assert.equal(textOf(answer), chuggyToolsNotYetServed[name], name);
-    }
-  }
-});
-
-test("every tool the unserved table names is one the roster carries", () => {
-  for (const name of unservedOnThisInstallation) {
-    assert.ok(allChuggyTools.includes(name), name);
-    assert.ok(
-      (chuggyToolsNotYetServed[name] ?? "").length > 0,
-      `${name} refuses with nothing`,
-    );
-  }
 });
 
 test("every subset of the capabilities admits its tools and disallows the rest", () => {
@@ -1037,7 +470,7 @@ test("the runtime's tool-discovery tool is denied by name to every roster", () =
 test("a session with no ProjectRead disallows every chuggy read by name", () => {
   const { allowedTools, disallowedTools } = sessionAllowedTools([
     "RepositoryRead",
-    "LeadDecision",
+    "RepositoryRead",
   ]);
 
   for (const tool of sessionCapabilityTools.ProjectRead) {

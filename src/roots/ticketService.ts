@@ -13,8 +13,6 @@ import {
   decodedCommandConfiguration,
   positiveInteger,
 } from "./commandConfig.ts";
-import { domainConfigurationSchema } from "../interpreter/domainConfiguration.ts";
-import { asRepositoryId } from "../interpreter/finalizer.ts";
 import {
   ticketServiceProcessRoot,
   type TicketServiceProcessRootConfig,
@@ -31,55 +29,11 @@ const configurationSchema = z
       .object({
         projectsPerPassMax: positiveInteger,
         projectLeaseSeconds: positiveNumber,
+        inputsPerProjectMax: positiveInteger.max(1000).default(32),
+        obligationsPerProjectMax: positiveInteger.max(1000).default(1000),
       })
       .strict(),
-    domain: domainConfigurationSchema,
     owner: z.string().min(1),
-    forge: z
-      .object({
-        appId: z.string().min(1),
-        keyFile: z.string().min(1),
-        apiUrl: z.string().min(1).optional(),
-        timeoutMs: positiveInteger.optional(),
-      })
-      .strict()
-      .optional(),
-    source: z
-      .object({
-        scratchDirectory: z.string().min(1),
-        identity: z
-          .object({ name: z.string().min(1), email: z.string().min(1) })
-          .strict(),
-        environment: z.record(z.string(), z.string().optional()),
-        sources: z
-          .array(
-            z
-              .object({
-                repository: z.string().min(1),
-                credentialReference: z.string().min(1).optional(),
-                path: z.string().min(1),
-              })
-              .strict(),
-          )
-          .optional(),
-        credentialBytesMax: positiveInteger.optional(),
-        credentialUsername: z.string().min(1).optional(),
-        localTimeoutSecsMax: positiveInteger.optional(),
-        remoteTimeoutSecsMax: positiveInteger.optional(),
-        promotionTimeoutSecsMax: positiveInteger.optional(),
-      })
-      .strict(),
-    ticket: z
-      .object({
-        agingIntervalSeconds: positiveNumber,
-        ordinarySoftLimit: positiveInteger,
-        mailboxHardLimit: positiveInteger,
-        writerDecisionQuantum: positiveInteger,
-        writerTimeQuantumMilliseconds: positiveNumber,
-        backpressureRetryAfterSeconds: positiveNumber,
-      })
-      .strict()
-      .optional(),
   })
   .strict();
 
@@ -111,64 +65,11 @@ export function ticketServiceConfiguration(
     configurationSchema,
     environment,
   );
-  if (
-    data.ticket !== undefined &&
-    data.ticket.ordinarySoftLimit >= data.ticket.mailboxHardLimit
-  )
-    throw new Error(`${configurationVariable}.ticket count bounds are invalid`);
-  const sources = data.source.sources ?? [];
-  if (data.forge === undefined && sources.length === 0)
-    throw new Error(
-      `${configurationVariable}.forge or ${configurationVariable}.source.sources is required`,
-    );
   return {
     database: commandDatabaseConfig(data.database),
     runtime: data.runtime,
     pass: data.pass,
-    domain: data.domain,
     owner: data.owner,
-    source: {
-      scratchDirectory: data.source.scratchDirectory,
-      identity: data.source.identity,
-      environment: data.source.environment,
-      sources: sources.map((source) => ({
-        repository: asRepositoryId(source.repository),
-        path: source.path,
-        ...(source.credentialReference === undefined
-          ? {}
-          : { credentialReference: source.credentialReference }),
-      })),
-      ...(data.source.credentialBytesMax === undefined
-        ? {}
-        : { credentialBytesMax: data.source.credentialBytesMax }),
-      ...(data.source.credentialUsername === undefined
-        ? {}
-        : { credentialUsername: data.source.credentialUsername }),
-      ...(data.source.localTimeoutSecsMax === undefined
-        ? {}
-        : { localTimeoutSecsMax: data.source.localTimeoutSecsMax }),
-      ...(data.source.remoteTimeoutSecsMax === undefined
-        ? {}
-        : { remoteTimeoutSecsMax: data.source.remoteTimeoutSecsMax }),
-      ...(data.source.promotionTimeoutSecsMax === undefined
-        ? {}
-        : { promotionTimeoutSecsMax: data.source.promotionTimeoutSecsMax }),
-    },
-    ...(data.forge === undefined
-      ? {}
-      : {
-          forge: {
-            appId: data.forge.appId,
-            keyFile: data.forge.keyFile,
-            ...(data.forge.apiUrl === undefined
-              ? {}
-              : { apiUrl: data.forge.apiUrl }),
-            ...(data.forge.timeoutMs === undefined
-              ? {}
-              : { requestTimeoutMs: data.forge.timeoutMs }),
-          },
-        }),
-    ...(data.ticket === undefined ? {} : { ticket: data.ticket }),
   };
 }
 

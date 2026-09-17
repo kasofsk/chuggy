@@ -10,31 +10,12 @@
  * segment or a name longer than a filesystem component would otherwise pick the
  * directory.
  *
- * A DECLARED PATH IS KEPT AS ITSELF, because it is what the worker stored the
- * object under and a rewritten one would name a key nobody wrote.
- * `../../interpreter/resultManifest.ts` has already refused every shape that
- * could climb out of the tree, and the resolution below is what proves the
- * refusal held rather than assuming it. That proof is lexical and about the
- * name alone: where the components of that name really lead is
- * `./artifactStore.ts`'s, which resolves the directory an object stands in
- * through its links and refuses a link at the object itself.
  */
 
 import { createHash } from "node:crypto";
-import { resolve, sep } from "node:path";
+import { resolve } from "node:path";
 
 import { sessionStoreBatchesMax } from "../../contract/http.ts";
-import {
-  artifactPathRejection,
-  type ArtifactPath,
-} from "../../interpreter/resultManifest.ts";
-
-/** The directory one attempt's own immutable outputs stand in. */
-const artifactAttemptDirectory = "attempt";
-
-/** The directory a project's own finalization evidence stands in. */
-const artifactOwnedDirectory = "artifact";
-
 /**
  * The directory one session's own transcript stands in. It is keyed by the
  * session and never by the attempt that wrote it: an attempt-keyed object is
@@ -55,50 +36,6 @@ export function artifactProjectDirectory(
   project: string,
 ): string {
   return resolve(root, artifactKeyOf(tenant), artifactKeyOf(project));
-}
-
-/**
- * The file one project-owned artifact is stored as. Its identity is opaque, so
- * it is a digest here like every other identity.
- */
-export function artifactOwnedFile(
-  projectDirectory: string,
-  artifact: string,
-): string {
-  return resolve(
-    projectDirectory,
-    artifactOwnedDirectory,
-    artifactKeyOf(artifact),
-  );
-}
-
-/** Whether one resolved path is still inside the project directory it was resolved from. */
-export function artifactWithinProject(
-  projectDirectory: string,
-  file: string,
-): boolean {
-  return file.startsWith(`${projectDirectory}${sep}`);
-}
-
-/**
- * The file one declared artifact of one attempt is stored as, or nothing where
- * the declared path is not one this store will resolve.
- */
-export function artifactAttemptFile(
-  projectDirectory: string,
-  execution: string,
-  attempt: string,
-  path: ArtifactPath,
-): string | undefined {
-  if (artifactPathRejection(path) !== undefined) return undefined;
-  const file = resolve(
-    projectDirectory,
-    artifactAttemptDirectory,
-    artifactKeyOf(execution),
-    artifactKeyOf(attempt),
-    path,
-  );
-  return artifactWithinProject(projectDirectory, file) ? file : undefined;
 }
 
 /**
@@ -135,19 +72,5 @@ export function artifactSessionFile(
   return resolve(
     artifactSessionRoot(projectDirectory, session, stream),
     `${String(batch)}.jsonl`,
-  );
-}
-
-/** The directory containing every immutable output written by one attempt. */
-export function artifactAttemptRoot(
-  projectDirectory: string,
-  execution: string,
-  attempt: string,
-): string {
-  return resolve(
-    projectDirectory,
-    artifactAttemptDirectory,
-    artifactKeyOf(execution),
-    artifactKeyOf(attempt),
   );
 }

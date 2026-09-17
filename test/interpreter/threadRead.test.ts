@@ -26,6 +26,7 @@ import {
 } from "../../src/interpreter/agentSession.ts";
 import { nativeWeb } from "../../src/interpreter/nativeWeb.ts";
 import type {
+  NativeLeadPorts,
   NativeThreadPorts,
   ProjectAccess,
 } from "../../src/interpreter/nativeWeb.ts";
@@ -36,7 +37,7 @@ import {
   type Principal,
 } from "../../src/interpreter/principal.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
-import { unaskedNativeWebPorts } from "./nativeWebFixtures.ts";
+import type { LeadInquiryStore } from "../../src/interpreter/leadInquiry.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   checkedThreadsLimit,
@@ -262,17 +263,10 @@ function boundary(
   };
   const web = nativeWeb(
     access,
-    ...unaskedNativeWebPorts,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
+    { projects: () => Promise.resolve({ projects: [] }) },
+    {} as NativeLeadPorts,
     ports(held),
+    {} as LeadInquiryStore,
   );
   return { web, held };
 }
