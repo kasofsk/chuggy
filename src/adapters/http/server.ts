@@ -18,7 +18,10 @@ import {
 import type { NativeWeb } from "../../interpreter/nativeWeb.ts";
 import type { ForgeCredentialMinting } from "../../interpreter/forgeCredentials.ts";
 import type { RepositoryOnboarding } from "../../interpreter/repositoryOnboarding.ts";
-import type { TicketApplication } from "../../interpreter/ticketApplication.ts";
+import type {
+  TicketApplication,
+  TicketApplicationResult,
+} from "../../interpreter/ticketApplication.ts";
 import { TicketId as AdoptedTicketId } from "../../domain/chuggernaut/task.js";
 import type { Ticket as AdoptedTicket } from "../../domain/chuggernaut/ticket.js";
 import { asGitObjectId, asRepositoryId } from "../../interpreter/finalizer.ts";
@@ -1037,6 +1040,61 @@ function adoptedTicketView(held: AdoptedTicket) {
   };
 }
 
+function adoptedCatalogRequest(request: FastifyRequest) {
+  const query = record(request.query);
+  const repository = query["repository"];
+  return {
+    partition: partitionOf(request),
+    catalogCommit: asGitObjectId(textField(query, "commit")),
+    ...(typeof repository === "string"
+      ? { repository: asRepositoryId(repository) }
+      : {}),
+  };
+}
+
+function registerAdoptedTicketCatalog(
+  app: FastifyInstance,
+  service: NativeTicketApplication,
+): void {
+  const root =
+    "/api/v1/tenants/:tenant/projects/:project/ticket-machine/catalog";
+  const answer = (
+    reply: FastifyReply,
+    result: TicketApplicationResult<object | undefined>,
+  ): void => {
+    if (result.result !== "Authorized") {
+      adoptedTicketReply(reply, result);
+      return;
+    }
+    if (result.value === undefined) {
+      void reply
+        .code(404)
+        .send(nativeHttpError("NotFound", "Catalog not found."));
+      return;
+    }
+    void reply.code(200).send(result.value);
+  };
+  app.get(root, async (request, reply) => {
+    answer(
+      reply,
+      await service.application.catalog(
+        principalOf(request),
+        adoptedCatalogRequest(request),
+      ),
+    );
+  });
+  app.get(`${root}/file`, async (request, reply) => {
+    answer(
+      reply,
+      await service.application.catalogFile(
+        principalOf(request),
+        adoptedCatalogRequest(request),
+        textField(record(request.query), "reference"),
+      ),
+    );
+  });
+}
+
 function registerAdoptedTicketValidation(
   app: FastifyInstance,
   service: NativeTicketApplication,
@@ -1167,6 +1225,7 @@ function registerAdoptedTickets(
 ): void {
   registerAdoptedTicketReads(app, service);
   registerAdoptedTicketValidation(app, service);
+  registerAdoptedTicketCatalog(app, service);
   registerAdoptedTicketAuthoring(app, service);
   registerAdoptedTicketActions(app, service);
 }

@@ -478,6 +478,8 @@ function retiredTicketApp(
         ),
       definition: unavailable,
       validate: unavailable,
+      catalog: unavailable,
+      catalogFile: unavailable,
       outcome: unavailable,
       create: unavailable,
       update: unavailable,
@@ -689,6 +691,73 @@ test("validation still demands the pinned catalog identity", async () => {
       "content-type": "application/yaml",
     },
     payload: "title: Example\n",
+  });
+  assert.equal(response.statusCode, 400);
+});
+
+test("the catalog routes pass the pinned commit and answer its tree", async () => {
+  const service = retiredTicketApp("Fresh");
+  const requests: unknown[] = [];
+  const application: NativeTicketApplication = {
+    ...service,
+    application: {
+      ...service.application,
+      catalog: (_principal, request) => {
+        requests.push(request);
+        return Promise.resolve({
+          result: "Authorized",
+          value: { entries: ["workloads/work.yaml"] },
+        });
+      },
+      catalogFile: (_principal, request, reference) => {
+        requests.push({ ...request, reference });
+        return Promise.resolve({
+          result: "Authorized",
+          value: { reference, content: "prompt: run\n" },
+        });
+      },
+    },
+  };
+  await using app = adoptedTicketRouteApp(application);
+  const root = "/api/v1/tenants/acme/projects/atlas/ticket-machine/catalog";
+  const headers = { authorization: "Bearer valid" };
+  const listed = await app.inject({
+    method: "GET",
+    url: `${root}?commit=${"a".repeat(40)}&repository=github.com/acme/atlas`,
+    headers,
+  });
+  assert.equal(listed.statusCode, 200, listed.body);
+  assert.deepEqual(listed.json(), { entries: ["workloads/work.yaml"] });
+  const read = await app.inject({
+    method: "GET",
+    url: `${root}/file?commit=${"a".repeat(40)}&reference=workloads/work.yaml`,
+    headers,
+  });
+  assert.equal(read.statusCode, 200, read.body);
+  assert.deepEqual(read.json(), {
+    reference: "workloads/work.yaml",
+    content: "prompt: run\n",
+  });
+  assert.deepEqual(requests, [
+    {
+      partition: { tenant: "acme", project: "atlas" },
+      catalogCommit: "a".repeat(40),
+      repository: "github.com/acme/atlas",
+    },
+    {
+      partition: { tenant: "acme", project: "atlas" },
+      catalogCommit: "a".repeat(40),
+      reference: "workloads/work.yaml",
+    },
+  ]);
+});
+
+test("a catalog read without a commit is a bad request", async () => {
+  await using app = adoptedTicketRouteApp(retiredTicketApp("Fresh"));
+  const response = await app.inject({
+    method: "GET",
+    url: "/api/v1/tenants/acme/projects/atlas/ticket-machine/catalog",
+    headers: { authorization: "Bearer valid" },
   });
   assert.equal(response.statusCode, 400);
 });

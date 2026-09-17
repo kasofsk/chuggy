@@ -8,7 +8,10 @@ import type {
   TicketCatalogSnapshot,
   TicketCatalogSnapshotPort,
 } from "../../interpreter/ticketCatalog.ts";
-import { ticketCatalogDocumentBytesMax } from "../../interpreter/ticketCatalog.ts";
+import {
+  ticketCatalogDocumentBytesMax,
+  ticketCatalogRoot,
+} from "../../interpreter/ticketCatalog.ts";
 import {
   scratchOpen,
   scratchRemoteArguments,
@@ -27,6 +30,9 @@ export interface GitTicketCatalogOptions {
   readonly localTimeoutSecsMax?: number;
   readonly remoteTimeoutSecsMax?: number;
 }
+
+/** A listing carries names alone, so one document's bound is ample for the whole tree. */
+const gitTicketCatalogListingBytesMax = ticketCatalogDocumentBytesMax;
 
 function gitTicketCatalogExited(
   ran: GitRan,
@@ -104,6 +110,28 @@ export function gitTicketCatalog(
         ],
       });
       if (!gitTicketCatalogExited(fetched)) return undefined;
+      const entries = async (): Promise<readonly string[]> => {
+        const listed = await scratchRun(scratch, {
+          repository,
+          timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+          argv: [
+            "ls-tree",
+            "-r",
+            "--name-only",
+            "-z",
+            input.commit,
+            "--",
+            ticketCatalogRoot,
+          ],
+          outputBytesMax: gitTicketCatalogListingBytesMax,
+        });
+        if (!gitTicketCatalogExited(listed))
+          throw new TypeError("catalog listing is unavailable");
+        return listed.stdout
+          .split("\0")
+          .filter((path) => path.startsWith(ticketCatalogRoot))
+          .map((path) => path.slice(ticketCatalogRoot.length));
+      };
       const snapshot: TicketCatalogSnapshot = {
         read: async (path) => {
           const checked = gitTicketCatalogPath(path);
@@ -120,7 +148,7 @@ export function gitTicketCatalog(
           return read.stdout;
         },
       };
-      return { repository, snapshot };
+      return { repository, snapshot, entries };
     },
   };
 }

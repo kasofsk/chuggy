@@ -20,6 +20,9 @@ export interface TicketContentStore {
 
 export const ticketCatalogDocumentBytesMax = 65_536;
 
+/** Every catalog path lives under this directory, which authored references omit. */
+export const ticketCatalogRoot = ".chug/";
+
 /** All catalog reads must come from the same immutable repository revision. */
 export interface TicketCatalogSource {
   readonly repository: string;
@@ -37,6 +40,8 @@ export interface TicketCatalogSnapshot {
 export interface TicketCatalogSnapshotRead {
   readonly repository: string;
   readonly snapshot: TicketCatalogSnapshot;
+  /** The catalog paths the commit holds, so an author can be offered what exists. */
+  entries(): Promise<readonly string[]>;
 }
 
 /** Resolves a project binding at one exact commit into an immutable catalog tree. */

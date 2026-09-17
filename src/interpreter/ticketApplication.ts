@@ -5,10 +5,12 @@ import type { Authority } from "./operationInbox.ts";
 import type { GitObjectId, RepositoryId } from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
-import type {
-  TicketCatalog,
-  TicketCatalogRelease,
-  TicketContentStore,
+import {
+  ticketCatalogRoot,
+  type TicketCatalog,
+  type TicketCatalogRelease,
+  type TicketCatalogSnapshotRead,
+  type TicketContentStore,
 } from "./ticketCatalog.ts";
 import type { TicketMachineOutcome } from "./ticketMachine.ts";
 import type {
@@ -51,6 +53,10 @@ export interface PinnedTicketCatalogs {
   draft(
     selection: PinnedTicketCatalogSelection,
   ): Promise<TicketCatalog | undefined>;
+  /** The pinned tree itself, which an author browses to learn what may be referenced. */
+  snapshot(
+    selection: PinnedTicketCatalogSelection,
+  ): Promise<TicketCatalogSnapshotRead | undefined>;
 }
 
 export interface TicketGraphRead {
@@ -64,12 +70,15 @@ export type TicketApplicationResult<Value> =
   | { readonly result: "LegacyModelUnsupported" }
   | { readonly result: "Authorized"; readonly value: Value };
 
-export interface TicketAuthoringRequest {
+export interface TicketCatalogRequest {
   readonly partition: Partition;
-  readonly identity: string;
-  readonly source: string;
   readonly catalogCommit: GitObjectId;
   readonly repository?: RepositoryId;
+}
+
+export interface TicketAuthoringRequest extends TicketCatalogRequest {
+  readonly identity: string;
+  readonly source: string;
 }
 
 export interface TicketUpdateRequest extends TicketAuthoringRequest {
@@ -88,16 +97,22 @@ export interface TicketDispatchRequest extends TicketActionRequest {
   readonly commit: string;
 }
 
-export interface TicketValidationRequest {
-  readonly partition: Partition;
+export interface TicketValidationRequest extends TicketCatalogRequest {
   readonly source: string;
-  readonly catalogCommit: GitObjectId;
-  readonly repository?: RepositoryId;
 }
 
 export interface TicketValidation {
   readonly valid: boolean;
   readonly findings: readonly string[];
+}
+
+export interface TicketCatalogEntries {
+  readonly entries: readonly string[];
+}
+
+export interface TicketCatalogFile {
+  readonly reference: string;
+  readonly content: string;
 }
 
 export interface TicketDefinitionRead {
@@ -120,6 +135,15 @@ export interface TicketApplication {
     principal: Principal,
     request: TicketValidationRequest,
   ): Promise<TicketApplicationResult<TicketValidation>>;
+  catalog(
+    principal: Principal,
+    request: TicketCatalogRequest,
+  ): Promise<TicketApplicationResult<TicketCatalogEntries | undefined>>;
+  catalogFile(
+    principal: Principal,
+    request: TicketCatalogRequest,
+    reference: string,
+  ): Promise<TicketApplicationResult<TicketCatalogFile | undefined>>;
   outcome(
     principal: Principal,
     partition: Partition,
@@ -223,7 +247,7 @@ function ticketApplicationUpdateMetadata(
 }
 
 function ticketApplicationSelection(
-  request: TicketAuthoringRequest | TicketValidationRequest,
+  request: TicketCatalogRequest,
 ): PinnedTicketCatalogSelection {
   return {
     partition: request.partition,
@@ -306,6 +330,54 @@ function ticketApplicationValidate(
         value: { valid: false, findings: [ticketApplicationFinding(error)] },
       };
     }
+  };
+}
+
+/** The catalog is only ever authored against, so browsing it asks the authoring authority. */
+async function ticketApplicationSnapshot(
+  ports: TicketApplicationPorts,
+  principal: Principal,
+  request: TicketCatalogRequest,
+): Promise<TicketCatalogSnapshotRead | undefined | "Unauthorized"> {
+  const authorization = await ticketApplicationAuthority(
+    ports,
+    principal,
+    request.partition,
+    "Mutate",
+  );
+  return authorization === undefined
+    ? "Unauthorized"
+    : ports.catalogs.snapshot(ticketApplicationSelection(request));
+}
+
+function ticketApplicationCatalogEntries(
+  ports: TicketApplicationPorts,
+): TicketApplication["catalog"] {
+  return async (principal, request) => {
+    const pinned = await ticketApplicationSnapshot(ports, principal, request);
+    if (pinned === "Unauthorized") return { result: "NotFound" };
+    if (pinned === undefined) return { result: "Authorized", value: undefined };
+    return {
+      result: "Authorized",
+      value: { entries: [...(await pinned.entries())].sort() },
+    };
+  };
+}
+
+function ticketApplicationCatalogFile(
+  ports: TicketApplicationPorts,
+): TicketApplication["catalogFile"] {
+  return async (principal, request, reference) => {
+    const pinned = await ticketApplicationSnapshot(ports, principal, request);
+    if (pinned === "Unauthorized") return { result: "NotFound" };
+    if (pinned === undefined) return { result: "Authorized", value: undefined };
+    return {
+      result: "Authorized",
+      value: {
+        reference,
+        content: await pinned.snapshot.read(`${ticketCatalogRoot}${reference}`),
+      },
+    };
   };
 }
 
@@ -537,6 +609,8 @@ export function ticketApplication(
     ...ticketApplicationReads(ports),
     definition: ticketApplicationDefinition(ports),
     validate: ticketApplicationValidate(ports),
+    catalog: ticketApplicationCatalogEntries(ports),
+    catalogFile: ticketApplicationCatalogFile(ports),
     create: ticketApplicationCreate(ports),
     update: ticketApplicationUpdate(ports),
     dispatch: ticketApplicationDispatch(ports),

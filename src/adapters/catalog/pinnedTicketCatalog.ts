@@ -42,5 +42,6 @@ export function pinnedTicketCatalogs(
   return {
     catalog: (selection) => build(selection, content(selection.partition)),
     draft: (selection) => build(selection, draftTicketContent()),
+    snapshot: (selection) => snapshots.snapshot(selection),
   };
 }

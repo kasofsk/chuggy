@@ -19,6 +19,7 @@ import {
 } from "../../src/interpreter/operationInbox.ts";
 import { asTenantId, asProjectId } from "../../src/interpreter/projectStore.ts";
 import { asGitObjectId } from "../../src/interpreter/finalizer.ts";
+import { ticketCatalogRoot } from "../../src/interpreter/ticketCatalog.ts";
 import {
   Pending,
   Ticket,
@@ -75,7 +76,8 @@ function setup(
       }),
   };
   let content = 0;
-  const effects = { catalogs: 0, content: 0, drafts: 0 };
+  const effects = { catalogs: 0, content: 0, drafts: 0, snapshots: 0 };
+  const reads: string[] = [];
   const application = ticketApplication({
     access: {
       authorize: (_principal, _partition, operation) =>
@@ -107,6 +109,20 @@ function setup(
           release: (identity) => catalogRelease(identity, release),
         });
       },
+      snapshot: () => {
+        effects.snapshots += 1;
+        return Promise.resolve({
+          repository: "repository",
+          snapshot: {
+            read: (path: string) => {
+              reads.push(path);
+              return Promise.resolve("prompt: run\n");
+            },
+          },
+          entries: () =>
+            Promise.resolve(["workloads/work.yaml", "evaluators/ci.yaml"]),
+        });
+      },
       draft: () => {
         effects.drafts += 1;
         return Promise.resolve({
@@ -132,7 +148,7 @@ function setup(
         ),
     }),
   });
-  return { application, submitted, effects };
+  return { application, submitted, effects, reads };
 }
 
 test("create reserves an identity and submits the frozen catalog release", async () => {
@@ -241,7 +257,12 @@ test("update and dispatch stop before side effects when the project is unavailab
         : "NotFound";
     assert.deepEqual(update, { result });
     assert.deepEqual(dispatch, { result });
-    assert.deepEqual(effects, { catalogs: 0, content: 0, drafts: 0 });
+    assert.deepEqual(effects, {
+      catalogs: 0,
+      content: 0,
+      drafts: 0,
+      snapshots: 0,
+    });
     assert.equal(submitted.length, 0);
   }
 });
@@ -320,7 +341,12 @@ test("validation reports findings over draft content and writes nothing", async 
       value: { valid: false, findings: ["catalog document must be a mapping"] },
     },
   );
-  assert.deepEqual(effects, { catalogs: 0, content: 0, drafts: 2 });
+  assert.deepEqual(effects, {
+    catalogs: 0,
+    content: 0,
+    drafts: 2,
+    snapshots: 0,
+  });
   assert.equal(submitted.length, 0);
 });
 
@@ -334,4 +360,37 @@ test("validation refuses a principal that may not author", async () => {
     }),
     { result: "NotFound" },
   );
+});
+
+test("a catalog read answers sorted references and one file's content", async () => {
+  const { application, effects, reads } = setup();
+  assert.deepEqual(
+    await application.catalog(principal, { partition, catalogCommit: commit }),
+    {
+      result: "Authorized",
+      value: { entries: ["evaluators/ci.yaml", "workloads/work.yaml"] },
+    },
+  );
+  assert.deepEqual(
+    await application.catalogFile(
+      principal,
+      { partition, catalogCommit: commit },
+      "workloads/work.yaml",
+    ),
+    {
+      result: "Authorized",
+      value: { reference: "workloads/work.yaml", content: "prompt: run\n" },
+    },
+  );
+  assert.deepEqual(reads, [`${ticketCatalogRoot}workloads/work.yaml`]);
+  assert.equal(effects.snapshots, 2);
+});
+
+test("a catalog read is refused to a principal that may not author", async () => {
+  const { application, effects } = setup(false);
+  assert.deepEqual(
+    await application.catalog(principal, { partition, catalogCommit: commit }),
+    { result: "NotFound" },
+  );
+  assert.equal(effects.snapshots, 0);
 });

@@ -31,6 +31,15 @@ export const adoptedTicketValidationSchema = z.strictObject({
   findings: z.array(z.string().min(1)),
 });
 
+export const adoptedCatalogEntriesSchema = z.strictObject({
+  entries: z.array(z.string().min(1)),
+});
+
+export const adoptedCatalogFileSchema = z.strictObject({
+  reference: z.string().min(1),
+  content: z.string(),
+});
+
 export const adoptedOperationAcceptanceSchema = z.strictObject({
   identity: z.string().min(1).max(256),
   accepted: z.enum(["Accepted", "AlreadyAccepted"]),
@@ -67,6 +76,8 @@ export type AdoptedTicketDefinition = z.infer<
 export type AdoptedTicketValidation = z.infer<
   typeof adoptedTicketValidationSchema
 >;
+export type AdoptedCatalogEntries = z.infer<typeof adoptedCatalogEntriesSchema>;
+export type AdoptedCatalogFile = z.infer<typeof adoptedCatalogFileSchema>;
 export type AdoptedOperationAcceptance = z.infer<
   typeof adoptedOperationAcceptanceSchema
 >;
