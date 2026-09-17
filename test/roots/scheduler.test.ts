@@ -554,6 +554,38 @@ test("an admitted-images list longer than its bound is refused", async () => {
   assert.equal(found.parsed, undefined);
 });
 
+test("an attempt's database sidecar is site data a placement carries, and is optional", async () => {
+  const database = {
+    image: "registry.invalid/postgres:18",
+    resources: {
+      cpuRequest: "250m",
+      cpuLimit: "1",
+      memoryRequest: "256Mi",
+      memoryLimit: "1Gi",
+      ephemeralStorageLimit: "4Gi",
+    },
+  };
+  const found = JSON.parse(
+    await schedulerProgram(
+      parseProgram({
+        ...environment,
+        CHUG_SCHEDULER_WORKER_DATABASE: JSON.stringify(database),
+      }),
+    ),
+  ) as { readonly parsed?: { readonly workers?: Record<string, unknown> } };
+  assert.deepEqual(found.parsed?.workers?.["database"], database);
+
+  const refused = JSON.parse(
+    await schedulerProgram(
+      parseProgram({
+        ...environment,
+        CHUG_SCHEDULER_WORKER_DATABASE: JSON.stringify({ image: "i" }),
+      }),
+    ),
+  ) as { readonly refused?: string };
+  assert.match(refused.refused ?? "", /CHUG_SCHEDULER_WORKER_DATABASE/u);
+});
+
 async function parsedTicketExecution(value: unknown): Promise<{
   readonly parsed?: { readonly tickets: unknown };
   readonly refused?: string;

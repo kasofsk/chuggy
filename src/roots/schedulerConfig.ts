@@ -287,6 +287,11 @@ const schedulerResourcesSchema = z.strictObject({
   ephemeralStorageLimit: schedulerTextSchema,
 });
 
+const schedulerWorkerDatabaseSchema = z.strictObject({
+  image: schedulerTextSchema,
+  resources: schedulerResourcesSchema,
+});
+
 const schedulerCredentialMountsSchema = z.record(
   schedulerTextSchema,
   z.strictObject({
@@ -497,8 +502,18 @@ function schedulerWorkerSite(
 function schedulerWorkers(
   environment: SchedulerEnvironment,
 ): KubernetesWorkloadSiteConfig {
+  const database = schedulerOptional(environment, "WORKER_DATABASE");
   return {
     ...schedulerWorkerSite(environment),
+    ...(database === undefined
+      ? {}
+      : {
+          database: schedulerDocument(
+            "WORKER_DATABASE",
+            schedulerWorkerDatabaseSchema,
+            database,
+          ),
+        }),
     apiBaseUrl: schedulerRequired(environment, "CLUSTER_API_URL"),
     namespace: schedulerRequired(environment, "CLUSTER_NAMESPACE"),
     tokenFile: schedulerRequired(environment, "CLUSTER_TOKEN_FILE"),

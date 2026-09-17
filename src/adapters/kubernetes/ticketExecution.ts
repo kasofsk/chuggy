@@ -35,10 +35,12 @@ import {
   kubernetesPodNamePrefix,
   kubernetesPositive,
   kubernetesReservedVariables,
+  type KubernetesContainer,
   type KubernetesPod,
   type KubernetesPodSite,
   type KubernetesResourceBudget,
   type KubernetesSecret,
+  type KubernetesWorkloadDatabase,
 } from "./kubernetesSite.ts";
 
 export interface TicketExecutionTerminals {
@@ -72,7 +74,34 @@ export interface KubernetesTicketExecutionConfig extends KubernetesPodSite {
   readonly retryAfterSecs: number;
   readonly capabilities: readonly string[];
   readonly environment: Readonly<Record<string, string>>;
+  readonly database?: KubernetesWorkloadDatabase;
 }
+
+/** The container name the attempt's PostgreSQL runs under, beside the worker's. */
+export const kubernetesTicketDatabaseContainerName = "postgres";
+
+/**
+ * Where the sidecar answers and what it answers as: the pod's loopback, which
+ * only this pod's containers reach, and the server's own superuser with no
+ * password, because there is nothing in the pod the worker is not.
+ */
+export const kubernetesTicketDatabaseUrl =
+  "postgres://postgres@127.0.0.1:5432/postgres";
+
+/**
+ * The variable the repository's gates read their server from. The worker runs
+ * `.chug/tasks/ci.sh` directly, so the address is handed to it under the name
+ * the gates already use rather than one the image would have to translate.
+ */
+export const kubernetesTicketDatabaseUrlVariable = "CHUG_PG_URL";
+
+/**
+ * How many databases the gates may drive at once. One server of one attempt's
+ * own gets the count a single container can carry; a deployment that sized the
+ * sidecar for more says so in its own site environment, which is written after
+ * this and therefore wins.
+ */
+export const kubernetesTicketDatabaseWorkersVariable = "CHUG_PG_WORKERS";
 
 interface TicketWorkerOutcome {
   readonly type: "result" | "process_failed" | "execution_unavailable";
@@ -102,11 +131,13 @@ function ticketConfig(
     );
   if (config.image.length === 0)
     throw new RangeError("ticket worker image is empty");
+  if (config.database !== undefined && config.database.image.length === 0)
+    throw new RangeError("ticket worker database image is empty");
   if (config.credentialUsername.length === 0)
     throw new RangeError("ticket credential username is empty");
   kubernetesReservedVariables(
     config.environment,
-    ["CHUG_TICKET_WORKER_TASK"],
+    ["CHUG_TICKET_WORKER_TASK", kubernetesTicketDatabaseUrlVariable],
     "ticket worker environment",
   );
   const callback = new URL(config.callbackUrl);
@@ -225,8 +256,64 @@ function ticketVolumes(
       emptyDir: { sizeLimit: config.resources.ephemeralStorageLimit },
     },
     { name: "control", emptyDir: { sizeLimit: "16Mi" } },
+    ...(config.database === undefined
+      ? []
+      : [
+          {
+            name: "database",
+            emptyDir: {
+              sizeLimit: config.database.resources.ephemeralStorageLimit,
+            },
+          },
+        ]),
     ...credentials.volumes,
   ];
+}
+
+/**
+ * The server this attempt's gates reach, or nothing where the site runs none:
+ * work that then asks for one fails in the container rather than being placed
+ * against a server this module invented an address for.
+ */
+function ticketDatabaseVariables(
+  config: KubernetesTicketExecutionConfig,
+): KubernetesPod["spec"]["containers"][number]["env"] {
+  if (config.database === undefined) return [];
+  return [
+    {
+      name: kubernetesTicketDatabaseUrlVariable,
+      value: kubernetesTicketDatabaseUrl,
+    },
+    { name: kubernetesTicketDatabaseWorkersVariable, value: "1" },
+  ];
+}
+
+/**
+ * The attempt's PostgreSQL, as the sidecar that runs it. The worker container
+ * is not started until the startup probe has seen the server accept a
+ * connection, so the worker never waits for it.
+ */
+function ticketDatabaseContainer(
+  config: KubernetesTicketExecutionConfig,
+  database: KubernetesWorkloadDatabase,
+): KubernetesContainer {
+  return {
+    name: kubernetesTicketDatabaseContainerName,
+    image: database.image,
+    args: ["-c", "listen_addresses=127.0.0.1"],
+    restartPolicy: "Always",
+    startupProbe: {
+      exec: { command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres"] },
+      periodSeconds: 1,
+      failureThreshold: 120,
+    },
+    env: [{ name: "POSTGRES_HOST_AUTH_METHOD", value: "trust" }],
+    resources: kubernetesContainerResources(database.resources),
+    securityContext: config.containerSecurityContext,
+    volumeMounts: [
+      { name: "database", mountPath: "/var/lib/postgresql", readOnly: false },
+    ],
+  };
 }
 
 function ticketEnvironment(
@@ -238,6 +325,7 @@ function ticketEnvironment(
       name: "CHUG_TICKET_WORKER_TASK",
       valueFrom: { secretKeyRef: { name: secret, key: "task" } },
     },
+    ...ticketDatabaseVariables(config),
     ...Object.entries(config.environment).map(([name, value]) => ({
       name,
       value,
@@ -276,6 +364,11 @@ function ticketPod(
       activeDeadlineSeconds: config.activeDeadlineSecs,
       nodeSelector: config.nodeSelector,
       securityContext: config.podSecurityContext,
+      ...(config.database === undefined
+        ? {}
+        : {
+            initContainers: [ticketDatabaseContainer(config, config.database)],
+          }),
       containers: [
         {
           name: "ticket-worker",

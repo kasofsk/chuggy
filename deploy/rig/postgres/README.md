@@ -466,6 +466,32 @@ kill "$forward"
 `chuggy` and `chuggy_rehearsal` match neither of those, which is what keeps
 this from being a command that drops the deployment.
 
+## The attempts' database
+
+**A server per attempt, beside the worker, and no role for it here.** Work runs
+agent-authored code and needs PostgreSQL to run a repository's own gates
+against, and those gates migrate whatever server they are pointed at: they make
+and alter cluster-wide roles, which is an authority over the whole server that
+nothing agent-authored can be given on a server shared with this deployment.
+So the scheduler places the server with the worker, as a sidecar of the
+attempt's pod that listens on the pod's loopback alone, trusts what connects
+there, holds nothing before the attempt and is gone with it. This server keeps
+no login for workers, no worker namespace needs a route to it, and nothing
+below runs against it.
+
+**The scheduler names the image, and the worker is told a fixed address.**
+`CHUG_SCHEDULER_WORKER_DATABASE` carries `{"image": ..., "resources": ...}`:
+the PostgreSQL image the sidecar runs and what that container may use. Every
+ticket pod then gets `CHUG_PG_URL` as a plain value naming the sidecar's
+superuser on loopback, which is the variable the gates already read, and
+`CHUG_PG_WORKERS` sized for one server. A site that names no image places
+workers with no sidecar that are told of no server, and work that then needs
+one fails in the container.
+
+**The worker never waits for it.** The sidecar carries a startup probe, and the
+pod starts the worker container only once that probe has seen the server
+accept a connection.
+
 ## Reversing it
 
 ```sh

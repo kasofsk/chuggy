@@ -6,6 +6,10 @@ import { after, test } from "node:test";
 
 import * as task from "../../src/domain/chuggernaut/task.js";
 import {
+  kubernetesTicketDatabaseContainerName,
+  kubernetesTicketDatabaseUrl,
+  kubernetesTicketDatabaseUrlVariable,
+  kubernetesTicketDatabaseWorkersVariable,
   kubernetesTicketExecutionPodName,
   kubernetesTicketExecutionRunner,
   ticketExecutionVerdict,
@@ -513,4 +517,155 @@ test("cancellation deletes the deterministic task pod", async () => {
   assert.deepEqual(paths, [
     `DELETE /api/v1/namespaces/tickets/pods/${kubernetesTicketExecutionPodName(config, claim)}`,
   ]);
+});
+
+const ticketDatabase = {
+  image: "registry.invalid/postgres:18",
+  resources: {
+    cpuRequest: "250m",
+    cpuLimit: "1",
+    memoryRequest: "256Mi",
+    memoryLimit: "1Gi",
+    ephemeralStorageLimit: "4Gi",
+  },
+} as const;
+
+interface PlacedPod {
+  readonly spec: {
+    readonly initContainers?: readonly {
+      readonly name: string;
+      readonly image: string;
+      readonly args: readonly string[];
+      readonly restartPolicy: string;
+      readonly startupProbe: {
+        readonly exec: { readonly command: readonly string[] };
+      };
+      readonly env: readonly {
+        readonly name: string;
+        readonly value: string;
+      }[];
+      readonly resources: { readonly limits: Record<string, string> };
+      readonly volumeMounts: readonly {
+        readonly name: string;
+        readonly mountPath: string;
+        readonly readOnly: boolean;
+      }[];
+    }[];
+    readonly containers: readonly {
+      readonly env: readonly {
+        readonly name: string;
+        readonly value?: string;
+      }[];
+    }[];
+    readonly volumes: readonly { readonly name: string }[];
+  };
+}
+
+/** The pod one run against a given site placed, which is where a sidecar is visible at all. */
+async function placedPod(
+  site: KubernetesTicketExecutionConfig,
+): Promise<PlacedPod> {
+  const requests: ClusterRequest[] = [];
+  const runner = kubernetesTicketExecutionRunner(
+    () => ({
+      put: (_mediaType, content) =>
+        Promise.resolve(task.ContentRef(content.length + 1)),
+      read: () => Promise.resolve(undefined),
+    }),
+    {
+      bind: () => Promise.resolve(true),
+      outcome: () =>
+        Promise.resolve({ type: "result", manifest: {}, outputs: [] }),
+      renew: () => Promise.resolve(true),
+    },
+    {
+      binding: () =>
+        Promise.resolve({
+          partition,
+          repository: asRepositoryId(view.repository),
+          recoveryEpoch: asRecoveryEpoch("epoch"),
+        }),
+    },
+    {
+      credential: () =>
+        Promise.resolve({
+          resolved: "Credential",
+          credential: asRepositoryCredential("repository-token"),
+        }),
+    },
+    site,
+    clusterFetch(requests),
+    () => "attempt-secret",
+  );
+  await runner.run(claim, view);
+  return JSON.parse(postedBody(requests, "/pods")) as PlacedPod;
+}
+
+test("an attempt's gates are given a PostgreSQL of the pod's own", async () => {
+  const pod = await placedPod({ ...config, database: ticketDatabase });
+  const sidecar = pod.spec.initContainers?.[0];
+  assert.equal(sidecar?.name, kubernetesTicketDatabaseContainerName);
+  assert.equal(sidecar?.image, ticketDatabase.image);
+  assert.deepEqual(sidecar?.args, ["-c", "listen_addresses=127.0.0.1"]);
+  assert.equal(sidecar?.restartPolicy, "Always");
+  assert.deepEqual(sidecar?.startupProbe.exec.command, [
+    "pg_isready",
+    "-h",
+    "127.0.0.1",
+    "-U",
+    "postgres",
+  ]);
+  assert.deepEqual(sidecar?.env, [
+    { name: "POSTGRES_HOST_AUTH_METHOD", value: "trust" },
+  ]);
+  assert.equal(
+    sidecar?.resources.limits["cpu"],
+    ticketDatabase.resources.cpuLimit,
+  );
+  assert.deepEqual(sidecar?.volumeMounts, [
+    { name: "database", mountPath: "/var/lib/postgresql", readOnly: false },
+  ]);
+  assert.ok(pod.spec.volumes.some(({ name }) => name === "database"));
+});
+
+test("the address the gates are handed reaches nothing outside the pod", async () => {
+  const pod = await placedPod({ ...config, database: ticketDatabase });
+  const supplied = new Map(
+    pod.spec.containers[0]?.env.map(({ name, value }) => [name, value]),
+  );
+  assert.equal(
+    supplied.get(kubernetesTicketDatabaseUrlVariable),
+    kubernetesTicketDatabaseUrl,
+  );
+  assert.equal(new URL(kubernetesTicketDatabaseUrl).hostname, "127.0.0.1");
+  assert.equal(supplied.get(kubernetesTicketDatabaseWorkersVariable), "1");
+});
+
+test("a site that runs no database places a pod with no sidecar and names none", async () => {
+  const pod = await placedPod(config);
+  assert.equal(pod.spec.initContainers, undefined);
+  assert.deepEqual(
+    pod.spec.containers[0]?.env.filter(({ name }) =>
+      name.startsWith("CHUG_PG_"),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    pod.spec.volumes.filter(({ name }) => name === "database"),
+    [],
+  );
+});
+
+test("a deployment naming a database the adapter cannot place is refused", async () => {
+  await assert.rejects(
+    placedPod({ ...config, database: { ...ticketDatabase, image: "" } }),
+    /ticket worker database image is empty/u,
+  );
+  await assert.rejects(
+    placedPod({
+      ...config,
+      environment: { [kubernetesTicketDatabaseUrlVariable]: "replacement" },
+    }),
+    new RegExp(kubernetesTicketDatabaseUrlVariable, "u"),
+  );
 });

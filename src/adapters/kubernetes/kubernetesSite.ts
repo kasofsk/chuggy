@@ -42,6 +42,12 @@ export interface KubernetesResourceBudget {
   readonly ephemeralStorageLimit: string;
 }
 
+/** The PostgreSQL image an attempt's own server runs, and what that container may use. */
+export interface KubernetesWorkloadDatabase {
+  readonly image: string;
+  readonly resources: KubernetesResourceBudget;
+}
+
 /** Site data shared by workload launchers that create one bounded pod. */
 export interface KubernetesWorkloadSiteConfig extends KubernetesPodSite {
   readonly environment: Readonly<Record<string, string>>;
@@ -50,6 +56,7 @@ export interface KubernetesWorkloadSiteConfig extends KubernetesPodSite {
   readonly podLabels: Readonly<Record<string, string>>;
   readonly podAnnotations: Readonly<Record<string, string>>;
   readonly activeDeadlineSecs: number;
+  readonly database?: KubernetesWorkloadDatabase;
 }
 
 /** One site-owned Secret key that may satisfy a policy's named credential. */
