@@ -1,19 +1,26 @@
 /**
  * The chat pane's history: which threads it offers, in what order, and what
- * choosing one hands back.
+ * choosing one hands back. And the actions offered on the thread the pane
+ * holds: Rename and Close, beside its own header controls.
  *
  * It is the whole of what the Threads page used to be, so the cases that page
- * carried about ordering and about a hidden thread are here instead.
+ * carried about ordering are here instead.
  */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { ChatPaneHistory } from "../app/browser/shell/ChatPaneHistory.tsx";
+import { SessionProvider } from "../app/browser/session.tsx";
+import {
+  ChatPaneHistory,
+  ChatPaneThreadActions,
+} from "../app/browser/shell/ChatPaneHistory.tsx";
+import { holderDouble } from "./screenHarness.tsx";
 import {
   threadEntry,
   threadMineSession,
   threadOtherSession,
+  threadPartition,
 } from "./threadFixture.ts";
 
 afterEach(cleanup);
@@ -70,14 +77,16 @@ test("choosing a thread hands its session back", async () => {
   expect(onChoose).toHaveBeenCalledWith(threadOtherSession);
 });
 
-/** Hiding is the reader saying they are done with a thread, so the history
- * honours it rather than offering it back on every open. */
-test("a hidden thread is not offered", async () => {
+/** Hiding used to take a thread off the reader's own rail, but the rail is
+ * gone and nothing sets the field any more — so a thread hidden before this
+ * change is still one the reader can reach. */
+test("a hidden thread is offered like any other", async () => {
   await historyOpened(vi.fn(), [
     ...threads,
     threadEntry({ session: "gone", title: "hidden", hidden: true }),
   ]);
-  expect(screen.queryByRole("menuitemradio", { name: "hidden" })).toBeNull();
+  const row = screen.getByRole("menuitemradio", { name: "hidden" });
+  expect(row.textContent).toBe("hidden");
 });
 
 test("a listing with nothing to offer draws no control", () => {
@@ -85,4 +94,42 @@ test("a listing with nothing to offer draws no control", () => {
     <ChatPaneHistory threads={[]} session={undefined} onChoose={vi.fn()} />,
   );
   expect(screen.queryByRole("button", { name: "History" })).toBeNull();
+});
+
+function renderedActions(thread: Parameters<typeof threadEntry>[0]) {
+  return render(
+    <SessionProvider holder={holderDouble()}>
+      <ChatPaneThreadActions
+        partition={threadPartition}
+        thread={threadEntry(thread)}
+      />
+    </SessionProvider>,
+  );
+}
+
+/** The header draws Rename and Close as plain buttons, so a reader with no
+ * pointer reaches them without a hover or a focus landing on a hidden
+ * trigger first. */
+test("the header offers Rename and Close with no hover", () => {
+  renderedActions({ session: threadMineSession, mine: true });
+  const rename = screen.getByRole("button", { name: "Rename" });
+  const close = screen.getByRole("button", { name: "Close" });
+  expect(rename.tagName).toBe("BUTTON");
+  expect(close.tagName).toBe("BUTTON");
+});
+
+test("neither Hide nor Show is offered anywhere", () => {
+  renderedActions({ session: threadMineSession, mine: true });
+  expect(screen.queryByText("Hide")).toBeNull();
+  expect(screen.queryByText("Show")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Thread actions" })).toBeNull();
+  expect(screen.queryByText("…")).toBeNull();
+});
+
+test("a stranger's thread offers Close alone", () => {
+  renderedActions({ session: threadOtherSession, mine: false });
+  expect(screen.getByRole("button", { name: "Close" }).tagName).toBe(
+    "BUTTON",
+  );
+  expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
 });
