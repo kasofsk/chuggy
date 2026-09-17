@@ -50,30 +50,6 @@ onboarding routes ask the other two, and the API's readiness probes every permit
 the code asks for, so an authority carrying a model without one of them reports
 NOT READY at the pod's door.
 
-## What a bound repository starts on
-
-A repository is read the moment a project binds it: the API resolves where the
-repository's own HEAD points, imports the configurations it declares there, and
-where it declares none authors a **bootstrap** configuration for the project —
-a review-only configuration whose whole brief is to write the repository's own
-`.chug/configurations` and stop running on it. The worker image that
-configuration commands is a setting, and a deployment naming none authors no
-bootstrap:
-
-```
-CHUG_API_BOOTSTRAP_WORKER_IMAGE=<a digest reference the scheduler admits>
-```
-
-It is not checked against the scheduler's admitted images — the API does not
-hold that list — so an image the rig will not run is refused at placement with
-`ExecutionPolicyDenied` rather than here.
-
-The step runs after the binding row exists and never refuses one. The bind's
-answer carries `configurations`, which is an import, a bootstrap, or a
-`Deferred` naming what stopped it; a deferred step is re-run through
-`POST /api/v1/tenants/<tenant>/projects/<project>/configurations/imports` and
-the authoring route, both of which already exist.
-
 ## Create a repository over the API
 
 ```

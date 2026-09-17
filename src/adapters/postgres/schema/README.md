@@ -9,6 +9,17 @@ issue #180 requires 5 things of every
 new mutable relation, so each one states them here rather than in a doc that
 would drift from the DDL beside it.
 
+UNSERVED RELATIONS ARE KEPT DELIBERATELY. The selector's settings, its
+readiness and its proposal review, the lead's mailbox, the project change log
+and the repository configuration import each still have their relations, roles,
+grants and routines here, and nothing in `src/` calls them: the automatic
+selector and the configuration surface were taken out of the control plane
+ahead of being rebuilt on the adopted ticket machine. They stay because
+dropping them is a migration that a rebuild would have to write back, and a
+half-dropped authority is worse than an idle one. What is gone is the
+TypeScript that reached them, so a reader finds no module claiming to serve
+them; the routes that did answer are registered as retired and say so.
+
 `recovery_epoch` — the global, unpredictable, never-reused epoch a restore
 advances before it permits any mutation. Owned by the control plane; the
 ticket-service role may read it and may not write it, because a runtime that
