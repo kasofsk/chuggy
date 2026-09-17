@@ -75,6 +75,23 @@ test("room for one more release runs out exactly at the fleet bound", () => {
   assert.ok(!canReleaseIn(config, coreOf(fleet), id(4)));
 });
 
+test("a fleet of Done tickets admits a further release; the same fleet Escalated does not", () => {
+  const doneFleet = Array.from({ length: config.nTickets }, () =>
+    ticketOn(config, "ManagedFinalizer", { phase: "Done" }),
+  );
+  assert.ok(
+    canReleaseIn(config, coreOf(doneFleet), id(config.nTickets + 1)),
+    "a terminal ticket keeps its id but frees its slot",
+  );
+  const escalatedFleet = Array.from({ length: config.nTickets }, () =>
+    ticketOn(config, "ManagedFinalizer", { phase: "Escalated" }),
+  );
+  assert.ok(
+    !canReleaseIn(config, coreOf(escalatedFleet), id(config.nTickets + 1)),
+    "Escalated keeps its slot: a resume can still take it back into Working",
+  );
+});
+
 test("an id is claimable once: not outside the universe, and never again after", () => {
   const held = sparseCore([
     [2, ticketOn(config)],
@@ -419,24 +436,29 @@ test("a release draws every authored value from a universe, and is refused outsi
   );
 });
 
-test("the stutter is enabled exactly on a fully-released fleet of terminals", () => {
-  const settled = [
+test("the stutter is enabled exactly once the whole id universe is claimed and terminal", () => {
+  const doneTicket = () =>
     ticketOn(config, "ManagedFinalizer", {
       phase: "Done",
       artifact: produced(2),
       completions: 1,
-    }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Revoked" }),
-    ticketOn(config, "ManagedFinalizer", {
-      phase: "Done",
-      artifact: produced(2),
-      completions: 1,
-    }),
-  ];
+    });
+  const settled = Array.from({ length: config.nTickets * 2 }, (_, i) =>
+    i === 1
+      ? ticketOn(config, "ManagedFinalizer", { phase: "Revoked" })
+      : doneTicket(),
+  );
   assert.ok(quietIn(config, coreOf(settled)));
   assert.ok(
     !quietIn(config, coreOf(settled.slice(0, -1))),
-    "room for a release means the author can still act",
+    "an id still unclaimed in the universe means a release is still enabled",
+  );
+  assert.ok(
+    !quietIn(
+      config,
+      coreOf(Array.from({ length: config.nTickets }, doneTicket)),
+    ),
+    "a terminal ticket frees its slot, so a fleet all Done still has room to release",
   );
   assert.ok(
     !quietIn(

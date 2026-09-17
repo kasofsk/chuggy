@@ -25,7 +25,6 @@ import {
   decideRevoke,
   decideWorkReduce,
 } from "../../src/domain/deciders.ts";
-import type { Config } from "../../src/domain/config.ts";
 import { executionBlockedReasons } from "../../src/domain/enablement.ts";
 import type {
   Core,
@@ -50,16 +49,6 @@ import type { ClosedSet } from "../../ui/chuggy-ui/app/core/ticketLedger.ts";
 
 const id = asTicketId(7);
 const stage = { fanout: 1, combinator: "UnanimousPass" } as const;
-
-/** The revoke walks the fleet a bounded number of rounds, and the bound is the fleet. */
-const fleetOfTwo: Config = {
-  nTickets: 2,
-  nTasks: 2,
-  reworkPolicy: { type: "BudgetedRework", value: 2 },
-  gas: 4,
-  finalizationPricing: "DeadlineOnly",
-  maxStages: 2,
-};
 
 function ticketIn(over: Partial<Ticket> = {}): Ticket {
   return {
@@ -314,7 +303,7 @@ test("a ticket parked by a revoked dependency is offered no resume", () => {
       ],
     ]),
   };
-  const after = ticketAt(decideRevoke(fleetOfTwo, core, id).post, dependent);
+  const after = ticketAt(decideRevoke(core, id).post, dependent);
   assert.equal(after.reason, "DependencyRevoked");
   agrees(ticketAt(core, dependent), after, "a revoked dependency");
 });

@@ -143,13 +143,9 @@ function escalate(
  * ticket with no human deciding it. Parking only Pending dependents is
  * exhaustive, because dispatch needs every dependency Done and Done absorbs.
  */
-export function decideRevoke(
-  config: Config,
-  core: Core,
-  id: TicketId,
-): Decision {
+export function decideRevoke(core: Core, id: TicketId): Decision {
   const doomed = new Set<TicketId>([id]);
-  for (let round = 0; round < config.nTickets; round++) {
+  for (let round = 0; round < core.tickets.size; round++) {
     for (const k of ticketIds(core)) {
       if ([...ticketAt(core, k).deps].some((d) => doomed.has(d as TicketId)))
         doomed.add(k);

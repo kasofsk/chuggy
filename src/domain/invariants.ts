@@ -22,6 +22,7 @@ import {
   stuckSet,
   subsetOf,
 } from "./derived.ts";
+import { nonTerminalIn } from "./enablement.ts";
 import type { Core, StepRecord, Task, Ticket } from "./generated/modelTypes.ts";
 import { firstTaskId, type TicketId } from "./ids.ts";
 import { sysMeasure } from "./measure.ts";
@@ -258,14 +259,16 @@ export const depsAcyclic: Invariant = (_config, view) =>
 /**
  * Ids come from the universe a release draws from, and the fleet stays within
  * its bound. They are sparse by construction, so this is a membership claim
- * rather than a density one.
+ * rather than a density one. The bound counts only tickets whose phase can
+ * still move — a Done, Abandoned or Revoked ticket keeps its id but frees
+ * its slot.
  */
 export const ticketIdsWellFormed: Invariant = (config, view) => {
   const universeCeiling = config.nTickets * 2;
   const live = liveTickets(view.post);
   return (
     live.every((id) => id >= 1 && id <= universeCeiling) &&
-    live.length <= config.nTickets
+    nonTerminalIn(view.post).length <= config.nTickets
   );
 };
 

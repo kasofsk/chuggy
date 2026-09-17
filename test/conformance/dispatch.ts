@@ -153,7 +153,7 @@ export function replayStep(
         ),
       });
     case "revoke":
-      return decideRevoke(config, pre, j());
+      return decideRevoke(pre, j());
     case "dispatch":
       return decideDispatch(pre, j());
     case "taskDone":

@@ -287,7 +287,7 @@ module chuggy_domain {
   /// are immutable, so no modeled resume exists — the wall's only exit is
   /// revoke (retryableIn; the deliberate table-line-44 deviation).
   pure def decideRevoke(c: Core, j: int): Decision =
-    val doomedByJ = range(1, N_TICKETS + 1).foldl(Set(j), (dset, _) =>
+    val doomedByJ = range(1, c.tickets.keys().size() + 1).foldl(Set(j), (dset, _) =>
       dset.union(c.tickets.keys().filter(k =>
         c.tickets.get(k).deps.exists(d => dset.contains(d)))))
       .filter(k => k != j)
@@ -408,9 +408,21 @@ module chuggy_domain {
   // change: each val's body moved verbatim into its pure def (liveTickets
   // becomes the explicit c.tickets.keys()).
 
-  /// Room for one more release (the N_TICKETS release bound).
+  /// Ids whose phase can still move — everything but the absorbing
+  /// terminals (Done, Abandoned, Revoked). Escalated keeps its slot: a
+  /// resume takes it back into Working, so counting it settled would let a
+  /// release fill the fleet and a legal resume overflow it.
+  pure def nonTerminalIn(c: Core): Set[int] = c.tickets.keys().filter(k => and {
+    c.tickets.get(k).phase != Done,
+    c.tickets.get(k).phase != Abandoned,
+    c.tickets.get(k).phase != Revoked
+  })
+
+  /// Room for one more release (the N_TICKETS release bound, over tickets
+  /// that can still move — a Done, Abandoned or Revoked ticket keeps its id
+  /// but frees its slot).
   pure def canReleaseIn(c: Core, j: int): bool = and {
-    c.tickets.keys().size() < N_TICKETS,
+    nonTerminalIn(c).size() < N_TICKETS,
     ticketIdUniverse.contains(j),
     not(c.tickets.keys().contains(j))
   }
@@ -724,7 +736,7 @@ module chuggy_domain {
     }
 
   pure def decideAbandonHandoff(c: Core, j: int): Decision =
-    val doomedByJ = range(1, N_TICKETS + 1).foldl(Set(j), (dset, _) =>
+    val doomedByJ = range(1, c.tickets.keys().size() + 1).foldl(Set(j), (dset, _) =>
       dset.union(c.tickets.keys().filter(k =>
         c.tickets.get(k).deps.exists(d => dset.contains(d)))))
     val abandoned = doomedByJ.filter(k => or {
@@ -1323,7 +1335,7 @@ module chuggy_domain {
     })
 
   def dependencyClosure(j: int): Set[int] =
-    range(1, N_TICKETS + 1).foldl(tickets.get(j).deps, (seen, _) =>
+    range(1, liveTickets.size() + 1).foldl(tickets.get(j).deps, (seen, _) =>
       seen.union(seen.map(d => tickets.get(d).deps).flatten()))
 
   val depsAcyclic: bool = liveTickets.forall(j => and {
@@ -1331,10 +1343,13 @@ module chuggy_domain {
     not(dependencyClosure(j).contains(j))
   })
 
-  /// Identity membership and ticket count are bounded independently.
+  /// Identity membership and ticket count are bounded independently: the
+  /// universe bounds the sparse map itself (N_TICKETS * 2), while the
+  /// release bound holds only over tickets that can still move — a Done,
+  /// Abandoned or Revoked ticket keeps its id but frees its slot.
   val ticketIdsWellFormed: bool = and {
     liveTickets.subseteq(ticketIdUniverse),
-    liveTickets.size() <= N_TICKETS
+    nonTerminalIn(core).size() <= N_TICKETS
   }
 
   // --- Visibility -----------------------------------------------------------
@@ -1423,7 +1438,7 @@ module chuggy_domain {
   /// is not Done blocks, and Revoked never becomes Done). The bounded
   /// fixpoint is independent of numeric identity order.
   val revokeDoomed: Set[int] =
-    range(1, N_TICKETS + 1).foldl(
+    range(1, liveTickets.size() + 1).foldl(
       liveTickets.filter(j => tickets.get(j).phase == Revoked), (dset, _) =>
         dset.union(liveTickets.filter(j =>
           tickets.get(j).deps.exists(d => dset.contains(d)))))
