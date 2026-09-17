@@ -45,7 +45,15 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
   && curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
     --location https://just.systems/install.sh \
     | bash -s -- --to /usr/local/bin \
-  && npm install --global \
+# THE AGENT IS NAMED TO --allow-scripts BECAUSE ITS BINARY IS WRITTEN BY ONE.
+# npm no longer runs a dependency's install scripts unless it is asked to, and
+# `@anthropic-ai/claude-code` creates `claude` from its own postinstall -- so
+# without this the install exits clean, warns that the script was not covered,
+# and leaves no `claude` on PATH. The package is named rather than scripts
+# allowed wholesale: it is the one package in either install that has any.
+#   docker run --rm <the base above> npm --version
+# is the npm this is about, and `claude --version` below is what catches it.
+  && npm install --global --allow-scripts=@anthropic-ai/claude-code \
     "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     "@anthropic-ai/claude-agent-sdk@${AGENT_SDK_VERSION}" \
     "zod@${ZOD_VERSION}" \
