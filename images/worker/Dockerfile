@@ -19,7 +19,7 @@
 #
 # The digest is the multi-architecture index's, read on 2026-09-17 with
 #   docker buildx imagetools inspect node:26.7.0-trixie
-FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599cd76a7a6caad48b
+FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599cd76a7a6caad48b AS worker
 
 # THE IMAGE RUNS TWO CLAUDE CODES AND THEY MUST BE THE SAME ONE. A work attempt
 # spawns the global `claude`; a session's Agent SDK spawns a copy of its own,
@@ -123,3 +123,87 @@ RUN cd /usr/local/lib/chuggy \
 USER 1000:1000
 WORKDIR /workspace
 ENTRYPOINT ["node", "/usr/local/lib/chuggy/worker.mjs"]
+
+# THE PRACTICES THE TREE DECLARES ARE INSTALLED FOR THE IMAGE'S USER. An agent
+# here is told to invoke them by name, and `check-roster` refuses a tree whose
+# roster does not resolve, so the roster is read off the tree's own
+# `.claude/settings.json` rather than listed a second time here.
+RUN --mount=type=bind,source=.claude/settings.json,target=/tmp/practices.json \
+  node -e ' \
+    const settings = require("/tmp/practices.json"); \
+    for (const market of Object.values(settings.extraKnownMarketplaces ?? {})) \
+      console.log(`marketplace ${market.source.repo}`); \
+    for (const [id, enabled] of Object.entries(settings.enabledPlugins ?? {})) \
+      if (enabled === true) console.log(`plugin ${id}`); \
+  ' | while read -r kind name; do \
+       case "$kind" in \
+       marketplace) claude plugin marketplace add "$name" || exit 1 ;; \
+       plugin) claude plugin install "$name" || exit 1 ;; \
+       esac; \
+     done
+
+# THE BUILD REFUSES AN IMAGE THAT CANNOT RUN THE GATES. Every attempt's Check
+# evaluation runs `.chug/tasks/ci.sh` inside this image, and the image a ticket
+# runs on is pinned at its release: a gate that cannot run here exits 2 on
+# every cycle of every ticket its cone touches, and nothing the ticket does can
+# move it. So this stage stages the tree the image was built from, installs it
+# and runs the whole roster, and the final stage binds this stage's verdict,
+# which is what makes the build depend on it. Nothing installed here ships: it
+# is a stage FROM the image, not the image.
+#
+# THE SERVER GATES ARE GIVEN SERVERS OF THE STAGE'S OWN, because a build has no
+# sidecars: Debian's PostgreSQL, started as the image's own user, and Ory Keto
+# from its release. The sqlite build of Keto is the one that runs, because
+# `dsn: memory` in `.chug/tasks/keto/keto.yml` is an in-memory sqlite, and the
+# release's own container image carries a binary linked against musl. The URLs
+# are the ones `_postgres.sh` and `_keto.sh` accept in place of a container.
+#
+# THE SERVER IS INITIALISED IN UTF-8 BY NAME. A build has no locale in its
+# environment, so `initdb` left to itself makes an SQL_ASCII cluster, under
+# which a character pattern such as `[[:cntrl:]]` reads the bytes of a
+# multibyte character one at a time, and a constraint the schema states goes
+# red on text the sidecar's server accepts.
+#
+# THE TREE IS COMMITTED BEFORE THE ROSTER RUNS. `.dockerignore` keeps `.git`
+# out of the context and every gate reads git, so the stage makes a repository
+# of what it was handed; a full run needs no base.
+FROM worker AS roster
+USER 0:0
+ARG KETO_VERSION=26.2.0
+ARG KETO_SHA256=37aaa6248eccb337503d618978520b18df4cad979e175134a1b017c291457ad0
+RUN apt-get update \
+  && apt-get install --yes --no-install-recommends postgresql-17 \
+  && curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+    "https://github.com/ory/keto/releases/download/v${KETO_VERSION}/keto_${KETO_VERSION}-linux_sqlite_64bit.tar.gz" \
+    --output /tmp/keto.tgz \
+  && echo "${KETO_SHA256}  /tmp/keto.tgz" | sha256sum --check --quiet - \
+  && tar --extract --gzip --file /tmp/keto.tgz --directory /usr/local/bin keto \
+  && rm /tmp/keto.tgz \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+COPY .chug/tasks/keto/keto.yml .chug/tasks/keto/namespaces.ts /etc/keto/
+COPY --chown=1000:1000 . /workspace/tree
+USER 1000:1000
+RUN cd /workspace/tree \
+  && export PATH="/usr/lib/postgresql/17/bin:$PATH" \
+  && initdb --pgdata /tmp/postgres --auth trust --username postgres \
+    --encoding UTF8 --locale C >/dev/null \
+  && pg_ctl --pgdata /tmp/postgres --log /tmp/postgres.log --options '-k /tmp' --wait start \
+  && (keto serve -c /etc/keto/keto.yml >/tmp/keto.log 2>&1 &) \
+  && git init --quiet --initial-branch main \
+  && git -c user.name=roster -c user.email=roster@chuggy.invalid add --all \
+  && git -c user.name=roster -c user.email=roster@chuggy.invalid commit --quiet \
+    --message 'the tree this image is held to' \
+  && npm ci \
+  && CHUG_CI_FULL=1 \
+    CHUG_PG_URL=postgres://postgres@127.0.0.1:5432/postgres \
+    CHUG_KETO_READ_URL=http://127.0.0.1:4466/ \
+    CHUG_KETO_WRITE_URL=http://127.0.0.1:4467/ \
+    ./.chug/tasks/ci.sh \
+  && touch /workspace/roster-clean
+
+# The image is the worker stage and nothing the roster stage added. The bind is
+# what makes the build refuse to finish without the roster's verdict, and it
+# leaves nothing behind, because a build's verdict is not something a pod needs.
+FROM worker
+RUN --mount=type=bind,from=roster,source=/workspace/roster-clean,target=/tmp/roster-clean true

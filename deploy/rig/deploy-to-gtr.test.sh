@@ -32,6 +32,11 @@ LOG="$WORK/calls.log"
 ARCHIVE="$WORK/archive"
 mkdir -p "$BIN" "$NOBIN" "$ARCHIVE"
 
+# The script commits inside the clone the gh stub makes, which carries no
+# identity of its own, and neither does a machine with no global git config.
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com \
+	GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
+
 ln -s "$(command -v git)" "$NOBIN/git"
 ln -s "$(command -v sh)" "$NOBIN/sh"
 
