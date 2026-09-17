@@ -29,7 +29,7 @@ export const baselineRelations: readonly string[] = [
     opened_after_sequence bigint DEFAULT 0 NOT NULL,
     member_title text,
     hidden_at timestamp with time zone,
-    CONSTRAINT agent_session_capabilities_are_known CHECK ((((cardinality(capabilities) >= 0) AND (cardinality(capabilities) <= 16)) AND (capabilities <@ ARRAY['RepositoryRead'::text, 'RepositoryWrite'::text, 'RunCommands'::text, 'ProjectRead'::text, 'DraftAuthor'::text, 'DraftOriginate'::text, 'LeadDecision'::text]))),
+    CONSTRAINT agent_session_capabilities_are_known CHECK ((((cardinality(capabilities) >= 0) AND (cardinality(capabilities) <= 16)) AND (capabilities <@ ARRAY['RepositoryRead'::text, 'RepositoryWrite'::text, 'RunCommands'::text, 'ProjectRead'::text, 'DraftAuthor'::text, 'DraftOriginate'::text]))),
     CONSTRAINT agent_session_closing_is_whole CHECK (((state = 'Closed'::text) = (closed_at IS NOT NULL))),
     CONSTRAINT agent_session_counters_are_positive CHECK (((turn_next >= 1) AND (attempt_next >= 1))),
     CONSTRAINT agent_session_kind_is_known CHECK ((kind = ANY (ARRAY['Lead'::text, 'Thread'::text, 'Inquiry'::text]))),

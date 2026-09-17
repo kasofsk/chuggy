@@ -21,7 +21,6 @@ import {
   projectRepositoryBoundSchema,
   projectRepositoryCreatedSchema,
   projectRepositoryLandingWrittenSchema,
-  projectResponseSchema,
 } from "../../../../src/contract/responses.ts";
 import type {
   ForgeAppsResponse,
@@ -35,7 +34,6 @@ import type {
   ProjectRepositoryBoundResponse,
   ProjectRepositoryCreatedResponse,
   ProjectRepositoryResponse,
-  ProjectResponse,
 } from "../../../../src/contract/responses.ts";
 import type {
   forgeInstallationClaimSchema,
@@ -74,6 +72,24 @@ function apiGet<T>(
     ...(signal ? { signal } : {}),
   };
   return apiRead(ports, request, parse);
+}
+
+type QueryValue = string | number | readonly string[] | undefined;
+
+type Query = Readonly<Record<string, QueryValue>>;
+
+/** A parameter the route reads repeatedly is given as a list and appended once
+ * per member, because that is the only way the wire says two of them. */
+function apiPath(base: string, query: Query = {}): string {
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(query)) {
+    if (value === undefined) continue;
+    if (typeof value === "string" || typeof value === "number")
+      search.set(name, String(value));
+    else for (const member of value) search.append(name, member);
+  }
+  const rendered = search.toString();
+  return rendered === "" ? base : `${base}?${rendered}`;
 }
 
 function apiProjectEndpoint<
@@ -310,36 +326,6 @@ export async function apiProjectInventoryAll(
     if (cursor === undefined) return { outcome: "Ok", value: partitions };
   }
   return { outcome: "Ok", value: partitions };
-}
-
-export interface ProjectPage {
-  readonly after?: number | undefined;
-  readonly cursor?: string | undefined;
-  readonly limit?: number | undefined;
-  readonly minimumSequence?: number | undefined;
-  readonly order?: "RecentActivity" | undefined;
-  readonly phase?: readonly string[] | undefined;
-}
-
-export function apiProject(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  page: ProjectPage = {},
-  signal?: AbortSignal,
-): Promise<ApiResult<ProjectResponse>> {
-  return apiGet(
-    ports,
-    apiPath(partitionPath(partition), {
-      after: page.after,
-      cursor: page.cursor,
-      limit: page.limit,
-      minimumSequence: page.minimumSequence,
-      order: page.order,
-      phase: page.phase,
-    }),
-    (value) => projectResponseSchema.parse(value),
-    signal,
-  );
 }
 
 export interface NativeActionsPage {
