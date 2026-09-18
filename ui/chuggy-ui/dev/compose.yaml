@@ -31,9 +31,9 @@ services:
     environment:
       HOME: /tmp
       CHUG_UI_PORT: "${CHUG_UI_PORT:-5173}"
-      CHUG_UI_UPSTREAM: "${CHUG_UI_UPSTREAM:-https://chuggy.vteng.io}"
-      CHUG_UI_ISSUER: "${CHUG_UI_ISSUER:-https://auth.vteng.io}"
-      CHUG_UI_AUDIENCE: "${CHUG_UI_AUDIENCE:-https://chuggy.vteng.io/api}"
+      CHUG_UI_UPSTREAM: "${CHUG_UI_UPSTREAM:?the origin serving the installation's /api/v1}"
+      CHUG_UI_ISSUER: "${CHUG_UI_ISSUER:?the installation's OAuth issuer}"
+      CHUG_UI_AUDIENCE: "${CHUG_UI_AUDIENCE:?the audience the installation's API accepts}"
       CHUG_UI_CLIENT_ID: "${CHUG_UI_CLIENT_ID:-chuggy-ui-local}"
     ports:
       - "${CHUG_UI_PORT:-5173}:${CHUG_UI_PORT:-5173}"
