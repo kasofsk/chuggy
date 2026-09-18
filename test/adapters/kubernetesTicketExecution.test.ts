@@ -223,7 +223,10 @@ async function assertMalformedOutcomes(
   assert.equal(uppercase.result, "Produced");
   assert.equal(
     stored.at(-1)?.content,
-    "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+    JSON.stringify({
+      commit: "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+      repository: view.repository,
+    }),
   );
 }
 
