@@ -1,5 +1,6 @@
 import { ContentRef } from "../../domain/chuggernaut/task.js";
 import { ticketCatalog } from "./ticketCatalog.ts";
+import { mergedTicketCatalogSnapshot } from "./mergedTicketCatalog.ts";
 import { projectTicketCatalogSource } from "./projectCatalog.ts";
 import type {
   PinnedTicketCatalogSelection,
@@ -7,7 +8,9 @@ import type {
 } from "../../interpreter/ticketApplication.ts";
 import type {
   TicketCatalog,
+  TicketCatalogFragments,
   TicketCatalogSnapshotPort,
+  TicketCatalogSnapshotRead,
   TicketContentStore,
 } from "../../interpreter/ticketCatalog.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
@@ -22,26 +25,40 @@ function draftTicketContent(): TicketContentStore {
   };
 }
 
-/** Builds each authoring catalog from one commit-pinned repository snapshot. */
+/**
+ * Builds each authoring catalog from one commit-pinned repository snapshot,
+ * merged with the fragments the project holds durably. Every caller — listing,
+ * reading, validation and release — goes through the same merged view, so a
+ * runtime fragment is a fragment in exactly the way a committed one is.
+ */
 export function pinnedTicketCatalogs(
   snapshots: TicketCatalogSnapshotPort,
   content: (partition: Partition) => TicketContentStore,
+  fragments: TicketCatalogFragments,
 ): PinnedTicketCatalogs {
+  const merged = async (
+    selection: PinnedTicketCatalogSelection,
+  ): Promise<TicketCatalogSnapshotRead | undefined> => {
+    const pinned = await snapshots.snapshot(selection);
+    return pinned === undefined
+      ? undefined
+      : mergedTicketCatalogSnapshot(pinned, fragments, selection.partition);
+  };
   const build = async (
     selection: PinnedTicketCatalogSelection,
     store: TicketContentStore,
   ): Promise<TicketCatalog | undefined> => {
-    const pinned = await snapshots.snapshot(selection);
-    if (pinned === undefined) return undefined;
+    const view = await merged(selection);
+    if (view === undefined) return undefined;
     const source = await projectTicketCatalogSource(
-      pinned.snapshot,
-      pinned.repository,
+      view.snapshot,
+      view.repository,
     );
     return ticketCatalog(source, store);
   };
   return {
     catalog: (selection) => build(selection, content(selection.partition)),
     draft: (selection) => build(selection, draftTicketContent()),
-    snapshot: (selection) => snapshots.snapshot(selection),
+    snapshot: merged,
   };
 }

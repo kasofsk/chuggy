@@ -7,11 +7,13 @@ import type {
 } from "../../interpreter/finalizer.ts";
 import type { ProjectRepositoryBindingRead } from "../../interpreter/repositoryConfiguration.ts";
 import type {
+  TicketCatalogEntry,
   TicketCatalogSnapshot,
   TicketCatalogSnapshotPort,
 } from "../../interpreter/ticketCatalog.ts";
 import {
   ticketCatalogDocumentBytesMax,
+  ticketCatalogReferenceRefusal,
   ticketCatalogRoot,
 } from "../../interpreter/ticketCatalog.ts";
 import {
@@ -42,22 +44,14 @@ function gitTicketCatalogExited(
   return ran.ran === "Exited" && ran.code === 0;
 }
 
-/**
- * Names a catalog read must never serve, even from inside the catalog
- * directory: a repository keeps credentials under these, and a caller who can
- * name a path is not thereby entitled to whatever a committer left there.
- */
-const gitTicketCatalogDenied =
-  /(^|\/)(\.git|secrets?|credentials?|\.env[^/]*|[^/]+\.(?:pem|key))(\/|$)/u;
-
+/** A repository path, held to the one reference rule both catalog origins share. */
 function gitTicketCatalogPath(path: string): string {
-  if (!path.startsWith(".chug/") || path.includes("\\") || path.startsWith("/"))
+  if (!path.startsWith(ticketCatalogRoot))
     throw new TypeError("catalog path must be inside .chug");
-  const parts = path.split("/");
-  if (parts.some((part) => part === "" || part === "." || part === ".."))
-    throw new TypeError("catalog path must be normalized");
-  if (gitTicketCatalogDenied.test(path))
-    throw new TypeError("catalog path names a file that is never served");
+  const refusal = ticketCatalogReferenceRefusal(
+    path.slice(ticketCatalogRoot.length),
+  );
+  if (refusal !== undefined) throw new TypeError(refusal);
   return path;
 }
 
@@ -140,7 +134,7 @@ interface GitTicketCatalogPinned {
 
 async function gitTicketCatalogEntries(
   pinned: GitTicketCatalogPinned,
-): Promise<readonly string[]> {
+): Promise<readonly TicketCatalogEntry[]> {
   const listed = await scratchRun(pinned.scratch, {
     repository: pinned.repository,
     timeoutSecsMax: pinned.scratch.options.localTimeoutSecsMax,
@@ -159,12 +153,10 @@ async function gitTicketCatalogEntries(
     throw new TypeError("catalog listing is unavailable");
   return listed.stdout
     .split("\0")
-    .filter(
-      (path) =>
-        path.startsWith(ticketCatalogRoot) &&
-        !gitTicketCatalogDenied.test(path),
-    )
-    .map((path) => path.slice(ticketCatalogRoot.length));
+    .filter((path) => path.startsWith(ticketCatalogRoot))
+    .map((path) => path.slice(ticketCatalogRoot.length))
+    .filter((path) => ticketCatalogReferenceRefusal(path) === undefined)
+    .map((path) => ({ path, origin: "Git" as const }));
 }
 
 function gitTicketCatalogSnapshot(

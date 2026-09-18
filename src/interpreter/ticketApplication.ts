@@ -6,8 +6,11 @@ import type { GitObjectId, RepositoryId } from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
 import {
+  ticketCatalogReferenceRefusal,
   ticketCatalogRoot,
   type TicketCatalog,
+  type TicketCatalogEntry,
+  type TicketCatalogFragments,
   type TicketCatalogRelease,
   type TicketCatalogSnapshotRead,
   type TicketContentStore,
@@ -106,17 +109,6 @@ export interface TicketValidation {
   readonly findings: readonly string[];
 }
 
-/**
- * Where an entry came from. The pinned repository tree is the only place a
- * catalog is held today, and a reader is told rather than left to assume.
- */
-export type TicketCatalogOrigin = "Git";
-
-export interface TicketCatalogEntry {
-  readonly path: string;
-  readonly origin: TicketCatalogOrigin;
-}
-
 export interface TicketCatalogEntries {
   readonly entries: readonly TicketCatalogEntry[];
 }
@@ -124,6 +116,15 @@ export interface TicketCatalogEntries {
 export interface TicketCatalogFile extends TicketCatalogEntry {
   readonly content: string;
 }
+
+/**
+ * What writing or removing a runtime fragment came to. A refusal carries the
+ * sentence a caller is shown, because the reason it names — a reference the
+ * repository already holds — is the caller's to act on.
+ */
+export type TicketCatalogWrite =
+  | { readonly written: "Written" | "Removed" | "NotHeld" }
+  | { readonly written: "Refused"; readonly message: string };
 
 export interface TicketDefinitionRead {
   readonly held: ticket.Ticket;
@@ -154,6 +155,17 @@ export interface TicketApplication {
     request: TicketCatalogRequest,
     path: string,
   ): Promise<TicketApplicationResult<TicketCatalogFile | undefined>>;
+  writeCatalogFile(
+    principal: Principal,
+    request: TicketCatalogRequest,
+    path: string,
+    content: string,
+  ): Promise<TicketApplicationResult<TicketCatalogWrite | undefined>>;
+  removeCatalogFile(
+    principal: Principal,
+    request: TicketCatalogRequest,
+    path: string,
+  ): Promise<TicketApplicationResult<TicketCatalogWrite | undefined>>;
   outcome(
     principal: Principal,
     partition: Partition,
@@ -187,6 +199,7 @@ interface TicketApplicationPorts {
   readonly graphs: TicketGraphRead;
   readonly catalogs: PinnedTicketCatalogs;
   readonly content: (partition: Partition) => TicketContentStore;
+  readonly fragments: TicketCatalogFragments;
 }
 
 const ticketApplicationPolicyRevision = "project-access-v1";
@@ -369,13 +382,18 @@ function ticketApplicationCatalogEntries(
     if (pinned === undefined) return { result: "Authorized", value: undefined };
     return {
       result: "Authorized",
-      value: {
-        entries: [...(await pinned.entries())]
-          .sort()
-          .map((path) => ({ path, origin: "Git" as const })),
-      },
+      value: { entries: ticketApplicationSorted(await pinned.entries()) },
     };
   };
+}
+
+/** By reference, so a reader sees one namespace rather than the two it was merged from. */
+function ticketApplicationSorted(
+  entries: readonly TicketCatalogEntry[],
+): readonly TicketCatalogEntry[] {
+  return [...entries].sort((left, right) =>
+    left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
+  );
 }
 
 function ticketApplicationCatalogFile(
@@ -385,13 +403,90 @@ function ticketApplicationCatalogFile(
     const pinned = await ticketApplicationSnapshot(ports, principal, request);
     if (pinned === "Unauthorized") return { result: "NotFound" };
     if (pinned === undefined) return { result: "Authorized", value: undefined };
+    const entry = (await pinned.entries()).find((held) => held.path === path);
+    if (entry === undefined) return { result: "Authorized", value: undefined };
     return {
       result: "Authorized",
       value: {
-        path,
-        origin: "Git",
+        ...entry,
         content: await pinned.snapshot.read(`${ticketCatalogRoot}${path}`),
       },
+    };
+  };
+}
+
+/**
+ * A runtime fragment may introduce a reference the repository does not hold and
+ * may never shadow one it does, so a colliding write is refused here rather
+ * than accepted into a row that would never resolve.
+ */
+async function ticketApplicationFragmentRefusal(
+  ports: TicketApplicationPorts,
+  principal: Principal,
+  request: TicketCatalogRequest,
+  path: string,
+): Promise<TicketCatalogWrite | undefined | "NotFound"> {
+  const refused = ticketCatalogReferenceRefusal(path);
+  if (refused !== undefined) return { written: "Refused", message: refused };
+  const pinned = await ticketApplicationSnapshot(ports, principal, request);
+  if (pinned === "Unauthorized") return "NotFound";
+  if (pinned === undefined) return undefined;
+  const committed = (await pinned.entries()).some(
+    (entry) => entry.path === path && entry.origin === "Git",
+  );
+  return committed
+    ? {
+        written: "Refused",
+        message: `the repository already holds ${path}; a runtime fragment may not shadow it`,
+      }
+    : undefined;
+}
+
+function ticketApplicationCatalogWrite(
+  ports: TicketApplicationPorts,
+): TicketApplication["writeCatalogFile"] {
+  return async (principal, request, path, content) => {
+    const refusal = await ticketApplicationFragmentRefusal(
+      ports,
+      principal,
+      request,
+      path,
+    );
+    if (refusal === "NotFound") return { result: "NotFound" };
+    if (refusal !== undefined)
+      return refusal.written === "Refused"
+        ? { result: "Authorized", value: refusal }
+        : { result: "Authorized", value: undefined };
+    await ports.fragments.write(request.partition, path, content);
+    return { result: "Authorized", value: { written: "Written" } };
+  };
+}
+
+/**
+ * Removing needs no repository read: a fragment shadowed by a later commit is
+ * exactly the row an operator removes, and refusing that would strand it.
+ */
+function ticketApplicationCatalogRemove(
+  ports: TicketApplicationPorts,
+): TicketApplication["removeCatalogFile"] {
+  return async (principal, request, path) => {
+    const authorization = await ticketApplicationAuthority(
+      ports,
+      principal,
+      request.partition,
+      "Mutate",
+    );
+    if (authorization === undefined) return { result: "NotFound" };
+    const refused = ticketCatalogReferenceRefusal(path);
+    if (refused !== undefined)
+      return {
+        result: "Authorized",
+        value: { written: "Refused", message: refused },
+      };
+    const removed = await ports.fragments.remove(request.partition, path);
+    return {
+      result: "Authorized",
+      value: { written: removed ? "Removed" : "NotHeld" },
     };
   };
 }
@@ -626,6 +721,8 @@ export function ticketApplication(
     validate: ticketApplicationValidate(ports),
     catalog: ticketApplicationCatalogEntries(ports),
     catalogFile: ticketApplicationCatalogFile(ports),
+    writeCatalogFile: ticketApplicationCatalogWrite(ports),
+    removeCatalogFile: ticketApplicationCatalogRemove(ports),
     create: ticketApplicationCreate(ports),
     update: ticketApplicationUpdate(ports),
     dispatch: ticketApplicationDispatch(ports),

@@ -64,6 +64,7 @@ import { ticketApplication } from "../interpreter/ticketApplication.ts";
 import { postgresTicketMachineInbox } from "../adapters/postgres/ticketMachineInbox.ts";
 import { postgresTicketMachine } from "../adapters/postgres/ticketMachine.ts";
 import { postgresTicketContent } from "../adapters/postgres/ticketContent.ts";
+import { postgresTicketCatalogFragments } from "../adapters/postgres/ticketCatalogFragment.ts";
 import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
 import { memberAuthorityKind } from "../interpreter/projectAccess.ts";
 import {
@@ -661,13 +662,15 @@ function nativeTicketApplication(
   });
   const content = (partition: Parameters<typeof postgresTicketContent>[1]) =>
     postgresTicketContent(pool, partition);
+  const fragments = postgresTicketCatalogFragments(pool);
   return {
     application: ticketApplication({
       access,
       inbox: postgresTicketMachineInbox(pool),
       graphs: postgresTicketMachine(pool),
-      catalogs: pinnedTicketCatalogs(catalogSnapshots, content),
+      catalogs: pinnedTicketCatalogs(catalogSnapshots, content, fragments),
       content,
+      fragments,
     }),
     identity: ({ principal, partition, key, operation }) =>
       idempotencyKeyDigestCurrent(

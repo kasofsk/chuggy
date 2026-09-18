@@ -78,7 +78,11 @@ function catalogsDouble(
           },
         },
         entries: () =>
-          Promise.resolve(["workloads/work.yaml", "evaluators/ci.yaml"]),
+          Promise.resolve([
+            { path: "workloads/work.yaml", origin: "Git" as const },
+            { path: "evaluators/ci.yaml", origin: "Git" as const },
+            { path: "workloads/runtime.yaml", origin: "Runtime" as const },
+          ]),
       });
     },
   };
@@ -138,7 +142,18 @@ function setup(
   let content = 0;
   const effects = { catalogs: 0, content: 0, drafts: 0, snapshots: 0 };
   const reads: string[] = [];
+  const held = new Map<string, string>();
   const application = ticketApplication({
+    fragments: {
+      paths: () => Promise.resolve([...held.keys()]),
+      read: (_partition, reference) => Promise.resolve(held.get(reference)),
+      write: (_partition, reference, value) => {
+        held.set(reference, value);
+        return Promise.resolve();
+      },
+      remove: (_partition, reference) =>
+        Promise.resolve(held.delete(reference)),
+    },
     access: accessDouble(authorized),
     inbox,
     graphs: {
@@ -178,7 +193,7 @@ function setup(
         ),
     }),
   });
-  return { application, submitted, effects, reads };
+  return { application, submitted, effects, reads, held };
 }
 
 test("create reserves an identity and submits the frozen catalog release", async () => {
@@ -401,6 +416,7 @@ test("a catalog read answers sorted references and one file's content", async ()
       value: {
         entries: [
           { path: "evaluators/ci.yaml", origin: "Git" },
+          { path: "workloads/runtime.yaml", origin: "Runtime" },
           { path: "workloads/work.yaml", origin: "Git" },
         ],
       },
@@ -432,4 +448,125 @@ test("a catalog read is refused to a principal that may not author", async () =>
     { result: "NotFound" },
   );
   assert.equal(effects.snapshots, 0);
+});
+
+test("a file read carries the origin its entry was listed under", async () => {
+  const { application } = setup();
+  assert.deepEqual(
+    await application.catalogFile(
+      principal,
+      { partition, catalogCommit: commit },
+      "workloads/runtime.yaml",
+    ),
+    {
+      result: "Authorized",
+      value: {
+        path: "workloads/runtime.yaml",
+        origin: "Runtime",
+        content: "prompt: run\n",
+      },
+    },
+  );
+  assert.deepEqual(
+    await application.catalogFile(
+      principal,
+      { partition, catalogCommit: commit },
+      "workloads/absent.yaml",
+    ),
+    { result: "Authorized", value: undefined },
+  );
+});
+
+test("a runtime fragment is written and read back under its reference", async () => {
+  const { application, held } = setup();
+  assert.deepEqual(
+    await application.writeCatalogFile(
+      principal,
+      { partition, catalogCommit: commit },
+      "workloads/new.yaml",
+      "prompt: new\n",
+    ),
+    { result: "Authorized", value: { written: "Written" } },
+  );
+  assert.deepEqual([...held], [["workloads/new.yaml", "prompt: new\n"]]);
+  assert.deepEqual(
+    await application.removeCatalogFile(
+      principal,
+      { partition, catalogCommit: commit },
+      "workloads/new.yaml",
+    ),
+    { result: "Authorized", value: { written: "Removed" } },
+  );
+  assert.deepEqual(
+    await application.removeCatalogFile(
+      principal,
+      { partition, catalogCommit: commit },
+      "workloads/new.yaml",
+    ),
+    { result: "Authorized", value: { written: "NotHeld" } },
+  );
+});
+
+test("a fragment shadowing a committed reference is refused by name", async () => {
+  const { application, held } = setup();
+  assert.deepEqual(
+    await application.writeCatalogFile(
+      principal,
+      { partition, catalogCommit: commit },
+      "workloads/work.yaml",
+      "prompt: shadow\n",
+    ),
+    {
+      result: "Authorized",
+      value: {
+        written: "Refused",
+        message:
+          "the repository already holds workloads/work.yaml; a runtime fragment may not shadow it",
+      },
+    },
+  );
+  assert.equal(held.size, 0);
+});
+
+test("a fragment naming what no catalog serves is refused before any store", async () => {
+  const { application, held, effects } = setup();
+  assert.deepEqual(
+    await application.writeCatalogFile(
+      principal,
+      { partition, catalogCommit: commit },
+      "secrets/deploy.yaml",
+      "token: leaked\n",
+    ),
+    {
+      result: "Authorized",
+      value: {
+        written: "Refused",
+        message: "catalog reference names a file that is never served",
+      },
+    },
+  );
+  assert.equal(held.size, 0);
+  assert.equal(effects.snapshots, 0);
+});
+
+test("a fragment write is refused to a principal that may not author", async () => {
+  const { application, held } = setup(false);
+  assert.deepEqual(
+    await application.writeCatalogFile(
+      principal,
+      { partition, catalogCommit: commit },
+      "workloads/new.yaml",
+      "prompt: new\n",
+    ),
+    { result: "NotFound" },
+  );
+  assert.deepEqual(
+    await application.removeCatalogFile(
+      principal,
+      { partition, catalogCommit: commit },
+      "workloads/new.yaml",
+    ),
+    { result: "NotFound" },
+  );
+  assert.equal(held.size, 0);
 });

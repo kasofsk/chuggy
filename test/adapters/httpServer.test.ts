@@ -480,6 +480,8 @@ function retiredTicketApp(
       validate: unavailable,
       catalog: unavailable,
       catalogFile: unavailable,
+      writeCatalogFile: unavailable,
+      removeCatalogFile: unavailable,
       outcome: unavailable,
       create: unavailable,
       update: unavailable,
@@ -755,6 +757,98 @@ test("the catalog routes pass the pinned commit and answer its tree", async () =
       path: "workloads/work.yaml",
     },
   ]);
+});
+
+const adoptedCatalogRoot =
+  "/api/v1/tenants/acme/projects/atlas/ticket-machine/catalog";
+const adoptedCatalogCommit = "a".repeat(40);
+
+/** A store whose one shadowed reference is refused and whose one held one removes. */
+function adoptedFragmentApp(written: unknown[]): NativeTicketApplication {
+  const service = retiredTicketApp("Fresh");
+  return {
+    ...service,
+    application: {
+      ...service.application,
+      writeCatalogFile: (_principal, request, path, content) => {
+        written.push({ ...request, path, content });
+        return Promise.resolve(
+          path === "workloads/work.yaml"
+            ? {
+                result: "Authorized",
+                value: {
+                  written: "Refused",
+                  message: `the repository already holds ${path}; a runtime fragment may not shadow it`,
+                },
+              }
+            : { result: "Authorized", value: { written: "Written" } },
+        );
+      },
+      removeCatalogFile: (_principal, _request, path) =>
+        Promise.resolve({
+          result: "Authorized",
+          value: {
+            written: path === "workloads/held.yaml" ? "Removed" : "NotHeld",
+          },
+        }),
+    },
+  };
+}
+
+test("a runtime fragment write forwards its reference and refuses a shadow", async () => {
+  const written: unknown[] = [];
+  await using app = adoptedTicketRouteApp(adoptedFragmentApp(written));
+  const headers = {
+    authorization: "Bearer valid",
+    "content-type": "application/yaml",
+  };
+  const accepted = await app.inject({
+    method: "PUT",
+    url: `${adoptedCatalogRoot}?commit=${adoptedCatalogCommit}&path=workloads/runtime.yaml`,
+    headers,
+    payload: "prompt: runtime\n",
+  });
+  assert.equal(accepted.statusCode, 200, accepted.body);
+  assert.deepEqual(accepted.json(), { written: "Written" });
+  const refused = await app.inject({
+    method: "PUT",
+    url: `${adoptedCatalogRoot}?commit=${adoptedCatalogCommit}&path=workloads/work.yaml`,
+    headers,
+    payload: "prompt: shadow\n",
+  });
+  assert.equal(refused.statusCode, 409, refused.body);
+  assert.deepEqual(written, [
+    {
+      partition: { tenant: "acme", project: "atlas" },
+      catalogCommit: adoptedCatalogCommit,
+      path: "workloads/runtime.yaml",
+      content: "prompt: runtime\n",
+    },
+    {
+      partition: { tenant: "acme", project: "atlas" },
+      catalogCommit: adoptedCatalogCommit,
+      path: "workloads/work.yaml",
+      content: "prompt: shadow\n",
+    },
+  ]);
+});
+
+test("removing a fragment the project does not hold is a not-found", async () => {
+  await using app = adoptedTicketRouteApp(adoptedFragmentApp([]));
+  const headers = { authorization: "Bearer valid" };
+  const removed = await app.inject({
+    method: "DELETE",
+    url: `${adoptedCatalogRoot}?commit=${adoptedCatalogCommit}&path=workloads/held.yaml`,
+    headers,
+  });
+  assert.equal(removed.statusCode, 200, removed.body);
+  assert.deepEqual(removed.json(), { written: "Removed" });
+  const absent = await app.inject({
+    method: "DELETE",
+    url: `${adoptedCatalogRoot}?commit=${adoptedCatalogCommit}&path=workloads/absent.yaml`,
+    headers,
+  });
+  assert.equal(absent.statusCode, 404);
 });
 
 test("a catalog read without a commit is a bad request", async () => {

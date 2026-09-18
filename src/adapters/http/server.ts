@@ -21,6 +21,7 @@ import type { RepositoryOnboarding } from "../../interpreter/repositoryOnboardin
 import type {
   TicketApplication,
   TicketApplicationResult,
+  TicketCatalogWrite,
 } from "../../interpreter/ticketApplication.ts";
 import { TicketId as AdoptedTicketId } from "../../domain/chuggernaut/task.js";
 import type { Ticket as AdoptedTicket } from "../../domain/chuggernaut/ticket.js";
@@ -1089,6 +1090,60 @@ function registerAdoptedTicketCatalog(
         : await service.application.catalog(principalOf(request), catalog),
     );
   });
+  /** A runtime fragment is written and removed by the reference it is read under. */
+  app.put(root, async (request, reply) => {
+    if (typeof request.body !== "string")
+      throw new TypeError("catalog fragment body must be text");
+    adoptedCatalogWriteReply(
+      reply,
+      await service.application.writeCatalogFile(
+        principalOf(request),
+        adoptedCatalogRequest(request),
+        textField(record(request.query), "path"),
+        request.body,
+      ),
+    );
+  });
+  app.delete(root, async (request, reply) => {
+    adoptedCatalogWriteReply(
+      reply,
+      await service.application.removeCatalogFile(
+        principalOf(request),
+        adoptedCatalogRequest(request),
+        textField(record(request.query), "path"),
+      ),
+    );
+  });
+}
+
+/** A refused fragment is a conflict with the repository, which the caller resolves there. */
+function adoptedCatalogWriteReply(
+  reply: FastifyReply,
+  result: TicketApplicationResult<TicketCatalogWrite | undefined>,
+): void {
+  if (result.result !== "Authorized") {
+    adoptedTicketReply(reply, result);
+    return;
+  }
+  if (result.value === undefined) {
+    void reply
+      .code(404)
+      .send(nativeHttpError("NotFound", "Catalog not found."));
+    return;
+  }
+  if (result.value.written === "Refused") {
+    void reply
+      .code(409)
+      .send(nativeHttpError("CatalogFragmentRefused", result.value.message));
+    return;
+  }
+  if (result.value.written === "NotHeld") {
+    void reply
+      .code(404)
+      .send(nativeHttpError("NotFound", "Catalog fragment not found."));
+    return;
+  }
+  void reply.code(200).send({ written: result.value.written });
 }
 
 function registerAdoptedTicketValidation(
