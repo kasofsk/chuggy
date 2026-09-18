@@ -83,21 +83,20 @@ test("catalog resolves adopted ticket structure and immutable execution configur
   );
   assert.deepEqual([...release.evaluatorNames.values()], ["ci"]);
   const work = release.definition.work_configuration;
-  assert.equal(
-    work.execution_requirements.access.kind,
-    "PublishRepositoryResult",
-  );
   assert.deepEqual(work.execution_requirements.required_capabilities, [
     "large",
   ]);
   const workload = blobs.get(work.workload)?.content;
+  assert.ok(workload?.includes('"publishes_repository_result":true'));
   assert.ok(workload?.includes("Implement the ticket."));
   assert.ok(workload?.includes('"runner_command":["runner"]'));
   assert.equal(blobs.get(work.inputs)?.content, '{"threshold":1.0}');
   for (const stage of release.definition.evaluation_plan.stages) {
-    assert.equal(
-      stage.evaluators[0]?.task.execution_requirements.access.kind,
-      "ReadRepository",
+    const evaluator = stage.evaluators[0]?.task.workload;
+    assert.ok(
+      blobs
+        .get(evaluator ?? work.workload)
+        ?.content.includes('"publishes_repository_result":false'),
     );
     assert.equal(stage.evaluators[0]?.key, 1);
   }

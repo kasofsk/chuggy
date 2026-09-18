@@ -227,8 +227,14 @@ test("work context preserves authored text alongside JSON inputs and rework", as
       ),
     );
   const context = new Map([
-    [10, { mediaType: "text/plain", content: "Fix the importer" }],
-    [2, { mediaType: "text/markdown", content: "Report every rejected row." }],
+    [
+      10,
+      {
+        mediaType: "text/markdown",
+        content: "# Fix the importer\n\nReport every rejected row.",
+      },
+    ],
+    [2, { mediaType: "application/json", content: '{"threshold":1}' }],
     [
       601,
       {
@@ -261,8 +267,8 @@ test("work context preserves authored text alongside JSON inputs and rework", as
   assert.deepEqual(
     view.context.map((entry) => entry.value),
     [
-      "Fix the importer",
-      "Report every rejected row.",
+      "# Fix the importer\n\nReport every rejected row.",
+      { threshold: 1 },
       { findings: [{ description: "Rows are dropped" }] },
       { findings: [{ description: "Totals disagree" }] },
     ],

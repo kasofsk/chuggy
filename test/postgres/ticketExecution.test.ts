@@ -83,11 +83,10 @@ function terminalInput(held: task.TaskObligation) {
       policyRevision: "test-policy-v1",
     },
     command: new ticket.ReportTaskTerminal(
-      new ticket.TaskTerminalReport(
+      new ticket.TerminalFailureReport(
         task.TicketId(1),
-        new task.TaskProcessFailed(
-          new task.TaskFailure(held.task, task.ContentRef(1)),
-        ),
+        new task.TaskFailure(held.task, task.ContentRef(1)),
+        new ticket.ProcessFailure(),
       ),
     ),
   };

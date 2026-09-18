@@ -5,10 +5,8 @@ import * as ticket from "../../src/domain/chuggernaut/ticket.js";
 import {
   ContentRef,
   CycleNumber,
-  Digest,
   Generation,
   TicketId,
-  WorkspaceSource,
 } from "../../src/domain/chuggernaut/task.js";
 import {
   asChangeProposalRequestIdentity,
@@ -44,8 +42,13 @@ const partition = {
 const commit = "b".repeat(40);
 const repository = "https://github.com/example/repository";
 const content = new Map([
-  [4, { mediaType: "text/plain", content: repository }],
-  [5, { mediaType: "text/plain", content: commit }],
+  [
+    4,
+    {
+      mediaType: "application/json",
+      content: JSON.stringify({ commit, repository }),
+    },
+  ],
   [
     6,
     {
@@ -61,7 +64,7 @@ const obligation = new ticket.FinalizeTicket(
     CycleNumber(2),
     Generation(3),
     ContentRef(8),
-    new WorkspaceSource(ContentRef(4), Digest(5)),
+    ContentRef(4),
   ),
   ContentRef(6),
 );
