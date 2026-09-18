@@ -1,13 +1,4 @@
 import {
-  FinalizationNeedsWork,
-  FinalizationResultReport,
-  FinalizationResultUnavailable,
-  FinalizationSucceeded,
-  ReportFinalizationResult,
-  type FinalizeTicket,
-} from "../domain/chuggernaut/ticket.js";
-import type { ContentRef } from "../domain/chuggernaut/task.js";
-import {
   changeProposalAddressed,
   changeProposalMergeNext,
   changeProposalMergeRequest,
@@ -20,6 +11,7 @@ import {
   type ChangeProposalPublicationBounds,
   type ChangeProposalRequest,
 } from "./changeProposal.ts";
+import type { TicketFinalizationOutcome } from "./ticketFinalization.ts";
 
 export interface TicketPullRequestConfiguration {
   readonly kind: "finalizer";
@@ -41,9 +33,6 @@ export interface TicketPullRequestBounds {
   readonly merging: ChangeProposalMergingBounds;
 }
 
-export type TicketPullRequestOutcome =
-  "Succeeded" | "NeedsWork" | "Unavailable";
-
 export type TicketPullRequestStep =
   | {
       readonly step:
@@ -55,7 +44,7 @@ export type TicketPullRequestStep =
     }
   | {
       readonly step: "Complete";
-      readonly outcome: TicketPullRequestOutcome;
+      readonly outcome: TicketFinalizationOutcome;
       readonly evidence: unknown;
     };
 
@@ -159,25 +148,4 @@ export function ticketPullRequestNext(
         };
       return ticketPullRequestMerge(view, next.evidence, bounds.merging);
   }
-}
-
-export function ticketPullRequestReport(
-  obligation: FinalizeTicket,
-  outcome: TicketPullRequestOutcome,
-  evidence: ContentRef,
-): ReportFinalizationResult {
-  const result =
-    outcome === "Succeeded"
-      ? new FinalizationSucceeded(evidence)
-      : outcome === "NeedsWork"
-        ? new FinalizationNeedsWork(evidence)
-        : new FinalizationResultUnavailable(evidence);
-  return new ReportFinalizationResult(
-    new FinalizationResultReport(
-      obligation.ticket,
-      obligation.finalization.work_cycle,
-      obligation.finalization.generation,
-      result,
-    ),
-  );
 }

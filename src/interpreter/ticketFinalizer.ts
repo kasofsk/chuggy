@@ -22,6 +22,7 @@ import {
   asGitRefName,
   asRepositoryId,
   repositoryBindingNarrowed,
+  type GitObjectId,
   type GitPromotionPort,
   type ObservedTarget,
   type RepositoryBinding,
@@ -31,11 +32,29 @@ import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts"
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import type { TicketContentStore } from "./ticketCatalog.ts";
 import {
+  ticketFinalizationReport,
+  type TicketFinalizationOutcome,
+} from "./ticketFinalization.ts";
+import {
+  ticketGitMergeRun,
+  type TicketGitMergeConfiguration,
+} from "./ticketGitMerge.ts";
+import {
   ticketPullRequestNext,
-  ticketPullRequestReport,
   type TicketPullRequestBounds,
   type TicketPullRequestConfiguration,
 } from "./ticketPullRequest.ts";
+
+/** A finalization that lands nothing, and so needs neither a repository nor a forge. */
+export interface TicketNoOpConfiguration {
+  readonly kind: "finalizer";
+  readonly operation: "no-op";
+}
+
+export type TicketFinalizerConfiguration =
+  | TicketPullRequestConfiguration
+  | TicketGitMergeConfiguration
+  | TicketNoOpConfiguration;
 
 export interface TicketFinalizerClaim {
   readonly partition: Partition;
@@ -103,7 +122,7 @@ export interface TicketFinalizerInbox {
   submit(
     partition: Partition,
     identity: string,
-    command: ReturnType<typeof ticketPullRequestReport>,
+    command: ReturnType<typeof ticketFinalizationReport>,
   ): Promise<boolean>;
 }
 
@@ -149,69 +168,163 @@ export const ticketFinalizerDefaults: TicketFinalizerConfig = {
   proposalMergeReadingsMax: 3,
 };
 
-function parsedConfiguration(content: string): TicketPullRequestConfiguration {
+const finalizerFields: Record<
+  TicketFinalizerConfiguration["operation"],
+  readonly string[]
+> = {
+  "pull-request": ["kind", "operation", "target_ref", "branch_prefix", "merge"],
+  "git-merge": ["kind", "operation", "target_ref"],
+  "no-op": ["kind", "operation"],
+};
+
+/** The operation a document asks for, refusing one carrying a field that operation does not honour. */
+function parsedOperation(
+  row: Record<string, unknown>,
+): TicketFinalizerConfiguration["operation"] {
+  const operation = row["operation"];
+  if (
+    operation !== "pull-request" &&
+    operation !== "git-merge" &&
+    operation !== "no-op"
+  )
+    throw new TypeError("unsupported finalizer configuration");
+  for (const field of Object.keys(row))
+    if (!finalizerFields[operation].includes(field))
+      throw new TypeError(`finalizer ${operation} does not carry ${field}`);
+  return operation;
+}
+
+function parsedText(row: Record<string, unknown>, name: string): string {
+  const value = row[name];
+  if (typeof value !== "string" || value.length === 0)
+    throw new TypeError("unsupported finalizer configuration");
+  return value;
+}
+
+function parsedConfiguration(content: string): TicketFinalizerConfiguration {
   const value: unknown = JSON.parse(content);
   if (value === null || typeof value !== "object")
     throw new TypeError("finalizer configuration is not an object");
   const row = value as Record<string, unknown>;
-  if (
-    row["kind"] !== "finalizer" ||
-    row["operation"] !== "pull-request" ||
-    typeof row["target_ref"] !== "string" ||
-    typeof row["branch_prefix"] !== "string" ||
-    typeof row["merge"] !== "boolean"
-  )
+  if (row["kind"] !== "finalizer")
+    throw new TypeError("unsupported finalizer configuration");
+  const operation = parsedOperation(row);
+  if (operation === "no-op") return { kind: "finalizer", operation };
+  const target_ref = parsedText(row, "target_ref");
+  if (operation === "git-merge")
+    return { kind: "finalizer", operation, target_ref };
+  const merge = row["merge"];
+  if (merge !== undefined && typeof merge !== "boolean")
     throw new TypeError("unsupported finalizer configuration");
   return {
     kind: "finalizer",
-    operation: "pull-request",
-    target_ref: row["target_ref"],
-    branch_prefix: row["branch_prefix"],
-    merge: row["merge"],
+    operation,
+    target_ref,
+    branch_prefix: parsedText(row, "branch_prefix"),
+    merge: merge === true,
   };
+}
+
+/** The repository binding and the immutable commit the ticket's work published. */
+async function ticketFinalizerSource(
+  service: TicketFinalizerService,
+  claim: TicketFinalizerClaim,
+): Promise<
+  | { readonly binding: RepositoryBinding; readonly commit: GitObjectId }
+  | undefined
+> {
+  const workspace = await ticketWorkspaceRead(
+    service.contents(claim.partition),
+    claim.obligation.finalization.source,
+  );
+  const binding = await service.bindings.binding(
+    claim.partition,
+    asRepositoryId(workspace.repository),
+  );
+  return binding === undefined
+    ? undefined
+    : { binding, commit: asGitObjectId(workspace.commit) };
+}
+
+/** Publishes the work commit under its own immutable ref, which is what makes it fetchable. */
+async function ticketFinalizerPrepared(
+  service: TicketFinalizerService,
+  binding: RepositoryBinding,
+  commit: GitObjectId,
+): Promise<boolean> {
+  const prepared = await service.git.prepareSource({
+    repository: binding,
+    ref: asGitRefName(`refs/chuggy/results/${commit}`),
+    commit,
+    base: commit,
+  });
+  return prepared.prepared === "Candidate" && prepared.candidate === commit;
+}
+
+/** Writes what one operation came to, and records the outcome against that evidence. */
+async function ticketFinalizerCompleted(
+  service: TicketFinalizerService,
+  claim: TicketFinalizerClaim,
+  outcome: TicketFinalizationOutcome,
+  evidence: unknown,
+): Promise<boolean> {
+  const reference = await service
+    .contents(claim.partition)
+    .put("application/json", JSON.stringify(evidence));
+  return service.store.complete(claim, outcome, reference);
 }
 
 async function ticketFinalizerInitialize(
   service: TicketFinalizerService,
   claim: TicketFinalizerClaim,
+  configuration: TicketPullRequestConfiguration,
 ): Promise<boolean> {
-  const content = service.contents(claim.partition);
-  const configurationContent = await content.read(
-    claim.obligation.configuration,
-  );
-  if (configurationContent?.mediaType !== "application/json") return false;
-  const workspace = await ticketWorkspaceRead(
-    content,
-    claim.obligation.finalization.source,
-  );
-  const configuration = parsedConfiguration(configurationContent.content);
-  const repository = asRepositoryId(workspace.repository);
-  const binding = await service.bindings.binding(claim.partition, repository);
-  const forge = service.forges.binding(repository);
-  if (binding === undefined || forge === undefined) return false;
+  const source = await ticketFinalizerSource(service, claim);
+  if (
+    source === undefined ||
+    service.forges.binding(source.binding.repository) === undefined
+  )
+    return false;
   const base = await service.git.observeTarget(
-    repositoryBindingNarrowed(binding, asGitRefName(configuration.target_ref)),
+    repositoryBindingNarrowed(
+      source.binding,
+      asGitRefName(configuration.target_ref),
+    ),
   );
   if (base.observed !== "Target") return false;
-  const headRef = asGitRefName(
-    `refs/heads/${configuration.branch_prefix}${String(claim.obligation.ticket)}`,
-  );
-  const headCommit = asGitObjectId(workspace.commit);
-  const sourceRef = asGitRefName(`refs/chuggy/results/${headCommit}`);
-  const prepared = await service.git.prepareSource({
-    repository: binding,
-    ref: sourceRef,
-    commit: headCommit,
-    base: headCommit,
-  });
-  if (prepared.prepared !== "Candidate" || prepared.candidate !== headCommit)
+  if (!(await ticketFinalizerPrepared(service, source.binding, source.commit)))
     return false;
   return service.store.prepare(
     claim,
-    binding,
+    source.binding,
     base.target,
-    headCommit,
-    headRef,
+    source.commit,
+    asGitRefName(
+      `refs/heads/${configuration.branch_prefix}${String(claim.obligation.ticket)}`,
+    ),
+  );
+}
+
+/** Merges the ticket's work into the target ref, which no forge is in the path of. */
+async function ticketFinalizerGitMerge(
+  service: TicketFinalizerService,
+  claim: TicketFinalizerClaim,
+  configuration: TicketGitMergeConfiguration,
+): Promise<boolean> {
+  const source = await ticketFinalizerSource(service, claim);
+  if (source === undefined) return false;
+  if (!(await ticketFinalizerPrepared(service, source.binding, source.commit)))
+    return false;
+  const settled = await ticketGitMergeRun({
+    git: service.git,
+    repository: source.binding,
+    targetRef: asGitRefName(configuration.target_ref),
+    candidate: source.commit,
+    permit: service.identities(claim).permit,
+  });
+  return (
+    settled.settled === "Outcome" &&
+    ticketFinalizerCompleted(service, claim, settled.outcome, settled.evidence)
   );
 }
 
@@ -316,31 +429,33 @@ function mergeAnswer(
     : undefined;
 }
 
-async function ticketFinalizerAdvance(
+/** Reports what a finished finalization came to, whichever operation finished it. */
+async function ticketFinalizerReported(
   service: TicketFinalizerService,
   claim: TicketFinalizerClaim,
+  completion: NonNullable<TicketFinalizerClaim["completion"]>,
 ): Promise<boolean> {
-  if (claim.completion !== undefined) {
-    const accepted = await service.inbox.submit(
-      claim.partition,
-      `finalizer:${claim.identity}`,
-      ticketPullRequestReport(
-        claim.obligation,
-        claim.completion.outcome,
-        claim.completion.evidence,
-      ),
-    );
-    return accepted && service.store.reported(claim);
-  }
+  const accepted = await service.inbox.submit(
+    claim.partition,
+    `finalizer:${claim.identity}`,
+    ticketFinalizationReport(
+      claim.obligation,
+      completion.outcome,
+      completion.evidence,
+    ),
+  );
+  return accepted && service.store.reported(claim);
+}
+
+async function ticketFinalizerPullRequest(
+  service: TicketFinalizerService,
+  claim: TicketFinalizerClaim,
+  configuration: TicketPullRequestConfiguration,
+): Promise<boolean> {
   if (claim.repository === undefined)
-    return ticketFinalizerInitialize(service, claim);
+    return ticketFinalizerInitialize(service, claim, configuration);
   if (claim.request === undefined)
     return ticketFinalizerPublish(service, claim);
-  const configurationContent = await service
-    .contents(claim.partition)
-    .read(claim.obligation.configuration);
-  if (configurationContent?.mediaType !== "application/json") return false;
-  const configuration = parsedConfiguration(configurationContent.content);
   const port = service.forges.proposal(claim.request.binding.forge);
   if (port === undefined) return false;
   const next = ticketPullRequestNext(
@@ -358,6 +473,32 @@ async function ticketFinalizerAdvance(
     port,
     next,
   );
+}
+
+/** The operation the ticket's configuration names, which is what selects the path below. */
+async function ticketFinalizerAdvance(
+  service: TicketFinalizerService,
+  claim: TicketFinalizerClaim,
+): Promise<boolean> {
+  if (claim.completion !== undefined)
+    return ticketFinalizerReported(service, claim, claim.completion);
+  const found = await service
+    .contents(claim.partition)
+    .read(claim.obligation.configuration);
+  if (found?.mediaType !== "application/json") return false;
+  const configuration = parsedConfiguration(found.content);
+  switch (configuration.operation) {
+    case "pull-request":
+      return ticketFinalizerPullRequest(service, claim, configuration);
+    case "git-merge":
+      return ticketFinalizerGitMerge(service, claim, configuration);
+    case "no-op":
+      return ticketFinalizerCompleted(service, claim, "Succeeded", {
+        landed: "Nothing",
+      });
+    default:
+      return assertNever(configuration);
+  }
 }
 
 async function ticketFinalizerProposalAdvance(
@@ -380,12 +521,13 @@ async function ticketFinalizerProposalAdvance(
       return ticketFinalizerMergeAdvance(service, claim, port, {
         step: "RefuseMerge",
       });
-    case "Complete": {
-      const evidence = await service
-        .contents(claim.partition)
-        .put("application/json", JSON.stringify(next.evidence));
-      return service.store.complete(claim, next.outcome, evidence);
-    }
+    case "Complete":
+      return ticketFinalizerCompleted(
+        service,
+        claim,
+        next.outcome,
+        next.evidence,
+      );
     default:
       return assertNever(next);
   }
