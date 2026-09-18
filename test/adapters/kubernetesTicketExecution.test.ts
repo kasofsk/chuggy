@@ -77,7 +77,6 @@ const config: KubernetesTicketExecutionConfig = {
   outcomePollsMax: 2,
   leaseSecs: 30,
   retryAfterSecs: 5,
-  capabilities: ["shell"],
 };
 
 const partition = { tenant: "tenant", project: "project" } as Partition;
@@ -452,10 +451,6 @@ test("invalid evaluator verdicts become process failures", async () => {
 });
 
 for (const [name, unavailableView] of [
-  [
-    "refuses an unavailable capability before resolving repository authority",
-    { ...view, requiredCapabilities: ["gpu"] },
-  ],
   [
     "refuses cloud identity before launching without credentials",
     {

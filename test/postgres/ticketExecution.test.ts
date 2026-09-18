@@ -15,6 +15,7 @@ import * as task from "../../src/domain/chuggernaut/task.js";
 import * as ticket from "../../src/domain/chuggernaut/ticket.js";
 import {
   Driver,
+  PLAN,
   released,
   dispatch,
   work_obligation,
@@ -49,6 +50,56 @@ function obligation() {
   driver.submit(dispatch(1));
   return work_obligation(driver.graph, 1);
 }
+
+function obligationNeeding(capabilities: readonly string[]) {
+  const driver = new Driver();
+  const base = released(1);
+  driver.submit(
+    new ticket.CreateTicket(
+      new ticket.ReleasedTicket(
+        base.id,
+        base.content,
+        base.input_bindings,
+        base.dependencies,
+        new task.TaskDefinition(
+          base.work_configuration.workload,
+          base.work_configuration.inputs,
+          new task.ExecutionRequirements(capabilities),
+          base.work_configuration.result_contract,
+        ),
+        PLAN,
+        base.finalization_configuration,
+      ),
+    ),
+  );
+  driver.submit(dispatch(1));
+  return work_obligation(driver.graph, 1);
+}
+
+test("a claimant is offered only the work its capabilities cover", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "execution-capabilities",
+  );
+  await postgresTicketExecution(writer).execute(
+    partition,
+    "execute",
+    "work:1:1",
+    obligationNeeding(["macos"]),
+  );
+  const store = postgresTicketExecution(scheduler);
+  const epoch = await postgresHarnessEpoch(harness.store);
+  const mine = (claims: readonly { partition: { project: string } }[]) =>
+    claims.filter((held) => held.partition.project === partition.project);
+  assert.deepEqual(
+    mine(await store.claim("linux-pool", epoch, 30, 10, ["linux"])),
+    [],
+  );
+  const found = mine(
+    await store.claim("macos-pool", epoch, 30, 10, ["linux", "macos"]),
+  );
+  assert.equal(found.length, 1);
+});
 
 test("cancellation tombstones defeat late and racing execution delivery", async () => {
   const store = postgresTicketExecution(writer);
@@ -106,7 +157,7 @@ test("attempt takeover fences worker capabilities and terminal queue acceptance"
   );
   const store = postgresTicketExecution(scheduler);
   const epoch = await postgresHarnessEpoch(harness.store);
-  const first = (await store.claim("scheduler", epoch, 30, 10)).find(
+  const first = (await store.claim("scheduler", epoch, 30, 10, [])).find(
     (claim) => claim.partition.project === partition.project,
   );
   assert.ok(first);
@@ -124,7 +175,7 @@ test("attempt takeover fences worker capabilities and terminal queue acceptance"
     "UPDATE ticket_execution SET claim_expires_at=now()-interval '1 second' WHERE tenant=$1 AND project=$2",
     [partition.tenant, partition.project],
   );
-  const second = (await store.claim("replacement", epoch, 30, 10)).find(
+  const second = (await store.claim("replacement", epoch, 30, 10, [])).find(
     (claim) => claim.partition.project === partition.project,
   );
   assert.ok(second);
@@ -169,8 +220,11 @@ test("a scheduler from a prior recovery epoch cannot claim fresh work", async ()
     postgresHarnessNewEpoch(),
   );
   const store = postgresTicketExecution(scheduler);
-  assert.deepEqual(await store.claim("stale-scheduler", previous, 30, 10), []);
-  const claims = await store.claim("current-scheduler", current, 30, 10);
+  assert.deepEqual(
+    await store.claim("stale-scheduler", previous, 30, 10, []),
+    [],
+  );
+  const claims = await store.claim("current-scheduler", current, 30, 10, []);
   const claim = claims.find(
     (value) => value.partition.project === partition.project,
   );

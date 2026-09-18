@@ -158,8 +158,9 @@ test("operational retry exhaustion reports unavailable with stable authorization
     {
       execute: () => Promise.resolve(true),
       cancel: () => Promise.resolve(true),
-      claim: (_owner, recoveryEpoch) => {
+      claim: (_owner, recoveryEpoch, _leaseSecs, _limit, capabilities) => {
         assert.equal(recoveryEpoch, claim.recoveryEpoch);
+        assert.deepEqual(capabilities, ["shell"]);
         return Promise.resolve([claim]);
       },
       retry: () => Promise.reject(new Error("exhausted work must not retry")),
@@ -192,6 +193,7 @@ test("operational retry exhaustion reports unavailable with stable authorization
     30,
     2,
     1,
+    ["shell"],
   );
   assert.equal(completed, 1);
   const input = submitted?.input as {

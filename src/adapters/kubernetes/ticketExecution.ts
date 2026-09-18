@@ -94,7 +94,6 @@ export interface KubernetesTicketExecutionConfig extends KubernetesPodSite {
   readonly outcomePollsMax: number;
   readonly leaseSecs: number;
   readonly retryAfterSecs: number;
-  readonly capabilities: readonly string[];
   readonly environment: Readonly<Record<string, string>>;
   readonly database?: KubernetesWorkloadDatabase;
 }
@@ -822,16 +821,6 @@ async function ticketRun(
       state,
       claim,
       "cloud identity delivery is unavailable for adopted ticket workers",
-    );
-  if (
-    view.requiredCapabilities.some(
-      (capability) => !state.config.capabilities.includes(capability),
-    )
-  )
-    return ticketUnavailable(
-      state,
-      claim,
-      "required execution capability is unavailable",
     );
   const repository = await ticketRepository(state, claim, view);
   if (typeof repository !== "string") return repository;

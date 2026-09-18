@@ -56,7 +56,6 @@ export function ticketExecutionRuntime(
         ) + 1,
       leaseSecs: settings.leaseSecs,
       retryAfterSecs: config.workers.unavailableRetryAfterSecs,
-      capabilities: settings.capabilities,
     },
   );
   const store = postgresTicketExecution(pool);
@@ -84,6 +83,7 @@ export function ticketExecutionRuntime(
         settings.leaseSecs,
         settings.attemptsMax,
         settings.claimsPerPassMax,
+        settings.capabilities,
       );
     },
   };
