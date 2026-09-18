@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as ticket from "../../src/domain/chuggernaut/ticket.js";
+import {
+  EvaluatorFail,
+  EvaluatorPass,
+} from "../../src/domain/chuggernaut/evaluation.js";
 import { TicketId } from "../../src/domain/chuggernaut/task.js";
 import {
   decode,
@@ -42,8 +46,8 @@ test("persisted events recover a rework decision independently of policy", () =>
   record(new ticket.CreateTicket(released(1)));
   record(dispatch(1));
   record(work_result_command(driver.graph, 1, 400));
-  record(evaluator_result_command(driver.graph, 1, 401, 0));
-  record(evaluator_result_command(driver.graph, 1, 402, 1));
+  record(evaluator_result_command(driver.graph, 1, 401, new EvaluatorFail()));
+  record(evaluator_result_command(driver.graph, 1, 402, new EvaluatorPass()));
   const checkpoint = ticketMachineReplay(
     ticketMachineEmpty(),
     history.slice(0, 3),

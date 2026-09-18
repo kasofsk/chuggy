@@ -7,6 +7,7 @@ import {
   ticketExecutionEffects,
   ticketExecutionResultRef,
   ticketExecutionRun,
+  ticketExecutionMaterial,
   ticketExecutionView,
   type TicketExecutionClaim,
   type TicketExecutionStore,
@@ -14,25 +15,51 @@ import {
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import type { TicketContentStore } from "../../src/interpreter/ticketCatalog.ts";
+import * as evaluation from "../../src/domain/chuggernaut/evaluation.js";
+import {
+  Driver,
+  PLAN,
+  evaluator_result_command,
+  work_obligation,
+  work_result_command,
+} from "./domain/testing.js";
 
 const partition = { tenant: "tenant", project: "project" } as Partition;
 
+const WORKSPACE =
+  '{"commit":"0123456789012345678901234567890123456789","repository":"repository"}';
+
+const WORKLOAD = task.ContentRef(1);
+const BINDINGS = task.ContentRef(2);
+const SOURCE = task.ContentRef(3);
+const CONTRACT = task.ContentRef(4);
+const AUTHORED = task.ContentRef(10);
+
+const definition = new ticket.ReleasedTicket(
+  task.TicketId(7),
+  AUTHORED,
+  BINDINGS,
+  new Set<task.TicketId>(),
+  new task.TaskDefinition(
+    WORKLOAD,
+    BINDINGS,
+    new task.ExecutionRequirements(["linux"]),
+    CONTRACT,
+  ),
+  PLAN,
+  task.ContentRef(1),
+);
+
+/** Drives ticket 7 into its first work cycle, the only state a work obligation is claimed in. */
+function dispatched(): Driver {
+  const driver = new Driver();
+  driver.submit(new ticket.CreateTicket(definition));
+  driver.submit(new ticket.DispatchTicket(task.TicketId(7), SOURCE));
+  return driver;
+}
+
 function obligation(): task.TaskObligation {
-  return new task.TaskObligation(
-    new task.WorkTaskId(task.TicketId(7), task.CycleNumber(2)),
-    new task.TaskDefinition(
-      task.ContentRef(1),
-      task.ContentRef(2),
-      new task.ExecutionRequirements(
-        task.ContentRef(3),
-        new task.PublishRepositoryResult(),
-        ["linux"],
-      ),
-      task.ContentRef(4),
-    ),
-    new task.WorkspaceSource(task.ContentRef(3), task.Digest(5)),
-    [task.ContentRef(6)],
-  );
+  return work_obligation(dispatched().graph, 7);
 }
 
 test("execution view resolves immutable references without rewriting workload options", async () => {
@@ -42,10 +69,12 @@ test("execution view resolves immutable references without rewriting workload op
       '{"runner":"script","command":["just","check"],"network_access":false}',
     ],
     [2, '{"answer":42}'],
-    [3, "git@example.invalid:owner/repository.git"],
+    [
+      3,
+      '{"commit":"0123456789012345678901234567890123456789","repository":"git@example.invalid:owner/repository.git"}',
+    ],
     [4, '{"type":"object"}'],
-    [5, "0123456789012345678901234567890123456789"],
-    [6, '{"summary":"prior work"}'],
+    [10, '{"summary":"prior work"}'],
   ]);
   const content: TicketContentStore = {
     put: () => Promise.resolve(task.ContentRef(99)),
@@ -58,16 +87,25 @@ test("execution view resolves immutable references without rewriting workload op
       );
     },
   };
-  const view = await ticketExecutionView(content, obligation());
+  const driver = dispatched();
+  const view = await ticketExecutionView(
+    content,
+    driver.graph,
+    work_obligation(driver.graph, 7),
+  );
   assert.deepEqual(view.workload, {
     runner: "script",
     command: ["just", "check"],
     network_access: false,
   });
   assert.equal(view.access, "PublishRepositoryResult");
+  assert.equal(view.repository, "git@example.invalid:owner/repository.git");
+  assert.equal(view.commit, "0123456789012345678901234567890123456789");
+  assert.equal(view.source, SOURCE);
   assert.deepEqual(view.requiredCapabilities, ["linux"]);
   assert.deepEqual(view.context, [
-    { reference: task.ContentRef(6), value: { summary: "prior work" } },
+    { reference: AUTHORED, value: { summary: "prior work" } },
+    { reference: BINDINGS, value: { answer: 42 } },
   ]);
 });
 
@@ -92,8 +130,8 @@ test("execution effects keep the delivery identity and cancel only the exact tas
     new ticket.CancelTask(task.TicketId(7), held.task),
   );
   assert.equal((calls[0] as unknown[])[2], "12:0");
-  assert.equal((calls[0] as unknown[])[3], "work:7:2");
-  assert.equal((calls[1] as unknown[])[3], "work:7:2");
+  assert.equal((calls[0] as unknown[])[3], "work:7:1");
+  assert.equal((calls[1] as unknown[])[3], "work:7:1");
 });
 
 test("operational retry exhaustion reports unavailable with stable authorization", async () => {
@@ -101,7 +139,7 @@ test("operational retry exhaustion reports unavailable with stable authorization
   const claim: TicketExecutionClaim = {
     partition,
     identity: "12:0",
-    taskKey: "work:7:2",
+    taskKey: "work:7:1",
     obligation: held,
     attempt: 2,
     recoveryEpoch: asRecoveryEpoch("epoch-one"),
@@ -127,14 +165,10 @@ test("operational retry exhaustion reports unavailable with stable authorization
       read: (reference) =>
         Promise.resolve({
           mediaType: "application/json",
-          content:
-            reference === task.ContentRef(3)
-              ? "repository"
-              : reference === task.ContentRef(5)
-                ? "0123456789012345678901234567890123456789"
-                : "{}",
+          content: reference === SOURCE ? WORKSPACE : "{}",
         }),
     }),
+    () => Promise.resolve(dispatched().graph),
     {
       run: () =>
         Promise.resolve({
@@ -162,8 +196,14 @@ test("operational retry exhaustion reports unavailable with stable authorization
     identity: string;
     command: ticket.ReportTaskTerminal;
   };
-  assert.equal(input.identity, "execution-terminal:work:7:2");
-  assert.equal(input.command.report.terminal.kind, "TaskExecutionUnavailable");
+  assert.equal(input.identity, "execution-terminal:work:7:1");
+  assert.equal(input.command.report.kind, "TerminalFailureReport");
+  if (input.command.report.kind !== "TerminalFailureReport")
+    throw new Error("an exhausted retry did not report a failure");
+  assert.equal(
+    input.command.report.kind_of_failure.kind,
+    "ExecutionUnavailableFailure",
+  );
 });
 
 test("produced commits have one deterministic publication ref", () => {
@@ -175,21 +215,32 @@ test("produced commits have one deterministic publication ref", () => {
 });
 
 test("work context preserves authored text alongside JSON inputs and rework", async () => {
-  const held = obligation();
-  const authored = new task.TaskObligation(
-    held.task,
-    held.definition,
-    held.source,
-    [task.ContentRef(6), task.ContentRef(7), task.ContentRef(8)],
-  );
+  const driver = dispatched();
+  driver.submit(work_result_command(driver.graph, 7, 400));
+  for (const manifest of [601, 602])
+    driver.submit(
+      evaluator_result_command(
+        driver.graph,
+        7,
+        manifest,
+        new evaluation.EvaluatorFail(),
+      ),
+    );
   const context = new Map([
-    [6, { mediaType: "text/plain", content: "Fix the importer" }],
-    [7, { mediaType: "text/markdown", content: "Report every rejected row." }],
+    [10, { mediaType: "text/plain", content: "Fix the importer" }],
+    [2, { mediaType: "text/markdown", content: "Report every rejected row." }],
     [
-      8,
+      601,
       {
         mediaType: "application/json",
         content: '{"findings":[{"description":"Rows are dropped"}]}',
+      },
+    ],
+    [
+      602,
+      {
+        mediaType: "application/json",
+        content: '{"findings":[{"description":"Totals disagree"}]}',
       },
     ],
   ]);
@@ -200,11 +251,12 @@ test("work context preserves authored text alongside JSON inputs and rework", as
         Promise.resolve(
           context.get(reference) ?? {
             mediaType: "application/json",
-            content: "{}",
+            content: WORKSPACE,
           },
         ),
     },
-    authored,
+    driver.graph,
+    work_obligation(driver.graph, 7),
   );
   assert.deepEqual(
     view.context.map((entry) => entry.value),
@@ -212,6 +264,17 @@ test("work context preserves authored text alongside JSON inputs and rework", as
       "Fix the importer",
       "Report every rejected row.",
       { findings: [{ description: "Rows are dropped" }] },
+      { findings: [{ description: "Totals disagree" }] },
     ],
+  );
+});
+
+test("an obligation whose ticket has moved on resolves no material", () => {
+  const driver = dispatched();
+  const held = work_obligation(driver.graph, 7);
+  driver.submit(work_result_command(driver.graph, 7, 400));
+  assert.throws(
+    () => ticketExecutionMaterial(driver.graph, held),
+    /work obligation is not current/u,
   );
 });

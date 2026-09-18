@@ -86,14 +86,10 @@ const obligation = new task.TaskObligation(
   new task.TaskDefinition(
     task.ContentRef(1),
     task.ContentRef(2),
-    new task.ExecutionRequirements(
-      task.ContentRef(3),
-      new task.ReadRepository(),
-    ),
+    new task.ExecutionRequirements(),
     task.ContentRef(4),
   ),
-  new task.WorkspaceSource(task.ContentRef(3), task.Digest(5)),
-  [],
+  task.ContextRef(1),
 );
 const claim: TicketExecutionClaim = {
   partition,
@@ -115,8 +111,7 @@ const evaluationClaim: TicketExecutionClaim = {
       task.EvaluatorKey(1),
     ),
     obligation.definition,
-    obligation.source,
-    [],
+    obligation.context_ref,
   ),
 };
 const view: TicketExecutionView = {
@@ -135,6 +130,7 @@ const view: TicketExecutionView = {
   resultContract: { type: "object" },
   repository: "https://git.invalid/owner/repository.git",
   commit: "0123456789012345678901234567890123456789",
+  source: task.ContentRef(3),
   access: "ReadRepository",
   requiredCapabilities: ["shell"],
   context: [],
@@ -376,8 +372,10 @@ test("launches one isolated adopted worker and keeps its authority in the Secret
   const result = await runner.run(claim, view);
   assert.equal(result.result, "Produced");
   if (result.result !== "Produced") throw new Error("result was not produced");
-  assert.equal(result.terminal.result.value, 1);
-  assert.deepEqual(result.terminal.result.findings, []);
+  assert.equal(result.report.kind, "WorkResultReport");
+  if (result.report.kind !== "WorkResultReport")
+    throw new Error("work produced an evaluation report");
+  assert.equal(result.report.accepted_source_ref, view.source);
   assert.equal(outcomes.reads, 2);
   assertSecretEnvelope(requests);
   await assertMalformedOutcomes(runner, stored);
@@ -389,32 +387,38 @@ test("launches one isolated adopted worker and keeps its authority in the Secret
   ]);
 });
 
-test("decodes evaluator verdicts and findings with upstream semantics", async () => {
-  const stored: string[] = [];
-  const content = {
-    put: (_mediaType: string, value: string) => {
-      stored.push(value);
-      return Promise.resolve(task.ContentRef(stored.length));
-    },
-    read: () => Promise.resolve(undefined),
-  };
-  await assert.rejects(
-    ticketExecutionVerdict(content, evaluationClaim, { verdict: "PASS" }),
+test("a manifest is read for a verdict and for findings a rework can cite", () => {
+  assert.throws(
+    () => ticketExecutionVerdict({ verdict: "PASS" }),
     /verdict is invalid/u,
   );
-  await assert.rejects(
-    ticketExecutionVerdict(content, evaluationClaim, {
-      verdict: "pass",
-      findings: [{ description: "unexpected" }],
-    }),
+  assert.throws(
+    () =>
+      ticketExecutionVerdict({
+        verdict: "pass",
+        findings: [{ description: "unexpected" }],
+      }),
     /passing evaluator manifest/u,
   );
-  const decoded = await ticketExecutionVerdict(content, evaluationClaim, {
-    verdict: "failed",
-    findings: [{ id: 1.5, description: "fractional falls back" }],
-  });
-  assert.equal(decoded.value, 0);
-  assert.equal(decoded.findings[0]?.id, 1);
+  assert.throws(
+    () =>
+      ticketExecutionVerdict({
+        verdict: "fail",
+        findings: [
+          { id: 1, description: "first" },
+          { id: 1, description: "second" },
+        ],
+      }),
+    /finding identity is repeated/u,
+  );
+  assert.equal(ticketExecutionVerdict({}).kind, "EvaluatorPass");
+  assert.equal(
+    ticketExecutionVerdict({
+      verdict: "failed",
+      findings: [{ id: 1.5, description: "fractional falls back" }],
+    }).kind,
+    "EvaluatorFail",
+  );
 });
 
 test("invalid evaluator verdicts become process failures", async () => {
@@ -439,7 +443,10 @@ test("invalid evaluator verdicts become process failures", async () => {
   }).run(evaluationClaim, view);
   assert.equal(result.result, "Produced");
   if (result.result !== "Produced") throw new Error("result was not produced");
-  assert.equal(result.terminal.result.findings[0]?.id, 1);
+  assert.equal(result.report.kind, "EvaluationResultReport");
+  if (result.report.kind !== "EvaluationResultReport")
+    throw new Error("an evaluator produced a work report");
+  assert.equal(result.report.verdict.kind, "EvaluatorFail");
 });
 
 for (const [name, unavailableView] of [
