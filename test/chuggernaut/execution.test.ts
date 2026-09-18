@@ -134,6 +134,15 @@ test("execution effects keep the delivery identity and cancel only the exact tas
   assert.equal((calls[1] as unknown[])[3], "work:7:1");
 });
 
+const workspaceContent = () => ({
+  put: () => Promise.resolve(task.ContentRef(99)),
+  read: (reference: task.ContentRef) =>
+    Promise.resolve({
+      mediaType: "application/json",
+      content: reference === SOURCE ? WORKSPACE : "{}",
+    }),
+});
+
 test("operational retry exhaustion reports unavailable with stable authorization", async () => {
   const held = obligation();
   const claim: TicketExecutionClaim = {
@@ -160,14 +169,7 @@ test("operational retry exhaustion reports unavailable with stable authorization
       },
       cancelled: () => Promise.resolve(false),
     },
-    () => ({
-      put: () => Promise.resolve(task.ContentRef(99)),
-      read: (reference) =>
-        Promise.resolve({
-          mediaType: "application/json",
-          content: reference === SOURCE ? WORKSPACE : "{}",
-        }),
-    }),
+    workspaceContent,
     () => Promise.resolve(dispatched().graph),
     {
       run: () =>

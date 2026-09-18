@@ -1,3 +1,20 @@
+/**
+ * The ports a claimed ticket task is run and reported through, and the view a
+ * runner is handed.
+ *
+ * AN OBLIGATION CARRIES NEITHER SOURCE NOR CONTEXT any more: the domain
+ * reduced it to a task, its definition and a context reference naming the work
+ * cycle. So both are read back out of the ticket the obligation belongs to,
+ * which is where they were always true — the machine holds the source it
+ * dispatched and the input it entered the cycle with. An obligation whose
+ * ticket has moved on resolves nothing rather than running against material
+ * the machine left behind, and its terminal is one the machine would refuse.
+ *
+ * A RESULT IS CLASSIFIED BY WHOEVER PRODUCED IT. A work result must name the
+ * source the machine is to accept and an evaluator result must carry a
+ * verdict, because the domain reads neither out of a manifest, so the runner
+ * hands back the report it decided.
+ */
 import * as task from "../domain/chuggernaut/task.js";
 import * as ticket from "../domain/chuggernaut/ticket.js";
 import { setTimeout as delay } from "node:timers/promises";
@@ -46,15 +63,7 @@ export interface TicketExecutionStore {
   cancelled(claim: TicketExecutionClaim): Promise<boolean>;
 }
 
-/**
- * What the fabric answers with, which is no longer a `TaskTerminal`.
- *
- * THE DOMAIN NOW ASKS THE FABRIC TO CLASSIFY ITS OWN RESULT. A work result
- * must name the source the machine is to accept, and an evaluator result must
- * carry a verdict, because the domain reads neither out of a manifest any
- * more. Both are the runner's to decide, so the runner hands back the report
- * it decided rather than a terminal the machine would have to decode.
- */
+/** What the fabric answers with, which is a report rather than a `TaskTerminal`. */
 export type TicketExecutionResult =
   | {
       readonly result: "Produced";
@@ -136,16 +145,7 @@ async function ticketExecutionContent(
   return found;
 }
 
-/**
- * The source and context material a claimed obligation runs against.
- *
- * THE OBLIGATION NO LONGER CARRIES EITHER. v0.4.0 reduced it to a task, its
- * definition and a context reference naming the work cycle, so what a worker
- * needs is read back out of the ticket the obligation belongs to. That is
- * where it has always been true: the machine holds the source it dispatched
- * and the input it entered the cycle with, and an obligation whose ticket has
- * moved on is one whose terminal the machine would refuse anyway.
- */
+/** The source and context material a claimed obligation runs against. */
 export interface TicketExecutionMaterial {
   readonly source: task.ContentRef;
   readonly context: readonly task.ContentRef[];

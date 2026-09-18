@@ -1,3 +1,22 @@
+/**
+ * Runs an adopted ticket task as an isolated Kubernetes pod and reports what it
+ * produced.
+ *
+ * THE FABRIC CLASSIFIES ITS OWN RESULT. The domain no longer reads a verdict
+ * out of a result value, nor a published commit out of an output list, so an
+ * evaluator's pass or fail and a work task's accepted source are decided here,
+ * against this tree's own worker contract, and travel as a report rather than
+ * as a terminal the machine would decode.
+ *
+ * A PUBLISHING TASK MUST NAME EXACTLY ONE OUTPUT on the repository it ran
+ * against; that commit becomes the source every later cycle and the
+ * finalization run from, and an output list that does not say so is the
+ * process failure the domain used to raise as
+ * `WorkResultMissingExactGitOutput`. Findings stay inside the manifest the
+ * result reference names, checked for a shape a rework cycle can cite — an
+ * unidentified or repeated one reaches the next cycle as evidence nobody can
+ * quote.
+ */
 import { randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { Ajv2020 } from "ajv/dist/2020.js";
@@ -459,14 +478,7 @@ function ticketMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-/**
- * Validates a worker's manifest and turns it into the report the machine takes.
- *
- * THE FABRIC CLASSIFIES ITS OWN RESULT NOW. The domain no longer reads a
- * verdict out of a result value, nor a published commit out of an output list,
- * so an evaluator's pass or fail and a work task's accepted source are decided
- * here against this tree's own worker contract and travel as a report.
- */
+/** Validates a worker's manifest and turns it into the report the machine takes. */
 async function ticketProduced(
   content: TicketContentStore,
   claim: TicketExecutionClaim,
@@ -559,14 +571,7 @@ export function ticketExecutionVerdict(
     : new evaluation.EvaluatorFail();
 }
 
-/**
- * Counts the findings a manifest declares, refusing a malformed list.
- *
- * THE DOMAIN NO LONGER MODELS A FINDING. It carries only the reference to the
- * manifest holding them, so the shape a rework cycle reads back is checked
- * here or nowhere: an unidentified or repeated finding reaches the next work
- * cycle as evidence nobody can cite.
- */
+/** Counts the findings a manifest declares, refusing a malformed list. */
 function ticketFindings(manifest: Record<string, unknown>): number {
   const raw = manifest["findings"] ?? [];
   if (!Array.isArray(raw))
@@ -591,13 +596,8 @@ function ticketFindings(manifest: Record<string, unknown>): number {
 }
 
 /**
- * The source the machine is to accept for a work result.
- *
- * A PUBLISHING TASK MUST NAME EXACTLY ONE OUTPUT on the repository it ran
- * against, and that output's commit becomes the source every later cycle and
- * the finalization run from — the refusal the domain used to carry as
- * `WorkResultMissingExactGitOutput`, which it can no longer see. A task that
- * does not publish keeps the source it was dispatched with.
+ * The source the machine is to accept for a work result: a publishing task's
+ * one output, or the source a non-publishing task never moved off.
  */
 async function ticketAcceptedSource(
   content: TicketContentStore,

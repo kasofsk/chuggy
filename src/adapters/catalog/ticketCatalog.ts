@@ -1,3 +1,15 @@
+/**
+ * Resolves an authored ticket document and its catalog fragments into a
+ * `ReleasedTicket` the machine can hold.
+ *
+ * TWO THINGS THE DOMAIN STOPPED CARRYING LAND HERE. `ExecutionRequirements`
+ * lost its repository and its access mode, so a work task's
+ * `publishes_repository_result` stays in this tree's own resolved workload
+ * document, where the execution view reads it back and where a reader would
+ * look for it. And a release carries one content reference rather than a title
+ * beside instructions, so the two authored fields are written as the markdown
+ * every prompt already rendered them as, the title as the heading it was.
+ */
 import * as task from "../../domain/chuggernaut/task.js";
 import * as evaluation from "../../domain/chuggernaut/evaluation.js";
 import * as ticket from "../../domain/chuggernaut/ticket.js";
@@ -140,14 +152,7 @@ function catalogCloudIdentity(
   resolved["cloud_identity"] = { ...workload.cloud_identity, project };
 }
 
-/**
- * Resolves one workload into a task definition and says whether it publishes.
- *
- * THE VERDICT TRAVELS IN THE RESOLVED WORKLOAD, not in the definition. The
- * domain dropped the repository and the access mode from
- * `ExecutionRequirements`, so `publishes_repository_result` stays in this
- * tree's own workload document, where the execution view reads it back.
- */
+/** Resolves one workload into a task definition and says whether it publishes. */
 async function catalogTask(
   context: CatalogContext,
   authored: Fragment,
@@ -277,13 +282,7 @@ async function catalogPlan(
   };
 }
 
-/**
- * The one document a release carries as its content.
- *
- * THE DOMAIN RELEASES ONE REFERENCE, not a title beside instructions, so the
- * two authored fields are written as the markdown a worker reads them as. A
- * title becomes the heading it already was in every prompt that rendered it.
- */
+/** The one markdown document a release carries as its content. */
 function catalogReleasedContent(document: TicketDocument): string {
   const title = document.title ?? "";
   const instructions = document.instructions ?? "";
