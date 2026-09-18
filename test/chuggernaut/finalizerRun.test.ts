@@ -29,6 +29,7 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
+import type { GitPromotionPort } from "../../src/interpreter/finalizer.ts";
 import {
   ticketFinalizerPass,
   type TicketFinalizerClaim,
@@ -41,23 +42,23 @@ const partition = {
 };
 const commit = "b".repeat(40);
 const repository = "https://github.com/example/repository";
-const content = new Map([
-  [
-    4,
-    {
-      mediaType: "application/json",
-      content: JSON.stringify({ commit, repository }),
-    },
-  ],
-  [
-    6,
-    {
-      mediaType: "application/json",
-      content:
-        '{"kind":"finalizer","operation":"pull-request","target_ref":"refs/heads/main","branch_prefix":"tickets/","merge":false}',
-    },
-  ],
-]);
+const pullRequest =
+  '{"kind":"finalizer","operation":"pull-request","target_ref":"refs/heads/main","branch_prefix":"tickets/","merge":false}';
+
+function finalizerContent(configuration: string) {
+  return new Map([
+    [
+      4,
+      {
+        mediaType: "application/json",
+        content: JSON.stringify({ commit, repository }),
+      },
+    ],
+    [6, { mediaType: "application/json", content: configuration }],
+  ]);
+}
+
+const content = finalizerContent(pullRequest);
 const obligation = new ticket.FinalizeTicket(
   TicketId(7),
   new ticket.FinalizationOperation(
@@ -97,31 +98,44 @@ const proposalEvidence = {
   body: proposal.body,
   status: "Open" as const,
 };
+const binding = {
+  partition,
+  repository: asRepositoryId(repository),
+  recoveryEpoch: asRecoveryEpoch("epoch"),
+};
+const target = {
+  observed: "Target",
+  target: { ref: proposal.base.ref, commit: proposal.base.commit },
+} as const;
+const prepared = {
+  prepared: "Candidate",
+  candidate: asGitObjectId(commit),
+} as const;
 
-function initializationStore(
-  prepared: (candidate: string, head: string) => void,
+type FinalizerService = Parameters<typeof ticketFinalizerPass>[0];
+
+const idleClaim: TicketFinalizerClaim = {
+  partition,
+  identity: "delivery",
+  generation: 1,
+  obligation,
+  promotion: "Idle",
+  publication: { publication: "Unopened" },
+  merging: { merging: "Unasked" },
+};
+
+function finalizerStore(
+  offers: number,
+  overrides: Partial<TicketFinalizerStore>,
 ): TicketFinalizerStore {
-  const claim: TicketFinalizerClaim = {
-    partition,
-    identity: "delivery",
-    generation: 1,
-    obligation,
-    promotion: "Idle",
-    publication: { publication: "Unopened" },
-    merging: { merging: "Unasked" },
-  };
-  let offered = false;
+  let offered = 0;
   return {
     register: () => Promise.resolve(true),
     claim: () => {
-      if (offered) return Promise.resolve(undefined);
-      offered = true;
-      return Promise.resolve(claim);
+      offered += 1;
+      return Promise.resolve(offered > offers ? undefined : idleClaim);
     },
-    prepare: (_claim, _repository, _base, candidate, head) => {
-      prepared(candidate, head);
-      return Promise.resolve(true);
-    },
+    prepare: () => Promise.resolve(false),
     promotion: () => Promise.resolve(false),
     initialize: () => Promise.resolve(false),
     publication: () => Promise.resolve(false),
@@ -129,57 +143,33 @@ function initializationStore(
     complete: () => Promise.resolve(false),
     reported: () => Promise.resolve(false),
     release: () => Promise.resolve(),
+    ...overrides,
   };
 }
 
-test("finalization resolves numeric repository and commit content references before Git", async () => {
-  let prepared: readonly [string, string] | undefined;
-  const binding = {
-    partition,
-    repository: asRepositoryId(repository),
-    recoveryEpoch: asRecoveryEpoch("epoch"),
-  };
-  const service = {
+function finalizerService(
+  store: TicketFinalizerStore,
+  git: Partial<GitPromotionPort>,
+  configuration = pullRequest,
+  forges: FinalizerService["forges"] = {
+    binding: () => undefined,
+    proposal: () => undefined,
+  },
+): FinalizerService {
+  const blobs = finalizerContent(configuration);
+  return {
     owner: "owner",
     leaseMs: 30_000,
     recoveryEpoch: asRecoveryEpoch("epoch"),
-    store: initializationStore((candidate, head) => {
-      prepared = [candidate, head];
-    }),
+    store,
     contents: () => ({
       read: (reference: ContentRef) =>
-        Promise.resolve(content.get(Number(reference))),
+        Promise.resolve(blobs.get(Number(reference))),
       put: () => Promise.resolve(ContentRef(9)),
     }),
     bindings: { binding: () => Promise.resolve(binding) },
-    git: {
-      observeTarget: () =>
-        Promise.resolve({
-          observed: "Target",
-          target: {
-            ref: asGitRefName("refs/heads/main"),
-            commit: asGitObjectId("a".repeat(40)),
-          },
-        } as const),
-      prepareSource: (request: {
-        readonly ref: string;
-        readonly commit: string;
-      }) => {
-        assert.equal(request.ref, `refs/chuggy/results/${commit}`);
-        assert.equal(request.commit, commit);
-        return Promise.resolve({
-          prepared: "Candidate",
-          candidate: asGitObjectId(commit),
-        } as const);
-      },
-    } as never,
-    forges: {
-      binding: () => ({
-        forge: asForgeBindingId("github"),
-        credential: asForgeCredentialReference("app"),
-      }),
-      proposal: () => undefined,
-    },
+    git: git as GitPromotionPort,
+    forges,
     inbox: { submit: () => Promise.resolve(false) },
     bounds: {
       publication: { creationsMax: 3, reconciliationsMax: 3 },
@@ -190,8 +180,132 @@ test("finalization resolves numeric repository and commit content references bef
       permit: "permit" as never,
     }),
   };
+}
+
+test("finalization resolves numeric repository and commit content references before Git", async () => {
+  let recorded: readonly [string, string] | undefined;
+  const service = finalizerService(
+    finalizerStore(1, {
+      prepare: (_claim, _repository, _base, candidate, head) => {
+        recorded = [candidate, head];
+        return Promise.resolve(true);
+      },
+    }),
+    {
+      observeTarget: () => Promise.resolve(target),
+      prepareSource: (request) => {
+        assert.equal(request.ref, `refs/chuggy/results/${commit}`);
+        assert.equal(request.commit, commit);
+        return Promise.resolve(prepared);
+      },
+    },
+    pullRequest,
+    {
+      binding: () => ({
+        forge: asForgeBindingId("github"),
+        credential: asForgeCredentialReference("app"),
+      }),
+      proposal: () => undefined,
+    },
+  );
   assert.equal(await ticketFinalizerPass(service, 1), 1);
-  assert.deepEqual(prepared, [commit, "refs/heads/tickets/7"]);
+  assert.deepEqual(recorded, [commit, "refs/heads/tickets/7"]);
+});
+
+test("a pull-request document without an explicit merge takes the default", async () => {
+  let recorded = false;
+  const service = finalizerService(
+    finalizerStore(1, {
+      prepare: () => {
+        recorded = true;
+        return Promise.resolve(true);
+      },
+    }),
+    {
+      observeTarget: () => Promise.resolve(target),
+      prepareSource: () => Promise.resolve(prepared),
+    },
+    '{"kind":"finalizer","operation":"pull-request","target_ref":"refs/heads/main","branch_prefix":"tickets/"}',
+    {
+      binding: () => ({
+        forge: asForgeBindingId("github"),
+        credential: asForgeCredentialReference("app"),
+      }),
+      proposal: () => undefined,
+    },
+  );
+  assert.equal(await ticketFinalizerPass(service, 1), 1);
+  assert.equal(recorded, true);
+});
+
+const gitMerge =
+  '{"kind":"finalizer","operation":"git-merge","target_ref":"refs/heads/main"}';
+
+function landingService(
+  completed: (outcome: string) => void,
+  git: Partial<GitPromotionPort>,
+  configuration: string,
+): FinalizerService {
+  return finalizerService(
+    finalizerStore(1, {
+      complete: (_claim, outcome) => {
+        completed(outcome);
+        return Promise.resolve(true);
+      },
+    }),
+    git,
+    configuration,
+  );
+}
+
+test("a git-merge finalization lands the work with no forge bound", async () => {
+  for (const [integrated, expected] of [
+    [
+      { integrated: "Candidate", candidate: asGitObjectId("d".repeat(40)) },
+      "Succeeded",
+    ],
+    [
+      {
+        integrated: "Conflicted",
+        conflict: { paths: ["one.ts"], truncated: false },
+      },
+      "NeedsWork",
+    ],
+  ] as const) {
+    let outcome: string | undefined;
+    const service = landingService(
+      (value) => {
+        outcome = value;
+      },
+      {
+        prepareSource: () => Promise.resolve(prepared),
+        proveCandidateAncestry: () =>
+          Promise.resolve({
+            proved: "NotAncestor",
+            observed: target.target.commit,
+          }),
+        observeTarget: () => Promise.resolve(target),
+        integrateCandidate: () => Promise.resolve(integrated),
+        promoteCandidate: () => Promise.resolve({ promoted: "Advanced" }),
+      },
+      gitMerge,
+    );
+    assert.equal(await ticketFinalizerPass(service, 1), 1);
+    assert.equal(outcome, expected);
+  }
+});
+
+test("a no-op finalization succeeds without reaching Git or a forge", async () => {
+  let outcome: string | undefined;
+  const service = landingService(
+    (value) => {
+      outcome = value;
+    },
+    {},
+    '{"kind":"finalizer","operation":"no-op"}',
+  );
+  assert.equal(await ticketFinalizerPass(service, 1), 1);
+  assert.equal(outcome, "Succeeded");
 });
 
 interface RefusalHarness {

@@ -17,10 +17,10 @@ import {
 import { asTenantId, asProjectId } from "../../src/interpreter/projectStore.ts";
 import {
   ticketPullRequestNext,
-  ticketPullRequestReport,
   type TicketPullRequestView,
   type TicketPullRequestBounds,
 } from "../../src/interpreter/ticketPullRequest.ts";
+import { ticketFinalizationReport } from "../../src/interpreter/ticketFinalization.ts";
 import * as ticket from "../../src/domain/chuggernaut/ticket.js";
 import {
   ContentRef,
@@ -181,7 +181,11 @@ test("finalizer reports carry the exact work cycle and generation", () => {
     ["NeedsWork", "FinalizationNeedsWork"],
     ["Unavailable", "FinalizationResultUnavailable"],
   ] as const) {
-    const command = ticketPullRequestReport(obligation, outcome, ContentRef(7));
+    const command = ticketFinalizationReport(
+      obligation,
+      outcome,
+      ContentRef(7),
+    );
     assert.equal(command.report.ticket, obligation.ticket);
     assert.equal(command.report.work_cycle, 2);
     assert.equal(command.report.generation, 3);

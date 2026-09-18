@@ -94,7 +94,6 @@ export interface KubernetesTicketExecutionConfig extends KubernetesPodSite {
   readonly outcomePollsMax: number;
   readonly leaseSecs: number;
   readonly retryAfterSecs: number;
-  readonly capabilities: readonly string[];
   readonly environment: Readonly<Record<string, string>>;
   readonly database?: KubernetesWorkloadDatabase;
 }
@@ -247,7 +246,6 @@ function ticketExecutionProfile(
   const profile = ticketRecord(selected, "execution profile");
   return execution_profile({
     required_capabilities: profile["required_capabilities"],
-    runner_command: profile["runner_command"],
     cpu: profile["cpu"],
     memory_mb: profile["memory_mb"],
   });
@@ -363,7 +361,6 @@ function ticketPod(
 ): KubernetesPod {
   const name = kubernetesTicketExecutionPodName(config, claim);
   const profile = ticketExecutionProfile(view);
-  const runnerCommand = profile?.runner_command[0];
   return {
     apiVersion: "v1",
     kind: "Pod",
@@ -395,12 +392,6 @@ function ticketPod(
         {
           name: "ticket-worker",
           image: config.image,
-          ...(profile === undefined || runnerCommand === undefined
-            ? {}
-            : {
-                command: [runnerCommand],
-                args: profile.runner_command.slice(1),
-              }),
           env: ticketEnvironment(config, name),
           resources: ticketResources(config, profile),
           securityContext: config.containerSecurityContext,
@@ -830,16 +821,6 @@ async function ticketRun(
       state,
       claim,
       "cloud identity delivery is unavailable for adopted ticket workers",
-    );
-  if (
-    view.requiredCapabilities.some(
-      (capability) => !state.config.capabilities.includes(capability),
-    )
-  )
-    return ticketUnavailable(
-      state,
-      claim,
-      "required execution capability is unavailable",
     );
   const repository = await ticketRepository(state, claim, view);
   if (typeof repository !== "string") return repository;

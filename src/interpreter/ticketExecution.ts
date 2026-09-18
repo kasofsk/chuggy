@@ -49,11 +49,18 @@ export interface TicketExecutionStore {
     identity: string,
     taskKey: string,
   ): Promise<boolean>;
+  /**
+   * The queued work this claimant may run, which is the work whose required
+   * capabilities its own set covers. Matching before the claim rather than
+   * after it is what stops two claimants of different capabilities racing for
+   * every row and the wrong one spending an attempt to report it unavailable.
+   */
   claim(
     owner: string,
     recoveryEpoch: RecoveryEpoch,
     leaseSecs: number,
     limit: number,
+    capabilities: readonly string[],
   ): Promise<readonly TicketExecutionClaim[]>;
   retry(claim: TicketExecutionClaim, retryAfterSecs: number): Promise<void>;
   terminal(
@@ -322,6 +329,7 @@ export async function ticketExecutionRun(
   leaseSecs: number,
   attemptsMax: number,
   limit: number,
+  capabilities: readonly string[],
   cancellationPollMs = 1_000,
 ): Promise<number> {
   if (
@@ -332,7 +340,13 @@ export async function ticketExecutionRun(
     throw new RangeError(
       "ticket execution bounds must be positive safe integers",
     );
-  const claims = await store.claim(owner, recoveryEpoch, leaseSecs, limit);
+  const claims = await store.claim(
+    owner,
+    recoveryEpoch,
+    leaseSecs,
+    limit,
+    capabilities,
+  );
   if (claims.length > limit)
     throw new Error("ticket execution store exceeded claim limit");
   const completed = await Promise.all(

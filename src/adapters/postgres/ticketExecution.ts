@@ -59,8 +59,9 @@ async function executionPut(
     WHERE tenant=${partition.tenant} AND project=${partition.project} AND task_key=${taskKey}`);
   if (cancelled.rows[0] !== undefined) return true;
   const inserted = await client.query(sql`INSERT INTO ticket_execution
-    (tenant,project,task_key,delivery_identity,obligation)
-    VALUES(${partition.tenant},${partition.project},${taskKey},${identity},${serialized})
+    (tenant,project,task_key,delivery_identity,obligation,required_capabilities)
+    VALUES(${partition.tenant},${partition.project},${taskKey},${identity},${serialized},
+      ${[...obligation.definition.execution_requirements.required_capabilities]}::text[])
     ON CONFLICT DO NOTHING`);
   if ((inserted.rowCount ?? 0) === 1) return true;
   const found = await client.query<{
@@ -118,6 +119,7 @@ async function executionClaimed(
   recoveryEpoch: RecoveryEpoch,
   leaseSecs: number,
   limit: number,
+  capabilities: readonly string[],
 ): Promise<readonly TicketExecutionClaim[]> {
   const found = await pool.query<ExecutionRow>(sql`UPDATE ticket_execution e SET
       state='Running',attempt=e.attempt+1,claim_owner=${owner},capability_digest=NULL,worker_outcome=NULL,
@@ -127,7 +129,8 @@ async function executionClaimed(
       AND (e.tenant,e.project,e.task_key) IN (
       SELECT q.tenant,q.project,q.task_key FROM ticket_execution q
       WHERE (q.state='Queued' OR (q.state='Running' AND q.claim_expires_at<=now()))
-        AND q.available_at<=now() AND EXISTS(SELECT 1 FROM project p
+        AND q.available_at<=now() AND q.required_capabilities <@ ${[...capabilities]}::text[]
+        AND EXISTS(SELECT 1 FROM project p
           WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active'
             AND p.ticket_model='Chuggernaut')
         ORDER BY q.available_at,q.task_key
@@ -188,8 +191,15 @@ export function postgresTicketExecution(pool: pg.Pool): TicketExecutionStore {
       postgresTransaction(pool, (client) =>
         executionCancel(client, partition, identity, taskKey),
       ),
-    claim: (owner, recoveryEpoch, leaseSecs, limit) =>
-      executionClaimed(pool, owner, recoveryEpoch, leaseSecs, limit),
+    claim: (owner, recoveryEpoch, leaseSecs, limit, capabilities) =>
+      executionClaimed(
+        pool,
+        owner,
+        recoveryEpoch,
+        leaseSecs,
+        limit,
+        capabilities,
+      ),
     retry: async (claim, retryAfterSecs) => {
       await pool.query(sql`UPDATE ticket_execution SET state='Queued',claim_owner=NULL,claim_expires_at=NULL,recovery_epoch=NULL,
           available_at=now()+make_interval(secs=>${retryAfterSecs}::double precision)

@@ -2,7 +2,6 @@ export const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/;
 
 export interface ExecutionProfile {
   readonly required_capabilities: readonly string[];
-  readonly runner_command: readonly string[];
   readonly cpu: number;
   readonly memory_mb: number;
 }
@@ -15,11 +14,7 @@ function object(value: unknown): value is Record<string, unknown> {
 export function execution_profile(value: unknown): ExecutionProfile {
   if (!object(value)) throw new Error("execution profile must be a mapping");
   for (const key of Object.keys(value))
-    if (
-      !["required_capabilities", "runner_command", "cpu", "memory_mb"].includes(
-        key,
-      )
-    )
+    if (!["required_capabilities", "cpu", "memory_mb"].includes(key))
       throw new Error(`unknown execution profile field: ${key}`);
   const caps = value["required_capabilities"];
   if (
@@ -28,17 +23,6 @@ export function execution_profile(value: unknown): ExecutionProfile {
   )
     throw new Error(
       "required_capabilities must be a list of capability tokens (letters, digits, underscore, hyphen; 1–63 characters)",
-    );
-  const command = value["runner_command"];
-  if (
-    !Array.isArray(command) ||
-    command.length === 0 ||
-    command.some(
-      (c) => typeof c !== "string" || c.length === 0 || c.includes("\0"),
-    )
-  )
-    throw new Error(
-      "runner_command must be a nonempty argv of nonempty strings without NUL",
     );
   const cpu = value["cpu"] === undefined ? 1000 : value["cpu"],
     memory = value["memory_mb"] === undefined ? 1024 : value["memory_mb"];
@@ -50,7 +34,6 @@ export function execution_profile(value: unknown): ExecutionProfile {
       throw new Error(`${key} must be a positive integer`);
   return Object.freeze({
     required_capabilities: Object.freeze([...new Set(caps as string[])].sort()),
-    runner_command: Object.freeze([...(command as string[])]),
     cpu: cpu as number,
     memory_mb: memory as number,
   });

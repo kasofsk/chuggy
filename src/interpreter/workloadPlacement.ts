@@ -8,8 +8,8 @@ export type BlockedReason =
   | "RuntimeVersionUnsupported"
   | "RequiredCapabilityUnavailable";
 
-/** The execution profile a workload backend enforces. */
-export interface ExecutionProfile {
+/** The execution profile a workload backend enforces for a session. */
+export interface SessionExecutionProfile {
   readonly profile: string;
   readonly runtimeVersion: string;
 }

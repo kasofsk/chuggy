@@ -202,8 +202,10 @@ retain the worker App's branch restrictions. Worker controls and their defaults 
 [src/roots/schedulerConfig.ts](../../../src/roots/schedulerConfig.ts).
 
 The ticket launcher applies a frozen execution profile directly to its pod:
-`cpu` is Kubernetes millicores, `memory_mb` is MiB, and `runner_command`
-replaces the image command and arguments. Codex receives only `codex-auth` and
+`cpu` is Kubernetes millicores and `memory_mb` is MiB. How the process starts is
+the image's, not the ticket's: the pod keeps the image entrypoint, which serves
+a ticket when `CHUG_TICKET_WORKER_TASK` is set and starts the root
+`CHUG_TICKET_WORKER_ENTRYPOINT` names. Codex receives only `codex-auth` and
 Claude receives only `claude-code`, each as its configured projected Secret
 file. Publishing runs the adopted comment removal and bounded pre-commit hooks
 before committing. Cloud identity is reported unavailable because this
