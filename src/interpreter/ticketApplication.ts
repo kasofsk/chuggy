@@ -16,6 +16,7 @@ import {
   type TicketCatalogTip,
   type TicketContentStore,
 } from "./ticketCatalog.ts";
+import { ticketWorkspacePut } from "./ticketWorkspace.ts";
 import type { TicketMachineOutcome } from "./ticketMachine.ts";
 import type {
   TicketMachineAuthorization,
@@ -774,17 +775,15 @@ function ticketApplicationDispatch(
       request.partition,
     );
     if (availability !== "Available") return { result: availability };
-    const content = ports.content(request.partition);
-    const repository = await content.put("text/plain", request.repository);
-    const commit = await content.put("text/plain", request.commit);
+    const source = await ticketWorkspacePut(ports.content(request.partition), {
+      repository: request.repository,
+      commit: request.commit,
+    });
     return ticketApplicationSubmit(
       ports,
       request,
       authorization,
-      new ticket.DispatchTicket(
-        request.ticket,
-        new task.WorkspaceSource(repository, task.Digest(commit)),
-      ),
+      new ticket.DispatchTicket(request.ticket, source),
     );
   };
 }

@@ -1,5 +1,6 @@
 import type { FinalizeTicket } from "../domain/chuggernaut/ticket.js";
-import { ContentRef } from "../domain/chuggernaut/task.js";
+import type { ContentRef } from "../domain/chuggernaut/task.js";
+import { ticketWorkspaceRead } from "./ticketWorkspace.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import {
   changeProposalRequest,
@@ -175,17 +176,16 @@ async function ticketFinalizerInitialize(
   claim: TicketFinalizerClaim,
 ): Promise<boolean> {
   const content = service.contents(claim.partition);
-  const [configurationContent, repositoryContent] = await Promise.all([
-    content.read(claim.obligation.configuration),
-    content.read(claim.obligation.finalization.source.repository),
-  ]);
-  if (
-    configurationContent?.mediaType !== "application/json" ||
-    repositoryContent?.mediaType !== "text/plain"
-  )
-    return false;
+  const configurationContent = await content.read(
+    claim.obligation.configuration,
+  );
+  if (configurationContent?.mediaType !== "application/json") return false;
+  const workspace = await ticketWorkspaceRead(
+    content,
+    claim.obligation.finalization.source,
+  );
   const configuration = parsedConfiguration(configurationContent.content);
-  const repository = asRepositoryId(repositoryContent.content);
+  const repository = asRepositoryId(workspace.repository);
   const binding = await service.bindings.binding(claim.partition, repository);
   const forge = service.forges.binding(repository);
   if (binding === undefined || forge === undefined) return false;
@@ -196,11 +196,7 @@ async function ticketFinalizerInitialize(
   const headRef = asGitRefName(
     `refs/heads/${configuration.branch_prefix}${String(claim.obligation.ticket)}`,
   );
-  const commitContent = await content.read(
-    ContentRef(Number(claim.obligation.finalization.source.commit)),
-  );
-  if (commitContent?.mediaType !== "text/plain") return false;
-  const headCommit = asGitObjectId(commitContent.content);
+  const headCommit = asGitObjectId(workspace.commit);
   const sourceRef = asGitRefName(`refs/chuggy/results/${headCommit}`);
   const prepared = await service.git.prepareSource({
     repository: binding,

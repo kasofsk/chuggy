@@ -3,6 +3,7 @@ import * as ticket from "../domain/chuggernaut/ticket.js";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import type { TicketContentStore } from "./ticketCatalog.ts";
+import { ticketWorkspaceRead } from "./ticketWorkspace.ts";
 import {
   ticketMachineTaskKey,
   type TicketMachineAuthorization,
@@ -45,11 +46,23 @@ export interface TicketExecutionStore {
   cancelled(claim: TicketExecutionClaim): Promise<boolean>;
 }
 
+/**
+ * What the fabric answers with, which is no longer a `TaskTerminal`.
+ *
+ * THE DOMAIN NOW ASKS THE FABRIC TO CLASSIFY ITS OWN RESULT. A work result
+ * must name the source the machine is to accept, and an evaluator result must
+ * carry a verdict, because the domain reads neither out of a manifest any
+ * more. Both are the runner's to decide, so the runner hands back the report
+ * it decided rather than a terminal the machine would have to decode.
+ */
 export type TicketExecutionResult =
-  | { readonly result: "Produced"; readonly terminal: task.TaskResultProduced }
+  | {
+      readonly result: "Produced";
+      readonly report: ticket.WorkResultReport | ticket.EvaluationResultReport;
+    }
   | {
       readonly result: "ProcessFailed";
-      readonly terminal: task.TaskProcessFailed;
+      readonly failure: task.TaskFailure;
     }
   | {
       readonly result: "ExecutionUnavailable";
@@ -69,13 +82,17 @@ export interface TicketExecutionRunner {
   cancel(claim: TicketExecutionClaim): Promise<void>;
 }
 
+export type TicketExecutionAccess =
+  "ReadRepository" | "PublishRepositoryResult";
+
 export interface TicketExecutionView {
   readonly workload: unknown;
   readonly inputs: unknown;
   readonly resultContract: unknown;
   readonly repository: string;
   readonly commit: string;
-  readonly access: task.GitAccess["kind"];
+  readonly source: task.ContentRef;
+  readonly access: TicketExecutionAccess;
   readonly requiredCapabilities: readonly string[];
   readonly context: readonly {
     readonly reference: task.ContentRef;
@@ -86,6 +103,11 @@ export interface TicketExecutionView {
 export type TicketExecutionContent = (
   partition: Partition,
 ) => TicketContentStore;
+
+/** Answers the graph a claimed obligation belongs to, or nothing for a project the machine does not drive. */
+export type TicketExecutionTickets = (
+  partition: Partition,
+) => Promise<ticket.TicketGraph | undefined>;
 
 export function ticketExecutionResultRef(commit: string): string {
   if (!/^[0-9a-f]{40}$/u.test(commit))
@@ -114,11 +136,80 @@ async function ticketExecutionContent(
   return found;
 }
 
+/**
+ * The source and context material a claimed obligation runs against.
+ *
+ * THE OBLIGATION NO LONGER CARRIES EITHER. v0.4.0 reduced it to a task, its
+ * definition and a context reference naming the work cycle, so what a worker
+ * needs is read back out of the ticket the obligation belongs to. That is
+ * where it has always been true: the machine holds the source it dispatched
+ * and the input it entered the cycle with, and an obligation whose ticket has
+ * moved on is one whose terminal the machine would refuse anyway.
+ */
+export interface TicketExecutionMaterial {
+  readonly source: task.ContentRef;
+  readonly context: readonly task.ContentRef[];
+}
+
+function ticketExecutionWorkContext(
+  input: ticket.WorkInput,
+): readonly task.ContentRef[] {
+  const cause = input.cause;
+  return [
+    input.released.content,
+    input.released.input_bindings,
+    ...(cause instanceof ticket.InitialWork
+      ? []
+      : cause instanceof ticket.EvaluationRework
+        ? cause.entries.map((entry) => entry.result_ref)
+        : [cause.evidence]),
+    ...input.retry_evidence,
+  ];
+}
+
+export function ticketExecutionMaterial(
+  graph: ticket.TicketGraph,
+  obligation: task.TaskObligation,
+): TicketExecutionMaterial {
+  const state = graph.tickets.get(task.task_owner(obligation.task))?.state;
+  if (obligation.task instanceof task.WorkTaskId) {
+    if (!(state instanceof ticket.Work))
+      throw new Error("ticket execution work obligation is not current");
+    return {
+      source: state.execution.source,
+      context: ticketExecutionWorkContext(state.execution.input),
+    };
+  }
+  if (!(state instanceof ticket.Evaluation))
+    throw new Error("ticket execution evaluation obligation is not current");
+  return {
+    source: state.evaluation.input.accepted_source_ref,
+    context: [state.evaluation.input.work_result],
+  };
+}
+
+/** A work task publishes unless its workload declines; an evaluator never does. */
+function ticketExecutionAccess(
+  held: task.TaskId,
+  workload: unknown,
+): TicketExecutionAccess {
+  const declared =
+    workload !== null && typeof workload === "object"
+      ? (workload as Record<string, unknown>)["publishes_repository_result"]
+      : undefined;
+  return held instanceof task.WorkTaskId && declared !== false
+    ? "PublishRepositoryResult"
+    : "ReadRepository";
+}
+
 export async function ticketExecutionView(
   content: TicketContentStore,
+  graph: ticket.TicketGraph,
   obligation: task.TaskObligation,
 ): Promise<TicketExecutionView> {
   const definition = obligation.definition;
+  const material = ticketExecutionMaterial(graph, obligation);
+  const workspace = await ticketWorkspaceRead(content, material.source);
   const references = await Promise.all([
     ticketExecutionContent(content, definition.workload, "workload"),
     ticketExecutionContent(content, definition.inputs, "inputs"),
@@ -127,39 +218,32 @@ export async function ticketExecutionView(
       definition.result_contract,
       "result contract",
     ),
-    ticketExecutionContent(content, obligation.source.repository, "repository"),
-    ticketExecutionContent(
-      content,
-      task.ContentRef(obligation.source.commit),
-      "commit",
-    ),
-    ...obligation.context.map((reference) =>
+    ...material.context.map((reference) =>
       ticketExecutionContent(content, reference, "context"),
     ),
   ]);
-  const [workload, inputs, resultContract, repository, commit, ...contexts] =
-    references;
+  const [workload, inputs, resultContract, ...contexts] = references;
   if (
     workload === undefined ||
     inputs === undefined ||
-    resultContract === undefined ||
-    repository === undefined ||
-    commit === undefined
+    resultContract === undefined
   )
     throw new Error("ticket execution view is incomplete");
+  const declaration = ticketExecutionJson(workload.content, "workload");
   return {
-    workload: ticketExecutionJson(workload.content, "workload"),
+    workload: declaration,
     inputs: ticketExecutionJson(inputs.content, "inputs"),
     resultContract: ticketExecutionJson(
       resultContract.content,
       "result contract",
     ),
-    repository: repository.content,
-    commit: commit.content,
-    access: definition.execution_requirements.access.kind,
+    repository: workspace.repository,
+    commit: workspace.commit,
+    source: material.source,
+    access: ticketExecutionAccess(obligation.task, declaration),
     requiredCapabilities:
       definition.execution_requirements.required_capabilities,
-    context: obligation.context.map((reference, index) => {
+    context: material.context.map((reference, index) => {
       const context = contexts[index];
       if (context === undefined)
         throw new Error("ticket execution context is incomplete");
@@ -190,14 +274,19 @@ export function ticketExecutionEffects(
   };
 }
 
-function ticketExecutionTerminal(
+function ticketExecutionReport(
   claim: TicketExecutionClaim,
-  result: Exclude<TicketExecutionResult, { readonly result: "Retry" }>,
-): task.TaskTerminal {
-  if (result.result === "Produced" || result.result === "ProcessFailed")
-    return result.terminal;
-  return new task.TaskExecutionUnavailable(
-    new task.TaskFailure(claim.obligation.task, result.evidence),
+  result: TicketExecutionResult,
+): ticket.TaskTerminalReport {
+  if (result.result === "Produced") return result.report;
+  return new ticket.TerminalFailureReport(
+    task.task_owner(claim.obligation.task),
+    result.result === "ProcessFailed"
+      ? result.failure
+      : new task.TaskFailure(claim.obligation.task, result.evidence),
+    result.result === "ProcessFailed"
+      ? new ticket.ProcessFailure()
+      : new ticket.ExecutionUnavailableFailure(),
   );
 }
 
@@ -225,6 +314,7 @@ async function ticketExecutionCancelled(
 export async function ticketExecutionRun(
   store: TicketExecutionStore,
   content: TicketExecutionContent,
+  tickets: TicketExecutionTickets,
   runner: TicketExecutionRunner,
   owner: string,
   recoveryEpoch: RecoveryEpoch,
@@ -250,6 +340,7 @@ export async function ticketExecutionRun(
       ticketExecutionClaimRun(
         store,
         content,
+        tickets,
         runner,
         claim,
         authorization,
@@ -264,15 +355,23 @@ export async function ticketExecutionRun(
 async function ticketExecutionClaimRun(
   store: TicketExecutionStore,
   content: TicketExecutionContent,
+  tickets: TicketExecutionTickets,
   runner: TicketExecutionRunner,
   claim: TicketExecutionClaim,
   authorization: TicketMachineAuthorization,
   attemptsMax: number,
   cancellationPollMs: number,
 ): Promise<number> {
+  const graph = await tickets(claim.partition);
+  if (graph === undefined)
+    throw new Error("ticket execution claim has no ticket machine");
   const running = runner.run(
     claim,
-    await ticketExecutionView(content(claim.partition), claim.obligation),
+    await ticketExecutionView(
+      content(claim.partition),
+      graph,
+      claim.obligation,
+    ),
   );
   if (
     await ticketExecutionCancelled(
@@ -289,21 +388,12 @@ async function ticketExecutionClaimRun(
     await store.retry(claim, result.retryAfterSecs);
     return 0;
   }
-  const terminal =
-    result.result === "Retry"
-      ? new task.TaskExecutionUnavailable(
-          new task.TaskFailure(claim.obligation.task, result.evidence),
-        )
-      : ticketExecutionTerminal(claim, result);
   const submitted = await store.terminal(claim, {
     identity: `execution-terminal:${claim.taskKey}`,
     origin: "Execution",
     authorization,
     command: new ticket.ReportTaskTerminal(
-      new ticket.TaskTerminalReport(
-        task.task_owner(claim.obligation.task),
-        terminal,
-      ),
+      ticketExecutionReport(claim, result),
     ),
   });
   return submitted ? 1 : 0;

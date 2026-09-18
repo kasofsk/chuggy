@@ -8,6 +8,7 @@ import {
   postgresTicketExecutionTerminals,
 } from "../adapters/postgres/ticketExecution.ts";
 import { postgresTicketContent } from "../adapters/postgres/ticketContent.ts";
+import { postgresTicketMachine } from "../adapters/postgres/ticketMachine.ts";
 import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
 import {
   composeForgeRepositoryMinting,
@@ -18,6 +19,7 @@ import { asRepositoryId } from "../interpreter/finalizer.ts";
 import {
   ticketExecutionRun,
   type TicketExecutionContent,
+  type TicketExecutionTickets,
 } from "../interpreter/ticketExecution.ts";
 import type {
   SchedulerCommandConfig,
@@ -58,11 +60,17 @@ export function ticketExecutionRuntime(
     },
   );
   const store = postgresTicketExecution(pool);
+  const machine = postgresTicketMachine(pool);
+  const tickets: TicketExecutionTickets = async (partition) => {
+    const graph = await machine.read(partition);
+    return graph === "LegacyModelUnsupported" ? undefined : graph;
+  };
   return {
     run: async () => {
       await ticketExecutionRun(
         store,
         content,
+        tickets,
         runner,
         config.identity.owner,
         config.identity.recoveryEpoch,

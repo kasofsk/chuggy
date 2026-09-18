@@ -22,7 +22,7 @@ export const codec_schema: Readonly<
   ContentRef: {
     alias: "int",
   },
-  Digest: {
+  ContextRef: {
     alias: "int",
   },
   WorkTaskId: {
@@ -43,33 +43,8 @@ export const codec_schema: Readonly<
   TaskId: {
     alias: "WorkTaskId | EvaluationTaskId",
   },
-  ReadRepository: {
-    fields: [],
-  },
-  PublishRepositoryResult: {
-    fields: [],
-  },
-  GitAccess: {
-    alias: "ReadRepository | PublishRepositoryResult",
-  },
   ExecutionRequirements: {
-    fields: [
-      ["repository", "ContentRef"],
-      ["access", "GitAccess"],
-      ["required_capabilities", "tuple[str, ...]", "default-empty"],
-    ],
-  },
-  WorkspaceSource: {
-    fields: [
-      ["repository", "ContentRef"],
-      ["commit", "Digest"],
-    ],
-  },
-  GitOutput: {
-    fields: [["output", "WorkspaceSource"]],
-  },
-  OutputRef: {
-    alias: "GitOutput",
+    fields: [["required_capabilities", "tuple[str, ...]", "default-empty"]],
   },
   TaskDefinition: {
     fields: [
@@ -83,23 +58,13 @@ export const codec_schema: Readonly<
     fields: [
       ["task", "TaskId"],
       ["definition", "TaskDefinition"],
-      ["source", "WorkspaceSource"],
-      ["context", "tuple[ContentRef, ...]"],
-    ],
-  },
-  ResultFinding: {
-    fields: [
-      ["id", "int"],
-      ["description", "ContentRef"],
+      ["context_ref", "ContextRef"],
     ],
   },
   ValidatedTaskResult: {
     fields: [
       ["obligation", "TaskObligation"],
-      ["manifest", "ContentRef"],
-      ["outputs", "tuple[OutputRef, ...]"],
-      ["value", "int"],
-      ["findings", "tuple[ResultFinding, ...]"],
+      ["result_ref", "ContentRef"],
     ],
   },
   TaskFailure: {
@@ -139,42 +104,23 @@ export const codec_schema: Readonly<
     fields: [
       ["ticket", "TicketId"],
       ["work_result", "ContentRef"],
-      ["accepted_source", "WorkspaceSource"],
+      ["accepted_source_ref", "ContentRef"],
     ],
   },
-  SummaryReason: {
-    fields: [["value", "int"]],
+  EvaluatorPass: {
+    fields: [],
   },
-  ExitCodeReason: {
-    fields: [["code", "int"]],
+  EvaluatorFail: {
+    fields: [],
   },
-  EvaluationReason: {
-    alias: "SummaryReason | ExitCodeReason",
-  },
-  EvaluationFinding: {
-    fields: [
-      ["id", "int"],
-      ["description", "ContentRef"],
-    ],
-  },
-  PassDetail: {
-    fields: [
-      ["reason", "EvaluationReason"],
-      ["result_manifest", "ContentRef"],
-    ],
-  },
-  FailDetail: {
-    fields: [
-      ["reason", "EvaluationReason"],
-      ["result_manifest", "ContentRef"],
-      ["findings", "tuple[EvaluationFinding, ...]"],
-    ],
+  EvaluationVerdict: {
+    alias: "EvaluatorPass | EvaluatorFail",
   },
   EvaluatorPassed: {
-    fields: [["detail", "PassDetail"]],
+    fields: [["result_ref", "ContentRef"]],
   },
   EvaluatorFailed: {
-    fields: [["detail", "FailDetail"]],
+    fields: [["result_ref", "ContentRef"]],
   },
   EvaluatorResult: {
     alias: "EvaluatorPassed | EvaluatorFailed",
@@ -198,9 +144,7 @@ export const codec_schema: Readonly<
   EvaluationReworkEntry: {
     fields: [
       ["evaluator", "EvaluatorKey"],
-      ["reason", "EvaluationReason"],
-      ["result_manifest", "ContentRef"],
-      ["findings", "tuple[EvaluationFinding, ...]"],
+      ["result_ref", "ContentRef"],
     ],
   },
   StageRun: {
@@ -239,17 +183,8 @@ export const codec_schema: Readonly<
       ["state", "EvaluationState"],
     ],
   },
-  AuthoredContent: {
-    fields: [
-      ["title", "ContentRef"],
-      ["instructions", "ContentRef"],
-    ],
-  },
-  LegacyContent: {
-    fields: [["content", "ContentRef"]],
-  },
   ReleasedContent: {
-    alias: "AuthoredContent | LegacyContent",
+    alias: "ContentRef",
   },
   ReleasedWorkInput: {
     fields: [
@@ -279,7 +214,7 @@ export const codec_schema: Readonly<
   WorkExecution: {
     fields: [
       ["input", "WorkInput"],
-      ["source", "WorkspaceSource"],
+      ["source", "ContentRef"],
     ],
   },
   FinalizationOperation: {
@@ -287,7 +222,7 @@ export const codec_schema: Readonly<
       ["work_cycle", "CycleNumber"],
       ["generation", "Generation"],
       ["input", "ContentRef"],
-      ["source", "WorkspaceSource"],
+      ["source", "ContentRef"],
     ],
   },
   ReworkEvaluationFailure: {
@@ -305,14 +240,14 @@ export const codec_schema: Readonly<
   WorkEscalation: {
     fields: [
       ["resume_input", "WorkInput"],
-      ["source", "WorkspaceSource"],
+      ["source", "ContentRef"],
       ["evidence", "ContentRef"],
     ],
   },
   EvaluationFailureEscalation: {
     fields: [
       ["evidence", "tuple[EvaluationReworkEntry, ...]"],
-      ["source", "WorkspaceSource"],
+      ["source", "ContentRef"],
     ],
   },
   FinalizationEscalation: {
@@ -387,11 +322,38 @@ export const codec_schema: Readonly<
   TicketGraph: {
     fields: [["tickets", "Mapping[TicketId, Ticket]"]],
   },
-  TaskTerminalReport: {
+  ProcessFailure: {
+    fields: [],
+  },
+  ExecutionUnavailableFailure: {
+    fields: [],
+  },
+  FailureKind: {
+    alias: "ProcessFailure | ExecutionUnavailableFailure",
+  },
+  WorkResultReport: {
     fields: [
       ["ticket", "TicketId"],
-      ["terminal", "TaskTerminal"],
+      ["result", "ValidatedTaskResult"],
+      ["accepted_source_ref", "ContentRef"],
     ],
+  },
+  EvaluationResultReport: {
+    fields: [
+      ["ticket", "TicketId"],
+      ["result", "ValidatedTaskResult"],
+      ["verdict", "EvaluationVerdict"],
+    ],
+  },
+  TerminalFailureReport: {
+    fields: [
+      ["ticket", "TicketId"],
+      ["failure", "TaskFailure"],
+      ["kind_of_failure", "FailureKind"],
+    ],
+  },
+  TaskTerminalReport: {
+    alias: "WorkResultReport | EvaluationResultReport | TerminalFailureReport",
   },
   FinalizationSucceeded: {
     fields: [["evidence", "ContentRef"]],
@@ -427,7 +389,7 @@ export const codec_schema: Readonly<
   DispatchTicket: {
     fields: [
       ["ticket", "TicketId"],
-      ["source", "WorkspaceSource"],
+      ["source", "ContentRef"],
     ],
   },
   RevokeTicket: {
@@ -477,9 +439,6 @@ export const codec_schema: Readonly<
   TicketDependenciesChanged: {
     fields: [["ticket", "TicketId"]],
   },
-  DispatchSourceRepositoryMismatch: {
-    fields: [["ticket", "TicketId"]],
-  },
   DependenciesIncomplete: {
     fields: [
       ["ticket", "TicketId"],
@@ -498,9 +457,6 @@ export const codec_schema: Readonly<
       ["task", "TaskId"],
     ],
   },
-  WorkResultMissingExactGitOutput: {
-    fields: [["ticket", "TicketId"]],
-  },
   FinalizationNotCurrent: {
     fields: [
       ["ticket", "TicketId"],
@@ -510,7 +466,7 @@ export const codec_schema: Readonly<
   },
   TicketRefusal: {
     alias:
-      "TicketAlreadyExists | DependenciesNotFound | SelfDependency | TicketNotFound | TicketNotPending | TicketIdentityMismatch | TicketRevisionStale | TicketDependenciesChanged | DispatchSourceRepositoryMismatch | DependenciesIncomplete | TicketNotRevocable | TicketNotResumable | TaskNotCurrent | WorkResultMissingExactGitOutput | FinalizationNotCurrent",
+      "TicketAlreadyExists | DependenciesNotFound | SelfDependency | TicketNotFound | TicketNotPending | TicketIdentityMismatch | TicketRevisionStale | TicketDependenciesChanged | DependenciesIncomplete | TicketNotRevocable | TicketNotResumable | TaskNotCurrent | FinalizationNotCurrent",
   },
   TicketCreated: {
     fields: [["definition", "ReleasedTicket"]],
@@ -525,7 +481,7 @@ export const codec_schema: Readonly<
   TicketDispatched: {
     fields: [
       ["ticket", "TicketId"],
-      ["source", "WorkspaceSource"],
+      ["source", "ContentRef"],
     ],
   },
   TicketRevoked: {
@@ -544,6 +500,7 @@ export const codec_schema: Readonly<
     fields: [
       ["ticket", "TicketId"],
       ["result", "ValidatedTaskResult"],
+      ["accepted_source_ref", "ContentRef"],
     ],
   },
   TicketWorkProcessFailed: {
@@ -563,33 +520,33 @@ export const codec_schema: Readonly<
   TicketEvaluationProgressed: {
     fields: [
       ["ticket", "TicketId"],
-      ["terminal", "TaskTerminal"],
+      ["report", "TaskTerminalReport"],
     ],
   },
   TicketEvaluationPassed: {
     fields: [
       ["ticket", "TicketId"],
-      ["terminal", "TaskTerminal"],
+      ["report", "TaskTerminalReport"],
     ],
   },
   TicketEvaluationReworkStarted: {
     fields: [
       ["ticket", "TicketId"],
-      ["terminal", "TaskTerminal"],
+      ["report", "TaskTerminalReport"],
       ["evidence", "tuple[EvaluationReworkEntry, ...]"],
     ],
   },
   TicketEvaluationFailureEscalated: {
     fields: [
       ["ticket", "TicketId"],
-      ["terminal", "TaskTerminal"],
+      ["report", "TaskTerminalReport"],
       ["evidence", "tuple[EvaluationReworkEntry, ...]"],
     ],
   },
   TicketEvaluationBlocked: {
     fields: [
       ["ticket", "TicketId"],
-      ["terminal", "TaskTerminal"],
+      ["report", "TaskTerminalReport"],
     ],
   },
   TicketFinalizationSucceeded: {

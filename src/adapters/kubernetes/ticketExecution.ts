@@ -3,6 +3,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import { Ajv2020 } from "ajv/dist/2020.js";
 
 import * as task from "../../domain/chuggernaut/task.js";
+import * as evaluation from "../../domain/chuggernaut/evaluation.js";
+import * as ticket from "../../domain/chuggernaut/ticket.js";
+import { ticketWorkspacePut } from "../../interpreter/ticketWorkspace.ts";
 import type {
   CredentialResolved,
   RepositoryBinding,
@@ -434,15 +437,36 @@ async function ticketFailure(
   content: TicketContentStore,
   claim: TicketExecutionClaim,
   evidence: string,
-): Promise<task.TaskProcessFailed> {
-  return new task.TaskProcessFailed(
-    new task.TaskFailure(
-      claim.obligation.task,
-      await content.put("text/plain", evidence),
-    ),
+): Promise<task.TaskFailure> {
+  return new task.TaskFailure(
+    claim.obligation.task,
+    await content.put("text/plain", evidence),
   );
 }
 
+async function ticketProcessFailed(
+  content: TicketContentStore,
+  claim: TicketExecutionClaim,
+  evidence: string,
+): Promise<TicketExecutionResult> {
+  return {
+    result: "ProcessFailed",
+    failure: await ticketFailure(content, claim, evidence),
+  };
+}
+
+function ticketMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+/**
+ * Validates a worker's manifest and turns it into the report the machine takes.
+ *
+ * THE FABRIC CLASSIFIES ITS OWN RESULT NOW. The domain no longer reads a
+ * verdict out of a result value, nor a published commit out of an output list,
+ * so an evaluator's pass or fail and a work task's accepted source are decided
+ * here against this tree's own worker contract and travel as a report.
+ */
 async function ticketProduced(
   content: TicketContentStore,
   claim: TicketExecutionClaim,
@@ -462,135 +486,94 @@ async function ticketProduced(
         `result contract violation: ${validate.errors?.[0]?.message ?? "invalid result"}`,
       );
   } catch (error) {
-    return {
-      result: "ProcessFailed",
-      terminal: await ticketFailure(
-        content,
-        claim,
-        error instanceof Error ? error.message : "workload result is invalid",
-      ),
-    };
+    return ticketProcessFailed(
+      content,
+      claim,
+      ticketMessage(error, "workload result is invalid"),
+    );
   }
-  const manifestReference = await content.put(
+  const resultRef = await content.put(
     "application/json",
     JSON.stringify(manifest),
   );
-  let decoded: {
-    readonly value: number;
-    readonly findings: readonly task.ResultFinding[];
-  };
-  try {
-    decoded = await ticketExecutionVerdict(content, claim, manifest);
-  } catch (error) {
-    return {
-      result: "ProcessFailed",
-      terminal: await ticketFailure(
-        content,
-        claim,
-        error instanceof Error
-          ? error.message
-          : "ticket execution findings are invalid",
-      ),
-    };
-  }
-  return ticketProducedResult(
-    content,
-    claim,
-    view,
-    outcome.outputs,
-    manifestReference,
-    decoded,
-  );
-}
-
-async function ticketProducedResult(
-  content: TicketContentStore,
-  claim: TicketExecutionClaim,
-  view: TicketExecutionView,
-  rawOutputs: unknown,
-  manifestReference: task.ContentRef,
-  decoded: {
-    readonly value: number;
-    readonly findings: readonly task.ResultFinding[];
-  },
-): Promise<TicketExecutionResult> {
-  try {
-    const published = await ticketOutputs(content, claim, view, rawOutputs);
-    return ticketValidated(
-      content,
-      claim,
-      manifestReference,
-      published,
-      decoded.value,
-      decoded.findings,
-    );
-  } catch (error) {
-    return {
-      result: "ProcessFailed",
-      terminal: await ticketFailure(
-        content,
-        claim,
-        error instanceof Error ? error.message : "workload outputs are invalid",
-      ),
-    };
-  }
-}
-
-async function ticketValidated(
-  content: TicketContentStore,
-  claim: TicketExecutionClaim,
-  manifest: task.ContentRef,
-  outputs: readonly task.GitOutput[],
-  value: number,
-  findings: readonly task.ResultFinding[],
-): Promise<TicketExecutionResult> {
   try {
     return {
       result: "Produced",
-      terminal: new task.TaskResultProduced(
-        task.ValidatedTaskResult.produce(
-          claim.obligation,
-          manifest,
-          outputs,
-          value,
-          findings,
-        ),
+      report: await ticketReport(
+        content,
+        claim,
+        view,
+        { manifest, outputs: outcome.outputs },
+        resultRef,
       ),
     };
   } catch (error) {
-    return {
-      result: "ProcessFailed",
-      terminal: await ticketFailure(
-        content,
-        claim,
-        error instanceof Error ? error.message : "workload result is invalid",
-      ),
-    };
+    return ticketProcessFailed(
+      content,
+      claim,
+      ticketMessage(error, "workload result is invalid"),
+    );
   }
 }
 
-export async function ticketExecutionVerdict(
+async function ticketReport(
   content: TicketContentStore,
   claim: TicketExecutionClaim,
+  view: TicketExecutionView,
+  produced: {
+    readonly manifest: Record<string, unknown>;
+    readonly outputs: unknown;
+  },
+  resultRef: task.ContentRef,
+): Promise<ticket.WorkResultReport | ticket.EvaluationResultReport> {
+  const owner = task.task_owner(claim.obligation.task);
+  const result = task.ValidatedTaskResult.produce(claim.obligation, resultRef);
+  return claim.obligation.task instanceof task.EvaluationTaskId
+    ? new ticket.EvaluationResultReport(
+        owner,
+        result,
+        ticketExecutionVerdict(produced.manifest),
+      )
+    : new ticket.WorkResultReport(
+        owner,
+        result,
+        await ticketAcceptedSource(content, view, produced.outputs),
+      );
+}
+
+/** An evaluator's manifest says pass or fail, and a passing one may hold no findings. */
+export function ticketExecutionVerdict(
   manifest: Record<string, unknown>,
-): Promise<{
-  readonly value: number;
-  readonly findings: readonly task.ResultFinding[];
-}> {
-  if (!(claim.obligation.task instanceof task.EvaluationTaskId))
-    return { value: 1, findings: [] };
+): evaluation.EvaluationVerdict {
   const verdict = Object.hasOwn(manifest, "verdict")
     ? manifest["verdict"]
     : "pass";
   if (!["pass", "passed", "fail", "failed"].includes(String(verdict)))
     throw new TypeError("ticket execution manifest verdict is invalid");
-  const findings: task.ResultFinding[] = [];
-  const rawFindings = manifest["findings"] ?? [];
-  if (!Array.isArray(rawFindings) || rawFindings.length > task.FINDING_LIMIT)
+  const findings = ticketFindings(manifest);
+  const passed = verdict === "pass" || verdict === "passed";
+  if (passed && findings > 0)
+    throw new TypeError("a passing evaluator manifest cannot contain findings");
+  return passed
+    ? new evaluation.EvaluatorPass()
+    : new evaluation.EvaluatorFail();
+}
+
+/**
+ * Counts the findings a manifest declares, refusing a malformed list.
+ *
+ * THE DOMAIN NO LONGER MODELS A FINDING. It carries only the reference to the
+ * manifest holding them, so the shape a rework cycle reads back is checked
+ * here or nowhere: an unidentified or repeated finding reaches the next work
+ * cycle as evidence nobody can cite.
+ */
+function ticketFindings(manifest: Record<string, unknown>): number {
+  const raw = manifest["findings"] ?? [];
+  if (!Array.isArray(raw))
     throw new TypeError("ticket execution findings are invalid");
   const seen = new Set<number>();
-  for (const [offset, raw] of rawFindings.entries()) {
-    const finding = ticketRecord(raw, "finding");
+  for (const [offset, entry] of raw.entries()) {
+    const finding = ticketRecord(entry, "finding");
     const description = finding["description"];
     if (typeof description !== "string" || description.length === 0)
       throw new TypeError("ticket execution finding description is invalid");
@@ -603,31 +586,30 @@ export async function ticketExecutionVerdict(
     if (seen.has(identifier))
       throw new TypeError("ticket execution finding identity is repeated");
     seen.add(identifier);
-    findings.push(
-      new task.ResultFinding(
-        identifier,
-        await content.put("text/plain", description),
-      ),
-    );
   }
-  const passed = verdict === "pass" || verdict === "passed";
-  if (passed && findings.length > 0)
-    throw new TypeError("a passing evaluator manifest cannot contain findings");
-  return { value: passed ? 1 : 0, findings };
+  return raw.length;
 }
 
-async function ticketOutputs(
+/**
+ * The source the machine is to accept for a work result.
+ *
+ * A PUBLISHING TASK MUST NAME EXACTLY ONE OUTPUT on the repository it ran
+ * against, and that output's commit becomes the source every later cycle and
+ * the finalization run from — the refusal the domain used to carry as
+ * `WorkResultMissingExactGitOutput`, which it can no longer see. A task that
+ * does not publish keeps the source it was dispatched with.
+ */
+async function ticketAcceptedSource(
   content: TicketContentStore,
-  claim: TicketExecutionClaim,
   view: TicketExecutionView,
   raw: unknown,
-): Promise<readonly task.GitOutput[]> {
+): Promise<task.ContentRef> {
   if (!Array.isArray(raw))
     throw new TypeError("ticket execution outputs must be an array");
   if (view.access === "ReadRepository") {
     if (raw.length !== 0)
       throw new TypeError("read-only ticket execution produced an output");
-    return [];
+    return view.source;
   }
   if (raw.length !== 1)
     throw new TypeError("publishing ticket execution must produce one output");
@@ -637,15 +619,10 @@ async function ticketOutputs(
   const commit = output["commit"];
   if (typeof commit !== "string" || !/^[0-9a-f]{40}$/iu.test(commit))
     throw new TypeError("ticket execution output commit is invalid");
-  const normalized = commit.toLowerCase();
-  return [
-    new task.GitOutput(
-      new task.WorkspaceSource(
-        claim.obligation.definition.execution_requirements.repository,
-        task.Digest(await content.put("text/plain", normalized)),
-      ),
-    ),
-  ];
+  return ticketWorkspacePut(content, {
+    repository: view.repository,
+    commit: commit.toLowerCase(),
+  });
 }
 
 async function ticketResult(
@@ -661,14 +638,11 @@ async function ticketResult(
       "worker outcome",
     ) as unknown as TicketWorkerOutcome;
   } catch (error) {
-    return {
-      result: "ProcessFailed",
-      terminal: await ticketFailure(
-        content,
-        claim,
-        error instanceof Error ? error.message : "worker outcome is invalid",
-      ),
-    };
+    return ticketProcessFailed(
+      content,
+      claim,
+      ticketMessage(error, "worker outcome is invalid"),
+    );
   }
   if (outcome.type === "result")
     return ticketProduced(content, claim, view, outcome);
@@ -676,15 +650,12 @@ async function ticketResult(
     typeof outcome.evidence === "string"
       ? outcome.evidence
       : "ticket worker returned an invalid outcome";
-  const reference = await content.put("text/plain", evidence);
   if (outcome.type === "execution_unavailable")
-    return { result: "ExecutionUnavailable", evidence: reference };
-  return {
-    result: "ProcessFailed",
-    terminal: new task.TaskProcessFailed(
-      new task.TaskFailure(claim.obligation.task, reference),
-    ),
-  };
+    return {
+      result: "ExecutionUnavailable",
+      evidence: await content.put("text/plain", evidence),
+    };
+  return ticketProcessFailed(content, claim, evidence);
 }
 
 interface TicketRunnerState {

@@ -140,13 +140,23 @@ function catalogCloudIdentity(
   resolved["cloud_identity"] = { ...workload.cloud_identity, project };
 }
 
+/**
+ * Resolves one workload into a task definition and says whether it publishes.
+ *
+ * THE VERDICT TRAVELS IN THE RESOLVED WORKLOAD, not in the definition. The
+ * domain dropped the repository and the access mode from
+ * `ExecutionRequirements`, so `publishes_repository_result` stays in this
+ * tree's own workload document, where the execution view reads it back.
+ */
 async function catalogTask(
   context: CatalogContext,
   authored: Fragment,
-  repository: task.ContentRef,
   inputs: task.ContentRef,
   container: string,
-): Promise<task.TaskDefinition> {
+): Promise<{
+  readonly definition: task.TaskDefinition;
+  readonly publishes: boolean;
+}> {
   const workload = await catalogFragment<WorkloadDocument>(
     context,
     authored,
@@ -161,15 +171,13 @@ async function catalogTask(
     throw new TypeError(
       "evaluator workloads must not declare publishes_repository_result",
     );
-  const access =
-    container !== "work" || workload.publishes_repository_result === false
-      ? new task.ReadRepository()
-      : new task.PublishRepositoryResult();
   const resolved = copy_json_metadata<CatalogDocument>(workload, {
     ...workload,
   });
   delete resolved["result_contract"];
-  delete resolved["publishes_repository_result"];
+  const publishes =
+    container === "work" && workload.publishes_repository_result !== false;
+  resolved["publishes_repository_result"] = publishes;
   let capabilities: readonly string[] = [];
   if (workload.execution_profile !== undefined) {
     const profile = context.source.executionProfiles.get(
@@ -191,12 +199,15 @@ async function catalogTask(
       catalogReference(workload.prompt, "agents", ".md"),
     );
   catalogCloudIdentity(context, workload, resolved, container);
-  return new task.TaskDefinition(
-    await context.content.put("application/json", canonical_json(resolved)),
-    inputs,
-    new task.ExecutionRequirements(repository, access, capabilities),
-    contract,
-  );
+  return {
+    definition: new task.TaskDefinition(
+      await context.content.put("application/json", canonical_json(resolved)),
+      inputs,
+      new task.ExecutionRequirements(capabilities),
+      contract,
+    ),
+    publishes,
+  };
 }
 
 interface CatalogPlan {
@@ -208,7 +219,6 @@ interface CatalogPlan {
 async function catalogPlan(
   context: CatalogContext,
   authored: Fragment,
-  repository: task.ContentRef,
   inputs: task.ContentRef,
 ): Promise<CatalogPlan> {
   const document = await catalogFragment<PlanDocument>(
@@ -247,13 +257,14 @@ async function catalogPlan(
       evaluators.push(
         new evaluation.EvaluatorDefinition(
           evaluatorKey,
-          await catalogTask(
-            context,
-            evaluator.workload,
-            repository,
-            inputs,
-            `eval:${String(key)}:${String(evaluatorKey)}`,
-          ),
+          (
+            await catalogTask(
+              context,
+              evaluator.workload,
+              inputs,
+              `eval:${String(key)}:${String(evaluatorKey)}`,
+            )
+          ).definition,
         ),
       );
     }
@@ -266,6 +277,19 @@ async function catalogPlan(
   };
 }
 
+/**
+ * The one document a release carries as its content.
+ *
+ * THE DOMAIN RELEASES ONE REFERENCE, not a title beside instructions, so the
+ * two authored fields are written as the markdown a worker reads them as. A
+ * title becomes the heading it already was in every prompt that rendered it.
+ */
+function catalogReleasedContent(document: TicketDocument): string {
+  const title = document.title ?? "";
+  const instructions = document.instructions ?? "";
+  return title === "" ? instructions : `# ${title}\n\n${instructions}`;
+}
+
 async function catalogRelease(
   context: CatalogContext,
   identity: task.TicketId,
@@ -275,47 +299,32 @@ async function catalogRelease(
     "ticket",
     catalogDocument(source),
   );
-  const repository = await context.content.put(
-    "text/plain",
-    context.source.repository,
-  );
   const inputs = await context.content.put(
     "application/json",
     canonical_json(document.inputs ?? {}),
   );
-  const work = await catalogTask(
-    context,
-    document.work,
-    repository,
-    inputs,
-    "work",
-  );
-  const plan = await catalogPlan(
-    context,
-    document.evaluation,
-    repository,
-    inputs,
-  );
+  const work = await catalogTask(context, document.work, inputs, "work");
+  const plan = await catalogPlan(context, document.evaluation, inputs);
   const finalizer = await catalogFragment<TicketPullRequestConfiguration>(
     context,
     document.finalization,
     "finalizers",
     "finalizer",
   );
-  if (work.execution_requirements.access.kind !== "PublishRepositoryResult")
+  if (!work.publishes)
     throw new TypeError(
       "pull-request finalization requires work that publishes a repository result",
     );
   const configuration = { ...finalizer, merge: finalizer.merge ?? false };
   const definition = new ticket.ReleasedTicket(
     identity,
-    new ticket.AuthoredContent(
-      await context.content.put("text/plain", document.title ?? ""),
-      await context.content.put("text/markdown", document.instructions ?? ""),
+    await context.content.put(
+      "text/markdown",
+      catalogReleasedContent(document),
     ),
     inputs,
     new Set((document.dependencies ?? []).map(task.TicketId)),
-    work,
+    work.definition,
     plan.plan,
     await context.content.put(
       "application/json",
