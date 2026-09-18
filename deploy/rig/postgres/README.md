@@ -1,5 +1,12 @@
 # The rig's PostgreSQL
 
+`deploy/rig/preflight.sh` is what to run before any of this: every credential
+below is a Secret an operator issued by hand, and a Secret that is not there
+reads back as an empty string rather than as a failure. `deploy/rig/bring-up.sh`
+is the executable form of the role, migration, project, access and binding
+steps, and this file is the argument for each of them and the procedure to read
+when the two disagree.
+
 Two files and the order to apply them in. `postgres-roles.sql` creates the
 identities a deployment owns and the migration cannot create for itself;
 `postgres-network-policy.yaml` decides who on the cluster network may open a
@@ -163,6 +170,48 @@ one.
 This and the grant below are provisioned in either order — a tuple names an
 object rather than referencing a row — but a partition answers nobody until it
 has both.
+
+## Bind a repository
+
+A project answers about repositories it is bound to, and nothing else binds
+one: the route that does needs a project administrator's bearer, which a
+freshly provisioned installation has nobody to issue. `src/roots/bindProjectRepository.ts`
+is the door without one, and it runs as the owner for the same reason the row
+above does.
+
+**THE EPOCH IS THE PART NOBODY HAS TO HAND.** A binding is made under a
+recovery epoch and the door refuses one made under any other, answering
+`RecoveryEpochMismatch` and writing nothing. Which epoch the installation is at
+is not in this checkout and not in the database's own settings: it is the value
+the finalizer runs with, and a deployment supplies that from a Secret. So it is
+read from where the estate says it is rather than from memory — the finalizer's
+`CHUG_FINALIZER_RECOVERY_EPOCH` names the Secret and the key, and that Secret
+holds the epoch:
+
+```sh
+reference="$(kubectl -n chuggy get deployment/chuggy-finalizer \
+  -o go-template='{{range .spec.template.spec.containers}}{{range .env}}{{if eq .name "CHUG_FINALIZER_RECOVERY_EPOCH"}}{{with .valueFrom}}{{.secretKeyRef.name}} {{.secretKeyRef.key}}{{end}}{{end}}{{end}}{{end}}')"
+epoch="$(secret ${reference% *} ${reference#* })"
+```
+
+Then, over the same forwarded port:
+
+```sh
+export CHUG_BIND_REPOSITORY_DATABASE_URL="$owner_url"
+export CHUG_BIND_REPOSITORY_TENANT="tenant" CHUG_BIND_REPOSITORY_PROJECT="project"
+export CHUG_BIND_REPOSITORY_REPOSITORY="github.com/kasofsk/chuggy"
+export CHUG_BIND_REPOSITORY_RECOVERY_EPOCH="$epoch"
+export CHUG_BIND_REPOSITORY_OPERATION="bind-tenant-project-chuggy"
+export CHUG_BIND_REPOSITORY_AUTHORITY_KIND=operator
+export CHUG_BIND_REPOSITORY_AUTHORITY_SUBJECT="the sub claim the provider issues"
+npm run bind:project-repository
+```
+
+The operation is an idempotency key, so a value derived from the partition and
+the repository is what makes a re-run a repeat of the same binding rather than
+a second one that conflicts with it. It reports `Bound` — which covers
+reinstating a repository this project retired — or `AlreadyBound`, and a
+project row that is not there is `ProjectAbsent` rather than a fault.
 
 ## Grant a project access
 

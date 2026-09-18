@@ -39,6 +39,21 @@ them.
 The API and finalizer mount the portal App key and mint credentials for their
 repository operations. The scheduler uses the worker App key for ticket execution.
 
+**AN INSTALLATION THAT REACHES NO FORGE STILL NEEDS BOTH KEYS.** The refusal
+below is at start-up and is made by the configuration rather than by the first
+act, so a deployment that names an App and mounts no usable key is a pod that
+never becomes ready and says nothing about a forge. Two throwaway RSA keys
+satisfy every precondition on a rig that mints nothing, and GitHub is asked
+about neither:
+
+```sh
+openssl genrsa -traditional -out portal.pem 4096
+openssl genrsa -traditional -out worker.pem 4096
+```
+
+`deploy/rig/preflight.sh` reports both Secrets absent rather than leaving the
+pods to.
+
 The key is read once per mint rather than held, and the process refuses to start
 unless the file it names is a readable RSA private key — so a Secret mounted at
 the wrong path is a pod that never becomes ready rather than a route that

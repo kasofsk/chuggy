@@ -53,6 +53,10 @@ the tenant's. A grant with `CHUG_PROVISION_PROJECT` absent is a tenant grant,
 and one whose relation is `tenant` names the tenant the project inherits from
 rather than a person — the one arm that reads no issuer or subject.
 
+A project needs both arms before it answers anybody, so `deploy/rig/bring-up.sh`
+writes them together in its `access` stage: the tenant grant and one member's,
+from the same issuer and subject.
+
 A grant is a PUT and writes one tuple, so re-running it changes nothing and
 granting a second relation adds to what the principal holds rather than
 replacing it. Narrowing access is a revocation of the relation to be taken
