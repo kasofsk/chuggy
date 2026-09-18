@@ -42,11 +42,7 @@ import {
   projectListReread,
   projectListRereadNamed,
 } from "../../core/projectQueryKeys.ts";
-import {
-  threadAnswering,
-  threadLabel,
-  threadMine,
-} from "../../core/threads.ts";
+import { threadAnswering, threadMine } from "../../core/threads.ts";
 import { useApiPorts, usePanelList } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { ThreadConversation } from "../thread/ThreadConversation.tsx";
@@ -265,14 +261,15 @@ function ChatPaneOpen(props: {
       className="bg-surface-1 relative grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
     >
       <header className="flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
-        <div className="group flex w-full min-w-0 items-center gap-2">
-          <h2 className="text-ink-2 font-strong min-w-0 flex-1 truncate text-sm">
-            {held === undefined ? "Chat" : threadLabel(held)}
-          </h2>
-          {held === undefined ? null : (
-            <ChatPaneThreadActions partition={props.partition} thread={held} />
-          )}
-        </div>
+        {held === undefined ? (
+          <div className="flex w-full min-w-0 items-center gap-2">
+            <h2 className="text-ink-2 font-strong min-w-0 flex-1 truncate text-sm">
+              Chat
+            </h2>
+          </div>
+        ) : (
+          <ChatPaneThreadActions partition={props.partition} thread={held} />
+        )}
         <ChatPaneStartControl
           partition={props.partition}
           start={holding.start}

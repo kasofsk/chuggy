@@ -1,28 +1,23 @@
 /**
- * The menu that renames, closes and hides one thread, and the editor the
- * rename opens into.
+ * The rename and close actions for the thread the pane holds, and the editor
+ * the rename opens into.
  *
- * The pieces are separate from the state behind them because the chat pane
- * draws the trigger in its header and swaps the whole header for the editor
- * while a rename is open, over one call to `useThreadEntryActions`.
+ * The state is separate from what draws it because the chat pane's header
+ * swaps the title for this editor while a rename is open, and the buttons
+ * beside it come and go with the same state, over one call to
+ * `useThreadEntryActions`.
  */
 
-import { DropdownMenu } from "radix-ui";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { threadTitleCharsMax } from "../../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
-import {
-  apiCloseThread,
-  apiHideThread,
-  apiRenameThread,
-} from "../../core/apiRoutes.ts";
+import { apiCloseThread, apiRenameThread } from "../../core/apiRoutes.ts";
 import { panelReason } from "../../core/freshness.ts";
-import { threadRowActions } from "../../core/threads.ts";
+import { threadActions } from "../../core/threads.ts";
 import { useApiPorts } from "../api.ts";
-import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
 
 export interface ThreadEntryActions {
   readonly renaming: boolean;
@@ -30,24 +25,18 @@ export interface ThreadEntryActions {
   readonly refused: string | undefined;
   readonly closable: boolean;
   /** Whether renaming this thread is the reader's to do: the door is
-   * owner-scoped and refuses `NotYourThread` otherwise, so a row that is not
-   * the reader's own does not offer an action it can only ever be refused. */
+   * owner-scoped and refuses `NotYourThread` otherwise, so a thread that is
+   * not the reader's own does not offer an action it can only ever be
+   * refused. */
   readonly renameable: boolean;
-  /** Hiding or showing is owner-scoped the same way. */
-  readonly hideable: boolean;
-  readonly hidden: boolean;
-  /** Whether the row offers any action at all — a stranger's closed row
-   * offers none, and draws no `…` trigger. */
-  readonly actionable: boolean;
   readonly startRename: () => void;
   readonly submitRename: (title: string) => void;
   readonly cancelRename: () => void;
-  readonly toggleHidden: () => void;
   readonly close: () => void;
 }
 
-/** The rename, hide and close state for one thread's row, called once per
- * row wherever it is drawn. */
+/** The rename and close state for the thread the pane holds, called once and
+ * shared by the title it swaps and the buttons beside it. */
 export function useThreadEntryActions(
   partition: PartitionIdentity,
   thread: ThreadEntryResponse,
@@ -56,17 +45,14 @@ export function useThreadEntryActions(
   const [renaming, setRenaming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string | undefined>(undefined);
-  const rowActions = threadRowActions(thread);
+  const offered = threadActions(thread);
 
   return {
     renaming,
     busy,
     refused,
-    closable: rowActions.includes("Close"),
-    renameable: rowActions.includes("Rename"),
-    hideable: rowActions.includes("Hide") || rowActions.includes("Show"),
-    hidden: thread.hidden,
-    actionable: rowActions.length > 0,
+    closable: offered.includes("Close"),
+    renameable: offered.includes("Rename"),
     startRename: () => {
       setRenaming(true);
     },
@@ -84,16 +70,6 @@ export function useThreadEntryActions(
             return;
           }
           setRenaming(false);
-        },
-      );
-    },
-    toggleHidden: () => {
-      setBusy(true);
-      setRefused(undefined);
-      void apiHideThread(ports, partition, thread.session, !thread.hidden).then(
-        (result) => {
-          setBusy(false);
-          if (result.outcome !== "Ok") setRefused(panelReason(result));
         },
       );
     },
@@ -130,54 +106,5 @@ export function ThreadEntryRename(props: {
         if (event.key === "Escape") props.actions.cancelRename();
       }}
     />
-  );
-}
-
-const threadEntryMenuTriggerClassName =
-  "shrink-0 rounded-2 px-1 text-ink-3 opacity-0 group-hover:opacity-100" +
-  " group-focus-within:opacity-100 data-[state=open]:opacity-100";
-
-export function ThreadEntryMenu(props: {
-  readonly actions: ThreadEntryActions;
-}): ReactNode {
-  const actions = props.actions;
-  if (!actions.actionable) return null;
-  return (
-    <DropdownMenu.Root modal={false}>
-      <DropdownMenu.Trigger
-        aria-label="Thread actions"
-        className={threadEntryMenuTriggerClassName}
-      >
-        …
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <MenuContent sideOffset={4} align="end">
-          {actions.renameable ? (
-            <DropdownMenu.Item
-              className={menuItemClassName}
-              onSelect={actions.startRename}
-            >
-              Rename
-            </DropdownMenu.Item>
-          ) : null}
-          {actions.closable ? (
-            <DropdownMenu.Item
-              className={menuItemClassName}
-              onSelect={actions.close}
-            >
-              Close
-            </DropdownMenu.Item>
-          ) : null}
-          {actions.hideable ? (
-            <DropdownMenu.Item
-              className={menuItemClassName}
-              onSelect={actions.toggleHidden}
-            >
-              {actions.hidden ? "Show" : "Hide"}
-            </DropdownMenu.Item>
-          ) : null}
-        </MenuContent>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
   );
 }

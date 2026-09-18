@@ -17,12 +17,12 @@ import {
 } from "../../../src/contract/rosters.ts";
 import type { ThreadTurnResponse } from "../../../src/contract/responses.ts";
 import {
+  threadActions,
   threadAnswering,
   threadHeldTurn,
   threadMine,
   threadRefusalCode,
   threadRefusalWord,
-  threadRowActions,
   threadSendFrom,
   threadTakesMessages,
   threadTurnKindWord,
@@ -53,47 +53,31 @@ describe("where a thread stands", () => {
   });
 });
 
-describe("the actions one row's menu offers", () => {
-  test("the reader's own open thread offers Rename, Close and Hide", () => {
+describe("the actions offered on the thread the pane holds", () => {
+  test("the reader's own open thread offers Rename and Close", () => {
     expect(
-      threadRowActions(threadEntry({ session: "s", mine: true })),
-    ).toStrictEqual(["Rename", "Close", "Hide"]);
+      threadActions(threadEntry({ session: "s", mine: true })),
+    ).toStrictEqual(["Rename", "Close"]);
   });
 
-  test("the reader's own closed thread offers Rename and Hide, not Close", () => {
+  test("the reader's own closed thread offers Rename alone", () => {
     expect(
-      threadRowActions(
-        threadEntry({ session: "s", mine: true, state: "Closed" }),
-      ),
-    ).toStrictEqual(["Rename", "Hide"]);
-  });
-
-  test("the reader's own hidden thread offers Show in Hide's place", () => {
-    expect(
-      threadRowActions(threadEntry({ session: "s", mine: true, hidden: true })),
-    ).toStrictEqual(["Rename", "Close", "Show"]);
+      threadActions(threadEntry({ session: "s", mine: true, state: "Closed" })),
+    ).toStrictEqual(["Rename"]);
   });
 
   test("a stranger's open thread offers Close alone", () => {
     expect(
-      threadRowActions(threadEntry({ session: "s", mine: false })),
+      threadActions(threadEntry({ session: "s", mine: false })),
     ).toStrictEqual(["Close"]);
   });
 
-  test("a stranger's closed thread offers nothing — no trigger is drawn", () => {
+  test("a stranger's closed thread offers nothing", () => {
     expect(
-      threadRowActions(
+      threadActions(
         threadEntry({ session: "s", mine: false, state: "Closed" }),
       ),
     ).toStrictEqual([]);
-  });
-
-  test("a stranger's hidden thread still offers Close alone — Show is the owner's", () => {
-    expect(
-      threadRowActions(
-        threadEntry({ session: "s", mine: false, hidden: true }),
-      ),
-    ).toStrictEqual(["Close"]);
   });
 });
 

@@ -4,9 +4,10 @@
  *
  * This is the whole of what the Threads page used to be. A thread is read in
  * the pane and nowhere else, so the listing is a way to choose which one the
- * pane holds rather than a screen of its own, and the row actions the page
- * carried are offered on the thread being read instead of on every row: a menu
- * inside a menu is a shape neither a pointer nor a screen reader handles well.
+ * pane holds rather than a screen of its own, and the actions the page
+ * carried per thread are offered on the thread being read instead of on every
+ * row: a control inside a menu row is a shape neither a pointer nor a screen
+ * reader handles well.
  */
 
 import { DropdownMenu } from "radix-ui";
@@ -15,24 +16,22 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
 import { threadLabel, threadsMineFirst } from "../../core/threads.ts";
-import { buttonLookClassName } from "../ui/Button.tsx";
+import { Button, buttonLookClassName } from "../ui/Button.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import {
-  ThreadEntryMenu,
   ThreadEntryRename,
   useThreadEntryActions,
 } from "../thread/ThreadEntryLabel.tsx";
 
 import "../ui/Picker.css";
 
-/** The threads the history offers: hidden ones are the reader's own way of
- * saying they are done with a thread, so the menu honours that and the listing
- * still carries them for anything that asks. */
+/** The threads the history offers: every one the reader can reach, their own
+ * first. */
 function chatPaneHistoryRows(
   threads: readonly ThreadEntryResponse[],
 ): readonly ThreadEntryResponse[] {
-  return threadsMineFirst(threads.filter((thread) => !thread.hidden));
+  return threadsMineFirst(threads);
 }
 
 export function ChatPaneHistory(props: {
@@ -74,19 +73,44 @@ export function ChatPaneHistory(props: {
   );
 }
 
-/** Rename, close and hide, offered on the thread the pane is holding. */
+/**
+ * The title of the thread the pane holds, and Rename and Close beside the
+ * pane's own controls. While a rename is open, the editor takes the title's
+ * place and the buttons stand aside for it.
+ */
 export function ChatPaneThreadActions(props: {
   readonly partition: PartitionIdentity;
   readonly thread: ThreadEntryResponse;
 }): ReactNode {
   const actions = useThreadEntryActions(props.partition, props.thread);
-  if (actions.renaming)
-    return (
-      <ThreadEntryRename initial={props.thread.title ?? ""} actions={actions} />
-    );
   return (
     <>
-      <ThreadEntryMenu actions={actions} />
+      <div className="flex w-full min-w-0 items-center gap-2">
+        {actions.renaming ? (
+          <ThreadEntryRename
+            initial={props.thread.title ?? ""}
+            actions={actions}
+          />
+        ) : (
+          <h2 className="text-ink-2 font-strong min-w-0 flex-1 truncate text-sm">
+            {threadLabel(props.thread)}
+          </h2>
+        )}
+      </div>
+      {actions.renaming ? null : (
+        <>
+          {actions.renameable ? (
+            <Button variant="quiet" size="sm" onClick={actions.startRename}>
+              Rename
+            </Button>
+          ) : null}
+          {actions.closable ? (
+            <Button variant="quiet" size="sm" onClick={actions.close}>
+              Close
+            </Button>
+          ) : null}
+        </>
+      )}
       {actions.refused === undefined ? null : (
         <Notice tone="danger" inline detail={`Refused · ${actions.refused}`} />
       )}

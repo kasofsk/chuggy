@@ -172,12 +172,38 @@ const fixtureForgeFiles: ForgeCredentialPort = {
     }),
 };
 
-test("a minted token is held to the bound of the credential it becomes", () => {
+test("a minted token is held to the bound of the credential it becomes", async () => {
   const atBound = "g".repeat(repositoryCredentialCharsMax);
   assert.equal(asForgeInstallationToken(atBound), atBound);
   assert.throws(
     () => asForgeInstallationToken(`${atBound}g`),
     /forge installation token: .* is past the/u,
+  );
+  assert.equal(asForgeCredential(atBound), atBound);
+  assert.throws(
+    () => asForgeCredential(`${atBound}g`),
+    /forge credential: .* is past the/u,
+  );
+  const source = forgeCredentialsByHost(
+    [
+      {
+        repositoryHost: "github.com",
+        tokens: {
+          token: () =>
+            Promise.resolve({
+              minted: "Token" as const,
+              token: asForgeInstallationToken(atBound),
+              expiresAtMs: 1,
+            }),
+        },
+        permissions: "propose",
+      },
+    ],
+    fixtureForgeFiles,
+  );
+  assert.deepEqual(
+    await source.credential(fixtureProposal(fixtureRepository)),
+    { resolved: "Credential", credential: atBound },
   );
 });
 
