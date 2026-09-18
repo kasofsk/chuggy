@@ -102,7 +102,7 @@ test("catalog resolves adopted ticket structure and immutable execution configur
   }
   assert.equal(
     blobs.get(release.definition.finalization_configuration)?.content,
-    '{"branch_prefix":"tickets/","kind":"finalizer","merge":false,"operation":"pull-request","target_ref":"refs/heads/main"}',
+    '{"branch_prefix":"tickets/","kind":"finalizer","operation":"pull-request","target_ref":"refs/heads/main"}',
   );
 });
 
@@ -162,4 +162,53 @@ test("ticket format rejects old authoring fields and duplicate evaluator names",
     setup(overrides).catalog.release(TicketId(1), document),
     /duplicate evaluator/,
   );
+});
+
+async function finalization(finalizer: string): Promise<string | undefined> {
+  const { catalog, blobs } = setup(
+    new Map([[catalogPath("finalizers/pr.yaml"), finalizer]]),
+  );
+  const release = await catalog.release(TicketId(1), document);
+  return blobs.get(release.definition.finalization_configuration)?.content;
+}
+
+test("a finalizer document carries only the fields its operation honours", async () => {
+  assert.equal(
+    await finalization(
+      "kind: finalizer\noperation: git-merge\ntarget_ref: refs/heads/main",
+    ),
+    '{"kind":"finalizer","operation":"git-merge","target_ref":"refs/heads/main"}',
+  );
+  assert.equal(
+    await finalization("kind: finalizer\noperation: no-op"),
+    '{"kind":"finalizer","operation":"no-op"}',
+  );
+  for (const refused of [
+    "kind: finalizer\noperation: git-merge\ntarget_ref: refs/heads/main\nmerge: true",
+    "kind: finalizer\noperation: git-merge\ntarget_ref: refs/heads/main\nbranch_prefix: tickets/",
+    "kind: finalizer\noperation: git-merge\ntarget_ref: refs/heads/main\nrelease_ref: refs/heads/release",
+    "kind: finalizer\noperation: no-op\ntarget_ref: refs/heads/main",
+    "kind: finalizer\noperation: rebase\ntarget_ref: refs/heads/main",
+  ])
+    await assert.rejects(finalization(refused), /finalizer/u);
+});
+
+test("only a finalization that lands something requires work that publishes", async () => {
+  const unpublishing = new Map([
+    [
+      catalogPath("workloads/work.yaml"),
+      "kind: workload\nrunner: codex\nmodel: test\nprompt: agents/work.md\nexecution_profile: large\npublishes_repository_result: false\nresult_contract: result-contracts/work.schema.json",
+    ],
+  ]);
+  await assert.rejects(
+    setup(unpublishing).catalog.release(TicketId(1), document),
+    /publishes a repository result/u,
+  );
+  const released = await setup(
+    new Map([
+      ...unpublishing,
+      [catalogPath("finalizers/pr.yaml"), "kind: finalizer\noperation: no-op"],
+    ]),
+  ).catalog.release(TicketId(1), document);
+  assert.equal(released.definition.id, 1);
 });

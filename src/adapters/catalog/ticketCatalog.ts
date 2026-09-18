@@ -24,7 +24,7 @@ import type {
   TicketContentStore,
   TicketCatalogRelease,
 } from "../../interpreter/ticketCatalog.ts";
-import type { TicketPullRequestConfiguration } from "../../interpreter/ticketPullRequest.ts";
+import type { TicketFinalizerConfiguration } from "../../interpreter/ticketFinalizer.ts";
 import { schema_validator } from "./jsonSchema.ts";
 import {
   catalogCheck,
@@ -304,17 +304,16 @@ async function catalogRelease(
   );
   const work = await catalogTask(context, document.work, inputs, "work");
   const plan = await catalogPlan(context, document.evaluation, inputs);
-  const finalizer = await catalogFragment<TicketPullRequestConfiguration>(
+  const finalizer = await catalogFragment<TicketFinalizerConfiguration>(
     context,
     document.finalization,
     "finalizers",
     "finalizer",
   );
-  if (!work.publishes)
+  if (finalizer.operation !== "no-op" && !work.publishes)
     throw new TypeError(
-      "pull-request finalization requires work that publishes a repository result",
+      `${finalizer.operation} finalization requires work that publishes a repository result`,
     );
-  const configuration = { ...finalizer, merge: finalizer.merge ?? false };
   const definition = new ticket.ReleasedTicket(
     identity,
     await context.content.put(
@@ -325,10 +324,7 @@ async function catalogRelease(
     new Set((document.dependencies ?? []).map(task.TicketId)),
     work.definition,
     plan.plan,
-    await context.content.put(
-      "application/json",
-      canonical_json(configuration),
-    ),
+    await context.content.put("application/json", canonical_json(finalizer)),
   );
   ticket.validate_release(definition);
   return {
