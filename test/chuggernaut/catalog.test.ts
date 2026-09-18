@@ -58,7 +58,6 @@ function setup(overrides: ReadonlyMap<string, string> = new Map()) {
         "large",
         execution_profile({
           required_capabilities: ["large"],
-          runner_command: ["runner"],
         }),
       ],
     ]),
@@ -89,7 +88,6 @@ test("catalog resolves adopted ticket structure and immutable execution configur
   const workload = blobs.get(work.workload)?.content;
   assert.ok(workload?.includes('"publishes_repository_result":true'));
   assert.ok(workload?.includes("Implement the ticket."));
-  assert.ok(workload?.includes('"runner_command":["runner"]'));
   assert.equal(blobs.get(work.inputs)?.content, '{"threshold":1.0}');
   for (const stage of release.definition.evaluation_plan.stages) {
     const evaluator = stage.evaluators[0]?.task.workload;

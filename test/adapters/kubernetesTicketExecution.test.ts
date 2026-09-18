@@ -121,7 +121,6 @@ const view: TicketExecutionView = {
     execution_profile: {
       name: "standard",
       required_capabilities: ["shell"],
-      runner_command: ["node", "/usr/local/lib/chuggy/ticketWorker.ts"],
       cpu: 250,
       memory_mb: 384,
     },
@@ -254,13 +253,13 @@ function assertSecretEnvelope(requests: readonly ClusterRequest[]): void {
   const pod = JSON.parse(postedBody(requests, "/pods")) as {
     readonly spec: {
       readonly containers: readonly {
-        readonly command: readonly string[];
+        readonly command?: readonly string[];
         readonly resources: { readonly limits: Record<string, string> };
         readonly volumeMounts: readonly { readonly mountPath: string }[];
       }[];
     };
   };
-  assert.deepEqual(pod.spec.containers[0]?.command, ["node"]);
+  assert.equal(pod.spec.containers[0]?.command, undefined);
   assert.equal(pod.spec.containers[0]?.resources.limits["cpu"], "250m");
   assert.equal(pod.spec.containers[0]?.resources.limits["memory"], "384Mi");
   assert.ok(
