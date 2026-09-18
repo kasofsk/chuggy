@@ -133,6 +133,13 @@ const gitScratchRootVariable = "CHUG_API_GIT_SCRATCH_ROOT";
 const repositoryCredentialSourcesVariable =
   "CHUG_API_REPOSITORY_CREDENTIAL_SOURCES";
 /**
+ * The username this process presents when a catalog remote asks for one, for
+ * the deployments whose git is not a forge. A credential file holds the secret
+ * half alone, and a host validating basic auth needs both; the name is not one,
+ * so it is named here rather than mounted.
+ */
+const gitCredentialUsernameVariable = "CHUG_API_GIT_CREDENTIAL_USERNAME";
+/**
  * The portal app this process acts under and the key it signs with, and the
  * worker app it verifies a claim for and enumerates an installation of. Each
  * pair is named together or not at all: one alone is a deployment that meant to
@@ -659,6 +666,11 @@ function nativeTicketApplication(
     ),
     credentials: forge.credentials,
     bindings: postgresProjectRepositoryBinding(pool),
+    ...(process.env[gitCredentialUsernameVariable] === undefined
+      ? {}
+      : {
+          credentialUsername: process.env[gitCredentialUsernameVariable],
+        }),
   });
   const content = (partition: Parameters<typeof postgresTicketContent>[1]) =>
     postgresTicketContent(pool, partition);
