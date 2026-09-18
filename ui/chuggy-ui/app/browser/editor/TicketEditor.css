@@ -26,9 +26,12 @@
     color: var(--ink-3);
   }
 
+  /* An editor is a place to work, so it takes a pane and keeps it whatever
+     the document's length; the author resizes it if the default is wrong. */
   .ticket-editor-host {
-    max-height: var(--height-clip);
+    block-size: clamp(24em, 60vh, 48em);
     overflow: auto;
+    resize: vertical;
     border: var(--hairline) solid var(--edge);
     border-radius: var(--radius-2);
   }

@@ -128,7 +128,12 @@ const ticketHighlighting = HighlightStyle.define([
 
 /** The editor styles itself, because a shadow root is out of the page sheets' reach. */
 const editorTheme = EditorView.theme({
-  "&": { color: "var(--ink-1)", backgroundColor: "var(--surface-2)" },
+  "&": {
+    color: "var(--ink-1)",
+    backgroundColor: "var(--surface-2)",
+    height: "100%",
+  },
+  ".cm-scroller": { overflow: "auto" },
   ".cm-content": { fontFamily: "var(--font-mono)", caretColor: "var(--ink-1)" },
   ".cm-gutters": {
     backgroundColor: "var(--surface-1)",

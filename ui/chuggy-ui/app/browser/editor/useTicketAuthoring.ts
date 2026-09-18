@@ -16,6 +16,7 @@ import {
   adoptedTicketValidate,
   type CatalogPin,
 } from "../../core/adoptedTickets.ts";
+import type { ApiFailure } from "../../core/apiRequest.ts";
 import { useApiPorts } from "../api.ts";
 import type { EditorFinding } from "./chugEditor.ts";
 import { editorFindings } from "./findings.ts";
@@ -27,6 +28,15 @@ export interface AuthoringPin extends CatalogPin {
   readonly source: string;
 }
 
+/** Why the catalog could not be listed, in words an author can act on. */
+function unreadSentence(failure: ApiFailure): string {
+  const why =
+    "reason" in failure
+      ? failure.reason
+      : `the request ended with ${failure.outcome}`;
+  return `The catalog could not be read, so no reference can be completed, previewed or materialised: ${why}.`;
+}
+
 /** An unbound repository is an absent header, not an empty one. */
 function pinOf(repository?: string): CatalogPin {
   return repository === undefined || repository === "" ? {} : { repository };
@@ -36,6 +46,12 @@ function pinOf(repository?: string): CatalogPin {
 export interface TicketValidation {
   readonly findings: readonly EditorFinding[];
   readonly commit: string | undefined;
+  /**
+   * Why there is no verdict, when there is none. A validation that could not be
+   * asked for is not a document without faults, and reporting it as one would
+   * offer the author a clean editor over a question nobody answered.
+   */
+  readonly unanswered: ApiFailure | undefined;
 }
 
 export function useTicketValidation(
@@ -46,6 +62,7 @@ export function useTicketValidation(
   const [validation, setValidation] = useState<TicketValidation>({
     findings: [],
     commit: undefined,
+    unanswered: undefined,
   });
   const { tenant, project } = partition;
   const { source, repository } = pin;
@@ -63,8 +80,9 @@ export function useTicketValidation(
             ? {
                 findings: editorFindings(result.value.findings, source),
                 commit: result.value.commit,
+                unanswered: undefined,
               }
-            : { findings: [], commit: undefined },
+            : { findings: [], commit: undefined, unanswered: result },
         );
       });
     }, validationIdleMs);
@@ -98,12 +116,20 @@ export function useTicketCatalog(
     let active = true;
     void adoptedCatalog(ports, { tenant, project }, pinOf(repository)).then(
       (result) => {
-        if (active)
-          setFiles(
-            result.outcome === "Ok"
-              ? result.value.entries.map((entry) => entry.path)
-              : [],
-          );
+        if (!active) return;
+        setFiles(
+          result.outcome === "Ok"
+            ? result.value.entries.map((entry) => entry.path)
+            : [],
+        );
+        /**
+         * An unread catalog is not an empty one. Every affordance over a
+         * reference is gated on the file list, so a swallowed failure takes
+         * the completions, the previews and the materialise action with it and
+         * leaves an editor that looks merely unhelpful.
+         */
+        if (result.outcome !== "Ok")
+          reported.current(new Error(unreadSentence(result)));
       },
     );
     return () => {

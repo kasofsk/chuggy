@@ -302,6 +302,28 @@ function useAuthoringTurn(
   return { busy, failure, confirming, setConfirming, submit };
 }
 
+/** What went wrong around the document, as distinct from what is wrong in it. */
+function AuthoringTrouble(props: {
+  readonly unanswered: ApiFailure | undefined;
+  readonly catalog: string | undefined;
+}): ReactNode {
+  return (
+    <>
+      {props.unanswered === undefined ? null : (
+        <Notice
+          inline
+          tone="danger"
+          role="status"
+          detail={`The document has not been checked: ${failureSentence(props.unanswered)}`}
+        />
+      )}
+      {props.catalog === undefined ? null : (
+        <Notice inline tone="danger" role="status" detail={props.catalog} />
+      )}
+    </>
+  );
+}
+
 function AuthoringForm(props: {
   readonly submitLabel: string;
   readonly initial?: AuthoringFields;
@@ -312,7 +334,10 @@ function AuthoringForm(props: {
     props.initial ?? { source: ticketDocumentExample, repository: "" },
   );
   const [catalogFailure, setCatalogFailure] = useState<string>();
-  const { findings, commit } = useTicketValidation(partition, fields);
+  const { findings, commit, unanswered } = useTicketValidation(
+    partition,
+    fields,
+  );
   const { dirty, settle } = useDirtyText(fields.source);
   const turn = useAuthoringTurn(fields, commit, props.onSubmit, settle);
   useUnloadGuard(dirty);
@@ -338,9 +363,7 @@ function AuthoringForm(props: {
         files={files}
         catalog={catalog}
       />
-      {catalogFailure === undefined ? null : (
-        <Notice inline tone="danger" role="status" detail={catalogFailure} />
-      )}
+      <AuthoringTrouble unanswered={unanswered} catalog={catalogFailure} />
       <div className="authoring-actions">
         <span className="panel-note">
           {dirty
