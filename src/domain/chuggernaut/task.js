@@ -4,7 +4,7 @@ export const StageKey = (value) => value;
 export const Generation = (value) => value;
 export const EvaluatorKey = (value) => value;
 export const ContentRef = (value) => value;
-export const Digest = (value) => value;
+export const ContextRef = (value) => value;
 export class WorkTaskId {
   ticket;
   cycle;
@@ -33,26 +33,10 @@ export class EvaluationTaskId {
     Object.freeze(this);
   }
 }
-export class ReadRepository {
-  kind = "ReadRepository";
-  constructor() {
-    Object.freeze(this);
-  }
-}
-export class PublishRepositoryResult {
-  kind = "PublishRepositoryResult";
-  constructor() {
-    Object.freeze(this);
-  }
-}
 export class ExecutionRequirements {
-  repository;
-  access;
   kind = "ExecutionRequirements";
   required_capabilities;
-  constructor(repository, access, required_capabilities = []) {
-    this.repository = repository;
-    this.access = access;
+  constructor(required_capabilities = []) {
     if (
       !Array.isArray(required_capabilities) &&
       !(required_capabilities instanceof Set)
@@ -66,24 +50,6 @@ export class ExecutionRequirements {
     this.required_capabilities = Object.freeze(
       [...new Set(capabilities)].sort(),
     );
-    Object.freeze(this);
-  }
-}
-export class WorkspaceSource {
-  repository;
-  commit;
-  kind = "WorkspaceSource";
-  constructor(repository, commit) {
-    this.repository = repository;
-    this.commit = commit;
-    Object.freeze(this);
-  }
-}
-export class GitOutput {
-  output;
-  kind = "GitOutput";
-  constructor(output) {
-    this.output = output;
     Object.freeze(this);
   }
 }
@@ -105,56 +71,28 @@ export class TaskDefinition {
 export class TaskObligation {
   task;
   definition;
-  source;
-  context;
+  context_ref;
   kind = "TaskObligation";
-  constructor(task, definition, source, context) {
+  constructor(task, definition, context_ref) {
     this.task = task;
     this.definition = definition;
-    this.source = source;
-    this.context = context;
-    this.context = Object.freeze([...context]);
+    this.context_ref = context_ref;
     validate_TaskObligation(this);
-    Object.freeze(this);
-  }
-}
-export class ResultFinding {
-  id;
-  description;
-  kind = "ResultFinding";
-  constructor(id, description) {
-    this.id = id;
-    this.description = description;
-    validate_ResultFinding(this);
     Object.freeze(this);
   }
 }
 export class ValidatedTaskResult {
   obligation;
-  manifest;
-  outputs;
-  value;
-  findings;
+  result_ref;
   kind = "ValidatedTaskResult";
-  constructor(obligation, manifest, outputs, value, findings) {
+  constructor(obligation, result_ref) {
     this.obligation = obligation;
-    this.manifest = manifest;
-    this.outputs = outputs;
-    this.value = value;
-    this.findings = findings;
-    this.findings = Object.freeze([...findings]);
-    this.outputs = Object.freeze([...outputs]);
+    this.result_ref = result_ref;
     validate_ValidatedTaskResult(this);
     Object.freeze(this);
   }
-  static produce(obligation, manifest, outputs, value, findings) {
-    return new ValidatedTaskResult(
-      obligation,
-      manifest,
-      outputs,
-      value,
-      findings,
-    );
+  static produce(obligation, result_ref) {
+    return new ValidatedTaskResult(obligation, result_ref);
   }
 }
 export class TaskFailure {
@@ -236,58 +174,19 @@ function validate_EvaluationTaskId(v) {
 function validate_TaskDefinition(v) {
   positive(v.workload, "workload must be present");
   positive(v.inputs, "inputs must be present");
-  positive(v.execution_requirements.repository, "repository must be present");
   positive(v.result_contract, "result contract must be present");
 }
 function validate_TaskObligation(v) {
-  positive(v.source.repository, "source repository must be present");
-  positive(v.source.commit, "source commit must be present");
-  if (v.source.repository !== v.definition.execution_requirements.repository)
-    throw new Error(
-      `source repository ${v.source.repository} is not the definition's repository ${v.definition.execution_requirements.repository}`,
-    );
-}
-export const FINDING_LIMIT = 32;
-function validate_ResultFinding(v) {
-  positive(v.id, "result finding id must be positive");
-  positive(v.description, "result finding description must be present");
+  positive(v.context_ref, "context reference must be present");
 }
 function validate_ValidatedTaskResult(v) {
-  positive(v.manifest, "result manifest must be present");
-  if (v.findings.length > FINDING_LIMIT)
-    throw new Error(
-      `at most ${FINDING_LIMIT} result findings: ${v.findings.length}`,
-    );
-  if (new Set(v.findings.map((f) => f.id)).size !== v.findings.length)
-    throw new Error("result finding ids must be unique");
+  positive(v.result_ref, "result reference must be present");
 }
 function validate_TaskFailure(v) {
   positive(v.evidence, "failure evidence must be present");
 }
 export function task_owner(task) {
   return task.ticket;
-}
-export function reads_repository(definition, repository) {
-  return (
-    definition.execution_requirements.repository === repository &&
-    definition.execution_requirements.access instanceof ReadRepository
-  );
-}
-export function publishes_repository_result(definition, repository) {
-  return (
-    definition.execution_requirements.repository === repository &&
-    definition.execution_requirements.access instanceof PublishRepositoryResult
-  );
-}
-export function exact_git_output(result) {
-  if (result.outputs.length !== 1) return null;
-  const output = result.outputs[0].output;
-  return output.repository ===
-    result.obligation.definition.execution_requirements.repository &&
-    output.repository === result.obligation.source.repository &&
-    output.commit > 0
-    ? output
-    : null;
 }
 export function terminal_task(terminal) {
   return terminal instanceof TaskResultProduced

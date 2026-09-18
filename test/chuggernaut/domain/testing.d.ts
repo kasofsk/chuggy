@@ -1,7 +1,7 @@
 import * as t from "../../../src/domain/chuggernaut/task.js";
 import * as e from "../../../src/domain/chuggernaut/evaluation.js";
 import * as k from "../../../src/domain/chuggernaut/ticket.js";
-export declare const source: (commit: number) => t.WorkspaceSource;
+export declare const source: (commit: number) => t.ContentRef;
 export declare const WORK: t.TaskDefinition;
 export declare const EVALUATOR: t.TaskDefinition;
 export declare const PLAN: e.EvaluationPlan;
@@ -37,8 +37,7 @@ export declare function evaluator_result_command(
   g: k.TicketGraph,
   id: number,
   manifest: number,
-  value: number,
-  findings?: readonly t.ResultFinding[],
+  verdict: e.EvaluationVerdict,
 ): k.TicketCommand;
 export declare function failure_command(
   g: k.TicketGraph,

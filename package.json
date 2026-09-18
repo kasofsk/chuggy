@@ -37,7 +37,7 @@
   },
   "dependencies": {
     "@cursorless/tree-sitter-wasms": "0.10.0",
-    "@kasofsk/chug-ticket-domain": "github:kasofsk/chug-ticket-domain#v0.3.0",
+    "@kasofsk/chug-ticket-domain": "github:kasofsk/chug-ticket-domain#v0.4.0",
     "@ts-safeql/sql-tag": "^0.2.2",
     "ajv": "8.20.0",
     "ajv-draft-04": "1.0.0",

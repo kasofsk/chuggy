@@ -10,7 +10,6 @@ import {
   TaskTerminal,
   TicketId,
   ValidatedTaskResult,
-  WorkspaceSource,
 } from "./task.js";
 export declare class EvaluatorDefinition {
   readonly key: EvaluatorKey;
@@ -32,57 +31,32 @@ export declare class EvaluationPlan {
 export declare class EvaluationInput {
   readonly ticket: TicketId;
   readonly work_result: ContentRef;
-  readonly accepted_source: WorkspaceSource;
+  readonly accepted_source_ref: ContentRef;
   readonly kind = "EvaluationInput";
   constructor(
     ticket: TicketId,
     work_result: ContentRef,
-    accepted_source: WorkspaceSource,
+    accepted_source_ref: ContentRef,
   );
 }
-export declare class SummaryReason {
-  readonly value: number;
-  readonly kind = "SummaryReason";
-  constructor(value: number);
+export declare class EvaluatorPass {
+  readonly kind = "EvaluatorPass";
+  constructor();
 }
-export declare class ExitCodeReason {
-  readonly code: number;
-  readonly kind = "ExitCodeReason";
-  constructor(code: number);
+export declare class EvaluatorFail {
+  readonly kind = "EvaluatorFail";
+  constructor();
 }
-export type EvaluationReason = SummaryReason | ExitCodeReason;
-export declare class EvaluationFinding {
-  readonly id: number;
-  readonly description: ContentRef;
-  readonly kind = "EvaluationFinding";
-  constructor(id: number, description: ContentRef);
-}
-export declare class PassDetail {
-  readonly reason: EvaluationReason;
-  readonly result_manifest: ContentRef;
-  readonly kind = "PassDetail";
-  constructor(reason: EvaluationReason, result_manifest: ContentRef);
-}
-export declare class FailDetail {
-  readonly reason: EvaluationReason;
-  readonly result_manifest: ContentRef;
-  readonly findings: readonly EvaluationFinding[];
-  readonly kind = "FailDetail";
-  constructor(
-    reason: EvaluationReason,
-    result_manifest: ContentRef,
-    findings: readonly EvaluationFinding[],
-  );
-}
+export type EvaluationVerdict = EvaluatorPass | EvaluatorFail;
 export declare class EvaluatorPassed {
-  readonly detail: PassDetail;
+  readonly result_ref: ContentRef;
   readonly kind = "EvaluatorPassed";
-  constructor(detail: PassDetail);
+  constructor(result_ref: ContentRef);
 }
 export declare class EvaluatorFailed {
-  readonly detail: FailDetail;
+  readonly result_ref: ContentRef;
   readonly kind = "EvaluatorFailed";
-  constructor(detail: FailDetail);
+  constructor(result_ref: ContentRef);
 }
 export type EvaluatorResult = EvaluatorPassed | EvaluatorFailed;
 export declare class Awaiting {
@@ -108,16 +82,9 @@ export type EvaluatorStatus =
   Awaiting | Produced | EvaluatorProcessFailed | EvaluatorExecutionUnavailable;
 export declare class EvaluationReworkEntry {
   readonly evaluator: EvaluatorKey;
-  readonly reason: EvaluationReason;
-  readonly result_manifest: ContentRef;
-  readonly findings: readonly EvaluationFinding[];
+  readonly result_ref: ContentRef;
   readonly kind = "EvaluationReworkEntry";
-  constructor(
-    evaluator: EvaluatorKey,
-    reason: EvaluationReason,
-    result_manifest: ContentRef,
-    findings: readonly EvaluationFinding[],
-  );
+  constructor(evaluator: EvaluatorKey, result_ref: ContentRef);
 }
 export declare class StageRun {
   readonly stage_index: number;
@@ -171,11 +138,6 @@ export declare class EvaluationInstance {
     state: EvaluationState,
   );
 }
-export declare const MAX_FINDINGS = 32;
-export declare function finding_valid(f: EvaluationFinding): boolean;
-export declare function findings_valid(
-  fs: readonly EvaluationFinding[],
-): boolean;
 export declare function evaluator_task_id(
   ticket: TicketId,
   work_cycle: CycleNumber,
@@ -211,13 +173,16 @@ export declare function is_current_stage_complete(
   v: EvaluationInstance,
 ): boolean;
 export declare function task_current(c: EvaluationInstance, t: TaskId): boolean;
-export declare function decode_evaluator_result(
-  r: ValidatedTaskResult,
-): EvaluatorResult;
-export declare function apply_terminal(
+export declare function apply_produced(
   c: EvaluationInstance,
   task: TaskId,
-  t: TaskTerminal,
+  result: ValidatedTaskResult,
+  verdict: EvaluationVerdict,
+): EvaluationInstance;
+export declare function apply_failure(
+  c: EvaluationInstance,
+  task: TaskId,
+  terminal: TaskTerminal,
 ): EvaluationInstance;
 export declare function resume_blocked(
   c: EvaluationInstance,
@@ -251,12 +216,4 @@ export declare function begin(
 export declare function stage_keys_unique(plan: EvaluationPlan): boolean;
 export declare function evaluator_keys_unique(stage: StageDefinition): boolean;
 export declare function plan_valid(plan: EvaluationPlan): boolean;
-export declare function plan_uses_repository(
-  plan: EvaluationPlan,
-  r: ContentRef,
-): boolean;
-export declare function validate_plan(
-  plan: EvaluationPlan,
-  r: ContentRef,
-): boolean;
 export declare function evaluation_invariant(c: EvaluationInstance): boolean;

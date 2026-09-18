@@ -2,6 +2,7 @@ import {
   EvaluationInstance,
   EvaluationPlan,
   EvaluationReworkEntry,
+  EvaluationVerdict,
 } from "./evaluation.js";
 import {
   ContentRef,
@@ -10,23 +11,11 @@ import {
   TaskDefinition,
   TaskId,
   TaskObligation,
-  TaskTerminal,
+  TaskFailure,
   TicketId,
   ValidatedTaskResult,
-  WorkspaceSource,
 } from "./task.js";
-export declare class AuthoredContent {
-  readonly title: ContentRef;
-  readonly instructions: ContentRef;
-  readonly kind = "AuthoredContent";
-  constructor(title: ContentRef, instructions: ContentRef);
-}
-export declare class LegacyContent {
-  readonly content: ContentRef;
-  readonly kind = "LegacyContent";
-  constructor(content: ContentRef);
-}
-export type ReleasedContent = AuthoredContent | LegacyContent;
+export type ReleasedContent = ContentRef;
 export declare class ReleasedWorkInput {
   readonly content: ReleasedContent;
   readonly input_bindings: ContentRef;
@@ -61,21 +50,21 @@ export declare class WorkInput {
 }
 export declare class WorkExecution {
   readonly input: WorkInput;
-  readonly source: WorkspaceSource;
+  readonly source: ContentRef;
   readonly kind = "WorkExecution";
-  constructor(input: WorkInput, source: WorkspaceSource);
+  constructor(input: WorkInput, source: ContentRef);
 }
 export declare class FinalizationOperation {
   readonly work_cycle: CycleNumber;
   readonly generation: Generation;
   readonly input: ContentRef;
-  readonly source: WorkspaceSource;
+  readonly source: ContentRef;
   readonly kind = "FinalizationOperation";
   constructor(
     work_cycle: CycleNumber,
     generation: Generation,
     input: ContentRef,
-    source: WorkspaceSource,
+    source: ContentRef,
   );
 }
 export declare class ReworkEvaluationFailure {
@@ -93,23 +82,20 @@ export type EvaluationFailurePolicy = (
 ) => FailureDisposition;
 export declare class WorkEscalation {
   readonly resume_input: WorkInput;
-  readonly source: WorkspaceSource;
+  readonly source: ContentRef;
   readonly evidence: ContentRef;
   readonly kind = "WorkEscalation";
   constructor(
     resume_input: WorkInput,
-    source: WorkspaceSource,
+    source: ContentRef,
     evidence: ContentRef,
   );
 }
 export declare class EvaluationFailureEscalation {
   readonly evidence: readonly EvaluationReworkEntry[];
-  readonly source: WorkspaceSource;
+  readonly source: ContentRef;
   readonly kind = "EvaluationFailureEscalation";
-  constructor(
-    evidence: readonly EvaluationReworkEntry[],
-    source: WorkspaceSource,
-  );
+  constructor(evidence: readonly EvaluationReworkEntry[], source: ContentRef);
 }
 export declare class FinalizationEscalation {
   readonly finalization: FinalizationOperation;
@@ -219,12 +205,56 @@ export declare class TicketGraph {
   readonly kind = "TicketGraph";
   constructor(tickets: ReadonlyMap<TicketId, Ticket>);
 }
-export declare class TaskTerminalReport {
-  readonly ticket: TicketId;
-  readonly terminal: TaskTerminal;
-  readonly kind = "TaskTerminalReport";
-  constructor(ticket: TicketId, terminal: TaskTerminal);
+export declare class ProcessFailure {
+  readonly kind = "ProcessFailure";
+  constructor();
 }
+export declare class ExecutionUnavailableFailure {
+  readonly kind = "ExecutionUnavailableFailure";
+  constructor();
+}
+export type FailureKind = ProcessFailure | ExecutionUnavailableFailure;
+export declare class WorkResultReport {
+  readonly ticket: TicketId;
+  readonly result: ValidatedTaskResult;
+  readonly accepted_source_ref: ContentRef;
+  readonly kind = "WorkResultReport";
+  constructor(
+    ticket: TicketId,
+    result: ValidatedTaskResult,
+    accepted_source_ref: ContentRef,
+  );
+}
+export declare class EvaluationResultReport {
+  readonly ticket: TicketId;
+  readonly result: ValidatedTaskResult;
+  readonly verdict: EvaluationVerdict;
+  readonly kind = "EvaluationResultReport";
+  constructor(
+    ticket: TicketId,
+    result: ValidatedTaskResult,
+    verdict: EvaluationVerdict,
+  );
+}
+export declare class TerminalFailureReport {
+  readonly ticket: TicketId;
+  readonly failure: TaskFailure;
+  readonly kind_of_failure: FailureKind;
+  readonly kind = "TerminalFailureReport";
+  constructor(
+    ticket: TicketId,
+    failure: TaskFailure,
+    kind_of_failure: FailureKind,
+  );
+}
+export type TaskTerminalReport =
+  WorkResultReport | EvaluationResultReport | TerminalFailureReport;
+export declare function report_ticket(report: TaskTerminalReport): TicketId;
+export declare function report_task(report: TaskTerminalReport): TaskId;
+export declare function apply_evaluation_report(
+  evaluation: EvaluationInstance,
+  report: TaskTerminalReport,
+): EvaluationInstance;
 export declare class FinalizationSucceeded {
   readonly evidence: ContentRef;
   readonly kind = "FinalizationSucceeded";
@@ -273,9 +303,9 @@ export declare class UpdateTicket {
 }
 export declare class DispatchTicket {
   readonly ticket: TicketId;
-  readonly source: WorkspaceSource;
+  readonly source: ContentRef;
   readonly kind = "DispatchTicket";
-  constructor(ticket: TicketId, source: WorkspaceSource);
+  constructor(ticket: TicketId, source: ContentRef);
 }
 export declare class RevokeTicket {
   readonly ticket: TicketId;
@@ -348,11 +378,6 @@ export declare class TicketDependenciesChanged {
   readonly kind = "TicketDependenciesChanged";
   constructor(ticket: TicketId);
 }
-export declare class DispatchSourceRepositoryMismatch {
-  readonly ticket: TicketId;
-  readonly kind = "DispatchSourceRepositoryMismatch";
-  constructor(ticket: TicketId);
-}
 export declare class DependenciesIncomplete {
   readonly ticket: TicketId;
   readonly dependencies: ReadonlySet<TicketId>;
@@ -375,11 +400,6 @@ export declare class TaskNotCurrent {
   readonly kind = "TaskNotCurrent";
   constructor(ticket: TicketId, task: TaskId);
 }
-export declare class WorkResultMissingExactGitOutput {
-  readonly ticket: TicketId;
-  readonly kind = "WorkResultMissingExactGitOutput";
-  constructor(ticket: TicketId);
-}
 export declare class FinalizationNotCurrent {
   readonly ticket: TicketId;
   readonly work_cycle: CycleNumber;
@@ -400,12 +420,10 @@ export type TicketRefusal =
   | TicketIdentityMismatch
   | TicketRevisionStale
   | TicketDependenciesChanged
-  | DispatchSourceRepositoryMismatch
   | DependenciesIncomplete
   | TicketNotRevocable
   | TicketNotResumable
   | TaskNotCurrent
-  | WorkResultMissingExactGitOutput
   | FinalizationNotCurrent;
 export declare class TicketCreated {
   readonly definition: ReleasedTicket;
@@ -421,9 +439,9 @@ export declare class TicketUpdated {
 }
 export declare class TicketDispatched {
   readonly ticket: TicketId;
-  readonly source: WorkspaceSource;
+  readonly source: ContentRef;
   readonly kind = "TicketDispatched";
-  constructor(ticket: TicketId, source: WorkspaceSource);
+  constructor(ticket: TicketId, source: ContentRef);
 }
 export declare class TicketRevoked {
   readonly ticket: TicketId;
@@ -448,8 +466,13 @@ export declare class TicketFinalizationResumed {
 export declare class TicketWorkResultAccepted {
   readonly ticket: TicketId;
   readonly result: ValidatedTaskResult;
+  readonly accepted_source_ref: ContentRef;
   readonly kind = "TicketWorkResultAccepted";
-  constructor(ticket: TicketId, result: ValidatedTaskResult);
+  constructor(
+    ticket: TicketId,
+    result: ValidatedTaskResult,
+    accepted_source_ref: ContentRef,
+  );
 }
 export declare class TicketWorkProcessFailed {
   readonly ticket: TicketId;
@@ -467,43 +490,43 @@ export declare class TicketWorkExecutionUnavailable {
 }
 export declare class TicketEvaluationProgressed {
   readonly ticket: TicketId;
-  readonly terminal: TaskTerminal;
+  readonly report: TaskTerminalReport;
   readonly kind = "TicketEvaluationProgressed";
-  constructor(ticket: TicketId, terminal: TaskTerminal);
+  constructor(ticket: TicketId, report: TaskTerminalReport);
 }
 export declare class TicketEvaluationPassed {
   readonly ticket: TicketId;
-  readonly terminal: TaskTerminal;
+  readonly report: TaskTerminalReport;
   readonly kind = "TicketEvaluationPassed";
-  constructor(ticket: TicketId, terminal: TaskTerminal);
+  constructor(ticket: TicketId, report: TaskTerminalReport);
 }
 export declare class TicketEvaluationReworkStarted {
   readonly ticket: TicketId;
-  readonly terminal: TaskTerminal;
+  readonly report: TaskTerminalReport;
   readonly evidence: readonly EvaluationReworkEntry[];
   readonly kind = "TicketEvaluationReworkStarted";
   constructor(
     ticket: TicketId,
-    terminal: TaskTerminal,
+    report: TaskTerminalReport,
     evidence: readonly EvaluationReworkEntry[],
   );
 }
 export declare class TicketEvaluationFailureEscalated {
   readonly ticket: TicketId;
-  readonly terminal: TaskTerminal;
+  readonly report: TaskTerminalReport;
   readonly evidence: readonly EvaluationReworkEntry[];
   readonly kind = "TicketEvaluationFailureEscalated";
   constructor(
     ticket: TicketId,
-    terminal: TaskTerminal,
+    report: TaskTerminalReport,
     evidence: readonly EvaluationReworkEntry[],
   );
 }
 export declare class TicketEvaluationBlocked {
   readonly ticket: TicketId;
-  readonly terminal: TaskTerminal;
+  readonly report: TaskTerminalReport;
   readonly kind = "TicketEvaluationBlocked";
-  constructor(ticket: TicketId, terminal: TaskTerminal);
+  constructor(ticket: TicketId, report: TaskTerminalReport);
 }
 export declare class TicketFinalizationSucceeded {
   readonly ticket: TicketId;
@@ -628,17 +651,16 @@ export declare function finalization_rework_input(
   d: ReleasedTicket,
   e: ContentRef,
 ): WorkInput;
-export declare function work_context(i: WorkInput): readonly ContentRef[];
 export declare function work_task_obligation(
   t: Ticket,
   n: CycleNumber,
-  s: WorkspaceSource,
+  s: ContentRef,
   i: WorkInput,
 ): TaskObligation;
 export declare function execute_work(
   t: Ticket,
   n: CycleNumber,
-  s: WorkspaceSource,
+  s: ContentRef,
   i: WorkInput,
 ): Obligation;
 export declare function resumed_finalization(

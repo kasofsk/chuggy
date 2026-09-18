@@ -22,10 +22,10 @@ export type ContentRef = number & {
   readonly __brand: "ContentRef";
 };
 export declare const ContentRef: (value: number) => ContentRef;
-export type Digest = number & {
-  readonly __brand: "Digest";
+export type ContextRef = number & {
+  readonly __brand: "ContextRef";
 };
-export declare const Digest: (value: number) => Digest;
+export declare const ContextRef: (value: number) => ContextRef;
 export declare class WorkTaskId {
   readonly ticket: TicketId;
   readonly cycle: CycleNumber;
@@ -48,38 +48,11 @@ export declare class EvaluationTaskId {
   );
 }
 export type TaskId = WorkTaskId | EvaluationTaskId;
-export declare class ReadRepository {
-  readonly kind = "ReadRepository";
-  constructor();
-}
-export declare class PublishRepositoryResult {
-  readonly kind = "PublishRepositoryResult";
-  constructor();
-}
-export type GitAccess = ReadRepository | PublishRepositoryResult;
 export declare class ExecutionRequirements {
-  readonly repository: ContentRef;
-  readonly access: GitAccess;
   readonly kind = "ExecutionRequirements";
   readonly required_capabilities: readonly string[];
-  constructor(
-    repository: ContentRef,
-    access: GitAccess,
-    required_capabilities?: readonly string[] | ReadonlySet<string>,
-  );
+  constructor(required_capabilities?: readonly string[] | ReadonlySet<string>);
 }
-export declare class WorkspaceSource {
-  readonly repository: ContentRef;
-  readonly commit: Digest;
-  readonly kind = "WorkspaceSource";
-  constructor(repository: ContentRef, commit: Digest);
-}
-export declare class GitOutput {
-  readonly output: WorkspaceSource;
-  readonly kind = "GitOutput";
-  constructor(output: WorkspaceSource);
-}
-export type OutputRef = GitOutput;
 export declare class TaskDefinition {
   readonly workload: ContentRef;
   readonly inputs: ContentRef;
@@ -96,42 +69,22 @@ export declare class TaskDefinition {
 export declare class TaskObligation {
   readonly task: TaskId;
   readonly definition: TaskDefinition;
-  readonly source: WorkspaceSource;
-  readonly context: readonly ContentRef[];
+  readonly context_ref: ContextRef;
   readonly kind = "TaskObligation";
   constructor(
     task: TaskId,
     definition: TaskDefinition,
-    source: WorkspaceSource,
-    context: readonly ContentRef[],
+    context_ref: ContextRef,
   );
-}
-export declare class ResultFinding {
-  readonly id: number;
-  readonly description: ContentRef;
-  readonly kind = "ResultFinding";
-  constructor(id: number, description: ContentRef);
 }
 export declare class ValidatedTaskResult {
   readonly obligation: TaskObligation;
-  readonly manifest: ContentRef;
-  readonly outputs: readonly OutputRef[];
-  readonly value: number;
-  readonly findings: readonly ResultFinding[];
+  readonly result_ref: ContentRef;
   readonly kind = "ValidatedTaskResult";
-  constructor(
-    obligation: TaskObligation,
-    manifest: ContentRef,
-    outputs: readonly OutputRef[],
-    value: number,
-    findings: readonly ResultFinding[],
-  );
+  constructor(obligation: TaskObligation, result_ref: ContentRef);
   static produce(
     obligation: TaskObligation,
-    manifest: ContentRef,
-    outputs: readonly OutputRef[],
-    value: number,
-    findings: readonly ResultFinding[],
+    result_ref: ContentRef,
   ): ValidatedTaskResult;
 }
 export declare class TaskFailure {
@@ -158,18 +111,6 @@ export declare class TaskExecutionUnavailable {
 export type TaskTerminal =
   TaskResultProduced | TaskProcessFailed | TaskExecutionUnavailable;
 export declare function equal(left: unknown, right: unknown): boolean;
-export declare const FINDING_LIMIT = 32;
 export declare function task_owner(task: TaskId): TicketId;
-export declare function reads_repository(
-  definition: TaskDefinition,
-  repository: ContentRef,
-): boolean;
-export declare function publishes_repository_result(
-  definition: TaskDefinition,
-  repository: ContentRef,
-): boolean;
-export declare function exact_git_output(
-  result: ValidatedTaskResult,
-): WorkspaceSource | null;
 export declare function terminal_task(terminal: TaskTerminal): TaskId;
 export declare function repr(value: unknown): string;
