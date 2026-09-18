@@ -139,6 +139,40 @@ async function executionClaimed(
   return found.rows.map(executionClaim);
 }
 
+/**
+ * The work that waited out its window without a claimant, taken by the
+ * orchestrator so it can be reported. It is claimed rather than read, because
+ * a terminal is written against a held claim, and the lease, the epoch fence
+ * and SKIP LOCKED then keep two passes from reporting one task twice.
+ * Capabilities are not matched, because work nobody can run is exactly what
+ * this pass exists to settle.
+ */
+async function executionUnclaimable(
+  pool: pg.Pool,
+  owner: string,
+  recoveryEpoch: RecoveryEpoch,
+  leaseSecs: number,
+  limit: number,
+  windowSecs: number,
+): Promise<readonly TicketExecutionClaim[]> {
+  const found = await pool.query<ExecutionRow>(sql`UPDATE ticket_execution e SET
+      state='Running',attempt=e.attempt+1,claim_owner=${owner},capability_digest=NULL,worker_outcome=NULL,
+      claim_expires_at=now()+make_interval(secs=>${leaseSecs}::double precision),
+      recovery_epoch=${recoveryEpoch}
+    WHERE ${recoveryEpoch}=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)
+      AND (e.tenant,e.project,e.task_key) IN (
+      SELECT q.tenant,q.project,q.task_key FROM ticket_execution q
+      WHERE q.state='Queued' AND q.attempt=0
+        AND q.queued_at+make_interval(secs=>${windowSecs}::double precision)<=now()
+        AND EXISTS(SELECT 1 FROM project p
+          WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active'
+            AND p.ticket_model='Chuggernaut')
+        ORDER BY q.queued_at,q.task_key
+      LIMIT ${limit} FOR UPDATE SKIP LOCKED)
+    RETURNING e.tenant,e.project,e.delivery_identity,e.task_key,e.obligation,e.attempt::text,e.recovery_epoch`);
+  return found.rows.map(executionClaim);
+}
+
 async function executionTerminal(
   client: pg.PoolClient,
   claim: TicketExecutionClaim,
@@ -199,6 +233,15 @@ export function postgresTicketExecution(pool: pg.Pool): TicketExecutionStore {
         leaseSecs,
         limit,
         capabilities,
+      ),
+    unclaimable: (owner, recoveryEpoch, leaseSecs, limit, windowSecs) =>
+      executionUnclaimable(
+        pool,
+        owner,
+        recoveryEpoch,
+        leaseSecs,
+        limit,
+        windowSecs,
       ),
     retry: async (claim, retryAfterSecs) => {
       await pool.query(sql`UPDATE ticket_execution SET state='Queued',claim_owner=NULL,claim_expires_at=NULL,recovery_epoch=NULL,

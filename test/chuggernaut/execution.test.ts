@@ -7,6 +7,7 @@ import {
   ticketExecutionEffects,
   ticketExecutionResultRef,
   ticketExecutionRun,
+  ticketExecutionUnclaimableRun,
   ticketExecutionMaterial,
   ticketExecutionView,
   type TicketExecutionClaim,
@@ -163,6 +164,7 @@ test("operational retry exhaustion reports unavailable with stable authorization
         assert.deepEqual(capabilities, ["shell"]);
         return Promise.resolve([claim]);
       },
+      unclaimable: () => Promise.resolve([]),
       retry: () => Promise.reject(new Error("exhausted work must not retry")),
       terminal: (_claim, input) => {
         submitted = { input };
@@ -286,5 +288,73 @@ test("an obligation whose ticket has moved on resolves no material", () => {
   assert.throws(
     () => ticketExecutionMaterial(driver.graph, held),
     /work obligation is not current/u,
+  );
+});
+
+test("work no claimant took inside its window is reported unavailable", async () => {
+  const held = obligation();
+  const claim: TicketExecutionClaim = {
+    partition,
+    identity: "12:0",
+    taskKey: "work:7:1",
+    obligation: held,
+    attempt: 1,
+    recoveryEpoch: asRecoveryEpoch("epoch-one"),
+  };
+  let evidence: string | undefined;
+  let submitted: { input: unknown } | undefined;
+  const settled = await ticketExecutionUnclaimableRun(
+    {
+      execute: () => Promise.resolve(true),
+      cancel: () => Promise.resolve(true),
+      claim: () => Promise.reject(new Error("the window pass never claims")),
+      unclaimable: (_owner, _epoch, _leaseSecs, _limit, windowSecs) => {
+        assert.equal(windowSecs, 60);
+        return Promise.resolve([claim]);
+      },
+      retry: () => Promise.reject(new Error("unclaimed work must not retry")),
+      terminal: (_claim, input) => {
+        submitted = { input };
+        return Promise.resolve(true);
+      },
+      cancelled: () => Promise.resolve(false),
+    },
+    () => ({
+      put: (_mediaType: string, content: string) => {
+        evidence = content;
+        return Promise.resolve(task.ContentRef(99));
+      },
+      read: () => Promise.resolve(undefined),
+    }),
+    "worker-one",
+    claim.recoveryEpoch,
+    {
+      principal: "worker-one",
+      authorizedOperation: "ReportTaskTerminal",
+      authorityKind: "ExecutionWorker",
+      authoritySubject: "worker-one",
+      policyRevision: "test-policy-v1",
+    },
+    30,
+    1,
+    60,
+  );
+  assert.equal(settled, 1);
+  assert.deepEqual(JSON.parse(evidence ?? "null"), {
+    reason: "no claimant covering the required capabilities appeared in time",
+    taskKey: "work:7:1",
+    requiredCapabilities: ["linux"],
+    windowSecs: 60,
+  });
+  const input = submitted?.input as {
+    identity: string;
+    command: ticket.ReportTaskTerminal;
+  };
+  assert.equal(input.identity, "execution-terminal:work:7:1");
+  if (input.command.report.kind !== "TerminalFailureReport")
+    throw new Error("unclaimed work did not report a failure");
+  assert.equal(
+    input.command.report.kind_of_failure.kind,
+    "ExecutionUnavailableFailure",
   );
 });

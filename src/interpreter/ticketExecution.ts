@@ -62,6 +62,19 @@ export interface TicketExecutionStore {
     limit: number,
     capabilities: readonly string[],
   ): Promise<readonly TicketExecutionClaim[]>;
+  /**
+   * Queued work older than its window that no claimant ever took, claimed by
+   * the caller so it can be settled. Under claiming this is the one shape that
+   * would otherwise wait forever, looking exactly like work whose turn has not
+   * come.
+   */
+  unclaimable(
+    owner: string,
+    recoveryEpoch: RecoveryEpoch,
+    leaseSecs: number,
+    limit: number,
+    windowSecs: number,
+  ): Promise<readonly TicketExecutionClaim[]>;
   retry(claim: TicketExecutionClaim, retryAfterSecs: number): Promise<void>;
   terminal(
     claim: TicketExecutionClaim,
@@ -316,6 +329,81 @@ async function ticketExecutionCancelled(
   await runner.cancel(claim);
   await running;
   return true;
+}
+
+/**
+ * Settles the work that waited out its window with no claimant, as
+ * `ExecutionUnavailable` against evidence naming what it asked for.
+ *
+ * Placement gets one answer for free — a backend offered work that it cannot
+ * place says so — whereas nothing claiming a row is silence, and work merely
+ * waiting its turn sounds exactly the same, so the window is what turns a
+ * requirement no claimant covers into a fact the ticket carries.
+ */
+export async function ticketExecutionUnclaimableRun(
+  store: TicketExecutionStore,
+  content: TicketExecutionContent,
+  owner: string,
+  recoveryEpoch: RecoveryEpoch,
+  authorization: TicketMachineAuthorization,
+  leaseSecs: number,
+  limit: number,
+  windowSecs: number,
+): Promise<number> {
+  if (
+    ![leaseSecs, limit, windowSecs].every(
+      (value) => Number.isSafeInteger(value) && value > 0,
+    )
+  )
+    throw new RangeError(
+      "ticket execution unclaimable bounds must be positive safe integers",
+    );
+  const claims = await store.unclaimable(
+    owner,
+    recoveryEpoch,
+    leaseSecs,
+    limit,
+    windowSecs,
+  );
+  if (claims.length > limit)
+    throw new Error("ticket execution store exceeded claim limit");
+  const settled = await Promise.all(
+    claims.map(async (claim) => {
+      const evidence = await content(claim.partition).put(
+        "application/json",
+        ticketExecutionUnclaimableEvidence(claim, windowSecs),
+      );
+      const submitted = await store.terminal(claim, {
+        identity: `execution-terminal:${claim.taskKey}`,
+        origin: "Execution",
+        authorization,
+        command: new ticket.ReportTaskTerminal(
+          ticketExecutionReport(claim, {
+            result: "ExecutionUnavailable",
+            evidence,
+          }),
+        ),
+      });
+      return submitted ? 1 : 0;
+    }),
+  );
+  return settled.reduce<number>((total, value) => total + value, 0);
+}
+
+/** What the ticket is told: what the work asked for, and how long nothing offering it appeared. */
+function ticketExecutionUnclaimableEvidence(
+  claim: TicketExecutionClaim,
+  windowSecs: number,
+): string {
+  return JSON.stringify({
+    reason: "no claimant covering the required capabilities appeared in time",
+    taskKey: claim.taskKey,
+    requiredCapabilities: [
+      ...claim.obligation.definition.execution_requirements
+        .required_capabilities,
+    ],
+    windowSecs,
+  });
 }
 
 export async function ticketExecutionRun(

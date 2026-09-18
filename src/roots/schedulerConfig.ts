@@ -85,6 +85,7 @@ export interface SchedulerTicketExecutionConfig {
   readonly outputBytesMax: number;
   readonly outcomePollMs: number;
   readonly claimsPerPassMax: number;
+  readonly unclaimedWindowSecs: number;
 }
 
 /** The one prefix every variable this command reads is spelled with. */
@@ -189,6 +190,7 @@ const schedulerTicketExecutionSchema = z.strictObject({
   outputBytesMax: schedulerSafePositiveSchema.default(1_048_576),
   outcomePollMs: schedulerSafePositiveSchema.default(1_000),
   claimsPerPassMax: schedulerCountSchema.default(1),
+  unclaimedWindowSecs: schedulerSafePositiveSchema.default(300),
 });
 
 /**

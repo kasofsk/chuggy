@@ -76,21 +76,28 @@ function obligationNeeding(capabilities: readonly string[]) {
   return work_obligation(driver.graph, 1);
 }
 
-test("a claimant is offered only the work its capabilities cover", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "execution-capabilities",
-  );
+/** One project holding one queued task that asks for what it names, and the reads over it. */
+async function queuedNeeding(name: string, capabilities: readonly string[]) {
+  const partition = await postgresHarnessProject(harness.store, name);
   await postgresTicketExecution(writer).execute(
     partition,
     "execute",
     "work:1:1",
-    obligationNeeding(["macos"]),
+    obligationNeeding(capabilities),
   );
-  const store = postgresTicketExecution(scheduler);
-  const epoch = await postgresHarnessEpoch(harness.store);
-  const mine = (claims: readonly { partition: { project: string } }[]) =>
-    claims.filter((held) => held.partition.project === partition.project);
+  return {
+    partition,
+    store: postgresTicketExecution(scheduler),
+    epoch: await postgresHarnessEpoch(harness.store),
+    mine: (claims: readonly { partition: { project: string } }[]) =>
+      claims.filter((held) => held.partition.project === partition.project),
+  };
+}
+
+test("a claimant is offered only the work its capabilities cover", async () => {
+  const { store, epoch, mine } = await queuedNeeding("execution-capabilities", [
+    "macos",
+  ]);
   assert.deepEqual(
     mine(await store.claim("linux-pool", epoch, 30, 10, ["linux"])),
     [],
@@ -142,6 +149,29 @@ function terminalInput(held: task.TaskObligation) {
     ),
   };
 }
+
+test("queued work nobody claims is taken once its window has passed", async () => {
+  const { partition, store, epoch, mine } = await queuedNeeding(
+    "execution-unclaimable",
+    ["macos"],
+  );
+  assert.deepEqual(
+    mine(await store.unclaimable("sweep", epoch, 30, 10, 60)),
+    [],
+  );
+  await harness.pool.query(
+    "UPDATE ticket_execution SET queued_at=now()-make_interval(secs=>120) WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
+  assert.equal(
+    mine(await store.unclaimable("sweep", epoch, 30, 10, 60)).length,
+    1,
+  );
+  assert.deepEqual(
+    mine(await store.unclaimable("sweep", epoch, 30, 10, 60)),
+    [],
+  );
+});
 
 test("attempt takeover fences worker capabilities and terminal queue acceptance", async () => {
   const partition = await postgresHarnessProject(

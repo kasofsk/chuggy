@@ -18,6 +18,7 @@ import { workerPodForgeApp } from "../interpreter/forgeInstallation.ts";
 import { asRepositoryId } from "../interpreter/finalizer.ts";
 import {
   ticketExecutionRun,
+  ticketExecutionUnclaimableRun,
   type TicketExecutionContent,
   type TicketExecutionTickets,
 } from "../interpreter/ticketExecution.ts";
@@ -33,12 +34,61 @@ export function ticketExecutionRuntime(
   const settings = config.tickets;
   const content: TicketExecutionContent = (partition) =>
     postgresTicketContent(pool, partition);
-  const credentials = ticketExecutionCredentials(pool, settings);
-  const runner = kubernetesTicketExecutionRunner(
+  const runner = ticketExecutionRuntimeRunner(pool, config, content);
+  const store = postgresTicketExecution(pool);
+  const machine = postgresTicketMachine(pool);
+  const tickets: TicketExecutionTickets = async (partition) => {
+    const graph = await machine.read(partition);
+    return graph === "LegacyModelUnsupported" ? undefined : graph;
+  };
+  const authorization = {
+    principal: config.identity.owner,
+    authorizedOperation: "ReportTaskTerminal",
+    authorityKind: "ExecutionScheduler",
+    authoritySubject: config.identity.owner,
+    policyRevision: "ticket-execution-v1",
+  } as const;
+  return {
+    run: async () => {
+      await ticketExecutionUnclaimableRun(
+        store,
+        content,
+        config.identity.owner,
+        config.identity.recoveryEpoch,
+        authorization,
+        settings.leaseSecs,
+        settings.claimsPerPassMax,
+        settings.unclaimedWindowSecs,
+      );
+      await ticketExecutionRun(
+        store,
+        content,
+        tickets,
+        runner,
+        config.identity.owner,
+        config.identity.recoveryEpoch,
+        authorization,
+        settings.leaseSecs,
+        settings.attemptsMax,
+        settings.claimsPerPassMax,
+        settings.capabilities,
+      );
+    },
+  };
+}
+
+/** The one backend this deployment runs its own claims on, built from the site it names. */
+function ticketExecutionRuntimeRunner(
+  pool: pg.Pool,
+  config: SchedulerCommandConfig,
+  content: TicketExecutionContent,
+): ReturnType<typeof kubernetesTicketExecutionRunner> {
+  const settings = config.tickets;
+  return kubernetesTicketExecutionRunner(
     content,
     postgresTicketExecutionTerminals(pool),
     postgresProjectRepositoryBinding(pool),
-    credentials,
+    ticketExecutionCredentials(pool, settings),
     {
       ...config.workers,
       image: settings.image,
@@ -58,35 +108,6 @@ export function ticketExecutionRuntime(
       retryAfterSecs: config.workers.unavailableRetryAfterSecs,
     },
   );
-  const store = postgresTicketExecution(pool);
-  const machine = postgresTicketMachine(pool);
-  const tickets: TicketExecutionTickets = async (partition) => {
-    const graph = await machine.read(partition);
-    return graph === "LegacyModelUnsupported" ? undefined : graph;
-  };
-  return {
-    run: async () => {
-      await ticketExecutionRun(
-        store,
-        content,
-        tickets,
-        runner,
-        config.identity.owner,
-        config.identity.recoveryEpoch,
-        {
-          principal: config.identity.owner,
-          authorizedOperation: "ReportTaskTerminal",
-          authorityKind: "ExecutionScheduler",
-          authoritySubject: config.identity.owner,
-          policyRevision: "ticket-execution-v1",
-        },
-        settings.leaseSecs,
-        settings.attemptsMax,
-        settings.claimsPerPassMax,
-        settings.capabilities,
-      );
-    },
-  };
 }
 
 export function ticketExecutionCredentials(
