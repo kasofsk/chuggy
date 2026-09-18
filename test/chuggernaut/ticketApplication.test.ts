@@ -392,7 +392,7 @@ test("validation reports findings over draft content and writes nothing", async 
       result: "Authorized",
       value: {
         valid: false,
-        findings: ["catalog document must be a mapping"],
+        findings: [{ path: "", message: "catalog document must be a mapping" }],
         commit,
       },
     },

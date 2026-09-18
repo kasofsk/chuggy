@@ -7,6 +7,7 @@ import type { Partition } from "./projectStore.ts";
 import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
 import {
   ticketCatalogReferenceRefusal,
+  CatalogSchemaError,
   ticketCatalogRoot,
   type TicketCatalog,
   type TicketCatalogEntry,
@@ -15,6 +16,7 @@ import {
   type TicketCatalogSnapshotRead,
   type TicketCatalogTip,
   type TicketContentStore,
+  type TicketFinding,
 } from "./ticketCatalog.ts";
 import { ticketWorkspacePut } from "./ticketWorkspace.ts";
 import type { TicketMachineOutcome } from "./ticketMachine.ts";
@@ -120,7 +122,7 @@ export interface TicketValidationRequest extends TicketCatalogRequest {
 
 export interface TicketValidation {
   readonly valid: boolean;
-  readonly findings: readonly string[];
+  readonly findings: readonly TicketFinding[];
   /** What the server resolved against, so a write can send it back as its guard. */
   readonly commit: GitObjectId;
 }
@@ -404,8 +406,18 @@ async function ticketApplicationSubmit(
 /** Any positive identity releases the same document, and a draft release is discarded. */
 const ticketValidationIdentity = task.TicketId(1);
 
-function ticketApplicationFinding(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+/**
+ * A schema failure knows every field it faulted; anything else is one finding
+ * about the document, because that is all the thrower said.
+ */
+function ticketApplicationFindings(error: unknown): readonly TicketFinding[] {
+  if (error instanceof CatalogSchemaError) return error.findings;
+  return [
+    {
+      path: "",
+      message: error instanceof Error ? error.message : String(error),
+    },
+  ];
 }
 
 function ticketApplicationValidate(
@@ -435,7 +447,7 @@ function ticketApplicationValidate(
         result: "Authorized",
         value: {
           valid: false,
-          findings: [ticketApplicationFinding(error)],
+          findings: ticketApplicationFindings(error),
           commit,
         },
       };

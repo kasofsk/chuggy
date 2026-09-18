@@ -66,11 +66,40 @@ function useEditorHandle(latest: EditorLatest): {
   return { host, handle, ready };
 }
 
+/**
+ * Whether vim keys are on outlives the editor, because it is how this author
+ * types rather than a fact about the document. Browser storage can throw or
+ * come back empty, so a reader that fails is simply an author who is not a vim
+ * user, and a write that fails costs the preference and nothing else.
+ */
+const vimStorageKey = "chug.editor.vim";
+
+function vimRemembered(): boolean {
+  try {
+    return window.localStorage.getItem(vimStorageKey) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function rememberVim(enabled: boolean): void {
+  try {
+    window.localStorage.setItem(vimStorageKey, String(enabled));
+  } catch {
+    /** A preference that cannot be stored is still applied to this editor. */
+  }
+}
+
 function EditorActions(props: {
   readonly handle: React.RefObject<EditorHandle | null>;
   readonly references: boolean;
+  readonly ready: boolean;
 }): ReactNode {
-  const [vimming, setVimming] = useState(false);
+  const [vimming, setVimming] = useState(vimRemembered);
+  const { handle, ready } = props;
+  useEffect(() => {
+    if (ready && vimming) handle.current?.setVim(true);
+  }, [ready, handle, vimming]);
   return (
     <div className="ticket-editor-actions">
       <button
@@ -116,6 +145,7 @@ function EditorActions(props: {
           onChange={(event) => {
             setVimming(event.target.checked);
             props.handle.current?.setVim(event.target.checked);
+            rememberVim(event.target.checked);
           }}
         />
         <span>Vim keys</span>
@@ -142,7 +172,11 @@ export function TicketEditor(props: TicketEditorProps): ReactNode {
   }, [ready, handle, props.files]);
   return (
     <div className="ticket-editor">
-      <EditorActions handle={handle} references={props.catalog !== undefined} />
+      <EditorActions
+        handle={handle}
+        references={props.catalog !== undefined}
+        ready={ready}
+      />
       <div className="ticket-editor-host" ref={host} />
     </div>
   );

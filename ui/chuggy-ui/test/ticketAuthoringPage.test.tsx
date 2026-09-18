@@ -36,6 +36,7 @@ vi.mock("@tanstack/react-router", () => ({
   ),
   useParams: () => ({ ...leadPartition }),
   useNavigate: () => () => Promise.resolve(),
+  useBlocker: () => undefined,
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
@@ -131,13 +132,45 @@ test("the catalog and the validation are asked for without a commit", async () =
   expect(validated?.body).toContain("version: 2");
 });
 
+/** The trigger and the confirmation carry the same words; the last one is in the dialog. */
+async function confirmCreation(): Promise<void> {
+  fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+  await settled();
+  const offered = screen.getAllByRole("button", { name: "Create ticket" });
+  fireEvent.click(offered[offered.length - 1] as HTMLElement);
+  await settled();
+}
+
+test("nothing is written until the creation is confirmed", async () => {
+  const sent = drawn();
+  await mounted();
+  vi.advanceTimersByTime(1_000);
+  await settled();
+  fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+  await settled();
+  expect(
+    sent.find((request) => request.url.endsWith("/tickets")),
+  ).toBeUndefined();
+});
+
+test("the confirmation shows the document that would be written", async () => {
+  drawn();
+  await mounted();
+  vi.advanceTimersByTime(1_000);
+  await settled();
+  fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+  await settled();
+  expect(
+    document.body.querySelector(".authoring-confirm-source")?.textContent,
+  ).toContain("finalization: finalizers/pull-request.yaml");
+});
+
 test("creating carries the text the editor holds, as YAML", async () => {
   const sent = drawn();
   await mounted();
   vi.advanceTimersByTime(1_000);
   await settled();
-  fireEvent.submit(screen.getByRole("button", { name: "Create ticket" }));
-  await settled();
+  await confirmCreation();
   const created = sent.find((request) => request.url.endsWith("/tickets"));
   expect(created?.method).toBe("POST");
   expect(created?.body).toContain("finalization: finalizers/pull-request.yaml");

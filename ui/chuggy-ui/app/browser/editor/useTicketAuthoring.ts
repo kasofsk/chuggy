@@ -18,6 +18,7 @@ import {
 } from "../../core/adoptedTickets.ts";
 import { useApiPorts } from "../api.ts";
 import type { EditorFinding } from "./chugEditor.ts";
+import { editorFindings } from "./findings.ts";
 import type { FragmentCatalog } from "./fragments.ts";
 
 export const validationIdleMs = 600;
@@ -60,10 +61,7 @@ export function useTicketValidation(
         setValidation(
           result.outcome === "Ok"
             ? {
-                findings: result.value.findings.map((message) => ({
-                  message,
-                  severity: "error" as const,
-                })),
+                findings: editorFindings(result.value.findings, source),
                 commit: result.value.commit,
               }
             : { findings: [], commit: undefined },

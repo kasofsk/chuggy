@@ -32,4 +32,36 @@
     border: var(--hairline) solid var(--edge);
     border-radius: var(--radius-2);
   }
+
+  .ticket-editor-fallback {
+    width: 100%;
+    min-height: var(--height-clip);
+    padding: var(--space-2);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+    background: var(--surface-2);
+    color: var(--ink-1);
+    font: var(--text-md) / var(--leading-prose) var(--font-mono);
+    resize: vertical;
+  }
+
+  .authoring-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+
+  .authoring-confirm-source {
+    max-height: var(--height-clip);
+    overflow: auto;
+    margin: 0;
+    padding: var(--space-2);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+    background: var(--surface-2);
+    font: var(--text-sm) / var(--leading-dense) var(--font-mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
 }
