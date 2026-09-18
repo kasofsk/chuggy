@@ -1041,14 +1041,24 @@ function adoptedTicketView(held: AdoptedTicket) {
   };
 }
 
+/**
+ * Which catalog a request works against. The server resolves the bound
+ * repository's tip itself; `X-Chug-Repository` names which binding when a
+ * project holds more than one, and `If-Catalog-Match` is the commit the caller
+ * last saw, which a write is refused against when the tree has moved.
+ */
 function adoptedCatalogRequest(request: FastifyRequest) {
   const query = record(request.query);
-  const repository = query["repository"];
+  const repository =
+    query["repository"] ?? request.headers["x-chug-repository"];
+  const expected = request.headers["if-catalog-match"];
   return {
     partition: partitionOf(request),
-    catalogCommit: asGitObjectId(textField(query, "commit")),
     ...(typeof repository === "string"
       ? { repository: asRepositoryId(repository) }
+      : {}),
+    ...(typeof expected === "string"
+      ? { expectedCatalogCommit: asGitObjectId(expected) }
       : {}),
   };
 }
@@ -1155,17 +1165,9 @@ function registerAdoptedTicketValidation(
     async (request, reply) => {
       if (typeof request.body !== "string")
         throw new TypeError("ticket body must be YAML text");
-      const catalogCommit = request.headers["x-chug-catalog-commit"];
-      if (typeof catalogCommit !== "string")
-        throw new TypeError("X-Chug-Catalog-Commit is required");
-      const repository = request.headers["x-chug-repository"];
       const result = await service.application.validate(principalOf(request), {
-        partition: partitionOf(request),
+        ...adoptedCatalogRequest(request),
         source: request.body,
-        catalogCommit: asGitObjectId(catalogCommit),
-        ...(typeof repository === "string"
-          ? { repository: asRepositoryId(repository) }
-          : {}),
       });
       if (result.result !== "Authorized") {
         adoptedTicketReply(reply, result);
@@ -1185,22 +1187,14 @@ function registerAdoptedTicketAuthoring(
   app.post(root, async (request, reply) => {
     if (typeof request.body !== "string")
       throw new TypeError("ticket body must be YAML text");
-    const catalogCommit = request.headers["x-chug-catalog-commit"];
-    if (typeof catalogCommit !== "string")
-      throw new TypeError("X-Chug-Catalog-Commit is required");
-    const repository = request.headers["x-chug-repository"];
     const identity = adoptedTicketIdentity(service, request, "CreateTicket");
     adoptedTicketMutationReply(
       reply,
       identity,
       await service.application.create(principalOf(request), {
-        partition: partitionOf(request),
+        ...adoptedCatalogRequest(request),
         identity,
         source: request.body,
-        catalogCommit: asGitObjectId(catalogCommit),
-        ...(typeof repository === "string"
-          ? { repository: asRepositoryId(repository) }
-          : {}),
       }),
     );
   });
@@ -1208,26 +1202,18 @@ function registerAdoptedTicketAuthoring(
     if (typeof request.body !== "string")
       throw new TypeError("ticket body must be YAML text");
     const revision = request.headers["if-match"];
-    const catalogCommit = request.headers["x-chug-catalog-commit"];
     if (typeof revision !== "string" || !/^[1-9][0-9]*$/u.test(revision))
       throw new TypeError("If-Match must be a positive ticket revision");
-    if (typeof catalogCommit !== "string")
-      throw new TypeError("X-Chug-Catalog-Commit is required");
-    const repository = request.headers["x-chug-repository"];
     const identity = adoptedTicketIdentity(service, request, "UpdateTicket");
     adoptedTicketMutationReply(
       reply,
       identity,
       await service.application.update(principalOf(request), {
-        partition: partitionOf(request),
+        ...adoptedCatalogRequest(request),
         identity,
         ticket: adoptedTicketNumber(request),
         expectedRevision: Number(revision),
         source: request.body,
-        catalogCommit: asGitObjectId(catalogCommit),
-        ...(typeof repository === "string"
-          ? { repository: asRepositoryId(repository) }
-          : {}),
       }),
     );
   });

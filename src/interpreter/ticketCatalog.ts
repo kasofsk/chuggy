@@ -110,6 +110,12 @@ export interface TicketCatalogSnapshotRead {
   entries(): Promise<readonly TicketCatalogEntry[]>;
 }
 
+/** Which repository a request works against, and where that repository stands. */
+export interface TicketCatalogTip {
+  readonly repository: RepositoryId;
+  readonly commit: GitObjectId;
+}
+
 /** Resolves a project binding at one exact commit into an immutable catalog tree. */
 export interface TicketCatalogSnapshotPort {
   snapshot(input: {
@@ -117,6 +123,16 @@ export interface TicketCatalogSnapshotPort {
     readonly repository?: RepositoryId;
     readonly commit: GitObjectId;
   }): Promise<TicketCatalogSnapshotRead | undefined>;
+  /**
+   * Where the bound repository's own HEAD stands, read from the remote rather
+   * than remembered. A caller naming no repository gets the binding
+   * `ProjectRepositoryBindingRead` already elects, which is the project's
+   * oldest live one; an unbound project resolves to nothing.
+   */
+  tip(input: {
+    readonly partition: Partition;
+    readonly repository?: RepositoryId;
+  }): Promise<TicketCatalogTip | undefined>;
 }
 
 export interface TicketCatalogRelease {

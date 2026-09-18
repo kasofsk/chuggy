@@ -34,6 +34,7 @@ import { mintedRepositoryTokens } from "../../src/adapters/forge/mintedCredentia
 import { githubRepositoryHost } from "../../src/adapters/forge/githubAddress.ts";
 import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
 import {
+  asGitObjectId,
   asRepositoryId,
   type RepositoryBinding,
 } from "../../src/interpreter/finalizer.ts";
@@ -552,7 +553,7 @@ test("retired lifecycle routes conceal an unauthorized project", async () => {
   assert.equal(response.statusCode, 404);
 });
 
-test("adopted authoring forwards YAML and pinned catalog identity", async () => {
+test("adopted authoring forwards YAML, its binding and its catalog guard", async () => {
   const service = retiredTicketApp("Fresh");
   const sources: unknown[] = [];
   const application: NativeTicketApplication = {
@@ -577,7 +578,7 @@ test("adopted authoring forwards YAML and pinned catalog identity", async () => 
       authorization: "Bearer valid",
       "content-type": "application/yaml",
       "idempotency-key": "create",
-      "x-chug-catalog-commit": "a".repeat(40),
+      "if-catalog-match": "a".repeat(40),
       "x-chug-repository": "github.com/acme/atlas",
     },
     payload: source,
@@ -592,10 +593,46 @@ test("adopted authoring forwards YAML and pinned catalog identity", async () => 
       partition: { tenant: "acme", project: "atlas" },
       identity: "identity",
       source,
-      catalogCommit: "a".repeat(40),
+      expectedCatalogCommit: "a".repeat(40),
       repository: "github.com/acme/atlas",
     },
   ]);
+});
+
+test("a write against a catalog that has moved is refused by name", async () => {
+  const service = retiredTicketApp("Fresh");
+  const application: NativeTicketApplication = {
+    ...service,
+    application: {
+      ...service.application,
+      create: () =>
+        Promise.resolve({
+          result: "Authorized",
+          value: {
+            accepted: "AuthoringRefused",
+            code: "CatalogCommitStale",
+            message: `the catalog has moved from ${"a".repeat(40)} to ${"b".repeat(40)}`,
+          },
+        }),
+    },
+  };
+  await using app = adoptedTicketRouteApp(application);
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/tenants/acme/projects/atlas/ticket-machine/tickets",
+    headers: {
+      authorization: "Bearer valid",
+      "content-type": "application/yaml",
+      "idempotency-key": "create",
+      "if-catalog-match": "a".repeat(40),
+    },
+    payload: "title: Example\n",
+  });
+  assert.equal(response.statusCode, 400, response.body);
+  assert.match(
+    JSON.stringify(response.json()),
+    /the catalog has moved from a+ to b+/u,
+  );
 });
 
 test("a ticket point read carries the authored source beside its revision", async () => {
@@ -653,6 +690,7 @@ test("validation answers with findings and never reaches authoring", async () =>
           value: {
             valid: false,
             findings: ["catalog document must be a mapping"],
+            commit: asGitObjectId("a".repeat(40)),
           },
         });
       },
@@ -665,7 +703,6 @@ test("validation answers with findings and never reaches authoring", async () =>
     headers: {
       authorization: "Bearer valid",
       "content-type": "application/yaml",
-      "x-chug-catalog-commit": "a".repeat(40),
     },
     payload: "not a ticket",
   });
@@ -673,31 +710,14 @@ test("validation answers with findings and never reaches authoring", async () =>
   assert.deepEqual(response.json(), {
     valid: false,
     findings: ["catalog document must be a mapping"],
+    commit: "a".repeat(40),
   });
   assert.deepEqual(requests, [
-    {
-      partition: { tenant: "acme", project: "atlas" },
-      source: "not a ticket",
-      catalogCommit: "a".repeat(40),
-    },
+    { partition: { tenant: "acme", project: "atlas" }, source: "not a ticket" },
   ]);
 });
 
-test("validation still demands the pinned catalog identity", async () => {
-  await using app = adoptedTicketRouteApp(retiredTicketApp("Fresh"));
-  const response = await app.inject({
-    method: "POST",
-    url: "/api/v1/tenants/acme/projects/atlas/ticket-machine/tickets/validate",
-    headers: {
-      authorization: "Bearer valid",
-      "content-type": "application/yaml",
-    },
-    payload: "title: Example\n",
-  });
-  assert.equal(response.statusCode, 400);
-});
-
-test("the catalog routes pass the pinned commit and answer its tree", async () => {
+test("the catalog routes name the binding alone and answer its tree", async () => {
   const service = retiredTicketApp("Fresh");
   const requests: unknown[] = [];
   const application: NativeTicketApplication = {
@@ -727,7 +747,7 @@ test("the catalog routes pass the pinned commit and answer its tree", async () =
   const headers = { authorization: "Bearer valid" };
   const listed = await app.inject({
     method: "GET",
-    url: `${root}?commit=${"a".repeat(40)}&repository=github.com/acme/atlas`,
+    url: `${root}?repository=github.com/acme/atlas`,
     headers,
   });
   assert.equal(listed.statusCode, 200, listed.body);
@@ -736,7 +756,7 @@ test("the catalog routes pass the pinned commit and answer its tree", async () =
   });
   const read = await app.inject({
     method: "GET",
-    url: `${root}?commit=${"a".repeat(40)}&path=workloads/work.yaml`,
+    url: `${root}?path=workloads/work.yaml`,
     headers,
   });
   assert.equal(read.statusCode, 200, read.body);
@@ -748,12 +768,10 @@ test("the catalog routes pass the pinned commit and answer its tree", async () =
   assert.deepEqual(requests, [
     {
       partition: { tenant: "acme", project: "atlas" },
-      catalogCommit: "a".repeat(40),
       repository: "github.com/acme/atlas",
     },
     {
       partition: { tenant: "acme", project: "atlas" },
-      catalogCommit: "a".repeat(40),
       path: "workloads/work.yaml",
     },
   ]);
@@ -801,10 +819,11 @@ test("a runtime fragment write forwards its reference and refuses a shadow", asy
   const headers = {
     authorization: "Bearer valid",
     "content-type": "application/yaml",
+    "if-catalog-match": adoptedCatalogCommit,
   };
   const accepted = await app.inject({
     method: "PUT",
-    url: `${adoptedCatalogRoot}?commit=${adoptedCatalogCommit}&path=workloads/runtime.yaml`,
+    url: `${adoptedCatalogRoot}?path=workloads/runtime.yaml`,
     headers,
     payload: "prompt: runtime\n",
   });
@@ -812,7 +831,7 @@ test("a runtime fragment write forwards its reference and refuses a shadow", asy
   assert.deepEqual(accepted.json(), { written: "Written" });
   const refused = await app.inject({
     method: "PUT",
-    url: `${adoptedCatalogRoot}?commit=${adoptedCatalogCommit}&path=workloads/work.yaml`,
+    url: `${adoptedCatalogRoot}?path=workloads/work.yaml`,
     headers,
     payload: "prompt: shadow\n",
   });
@@ -820,13 +839,13 @@ test("a runtime fragment write forwards its reference and refuses a shadow", asy
   assert.deepEqual(written, [
     {
       partition: { tenant: "acme", project: "atlas" },
-      catalogCommit: adoptedCatalogCommit,
+      expectedCatalogCommit: adoptedCatalogCommit,
       path: "workloads/runtime.yaml",
       content: "prompt: runtime\n",
     },
     {
       partition: { tenant: "acme", project: "atlas" },
-      catalogCommit: adoptedCatalogCommit,
+      expectedCatalogCommit: adoptedCatalogCommit,
       path: "workloads/work.yaml",
       content: "prompt: shadow\n",
     },
@@ -838,25 +857,28 @@ test("removing a fragment the project does not hold is a not-found", async () =>
   const headers = { authorization: "Bearer valid" };
   const removed = await app.inject({
     method: "DELETE",
-    url: `${adoptedCatalogRoot}?commit=${adoptedCatalogCommit}&path=workloads/held.yaml`,
+    url: `${adoptedCatalogRoot}?path=workloads/held.yaml`,
     headers,
   });
   assert.equal(removed.statusCode, 200, removed.body);
   assert.deepEqual(removed.json(), { written: "Removed" });
   const absent = await app.inject({
     method: "DELETE",
-    url: `${adoptedCatalogRoot}?commit=${adoptedCatalogCommit}&path=workloads/absent.yaml`,
+    url: `${adoptedCatalogRoot}?path=workloads/absent.yaml`,
     headers,
   });
   assert.equal(absent.statusCode, 404);
 });
 
-test("a catalog read without a commit is a bad request", async () => {
-  await using app = adoptedTicketRouteApp(retiredTicketApp("Fresh"));
+test("a catalog guard that is not a commit is a bad request", async () => {
+  await using app = adoptedTicketRouteApp(adoptedFragmentApp([]));
   const response = await app.inject({
-    method: "GET",
-    url: "/api/v1/tenants/acme/projects/atlas/ticket-machine/catalog",
-    headers: { authorization: "Bearer valid" },
+    method: "DELETE",
+    url: `${adoptedCatalogRoot}?path=workloads/held.yaml`,
+    headers: {
+      authorization: "Bearer valid",
+      "if-catalog-match": "not-a-commit",
+    },
   });
   assert.equal(response.statusCode, 400);
 });

@@ -179,7 +179,7 @@ const leadStandingInstructions = `# How you act on this project
   selector runtime is what dispatches, refuses and lifts, under its own fence.
 - You cannot originate a ticket. Use \`list_tickets\` and \`read_ticket\` to
   inspect the adopted ticket graph. Use \`update_ticket\` only to revise an
-  existing ticket, with its current revision and an exact catalog commit.
+  existing ticket, with its current revision.
 - \`dispatch_ticket\`, \`revoke_ticket\`, \`resume_ticket\`, and \`update_ticket\`
   answer an accepted operation rather than an outcome. Use \`read_operation\`
   to learn whether the ticket machine decided or refused it.`;

@@ -11,6 +11,7 @@ import {
   adoptedTicketDefinition,
   adoptedTicketUpdate,
   adoptedTickets,
+  type CatalogPin,
 } from "../core/adoptedTickets.ts";
 import { useApiPorts } from "./api.ts";
 import {
@@ -102,8 +103,25 @@ export function AdoptedTickets(): ReactNode {
 
 interface AuthoringFields {
   readonly source: string;
-  readonly catalogCommit: string;
   readonly repository: string;
+}
+
+/** What the write is guarded on: the commit the last validation resolved against. */
+interface AuthoringSubmission {
+  readonly fields: AuthoringFields;
+  readonly expectedCommit: string | undefined;
+}
+
+/** An unnamed binding and an unresolved commit are absent fields, not empty ones. */
+function authoringPin(submission: AuthoringSubmission): CatalogPin {
+  return {
+    ...(submission.fields.repository === ""
+      ? {}
+      : { repository: submission.fields.repository }),
+    ...(submission.expectedCommit === undefined
+      ? {}
+      : { expectedCommit: submission.expectedCommit }),
+  };
 }
 
 function AuthoringSubmit(props: {
@@ -129,19 +147,6 @@ function AuthoringPin(props: {
   return (
     <>
       <label className="grid gap-1">
-        <span>Catalog commit</span>
-        <input
-          required
-          value={props.fields.catalogCommit}
-          onChange={(event) => {
-            props.setFields({
-              ...props.fields,
-              catalogCommit: event.target.value,
-            });
-          }}
-        />
-      </label>
-      <label className="grid gap-1">
         <span>Repository binding (optional)</span>
         <input
           value={props.fields.repository}
@@ -160,22 +165,18 @@ function AuthoringPin(props: {
 function AuthoringForm(props: {
   readonly submitLabel: string;
   readonly initial?: AuthoringFields;
-  readonly onSubmit: (fields: AuthoringFields) => Promise<void>;
+  readonly onSubmit: (submission: AuthoringSubmission) => Promise<void>;
 }): ReactNode {
   const partition = useParams({ from: "/$tenant/$project" });
   const [fields, setFields] = useState<AuthoringFields>(
-    props.initial ?? {
-      source: ticketDocumentExample,
-      catalogCommit: "",
-      repository: "",
-    },
+    props.initial ?? { source: ticketDocumentExample, repository: "" },
   );
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string>();
-  const findings = useTicketValidation(partition, fields);
+  const { findings, commit } = useTicketValidation(partition, fields);
   const { files, catalog } = useTicketCatalog(
     partition,
-    { catalogCommit: fields.catalogCommit, repository: fields.repository },
+    fields.repository === "" ? {} : { repository: fields.repository },
     (error: unknown) => {
       setFailure(
         error instanceof Error ? error.message : "The catalog failed.",
@@ -189,7 +190,7 @@ function AuthoringForm(props: {
         event.preventDefault();
         setBusy(true);
         void props
-          .onSubmit(fields)
+          .onSubmit({ fields, expectedCommit: commit })
           .catch((error: unknown) => {
             setFailure(
               error instanceof Error ? error.message : "The request failed.",
@@ -255,14 +256,11 @@ export function AdoptedTicketCreation(): ReactNode {
       )}
       <AuthoringForm
         submitLabel="Create ticket"
-        onSubmit={async (fields) => {
+        onSubmit={async (submission) => {
           const key = newIdentity();
           const result = await adoptedTicketCreate(ports, partition, {
-            source: fields.source,
-            catalogCommit: fields.catalogCommit,
-            ...(fields.repository === ""
-              ? {}
-              : { repository: fields.repository }),
+            source: submission.fields.source,
+            ...authoringPin(submission),
             idempotencyKey: key,
           });
           if (result.outcome !== "Ok") {
@@ -372,7 +370,7 @@ function TicketDispatch(props: {
 /** The form opens on the authored text, so an update starts where the last one ended. */
 function TicketUpdate(props: {
   readonly source: string | null | undefined;
-  readonly submit: (fields: AuthoringFields) => Promise<void>;
+  readonly submit: (submission: AuthoringSubmission) => Promise<void>;
 }): ReactNode {
   return (
     <section className="grid gap-3">
@@ -385,13 +383,7 @@ function TicketUpdate(props: {
           onSubmit={props.submit}
           {...(props.source === null
             ? {}
-            : {
-                initial: {
-                  source: props.source,
-                  catalogCommit: "",
-                  repository: "",
-                },
-              })}
+            : { initial: { source: props.source, repository: "" } })}
         />
       )}
     </section>
@@ -402,7 +394,7 @@ async function runTicketUpdate(input: {
   readonly ports: ReturnType<typeof useApiPorts>;
   readonly partition: { readonly tenant: string; readonly project: string };
   readonly ticket: AdoptedTicket;
-  readonly fields: AuthoringFields;
+  readonly submission: AuthoringSubmission;
 }): Promise<void> {
   const key = newIdentity();
   const result = await adoptedTicketUpdate(
@@ -411,11 +403,8 @@ async function runTicketUpdate(input: {
     input.ticket.ticket,
     input.ticket.revision,
     {
-      source: input.fields.source,
-      catalogCommit: input.fields.catalogCommit,
-      ...(input.fields.repository === ""
-        ? {}
-        : { repository: input.fields.repository }),
+      source: input.submission.fields.source,
+      ...authoringPin(input.submission),
       idempotencyKey: key,
     },
   );
@@ -498,9 +487,9 @@ export function AdoptedTicketPage(): ReactNode {
     await waitForOperation(ports, partition, result.value.identity);
     await refresh();
   };
-  const update = async (fields: AuthoringFields): Promise<void> => {
+  const update = async (submission: AuthoringSubmission): Promise<void> => {
     if (ticket === undefined) return;
-    await runTicketUpdate({ ports, partition, ticket, fields });
+    await runTicketUpdate({ ports, partition, ticket, submission });
     await refresh();
   };
   if (ticket === undefined)
@@ -519,7 +508,7 @@ function TicketBody(props: {
   readonly setDispatch: (value: { repository: string; commit: string }) => void;
   readonly act: (action: "dispatch" | "revoke" | "resume") => Promise<void>;
   readonly source: string | null | undefined;
-  readonly update: (fields: AuthoringFields) => Promise<void>;
+  readonly update: (submission: AuthoringSubmission) => Promise<void>;
 }): ReactNode {
   return (
     <main className="grid gap-5 p-4">

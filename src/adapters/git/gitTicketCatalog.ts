@@ -17,11 +17,13 @@ import {
   ticketCatalogRoot,
 } from "../../interpreter/ticketCatalog.ts";
 import {
+  scratchObserveHead,
   scratchOpen,
   scratchRemoteArguments,
   scratchRun,
   type GitCommitIdentity,
 } from "./gitScratch.ts";
+import type { Partition } from "../../interpreter/projectStore.ts";
 import type { GitEnvironment, GitRan } from "./gitRun.ts";
 
 export interface GitTicketCatalogOptions {
@@ -74,6 +76,33 @@ async function gitTicketCatalogCredential(
   }
 }
 
+/** The repository a request works against and the credential to reach it with. */
+interface GitTicketCatalogBound {
+  readonly repository: RepositoryId;
+  readonly credential: RepositoryCredential | undefined;
+}
+
+async function gitTicketCatalogBound(
+  options: GitTicketCatalogOptions,
+  input: {
+    readonly partition: Partition;
+    readonly repository?: RepositoryId;
+  },
+): Promise<GitTicketCatalogBound | undefined> {
+  const binding = await options.bindings.binding(
+    input.partition,
+    input.repository,
+  );
+  if (binding === undefined) return undefined;
+  const credential = await gitTicketCatalogCredential(
+    options.credentials,
+    binding,
+  );
+  if (credential === "Unavailable")
+    throw new Error("ticket catalog credential unavailable");
+  return { repository: binding.repository, credential };
+}
+
 /** Reads catalog files only from the exact commit named by an authoring request. */
 export function gitTicketCatalog(
   options: GitTicketCatalogOptions,
@@ -88,19 +117,22 @@ export function gitTicketCatalog(
     promotionTimeoutSecsMax: options.remoteTimeoutSecsMax ?? 300,
   });
   return {
+    tip: async (input) => {
+      const bound = await gitTicketCatalogBound(options, input);
+      if (bound === undefined) return undefined;
+      const observed = await scratchObserveHead(
+        scratch,
+        bound.repository,
+        bound.credential,
+      );
+      return observed.read === "Value"
+        ? { repository: bound.repository, commit: observed.value.commit }
+        : undefined;
+    },
     snapshot: async (input) => {
-      const binding = await options.bindings.binding(
-        input.partition,
-        input.repository,
-      );
-      if (binding === undefined) return undefined;
-      const credential = await gitTicketCatalogCredential(
-        options.credentials,
-        binding,
-      );
-      if (credential === "Unavailable")
-        throw new Error("ticket catalog credential unavailable");
-      const repository = binding.repository;
+      const bound = await gitTicketCatalogBound(options, input);
+      if (bound === undefined) return undefined;
+      const { repository, credential } = bound;
       const fetched = await scratchRun(scratch, {
         repository,
         ...(credential === undefined ? {} : { credential }),

@@ -13,6 +13,7 @@ import {
   type TicketCatalogFragments,
   type TicketCatalogRelease,
   type TicketCatalogSnapshotRead,
+  type TicketCatalogTip,
   type TicketContentStore,
 } from "./ticketCatalog.ts";
 import type { TicketMachineOutcome } from "./ticketMachine.ts";
@@ -37,7 +38,7 @@ export type TicketApplicationSubmission =
   | TicketMachineAccepted
   | {
       readonly accepted: "AuthoringRefused";
-      readonly code: "ReworkLimitChanged";
+      readonly code: "ReworkLimitChanged" | "CatalogCommitStale";
       readonly message: string;
     };
 export type TicketApplicationInbox = TicketMachineInbox;
@@ -60,6 +61,11 @@ export interface PinnedTicketCatalogs {
   snapshot(
     selection: PinnedTicketCatalogSelection,
   ): Promise<TicketCatalogSnapshotRead | undefined>;
+  /** Where the bound repository stands now, which is what every request pins to. */
+  tip(selection: {
+    readonly partition: Partition;
+    readonly repository?: RepositoryId;
+  }): Promise<TicketCatalogTip | undefined>;
 }
 
 export interface TicketGraphRead {
@@ -73,10 +79,17 @@ export type TicketApplicationResult<Value> =
   | { readonly result: "LegacyModelUnsupported" }
   | { readonly result: "Authorized"; readonly value: Value };
 
+/**
+ * Which catalog a request works against: the server resolves the bound
+ * repository's tip itself rather than being told one, so provenance is recorded
+ * rather than supplied. `expectedCatalogCommit` is the commit the caller last
+ * saw, and a write is refused when the tree has moved past it — the shape the
+ * update path's `If-Match` revision already has.
+ */
 export interface TicketCatalogRequest {
   readonly partition: Partition;
-  readonly catalogCommit: GitObjectId;
   readonly repository?: RepositoryId;
+  readonly expectedCatalogCommit?: GitObjectId;
 }
 
 export interface TicketAuthoringRequest extends TicketCatalogRequest {
@@ -107,6 +120,8 @@ export interface TicketValidationRequest extends TicketCatalogRequest {
 export interface TicketValidation {
   readonly valid: boolean;
   readonly findings: readonly string[];
+  /** What the server resolved against, so a write can send it back as its guard. */
+  readonly commit: GitObjectId;
 }
 
 export interface TicketCatalogEntries {
@@ -237,6 +252,7 @@ async function ticketApplicationAuthority(
 function ticketApplicationMetadata(
   release: TicketCatalogRelease,
   source: task.ContentRef,
+  selection: PinnedTicketCatalogSelection,
 ): TicketReleaseMetadata {
   return {
     stageNames: [...release.stageNames].map(([key, name]) => [key, name]),
@@ -246,6 +262,7 @@ function ticketApplicationMetadata(
     ]),
     reworkLimit: release.reworkLimit,
     source,
+    catalogCommit: selection.commit,
   };
 }
 
@@ -253,6 +270,7 @@ function ticketApplicationUpdateMetadata(
   release: TicketCatalogRelease,
   frozen: TicketReleaseMetadata,
   source: task.ContentRef,
+  selection: PinnedTicketCatalogSelection,
 ): TicketReleaseMetadata | TicketApplicationSubmission {
   if (release.reworkLimitDeclared && release.reworkLimit !== frozen.reworkLimit)
     return {
@@ -264,28 +282,88 @@ function ticketApplicationUpdateMetadata(
           : `rework_limit must remain ${String(frozen.reworkLimit)}`,
     };
   return {
-    ...ticketApplicationMetadata(release, source),
+    ...ticketApplicationMetadata(release, source, selection),
     reworkLimit: frozen.reworkLimit,
   };
 }
 
-function ticketApplicationSelection(
+/**
+ * What one request pins to. `Unbound` is a project with no reachable binding
+ * to resolve against, which a caller sees as a catalog that is not there;
+ * `Stale` is the guard the caller sent back failing, which is a refusal it can
+ * act on by reading the catalog again.
+ */
+type TicketApplicationPin =
+  | {
+      readonly pinned: "Pinned";
+      readonly selection: PinnedTicketCatalogSelection;
+    }
+  | { readonly pinned: "Unbound" }
+  | { readonly pinned: "Stale"; readonly message: string };
+
+async function ticketApplicationPin(
+  ports: TicketApplicationPorts,
   request: TicketCatalogRequest,
-): PinnedTicketCatalogSelection {
-  return {
+  guarded: boolean,
+): Promise<TicketApplicationPin> {
+  const repository =
+    request.repository === undefined ? {} : { repository: request.repository };
+  const tip = await ports.catalogs.tip({
     partition: request.partition,
-    commit: request.catalogCommit,
-    ...(request.repository === undefined
-      ? {}
-      : { repository: request.repository }),
+    ...repository,
+  });
+  if (tip === undefined) return { pinned: "Unbound" };
+  const expected = request.expectedCatalogCommit;
+  if (guarded && expected !== undefined && expected !== tip.commit)
+    return {
+      pinned: "Stale",
+      message: `the catalog has moved from ${expected} to ${tip.commit}`,
+    };
+  return {
+    pinned: "Pinned",
+    selection: {
+      partition: request.partition,
+      commit: tip.commit,
+      repository: tip.repository,
+    },
   };
 }
+
+/** The guarded pin and the catalog over it, or the answer the caller gets instead. */
+type TicketApplicationOpened =
+  | {
+      readonly opened: "Catalog";
+      readonly catalog: TicketCatalog;
+      readonly selection: PinnedTicketCatalogSelection;
+    }
+  | {
+      readonly opened: "Answered";
+      readonly result: TicketApplicationResult<TicketApplicationSubmission>;
+    };
 
 async function ticketApplicationCatalog(
   ports: TicketApplicationPorts,
   request: TicketAuthoringRequest,
-): Promise<TicketCatalog | undefined> {
-  return ports.catalogs.catalog(ticketApplicationSelection(request));
+): Promise<TicketApplicationOpened> {
+  const pin = await ticketApplicationPin(ports, request, true);
+  if (pin.pinned === "Unbound")
+    return { opened: "Answered", result: { result: "NotFound" } };
+  if (pin.pinned === "Stale")
+    return {
+      opened: "Answered",
+      result: {
+        result: "Authorized",
+        value: {
+          accepted: "AuthoringRefused",
+          code: "CatalogCommitStale",
+          message: pin.message,
+        },
+      },
+    };
+  const catalog = await ports.catalogs.catalog(pin.selection);
+  return catalog === undefined
+    ? { opened: "Answered", result: { result: "NotFound" } }
+    : { opened: "Catalog", catalog, selection: pin.selection };
 }
 
 /** The authored text the machine never sees, kept beside the release it produced. */
@@ -340,17 +418,25 @@ function ticketApplicationValidate(
       "Mutate",
     );
     if (authorization === undefined) return { result: "NotFound" };
-    const catalog = await ports.catalogs.draft(
-      ticketApplicationSelection(request),
-    );
+    const pin = await ticketApplicationPin(ports, request, false);
+    if (pin.pinned !== "Pinned") return { result: "NotFound" };
+    const commit = pin.selection.commit;
+    const catalog = await ports.catalogs.draft(pin.selection);
     if (catalog === undefined) return { result: "NotFound" };
     try {
       await catalog.release(ticketValidationIdentity, request.source);
-      return { result: "Authorized", value: { valid: true, findings: [] } };
+      return {
+        result: "Authorized",
+        value: { valid: true, findings: [], commit },
+      };
     } catch (error) {
       return {
         result: "Authorized",
-        value: { valid: false, findings: [ticketApplicationFinding(error)] },
+        value: {
+          valid: false,
+          findings: [ticketApplicationFinding(error)],
+          commit,
+        },
       };
     }
   };
@@ -368,9 +454,11 @@ async function ticketApplicationSnapshot(
     request.partition,
     "Mutate",
   );
-  return authorization === undefined
-    ? "Unauthorized"
-    : ports.catalogs.snapshot(ticketApplicationSelection(request));
+  if (authorization === undefined) return "Unauthorized";
+  const pin = await ticketApplicationPin(ports, request, false);
+  return pin.pinned === "Pinned"
+    ? ports.catalogs.snapshot(pin.selection)
+    : undefined;
 }
 
 function ticketApplicationCatalogEntries(
@@ -422,15 +510,17 @@ function ticketApplicationCatalogFile(
  */
 async function ticketApplicationFragmentRefusal(
   ports: TicketApplicationPorts,
-  principal: Principal,
   request: TicketCatalogRequest,
   path: string,
 ): Promise<TicketCatalogWrite | undefined | "NotFound"> {
   const refused = ticketCatalogReferenceRefusal(path);
   if (refused !== undefined) return { written: "Refused", message: refused };
-  const pinned = await ticketApplicationSnapshot(ports, principal, request);
-  if (pinned === "Unauthorized") return "NotFound";
-  if (pinned === undefined) return undefined;
+  const pin = await ticketApplicationPin(ports, request, true);
+  if (pin.pinned === "Unbound") return "NotFound";
+  if (pin.pinned === "Stale")
+    return { written: "Refused", message: pin.message };
+  const pinned = await ports.catalogs.snapshot(pin.selection);
+  if (pinned === undefined) return "NotFound";
   const committed = (await pinned.entries()).some(
     (entry) => entry.path === path && entry.origin === "Git",
   );
@@ -446,17 +536,20 @@ function ticketApplicationCatalogWrite(
   ports: TicketApplicationPorts,
 ): TicketApplication["writeCatalogFile"] {
   return async (principal, request, path, content) => {
-    const refusal = await ticketApplicationFragmentRefusal(
+    const authorization = await ticketApplicationAuthority(
       ports,
       principal,
+      request.partition,
+      "Mutate",
+    );
+    if (authorization === undefined) return { result: "NotFound" };
+    const refusal = await ticketApplicationFragmentRefusal(
+      ports,
       request,
       path,
     );
     if (refusal === "NotFound") return { result: "NotFound" };
-    if (refusal !== undefined)
-      return refusal.written === "Refused"
-        ? { result: "Authorized", value: refusal }
-        : { result: "Authorized", value: undefined };
+    if (refusal !== undefined) return { result: "Authorized", value: refusal };
     await ports.fragments.write(request.partition, path, content);
     return { result: "Authorized", value: { written: "Written" } };
   };
@@ -596,9 +689,12 @@ function ticketApplicationCreate(
               value: { accepted: reservation.reserved },
             }
           : { result: "NotFound" };
-    const catalog = await ticketApplicationCatalog(ports, request);
-    if (catalog === undefined) return { result: "NotFound" };
-    const release = await catalog.release(reservation.ticket, request.source);
+    const opened = await ticketApplicationCatalog(ports, request);
+    if (opened.opened === "Answered") return opened.result;
+    const release = await opened.catalog.release(
+      reservation.ticket,
+      request.source,
+    );
     return ticketApplicationSubmit(
       ports,
       request,
@@ -607,6 +703,7 @@ function ticketApplicationCreate(
       ticketApplicationMetadata(
         release,
         await ticketApplicationSource(ports, request),
+        opened.selection,
       ),
     );
   };
@@ -628,9 +725,12 @@ function ticketApplicationUpdate(
       request.partition,
     );
     if (availability !== "Available") return { result: availability };
-    const catalog = await ticketApplicationCatalog(ports, request);
-    if (catalog === undefined) return { result: "NotFound" };
-    const release = await catalog.release(request.ticket, request.source);
+    const opened = await ticketApplicationCatalog(ports, request);
+    if (opened.opened === "Answered") return opened.result;
+    const release = await opened.catalog.release(
+      request.ticket,
+      request.source,
+    );
     const frozen = await ports.inbox.releaseMetadata(
       request.partition,
       request.ticket,
@@ -640,6 +740,7 @@ function ticketApplicationUpdate(
       release,
       frozen,
       await ticketApplicationSource(ports, request),
+      opened.selection,
     );
     if ("accepted" in metadata)
       return { result: "Authorized", value: metadata };

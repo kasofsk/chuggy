@@ -3,8 +3,8 @@
  *
  * THE TRAFFIC IS THE CASE WITH TEETH. The editor owns the document, so what
  * proves it is wired is not a textarea's value but that the catalog and the
- * validation the pinned commit unlocks are actually asked for, and that the
- * body the create finally carries is the text the editor holds.
+ * validation are actually asked for against the tip the server resolves, and
+ * that the body the create finally carries is the text the editor holds.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -94,7 +94,7 @@ function drawn(): readonly Sent[] {
         answer({ entries: [{ path: "workloads/work.yaml", origin: "Git" }] }),
       );
     if (url.includes("/validate"))
-      return Promise.resolve(answer({ valid: true, findings: [] }));
+      return Promise.resolve(answer({ valid: true, findings: [], commit }));
     return Promise.resolve(answer({ identity: "made", accepted: "Accepted" }));
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", fetching);
@@ -114,23 +114,18 @@ test("the editor draws the document the form opens on", async () => {
   drawn();
   const host = await mounted();
   expect(screen.getByText("Ticket YAML")).toBeDefined();
-  expect(screen.getByLabelText("Catalog commit")).toBeDefined();
+  expect(screen.queryByLabelText("Catalog commit")).toBeNull();
   expect(screen.getByRole("button", { name: "Fold all" })).toBeDefined();
   expect(host?.shadowRoot?.textContent).toContain("title: Describe the change");
 });
 
-test("a pinned commit is what unlocks the catalog and the validation", async () => {
+test("the catalog and the validation are asked for without a commit", async () => {
   const sent = drawn();
   await mounted();
-  expect(sent.some((request) => request.url.includes("/catalog"))).toBe(false);
-  fireEvent.change(screen.getByLabelText("Catalog commit"), {
-    target: { value: commit },
-  });
-  await settled();
   vi.advanceTimersByTime(1_000);
   await settled();
   const listed = sent.find((request) => request.url.includes("/catalog?"));
-  expect(listed?.url).toContain(`commit=${commit}`);
+  expect(listed?.url).not.toContain("commit=");
   const validated = sent.find((request) => request.url.endsWith("/validate"));
   expect(validated?.method).toBe("POST");
   expect(validated?.body).toContain("version: 2");
@@ -139,9 +134,7 @@ test("a pinned commit is what unlocks the catalog and the validation", async () 
 test("creating carries the text the editor holds, as YAML", async () => {
   const sent = drawn();
   await mounted();
-  fireEvent.change(screen.getByLabelText("Catalog commit"), {
-    target: { value: commit },
-  });
+  vi.advanceTimersByTime(1_000);
   await settled();
   fireEvent.submit(screen.getByRole("button", { name: "Create ticket" }));
   await settled();

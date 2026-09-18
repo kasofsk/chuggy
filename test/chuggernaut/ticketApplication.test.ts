@@ -18,7 +18,10 @@ import {
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
 import { asTenantId, asProjectId } from "../../src/interpreter/projectStore.ts";
-import { asGitObjectId } from "../../src/interpreter/finalizer.ts";
+import {
+  asGitObjectId,
+  asRepositoryId,
+} from "../../src/interpreter/finalizer.ts";
 import { ticketCatalogRoot } from "../../src/interpreter/ticketCatalog.ts";
 import {
   Pending,
@@ -51,6 +54,7 @@ type Effects = {
   content: number;
   drafts: number;
   snapshots: number;
+  tips: number;
 };
 
 /** The catalog port, whose draft refuses anything the create double accepts. */
@@ -60,6 +64,13 @@ function catalogsDouble(
   release: { readonly reworkLimit: number; readonly declared: boolean },
 ) {
   return {
+    tip: () => {
+      effects.tips += 1;
+      return Promise.resolve({
+        repository: asRepositoryId("github.com/acme/atlas"),
+        commit,
+      });
+    },
     catalog: () => {
       effects.catalogs += 1;
       return Promise.resolve({
@@ -140,7 +151,7 @@ function setup(
   const submitted: TicketMachineInput[] = [];
   const inbox = inboxDouble(submitted, frozen);
   let content = 0;
-  const effects = { catalogs: 0, content: 0, drafts: 0, snapshots: 0 };
+  const effects = { catalogs: 0, content: 0, drafts: 0, snapshots: 0, tips: 0 };
   const reads: string[] = [];
   const held = new Map<string, string>();
   const application = ticketApplication({
@@ -202,7 +213,6 @@ test("create reserves an identity and submits the frozen catalog release", async
     partition,
     identity: "opaque-create",
     source: "ticket",
-    catalogCommit: commit,
   });
   assert.equal(result.result, "Authorized");
   const input = submitted[0];
@@ -216,6 +226,7 @@ test("create reserves an identity and submits the frozen catalog release", async
     evaluatorNames: [[2, "ci"]],
     reworkLimit: 3,
     source: 1,
+    catalogCommit: commit,
   });
 });
 
@@ -231,7 +242,6 @@ test("update preserves an omitted rework limit", async () => {
     ticket: TicketId(7),
     expectedRevision: 1,
     source: "ticket",
-    catalogCommit: commit,
   });
   assert.equal(result.result, "Authorized");
   assert.equal(submitted[0]?.metadata?.reworkLimit, 4);
@@ -249,7 +259,6 @@ test("update refuses an explicit change to the frozen rework limit", async () =>
     ticket: TicketId(7),
     expectedRevision: 1,
     source: "ticket",
-    catalogCommit: commit,
   });
   assert.deepEqual(result, {
     result: "Authorized",
@@ -287,7 +296,6 @@ test("update and dispatch stop before side effects when the project is unavailab
       ticket: TicketId(7),
       expectedRevision: 1,
       source: "ticket",
-      catalogCommit: commit,
     });
     const dispatch = await application.dispatch(principal, {
       partition,
@@ -307,6 +315,7 @@ test("update and dispatch stop before side effects when the project is unavailab
       content: 0,
       drafts: 0,
       snapshots: 0,
+      tips: 0,
     });
     assert.equal(submitted.length, 0);
   }
@@ -371,19 +380,21 @@ test("validation reports findings over draft content and writes nothing", async 
     await application.validate(principal, {
       partition,
       source: "ticket",
-      catalogCommit: commit,
     }),
-    { result: "Authorized", value: { valid: true, findings: [] } },
+    { result: "Authorized", value: { valid: true, findings: [], commit } },
   );
   assert.deepEqual(
     await application.validate(principal, {
       partition,
       source: "not a ticket",
-      catalogCommit: commit,
     }),
     {
       result: "Authorized",
-      value: { valid: false, findings: ["catalog document must be a mapping"] },
+      value: {
+        valid: false,
+        findings: ["catalog document must be a mapping"],
+        commit,
+      },
     },
   );
   assert.deepEqual(effects, {
@@ -391,8 +402,54 @@ test("validation reports findings over draft content and writes nothing", async 
     content: 0,
     drafts: 2,
     snapshots: 0,
+    tips: 2,
   });
   assert.equal(submitted.length, 0);
+});
+
+test("a write against a catalog that has moved is refused and submits nothing", async () => {
+  const { application, submitted, held } = setup();
+  const moved = asGitObjectId("c".repeat(40));
+  const refusal = {
+    accepted: "AuthoringRefused",
+    code: "CatalogCommitStale",
+    message: `the catalog has moved from ${moved} to ${commit}`,
+  };
+  assert.deepEqual(
+    await application.create(principal, {
+      partition,
+      identity: "opaque-create",
+      source: "ticket",
+      expectedCatalogCommit: moved,
+    }),
+    { result: "Authorized", value: refusal },
+  );
+  assert.deepEqual(
+    await application.writeCatalogFile(
+      principal,
+      { partition, expectedCatalogCommit: moved },
+      "workloads/new.yaml",
+      "prompt: new\n",
+    ),
+    {
+      result: "Authorized",
+      value: { written: "Refused", message: refusal.message },
+    },
+  );
+  assert.equal(submitted.length, 0);
+  assert.equal(held.size, 0);
+});
+
+test("a write carrying the commit the server resolved is taken", async () => {
+  const { application, submitted } = setup();
+  const result = await application.create(principal, {
+    partition,
+    identity: "opaque-create",
+    source: "ticket",
+    expectedCatalogCommit: commit,
+  });
+  assert.equal(result.result, "Authorized");
+  assert.equal(submitted.length, 1);
 });
 
 test("validation refuses a principal that may not author", async () => {
@@ -401,7 +458,6 @@ test("validation refuses a principal that may not author", async () => {
     await application.validate(principal, {
       partition,
       source: "ticket",
-      catalogCommit: commit,
     }),
     { result: "NotFound" },
   );
@@ -409,23 +465,20 @@ test("validation refuses a principal that may not author", async () => {
 
 test("a catalog read answers sorted references and one file's content", async () => {
   const { application, effects, reads } = setup();
-  assert.deepEqual(
-    await application.catalog(principal, { partition, catalogCommit: commit }),
-    {
-      result: "Authorized",
-      value: {
-        entries: [
-          { path: "evaluators/ci.yaml", origin: "Git" },
-          { path: "workloads/runtime.yaml", origin: "Runtime" },
-          { path: "workloads/work.yaml", origin: "Git" },
-        ],
-      },
+  assert.deepEqual(await application.catalog(principal, { partition }), {
+    result: "Authorized",
+    value: {
+      entries: [
+        { path: "evaluators/ci.yaml", origin: "Git" },
+        { path: "workloads/runtime.yaml", origin: "Runtime" },
+        { path: "workloads/work.yaml", origin: "Git" },
+      ],
     },
-  );
+  });
   assert.deepEqual(
     await application.catalogFile(
       principal,
-      { partition, catalogCommit: commit },
+      { partition },
       "workloads/work.yaml",
     ),
     {
@@ -443,10 +496,9 @@ test("a catalog read answers sorted references and one file's content", async ()
 
 test("a catalog read is refused to a principal that may not author", async () => {
   const { application, effects } = setup(false);
-  assert.deepEqual(
-    await application.catalog(principal, { partition, catalogCommit: commit }),
-    { result: "NotFound" },
-  );
+  assert.deepEqual(await application.catalog(principal, { partition }), {
+    result: "NotFound",
+  });
   assert.equal(effects.snapshots, 0);
 });
 
@@ -455,7 +507,7 @@ test("a file read carries the origin its entry was listed under", async () => {
   assert.deepEqual(
     await application.catalogFile(
       principal,
-      { partition, catalogCommit: commit },
+      { partition },
       "workloads/runtime.yaml",
     ),
     {
@@ -470,7 +522,7 @@ test("a file read carries the origin its entry was listed under", async () => {
   assert.deepEqual(
     await application.catalogFile(
       principal,
-      { partition, catalogCommit: commit },
+      { partition },
       "workloads/absent.yaml",
     ),
     { result: "Authorized", value: undefined },
@@ -482,7 +534,7 @@ test("a runtime fragment is written and read back under its reference", async ()
   assert.deepEqual(
     await application.writeCatalogFile(
       principal,
-      { partition, catalogCommit: commit },
+      { partition },
       "workloads/new.yaml",
       "prompt: new\n",
     ),
@@ -492,7 +544,7 @@ test("a runtime fragment is written and read back under its reference", async ()
   assert.deepEqual(
     await application.removeCatalogFile(
       principal,
-      { partition, catalogCommit: commit },
+      { partition },
       "workloads/new.yaml",
     ),
     { result: "Authorized", value: { written: "Removed" } },
@@ -500,7 +552,7 @@ test("a runtime fragment is written and read back under its reference", async ()
   assert.deepEqual(
     await application.removeCatalogFile(
       principal,
-      { partition, catalogCommit: commit },
+      { partition },
       "workloads/new.yaml",
     ),
     { result: "Authorized", value: { written: "NotHeld" } },
@@ -512,7 +564,7 @@ test("a fragment shadowing a committed reference is refused by name", async () =
   assert.deepEqual(
     await application.writeCatalogFile(
       principal,
-      { partition, catalogCommit: commit },
+      { partition },
       "workloads/work.yaml",
       "prompt: shadow\n",
     ),
@@ -533,7 +585,7 @@ test("a fragment naming what no catalog serves is refused before any store", asy
   assert.deepEqual(
     await application.writeCatalogFile(
       principal,
-      { partition, catalogCommit: commit },
+      { partition },
       "secrets/deploy.yaml",
       "token: leaked\n",
     ),
@@ -554,7 +606,7 @@ test("a fragment write is refused to a principal that may not author", async () 
   assert.deepEqual(
     await application.writeCatalogFile(
       principal,
-      { partition, catalogCommit: commit },
+      { partition },
       "workloads/new.yaml",
       "prompt: new\n",
     ),
@@ -563,7 +615,7 @@ test("a fragment write is refused to a principal that may not author", async () 
   assert.deepEqual(
     await application.removeCatalogFile(
       principal,
-      { partition, catalogCommit: commit },
+      { partition },
       "workloads/new.yaml",
     ),
     { result: "NotFound" },

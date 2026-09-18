@@ -45,13 +45,19 @@ export function adoptedTicketDefinition(
   );
 }
 
+/**
+ * Which catalog a call works against. The server resolves the bound
+ * repository's tip itself, so a caller names only which binding to use when a
+ * project holds more than one, and sends back `expectedCommit` — the commit
+ * validation answered with — to have a write refused if the tree has moved.
+ */
 export interface CatalogPin {
-  readonly catalogCommit: string;
   readonly repository?: string;
+  readonly expectedCommit?: string;
 }
 
 function catalogQuery(pin: CatalogPin): string {
-  const query = new URLSearchParams({ commit: pin.catalogCommit });
+  const query = new URLSearchParams();
   if (pin.repository !== undefined) query.set("repository", pin.repository);
   return query.toString();
 }
@@ -91,10 +97,12 @@ interface AuthoringRequest extends CatalogPin {
 
 function authoringHeaders(request: CatalogPin): Record<string, string> {
   return {
-    "x-chug-catalog-commit": request.catalogCommit,
     ...(request.repository === undefined
       ? {}
       : { "x-chug-repository": request.repository }),
+    ...(request.expectedCommit === undefined
+      ? {}
+      : { "if-catalog-match": request.expectedCommit }),
   };
 }
 

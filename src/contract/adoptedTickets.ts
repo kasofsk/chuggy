@@ -29,6 +29,8 @@ export const adoptedTicketDefinitionSchema = adoptedTicketSchema.extend({
 export const adoptedTicketValidationSchema = z.strictObject({
   valid: z.boolean(),
   findings: z.array(z.string().min(1)),
+  /** What the server resolved against, which a write sends back as its guard. */
+  commit: z.string().min(1),
 });
 
 export const adoptedCatalogOriginSchema = z.enum(["Git", "Runtime"]);

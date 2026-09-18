@@ -3,9 +3,10 @@
  * the document may reference, and the verdict the server would reach on it.
  *
  * Validation is asked for once the typing stops rather than on every keystroke,
- * because each call resolves a pinned repository tree on the server. Both hooks
- * hold the pinned commit in a ref, so the catalog handed to the editor at mount
- * keeps working after the author changes which commit they are writing against.
+ * because each call resolves the bound repository's tip on the server. That
+ * verdict carries the commit it resolved against, which the form sends back
+ * with the write so a tree that moved under the author refuses it rather than
+ * releasing against a catalog nobody read.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
@@ -26,41 +27,46 @@ export interface AuthoringPin extends CatalogPin {
 }
 
 /** An unbound repository is an absent header, not an empty one. */
-function pinOf(catalogCommit: string, repository?: string): CatalogPin {
-  return {
-    catalogCommit,
-    ...(repository === undefined || repository === "" ? {} : { repository }),
-  };
+function pinOf(repository?: string): CatalogPin {
+  return repository === undefined || repository === "" ? {} : { repository };
+}
+
+/** The verdict, and what the server resolved it against for the write to guard on. */
+export interface TicketValidation {
+  readonly findings: readonly EditorFinding[];
+  readonly commit: string | undefined;
 }
 
 export function useTicketValidation(
   partition: PartitionIdentity,
   pin: AuthoringPin,
-): readonly EditorFinding[] {
+): TicketValidation {
   const ports = useApiPorts();
-  const [findings, setFindings] = useState<readonly EditorFinding[]>([]);
+  const [validation, setValidation] = useState<TicketValidation>({
+    findings: [],
+    commit: undefined,
+  });
   const { tenant, project } = partition;
-  const { source, catalogCommit, repository } = pin;
+  const { source, repository } = pin;
   useEffect(() => {
-    if (catalogCommit === "") return;
     let active = true;
     const timer = setTimeout(() => {
       void adoptedTicketValidate(
         ports,
         { tenant, project },
-        {
-          source,
-          ...pinOf(catalogCommit, repository),
-        },
+        { source, ...pinOf(repository) },
       ).then((result) => {
         if (!active) return;
-        setFindings(
+        setValidation(
           result.outcome === "Ok"
-            ? result.value.findings.map((message) => ({
-                message,
-                severity: "error" as const,
-              }))
-            : [],
+            ? {
+                findings: result.value.findings.map((message) => ({
+                  message,
+                  severity: "error" as const,
+                })),
+                commit: result.value.commit,
+              }
+            : { findings: [], commit: undefined },
         );
       });
     }, validationIdleMs);
@@ -68,8 +74,8 @@ export function useTicketValidation(
       active = false;
       clearTimeout(timer);
     };
-  }, [ports, tenant, project, source, catalogCommit, repository]);
-  return findings;
+  }, [ports, tenant, project, source, repository]);
+  return validation;
 }
 
 export function useTicketCatalog(
@@ -89,33 +95,30 @@ export function useTicketCatalog(
     held.current = pin;
     reported.current = onError;
   });
-  const { catalogCommit, repository } = pin;
+  const { repository } = pin;
   useEffect(() => {
-    if (catalogCommit === "") return;
     let active = true;
-    void adoptedCatalog(
-      ports,
-      { tenant, project },
-      pinOf(catalogCommit, repository),
-    ).then((result) => {
-      if (active)
-        setFiles(
-          result.outcome === "Ok"
-            ? result.value.entries.map((entry) => entry.path)
-            : [],
-        );
-    });
+    void adoptedCatalog(ports, { tenant, project }, pinOf(repository)).then(
+      (result) => {
+        if (active)
+          setFiles(
+            result.outcome === "Ok"
+              ? result.value.entries.map((entry) => entry.path)
+              : [],
+          );
+      },
+    );
     return () => {
       active = false;
     };
-  }, [ports, tenant, project, catalogCommit, repository]);
+  }, [ports, tenant, project, repository]);
   const catalog = useMemo<FragmentCatalog>(
     () => ({
       load: async (reference) => {
         const result = await adoptedCatalogFile(
           ports,
           { tenant, project },
-          pinOf(held.current.catalogCommit, held.current.repository),
+          pinOf(held.current.repository),
           reference,
         );
         if (result.outcome !== "Ok")

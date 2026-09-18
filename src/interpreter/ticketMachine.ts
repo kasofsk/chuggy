@@ -20,6 +20,8 @@ export interface TicketMachineReleaseMetadata {
   readonly reworkLimit: number | null;
   /** The content holding the authored YAML, absent for a release recorded before it was retained. */
   readonly source?: number | undefined;
+  /** The catalog commit the server resolved this release against, which it records rather than is told. */
+  readonly catalogCommit?: string | undefined;
 }
 
 export interface TicketMachineInput {
