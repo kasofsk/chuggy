@@ -28,10 +28,17 @@ loss is accepted rather than repaired.
 
 ## Grant a project access
 
-`src/roots/provisionProjectAccess.ts` is the only way a tuple is written from
-this tree. It reaches Keto's **write** port and nothing else: the API holds no
-credential for that port, so the API process cannot widen its own
-authorization, and this command needs no database at all.
+`src/roots/provisionProjectAccess.ts` is how a person's tuple is written from
+this tree. It reaches Keto's **write** port and nothing else, and it needs no
+database at all.
+
+It is not the only thing in this tree that reaches that port. The API names it
+too, under `CHUG_API_KETO_WRITE_URL`, because registering a worker pool writes
+a `pools` tuple and is a route rather than a command -- so an installation that
+serves registration does put the write port within the API process's reach. An
+installation naming neither that variable nor `CHUG_API_HYDRA_ADMIN_URL` serves
+no registration route and reaches neither; naming one without the other refuses
+to start.
 
 Supply the issuer and the subject the token carries; the command derives the
 principal with the same function the API derives it from, so neither side has
