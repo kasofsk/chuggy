@@ -197,13 +197,14 @@ const parsed = {
   tickets: {
     image: ticketImage,
     capabilities: [],
-    credentialSources: [],
-    credentialUsername: "x-access-token",
+    capabilityCredentials: {},
     leaseSecs: 300,
     attemptsMax: 3,
     outputBytesMax: 1_048_576,
     outcomePollMs: 1_000,
     claimsPerPassMax: 1,
+    unclaimedWindowSecs: 300,
+    attemptsUnreportedMax: 3,
   },
 };
 
@@ -606,27 +607,15 @@ async function parsedTicketExecution(value: unknown): Promise<{
 test("ticket execution accepts the complete deployment configuration", async () => {
   const configured = {
     image: ticketImage,
-    capabilities: ["git", "pull-request"],
-    credentialSources: [
-      {
-        repository: "https://forge.invalid/acme/repository.git",
-        credentialReference: "installation-42",
-        permissions: "write",
-        path: "/run/credentials/repository",
-      },
-    ],
-    forge: {
-      appId: "42",
-      keyFile: "/run/credentials/forge-key.pem",
-      apiUrl: "https://forge.invalid/api",
-      requestTimeoutMs: 5_000,
-    },
-    credentialUsername: "git",
+    capabilities: ["git", "pull-request", "runner-claude"],
+    capabilityCredentials: { "runner-claude": "claude-code" },
     leaseSecs: 60,
     attemptsMax: 5,
     outputBytesMax: 2_000_000,
     outcomePollMs: 250,
     claimsPerPassMax: 4,
+    unclaimedWindowSecs: 900,
+    attemptsUnreportedMax: 2,
   };
   const found = await parsedTicketExecution(configured);
   assert.deepEqual(found.parsed?.tickets, configured);
@@ -639,16 +628,9 @@ test("ticket execution requires a digest-pinned image and bounded positive integ
     { image: ticketImage, outputBytesMax: Number.MAX_SAFE_INTEGER + 1 },
     { image: ticketImage, attemptsMax: 1_001 },
     { image: ticketImage, claimsPerPassMax: 1_001 },
-    {
-      image: ticketImage,
-      credentialSources: [
-        {
-          repository: "https://forge.invalid/acme/repository.git",
-          path: "/run/credentials/repository",
-        },
-      ],
-    },
-    { image: ticketImage, forge: { appId: "42", keyFile: "" } },
+    { image: ticketImage, unclaimedWindowSecs: 0 },
+    { image: ticketImage, attemptsUnreportedMax: 0 },
+    { image: ticketImage, credentialUsername: "git" },
   ]) {
     const found = await parsedTicketExecution(value);
     assert.equal(found.parsed, undefined, JSON.stringify(value));

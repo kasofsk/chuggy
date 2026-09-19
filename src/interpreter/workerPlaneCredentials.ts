@@ -27,6 +27,7 @@ import type {
 } from "./forgeInstallation.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
+import type { TicketExecutionAccess } from "./ticketExecutionOutcome.ts";
 
 /**
  * The username a minted installation token is presented to git under, which is
@@ -52,6 +53,11 @@ export interface WorkerPlaneCredentialMinting {
   session(
     partition: Partition,
     repository: RepositoryId,
+  ): Promise<WorkerPlaneCredentialMinted>;
+  attempt(
+    partition: Partition,
+    repository: RepositoryId,
+    access: TicketExecutionAccess,
   ): Promise<WorkerPlaneCredentialMinted>;
 }
 
@@ -112,26 +118,53 @@ async function workerPlaneCredentialBound(
   );
 }
 
+/** One mint on the binding a pod's own project holds, under the permissions its caller derived. */
+async function workerPlaneCredentialFor(
+  options: WorkerPlaneCredentialOptions,
+  partition: Partition,
+  repository: RepositoryId,
+  permissions: ForgePermissionSet,
+): Promise<WorkerPlaneCredentialMinted> {
+  const bound = await workerPlaneCredentialBound(
+    options.bindings,
+    partition,
+    repository,
+  );
+  if (bound.read === "Unavailable") return { minted: "Unavailable" };
+  return bound.read === "Absent"
+    ? { minted: "NotFound" }
+    : workerPlaneCredentialMinted(
+        options.tokens,
+        bound.repository,
+        partition,
+        permissions,
+      );
+}
+
+/**
+ * The permission set one attempt's recorded access comes to. The access is the
+ * scheduler's own reading of the workload and is on the attempt's row before a
+ * harness exists, so nothing a caller says reaches this.
+ */
+function workerPlaneCredentialPermissions(
+  access: TicketExecutionAccess,
+): ForgePermissionSet {
+  return access === "PublishRepositoryResult" ? "write" : "read";
+}
+
 /** Mints for the repository a pod's own row names, and for no other. */
 export function workerPlaneCredentialMinting(
   options: WorkerPlaneCredentialOptions,
 ): WorkerPlaneCredentialMinting {
   return {
-    session: async (partition, repository) => {
-      const bound = await workerPlaneCredentialBound(
-        options.bindings,
+    session: (partition, repository) =>
+      workerPlaneCredentialFor(options, partition, repository, "read"),
+    attempt: (partition, repository, access) =>
+      workerPlaneCredentialFor(
+        options,
         partition,
         repository,
-      );
-      if (bound.read === "Unavailable") return { minted: "Unavailable" };
-      return bound.read === "Absent"
-        ? { minted: "NotFound" }
-        : workerPlaneCredentialMinted(
-            options.tokens,
-            bound.repository,
-            partition,
-            "read",
-          );
-    },
+        workerPlaneCredentialPermissions(access),
+      ),
   };
 }

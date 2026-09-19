@@ -12,20 +12,14 @@ import {
   kubernetesTicketDatabaseWorkersVariable,
   kubernetesTicketExecutionPodName,
   kubernetesTicketExecutionRunner,
-  ticketExecutionVerdict,
   type KubernetesTicketExecutionConfig,
 } from "../../src/adapters/kubernetes/ticketExecution.ts";
-import {
-  asRepositoryCredential,
-  asRepositoryId,
-} from "../../src/interpreter/finalizer.ts";
 import {
   asRecoveryEpoch,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import type {
   TicketExecutionClaim,
-  TicketExecutionRunner,
   TicketExecutionView,
 } from "../../src/interpreter/ticketExecution.ts";
 
@@ -57,10 +51,10 @@ const config: KubernetesTicketExecutionConfig = {
     },
   },
   environment: { TICKET_SITE: "configured" },
+  capabilityCredentials: { "runner-codex": "codex-auth" },
   podNamePrefix: "ticket",
   image: "registry.invalid/ticket-worker:1",
-  callbackUrl: "https://worker.invalid/v1/ticket-terminal",
-  credentialUsername: "x-access-token",
+  callbackUrl: "https://worker.invalid/v1/ticket-execution",
   resources: {
     cpuRequest: "100m",
     cpuLimit: "1",
@@ -98,21 +92,6 @@ const claim: TicketExecutionClaim = {
   attempt: 2,
   recoveryEpoch: asRecoveryEpoch("epoch"),
 };
-const evaluationClaim: TicketExecutionClaim = {
-  ...claim,
-  taskKey: "evaluation:1:1:review:1:quality",
-  obligation: new task.TaskObligation(
-    new task.EvaluationTaskId(
-      task.TicketId(1),
-      task.CycleNumber(1),
-      task.StageKey(1),
-      task.Generation(1),
-      task.EvaluatorKey(1),
-    ),
-    obligation.definition,
-    obligation.context_ref,
-  ),
-};
 const view: TicketExecutionView = {
   workload: {
     runner: "codex",
@@ -130,21 +109,9 @@ const view: TicketExecutionView = {
   commit: "0123456789012345678901234567890123456789",
   source: task.ContentRef(3),
   access: "ReadRepository",
-  requiredCapabilities: ["shell"],
+  requiredCapabilities: ["shell", "runner-codex"],
   context: [],
 };
-
-const duplicateFindingOutcome = {
-  type: "result",
-  manifest: {
-    verdict: "fail",
-    findings: [
-      { id: 1, description: "first" },
-      { id: 1, description: "second" },
-    ],
-  },
-  outputs: [],
-} as const;
 
 interface ClusterRequest {
   readonly method: string;
@@ -196,57 +163,22 @@ function postedBody(
   return request.body;
 }
 
-async function assertMalformedOutcomes(
-  runner: TicketExecutionRunner,
-  stored: readonly { readonly content: string }[],
-): Promise<void> {
-  assert.equal((await runner.run(claim, view)).result, "ProcessFailed");
-  assert.match(
-    stored.at(-1)?.content ?? "",
-    /worker outcome must be an object/u,
-  );
-  assert.equal(
-    (await runner.run(claim, { ...view, access: "PublishRepositoryResult" }))
-      .result,
-    "ProcessFailed",
-  );
-  assert.equal(
-    stored.at(-1)?.content,
-    "ticket execution output repository is invalid",
-  );
-  const uppercase = await runner.run(claim, {
-    ...view,
-    access: "PublishRepositoryResult",
-  });
-  assert.equal(uppercase.result, "Produced");
-  assert.equal(
-    stored.at(-1)?.content,
-    JSON.stringify({
-      commit: "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
-      repository: view.repository,
-    }),
-  );
-}
-
 function assertSecretEnvelope(requests: readonly ClusterRequest[]): void {
-  assert.doesNotMatch(
-    postedBody(requests, "/pods"),
-    /attempt-secret|repository-token/u,
-  );
+  assert.doesNotMatch(postedBody(requests, "/pods"), /attempt-secret/u);
   const secret = JSON.parse(postedBody(requests, "/secrets")) as {
     readonly stringData: { readonly task: string };
   };
-  const envelope = JSON.parse(secret.stringData.task) as {
-    readonly bearer: string;
-    readonly transportUrl: string;
-    readonly providerCredentialFile: string;
-    readonly view: { readonly repository: string };
-  };
-  assert.equal(envelope.bearer, "attempt-secret");
-  assert.equal(envelope.view.repository, view.repository);
-  assert.equal(new URL(envelope.transportUrl).password, "repository-token");
+  const envelope = JSON.parse(secret.stringData.task) as Record<
+    string,
+    unknown
+  >;
+  assert.equal(envelope["bearer"], "attempt-secret");
+  assert.equal(envelope["view"], undefined);
+  assert.equal(envelope["taskKey"], undefined);
+  assert.equal(envelope["callbackUrl"], config.callbackUrl);
+  assert.equal(envelope["transportUrl"], undefined);
   assert.equal(
-    envelope.providerCredentialFile,
+    envelope["providerCredentialFile"],
     "/var/run/chuggy/codex/auth.json",
   );
   const pod = JSON.parse(postedBody(requests, "/pods")) as {
@@ -269,185 +201,44 @@ function assertSecretEnvelope(requests: readonly ClusterRequest[]): void {
   assert.equal(requests.at(-1)?.method, "DELETE");
 }
 
+/** The plane answers nothing on the first poll, and the harness's own outcome on the next. */
 function ticketOutcome(state: { reads: number }): Promise<unknown> {
   state.reads += 1;
-  if (state.reads === 1) return Promise.resolve(undefined);
-  if (state.reads === 2) return Promise.resolve(duplicateFindingOutcome);
-  if (state.reads === 3) return Promise.resolve(null);
-  if (state.reads === 4)
-    return Promise.resolve({
-      type: "result",
-      manifest: { verdict: "pass" },
-      outputs: [{ repository: "wrong", commit: "not-a-commit" }],
-    });
-  return Promise.resolve({
-    type: "result",
-    manifest: {},
-    outputs: [
-      {
-        repository: view.repository,
-        commit: "ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD",
-      },
-    ],
-  });
-}
-
-function runnerForOutcome(outcome: unknown): TicketExecutionRunner {
-  return kubernetesTicketExecutionRunner(
-    () => ({
-      put: (_mediaType, content) =>
-        Promise.resolve(task.ContentRef(content.length + 1)),
-      read: () => Promise.resolve(undefined),
-    }),
-    {
-      bind: () => Promise.resolve(true),
-      outcome: () => Promise.resolve(outcome),
-      renew: () => Promise.resolve(true),
-    },
-    {
-      binding: () =>
-        Promise.resolve({
-          partition,
-          repository: asRepositoryId(view.repository),
-          recoveryEpoch: asRecoveryEpoch("epoch"),
-        }),
-    },
-    {
-      credential: () =>
-        Promise.resolve({
-          resolved: "Credential",
-          credential: asRepositoryCredential("repository-token"),
-        }),
-    },
-    config,
-    clusterFetch([]),
-    () => "attempt-secret",
+  return Promise.resolve(
+    state.reads === 1
+      ? undefined
+      : { type: "result", manifest: { verdict: "fail" }, outputs: [] },
   );
 }
 
 test("launches one isolated adopted worker and keeps its authority in the Secret", async () => {
   const requests: ClusterRequest[] = [];
-  const credentialAccesses: string[] = [];
   const outcomes = { reads: 0 };
-  const stored: { readonly mediaType: string; readonly content: string }[] = [];
   const runner = kubernetesTicketExecutionRunner(
-    () => ({
-      put: (mediaType, content) => {
-        stored.push({ mediaType, content });
-        return Promise.resolve(task.ContentRef(stored.length));
-      },
-      read: () => Promise.resolve(undefined),
-    }),
     {
-      bind: (_claim, secret) => {
+      bind: (_claim, secret, bound) => {
         assert.equal(secret, "attempt-secret");
+        assert.equal(bound, view);
         return Promise.resolve(true);
       },
       outcome: () => ticketOutcome(outcomes),
       renew: () => Promise.resolve(true),
     },
-    {
-      binding: (askedPartition, repository) => {
-        assert.deepEqual(askedPartition, partition);
-        assert.equal(repository, asRepositoryId(view.repository));
-        return Promise.resolve({
-          partition,
-          repository: asRepositoryId(view.repository),
-          recoveryEpoch: asRecoveryEpoch("epoch"),
-        });
-      },
-    },
-    {
-      credential: (_binding, access) => {
-        credentialAccesses.push(access);
-        return Promise.resolve({
-          resolved: "Credential",
-          credential: asRepositoryCredential("repository-token"),
-        });
-      },
-    },
     config,
     clusterFetch(requests),
     () => "attempt-secret",
   );
-  const result = await runner.run(claim, view);
-  assert.equal(result.result, "Produced");
-  if (result.result !== "Produced") throw new Error("result was not produced");
-  assert.equal(result.report.kind, "WorkResultReport");
-  if (result.report.kind !== "WorkResultReport")
-    throw new Error("work produced an evaluation report");
-  assert.equal(result.report.accepted_source_ref, view.source);
+  const placement = await runner.run(claim, view);
+  assert.equal(placement.placed, "Reported");
+  if (placement.placed !== "Reported")
+    throw new Error("a placed attempt did not report");
+  assert.deepEqual(placement.outcome, {
+    type: "result",
+    manifest: { verdict: "fail" },
+    outputs: [],
+  });
   assert.equal(outcomes.reads, 2);
   assertSecretEnvelope(requests);
-  await assertMalformedOutcomes(runner, stored);
-  assert.deepEqual(credentialAccesses, [
-    "ReadRepository",
-    "ReadRepository",
-    "PublishRepositoryResult",
-    "PublishRepositoryResult",
-  ]);
-});
-
-test("a manifest is read for a verdict and for findings a rework can cite", () => {
-  assert.throws(
-    () => ticketExecutionVerdict({ verdict: "PASS" }),
-    /verdict is invalid/u,
-  );
-  assert.throws(
-    () =>
-      ticketExecutionVerdict({
-        verdict: "pass",
-        findings: [{ description: "unexpected" }],
-      }),
-    /passing evaluator manifest/u,
-  );
-  assert.throws(
-    () =>
-      ticketExecutionVerdict({
-        verdict: "fail",
-        findings: [
-          { id: 1, description: "first" },
-          { id: 1, description: "second" },
-        ],
-      }),
-    /finding identity is repeated/u,
-  );
-  assert.equal(ticketExecutionVerdict({}).kind, "EvaluatorPass");
-  assert.equal(
-    ticketExecutionVerdict({
-      verdict: "failed",
-      findings: [{ id: 1.5, description: "fractional falls back" }],
-    }).kind,
-    "EvaluatorFail",
-  );
-});
-
-test("invalid evaluator verdicts become process failures", async () => {
-  for (const manifest of [
-    { verdict: "PASS" },
-    { verdict: "pass", findings: [{ description: "unexpected" }] },
-  ]) {
-    const result = await runnerForOutcome({
-      type: "result",
-      manifest,
-      outputs: [],
-    }).run(evaluationClaim, view);
-    assert.equal(result.result, "ProcessFailed");
-  }
-  const result = await runnerForOutcome({
-    type: "result",
-    manifest: {
-      verdict: "failed",
-      findings: [{ id: 1.5, description: "fractional falls back" }],
-    },
-    outputs: [],
-  }).run(evaluationClaim, view);
-  assert.equal(result.result, "Produced");
-  if (result.result !== "Produced") throw new Error("result was not produced");
-  assert.equal(result.report.kind, "EvaluationResultReport");
-  if (result.report.kind !== "EvaluationResultReport")
-    throw new Error("an evaluator produced a work report");
-  assert.equal(result.report.verdict.kind, "EvaluatorFail");
 });
 
 for (const [name, unavailableView] of [
@@ -463,45 +254,116 @@ for (const [name, unavailableView] of [
   ],
 ] as const)
   test(name, async () => {
-    let reached = false;
+    let bound = false;
     const runner = kubernetesTicketExecutionRunner(
-      () => ({
-        put: () => Promise.resolve(task.ContentRef(9)),
-        read: () => Promise.resolve(undefined),
-      }),
       {
-        bind: () => Promise.resolve(true),
+        bind: () => {
+          bound = true;
+          return Promise.resolve(true);
+        },
         outcome: () => Promise.resolve(undefined),
         renew: () => Promise.resolve(true),
       },
-      {
-        binding: () => {
-          reached = true;
-          return Promise.resolve(undefined);
-        },
-      },
-      { credential: () => Promise.resolve({ resolved: "Denied" }) },
       config,
     );
-    const result = await runner.run(claim, unavailableView);
-    assert.equal(result.result, "ExecutionUnavailable");
-    assert.equal(reached, false);
+    const placement = await runner.run(claim, unavailableView);
+    assert.equal(placement.placed, "Unavailable");
+    assert.equal(bound, false);
   });
 
-test("cancellation deletes the deterministic task pod", async () => {
-  const paths: string[] = [];
+test("a token this site delivers no credential for mounts none and names none", async () => {
+  const requests: ClusterRequest[] = [];
+  const outcomes = { reads: 0 };
   const runner = kubernetesTicketExecutionRunner(
-    () => ({
-      put: () => Promise.resolve(task.ContentRef(1)),
-      read: () => Promise.resolve(undefined),
-    }),
+    {
+      bind: () => Promise.resolve(true),
+      outcome: () => ticketOutcome(outcomes),
+      renew: () => Promise.resolve(true),
+    },
+    config,
+    clusterFetch(requests),
+    () => "attempt-secret",
+  );
+  await runner.run(claim, { ...view, requiredCapabilities: ["shell"] });
+  const secret = JSON.parse(postedBody(requests, "/secrets")) as {
+    readonly stringData: { readonly task: string };
+  };
+  const envelope = JSON.parse(secret.stringData.task) as Record<
+    string,
+    unknown
+  >;
+  assert.equal(envelope["providerCredentialFile"], undefined);
+  const pod = JSON.parse(postedBody(requests, "/pods")) as {
+    readonly spec: {
+      readonly containers: readonly {
+        readonly volumeMounts: readonly { readonly mountPath: string }[];
+      }[];
+    };
+  };
+  assert.equal(
+    pod.spec.containers[0]?.volumeMounts.some(({ mountPath }) =>
+      mountPath.startsWith("/var/run/chuggy/codex"),
+    ),
+    false,
+  );
+});
+
+test("work requiring two of this site's credentials is unavailable rather than launched", async () => {
+  const runner = kubernetesTicketExecutionRunner(
     {
       bind: () => Promise.resolve(true),
       outcome: () => Promise.resolve(undefined),
       renew: () => Promise.resolve(true),
     },
-    { binding: () => Promise.resolve(undefined) },
-    { credential: () => Promise.resolve({ resolved: "Denied" }) },
+    {
+      ...config,
+      credentialMounts: {
+        ...config.credentialMounts,
+        "claude-code": {
+          secretName: "claude-code",
+          key: "token",
+          mountPath: "/var/run/chuggy/claude/token",
+        },
+      },
+      capabilityCredentials: {
+        "runner-codex": "codex-auth",
+        "runner-claude": "claude-code",
+      },
+    },
+  );
+  const placement = await runner.run(claim, {
+    ...view,
+    requiredCapabilities: ["runner-codex", "runner-claude"],
+  });
+  assert.equal(placement.placed, "Unavailable");
+});
+
+test("a deployment delivering a capability with a credential no mount serves is refused", () => {
+  assert.throws(
+    () =>
+      kubernetesTicketExecutionRunner(
+        {
+          bind: () => Promise.resolve(true),
+          outcome: () => Promise.resolve(undefined),
+          renew: () => Promise.resolve(true),
+        },
+        {
+          ...config,
+          capabilityCredentials: { "runner-claude": "claude-code" },
+        },
+      ),
+    RangeError,
+  );
+});
+
+test("cancellation deletes the deterministic task pod", async () => {
+  const paths: string[] = [];
+  const runner = kubernetesTicketExecutionRunner(
+    {
+      bind: () => Promise.resolve(true),
+      outcome: () => Promise.resolve(undefined),
+      renew: () => Promise.resolve(true),
+    },
     config,
     (input, init) => {
       const url =
@@ -571,31 +433,11 @@ async function placedPod(
 ): Promise<PlacedPod> {
   const requests: ClusterRequest[] = [];
   const runner = kubernetesTicketExecutionRunner(
-    () => ({
-      put: (_mediaType, content) =>
-        Promise.resolve(task.ContentRef(content.length + 1)),
-      read: () => Promise.resolve(undefined),
-    }),
     {
       bind: () => Promise.resolve(true),
       outcome: () =>
         Promise.resolve({ type: "result", manifest: {}, outputs: [] }),
       renew: () => Promise.resolve(true),
-    },
-    {
-      binding: () =>
-        Promise.resolve({
-          partition,
-          repository: asRepositoryId(view.repository),
-          recoveryEpoch: asRecoveryEpoch("epoch"),
-        }),
-    },
-    {
-      credential: () =>
-        Promise.resolve({
-          resolved: "Credential",
-          credential: asRepositoryCredential("repository-token"),
-        }),
     },
     site,
     clusterFetch(requests),

@@ -10,23 +10,37 @@
  * ticket has moved on resolves nothing rather than running against material
  * the machine left behind, and its terminal is one the machine would refuse.
  *
- * A RESULT IS CLASSIFIED BY WHOEVER PRODUCED IT. A work result must name the
- * source the machine is to accept and an evaluator result must carry a
- * verdict, because the domain reads neither out of a manifest, so the runner
- * hands back the report it decided.
+ * A RUNNER PLACES WORK AND DECIDES NOTHING. A work result must name the source
+ * the machine is to accept and an evaluator result must carry a verdict,
+ * because the domain reads neither out of a manifest; but that reading is one
+ * protocol above every backend, in `ticketExecutionOutcome.ts`, so a placement
+ * backend hands back the harness's own wire outcome and never a report.
  */
 import * as task from "../domain/chuggernaut/task.js";
 import * as ticket from "../domain/chuggernaut/ticket.js";
 import { setTimeout as delay } from "node:timers/promises";
+import type { RepositoryId } from "./finalizer.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import type { TicketContentStore } from "./ticketCatalog.ts";
 import { ticketWorkspaceRead } from "./ticketWorkspace.ts";
+import {
+  ticketExecutionOutcomeReport,
+  type TicketExecutionAccess,
+} from "./ticketExecutionOutcome.ts";
 import {
   ticketMachineTaskKey,
   type TicketMachineAuthorization,
   type TicketMachineEffects,
   type TicketMachineInput,
 } from "./ticketMachine.ts";
+
+/**
+ * The bound two tiers must agree on, defaulted here so they agree by
+ * construction. The scheduler sweeps work that reached it and the plane
+ * serving pools stops claiming there; a deployment that moves one moves both,
+ * by naming each.
+ */
+export const ticketExecutionDefaults = { attemptsUnreportedMax: 3 } as const;
 
 export interface TicketExecutionClaim {
   readonly partition: Partition;
@@ -35,6 +49,20 @@ export interface TicketExecutionClaim {
   readonly obligation: task.TaskObligation;
   readonly attempt: number;
   readonly recoveryEpoch: RecoveryEpoch;
+}
+
+/** One queued row as the preparation pass needs it, which is its obligation and where it lives. */
+export interface TicketExecutionQueued {
+  readonly partition: Partition;
+  readonly taskKey: string;
+  readonly obligation: task.TaskObligation;
+}
+
+/** One pool-held attempt awaiting its terminal, and the one thing it has to say. */
+export interface TicketExecutionSettlement {
+  readonly claim: TicketExecutionClaim;
+  readonly outcome?: unknown;
+  readonly refusal?: string;
 }
 
 export interface TicketExecutionStore {
@@ -61,7 +89,53 @@ export interface TicketExecutionStore {
     leaseSecs: number,
     limit: number,
     capabilities: readonly string[],
+    attemptsUnreportedMax: number,
   ): Promise<readonly TicketExecutionClaim[]>;
+  /**
+   * The work whose attempts kept ending without a word, claimed by the caller
+   * so it can be settled. A claim spent on work no fabric can ever run says
+   * nothing where a busy fabric releases the row and an unwilling one records
+   * its refusal, so the silence is what is counted and the ceiling on it is
+   * what every claim predicate stops at.
+   */
+  unreported(
+    owner: string,
+    recoveryEpoch: RecoveryEpoch,
+    leaseSecs: number,
+    limit: number,
+    attemptsUnreportedMax: number,
+  ): Promise<readonly TicketExecutionClaim[]>;
+  /**
+   * Queued work older than its window that no claimant ever took, claimed by
+   * the caller so it can be settled. Under claiming this is the one shape that
+   * would otherwise wait forever, looking exactly like work whose turn has not
+   * come.
+   */
+  unclaimable(
+    owner: string,
+    recoveryEpoch: RecoveryEpoch,
+    leaseSecs: number,
+    limit: number,
+    windowSecs: number,
+  ): Promise<readonly TicketExecutionClaim[]>;
+  /**
+   * Queued work whose harness view has not been resolved yet, which is the work
+   * a pool could otherwise be handed nothing for. It is read rather than
+   * claimed, because resolving a view spends no attempt and changes no state a
+   * claimant would see.
+   */
+  unprepared(limit: number): Promise<readonly TicketExecutionQueued[]>;
+  prepare(
+    partition: Partition,
+    taskKey: string,
+    view: TicketExecutionView,
+  ): Promise<boolean>;
+  /**
+   * The pool-held attempts that have something to settle: a harness outcome
+   * recorded through the worker plane, or the pool's own settled no. Nothing
+   * orchestrator-side is waiting on either, so a pass is what picks them up.
+   */
+  settlements(limit: number): Promise<readonly TicketExecutionSettlement[]>;
   retry(claim: TicketExecutionClaim, retryAfterSecs: number): Promise<void>;
   terminal(
     claim: TicketExecutionClaim,
@@ -70,36 +144,34 @@ export interface TicketExecutionStore {
   cancelled(claim: TicketExecutionClaim): Promise<boolean>;
 }
 
-/** What the fabric answers with, which is a report rather than a `TaskTerminal`. */
-export type TicketExecutionResult =
+/**
+ * What a placement backend answers with, which names no domain value at all: it
+ * placed the work and the harness reported through the plane, or it could not,
+ * and its evidence is the plain text a backend can write without reading the
+ * machine's language.
+ */
+export type TicketExecutionPlacement =
   | {
-      readonly result: "Produced";
-      readonly report: ticket.WorkResultReport | ticket.EvaluationResultReport;
+      readonly placed: "Reported";
+      readonly outcome: unknown;
     }
   | {
-      readonly result: "ProcessFailed";
-      readonly failure: task.TaskFailure;
+      readonly placed: "Unavailable";
+      readonly evidence: string;
     }
   | {
-      readonly result: "ExecutionUnavailable";
-      readonly evidence: task.ContentRef;
-    }
-  | {
-      readonly result: "Retry";
+      readonly placed: "Retry";
       readonly retryAfterSecs: number;
-      readonly evidence: task.ContentRef;
+      readonly evidence: string;
     };
 
 export interface TicketExecutionRunner {
   run(
     claim: TicketExecutionClaim,
     view: TicketExecutionView,
-  ): Promise<TicketExecutionResult>;
+  ): Promise<TicketExecutionPlacement>;
   cancel(claim: TicketExecutionClaim): Promise<void>;
 }
-
-export type TicketExecutionAccess =
-  "ReadRepository" | "PublishRepositoryResult";
 
 export interface TicketExecutionView {
   readonly workload: unknown;
@@ -115,6 +187,8 @@ export interface TicketExecutionView {
     readonly value: unknown;
   }[];
 }
+
+export type { TicketExecutionAccess };
 
 export type TicketExecutionContent = (
   partition: Partition,
@@ -265,6 +339,53 @@ export async function ticketExecutionView(
   };
 }
 
+/**
+ * What a harness is served over its callback, which is the resolved view with
+ * the machine's own source reference left out: a harness names a source it
+ * never reads, and a reference this project's content store keys on is nothing
+ * a pool beyond this cluster is entitled to.
+ */
+export interface TicketExecutionWorkerView {
+  readonly workload: unknown;
+  readonly inputs: unknown;
+  readonly resultContract: unknown;
+  readonly requiredCapabilities: readonly string[];
+  readonly context: readonly {
+    readonly reference: task.ContentRef;
+    readonly value: unknown;
+  }[];
+  readonly repository: string;
+  readonly commit: string;
+  readonly access: TicketExecutionAccess;
+}
+
+/**
+ * Whom one attempt's git credential is minted for, read off the attempt's own
+ * row rather than out of the request asking. The access is the scheduler's
+ * reading of the workload and was recorded before a harness existed, so a
+ * harness that asked for a push it was not given is answered the read it was.
+ */
+export interface TicketExecutionCredentialSubject {
+  readonly partition: Partition;
+  readonly repository: RepositoryId;
+  readonly access: TicketExecutionAccess;
+}
+
+export function ticketExecutionWorkerView(
+  view: TicketExecutionView,
+): TicketExecutionWorkerView {
+  return {
+    workload: view.workload,
+    inputs: view.inputs,
+    resultContract: view.resultContract,
+    requiredCapabilities: view.requiredCapabilities,
+    context: view.context,
+    repository: view.repository,
+    commit: view.commit,
+    access: view.access,
+  };
+}
+
 export function ticketExecutionEffects(
   store: TicketExecutionStore,
 ): Pick<TicketMachineEffects, "execute" | "cancel"> {
@@ -281,19 +402,15 @@ export function ticketExecutionEffects(
   };
 }
 
-function ticketExecutionReport(
+/** What a ticket is told about an attempt no backend could carry to a harness. */
+function ticketExecutionUnavailableReport(
   claim: TicketExecutionClaim,
-  result: TicketExecutionResult,
-): ticket.TaskTerminalReport {
-  if (result.result === "Produced") return result.report;
+  evidence: task.ContentRef,
+): ticket.TerminalFailureReport {
   return new ticket.TerminalFailureReport(
     task.task_owner(claim.obligation.task),
-    result.result === "ProcessFailed"
-      ? result.failure
-      : new task.TaskFailure(claim.obligation.task, result.evidence),
-    result.result === "ProcessFailed"
-      ? new ticket.ProcessFailure()
-      : new ticket.ExecutionUnavailableFailure(),
+    new task.TaskFailure(claim.obligation.task, evidence),
+    new ticket.ExecutionUnavailableFailure(),
   );
 }
 
@@ -301,7 +418,7 @@ async function ticketExecutionCancelled(
   store: TicketExecutionStore,
   runner: TicketExecutionRunner,
   claim: TicketExecutionClaim,
-  running: Promise<TicketExecutionResult>,
+  running: Promise<TicketExecutionPlacement>,
   cancellationPollMs: number,
 ): Promise<boolean> {
   let cancelled = await store.cancelled(claim);
@@ -318,6 +435,153 @@ async function ticketExecutionCancelled(
   return true;
 }
 
+/**
+ * Settles the claims a sweep took, each as `ExecutionUnavailable` against the
+ * evidence it writes for it. What the two sweeps found differs and what the
+ * ticket is owed for it does not, so only the evidence is theirs.
+ */
+async function ticketExecutionSweptRun(
+  store: TicketExecutionStore,
+  content: TicketExecutionContent,
+  claims: readonly TicketExecutionClaim[],
+  authorization: TicketMachineAuthorization,
+  limit: number,
+  evidenceOf: (claim: TicketExecutionClaim) => string,
+): Promise<number> {
+  if (claims.length > limit)
+    throw new Error("ticket execution store exceeded claim limit");
+  const settled = await Promise.all(
+    claims.map(async (claim) => {
+      const evidence = await content(claim.partition).put(
+        "application/json",
+        evidenceOf(claim),
+      );
+      const submitted = await store.terminal(claim, {
+        identity: `execution-terminal:${claim.taskKey}`,
+        origin: "Execution",
+        authorization,
+        command: new ticket.ReportTaskTerminal(
+          ticketExecutionUnavailableReport(claim, evidence),
+        ),
+      });
+      return submitted ? 1 : 0;
+    }),
+  );
+  return settled.reduce<number>((total, value) => total + value, 0);
+}
+
+/**
+ * Settles the work that waited out its window with no claimant, as
+ * `ExecutionUnavailable` against evidence naming what it asked for.
+ *
+ * Placement gets one answer for free — a backend offered work that it cannot
+ * place says so — whereas nothing claiming a row is silence, and work merely
+ * waiting its turn sounds exactly the same, so the window is what turns a
+ * requirement no claimant covers into a fact the ticket carries.
+ */
+export async function ticketExecutionUnclaimableRun(
+  store: TicketExecutionStore,
+  content: TicketExecutionContent,
+  owner: string,
+  recoveryEpoch: RecoveryEpoch,
+  authorization: TicketMachineAuthorization,
+  leaseSecs: number,
+  limit: number,
+  windowSecs: number,
+): Promise<number> {
+  if (
+    ![leaseSecs, limit, windowSecs].every(
+      (value) => Number.isSafeInteger(value) && value > 0,
+    )
+  )
+    throw new RangeError(
+      "ticket execution unclaimable bounds must be positive safe integers",
+    );
+  return ticketExecutionSweptRun(
+    store,
+    content,
+    await store.unclaimable(owner, recoveryEpoch, leaseSecs, limit, windowSecs),
+    authorization,
+    limit,
+    (claim) => ticketExecutionUnclaimableEvidence(claim, windowSecs),
+  );
+}
+
+/** What the ticket is told: what the work asked for, and how long nothing offering it appeared. */
+function ticketExecutionUnclaimableEvidence(
+  claim: TicketExecutionClaim,
+  windowSecs: number,
+): string {
+  return JSON.stringify({
+    reason: "no claimant covering the required capabilities appeared in time",
+    taskKey: claim.taskKey,
+    requiredCapabilities: [
+      ...claim.obligation.definition.execution_requirements
+        .required_capabilities,
+    ],
+    windowSecs,
+  });
+}
+
+/**
+ * Settles the work whose claims kept ending in silence, which is the other way
+ * work runs forever without ever becoming a fact: a busy or unwilling pool
+ * answers the offer, whereas a workload a fabric accepted and no node can ever
+ * schedule lets the lease run out and says nothing the ticket could carry.
+ * The ceiling both claim predicates stop at is what ends the cycle, and this
+ * pass is what the ticket hears instead.
+ */
+export async function ticketExecutionUnreportedRun(
+  store: TicketExecutionStore,
+  content: TicketExecutionContent,
+  owner: string,
+  recoveryEpoch: RecoveryEpoch,
+  authorization: TicketMachineAuthorization,
+  leaseSecs: number,
+  limit: number,
+  attemptsUnreportedMax: number,
+): Promise<number> {
+  if (
+    ![leaseSecs, limit, attemptsUnreportedMax].every(
+      (value) => Number.isSafeInteger(value) && value > 0,
+    )
+  )
+    throw new RangeError(
+      "ticket execution unreported bounds must be positive safe integers",
+    );
+  return ticketExecutionSweptRun(
+    store,
+    content,
+    await store.unreported(
+      owner,
+      recoveryEpoch,
+      leaseSecs,
+      limit,
+      attemptsUnreportedMax,
+    ),
+    authorization,
+    limit,
+    (claim) => ticketExecutionUnreportedEvidence(claim, attemptsUnreportedMax),
+  );
+}
+
+/** What the ticket is told: what the work asked for, and how many claims of it said nothing. */
+function ticketExecutionUnreportedEvidence(
+  claim: TicketExecutionClaim,
+  attemptsUnreportedMax: number,
+): string {
+  return JSON.stringify({
+    reason: "every claim of this work expired without reporting an outcome",
+    taskKey: claim.taskKey,
+    requiredCapabilities: [
+      ...claim.obligation.definition.execution_requirements
+        .required_capabilities,
+    ],
+    attempts: claim.attempt,
+    attemptsUnreportedMax,
+  });
+}
+
 export async function ticketExecutionRun(
   store: TicketExecutionStore,
   content: TicketExecutionContent,
@@ -330,12 +594,17 @@ export async function ticketExecutionRun(
   attemptsMax: number,
   limit: number,
   capabilities: readonly string[],
+  attemptsUnreportedMax: number,
   cancellationPollMs = 1_000,
 ): Promise<number> {
   if (
-    ![leaseSecs, attemptsMax, limit, cancellationPollMs].every(
-      (value) => Number.isSafeInteger(value) && value > 0,
-    )
+    ![
+      leaseSecs,
+      attemptsMax,
+      limit,
+      attemptsUnreportedMax,
+      cancellationPollMs,
+    ].every((value) => Number.isSafeInteger(value) && value > 0)
   )
     throw new RangeError(
       "ticket execution bounds must be positive safe integers",
@@ -346,6 +615,7 @@ export async function ticketExecutionRun(
     leaseSecs,
     limit,
     capabilities,
+    attemptsUnreportedMax,
   );
   if (claims.length > limit)
     throw new Error("ticket execution store exceeded claim limit");
@@ -379,14 +649,13 @@ async function ticketExecutionClaimRun(
   const graph = await tickets(claim.partition);
   if (graph === undefined)
     throw new Error("ticket execution claim has no ticket machine");
-  const running = runner.run(
-    claim,
-    await ticketExecutionView(
-      content(claim.partition),
-      graph,
-      claim.obligation,
-    ),
+  const attemptContent = content(claim.partition);
+  const view = await ticketExecutionView(
+    attemptContent,
+    graph,
+    claim.obligation,
   );
+  const running = runner.run(claim, view);
   if (
     await ticketExecutionCancelled(
       store,
@@ -397,9 +666,9 @@ async function ticketExecutionClaimRun(
     )
   )
     return 0;
-  const result = await running;
-  if (result.result === "Retry" && claim.attempt < attemptsMax) {
-    await store.retry(claim, result.retryAfterSecs);
+  const placement = await running;
+  if (placement.placed === "Retry" && claim.attempt < attemptsMax) {
+    await store.retry(claim, placement.retryAfterSecs);
     return 0;
   }
   const submitted = await store.terminal(claim, {
@@ -407,8 +676,126 @@ async function ticketExecutionClaimRun(
     origin: "Execution",
     authorization,
     command: new ticket.ReportTaskTerminal(
-      ticketExecutionReport(claim, result),
+      placement.placed === "Reported"
+        ? await ticketExecutionOutcomeReport(
+            attemptContent,
+            claim.obligation,
+            view,
+            placement.outcome,
+          )
+        : ticketExecutionUnavailableReport(
+            claim,
+            await attemptContent.put("text/plain", placement.evidence),
+          ),
     ),
   });
   return submitted ? 1 : 0;
+}
+
+/**
+ * Resolves the harness view of queued work before anything claims it, because
+ * the view is the one thing an assignment needs that only the journal holds and
+ * the plane serving pools must never read the journal. A row whose obligation
+ * no longer matches its ticket is left unprepared rather than settled, the
+ * unclaimed window being what turns work no claimant can take into evidence.
+ */
+export async function ticketExecutionPrepareRun(
+  store: TicketExecutionStore,
+  content: TicketExecutionContent,
+  tickets: TicketExecutionTickets,
+  limit: number,
+): Promise<number> {
+  if (!Number.isSafeInteger(limit) || limit <= 0)
+    throw new RangeError("ticket execution prepare limit must be positive");
+  const queued = await store.unprepared(limit);
+  if (queued.length > limit)
+    throw new Error("ticket execution store exceeded prepare limit");
+  const prepared = await Promise.all(
+    queued.map(async (row) => {
+      const graph = await tickets(row.partition);
+      if (graph === undefined) return 0;
+      const view = await ticketExecutionPrepared(
+        content(row.partition),
+        graph,
+        row.obligation,
+      );
+      return view !== undefined &&
+        (await store.prepare(row.partition, row.taskKey, view))
+        ? 1
+        : 0;
+    }),
+  );
+  return prepared.reduce<number>((total, value) => total + value, 0);
+}
+
+/** The view of one queued obligation, or nothing where its ticket has moved past it. */
+async function ticketExecutionPrepared(
+  content: TicketContentStore,
+  graph: ticket.TicketGraph,
+  obligation: task.TaskObligation,
+): Promise<TicketExecutionView | undefined> {
+  try {
+    return await ticketExecutionView(content, graph, obligation);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Settles the attempts a pool ran, which nothing orchestrator-side is waiting
+ * on: the harness reported to the worker plane, which recorded the outcome and
+ * returned, and the pool went back to polling. The same result protocol is
+ * called here rather than inside the plane the harness reached, because
+ * deriving a report there would widen that process to the whole ticket machine.
+ */
+export async function ticketExecutionSettlementRun(
+  store: TicketExecutionStore,
+  content: TicketExecutionContent,
+  tickets: TicketExecutionTickets,
+  authorization: TicketMachineAuthorization,
+  limit: number,
+): Promise<number> {
+  if (!Number.isSafeInteger(limit) || limit <= 0)
+    throw new RangeError("ticket execution settlement limit must be positive");
+  const pending = await store.settlements(limit);
+  if (pending.length > limit)
+    throw new Error("ticket execution store exceeded settlement limit");
+  const settled = await Promise.all(
+    pending.map(async (settlement) => {
+      const submitted = await store.terminal(settlement.claim, {
+        identity: `execution-terminal:${settlement.claim.taskKey}`,
+        origin: "Execution",
+        authorization,
+        command: new ticket.ReportTaskTerminal(
+          await ticketExecutionSettled(content, tickets, settlement),
+        ),
+      });
+      return submitted ? 1 : 0;
+    }),
+  );
+  return settled.reduce<number>((total, value) => total + value, 0);
+}
+
+/** A pool's settled no is evidence; a harness outcome is the result protocol's to read. */
+async function ticketExecutionSettled(
+  content: TicketExecutionContent,
+  tickets: TicketExecutionTickets,
+  settlement: TicketExecutionSettlement,
+): Promise<ticket.TaskTerminalReport> {
+  const claim = settlement.claim;
+  const attemptContent = content(claim.partition);
+  if (settlement.refusal !== undefined)
+    return ticketExecutionUnavailableReport(
+      claim,
+      await attemptContent.put("text/plain", settlement.refusal),
+    );
+  const graph = await tickets(claim.partition);
+  if (graph === undefined)
+    throw new Error("ticket execution settlement has no ticket machine");
+  return ticketExecutionOutcomeReport(
+    attemptContent,
+    claim.obligation,
+    await ticketExecutionView(attemptContent, graph, claim.obligation),
+    settlement.outcome,
+  );
 }

@@ -25,6 +25,8 @@ import type {
   TicketCatalogRelease,
 } from "../../interpreter/ticketCatalog.ts";
 import type { TicketFinalizerConfiguration } from "../../interpreter/ticketFinalizer.ts";
+import { textCodePointsCount } from "../../contract/http.ts";
+import { workerPoolTokenCharsMax } from "../../contract/workerPool.ts";
 import { schema_validator } from "./jsonSchema.ts";
 import {
   catalogCheck,
@@ -152,6 +154,33 @@ function catalogCloudIdentity(
   resolved["cloud_identity"] = { ...workload.cloud_identity, project };
 }
 
+/** The prefix a runner's capability token takes, which is the whole of the rule. */
+const catalogRunnerCapabilityPrefix = "runner-";
+
+/**
+ * The capability a workload's runner requires, derived here rather than
+ * declared by the author, who already wrote the runner: a claimant holding no
+ * credential for that agent must not be able to claim the work, and the claim
+ * predicate matches capability tokens alone. A runner name no token can spell
+ * is refused at release, where the author can still change it.
+ */
+function catalogRunnerCapability(
+  workload: WorkloadDocument,
+): string | undefined {
+  const runner = workload["runner"];
+  if (runner === undefined) return undefined;
+  if (typeof runner !== "string")
+    throw new TypeError("workload runner must be a name");
+  if (!catalogRunnerName.test(runner))
+    throw new TypeError(`workload runner is not a capability name: ${runner}`);
+  const capability = `${catalogRunnerCapabilityPrefix}${runner}`;
+  if (textCodePointsCount(capability) > workerPoolTokenCharsMax)
+    throw new TypeError(`workload runner is too long to require: ${runner}`);
+  return capability;
+}
+
+const catalogRunnerName = /^[A-Za-z0-9][A-Za-z0-9_-]*$/u;
+
 /** Resolves one workload into a task definition and says whether it publishes. */
 async function catalogTask(
   context: CatalogContext,
@@ -198,6 +227,9 @@ async function catalogTask(
     };
     capabilities = profile.required_capabilities;
   }
+  const runner = catalogRunnerCapability(workload);
+  if (runner !== undefined && !capabilities.includes(runner))
+    capabilities = [...capabilities, runner];
   if (workload.prompt?.startsWith("agents/"))
     resolved["prompt"] = await catalogRead(
       context,

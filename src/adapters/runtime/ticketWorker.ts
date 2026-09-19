@@ -6,30 +6,192 @@ import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { Ajv2020 } from "ajv/dist/2020.js";
 
+import {
+  ticketExecutionRunConfigurationBytesMax,
+  ticketExecutionRunModelCharsMax,
+  ticketExecutionRunModelsMax,
+  ticketExecutionRunReasonCharsMax,
+  ticketExecutionRunTurnsMax,
+  ticketExecutionRunTranscriptBatchesMax,
+  ticketExecutionRunTranscriptBytesMax,
+  ticketExecutionRunTurnsPageMax,
+} from "../../contract/http.ts";
+import { ticketExecutionRunMeasured } from "../../interpreter/ticketExecutionRun.ts";
 import { prepare_commit } from "./commitHooks.ts";
 
+/**
+ * What the launcher hands this process, which is only what no callback could:
+ * where to call and what to call as. Everything else about the task, the git
+ * credential included, is fetched from the callback, so a pool that placed
+ * this process carries a token and a URL and nothing confidential at all.
+ */
 interface TicketWorkerEnvelope {
-  readonly taskKey: string;
   readonly callbackUrl: string;
   readonly bearer: string;
   readonly workspace: string;
   readonly timeoutSecsMax: number;
   readonly outputBytesMax: number;
-  readonly transportUrl: string;
   readonly providerCredentialFile?: string;
-  readonly view: {
-    readonly workload: unknown;
-    readonly inputs: unknown;
-    readonly resultContract: unknown;
-    readonly requiredCapabilities: readonly string[];
-    readonly context: readonly {
-      readonly reference: number;
-      readonly value: unknown;
-    }[];
-    readonly repository: string;
-    readonly commit: string;
-    readonly access: "ReadRepository" | "PublishRepositoryResult";
-  };
+}
+
+/** One git credential as the plane mints it, and when the plane says it stops working. */
+interface TicketWorkerCredential {
+  readonly username: string;
+  readonly password: string;
+  readonly expiresAtMs: number;
+}
+
+/**
+ * What this attempt reaches its repository under: the envelope it was launched
+ * with and the credential it has been minted so far. The credential is held
+ * only in this process and never written into the workspace's own git
+ * configuration, so a workload reads it from neither.
+ */
+interface TicketWorkerTransport {
+  readonly held: TicketWorkerEnvelope;
+  credential?: TicketWorkerCredential;
+}
+
+/**
+ * A mint the plane could not perform, which is not a mint it refused. An
+ * outage ends the attempt as unavailable and is tried again; a refusal is this
+ * attempt's own evidence and settles it.
+ */
+class TicketWorkerUnavailable extends Error {}
+
+/**
+ * How long before a credential's stated end it is minted again rather than
+ * used. A work task may run longer than one token lives, and a push that fails
+ * on an expired token throws away the work that earned it.
+ */
+const ticketWorkerCredentialMarginMs = 60_000;
+
+/**
+ * How often the workload says it is still going. It is the harness's own
+ * signal and not its pool's, so it is sent while the workload runs and stops
+ * the moment it does.
+ */
+const ticketWorkerHeartbeatMs = 30_000;
+
+interface TicketWorkerView {
+  readonly workload: unknown;
+  readonly inputs: unknown;
+  readonly resultContract: unknown;
+  readonly requiredCapabilities: readonly string[];
+  readonly context: readonly {
+    readonly reference: number;
+    readonly value: unknown;
+  }[];
+  readonly repository: string;
+  readonly commit: string;
+  readonly access: "ReadRepository" | "PublishRepositoryResult";
+}
+
+/** Where the callback answers this attempt's own routes. */
+function ticketWorkerRoute(held: TicketWorkerEnvelope, route: string): string {
+  return new URL(route, `${held.callbackUrl}/`).toString();
+}
+
+/** The resolved view this attempt runs against, fetched under its own bearer. */
+async function ticketWorkerView(
+  held: TicketWorkerEnvelope,
+): Promise<TicketWorkerView> {
+  const response = await fetch(ticketWorkerRoute(held, "view"), {
+    headers: { authorization: `Bearer ${held.bearer}` },
+  });
+  if (!response.ok)
+    throw new Error(
+      `ticket worker view was refused with ${String(response.status)}`,
+    );
+  const view = record(await response.json(), "view");
+  for (const name of ["repository", "commit", "access"])
+    if (typeof view[name] !== "string" || String(view[name]).length === 0)
+      throw new TypeError(`ticket worker view ${name} is invalid`);
+  return view as unknown as TicketWorkerView;
+}
+
+/**
+ * One mint on the callback, refused for this repository or not reached at all.
+ * Only a refusal naming the repository is settled: everything else leaves the
+ * attempt unavailable, because a plane that answered nothing has decided
+ * nothing about this ticket.
+ */
+async function ticketWorkerCredentialMinted(
+  held: TicketWorkerEnvelope,
+): Promise<TicketWorkerCredential> {
+  const response = await fetch(ticketWorkerRoute(held, "credentials"), {
+    method: "POST",
+    headers: { authorization: `Bearer ${held.bearer}` },
+  }).catch(() => undefined);
+  if (response === undefined)
+    throw new TicketWorkerUnavailable(
+      "the repository credential mint could not be reached",
+    );
+  if (response.status === 404) {
+    const refusal = record(await response.json(), "credential refusal");
+    if (refusal["reason"] === "NotMinted")
+      throw new Error("the repository credential was denied");
+    throw new TicketWorkerUnavailable(
+      "the plane mints no repository credential",
+    );
+  }
+  if (!response.ok)
+    throw new TicketWorkerUnavailable(
+      `the repository credential mint answered ${String(response.status)}`,
+    );
+  return ticketWorkerCredentialOf(await response.json());
+}
+
+/** One minted credential as the plane wrote it, refused here rather than by git. */
+function ticketWorkerCredentialOf(value: unknown): TicketWorkerCredential {
+  const found = record(value, "credential");
+  for (const name of ["username", "password"])
+    if (typeof found[name] !== "string" || found[name].length === 0)
+      throw new TypeError(`ticket worker credential ${name} is invalid`);
+  if (!Number.isSafeInteger(found["expiresAtMs"]))
+    throw new TypeError("ticket worker credential expiry is invalid");
+  return found as unknown as TicketWorkerCredential;
+}
+
+/**
+ * The credential this attempt works under, minted once and again only once the
+ * held one is spent. One mint covers every git call of an attempt because the
+ * scope is the attempt's own and identical for each of them, so minting per
+ * call would widen nothing and only multiply the ways an attempt can fail.
+ */
+async function ticketWorkerCredential(
+  transport: TicketWorkerTransport,
+  nowMs: number = Date.now(),
+): Promise<TicketWorkerCredential> {
+  const held = transport.credential;
+  if (
+    held !== undefined &&
+    held.expiresAtMs - nowMs > ticketWorkerCredentialMarginMs
+  )
+    return held;
+  const minted = await ticketWorkerCredentialMinted(transport.held);
+  transport.credential = minted;
+  return minted;
+}
+
+/**
+ * The remote one git call is made against. It is built for the call and passed
+ * as an argument, so the credential never lands in the workspace's own git
+ * configuration for the workload to read.
+ */
+async function ticketWorkerRemote(
+  transport: TicketWorkerTransport,
+  repository: string,
+): Promise<string> {
+  const credential = await ticketWorkerCredential(transport);
+  const remote = new URL(repository);
+  if (remote.protocol !== "https:")
+    throw new TypeError("ticket repository must use HTTPS");
+  if (remote.username !== "" || remote.password !== "")
+    throw new TypeError("ticket repository URL must carry no credentials");
+  remote.username = credential.username;
+  remote.password = credential.password;
+  return remote.href;
 }
 
 interface Ran {
@@ -51,38 +213,25 @@ function record(value: unknown, what: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function safeView(held: TicketWorkerEnvelope): TicketWorkerEnvelope["view"] {
-  return held.view;
-}
-
-function workerEvidence(held: TicketWorkerEnvelope, evidence: string): string {
-  let scrubbed = evidence.replaceAll(held.bearer, "[REDACTED]");
-  try {
-    const url = new URL(held.transportUrl);
-    for (const secret of [url.username, url.password])
-      if (secret.length > 0)
-        scrubbed = scrubbed.replaceAll(secret, "[REDACTED]");
-  } catch {
-    return scrubbed;
-  }
+function workerEvidence(
+  transport: TicketWorkerTransport,
+  evidence: string,
+): string {
+  let scrubbed = evidence.replaceAll(transport.held.bearer, "[REDACTED]");
+  for (const secret of [
+    transport.credential?.username,
+    transport.credential?.password,
+  ])
+    if (secret !== undefined && secret.length > 0)
+      scrubbed = scrubbed.replaceAll(secret, "[REDACTED]");
   return scrubbed;
 }
 
 function envelope(value: unknown): TicketWorkerEnvelope {
   const found = record(value, "envelope");
-  const view = record(found["view"], "view");
-  for (const name of [
-    "taskKey",
-    "callbackUrl",
-    "bearer",
-    "workspace",
-    "transportUrl",
-  ])
+  for (const name of ["callbackUrl", "bearer", "workspace"])
     if (typeof found[name] !== "string" || found[name].length === 0)
       throw new TypeError(`ticket worker ${name} is invalid`);
-  for (const name of ["repository", "commit", "access"])
-    if (typeof view[name] !== "string" || view[name].length === 0)
-      throw new TypeError(`ticket worker view ${name} is invalid`);
   for (const name of ["timeoutSecsMax", "outputBytesMax"])
     if (!Number.isSafeInteger(found[name]) || Number(found[name]) < 1)
       throw new TypeError(`ticket worker ${name} is invalid`);
@@ -118,14 +267,12 @@ function optionalString(
 }
 
 export function ticketWorkerPrompt(
-  taskKey: string,
   workload: Record<string, unknown>,
   inputs: unknown,
-  context: TicketWorkerEnvelope["view"]["context"],
+  context: TicketWorkerView["context"],
 ): string {
   return [
     optionalString(workload, "prompt", ""),
-    `Task: ${taskKey}`,
     `Inputs:\n${JSON.stringify(inputs, null, 2)}`,
     `Context:\n${context
       .map(
@@ -364,16 +511,16 @@ async function git(
   return ran.stdout.trim();
 }
 
-async function checkout(held: TicketWorkerEnvelope): Promise<void> {
+async function checkout(
+  transport: TicketWorkerTransport,
+  view: TicketWorkerView,
+): Promise<void> {
+  const held = transport.held;
+  const remote = await ticketWorkerRemote(transport, view.repository);
   await mkdir(held.workspace, { recursive: true });
   await git(["init", "--quiet"], held.workspace, held);
   await git(
-    ["remote", "add", "origin", held.transportUrl],
-    held.workspace,
-    held,
-  );
-  await git(
-    ["fetch", "--quiet", "--depth=1", "origin", held.view.commit],
+    ["fetch", "--quiet", "--depth=1", remote, view.commit],
     held.workspace,
     held,
   );
@@ -386,6 +533,7 @@ async function checkout(held: TicketWorkerEnvelope): Promise<void> {
 
 async function workloadInvocation(
   held: TicketWorkerEnvelope,
+  view: TicketWorkerView,
   workload: Record<string, unknown>,
 ): Promise<{
   readonly command: readonly string[];
@@ -401,25 +549,20 @@ async function workloadInvocation(
       environment: {
         ...childEnvironment(),
         ...(authored as Record<string, string>),
-        CHUG_INPUTS: JSON.stringify(held.view.inputs),
-        CHUG_TASK: JSON.stringify(safeView(held)),
+        CHUG_INPUTS: JSON.stringify(view.inputs),
+        CHUG_TASK: JSON.stringify(view),
       },
     };
   }
   const control = await mkdtemp(join(tmpdir(), "chug-ticket-agent-"));
   await writeFile(
     join(control, "schema.json"),
-    JSON.stringify(held.view.resultContract),
+    JSON.stringify(view.resultContract),
   );
   const agent = await ticketWorkerAgentCommand(
     {
       ...workload,
-      prompt: ticketWorkerPrompt(
-        held.taskKey,
-        workload,
-        held.view.inputs,
-        held.view.context,
-      ),
+      prompt: ticketWorkerPrompt(workload, view.inputs, view.context),
     },
     held.workspace,
     control,
@@ -431,8 +574,8 @@ async function workloadInvocation(
     command: agent.argv,
     environment: {
       ...agent.environment,
-      CHUG_TASK: JSON.stringify(safeView(held)),
-      CHUG_CONTEXT: JSON.stringify(held.view.context),
+      CHUG_TASK: JSON.stringify(view),
+      CHUG_CONTEXT: JSON.stringify(view.context),
     },
     control,
   };
@@ -444,38 +587,168 @@ async function invocationCleanup(control: string | undefined): Promise<void> {
 }
 
 async function publishedResult(
-  held: TicketWorkerEnvelope,
+  transport: TicketWorkerTransport,
+  view: TicketWorkerView,
   workload: Record<string, unknown>,
   manifest: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  if (held.view.access === "ReadRepository")
+  if (view.access === "ReadRepository")
     return { type: "result", manifest, outputs: [] };
+  const held = transport.held;
   const commit = await prepare_commit(
     held.workspace,
-    held.view.commit,
+    view.commit,
     workload,
     () => {},
     childEnvironment(),
     "Complete ticket task",
   );
   await git(
-    ["push", "--quiet", "origin", `${commit}:refs/chuggy/results/${commit}`],
+    [
+      "push",
+      "--quiet",
+      await ticketWorkerRemote(transport, view.repository),
+      `${commit}:refs/chuggy/results/${commit}`,
+    ],
     held.workspace,
     held,
   );
   return {
     type: "result",
     manifest,
-    outputs: [{ repository: held.view.repository, commit }],
+    outputs: [{ repository: view.repository, commit, base: view.commit }],
+  };
+}
+
+/**
+ * Reports what the run spent, folded out of the event stream the agent already
+ * wrote. A measure nothing accepted is not a failed attempt: the workload did
+ * its work and its terminal says so, so a refusal here is left behind.
+ */
+async function ticketWorkerMeasure(
+  transport: TicketWorkerTransport,
+  stream: string,
+): Promise<void> {
+  const held = transport.held;
+  const measured = ticketExecutionRunMeasured(stream, {
+    turnsMax: ticketExecutionRunTurnsMax,
+    modelCharsMax: ticketExecutionRunModelCharsMax,
+    modelsMax: ticketExecutionRunModelsMax,
+    reasonCharsMax: ticketExecutionRunReasonCharsMax,
+  });
+  const report = async (route: string, body: unknown): Promise<void> => {
+    await fetch(ticketWorkerRoute(held, route), {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${held.bearer}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    }).catch(() => undefined);
+  };
+  for (
+    let sent = 0;
+    sent < measured.turns.length;
+    sent += ticketExecutionRunTurnsPageMax
+  )
+    await report("run/turns", {
+      turns: measured.turns.slice(sent, sent + ticketExecutionRunTurnsPageMax),
+    });
+  await report("run/totals", measured.totals);
+}
+
+/** The batches one transcript is uploaded as, split on line boundaries within the bound. */
+function ticketWorkerBatches(transcript: string): readonly string[] {
+  const batches: string[] = [];
+  let held = "";
+  for (const line of transcript.split("\n")) {
+    const next = held.length === 0 ? line : `${held}\n${line}`;
+    if (
+      Buffer.byteLength(next, "utf8") > ticketExecutionRunTranscriptBytesMax &&
+      held.length > 0
+    ) {
+      batches.push(held);
+      held = line;
+    } else held = next;
+    if (batches.length >= ticketExecutionRunTranscriptBatchesMax)
+      return batches;
+  }
+  if (held.length > 0) batches.push(held);
+  return batches;
+}
+
+/**
+ * Uploads what the run left behind, scrubbed of every secret this harness holds
+ * before any of it leaves the machine. A batch the plane would not take ends the
+ * upload rather than retrying it: the terminal is what settles the attempt.
+ */
+async function ticketWorkerEvidence(
+  transport: TicketWorkerTransport,
+  view: TicketWorkerView,
+  invocation: { readonly command: readonly string[] },
+  stream: string,
+): Promise<void> {
+  const held = transport.held;
+  const put = async (route: string, body: string): Promise<boolean> => {
+    const response = await fetch(ticketWorkerRoute(held, route), {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${held.bearer}`,
+        "content-type": "application/octet-stream",
+      },
+      body,
+    }).catch(() => undefined);
+    return response?.ok === true;
+  };
+  await put(
+    "run/configuration",
+    workerEvidence(
+      transport,
+      JSON.stringify(
+        await ticketWorkerConfiguration(held.workspace, view, invocation),
+      ),
+    ),
+  );
+  const batches = ticketWorkerBatches(workerEvidence(transport, stream));
+  for (const [index, batch] of batches.entries())
+    if (!(await put(`run/transcript/${String(index + 1)}`, batch))) return;
+}
+
+/** What this attempt ran under, which is the workload it was given and the files that shape it. */
+async function ticketWorkerConfiguration(
+  workspace: string,
+  view: TicketWorkerView,
+  invocation: { readonly command: readonly string[] },
+): Promise<Record<string, unknown>> {
+  const files: Record<string, string> = {};
+  for (const name of ["AGENTS.md", "CLAUDE.md"])
+    try {
+      files[name] = (await readFile(join(workspace, name), "utf8")).slice(
+        0,
+        ticketExecutionRunConfigurationBytesMax / 4,
+      );
+    } catch {
+      continue;
+    }
+  return {
+    argv: invocation.command,
+    workload: view.workload,
+    requiredCapabilities: view.requiredCapabilities,
+    repository: view.repository,
+    commit: view.commit,
+    access: view.access,
+    files,
   };
 }
 
 async function execute(
-  held: TicketWorkerEnvelope,
+  transport: TicketWorkerTransport,
+  view: TicketWorkerView,
 ): Promise<Record<string, unknown>> {
-  await checkout(held);
-  const workload = record(held.view.workload, "workload");
-  const invocation = await workloadInvocation(held, workload);
+  const held = transport.held;
+  await checkout(transport, view);
+  const workload = record(view.workload, "workload");
+  const invocation = await workloadInvocation(held, view, workload);
   let ran: Ran;
   try {
     ran = await run(
@@ -490,6 +763,9 @@ async function execute(
       await rm(invocation.control, { recursive: true, force: true });
     throw error;
   }
+  if (invocation.control !== undefined)
+    await ticketWorkerMeasure(transport, ran.stdout);
+  await ticketWorkerEvidence(transport, view, invocation, ran.stdout);
   if (ran.stopped)
     return (
       await invocationCleanup(invocation.control),
@@ -504,7 +780,7 @@ async function execute(
       {
         type: "process_failed",
         evidence: workerEvidence(
-          held,
+          transport,
           ran.stderr.trim() || `workload exited ${String(ran.code)}`,
         ),
       }
@@ -523,7 +799,25 @@ async function execute(
     if (invocation.control !== undefined)
       await rm(invocation.control, { recursive: true, force: true });
   }
-  return publishedResult(held, workload, manifest);
+  return publishedResult(transport, view, workload, manifest);
+}
+
+/**
+ * Says the workload is still going until told to stop saying it. A refusal ends
+ * the beating and nothing else: the attempt this harness holds may have been
+ * fenced, and the terminal it is about to write is what settles that.
+ */
+function ticketWorkerHeartbeat(held: TicketWorkerEnvelope): () => void {
+  const timer = setInterval(() => {
+    void fetch(ticketWorkerRoute(held, "heartbeat"), {
+      method: "POST",
+      headers: { authorization: `Bearer ${held.bearer}` },
+    }).catch(() => undefined);
+  }, ticketWorkerHeartbeatMs);
+  timer.unref();
+  return () => {
+    clearInterval(timer);
+  };
 }
 
 export async function ticketWorkerMain(
@@ -533,25 +827,31 @@ export async function ticketWorkerMain(
   if (source === undefined)
     throw new Error("CHUG_TICKET_WORKER_TASK is required");
   const held = envelope(JSON.parse(source) as unknown);
+  const transport: TicketWorkerTransport = { held };
+  const beating = ticketWorkerHeartbeat(held);
   let outcome: Record<string, unknown>;
   try {
-    outcome = await execute(held);
+    outcome = await execute(transport, await ticketWorkerView(held));
   } catch (error) {
     outcome = {
-      type: "process_failed",
+      type:
+        error instanceof TicketWorkerUnavailable
+          ? "execution_unavailable"
+          : "process_failed",
       evidence: workerEvidence(
-        held,
+        transport,
         error instanceof Error ? error.message : "worker failed",
       ),
     };
   }
-  const response = await fetch(held.callbackUrl, {
+  beating();
+  const response = await fetch(ticketWorkerRoute(held, "terminal"), {
     method: "POST",
     headers: {
       authorization: `Bearer ${held.bearer}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ taskKey: held.taskKey, outcome }),
+    body: JSON.stringify({ outcome }),
   });
   if (!response.ok)
     throw new Error(

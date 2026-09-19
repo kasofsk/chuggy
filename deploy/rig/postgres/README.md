@@ -398,6 +398,7 @@ as chuggy_api_login CHUG_PG_API_PASSWORD chuggy_api
 as chuggy_scheduler_login CHUG_PG_SCHEDULER_PASSWORD chuggy_scheduler
 as chuggy_finalizer_login CHUG_PG_FINALIZER_PASSWORD chuggy_finalizer
 as chuggy_worker_plane_login CHUG_PG_WORKER_PLANE_PASSWORD chuggy_worker_plane
+as chuggy_pool_plane_login CHUG_PG_POOL_PLANE_PASSWORD chuggy_pool_plane
 ```
 
 The owner's line asks about `chuggy_boundary_owner` rather than a service

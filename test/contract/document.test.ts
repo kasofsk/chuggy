@@ -55,6 +55,18 @@ test("the golden names every route and not an empty stand-in", () => {
     "threadRename",
     "threadTranscript",
     "threads",
+    "ticket",
+    "ticketCatalog",
+    "ticketExecution",
+    "ticketExecutionConfiguration",
+    "ticketExecutionTranscript",
+    "ticketExecutionTurns",
+    "ticketExecutions",
+    "ticketMachineAdmission",
+    "ticketOperation",
+    "ticketOperations",
+    "ticketValidation",
+    "tickets",
   ]);
 });
 

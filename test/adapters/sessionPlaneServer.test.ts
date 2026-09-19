@@ -1371,6 +1371,7 @@ function credentialPlane(
               asked.push({ partition, repository });
               return Promise.resolve(minted);
             },
+            attempt: () => Promise.resolve(minted),
           },
         }),
   });

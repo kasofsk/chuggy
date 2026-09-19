@@ -47,11 +47,15 @@ CHUG_PROVISION_ACTION=grant npm run provision:project-access
 ```
 
 `CHUG_PROVISION_RELATION` names one relation, and the model is what turns it
-into the permits a route asks for: `admins`, `developers`, `dispatchers` and
-`agents` are the project's, and `admins`, `members` and `hosted_execution` are
-the tenant's. A grant with `CHUG_PROVISION_PROJECT` absent is a tenant grant,
-and one whose relation is `tenant` names the tenant the project inherits from
-rather than a person — the one arm that reads no issuer or subject.
+into the permits a route asks for: `admins`, `developers`, `dispatchers`,
+`agents` and `pools` are the project's, and `admins`, `members` and
+`hosted_execution` are the tenant's. `pools` is written by registration rather
+than by hand — `deploy/rig/pools/README.md` is the procedure — and it is the
+only relation `execute` follows from, so no person's relation carries it.
+
+A grant with `CHUG_PROVISION_PROJECT` absent is a tenant grant, and one whose
+relation is `tenant` names the tenant the project inherits from rather than a
+person — the one arm that reads no issuer or subject.
 
 A project needs both arms before it answers anybody, so `deploy/rig/bring-up.sh`
 writes them together in its `access` stage: the tenant grant and one member's,

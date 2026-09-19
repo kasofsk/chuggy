@@ -249,6 +249,32 @@ printf '%s\n' 'import { store } from "../src/adapters/one/store.ts"' 'import { x
 seal
 check "an adapter directory may not import the adapter its name prefixes" 1 "$RC" "no-adapter-sees-another:"
 
+# --- pool-plane-mints-no-credential ------------------------------------------
+
+# Reachability is the whole of this one: the root names no admin adapter and the
+# shape to catch is a composition helper that names it for both roots.
+fixture
+mkdir -p "$R/src/roots" "$R/src/adapters/hydra"
+printf '%s\n' 'export const clients = 1' > "$R/src/adapters/hydra/oauthClients.ts"
+printf '%s\n' 'import { clients } from "../adapters/hydra/oauthClients.ts"' 'export const wiring = clients' > "$R/src/roots/planeEnvironment.ts"
+printf '%s\n' 'import { wiring } from "./planeEnvironment.ts"' 'export const plane = wiring' > "$R/src/roots/poolPlane.ts"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const z = x' > "$R/test/a.test.ts"
+seal
+check "the plane pools poll may not REACH the issuer's admin adapter" 1 "$RC" "pool-plane-mints-no-credential:"
+
+# Another root reaching the same adapter is what registration is, so the rule
+# must not be a ban on the adapter itself.
+fixture
+mkdir -p "$R/src/roots" "$R/src/adapters/hydra"
+printf '%s\n' 'export const clients = 1' > "$R/src/adapters/hydra/oauthClients.ts"
+printf '%s\n' 'import { clients } from "../adapters/hydra/oauthClients.ts"' 'export const registers = clients' > "$R/src/roots/registerWorkerPool.ts"
+printf '%s\n' 'import { x } from "../domain/a.ts"' 'export const plane = x' > "$R/src/roots/poolPlane.ts"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const z = x' > "$R/test/a.test.ts"
+seal
+check "an owner's command may reach the issuer's admin adapter" 0 "$RC" "graph clean"
+
 # --- nothing-imports-a-process-root ------------------------------------------
 
 fixture

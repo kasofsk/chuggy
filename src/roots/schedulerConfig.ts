@@ -35,6 +35,7 @@ import {
   type RecoveryEpoch,
 } from "../interpreter/projectStore.ts";
 import type { ServiceRuntimeConfig } from "../interpreter/serviceRuntime.ts";
+import { ticketExecutionDefaults } from "../interpreter/ticketExecution.ts";
 import {
   admittedImagesMax,
   asWorkerName,
@@ -66,25 +67,23 @@ export interface SchedulerCommandConfig {
 
 export interface SchedulerTicketExecutionConfig {
   readonly image: string;
+  /**
+   * What this deployment's own claimant may take, which is a claim of what it
+   * can deliver rather than a proof. A released workload requires its runner's
+   * token, so the token belongs here before that work is released and not
+   * after: work naming a token nothing declares is claimed by nobody and is
+   * settled as unavailable once its window passes.
+   */
   readonly capabilities: readonly string[];
-  readonly credentialSources: readonly {
-    readonly repository: string;
-    readonly permissions: "read" | "write";
-    readonly credentialReference?: string;
-    readonly path: string;
-  }[];
-  readonly forge?: {
-    readonly appId: string;
-    readonly keyFile: string;
-    readonly apiUrl?: string;
-    readonly requestTimeoutMs?: number;
-  };
-  readonly credentialUsername: string;
+  /** What each of those tokens is delivered as, named among this site's credential mounts. */
+  readonly capabilityCredentials: Readonly<Record<string, string>>;
   readonly leaseSecs: number;
   readonly attemptsMax: number;
   readonly outputBytesMax: number;
   readonly outcomePollMs: number;
   readonly claimsPerPassMax: number;
+  readonly unclaimedWindowSecs: number;
+  readonly attemptsUnreportedMax: number;
 }
 
 /** The one prefix every variable this command reads is spelled with. */
@@ -165,30 +164,18 @@ const schedulerTicketExecutionSchema = z.strictObject({
     "must be pinned by a sha256 digest",
   ),
   capabilities: z.array(schedulerTextSchema).default([]),
-  credentialSources: z
-    .array(
-      z.strictObject({
-        repository: schedulerTextSchema,
-        permissions: z.enum(["read", "write"]),
-        credentialReference: schedulerTextSchema.optional(),
-        path: schedulerTextSchema,
-      }),
-    )
-    .default([]),
-  forge: z
-    .strictObject({
-      appId: schedulerTextSchema,
-      keyFile: schedulerTextSchema,
-      apiUrl: schedulerTextSchema.optional(),
-      requestTimeoutMs: schedulerSafePositiveSchema.optional(),
-    })
-    .optional(),
-  credentialUsername: schedulerTextSchema.default("x-access-token"),
+  capabilityCredentials: z
+    .record(schedulerTextSchema, schedulerTextSchema)
+    .default({}),
   leaseSecs: schedulerSafePositiveSchema.default(300),
   attemptsMax: schedulerCountSchema.default(3),
   outputBytesMax: schedulerSafePositiveSchema.default(1_048_576),
   outcomePollMs: schedulerSafePositiveSchema.default(1_000),
   claimsPerPassMax: schedulerCountSchema.default(1),
+  unclaimedWindowSecs: schedulerSafePositiveSchema.default(300),
+  attemptsUnreportedMax: schedulerCountSchema.default(
+    ticketExecutionDefaults.attemptsUnreportedMax,
+  ),
 });
 
 /**
@@ -655,30 +642,7 @@ function schedulerTicketExecution(
     "TICKET_EXECUTION",
     schedulerTicketExecutionSchema,
   );
-  const { credentialSources, forge, ...settings } = parsed;
-  return {
-    ...settings,
-    credentialSources: credentialSources.map((source) => ({
-      repository: source.repository,
-      permissions: source.permissions,
-      path: source.path,
-      ...(source.credentialReference === undefined
-        ? {}
-        : { credentialReference: source.credentialReference }),
-    })),
-    ...(forge === undefined
-      ? {}
-      : {
-          forge: {
-            appId: forge.appId,
-            keyFile: forge.keyFile,
-            ...(forge.apiUrl === undefined ? {} : { apiUrl: forge.apiUrl }),
-            ...(forge.requestTimeoutMs === undefined
-              ? {}
-              : { requestTimeoutMs: forge.requestTimeoutMs }),
-          },
-        }),
-  };
+  return parsed;
 }
 
 /** Only the cluster half of a worker configuration, which is the site both halves share. */

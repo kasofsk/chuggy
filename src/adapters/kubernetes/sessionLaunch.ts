@@ -47,12 +47,16 @@ export function kubernetesSessionLaunch(
         kubernetesSessionSecret(config, placement, podUid),
       );
     },
-    cancel: async (attempt) =>
-      kubernetesCancelPod(
+    cancel: async (attempt) => {
+      const cancelled = await kubernetesCancelPod(
         config,
         fetcher,
         kubernetesSessionPodName(config, attempt.partition, attempt.attempt),
-      ),
+      );
+      return cancelled.cancelled === "Accepted"
+        ? cancelled
+        : { cancelled: "Unavailable" };
+    },
 
     observe: async (attempt): Promise<SessionPodObserved> => {
       const phase = kubernetesPodEnd(

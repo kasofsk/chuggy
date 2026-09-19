@@ -117,7 +117,6 @@ test("the agent argv carries authored context and rework inputs", async () => {
   const control = await mkdtemp(join(tmpdir(), "ticket-briefing-"));
   try {
     const prompt = ticketWorkerPrompt(
-      "work:3:2",
       { runner: "codex", prompt: "implement" },
       { rework: [{ finding: "restore validation" }] },
       [
@@ -239,49 +238,130 @@ test("Claude receives the adopted tools, model, effort, budget, prompt, and resu
   }
 });
 
-test("the adopted script worker checks out, executes, and reports through its callback", async () => {
-  const root = await mkdtemp(join(tmpdir(), "ticket-worker-"));
-  const { remote, commit } = await ticketRepository(root);
+/**
+ * Where the harness believes its repository is, and where git is then made to
+ * look. The credential is embedded in the remote before git sees it, so the
+ * rewrite is keyed on the credentialed URL: what this suite drives is the
+ * production path, local only after git has read the address.
+ */
+const workerRepositoryUrl = "https://git.invalid/owner/repository.git";
+const workerCredential = {
+  username: "x-access-token",
+  password: "ghs_0123456789abcdefghij",
+  expiresAtMs: 4_102_444_800_000,
+};
+
+/** A view whose script reports back what the harness let it see of the attempt. */
+function scriptWorkerView(commit: string): Record<string, unknown> {
+  return {
+    workload: {
+      runner: "script",
+      command: [
+        process.execPath,
+        "-e",
+        'const task=JSON.parse(process.env.CHUG_TASK); console.log(JSON.stringify({verdict:"arbitrary",findings:"opaque",launcher:process.env.CHUG_TICKET_WORKER_TASK,leaked:Object.hasOwn(task,"bearer")}))',
+      ],
+    },
+    inputs: {},
+    resultContract: { type: "object" },
+    requiredCapabilities: [],
+    context: [],
+    repository: workerRepositoryUrl,
+    commit,
+    access: "ReadRepository",
+  };
+}
+
+/** The envelope a launcher hands the harness, which carries no remote and no credential. */
+function workerEnvelope(workspace: string): string {
+  return JSON.stringify({
+    callbackUrl: "https://callback.invalid/v1/ticket-execution",
+    bearer: "attempt-secret",
+    workspace,
+    timeoutSecsMax: 10,
+    outputBytesMax: 4096,
+  });
+}
+
+/** What one harness run called, what it reported, and what it left the environment as. */
+interface WorkerRun {
+  readonly called: readonly string[];
+  readonly reported: unknown;
+}
+
+/**
+ * One whole harness run against a local bare repository, reached under the
+ * credential the callback minted. The callback answers the view, the mint and
+ * the terminal, which is every route a harness has.
+ */
+async function workerRun(
+  root: string,
+  view: Record<string, unknown>,
+  credential: (route: string) => Response,
+): Promise<WorkerRun> {
   const workspace = join(root, "workspace");
   const prior = globalThis.fetch;
   const priorTask = process.env["CHUG_TICKET_WORKER_TASK"];
+  const priorConfig = process.env["GIT_CONFIG_GLOBAL"];
+  const called: string[] = [];
   let reported: unknown;
-  globalThis.fetch = (_input, init) => {
+  globalThis.fetch = (input, init) => {
+    const url =
+      input instanceof URL
+        ? input.href
+        : typeof input === "string"
+          ? input
+          : input.url;
+    called.push(`${init?.method ?? "GET"} ${url}`);
+    if ((init?.method ?? "GET") === "GET")
+      return Promise.resolve(Response.json(view));
+    if (url.endsWith("/credentials")) return Promise.resolve(credential(url));
     if (typeof init?.body !== "string")
       throw new Error("callback body is absent");
     reported = JSON.parse(init.body) as unknown;
     return Promise.resolve(new Response(null, { status: 204 }));
   };
-  process.env["CHUG_TICKET_WORKER_TASK"] = JSON.stringify({
-    taskKey: "work:1:1",
-    callbackUrl: "https://callback.invalid/terminal",
-    bearer: "attempt-secret",
-    workspace,
-    timeoutSecsMax: 10,
-    outputBytesMax: 4096,
-    transportUrl: remote,
-    view: {
-      workload: {
-        runner: "script",
-        command: [
-          process.execPath,
-          "-e",
-          'const task=JSON.parse(process.env.CHUG_TASK); console.log(JSON.stringify({verdict:"arbitrary",findings:"opaque",launcher:process.env.CHUG_TICKET_WORKER_TASK,leaked:Object.hasOwn(task,"bearer")}))',
-        ],
-      },
-      inputs: {},
-      resultContract: { type: "object" },
-      requiredCapabilities: [],
-      context: [],
-      repository: remote,
-      commit,
-      access: "ReadRepository",
-    },
-  });
+  process.env["CHUG_TICKET_WORKER_TASK"] = workerEnvelope(workspace);
+  process.env["GIT_CONFIG_GLOBAL"] = join(root, "gitconfig");
   try {
     await ticketWorkerMain(process.env);
-    assert.deepEqual(reported, {
-      taskKey: "work:1:1",
+    return { called, reported };
+  } finally {
+    globalThis.fetch = prior;
+    if (priorTask === undefined) delete process.env["CHUG_TICKET_WORKER_TASK"];
+    else process.env["CHUG_TICKET_WORKER_TASK"] = priorTask;
+    if (priorConfig === undefined) delete process.env["GIT_CONFIG_GLOBAL"];
+    else process.env["GIT_CONFIG_GLOBAL"] = priorConfig;
+  }
+}
+
+/** Points git at the local bare repository the credentialed remote would otherwise name. */
+async function workerGitConfig(root: string, remote: string): Promise<void> {
+  const credentialed = new URL(workerRepositoryUrl);
+  credentialed.username = workerCredential.username;
+  credentialed.password = workerCredential.password;
+  await writeFile(
+    join(root, "gitconfig"),
+    `[url "${remote}"]\n\tinsteadOf = ${credentialed.href}\n`,
+  );
+}
+
+test("the adopted script worker checks out under a minted credential and reports through its callback", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ticket-worker-"));
+  const { remote, commit } = await ticketRepository(root);
+  await workerGitConfig(root, remote);
+  try {
+    const ran = await workerRun(root, scriptWorkerView(commit), () =>
+      Response.json(workerCredential),
+    );
+    assert.deepEqual(ran.called, [
+      "GET https://callback.invalid/v1/ticket-execution/view",
+      "POST https://callback.invalid/v1/ticket-execution/credentials",
+      "PUT https://callback.invalid/v1/ticket-execution/run/configuration",
+      "PUT https://callback.invalid/v1/ticket-execution/run/transcript/1",
+      "POST https://callback.invalid/v1/ticket-execution/terminal",
+    ]);
+    assert.deepEqual(ran.reported, {
       outcome: {
         type: "result",
         manifest: {
@@ -293,9 +373,53 @@ test("the adopted script worker checks out, executes, and reports through its ca
       },
     });
   } finally {
-    globalThis.fetch = prior;
-    if (priorTask === undefined) delete process.env["CHUG_TICKET_WORKER_TASK"];
-    else process.env["CHUG_TICKET_WORKER_TASK"] = priorTask;
     await rm(root, { recursive: true, force: true });
   }
+});
+
+/**
+ * A mint the plane refused settles the attempt and a mint it could not answer
+ * does not, because the first is a fact about this ticket and the second is a
+ * fact about the plane.
+ */
+for (const [why, answer, type] of [
+  [
+    "refused for the attempt's repository",
+    Response.json({ reason: "NotMinted" }, { status: 404 }),
+    "process_failed",
+  ],
+  [
+    "answered by a plane that could not mint",
+    new Response(null, { status: 503 }),
+    "execution_unavailable",
+  ],
+] as const)
+  test(`a credential ${why} ends the attempt as ${type}`, async () => {
+    const root = await mkdtemp(join(tmpdir(), "ticket-worker-mint-"));
+    const { commit } = await ticketRepository(root);
+    try {
+      const ran = await workerRun(root, scriptWorkerView(commit), () =>
+        answer.clone(),
+      );
+      const reported = ran.reported as {
+        readonly outcome: { readonly type: string };
+      };
+      assert.equal(reported.outcome.type, type);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+test("the self-check loads the harness, runs nothing and says the host can run it", async () => {
+  const ran = await executeFile(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      new URL("../../src/roots/ticketWorker.ts", import.meta.url).pathname,
+      "--self-check",
+    ],
+    { env: { PATH: process.env["PATH"] ?? "" } },
+  );
+  assert.equal(ran.stdout, "");
+  assert.equal(ran.stderr, "");
 });

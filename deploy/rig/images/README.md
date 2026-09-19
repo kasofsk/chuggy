@@ -104,10 +104,13 @@ to start without the required ones.
 | `CHUG_API_OIDC_AUDIENCE` | required | |
 | `CHUG_API_OIDC_ALGORITHMS` | required | comma-separated, surrounding spaces trimmed; every entry must be one `oidcVerifiableAlgorithms` in `src/adapters/http/oidc.ts` admits, and anything else — a shared-secret algorithm, `none`, an empty entry, a name with a typo — refuses to start, naming what it refused |
 | `CHUG_API_KETO_READ_URL` | required | the read API of the authority that answers project access, HTTP or HTTPS and carrying no credentials |
+| `CHUG_API_KETO_WRITE_URL` | with the Hydra admin URL, or neither | the write API the `Execute` relation a redeemed registration token grants is written through |
+| `CHUG_API_HYDRA_ADMIN_URL` | with the Keto write URL, or neither | the issuer's admin API, where a pool's `client_credentials` client is created; an API naming neither serves no worker-pool registration route, and one naming a single variable refuses to start |
 | `CHUG_API_ARTIFACT_ROOT` | required | see below |
 | `CHUG_API_GIT_SCRATCH_ROOT` | required | writable scratch for exact-commit configuration reads |
 | `CHUG_API_THREAD_CREDENTIAL_SLOT` | required | the named credential mount a member's thread speaks through |
 | `CHUG_API_REPOSITORY_CREDENTIAL_SOURCES` | optional | JSON repository-to-credential-file mappings; a deployment that mints every credential it presents names none |
+| `CHUG_API_GIT_CREDENTIAL_USERNAME` | optional | the user a catalog read authenticates as, default `chuggy` |
 | `CHUG_API_FORGE_APP_ID` | with the key file, or neither | the GitHub App this deployment mints installation tokens under |
 | `CHUG_API_FORGE_APP_KEY_FILE` | with the app id, or neither | a file holding that app's RSA private key, in either PEM encoding; the process refuses to start unless it can be read and used |
 | `CHUG_API_FORGE_WORKER_APP_ID` | with the worker key file, or neither | the GitHub App the worker plane mints under, held here only so a tenant can claim its installations over the API |
@@ -119,6 +122,9 @@ to start without the required ones.
 | `CHUG_API_HOST` | `0.0.0.0` in the image | the source default is loopback, which no kubelet can reach |
 | `CHUG_API_PORT` | 3000 | |
 | `CHUG_API_SHUTDOWN_DRAIN_MS` | | how long a drain runs before open connections are closed |
+| `CHUG_API_METRICS_PORT` | | where the scrape listener answers; naming none starts no such listener at all |
+| `CHUG_API_METRICS_HOST` | loopback | the scrape listener spans every tenant, so what may reach it is the operator's to decide |
+| `CHUG_API_METRICS_SILENCE_SECS` | 300 | how long a running claim may say nothing before its workload is counted silent |
 | `CHUG_API_OIDC_DISCOVERY_TIMEOUT_MS` | | |
 | `CHUG_API_OIDC_JWKS_TIMEOUT_MS` | | |
 | `CHUG_API_KETO_TIMEOUT_MS` | | how long one project access question may take before it is undecided |
@@ -143,6 +149,53 @@ API only ever reads — the web composition passes the store to one read port �
 so the deployment mounts the artifact volume there and may mount it read-only.
 Nothing creates the directory for the API, and a path that is not there reads as
 an artifact that is missing rather than as a failure.
+
+## Registering a worker pool
+
+A pool is a confidential OAuth2 client of the issuer this installation already
+runs, and nothing about it is a secret this tree stores. An owner mints a
+short-lived single-use registration token for one project over the API, an
+operator configures the machine with it, and redeeming it creates the client,
+writes the `pools` relation the authority answers `Execute` from, and answers
+the client id and secret once.
+
+**That relation carries `Execute` and nothing else.** `deploy/rig/pools/README.md`
+is what a pool is trusted with, what it is not, and the order an operator makes
+the writes in.
+
+`src/roots/registerWorkerPool.ts` is the same three writes as an owner's own
+command, for a machine the owner is at. It reads `CHUG_WORKER_POOL_DATABASE_URL`,
+`CHUG_WORKER_POOL_TENANT`, `CHUG_WORKER_POOL_PROJECT`, `CHUG_WORKER_POOL_POOL`,
+`CHUG_WORKER_POOL_CAPABILITIES`, `CHUG_WORKER_POOL_OPERATION`,
+`CHUG_WORKER_POOL_OIDC_ISSUER`, `CHUG_WORKER_POOL_OIDC_AUDIENCE`,
+`CHUG_WORKER_POOL_HYDRA_ADMIN_URL` and `CHUG_WORKER_POOL_KETO_WRITE_URL`.
+
+**A pool must ask for the audience at the token endpoint.** The client is
+created with the API's audience in its own list, and Hydra puts an `aud` in an
+access token only where the token request names one; a `client_credentials`
+request that asks for none is answered a token the plane refuses.
+
+## Configuring the plane a pool polls
+
+`src/roots/poolPlane.ts` verifies a pool's token against the issuer and asks the
+authority what the pool may do, and it names no admin address of either: it
+mints nothing.
+
+| Variable | | |
+|---|---|---|
+| `CHUG_POOL_PLANE_OIDC_ISSUER` | required | the same issuer the API names, an HTTPS URL with no credentials, query or fragment |
+| `CHUG_POOL_PLANE_OIDC_AUDIENCE` | required | the API's audience, which is the one a pool's client is created with |
+| `CHUG_POOL_PLANE_OIDC_ALGORITHMS` | required | comma-separated, under the same admission `CHUG_API_OIDC_ALGORITHMS` is |
+| `CHUG_POOL_PLANE_OIDC_DISCOVERY_TIMEOUT_MS` | 5000 | discovery happens once, at start-up, so an issuer that cannot be reached refuses the start |
+| `CHUG_POOL_PLANE_OIDC_JWKS_TIMEOUT_MS` | 5000 | how long one key-set fetch may take before verification is undecided |
+| `CHUG_POOL_PLANE_KETO_READ_URL` | required | the read API that answers whether a pool holds `Execute` on its project |
+| `CHUG_POOL_PLANE_KETO_TIMEOUT_MS` | | how long one access question may take before a poll is answered with a retry |
+
+**An outage and a refusal are different answers to a pool.** A token this side
+read and rejected is 401, a caller no registration names or the authority
+refuses is 404, and an issuer or authority that could not answer is 503 asking
+for a retry — so a pool polling through a Keto outage comes back rather than
+stopping.
 
 ## Configuring the worker plane's minting
 
@@ -189,16 +242,17 @@ and source resolution happen at the API and execution boundaries.
 
 The scheduler requires `CHUG_SCHEDULER_TICKET_EXECUTION` for the adopted ticket
 worker. It is a JSON object whose `image` is pinned as
-`<reference>@sha256:<64 lowercase hexadecimal characters>`. Optional
-`capabilities` and `credentialSources` arrays default to empty. Each credential
-source names `repository`, `path`, `permissions` (`read` or `write`), and an
-optional `credentialReference`. File credentials must carry their declared scope;
-forge credentials are minted with the access required by the task.
-`credentialUsername` defaults to `x-access-token`.
+`<reference>@sha256:<64 lowercase hexadecimal characters>`. The optional
+`capabilities` array defaults to empty. `capabilities`
+is what the scheduler claims against: it takes only tasks whose required set it
+covers, and a task no capability list covers waits out `unclaimedWindowSecs` and
+is then reported execution-unavailable against evidence naming what it asked
+for.
 
-The optional `forge` object names `appId`, `keyFile`, and optional `apiUrl` and
-`requestTimeoutMs`. It uses the worker App key and installation so task tokens
-retain the worker App's branch restrictions. Worker controls and their defaults are defined in
+The scheduler names no git credential: a harness fetches its own from the
+worker plane, which mints it under `CHUG_WORKER_PLANE_FORGE_APP_ID` and
+`CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE`, so a deployment that runs ticket work
+against a private repository names those. Worker controls and their defaults are defined in
 [src/roots/schedulerConfig.ts](../../../src/roots/schedulerConfig.ts).
 
 The ticket launcher applies a frozen execution profile directly to its pod:

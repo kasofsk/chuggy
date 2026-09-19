@@ -31,7 +31,10 @@ import { promisify } from "node:util";
 
 import type { FastifyInstance } from "fastify";
 
-import { artifactStore } from "../../src/adapters/artifacts/artifactStore.ts";
+import {
+  artifactStore,
+  sessionArtifactStore,
+} from "../../src/adapters/artifacts/artifactStore.ts";
 import { createWorkerPlaneApp } from "../../src/adapters/http/workerPlaneServer.ts";
 import {
   asSessionId,
@@ -120,10 +123,12 @@ function resumePlane(rig: SessionRig): FastifyInstance {
       holds: rig.plane,
       records: rig.plane,
       queries: rig.plane,
-      store: artifactStore({
-        root: artifactRoot,
-        writeBytesMax: sessionStoreBatchBytesMax,
-      }),
+      store: sessionArtifactStore(
+        artifactStore({
+          root: artifactRoot,
+          writeBytesMax: sessionStoreBatchBytesMax,
+        }),
+      ),
       turnPollIntervalMs: 10,
       turnPollSecsMax: 1,
       pollsMax: 8,

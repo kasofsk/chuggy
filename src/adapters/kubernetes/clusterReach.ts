@@ -266,6 +266,45 @@ export function kubernetesPodEnd(reached: KubernetesReached): KubernetesPodEnd {
   }
 }
 
+/**
+ * Reads back the annotation of every pod carrying one label selector, which is
+ * how a process learns what it is still running without remembering it. A
+ * listing that could not be read is nothing rather than an empty cluster: the
+ * two answers mean opposite things to a caller deciding what it still holds, so
+ * an unreachable cluster raises where an empty namespace returns.
+ */
+export async function kubernetesListedPodAnnotations(
+  site: KubernetesPodSite,
+  fetcher: typeof fetch,
+  labelSelector: string,
+  annotation: string,
+): Promise<readonly string[]> {
+  const reached = await kubernetesReach(site, fetcher, {
+    method: "GET",
+    path: `${kubernetesPodsPath(site)}?labelSelector=${encodeURIComponent(labelSelector)}`,
+  });
+  if (reached.reached !== "Status" || reached.status !== 200)
+    throw new Error("the cluster could not be listed");
+  let document: {
+    readonly items?: readonly {
+      readonly metadata?: {
+        readonly annotations?: Readonly<Record<string, unknown>>;
+      };
+    }[];
+  };
+  try {
+    document = JSON.parse(reached.body) as typeof document;
+  } catch {
+    throw new Error("the cluster listed pods this side cannot read");
+  }
+  const named: string[] = [];
+  for (const item of document.items ?? []) {
+    const value = item.metadata?.annotations?.[annotation];
+    if (typeof value === "string" && value.length > 0) named.push(value);
+  }
+  return named;
+}
+
 /** Deletes one named pod, which is what both cancellation and a failed placement do. */
 export async function kubernetesDeletePod(
   site: KubernetesPodSite,
@@ -342,18 +381,23 @@ export async function kubernetesPlacePod(
 /**
  * Cancels one named pod. A pod that is gone and a pod that has just been asked
  * to go are the same answer, because the caller's question is whether the
- * cluster still holds one.
+ * cluster still holds one; a request the API refused parts from an outage at the
+ * status line, as every other act in this module does.
  */
 export async function kubernetesCancelPod(
   site: KubernetesPodSite,
   fetcher: typeof fetch,
   name: string,
 ): Promise<
-  { readonly cancelled: "Accepted" } | { readonly cancelled: "Unavailable" }
+  | { readonly cancelled: "Accepted" }
+  | { readonly cancelled: "Refused"; readonly status: number }
+  | { readonly cancelled: "Unavailable" }
 > {
   const deleted = await kubernetesDeletePod(site, fetcher, name);
-  return deleted.reached === "Status" &&
-    (deleted.status === 404 || (deleted.status >= 200 && deleted.status < 300))
-    ? { cancelled: "Accepted" }
+  if (deleted.reached !== "Status") return { cancelled: "Unavailable" };
+  if (deleted.status === 404 || (deleted.status >= 200 && deleted.status < 300))
+    return { cancelled: "Accepted" };
+  return kubernetesManifestRefusals.has(deleted.status)
+    ? { cancelled: "Refused", status: deleted.status }
     : { cancelled: "Unavailable" };
 }
