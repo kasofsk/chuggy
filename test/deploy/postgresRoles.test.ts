@@ -69,7 +69,7 @@ import { test } from "node:test";
 
 import * as schema from "../../src/adapters/postgres/schema.ts";
 
-const { migrations, workerPlaneRole } = schema;
+const { migrations, poolPlaneRole, workerPlaneRole } = schema;
 const rolesFilePath = "deploy/rig/postgres/postgres-roles.sql";
 const rolesFile = readFileSync(rolesFilePath, "utf8")
   .replaceAll(/--.*$/gmu, " ")
@@ -230,14 +230,16 @@ test("every group role a serving command asserts is granted to a login role", ()
 
 test("serving groups with the schema-readiness contract can read the ledger", () => {
   const expected = new Set(rootAssertedRoles());
-  expected.delete(workerPlaneRole);
+  const planes = [workerPlaneRole, poolPlaneRole];
+  for (const plane of planes) expected.delete(plane);
   const readers = migrationLedgerReaders();
   for (const role of expected)
     assert.ok(readers.has(role), `${role} cannot read schema readiness`);
-  assert.ok(
-    !readers.has(workerPlaneRole),
-    "worker plane uses EXECUTE-only readiness",
-  );
+  for (const plane of planes)
+    assert.ok(
+      !readers.has(plane),
+      `${plane} answers readiness from the role it connected as`,
+    );
 });
 
 test("each login role is granted the group its own name is made of", () => {

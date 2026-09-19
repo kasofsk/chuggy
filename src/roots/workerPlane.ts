@@ -18,6 +18,10 @@ import {
 } from "../adapters/http/workerPlaneServer.ts";
 import { postgresForgeInstallations } from "../adapters/postgres/forgeInstallation.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
+import {
+  planeEnvironmentPositive,
+  planeEnvironmentRequired,
+} from "./planeEnvironment.ts";
 import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
 import { workerPlaneRole } from "../adapters/postgres/schema.ts";
 import { postgresSessionPlane } from "../adapters/postgres/sessionPlane.ts";
@@ -32,22 +36,6 @@ import {
   workerPlaneCredentialMinting,
   type WorkerPlaneCredentialMinting,
 } from "../interpreter/workerPlaneCredentials.ts";
-
-function required(name: string): string {
-  const value = process.env[name];
-  if (value === undefined || value.length === 0)
-    throw new Error(`${name} is required`);
-  return value;
-}
-
-function positive(name: string, fallback: number): number {
-  const value = process.env[name];
-  if (value === undefined) return fallback;
-  const parsed = Number(value);
-  if (!/^[1-9][0-9]*$/u.test(value) || !Number.isSafeInteger(parsed))
-    throw new Error(`${name} must be a positive integer`);
-  return parsed;
-}
 
 /**
  * The session half of this plane, over the same pool and the same artifact
@@ -75,19 +63,22 @@ function planeSessions(
     records: sessions,
     queries: sessions,
     store: artifacts,
-    heartbeatLeaseSecs: positive(
+    heartbeatLeaseSecs: planeEnvironmentPositive(
       "CHUG_WORKER_PLANE_SESSION_HEARTBEAT_LEASE_SECS",
       sessionSchedulerDefaults.attemptLeaseSecs,
     ),
-    turnPollIntervalMs: positive(
+    turnPollIntervalMs: planeEnvironmentPositive(
       "CHUG_WORKER_PLANE_SESSION_TURN_POLL_INTERVAL_MS",
       1_000,
     ),
-    turnPollSecsMax: positive(
+    turnPollSecsMax: planeEnvironmentPositive(
       "CHUG_WORKER_PLANE_SESSION_TURN_POLL_SECS_MAX",
       25,
     ),
-    pollsMax: positive("CHUG_WORKER_PLANE_SESSION_POLLS_MAX", 64),
+    pollsMax: planeEnvironmentPositive(
+      "CHUG_WORKER_PLANE_SESSION_POLLS_MAX",
+      64,
+    ),
   };
 }
 
@@ -119,7 +110,7 @@ function planeForgeOptions(): GithubInstallationTokensOptions | undefined {
       timeoutMs: forgeTimeoutVariable,
     },
     process.env,
-    positive,
+    planeEnvironmentPositive,
   );
 }
 
@@ -155,13 +146,15 @@ async function planeCredentials(
 }
 
 async function main(): Promise<void> {
-  const pool = postgresPool(required("CHUG_WORKER_PLANE_DATABASE_URL"));
-  const uploadBytesMax = positive(
+  const pool = postgresPool(
+    planeEnvironmentRequired("CHUG_WORKER_PLANE_DATABASE_URL"),
+  );
+  const uploadBytesMax = planeEnvironmentPositive(
     "CHUG_WORKER_PLANE_UPLOAD_BYTES_MAX",
     workerPlaneUploadBytesMax,
   );
   const artifacts = artifactStore({
-    root: required("CHUG_WORKER_PLANE_ARTIFACT_ROOT"),
+    root: planeEnvironmentRequired("CHUG_WORKER_PLANE_ARTIFACT_ROOT"),
     writeBytesMax: uploadBytesMax,
   });
   const credentials = await planeCredentials(pool);
@@ -183,7 +176,7 @@ async function main(): Promise<void> {
   app.addHook("onClose", () => pool.end());
   await app.listen({
     host: process.env["CHUG_WORKER_PLANE_HOST"] ?? "127.0.0.1",
-    port: positive("CHUG_WORKER_PLANE_PORT", 3_001),
+    port: planeEnvironmentPositive("CHUG_WORKER_PLANE_PORT", 3_001),
   });
 }
 
