@@ -255,7 +255,6 @@ async function ticketApplicationAuthority(
 function ticketApplicationMetadata(
   release: TicketCatalogRelease,
   source: task.ContentRef,
-  selection: PinnedTicketCatalogSelection,
 ): TicketReleaseMetadata {
   return {
     stageNames: [...release.stageNames].map(([key, name]) => [key, name]),
@@ -265,7 +264,6 @@ function ticketApplicationMetadata(
     ]),
     reworkLimit: release.reworkLimit,
     source,
-    catalogCommit: selection.commit,
   };
 }
 
@@ -273,7 +271,6 @@ function ticketApplicationUpdateMetadata(
   release: TicketCatalogRelease,
   frozen: TicketReleaseMetadata,
   source: task.ContentRef,
-  selection: PinnedTicketCatalogSelection,
 ): TicketReleaseMetadata | TicketApplicationSubmission {
   if (release.reworkLimitDeclared && release.reworkLimit !== frozen.reworkLimit)
     return {
@@ -285,7 +282,7 @@ function ticketApplicationUpdateMetadata(
           : `rework_limit must remain ${String(frozen.reworkLimit)}`,
     };
   return {
-    ...ticketApplicationMetadata(release, source, selection),
+    ...ticketApplicationMetadata(release, source),
     reworkLimit: frozen.reworkLimit,
   };
 }
@@ -337,7 +334,6 @@ type TicketApplicationOpened =
   | {
       readonly opened: "Catalog";
       readonly catalog: TicketCatalog;
-      readonly selection: PinnedTicketCatalogSelection;
     }
   | {
       readonly opened: "Answered";
@@ -366,7 +362,7 @@ async function ticketApplicationCatalog(
   const catalog = await ports.catalogs.catalog(pin.selection);
   return catalog === undefined
     ? { opened: "Answered", result: { result: "NotFound" } }
-    : { opened: "Catalog", catalog, selection: pin.selection };
+    : { opened: "Catalog", catalog };
 }
 
 /** The authored text the machine never sees, kept beside the release it produced. */
@@ -717,7 +713,6 @@ function ticketApplicationCreate(
       ticketApplicationMetadata(
         release,
         await ticketApplicationSource(ports, request),
-        opened.selection,
       ),
     );
   };
@@ -754,7 +749,6 @@ function ticketApplicationUpdate(
       release,
       frozen,
       await ticketApplicationSource(ports, request),
-      opened.selection,
     );
     if ("accepted" in metadata)
       return { result: "Authorized", value: metadata };
