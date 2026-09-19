@@ -26,6 +26,7 @@ import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositor
 import { workerPlaneRole } from "../adapters/postgres/schema.ts";
 import { postgresSessionPlane } from "../adapters/postgres/sessionPlane.ts";
 import { postgresTicketExecutionTerminals } from "../adapters/postgres/ticketExecution.ts";
+import { postgresTicketExecutionRun } from "../adapters/postgres/ticketExecutionRun.ts";
 import { workerPlaneUploadBytesMax } from "../contract/http.ts";
 import {
   githubForgeId,
@@ -159,7 +160,10 @@ async function main(): Promise<void> {
   });
   const credentials = await planeCredentials(pool);
   const app = createWorkerPlaneApp({
-    ticketExecutions: postgresTicketExecutionTerminals(pool),
+    ticketExecutions: {
+      ...postgresTicketExecutionTerminals(pool),
+      run: postgresTicketExecutionRun(pool),
+    },
     sessions: planeSessions(pool, artifacts),
     ...(credentials === undefined ? {} : { credentials }),
     ready: async () => {

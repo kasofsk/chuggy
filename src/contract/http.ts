@@ -120,6 +120,25 @@ export const sessionTurnToolNameCharsMax = 128;
 /** How many already-confirmed entry uuids one stream's adapter remembers. */
 export const sessionStoreUuidsRemembered = 4_096;
 
+/**
+ * The most turns one attempt's run is measured over. A run past it is measured
+ * up to it and no further, because a series nothing bounds is a series a pool
+ * this tree does not run can make as long as it likes.
+ */
+export const ticketExecutionRunTurnsMax = 1_000;
+
+/** The most turns one report of them carries, which a longer run pages over. */
+export const ticketExecutionRunTurnsPageMax = 100;
+
+/** The longest model identity one turn of a run names. */
+export const ticketExecutionRunModelCharsMax = 128;
+
+/** The most models one run's totals break down by. */
+export const ticketExecutionRunModelsMax = 32;
+
+/** The longest subtype or stop reason a run's totals carry. */
+export const ticketExecutionRunReasonCharsMax = 64;
+
 /** The largest body one worker-plane upload carries, which an artifact is written against. */
 export const workerPlaneUploadBytesMax = 4_194_304;
 

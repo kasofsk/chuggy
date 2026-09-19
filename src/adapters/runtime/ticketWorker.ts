@@ -6,6 +6,14 @@ import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { Ajv2020 } from "ajv/dist/2020.js";
 
+import {
+  ticketExecutionRunModelCharsMax,
+  ticketExecutionRunModelsMax,
+  ticketExecutionRunReasonCharsMax,
+  ticketExecutionRunTurnsMax,
+  ticketExecutionRunTurnsPageMax,
+} from "../../contract/http.ts";
+import { ticketExecutionRunMeasured } from "../../interpreter/ticketExecutionRun.ts";
 import { prepare_commit } from "./commitHooks.ts";
 
 /**
@@ -609,6 +617,43 @@ async function publishedResult(
   };
 }
 
+/**
+ * Reports what the run spent, folded out of the event stream the agent already
+ * wrote. A measure nothing accepted is not a failed attempt: the workload did
+ * its work and its terminal says so, so a refusal here is left behind.
+ */
+async function ticketWorkerMeasure(
+  transport: TicketWorkerTransport,
+  stream: string,
+): Promise<void> {
+  const held = transport.held;
+  const measured = ticketExecutionRunMeasured(stream, {
+    turnsMax: ticketExecutionRunTurnsMax,
+    modelCharsMax: ticketExecutionRunModelCharsMax,
+    modelsMax: ticketExecutionRunModelsMax,
+    reasonCharsMax: ticketExecutionRunReasonCharsMax,
+  });
+  const report = async (route: string, body: unknown): Promise<void> => {
+    await fetch(ticketWorkerRoute(held, route), {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${held.bearer}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    }).catch(() => undefined);
+  };
+  for (
+    let sent = 0;
+    sent < measured.turns.length;
+    sent += ticketExecutionRunTurnsPageMax
+  )
+    await report("run/turns", {
+      turns: measured.turns.slice(sent, sent + ticketExecutionRunTurnsPageMax),
+    });
+  await report("run/totals", measured.totals);
+}
+
 async function execute(
   transport: TicketWorkerTransport,
   view: TicketWorkerView,
@@ -631,6 +676,8 @@ async function execute(
       await rm(invocation.control, { recursive: true, force: true });
     throw error;
   }
+  if (invocation.control !== undefined)
+    await ticketWorkerMeasure(transport, ran.stdout);
   if (ran.stopped)
     return (
       await invocationCleanup(invocation.control),

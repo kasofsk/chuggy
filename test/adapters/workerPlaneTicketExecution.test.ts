@@ -56,6 +56,12 @@ function attemptPlane(
         Promise.resolve(secret === bearer ? "Recorded" : "Fenced"),
       heartbeat: (secret) =>
         Promise.resolve(secret === bearer ? "Recorded" : "Fenced"),
+      run: {
+        turns: (secret) =>
+          Promise.resolve(secret === bearer ? "Stored" : "Fenced"),
+        totals: (secret) =>
+          Promise.resolve(secret === bearer ? "Stored" : "Fenced"),
+      },
       view: (secret) => Promise.resolve(secret === bearer ? view : undefined),
       credential: (secret) =>
         Promise.resolve(secret === bearer ? attemptSubject(access) : undefined),
@@ -172,6 +178,97 @@ for (const [why, headers, status] of [
     assert.equal(response.json<{ action: string }>().action, "stop");
   });
 
+const measuredTotals = {
+  turns: 3,
+  durationMs: 900,
+  durationApiMs: 400,
+  tokensInput: 10,
+  tokensOutput: 5,
+  tokensCacheCreation: 0,
+  tokensCacheRead: 2,
+  costUsdMicros: 12_500,
+  costBasis: "List",
+  permissionDenials: 0,
+  models: [],
+};
+
+test("a run's measure is taken under the bearer its terminal is written with", async () => {
+  const app = attemptPlane("attempt-secret");
+  for (const [url, payload] of [
+    [
+      "/v1/ticket-execution/run/turns",
+      {
+        turns: [
+          {
+            ordinal: 1,
+            model: "sonnet",
+            tokensInput: 4,
+            tokensOutput: 1,
+            tokensCacheCreation: 0,
+            tokensCacheRead: 0,
+          },
+        ],
+      },
+    ],
+    ["/v1/ticket-execution/run/totals", measuredTotals],
+  ] as const) {
+    const response = await app.inject({
+      method: "POST",
+      url,
+      headers: { authorization: "Bearer attempt-secret" },
+      payload,
+    });
+    assert.equal(response.statusCode, 204, response.body);
+  }
+});
+
+for (const [why, url, payload] of [
+  [
+    "an ordinal past the series bound",
+    "/v1/ticket-execution/run/turns",
+    { turns: [{ ordinal: 100_000, model: "sonnet" }] },
+  ],
+  [
+    "a cost basis this wire does not name",
+    "/v1/ticket-execution/run/totals",
+    { ...measuredTotals, costBasis: "Negotiated" },
+  ],
+  [
+    "a field the measure does not hold",
+    "/v1/ticket-execution/run/totals",
+    { ...measuredTotals, cheapest: true },
+  ],
+  [
+    "a count that is not whole",
+    "/v1/ticket-execution/run/totals",
+    { ...measuredTotals, durationMs: 1.5 },
+  ],
+] as const)
+  test(`a measure carrying ${why} is refused at the door`, async () => {
+    const response = await attemptPlane("attempt-secret").inject({
+      method: "POST",
+      url,
+      headers: { authorization: "Bearer attempt-secret" },
+      payload,
+    });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.deepEqual(response.json(), {
+      action: "stop",
+      reason: "InvalidMeasure",
+    });
+  });
+
+test("a measure under a bearer no live attempt is bound to is fenced", async () => {
+  const response = await attemptPlane("attempt-secret").inject({
+    method: "POST",
+    url: "/v1/ticket-execution/run/totals",
+    headers: { authorization: "Bearer other" },
+    payload: measuredTotals,
+  });
+  assert.equal(response.statusCode, 409, response.body);
+  assert.deepEqual(response.json(), { action: "stop", reason: "Fenced" });
+});
+
 test("a plane composed with no attempt half serves no ticket route", async () => {
   const app = createWorkerPlaneApp(inertWorkerPlane(1_024));
   for (const [method, url] of [
@@ -179,6 +276,8 @@ test("a plane composed with no attempt half serves no ticket route", async () =>
     ["POST", "/v1/ticket-execution/terminal"],
     ["POST", "/v1/ticket-execution/credentials"],
     ["POST", "/v1/ticket-execution/heartbeat"],
+    ["POST", "/v1/ticket-execution/run/turns"],
+    ["POST", "/v1/ticket-execution/run/totals"],
   ] as const) {
     const response = await app.inject({
       method,

@@ -15,6 +15,11 @@ import {
   sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
+  ticketExecutionRunModelCharsMax,
+  ticketExecutionRunModelsMax,
+  ticketExecutionRunReasonCharsMax,
+  ticketExecutionRunTurnsMax,
+  ticketExecutionRunTurnsPageMax,
 } from "../../contract/http.ts";
 import { isBoundedText } from "../../interpreter/boundedText.ts";
 import {
@@ -52,6 +57,10 @@ import {
 } from "../../interpreter/finalizer.ts";
 import type { TicketExecutionCredentialSubject } from "../../interpreter/ticketExecution.ts";
 import type {
+  TicketExecutionRunPort,
+  TicketExecutionRunStored,
+} from "../../interpreter/ticketExecutionRun.ts";
+import type {
   WorkerPlaneCredentialMinted,
   WorkerPlaneCredentialMinting,
 } from "../../interpreter/workerPlaneCredentials.ts";
@@ -73,6 +82,8 @@ export const workerPlaneRoutes = [
   "/v1/ticket-execution/view",
   "/v1/ticket-execution/credentials",
   "/v1/ticket-execution/heartbeat",
+  "/v1/ticket-execution/run/turns",
+  "/v1/ticket-execution/run/totals",
 ] as const;
 
 const sessionStorePrefix = "/v1/session/store/";
@@ -103,6 +114,7 @@ export interface WorkerPlaneServerService {
       body: unknown,
     ): Promise<"Recorded" | "Conflict" | "Fenced">;
     heartbeat(secret: string): Promise<"Recorded" | "Fenced">;
+    readonly run?: TicketExecutionRunPort;
     view(secret: string): Promise<unknown>;
     credential(
       secret: string,
@@ -174,6 +186,103 @@ function ticketExecutionRoutes(
   });
   ticketCredentialRoute(app, service, attempts);
   ticketHeartbeatRoute(app, attempts);
+  ticketRunRoutes(app, attempts);
+}
+
+const ticketRunModelSchema = z
+  .string()
+  .refine((value) => isBoundedText(value, ticketExecutionRunModelCharsMax));
+
+const ticketRunReasonSchema = z
+  .string()
+  .refine((value) => isBoundedText(value, ticketExecutionRunReasonCharsMax));
+
+const ticketRunTokensSchema = {
+  tokensInput: countSchema,
+  tokensOutput: countSchema,
+  tokensCacheCreation: countSchema,
+  tokensCacheRead: countSchema,
+};
+
+const ticketRunTurnsSchema = z.strictObject({
+  turns: z
+    .array(
+      z.strictObject({
+        ordinal: z.number().int().positive().max(ticketExecutionRunTurnsMax),
+        model: ticketRunModelSchema,
+        ...ticketRunTokensSchema,
+      }),
+    )
+    .max(ticketExecutionRunTurnsPageMax),
+});
+
+const ticketRunTotalsSchema = z.strictObject({
+  turns: countSchema,
+  durationMs: countSchema,
+  durationApiMs: countSchema,
+  ...ticketRunTokensSchema,
+  costUsdMicros: countSchema,
+  costBasis: z.literal("List"),
+  permissionDenials: countSchema,
+  models: z
+    .array(
+      z.strictObject({
+        model: ticketRunModelSchema,
+        ...ticketRunTokensSchema,
+        costUsdMicros: countSchema,
+      }),
+    )
+    .max(ticketExecutionRunModelsMax),
+  resultSubtype: ticketRunReasonSchema.optional(),
+  stopReason: ticketRunReasonSchema.optional(),
+});
+
+/** How a measure that was refused answers, a fence and a conflict read alike by the harness. */
+function ticketRunStored(
+  reply: FastifyReply,
+  stored: TicketExecutionRunStored,
+): FastifyReply {
+  return stored === "Stored" || stored === "AlreadyStored"
+    ? reply.code(204).send()
+    : reply.code(409).send({ action: "stop", reason: stored });
+}
+
+/**
+ * What one attempt's run spent, reported while it runs and settled by nothing.
+ * A measure moves no lease and ends no attempt, so a plane composed without
+ * somewhere to put one serves these routes not at all rather than accepting a
+ * report it would drop.
+ */
+function ticketRunRoutes(
+  app: FastifyInstance,
+  attempts: NonNullable<WorkerPlaneServerService["ticketExecutions"]>,
+): void {
+  const run = attempts.run;
+  if (run === undefined) return;
+  app.post(workerPlaneRoutes[16], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const offered = ticketRunTurnsSchema.safeParse(request.body);
+    if (!offered.success)
+      return reply.code(400).send({ action: "stop", reason: "InvalidMeasure" });
+    return ticketRunStored(reply, await run.turns(secret, offered.data.turns));
+  });
+  app.post(workerPlaneRoutes[17], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const offered = ticketRunTotalsSchema.safeParse(request.body);
+    if (!offered.success)
+      return reply.code(400).send({ action: "stop", reason: "InvalidMeasure" });
+    const { resultSubtype, stopReason, ...measured } = offered.data;
+    return ticketRunStored(
+      reply,
+      await run.totals(secret, {
+        ...measured,
+        ...(resultSubtype === undefined ? {} : { resultSubtype }),
+        ...(stopReason === undefined ? {} : { stopReason }),
+      }),
+    );
+  });
 }
 
 /**

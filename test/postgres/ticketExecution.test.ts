@@ -5,6 +5,7 @@ import {
   postgresTicketExecution,
   postgresTicketExecutionTerminals,
 } from "../../src/adapters/postgres/ticketExecution.ts";
+import { postgresTicketExecutionRun } from "../../src/adapters/postgres/ticketExecutionRun.ts";
 import { postgresTicketMachineInbox } from "../../src/adapters/postgres/ticketMachineInbox.ts";
 import {
   schedulerRole,
@@ -265,6 +266,108 @@ test("a workload's own liveness is stamped by it and cleared by the next claim",
     null,
     "a stamp belongs to the attempt that wrote it",
   );
+});
+
+/** One bound attempt, whose bearer is the whole of what a measure is addressed by. */
+async function boundForMeasure(name: string, capability: string) {
+  const partition = await postgresHarnessProject(harness.store, name);
+  await postgresTicketExecution(writer).execute(
+    partition,
+    "execute",
+    "work:1:1",
+    obligation(),
+  );
+  const store = postgresTicketExecution(scheduler);
+  const epoch = await postgresHarnessEpoch(harness.store);
+  const claim = (await store.claim("scheduler", epoch, 30, 10, [], 3)).find(
+    (held) => held.partition.project === partition.project,
+  );
+  assert.ok(claim);
+  assert.equal(
+    await postgresTicketExecutionTerminals(scheduler).bind(
+      claim,
+      capability,
+      workerView,
+    ),
+    true,
+  );
+  return { partition, run: postgresTicketExecutionRun(worker) };
+}
+
+const measuredTurn = {
+  ordinal: 1,
+  model: "sonnet",
+  tokensInput: 4,
+  tokensOutput: 1,
+  tokensCacheCreation: 0,
+  tokensCacheRead: 0,
+};
+
+const measuredTotals = {
+  turns: 1,
+  durationMs: 900,
+  durationApiMs: 400,
+  tokensInput: 4,
+  tokensOutput: 1,
+  tokensCacheCreation: 0,
+  tokensCacheRead: 0,
+  costUsdMicros: 12_500,
+  costBasis: "List" as const,
+  permissionDenials: 0,
+  models: [
+    {
+      model: "sonnet",
+      tokensInput: 4,
+      tokensOutput: 1,
+      tokensCacheCreation: 0,
+      tokensCacheRead: 0,
+      costUsdMicros: 2_000,
+    },
+  ],
+};
+
+test("a turn is stored once and one ordinal cannot hold two answers", async () => {
+  const { run } = await boundForMeasure("execution-turns", "turn-capability");
+  assert.equal(await run.turns("turn-capability", [measuredTurn]), "Stored");
+  assert.equal(
+    await run.turns("turn-capability", [measuredTurn]),
+    "AlreadyStored",
+  );
+  assert.equal(
+    await run.turns("turn-capability", [{ ...measuredTurn, tokensInput: 9 }]),
+    "Conflict",
+    "an ordinal is what a reader pages by",
+  );
+  assert.equal(await run.turns("no-such-capability", [measuredTurn]), "Fenced");
+});
+
+test("totals are stored once, with the per-model cost the run reported", async () => {
+  const { partition, run } = await boundForMeasure(
+    "execution-totals",
+    "total-capability",
+  );
+  assert.equal(await run.totals("total-capability", measuredTotals), "Stored");
+  assert.equal(
+    await run.totals("total-capability", measuredTotals),
+    "AlreadyStored",
+  );
+  assert.equal(
+    await run.totals("total-capability", {
+      ...measuredTotals,
+      durationMs: 1,
+    }),
+    "Conflict",
+  );
+  assert.equal(
+    await run.totals("no-such-capability", measuredTotals),
+    "Fenced",
+  );
+  const stored = await harness.pool.query<{ cost_usd_micros: string }>(
+    `SELECT cost_usd_micros FROM ticket_execution_run_model_usage
+     WHERE tenant=$1 AND project=$2 AND model='sonnet'`,
+    [partition.tenant, partition.project],
+  );
+  assert.equal(stored.rows[0]?.cost_usd_micros, "2000");
 });
 
 test("attempt takeover fences worker capabilities and terminal queue acceptance", async () => {
