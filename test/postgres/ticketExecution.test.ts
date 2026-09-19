@@ -188,7 +188,6 @@ test("attempt takeover fences worker capabilities and terminal queue acceptance"
   assert.deepEqual(await reports.view("first-capability"), workerView);
   assert.equal(
     await reports.report("first-capability", {
-      taskKey: first.taskKey,
       outcome: { result: "ProcessFailed" },
     }),
     "Recorded",
@@ -210,7 +209,6 @@ test("attempt takeover fences worker capabilities and terminal queue acceptance"
   assert.equal(await reports.view("first-capability"), undefined);
   assert.equal(
     await reports.report("first-capability", {
-      taskKey: first.taskKey,
       outcome: { result: "ProcessFailed" },
     }),
     "Fenced",

@@ -341,18 +341,20 @@ export function postgresTicketExecution(pool: pg.Pool): TicketExecutionStore {
   };
 }
 
-function ticketTerminalBody(value: unknown):
-  | {
-      readonly taskKey: string;
-      readonly outcome: unknown;
-    }
-  | undefined {
+/**
+ * The outcome a terminal offers, which is all of it. The attempt it belongs to
+ * is the bearer's, so a body naming one would be a caller's word for something
+ * the digest already decided.
+ */
+function ticketTerminalBody(
+  value: unknown,
+): { readonly outcome: unknown } | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return undefined;
   const body = value as Record<string, unknown>;
-  return typeof body["taskKey"] === "string" && body["outcome"] !== undefined
-    ? { taskKey: body["taskKey"], outcome: body["outcome"] }
-    : undefined;
+  return body["outcome"] === undefined
+    ? undefined
+    : { outcome: body["outcome"] };
 }
 
 /** Binds one attempt to the bearer its harness answers under, and to the view it is served. */
@@ -470,14 +472,14 @@ export function postgresTicketExecutionTerminals(pool: pg.Pool): {
       if (body === undefined) return "Conflict";
       const updated =
         await pool.query(sql`UPDATE ticket_execution SET worker_outcome=${JSON.stringify(body.outcome)}::jsonb
-        WHERE capability_digest=${digest(secret)} AND task_key=${body.taskKey}
+        WHERE capability_digest=${digest(secret)}
           AND state='Running' AND claim_expires_at>now() AND worker_outcome IS NULL
           AND recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`);
       if ((updated.rowCount ?? 0) === 1) return "Recorded";
       const found = await pool.query<{
         worker_outcome: unknown;
       }>(sql`SELECT worker_outcome FROM ticket_execution
-        WHERE capability_digest=${digest(secret)} AND task_key=${body.taskKey}
+        WHERE capability_digest=${digest(secret)}
           AND state='Running' AND claim_expires_at>now() AND recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`);
       const prior = found.rows[0];
       if (prior === undefined) return "Fenced";

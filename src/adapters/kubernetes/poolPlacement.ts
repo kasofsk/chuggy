@@ -138,10 +138,10 @@ function poolPlacementConstraints(
 }
 
 /**
- * What the pod is launched with, which is what no callback can hand it. The
- * workload is named by its assignment because that is the only identity a pool
- * is given, and every byte of material the run needs is fetched from the
- * callback under the bearer beside it.
+ * What the pod is launched with, which is what no callback can hand it. It is
+ * the same payload the in-cluster launcher writes, because every byte of
+ * material the run needs is fetched from the callback under the bearer here and
+ * a pool holds no identity to add to it.
  */
 function poolPlacementEnvelope(
   config: KubernetesPoolPlacementConfig,
@@ -149,7 +149,6 @@ function poolPlacementEnvelope(
   providerCredentialFile: string | undefined,
 ): string {
   return JSON.stringify({
-    taskKey: assignment.assignment,
     callbackUrl: assignment.callbackUrl,
     bearer: assignment.bearer,
     workspace: config.workspacePath,

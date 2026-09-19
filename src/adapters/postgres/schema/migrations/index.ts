@@ -8,6 +8,7 @@ import { migration007 } from "./007-execution-pool-assignment.ts";
 import { migration008 } from "./008-worker-pool.ts";
 import { migration009 } from "./009-worker-pool-principal.ts";
 import { migration010 } from "./010-worker-pool-registration-token.ts";
+import { migration011 } from "./011-execution-capability-digest.ts";
 import type { Migration } from "../shared.ts";
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -22,4 +23,5 @@ export const migrations: readonly Migration[] = [
   migration008,
   migration009,
   migration010,
+  migration011,
 ];

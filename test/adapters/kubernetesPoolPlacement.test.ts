@@ -204,7 +204,6 @@ test("the envelope carries the callback and the bearer and no material at all", 
     stringData: { task: string };
   };
   assert.deepEqual(JSON.parse(secret.stringData.task), {
-    taskKey: "assignment-one",
     callbackUrl: assignment.callbackUrl,
     bearer: assignment.bearer,
     workspace: "/workspace",

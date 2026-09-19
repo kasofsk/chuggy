@@ -94,7 +94,7 @@ test("a harness fetches its own view under the bearer its terminal is written wi
     method: "POST",
     url: "/v1/ticket-execution/terminal",
     headers: { authorization: "Bearer attempt-secret" },
-    payload: { taskKey: "work:1:1", outcome: { type: "result" } },
+    payload: { outcome: { type: "result" } },
   });
   assert.equal(reported.statusCode, 204);
 });

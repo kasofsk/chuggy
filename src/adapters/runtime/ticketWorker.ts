@@ -15,7 +15,6 @@ import { prepare_commit } from "./commitHooks.ts";
  * this process carries a token and a URL and nothing confidential at all.
  */
 interface TicketWorkerEnvelope {
-  readonly taskKey: string;
   readonly callbackUrl: string;
   readonly bearer: string;
   readonly workspace: string;
@@ -212,7 +211,7 @@ function workerEvidence(
 
 function envelope(value: unknown): TicketWorkerEnvelope {
   const found = record(value, "envelope");
-  for (const name of ["taskKey", "callbackUrl", "bearer", "workspace"])
+  for (const name of ["callbackUrl", "bearer", "workspace"])
     if (typeof found[name] !== "string" || found[name].length === 0)
       throw new TypeError(`ticket worker ${name} is invalid`);
   for (const name of ["timeoutSecsMax", "outputBytesMax"])
@@ -250,14 +249,12 @@ function optionalString(
 }
 
 export function ticketWorkerPrompt(
-  taskKey: string,
   workload: Record<string, unknown>,
   inputs: unknown,
   context: TicketWorkerView["context"],
 ): string {
   return [
     optionalString(workload, "prompt", ""),
-    `Task: ${taskKey}`,
     `Inputs:\n${JSON.stringify(inputs, null, 2)}`,
     `Context:\n${context
       .map(
@@ -547,12 +544,7 @@ async function workloadInvocation(
   const agent = await ticketWorkerAgentCommand(
     {
       ...workload,
-      prompt: ticketWorkerPrompt(
-        held.taskKey,
-        workload,
-        view.inputs,
-        view.context,
-      ),
+      prompt: ticketWorkerPrompt(workload, view.inputs, view.context),
     },
     held.workspace,
     control,
@@ -697,7 +689,7 @@ export async function ticketWorkerMain(
       authorization: `Bearer ${held.bearer}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ taskKey: held.taskKey, outcome }),
+    body: JSON.stringify({ outcome }),
   });
   if (!response.ok)
     throw new Error(

@@ -156,12 +156,10 @@ function ticketRecord(value: unknown, what: string): Record<string, unknown> {
  */
 function ticketEnvelope(
   config: KubernetesTicketExecutionConfig,
-  claim: TicketExecutionClaim,
   bearer: string,
   providerCredentialFile: string | undefined,
 ): string {
   return JSON.stringify({
-    taskKey: claim.taskKey,
     callbackUrl: config.callbackUrl,
     bearer,
     workspace: config.workspacePath,
@@ -430,7 +428,6 @@ async function ticketLaunch(
     kubernetesPodSecret(pod, uid, {
       task: ticketEnvelope(
         state.config,
-        claim,
         bearer,
         providerCredential === undefined
           ? undefined

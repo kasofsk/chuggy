@@ -117,7 +117,6 @@ test("the agent argv carries authored context and rework inputs", async () => {
   const control = await mkdtemp(join(tmpdir(), "ticket-briefing-"));
   try {
     const prompt = ticketWorkerPrompt(
-      "work:3:2",
       { runner: "codex", prompt: "implement" },
       { rework: [{ finding: "restore validation" }] },
       [
@@ -276,7 +275,6 @@ function scriptWorkerView(commit: string): Record<string, unknown> {
 /** The envelope a launcher hands the harness, which carries no remote and no credential. */
 function workerEnvelope(workspace: string): string {
   return JSON.stringify({
-    taskKey: "work:1:1",
     callbackUrl: "https://callback.invalid/v1/ticket-execution",
     bearer: "attempt-secret",
     workspace,
@@ -362,7 +360,6 @@ test("the adopted script worker checks out under a minted credential and reports
       "POST https://callback.invalid/v1/ticket-execution/terminal",
     ]);
     assert.deepEqual(ran.reported, {
-      taskKey: "work:1:1",
       outcome: {
         type: "result",
         manifest: {

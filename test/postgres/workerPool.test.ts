@@ -162,7 +162,6 @@ test("what names a pool authenticates no attempt and reports no terminal", async
   );
   assert.equal(
     await reports.report(held.clientId, {
-      taskKey: "work:1:1",
       outcome: { type: "process_failed", evidence: "a pool said so" },
     }),
     "Fenced",
@@ -172,6 +171,75 @@ test("what names a pool authenticates no attempt and reports no terminal", async
     [held.partition.tenant, held.partition.project],
   );
   assert.equal(outcome.rows[0]?.worker_outcome, null);
+});
+
+/**
+ * A pool-placed harness holds its bearer and nothing else about the work it
+ * ran, so a terminal keyed on anything the pool never saw is a terminal it
+ * cannot write. What it reports is what the orchestrator then finds to settle.
+ */
+test("a harness holding only its bearer reports the terminal the pool's attempt settles on", async () => {
+  const held = await registered("pool-report", [], []);
+  assert.equal(await held.prepare(), true);
+  assert.ok(
+    await held.assignments.claim(
+      held.identity,
+      30,
+      held.names.one,
+      held.bearer,
+    ),
+  );
+  const reports = postgresTicketExecutionTerminals(worker);
+  const outcome = { type: "result", manifest: { verdict: "done" } };
+  assert.equal(await reports.report(held.bearer, { outcome }), "Recorded");
+  assert.equal(
+    await reports.report(held.bearer, { outcome }),
+    "Recorded",
+    "one harness retrying its own terminal is the terminal it already wrote",
+  );
+  const settlements = await postgresTicketExecution(scheduler).settlements(10);
+  const settled = settlements.find(
+    (candidate) => candidate.claim.partition.project === held.partition.project,
+  );
+  assert.equal(settled?.claim.taskKey, "work:1:1");
+  assert.deepEqual(settled?.outcome, outcome);
+});
+
+/**
+ * The bearer a terminal is resolved by identifies one attempt or it identifies
+ * nothing. A second claim offering a bearer already bound is refused by the
+ * relation rather than allowed to make two live attempts answer one credential.
+ */
+test("one bearer binds one attempt and a second claim under it is refused", async () => {
+  const held = await registered("pool-bearer", [], []);
+  assert.equal(await held.prepare(), true);
+  await postgresTicketExecution(writer).execute(
+    held.partition,
+    "execute-two",
+    "work:1:2",
+    obligationNeeding([]),
+  );
+  assert.equal(
+    await postgresTicketExecution(scheduler).prepare(
+      held.partition,
+      "work:1:2",
+      preparedView,
+    ),
+    true,
+  );
+  assert.ok(
+    await held.assignments.claim(
+      held.identity,
+      30,
+      held.names.one,
+      held.bearer,
+    ),
+  );
+  await assert.rejects(
+    () =>
+      held.assignments.claim(held.identity, 30, held.names.two, held.bearer),
+    /capability_digest/u,
+  );
 });
 
 test("the plane serving harnesses cannot read the relation a pool is registered in", async () => {

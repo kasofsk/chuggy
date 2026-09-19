@@ -173,6 +173,7 @@ function assertSecretEnvelope(requests: readonly ClusterRequest[]): void {
   >;
   assert.equal(envelope["bearer"], "attempt-secret");
   assert.equal(envelope["view"], undefined);
+  assert.equal(envelope["taskKey"], undefined);
   assert.equal(envelope["callbackUrl"], config.callbackUrl);
   assert.equal(envelope["transportUrl"], undefined);
   assert.equal(
