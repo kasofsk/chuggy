@@ -55,6 +55,13 @@ class TicketWorkerUnavailable extends Error {}
  */
 const ticketWorkerCredentialMarginMs = 60_000;
 
+/**
+ * How often the workload says it is still going. It is the harness's own
+ * signal and not its pool's, so it is sent while the workload runs and stops
+ * the moment it does.
+ */
+const ticketWorkerHeartbeatMs = 30_000;
+
 interface TicketWorkerView {
   readonly workload: unknown;
   readonly inputs: unknown;
@@ -660,6 +667,24 @@ async function execute(
   return publishedResult(transport, view, workload, manifest);
 }
 
+/**
+ * Says the workload is still going until told to stop saying it. A refusal ends
+ * the beating and nothing else: the attempt this harness holds may have been
+ * fenced, and the terminal it is about to write is what settles that.
+ */
+function ticketWorkerHeartbeat(held: TicketWorkerEnvelope): () => void {
+  const timer = setInterval(() => {
+    void fetch(ticketWorkerRoute(held, "heartbeat"), {
+      method: "POST",
+      headers: { authorization: `Bearer ${held.bearer}` },
+    }).catch(() => undefined);
+  }, ticketWorkerHeartbeatMs);
+  timer.unref();
+  return () => {
+    clearInterval(timer);
+  };
+}
+
 export async function ticketWorkerMain(
   environment: NodeJS.ProcessEnv,
 ): Promise<void> {
@@ -668,6 +693,7 @@ export async function ticketWorkerMain(
     throw new Error("CHUG_TICKET_WORKER_TASK is required");
   const held = envelope(JSON.parse(source) as unknown);
   const transport: TicketWorkerTransport = { held };
+  const beating = ticketWorkerHeartbeat(held);
   let outcome: Record<string, unknown>;
   try {
     outcome = await execute(transport, await ticketWorkerView(held));
@@ -683,6 +709,7 @@ export async function ticketWorkerMain(
       ),
     };
   }
+  beating();
   const response = await fetch(ticketWorkerRoute(held, "terminal"), {
     method: "POST",
     headers: {

@@ -72,6 +72,7 @@ export const workerPlaneRoutes = [
   "/v1/ticket-execution/terminal",
   "/v1/ticket-execution/view",
   "/v1/ticket-execution/credentials",
+  "/v1/ticket-execution/heartbeat",
 ] as const;
 
 const sessionStorePrefix = "/v1/session/store/";
@@ -101,6 +102,7 @@ export interface WorkerPlaneServerService {
       secret: string,
       body: unknown,
     ): Promise<"Recorded" | "Conflict" | "Fenced">;
+    heartbeat(secret: string): Promise<"Recorded" | "Fenced">;
     view(secret: string): Promise<unknown>;
     credential(
       secret: string,
@@ -171,6 +173,26 @@ function ticketExecutionRoutes(
       : reply.code(200).send(view);
   });
   ticketCredentialRoute(app, service, attempts);
+  ticketHeartbeatRoute(app, attempts);
+}
+
+/**
+ * That the workload is still going, said by the workload and by nothing else.
+ * A lease renewed by a pool's poll says its fabric still lists a pod, which a
+ * wedged harness keeps true, so this is the one signal that separates a run
+ * making progress from a run that stopped making any.
+ */
+function ticketHeartbeatRoute(
+  app: FastifyInstance,
+  attempts: NonNullable<WorkerPlaneServerService["ticketExecutions"]>,
+): void {
+  app.post(workerPlaneRoutes[15], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    return (await attempts.heartbeat(secret)) === "Recorded"
+      ? reply.code(204).send()
+      : reply.code(409).send({ action: "stop", reason: "Fenced" });
+  });
 }
 
 /**

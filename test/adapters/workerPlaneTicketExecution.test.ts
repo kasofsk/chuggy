@@ -54,6 +54,8 @@ function attemptPlane(
     ticketExecutions: {
       report: (secret) =>
         Promise.resolve(secret === bearer ? "Recorded" : "Fenced"),
+      heartbeat: (secret) =>
+        Promise.resolve(secret === bearer ? "Recorded" : "Fenced"),
       view: (secret) => Promise.resolve(secret === bearer ? view : undefined),
       credential: (secret) =>
         Promise.resolve(secret === bearer ? attemptSubject(access) : undefined),
@@ -142,12 +144,41 @@ test("an outcome the envelope can hold is stored for the protocol to read", asyn
   assert.equal(response.statusCode, 204, response.body);
 });
 
+test("a workload says it is still going under the bearer its terminal is written with", async () => {
+  const app = attemptPlane("attempt-secret");
+  const beat = await app.inject({
+    method: "POST",
+    url: "/v1/ticket-execution/heartbeat",
+    headers: { authorization: "Bearer attempt-secret" },
+  });
+  assert.equal(beat.statusCode, 204, beat.body);
+});
+
+for (const [why, headers, status] of [
+  ["no bearer at all", {}, 401],
+  [
+    "a bearer no live attempt is bound to",
+    { authorization: "Bearer other" },
+    409,
+  ],
+] as const)
+  test(`a workload heartbeat is refused to ${why}`, async () => {
+    const response = await attemptPlane("attempt-secret").inject({
+      method: "POST",
+      url: "/v1/ticket-execution/heartbeat",
+      headers,
+    });
+    assert.equal(response.statusCode, status, response.body);
+    assert.equal(response.json<{ action: string }>().action, "stop");
+  });
+
 test("a plane composed with no attempt half serves no ticket route", async () => {
   const app = createWorkerPlaneApp(inertWorkerPlane(1_024));
   for (const [method, url] of [
     ["GET", "/v1/ticket-execution/view"],
     ["POST", "/v1/ticket-execution/terminal"],
     ["POST", "/v1/ticket-execution/credentials"],
+    ["POST", "/v1/ticket-execution/heartbeat"],
   ] as const) {
     const response = await app.inject({
       method,

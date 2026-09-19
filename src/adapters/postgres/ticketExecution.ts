@@ -136,7 +136,7 @@ async function executionClaimed(
   attemptsUnreportedMax: number,
 ): Promise<readonly TicketExecutionClaim[]> {
   const found = await pool.query<ExecutionRow>(sql`UPDATE ticket_execution e SET
-      state='Running',attempt=e.attempt+1,claim_owner=${owner},capability_digest=NULL,worker_outcome=NULL,
+      state='Running',attempt=e.attempt+1,claim_owner=${owner},capability_digest=NULL,worker_outcome=NULL,last_reported_at=NULL,
       pool=NULL,assignment=NULL,pool_refusal=NULL,
       attempts_unreported=e.attempts_unreported+(CASE WHEN e.state='Running' AND e.claim_expires_at<=now()
         AND e.worker_outcome IS NULL AND e.pool_refusal IS NULL THEN 1 ELSE 0 END),
@@ -172,7 +172,7 @@ async function executionUnclaimable(
   windowSecs: number,
 ): Promise<readonly TicketExecutionClaim[]> {
   const found = await pool.query<ExecutionRow>(sql`UPDATE ticket_execution e SET
-      state='Running',attempt=e.attempt+1,claim_owner=${owner},capability_digest=NULL,worker_outcome=NULL,
+      state='Running',attempt=e.attempt+1,claim_owner=${owner},capability_digest=NULL,worker_outcome=NULL,last_reported_at=NULL,
       pool=NULL,assignment=NULL,pool_refusal=NULL,
       claim_expires_at=now()+make_interval(secs=>${leaseSecs}::double precision),
       recovery_epoch=${recoveryEpoch}
@@ -205,7 +205,7 @@ async function executionUnreported(
   attemptsUnreportedMax: number,
 ): Promise<readonly TicketExecutionClaim[]> {
   const found = await pool.query<ExecutionRow>(sql`UPDATE ticket_execution e SET
-      state='Running',attempt=e.attempt+1,claim_owner=${owner},capability_digest=NULL,worker_outcome=NULL,
+      state='Running',attempt=e.attempt+1,claim_owner=${owner},capability_digest=NULL,worker_outcome=NULL,last_reported_at=NULL,
       pool=NULL,assignment=NULL,pool_refusal=NULL,
       claim_expires_at=now()+make_interval(secs=>${leaseSecs}::double precision),
       recovery_epoch=${recoveryEpoch}
@@ -445,6 +445,53 @@ function ticketTerminalBody(
     : { outcome: body["outcome"] };
 }
 
+/**
+ * Records what one attempt produced, once. A redelivery of the same outcome is
+ * the same fact and answers as recorded; a different one against a row that
+ * already holds an outcome is a conflict, and no row at all is a fence.
+ */
+async function executionReport(
+  pool: pg.Pool,
+  capabilityDigest: string,
+  offered: unknown,
+): Promise<"Recorded" | "Conflict" | "Fenced"> {
+  const body = ticketTerminalBody(offered);
+  if (body === undefined) return "Conflict";
+  const updated =
+    await pool.query(sql`UPDATE ticket_execution SET worker_outcome=${JSON.stringify(body.outcome)}::jsonb
+    WHERE capability_digest=${capabilityDigest}
+      AND state='Running' AND claim_expires_at>now() AND worker_outcome IS NULL
+      AND recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`);
+  if ((updated.rowCount ?? 0) === 1) return "Recorded";
+  const found = await pool.query<{
+    worker_outcome: unknown;
+  }>(sql`SELECT worker_outcome FROM ticket_execution
+    WHERE capability_digest=${capabilityDigest}
+      AND state='Running' AND claim_expires_at>now() AND recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`);
+  const prior = found.rows[0];
+  if (prior === undefined) return "Fenced";
+  return canonical_json(prior.worker_outcome) === canonical_json(body.outcome)
+    ? "Recorded"
+    : "Conflict";
+}
+
+/**
+ * Stamps that the workload behind one bearer is still going. It moves no lease:
+ * what a claimant holds is its own to renew, and this says only that the
+ * workload inside it spoke.
+ */
+async function executionHeartbeat(
+  pool: pg.Pool,
+  capabilityDigest: string,
+): Promise<"Recorded" | "Fenced"> {
+  const updated =
+    await pool.query(sql`UPDATE ticket_execution SET last_reported_at=now()
+    WHERE capability_digest=${capabilityDigest}
+      AND state='Running' AND claim_expires_at>now() AND worker_outcome IS NULL
+      AND recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`);
+  return (updated.rowCount ?? 0) === 1 ? "Recorded" : "Fenced";
+}
+
 /** Binds one attempt to the bearer its harness answers under, and to the view it is served. */
 async function executionBind(
   pool: pg.Pool,
@@ -525,6 +572,7 @@ export function postgresTicketExecutionTerminals(pool: pg.Pool): {
     secret: string,
     body: unknown,
   ): Promise<"Recorded" | "Conflict" | "Fenced">;
+  heartbeat(secret: string): Promise<"Recorded" | "Fenced">;
 } {
   const digest = (secret: string): string =>
     createHash("sha256").update(secret).digest("hex");
@@ -552,29 +600,10 @@ export function postgresTicketExecutionTerminals(pool: pg.Pool): {
           AND recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`);
       return found.rows[0]?.worker_outcome ?? undefined;
     },
+    heartbeat: (secret) => executionHeartbeat(pool, digest(secret)),
     view: (secret) => executionWorkerView(pool, digest(secret)),
     credential: (secret) =>
       executionWorkerCredentialSubject(pool, digest(secret)),
-    report: async (secret, offered) => {
-      const body = ticketTerminalBody(offered);
-      if (body === undefined) return "Conflict";
-      const updated =
-        await pool.query(sql`UPDATE ticket_execution SET worker_outcome=${JSON.stringify(body.outcome)}::jsonb
-        WHERE capability_digest=${digest(secret)}
-          AND state='Running' AND claim_expires_at>now() AND worker_outcome IS NULL
-          AND recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`);
-      if ((updated.rowCount ?? 0) === 1) return "Recorded";
-      const found = await pool.query<{
-        worker_outcome: unknown;
-      }>(sql`SELECT worker_outcome FROM ticket_execution
-        WHERE capability_digest=${digest(secret)}
-          AND state='Running' AND claim_expires_at>now() AND recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`);
-      const prior = found.rows[0];
-      if (prior === undefined) return "Fenced";
-      return canonical_json(prior.worker_outcome) ===
-        canonical_json(body.outcome)
-        ? "Recorded"
-        : "Conflict";
-    },
+    report: (secret, offered) => executionReport(pool, digest(secret), offered),
   };
 }

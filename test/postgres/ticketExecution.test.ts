@@ -19,7 +19,10 @@ import {
   dispatch,
   work_obligation,
 } from "../chuggernaut/domain/testing.js";
-import type { TicketExecutionView } from "../../src/interpreter/ticketExecution.ts";
+import type {
+  TicketExecutionClaim,
+  TicketExecutionView,
+} from "../../src/interpreter/ticketExecution.ts";
 import { obligationNeeding } from "./executionFixtures.ts";
 import {
   postgresHarnessOpen,
@@ -210,6 +213,57 @@ test("a claim that reported an outcome is not a claim that said nothing", async 
   assert.equal(
     mine(await store.claim("pool-four", epoch, 30, 10, [], 2)).length,
     1,
+  );
+});
+
+test("a workload's own liveness is stamped by it and cleared by the next claim", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "execution-liveness",
+  );
+  await postgresTicketExecution(writer).execute(
+    partition,
+    "execute",
+    "work:1:1",
+    obligation(),
+  );
+  const store = postgresTicketExecution(scheduler);
+  const epoch = await postgresHarnessEpoch(harness.store);
+  const mine = (claims: readonly TicketExecutionClaim[]) =>
+    claims.find((claim) => claim.partition.project === partition.project);
+  const first = mine(await store.claim("scheduler", epoch, 30, 10, [], 3));
+  assert.ok(first);
+  const terminals = postgresTicketExecutionTerminals(scheduler);
+  const reports = postgresTicketExecutionTerminals(worker);
+  assert.equal(
+    await terminals.bind(first, "first-capability", workerView),
+    true,
+  );
+  const stamped = async (): Promise<Date | null> =>
+    (
+      await harness.pool.query<{ last_reported_at: Date | null }>(
+        "SELECT last_reported_at FROM ticket_execution WHERE tenant=$1 AND project=$2",
+        [partition.tenant, partition.project],
+      )
+    ).rows[0]?.last_reported_at ?? null;
+  assert.equal(await stamped(), null, "a claim nobody has run says nothing");
+  assert.equal(await reports.heartbeat("first-capability"), "Recorded");
+  assert.notEqual(await stamped(), null);
+  assert.equal(
+    await reports.heartbeat("second-capability"),
+    "Fenced",
+    "a bearer no live attempt is bound to stamps nothing",
+  );
+  await harness.pool.query(
+    "UPDATE ticket_execution SET claim_expires_at=now()-interval '1 second' WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
+  const second = mine(await store.claim("replacement", epoch, 30, 10, [], 3));
+  assert.ok(second);
+  assert.equal(
+    await stamped(),
+    null,
+    "a stamp belongs to the attempt that wrote it",
   );
 });
 

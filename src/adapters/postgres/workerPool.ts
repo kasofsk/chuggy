@@ -166,7 +166,7 @@ async function workerPoolClaimed(
     required_capabilities: string[];
   }>(sql`UPDATE ticket_execution e SET
       state='Running',attempt=e.attempt+1,claim_owner=${identity.pool},pool=${identity.pool},
-      assignment=${assignment},capability_digest=${workerPoolDigest(bearer)},pool_refusal=NULL,
+      assignment=${assignment},capability_digest=${workerPoolDigest(bearer)},pool_refusal=NULL,last_reported_at=NULL,
       attempts_unreported=e.attempts_unreported+(CASE WHEN e.state='Running' AND e.claim_expires_at<=now()
         AND e.worker_outcome IS NULL AND e.pool_refusal IS NULL THEN 1 ELSE 0 END),
       claim_expires_at=now()+make_interval(secs=>${leaseSecs}::double precision),
