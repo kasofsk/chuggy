@@ -96,6 +96,12 @@ ENV DISABLE_AUTOUPDATER=1 \
 COPY images/worker/entrypoint.mjs /usr/local/lib/chuggy/worker.mjs
 COPY src/roots/ticketWorker.ts /usr/local/lib/chuggy/ticketWorker.ts
 COPY src/adapters/runtime/ticketWorker.ts /usr/local/lib/adapters/runtime/ticketWorker.ts
+# What that file reaches outside its own directory, at the paths its relative
+# imports resolve to from /usr/local/lib/adapters/runtime/. The `RUN` below is
+# what catches a third: it imports the entrypoint, so a module the tree added
+# and this list did not fails the build rather than the first ticket.
+COPY src/contract/http.ts /usr/local/lib/contract/http.ts
+COPY src/interpreter/ticketExecutionRun.ts /usr/local/lib/interpreter/ticketExecutionRun.ts
 COPY src/adapters/runtime/comments.ts /usr/local/lib/adapters/runtime/comments.ts
 COPY src/adapters/runtime/commitHooks.ts /usr/local/lib/adapters/runtime/commitHooks.ts
 COPY images/worker/chuggyApi.mjs /usr/local/lib/chuggy/chuggyApi.mjs
