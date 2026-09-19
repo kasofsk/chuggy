@@ -266,6 +266,45 @@ export function kubernetesPodEnd(reached: KubernetesReached): KubernetesPodEnd {
   }
 }
 
+/**
+ * Reads back the annotation of every pod carrying one label selector, which is
+ * how a process learns what it is still running without remembering it. A
+ * listing that could not be read is nothing rather than an empty cluster: the
+ * two answers mean opposite things to a caller deciding what it still holds, so
+ * an unreachable cluster raises where an empty namespace returns.
+ */
+export async function kubernetesListedPodAnnotations(
+  site: KubernetesPodSite,
+  fetcher: typeof fetch,
+  labelSelector: string,
+  annotation: string,
+): Promise<readonly string[]> {
+  const reached = await kubernetesReach(site, fetcher, {
+    method: "GET",
+    path: `${kubernetesPodsPath(site)}?labelSelector=${encodeURIComponent(labelSelector)}`,
+  });
+  if (reached.reached !== "Status" || reached.status !== 200)
+    throw new Error("the cluster could not be listed");
+  let document: {
+    readonly items?: readonly {
+      readonly metadata?: {
+        readonly annotations?: Readonly<Record<string, unknown>>;
+      };
+    }[];
+  };
+  try {
+    document = JSON.parse(reached.body) as typeof document;
+  } catch {
+    throw new Error("the cluster listed pods this side cannot read");
+  }
+  const named: string[] = [];
+  for (const item of document.items ?? []) {
+    const value = item.metadata?.annotations?.[annotation];
+    if (typeof value === "string" && value.length > 0) named.push(value);
+  }
+  return named;
+}
+
 /** Deletes one named pod, which is what both cancellation and a failed placement do. */
 export async function kubernetesDeletePod(
   site: KubernetesPodSite,
