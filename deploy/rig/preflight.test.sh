@@ -108,6 +108,7 @@ api-password
 scheduler-password
 finalizer-password
 worker-plane-password
+pool-plane-password
 KEYS
 	printf 'password\n' > "$DIR/keys.chuggy.postgres-superuser"
 

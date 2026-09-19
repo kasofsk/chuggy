@@ -217,9 +217,10 @@ stage_roles() {
 	CHUG_PG_SCHEDULER_PASSWORD="$(secret chuggy-postgres-credentials scheduler-password)"
 	CHUG_PG_FINALIZER_PASSWORD="$(secret chuggy-postgres-credentials finalizer-password)"
 	CHUG_PG_WORKER_PLANE_PASSWORD="$(secret chuggy-postgres-credentials worker-plane-password)"
+	CHUG_PG_POOL_PLANE_PASSWORD="$(secret chuggy-postgres-credentials pool-plane-password)"
 	export PGPASSWORD CHUG_PG_OWNER_PASSWORD CHUG_PG_TICKET_SERVICE_PASSWORD \
 		CHUG_PG_API_PASSWORD CHUG_PG_SCHEDULER_PASSWORD CHUG_PG_FINALIZER_PASSWORD \
-		CHUG_PG_WORKER_PLANE_PASSWORD
+		CHUG_PG_WORKER_PLANE_PASSWORD CHUG_PG_POOL_PLANE_PASSWORD
 	psql -h 127.0.0.1 -p "$port" -U postgres -d "$database" \
 		-v ON_ERROR_STOP=1 -f deploy/rig/postgres/postgres-roles.sql \
 		|| psql_leave_as $? "the role script did not land, so no role was created or rotated"

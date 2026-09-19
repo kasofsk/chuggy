@@ -138,7 +138,7 @@ expect() { # <namespace> <name> <comma-separated keys or -> <symptom>
 }
 
 expect "$namespace" chuggy-postgres-credentials \
-	owner-password,ticket-service-password,api-password,scheduler-password,finalizer-password,worker-plane-password \
+	owner-password,ticket-service-password,api-password,scheduler-password,finalizer-password,worker-plane-password,pool-plane-password \
 	"a control-plane process cannot authenticate as its own role and refuses to serve"
 expect "$namespace" postgres-superuser password \
 	"the roles cannot be created and no gate can reach the server"
