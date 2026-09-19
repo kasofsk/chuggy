@@ -28,6 +28,7 @@ import { TicketId as AdoptedTicketId } from "../../domain/chuggernaut/task.js";
 import type { Ticket as AdoptedTicket } from "../../domain/chuggernaut/ticket.js";
 import { asGitObjectId, asRepositoryId } from "../../interpreter/finalizer.ts";
 import { encode as encodeChuggernaut } from "../../interpreter/codec.ts";
+import type { TicketExecutionReads } from "../../interpreter/ticketExecutionRead.ts";
 import { nativeHttpContractDocument } from "../../contract/document.ts";
 import { integerField, textField } from "../../contract/fields.ts";
 import {
@@ -35,7 +36,10 @@ import {
   nativeHttpError,
   nativeHttpHeaderBytesMax,
   nativeHttpMediaType,
+  nativeHttpPageItemsDefault,
+  nativeHttpPageItemsMax,
   nativeHttpPathSegmentCharsMax,
+  nativeHttpRoutes,
   sessionStorePageBatchesMax,
   threadTurnsAnsweredMax,
 } from "../../contract/http.ts";
@@ -909,6 +913,7 @@ function registerLeadInquiries(
 
 export interface NativeTicketApplication {
   readonly application: TicketApplication;
+  readonly reads?: TicketExecutionReads;
   identity(input: {
     readonly principal: Principal;
     readonly partition: Partition;
@@ -1009,35 +1014,29 @@ function registerAdoptedTicketReads(
   app: FastifyInstance,
   service: NativeTicketApplication,
 ): void {
-  const root =
-    "/api/v1/tenants/:tenant/projects/:project/ticket-machine/tickets";
-  app.get(
-    "/api/v1/tenants/:tenant/projects/:project/ticket-machine/operations",
-    async (request, reply) => {
-      const query = fieldsOnly(request.query, ["identity"]);
-      const result = await service.application.outcome(
-        principalOf(request),
-        partitionOf(request),
-        textField(query, "identity"),
-      );
-      if (result.result !== "Authorized") {
-        adoptedTicketReply(reply, result);
-        return;
-      }
-      if (result.value === undefined) {
-        void reply
-          .code(404)
-          .send(nativeHttpError("NotFound", "Operation not found."));
-        return;
-      }
-      void reply.code(200).send({
-        sequence: result.value.sequence,
-        decision: JSON.parse(
-          encodeChuggernaut(result.value.decision),
-        ) as unknown,
-      });
-    },
-  );
+  const root = nativeHttpRoutes.tickets;
+  app.get(nativeHttpRoutes.ticketOperation, async (request, reply) => {
+    const query = fieldsOnly(request.query, ["identity"]);
+    const result = await service.application.outcome(
+      principalOf(request),
+      partitionOf(request),
+      textField(query, "identity"),
+    );
+    if (result.result !== "Authorized") {
+      adoptedTicketReply(reply, result);
+      return;
+    }
+    if (result.value === undefined) {
+      void reply
+        .code(404)
+        .send(nativeHttpError("NotFound", "Operation not found."));
+      return;
+    }
+    void reply.code(200).send({
+      sequence: result.value.sequence,
+      decision: JSON.parse(encodeChuggernaut(result.value.decision)) as unknown,
+    });
+  });
   app.get(root, async (request, reply) => {
     const result = await service.application.graph(
       principalOf(request),
@@ -1115,8 +1114,7 @@ function registerAdoptedTicketCatalog(
   app: FastifyInstance,
   service: NativeTicketApplication,
 ): void {
-  const root =
-    "/api/v1/tenants/:tenant/projects/:project/ticket-machine/catalog";
+  const root = nativeHttpRoutes.ticketCatalog;
   const answer = (
     reply: FastifyReply,
     result: TicketApplicationResult<object | undefined>,
@@ -1208,30 +1206,26 @@ function registerAdoptedTicketValidation(
   app: FastifyInstance,
   service: NativeTicketApplication,
 ): void {
-  app.post(
-    "/api/v1/tenants/:tenant/projects/:project/ticket-machine/tickets/validate",
-    async (request, reply) => {
-      if (typeof request.body !== "string")
-        throw new TypeError("ticket body must be YAML text");
-      const result = await service.application.validate(principalOf(request), {
-        ...adoptedCatalogRequest(request),
-        source: request.body,
-      });
-      if (result.result !== "Authorized") {
-        adoptedTicketReply(reply, result);
-        return;
-      }
-      void reply.code(200).send(result.value);
-    },
-  );
+  app.post(nativeHttpRoutes.ticketValidation, async (request, reply) => {
+    if (typeof request.body !== "string")
+      throw new TypeError("ticket body must be YAML text");
+    const result = await service.application.validate(principalOf(request), {
+      ...adoptedCatalogRequest(request),
+      source: request.body,
+    });
+    if (result.result !== "Authorized") {
+      adoptedTicketReply(reply, result);
+      return;
+    }
+    void reply.code(200).send(result.value);
+  });
 }
 
 function registerAdoptedTicketAuthoring(
   app: FastifyInstance,
   service: NativeTicketApplication,
 ): void {
-  const root =
-    "/api/v1/tenants/:tenant/projects/:project/ticket-machine/tickets";
+  const root = nativeHttpRoutes.tickets;
   app.post(root, async (request, reply) => {
     if (typeof request.body !== "string")
       throw new TypeError("ticket body must be YAML text");
@@ -1271,8 +1265,7 @@ function registerAdoptedTicketActions(
   app: FastifyInstance,
   service: NativeTicketApplication,
 ): void {
-  const root =
-    "/api/v1/tenants/:tenant/projects/:project/ticket-machine/tickets";
+  const root = nativeHttpRoutes.tickets;
   for (const action of ["revoke", "resume"] as const)
     app.post(`${root}/:ticket/${action}`, async (request, reply) => {
       const operation = action === "revoke" ? "RevokeTicket" : "ResumeTicket";
@@ -1302,6 +1295,159 @@ function registerAdoptedTicketActions(
       }),
     );
   });
+}
+
+/** One task key as a path segment, which is opaque text this tree never interprets. */
+function adoptedTaskKey(request: FastifyRequest): string {
+  return textField(record(request.params), "task");
+}
+
+/** The attempt one read names, which is a whole count and nothing else. */
+function adoptedAttempt(request: FastifyRequest): number {
+  return integerField(record(request.params), "attempt");
+}
+
+/** A page size the caller may narrow but never widen past the wire's own bound. */
+function adoptedPageLimit(request: FastifyRequest): number {
+  const asked = record(request.query)["limit"];
+  const held =
+    typeof asked === "string" ? integerField({ limit: asked }, "limit") : 0;
+  return held > 0
+    ? Math.min(held, nativeHttpPageItemsMax)
+    : nativeHttpPageItemsDefault;
+}
+
+/**
+ * What one attempt ran, spent and left behind, and the record of what people
+ * asked of this project. Every one conceals a project the caller may not see as
+ * a project that is not there, which is why the bare admission read exists at
+ * all: the path it replaces is retired and answers a conflict.
+ */
+function registerAdoptedTicketEvidence(
+  app: FastifyInstance,
+  reads: TicketExecutionReads,
+): void {
+  const answer = (
+    reply: FastifyReply,
+    result: TicketApplicationResult<unknown>,
+  ): void => {
+    if (result.result !== "Authorized") {
+      adoptedTicketReply(reply, result);
+      return;
+    }
+    if (result.value === undefined) {
+      void reply.code(404).send(nativeHttpError("NotFound", "Not found."));
+      return;
+    }
+    void reply.code(200).send(result.value);
+  };
+  app.get(nativeHttpRoutes.ticketMachineAdmission, async (request, reply) => {
+    answer(
+      reply,
+      await reads.admitted(principalOf(request), partitionOf(request)),
+    );
+  });
+  app.get(nativeHttpRoutes.ticketExecutions, async (request, reply) => {
+    const found = await reads.executions(
+      principalOf(request),
+      partitionOf(request),
+      adoptedPageLimit(request),
+    );
+    answer(
+      reply,
+      found.result === "Authorized"
+        ? { result: "Authorized", value: { executions: found.value } }
+        : found,
+    );
+  });
+  app.get(nativeHttpRoutes.ticketOperations, async (request, reply) => {
+    const found = await reads.operations(
+      principalOf(request),
+      partitionOf(request),
+      adoptedPageLimit(request),
+    );
+    answer(
+      reply,
+      found.result === "Authorized"
+        ? { result: "Authorized", value: { operations: found.value } }
+        : found,
+    );
+  });
+  app.get(nativeHttpRoutes.ticketExecution, async (request, reply) => {
+    answer(
+      reply,
+      await reads.execution(
+        principalOf(request),
+        partitionOf(request),
+        adoptedTaskKey(request),
+      ),
+    );
+  });
+  registerAdoptedTicketRunReads(app, reads, answer);
+}
+
+/**
+ * One attempt's own measure and the bytes it left, each read by the attempt
+ * number the execution read named.
+ */
+function registerAdoptedTicketRunReads(
+  app: FastifyInstance,
+  reads: TicketExecutionReads,
+  answer: (
+    reply: FastifyReply,
+    result: TicketApplicationResult<unknown>,
+  ) => void,
+): void {
+  app.get(nativeHttpRoutes.ticketExecutionTurns, async (request, reply) => {
+    answer(
+      reply,
+      await reads.turns(
+        principalOf(request),
+        partitionOf(request),
+        adoptedTaskKey(request),
+        adoptedAttempt(request),
+        adoptedCursor(request),
+        adoptedPageLimit(request),
+      ),
+    );
+  });
+  app.get(
+    nativeHttpRoutes.ticketExecutionTranscript,
+    async (request, reply) => {
+      answer(
+        reply,
+        await reads.transcript(
+          principalOf(request),
+          partitionOf(request),
+          adoptedTaskKey(request),
+          adoptedAttempt(request),
+          adoptedCursor(request),
+        ),
+      );
+    },
+  );
+  app.get(
+    nativeHttpRoutes.ticketExecutionConfiguration,
+    async (request, reply) => {
+      answer(
+        reply,
+        await reads.configuration(
+          principalOf(request),
+          partitionOf(request),
+          adoptedTaskKey(request),
+          adoptedAttempt(request),
+        ),
+      );
+    },
+  );
+}
+
+/** Where a page resumes, which is absent on the first page and a count after that. */
+function adoptedCursor(request: FastifyRequest): number {
+  const asked = record(request.query)["after"];
+  return typeof asked === "string"
+    ? integerField({ after: asked }, "after")
+    : 0;
 }
 
 function registerAdoptedTickets(
@@ -1411,6 +1557,8 @@ export function createNativeHttpApp(
   registerInventory(app, web);
   if (ticketService !== undefined) {
     registerAdoptedTickets(app, ticketService);
+    if (ticketService.reads !== undefined)
+      registerAdoptedTicketEvidence(app, ticketService.reads);
     registerRetiredLegacyTicketRoutes(app, ticketService);
   }
   registerLead(app, web, partitionRoot);

@@ -45,7 +45,19 @@
     "threadMessages": "/api/v1/tenants/:tenant/projects/:project/threads/:session/messages",
     "threadClose": "/api/v1/tenants/:tenant/projects/:project/threads/:session/close",
     "threadRename": "/api/v1/tenants/:tenant/projects/:project/threads/:session/rename",
-    "threadHide": "/api/v1/tenants/:tenant/projects/:project/threads/:session/hide"
+    "threadHide": "/api/v1/tenants/:tenant/projects/:project/threads/:session/hide",
+    "ticketMachineAdmission": "/api/v1/tenants/:tenant/projects/:project/ticket-machine",
+    "tickets": "/api/v1/tenants/:tenant/projects/:project/ticket-machine/tickets",
+    "ticket": "/api/v1/tenants/:tenant/projects/:project/ticket-machine/tickets/:ticket",
+    "ticketValidation": "/api/v1/tenants/:tenant/projects/:project/ticket-machine/tickets/validate",
+    "ticketCatalog": "/api/v1/tenants/:tenant/projects/:project/ticket-machine/catalog",
+    "ticketOperation": "/api/v1/tenants/:tenant/projects/:project/ticket-machine/operations",
+    "ticketOperations": "/api/v1/tenants/:tenant/projects/:project/ticket-machine/operations/recent",
+    "ticketExecutions": "/api/v1/tenants/:tenant/projects/:project/ticket-machine/executions",
+    "ticketExecution": "/api/v1/tenants/:tenant/projects/:project/ticket-machine/executions/:task",
+    "ticketExecutionTurns": "/api/v1/tenants/:tenant/projects/:project/ticket-machine/executions/:task/attempts/:attempt/turns",
+    "ticketExecutionTranscript": "/api/v1/tenants/:tenant/projects/:project/ticket-machine/executions/:task/attempts/:attempt/transcript",
+    "ticketExecutionConfiguration": "/api/v1/tenants/:tenant/projects/:project/ticket-machine/executions/:task/attempts/:attempt/configuration"
   },
   "schemas": {
     "forgeCredential": {

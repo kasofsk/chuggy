@@ -336,6 +336,18 @@ export const nativeHttpRoutes = {
   threadClose: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/close`,
   threadRename: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/rename`,
   threadHide: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/hide`,
+  ticketMachineAdmission: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine`,
+  tickets: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/tickets`,
+  ticket: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/tickets/:ticket`,
+  ticketValidation: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/tickets/validate`,
+  ticketCatalog: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/catalog`,
+  ticketOperation: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/operations`,
+  ticketOperations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/operations/recent`,
+  ticketExecutions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/executions`,
+  ticketExecution: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/executions/:task`,
+  ticketExecutionTurns: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/executions/:task/attempts/:attempt/turns`,
+  ticketExecutionTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/executions/:task/attempts/:attempt/transcript`,
+  ticketExecutionConfiguration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/executions/:task/attempts/:attempt/configuration`,
 } as const;
 
 export type NativeHttpRoute = keyof typeof nativeHttpRoutes;

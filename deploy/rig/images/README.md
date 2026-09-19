@@ -122,6 +122,9 @@ to start without the required ones.
 | `CHUG_API_HOST` | `0.0.0.0` in the image | the source default is loopback, which no kubelet can reach |
 | `CHUG_API_PORT` | 3000 | |
 | `CHUG_API_SHUTDOWN_DRAIN_MS` | | how long a drain runs before open connections are closed |
+| `CHUG_API_METRICS_PORT` | | where the scrape listener answers; naming none starts no such listener at all |
+| `CHUG_API_METRICS_HOST` | loopback | the scrape listener spans every tenant, so what may reach it is the operator's to decide |
+| `CHUG_API_METRICS_SILENCE_SECS` | 300 | how long a running claim may say nothing before its workload is counted silent |
 | `CHUG_API_OIDC_DISCOVERY_TIMEOUT_MS` | | |
 | `CHUG_API_OIDC_JWKS_TIMEOUT_MS` | | |
 | `CHUG_API_KETO_TIMEOUT_MS` | | how long one project access question may take before it is undecided |

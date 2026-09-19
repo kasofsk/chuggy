@@ -1,4 +1,8 @@
-import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import {
+  nativeHttpRoutes,
+  type PartitionIdentity,
+} from "../../../../src/contract/http.ts";
+import { endpointPath } from "../../../../src/contract/endpoints.ts";
 import {
   adoptedCatalogEntriesSchema,
   adoptedCatalogFileSchema,
@@ -19,7 +23,7 @@ import type { ApiPorts, ApiResult } from "./apiRequest.ts";
 import { apiRead } from "./apiRequest.ts";
 
 function root(partition: PartitionIdentity): string {
-  return `/api/v1/tenants/${encodeURIComponent(partition.tenant)}/projects/${encodeURIComponent(partition.project)}/ticket-machine`;
+  return endpointPath(nativeHttpRoutes.ticketMachineAdmission, partition);
 }
 
 export function adoptedTickets(

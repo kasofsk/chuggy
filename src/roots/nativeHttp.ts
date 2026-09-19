@@ -48,7 +48,16 @@ import {
   postgresThreads,
 } from "../adapters/postgres/thread.ts";
 import { postgresSessionStoreRows } from "../adapters/postgres/sessionStoreReads.ts";
-import { sessionStoreStreamsAnswered } from "../contract/http.ts";
+import {
+  sessionStorePageBatchesMax,
+  sessionStoreStreamsAnswered,
+} from "../contract/http.ts";
+import { postgresTicketExecutionReads } from "../adapters/postgres/ticketExecutionReads.ts";
+import { postgresExecutionMetrics } from "../adapters/postgres/executionMetrics.ts";
+import { createMetricsApp } from "../adapters/http/metricsServer.ts";
+import type { FastifyInstance } from "fastify";
+import { ticketExecutionReads } from "../interpreter/ticketExecutionRead.ts";
+import type { BlobReadPort } from "../interpreter/blobStore.ts";
 import type { SessionStoreReadPort } from "../interpreter/sessionStore.ts";
 import {
   currentRuntimeSchemaContract,
@@ -718,6 +727,7 @@ function nativeTicketApplication(
   access: ProjectAccess,
   forge: NativeForge,
   keying: IdempotencyKeying,
+  blobs: BlobReadPort,
 ): NativeTicketApplication {
   const { pool } = pools;
   const catalogSnapshots = gitTicketCatalog({
@@ -751,6 +761,14 @@ function nativeTicketApplication(
       content,
       fragments,
     }),
+    reads: ticketExecutionReads({
+      access,
+      store: postgresTicketExecutionReads(
+        pool,
+        blobs,
+        sessionStorePageBatchesMax,
+      ),
+    }),
     identity: ({ principal, partition, key, operation }) =>
       idempotencyKeyDigestCurrent(
         keying,
@@ -760,6 +778,45 @@ function nativeTicketApplication(
         ),
       ),
   };
+}
+
+/**
+ * The scrape listener, started only where the operator named a port. It is a
+ * listener of its own because a scrape is not a membership: these samples span
+ * every tenant this installation holds, and no member's bearer stands for that.
+ */
+function nativeMetricsListener(pool: pg.Pool): FastifyInstance | undefined {
+  if (process.env["CHUG_API_METRICS_PORT"] === undefined) return undefined;
+  const metrics = postgresExecutionMetrics(pool);
+  return createMetricsApp({
+    samples: (silenceSecs) => metrics.samples(silenceSecs),
+    silenceSecs: positiveEnvironment("CHUG_API_METRICS_SILENCE_SECS", 300),
+  });
+}
+
+/** What one shutdown of this process stops, in the order stopping them is safe. */
+function nativeApiClosing(
+  app: FastifyInstance,
+  retention: { stop: () => Promise<void> },
+  metrics: FastifyInstance | undefined,
+  pool: pg.Pool,
+): void {
+  app.addHook("onClose", async () => {
+    await retention.stop();
+    await metrics?.close();
+    await closePool(pool);
+  });
+}
+
+/** Where the scrape listener answers, which the operator names and nothing defaults. */
+async function nativeMetricsListening(
+  metrics: FastifyInstance | undefined,
+): Promise<void> {
+  if (metrics === undefined) return;
+  await metrics.listen({
+    host: process.env["CHUG_API_METRICS_HOST"] ?? "127.0.0.1",
+    port: positiveEnvironment("CHUG_API_METRICS_PORT", 0),
+  });
 }
 
 async function main(): Promise<void> {
@@ -797,7 +854,7 @@ async function main(): Promise<void> {
     nativeHttpLimitsDefault,
     forge.minting,
     forge.onboarding,
-    nativeTicketApplication(pools, access, forge, keying),
+    nativeTicketApplication(pools, access, forge, keying, artifacts),
     nativeWorkerPools(pool, access),
   );
   const retention = projectChangeRetentionMaintenance(
@@ -810,16 +867,15 @@ async function main(): Promise<void> {
       process.stderr.write(`project change retention: ${message}\n`);
     },
   );
-  app.addHook("onClose", async () => {
-    await retention.stop();
-    await closePool(pool);
-  });
+  const metrics = nativeMetricsListener(pool);
+  nativeApiClosing(app, retention, metrics, pool);
   const shutdown = nativeShutdown(
     app,
     positiveEnvironment("CHUG_API_SHUTDOWN_DRAIN_MS", 15_000),
   );
   nativeShutdownSignals(shutdown);
   retention.start();
+  await nativeMetricsListening(metrics);
   try {
     await app.listen({
       host: process.env["CHUG_API_HOST"] ?? "127.0.0.1",
