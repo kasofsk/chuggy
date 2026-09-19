@@ -128,7 +128,12 @@ const ticketHighlighting = HighlightStyle.define([
 
 /** The editor styles itself, because a shadow root is out of the page sheets' reach. */
 const editorTheme = EditorView.theme({
-  "&": { color: "var(--ink-1)", backgroundColor: "var(--surface-2)" },
+  "&": {
+    color: "var(--ink-1)",
+    backgroundColor: "var(--surface-2)",
+    height: "100%",
+  },
+  ".cm-scroller": { overflow: "auto" },
   ".cm-content": { fontFamily: "var(--font-mono)", caretColor: "var(--ink-1)" },
   ".cm-gutters": {
     backgroundColor: "var(--surface-1)",
@@ -152,6 +157,11 @@ const editorTheme = EditorView.theme({
     color: "var(--ink-2)",
     cursor: "pointer",
     marginLeft: "var(--space-1)",
+    minHeight: "24px",
+    minWidth: "24px",
+  },
+  "@media (pointer: coarse)": {
+    ".cm-fragment-action": { minHeight: "44px", minWidth: "44px" },
   },
   ".cm-fragment-content": {
     border: "var(--hairline) solid var(--edge)",
@@ -169,6 +179,33 @@ const editorTheme = EditorView.theme({
     borderLeft: "var(--rail) solid var(--edge-strong)",
     marginTop: "var(--space-2)",
     paddingLeft: "var(--space-2)",
+  },
+  /**
+   * The completion list is drawn by CodeMirror inside the same shadow root, and
+   * nothing registers a dark CodeMirror theme, so without these rules it falls
+   * through to CodeMirror's own light one whichever mode is active.
+   */
+  ".cm-tooltip.cm-tooltip-autocomplete": {
+    background: "var(--surface-1)",
+    color: "var(--ink-1)",
+    border: "var(--hairline) solid var(--edge)",
+    borderRadius: "var(--radius-2)",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul": {
+    fontFamily: "var(--font-mono)",
+    fontSize: "var(--text-md)",
+    maxHeight: "16em",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+    color: "var(--ink-1)",
+    padding: "var(--space-1) var(--space-2)",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
+    background: "var(--surface-2)",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete .cm-completionMatchedText": {
+    color: "inherit",
+    fontWeight: "var(--weight-strong)",
   },
 });
 

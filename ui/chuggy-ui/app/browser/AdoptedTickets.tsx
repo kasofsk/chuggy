@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { AdoptedTicket } from "../../../../src/contract/adoptedTickets.ts";
 import type { ApiFailure } from "../core/apiRequest.ts";
+import { envelopeMessage } from "../../../../src/contract/outcomes.ts";
 import {
   adoptedOperation,
   assertAdoptedOperationSucceeded,
@@ -18,7 +19,16 @@ import {
   useTicketCatalog,
   useTicketValidation,
 } from "./editor/useTicketAuthoring.ts";
+import type { EditorFinding } from "./editor/chugEditor.ts";
+import type { FragmentCatalog } from "./editor/fragments.ts";
 import { Button, ButtonLink } from "./ui/Button.tsx";
+import { Dialog } from "./ui/Dialog.tsx";
+import { Notice } from "./ui/Notice.tsx";
+import {
+  EditorBoundary,
+  useLeaveGuard,
+  useUnloadGuard,
+} from "./editor/authoringGuards.tsx";
 
 /** CodeMirror is the largest thing the console bundles and only authoring wants it. */
 const TicketEditor = lazy(async () => ({
@@ -28,9 +38,8 @@ const TicketEditor = lazy(async () => ({
 const operationPollAttemptsMax = 60;
 const operationPollDelayMs = 1_000;
 const ticketDocumentExample = `version: 2
-title: Describe the change
-instructions: |
-  Explain the intended result and how to verify it.
+title:
+instructions:
 work: workloads/work.yaml
 evaluation: evaluation-plans/review.yaml
 finalization: finalizers/pull-request.yaml
@@ -40,6 +49,13 @@ function failureSentence(failure: ApiFailure): string {
   if ("reason" in failure) return failure.reason;
   if (failure.outcome === "Conflict")
     return "This project uses an unsupported ticket model or the request conflicted.";
+  const named = "status" in failure ? ` ${String(failure.status)}` : "";
+  if ("body" in failure) {
+    const said = envelopeMessage(failure.body);
+    if (said !== undefined) return `${said} (${failure.code}${named})`;
+  }
+  if ("code" in failure)
+    return `The request ended with ${failure.outcome}: ${failure.code}${named}.`;
   return `The request ended with ${failure.outcome}.`;
 }
 
@@ -124,22 +140,6 @@ function authoringPin(submission: AuthoringSubmission): CatalogPin {
   };
 }
 
-function AuthoringSubmit(props: {
-  readonly busy: boolean;
-  readonly label: string;
-}): ReactNode {
-  return (
-    <Button
-      type="submit"
-      busy={props.busy}
-      disabled={props.busy}
-      onClick={() => undefined}
-    >
-      {props.label}
-    </Button>
-  );
-}
-
 function AuthoringPin(props: {
   readonly fields: AuthoringFields;
   readonly setFields: (fields: AuthoringFields) => void;
@@ -162,65 +162,256 @@ function AuthoringPin(props: {
   );
 }
 
+/** The text as last written out, so "changed" means changed since then. */
+function useDirtyText(source: string): {
+  readonly dirty: boolean;
+  readonly settle: (text: string) => void;
+} {
+  const [saved, setSaved] = useState(source);
+  return { dirty: source !== saved, settle: setSaved };
+}
+
+function AuthoringFallback(props: {
+  readonly value: string;
+  readonly onChange: (text: string) => void;
+}): ReactNode {
+  return (
+    <div className="grid gap-2">
+      <Notice
+        inline
+        tone="danger"
+        role="alert"
+        detail="The editor could not load. The YAML is still editable here."
+      />
+      <textarea
+        aria-label="Ticket YAML"
+        className="ticket-editor-fallback"
+        spellCheck={false}
+        rows={16}
+        value={props.value}
+        onChange={(event) => {
+          props.onChange(event.target.value);
+        }}
+      />
+    </div>
+  );
+}
+
+/** The document as it will be written, shown before anything is. */
+function AuthoringConfirm(props: {
+  readonly label: string;
+  readonly source: string;
+  readonly openFindings: number;
+  readonly busy: boolean;
+  readonly open: boolean;
+  readonly setOpen: (open: boolean) => void;
+  readonly onConfirm: () => void;
+}): ReactNode {
+  return (
+    <Dialog
+      title="Create this ticket?"
+      trigger={props.label}
+      triggerVariant="primary"
+      triggerDisabled={props.busy}
+      open={props.open}
+      onOpenChange={(open) => {
+        if (!open && props.busy) return;
+        props.setOpen(open);
+      }}
+    >
+      <p className="panel-note">
+        This is the document that will be written. Creating it does not dispatch
+        it or start a run.
+      </p>
+      <pre className="authoring-confirm-source">{props.source}</pre>
+      {props.openFindings === 0 ? null : (
+        <Notice
+          inline
+          tone="danger"
+          role="status"
+          detail={`${String(props.openFindings)} finding(s) are still open on this document.`}
+        />
+      )}
+      <Button
+        variant="primary"
+        busy={props.busy}
+        disabled={props.busy}
+        onClick={props.onConfirm}
+      >
+        {props.label}
+      </Button>
+    </Dialog>
+  );
+}
+
+/** The editor, or the textarea that stands in when its chunk will not load. */
+/**
+ * A filling document claims the pane it sits in rather than a fixed band. The
+ * shell stretches a page that holds a region, so that is what the mark is for.
+ */
+function AuthoringDocument(props: {
+  readonly value: string;
+  readonly onChange: (text: string) => void;
+  readonly findings: readonly EditorFinding[];
+  readonly files: readonly string[];
+  readonly catalog: FragmentCatalog | undefined;
+  readonly fill?: boolean;
+}): ReactNode {
+  const filling = props.fill === true;
+  return (
+    <div
+      className={
+        filling
+          ? "authoring-document authoring-document-fill"
+          : "authoring-document"
+      }
+      {...(filling ? { role: "region", "aria-label": "Ticket YAML" } : {})}
+    >
+      <span>Ticket YAML</span>
+      <EditorBoundary
+        fallback={
+          <AuthoringFallback value={props.value} onChange={props.onChange} />
+        }
+      >
+        <Suspense fallback={<p className="panel-note">Loading the editor…</p>}>
+          <TicketEditor
+            value={props.value}
+            onChange={props.onChange}
+            findings={props.findings}
+            files={props.files}
+            catalog={props.catalog}
+          />
+        </Suspense>
+      </EditorBoundary>
+    </div>
+  );
+}
+
+/** Everything the form holds that is not a field: what failed, and what is in flight. */
+function useAuthoringTurn(
+  fields: AuthoringFields,
+  commit: string | undefined,
+  onSubmit: (submission: AuthoringSubmission) => Promise<void>,
+  settle: (text: string) => void,
+): {
+  readonly busy: boolean;
+  readonly failure: string | undefined;
+  readonly confirming: boolean;
+  readonly setConfirming: (open: boolean) => void;
+  readonly submit: () => void;
+} {
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string>();
+  const [confirming, setConfirming] = useState(false);
+  const submit = (): void => {
+    setBusy(true);
+    void onSubmit({ fields, expectedCommit: commit })
+      .then(() => {
+        settle(fields.source);
+        setConfirming(false);
+      })
+      .catch((error: unknown) => {
+        setFailure(
+          error instanceof Error ? error.message : "The request failed.",
+        );
+      })
+      .finally(() => {
+        setBusy(false);
+      });
+  };
+  return { busy, failure, confirming, setConfirming, submit };
+}
+
+/** What went wrong around the document, as distinct from what is wrong in it. */
+function AuthoringTrouble(props: {
+  readonly unanswered: ApiFailure | undefined;
+  readonly catalog: string | undefined;
+}): ReactNode {
+  return (
+    <>
+      {props.unanswered === undefined ? null : (
+        <Notice
+          inline
+          tone="danger"
+          role="status"
+          detail={`The document has not been checked: ${failureSentence(props.unanswered)}`}
+        />
+      )}
+      {props.catalog === undefined ? null : (
+        <Notice inline tone="danger" role="status" detail={props.catalog} />
+      )}
+    </>
+  );
+}
+
 function AuthoringForm(props: {
   readonly submitLabel: string;
   readonly initial?: AuthoringFields;
   readonly onSubmit: (submission: AuthoringSubmission) => Promise<void>;
+  readonly fill?: boolean;
 }): ReactNode {
   const partition = useParams({ from: "/$tenant/$project" });
   const [fields, setFields] = useState<AuthoringFields>(
     props.initial ?? { source: ticketDocumentExample, repository: "" },
   );
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string>();
-  const { findings, commit } = useTicketValidation(partition, fields);
+  const [catalogFailure, setCatalogFailure] = useState<string>();
+  const { findings, commit, unanswered } = useTicketValidation(
+    partition,
+    fields,
+  );
+  const { dirty, settle } = useDirtyText(fields.source);
+  const turn = useAuthoringTurn(fields, commit, props.onSubmit, settle);
+  useUnloadGuard(dirty);
+  useLeaveGuard(dirty);
   const { files, catalog } = useTicketCatalog(
     partition,
     fields.repository === "" ? {} : { repository: fields.repository },
     (error: unknown) => {
-      setFailure(
+      setCatalogFailure(
         error instanceof Error ? error.message : "The catalog failed.",
       );
     },
   );
   return (
-    <form
-      className="grid gap-3"
-      onSubmit={(event) => {
-        event.preventDefault();
-        setBusy(true);
-        void props
-          .onSubmit({ fields, expectedCommit: commit })
-          .catch((error: unknown) => {
-            setFailure(
-              error instanceof Error ? error.message : "The request failed.",
-            );
-          })
-          .finally(() => {
-            setBusy(false);
-          });
-      }}
+    <div
+      className={
+        props.fill === true
+          ? "authoring-form authoring-form-fill"
+          : "authoring-form"
+      }
     >
       <AuthoringPin fields={fields} setFields={setFields} />
-      <div className="grid gap-1">
-        <span>Ticket YAML</span>
-        <Suspense fallback={<p className="panel-note">Loading the editor…</p>}>
-          <TicketEditor
-            value={fields.source}
-            onChange={(source) => {
-              setFields({ ...fields, source });
-            }}
-            findings={findings}
-            files={files}
-            catalog={catalog}
-          />
-        </Suspense>
+      <AuthoringDocument
+        value={fields.source}
+        onChange={(source) => {
+          setFields({ ...fields, source });
+        }}
+        findings={findings}
+        files={files}
+        catalog={catalog}
+        {...(props.fill === true ? { fill: true } : {})}
+      />
+      <AuthoringTrouble unanswered={unanswered} catalog={catalogFailure} />
+      <div className="authoring-actions">
+        <span className="panel-note">
+          {dirty
+            ? "Unsaved changes · nothing is written until you confirm"
+            : ""}
+        </span>
+        <AuthoringConfirm
+          label={props.submitLabel}
+          source={fields.source}
+          openFindings={findings.length}
+          busy={turn.busy}
+          open={turn.confirming}
+          setOpen={turn.setConfirming}
+          onConfirm={turn.submit}
+        />
       </div>
-      <AuthoringSubmit busy={busy} label={props.submitLabel} />
-      {failure === undefined ? null : (
-        <p className="text-tone-fail">{failure}</p>
+      {turn.failure === undefined ? null : (
+        <p className="text-tone-fail">{turn.failure}</p>
       )}
-    </form>
+    </div>
   );
 }
 
@@ -249,12 +440,13 @@ export function AdoptedTicketCreation(): ReactNode {
   const navigate = useNavigate();
   const [failure, setFailure] = useState<string>();
   return (
-    <main className="grid gap-4 p-4">
+    <main className="flex min-h-0 flex-1 flex-col gap-4 p-4">
       <h1>New ticket</h1>
       {failure === undefined ? null : (
         <p className="text-tone-fail">{failure}</p>
       )}
       <AuthoringForm
+        fill
         submitLabel="Create ticket"
         onSubmit={async (submission) => {
           const key = newIdentity();

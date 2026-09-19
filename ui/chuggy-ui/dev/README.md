@@ -1,14 +1,18 @@
 # The console, local, against a running installation
 
 ```sh
-just ui-local
+CHUG_UI_UPSTREAM=https://<installation> \
+CHUG_UI_ISSUER=https://<installation>/oauth \
+CHUG_UI_AUDIENCE=https://<installation>/api \
+  just ui-local
 ```
 
 Then open the address it prints. The console is served from this checkout with
 its sources watched, so an edit is a reload; everything behind `/api/v1` is the
-installation `compose.yaml` names, which by default is the rig. **Every action
-taken here is taken there.** A dispatch is a dispatch, a revoke is a revoke,
-and there is no local database to reset.
+installation the environment names. There is no default: an installation is
+somebody's running system, so naming one is the operator's to do and not this
+file's to assume. **Every action taken here is taken there.** A dispatch is a
+dispatch, a revoke is a revoke, and there is no local database to reset.
 
 ## Why an installation and not a fixture
 
@@ -47,13 +51,12 @@ CORS list stays what it was.
 `/config.json` is served the same way, derived from the address the browser
 asked on, so the redirect the console registers is the port it was reached on.
 
-## Somewhere else
+## The client
+
+`CHUG_UI_CLIENT_ID` defaults to `chuggy-ui-local`, the name above; an
+installation that registered it under another name is named the same way.
 
 ```sh
-CHUG_UI_UPSTREAM=https://chuggy.vteng.io \
 CHUG_UI_CLIENT_ID=<a client that installation registered for this port> \
   just ui-local
 ```
-
-`CHUG_UI_ISSUER` and `CHUG_UI_AUDIENCE` are the other two, and every one of
-them has the rig's value as its default.

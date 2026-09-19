@@ -1,11 +1,16 @@
 import { readFileSync } from "node:fs";
 import { parseDocument, isScalar, type Tags } from "yaml";
+import type { ErrorObject } from "ajv";
 import { schema_validator } from "./jsonSchema.ts";
 import { set_number_token } from "../../interpreter/json.ts";
 
 export type CatalogDocument = Record<string, unknown>;
 export { ticketCatalogDocumentBytesMax as catalogDocumentBytesMax } from "../../interpreter/ticketCatalog.ts";
-import { ticketCatalogDocumentBytesMax } from "../../interpreter/ticketCatalog.ts";
+import {
+  CatalogSchemaError,
+  ticketCatalogDocumentBytesMax,
+  type TicketFinding,
+} from "../../interpreter/ticketCatalog.ts";
 
 function documentTags(tags: Tags): Tags {
   return tags.map((tag) => {
@@ -137,6 +142,32 @@ function documentNumberToken(
     );
 }
 
+/**
+ * A fault about a property belongs at that property, not at the mapping holding
+ * it: a missing field and an unknown one are both places the author can look,
+ * and the validator reports them against the parent.
+ */
+function catalogFinding(error: ErrorObject): TicketFinding {
+  const params = error.params as {
+    missingProperty?: string;
+    additionalProperty?: string;
+  };
+  if (error.keyword === "required" && params.missingProperty !== undefined)
+    return {
+      path: `${error.instancePath}/${params.missingProperty}`,
+      message: "is required",
+    };
+  if (
+    error.keyword === "additionalProperties" &&
+    params.additionalProperty !== undefined
+  )
+    return {
+      path: `${error.instancePath}/${params.additionalProperty}`,
+      message: "is not a field this document has",
+    };
+  return { path: error.instancePath, message: error.message ?? "is invalid" };
+}
+
 export function catalogCheck<T extends object>(
   kind: string,
   value: unknown,
@@ -148,7 +179,10 @@ export function catalogCheck<T extends object>(
     throw new TypeError("catalog schema must be a mapping");
   const validate = schema_validator(schema).compile(schema);
   if (!validate(value))
-    throw new TypeError(`${kind}: ${JSON.stringify(validate.errors)}`);
+    throw new CatalogSchemaError(
+      kind,
+      (validate.errors ?? []).map(catalogFinding),
+    );
   return value as T;
 }
 

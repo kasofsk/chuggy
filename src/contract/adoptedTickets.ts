@@ -26,9 +26,16 @@ export const adoptedTicketDefinitionSchema = adoptedTicketSchema.extend({
   source: z.string().nullable(),
 });
 
+/** A finding names where it is, so an editor can draw it on that line. */
+export const adoptedTicketFindingSchema = z.strictObject({
+  /** A JSON pointer into the document; empty names the document itself. */
+  path: z.string(),
+  message: z.string().min(1),
+});
+
 export const adoptedTicketValidationSchema = z.strictObject({
   valid: z.boolean(),
-  findings: z.array(z.string().min(1)),
+  findings: z.array(adoptedTicketFindingSchema),
   /** What the server resolved against, which a write sends back as its guard. */
   commit: z.string().min(1),
 });
@@ -85,6 +92,7 @@ export type AdoptedTickets = z.infer<typeof adoptedTicketsSchema>;
 export type AdoptedTicketDefinition = z.infer<
   typeof adoptedTicketDefinitionSchema
 >;
+export type AdoptedTicketFinding = z.infer<typeof adoptedTicketFindingSchema>;
 export type AdoptedTicketValidation = z.infer<
   typeof adoptedTicketValidationSchema
 >;

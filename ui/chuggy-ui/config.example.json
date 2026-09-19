@@ -1,7 +1,7 @@
 {
-  "issuer": "https://auth.vteng.io",
+  "issuer": "https://<installation>/oauth",
   "clientId": "chuggy-ui",
-  "audience": "https://chuggy.vteng.io/api",
-  "redirectUri": "https://chuggy.vteng.io/auth/callback",
+  "audience": "https://<installation>/api",
+  "redirectUri": "https://<installation>/auth/callback",
   "scopes": ["openid", "offline_access"]
 }
