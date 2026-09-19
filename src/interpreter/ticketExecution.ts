@@ -19,6 +19,7 @@
 import * as task from "../domain/chuggernaut/task.js";
 import * as ticket from "../domain/chuggernaut/ticket.js";
 import { setTimeout as delay } from "node:timers/promises";
+import type { RepositoryId } from "./finalizer.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import type { TicketContentStore } from "./ticketCatalog.ts";
 import { ticketWorkspaceRead } from "./ticketWorkspace.ts";
@@ -332,6 +333,18 @@ export interface TicketExecutionWorkerView {
   }[];
   readonly repository: string;
   readonly commit: string;
+  readonly access: TicketExecutionAccess;
+}
+
+/**
+ * Whom one attempt's git credential is minted for, read off the attempt's own
+ * row rather than out of the request asking. The access is the scheduler's
+ * reading of the workload and was recorded before a harness existed, so a
+ * harness that asked for a push it was not given is answered the read it was.
+ */
+export interface TicketExecutionCredentialSubject {
+  readonly partition: Partition;
+  readonly repository: RepositoryId;
   readonly access: TicketExecutionAccess;
 }
 

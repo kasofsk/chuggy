@@ -50,6 +50,7 @@ import {
   asRepositoryId,
   finalizerIdentityCharsMax,
 } from "../../interpreter/finalizer.ts";
+import type { TicketExecutionCredentialSubject } from "../../interpreter/ticketExecution.ts";
 import type {
   WorkerPlaneCredentialMinted,
   WorkerPlaneCredentialMinting,
@@ -70,6 +71,7 @@ export const workerPlaneRoutes = [
   "/v1/session/credential",
   "/v1/ticket-execution/terminal",
   "/v1/ticket-execution/view",
+  "/v1/ticket-execution/credentials",
 ] as const;
 
 const sessionStorePrefix = "/v1/session/store/";
@@ -100,6 +102,9 @@ export interface WorkerPlaneServerService {
       body: unknown,
     ): Promise<"Recorded" | "Conflict" | "Fenced">;
     view(secret: string): Promise<unknown>;
+    credential(
+      secret: string,
+    ): Promise<TicketExecutionCredentialSubject | undefined>;
   };
 }
 
@@ -149,6 +154,37 @@ function ticketExecutionRoutes(
     return view === undefined
       ? reply.code(401).send({ action: "stop" })
       : reply.code(200).send(view);
+  });
+  ticketCredentialRoute(app, service, attempts);
+}
+
+/**
+ * The credential one attempt works under. It carries no body: the repository is
+ * the one the attempt's own input bundle pinned and the permission set follows
+ * from the kind of task the scheduler recorded, so there is nothing here for a
+ * harness to name and nothing for it to widen.
+ */
+function ticketCredentialRoute(
+  app: FastifyInstance,
+  service: WorkerPlaneServerService,
+  attempts: NonNullable<WorkerPlaneServerService["ticketExecutions"]>,
+): void {
+  app.post(workerPlaneRoutes[14], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const subject = await attempts.credential(secret);
+    if (subject === undefined) return reply.code(401).send({ action: "stop" });
+    const credentials = service.credentials;
+    return credentials === undefined
+      ? reply.code(404).send(workerCredentialNotConfigured)
+      : workerCredentialAnswered(
+          reply,
+          await credentials.attempt(
+            subject.partition,
+            subject.repository,
+            subject.access,
+          ),
+        );
   });
 }
 
@@ -221,12 +257,6 @@ function workerCredentialAnswered(
   }
 }
 
-/**
- * The credential one attempt works under. It carries no body: the repository is
- * the one the attempt's own input bundle pinned and the permission set follows
- * from the kind of task the scheduler recorded, so there is nothing here for a
- * pod to name and nothing for it to widen.
- */
 /**
  * The credential one session reads its tree under. It names its repository,
  * because a site may have placed the session against a mirror of the binding

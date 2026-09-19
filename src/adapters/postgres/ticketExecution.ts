@@ -3,6 +3,7 @@ import type pg from "pg";
 import { createHash } from "node:crypto";
 
 import { decode, encode, canonical_json } from "../../interpreter/codec.ts";
+import { asRepositoryId } from "../../interpreter/finalizer.ts";
 import * as task from "../../domain/chuggernaut/task.js";
 import {
   asRecoveryEpoch,
@@ -12,6 +13,7 @@ import {
 import {
   ticketExecutionWorkerView,
   type TicketExecutionClaim,
+  type TicketExecutionCredentialSubject,
   type TicketExecutionQueued,
   type TicketExecutionSettlement,
   type TicketExecutionStore,
@@ -384,6 +386,39 @@ async function executionWorkerView(
   return found.rows[0]?.worker_view ?? undefined;
 }
 
+/**
+ * Whom one live attempt's credential is minted for, taken off the same row and
+ * under the same bearer its view is served from. The repository and the access
+ * are read out of the view the scheduler materialised at bind time, so they
+ * are the attempt's own and not the caller's.
+ */
+async function executionWorkerCredentialSubject(
+  pool: pg.Pool,
+  capabilityDigest: string,
+): Promise<TicketExecutionCredentialSubject | undefined> {
+  const found = await pool.query<{
+    tenant: string;
+    project: string;
+    worker_view: unknown;
+  }>(sql`SELECT tenant,project,worker_view FROM ticket_execution
+    WHERE capability_digest=${capabilityDigest} AND state='Running'
+      AND claim_expires_at>now()
+      AND recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`);
+  const row = found.rows[0];
+  if (row === undefined || row.worker_view === null) return undefined;
+  const view = row.worker_view as { repository?: unknown; access?: unknown };
+  if (typeof view.repository !== "string" || view.repository.length === 0)
+    return undefined;
+  return {
+    partition: { tenant: row.tenant, project: row.project } as Partition,
+    repository: asRepositoryId(view.repository),
+    access:
+      view.access === "PublishRepositoryResult"
+        ? "PublishRepositoryResult"
+        : "ReadRepository",
+  };
+}
+
 export function postgresTicketExecutionTerminals(pool: pg.Pool): {
   bind(
     claim: TicketExecutionClaim,
@@ -393,6 +428,9 @@ export function postgresTicketExecutionTerminals(pool: pg.Pool): {
   renew(claim: TicketExecutionClaim, leaseSecs: number): Promise<boolean>;
   outcome(claim: TicketExecutionClaim): Promise<unknown>;
   view(secret: string): Promise<unknown>;
+  credential(
+    secret: string,
+  ): Promise<TicketExecutionCredentialSubject | undefined>;
   report(
     secret: string,
     body: unknown,
@@ -425,6 +463,8 @@ export function postgresTicketExecutionTerminals(pool: pg.Pool): {
       return found.rows[0]?.worker_outcome ?? undefined;
     },
     view: (secret) => executionWorkerView(pool, digest(secret)),
+    credential: (secret) =>
+      executionWorkerCredentialSubject(pool, digest(secret)),
     report: async (secret, offered) => {
       const body = ticketTerminalBody(offered);
       if (body === undefined) return "Conflict";
