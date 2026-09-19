@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { AdoptedTicket } from "../../../../src/contract/adoptedTickets.ts";
 import type { ApiFailure } from "../core/apiRequest.ts";
+import { envelopeMessage } from "../../../../src/contract/outcomes.ts";
 import {
   adoptedOperation,
   assertAdoptedOperationSucceeded,
@@ -37,9 +38,8 @@ const TicketEditor = lazy(async () => ({
 const operationPollAttemptsMax = 60;
 const operationPollDelayMs = 1_000;
 const ticketDocumentExample = `version: 2
-title: Describe the change
-instructions: |
-  Explain the intended result and how to verify it.
+title:
+instructions:
 work: workloads/work.yaml
 evaluation: evaluation-plans/review.yaml
 finalization: finalizers/pull-request.yaml
@@ -49,6 +49,13 @@ function failureSentence(failure: ApiFailure): string {
   if ("reason" in failure) return failure.reason;
   if (failure.outcome === "Conflict")
     return "This project uses an unsupported ticket model or the request conflicted.";
+  const named = "status" in failure ? ` ${String(failure.status)}` : "";
+  if ("body" in failure) {
+    const said = envelopeMessage(failure.body);
+    if (said !== undefined) return `${said} (${failure.code}${named})`;
+  }
+  if ("code" in failure)
+    return `The request ended with ${failure.outcome}: ${failure.code}${named}.`;
   return `The request ended with ${failure.outcome}.`;
 }
 
@@ -238,15 +245,28 @@ function AuthoringConfirm(props: {
 }
 
 /** The editor, or the textarea that stands in when its chunk will not load. */
+/**
+ * A filling document claims the pane it sits in rather than a fixed band. The
+ * shell stretches a page that holds a region, so that is what the mark is for.
+ */
 function AuthoringDocument(props: {
   readonly value: string;
   readonly onChange: (text: string) => void;
   readonly findings: readonly EditorFinding[];
   readonly files: readonly string[];
   readonly catalog: FragmentCatalog | undefined;
+  readonly fill?: boolean;
 }): ReactNode {
+  const filling = props.fill === true;
   return (
-    <div className="grid gap-1">
+    <div
+      className={
+        filling
+          ? "authoring-document authoring-document-fill"
+          : "authoring-document"
+      }
+      {...(filling ? { role: "region", "aria-label": "Ticket YAML" } : {})}
+    >
       <span>Ticket YAML</span>
       <EditorBoundary
         fallback={
@@ -328,6 +348,7 @@ function AuthoringForm(props: {
   readonly submitLabel: string;
   readonly initial?: AuthoringFields;
   readonly onSubmit: (submission: AuthoringSubmission) => Promise<void>;
+  readonly fill?: boolean;
 }): ReactNode {
   const partition = useParams({ from: "/$tenant/$project" });
   const [fields, setFields] = useState<AuthoringFields>(
@@ -352,7 +373,13 @@ function AuthoringForm(props: {
     },
   );
   return (
-    <div className="grid gap-3">
+    <div
+      className={
+        props.fill === true
+          ? "authoring-form authoring-form-fill"
+          : "authoring-form"
+      }
+    >
       <AuthoringPin fields={fields} setFields={setFields} />
       <AuthoringDocument
         value={fields.source}
@@ -362,6 +389,7 @@ function AuthoringForm(props: {
         findings={findings}
         files={files}
         catalog={catalog}
+        {...(props.fill === true ? { fill: true } : {})}
       />
       <AuthoringTrouble unanswered={unanswered} catalog={catalogFailure} />
       <div className="authoring-actions">
@@ -412,12 +440,13 @@ export function AdoptedTicketCreation(): ReactNode {
   const navigate = useNavigate();
   const [failure, setFailure] = useState<string>();
   return (
-    <main className="grid gap-4 p-4">
+    <main className="flex min-h-0 flex-1 flex-col gap-4 p-4">
       <h1>New ticket</h1>
       {failure === undefined ? null : (
         <p className="text-tone-fail">{failure}</p>
       )}
       <AuthoringForm
+        fill
         submitLabel="Create ticket"
         onSubmit={async (submission) => {
           const key = newIdentity();

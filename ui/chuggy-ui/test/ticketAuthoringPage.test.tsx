@@ -117,7 +117,15 @@ test("the editor draws the document the form opens on", async () => {
   expect(screen.getByText("Ticket YAML")).toBeDefined();
   expect(screen.queryByLabelText("Catalog commit")).toBeNull();
   expect(screen.getByRole("button", { name: "Fold all" })).toBeDefined();
-  expect(host?.shadowRoot?.textContent).toContain("title: Describe the change");
+  expect(host?.shadowRoot?.textContent).toContain("version: 2");
+  expect(host?.shadowRoot?.textContent).toContain("title:instructions:");
+});
+
+test("the form the editor fills claims the pane as a region", async () => {
+  drawn();
+  await mounted();
+  const region = screen.getByRole("region", { name: "Ticket YAML" });
+  expect(region.classList.contains("authoring-document-fill")).toBe(true);
 });
 
 test("the catalog and the validation are asked for without a commit", async () => {
