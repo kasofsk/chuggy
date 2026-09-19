@@ -1,0 +1,10 @@
+kind: workload
+runner: codex
+model: gpt-5.6-terra
+prompt: agents/worker.md
+permission_mode: workspace-write
+allowed_tools: []
+result_contract: result-contracts/worker-result-v1.schema.json
+network_access: true
+pre_commit_hooks:
+  - [./node_modules/.bin/prettier, --write, --log-level, warn, .]

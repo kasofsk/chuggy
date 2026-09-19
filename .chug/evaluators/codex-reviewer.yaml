@@ -1,0 +1,3 @@
+kind: evaluator
+name: Codex review
+workload: workloads/codex-reviewer.yaml

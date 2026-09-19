@@ -1,0 +1,12 @@
+kind: workload
+runner: claude
+model: claude-fable-5-1
+effort: low
+prompt: agents/claude-worker.md
+permission_mode: acceptEdits
+network_access: true
+allowed_tools: [Bash, Edit, Write, MultiEdit, Read, Glob, Grep, Agent, TodoWrite]
+max_budget_usd: 60
+result_contract: result-contracts/worker-result-v1.schema.json
+pre_commit_hooks:
+  - [./node_modules/.bin/prettier, --write, --log-level, warn, .]

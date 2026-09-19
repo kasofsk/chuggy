@@ -1,0 +1,8 @@
+kind: evaluation-plan
+stages:
+  - name: CI
+    evaluators:
+      - evaluators/project-ci.yaml
+  - name: Agent review
+    evaluators:
+      - evaluators/codex-reviewer.yaml
