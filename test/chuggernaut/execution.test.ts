@@ -266,6 +266,7 @@ test("a placed attempt's wire outcome becomes the terminal the machine takes", a
               {
                 repository: "repository",
                 commit: "0123456789012345678901234567890123456789",
+                base: "0123456789012345678901234567890123456789",
               },
             ],
           },
@@ -560,6 +561,7 @@ test("a pool-run attempt is settled by the pass, through the one result protocol
                 {
                   repository: "repository",
                   commit: "0123456789012345678901234567890123456789",
+                  base: "0123456789012345678901234567890123456789",
                 },
               ],
             },

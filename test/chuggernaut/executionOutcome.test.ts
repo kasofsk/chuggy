@@ -34,6 +34,7 @@ const review = new task.TaskObligation(
 const view: TicketExecutionOutcomeView = {
   resultContract: { type: "object" },
   repository: "https://git.invalid/owner/repository.git",
+  commit: "0123456789abcdef0123456789abcdef01234567",
   source: task.ContentRef(3),
   access: "ReadRepository",
 };
@@ -119,6 +120,7 @@ test("a publishing work result is accepted on the one commit it named", async ()
         {
           repository: view.repository,
           commit: "ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD",
+          base: view.commit,
         },
       ],
     },
@@ -165,6 +167,49 @@ for (const [why, obligation, offered, expected] of [
       outputs: [{ repository: "wrong", commit: "not-a-commit" }],
     },
     "PublishRepositoryResult",
+  ],
+  [
+    "ticket execution output must name the base it built on",
+    work,
+    {
+      type: "result",
+      manifest: {},
+      outputs: [
+        {
+          repository: "https://git.invalid/owner/repository.git",
+          commit: "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+        },
+      ],
+    },
+    "PublishRepositoryResult",
+  ],
+  [
+    "ticket execution output base is not the commit the attempt was served",
+    work,
+    {
+      type: "result",
+      manifest: {},
+      outputs: [
+        {
+          repository: "https://git.invalid/owner/repository.git",
+          commit: "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+          base: "ffffffffffffffffffffffffffffffffffffffff",
+        },
+      ],
+    },
+    "PublishRepositoryResult",
+  ],
+  [
+    'ticket execution outcome type is unrecognised: "finished"',
+    work,
+    { type: "finished", manifest: {}, outputs: [] },
+    undefined,
+  ],
+  [
+    "ticket execution outcome type is unrecognised: undefined",
+    work,
+    { manifest: {}, outputs: [] },
+    undefined,
   ],
   [
     "read-only ticket execution produced an output",

@@ -113,6 +113,35 @@ for (const [why, headers] of [
     assert.deepEqual(response.json(), { action: "stop" });
   });
 
+for (const [why, payload] of [
+  ["carries no outcome at all", { taskKey: "work:1" }],
+  ["names a field the envelope does not hold", { outcome: {}, extra: 1 }],
+  ["is not an object", ["outcome"]],
+] as const)
+  test(`a terminal that ${why} is refused at the door`, async () => {
+    const response = await attemptPlane("attempt-secret").inject({
+      method: "POST",
+      url: "/v1/ticket-execution/terminal",
+      headers: { authorization: "Bearer attempt-secret" },
+      payload,
+    });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.deepEqual(response.json(), {
+      action: "stop",
+      reason: "InvalidTerminal",
+    });
+  });
+
+test("an outcome the envelope can hold is stored for the protocol to read", async () => {
+  const response = await attemptPlane("attempt-secret").inject({
+    method: "POST",
+    url: "/v1/ticket-execution/terminal",
+    headers: { authorization: "Bearer attempt-secret" },
+    payload: { outcome: { type: "nonsense" } },
+  });
+  assert.equal(response.statusCode, 204, response.body);
+});
+
 test("a plane composed with no attempt half serves no ticket route", async () => {
   const app = createWorkerPlaneApp(inertWorkerPlane(1_024));
   for (const [method, url] of [

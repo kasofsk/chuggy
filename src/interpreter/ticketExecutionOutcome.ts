@@ -29,9 +29,19 @@ import { ticketWorkspacePut } from "./ticketWorkspace.ts";
 export type TicketExecutionAccess =
   "ReadRepository" | "PublishRepositoryResult";
 
+/** Every terminal a harness may name, and the whole of what one may mean. */
+export const ticketExecutionOutcomeTypes = [
+  "result",
+  "process_failed",
+  "execution_unavailable",
+] as const;
+
+export type TicketExecutionOutcomeType =
+  (typeof ticketExecutionOutcomeTypes)[number];
+
 /** What a harness may say, which carries neither a verdict nor a report. */
 export interface TicketExecutionOutcome {
-  readonly type: "result" | "process_failed" | "execution_unavailable";
+  readonly type: TicketExecutionOutcomeType;
   readonly manifest?: unknown;
   readonly outputs?: unknown;
   readonly evidence?: unknown;
@@ -41,6 +51,7 @@ export interface TicketExecutionOutcome {
 export interface TicketExecutionOutcomeView {
   readonly resultContract: unknown;
   readonly repository: string;
+  readonly commit: string;
   readonly source: task.ContentRef;
   readonly access: TicketExecutionAccess;
 }
@@ -123,6 +134,26 @@ function ticketExecutionVerdictFindings(
  * The source the machine is to accept for a work result: a publishing task's
  * one output, or the source a non-publishing task never moved off.
  */
+/**
+ * Holds a published output to the commit the attempt was served. It refuses a
+ * base that diverged rather than proving one, exactly as the constraint it
+ * restores did: a harness states what it branched from and the plane refuses a
+ * statement that disagrees with what it handed out.
+ */
+function ticketExecutionOutcomeBase(
+  view: TicketExecutionOutcomeView,
+  offered: unknown,
+): void {
+  if (typeof offered !== "string")
+    throw new TypeError(
+      "ticket execution output must name the base it built on",
+    );
+  if (offered.toLowerCase() !== view.commit.toLowerCase())
+    throw new TypeError(
+      "ticket execution output base is not the commit the attempt was served",
+    );
+}
+
 async function ticketExecutionOutcomeSource(
   content: TicketContentStore,
   view: TicketExecutionOutcomeView,
@@ -143,6 +174,7 @@ async function ticketExecutionOutcomeSource(
   const commit = output["commit"];
   if (typeof commit !== "string" || !/^[0-9a-f]{40}$/iu.test(commit))
     throw new TypeError("ticket execution output commit is invalid");
+  ticketExecutionOutcomeBase(view, output["base"]);
   return ticketWorkspacePut(content, {
     repository: view.repository,
     commit: commit.toLowerCase(),
@@ -196,6 +228,37 @@ function ticketExecutionOutcomeManifest(
   return manifest;
 }
 
+/** How an unreadable type is quoted back, bounded because a harness wrote it. */
+function ticketExecutionOutcomeNamed(type: unknown): string {
+  return typeof type === "string"
+    ? JSON.stringify(type.slice(0, 64))
+    : typeof type;
+}
+
+/**
+ * The wire outcome a harness submitted, held to the terminals this protocol
+ * knows. A type outside them is named rather than folded into whichever failure
+ * it most resembles, because a harness reporting a terminal this tree cannot
+ * read is a different fact from a workload that failed.
+ */
+function ticketExecutionOutcomeParsed(raw: unknown): TicketExecutionOutcome {
+  const record = ticketExecutionOutcomeRecord(raw, "worker outcome");
+  const type = record["type"];
+  if (
+    typeof type !== "string" ||
+    !(ticketExecutionOutcomeTypes as readonly string[]).includes(type)
+  )
+    throw new TypeError(
+      `ticket execution outcome type is unrecognised: ${ticketExecutionOutcomeNamed(type)}`,
+    );
+  return {
+    type: type as TicketExecutionOutcomeType,
+    manifest: record["manifest"],
+    outputs: record["outputs"],
+    evidence: record["evidence"],
+  };
+}
+
 /**
  * The terminal one wire outcome means. A manifest this protocol cannot read is
  * a process failure rather than a refusal: the attempt ran, and what it left
@@ -210,10 +273,7 @@ export async function ticketExecutionOutcomeReport(
   const held = obligation.task;
   let outcome: TicketExecutionOutcome;
   try {
-    outcome = ticketExecutionOutcomeRecord(
-      raw,
-      "worker outcome",
-    ) as unknown as TicketExecutionOutcome;
+    outcome = ticketExecutionOutcomeParsed(raw);
   } catch (error) {
     return ticketExecutionOutcomeFailed(
       content,

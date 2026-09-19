@@ -128,6 +128,16 @@ function rawBearer(request: FastifyRequest): string | undefined {
 }
 
 /**
+ * The envelope a terminal arrives in, which is checked at the door while what it
+ * carries is not. An outcome this tree cannot read is a process failure the next
+ * cycle is told about, so only a body with nowhere to put an outcome is refused
+ * here.
+ */
+const ticketTerminalSchema = z
+  .strictObject({ outcome: z.unknown() })
+  .refine((offered) => offered.outcome !== undefined);
+
+/**
  * What one attempt is and what it produced, both reached by the same attempt
  * bearer and by nothing else. Neither route names a pod, a namespace or a
  * launcher: a harness a worker pool started on a machine this tree has never
@@ -142,7 +152,12 @@ function ticketExecutionRoutes(
   app.post(workerPlaneRoutes[12], async (request, reply) => {
     const secret = rawBearer(request);
     if (secret === undefined) return reply.code(401).send({ action: "stop" });
-    const reported = await attempts.report(secret, request.body);
+    const offered = ticketTerminalSchema.safeParse(request.body);
+    if (!offered.success)
+      return reply
+        .code(400)
+        .send({ action: "stop", reason: "InvalidTerminal" });
+    const reported = await attempts.report(secret, offered.data);
     return reported === "Recorded"
       ? reply.code(204).send()
       : reply.code(409).send({ action: "stop", reason: reported });

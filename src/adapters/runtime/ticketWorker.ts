@@ -598,7 +598,7 @@ async function publishedResult(
   return {
     type: "result",
     manifest,
-    outputs: [{ repository: view.repository, commit }],
+    outputs: [{ repository: view.repository, commit, base: view.commit }],
   };
 }
 
