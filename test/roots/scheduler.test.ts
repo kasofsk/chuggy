@@ -197,8 +197,6 @@ const parsed = {
   tickets: {
     image: ticketImage,
     capabilities: [],
-    credentialSources: [],
-    credentialUsername: "x-access-token",
     leaseSecs: 300,
     attemptsMax: 3,
     outputBytesMax: 1_048_576,
@@ -608,21 +606,6 @@ test("ticket execution accepts the complete deployment configuration", async () 
   const configured = {
     image: ticketImage,
     capabilities: ["git", "pull-request"],
-    credentialSources: [
-      {
-        repository: "https://forge.invalid/acme/repository.git",
-        credentialReference: "installation-42",
-        permissions: "write",
-        path: "/run/credentials/repository",
-      },
-    ],
-    forge: {
-      appId: "42",
-      keyFile: "/run/credentials/forge-key.pem",
-      apiUrl: "https://forge.invalid/api",
-      requestTimeoutMs: 5_000,
-    },
-    credentialUsername: "git",
     leaseSecs: 60,
     attemptsMax: 5,
     outputBytesMax: 2_000_000,
@@ -642,16 +625,7 @@ test("ticket execution requires a digest-pinned image and bounded positive integ
     { image: ticketImage, attemptsMax: 1_001 },
     { image: ticketImage, claimsPerPassMax: 1_001 },
     { image: ticketImage, unclaimedWindowSecs: 0 },
-    {
-      image: ticketImage,
-      credentialSources: [
-        {
-          repository: "https://forge.invalid/acme/repository.git",
-          path: "/run/credentials/repository",
-        },
-      ],
-    },
-    { image: ticketImage, forge: { appId: "42", keyFile: "" } },
+    { image: ticketImage, credentialUsername: "git" },
   ]) {
     const found = await parsedTicketExecution(value);
     assert.equal(found.parsed, undefined, JSON.stringify(value));

@@ -189,20 +189,17 @@ and source resolution happen at the API and execution boundaries.
 
 The scheduler requires `CHUG_SCHEDULER_TICKET_EXECUTION` for the adopted ticket
 worker. It is a JSON object whose `image` is pinned as
-`<reference>@sha256:<64 lowercase hexadecimal characters>`. Optional
-`capabilities` and `credentialSources` arrays default to empty. `capabilities`
+`<reference>@sha256:<64 lowercase hexadecimal characters>`. The optional
+`capabilities` array defaults to empty. `capabilities`
 is what the scheduler claims against: it takes only tasks whose required set it
 covers, and a task no capability list covers waits out `unclaimedWindowSecs` and
 is then reported execution-unavailable against evidence naming what it asked
-for. Each credential
-source names `repository`, `path`, `permissions` (`read` or `write`), and an
-optional `credentialReference`. File credentials must carry their declared scope;
-forge credentials are minted with the access required by the task.
-`credentialUsername` defaults to `x-access-token`.
+for.
 
-The optional `forge` object names `appId`, `keyFile`, and optional `apiUrl` and
-`requestTimeoutMs`. It uses the worker App key and installation so task tokens
-retain the worker App's branch restrictions. Worker controls and their defaults are defined in
+The scheduler names no git credential: a harness fetches its own from the
+worker plane, which mints it under `CHUG_WORKER_PLANE_FORGE_APP_ID` and
+`CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE`, so a deployment that runs ticket work
+against a private repository names those. Worker controls and their defaults are defined in
 [src/roots/schedulerConfig.ts](../../../src/roots/schedulerConfig.ts).
 
 The ticket launcher applies a frozen execution profile directly to its pod:

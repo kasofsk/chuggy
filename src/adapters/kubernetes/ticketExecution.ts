@@ -13,12 +13,6 @@ import { randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type {
-  CredentialResolved,
-  RepositoryBinding,
-} from "../../interpreter/finalizer.ts";
-import { asRepositoryId } from "../../interpreter/finalizer.ts";
-import type { ProjectRepositoryBindingRead } from "../../interpreter/repositoryConfiguration.ts";
-import type {
   TicketExecutionClaim,
   TicketExecutionPlacement,
   TicketExecutionRunner,
@@ -60,19 +54,11 @@ export interface TicketExecutionTerminals {
   renew(claim: TicketExecutionClaim, leaseSecs: number): Promise<boolean>;
 }
 
-export interface TicketRepositoryCredentials {
-  credential(
-    repository: RepositoryBinding,
-    access: TicketExecutionView["access"],
-  ): Promise<CredentialResolved>;
-}
-
 export interface KubernetesTicketExecutionConfig extends KubernetesPodSite {
   readonly podNamePrefix: string;
   readonly image: string;
   readonly callbackUrl: string;
   readonly workspacePath: string;
-  readonly credentialUsername: string;
   readonly resources: KubernetesResourceBudget;
   readonly podLabels: Readonly<Record<string, string>>;
   readonly podAnnotations: Readonly<Record<string, string>>;
@@ -136,8 +122,6 @@ function ticketConfig(
     throw new RangeError("ticket worker image is empty");
   if (config.database !== undefined && config.database.image.length === 0)
     throw new RangeError("ticket worker database image is empty");
-  if (config.credentialUsername.length === 0)
-    throw new RangeError("ticket credential username is empty");
   kubernetesReservedVariables(
     config.environment,
     ["CHUG_TICKET_WORKER_TASK", kubernetesTicketDatabaseUrlVariable],
@@ -163,33 +147,15 @@ function ticketRecord(value: unknown, what: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function ticketRemote(
-  repository: string,
-  username: string,
-  credential: string | undefined,
-): string {
-  const remote = new URL(repository);
-  if (remote.protocol !== "https:")
-    throw new TypeError("ticket repository must use HTTPS");
-  if (remote.username !== "" || remote.password !== "")
-    throw new TypeError("ticket repository URL must carry no credentials");
-  if (credential !== undefined) {
-    remote.username = username;
-    remote.password = credential;
-  }
-  return remote.href;
-}
-
 /**
  * What the pod is launched with, which is what no callback can hand it: where
- * to call, what it may call as, and the write-scoped remote it pushes to. The
- * view is not here — the harness fetches that from the callback, the way a
- * pool beyond this cluster has to.
+ * to call and what it may call as. Neither the view nor the git credential is
+ * here — the harness fetches both from the callback, the way a pool beyond
+ * this cluster has to, so this payload carries nothing confidential.
  */
 function ticketEnvelope(
   config: KubernetesTicketExecutionConfig,
   claim: TicketExecutionClaim,
-  repository: string,
   bearer: string,
   providerCredentialFile: string | undefined,
 ): string {
@@ -200,7 +166,6 @@ function ticketEnvelope(
     workspace: config.workspacePath,
     timeoutSecsMax: config.timeoutSecsMax,
     outputBytesMax: config.outputBytesMax,
-    transportUrl: repository,
     ...(providerCredentialFile === undefined ? {} : { providerCredentialFile }),
   });
 }
@@ -422,8 +387,6 @@ function ticketSecret(
 
 interface TicketRunnerState {
   readonly terminals: TicketExecutionTerminals;
-  readonly bindings: ProjectRepositoryBindingRead;
-  readonly credentials: TicketRepositoryCredentials;
   readonly config: KubernetesTicketExecutionConfig;
   readonly fetcher: typeof fetch;
   readonly mint: () => string;
@@ -442,35 +405,6 @@ function ticketRetry(
     retryAfterSecs: state.config.retryAfterSecs,
     evidence,
   };
-}
-
-async function ticketRepository(
-  state: TicketRunnerState,
-  claim: TicketExecutionClaim,
-  view: TicketExecutionView,
-): Promise<string | TicketExecutionPlacement> {
-  const binding = await state.bindings.binding(
-    claim.partition,
-    asRepositoryId(view.repository),
-  );
-  if (binding === undefined)
-    return ticketUnavailable("repository is not bound to the project");
-  const resolved = await state.credentials.credential(binding, view.access);
-  if (resolved.resolved === "Unavailable")
-    return ticketRetry(state, "repository credential is unavailable");
-  if (resolved.resolved === "Denied")
-    return ticketUnavailable("repository credential was denied");
-  try {
-    return ticketRemote(
-      binding.repository,
-      state.config.credentialUsername,
-      resolved.credential,
-    );
-  } catch (error) {
-    return ticketUnavailable(
-      error instanceof Error ? error.message : "repository binding is invalid",
-    );
-  }
 }
 
 async function ticketPoll(
@@ -502,7 +436,6 @@ async function ticketLaunch(
   state: TicketRunnerState,
   claim: TicketExecutionClaim,
   view: TicketExecutionView,
-  repository: string,
   bearer: string,
 ): Promise<TicketExecutionPlacement> {
   const providerCredential = ticketProviderCredential(view);
@@ -543,7 +476,6 @@ async function ticketLaunch(
       ticketEnvelope(
         state.config,
         claim,
-        repository,
         bearer,
         providerCredential === undefined
           ? undefined
@@ -571,26 +503,20 @@ async function ticketRun(
     return ticketUnavailable(
       "cloud identity delivery is unavailable for adopted ticket workers",
     );
-  const repository = await ticketRepository(state, claim, view);
-  if (typeof repository !== "string") return repository;
   const bearer = state.mint();
   if (!(await state.terminals.bind(claim, bearer, view)))
     return ticketRetry(state, "ticket execution claim was fenced");
-  return ticketLaunch(state, claim, view, repository, bearer);
+  return ticketLaunch(state, claim, view, bearer);
 }
 
 export function kubernetesTicketExecutionRunner(
   terminals: TicketExecutionTerminals,
-  bindings: ProjectRepositoryBindingRead,
-  credentials: TicketRepositoryCredentials,
   input: KubernetesTicketExecutionConfig,
   fetcher: typeof fetch = fetch,
   mint: () => string = () => randomBytes(32).toString("base64url"),
 ): TicketExecutionRunner {
   const state: TicketRunnerState = {
     terminals,
-    bindings,
-    credentials,
     config: ticketConfig(input),
     fetcher,
     mint,

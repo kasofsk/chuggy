@@ -67,19 +67,6 @@ export interface SchedulerCommandConfig {
 export interface SchedulerTicketExecutionConfig {
   readonly image: string;
   readonly capabilities: readonly string[];
-  readonly credentialSources: readonly {
-    readonly repository: string;
-    readonly permissions: "read" | "write";
-    readonly credentialReference?: string;
-    readonly path: string;
-  }[];
-  readonly forge?: {
-    readonly appId: string;
-    readonly keyFile: string;
-    readonly apiUrl?: string;
-    readonly requestTimeoutMs?: number;
-  };
-  readonly credentialUsername: string;
   readonly leaseSecs: number;
   readonly attemptsMax: number;
   readonly outputBytesMax: number;
@@ -166,25 +153,6 @@ const schedulerTicketExecutionSchema = z.strictObject({
     "must be pinned by a sha256 digest",
   ),
   capabilities: z.array(schedulerTextSchema).default([]),
-  credentialSources: z
-    .array(
-      z.strictObject({
-        repository: schedulerTextSchema,
-        permissions: z.enum(["read", "write"]),
-        credentialReference: schedulerTextSchema.optional(),
-        path: schedulerTextSchema,
-      }),
-    )
-    .default([]),
-  forge: z
-    .strictObject({
-      appId: schedulerTextSchema,
-      keyFile: schedulerTextSchema,
-      apiUrl: schedulerTextSchema.optional(),
-      requestTimeoutMs: schedulerSafePositiveSchema.optional(),
-    })
-    .optional(),
-  credentialUsername: schedulerTextSchema.default("x-access-token"),
   leaseSecs: schedulerSafePositiveSchema.default(300),
   attemptsMax: schedulerCountSchema.default(3),
   outputBytesMax: schedulerSafePositiveSchema.default(1_048_576),
@@ -657,30 +625,7 @@ function schedulerTicketExecution(
     "TICKET_EXECUTION",
     schedulerTicketExecutionSchema,
   );
-  const { credentialSources, forge, ...settings } = parsed;
-  return {
-    ...settings,
-    credentialSources: credentialSources.map((source) => ({
-      repository: source.repository,
-      permissions: source.permissions,
-      path: source.path,
-      ...(source.credentialReference === undefined
-        ? {}
-        : { credentialReference: source.credentialReference }),
-    })),
-    ...(forge === undefined
-      ? {}
-      : {
-          forge: {
-            appId: forge.appId,
-            keyFile: forge.keyFile,
-            ...(forge.apiUrl === undefined ? {} : { apiUrl: forge.apiUrl }),
-            ...(forge.requestTimeoutMs === undefined
-              ? {}
-              : { requestTimeoutMs: forge.requestTimeoutMs }),
-          },
-        }),
-  };
+  return parsed;
 }
 
 /** Only the cluster half of a worker configuration, which is the site both halves share. */

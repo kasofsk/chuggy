@@ -15,10 +15,6 @@ import {
   type KubernetesTicketExecutionConfig,
 } from "../../src/adapters/kubernetes/ticketExecution.ts";
 import {
-  asRepositoryCredential,
-  asRepositoryId,
-} from "../../src/interpreter/finalizer.ts";
-import {
   asRecoveryEpoch,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
@@ -58,7 +54,6 @@ const config: KubernetesTicketExecutionConfig = {
   podNamePrefix: "ticket",
   image: "registry.invalid/ticket-worker:1",
   callbackUrl: "https://worker.invalid/v1/ticket-execution",
-  credentialUsername: "x-access-token",
   resources: {
     cpuRequest: "100m",
     cpuLimit: "1",
@@ -168,10 +163,7 @@ function postedBody(
 }
 
 function assertSecretEnvelope(requests: readonly ClusterRequest[]): void {
-  assert.doesNotMatch(
-    postedBody(requests, "/pods"),
-    /attempt-secret|repository-token/u,
-  );
+  assert.doesNotMatch(postedBody(requests, "/pods"), /attempt-secret/u);
   const secret = JSON.parse(postedBody(requests, "/secrets")) as {
     readonly stringData: { readonly task: string };
   };
@@ -182,10 +174,7 @@ function assertSecretEnvelope(requests: readonly ClusterRequest[]): void {
   assert.equal(envelope["bearer"], "attempt-secret");
   assert.equal(envelope["view"], undefined);
   assert.equal(envelope["callbackUrl"], config.callbackUrl);
-  assert.equal(
-    new URL(String(envelope["transportUrl"])).password,
-    "repository-token",
-  );
+  assert.equal(envelope["transportUrl"], undefined);
   assert.equal(
     envelope["providerCredentialFile"],
     "/var/run/chuggy/codex/auth.json",
@@ -222,7 +211,6 @@ function ticketOutcome(state: { reads: number }): Promise<unknown> {
 
 test("launches one isolated adopted worker and keeps its authority in the Secret", async () => {
   const requests: ClusterRequest[] = [];
-  const credentialAccesses: string[] = [];
   const outcomes = { reads: 0 };
   const runner = kubernetesTicketExecutionRunner(
     {
@@ -233,26 +221,6 @@ test("launches one isolated adopted worker and keeps its authority in the Secret
       },
       outcome: () => ticketOutcome(outcomes),
       renew: () => Promise.resolve(true),
-    },
-    {
-      binding: (askedPartition, repository) => {
-        assert.deepEqual(askedPartition, partition);
-        assert.equal(repository, asRepositoryId(view.repository));
-        return Promise.resolve({
-          partition,
-          repository: asRepositoryId(view.repository),
-          recoveryEpoch: asRecoveryEpoch("epoch"),
-        });
-      },
-    },
-    {
-      credential: (_binding, access) => {
-        credentialAccesses.push(access);
-        return Promise.resolve({
-          resolved: "Credential",
-          credential: asRepositoryCredential("repository-token"),
-        });
-      },
     },
     config,
     clusterFetch(requests),
@@ -269,7 +237,6 @@ test("launches one isolated adopted worker and keeps its authority in the Secret
   });
   assert.equal(outcomes.reads, 2);
   assertSecretEnvelope(requests);
-  assert.deepEqual(credentialAccesses, ["ReadRepository"]);
 });
 
 for (const [name, unavailableView] of [
@@ -285,25 +252,21 @@ for (const [name, unavailableView] of [
   ],
 ] as const)
   test(name, async () => {
-    let reached = false;
+    let bound = false;
     const runner = kubernetesTicketExecutionRunner(
       {
-        bind: () => Promise.resolve(true),
+        bind: () => {
+          bound = true;
+          return Promise.resolve(true);
+        },
         outcome: () => Promise.resolve(undefined),
         renew: () => Promise.resolve(true),
       },
-      {
-        binding: () => {
-          reached = true;
-          return Promise.resolve(undefined);
-        },
-      },
-      { credential: () => Promise.resolve({ resolved: "Denied" }) },
       config,
     );
     const placement = await runner.run(claim, unavailableView);
     assert.equal(placement.placed, "Unavailable");
-    assert.equal(reached, false);
+    assert.equal(bound, false);
   });
 
 test("cancellation deletes the deterministic task pod", async () => {
@@ -314,8 +277,6 @@ test("cancellation deletes the deterministic task pod", async () => {
       outcome: () => Promise.resolve(undefined),
       renew: () => Promise.resolve(true),
     },
-    { binding: () => Promise.resolve(undefined) },
-    { credential: () => Promise.resolve({ resolved: "Denied" }) },
     config,
     (input, init) => {
       const url =
@@ -390,21 +351,6 @@ async function placedPod(
       outcome: () =>
         Promise.resolve({ type: "result", manifest: {}, outputs: [] }),
       renew: () => Promise.resolve(true),
-    },
-    {
-      binding: () =>
-        Promise.resolve({
-          partition,
-          repository: asRepositoryId(view.repository),
-          recoveryEpoch: asRecoveryEpoch("epoch"),
-        }),
-    },
-    {
-      credential: () =>
-        Promise.resolve({
-          resolved: "Credential",
-          credential: asRepositoryCredential("repository-token"),
-        }),
     },
     site,
     clusterFetch(requests),

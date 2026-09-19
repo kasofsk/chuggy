@@ -1,21 +1,11 @@
 import type pg from "pg";
-import {
-  kubernetesTicketExecutionRunner,
-  type TicketRepositoryCredentials,
-} from "../adapters/kubernetes/ticketExecution.ts";
+import { kubernetesTicketExecutionRunner } from "../adapters/kubernetes/ticketExecution.ts";
 import {
   postgresTicketExecution,
   postgresTicketExecutionTerminals,
 } from "../adapters/postgres/ticketExecution.ts";
 import { postgresTicketContent } from "../adapters/postgres/ticketContent.ts";
 import { postgresTicketMachine } from "../adapters/postgres/ticketMachine.ts";
-import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
-import {
-  composeForgeRepositoryMinting,
-  composeRepositoryCredentials,
-} from "../compose.ts";
-import { workerPodForgeApp } from "../interpreter/forgeInstallation.ts";
-import { asRepositoryId } from "../interpreter/finalizer.ts";
 import {
   ticketExecutionPrepareRun,
   ticketExecutionRun,
@@ -24,10 +14,7 @@ import {
   type TicketExecutionContent,
   type TicketExecutionTickets,
 } from "../interpreter/ticketExecution.ts";
-import type {
-  SchedulerCommandConfig,
-  SchedulerTicketExecutionConfig,
-} from "./schedulerConfig.ts";
+import type { SchedulerCommandConfig } from "./schedulerConfig.ts";
 
 export function ticketExecutionRuntime(
   pool: pg.Pool,
@@ -100,8 +87,6 @@ function ticketExecutionRuntimeRunner(
   const settings = config.tickets;
   return kubernetesTicketExecutionRunner(
     postgresTicketExecutionTerminals(pool),
-    postgresProjectRepositoryBinding(pool),
-    ticketExecutionCredentials(pool, settings),
     {
       ...config.workers,
       image: settings.image,
@@ -109,7 +94,6 @@ function ticketExecutionRuntimeRunner(
         "/v1/ticket-execution",
         config.workers.workerPlaneUrl,
       ).toString(),
-      credentialUsername: settings.credentialUsername,
       timeoutSecsMax: config.workers.activeDeadlineSecs,
       outputBytesMax: settings.outputBytesMax,
       outcomePollMs: settings.outcomePollMs,
@@ -121,38 +105,4 @@ function ticketExecutionRuntimeRunner(
       retryAfterSecs: config.workers.unavailableRetryAfterSecs,
     },
   );
-}
-
-export function ticketExecutionCredentials(
-  pool: pg.Pool,
-  settings: Pick<SchedulerTicketExecutionConfig, "forge" | "credentialSources">,
-): TicketRepositoryCredentials {
-  const minting = composeForgeRepositoryMinting(
-    pool,
-    settings.forge,
-    workerPodForgeApp,
-  );
-  const ports = {
-    read: credentialPort("read"),
-    write: credentialPort("write"),
-  };
-  function credentialPort(permissions: "read" | "write") {
-    return composeRepositoryCredentials({
-      sources: settings.credentialSources
-        .filter((source) => source.permissions === permissions)
-        .map((source) => ({
-          repository: asRepositoryId(source.repository),
-          path: source.path,
-          ...(source.credentialReference === undefined
-            ? {}
-            : { credentialReference: source.credentialReference }),
-        })),
-      permissions,
-      ...(minting === undefined ? {} : { minting }),
-    });
-  }
-  return {
-    credential: (binding, access) =>
-      ports[access === "ReadRepository" ? "read" : "write"].credential(binding),
-  };
 }

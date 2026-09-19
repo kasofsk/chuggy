@@ -10,9 +10,9 @@ import { prepare_commit } from "./commitHooks.ts";
 
 /**
  * What the launcher hands this process, which is only what no callback could:
- * where to call, what to call as, and the remote it pushes to. Everything else
- * about the task is fetched from the callback, so a pool that placed this
- * process carries a token and a URL and nothing of the ticket at all.
+ * where to call and what to call as. Everything else about the task, the git
+ * credential included, is fetched from the callback, so a pool that placed
+ * this process carries a token and a URL and nothing confidential at all.
  */
 interface TicketWorkerEnvelope {
   readonly taskKey: string;
@@ -21,9 +21,40 @@ interface TicketWorkerEnvelope {
   readonly workspace: string;
   readonly timeoutSecsMax: number;
   readonly outputBytesMax: number;
-  readonly transportUrl: string;
   readonly providerCredentialFile?: string;
 }
+
+/** One git credential as the plane mints it, and when the plane says it stops working. */
+interface TicketWorkerCredential {
+  readonly username: string;
+  readonly password: string;
+  readonly expiresAtMs: number;
+}
+
+/**
+ * What this attempt reaches its repository under: the envelope it was launched
+ * with and the credential it has been minted so far. The credential is held
+ * only in this process and never written into the workspace's own git
+ * configuration, so a workload reads it from neither.
+ */
+interface TicketWorkerTransport {
+  readonly held: TicketWorkerEnvelope;
+  credential?: TicketWorkerCredential;
+}
+
+/**
+ * A mint the plane could not perform, which is not a mint it refused. An
+ * outage ends the attempt as unavailable and is tried again; a refusal is this
+ * attempt's own evidence and settles it.
+ */
+class TicketWorkerUnavailable extends Error {}
+
+/**
+ * How long before a credential's stated end it is minted again rather than
+ * used. A work task may run longer than one token lives, and a push that fails
+ * on an expired token throws away the work that earned it.
+ */
+const ticketWorkerCredentialMarginMs = 60_000;
 
 interface TicketWorkerView {
   readonly workload: unknown;
@@ -62,6 +93,90 @@ async function ticketWorkerView(
   return view as unknown as TicketWorkerView;
 }
 
+/**
+ * One mint on the callback, refused for this repository or not reached at all.
+ * Only a refusal naming the repository is settled: everything else leaves the
+ * attempt unavailable, because a plane that answered nothing has decided
+ * nothing about this ticket.
+ */
+async function ticketWorkerCredentialMinted(
+  held: TicketWorkerEnvelope,
+): Promise<TicketWorkerCredential> {
+  const response = await fetch(ticketWorkerRoute(held, "credentials"), {
+    method: "POST",
+    headers: { authorization: `Bearer ${held.bearer}` },
+  }).catch(() => undefined);
+  if (response === undefined)
+    throw new TicketWorkerUnavailable(
+      "the repository credential mint could not be reached",
+    );
+  if (response.status === 404) {
+    const refusal = record(await response.json(), "credential refusal");
+    if (refusal["reason"] === "NotMinted")
+      throw new Error("the repository credential was denied");
+    throw new TicketWorkerUnavailable(
+      "the plane mints no repository credential",
+    );
+  }
+  if (!response.ok)
+    throw new TicketWorkerUnavailable(
+      `the repository credential mint answered ${String(response.status)}`,
+    );
+  return ticketWorkerCredentialOf(await response.json());
+}
+
+/** One minted credential as the plane wrote it, refused here rather than by git. */
+function ticketWorkerCredentialOf(value: unknown): TicketWorkerCredential {
+  const found = record(value, "credential");
+  for (const name of ["username", "password"])
+    if (typeof found[name] !== "string" || found[name].length === 0)
+      throw new TypeError(`ticket worker credential ${name} is invalid`);
+  if (!Number.isSafeInteger(found["expiresAtMs"]))
+    throw new TypeError("ticket worker credential expiry is invalid");
+  return found as unknown as TicketWorkerCredential;
+}
+
+/**
+ * The credential this attempt works under, minted once and again only once the
+ * held one is spent. One mint covers every git call of an attempt because the
+ * scope is the attempt's own and identical for each of them, so minting per
+ * call would widen nothing and only multiply the ways an attempt can fail.
+ */
+async function ticketWorkerCredential(
+  transport: TicketWorkerTransport,
+  nowMs: number = Date.now(),
+): Promise<TicketWorkerCredential> {
+  const held = transport.credential;
+  if (
+    held !== undefined &&
+    held.expiresAtMs - nowMs > ticketWorkerCredentialMarginMs
+  )
+    return held;
+  const minted = await ticketWorkerCredentialMinted(transport.held);
+  transport.credential = minted;
+  return minted;
+}
+
+/**
+ * The remote one git call is made against. It is built for the call and passed
+ * as an argument, so the credential never lands in the workspace's own git
+ * configuration for the workload to read.
+ */
+async function ticketWorkerRemote(
+  transport: TicketWorkerTransport,
+  repository: string,
+): Promise<string> {
+  const credential = await ticketWorkerCredential(transport);
+  const remote = new URL(repository);
+  if (remote.protocol !== "https:")
+    throw new TypeError("ticket repository must use HTTPS");
+  if (remote.username !== "" || remote.password !== "")
+    throw new TypeError("ticket repository URL must carry no credentials");
+  remote.username = credential.username;
+  remote.password = credential.password;
+  return remote.href;
+}
+
 interface Ran {
   readonly code: number | null;
   readonly stopped: boolean;
@@ -81,28 +196,23 @@ function record(value: unknown, what: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function workerEvidence(held: TicketWorkerEnvelope, evidence: string): string {
-  let scrubbed = evidence.replaceAll(held.bearer, "[REDACTED]");
-  try {
-    const url = new URL(held.transportUrl);
-    for (const secret of [url.username, url.password])
-      if (secret.length > 0)
-        scrubbed = scrubbed.replaceAll(secret, "[REDACTED]");
-  } catch {
-    return scrubbed;
-  }
+function workerEvidence(
+  transport: TicketWorkerTransport,
+  evidence: string,
+): string {
+  let scrubbed = evidence.replaceAll(transport.held.bearer, "[REDACTED]");
+  for (const secret of [
+    transport.credential?.username,
+    transport.credential?.password,
+  ])
+    if (secret !== undefined && secret.length > 0)
+      scrubbed = scrubbed.replaceAll(secret, "[REDACTED]");
   return scrubbed;
 }
 
 function envelope(value: unknown): TicketWorkerEnvelope {
   const found = record(value, "envelope");
-  for (const name of [
-    "taskKey",
-    "callbackUrl",
-    "bearer",
-    "workspace",
-    "transportUrl",
-  ])
+  for (const name of ["taskKey", "callbackUrl", "bearer", "workspace"])
     if (typeof found[name] !== "string" || found[name].length === 0)
       throw new TypeError(`ticket worker ${name} is invalid`);
   for (const name of ["timeoutSecsMax", "outputBytesMax"])
@@ -387,18 +497,15 @@ async function git(
 }
 
 async function checkout(
-  held: TicketWorkerEnvelope,
+  transport: TicketWorkerTransport,
   view: TicketWorkerView,
 ): Promise<void> {
+  const held = transport.held;
+  const remote = await ticketWorkerRemote(transport, view.repository);
   await mkdir(held.workspace, { recursive: true });
   await git(["init", "--quiet"], held.workspace, held);
   await git(
-    ["remote", "add", "origin", held.transportUrl],
-    held.workspace,
-    held,
-  );
-  await git(
-    ["fetch", "--quiet", "--depth=1", "origin", view.commit],
+    ["fetch", "--quiet", "--depth=1", remote, view.commit],
     held.workspace,
     held,
   );
@@ -470,13 +577,14 @@ async function invocationCleanup(control: string | undefined): Promise<void> {
 }
 
 async function publishedResult(
-  held: TicketWorkerEnvelope,
+  transport: TicketWorkerTransport,
   view: TicketWorkerView,
   workload: Record<string, unknown>,
   manifest: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   if (view.access === "ReadRepository")
     return { type: "result", manifest, outputs: [] };
+  const held = transport.held;
   const commit = await prepare_commit(
     held.workspace,
     view.commit,
@@ -486,7 +594,12 @@ async function publishedResult(
     "Complete ticket task",
   );
   await git(
-    ["push", "--quiet", "origin", `${commit}:refs/chuggy/results/${commit}`],
+    [
+      "push",
+      "--quiet",
+      await ticketWorkerRemote(transport, view.repository),
+      `${commit}:refs/chuggy/results/${commit}`,
+    ],
     held.workspace,
     held,
   );
@@ -498,10 +611,11 @@ async function publishedResult(
 }
 
 async function execute(
-  held: TicketWorkerEnvelope,
+  transport: TicketWorkerTransport,
   view: TicketWorkerView,
 ): Promise<Record<string, unknown>> {
-  await checkout(held, view);
+  const held = transport.held;
+  await checkout(transport, view);
   const workload = record(view.workload, "workload");
   const invocation = await workloadInvocation(held, view, workload);
   let ran: Ran;
@@ -532,7 +646,7 @@ async function execute(
       {
         type: "process_failed",
         evidence: workerEvidence(
-          held,
+          transport,
           ran.stderr.trim() || `workload exited ${String(ran.code)}`,
         ),
       }
@@ -551,7 +665,7 @@ async function execute(
     if (invocation.control !== undefined)
       await rm(invocation.control, { recursive: true, force: true });
   }
-  return publishedResult(held, view, workload, manifest);
+  return publishedResult(transport, view, workload, manifest);
 }
 
 export async function ticketWorkerMain(
@@ -561,14 +675,18 @@ export async function ticketWorkerMain(
   if (source === undefined)
     throw new Error("CHUG_TICKET_WORKER_TASK is required");
   const held = envelope(JSON.parse(source) as unknown);
+  const transport: TicketWorkerTransport = { held };
   let outcome: Record<string, unknown>;
   try {
-    outcome = await execute(held, await ticketWorkerView(held));
+    outcome = await execute(transport, await ticketWorkerView(held));
   } catch (error) {
     outcome = {
-      type: "process_failed",
+      type:
+        error instanceof TicketWorkerUnavailable
+          ? "execution_unavailable"
+          : "process_failed",
       evidence: workerEvidence(
-        held,
+        transport,
         error instanceof Error ? error.message : "worker failed",
       ),
     };
