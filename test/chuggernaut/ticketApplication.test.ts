@@ -234,7 +234,6 @@ test("create reserves an identity and submits the frozen catalog release", async
     evaluatorNames: [[2, "ci"]],
     reworkLimit: 3,
     source: 1,
-    catalogCommit: commit,
   });
 });
 
