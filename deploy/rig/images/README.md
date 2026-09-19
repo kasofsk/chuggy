@@ -190,7 +190,11 @@ and source resolution happen at the API and execution boundaries.
 The scheduler requires `CHUG_SCHEDULER_TICKET_EXECUTION` for the adopted ticket
 worker. It is a JSON object whose `image` is pinned as
 `<reference>@sha256:<64 lowercase hexadecimal characters>`. Optional
-`capabilities` and `credentialSources` arrays default to empty. Each credential
+`capabilities` and `credentialSources` arrays default to empty. `capabilities`
+is what the scheduler claims against: it takes only tasks whose required set it
+covers, and a task no capability list covers waits out `unclaimedWindowSecs` and
+is then reported execution-unavailable against evidence naming what it asked
+for. Each credential
 source names `repository`, `path`, `permissions` (`read` or `write`), and an
 optional `credentialReference`. File credentials must carry their declared scope;
 forge credentials are minted with the access required by the task.
