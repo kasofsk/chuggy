@@ -407,3 +407,17 @@ for (const [why, answer, type] of [
       await rm(root, { recursive: true, force: true });
     }
   });
+
+test("the self-check loads the harness, runs nothing and says the host can run it", async () => {
+  const ran = await executeFile(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      new URL("../../src/roots/ticketWorker.ts", import.meta.url).pathname,
+      "--self-check",
+    ],
+    { env: { PATH: process.env["PATH"] ?? "" } },
+  );
+  assert.equal(ran.stdout, "");
+  assert.equal(ran.stderr, "");
+});
