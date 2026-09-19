@@ -120,6 +120,7 @@ export interface WorkerPoolAssignments {
     leaseSecs: number,
     assignment: string,
     bearer: string,
+    attemptsUnreportedMax: number,
   ): Promise<WorkerPoolClaimed | undefined>;
   renew(
     identity: WorkerPoolIdentity,
@@ -141,6 +142,12 @@ export interface WorkerPoolAssignments {
 
 export interface WorkerPoolPollSettings {
   readonly leaseSecs: number;
+  /**
+   * How many claims of one task may expire having said nothing before no pool
+   * is offered it again. It is the orchestrator's ceiling, named here so this
+   * plane stops where the sweep that settles such work begins.
+   */
+  readonly attemptsUnreportedMax: number;
   readonly assignmentsPerPollMax: number;
   readonly heldMax: number;
   readonly deadlineSecs: number;
@@ -193,6 +200,7 @@ function workerPoolRecord(value: unknown): Record<string, unknown> {
 function workerPoolCheckedSettings(settings: WorkerPoolPollSettings): void {
   for (const [name, bound] of [
     ["leaseSecs", settings.leaseSecs],
+    ["attemptsUnreportedMax", settings.attemptsUnreportedMax],
     ["assignmentsPerPollMax", settings.assignmentsPerPollMax],
     ["heldMax", settings.heldMax],
     ["deadlineSecs", settings.deadlineSecs],
@@ -248,6 +256,7 @@ async function workerPoolClaims(
       settings.leaseSecs,
       assignment,
       bearer,
+      settings.attemptsUnreportedMax,
     );
     if (row === undefined) break;
     claimed.push({

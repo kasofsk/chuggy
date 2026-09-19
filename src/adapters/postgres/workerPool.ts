@@ -159,6 +159,7 @@ async function workerPoolClaimed(
   leaseSecs: number,
   assignment: string,
   bearer: string,
+  attemptsUnreportedMax: number,
 ): Promise<{ view: unknown; capabilities: string[] } | undefined> {
   const found = await pool.query<{
     worker_view: unknown;
@@ -166,6 +167,8 @@ async function workerPoolClaimed(
   }>(sql`UPDATE ticket_execution e SET
       state='Running',attempt=e.attempt+1,claim_owner=${identity.pool},pool=${identity.pool},
       assignment=${assignment},capability_digest=${workerPoolDigest(bearer)},pool_refusal=NULL,
+      attempts_unreported=e.attempts_unreported+(CASE WHEN e.state='Running' AND e.claim_expires_at<=now()
+        AND e.worker_outcome IS NULL AND e.pool_refusal IS NULL THEN 1 ELSE 0 END),
       claim_expires_at=now()+make_interval(secs=>${leaseSecs}::double precision),
       recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)
     WHERE (e.tenant,e.project,e.task_key) IN (
@@ -174,6 +177,7 @@ async function workerPoolClaimed(
         AND (q.state='Queued' OR (q.state='Running' AND q.claim_expires_at<=now()))
         AND q.available_at<=now() AND q.worker_view IS NOT NULL
         AND q.required_capabilities <@ ${[...identity.capabilities]}::text[]
+        AND q.attempts_unreported<${attemptsUnreportedMax}
         AND EXISTS(SELECT 1 FROM project p
           WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active'
             AND p.ticket_model='Chuggernaut')
@@ -190,10 +194,23 @@ export function postgresWorkerPoolAssignments(
   pool: pg.Pool,
 ): WorkerPoolAssignments {
   return {
-    claim: async (identity, leaseSecs, assignment, bearer) => {
+    claim: async (
+      identity,
+      leaseSecs,
+      assignment,
+      bearer,
+      attemptsUnreportedMax,
+    ) => {
       if (!Number.isSafeInteger(leaseSecs) || leaseSecs < 1)
         throw new RangeError("invalid worker pool lease");
-      return workerPoolClaimed(pool, identity, leaseSecs, assignment, bearer);
+      return workerPoolClaimed(
+        pool,
+        identity,
+        leaseSecs,
+        assignment,
+        bearer,
+        attemptsUnreportedMax,
+      );
     },
     renew: async (identity, assignment, leaseSecs) => {
       if (!Number.isSafeInteger(leaseSecs) || leaseSecs < 1)

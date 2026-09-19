@@ -203,6 +203,7 @@ const parsed = {
     outcomePollMs: 1_000,
     claimsPerPassMax: 1,
     unclaimedWindowSecs: 300,
+    attemptsUnreportedMax: 3,
   },
 };
 
@@ -612,6 +613,7 @@ test("ticket execution accepts the complete deployment configuration", async () 
     outcomePollMs: 250,
     claimsPerPassMax: 4,
     unclaimedWindowSecs: 900,
+    attemptsUnreportedMax: 2,
   };
   const found = await parsedTicketExecution(configured);
   assert.deepEqual(found.parsed?.tickets, configured);
@@ -625,6 +627,7 @@ test("ticket execution requires a digest-pinned image and bounded positive integ
     { image: ticketImage, attemptsMax: 1_001 },
     { image: ticketImage, claimsPerPassMax: 1_001 },
     { image: ticketImage, unclaimedWindowSecs: 0 },
+    { image: ticketImage, attemptsUnreportedMax: 0 },
     { image: ticketImage, credentialUsername: "git" },
   ]) {
     const found = await parsedTicketExecution(value);

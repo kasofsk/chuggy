@@ -119,6 +119,13 @@ async function executionCancel(
   return true;
 }
 
+/**
+ * The work this claimant may take, which is the work its capabilities cover and
+ * whose silent attempts are still under the ceiling. Counting a silence belongs
+ * here because the claim is what finds one: the row it takes back was
+ * `Running`, its lease is gone, and it carries neither a harness outcome nor a
+ * pool's refusal.
+ */
 async function executionClaimed(
   pool: pg.Pool,
   owner: string,
@@ -126,10 +133,13 @@ async function executionClaimed(
   leaseSecs: number,
   limit: number,
   capabilities: readonly string[],
+  attemptsUnreportedMax: number,
 ): Promise<readonly TicketExecutionClaim[]> {
   const found = await pool.query<ExecutionRow>(sql`UPDATE ticket_execution e SET
       state='Running',attempt=e.attempt+1,claim_owner=${owner},capability_digest=NULL,worker_outcome=NULL,
       pool=NULL,assignment=NULL,pool_refusal=NULL,
+      attempts_unreported=e.attempts_unreported+(CASE WHEN e.state='Running' AND e.claim_expires_at<=now()
+        AND e.worker_outcome IS NULL AND e.pool_refusal IS NULL THEN 1 ELSE 0 END),
       claim_expires_at=now()+make_interval(secs=>${leaseSecs}::double precision),
       recovery_epoch=${recoveryEpoch}
     WHERE ${recoveryEpoch}=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)
@@ -137,6 +147,7 @@ async function executionClaimed(
       SELECT q.tenant,q.project,q.task_key FROM ticket_execution q
       WHERE (q.state='Queued' OR (q.state='Running' AND q.claim_expires_at<=now()))
         AND q.available_at<=now() AND q.required_capabilities <@ ${[...capabilities]}::text[]
+        AND q.attempts_unreported<${attemptsUnreportedMax}
         AND EXISTS(SELECT 1 FROM project p
           WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active'
             AND p.ticket_model='Chuggernaut')
@@ -149,10 +160,8 @@ async function executionClaimed(
 /**
  * The work that waited out its window without a claimant, taken by the
  * orchestrator so it can be reported. It is claimed rather than read, because
- * a terminal is written against a held claim, and the lease, the epoch fence
- * and SKIP LOCKED then keep two passes from reporting one task twice.
- * Capabilities are not matched, because work nobody can run is exactly what
- * this pass exists to settle.
+ * a terminal is written against a held claim, and it matches no capabilities,
+ * because work nobody can run is exactly what this pass exists to settle.
  */
 async function executionUnclaimable(
   pool: pg.Pool,
@@ -172,6 +181,39 @@ async function executionUnclaimable(
       SELECT q.tenant,q.project,q.task_key FROM ticket_execution q
       WHERE q.state='Queued' AND q.attempt=0
         AND q.queued_at+make_interval(secs=>${windowSecs}::double precision)<=now()
+        AND EXISTS(SELECT 1 FROM project p
+          WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active'
+            AND p.ticket_model='Chuggernaut')
+        ORDER BY q.queued_at,q.task_key
+      LIMIT ${limit} FOR UPDATE SKIP LOCKED)
+    RETURNING e.tenant,e.project,e.delivery_identity,e.task_key,e.obligation,e.attempt::text,e.recovery_epoch`);
+  return found.rows.map(executionClaim);
+}
+
+/**
+ * The work whose attempts kept ending in silence, taken by the orchestrator so
+ * it can be reported. Both claim predicates stop at the same ceiling, so a row
+ * that reaches it is claimable by this pass alone and the cycle ends here
+ * rather than when a sweep happens to win a race against the pools.
+ */
+async function executionUnreported(
+  pool: pg.Pool,
+  owner: string,
+  recoveryEpoch: RecoveryEpoch,
+  leaseSecs: number,
+  limit: number,
+  attemptsUnreportedMax: number,
+): Promise<readonly TicketExecutionClaim[]> {
+  const found = await pool.query<ExecutionRow>(sql`UPDATE ticket_execution e SET
+      state='Running',attempt=e.attempt+1,claim_owner=${owner},capability_digest=NULL,worker_outcome=NULL,
+      pool=NULL,assignment=NULL,pool_refusal=NULL,
+      claim_expires_at=now()+make_interval(secs=>${leaseSecs}::double precision),
+      recovery_epoch=${recoveryEpoch}
+    WHERE ${recoveryEpoch}=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)
+      AND (e.tenant,e.project,e.task_key) IN (
+      SELECT q.tenant,q.project,q.task_key FROM ticket_execution q
+      WHERE (q.state='Queued' OR (q.state='Running' AND q.claim_expires_at<=now()))
+        AND q.attempts_unreported>=${attemptsUnreportedMax}
         AND EXISTS(SELECT 1 FROM project p
           WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active'
             AND p.ticket_model='Chuggernaut')
@@ -289,7 +331,14 @@ export function postgresTicketExecution(pool: pg.Pool): TicketExecutionStore {
       postgresTransaction(pool, (client) =>
         executionCancel(client, partition, identity, taskKey),
       ),
-    claim: (owner, recoveryEpoch, leaseSecs, limit, capabilities) =>
+    claim: (
+      owner,
+      recoveryEpoch,
+      leaseSecs,
+      limit,
+      capabilities,
+      attemptsUnreportedMax,
+    ) =>
       executionClaimed(
         pool,
         owner,
@@ -297,6 +346,7 @@ export function postgresTicketExecution(pool: pg.Pool): TicketExecutionStore {
         leaseSecs,
         limit,
         capabilities,
+        attemptsUnreportedMax,
       ),
     unclaimable: (owner, recoveryEpoch, leaseSecs, limit, windowSecs) =>
       executionUnclaimable(
@@ -307,38 +357,76 @@ export function postgresTicketExecution(pool: pg.Pool): TicketExecutionStore {
         limit,
         windowSecs,
       ),
+    unreported: (
+      owner,
+      recoveryEpoch,
+      leaseSecs,
+      limit,
+      attemptsUnreportedMax,
+    ) =>
+      executionUnreported(
+        pool,
+        owner,
+        recoveryEpoch,
+        leaseSecs,
+        limit,
+        attemptsUnreportedMax,
+      ),
     unprepared: (limit) => executionUnprepared(pool, limit),
-    prepare: async (partition, taskKey, view) => {
-      const updated =
-        await pool.query(sql`UPDATE ticket_execution SET worker_view=${JSON.stringify(ticketExecutionWorkerView(view))}::jsonb
-        WHERE tenant=${partition.tenant} AND project=${partition.project}
-          AND task_key=${taskKey} AND state='Queued' AND worker_view IS NULL`);
-      return (updated.rowCount ?? 0) === 1;
-    },
+    prepare: (partition, taskKey, view) =>
+      executionPrepare(pool, partition, taskKey, view),
     settlements: (limit) => executionSettlements(pool, limit),
-    retry: async (claim, retryAfterSecs) => {
-      await pool.query(sql`UPDATE ticket_execution SET state='Queued',claim_owner=NULL,claim_expires_at=NULL,recovery_epoch=NULL,
-          available_at=now()+make_interval(secs=>${retryAfterSecs}::double precision)
-        WHERE tenant=${claim.partition.tenant} AND project=${claim.partition.project}
-          AND task_key=${claim.taskKey} AND state='Running' AND attempt=${claim.attempt}
-          AND recovery_epoch=${claim.recoveryEpoch} AND recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`);
-    },
+    retry: (claim, retryAfterSecs) =>
+      executionRetry(pool, claim, retryAfterSecs),
     terminal: (claim, input) =>
       postgresTransaction(pool, (client) =>
         executionTerminal(client, claim, input),
       ),
-    cancelled: async (claim) => {
-      const found = await pool.query<{
-        cancelled: boolean;
-      }>(sql`SELECT NOT EXISTS(
+    cancelled: (claim) => executionCancelled(pool, claim),
+  };
+}
+
+/** Writes the harness view of one queued row, which is a row nothing has claimed yet. */
+async function executionPrepare(
+  pool: pg.Pool,
+  partition: Partition,
+  taskKey: string,
+  view: TicketExecutionView,
+): Promise<boolean> {
+  const updated =
+    await pool.query(sql`UPDATE ticket_execution SET worker_view=${JSON.stringify(ticketExecutionWorkerView(view))}::jsonb
+        WHERE tenant=${partition.tenant} AND project=${partition.project}
+          AND task_key=${taskKey} AND state='Queued' AND worker_view IS NULL`);
+  return (updated.rowCount ?? 0) === 1;
+}
+
+/** Returns one claimed row to the queue, under the claim and the epoch it was taken with. */
+async function executionRetry(
+  pool: pg.Pool,
+  claim: TicketExecutionClaim,
+  retryAfterSecs: number,
+): Promise<void> {
+  await pool.query(sql`UPDATE ticket_execution SET state='Queued',claim_owner=NULL,claim_expires_at=NULL,recovery_epoch=NULL,
+          available_at=now()+make_interval(secs=>${retryAfterSecs}::double precision)
+        WHERE tenant=${claim.partition.tenant} AND project=${claim.partition.project}
+          AND task_key=${claim.taskKey} AND state='Running' AND attempt=${claim.attempt}
+          AND recovery_epoch=${claim.recoveryEpoch} AND recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`);
+}
+
+/** Whether this claim has stopped being the live one, which is what a runner stops for. */
+async function executionCancelled(
+  pool: pg.Pool,
+  claim: TicketExecutionClaim,
+): Promise<boolean> {
+  const found = await pool.query<{
+    cancelled: boolean;
+  }>(sql`SELECT NOT EXISTS(
         SELECT 1 FROM ticket_execution e JOIN project p ON p.tenant=e.tenant AND p.project=e.project
         WHERE e.tenant=${claim.partition.tenant} AND e.project=${claim.partition.project} AND e.task_key=${claim.taskKey}
           AND e.state='Running' AND e.attempt=${claim.attempt} AND e.claim_expires_at>now()
           AND e.recovery_epoch=${claim.recoveryEpoch} AND p.lifecycle='Active'
           AND e.recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)) AS cancelled`);
-      return found.rows[0]?.cancelled === true;
-    },
-  };
+  return found.rows[0]?.cancelled === true;
 }
 
 /**

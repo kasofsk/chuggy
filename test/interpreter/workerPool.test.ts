@@ -18,6 +18,7 @@ const identity: WorkerPoolIdentity = {
 
 const settings: WorkerPoolPollSettings = {
   leaseSecs: 30,
+  attemptsUnreportedMax: 3,
   assignmentsPerPollMax: 2,
   heldMax: 2,
   deadlineSecs: 600,

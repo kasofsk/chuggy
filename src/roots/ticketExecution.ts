@@ -11,9 +11,11 @@ import {
   ticketExecutionRun,
   ticketExecutionSettlementRun,
   ticketExecutionUnclaimableRun,
+  ticketExecutionUnreportedRun,
   type TicketExecutionContent,
   type TicketExecutionTickets,
 } from "../interpreter/ticketExecution.ts";
+import type { TicketMachineAuthorization } from "../interpreter/ticketMachine.ts";
 import type { SchedulerCommandConfig } from "./schedulerConfig.ts";
 
 export function ticketExecutionRuntime(
@@ -52,16 +54,7 @@ export function ticketExecutionRuntime(
         authorization,
         settings.claimsPerPassMax,
       );
-      await ticketExecutionUnclaimableRun(
-        store,
-        content,
-        config.identity.owner,
-        config.identity.recoveryEpoch,
-        authorization,
-        settings.leaseSecs,
-        settings.claimsPerPassMax,
-        settings.unclaimedWindowSecs,
-      );
+      await ticketExecutionRuntimeSwept(store, content, config, authorization);
       await ticketExecutionRun(
         store,
         content,
@@ -74,9 +67,44 @@ export function ticketExecutionRuntime(
         settings.attemptsMax,
         settings.claimsPerPassMax,
         settings.capabilities,
+        settings.attemptsUnreportedMax,
       );
     },
   };
+}
+
+/**
+ * The two passes that turn work no claim ever reported into ticket evidence:
+ * work nothing claimed inside its window, and work whose claims kept expiring
+ * in silence. Neither runs anything, so both come before the pass that does.
+ */
+async function ticketExecutionRuntimeSwept(
+  store: ReturnType<typeof postgresTicketExecution>,
+  content: TicketExecutionContent,
+  config: SchedulerCommandConfig,
+  authorization: TicketMachineAuthorization,
+): Promise<void> {
+  const settings = config.tickets;
+  await ticketExecutionUnclaimableRun(
+    store,
+    content,
+    config.identity.owner,
+    config.identity.recoveryEpoch,
+    authorization,
+    settings.leaseSecs,
+    settings.claimsPerPassMax,
+    settings.unclaimedWindowSecs,
+  );
+  await ticketExecutionUnreportedRun(
+    store,
+    content,
+    config.identity.owner,
+    config.identity.recoveryEpoch,
+    authorization,
+    settings.leaseSecs,
+    settings.claimsPerPassMax,
+    settings.attemptsUnreportedMax,
+  );
 }
 
 /** The one backend this deployment runs its own claims on, built from the site it names. */

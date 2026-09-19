@@ -112,6 +112,7 @@ function plane(
     mint: () => `minted-${String((minted += 1))}`,
     settings: {
       leaseSecs: 30,
+      attemptsUnreportedMax: 3,
       assignmentsPerPollMax: 1,
       heldMax: 3,
       deadlineSecs: 600,

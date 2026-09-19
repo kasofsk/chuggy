@@ -34,6 +34,14 @@ import {
   type TicketMachineInput,
 } from "./ticketMachine.ts";
 
+/**
+ * The bound two tiers must agree on, defaulted here so they agree by
+ * construction. The scheduler sweeps work that reached it and the plane
+ * serving pools stops claiming there; a deployment that moves one moves both,
+ * by naming each.
+ */
+export const ticketExecutionDefaults = { attemptsUnreportedMax: 3 } as const;
+
 export interface TicketExecutionClaim {
   readonly partition: Partition;
   readonly identity: string;
@@ -81,6 +89,21 @@ export interface TicketExecutionStore {
     leaseSecs: number,
     limit: number,
     capabilities: readonly string[],
+    attemptsUnreportedMax: number,
+  ): Promise<readonly TicketExecutionClaim[]>;
+  /**
+   * The work whose attempts kept ending without a word, claimed by the caller
+   * so it can be settled. A claim spent on work no fabric can ever run says
+   * nothing where a busy fabric releases the row and an unwilling one records
+   * its refusal, so the silence is what is counted and the ceiling on it is
+   * what every claim predicate stops at.
+   */
+  unreported(
+    owner: string,
+    recoveryEpoch: RecoveryEpoch,
+    leaseSecs: number,
+    limit: number,
+    attemptsUnreportedMax: number,
   ): Promise<readonly TicketExecutionClaim[]>;
   /**
    * Queued work older than its window that no claimant ever took, claimed by
@@ -413,6 +436,41 @@ async function ticketExecutionCancelled(
 }
 
 /**
+ * Settles the claims a sweep took, each as `ExecutionUnavailable` against the
+ * evidence it writes for it. What the two sweeps found differs and what the
+ * ticket is owed for it does not, so only the evidence is theirs.
+ */
+async function ticketExecutionSweptRun(
+  store: TicketExecutionStore,
+  content: TicketExecutionContent,
+  claims: readonly TicketExecutionClaim[],
+  authorization: TicketMachineAuthorization,
+  limit: number,
+  evidenceOf: (claim: TicketExecutionClaim) => string,
+): Promise<number> {
+  if (claims.length > limit)
+    throw new Error("ticket execution store exceeded claim limit");
+  const settled = await Promise.all(
+    claims.map(async (claim) => {
+      const evidence = await content(claim.partition).put(
+        "application/json",
+        evidenceOf(claim),
+      );
+      const submitted = await store.terminal(claim, {
+        identity: `execution-terminal:${claim.taskKey}`,
+        origin: "Execution",
+        authorization,
+        command: new ticket.ReportTaskTerminal(
+          ticketExecutionUnavailableReport(claim, evidence),
+        ),
+      });
+      return submitted ? 1 : 0;
+    }),
+  );
+  return settled.reduce<number>((total, value) => total + value, 0);
+}
+
+/**
  * Settles the work that waited out its window with no claimant, as
  * `ExecutionUnavailable` against evidence naming what it asked for.
  *
@@ -439,33 +497,14 @@ export async function ticketExecutionUnclaimableRun(
     throw new RangeError(
       "ticket execution unclaimable bounds must be positive safe integers",
     );
-  const claims = await store.unclaimable(
-    owner,
-    recoveryEpoch,
-    leaseSecs,
+  return ticketExecutionSweptRun(
+    store,
+    content,
+    await store.unclaimable(owner, recoveryEpoch, leaseSecs, limit, windowSecs),
+    authorization,
     limit,
-    windowSecs,
+    (claim) => ticketExecutionUnclaimableEvidence(claim, windowSecs),
   );
-  if (claims.length > limit)
-    throw new Error("ticket execution store exceeded claim limit");
-  const settled = await Promise.all(
-    claims.map(async (claim) => {
-      const evidence = await content(claim.partition).put(
-        "application/json",
-        ticketExecutionUnclaimableEvidence(claim, windowSecs),
-      );
-      const submitted = await store.terminal(claim, {
-        identity: `execution-terminal:${claim.taskKey}`,
-        origin: "Execution",
-        authorization,
-        command: new ticket.ReportTaskTerminal(
-          ticketExecutionUnavailableReport(claim, evidence),
-        ),
-      });
-      return submitted ? 1 : 0;
-    }),
-  );
-  return settled.reduce<number>((total, value) => total + value, 0);
 }
 
 /** What the ticket is told: what the work asked for, and how long nothing offering it appeared. */
@@ -484,6 +523,65 @@ function ticketExecutionUnclaimableEvidence(
   });
 }
 
+/**
+ * Settles the work whose claims kept ending in silence, which is the other way
+ * work runs forever without ever becoming a fact: a busy or unwilling pool
+ * answers the offer, whereas a workload a fabric accepted and no node can ever
+ * schedule lets the lease run out and says nothing the ticket could carry.
+ * The ceiling both claim predicates stop at is what ends the cycle, and this
+ * pass is what the ticket hears instead.
+ */
+export async function ticketExecutionUnreportedRun(
+  store: TicketExecutionStore,
+  content: TicketExecutionContent,
+  owner: string,
+  recoveryEpoch: RecoveryEpoch,
+  authorization: TicketMachineAuthorization,
+  leaseSecs: number,
+  limit: number,
+  attemptsUnreportedMax: number,
+): Promise<number> {
+  if (
+    ![leaseSecs, limit, attemptsUnreportedMax].every(
+      (value) => Number.isSafeInteger(value) && value > 0,
+    )
+  )
+    throw new RangeError(
+      "ticket execution unreported bounds must be positive safe integers",
+    );
+  return ticketExecutionSweptRun(
+    store,
+    content,
+    await store.unreported(
+      owner,
+      recoveryEpoch,
+      leaseSecs,
+      limit,
+      attemptsUnreportedMax,
+    ),
+    authorization,
+    limit,
+    (claim) => ticketExecutionUnreportedEvidence(claim, attemptsUnreportedMax),
+  );
+}
+
+/** What the ticket is told: what the work asked for, and how many claims of it said nothing. */
+function ticketExecutionUnreportedEvidence(
+  claim: TicketExecutionClaim,
+  attemptsUnreportedMax: number,
+): string {
+  return JSON.stringify({
+    reason: "every claim of this work expired without reporting an outcome",
+    taskKey: claim.taskKey,
+    requiredCapabilities: [
+      ...claim.obligation.definition.execution_requirements
+        .required_capabilities,
+    ],
+    attempts: claim.attempt,
+    attemptsUnreportedMax,
+  });
+}
+
 export async function ticketExecutionRun(
   store: TicketExecutionStore,
   content: TicketExecutionContent,
@@ -496,12 +594,17 @@ export async function ticketExecutionRun(
   attemptsMax: number,
   limit: number,
   capabilities: readonly string[],
+  attemptsUnreportedMax: number,
   cancellationPollMs = 1_000,
 ): Promise<number> {
   if (
-    ![leaseSecs, attemptsMax, limit, cancellationPollMs].every(
-      (value) => Number.isSafeInteger(value) && value > 0,
-    )
+    ![
+      leaseSecs,
+      attemptsMax,
+      limit,
+      attemptsUnreportedMax,
+      cancellationPollMs,
+    ].every((value) => Number.isSafeInteger(value) && value > 0)
   )
     throw new RangeError(
       "ticket execution bounds must be positive safe integers",
@@ -512,6 +615,7 @@ export async function ticketExecutionRun(
     leaseSecs,
     limit,
     capabilities,
+    attemptsUnreportedMax,
   );
   if (claims.length > limit)
     throw new Error("ticket execution store exceeded claim limit");

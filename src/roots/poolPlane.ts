@@ -31,6 +31,7 @@ import {
   planeEnvironmentRequired,
 } from "./planeEnvironment.ts";
 import { poolPlaneRole } from "../adapters/postgres/schema.ts";
+import { ticketExecutionDefaults } from "../interpreter/ticketExecution.ts";
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRegistry,
@@ -89,6 +90,10 @@ async function main(): Promise<void> {
     mint: () => randomBytes(32).toString("base64url"),
     settings: {
       leaseSecs: planeEnvironmentPositive("CHUG_POOL_PLANE_LEASE_SECS", 300),
+      attemptsUnreportedMax: planeEnvironmentPositive(
+        "CHUG_POOL_PLANE_ATTEMPTS_UNREPORTED_MAX",
+        ticketExecutionDefaults.attemptsUnreportedMax,
+      ),
       assignmentsPerPollMax: planeEnvironmentPositive(
         "CHUG_POOL_PLANE_ASSIGNMENTS_PER_POLL_MAX",
         8,

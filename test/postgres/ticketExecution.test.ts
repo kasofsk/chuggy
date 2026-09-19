@@ -87,11 +87,11 @@ test("a claimant is offered only the work its capabilities cover", async () => {
     "macos",
   ]);
   assert.deepEqual(
-    mine(await store.claim("linux-pool", epoch, 30, 10, ["linux"])),
+    mine(await store.claim("linux-pool", epoch, 30, 10, ["linux"], 3)),
     [],
   );
   const found = mine(
-    await store.claim("macos-pool", epoch, 30, 10, ["linux", "macos"]),
+    await store.claim("macos-pool", epoch, 30, 10, ["linux", "macos"], 3),
   );
   assert.equal(found.length, 1);
 });
@@ -161,6 +161,58 @@ test("queued work nobody claims is taken once its window has passed", async () =
   );
 });
 
+test("a claim that expires in silence is counted, and the ceiling ends the cycle", async () => {
+  const { partition, store, epoch, mine } = await queuedNeeding(
+    "execution-unreported",
+    [],
+  );
+  const expire = () =>
+    harness.pool.query(
+      "UPDATE ticket_execution SET claim_expires_at=now()-make_interval(secs=>1) WHERE tenant=$1 AND project=$2",
+      [partition.tenant, partition.project],
+    );
+  assert.deepEqual(mine(await store.unreported("sweep", epoch, 30, 10, 2)), []);
+  for (const taken of [1, 2, 3]) {
+    assert.equal(
+      mine(await store.claim(`pool-${String(taken)}`, epoch, 30, 10, [], 2))
+        .length,
+      1,
+    );
+    await expire();
+  }
+  assert.deepEqual(
+    mine(await store.claim("pool-four", epoch, 30, 10, [], 2)),
+    [],
+  );
+  assert.equal(
+    mine(await store.unreported("sweep", epoch, 30, 10, 2)).length,
+    1,
+  );
+});
+
+test("a claim that reported an outcome is not a claim that said nothing", async () => {
+  const { partition, store, epoch, mine } = await queuedNeeding(
+    "execution-reported",
+    [],
+  );
+  for (const taken of [1, 2, 3]) {
+    assert.equal(
+      mine(await store.claim(`pool-${String(taken)}`, epoch, 30, 10, [], 2))
+        .length,
+      1,
+    );
+    await harness.pool.query(
+      `UPDATE ticket_execution SET worker_outcome='{"outcome":{}}'::jsonb,
+         claim_expires_at=now()-make_interval(secs=>1) WHERE tenant=$1 AND project=$2`,
+      [partition.tenant, partition.project],
+    );
+  }
+  assert.equal(
+    mine(await store.claim("pool-four", epoch, 30, 10, [], 2)).length,
+    1,
+  );
+});
+
 test("attempt takeover fences worker capabilities and terminal queue acceptance", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
@@ -175,7 +227,7 @@ test("attempt takeover fences worker capabilities and terminal queue acceptance"
   );
   const store = postgresTicketExecution(scheduler);
   const epoch = await postgresHarnessEpoch(harness.store);
-  const first = (await store.claim("scheduler", epoch, 30, 10, [])).find(
+  const first = (await store.claim("scheduler", epoch, 30, 10, [], 3)).find(
     (claim) => claim.partition.project === partition.project,
   );
   assert.ok(first);
@@ -196,7 +248,7 @@ test("attempt takeover fences worker capabilities and terminal queue acceptance"
     "UPDATE ticket_execution SET claim_expires_at=now()-interval '1 second' WHERE tenant=$1 AND project=$2",
     [partition.tenant, partition.project],
   );
-  const second = (await store.claim("replacement", epoch, 30, 10, [])).find(
+  const second = (await store.claim("replacement", epoch, 30, 10, [], 3)).find(
     (claim) => claim.partition.project === partition.project,
   );
   assert.ok(second);
@@ -245,10 +297,10 @@ test("a scheduler from a prior recovery epoch cannot claim fresh work", async ()
   );
   const store = postgresTicketExecution(scheduler);
   assert.deepEqual(
-    await store.claim("stale-scheduler", previous, 30, 10, []),
+    await store.claim("stale-scheduler", previous, 30, 10, [], 3),
     [],
   );
-  const claims = await store.claim("current-scheduler", current, 30, 10, []);
+  const claims = await store.claim("current-scheduler", current, 30, 10, [], 3);
   const claim = claims.find(
     (value) => value.partition.project === partition.project,
   );

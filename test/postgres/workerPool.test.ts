@@ -114,6 +114,7 @@ test("a pool claims only prepared work its declared capabilities cover", async (
       30,
       held.names.one,
       held.bearer,
+      3,
     ),
     undefined,
     "work with no materialised view is work a pool cannot be assigned",
@@ -126,6 +127,7 @@ test("a pool claims only prepared work its declared capabilities cover", async (
       30,
       held.names.two,
       `${held.bearer}-two`,
+      3,
     ),
     undefined,
   );
@@ -134,11 +136,44 @@ test("a pool claims only prepared work its declared capabilities cover", async (
     30,
     held.names.one,
     held.bearer,
+    3,
   );
   assert.deepEqual(claimed?.capabilities, ["linux"]);
   assert.deepEqual(
     (claimed?.view as { workload: unknown }).workload,
     preparedView.workload,
+  );
+});
+
+test("a pool is offered nothing whose claims kept expiring in silence", async () => {
+  const held = await registered("pool-unreported", [], []);
+  assert.equal(await held.prepare(), true);
+  const expire = () =>
+    harness.pool.query(
+      "UPDATE ticket_execution SET claim_expires_at=now()-make_interval(secs=>1) WHERE tenant=$1 AND project=$2",
+      [held.partition.tenant, held.partition.project],
+    );
+  for (const taken of [1, 2, 3]) {
+    assert.ok(
+      await held.assignments.claim(
+        held.identity,
+        30,
+        `${held.names.one}-${String(taken)}`,
+        `${held.bearer}-${String(taken)}`,
+        2,
+      ),
+    );
+    await expire();
+  }
+  assert.equal(
+    await held.assignments.claim(
+      held.identity,
+      30,
+      held.names.two,
+      `${held.bearer}-last`,
+      2,
+    ),
+    undefined,
   );
 });
 
@@ -151,6 +186,7 @@ test("what names a pool authenticates no attempt and reports no terminal", async
       30,
       held.names.one,
       held.bearer,
+      3,
     ),
   );
   const reports = postgresTicketExecutionTerminals(worker);
@@ -187,6 +223,7 @@ test("a harness holding only its bearer reports the terminal the pool's attempt 
       30,
       held.names.one,
       held.bearer,
+      3,
     ),
   );
   const reports = postgresTicketExecutionTerminals(worker);
@@ -233,11 +270,12 @@ test("one bearer binds one attempt and a second claim under it is refused", asyn
       30,
       held.names.one,
       held.bearer,
+      3,
     ),
   );
   await assert.rejects(
     () =>
-      held.assignments.claim(held.identity, 30, held.names.two, held.bearer),
+      held.assignments.claim(held.identity, 30, held.names.two, held.bearer, 3),
     /capability_digest/u,
   );
 });
@@ -268,6 +306,7 @@ test("an assignment is renewed, refused and released by the pool holding it", as
       30,
       held.names.one,
       held.bearer,
+      3,
     ),
   );
   const other = { ...held.identity, pool: "pool-two" };
@@ -308,6 +347,7 @@ test("an assignment is renewed, refused and released by the pool holding it", as
       30,
       held.names.two,
       `${held.bearer}-two`,
+      3,
     ),
   );
   assert.equal(
@@ -330,6 +370,7 @@ test("deregistration answers with the client it removed and leaves the work it h
       30,
       held.names.one,
       held.bearer,
+      3,
     ),
   );
   assert.equal(

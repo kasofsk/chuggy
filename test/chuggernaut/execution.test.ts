@@ -10,6 +10,7 @@ import {
   ticketExecutionRun,
   ticketExecutionSettlementRun,
   ticketExecutionUnclaimableRun,
+  ticketExecutionUnreportedRun,
   ticketExecutionMaterial,
   ticketExecutionView,
   type TicketExecutionClaim,
@@ -150,6 +151,7 @@ const workspaceContent = () => ({
 
 /** The passes a case does not drive, each one a failure if the run reaches it. */
 const idlePasses = {
+  unreported: () => Promise.reject(new Error("this case sweeps nothing")),
   unprepared: () => Promise.reject(new Error("this case prepares nothing")),
   prepare: () => Promise.reject(new Error("this case prepares nothing")),
   settlements: () => Promise.reject(new Error("this case settles nothing")),
@@ -208,6 +210,7 @@ test("operational retry exhaustion reports unavailable with stable authorization
     2,
     1,
     ["shell"],
+    3,
   );
   assert.equal(completed, 1);
   const input = submitted?.input as {
@@ -282,6 +285,7 @@ test("a placed attempt's wire outcome becomes the terminal the machine takes", a
     2,
     1,
     ["linux"],
+    3,
   );
   assert.equal(completed, 1);
   assert.equal(submitted?.report.kind, "WorkResultReport");
@@ -366,73 +370,134 @@ test("an obligation whose ticket has moved on resolves no material", () => {
   );
 });
 
-test("work no claimant took inside its window is reported unavailable", async () => {
-  const held = obligation();
-  const claim: TicketExecutionClaim = {
+/** The one claim a sweep took, which differs between the sweeps only in what it spent. */
+function sweptClaim(attempt: number): TicketExecutionClaim {
+  return {
     partition,
     identity: "12:0",
     taskKey: "work:7:1",
-    obligation: held,
-    attempt: 1,
+    obligation: obligation(),
+    attempt,
     recoveryEpoch: asRecoveryEpoch("epoch-one"),
   };
-  let evidence: string | undefined;
-  let submitted: { input: unknown } | undefined;
-  const settled = await ticketExecutionUnclaimableRun(
-    {
+}
+
+/** What a sweep settles through: a store that claims nothing, and what it wrote down. */
+function swept() {
+  const written: { evidence?: string; input?: unknown } = {};
+  return {
+    written,
+    store: {
       ...idlePasses,
       execute: () => Promise.resolve(true),
       cancel: () => Promise.resolve(true),
-      claim: () => Promise.reject(new Error("the window pass never claims")),
-      unclaimable: (_owner, _epoch, _leaseSecs, _limit, windowSecs) => {
-        assert.equal(windowSecs, 60);
-        return Promise.resolve([claim]);
-      },
-      retry: () => Promise.reject(new Error("unclaimed work must not retry")),
-      terminal: (_claim, input) => {
-        submitted = { input };
+      claim: () => Promise.reject(new Error("a sweep never claims")),
+      retry: () => Promise.reject(new Error("swept work must not retry")),
+      terminal: (_claim: TicketExecutionClaim, input: TicketMachineInput) => {
+        written.input = input;
         return Promise.resolve(true);
       },
       cancelled: () => Promise.resolve(false),
     },
-    () => ({
+    content: () => ({
       put: (_mediaType: string, content: string) => {
-        evidence = content;
+        written.evidence = content;
         return Promise.resolve(task.ContentRef(99));
       },
       read: () => Promise.resolve(undefined),
     }),
-    "worker-one",
-    claim.recoveryEpoch,
-    {
+    authorization: {
       principal: "worker-one",
       authorizedOperation: "ReportTaskTerminal",
       authorityKind: "ExecutionWorker",
       authoritySubject: "worker-one",
       policyRevision: "test-policy-v1",
+    } as const,
+  };
+}
+
+/** The terminal both sweeps submit, which is unavailability against the evidence they wrote. */
+function sweptUnavailable(input: unknown): void {
+  const submitted = input as {
+    identity: string;
+    command: ticket.ReportTaskTerminal;
+  };
+  assert.equal(submitted.identity, "execution-terminal:work:7:1");
+  if (submitted.command.report.kind !== "TerminalFailureReport")
+    throw new Error("swept work did not report a failure");
+  assert.equal(
+    submitted.command.report.kind_of_failure.kind,
+    "ExecutionUnavailableFailure",
+  );
+}
+
+test("work whose every claim said nothing is reported unavailable", async () => {
+  const claim = sweptClaim(4);
+  const fixture = swept();
+  const settled = await ticketExecutionUnreportedRun(
+    {
+      ...fixture.store,
+      unclaimable: () =>
+        Promise.reject(new Error("the silence pass is not the window pass")),
+      unreported: (
+        _owner,
+        _epoch,
+        _leaseSecs,
+        _limit,
+        attemptsUnreportedMax,
+      ) => {
+        assert.equal(attemptsUnreportedMax, 3);
+        return Promise.resolve([claim]);
+      },
     },
+    fixture.content,
+    "worker-one",
+    claim.recoveryEpoch,
+    fixture.authorization,
+    30,
+    1,
+    3,
+  );
+  assert.equal(settled, 1);
+  assert.deepEqual(JSON.parse(fixture.written.evidence ?? "null"), {
+    reason: "every claim of this work expired without reporting an outcome",
+    taskKey: "work:7:1",
+    requiredCapabilities: ["linux"],
+    attempts: 4,
+    attemptsUnreportedMax: 3,
+  });
+  sweptUnavailable(fixture.written.input);
+});
+
+test("work no claimant took inside its window is reported unavailable", async () => {
+  const claim = sweptClaim(1);
+  const fixture = swept();
+  const settled = await ticketExecutionUnclaimableRun(
+    {
+      ...fixture.store,
+      unreported: () =>
+        Promise.reject(new Error("the window pass is not the silence pass")),
+      unclaimable: (_owner, _epoch, _leaseSecs, _limit, windowSecs) => {
+        assert.equal(windowSecs, 60);
+        return Promise.resolve([claim]);
+      },
+    },
+    fixture.content,
+    "worker-one",
+    claim.recoveryEpoch,
+    fixture.authorization,
     30,
     1,
     60,
   );
   assert.equal(settled, 1);
-  assert.deepEqual(JSON.parse(evidence ?? "null"), {
+  assert.deepEqual(JSON.parse(fixture.written.evidence ?? "null"), {
     reason: "no claimant covering the required capabilities appeared in time",
     taskKey: "work:7:1",
     requiredCapabilities: ["linux"],
     windowSecs: 60,
   });
-  const input = submitted?.input as {
-    identity: string;
-    command: ticket.ReportTaskTerminal;
-  };
-  assert.equal(input.identity, "execution-terminal:work:7:1");
-  if (input.command.report.kind !== "TerminalFailureReport")
-    throw new Error("unclaimed work did not report a failure");
-  assert.equal(
-    input.command.report.kind_of_failure.kind,
-    "ExecutionUnavailableFailure",
-  );
+  sweptUnavailable(fixture.written.input);
 });
 
 test("queued work is given the view a pool's plane hands out, and stale work is not", async () => {

@@ -35,6 +35,7 @@ import {
   type RecoveryEpoch,
 } from "../interpreter/projectStore.ts";
 import type { ServiceRuntimeConfig } from "../interpreter/serviceRuntime.ts";
+import { ticketExecutionDefaults } from "../interpreter/ticketExecution.ts";
 import {
   admittedImagesMax,
   asWorkerName,
@@ -73,6 +74,7 @@ export interface SchedulerTicketExecutionConfig {
   readonly outcomePollMs: number;
   readonly claimsPerPassMax: number;
   readonly unclaimedWindowSecs: number;
+  readonly attemptsUnreportedMax: number;
 }
 
 /** The one prefix every variable this command reads is spelled with. */
@@ -159,6 +161,9 @@ const schedulerTicketExecutionSchema = z.strictObject({
   outcomePollMs: schedulerSafePositiveSchema.default(1_000),
   claimsPerPassMax: schedulerCountSchema.default(1),
   unclaimedWindowSecs: schedulerSafePositiveSchema.default(300),
+  attemptsUnreportedMax: schedulerCountSchema.default(
+    ticketExecutionDefaults.attemptsUnreportedMax,
+  ),
 });
 
 /**
