@@ -66,6 +66,18 @@ async function machineProject(
   return undefined;
 }
 
+/**
+ * The whole journal, replayed from empty into the graph it decides against.
+ *
+ * THE PAGE IS ORDERED BY THE TABLE'S COLUMN AND NOT BY THE OUTPUT'S.
+ * `sequence::text` names an output column `sequence`, and SQL resolves an
+ * unqualified `ORDER BY` against output names before table columns — so the
+ * bare name sorts the text, and a page arrives 1, 10, 2, 3. Replay requires
+ * each entry to be the last plus one, which makes such a journal contiguous
+ * up to its ninth input and unreadable from its tenth, for good. The
+ * qualified name can only be the column, and the suite drives eleven inputs
+ * because ten is the first one that disagrees.
+ */
 async function machineLoad(
   client: pg.PoolClient,
   partition: Partition,
@@ -79,7 +91,7 @@ async function machineLoad(
   const pages = Math.ceil(head / pageSize);
   for (let page = 0; page < pages; page += 1) {
     const events = await client.query<MachineEvent>(
-      sql`SELECT sequence::text,decision FROM ticket_machine_input WHERE tenant=${partition.tenant} AND project=${partition.project} AND sequence>${state.sequence} AND sequence<=${head} ORDER BY sequence LIMIT ${pageSize}`,
+      sql`SELECT sequence::text,decision FROM ticket_machine_input WHERE tenant=${partition.tenant} AND project=${partition.project} AND sequence>${state.sequence} AND sequence<=${head} ORDER BY ticket_machine_input.sequence LIMIT ${pageSize}`,
     );
     if (events.rows.length === 0)
       throw new Error("ticket history is incomplete");

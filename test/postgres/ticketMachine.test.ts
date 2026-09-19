@@ -429,3 +429,40 @@ test("API credentials can read adopted graphs without writer authority", async (
     await api.end();
   }
 });
+
+/**
+ * Past ten, because ten is where an order that is not the column's stops
+ * agreeing with one that is. A journal read `ORDER BY` a text projection of
+ * `sequence` arrives 1, 10, 2, 3 — contiguous for nine inputs and never again,
+ * which is a project that works until it has been used and then cannot be read
+ * at all. Refusals are what this drives it with: each commits a sequence and
+ * none of them builds graph state, so the eleventh is reached in one pass.
+ */
+test("a journal is replayed in the column's order past the tenth input", async () => {
+  const lease = await held("ticket-machine-past-ten");
+  const store = postgresTicketMachine(writerPool);
+  const inbox = postgresTicketMachineInbox(writerPool);
+  const entries = 11;
+  for (let index = 1; index <= entries; index += 1) {
+    const input = {
+      identity: `refusal-${String(index)}`,
+      origin: "Author" as const,
+      authorization,
+      command: dispatch(1),
+    };
+    assert.equal(
+      (await inbox.submit(lease.partition, input)).accepted,
+      "Accepted",
+    );
+    const committed = await processMachine(
+      store,
+      lease,
+      input,
+      ticket.rework_policy,
+    );
+    if (committed.processed !== "Committed")
+      throw new Error(`input ${String(index)} was not committed`);
+    assert.equal(committed.outcome.sequence, index);
+  }
+  assert.ok((await store.read(lease.partition)) instanceof ticket.TicketGraph);
+});
