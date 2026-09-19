@@ -1032,6 +1032,7 @@ test("the scheduler reads execution and capacity, and of the project only its li
       "schema_migration",
       "ticket_execution",
       "ticket_machine_content",
+      "ticket_machine_input",
     ],
   );
   assert.equal(
