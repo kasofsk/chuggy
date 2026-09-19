@@ -15,11 +15,18 @@
  * THE POOL'S CREDENTIAL IS A VARIABLE AND NEVER A FILE THIS SIDE NAMES. A pool
  * is registered by an owner who hands over a client id and a secret once, and
  * the process that spends them is the only thing that should ever hold them.
+ *
+ * THE SITE NAMES ITS OWN FABRIC AND NOTHING ELSE SELECTS ONE. A second variable
+ * saying which backend to build would be a second source of one truth, and the
+ * one that goes stale is the one nobody reads; a tagged document refuses a
+ * cluster's site under a scheduler's name at the same moment it refuses a
+ * misspelled member, which is before a single poll is made.
  */
 
 import { z } from "zod";
 
 import type { KubernetesPoolPlacementConfig } from "../adapters/kubernetes/poolPlacement.ts";
+import type { NomadPoolPlacementConfig } from "../adapters/nomad/poolPlacement.ts";
 import type { ClientCredentialsSettings } from "../adapters/http/clientCredentials.ts";
 import type { PoolPlaneClientSettings } from "../adapters/http/poolPlaneClient.ts";
 import type { WorkerPoolClientSettings } from "../interpreter/workerPoolClient.ts";
@@ -31,11 +38,16 @@ export type PoolClientEnvironment = Readonly<
   Record<string, string | undefined>
 >;
 
+/** The one fabric this pool places on, which is the site document's own tag. */
+export type PoolClientSite =
+  | ({ readonly fabric: "Kubernetes" } & KubernetesPoolPlacementConfig)
+  | ({ readonly fabric: "Nomad" } & NomadPoolPlacementConfig);
+
 /** What one run of the client is composed of, which is four settings objects and nothing else. */
 export interface PoolClientConfig {
   readonly tokens: ClientCredentialsSettings;
   readonly plane: PoolPlaneClientSettings;
-  readonly site: KubernetesPoolPlacementConfig;
+  readonly site: PoolClientSite;
   readonly client: WorkerPoolClientSettings;
 }
 
@@ -64,7 +76,8 @@ const poolClientCapabilitySchema = z.strictObject({
   tolerations: z.array(poolClientTolerationSchema),
 });
 
-const poolClientSiteSchema = z.strictObject({
+const poolClientKubernetesSiteSchema = z.strictObject({
+  fabric: z.literal("Kubernetes"),
   apiBaseUrl: poolClientTextSchema,
   namespace: poolClientTextSchema,
   tokenFile: poolClientTextSchema,
@@ -107,6 +120,45 @@ const poolClientSiteSchema = z.strictObject({
   unavailableRetryAfterSecs: poolClientBoundSchema,
 });
 
+/** What an installation must fetch onto a host that has no image to pull. */
+const poolClientHarnessSourceSchema = z.strictObject({
+  sourceUrl: poolClientTextSchema,
+  sourceSha256: poolClientTextSchema,
+  release: poolClientTextSchema,
+  rootPath: poolClientTextSchema,
+  nodePath: poolClientTextSchema,
+  shellPath: poolClientTextSchema,
+  installWaitSecsMax: poolClientBoundSchema,
+});
+
+const poolClientNomadSiteSchema = z.strictObject({
+  fabric: z.literal("Nomad"),
+  apiBaseUrl: poolClientTextSchema,
+  tokenFile: poolClientTextSchema.optional(),
+  namespace: poolClientTextSchema.optional(),
+  jobNamePrefix: poolClientTextSchema,
+  datacenters: z.array(poolClientTextSchema).min(1),
+  capabilityMetaKey: poolClientTextSchema,
+  capabilities: z
+    .record(poolClientTextSchema, poolClientTextSchema)
+    .default({}),
+  megahertzPerCore: poolClientBoundSchema,
+  source: poolClientHarnessSourceSchema,
+  workspacePath: poolClientTextSchema,
+  environment: z.record(poolClientTextSchema, z.string()).default({}),
+  providerCredentialSource: poolClientTextSchema.optional(),
+  timeoutSecsMax: poolClientBoundSchema,
+  outputBytesMax: poolClientBoundSchema,
+  requestTimeoutSecsMax: poolClientBoundSchema,
+  unavailableRetryAfterSecs: poolClientBoundSchema,
+  heldJobsMax: poolClientBoundSchema,
+});
+
+const poolClientSiteSchema = z.discriminatedUnion("fabric", [
+  poolClientKubernetesSiteSchema,
+  poolClientNomadSiteSchema,
+]);
+
 /** The value this process cannot start without, named in its own refusal. */
 function poolClientRequired(
   environment: PoolClientEnvironment,
@@ -135,9 +187,7 @@ function poolClientPositive(
 }
 
 /** The site document, refused with the path of whatever member is wrong. */
-function poolClientSite(
-  environment: PoolClientEnvironment,
-): KubernetesPoolPlacementConfig {
+function poolClientSite(environment: PoolClientEnvironment): PoolClientSite {
   const value = poolClientRequired(environment, "SITE");
   let document: unknown;
   try {

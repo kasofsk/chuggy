@@ -5,9 +5,10 @@
  * IT IS THE ONLY PROCESS IN THIS TREE THAT IS A CLIENT OF CHUGGY'S OWN HTTP
  * SURFACE, and it is composed exactly like the servers are — the loop is
  * `../interpreter/workerPoolClient.ts`, the wire and the issuer are adapters
- * under `../adapters/http/`, the cluster is one under
- * `../adapters/kubernetes/`, and this file only names which. A pool that ran
- * some other fabric changes the backend here and nothing above it.
+ * under `../adapters/http/`, the fabric is one under `../adapters/kubernetes/`
+ * or `../adapters/nomad/`, and this file only names which. Which one is the
+ * site document's own answer, so a pool on a third fabric adds a backend beside
+ * them and changes nothing above here.
  *
  * A RUN IS BOUNDED AND ENDING ONE IS NOT LOSING WORK. The loop makes a
  * configured number of passes and exits, because what the pool holds is read
@@ -22,12 +23,24 @@ import { setTimeout as delay } from "node:timers/promises";
 import { clientCredentialsTokens } from "../adapters/http/clientCredentials.ts";
 import { poolPlaneClient } from "../adapters/http/poolPlaneClient.ts";
 import { kubernetesPoolBackend } from "../adapters/kubernetes/poolPlacement.ts";
+import { nomadPoolBackend } from "../adapters/nomad/poolPlacement.ts";
 import {
   checkedWorkerPoolClientSettings,
   workerPoolClientRun,
+  type WorkerPoolBackend,
   type WorkerPoolPass,
 } from "../interpreter/workerPoolClient.ts";
-import { poolClientConfig } from "./poolClientConfig.ts";
+import { poolClientConfig, type PoolClientSite } from "./poolClientConfig.ts";
+
+/** The one backend this site is, which is the fabric its own document named. */
+function poolClientBackend(site: PoolClientSite): WorkerPoolBackend {
+  switch (site.fabric) {
+    case "Kubernetes":
+      return kubernetesPoolBackend(site);
+    case "Nomad":
+      return nomadPoolBackend(site);
+  }
+}
 
 export async function poolClientMain(
   environment: NodeJS.ProcessEnv,
@@ -37,7 +50,7 @@ export async function poolClientMain(
     {
       tokens: clientCredentialsTokens(config.tokens),
       plane: poolPlaneClient(config.plane),
-      backend: kubernetesPoolBackend(config.site),
+      backend: poolClientBackend(config.site),
       settings: checkedWorkerPoolClientSettings(config.client),
       now: () => Date.now(),
       held: undefined,

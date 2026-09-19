@@ -16,6 +16,7 @@ import { promisify } from "node:util";
 const execute = promisify(execFile);
 
 const site = {
+  fabric: "Kubernetes",
   apiBaseUrl: "https://cluster.invalid:6443",
   namespace: "pool",
   tokenFile: "/var/run/secrets/token",
@@ -139,4 +140,52 @@ test("a site that is not JSON, and one with a member it does not hold, are both 
     ),
     /CHUG_POOL_CLIENT_SITE:/u,
   );
+});
+
+const nomadSite = {
+  fabric: "Nomad",
+  apiBaseUrl: "http://agent.invalid:4646",
+  jobNamePrefix: "chuggy-pool",
+  datacenters: ["dc1"],
+  capabilityMetaKey: "chug.capabilities",
+  capabilities: { linux: "linux" },
+  megahertzPerCore: 2500,
+  source: {
+    sourceUrl: "https://releases.invalid/chuggy.tar.gz",
+    sourceSha256: "a".repeat(64),
+    release: "b".repeat(40),
+    rootPath: "/opt/chuggy",
+    nodePath: "/etc/chuggy/node",
+    shellPath: "/bin/sh",
+    installWaitSecsMax: 600,
+  },
+  workspacePath: "/workspace",
+  timeoutSecsMax: 30,
+  outputBytesMax: 4096,
+  requestTimeoutSecsMax: 5,
+  unavailableRetryAfterSecs: 11,
+  heldJobsMax: 64,
+};
+
+test("a site names its own fabric, and each one refuses the other's document", async () => {
+  const found = (
+    await parsed({
+      ...environment,
+      CHUG_POOL_CLIENT_SITE: JSON.stringify(nomadSite),
+    })
+  ).parsed as { site: { fabric: string; datacenters: readonly string[] } };
+  assert.equal(found.site.fabric, "Nomad");
+  assert.deepEqual(found.site.datacenters, ["dc1"]);
+  for (const crossed of [
+    { ...site, fabric: "Nomad" },
+    { ...nomadSite, fabric: "Kubernetes" },
+    { ...nomadSite, fabric: "Mesos" },
+  ]) {
+    const refused = await parsed({
+      ...environment,
+      CHUG_POOL_CLIENT_SITE: JSON.stringify(crossed),
+    });
+    assert.equal(refused.parsed, undefined, crossed.fabric);
+    assert.match(String(refused.refused), /CHUG_POOL_CLIENT_SITE:/u);
+  }
 });
