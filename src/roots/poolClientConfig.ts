@@ -138,9 +138,10 @@ function poolClientPositive(
 function poolClientSite(
   environment: PoolClientEnvironment,
 ): KubernetesPoolPlacementConfig {
+  const value = poolClientRequired(environment, "SITE");
   let document: unknown;
   try {
-    document = JSON.parse(poolClientRequired(environment, "SITE"));
+    document = JSON.parse(value);
   } catch {
     throw new RangeError(`${poolClientVariablePrefix}SITE is not JSON`);
   }
