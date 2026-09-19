@@ -5,15 +5,19 @@ import * as task from "../../src/domain/chuggernaut/task.js";
 import * as ticket from "../../src/domain/chuggernaut/ticket.js";
 import {
   ticketExecutionEffects,
+  ticketExecutionPrepareRun,
   ticketExecutionResultRef,
   ticketExecutionRun,
+  ticketExecutionSettlementRun,
   ticketExecutionUnclaimableRun,
   ticketExecutionMaterial,
   ticketExecutionView,
   type TicketExecutionClaim,
   type TicketExecutionStore,
+  type TicketExecutionView,
 } from "../../src/interpreter/ticketExecution.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
+import type { TicketMachineInput } from "../../src/interpreter/ticketMachine.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import type { TicketContentStore } from "../../src/interpreter/ticketCatalog.ts";
 import * as evaluation from "../../src/domain/chuggernaut/evaluation.js";
@@ -144,6 +148,13 @@ const workspaceContent = () => ({
     }),
 });
 
+/** The passes a case does not drive, each one a failure if the run reaches it. */
+const idlePasses = {
+  unprepared: () => Promise.reject(new Error("this case prepares nothing")),
+  prepare: () => Promise.reject(new Error("this case prepares nothing")),
+  settlements: () => Promise.reject(new Error("this case settles nothing")),
+};
+
 test("operational retry exhaustion reports unavailable with stable authorization", async () => {
   const held = obligation();
   const claim: TicketExecutionClaim = {
@@ -157,6 +168,7 @@ test("operational retry exhaustion reports unavailable with stable authorization
   let submitted: { input: unknown } | undefined;
   const completed = await ticketExecutionRun(
     {
+      ...idlePasses,
       execute: () => Promise.resolve(true),
       cancel: () => Promise.resolve(true),
       claim: (_owner, recoveryEpoch, _leaseSecs, _limit, capabilities) => {
@@ -225,6 +237,7 @@ test("a placed attempt's wire outcome becomes the terminal the machine takes", a
   let submitted: ticket.ReportTaskTerminal | undefined;
   const completed = await ticketExecutionRun(
     {
+      ...idlePasses,
       execute: () => Promise.resolve(true),
       cancel: () => Promise.resolve(true),
       claim: () => Promise.resolve([claim]),
@@ -367,6 +380,7 @@ test("work no claimant took inside its window is reported unavailable", async ()
   let submitted: { input: unknown } | undefined;
   const settled = await ticketExecutionUnclaimableRun(
     {
+      ...idlePasses,
       execute: () => Promise.resolve(true),
       cancel: () => Promise.resolve(true),
       claim: () => Promise.reject(new Error("the window pass never claims")),
@@ -417,6 +431,104 @@ test("work no claimant took inside its window is reported unavailable", async ()
     throw new Error("unclaimed work did not report a failure");
   assert.equal(
     input.command.report.kind_of_failure.kind,
+    "ExecutionUnavailableFailure",
+  );
+});
+
+test("queued work is given the view a pool's plane hands out, and stale work is not", async () => {
+  const driver = dispatched();
+  const held = work_obligation(driver.graph, 7);
+  const prepared: Record<string, unknown> = {};
+  const settledDriver = dispatched();
+  settledDriver.submit(work_result_command(settledDriver.graph, 7, 400));
+  for (const [what, graph, count] of [
+    ["current", driver.graph, 1],
+    ["moved on", settledDriver.graph, 0],
+  ] as const) {
+    const count_prepared = await ticketExecutionPrepareRun(
+      {
+        ...idlePasses,
+        unprepared: () =>
+          Promise.resolve([
+            { partition, taskKey: "work:7:1", obligation: held },
+          ]),
+        prepare: (
+          _partition: Partition,
+          taskKey: string,
+          view: TicketExecutionView,
+        ) => {
+          prepared[taskKey] = view.requiredCapabilities;
+          return Promise.resolve(true);
+        },
+      } as unknown as TicketExecutionStore,
+      workspaceContent,
+      () => Promise.resolve(graph),
+      4,
+    );
+    assert.equal(count_prepared, count, what);
+  }
+  assert.deepEqual(prepared["work:7:1"], ["linux"]);
+});
+
+test("a pool-run attempt is settled by the pass, through the one result protocol", async () => {
+  const held = obligation();
+  const claim: TicketExecutionClaim = {
+    partition,
+    identity: "12:0",
+    taskKey: "work:7:1",
+    obligation: held,
+    attempt: 1,
+    recoveryEpoch: asRecoveryEpoch("epoch-one"),
+  };
+  const reported: ticket.ReportTaskTerminal[] = [];
+  const settled = await ticketExecutionSettlementRun(
+    {
+      ...idlePasses,
+      settlements: () =>
+        Promise.resolve([
+          {
+            claim,
+            outcome: {
+              type: "result",
+              manifest: {},
+              outputs: [
+                {
+                  repository: "repository",
+                  commit: "0123456789012345678901234567890123456789",
+                },
+              ],
+            },
+          },
+          { claim, refusal: "this pool runs no containers" },
+        ]),
+      terminal: (_claim: TicketExecutionClaim, input: TicketMachineInput) => {
+        reported.push(input.command as ticket.ReportTaskTerminal);
+        return Promise.resolve(true);
+      },
+    } as unknown as TicketExecutionStore,
+    workspaceContent,
+    () => Promise.resolve(dispatched().graph),
+    {
+      principal: "scheduler-one",
+      authorizedOperation: "ReportTaskTerminal",
+      authorityKind: "ExecutionScheduler",
+      authoritySubject: "scheduler-one",
+      policyRevision: "test-policy-v1",
+    },
+    4,
+  );
+  assert.equal(settled, 2);
+  assert.deepEqual(reported.map((command) => command.report.kind).sort(), [
+    "TerminalFailureReport",
+    "WorkResultReport",
+  ]);
+  const refused = reported.find(
+    (command) => command.report.kind === "TerminalFailureReport",
+  )?.report;
+  assert.equal(
+    refused?.kind === "TerminalFailureReport"
+      ? refused.kind_of_failure.kind
+      : undefined,
     "ExecutionUnavailableFailure",
   );
 });

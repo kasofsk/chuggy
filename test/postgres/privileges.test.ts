@@ -971,7 +971,7 @@ const schedulerWritePrivileges = [
     table_name: "ticket_execution",
     privilege_type: "UPDATE",
     columns:
-      "attempt,available_at,capability_digest,claim_expires_at,claim_owner,recovery_epoch,state,terminal_input_identity,worker_outcome,worker_view",
+      "assignment,attempt,available_at,capability_digest,claim_expires_at,claim_owner,pool,pool_refusal,recovery_epoch,state,terminal_input_identity,worker_outcome,worker_view",
   },
   {
     table_name: "ticket_machine_content",

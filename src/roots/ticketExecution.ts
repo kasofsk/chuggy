@@ -17,7 +17,9 @@ import {
 import { workerPodForgeApp } from "../interpreter/forgeInstallation.ts";
 import { asRepositoryId } from "../interpreter/finalizer.ts";
 import {
+  ticketExecutionPrepareRun,
   ticketExecutionRun,
+  ticketExecutionSettlementRun,
   ticketExecutionUnclaimableRun,
   type TicketExecutionContent,
   type TicketExecutionTickets,
@@ -50,6 +52,19 @@ export function ticketExecutionRuntime(
   } as const;
   return {
     run: async () => {
+      await ticketExecutionPrepareRun(
+        store,
+        content,
+        tickets,
+        settings.claimsPerPassMax,
+      );
+      await ticketExecutionSettlementRun(
+        store,
+        content,
+        tickets,
+        authorization,
+        settings.claimsPerPassMax,
+      );
       await ticketExecutionUnclaimableRun(
         store,
         content,

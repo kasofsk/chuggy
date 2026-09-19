@@ -12,6 +12,8 @@ import {
 import {
   ticketExecutionWorkerView,
   type TicketExecutionClaim,
+  type TicketExecutionQueued,
+  type TicketExecutionSettlement,
   type TicketExecutionStore,
   type TicketExecutionView,
 } from "../../interpreter/ticketExecution.ts";
@@ -125,6 +127,7 @@ async function executionClaimed(
 ): Promise<readonly TicketExecutionClaim[]> {
   const found = await pool.query<ExecutionRow>(sql`UPDATE ticket_execution e SET
       state='Running',attempt=e.attempt+1,claim_owner=${owner},capability_digest=NULL,worker_outcome=NULL,
+      pool=NULL,assignment=NULL,pool_refusal=NULL,
       claim_expires_at=now()+make_interval(secs=>${leaseSecs}::double precision),
       recovery_epoch=${recoveryEpoch}
     WHERE ${recoveryEpoch}=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)
@@ -159,6 +162,7 @@ async function executionUnclaimable(
 ): Promise<readonly TicketExecutionClaim[]> {
   const found = await pool.query<ExecutionRow>(sql`UPDATE ticket_execution e SET
       state='Running',attempt=e.attempt+1,claim_owner=${owner},capability_digest=NULL,worker_outcome=NULL,
+      pool=NULL,assignment=NULL,pool_refusal=NULL,
       claim_expires_at=now()+make_interval(secs=>${leaseSecs}::double precision),
       recovery_epoch=${recoveryEpoch}
     WHERE ${recoveryEpoch}=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)
@@ -217,6 +221,62 @@ async function executionTerminal(
   return true;
 }
 
+/** Queued work the orchestrator has not resolved a harness view for yet. */
+async function executionUnprepared(
+  pool: pg.Pool,
+  limit: number,
+): Promise<readonly TicketExecutionQueued[]> {
+  const found = await pool.query<{
+    tenant: string;
+    project: string;
+    task_key: string;
+    obligation: string;
+  }>(sql`SELECT q.tenant,q.project,q.task_key,q.obligation FROM ticket_execution q
+    WHERE q.state='Queued' AND q.worker_view IS NULL
+      AND EXISTS(SELECT 1 FROM project p
+        WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active'
+          AND p.ticket_model='Chuggernaut')
+    ORDER BY q.queued_at,q.task_key LIMIT ${limit}`);
+  return found.rows.map((row) => ({
+    partition: { tenant: row.tenant, project: row.project } as Partition,
+    taskKey: row.task_key,
+    obligation: decode(row.obligation, task.TaskObligation),
+  }));
+}
+
+/** The pool-held attempts carrying something to settle, with the claim each was written under. */
+async function executionSettlements(
+  pool: pg.Pool,
+  limit: number,
+): Promise<readonly TicketExecutionSettlement[]> {
+  const found = await pool.query<{
+    tenant: string;
+    project: string;
+    delivery_identity: string;
+    task_key: string;
+    obligation: string;
+    attempt: string;
+    recovery_epoch: string;
+    worker_outcome: unknown;
+    pool_refusal: string | null;
+  }>(sql`SELECT e.tenant,e.project,e.delivery_identity,e.task_key,e.obligation,
+      e.attempt::text,e.recovery_epoch,e.worker_outcome,e.pool_refusal
+    FROM ticket_execution e
+    WHERE e.pool IS NOT NULL AND e.state='Running' AND e.claim_expires_at>now()
+      AND (e.worker_outcome IS NOT NULL OR e.pool_refusal IS NOT NULL)
+      AND e.recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)
+      AND EXISTS(SELECT 1 FROM project p
+        WHERE p.tenant=e.tenant AND p.project=e.project AND p.lifecycle='Active'
+          AND p.ticket_model='Chuggernaut')
+    ORDER BY e.claim_expires_at,e.task_key LIMIT ${limit}`);
+  return found.rows.map((row) => ({
+    claim: executionClaim(row),
+    ...(row.pool_refusal === null
+      ? { outcome: row.worker_outcome }
+      : { refusal: row.pool_refusal }),
+  }));
+}
+
 export function postgresTicketExecution(pool: pg.Pool): TicketExecutionStore {
   return {
     execute: (partition, identity, taskKey, obligation) =>
@@ -245,6 +305,15 @@ export function postgresTicketExecution(pool: pg.Pool): TicketExecutionStore {
         limit,
         windowSecs,
       ),
+    unprepared: (limit) => executionUnprepared(pool, limit),
+    prepare: async (partition, taskKey, view) => {
+      const updated =
+        await pool.query(sql`UPDATE ticket_execution SET worker_view=${JSON.stringify(ticketExecutionWorkerView(view))}::jsonb
+        WHERE tenant=${partition.tenant} AND project=${partition.project}
+          AND task_key=${taskKey} AND state='Queued' AND worker_view IS NULL`);
+      return (updated.rowCount ?? 0) === 1;
+    },
+    settlements: (limit) => executionSettlements(pool, limit),
     retry: async (claim, retryAfterSecs) => {
       await pool.query(sql`UPDATE ticket_execution SET state='Queued',claim_owner=NULL,claim_expires_at=NULL,recovery_epoch=NULL,
           available_at=now()+make_interval(secs=>${retryAfterSecs}::double precision)

@@ -4,6 +4,7 @@ import { migration003 } from "./003-catalog-fragment.ts";
 import { migration004 } from "./004-execution-capabilities.ts";
 import { migration005 } from "./005-execution-queued-at.ts";
 import { migration006 } from "./006-execution-worker-view.ts";
+import { migration007 } from "./007-execution-pool-assignment.ts";
 import type { Migration } from "../shared.ts";
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -14,4 +15,5 @@ export const migrations: readonly Migration[] = [
   migration004,
   migration005,
   migration006,
+  migration007,
 ];
