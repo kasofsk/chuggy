@@ -34,7 +34,7 @@ export function ticketExecutionRuntime(
   const settings = config.tickets;
   const content: TicketExecutionContent = (partition) =>
     postgresTicketContent(pool, partition);
-  const runner = ticketExecutionRuntimeRunner(pool, config, content);
+  const runner = ticketExecutionRuntimeRunner(pool, config);
   const store = postgresTicketExecution(pool);
   const machine = postgresTicketMachine(pool);
   const tickets: TicketExecutionTickets = async (partition) => {
@@ -81,11 +81,9 @@ export function ticketExecutionRuntime(
 function ticketExecutionRuntimeRunner(
   pool: pg.Pool,
   config: SchedulerCommandConfig,
-  content: TicketExecutionContent,
 ): ReturnType<typeof kubernetesTicketExecutionRunner> {
   const settings = config.tickets;
   return kubernetesTicketExecutionRunner(
-    content,
     postgresTicketExecutionTerminals(pool),
     postgresProjectRepositoryBinding(pool),
     ticketExecutionCredentials(pool, settings),

@@ -10,10 +10,11 @@
  * ticket has moved on resolves nothing rather than running against material
  * the machine left behind, and its terminal is one the machine would refuse.
  *
- * A RESULT IS CLASSIFIED BY WHOEVER PRODUCED IT. A work result must name the
- * source the machine is to accept and an evaluator result must carry a
- * verdict, because the domain reads neither out of a manifest, so the runner
- * hands back the report it decided.
+ * A RUNNER PLACES WORK AND DECIDES NOTHING. A work result must name the source
+ * the machine is to accept and an evaluator result must carry a verdict,
+ * because the domain reads neither out of a manifest; but that reading is one
+ * protocol above every backend, in `ticketExecutionOutcome.ts`, so a placement
+ * backend hands back the harness's own wire outcome and never a report.
  */
 import * as task from "../domain/chuggernaut/task.js";
 import * as ticket from "../domain/chuggernaut/ticket.js";
@@ -21,6 +22,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import type { TicketContentStore } from "./ticketCatalog.ts";
 import { ticketWorkspaceRead } from "./ticketWorkspace.ts";
+import {
+  ticketExecutionOutcomeReport,
+  type TicketExecutionAccess,
+} from "./ticketExecutionOutcome.ts";
 import {
   ticketMachineTaskKey,
   type TicketMachineAuthorization,
@@ -83,36 +88,34 @@ export interface TicketExecutionStore {
   cancelled(claim: TicketExecutionClaim): Promise<boolean>;
 }
 
-/** What the fabric answers with, which is a report rather than a `TaskTerminal`. */
-export type TicketExecutionResult =
+/**
+ * What a placement backend answers with, which names no domain value at all: it
+ * placed the work and the harness reported through the plane, or it could not,
+ * and its evidence is the plain text a backend can write without reading the
+ * machine's language.
+ */
+export type TicketExecutionPlacement =
   | {
-      readonly result: "Produced";
-      readonly report: ticket.WorkResultReport | ticket.EvaluationResultReport;
+      readonly placed: "Reported";
+      readonly outcome: unknown;
     }
   | {
-      readonly result: "ProcessFailed";
-      readonly failure: task.TaskFailure;
+      readonly placed: "Unavailable";
+      readonly evidence: string;
     }
   | {
-      readonly result: "ExecutionUnavailable";
-      readonly evidence: task.ContentRef;
-    }
-  | {
-      readonly result: "Retry";
+      readonly placed: "Retry";
       readonly retryAfterSecs: number;
-      readonly evidence: task.ContentRef;
+      readonly evidence: string;
     };
 
 export interface TicketExecutionRunner {
   run(
     claim: TicketExecutionClaim,
     view: TicketExecutionView,
-  ): Promise<TicketExecutionResult>;
+  ): Promise<TicketExecutionPlacement>;
   cancel(claim: TicketExecutionClaim): Promise<void>;
 }
-
-export type TicketExecutionAccess =
-  "ReadRepository" | "PublishRepositoryResult";
 
 export interface TicketExecutionView {
   readonly workload: unknown;
@@ -128,6 +131,8 @@ export interface TicketExecutionView {
     readonly value: unknown;
   }[];
 }
+
+export type { TicketExecutionAccess };
 
 export type TicketExecutionContent = (
   partition: Partition,
@@ -294,19 +299,15 @@ export function ticketExecutionEffects(
   };
 }
 
-function ticketExecutionReport(
+/** What a ticket is told about an attempt no backend could carry to a harness. */
+function ticketExecutionUnavailableReport(
   claim: TicketExecutionClaim,
-  result: TicketExecutionResult,
-): ticket.TaskTerminalReport {
-  if (result.result === "Produced") return result.report;
+  evidence: task.ContentRef,
+): ticket.TerminalFailureReport {
   return new ticket.TerminalFailureReport(
     task.task_owner(claim.obligation.task),
-    result.result === "ProcessFailed"
-      ? result.failure
-      : new task.TaskFailure(claim.obligation.task, result.evidence),
-    result.result === "ProcessFailed"
-      ? new ticket.ProcessFailure()
-      : new ticket.ExecutionUnavailableFailure(),
+    new task.TaskFailure(claim.obligation.task, evidence),
+    new ticket.ExecutionUnavailableFailure(),
   );
 }
 
@@ -314,7 +315,7 @@ async function ticketExecutionCancelled(
   store: TicketExecutionStore,
   runner: TicketExecutionRunner,
   claim: TicketExecutionClaim,
-  running: Promise<TicketExecutionResult>,
+  running: Promise<TicketExecutionPlacement>,
   cancellationPollMs: number,
 ): Promise<boolean> {
   let cancelled = await store.cancelled(claim);
@@ -378,10 +379,7 @@ export async function ticketExecutionUnclaimableRun(
         origin: "Execution",
         authorization,
         command: new ticket.ReportTaskTerminal(
-          ticketExecutionReport(claim, {
-            result: "ExecutionUnavailable",
-            evidence,
-          }),
+          ticketExecutionUnavailableReport(claim, evidence),
         ),
       });
       return submitted ? 1 : 0;
@@ -467,14 +465,13 @@ async function ticketExecutionClaimRun(
   const graph = await tickets(claim.partition);
   if (graph === undefined)
     throw new Error("ticket execution claim has no ticket machine");
-  const running = runner.run(
-    claim,
-    await ticketExecutionView(
-      content(claim.partition),
-      graph,
-      claim.obligation,
-    ),
+  const attemptContent = content(claim.partition);
+  const view = await ticketExecutionView(
+    attemptContent,
+    graph,
+    claim.obligation,
   );
+  const running = runner.run(claim, view);
   if (
     await ticketExecutionCancelled(
       store,
@@ -485,9 +482,9 @@ async function ticketExecutionClaimRun(
     )
   )
     return 0;
-  const result = await running;
-  if (result.result === "Retry" && claim.attempt < attemptsMax) {
-    await store.retry(claim, result.retryAfterSecs);
+  const placement = await running;
+  if (placement.placed === "Retry" && claim.attempt < attemptsMax) {
+    await store.retry(claim, placement.retryAfterSecs);
     return 0;
   }
   const submitted = await store.terminal(claim, {
@@ -495,7 +492,17 @@ async function ticketExecutionClaimRun(
     origin: "Execution",
     authorization,
     command: new ticket.ReportTaskTerminal(
-      ticketExecutionReport(claim, result),
+      placement.placed === "Reported"
+        ? await ticketExecutionOutcomeReport(
+            attemptContent,
+            claim.obligation,
+            view,
+            placement.outcome,
+          )
+        : ticketExecutionUnavailableReport(
+            claim,
+            await attemptContent.put("text/plain", placement.evidence),
+          ),
     ),
   });
   return submitted ? 1 : 0;

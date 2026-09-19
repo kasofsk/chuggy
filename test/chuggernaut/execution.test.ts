@@ -177,9 +177,9 @@ test("operational retry exhaustion reports unavailable with stable authorization
     {
       run: () =>
         Promise.resolve({
-          result: "Retry" as const,
+          placed: "Retry" as const,
           retryAfterSecs: 1,
-          evidence: task.ContentRef(8),
+          evidence: "the site placed nothing",
         }),
       cancel: () => Promise.resolve(),
     },
@@ -210,6 +210,68 @@ test("operational retry exhaustion reports unavailable with stable authorization
     input.command.report.kind_of_failure.kind,
     "ExecutionUnavailableFailure",
   );
+});
+
+test("a placed attempt's wire outcome becomes the terminal the machine takes", async () => {
+  const held = obligation();
+  const claim: TicketExecutionClaim = {
+    partition,
+    identity: "12:0",
+    taskKey: "work:7:1",
+    obligation: held,
+    attempt: 1,
+    recoveryEpoch: asRecoveryEpoch("epoch-one"),
+  };
+  let submitted: ticket.ReportTaskTerminal | undefined;
+  const completed = await ticketExecutionRun(
+    {
+      execute: () => Promise.resolve(true),
+      cancel: () => Promise.resolve(true),
+      claim: () => Promise.resolve([claim]),
+      unclaimable: () => Promise.resolve([]),
+      retry: () =>
+        Promise.reject(new Error("a reported attempt must not retry")),
+      terminal: (_claim, input) => {
+        submitted = input.command as ticket.ReportTaskTerminal;
+        return Promise.resolve(true);
+      },
+      cancelled: () => Promise.resolve(false),
+    },
+    workspaceContent,
+    () => Promise.resolve(dispatched().graph),
+    {
+      run: () =>
+        Promise.resolve({
+          placed: "Reported" as const,
+          outcome: {
+            type: "result",
+            manifest: {},
+            outputs: [
+              {
+                repository: "repository",
+                commit: "0123456789012345678901234567890123456789",
+              },
+            ],
+          },
+        }),
+      cancel: () => Promise.resolve(),
+    },
+    "worker-one",
+    claim.recoveryEpoch,
+    {
+      principal: "worker-one",
+      authorizedOperation: "ReportTaskTerminal",
+      authorityKind: "ExecutionWorker",
+      authoritySubject: "worker-one",
+      policyRevision: "test-policy-v1",
+    },
+    30,
+    2,
+    1,
+    ["linux"],
+  );
+  assert.equal(completed, 1);
+  assert.equal(submitted?.report.kind, "WorkResultReport");
 });
 
 test("produced commits have one deterministic publication ref", () => {
