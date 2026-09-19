@@ -1,0 +1,9 @@
+kind: workload
+runner: claude
+model: claude-opus-5
+prompt: agents/spike-worker.md
+permission_mode: acceptEdits
+network_access: true
+allowed_tools: [Bash, Read, Glob, Grep, WebSearch, WebFetch]
+max_budget_usd: 60
+result_contract: result-contracts/spike-result-v1.schema.json

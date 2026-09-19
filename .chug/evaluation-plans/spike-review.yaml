@@ -1,0 +1,5 @@
+kind: evaluation-plan
+stages:
+  - name: Report review
+    evaluators:
+      - evaluators/codex-spike-reviewer.yaml

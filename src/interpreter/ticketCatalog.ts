@@ -146,3 +146,30 @@ export interface TicketCatalogRelease {
 export interface TicketCatalog {
   release(ticket: TicketId, source: string): Promise<TicketCatalogRelease>;
 }
+
+/** One thing wrong with an authored document, and where in it. */
+export interface TicketFinding {
+  /** A JSON pointer into the document; empty names the document itself. */
+  readonly path: string;
+  readonly message: string;
+}
+
+/**
+ * A schema failure that names every place it found, rather than the first.
+ *
+ * The validator is asked for all errors, so keeping one — or flattening them
+ * into a sentence — throws away the only thing an author can act on, which is
+ * the field that is wrong.
+ */
+export class CatalogSchemaError extends TypeError {
+  readonly findings: readonly TicketFinding[];
+  constructor(kind: string, findings: readonly TicketFinding[]) {
+    super(
+      `${kind}: ${findings
+        .map((finding) => `${finding.path || "$"}: ${finding.message}`)
+        .join("; ")}`,
+    );
+    this.name = "CatalogSchemaError";
+    this.findings = findings;
+  }
+}

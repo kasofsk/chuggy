@@ -1,0 +1,5 @@
+kind: workload
+runner: script
+command: [node, --experimental-strip-types, .chug/scripts/project-ci.ts]
+environment: {}
+result_contract: result-contracts/ci-result-v2.schema.json

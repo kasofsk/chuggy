@@ -18,6 +18,20 @@ const envelopeCodeSchema = z.object({
   error: z.object({ code: z.string().min(1) }),
 });
 
+/** The sentence the server wrote about the refusal, when it wrote one. */
+const envelopeMessageSchema = z.object({
+  error: z.object({ message: z.string().min(1) }),
+});
+
+/**
+ * A refusal the caller cannot act on is a refusal that was not reported, so
+ * the server's own sentence travels with the code.
+ */
+export function envelopeMessage(body: unknown): string | undefined {
+  const parsed = envelopeMessageSchema.safeParse(body);
+  return parsed.success ? parsed.data.error.message : undefined;
+}
+
 export const retryAfterSecondsMax = 300;
 export const retryAfterSecondsFallback = 5;
 

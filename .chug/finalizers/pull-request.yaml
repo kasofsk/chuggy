@@ -1,0 +1,5 @@
+kind: finalizer
+operation: pull-request
+target_ref: refs/heads/main
+branch_prefix: chug/tickets/
+merge: false

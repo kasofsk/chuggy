@@ -726,7 +726,9 @@ test("validation answers with findings and never reaches authoring", async () =>
           result: "Authorized",
           value: {
             valid: false,
-            findings: ["catalog document must be a mapping"],
+            findings: [
+              { path: "", message: "catalog document must be a mapping" },
+            ],
             commit: asGitObjectId("a".repeat(40)),
           },
         });
@@ -746,7 +748,7 @@ test("validation answers with findings and never reaches authoring", async () =>
   assert.equal(response.statusCode, 200, response.body);
   assert.deepEqual(response.json(), {
     valid: false,
-    findings: ["catalog document must be a mapping"],
+    findings: [{ path: "", message: "catalog document must be a mapping" }],
     commit: "a".repeat(40),
   });
   assert.deepEqual(requests, [

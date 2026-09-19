@@ -7,9 +7,10 @@ import {
 } from "../../src/adapters/catalog/document.ts";
 import { ContentRef, TicketId } from "../../src/domain/chuggernaut/task.js";
 import { execution_profile } from "../../src/interpreter/executionProfile.ts";
-import type {
-  TicketContentStore,
-  TicketCatalogSource,
+import {
+  CatalogSchemaError,
+  type TicketContentStore,
+  type TicketCatalogSource,
 } from "../../src/interpreter/ticketCatalog.ts";
 
 function catalogPath(file: string): string {
@@ -187,7 +188,7 @@ test("catalog rejects traversal, malformed YAML, cycles and float ticket fields"
 test("ticket format rejects old authoring fields and duplicate evaluator names", async () => {
   await assert.rejects(
     setup().catalog.release(TicketId(1), `${document}\nintent: old-format`),
-    /additionalProperties/,
+    /intent: is not a field this document has/,
   );
   const overrides = new Map([
     [
@@ -248,4 +249,19 @@ test("only a finalization that lands something requires work that publishes", as
     ]),
   ).catalog.release(TicketId(1), document);
   assert.equal(released.definition.id, 1);
+});
+
+test("a schema failure names every field it faulted, each by pointer", async () => {
+  await assert.rejects(
+    setup().catalog.release(TicketId(1), "version: 2\ndependencies: []\n"),
+    (error: unknown) => {
+      assert.ok(error instanceof CatalogSchemaError);
+      const paths = error.findings.map((finding) => finding.path).sort();
+      assert.deepEqual(paths, ["/evaluation", "/finalization", "/work"]);
+      assert.ok(
+        error.findings.every((finding) => finding.message === "is required"),
+      );
+      return true;
+    },
+  );
 });

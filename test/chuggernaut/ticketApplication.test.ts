@@ -136,6 +136,20 @@ function accessDouble(authorized: boolean) {
   };
 }
 
+/** A draft that will not build rejects where the real catalog reads its project. */
+function draftDouble(
+  release: { readonly reworkLimit: number; readonly declared: boolean },
+  fault: Error | undefined,
+) {
+  if (fault !== undefined) return Promise.reject(fault);
+  return Promise.resolve({
+    release: (identity: TicketId, document: string) =>
+      document === "ticket"
+        ? catalogRelease(identity, release)
+        : Promise.reject(new TypeError("catalog document must be a mapping")),
+  });
+}
+
 function setup(
   authorized = true,
   release: { readonly reworkLimit: number; readonly declared: boolean } = {
@@ -147,6 +161,7 @@ function setup(
     "Available" | "LegacyModelUnsupported" | "Inactive" = "Available",
   graph = new TicketGraph(new Map()),
   stored: string | undefined = undefined,
+  draftFault: Error | undefined = undefined,
 ) {
   const submitted: TicketMachineInput[] = [];
   const inbox = inboxDouble(submitted, frozen);
@@ -181,14 +196,7 @@ function setup(
       ...catalogsDouble(effects, reads, release),
       draft: () => {
         effects.drafts += 1;
-        return Promise.resolve({
-          release: (identity, document) =>
-            document === "ticket"
-              ? catalogRelease(identity, release)
-              : Promise.reject(
-                  new TypeError("catalog document must be a mapping"),
-                ),
-        });
+        return draftDouble(release, draftFault);
       },
     },
     content: () => ({
@@ -392,7 +400,7 @@ test("validation reports findings over draft content and writes nothing", async 
       result: "Authorized",
       value: {
         valid: false,
-        findings: ["catalog document must be a mapping"],
+        findings: [{ path: "", message: "catalog document must be a mapping" }],
         commit,
       },
     },
@@ -460,6 +468,29 @@ test("validation refuses a principal that may not author", async () => {
       source: "ticket",
     }),
     { result: "NotFound" },
+  );
+});
+
+test("a catalog that will not build is a finding, not a refusal", async () => {
+  const { application } = setup(
+    true,
+    { reworkLimit: 3, declared: true },
+    3,
+    "Available",
+    new TicketGraph(new Map()),
+    undefined,
+    new TypeError("project document must be a mapping"),
+  );
+  assert.deepEqual(
+    await application.validate(principal, { partition, source: "ticket" }),
+    {
+      result: "Authorized",
+      value: {
+        valid: false,
+        findings: [{ path: "", message: "project document must be a mapping" }],
+        commit,
+      },
+    },
   );
 });
 
