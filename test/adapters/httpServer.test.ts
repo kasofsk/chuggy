@@ -21,6 +21,8 @@ import {
   type NativeWeb,
 } from "../../src/interpreter/nativeWeb.ts";
 import { asTenantId } from "../../src/interpreter/projectStore.ts";
+import type { TicketApplicationResult } from "../../src/interpreter/ticketApplication.ts";
+import type { TicketExecutionReads } from "../../src/interpreter/ticketExecutionRead.ts";
 import { asInstallationId } from "../../src/domain/ids.ts";
 import {
   forgeCredentialMinting,
@@ -529,6 +531,125 @@ function retiredTicketApp(
     },
   };
 }
+
+/** A read half that answers one project and conceals every other as one that is not there. */
+function evidenceReads(permitted: string): TicketExecutionReads {
+  const held = <Value>(
+    partition: { project: string },
+    value: Value,
+  ): TicketApplicationResult<Value> =>
+    partition.project === permitted
+      ? { result: "Authorized", value }
+      : { result: "NotFound" };
+  return {
+    admitted: (_principal, partition) =>
+      Promise.resolve(held(partition, { admitted: true } as const)),
+    executions: (_principal, partition) =>
+      Promise.resolve(
+        held(partition, [
+          {
+            taskKey: "work:1:1",
+            state: "Terminal" as const,
+            attempt: 2,
+            attemptsUnreported: 0,
+            queuedAt: "2026-09-19T00:00:00.000Z",
+          },
+        ]),
+      ),
+    execution: (_principal, partition, taskKey) =>
+      Promise.resolve(
+        held(
+          partition,
+          taskKey === "work:1:1"
+            ? {
+                taskKey,
+                state: "Terminal" as const,
+                attempt: 2,
+                attemptsUnreported: 0,
+                queuedAt: "2026-09-19T00:00:00.000Z",
+              }
+            : undefined,
+        ),
+      ),
+    turns: (_principal, partition) =>
+      Promise.resolve(held(partition, { turns: [] })),
+    transcript: (_principal, partition) =>
+      Promise.resolve(held(partition, { batches: [] })),
+    configuration: (_principal, partition) =>
+      Promise.resolve(held(partition, undefined)),
+    operations: (_principal, partition) =>
+      Promise.resolve(
+        held(partition, [
+          {
+            identity: "op-1",
+            sequence: 4,
+            origin: "Author" as const,
+            attribution: "member",
+            command: "CreateTicket",
+          },
+        ]),
+      ),
+  };
+}
+
+test("the evidence reads answer a member and conceal a project it may not see", async () => {
+  const service = retiredTicketApp("Fresh");
+  await using app = adoptedTicketRouteApp({
+    ...service,
+    reads: evidenceReads("atlas"),
+  });
+  const get = (path: string) =>
+    app.inject({
+      method: "GET",
+      url: path,
+      headers: { authorization: "Bearer valid" },
+    });
+  const root = "/api/v1/tenants/acme/projects/atlas/ticket-machine";
+  const admitted = await get(root);
+  assert.equal(admitted.statusCode, 200, admitted.body);
+  assert.deepEqual(admitted.json(), { admitted: true });
+  const executions = await get(`${root}/executions`);
+  assert.equal(executions.statusCode, 200, executions.body);
+  assert.deepEqual(executions.json<{ executions: unknown[] }>().executions, [
+    {
+      taskKey: "work:1:1",
+      state: "Terminal",
+      attempt: 2,
+      attemptsUnreported: 0,
+      queuedAt: "2026-09-19T00:00:00.000Z",
+    },
+  ]);
+  const operations = await get(`${root}/operations/recent`);
+  assert.equal(operations.statusCode, 200, operations.body);
+  assert.equal(
+    operations.json<{ operations: unknown[] }>().operations.length,
+    1,
+  );
+  const turns = await get(`${root}/executions/work%3A1%3A1/attempts/2/turns`);
+  assert.equal(turns.statusCode, 200, turns.body);
+  const missing = await get(`${root}/executions/work%3A9%3A9`);
+  assert.equal(missing.statusCode, 404, missing.body);
+  const configuration = await get(
+    `${root}/executions/work%3A1%3A1/attempts/2/configuration`,
+  );
+  assert.equal(configuration.statusCode, 404, configuration.body);
+  const concealed = await app.inject({
+    method: "GET",
+    url: "/api/v1/tenants/acme/projects/other/ticket-machine",
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(concealed.statusCode, 404, concealed.body);
+});
+
+test("a plane composed with no read half serves no evidence route", async () => {
+  await using app = adoptedTicketRouteApp(retiredTicketApp("Fresh"));
+  const response = await app.inject({
+    method: "GET",
+    url: "/api/v1/tenants/acme/projects/atlas/ticket-machine/executions",
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(response.statusCode, 404, response.body);
+});
 
 function adoptedTicketRouteApp(service: NativeTicketApplication) {
   return createNativeHttpApp(

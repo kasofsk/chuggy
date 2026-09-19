@@ -2,6 +2,7 @@ import { pathToFileURL } from "node:url";
 
 import {
   artifactStore,
+  sessionArtifactStore,
   type ArtifactStore,
 } from "../adapters/artifacts/artifactStore.ts";
 import { githubRepositoryHost } from "../adapters/forge/githubAddress.ts";
@@ -26,6 +27,7 @@ import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositor
 import { workerPlaneRole } from "../adapters/postgres/schema.ts";
 import { postgresSessionPlane } from "../adapters/postgres/sessionPlane.ts";
 import { postgresTicketExecutionTerminals } from "../adapters/postgres/ticketExecution.ts";
+import { postgresTicketExecutionRun } from "../adapters/postgres/ticketExecutionRun.ts";
 import { workerPlaneUploadBytesMax } from "../contract/http.ts";
 import {
   githubForgeId,
@@ -62,7 +64,7 @@ function planeSessions(
     holds: sessions,
     records: sessions,
     queries: sessions,
-    store: artifacts,
+    store: sessionArtifactStore(artifacts),
     heartbeatLeaseSecs: planeEnvironmentPositive(
       "CHUG_WORKER_PLANE_SESSION_HEARTBEAT_LEASE_SECS",
       sessionSchedulerDefaults.attemptLeaseSecs,
@@ -159,7 +161,10 @@ async function main(): Promise<void> {
   });
   const credentials = await planeCredentials(pool);
   const app = createWorkerPlaneApp({
-    ticketExecutions: postgresTicketExecutionTerminals(pool),
+    ticketExecutions: {
+      ...postgresTicketExecutionTerminals(pool),
+      run: postgresTicketExecutionRun(pool, artifacts),
+    },
     sessions: planeSessions(pool, artifacts),
     ...(credentials === undefined ? {} : { credentials }),
     ready: async () => {

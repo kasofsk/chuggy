@@ -15,6 +15,11 @@ import {
   sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
+  ticketExecutionRunModelCharsMax,
+  ticketExecutionRunModelsMax,
+  ticketExecutionRunReasonCharsMax,
+  ticketExecutionRunTurnsMax,
+  ticketExecutionRunTurnsPageMax,
 } from "../../contract/http.ts";
 import { isBoundedText } from "../../interpreter/boundedText.ts";
 import {
@@ -52,6 +57,11 @@ import {
 } from "../../interpreter/finalizer.ts";
 import type { TicketExecutionCredentialSubject } from "../../interpreter/ticketExecution.ts";
 import type {
+  TicketExecutionRunEvidenceStored,
+  TicketExecutionRunPort,
+  TicketExecutionRunStored,
+} from "../../interpreter/ticketExecutionRun.ts";
+import type {
   WorkerPlaneCredentialMinted,
   WorkerPlaneCredentialMinting,
 } from "../../interpreter/workerPlaneCredentials.ts";
@@ -72,6 +82,11 @@ export const workerPlaneRoutes = [
   "/v1/ticket-execution/terminal",
   "/v1/ticket-execution/view",
   "/v1/ticket-execution/credentials",
+  "/v1/ticket-execution/heartbeat",
+  "/v1/ticket-execution/run/turns",
+  "/v1/ticket-execution/run/totals",
+  "/v1/ticket-execution/run/transcript/:batch",
+  "/v1/ticket-execution/run/configuration",
 ] as const;
 
 const sessionStorePrefix = "/v1/session/store/";
@@ -101,6 +116,8 @@ export interface WorkerPlaneServerService {
       secret: string,
       body: unknown,
     ): Promise<"Recorded" | "Conflict" | "Fenced">;
+    heartbeat(secret: string): Promise<"Recorded" | "Fenced">;
+    readonly run?: TicketExecutionRunPort;
     view(secret: string): Promise<unknown>;
     credential(
       secret: string,
@@ -128,6 +145,16 @@ function rawBearer(request: FastifyRequest): string | undefined {
 }
 
 /**
+ * The envelope a terminal arrives in, which is checked at the door while what it
+ * carries is not. An outcome this tree cannot read is a process failure the next
+ * cycle is told about, so only a body with nowhere to put an outcome is refused
+ * here.
+ */
+const ticketTerminalSchema = z
+  .strictObject({ outcome: z.unknown() })
+  .refine((offered) => offered.outcome !== undefined);
+
+/**
  * What one attempt is and what it produced, both reached by the same attempt
  * bearer and by nothing else. Neither route names a pod, a namespace or a
  * launcher: a harness a worker pool started on a machine this tree has never
@@ -142,7 +169,12 @@ function ticketExecutionRoutes(
   app.post(workerPlaneRoutes[12], async (request, reply) => {
     const secret = rawBearer(request);
     if (secret === undefined) return reply.code(401).send({ action: "stop" });
-    const reported = await attempts.report(secret, request.body);
+    const offered = ticketTerminalSchema.safeParse(request.body);
+    if (!offered.success)
+      return reply
+        .code(400)
+        .send({ action: "stop", reason: "InvalidTerminal" });
+    const reported = await attempts.report(secret, offered.data);
     return reported === "Recorded"
       ? reply.code(204).send()
       : reply.code(409).send({ action: "stop", reason: reported });
@@ -156,6 +188,186 @@ function ticketExecutionRoutes(
       : reply.code(200).send(view);
   });
   ticketCredentialRoute(app, service, attempts);
+  ticketHeartbeatRoute(app, attempts);
+  ticketRunRoutes(app, attempts);
+}
+
+const ticketRunModelSchema = z
+  .string()
+  .refine((value) => isBoundedText(value, ticketExecutionRunModelCharsMax));
+
+const ticketRunReasonSchema = z
+  .string()
+  .refine((value) => isBoundedText(value, ticketExecutionRunReasonCharsMax));
+
+const ticketRunTokensSchema = {
+  tokensInput: countSchema,
+  tokensOutput: countSchema,
+  tokensCacheCreation: countSchema,
+  tokensCacheRead: countSchema,
+};
+
+const ticketRunTurnsSchema = z.strictObject({
+  turns: z
+    .array(
+      z.strictObject({
+        ordinal: z.number().int().positive().max(ticketExecutionRunTurnsMax),
+        model: ticketRunModelSchema,
+        ...ticketRunTokensSchema,
+      }),
+    )
+    .max(ticketExecutionRunTurnsPageMax),
+});
+
+const ticketRunTotalsSchema = z.strictObject({
+  turns: countSchema,
+  durationMs: countSchema,
+  durationApiMs: countSchema,
+  ...ticketRunTokensSchema,
+  costUsdMicros: countSchema,
+  costBasis: z.literal("List"),
+  permissionDenials: countSchema,
+  models: z
+    .array(
+      z.strictObject({
+        model: ticketRunModelSchema,
+        ...ticketRunTokensSchema,
+        costUsdMicros: countSchema,
+      }),
+    )
+    .max(ticketExecutionRunModelsMax),
+  resultSubtype: ticketRunReasonSchema.optional(),
+  stopReason: ticketRunReasonSchema.optional(),
+});
+
+/** How stored evidence answers, each refusal separated because they are acted on differently. */
+function ticketRunEvidenceStored(
+  reply: FastifyReply,
+  stored: TicketExecutionRunEvidenceStored,
+): FastifyReply {
+  if (stored === "Stored" || stored === "AlreadyStored")
+    return reply.code(204).send();
+  if (stored === "TooLarge")
+    return reply.code(413).send({ action: "stop", reason: stored });
+  if (stored === "Unavailable")
+    return reply
+      .code(503)
+      .header("retry-after", "1")
+      .send({ action: "stop", reason: stored });
+  return reply.code(409).send({ action: "stop", reason: stored });
+}
+
+/**
+ * The bytes a run left behind, measured here rather than believed. A harness
+ * states a batch number and nothing else about what it sends: the digest, the
+ * size and the event count are all read off what arrived.
+ */
+function ticketRunEvidenceRoutes(
+  app: FastifyInstance,
+  run: TicketExecutionRunPort,
+): void {
+  app.put(workerPlaneRoutes[18], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const batch = Number(
+      (request.params as Record<string, string>)["batch"] ?? "",
+    );
+    if (!Number.isSafeInteger(batch))
+      return reply.code(400).send({ action: "stop", reason: "InvalidBatch" });
+    const content = ticketRunBody(request);
+    if (content === undefined)
+      return reply.code(400).send({ action: "stop", reason: "InvalidBody" });
+    return ticketRunEvidenceStored(
+      reply,
+      await run.transcript(secret, batch, content),
+    );
+  });
+  app.put(workerPlaneRoutes[19], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const content = ticketRunBody(request);
+    if (content === undefined)
+      return reply.code(400).send({ action: "stop", reason: "InvalidBody" });
+    return ticketRunEvidenceStored(
+      reply,
+      await run.configuration(secret, content),
+    );
+  });
+}
+
+/** The bytes a harness uploaded, which only an octet-stream body carries. */
+function ticketRunBody(request: FastifyRequest): Uint8Array | undefined {
+  return Buffer.isBuffer(request.body)
+    ? new Uint8Array(request.body)
+    : undefined;
+}
+
+/** How a measure that was refused answers, a fence and a conflict read alike by the harness. */
+function ticketRunStored(
+  reply: FastifyReply,
+  stored: TicketExecutionRunStored,
+): FastifyReply {
+  return stored === "Stored" || stored === "AlreadyStored"
+    ? reply.code(204).send()
+    : reply.code(409).send({ action: "stop", reason: stored });
+}
+
+/**
+ * What one attempt's run spent, reported while it runs and settled by nothing.
+ * A measure moves no lease and ends no attempt, so a plane composed without
+ * somewhere to put one serves these routes not at all rather than accepting a
+ * report it would drop.
+ */
+function ticketRunRoutes(
+  app: FastifyInstance,
+  attempts: NonNullable<WorkerPlaneServerService["ticketExecutions"]>,
+): void {
+  const run = attempts.run;
+  if (run === undefined) return;
+  app.post(workerPlaneRoutes[16], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const offered = ticketRunTurnsSchema.safeParse(request.body);
+    if (!offered.success)
+      return reply.code(400).send({ action: "stop", reason: "InvalidMeasure" });
+    return ticketRunStored(reply, await run.turns(secret, offered.data.turns));
+  });
+  ticketRunEvidenceRoutes(app, run);
+  app.post(workerPlaneRoutes[17], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const offered = ticketRunTotalsSchema.safeParse(request.body);
+    if (!offered.success)
+      return reply.code(400).send({ action: "stop", reason: "InvalidMeasure" });
+    const { resultSubtype, stopReason, ...measured } = offered.data;
+    return ticketRunStored(
+      reply,
+      await run.totals(secret, {
+        ...measured,
+        ...(resultSubtype === undefined ? {} : { resultSubtype }),
+        ...(stopReason === undefined ? {} : { stopReason }),
+      }),
+    );
+  });
+}
+
+/**
+ * That the workload is still going, said by the workload and by nothing else.
+ * A lease renewed by a pool's poll says its fabric still lists a pod, which a
+ * wedged harness keeps true, so this is the one signal that separates a run
+ * making progress from a run that stopped making any.
+ */
+function ticketHeartbeatRoute(
+  app: FastifyInstance,
+  attempts: NonNullable<WorkerPlaneServerService["ticketExecutions"]>,
+): void {
+  app.post(workerPlaneRoutes[15], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    return (await attempts.heartbeat(secret)) === "Recorded"
+      ? reply.code(204).send()
+      : reply.code(409).send({ action: "stop", reason: "Fenced" });
+  });
 }
 
 /**

@@ -6,6 +6,17 @@ import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { Ajv2020 } from "ajv/dist/2020.js";
 
+import {
+  ticketExecutionRunConfigurationBytesMax,
+  ticketExecutionRunModelCharsMax,
+  ticketExecutionRunModelsMax,
+  ticketExecutionRunReasonCharsMax,
+  ticketExecutionRunTurnsMax,
+  ticketExecutionRunTranscriptBatchesMax,
+  ticketExecutionRunTranscriptBytesMax,
+  ticketExecutionRunTurnsPageMax,
+} from "../../contract/http.ts";
+import { ticketExecutionRunMeasured } from "../../interpreter/ticketExecutionRun.ts";
 import { prepare_commit } from "./commitHooks.ts";
 
 /**
@@ -54,6 +65,13 @@ class TicketWorkerUnavailable extends Error {}
  * on an expired token throws away the work that earned it.
  */
 const ticketWorkerCredentialMarginMs = 60_000;
+
+/**
+ * How often the workload says it is still going. It is the harness's own
+ * signal and not its pool's, so it is sent while the workload runs and stops
+ * the moment it does.
+ */
+const ticketWorkerHeartbeatMs = 30_000;
 
 interface TicketWorkerView {
   readonly workload: unknown;
@@ -598,7 +616,128 @@ async function publishedResult(
   return {
     type: "result",
     manifest,
-    outputs: [{ repository: view.repository, commit }],
+    outputs: [{ repository: view.repository, commit, base: view.commit }],
+  };
+}
+
+/**
+ * Reports what the run spent, folded out of the event stream the agent already
+ * wrote. A measure nothing accepted is not a failed attempt: the workload did
+ * its work and its terminal says so, so a refusal here is left behind.
+ */
+async function ticketWorkerMeasure(
+  transport: TicketWorkerTransport,
+  stream: string,
+): Promise<void> {
+  const held = transport.held;
+  const measured = ticketExecutionRunMeasured(stream, {
+    turnsMax: ticketExecutionRunTurnsMax,
+    modelCharsMax: ticketExecutionRunModelCharsMax,
+    modelsMax: ticketExecutionRunModelsMax,
+    reasonCharsMax: ticketExecutionRunReasonCharsMax,
+  });
+  const report = async (route: string, body: unknown): Promise<void> => {
+    await fetch(ticketWorkerRoute(held, route), {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${held.bearer}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    }).catch(() => undefined);
+  };
+  for (
+    let sent = 0;
+    sent < measured.turns.length;
+    sent += ticketExecutionRunTurnsPageMax
+  )
+    await report("run/turns", {
+      turns: measured.turns.slice(sent, sent + ticketExecutionRunTurnsPageMax),
+    });
+  await report("run/totals", measured.totals);
+}
+
+/** The batches one transcript is uploaded as, split on line boundaries within the bound. */
+function ticketWorkerBatches(transcript: string): readonly string[] {
+  const batches: string[] = [];
+  let held = "";
+  for (const line of transcript.split("\n")) {
+    const next = held.length === 0 ? line : `${held}\n${line}`;
+    if (
+      Buffer.byteLength(next, "utf8") > ticketExecutionRunTranscriptBytesMax &&
+      held.length > 0
+    ) {
+      batches.push(held);
+      held = line;
+    } else held = next;
+    if (batches.length >= ticketExecutionRunTranscriptBatchesMax)
+      return batches;
+  }
+  if (held.length > 0) batches.push(held);
+  return batches;
+}
+
+/**
+ * Uploads what the run left behind, scrubbed of every secret this harness holds
+ * before any of it leaves the machine. A batch the plane would not take ends the
+ * upload rather than retrying it: the terminal is what settles the attempt.
+ */
+async function ticketWorkerEvidence(
+  transport: TicketWorkerTransport,
+  view: TicketWorkerView,
+  invocation: { readonly command: readonly string[] },
+  stream: string,
+): Promise<void> {
+  const held = transport.held;
+  const put = async (route: string, body: string): Promise<boolean> => {
+    const response = await fetch(ticketWorkerRoute(held, route), {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${held.bearer}`,
+        "content-type": "application/octet-stream",
+      },
+      body,
+    }).catch(() => undefined);
+    return response?.ok === true;
+  };
+  await put(
+    "run/configuration",
+    workerEvidence(
+      transport,
+      JSON.stringify(
+        await ticketWorkerConfiguration(held.workspace, view, invocation),
+      ),
+    ),
+  );
+  const batches = ticketWorkerBatches(workerEvidence(transport, stream));
+  for (const [index, batch] of batches.entries())
+    if (!(await put(`run/transcript/${String(index + 1)}`, batch))) return;
+}
+
+/** What this attempt ran under, which is the workload it was given and the files that shape it. */
+async function ticketWorkerConfiguration(
+  workspace: string,
+  view: TicketWorkerView,
+  invocation: { readonly command: readonly string[] },
+): Promise<Record<string, unknown>> {
+  const files: Record<string, string> = {};
+  for (const name of ["AGENTS.md", "CLAUDE.md"])
+    try {
+      files[name] = (await readFile(join(workspace, name), "utf8")).slice(
+        0,
+        ticketExecutionRunConfigurationBytesMax / 4,
+      );
+    } catch {
+      continue;
+    }
+  return {
+    argv: invocation.command,
+    workload: view.workload,
+    requiredCapabilities: view.requiredCapabilities,
+    repository: view.repository,
+    commit: view.commit,
+    access: view.access,
+    files,
   };
 }
 
@@ -624,6 +763,9 @@ async function execute(
       await rm(invocation.control, { recursive: true, force: true });
     throw error;
   }
+  if (invocation.control !== undefined)
+    await ticketWorkerMeasure(transport, ran.stdout);
+  await ticketWorkerEvidence(transport, view, invocation, ran.stdout);
   if (ran.stopped)
     return (
       await invocationCleanup(invocation.control),
@@ -660,6 +802,24 @@ async function execute(
   return publishedResult(transport, view, workload, manifest);
 }
 
+/**
+ * Says the workload is still going until told to stop saying it. A refusal ends
+ * the beating and nothing else: the attempt this harness holds may have been
+ * fenced, and the terminal it is about to write is what settles that.
+ */
+function ticketWorkerHeartbeat(held: TicketWorkerEnvelope): () => void {
+  const timer = setInterval(() => {
+    void fetch(ticketWorkerRoute(held, "heartbeat"), {
+      method: "POST",
+      headers: { authorization: `Bearer ${held.bearer}` },
+    }).catch(() => undefined);
+  }, ticketWorkerHeartbeatMs);
+  timer.unref();
+  return () => {
+    clearInterval(timer);
+  };
+}
+
 export async function ticketWorkerMain(
   environment: NodeJS.ProcessEnv,
 ): Promise<void> {
@@ -668,6 +828,7 @@ export async function ticketWorkerMain(
     throw new Error("CHUG_TICKET_WORKER_TASK is required");
   const held = envelope(JSON.parse(source) as unknown);
   const transport: TicketWorkerTransport = { held };
+  const beating = ticketWorkerHeartbeat(held);
   let outcome: Record<string, unknown>;
   try {
     outcome = await execute(transport, await ticketWorkerView(held));
@@ -683,6 +844,7 @@ export async function ticketWorkerMain(
       ),
     };
   }
+  beating();
   const response = await fetch(ticketWorkerRoute(held, "terminal"), {
     method: "POST",
     headers: {

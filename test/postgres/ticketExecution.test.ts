@@ -5,6 +5,10 @@ import {
   postgresTicketExecution,
   postgresTicketExecutionTerminals,
 } from "../../src/adapters/postgres/ticketExecution.ts";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { artifactStore } from "../../src/adapters/artifacts/artifactStore.ts";
+import { postgresTicketExecutionRun } from "../../src/adapters/postgres/ticketExecutionRun.ts";
 import { postgresTicketMachineInbox } from "../../src/adapters/postgres/ticketMachineInbox.ts";
 import {
   schedulerRole,
@@ -19,7 +23,10 @@ import {
   dispatch,
   work_obligation,
 } from "../chuggernaut/domain/testing.js";
-import type { TicketExecutionView } from "../../src/interpreter/ticketExecution.ts";
+import type {
+  TicketExecutionClaim,
+  TicketExecutionView,
+} from "../../src/interpreter/ticketExecution.ts";
 import { obligationNeeding } from "./executionFixtures.ts";
 import {
   postgresHarnessOpen,
@@ -210,6 +217,242 @@ test("a claim that reported an outcome is not a claim that said nothing", async 
   assert.equal(
     mine(await store.claim("pool-four", epoch, 30, 10, [], 2)).length,
     1,
+  );
+});
+
+test("a workload's own liveness is stamped by it and cleared by the next claim", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "execution-liveness",
+  );
+  await postgresTicketExecution(writer).execute(
+    partition,
+    "execute",
+    "work:1:1",
+    obligation(),
+  );
+  const store = postgresTicketExecution(scheduler);
+  const epoch = await postgresHarnessEpoch(harness.store);
+  const mine = (claims: readonly TicketExecutionClaim[]) =>
+    claims.find((claim) => claim.partition.project === partition.project);
+  const first = mine(await store.claim("scheduler", epoch, 30, 10, [], 3));
+  assert.ok(first);
+  const terminals = postgresTicketExecutionTerminals(scheduler);
+  const reports = postgresTicketExecutionTerminals(worker);
+  assert.equal(
+    await terminals.bind(first, "first-capability", workerView),
+    true,
+  );
+  const stamped = async (): Promise<Date | null> =>
+    (
+      await harness.pool.query<{ last_reported_at: Date | null }>(
+        "SELECT last_reported_at FROM ticket_execution WHERE tenant=$1 AND project=$2",
+        [partition.tenant, partition.project],
+      )
+    ).rows[0]?.last_reported_at ?? null;
+  assert.equal(await stamped(), null, "a claim nobody has run says nothing");
+  assert.equal(await reports.heartbeat("first-capability"), "Recorded");
+  assert.notEqual(await stamped(), null);
+  assert.equal(
+    await reports.heartbeat("second-capability"),
+    "Fenced",
+    "a bearer no live attempt is bound to stamps nothing",
+  );
+  await harness.pool.query(
+    "UPDATE ticket_execution SET claim_expires_at=now()-interval '1 second' WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
+  const second = mine(await store.claim("replacement", epoch, 30, 10, [], 3));
+  assert.ok(second);
+  assert.equal(
+    await stamped(),
+    null,
+    "a stamp belongs to the attempt that wrote it",
+  );
+});
+
+/** A blob store of this run's own, so a measure's bytes land somewhere the case owns. */
+function sessionBlobs(root: string) {
+  return artifactStore({ root });
+}
+
+/** One bound attempt, whose bearer is the whole of what a measure is addressed by. */
+async function boundForMeasure(name: string, capability: string) {
+  const partition = await postgresHarnessProject(harness.store, name);
+  await postgresTicketExecution(writer).execute(
+    partition,
+    "execute",
+    "work:1:1",
+    obligation(),
+  );
+  const store = postgresTicketExecution(scheduler);
+  const epoch = await postgresHarnessEpoch(harness.store);
+  const claim = (await store.claim("scheduler", epoch, 30, 10, [], 3)).find(
+    (held) => held.partition.project === partition.project,
+  );
+  assert.ok(claim);
+  assert.equal(
+    await postgresTicketExecutionTerminals(scheduler).bind(
+      claim,
+      capability,
+      workerView,
+    ),
+    true,
+  );
+  return {
+    partition,
+    run: postgresTicketExecutionRun(
+      worker,
+      sessionBlobs(join(tmpdir(), `chug-run-${name}`)),
+    ),
+  };
+}
+
+const measuredTurn = {
+  ordinal: 1,
+  model: "sonnet",
+  tokensInput: 4,
+  tokensOutput: 1,
+  tokensCacheCreation: 0,
+  tokensCacheRead: 0,
+};
+
+const measuredTotals = {
+  turns: 1,
+  durationMs: 900,
+  durationApiMs: 400,
+  tokensInput: 4,
+  tokensOutput: 1,
+  tokensCacheCreation: 0,
+  tokensCacheRead: 0,
+  costUsdMicros: 12_500,
+  costBasis: "List" as const,
+  permissionDenials: 0,
+  models: [
+    {
+      model: "sonnet",
+      tokensInput: 4,
+      tokensOutput: 1,
+      tokensCacheCreation: 0,
+      tokensCacheRead: 0,
+      costUsdMicros: 2_000,
+    },
+  ],
+};
+
+test("a turn is stored once and one ordinal cannot hold two answers", async () => {
+  const { run } = await boundForMeasure("execution-turns", "turn-capability");
+  assert.equal(await run.turns("turn-capability", [measuredTurn]), "Stored");
+  assert.equal(
+    await run.turns("turn-capability", [measuredTurn]),
+    "AlreadyStored",
+  );
+  assert.equal(
+    await run.turns("turn-capability", [{ ...measuredTurn, tokensInput: 9 }]),
+    "Conflict",
+    "an ordinal is what a reader pages by",
+  );
+  assert.equal(await run.turns("no-such-capability", [measuredTurn]), "Fenced");
+});
+
+test("totals are stored once, with the per-model cost the run reported", async () => {
+  const { partition, run } = await boundForMeasure(
+    "execution-totals",
+    "total-capability",
+  );
+  assert.equal(await run.totals("total-capability", measuredTotals), "Stored");
+  assert.equal(
+    await run.totals("total-capability", measuredTotals),
+    "AlreadyStored",
+  );
+  assert.equal(
+    await run.totals("total-capability", {
+      ...measuredTotals,
+      durationMs: 1,
+    }),
+    "Conflict",
+  );
+  assert.equal(
+    await run.totals("no-such-capability", measuredTotals),
+    "Fenced",
+  );
+  const stored = await harness.pool.query<{ cost_usd_micros: string }>(
+    `SELECT cost_usd_micros FROM ticket_execution_run_model_usage
+     WHERE tenant=$1 AND project=$2 AND model='sonnet'`,
+    [partition.tenant, partition.project],
+  );
+  assert.equal(stored.rows[0]?.cost_usd_micros, "2000");
+});
+
+test("a transcript is measured by the plane and must arrive in order", async () => {
+  const { partition, run } = await boundForMeasure(
+    "execution-transcript",
+    "transcript-capability",
+  );
+  const bytes = (text: string) => new TextEncoder().encode(text);
+  assert.equal(
+    await run.transcript("transcript-capability", 2, bytes("late\n")),
+    "OutOfOrder",
+    "a gap would be a transcript nobody can say is whole",
+  );
+  assert.equal(
+    await run.transcript("transcript-capability", 1, bytes("one\ntwo\n")),
+    "Stored",
+  );
+  assert.equal(
+    await run.transcript("transcript-capability", 1, bytes("one\ntwo\n")),
+    "AlreadyStored",
+  );
+  assert.equal(
+    await run.transcript("transcript-capability", 1, bytes("different\n")),
+    "Conflict",
+  );
+  assert.equal(
+    await run.transcript("no-such-capability", 1, bytes("one\n")),
+    "Fenced",
+  );
+  const stored = await harness.pool.query<{
+    events: string;
+    bytes: string;
+    digest: string;
+  }>(
+    `SELECT events,bytes,digest FROM ticket_execution_run_transcript_batch
+     WHERE tenant=$1 AND project=$2 AND batch=1`,
+    [partition.tenant, partition.project],
+  );
+  assert.equal(
+    stored.rows[0]?.events,
+    "2",
+    "the plane recounts the events rather than believing a field",
+  );
+  assert.equal(stored.rows[0]?.bytes, "8");
+  assert.match(stored.rows[0]?.digest ?? "", /^[0-9a-f]{64}$/u);
+});
+
+test("a configuration snapshot is stored once for the attempt that ran under it", async () => {
+  const { run } = await boundForMeasure(
+    "execution-configuration",
+    "configuration-capability",
+  );
+  const bytes = (text: string) => new TextEncoder().encode(text);
+  assert.equal(
+    await run.configuration("configuration-capability", bytes('{"argv":[]}')),
+    "Stored",
+  );
+  assert.equal(
+    await run.configuration("configuration-capability", bytes('{"argv":[]}')),
+    "AlreadyStored",
+  );
+  assert.equal(
+    await run.configuration(
+      "configuration-capability",
+      bytes('{"argv":["x"]}'),
+    ),
+    "Conflict",
+  );
+  assert.equal(
+    await run.configuration("no-such-capability", bytes("{}")),
+    "Fenced",
   );
 });
 

@@ -28,7 +28,10 @@ import { after, test } from "node:test";
 
 import type { FastifyInstance } from "fastify";
 
-import { artifactStore } from "../../src/adapters/artifacts/artifactStore.ts";
+import {
+  artifactStore,
+  sessionArtifactStore,
+} from "../../src/adapters/artifacts/artifactStore.ts";
 import { createWorkerPlaneApp } from "../../src/adapters/http/workerPlaneServer.ts";
 import {
   sessionStoreBatchBytesMax,
@@ -66,10 +69,12 @@ function forkPlane(rig: SessionRig): {
   readonly app: FastifyInstance;
   readonly addressed: string[];
 } {
-  const volume = artifactStore({
-    root: artifactRoot,
-    writeBytesMax: sessionStoreBatchBytesMax,
-  });
+  const volume = sessionArtifactStore(
+    artifactStore({
+      root: artifactRoot,
+      writeBytesMax: sessionStoreBatchBytesMax,
+    }),
+  );
   const addressed: string[] = [];
   const app = createWorkerPlaneApp({
     ...inertWorkerPlane(sessionStoreBatchBytesMax),

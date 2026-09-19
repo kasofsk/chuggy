@@ -972,7 +972,7 @@ const schedulerWritePrivileges = [
     table_name: "ticket_execution",
     privilege_type: "UPDATE",
     columns:
-      "assignment,attempt,attempts_unreported,available_at,capability_digest,claim_expires_at,claim_owner,pool,pool_refusal,recovery_epoch,state,terminal_input_identity,worker_outcome,worker_view",
+      "assignment,attempt,attempts_unreported,available_at,capability_digest,claim_expires_at,claim_owner,last_reported_at,pool,pool_refusal,recovery_epoch,state,terminal_input_identity,worker_outcome,worker_view",
   },
   {
     table_name: "ticket_machine_content",
@@ -1252,7 +1252,7 @@ test("the plane pools poll claims work and can write no outcome", async () => {
         table_name: "ticket_execution",
         privilege_type: "UPDATE",
         columns:
-          "assignment,attempt,attempts_unreported,available_at,capability_digest,claim_expires_at,claim_owner,pool,pool_refusal,recovery_epoch,state",
+          "assignment,attempt,attempts_unreported,available_at,capability_digest,claim_expires_at,claim_owner,last_reported_at,pool,pool_refusal,recovery_epoch,state",
       },
     ],
   );
@@ -1270,7 +1270,7 @@ test("the plane pools poll claims work and can write no outcome", async () => {
   );
   assert.equal(
     read.find((row) => row.relation === "ticket_execution")?.columns,
-    "assignment,attempt,attempts_unreported,available_at,claim_expires_at,claim_owner,pool,pool_refusal,recovery_epoch,required_capabilities,state,task_key,tenant,project,worker_outcome,worker_view"
+    "assignment,attempt,attempts_unreported,available_at,claim_expires_at,claim_owner,last_reported_at,pool,pool_refusal,recovery_epoch,required_capabilities,state,task_key,tenant,project,worker_outcome,worker_view"
       .split(",")
       .sort()
       .join(","),
