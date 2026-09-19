@@ -12,6 +12,7 @@ import { migration011 } from "./011-execution-capability-digest.ts";
 import { migration012 } from "./012-execution-unreported-attempts.ts";
 import { migration013 } from "./013-execution-workload-liveness.ts";
 import { migration014 } from "./014-execution-run-measure.ts";
+import { migration015 } from "./015-execution-run-evidence.ts";
 import type { Migration } from "../shared.ts";
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -30,4 +31,5 @@ export const migrations: readonly Migration[] = [
   migration012,
   migration013,
   migration014,
+  migration015,
 ];

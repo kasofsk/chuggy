@@ -2,12 +2,21 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 import { createHash } from "node:crypto";
 
+import type { BlobWritePort } from "../../interpreter/blobStore.ts";
+import { blobHolderKinds } from "../../interpreter/blobStore.ts";
+import {
+  ticketExecutionRunConfigurationBytesMax,
+  ticketExecutionRunTranscriptBatchesMax,
+  ticketExecutionRunTranscriptBytesMax,
+} from "../../contract/http.ts";
 import type {
+  TicketExecutionRunEvidenceStored,
   TicketExecutionRunPort,
   TicketExecutionRunStored,
   TicketExecutionRunTotals,
   TicketExecutionRunTurn,
 } from "../../interpreter/ticketExecutionRun.ts";
+import type { Partition } from "../../interpreter/projectStore.ts";
 import { postgresTransaction } from "./pool.ts";
 
 /**
@@ -37,8 +46,37 @@ async function runAttempt(
   return found.rows[0];
 }
 
+/** The partition one attempt stands in, which the store keys its bytes under. */
+function runPartition(held: RunAttemptRow): Partition {
+  return { tenant: held.tenant, project: held.project } as Partition;
+}
+
+/** The holder one attempt's own stream of bytes is stored under. */
+function runHolder(held: RunAttemptRow, stream: string) {
+  return {
+    kind: blobHolderKinds.attempt,
+    parts: [held.task_key, String(held.attempt), stream],
+  };
+}
+
+/** The digest and the event count the plane measured, which are not what the harness said. */
+function runMeasuredBytes(content: Uint8Array): {
+  readonly digest: string;
+  readonly bytes: number;
+  readonly events: number;
+} {
+  let events = 0;
+  for (const byte of content) if (byte === 0x0a) events += 1;
+  return {
+    digest: createHash("sha256").update(content).digest("hex"),
+    bytes: content.byteLength,
+    events,
+  };
+}
+
 export function postgresTicketExecutionRun(
   pool: pg.Pool,
+  blobs: BlobWritePort,
 ): TicketExecutionRunPort {
   const digest = (secret: string): string =>
     createHash("sha256").update(secret).digest("hex");
@@ -53,7 +91,102 @@ export function postgresTicketExecutionRun(
       if (held === undefined) return "Fenced";
       return runTotalsStored(pool, held, totals);
     },
+    transcript: async (secret, batch, content) => {
+      if (content.byteLength > ticketExecutionRunTranscriptBytesMax)
+        return "TooLarge";
+      if (batch < 1 || batch > ticketExecutionRunTranscriptBatchesMax)
+        return "OutOfOrder";
+      const held = await runAttempt(pool, digest(secret));
+      if (held === undefined) return "Fenced";
+      return runTranscriptStored(pool, blobs, held, batch, content);
+    },
+    configuration: async (secret, content) => {
+      if (content.byteLength > ticketExecutionRunConfigurationBytesMax)
+        return "TooLarge";
+      const held = await runAttempt(pool, digest(secret));
+      if (held === undefined) return "Fenced";
+      return runConfigurationStored(pool, blobs, held, content);
+    },
   };
+}
+
+/**
+ * Stores one transcript batch, which must be the next one. The bytes land in
+ * the blob store before the row that points at them, so a row a reader finds
+ * always has something behind it.
+ */
+async function runTranscriptStored(
+  pool: pg.Pool,
+  blobs: BlobWritePort,
+  held: RunAttemptRow,
+  batch: number,
+  content: Uint8Array,
+): Promise<TicketExecutionRunEvidenceStored> {
+  const measured = runMeasuredBytes(content);
+  const highest = await pool.query<{
+    highest: string | null;
+  }>(sql`SELECT max(batch)::text AS highest
+    FROM ticket_execution_run_transcript_batch
+    WHERE tenant=${held.tenant} AND project=${held.project}
+      AND task_key=${held.task_key} AND attempt=${held.attempt}`);
+  const next = Number(highest.rows[0]?.highest ?? 0) + 1;
+  if (batch > next) return "OutOfOrder";
+  const stored = await blobs.storeBlob({
+    partition: runPartition(held),
+    holder: runHolder(held, "transcript"),
+    batch,
+    content,
+  });
+  if (stored.stored === "Refused") return "TooLarge";
+  if (stored.stored === "Unavailable") return "Unavailable";
+  if (stored.stored === "Conflict") return "Conflict";
+  const written =
+    await pool.query(sql`INSERT INTO ticket_execution_run_transcript_batch
+    (tenant,project,task_key,attempt,batch,digest,bytes,events)
+    VALUES (${held.tenant},${held.project},${held.task_key},${held.attempt},
+      ${batch},${measured.digest},${measured.bytes},${measured.events})
+    ON CONFLICT (tenant,project,task_key,attempt,batch) DO NOTHING`);
+  if ((written.rowCount ?? 0) === 1) return "Stored";
+  const prior = await pool.query<{ digest: string }>(sql`SELECT digest
+    FROM ticket_execution_run_transcript_batch
+    WHERE tenant=${held.tenant} AND project=${held.project}
+      AND task_key=${held.task_key} AND attempt=${held.attempt} AND batch=${batch}`);
+  return prior.rows[0]?.digest === measured.digest
+    ? "AlreadyStored"
+    : "Conflict";
+}
+
+/** Stores the configuration one attempt ran under, once. */
+async function runConfigurationStored(
+  pool: pg.Pool,
+  blobs: BlobWritePort,
+  held: RunAttemptRow,
+  content: Uint8Array,
+): Promise<TicketExecutionRunEvidenceStored> {
+  const measured = runMeasuredBytes(content);
+  const stored = await blobs.storeBlob({
+    partition: runPartition(held),
+    holder: runHolder(held, "configuration"),
+    batch: 1,
+    content,
+  });
+  if (stored.stored === "Refused") return "TooLarge";
+  if (stored.stored === "Unavailable") return "Unavailable";
+  if (stored.stored === "Conflict") return "Conflict";
+  const written =
+    await pool.query(sql`INSERT INTO ticket_execution_run_configuration
+    (tenant,project,task_key,attempt,digest,bytes)
+    VALUES (${held.tenant},${held.project},${held.task_key},${held.attempt},
+      ${measured.digest},${measured.bytes})
+    ON CONFLICT (tenant,project,task_key,attempt) DO NOTHING`);
+  if ((written.rowCount ?? 0) === 1) return "Stored";
+  const prior = await pool.query<{ digest: string }>(sql`SELECT digest
+    FROM ticket_execution_run_configuration
+    WHERE tenant=${held.tenant} AND project=${held.project}
+      AND task_key=${held.task_key} AND attempt=${held.attempt}`);
+  return prior.rows[0]?.digest === measured.digest
+    ? "AlreadyStored"
+    : "Conflict";
 }
 
 /**

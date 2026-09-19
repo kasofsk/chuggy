@@ -2,6 +2,7 @@ import { pathToFileURL } from "node:url";
 
 import {
   artifactStore,
+  sessionArtifactStore,
   type ArtifactStore,
 } from "../adapters/artifacts/artifactStore.ts";
 import { githubRepositoryHost } from "../adapters/forge/githubAddress.ts";
@@ -63,7 +64,7 @@ function planeSessions(
     holds: sessions,
     records: sessions,
     queries: sessions,
-    store: artifacts,
+    store: sessionArtifactStore(artifacts),
     heartbeatLeaseSecs: planeEnvironmentPositive(
       "CHUG_WORKER_PLANE_SESSION_HEARTBEAT_LEASE_SECS",
       sessionSchedulerDefaults.attemptLeaseSecs,
@@ -162,7 +163,7 @@ async function main(): Promise<void> {
   const app = createWorkerPlaneApp({
     ticketExecutions: {
       ...postgresTicketExecutionTerminals(pool),
-      run: postgresTicketExecutionRun(pool),
+      run: postgresTicketExecutionRun(pool, artifacts),
     },
     sessions: planeSessions(pool, artifacts),
     ...(credentials === undefined ? {} : { credentials }),

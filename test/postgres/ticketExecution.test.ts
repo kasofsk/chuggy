@@ -5,6 +5,9 @@ import {
   postgresTicketExecution,
   postgresTicketExecutionTerminals,
 } from "../../src/adapters/postgres/ticketExecution.ts";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { artifactStore } from "../../src/adapters/artifacts/artifactStore.ts";
 import { postgresTicketExecutionRun } from "../../src/adapters/postgres/ticketExecutionRun.ts";
 import { postgresTicketMachineInbox } from "../../src/adapters/postgres/ticketMachineInbox.ts";
 import {
@@ -268,6 +271,11 @@ test("a workload's own liveness is stamped by it and cleared by the next claim",
   );
 });
 
+/** A blob store of this run's own, so a measure's bytes land somewhere the case owns. */
+function sessionBlobs(root: string) {
+  return artifactStore({ root });
+}
+
 /** One bound attempt, whose bearer is the whole of what a measure is addressed by. */
 async function boundForMeasure(name: string, capability: string) {
   const partition = await postgresHarnessProject(harness.store, name);
@@ -291,7 +299,13 @@ async function boundForMeasure(name: string, capability: string) {
     ),
     true,
   );
-  return { partition, run: postgresTicketExecutionRun(worker) };
+  return {
+    partition,
+    run: postgresTicketExecutionRun(
+      worker,
+      sessionBlobs(join(tmpdir(), `chug-run-${name}`)),
+    ),
+  };
 }
 
 const measuredTurn = {
@@ -368,6 +382,78 @@ test("totals are stored once, with the per-model cost the run reported", async (
     [partition.tenant, partition.project],
   );
   assert.equal(stored.rows[0]?.cost_usd_micros, "2000");
+});
+
+test("a transcript is measured by the plane and must arrive in order", async () => {
+  const { partition, run } = await boundForMeasure(
+    "execution-transcript",
+    "transcript-capability",
+  );
+  const bytes = (text: string) => new TextEncoder().encode(text);
+  assert.equal(
+    await run.transcript("transcript-capability", 2, bytes("late\n")),
+    "OutOfOrder",
+    "a gap would be a transcript nobody can say is whole",
+  );
+  assert.equal(
+    await run.transcript("transcript-capability", 1, bytes("one\ntwo\n")),
+    "Stored",
+  );
+  assert.equal(
+    await run.transcript("transcript-capability", 1, bytes("one\ntwo\n")),
+    "AlreadyStored",
+  );
+  assert.equal(
+    await run.transcript("transcript-capability", 1, bytes("different\n")),
+    "Conflict",
+  );
+  assert.equal(
+    await run.transcript("no-such-capability", 1, bytes("one\n")),
+    "Fenced",
+  );
+  const stored = await harness.pool.query<{
+    events: string;
+    bytes: string;
+    digest: string;
+  }>(
+    `SELECT events,bytes,digest FROM ticket_execution_run_transcript_batch
+     WHERE tenant=$1 AND project=$2 AND batch=1`,
+    [partition.tenant, partition.project],
+  );
+  assert.equal(
+    stored.rows[0]?.events,
+    "2",
+    "the plane recounts the events rather than believing a field",
+  );
+  assert.equal(stored.rows[0]?.bytes, "8");
+  assert.match(stored.rows[0]?.digest ?? "", /^[0-9a-f]{64}$/u);
+});
+
+test("a configuration snapshot is stored once for the attempt that ran under it", async () => {
+  const { run } = await boundForMeasure(
+    "execution-configuration",
+    "configuration-capability",
+  );
+  const bytes = (text: string) => new TextEncoder().encode(text);
+  assert.equal(
+    await run.configuration("configuration-capability", bytes('{"argv":[]}')),
+    "Stored",
+  );
+  assert.equal(
+    await run.configuration("configuration-capability", bytes('{"argv":[]}')),
+    "AlreadyStored",
+  );
+  assert.equal(
+    await run.configuration(
+      "configuration-capability",
+      bytes('{"argv":["x"]}'),
+    ),
+    "Conflict",
+  );
+  assert.equal(
+    await run.configuration("no-such-capability", bytes("{}")),
+    "Fenced",
+  );
 });
 
 test("attempt takeover fences worker capabilities and terminal queue acceptance", async () => {

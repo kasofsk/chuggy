@@ -49,7 +49,14 @@ export interface TicketExecutionRunTotals extends TicketExecutionRunTokens {
 export type TicketExecutionRunStored =
   "Stored" | "AlreadyStored" | "Conflict" | "Fenced";
 
-/** Where a run's measures are written, under the bearer of the attempt they belong to. */
+/**
+ * What storing a run's evidence found. `OutOfOrder` is a batch that is not the
+ * next one, which a reader of a whole transcript could not page over.
+ */
+export type TicketExecutionRunEvidenceStored =
+  TicketExecutionRunStored | "OutOfOrder" | "TooLarge" | "Unavailable";
+
+/** Where a run's measures and evidence are written, under the bearer of the attempt they belong to. */
 export interface TicketExecutionRunPort {
   turns(
     secret: string,
@@ -59,6 +66,15 @@ export interface TicketExecutionRunPort {
     secret: string,
     totals: TicketExecutionRunTotals,
   ): Promise<TicketExecutionRunStored>;
+  transcript(
+    secret: string,
+    batch: number,
+    content: Uint8Array,
+  ): Promise<TicketExecutionRunEvidenceStored>;
+  configuration(
+    secret: string,
+    content: Uint8Array,
+  ): Promise<TicketExecutionRunEvidenceStored>;
 }
 
 /** A non-negative whole count, which is what every measured field here is. */

@@ -139,6 +139,15 @@ export const ticketExecutionRunModelsMax = 32;
 /** The longest subtype or stop reason a run's totals carry. */
 export const ticketExecutionRunReasonCharsMax = 64;
 
+/** The most transcript batches one attempt's run is stored as, in arrival order. */
+export const ticketExecutionRunTranscriptBatchesMax = 4_096;
+
+/** The largest one transcript batch is, which a longer run splits rather than trims. */
+export const ticketExecutionRunTranscriptBytesMax = 65_536;
+
+/** The largest configuration snapshot one attempt records of what it ran under. */
+export const ticketExecutionRunConfigurationBytesMax = 1_048_576;
+
 /** The largest body one worker-plane upload carries, which an artifact is written against. */
 export const workerPlaneUploadBytesMax = 4_194_304;
 

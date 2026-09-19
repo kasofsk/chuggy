@@ -7,10 +7,13 @@ import { createInterface } from "node:readline";
 import { Ajv2020 } from "ajv/dist/2020.js";
 
 import {
+  ticketExecutionRunConfigurationBytesMax,
   ticketExecutionRunModelCharsMax,
   ticketExecutionRunModelsMax,
   ticketExecutionRunReasonCharsMax,
   ticketExecutionRunTurnsMax,
+  ticketExecutionRunTranscriptBatchesMax,
+  ticketExecutionRunTranscriptBytesMax,
   ticketExecutionRunTurnsPageMax,
 } from "../../contract/http.ts";
 import { ticketExecutionRunMeasured } from "../../interpreter/ticketExecutionRun.ts";
@@ -654,6 +657,90 @@ async function ticketWorkerMeasure(
   await report("run/totals", measured.totals);
 }
 
+/** The batches one transcript is uploaded as, split on line boundaries within the bound. */
+function ticketWorkerBatches(transcript: string): readonly string[] {
+  const batches: string[] = [];
+  let held = "";
+  for (const line of transcript.split("\n")) {
+    const next = held.length === 0 ? line : `${held}\n${line}`;
+    if (
+      Buffer.byteLength(next, "utf8") > ticketExecutionRunTranscriptBytesMax &&
+      held.length > 0
+    ) {
+      batches.push(held);
+      held = line;
+    } else held = next;
+    if (batches.length >= ticketExecutionRunTranscriptBatchesMax)
+      return batches;
+  }
+  if (held.length > 0) batches.push(held);
+  return batches;
+}
+
+/**
+ * Uploads what the run left behind, scrubbed of every secret this harness holds
+ * before any of it leaves the machine. A batch the plane would not take ends the
+ * upload rather than retrying it: the terminal is what settles the attempt.
+ */
+async function ticketWorkerEvidence(
+  transport: TicketWorkerTransport,
+  view: TicketWorkerView,
+  invocation: { readonly command: readonly string[] },
+  stream: string,
+): Promise<void> {
+  const held = transport.held;
+  const put = async (route: string, body: string): Promise<boolean> => {
+    const response = await fetch(ticketWorkerRoute(held, route), {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${held.bearer}`,
+        "content-type": "application/octet-stream",
+      },
+      body,
+    }).catch(() => undefined);
+    return response?.ok === true;
+  };
+  await put(
+    "run/configuration",
+    workerEvidence(
+      transport,
+      JSON.stringify(
+        await ticketWorkerConfiguration(held.workspace, view, invocation),
+      ),
+    ),
+  );
+  const batches = ticketWorkerBatches(workerEvidence(transport, stream));
+  for (const [index, batch] of batches.entries())
+    if (!(await put(`run/transcript/${String(index + 1)}`, batch))) return;
+}
+
+/** What this attempt ran under, which is the workload it was given and the files that shape it. */
+async function ticketWorkerConfiguration(
+  workspace: string,
+  view: TicketWorkerView,
+  invocation: { readonly command: readonly string[] },
+): Promise<Record<string, unknown>> {
+  const files: Record<string, string> = {};
+  for (const name of ["AGENTS.md", "CLAUDE.md"])
+    try {
+      files[name] = (await readFile(join(workspace, name), "utf8")).slice(
+        0,
+        ticketExecutionRunConfigurationBytesMax / 4,
+      );
+    } catch {
+      continue;
+    }
+  return {
+    argv: invocation.command,
+    workload: view.workload,
+    requiredCapabilities: view.requiredCapabilities,
+    repository: view.repository,
+    commit: view.commit,
+    access: view.access,
+    files,
+  };
+}
+
 async function execute(
   transport: TicketWorkerTransport,
   view: TicketWorkerView,
@@ -678,6 +765,7 @@ async function execute(
   }
   if (invocation.control !== undefined)
     await ticketWorkerMeasure(transport, ran.stdout);
+  await ticketWorkerEvidence(transport, view, invocation, ran.stdout);
   if (ran.stopped)
     return (
       await invocationCleanup(invocation.control),

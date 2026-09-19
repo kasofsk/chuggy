@@ -28,8 +28,12 @@ import {
 } from "../../src/adapters/artifacts/artifactKey.ts";
 import {
   artifactStore,
-  type ArtifactStore,
+  sessionArtifactStore,
 } from "../../src/adapters/artifacts/artifactStore.ts";
+import type {
+  SessionStoreReadPort,
+  SessionStoreWritePort,
+} from "../../src/interpreter/sessionStore.ts";
 import { sessionStoreBatchesMax } from "../../src/contract/http.ts";
 import {
   asSessionId,
@@ -53,7 +57,7 @@ const stream = asSessionStoreStream("1a2b/subagent-7");
 /** One opened store and the root it was opened over. */
 interface Fixture {
   readonly root: string;
-  readonly store: ArtifactStore;
+  readonly store: SessionStoreWritePort & SessionStoreReadPort;
 }
 
 async function fixtureOpen(
@@ -67,10 +71,12 @@ async function fixtureOpen(
   });
   return {
     root,
-    store: artifactStore({
-      root,
-      ...(writeBytesMax === undefined ? {} : { writeBytesMax }),
-    }),
+    store: sessionArtifactStore(
+      artifactStore({
+        root,
+        ...(writeBytesMax === undefined ? {} : { writeBytesMax }),
+      }),
+    ),
   };
 }
 

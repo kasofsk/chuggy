@@ -61,6 +61,12 @@ function attemptPlane(
           Promise.resolve(secret === bearer ? "Stored" : "Fenced"),
         totals: (secret) =>
           Promise.resolve(secret === bearer ? "Stored" : "Fenced"),
+        transcript: (secret, batch) =>
+          Promise.resolve(
+            secret !== bearer ? "Fenced" : batch > 1 ? "OutOfOrder" : "Stored",
+          ),
+        configuration: (secret) =>
+          Promise.resolve(secret === bearer ? "Stored" : "Fenced"),
       },
       view: (secret) => Promise.resolve(secret === bearer ? view : undefined),
       credential: (secret) =>
@@ -269,6 +275,48 @@ test("a measure under a bearer no live attempt is bound to is fenced", async () 
   assert.deepEqual(response.json(), { action: "stop", reason: "Fenced" });
 });
 
+test("a run's evidence is uploaded as bytes and answered by what the plane made of them", async () => {
+  const app = attemptPlane("attempt-secret");
+  const put = (url: string, payload: string) =>
+    app.inject({
+      method: "PUT",
+      url,
+      headers: {
+        authorization: "Bearer attempt-secret",
+        "content-type": "application/octet-stream",
+      },
+      payload,
+    });
+  assert.equal(
+    (await put("/v1/ticket-execution/run/configuration", "{}")).statusCode,
+    204,
+  );
+  assert.equal(
+    (await put("/v1/ticket-execution/run/transcript/1", "{}\n")).statusCode,
+    204,
+  );
+  const skipped = await put("/v1/ticket-execution/run/transcript/2", "{}\n");
+  assert.equal(skipped.statusCode, 409, skipped.body);
+  assert.deepEqual(skipped.json(), { action: "stop", reason: "OutOfOrder" });
+});
+
+test("a batch number that is not a number is refused before anything is stored", async () => {
+  const response = await attemptPlane("attempt-secret").inject({
+    method: "PUT",
+    url: "/v1/ticket-execution/run/transcript/first",
+    headers: {
+      authorization: "Bearer attempt-secret",
+      "content-type": "application/octet-stream",
+    },
+    payload: "{}\n",
+  });
+  assert.equal(response.statusCode, 400, response.body);
+  assert.deepEqual(response.json(), {
+    action: "stop",
+    reason: "InvalidBatch",
+  });
+});
+
 test("a plane composed with no attempt half serves no ticket route", async () => {
   const app = createWorkerPlaneApp(inertWorkerPlane(1_024));
   for (const [method, url] of [
@@ -278,6 +326,8 @@ test("a plane composed with no attempt half serves no ticket route", async () =>
     ["POST", "/v1/ticket-execution/heartbeat"],
     ["POST", "/v1/ticket-execution/run/turns"],
     ["POST", "/v1/ticket-execution/run/totals"],
+    ["PUT", "/v1/ticket-execution/run/transcript/1"],
+    ["PUT", "/v1/ticket-execution/run/configuration"],
   ] as const) {
     const response = await app.inject({
       method,

@@ -357,6 +357,8 @@ test("the adopted script worker checks out under a minted credential and reports
     assert.deepEqual(ran.called, [
       "GET https://callback.invalid/v1/ticket-execution/view",
       "POST https://callback.invalid/v1/ticket-execution/credentials",
+      "PUT https://callback.invalid/v1/ticket-execution/run/configuration",
+      "PUT https://callback.invalid/v1/ticket-execution/run/transcript/1",
       "POST https://callback.invalid/v1/ticket-execution/terminal",
     ]);
     assert.deepEqual(ran.reported, {

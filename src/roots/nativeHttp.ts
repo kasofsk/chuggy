@@ -33,7 +33,10 @@ import {
   type IdempotencyKeying,
 } from "../adapters/postgres/keying.ts";
 import { asIdempotencyKey } from "../interpreter/operationInbox.ts";
-import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
+import {
+  artifactStore,
+  sessionArtifactStore,
+} from "../adapters/artifacts/artifactStore.ts";
 import { postgresLeadReads } from "../adapters/postgres/leadReads.ts";
 import type {
   NativeLeadPorts,
@@ -783,8 +786,8 @@ async function main(): Promise<void> {
   const web = composeNativeWeb(
     pool,
     access,
-    nativeLeadPorts(pools, artifacts),
-    nativeThreadPorts(pools, artifacts),
+    nativeLeadPorts(pools, sessionArtifactStore(artifacts)),
+    nativeThreadPorts(pools, sessionArtifactStore(artifacts)),
   );
   const app = createNativeHttpApp(
     web,

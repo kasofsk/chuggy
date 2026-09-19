@@ -57,6 +57,7 @@ import {
 } from "../../interpreter/finalizer.ts";
 import type { TicketExecutionCredentialSubject } from "../../interpreter/ticketExecution.ts";
 import type {
+  TicketExecutionRunEvidenceStored,
   TicketExecutionRunPort,
   TicketExecutionRunStored,
 } from "../../interpreter/ticketExecutionRun.ts";
@@ -84,6 +85,8 @@ export const workerPlaneRoutes = [
   "/v1/ticket-execution/heartbeat",
   "/v1/ticket-execution/run/turns",
   "/v1/ticket-execution/run/totals",
+  "/v1/ticket-execution/run/transcript/:batch",
+  "/v1/ticket-execution/run/configuration",
 ] as const;
 
 const sessionStorePrefix = "/v1/session/store/";
@@ -237,6 +240,68 @@ const ticketRunTotalsSchema = z.strictObject({
   stopReason: ticketRunReasonSchema.optional(),
 });
 
+/** How stored evidence answers, each refusal separated because they are acted on differently. */
+function ticketRunEvidenceStored(
+  reply: FastifyReply,
+  stored: TicketExecutionRunEvidenceStored,
+): FastifyReply {
+  if (stored === "Stored" || stored === "AlreadyStored")
+    return reply.code(204).send();
+  if (stored === "TooLarge")
+    return reply.code(413).send({ action: "stop", reason: stored });
+  if (stored === "Unavailable")
+    return reply
+      .code(503)
+      .header("retry-after", "1")
+      .send({ action: "stop", reason: stored });
+  return reply.code(409).send({ action: "stop", reason: stored });
+}
+
+/**
+ * The bytes a run left behind, measured here rather than believed. A harness
+ * states a batch number and nothing else about what it sends: the digest, the
+ * size and the event count are all read off what arrived.
+ */
+function ticketRunEvidenceRoutes(
+  app: FastifyInstance,
+  run: TicketExecutionRunPort,
+): void {
+  app.put(workerPlaneRoutes[18], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const batch = Number(
+      (request.params as Record<string, string>)["batch"] ?? "",
+    );
+    if (!Number.isSafeInteger(batch))
+      return reply.code(400).send({ action: "stop", reason: "InvalidBatch" });
+    const content = ticketRunBody(request);
+    if (content === undefined)
+      return reply.code(400).send({ action: "stop", reason: "InvalidBody" });
+    return ticketRunEvidenceStored(
+      reply,
+      await run.transcript(secret, batch, content),
+    );
+  });
+  app.put(workerPlaneRoutes[19], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const content = ticketRunBody(request);
+    if (content === undefined)
+      return reply.code(400).send({ action: "stop", reason: "InvalidBody" });
+    return ticketRunEvidenceStored(
+      reply,
+      await run.configuration(secret, content),
+    );
+  });
+}
+
+/** The bytes a harness uploaded, which only an octet-stream body carries. */
+function ticketRunBody(request: FastifyRequest): Uint8Array | undefined {
+  return Buffer.isBuffer(request.body)
+    ? new Uint8Array(request.body)
+    : undefined;
+}
+
 /** How a measure that was refused answers, a fence and a conflict read alike by the harness. */
 function ticketRunStored(
   reply: FastifyReply,
@@ -267,6 +332,7 @@ function ticketRunRoutes(
       return reply.code(400).send({ action: "stop", reason: "InvalidMeasure" });
     return ticketRunStored(reply, await run.turns(secret, offered.data.turns));
   });
+  ticketRunEvidenceRoutes(app, run);
   app.post(workerPlaneRoutes[17], async (request, reply) => {
     const secret = rawBearer(request);
     if (secret === undefined) return reply.code(401).send({ action: "stop" });
