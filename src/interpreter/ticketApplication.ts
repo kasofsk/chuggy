@@ -408,7 +408,8 @@ const ticketValidationIdentity = task.TicketId(1);
 
 /**
  * A schema failure knows every field it faulted; anything else is one finding
- * about the document, because that is all the thrower said.
+ * about the document, because that is all the thrower said. A catalog that will
+ * not build faults here too, so the author reads why instead of a bare refusal.
  */
 function ticketApplicationFindings(error: unknown): readonly TicketFinding[] {
   if (error instanceof CatalogSchemaError) return error.findings;
@@ -434,9 +435,9 @@ function ticketApplicationValidate(
     const pin = await ticketApplicationPin(ports, request, false);
     if (pin.pinned !== "Pinned") return { result: "NotFound" };
     const commit = pin.selection.commit;
-    const catalog = await ports.catalogs.draft(pin.selection);
-    if (catalog === undefined) return { result: "NotFound" };
     try {
+      const catalog = await ports.catalogs.draft(pin.selection);
+      if (catalog === undefined) return { result: "NotFound" };
       await catalog.release(ticketValidationIdentity, request.source);
       return {
         result: "Authorized",

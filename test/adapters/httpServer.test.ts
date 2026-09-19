@@ -689,7 +689,9 @@ test("validation answers with findings and never reaches authoring", async () =>
           result: "Authorized",
           value: {
             valid: false,
-            findings: [{ path: "", message: "catalog document must be a mapping" }],
+            findings: [
+              { path: "", message: "catalog document must be a mapping" },
+            ],
             commit: asGitObjectId("a".repeat(40)),
           },
         });
