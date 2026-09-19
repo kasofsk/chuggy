@@ -10,12 +10,15 @@
  */
 
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { promisify } from "node:util";
 
 import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
+import { nomadHarnessBootstrap } from "../../src/adapters/nomad/harnessJob.ts";
 import {
   nomadPoolBackend,
   nomadPoolCredentialPath,
@@ -293,4 +296,10 @@ test("a site that could not pin its harness is refused before a pool polls", () 
     { ...config.source, nodePath: "node" },
   ])
     assert.throws(() => nomadPoolBackend({ ...config, source }), RangeError);
+});
+
+test("the bootstrap is shell a shell accepts, which no gate reads inside a literal", async () => {
+  const script = join(root, "bootstrap.sh");
+  writeFileSync(script, nomadHarnessBootstrap(config.source));
+  await promisify(execFile)("/bin/sh", ["-n", script]);
 });
