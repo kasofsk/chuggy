@@ -243,7 +243,9 @@ export async function nomadStopJob(
   fetcher: typeof fetch,
   id: string,
 ): Promise<
-  { readonly stopped: "Accepted" } | { readonly stopped: "Unavailable" }
+  | { readonly stopped: "Accepted" }
+  | { readonly stopped: "Refused"; readonly status: number }
+  | { readonly stopped: "Unavailable" }
 > {
   const reached = await nomadReach(site, fetcher, {
     method: "DELETE",
@@ -251,7 +253,9 @@ export async function nomadStopJob(
   });
   if (reached.reached === "Status" && reached.status === 404)
     return { stopped: "Accepted" };
-  return nomadAnswered(reached)
-    ? { stopped: "Accepted" }
+  if (nomadAnswered(reached)) return { stopped: "Accepted" };
+  return reached.reached === "Status" &&
+    nomadDocumentRefusals.has(reached.status)
+    ? { stopped: "Refused", status: reached.status }
     : { stopped: "Unavailable" };
 }

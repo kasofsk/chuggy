@@ -38,6 +38,7 @@ import type { WorkerPoolAssignment } from "../../contract/workerPool.ts";
 import type {
   WorkerPoolBackend,
   WorkerPoolPlacement,
+  WorkerPoolStopped,
 } from "../../interpreter/workerPoolClient.ts";
 import {
   checkedNomadHarnessSource,
@@ -285,6 +286,37 @@ async function poolPlacementPlaced(
     : poolPlacementHold(config);
 }
 
+/**
+ * What stopping one assignment came to, which is the agent's answer in the
+ * seam's words. A job the agent no longer holds is stopped, and the two
+ * inabilities part where every other answer from this agent parts them.
+ */
+async function poolPlacementStopped(
+  config: NomadPoolPlacementConfig,
+  fetcher: typeof fetch,
+  assignment: string,
+): Promise<WorkerPoolStopped> {
+  const stopped = await nomadStopJob(
+    config,
+    fetcher,
+    nomadPoolJobName(config, assignment),
+  );
+  switch (stopped.stopped) {
+    case "Accepted":
+      return { stopped: "Stopped" };
+    case "Refused":
+      return {
+        stopped: "Refused",
+        evidence: `the Nomad agent refused to stop this workload with status ${String(stopped.status)}`,
+      };
+    case "Unavailable":
+      return {
+        stopped: "Unavailable",
+        evidence: "the Nomad agent could not be reached to stop this workload",
+      };
+  }
+}
+
 export function nomadPoolBackend(
   input: NomadPoolPlacementConfig,
   fetcher: typeof fetch = fetch,
@@ -292,17 +324,7 @@ export function nomadPoolBackend(
   const config = checkedNomadPoolPlacementConfig(input);
   return {
     place: (assignment) => poolPlacementPlaced(config, fetcher, assignment),
-    stop: async (assignment) => {
-      const stopped = await nomadStopJob(
-        config,
-        fetcher,
-        nomadPoolJobName(config, assignment),
-      );
-      if (stopped.stopped !== "Accepted")
-        throw new Error(
-          "a workload this pool was told to stop is still placed",
-        );
-    },
+    stop: (assignment) => poolPlacementStopped(config, fetcher, assignment),
     held: () =>
       nomadHeldAssignments(config, fetcher, `${config.jobNamePrefix}-`),
   };

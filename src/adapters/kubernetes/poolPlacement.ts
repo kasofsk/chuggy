@@ -27,6 +27,7 @@ import type { WorkerPoolAssignment } from "../../contract/workerPool.ts";
 import type {
   WorkerPoolBackend,
   WorkerPoolPlacement,
+  WorkerPoolStopped,
 } from "../../interpreter/workerPoolClient.ts";
 import {
   kubernetesCancelPod,
@@ -296,6 +297,37 @@ async function poolPlacementPlaced(
   }
 }
 
+/**
+ * What stopping one assignment came to, which is the cluster's answer in the
+ * seam's words. A pod the cluster no longer holds is stopped, and the two
+ * inabilities part where every other answer from this cluster parts them.
+ */
+async function poolPlacementStopped(
+  config: KubernetesPoolPlacementConfig,
+  fetcher: typeof fetch,
+  assignment: string,
+): Promise<WorkerPoolStopped> {
+  const cancelled = await kubernetesCancelPod(
+    config,
+    fetcher,
+    kubernetesPoolPodName(config, assignment),
+  );
+  switch (cancelled.cancelled) {
+    case "Accepted":
+      return { stopped: "Stopped" };
+    case "Refused":
+      return {
+        stopped: "Refused",
+        evidence: `the cluster refused to stop this workload with status ${String(cancelled.status)}`,
+      };
+    case "Unavailable":
+      return {
+        stopped: "Unavailable",
+        evidence: "the cluster could not be reached to stop this workload",
+      };
+  }
+}
+
 export function kubernetesPoolBackend(
   input: KubernetesPoolPlacementConfig,
   fetcher: typeof fetch = fetch,
@@ -303,17 +335,7 @@ export function kubernetesPoolBackend(
   const config = checkedKubernetesPoolPlacementConfig(input);
   return {
     place: (assignment) => poolPlacementPlaced(config, fetcher, assignment),
-    stop: async (assignment) => {
-      const cancelled = await kubernetesCancelPod(
-        config,
-        fetcher,
-        kubernetesPoolPodName(config, assignment),
-      );
-      if (cancelled.cancelled !== "Accepted")
-        throw new Error(
-          "a workload this pool was told to stop is still placed",
-        );
-    },
+    stop: (assignment) => poolPlacementStopped(config, fetcher, assignment),
     held: () =>
       kubernetesListedPodAnnotations(
         config,

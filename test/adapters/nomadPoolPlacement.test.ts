@@ -275,17 +275,30 @@ test("an agent that could not be listed raises rather than reporting an empty po
 
 test("stopping takes the job out of the agent, and a job already gone is the same answer", async () => {
   const { reached, fetcher } = agent(() => new Response("", { status: 404 }));
-  await nomadPoolBackend(config, fetcher).stop("assignment-one");
+  assert.deepEqual(
+    await nomadPoolBackend(config, fetcher).stop("assignment-one"),
+    {
+      stopped: "Stopped",
+    },
+  );
   assert.equal(reached[0]?.method, "DELETE");
   assert.match(reached[0]?.path ?? "", /purge=true/u);
 });
 
-test("a stop the agent would not take raises rather than passing for done", async () => {
+test("an agent that could not take a stop is an outage rather than a refusal", async () => {
   const { fetcher } = agent(() => new Response("", { status: 500 }));
-  await assert.rejects(
-    nomadPoolBackend(config, fetcher).stop("assignment-one"),
-    /still placed/u,
+  const stopped = await nomadPoolBackend(config, fetcher).stop(
+    "assignment-one",
   );
+  assert.equal(stopped.stopped, "Unavailable");
+});
+
+test("an agent that refused the stop itself says so, because asking again would not change it", async () => {
+  const { fetcher } = agent(() => new Response("", { status: 422 }));
+  const stopped = await nomadPoolBackend(config, fetcher).stop(
+    "assignment-one",
+  );
+  assert.equal(stopped.stopped, "Refused");
 });
 
 test("a site that could not pin its harness is refused before a pool polls", () => {

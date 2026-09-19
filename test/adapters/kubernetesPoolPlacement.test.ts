@@ -273,7 +273,10 @@ test("a cluster that could not be listed raises rather than answering an empty p
 test("a stop is the one delete, and gone and asked-to-go are one answer", async () => {
   for (const status of [200, 202, 404]) {
     const { reached, fetcher } = cluster(() => new Response("{}", { status }));
-    await kubernetesPoolBackend(config, fetcher).stop("assignment-one");
+    assert.deepEqual(
+      await kubernetesPoolBackend(config, fetcher).stop("assignment-one"),
+      { stopped: "Stopped" },
+    );
     assert.equal(reached[0]?.method, "DELETE");
     assert.equal(
       reached[0]?.path,
@@ -282,14 +285,18 @@ test("a stop is the one delete, and gone and asked-to-go are one answer", async 
   }
 });
 
-test("a stop the cluster could not make raises, because the lease would be renewed regardless", async () => {
-  await assert.rejects(
-    () =>
-      kubernetesPoolBackend(config, () =>
-        Promise.resolve(new Response("{}", { status: 503 })),
-      ).stop("assignment-one"),
-    Error,
-  );
+test("a cluster that could not take a stop is an outage rather than a refusal", async () => {
+  const stopped = await kubernetesPoolBackend(config, () =>
+    Promise.resolve(new Response("{}", { status: 503 })),
+  ).stop("assignment-one");
+  assert.equal(stopped.stopped, "Unavailable");
+});
+
+test("a cluster that refused the stop itself says so, because asking again would not change it", async () => {
+  const stopped = await kubernetesPoolBackend(config, () =>
+    Promise.resolve(new Response("{}", { status: 422 })),
+  ).stop("assignment-one");
+  assert.equal(stopped.stopped, "Refused");
 });
 
 test("a site is refused where its provider credential is served by no mount", () => {

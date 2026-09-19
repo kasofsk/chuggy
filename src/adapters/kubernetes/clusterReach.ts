@@ -381,18 +381,23 @@ export async function kubernetesPlacePod(
 /**
  * Cancels one named pod. A pod that is gone and a pod that has just been asked
  * to go are the same answer, because the caller's question is whether the
- * cluster still holds one.
+ * cluster still holds one; a request the API refused parts from an outage at the
+ * status line, as every other act in this module does.
  */
 export async function kubernetesCancelPod(
   site: KubernetesPodSite,
   fetcher: typeof fetch,
   name: string,
 ): Promise<
-  { readonly cancelled: "Accepted" } | { readonly cancelled: "Unavailable" }
+  | { readonly cancelled: "Accepted" }
+  | { readonly cancelled: "Refused"; readonly status: number }
+  | { readonly cancelled: "Unavailable" }
 > {
   const deleted = await kubernetesDeletePod(site, fetcher, name);
-  return deleted.reached === "Status" &&
-    (deleted.status === 404 || (deleted.status >= 200 && deleted.status < 300))
-    ? { cancelled: "Accepted" }
+  if (deleted.reached !== "Status") return { cancelled: "Unavailable" };
+  if (deleted.status === 404 || (deleted.status >= 200 && deleted.status < 300))
+    return { cancelled: "Accepted" };
+  return kubernetesManifestRefusals.has(deleted.status)
+    ? { cancelled: "Refused", status: deleted.status }
     : { cancelled: "Unavailable" };
 }

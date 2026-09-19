@@ -9,11 +9,13 @@
  * operation and not a field: an in-process list is a second account of what is
  * running, and the process that owns it is the one that just died.
  *
- * FOUR FAILURES, FOUR REMEDIES, AND NONE OF THEM IS A RETRY-EVERYTHING LOOP. A
- * token the issuer refuses and a token it could not mint are different answers;
- * so are a plane that rejected this pool and a plane that was unreachable. A
- * denial stops the client, because a pool told it is not a pool learns nothing
- * by asking again; an outage backs off and comes back.
+ * EVERY FAILURE PARTS THE SAME WAY, AND NONE OF THE REMEDIES IS A
+ * RETRY-EVERYTHING LOOP. A token the issuer refuses and a token it could not
+ * mint are different answers; so are a plane that rejected this pool and a
+ * plane that was unreachable, and so are a fabric that refused a stop and a
+ * fabric that was not there to take one. A denial stops the client, because a
+ * pool told it is not a pool learns nothing by asking again; an outage backs
+ * off and comes back.
  *
  * A PLACEMENT NOBODY ACKNOWLEDGED IS NOT LOST. An accepted assignment is
  * already claimed and already leased by the poll that offered it, so the accept
@@ -34,13 +36,23 @@ export type WorkerPoolPlacement =
   | { readonly placed: "Unavailable"; readonly retryAfterSecs: number };
 
 /**
+ * What stopping one assignment came to, which parts the same two inabilities a
+ * placement does. A fabric that refused the stop will refuse it again, and a
+ * fabric that could not be reached is this moment rather than an answer.
+ */
+export type WorkerPoolStopped =
+  | { readonly stopped: "Stopped" }
+  | { readonly stopped: "Refused"; readonly evidence: string }
+  | { readonly stopped: "Unavailable"; readonly evidence: string };
+
+/**
  * The three operations a backend answers, `held` being the one the contract has
  * no member for. It is derived from the backend rather than from this process,
  * so what is running is read from where it is running.
  */
 export interface WorkerPoolBackend {
   place(assignment: WorkerPoolAssignment): Promise<WorkerPoolPlacement>;
-  stop(assignment: string): Promise<void>;
+  stop(assignment: string): Promise<WorkerPoolStopped>;
   held(): Promise<readonly string[]>;
 }
 
@@ -188,15 +200,29 @@ async function workerPoolClientToken(
 
 /**
  * Stops everything the plane flagged, one call each and each one idempotent. A
- * backend that cannot stop a workload raises, because a pool that kept polling
- * would keep renewing the lease of work it was told to abandon.
+ * fabric that could not be reached ends the pass before it places anything, so
+ * this pool takes on nothing new while work it was told to abandon is still
+ * running; a fabric that refused the stop ends the run, because a pool that
+ * kept polling would keep renewing the lease of work it cannot abandon and no
+ * later pass would be answered differently.
  */
 async function workerPoolClientStopped(
   client: WorkerPoolClient,
   stop: readonly string[],
-): Promise<number> {
-  for (const assignment of stop) await client.backend.stop(assignment);
-  return stop.length;
+): Promise<
+  | { readonly stopped: number }
+  | Exclude<WorkerPoolPass, { passed: "Reconciled" }>
+> {
+  let stopped = 0;
+  for (const assignment of stop) {
+    const outcome = await client.backend.stop(assignment);
+    if (outcome.stopped === "Refused")
+      return { passed: "Denied", evidence: outcome.evidence };
+    if (outcome.stopped === "Unavailable")
+      return { passed: "Unavailable", evidence: outcome.evidence };
+    stopped += 1;
+  }
+  return { stopped };
 }
 
 /** The outcome one placement is reported as, which is the placement itself in the contract's words. */
@@ -274,17 +300,18 @@ export async function workerPoolClientPass(
   if (polled.polled !== "Reconciled")
     return { passed: polled.polled, evidence: polled.evidence };
   const stopped = await workerPoolClientStopped(client, polled.stop);
+  if ("passed" in stopped) return stopped;
   const tally = await workerPoolClientPlaced(
     client,
     minted.token,
     polled.assignments,
-    held.length - stopped,
+    held.length - stopped.stopped,
   );
   if (tally.stale) client.held = undefined;
   return {
     passed: "Reconciled",
     placed: tally.placed,
-    stopped,
+    stopped: stopped.stopped,
     refused: tally.refused,
   };
 }

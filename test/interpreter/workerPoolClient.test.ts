@@ -11,6 +11,7 @@ import {
   type WorkerPoolPlacement,
   type WorkerPoolPlane,
   type WorkerPoolPolled,
+  type WorkerPoolStopped,
   type WorkerPoolSettled,
   type WorkerPoolTokenAcquired,
 } from "../../src/interpreter/workerPoolClient.ts";
@@ -38,7 +39,7 @@ function assignment(named: string): WorkerPoolAssignment {
 /** A backend holding nothing and placing everything, which every case narrows from. */
 const idle: WorkerPoolBackend = {
   place: () => Promise.resolve<WorkerPoolPlacement>({ placed: "Placed" }),
-  stop: () => Promise.resolve(),
+  stop: () => Promise.resolve<WorkerPoolStopped>({ stopped: "Stopped" }),
   held: () => Promise.resolve([]),
 };
 
@@ -150,7 +151,7 @@ test("a stopped assignment frees the room the same pass places into", async () =
         held: () => Promise.resolve(["going"]),
         stop: (named) => {
           stopped.push(named);
-          return Promise.resolve();
+          return Promise.resolve<WorkerPoolStopped>({ stopped: "Stopped" });
         },
       },
       plane: {
@@ -170,6 +171,76 @@ test("a stopped assignment frees the room the same pass places into", async () =
     placed: 1,
     stopped: 1,
     refused: 0,
+  });
+});
+
+test("a fabric that could not take a stop places nothing further this pass", async () => {
+  let placed = 0;
+  const passed = await workerPoolClientPass(
+    client({
+      backend: {
+        ...idle,
+        held: () => Promise.resolve(["going"]),
+        stop: () =>
+          Promise.resolve<WorkerPoolStopped>({
+            stopped: "Unavailable",
+            evidence: "the fabric could not be reached",
+          }),
+        place: () => {
+          placed += 1;
+          return Promise.resolve<WorkerPoolPlacement>({ placed: "Placed" });
+        },
+      },
+      plane: {
+        ...quiet,
+        poll: () =>
+          Promise.resolve<WorkerPoolPolled>({
+            polled: "Reconciled",
+            assignments: [assignment("offered")],
+            stop: ["going"],
+          }),
+      },
+    }),
+  );
+  assert.equal(placed, 0);
+  assert.deepEqual(passed, {
+    passed: "Unavailable",
+    evidence: "the fabric could not be reached",
+  });
+});
+
+test("a fabric that refused a stop ends the run rather than renewing that lease", async () => {
+  let polled = 0;
+  const passed = await workerPoolClientRun(
+    client({
+      settings: { ...settings, passesMax: 5 },
+      backend: {
+        ...idle,
+        held: () => Promise.resolve(["going"]),
+        stop: () =>
+          Promise.resolve<WorkerPoolStopped>({
+            stopped: "Refused",
+            evidence: "the fabric refused to stop this workload",
+          }),
+      },
+      plane: {
+        ...quiet,
+        poll: () => {
+          polled += 1;
+          return Promise.resolve<WorkerPoolPolled>({
+            polled: "Reconciled",
+            assignments: [],
+            stop: ["going"],
+          });
+        },
+      },
+    }),
+    () => Promise.resolve(),
+  );
+  assert.equal(polled, 1);
+  assert.deepEqual(passed, {
+    passed: "Denied",
+    evidence: "the fabric refused to stop this workload",
   });
 });
 
