@@ -1233,7 +1233,7 @@ test("only the boundary owner may move the columns the doors write", async () =>
  * The whole argument for a plane of its own is this pair of surfaces. The plane
  * pools poll claims work and leases it and cannot write an outcome; the plane a
  * harness reaches writes an outcome and cannot claim, and cannot read the
- * relation a pool's credential is looked up in at all.
+ * relation a pool is registered in at all.
  */
 test("the plane pools poll claims work and can write no outcome", async () => {
   assert.deepEqual(
@@ -1274,6 +1274,11 @@ test("the plane pools poll claims work and can write no outcome", async () => {
       .split(",")
       .sort()
       .join(","),
+  );
+  assert.equal(
+    read.find((row) => row.relation === "worker_pool")?.columns,
+    "capabilities,pool,principal,project,tenant",
+    "a poll resolves its pool by the principal the issuer vouched for, and reads the client id of nothing",
   );
 });
 

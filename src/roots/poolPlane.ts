@@ -7,12 +7,25 @@
  * cannot write an outcome, where the plane a harness reaches can write an
  * outcome and cannot claim — so the readiness probe asks the server which role
  * it connected as, exactly as the worker plane's does.
+ *
+ * IT IS COMPOSED WITH NO WAY TO MINT ANYTHING. The issuer reaches this process
+ * as a discovery address and a key set, and the authority as a read URL; the
+ * admin API that registers a pool's client is named by no variable this file
+ * reads, so the least-trusted outward-facing process cannot make itself a
+ * second pool. Discovery happens once, at start-up, which is why an issuer that
+ * cannot be reached refuses the start rather than serving refusals.
  */
 import { pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
 
 import { createPoolPlaneApp } from "../adapters/http/poolPlaneServer.ts";
+import { oidcAuthentication } from "../adapters/http/oidc.ts";
+import { ketoProjectAccess } from "../adapters/keto/projectAccess.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
+import {
+  checkedProjectAccessSettings,
+  projectAccessTimeoutMsDefault,
+} from "../interpreter/projectAccess.ts";
 import {
   planeEnvironmentPositive,
   planeEnvironmentRequired,
@@ -31,11 +44,46 @@ import {
  */
 const callbackUrlVariable = "CHUG_POOL_PLANE_CALLBACK_URL";
 
+/** The issuer a pool's token is verified against, read the way every other bound is. */
+function poolPlaneIssuer() {
+  return {
+    issuer: planeEnvironmentRequired("CHUG_POOL_PLANE_OIDC_ISSUER"),
+    audience: planeEnvironmentRequired("CHUG_POOL_PLANE_OIDC_AUDIENCE"),
+    algorithms: planeEnvironmentRequired("CHUG_POOL_PLANE_OIDC_ALGORITHMS")
+      .split(",")
+      .map((algorithm) => algorithm.trim()),
+    discoveryTimeoutMs: planeEnvironmentPositive(
+      "CHUG_POOL_PLANE_OIDC_DISCOVERY_TIMEOUT_MS",
+      5_000,
+    ),
+    jwksTimeoutMs: planeEnvironmentPositive(
+      "CHUG_POOL_PLANE_OIDC_JWKS_TIMEOUT_MS",
+      5_000,
+    ),
+  };
+}
+
 async function main(): Promise<void> {
   const pool = postgresPool(
     planeEnvironmentRequired("CHUG_POOL_PLANE_DATABASE_URL"),
   );
+  const authentication = await oidcAuthentication(poolPlaneIssuer()).catch(
+    async (failure: unknown) => {
+      await pool.end();
+      throw failure;
+    },
+  );
   const app = createPoolPlaneApp({
+    authentication,
+    access: ketoProjectAccess(
+      checkedProjectAccessSettings({
+        readUrl: planeEnvironmentRequired("CHUG_POOL_PLANE_KETO_READ_URL"),
+        requestTimeoutMs: planeEnvironmentPositive(
+          "CHUG_POOL_PLANE_KETO_TIMEOUT_MS",
+          projectAccessTimeoutMsDefault,
+        ),
+      }),
+    ),
     registry: postgresWorkerPoolRegistry(pool),
     assignments: postgresWorkerPoolAssignments(pool),
     mint: () => randomBytes(32).toString("base64url"),

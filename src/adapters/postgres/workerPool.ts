@@ -2,11 +2,12 @@
  * The registry a pool is known by and the durable side of every assignment it
  * holds, both of them reachable without one line of the ticket machine.
  *
- * A POOL'S CREDENTIAL NEVER LANDS IN A ROW. Only its SHA-256 does, and it is
- * looked up in `worker_pool` alone — a relation the plane that serves harnesses
- * holds no privilege on. So a pool presenting its registration credential where
- * an attempt bearer is expected matches no attempt, and the separation is the
- * grant rather than a check any caller could forget.
+ * NO POOL SECRET IS STORED HERE AT ALL. A row keeps the principal the issuer's
+ * subject resolves to, which is a public name rather than a credential, and it
+ * is looked up in `worker_pool` alone — a relation the plane that serves
+ * harnesses holds no privilege on. The digest that remains is one attempt
+ * bearer's, written by a claim, and the separation is the grant rather than a
+ * check any caller could forget.
  *
  * EVERY STATEMENT IS SCOPED TO THE POOL THAT ASKED. An assignment is the only
  * handle a pool has, and each one is resolved together with the pool holding it
@@ -20,27 +21,27 @@ import type { Partition } from "../../interpreter/projectStore.ts";
 import type {
   WorkerPoolAssignments,
   WorkerPoolIdentity,
+  WorkerPoolRegistration,
   WorkerPoolRegistry,
 } from "../../interpreter/workerPool.ts";
 import { postgresTransaction } from "./pool.ts";
 
-function workerPoolDigest(credential: string): string {
-  return createHash("sha256").update(credential).digest("hex");
+/** The digest one attempt bearer is stored as, which is the only secret this module handles. */
+function workerPoolDigest(bearer: string): string {
+  return createHash("sha256").update(bearer).digest("hex");
 }
 
-/** Registration is a fresh registration every time, so a re-register rotates the credential. */
+/** Registration is a fresh registration every time, so a re-register re-declares the pool. */
 async function workerPoolRegistered(
   client: pg.PoolClient,
-  partition: Partition,
-  pool: string,
-  capabilities: readonly string[],
-  credential: string,
+  registration: WorkerPoolRegistration,
 ): Promise<boolean> {
+  const { partition } = registration;
   await client.query(sql`DELETE FROM worker_pool
-    WHERE tenant=${partition.tenant} AND project=${partition.project} AND pool=${pool}`);
+    WHERE tenant=${partition.tenant} AND project=${partition.project} AND pool=${registration.pool}`);
   const inserted =
-    await client.query(sql`INSERT INTO worker_pool(tenant,project,pool,capabilities,credential_digest)
-    SELECT ${partition.tenant},${partition.project},${pool},${[...capabilities]}::text[],${workerPoolDigest(credential)}
+    await client.query(sql`INSERT INTO worker_pool(tenant,project,pool,capabilities,principal,client_id)
+    SELECT ${partition.tenant},${partition.project},${registration.pool},${[...registration.capabilities]}::text[],${registration.principal as string},${registration.clientId}
     WHERE EXISTS(SELECT 1 FROM project p
       WHERE p.tenant=${partition.tenant} AND p.project=${partition.project} AND p.lifecycle='Active')`);
   return (inserted.rowCount ?? 0) === 1;
@@ -48,29 +49,26 @@ async function workerPoolRegistered(
 
 export function postgresWorkerPoolRegistry(pool: pg.Pool): WorkerPoolRegistry {
   return {
-    register: (partition, named, capabilities, credential) =>
+    register: (registration) =>
       postgresTransaction(pool, (client) =>
-        workerPoolRegistered(
-          client,
-          partition,
-          named,
-          capabilities,
-          credential,
-        ),
+        workerPoolRegistered(client, registration),
       ),
     deregister: async (partition, named) => {
-      const deleted = await pool.query(sql`DELETE FROM worker_pool
-        WHERE tenant=${partition.tenant} AND project=${partition.project} AND pool=${named}`);
-      return (deleted.rowCount ?? 0) === 1;
+      const deleted = await pool.query<{ client_id: string }>(
+        sql`DELETE FROM worker_pool
+        WHERE tenant=${partition.tenant} AND project=${partition.project} AND pool=${named}
+        RETURNING client_id`,
+      );
+      return deleted.rows[0]?.client_id;
     },
-    authenticate: async (credential) => {
+    identify: async (principal) => {
       const found = await pool.query<{
         tenant: string;
         project: string;
         pool: string;
         capabilities: string[];
       }>(sql`SELECT w.tenant,w.project,w.pool,w.capabilities FROM worker_pool w
-        WHERE w.credential_digest=${workerPoolDigest(credential)}
+        WHERE w.principal=${principal}
           AND EXISTS(SELECT 1 FROM project p
             WHERE p.tenant=w.tenant AND p.project=w.project
               AND p.lifecycle='Active' AND p.ticket_model='Chuggernaut')`);

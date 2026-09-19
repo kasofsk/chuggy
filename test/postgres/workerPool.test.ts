@@ -16,6 +16,7 @@ import {
   ticketServiceRole,
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema/shared.ts";
+import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import type { TicketExecutionView } from "../../src/interpreter/ticketExecution.ts";
 import { obligationNeeding } from "./executionFixtures.ts";
 import {
@@ -41,6 +42,9 @@ after(async () => {
   await Promise.all([writer.end(), scheduler.end(), plane.end(), worker.end()]);
   await harness.close();
 });
+
+/** The issuer every principal in this suite is derived under, which no server here is. */
+const issuer = "https://issuer.invalid";
 
 const preparedView = {
   workload: {
@@ -70,17 +74,24 @@ async function registered(
     obligationNeeding(needs),
   );
   const registry = postgresWorkerPoolRegistry(writer);
-  const credential = `credential-${name}`;
+  const clientId = `client-${name}`;
+  const principal = oidcPrincipal(issuer, clientId);
   assert.equal(
-    await registry.register(partition, "pool-one", declares, credential),
+    await registry.register({
+      partition,
+      pool: "pool-one",
+      capabilities: declares,
+      clientId,
+      principal,
+    }),
     true,
   );
-  const identity =
-    await postgresWorkerPoolRegistry(plane).authenticate(credential);
+  const identity = await postgresWorkerPoolRegistry(plane).identify(principal);
   assert.ok(identity);
   return {
     partition,
-    credential,
+    clientId,
+    principal,
     names: { one: `${name}-one`, two: `${name}-two` },
     bearer: `bearer-${name}`,
     identity,
@@ -131,7 +142,7 @@ test("a pool claims only prepared work its declared capabilities cover", async (
   );
 });
 
-test("a pool's credential authenticates no attempt and reports no terminal", async () => {
+test("what names a pool authenticates no attempt and reports no terminal", async () => {
   const held = await registered("pool-separation", [], []);
   assert.equal(await held.prepare(), true);
   assert.ok(
@@ -143,14 +154,14 @@ test("a pool's credential authenticates no attempt and reports no terminal", asy
     ),
   );
   const reports = postgresTicketExecutionTerminals(worker);
-  assert.equal(await reports.view(held.credential), undefined);
+  assert.equal(await reports.view(held.clientId), undefined);
   assert.notEqual(
     await reports.view(held.bearer),
     undefined,
     "the attempt's own bearer is what that plane answers",
   );
   assert.equal(
-    await reports.report(held.credential, {
+    await reports.report(held.clientId, {
       taskKey: "work:1:1",
       outcome: { type: "process_failed", evidence: "a pool said so" },
     }),
@@ -167,7 +178,7 @@ test("the plane serving harnesses cannot read the relation a pool is registered 
   assert.match(
     (await harness.attemptAs(
       workerPlaneRole,
-      "SELECT credential_digest FROM worker_pool",
+      "SELECT principal FROM worker_pool",
     )) ?? "",
     /permission denied for table worker_pool/u,
   );
@@ -242,7 +253,7 @@ test("an assignment is renewed, refused and released by the pool holding it", as
   );
 });
 
-test("deregistration takes the credential and leaves the work it held", async () => {
+test("deregistration answers with the client it removed and leaves the work it held", async () => {
   const held = await registered("pool-deregister", [], []);
   assert.equal(await held.prepare(), true);
   assert.ok(
@@ -255,10 +266,10 @@ test("deregistration takes the credential and leaves the work it held", async ()
   );
   assert.equal(
     await held.registry.deregister(held.partition, "pool-one"),
-    true,
+    held.clientId,
   );
   assert.equal(
-    await postgresWorkerPoolRegistry(plane).authenticate(held.credential),
+    await postgresWorkerPoolRegistry(plane).identify(held.principal),
     undefined,
   );
   const row = await harness.pool.query<{ state: string; pool: string }>(

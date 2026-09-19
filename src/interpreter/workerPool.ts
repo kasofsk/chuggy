@@ -20,30 +20,87 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import type { WorkerPoolAssignment } from "../contract/workerPool.ts";
 import { execution_profile } from "./executionProfile.ts";
+import type { Principal } from "./principal.ts";
+import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
 
-/** One registered pool as its credential resolves it: whose it is, and what it declared. */
+/** One registered pool as its principal resolves it: whose it is, and what it declared. */
 export interface WorkerPoolIdentity {
   readonly partition: Partition;
   readonly pool: string;
   readonly capabilities: readonly string[];
 }
 
+/** What registering one pool records: who it is at the issuer, and what it declared. */
+export interface WorkerPoolRegistration {
+  readonly partition: Partition;
+  readonly pool: string;
+  readonly capabilities: readonly string[];
+  readonly clientId: string;
+  readonly principal: Principal;
+}
+
 /**
- * Registration, deregistration and the credential lookup all three are keyed
- * by. The credential is offered here in plaintext and stored as a digest by
- * whatever implements this, which is the same arrangement an attempt's bearer
- * already has.
+ * Registration, deregistration and the lookup a poll resolves its pool by. No
+ * secret passes through here — a pool authenticates as an OAuth2 client of the
+ * issuer this installation already runs, and what a row keeps is the principal
+ * that client's subject resolves to — and deregistration answers with the
+ * client it took off rather than a flag, because the command that removes the
+ * row is the one that has to remove the client and nothing else in this tree
+ * may read a subject back out of a principal.
  */
 export interface WorkerPoolRegistry {
-  register(
-    partition: Partition,
-    pool: string,
-    capabilities: readonly string[],
-    credential: string,
-  ): Promise<boolean>;
-  deregister(partition: Partition, pool: string): Promise<boolean>;
-  authenticate(credential: string): Promise<WorkerPoolIdentity | undefined>;
+  register(registration: WorkerPoolRegistration): Promise<boolean>;
+  deregister(partition: Partition, pool: string): Promise<string | undefined>;
+  identify(principal: Principal): Promise<WorkerPoolIdentity | undefined>;
+}
+
+/**
+ * The pool one authenticated principal acts as, and nothing where the authority
+ * says it may not: a registration is who the caller is and never what it may
+ * do, `Execute` on the project is the permit, and revoking a pool is therefore a
+ * revocation like any other and needs no row deleted here. An authority that
+ * could not answer throws `ProjectAccessUnavailable` through this function
+ * rather than resolving to `undefined`, because a pool told it is not allowed
+ * stops where a pool told to retry comes back.
+ */
+export async function workerPoolAdmitted(
+  registry: WorkerPoolRegistry,
+  access: ProjectAccess,
+  principal: Principal,
+): Promise<WorkerPoolIdentity | undefined> {
+  const identity = await registry.identify(principal);
+  if (identity === undefined) return undefined;
+  const authority = await access.authorize(
+    principal,
+    identity.partition,
+    "Execute",
+  );
+  return authority === undefined ? undefined : identity;
+}
+
+/** A fault that left the issuer's client registry unchanged, or left it unknown whether it did. */
+export class WorkerPoolClientUnavailable extends Error {
+  constructor(why: string) {
+    super(`worker pool client: ${why}`);
+    this.name = "WorkerPoolClientUnavailable";
+  }
+}
+
+/** What a pool's OAuth2 client was minted as, handed back once and kept nowhere. */
+export interface WorkerPoolClientSecret {
+  readonly clientId: string;
+  readonly clientSecret: string;
+}
+
+/**
+ * The issuer's client registration, held by the owner-side command and by no
+ * process a pool can reach. The plane pools poll verifies tokens and mints
+ * nothing, which is why this port is not among the ones it is composed with.
+ */
+export interface WorkerPoolClients {
+  create(clientId: string): Promise<WorkerPoolClientSecret>;
+  remove(clientId: string): Promise<void>;
 }
 
 /** What one claim produced: the view the orchestrator had already resolved for it. */

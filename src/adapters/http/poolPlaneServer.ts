@@ -13,6 +13,15 @@
  * answers which of them must stop, claims what the pool's capabilities cover,
  * and by being made at all says the pool is alive. Nothing here is a heartbeat
  * and nothing here is a placement.
+ *
+ * IT VERIFIES AND IT NEVER MINTS. A pool arrives as an OAuth2 client of the
+ * issuer this installation already runs, so what this process holds is the
+ * issuer's published keys and a question for the authority — never the admin
+ * privilege that made the client. Four answers come out of that pair and each
+ * one says something different: a token this side read and rejected is 401, a
+ * caller no registration names or the authority refuses is 404, an issuer or
+ * authority that could not answer is 503 and asks for a retry, and only the
+ * last of those is a pool that should come back unchanged.
  */
 import fastify, {
   type FastifyInstance,
@@ -25,7 +34,10 @@ import {
   workerPoolIdentityCharsMax,
 } from "../../contract/workerPool.ts";
 import { isBoundedText } from "../../interpreter/boundedText.ts";
+import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
+import type { ProjectAccess } from "../../interpreter/projectAccess.ts";
 import {
+  workerPoolAdmitted,
   workerPoolPoll,
   type WorkerPoolAssignments,
   type WorkerPoolIdentity,
@@ -33,6 +45,7 @@ import {
   type WorkerPoolPollSettings,
   type WorkerPoolRegistry,
 } from "../../interpreter/workerPool.ts";
+import type { PrincipalAuthentication } from "./server.ts";
 
 export const poolPlaneRoutes = [
   "/health/live",
@@ -44,12 +57,25 @@ export const poolPlaneRoutes = [
 ] as const;
 
 export interface PoolPlaneService {
+  readonly authentication: PrincipalAuthentication;
+  readonly access: ProjectAccess;
   readonly registry: WorkerPoolRegistry;
   readonly assignments: WorkerPoolAssignments;
   readonly settings: WorkerPoolPollSettings;
   readonly mint: WorkerPoolMint;
   readonly ready: () => Promise<boolean>;
 }
+
+/**
+ * What resolving a caller came to. `Unknown` and `Unavailable` are kept apart
+ * for the reason the authority keeps a refusal and an outage apart: one is a
+ * pool that should stop, and the other is a pool that should ask again.
+ */
+type PoolCaller =
+  | { readonly caller: "Pool"; readonly identity: WorkerPoolIdentity }
+  | { readonly caller: "InvalidToken" }
+  | { readonly caller: "Unknown" }
+  | { readonly caller: "Unavailable" };
 
 function poolBearer(request: FastifyRequest): string | undefined {
   const header = request.headers.authorization;
@@ -58,15 +84,48 @@ function poolBearer(request: FastifyRequest): string | undefined {
     : undefined;
 }
 
-/** The pool one call acts for, or nothing where its credential names no registration. */
+/** The pool one call acts for, or which of the three refusals it met. */
 async function poolCaller(
   service: PoolPlaneService,
   request: FastifyRequest,
-): Promise<WorkerPoolIdentity | undefined> {
-  const secret = poolBearer(request);
-  return secret === undefined
-    ? undefined
-    : service.registry.authenticate(secret);
+): Promise<PoolCaller> {
+  const token = poolBearer(request);
+  if (token === undefined) return { caller: "InvalidToken" };
+  const authenticated = await service.authentication.authenticateBearer(token);
+  if (authenticated.authenticated === "InvalidToken")
+    return { caller: "InvalidToken" };
+  if (authenticated.authenticated === "AuthorityUnavailable")
+    return { caller: "Unavailable" };
+  let identity: WorkerPoolIdentity | undefined;
+  try {
+    identity = await workerPoolAdmitted(
+      service.registry,
+      service.access,
+      authenticated.bearer.principal,
+    );
+  } catch (failure) {
+    if (failure instanceof ProjectAccessUnavailable)
+      return { caller: "Unavailable" };
+    throw failure;
+  }
+  return identity === undefined
+    ? { caller: "Unknown" }
+    : { caller: "Pool", identity };
+}
+
+/** The one answer each refusal is given, so no route spells a status of its own. */
+function poolRefused(
+  reply: FastifyReply,
+  caller: Exclude<PoolCaller["caller"], "Pool">,
+): FastifyReply {
+  switch (caller) {
+    case "InvalidToken":
+      return reply.code(401).send({ action: "stop" });
+    case "Unknown":
+      return reply.code(404).send({ action: "stop" });
+    case "Unavailable":
+      return reply.code(503).send({ action: "retry" });
+  }
 }
 
 /**
@@ -121,14 +180,14 @@ function poolAssignmentsRoute(
   service: PoolPlaneService,
 ): void {
   app.get(poolPlaneRoutes[2], async (request, reply) => {
-    const identity = await poolCaller(service, request);
-    if (identity === undefined) return reply.code(401).send({ action: "stop" });
+    const caller = await poolCaller(service, request);
+    if (caller.caller !== "Pool") return poolRefused(reply, caller.caller);
     const held = poolHeld(request, service.settings.heldMax);
     if (held === undefined)
       return reply.code(400).send({ action: "stop", reason: "InvalidHeld" });
     const answered = await workerPoolPoll(
       service.assignments,
-      identity,
+      caller.identity,
       held,
       service.settings,
       service.mint,
@@ -164,8 +223,8 @@ async function poolOutcomeAnswered(
   reply: FastifyReply,
   outcome: "Accepted" | "Refused" | "Unavailable",
 ): Promise<unknown> {
-  const identity = await poolCaller(service, request);
-  if (identity === undefined) return reply.code(401).send({ action: "stop" });
+  const caller = await poolCaller(service, request);
+  if (caller.caller !== "Pool") return poolRefused(reply, caller.caller);
   const assignment = poolAssignmentNamed(request);
   if (assignment === undefined)
     return reply
@@ -181,7 +240,7 @@ async function poolOutcomeAnswered(
     return reply.code(400).send({ action: "stop", reason: "InvalidOutcome" });
   const settled = await poolOutcomeSettled(
     service,
-    identity,
+    caller.identity,
     assignment,
     offered.data,
   );
