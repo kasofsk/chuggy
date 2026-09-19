@@ -29,7 +29,7 @@ async function stateSamples(
     project: string;
     state: string;
     held: string;
-    unreported: string;
+    unreported: string | null;
   }>(sql`SELECT tenant,project,state,count(*)::text AS held,
       sum(attempts_unreported)::text AS unreported
     FROM ticket_execution GROUP BY tenant,project,state`);
@@ -83,12 +83,12 @@ async function totalSamples(
   const found = await pool.query<{
     tenant: string;
     project: string;
-    cost: string;
-    turns: string;
-    input: string;
-    output: string;
-    cache_creation: string;
-    cache_read: string;
+    cost: string | null;
+    turns: string | null;
+    input: string | null;
+    output: string | null;
+    cache_creation: string | null;
+    cache_read: string | null;
   }>(sql`SELECT tenant,project,
       sum(cost_usd_micros)::text AS cost, sum(turns)::text AS turns,
       sum(tokens_input)::text AS input, sum(tokens_output)::text AS output,
