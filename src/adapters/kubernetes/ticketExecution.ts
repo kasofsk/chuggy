@@ -35,12 +35,13 @@ import {
   kubernetesCredentials,
   kubernetesPodNamePrefix,
   kubernetesPositive,
+  kubernetesPodSecret,
   kubernetesReservedVariables,
+  kubernetesWorkloadPod,
   type KubernetesContainer,
   type KubernetesPod,
   type KubernetesPodSite,
   type KubernetesResourceBudget,
-  type KubernetesSecret,
   type KubernetesWorkloadDatabase,
 } from "./kubernetesSite.ts";
 
@@ -302,87 +303,44 @@ function ticketPod(
   view: TicketExecutionView,
 ): KubernetesPod {
   const name = kubernetesTicketExecutionPodName(config, claim);
-  const profile = ticketExecutionProfile(view);
-  return {
-    apiVersion: "v1",
-    kind: "Pod",
-    metadata: {
-      name,
-      namespace: config.namespace,
-      labels: config.podLabels,
-      annotations: {
-        ...config.podAnnotations,
-        [`${kubernetesAnnotationPrefix}tenant`]: claim.partition.tenant,
-        [`${kubernetesAnnotationPrefix}project`]: claim.partition.project,
-        [`${kubernetesAnnotationPrefix}task-key`]: claim.taskKey,
-        [`${kubernetesAnnotationPrefix}attempt`]: String(claim.attempt),
+  return kubernetesWorkloadPod({
+    site: config,
+    name,
+    labels: config.podLabels,
+    annotations: {
+      ...config.podAnnotations,
+      [`${kubernetesAnnotationPrefix}tenant`]: claim.partition.tenant,
+      [`${kubernetesAnnotationPrefix}project`]: claim.partition.project,
+      [`${kubernetesAnnotationPrefix}task-key`]: claim.taskKey,
+      [`${kubernetesAnnotationPrefix}attempt`]: String(claim.attempt),
+    },
+    activeDeadlineSecs: config.activeDeadlineSecs,
+    nodeSelector: config.nodeSelector,
+    tolerations: [],
+    initContainers:
+      config.database === undefined
+        ? []
+        : [ticketDatabaseContainer(config, config.database)],
+    containers: [
+      {
+        name: "ticket-worker",
+        image: config.image,
+        env: ticketEnvironment(config, name),
+        resources: ticketResources(config, ticketExecutionProfile(view)),
+        securityContext: config.containerSecurityContext,
+        volumeMounts: [
+          {
+            name: "workspace",
+            mountPath: config.workspacePath,
+            readOnly: false,
+          },
+          { name: "control", mountPath: "/tmp", readOnly: false },
+          ...credentials.mounts,
+        ],
       },
-    },
-    spec: {
-      restartPolicy: "Never",
-      serviceAccountName: config.serviceAccountName,
-      automountServiceAccountToken: false,
-      activeDeadlineSeconds: config.activeDeadlineSecs,
-      nodeSelector: config.nodeSelector,
-      securityContext: config.podSecurityContext,
-      ...(config.database === undefined
-        ? {}
-        : {
-            initContainers: [ticketDatabaseContainer(config, config.database)],
-          }),
-      containers: [
-        {
-          name: "ticket-worker",
-          image: config.image,
-          env: ticketEnvironment(config, name),
-          resources: ticketResources(config, profile),
-          securityContext: config.containerSecurityContext,
-          volumeMounts: [
-            {
-              name: "workspace",
-              mountPath: config.workspacePath,
-              readOnly: false,
-            },
-            {
-              name: "control",
-              mountPath: "/tmp",
-              readOnly: false,
-            },
-            ...credentials.mounts,
-          ],
-        },
-      ],
-      volumes: ticketVolumes(config, credentials),
-    },
-  };
-}
-
-function ticketSecret(
-  config: KubernetesTicketExecutionConfig,
-  pod: KubernetesPod,
-  podUid: string,
-  envelope: string,
-): KubernetesSecret {
-  return {
-    apiVersion: "v1",
-    kind: "Secret",
-    immutable: true,
-    metadata: {
-      name: pod.metadata.name,
-      namespace: config.namespace,
-      ownerReferences: [
-        {
-          apiVersion: "v1",
-          kind: "Pod",
-          name: pod.metadata.name,
-          uid: podUid,
-          controller: true,
-          blockOwnerDeletion: true,
-        },
-      ],
-    },
-    stringData: { task: envelope },
-  };
+    ],
+    volumes: ticketVolumes(config, credentials),
+  });
 }
 
 interface TicketRunnerState {
@@ -469,11 +427,8 @@ async function ticketLaunch(
   const secret = await kubernetesEnsureSecret(
     state.config,
     state.fetcher,
-    ticketSecret(
-      state.config,
-      pod,
-      uid,
-      ticketEnvelope(
+    kubernetesPodSecret(pod, uid, {
+      task: ticketEnvelope(
         state.config,
         claim,
         bearer,
@@ -481,7 +436,7 @@ async function ticketLaunch(
           ? undefined
           : credentials.files[providerCredential],
       ),
-    ),
+    }),
   );
   if (
     secret.reached !== "Status" ||
