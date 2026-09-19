@@ -51,10 +51,11 @@ export const registerPoolVariables = {
 
 /**
  * The relation a pool is written into. `Execute` is what the plane asks for and
- * `develop` is the permit it resolves to in the deployed model, so `developers`
- * is the narrowest relation that answers it.
+ * `execute` is the permit it resolves to, which the deployed model follows from
+ * this relation alone — so a pool holds that one permit and nothing a person's
+ * relation carries.
  */
-export const workerPoolGrantRelation = "developers";
+export const workerPoolGrantRelation = "pools";
 
 /** The access the relation above is written to satisfy, named so the pair reads together. */
 export const workerPoolGrantedAccess: ProjectAccessKind = "Execute";

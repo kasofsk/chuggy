@@ -153,8 +153,12 @@ A pool is a confidential OAuth2 client of the issuer this installation already
 runs, and nothing about it is a secret this tree stores. An owner mints a
 short-lived single-use registration token for one project over the API, an
 operator configures the machine with it, and redeeming it creates the client,
-writes the `developers` relation the authority answers `Execute` from, and
-answers the client id and secret once.
+writes the `pools` relation the authority answers `Execute` from, and answers
+the client id and secret once.
+
+**That relation carries `Execute` and nothing else.** `deploy/rig/pools/README.md`
+is what a pool is trusted with, what it is not, and the order an operator makes
+the writes in.
 
 `src/roots/registerWorkerPool.ts` is the same three writes as an owner's own
 command, for a machine the owner is at. It reads `CHUG_WORKER_POOL_DATABASE_URL`,

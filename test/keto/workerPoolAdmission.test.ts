@@ -57,7 +57,7 @@ test("a registered pool the authority permits is admitted with what it declared"
       subject: "chuggy-pool-admitted",
       tenant: partition.tenant,
       project: partition.project,
-      relation: "developers",
+      relation: "pools",
     }),
   );
   assert.deepEqual(

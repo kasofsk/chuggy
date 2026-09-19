@@ -64,7 +64,7 @@ test("registration mints a client, writes the relation and records the principal
   assert.match(reported, /a-secret/u);
   assert.deepEqual(made.made, [
     ["create", "chuggy-pool-fixed"],
-    ["write", "developers"],
+    ["write", "pools"],
     [
       "register",
       {
@@ -85,7 +85,7 @@ test("a registration the row refused leaves neither a client nor a relation behi
     /NotRegistered/u,
   );
   assert.deepEqual(made.made.slice(3), [
-    ["revoke", "developers"],
+    ["revoke", "pools"],
     ["remove", "chuggy-pool-fixed"],
   ]);
 });
@@ -104,7 +104,7 @@ test("deregistration takes off the client the row named", async () => {
   );
   assert.deepEqual(made.made, [
     ["deregister", "pool-one"],
-    ["revoke", "developers"],
+    ["revoke", "pools"],
     ["remove", "chuggy-pool-was-here"],
   ]);
 });
