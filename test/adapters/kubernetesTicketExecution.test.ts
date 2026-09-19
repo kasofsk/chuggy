@@ -57,7 +57,7 @@ const config: KubernetesTicketExecutionConfig = {
   environment: { TICKET_SITE: "configured" },
   podNamePrefix: "ticket",
   image: "registry.invalid/ticket-worker:1",
-  callbackUrl: "https://worker.invalid/v1/ticket-terminal",
+  callbackUrl: "https://worker.invalid/v1/ticket-execution",
   credentialUsername: "x-access-token",
   resources: {
     cpuRequest: "100m",
@@ -175,17 +175,19 @@ function assertSecretEnvelope(requests: readonly ClusterRequest[]): void {
   const secret = JSON.parse(postedBody(requests, "/secrets")) as {
     readonly stringData: { readonly task: string };
   };
-  const envelope = JSON.parse(secret.stringData.task) as {
-    readonly bearer: string;
-    readonly transportUrl: string;
-    readonly providerCredentialFile: string;
-    readonly view: { readonly repository: string };
-  };
-  assert.equal(envelope.bearer, "attempt-secret");
-  assert.equal(envelope.view.repository, view.repository);
-  assert.equal(new URL(envelope.transportUrl).password, "repository-token");
+  const envelope = JSON.parse(secret.stringData.task) as Record<
+    string,
+    unknown
+  >;
+  assert.equal(envelope["bearer"], "attempt-secret");
+  assert.equal(envelope["view"], undefined);
+  assert.equal(envelope["callbackUrl"], config.callbackUrl);
   assert.equal(
-    envelope.providerCredentialFile,
+    new URL(String(envelope["transportUrl"])).password,
+    "repository-token",
+  );
+  assert.equal(
+    envelope["providerCredentialFile"],
     "/var/run/chuggy/codex/auth.json",
   );
   const pod = JSON.parse(postedBody(requests, "/pods")) as {
@@ -224,8 +226,9 @@ test("launches one isolated adopted worker and keeps its authority in the Secret
   const outcomes = { reads: 0 };
   const runner = kubernetesTicketExecutionRunner(
     {
-      bind: (_claim, secret) => {
+      bind: (_claim, secret, bound) => {
         assert.equal(secret, "attempt-secret");
+        assert.equal(bound, view);
         return Promise.resolve(true);
       },
       outcome: () => ticketOutcome(outcomes),

@@ -8,6 +8,12 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 
 import { prepare_commit } from "./commitHooks.ts";
 
+/**
+ * What the launcher hands this process, which is only what no callback could:
+ * where to call, what to call as, and the remote it pushes to. Everything else
+ * about the task is fetched from the callback, so a pool that placed this
+ * process carries a token and a URL and nothing of the ticket at all.
+ */
 interface TicketWorkerEnvelope {
   readonly taskKey: string;
   readonly callbackUrl: string;
@@ -17,19 +23,43 @@ interface TicketWorkerEnvelope {
   readonly outputBytesMax: number;
   readonly transportUrl: string;
   readonly providerCredentialFile?: string;
-  readonly view: {
-    readonly workload: unknown;
-    readonly inputs: unknown;
-    readonly resultContract: unknown;
-    readonly requiredCapabilities: readonly string[];
-    readonly context: readonly {
-      readonly reference: number;
-      readonly value: unknown;
-    }[];
-    readonly repository: string;
-    readonly commit: string;
-    readonly access: "ReadRepository" | "PublishRepositoryResult";
-  };
+}
+
+interface TicketWorkerView {
+  readonly workload: unknown;
+  readonly inputs: unknown;
+  readonly resultContract: unknown;
+  readonly requiredCapabilities: readonly string[];
+  readonly context: readonly {
+    readonly reference: number;
+    readonly value: unknown;
+  }[];
+  readonly repository: string;
+  readonly commit: string;
+  readonly access: "ReadRepository" | "PublishRepositoryResult";
+}
+
+/** Where the callback answers this attempt's own routes. */
+function ticketWorkerRoute(held: TicketWorkerEnvelope, route: string): string {
+  return new URL(route, `${held.callbackUrl}/`).toString();
+}
+
+/** The resolved view this attempt runs against, fetched under its own bearer. */
+async function ticketWorkerView(
+  held: TicketWorkerEnvelope,
+): Promise<TicketWorkerView> {
+  const response = await fetch(ticketWorkerRoute(held, "view"), {
+    headers: { authorization: `Bearer ${held.bearer}` },
+  });
+  if (!response.ok)
+    throw new Error(
+      `ticket worker view was refused with ${String(response.status)}`,
+    );
+  const view = record(await response.json(), "view");
+  for (const name of ["repository", "commit", "access"])
+    if (typeof view[name] !== "string" || String(view[name]).length === 0)
+      throw new TypeError(`ticket worker view ${name} is invalid`);
+  return view as unknown as TicketWorkerView;
 }
 
 interface Ran {
@@ -51,10 +81,6 @@ function record(value: unknown, what: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function safeView(held: TicketWorkerEnvelope): TicketWorkerEnvelope["view"] {
-  return held.view;
-}
-
 function workerEvidence(held: TicketWorkerEnvelope, evidence: string): string {
   let scrubbed = evidence.replaceAll(held.bearer, "[REDACTED]");
   try {
@@ -70,7 +96,6 @@ function workerEvidence(held: TicketWorkerEnvelope, evidence: string): string {
 
 function envelope(value: unknown): TicketWorkerEnvelope {
   const found = record(value, "envelope");
-  const view = record(found["view"], "view");
   for (const name of [
     "taskKey",
     "callbackUrl",
@@ -80,9 +105,6 @@ function envelope(value: unknown): TicketWorkerEnvelope {
   ])
     if (typeof found[name] !== "string" || found[name].length === 0)
       throw new TypeError(`ticket worker ${name} is invalid`);
-  for (const name of ["repository", "commit", "access"])
-    if (typeof view[name] !== "string" || view[name].length === 0)
-      throw new TypeError(`ticket worker view ${name} is invalid`);
   for (const name of ["timeoutSecsMax", "outputBytesMax"])
     if (!Number.isSafeInteger(found[name]) || Number(found[name]) < 1)
       throw new TypeError(`ticket worker ${name} is invalid`);
@@ -121,7 +143,7 @@ export function ticketWorkerPrompt(
   taskKey: string,
   workload: Record<string, unknown>,
   inputs: unknown,
-  context: TicketWorkerEnvelope["view"]["context"],
+  context: TicketWorkerView["context"],
 ): string {
   return [
     optionalString(workload, "prompt", ""),
@@ -364,7 +386,10 @@ async function git(
   return ran.stdout.trim();
 }
 
-async function checkout(held: TicketWorkerEnvelope): Promise<void> {
+async function checkout(
+  held: TicketWorkerEnvelope,
+  view: TicketWorkerView,
+): Promise<void> {
   await mkdir(held.workspace, { recursive: true });
   await git(["init", "--quiet"], held.workspace, held);
   await git(
@@ -373,7 +398,7 @@ async function checkout(held: TicketWorkerEnvelope): Promise<void> {
     held,
   );
   await git(
-    ["fetch", "--quiet", "--depth=1", "origin", held.view.commit],
+    ["fetch", "--quiet", "--depth=1", "origin", view.commit],
     held.workspace,
     held,
   );
@@ -386,6 +411,7 @@ async function checkout(held: TicketWorkerEnvelope): Promise<void> {
 
 async function workloadInvocation(
   held: TicketWorkerEnvelope,
+  view: TicketWorkerView,
   workload: Record<string, unknown>,
 ): Promise<{
   readonly command: readonly string[];
@@ -401,15 +427,15 @@ async function workloadInvocation(
       environment: {
         ...childEnvironment(),
         ...(authored as Record<string, string>),
-        CHUG_INPUTS: JSON.stringify(held.view.inputs),
-        CHUG_TASK: JSON.stringify(safeView(held)),
+        CHUG_INPUTS: JSON.stringify(view.inputs),
+        CHUG_TASK: JSON.stringify(view),
       },
     };
   }
   const control = await mkdtemp(join(tmpdir(), "chug-ticket-agent-"));
   await writeFile(
     join(control, "schema.json"),
-    JSON.stringify(held.view.resultContract),
+    JSON.stringify(view.resultContract),
   );
   const agent = await ticketWorkerAgentCommand(
     {
@@ -417,8 +443,8 @@ async function workloadInvocation(
       prompt: ticketWorkerPrompt(
         held.taskKey,
         workload,
-        held.view.inputs,
-        held.view.context,
+        view.inputs,
+        view.context,
       ),
     },
     held.workspace,
@@ -431,8 +457,8 @@ async function workloadInvocation(
     command: agent.argv,
     environment: {
       ...agent.environment,
-      CHUG_TASK: JSON.stringify(safeView(held)),
-      CHUG_CONTEXT: JSON.stringify(held.view.context),
+      CHUG_TASK: JSON.stringify(view),
+      CHUG_CONTEXT: JSON.stringify(view.context),
     },
     control,
   };
@@ -445,14 +471,15 @@ async function invocationCleanup(control: string | undefined): Promise<void> {
 
 async function publishedResult(
   held: TicketWorkerEnvelope,
+  view: TicketWorkerView,
   workload: Record<string, unknown>,
   manifest: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  if (held.view.access === "ReadRepository")
+  if (view.access === "ReadRepository")
     return { type: "result", manifest, outputs: [] };
   const commit = await prepare_commit(
     held.workspace,
-    held.view.commit,
+    view.commit,
     workload,
     () => {},
     childEnvironment(),
@@ -466,16 +493,17 @@ async function publishedResult(
   return {
     type: "result",
     manifest,
-    outputs: [{ repository: held.view.repository, commit }],
+    outputs: [{ repository: view.repository, commit }],
   };
 }
 
 async function execute(
   held: TicketWorkerEnvelope,
+  view: TicketWorkerView,
 ): Promise<Record<string, unknown>> {
-  await checkout(held);
-  const workload = record(held.view.workload, "workload");
-  const invocation = await workloadInvocation(held, workload);
+  await checkout(held, view);
+  const workload = record(view.workload, "workload");
+  const invocation = await workloadInvocation(held, view, workload);
   let ran: Ran;
   try {
     ran = await run(
@@ -523,7 +551,7 @@ async function execute(
     if (invocation.control !== undefined)
       await rm(invocation.control, { recursive: true, force: true });
   }
-  return publishedResult(held, workload, manifest);
+  return publishedResult(held, view, workload, manifest);
 }
 
 export async function ticketWorkerMain(
@@ -535,7 +563,7 @@ export async function ticketWorkerMain(
   const held = envelope(JSON.parse(source) as unknown);
   let outcome: Record<string, unknown>;
   try {
-    outcome = await execute(held);
+    outcome = await execute(held, await ticketWorkerView(held));
   } catch (error) {
     outcome = {
       type: "process_failed",
@@ -545,7 +573,7 @@ export async function ticketWorkerMain(
       ),
     };
   }
-  const response = await fetch(held.callbackUrl, {
+  const response = await fetch(ticketWorkerRoute(held, "terminal"), {
     method: "POST",
     headers: {
       authorization: `Bearer ${held.bearer}`,

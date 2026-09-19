@@ -51,7 +51,11 @@ import {
 } from "./kubernetesSite.ts";
 
 export interface TicketExecutionTerminals {
-  bind(claim: TicketExecutionClaim, secret: string): Promise<boolean>;
+  bind(
+    claim: TicketExecutionClaim,
+    secret: string,
+    view: TicketExecutionView,
+  ): Promise<boolean>;
   outcome(claim: TicketExecutionClaim): Promise<unknown>;
   renew(claim: TicketExecutionClaim, leaseSecs: number): Promise<boolean>;
 }
@@ -176,10 +180,15 @@ function ticketRemote(
   return remote.href;
 }
 
+/**
+ * What the pod is launched with, which is what no callback can hand it: where
+ * to call, what it may call as, and the write-scoped remote it pushes to. The
+ * view is not here — the harness fetches that from the callback, the way a
+ * pool beyond this cluster has to.
+ */
 function ticketEnvelope(
   config: KubernetesTicketExecutionConfig,
   claim: TicketExecutionClaim,
-  view: TicketExecutionView,
   repository: string,
   bearer: string,
   providerCredentialFile: string | undefined,
@@ -193,16 +202,6 @@ function ticketEnvelope(
     outputBytesMax: config.outputBytesMax,
     transportUrl: repository,
     ...(providerCredentialFile === undefined ? {} : { providerCredentialFile }),
-    view: {
-      workload: view.workload,
-      inputs: view.inputs,
-      resultContract: view.resultContract,
-      requiredCapabilities: view.requiredCapabilities,
-      context: view.context,
-      repository: view.repository,
-      commit: view.commit,
-      access: view.access,
-    },
   });
 }
 
@@ -544,7 +543,6 @@ async function ticketLaunch(
       ticketEnvelope(
         state.config,
         claim,
-        view,
         repository,
         bearer,
         providerCredential === undefined
@@ -576,7 +574,7 @@ async function ticketRun(
   const repository = await ticketRepository(state, claim, view);
   if (typeof repository !== "string") return repository;
   const bearer = state.mint();
-  if (!(await state.terminals.bind(claim, bearer)))
+  if (!(await state.terminals.bind(claim, bearer, view)))
     return ticketRetry(state, "ticket execution claim was fenced");
   return ticketLaunch(state, claim, view, repository, bearer);
 }

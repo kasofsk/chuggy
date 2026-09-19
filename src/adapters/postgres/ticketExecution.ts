@@ -9,9 +9,11 @@ import {
   type Partition,
   type RecoveryEpoch,
 } from "../../interpreter/projectStore.ts";
-import type {
-  TicketExecutionClaim,
-  TicketExecutionStore,
+import {
+  ticketExecutionWorkerView,
+  type TicketExecutionClaim,
+  type TicketExecutionStore,
+  type TicketExecutionView,
 } from "../../interpreter/ticketExecution.ts";
 import type { TicketMachineInput } from "../../interpreter/ticketMachine.ts";
 import { postgresTransaction } from "./pool.ts";
@@ -282,10 +284,46 @@ function ticketTerminalBody(value: unknown):
     : undefined;
 }
 
+/** Binds one attempt to the bearer its harness answers under, and to the view it is served. */
+async function executionBind(
+  pool: pg.Pool,
+  claim: TicketExecutionClaim,
+  capabilityDigest: string,
+  view: TicketExecutionView,
+): Promise<boolean> {
+  const updated =
+    await pool.query(sql`UPDATE ticket_execution SET capability_digest=${capabilityDigest},
+      worker_view=${JSON.stringify(ticketExecutionWorkerView(view))}::jsonb
+    WHERE tenant=${claim.partition.tenant} AND project=${claim.partition.project}
+      AND task_key=${claim.taskKey} AND state='Running' AND attempt=${claim.attempt}
+      AND recovery_epoch=${claim.recoveryEpoch} AND claim_expires_at>now()
+      AND recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1) AND capability_digest IS NULL`);
+  return (updated.rowCount ?? 0) === 1;
+}
+
+/** The view one live attempt is served, found by the digest of the bearer asking. */
+async function executionWorkerView(
+  pool: pg.Pool,
+  capabilityDigest: string,
+): Promise<unknown> {
+  const found = await pool.query<{
+    worker_view: unknown;
+  }>(sql`SELECT worker_view FROM ticket_execution
+    WHERE capability_digest=${capabilityDigest} AND state='Running'
+      AND claim_expires_at>now()
+      AND recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`);
+  return found.rows[0]?.worker_view ?? undefined;
+}
+
 export function postgresTicketExecutionTerminals(pool: pg.Pool): {
-  bind(claim: TicketExecutionClaim, secret: string): Promise<boolean>;
+  bind(
+    claim: TicketExecutionClaim,
+    secret: string,
+    view: TicketExecutionView,
+  ): Promise<boolean>;
   renew(claim: TicketExecutionClaim, leaseSecs: number): Promise<boolean>;
   outcome(claim: TicketExecutionClaim): Promise<unknown>;
+  view(secret: string): Promise<unknown>;
   report(
     secret: string,
     body: unknown,
@@ -305,15 +343,8 @@ export function postgresTicketExecutionTerminals(pool: pg.Pool): {
           AND EXISTS(SELECT 1 FROM project p WHERE p.tenant=e.tenant AND p.project=e.project AND p.lifecycle='Active')`);
       return updated.rowCount === 1;
     },
-    bind: async (claim, secret) => {
-      const updated =
-        await pool.query(sql`UPDATE ticket_execution SET capability_digest=${digest(secret)}
-        WHERE tenant=${claim.partition.tenant} AND project=${claim.partition.project}
-          AND task_key=${claim.taskKey} AND state='Running' AND attempt=${claim.attempt}
-          AND recovery_epoch=${claim.recoveryEpoch} AND claim_expires_at>now()
-          AND recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1) AND capability_digest IS NULL`);
-      return (updated.rowCount ?? 0) === 1;
-    },
+    bind: (claim, secret, view) =>
+      executionBind(pool, claim, digest(secret), view),
     outcome: async (claim) => {
       const found = await pool.query<{
         worker_outcome: unknown;
@@ -324,6 +355,7 @@ export function postgresTicketExecutionTerminals(pool: pg.Pool): {
           AND recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`);
       return found.rows[0]?.worker_outcome ?? undefined;
     },
+    view: (secret) => executionWorkerView(pool, digest(secret)),
     report: async (secret, offered) => {
       const body = ticketTerminalBody(offered);
       if (body === undefined) return "Conflict";

@@ -69,6 +69,7 @@ export const workerPlaneRoutes = [
   "/v1/session/store/*",
   "/v1/session/credential",
   "/v1/ticket-execution/terminal",
+  "/v1/ticket-execution/view",
 ] as const;
 
 const sessionStorePrefix = "/v1/session/store/";
@@ -98,6 +99,7 @@ export interface WorkerPlaneServerService {
       secret: string,
       body: unknown,
     ): Promise<"Recorded" | "Conflict" | "Fenced">;
+    view(secret: string): Promise<unknown>;
   };
 }
 
@@ -120,19 +122,33 @@ function rawBearer(request: FastifyRequest): string | undefined {
     : undefined;
 }
 
-function ticketExecutionTerminalRoute(
+/**
+ * What one attempt is and what it produced, both reached by the same attempt
+ * bearer and by nothing else. Neither route names a pod, a namespace or a
+ * launcher: a harness a worker pool started on a machine this tree has never
+ * seen calls exactly these, which is the whole point of them being here.
+ */
+function ticketExecutionRoutes(
   app: FastifyInstance,
   service: WorkerPlaneServerService,
 ): void {
-  const terminal = service.ticketExecutions;
-  if (terminal === undefined) return;
+  const attempts = service.ticketExecutions;
+  if (attempts === undefined) return;
   app.post(workerPlaneRoutes[12], async (request, reply) => {
     const secret = rawBearer(request);
     if (secret === undefined) return reply.code(401).send({ action: "stop" });
-    const reported = await terminal.report(secret, request.body);
+    const reported = await attempts.report(secret, request.body);
     return reported === "Recorded"
       ? reply.code(204).send()
       : reply.code(409).send({ action: "stop", reason: reported });
+  });
+  app.get(workerPlaneRoutes[13], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const view = await attempts.view(secret);
+    return view === undefined
+      ? reply.code(401).send({ action: "stop" })
+      : reply.code(200).send(view);
   });
 }
 
@@ -764,7 +780,7 @@ export function createWorkerPlaneApp(
     },
   );
   workerHealthRoutes(app, service);
-  ticketExecutionTerminalRoute(app, service);
+  ticketExecutionRoutes(app, service);
   const sessions = service.sessions;
   if (sessions !== undefined) {
     sessionBoundsChecked(sessions);

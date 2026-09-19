@@ -20,6 +20,7 @@ import {
   dispatch,
   work_obligation,
 } from "../chuggernaut/domain/testing.js";
+import type { TicketExecutionView } from "../../src/interpreter/ticketExecution.ts";
 import {
   postgresHarnessOpen,
   postgresHarnessEpoch,
@@ -43,6 +44,18 @@ after(async () => {
   await Promise.all([writer.end(), scheduler.end(), worker.end()]);
   await harness.close();
 });
+
+/** The view an attempt's harness is served, which the bind writes beside its bearer. */
+const workerView = {
+  workload: { runner: "script", command: ["just", "check"] },
+  inputs: {},
+  resultContract: { type: "object" },
+  requiredCapabilities: [],
+  context: [],
+  repository: "https://git.invalid/owner/repository.git",
+  commit: "0123456789012345678901234567890123456789",
+  access: "ReadRepository",
+} as unknown as TicketExecutionView;
 
 function obligation() {
   const driver = new Driver();
@@ -193,7 +206,11 @@ test("attempt takeover fences worker capabilities and terminal queue acceptance"
   assert.ok(first);
   const terminals = postgresTicketExecutionTerminals(scheduler);
   const reports = postgresTicketExecutionTerminals(worker);
-  assert.equal(await terminals.bind(first, "first-capability"), true);
+  assert.equal(
+    await terminals.bind(first, "first-capability", workerView),
+    true,
+  );
+  assert.deepEqual(await reports.view("first-capability"), workerView);
   assert.equal(
     await reports.report("first-capability", {
       taskKey: first.taskKey,
@@ -211,7 +228,11 @@ test("attempt takeover fences worker capabilities and terminal queue acceptance"
   assert.ok(second);
   assert.equal(second.attempt, first.attempt + 1);
   assert.equal(await terminals.outcome(second), undefined);
-  assert.equal(await terminals.bind(second, "second-capability"), true);
+  assert.equal(
+    await terminals.bind(second, "second-capability", workerView),
+    true,
+  );
+  assert.equal(await reports.view("first-capability"), undefined);
   assert.equal(
     await reports.report("first-capability", {
       taskKey: first.taskKey,

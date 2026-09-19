@@ -91,7 +91,7 @@ function ticketExecutionRuntimeRunner(
       ...config.workers,
       image: settings.image,
       callbackUrl: new URL(
-        "/v1/ticket-execution/terminal",
+        "/v1/ticket-execution",
         config.workers.workerPlaneUrl,
       ).toString(),
       credentialUsername: settings.credentialUsername,

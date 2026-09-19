@@ -239,6 +239,30 @@ test("Claude receives the adopted tools, model, effort, budget, prompt, and resu
   }
 });
 
+/** A view whose script reports back what the harness let it see of the attempt. */
+function scriptWorkerView(
+  remote: string,
+  commit: string,
+): Record<string, unknown> {
+  return {
+    workload: {
+      runner: "script",
+      command: [
+        process.execPath,
+        "-e",
+        'const task=JSON.parse(process.env.CHUG_TASK); console.log(JSON.stringify({verdict:"arbitrary",findings:"opaque",launcher:process.env.CHUG_TICKET_WORKER_TASK,leaked:Object.hasOwn(task,"bearer")}))',
+      ],
+    },
+    inputs: {},
+    resultContract: { type: "object" },
+    requiredCapabilities: [],
+    context: [],
+    repository: remote,
+    commit,
+    access: "ReadRepository",
+  };
+}
+
 test("the adopted script worker checks out, executes, and reports through its callback", async () => {
   const root = await mkdtemp(join(tmpdir(), "ticket-worker-"));
   const { remote, commit } = await ticketRepository(root);
@@ -246,7 +270,18 @@ test("the adopted script worker checks out, executes, and reports through its ca
   const prior = globalThis.fetch;
   const priorTask = process.env["CHUG_TICKET_WORKER_TASK"];
   let reported: unknown;
-  globalThis.fetch = (_input, init) => {
+  const view = scriptWorkerView(remote, commit);
+  const called: string[] = [];
+  globalThis.fetch = (input, init) => {
+    const url =
+      input instanceof URL
+        ? input.href
+        : typeof input === "string"
+          ? input
+          : input.url;
+    called.push(`${init?.method ?? "GET"} ${url}`);
+    if ((init?.method ?? "GET") === "GET")
+      return Promise.resolve(Response.json(view));
     if (typeof init?.body !== "string")
       throw new Error("callback body is absent");
     reported = JSON.parse(init.body) as unknown;
@@ -254,32 +289,19 @@ test("the adopted script worker checks out, executes, and reports through its ca
   };
   process.env["CHUG_TICKET_WORKER_TASK"] = JSON.stringify({
     taskKey: "work:1:1",
-    callbackUrl: "https://callback.invalid/terminal",
+    callbackUrl: "https://callback.invalid/v1/ticket-execution",
     bearer: "attempt-secret",
     workspace,
     timeoutSecsMax: 10,
     outputBytesMax: 4096,
     transportUrl: remote,
-    view: {
-      workload: {
-        runner: "script",
-        command: [
-          process.execPath,
-          "-e",
-          'const task=JSON.parse(process.env.CHUG_TASK); console.log(JSON.stringify({verdict:"arbitrary",findings:"opaque",launcher:process.env.CHUG_TICKET_WORKER_TASK,leaked:Object.hasOwn(task,"bearer")}))',
-        ],
-      },
-      inputs: {},
-      resultContract: { type: "object" },
-      requiredCapabilities: [],
-      context: [],
-      repository: remote,
-      commit,
-      access: "ReadRepository",
-    },
   });
   try {
     await ticketWorkerMain(process.env);
+    assert.deepEqual(called, [
+      "GET https://callback.invalid/v1/ticket-execution/view",
+      "POST https://callback.invalid/v1/ticket-execution/terminal",
+    ]);
     assert.deepEqual(reported, {
       taskKey: "work:1:1",
       outcome: {

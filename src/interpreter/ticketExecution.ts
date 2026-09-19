@@ -283,6 +283,41 @@ export async function ticketExecutionView(
   };
 }
 
+/**
+ * What a harness is served over its callback, which is the resolved view with
+ * the machine's own source reference left out: a harness names a source it
+ * never reads, and a reference this project's content store keys on is nothing
+ * a pool beyond this cluster is entitled to.
+ */
+export interface TicketExecutionWorkerView {
+  readonly workload: unknown;
+  readonly inputs: unknown;
+  readonly resultContract: unknown;
+  readonly requiredCapabilities: readonly string[];
+  readonly context: readonly {
+    readonly reference: task.ContentRef;
+    readonly value: unknown;
+  }[];
+  readonly repository: string;
+  readonly commit: string;
+  readonly access: TicketExecutionAccess;
+}
+
+export function ticketExecutionWorkerView(
+  view: TicketExecutionView,
+): TicketExecutionWorkerView {
+  return {
+    workload: view.workload,
+    inputs: view.inputs,
+    resultContract: view.resultContract,
+    requiredCapabilities: view.requiredCapabilities,
+    context: view.context,
+    repository: view.repository,
+    commit: view.commit,
+    access: view.access,
+  };
+}
+
 export function ticketExecutionEffects(
   store: TicketExecutionStore,
 ): Pick<TicketMachineEffects, "execute" | "cancel"> {
