@@ -76,23 +76,6 @@ module.exports = {
       },
     },
     {
-      name: "actor-sees-domain-only",
-      comment:
-        "The actor is the journaled decision layer: it reads the domain and " +
-        "nothing else, transitively, by any path in the module graph. What " +
-        "that buys is the crash-seam demonstration — every actor step is a " +
-        "pure function of its state and picks, so crashing at every " +
-        "observable seam is exhaustive. This rule is the graph half of that " +
-        "and the ambient half is `eslint.config.js`, because a step that " +
-        "reads a clock takes no path anywhere for a graph rule to find.",
-      severity: "error",
-      from: { path: "^src/actor/" },
-      to: {
-        reachable: true,
-        path: "^(?!src/(domain|actor)/)",
-      },
-    },
-    {
       name: "interpreter-constructs-no-adapter",
       comment:
         "The interpreter declares the ports and never picks who answers them: " +
@@ -101,8 +84,7 @@ module.exports = {
         "second fabric change the core. Stated as reachability rather than as " +
         "an import, because the shape that breaks it is a relay — a module " +
         "belonging to neither directory that one imports and the other " +
-        "answers, which is what the domain and the actor are each already " +
-        "forbidden to be.",
+        "answers, which is what the domain is already forbidden to be.",
       severity: "error",
       from: { path: "^src/interpreter/" },
       to: { reachable: true, path: "^src/adapters/" },
@@ -126,6 +108,22 @@ module.exports = {
         path: "^src/adapters/",
         pathNot: "^src/adapters/$1(/|$)",
       },
+    },
+    {
+      name: "pool-plane-mints-no-credential",
+      comment:
+        "The plane a worker pool polls is the least-trusted outward-facing " +
+        "process this tree runs, and the one privilege it must never hold is " +
+        "the issuer's client registration: a pool that took that process " +
+        "could mint itself a second client and be some other project's pool. " +
+        "So the root that composes it may not reach the admin adapter at " +
+        "all — reachability rather than an import, because the shape that " +
+        "breaks it is a shared composition helper that names the admin " +
+        "address for both roots. Registration is an owner's command and the " +
+        "main API's, and both are other roots.",
+      severity: "error",
+      from: { path: "^src/roots/poolPlane[.]ts$" },
+      to: { reachable: true, path: "^src/adapters/hydra/" },
     },
     {
       name: "nothing-imports-a-process-root",
@@ -195,8 +193,9 @@ module.exports = {
         "the server side and would have no reason to permit here — what a " +
         "browser fetches for one console would be decided by the other's " +
         "needs. So a constant two consoles both need is written twice, and " +
-        "test/ui/ holds the copies equal, which is the arrangement already " +
-        "in force between the console and the server. Capture group and " +
+        "a suite beside each holds the copies equal, which is the " +
+        "arrangement already in force between the console and the server. " +
+        "Capture group and " +
         "segment anchor for the same reasons no-adapter-sees-another states " +
         "them: the interesting violation is a reachable helper rather than " +
         "one console importing another by name, and an unanchored name " +

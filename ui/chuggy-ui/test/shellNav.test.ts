@@ -23,24 +23,19 @@ test("every entry names a route of the partition and carries its params", () => 
   }
   expect(entries.map((entry) => entry.id)).toStrictEqual([
     "overview",
-    "inbox",
     "lead",
-    "selector",
     "repositories",
     "ticket-new",
   ]);
 });
 
-test("the inbox count and the lead's standing are drawn only where a read supplied them", () => {
+test("the lead's standing is drawn only where a read supplied it", () => {
   const silent = shellNav({ partition: atlas });
-  expect(silent.find((entry) => entry.id === "inbox")?.count).toBeUndefined();
   expect(silent.find((entry) => entry.id === "lead")?.standing).toBeUndefined();
   const told = shellNav({
     partition: atlas,
-    inboxCount: "3",
     leadStanding: { word: "Working", tone: "live" },
   });
-  expect(told.find((entry) => entry.id === "inbox")?.count).toBe("3");
   expect(told.find((entry) => entry.id === "lead")?.standing).toStrictEqual({
     word: "Working",
     tone: "live",

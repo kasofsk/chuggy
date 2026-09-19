@@ -18,13 +18,13 @@
 import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
 
-import type { TicketPhase } from "../../../../../src/contract/rosters.ts";
+import type { AdoptedTicket } from "../../../../../src/contract/adoptedTickets.ts";
 
 /** What a reference can say beyond the number, where the project has it to
  * hand. */
 export interface TicketReferenceFacts {
   readonly title: string | undefined;
-  readonly phase: TicketPhase;
+  readonly state: AdoptedTicket["state"];
 }
 
 export interface TicketReferenceHeld {

@@ -37,7 +37,7 @@
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
+export type ProjectResourceKind = "Project" | "Session" | "Thread" | "Ticket";
 
 export const projectQueryScope = "project";
 export const projectsQueryScope = "projects";
@@ -61,7 +61,7 @@ export function projectPartitionKey(
 
 export function projectResourceKey(
   partition: PartitionIdentity,
-  kind: ProjectChangeKind,
+  kind: ProjectResourceKind,
   resource: string,
 ): ProjectQueryKey {
   return [...projectPartitionKey(partition), kind, resource];
@@ -85,7 +85,7 @@ export function projectHeldKey(
 
 function projectListKey(
   partition: PartitionIdentity,
-  kind: ProjectChangeKind,
+  kind: ProjectResourceKind,
   name: string,
 ): ProjectQueryKey {
   return [...projectPartitionKey(partition), kind, projectListMarker, name];
@@ -130,7 +130,7 @@ const projectListWitness: unique symbol = Symbol("projectListWitness");
 
 /** A list entry and the refresh that keeps it live, which are one value. */
 export interface ProjectList<T> {
-  readonly kind: ProjectChangeKind;
+  readonly kind: ProjectResourceKind;
   readonly key: ProjectQueryKey;
   readonly refresh: ProjectListRefresh<T>;
   readonly [projectListWitness]: true;
@@ -138,7 +138,7 @@ export interface ProjectList<T> {
 
 function projectListOf<T>(
   partition: PartitionIdentity,
-  kind: ProjectChangeKind,
+  kind: ProjectResourceKind,
   name: string,
   refresh: ProjectListRefresh<T>,
 ): ProjectList<T> {
@@ -152,7 +152,7 @@ function projectListOf<T>(
 
 export function projectListFolded<T>(
   partition: PartitionIdentity,
-  kind: ProjectChangeKind,
+  kind: ProjectResourceKind,
   name: string,
   fold: (previous: T | undefined, change: ProjectListChange) => T | undefined,
 ): ProjectList<T> {
@@ -163,7 +163,7 @@ export function projectListFolded<T>(
  * carries and none of them therefore settles. */
 export function projectListReread<T>(
   partition: PartitionIdentity,
-  kind: ProjectChangeKind,
+  kind: ProjectResourceKind,
   name: string,
 ): ProjectList<T> {
   return projectListOf(partition, kind, name, { refresh: "Reread" });
@@ -181,7 +181,7 @@ export function projectListReread<T>(
  */
 export function projectListRereadNamed<T>(
   partition: PartitionIdentity,
-  kind: ProjectChangeKind,
+  kind: ProjectResourceKind,
   name: string,
   names: (change: ProjectListChange) => boolean,
 ): ProjectList<T> {

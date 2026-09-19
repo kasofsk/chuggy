@@ -15,23 +15,13 @@ import { after, before, test } from "node:test";
 import { randomUUID } from "node:crypto";
 
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
-import {
-  agenticRefusalLedgerAnsweredMax,
-  agenticRefusalsAnsweredMax,
-  selectorHistoryLimitMax,
-  sessionStorePageBatchesMax,
-} from "../../src/contract/http.ts";
-import {
-  agenticRefusalsResponseSchema,
-  leadResponseSchema,
-  leadTranscriptResponseSchema,
-  selectorHistoryResponseSchema,
-  ticketAgenticRefusalsResponseSchema,
-} from "../../src/contract/responses.ts";
-import { postgresAgenticRefusalReads } from "../../src/adapters/postgres/agenticRefusal.ts";
+import { sessionStorePageBatchesMax } from "../../src/contract/http.ts";
+import { leadTranscriptResponseSchema } from "../../src/contract/responses.ts";
 import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
-import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
+import { postgresSessionStoreRows } from "../../src/adapters/postgres/sessionStoreReads.ts";
+import { postgresThreadSeeding } from "../../src/adapters/postgres/thread.ts";
+import { threadSessionMint } from "../../src/adapters/crypto/threadSessionMint.ts";
 import { composeNativeWeb } from "../../src/compose.ts";
 import {
   asSessionStoreStream,
@@ -39,15 +29,8 @@ import {
 } from "../../src/interpreter/agentSession.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import { asTicketId } from "../../src/domain/ids.ts";
-import { postgresHarnessKeying } from "./harness.ts";
 import { sessionStoreDouble, sessionStoreEntryLine } from "./storeDouble.ts";
-import {
-  leadRigDecision,
-  leadRigOpen,
-  leadRigProject,
-  type LeadRig,
-} from "./leadHarness.ts";
+import { leadRigOpen, leadRigProject, type LeadRig } from "./leadHarness.ts";
 import {
   sessionRigAttempt,
   sessionRigSession,
@@ -77,7 +60,14 @@ async function claimedLead(label: string) {
     kind: "Lead",
   });
   const turn = sessionRigTurnId(label);
-  await rig.mailbox.offer({ partition, turn, input: '{"version":1}' });
+  const offered = await rig.sessions.sessions.enqueue({
+    partition,
+    session,
+    turn,
+    inputKind: "Observation",
+    input: '{"version":1}',
+  });
+  assert.equal(offered.enqueued, "Enqueued");
   const attempt = await sessionRigAttempt(
     rig.sessions,
     partition,
@@ -128,20 +118,15 @@ function leadApp(subject: string) {
   const leads = postgresLeadReads(pool);
   const web = composeNativeWeb(
     pool,
-    postgresHarnessKeying(),
     rig.sessions.harness.access,
-    postgresExecutionBacklogGuard(pool),
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
+    { leads, store: storeReads },
     {
-      leads,
+      threads: rig.threads,
+      sessions: threadSessionMint(),
+      seeding: postgresThreadSeeding(pool),
+      rows: postgresSessionStoreRows(pool),
       store: storeReads,
-      refusals: postgresAgenticRefusalReads(pool),
-      history: leads,
+      credentialSlot: "claude-code",
     },
   );
   return createNativeHttpApp(
@@ -199,14 +184,14 @@ test("the lead route reads a real lead, its mailbox tail and its streams", async
     headers: authorized,
   });
   assert.equal(found.statusCode, 200);
-  const body = leadResponseSchema.parse(found.json());
+  const body = found.json<{
+    session: string;
+    state: string;
+    turns: readonly { turn: string; tokens?: number }[];
+    streams: readonly { stream: string; batches: number }[];
+  }>();
   assert.equal(body.session, session);
   assert.equal(body.state, "Open");
-  assert.deepEqual(body.handoffNote, {
-    bytes: 2,
-    preview: "{}",
-    truncated: false,
-  });
   assert.equal(body.turns[0]?.turn, turn);
   assert.equal(body.turns[0]?.tokens, 10);
   assert.deepEqual(body.streams, [{ stream, batches: 1 }]);
@@ -298,197 +283,13 @@ test("the held walk pages the store past the page a reader asked for", async () 
   );
 });
 
-test("the refusal routes page a real ledger and say when it is short", async () => {
-  const partition = await readableProject("http-refusals");
-  const ticket = asTicketId(42);
-  const entries = agenticRefusalLedgerAnsweredMax + 2;
-  for (let index = 0; index < entries; index += 1) {
-    const decision = await leadRigDecision(
-      rig,
-      partition,
-      `http-refusals-${String(index)}`,
-    );
-    await rig.writes.record({
-      partition,
-      decision,
-      ...(index % 2 === 0
-        ? {
-            refusals: [
-              { ticket, ticketVersion: 2, reason: "the dependency fails" },
-            ],
-            lifts: [],
-          }
-        : { refusals: [], lifts: [{ ticket }] }),
-    });
-  }
-
-  await using app = leadApp("http-refusals");
-  const ledger = ticketAgenticRefusalsResponseSchema.parse(
-    (
-      await app.inject({
-        url: `${pathOf(partition)}/tickets/42/agentic-refusals`,
-        headers: authorized,
-      })
-    ).json(),
-  );
-  assert.equal(ledger.entries.length, agenticRefusalLedgerAnsweredMax);
-  assert.equal(
-    ledger.more,
-    true,
-    "read_agentic_refusals answers one past the page, so more is a fact",
-  );
-  assert.equal(
-    ledger.standing,
-    undefined,
-    "and a page that stops short claims no standing",
-  );
-
-  const standing = agenticRefusalsResponseSchema.parse(
-    (
-      await app.inject({
-        url: `${pathOf(partition)}/agentic-refusals`,
-        headers: authorized,
-      })
-    ).json(),
-  );
-  assert.deepEqual(
-    standing.refusals.map((each) => each.ticket),
-    [],
-    "the ledger's latest entry lifted it, so nothing stands",
-  );
-  assert.equal(standing.more, false);
-});
-
-test("standing_agentic_refusals answers one past its page, so more is a fact", async () => {
-  const partition = await readableProject("http-standing");
-  const decision = await leadRigDecision(rig, partition, "http-standing");
-  const tickets = Array.from(
-    { length: agenticRefusalsAnsweredMax + 1 },
-    (_unused, index) => asTicketId(index + 1),
-  );
-  await rig.writes.record({
-    partition,
-    decision,
-    refusals: tickets.map((ticket) => ({
-      ticket,
-      ticketVersion: 2,
-      reason: "the dependency fails",
-    })),
-    lifts: [],
-  });
-
-  const reads = postgresAgenticRefusalReads(rig.apiPool);
-  assert.equal(
-    (await reads.standing(partition, 1)).length,
-    1,
-    "the function answers the limit it was given",
-  );
-  assert.equal(
-    (await reads.standing(partition, agenticRefusalsAnsweredMax + 1)).length,
-    agenticRefusalsAnsweredMax + 1,
-    "and one past the page it answers, which is what makes more a fact",
-  );
-
-  await using app = leadApp("http-standing");
-  const page = agenticRefusalsResponseSchema.parse(
-    (
-      await app.inject({
-        url: `${pathOf(partition)}/agentic-refusals`,
-        headers: authorized,
-      })
-    ).json(),
-  );
-  assert.equal(page.refusals.length, agenticRefusalsAnsweredMax);
-  assert.equal(
-    page.more,
-    true,
-    "a project standing on more refusals than a page says so",
-  );
-});
-
-test("the decision log pages forward and answers its far end", async () => {
-  const partition = await readableProject("http-history");
-  const decisions: string[] = [];
-  for (const label of ["one", "two", "three"])
-    decisions.push(
-      await leadRigDecision(rig, partition, `http-history-${label}`),
-    );
-
-  await using app = leadApp("http-history");
-  const root = `${pathOf(partition)}/selector-history`;
-  const first = selectorHistoryResponseSchema.parse(
-    (await app.inject({ url: `${root}?limit=2`, headers: authorized })).json(),
-  );
-  assert.deepEqual(
-    first.decisions.map((each) => each.decision),
-    decisions.slice(0, 2),
-    "forward from the beginning, oldest first",
-  );
-  assert.ok(first.nextAfter !== undefined);
-  const second = selectorHistoryResponseSchema.parse(
-    (
-      await app.inject({
-        url: `${root}?limit=2&after=${String(first.nextAfter)}`,
-        headers: authorized,
-      })
-    ).json(),
-  );
-  assert.deepEqual(
-    second.decisions.map((each) => each.decision),
-    decisions.slice(2),
-    "and the cursor continues where the page ended",
-  );
-
-  const newest = selectorHistoryResponseSchema.parse(
-    (
-      await app.inject({
-        url: `${root}?order=newest&limit=2`,
-        headers: authorized,
-      })
-    ).json(),
-  );
-  assert.deepEqual(
-    newest.decisions.map((each) => each.decision),
-    [...decisions].reverse().slice(0, 2),
-    "the newest arm answers the far end, newest first",
-  );
-  assert.equal(newest.nextAfter, undefined);
-  assert.ok(
-    newest.decisions.every((each) => each.ordinal > 0),
-    "and the ordinals are the log's own",
-  );
-
-  const refused = await app.inject({
-    url: `${root}?order=newest&after=1`,
-    headers: authorized,
-  });
-  assert.equal(refused.statusCode, 400);
-
-  const unbounded = selectorHistoryResponseSchema.parse(
-    (
-      await app.inject({ url: `${root}?order=newest`, headers: authorized })
-    ).json(),
-  );
-  assert.ok(
-    unbounded.decisions.length <= selectorHistoryLimitMax,
-    "asking for no limit answers at most the bound the route defaults to",
-  );
-  assert.equal(unbounded.decisions.length, decisions.length);
-});
-
 test("a project the reader has no membership in answers not found", async () => {
   const partition = await readableProject("http-denied");
   await sessionRigSession(rig.sessions, partition, "http-denied", {
     kind: "Lead",
   });
   await using app = leadApp("http-stranger");
-  for (const path of [
-    "/lead",
-    "/lead/transcript",
-    "/agentic-refusals",
-    "/tickets/42/agentic-refusals",
-    "/selector-history",
-  ]) {
+  for (const path of ["/lead", "/lead/transcript"]) {
     const found = await app.inject({
       url: `${pathOf(partition)}${path}`,
       headers: authorized,

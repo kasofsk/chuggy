@@ -194,8 +194,6 @@ export const allSessionCapabilities = [
    * and widening it would hand the lead the one thing that rule withholds.
    */
   "DraftOriginate",
-  /** The decision tools, which write nothing and compose the turn's answer. */
-  "LeadDecision",
 ] as const;
 export type SessionCapability = (typeof allSessionCapabilities)[number];
 

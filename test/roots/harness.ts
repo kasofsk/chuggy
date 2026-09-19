@@ -11,8 +11,9 @@
  * command's output format is written down.
  */
 
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
+import { promisify } from "node:util";
 
 export interface SignalledRun {
   readonly code: number;
@@ -88,4 +89,21 @@ export async function signalledCommandRun(
   if (code === null)
     throw new Error("command exited by signal after readiness");
   return { code, stdout };
+}
+
+/**
+ * Runs a program against this checkout and returns what it wrote to stdout.
+ *
+ * A COMMAND'S EXPORTS ARE DRIVEN IN A CHILD BECAUSE ITS MODULE IS A ROOT: the
+ * file installs handlers and may run its own `main` on import, so a suite that
+ * imported it directly would take those effects into the test process.
+ */
+export async function evaluatedModule(program: string): Promise<string> {
+  return (
+    await promisify(execFile)(
+      process.execPath,
+      ["--experimental-strip-types", "--input-type=module", "--eval", program],
+      { cwd: process.cwd() },
+    )
+  ).stdout;
 }

@@ -125,9 +125,6 @@ const leadPortsProgram = `
     after: 0,
     limit: 1,
   });
-  await ports.history.history(partition, { limit: 1, order: 'oldest' });
-  await ports.refusals.standing(partition, 1);
-  await ports.refusals.ledger(partition, 1, 1);
   process.stdout.write(JSON.stringify(asked));
 `;
 
@@ -158,7 +155,7 @@ test("the lead's reads stand on the API pool and never the review pool", async (
     [],
     "no lead read may reach the pool with no grant on 059's doors",
   );
-  assert.equal(asked.pool.length, 6, "every lead read was handed the API pool");
+  assert.equal(asked.pool.length, 3, "every lead read was handed the API pool");
 });
 
 test("each lead read reaches the definer function the plan names for it", async () => {
@@ -167,9 +164,6 @@ test("each lead read reaches the definer function the plan names for it", async 
     "read_lead_standing",
     "list_session_store_streams",
     "read_session_store_batches",
-    "read_selector_interactions",
-    "read_standing_agentic_refusals",
-    "read_agentic_refusals",
   ])
     assert.ok(
       asked.pool.some((statement) => statement.includes(named)),
@@ -291,9 +285,9 @@ const inquiryComposedProgram = `
   const pool = pooled('pool');
   const web = compose.composeNativeWeb(
     pool,
-    { digest: () => 'digest' },
     { authorize: async () => ({ kind: 'OidcUser', subject: 'geoff' }) },
-    { admits: async () => ({ admitted: 'Admitted' }) },
+    {},
+    {},
   );
   const principal = 'principal';
   const partition = { tenant: 'tenant', project: 'project' };

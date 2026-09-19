@@ -1,276 +1,67 @@
-/**
- * Every request body the public wire accepts.
- *
- * The schemas parse into plain wire values; turning one into an interpreter
- * type is the server's own step. A cursor is not here: it is opaque to every
- * reader but the server that issued it, so its payload is that server's shape
- * rather than the wire's, and `cursorSchema` is all the wire says about one.
- */
-
 import { z } from "zod";
 
 import {
-  countSchema,
-  digestSchema,
-  dispatchViewSchemaVersion,
   inquiryQuestionCharsMax,
-  leadDispatchesMax,
-  selectorAllowlistNameCharsMax,
-  selectorAllowlistNamesMax,
-  selectorSettingsTextCharsMax,
   threadMessageCharsMax,
   threadTitleCharsMax,
-  ticketNumberSchema,
 } from "./http.ts";
-import { authoringSchema } from "./authoring.ts";
-import { briefSchema } from "./brief.ts";
 import {
   briefFinalizationModes,
-  forgeCredentialPermissions,
   forgeApps,
+  forgeCredentialPermissions,
   forgeIds,
   forgeRepositoryVisibilities,
-  nativeActionResolutions,
-  selectorDispatchModes,
-  selectorModes,
 } from "./rosters.ts";
 
-/** An identity a body may carry, bounded only by the body limit itself. */
 const bodyIdentitySchema = z.string().min(1);
-
-export const publicMutationSchema = z.discriminatedUnion("mutation", [
-  z.strictObject({
-    mutation: z.literal("RevokeTicket"),
-    ticket: ticketNumberSchema,
-  }),
-  z.strictObject({
-    mutation: z.literal("ResumeTicket"),
-    ticket: ticketNumberSchema,
-  }),
-  z.strictObject({
-    mutation: z.literal("ReleaseDraft"),
-    ticket: ticketNumberSchema,
-    authoringVersion: countSchema,
-    configurationRevision: z.string(),
-  }),
-  z.strictObject({
-    mutation: z.literal("ResolveNativeAction"),
-    action: z.string(),
-    authorizingSequence: countSchema,
-    resolution: z.enum(nativeActionResolutions),
-  }),
-  z.strictObject({
-    mutation: z.literal("ManualDispatch"),
-    ticket: ticketNumberSchema,
-    expectedTicketVersion: countSchema,
-  }),
-  z.strictObject({
-    mutation: z.literal("ProposeDispatch"),
-    ticket: ticketNumberSchema,
-    expectedTicketVersion: countSchema,
-    observedViewToken: z.strictObject({
-      tenant: bodyIdentitySchema,
-      project: bodyIdentitySchema,
-      recoveryEpoch: bodyIdentitySchema,
-      schemaVersion: z.literal(dispatchViewSchemaVersion),
-      watermark: countSchema,
-      digest: digestSchema,
-    }),
-    selectorDecisionReference: z.string(),
-  }),
-]);
-
-export type PublicMutation = z.infer<typeof publicMutationSchema>;
-
-export const configurationCreationSchema = z.strictObject({
-  revision: bodyIdentitySchema,
-  parent: bodyIdentitySchema.optional(),
-  canonical: bodyIdentitySchema,
-});
-
-export const repositoryConfigurationImportSchema = z.strictObject({
-  repository: bodyIdentitySchema,
-  commit: bodyIdentitySchema,
-});
 
 export const forgeCredentialRequestSchema = z.strictObject({
   repository: bodyIdentitySchema,
   permissions: z.enum(forgeCredentialPermissions),
 });
 
-/**
- * One claim: which forge, which of the apps a tenant installs, and which
- * installation of that app on it. The app is the caller's to name because a
- * tenant installs two and the installation identities are the forge's, so
- * nothing in an identity says which app it belongs to.
- */
 export const forgeInstallationClaimSchema = z.strictObject({
   forge: z.enum(forgeIds),
   app: z.enum(forgeApps),
   installationId: bodyIdentitySchema,
 });
 
-/**
- * One binding. The project is the path's and is not repeated here, and nothing
- * else is chosen: a binding privileges no repository and elects none.
- */
 export const projectRepositoryBindSchema = z.strictObject({
   repository: bodyIdentitySchema,
 });
 
-/**
- * One repository to create: whose account it is made under, what it is called,
- * and whether it is that account's alone to read. The forge is not named
- * because a deployment creates through the one its creation half is composed
- * for, and the project is the path's.
- */
 export const projectRepositoryCreateSchema = z.strictObject({
   account: bodyIdentitySchema,
   name: bodyIdentitySchema,
   visibility: z.enum(forgeRepositoryVisibilities),
 });
 
-/** How a finished ticket lands: the mode alone today, the reference it lands on staying the brief's. */
 export const repositoryLandingSchema = z.strictObject({
   mode: z.enum(briefFinalizationModes),
 });
 export type RepositoryLanding = z.infer<typeof repositoryLandingSchema>;
 
-/** A repository's landing default, written against the one the writer read so two administrators cannot cross. */
 export const projectRepositoryLandingSchema = z.strictObject({
   repository: bodyIdentitySchema,
   expected: repositoryLandingSchema,
   landing: repositoryLandingSchema,
 });
 
-/**
- * One binding retired. It carries the repository and nothing else: retirement
- * is one-way and names its own row, so there is no value for a second writer
- * to be deciding against and nothing for an expected one to fence.
- */
 export const projectRepositoryRetirementSchema = z.strictObject({
   repository: bodyIdentitySchema,
 });
 
-/**
- * Whether a ticket's authoring and its brief agree about landing. Landing is a
- * parameter of the managed finalizer, so a ticket authored to run none names
- * none: the pairing is stated here rather than on either schema, neither of
- * which can see the other.
- */
-function draftLandingIsAuthored(value: {
-  readonly authoring: { readonly finalizer: string };
-  readonly brief: { readonly finalization?: unknown };
-}): boolean {
-  return (
-    value.authoring.finalizer !== "NoFinalizer" ||
-    value.brief.finalization === undefined
-  );
-}
-
-const draftLandingIsAuthoredIssue = {
-  error: "a ticket with no finalizer lands nothing",
-  path: ["brief", "finalization"],
-};
-
-export const draftCreationSchema = z
-  .strictObject({
-    configurationRevision: bodyIdentitySchema,
-    configurationDigest: digestSchema,
-    expectedProjectSequence: countSchema,
-    authoring: authoringSchema,
-    brief: briefSchema,
-  })
-  .refine(draftLandingIsAuthored, draftLandingIsAuthoredIssue);
-
-export const draftRevisionSchema = z
-  .strictObject({
-    expectedVersion: countSchema,
-    configurationRevision: bodyIdentitySchema,
-    authoring: authoringSchema,
-    brief: briefSchema,
-  })
-  .refine(draftLandingIsAuthored, draftLandingIsAuthoredIssue);
-
-export const submissionSchema = z.strictObject({
-  operation: bodyIdentitySchema,
-  mutation: publicMutationSchema,
-});
-
-const selectorLimitSchema = z.number().int().safe().positive();
-const selectorSettingsTextSchema = z
-  .string()
-  .min(1)
-  .max(selectorSettingsTextCharsMax);
-const selectorAllowlistSchema = z
-  .array(z.string().min(1).max(selectorAllowlistNameCharsMax))
-  .max(selectorAllowlistNamesMax);
-
-/**
- * What one project sets for itself, an absent field meaning the installation
- * default, so a write clears an override by omitting it. `concurrentDecisions`
- * and `selectionsPerMinute` are not here, because they bound one shared pool
- * rather than one project's behaviour.
- */
-export const selectorProjectOverridesSchema = z.strictObject({
-  northStar: selectorSettingsTextSchema.optional(),
-  threadStandingRules: selectorSettingsTextSchema.optional(),
-  mode: z.enum(selectorModes).optional(),
-  dispatchMode: z.enum(selectorDispatchModes).optional(),
-  basePrompt: selectorSettingsTextSchema.optional(),
-  modelAllowlist: selectorAllowlistSchema.optional(),
-  toolAllowlist: selectorAllowlistSchema.optional(),
-  limits: z
-    .strictObject({
-      tokensPerDecision: selectorLimitSchema.optional(),
-      millisecondsPerDecision: selectorLimitSchema.optional(),
-      toolCallsPerDecision: selectorLimitSchema.optional(),
-      dispatchesPerDecision: selectorLimitSchema
-        .max(leadDispatchesMax)
-        .optional(),
-      inputBytesPerDecision: selectorLimitSchema.optional(),
-      candidatePagesPerDecision: selectorLimitSchema.optional(),
-    })
-    .optional(),
-  operationalContextMaxAgeMs: selectorLimitSchema.optional(),
-});
-
-/** The whole override set, written under the revision the writer read it at. */
-export const selectorProjectSettingsSchema = z.strictObject({
-  expectedRevision: countSchema,
-  overrides: selectorProjectOverridesSchema,
-});
-
-/**
- * What a member puts in their own thread: a turn identity they mint themselves
- * and the text they typed. The turn is the body's rather than a header's for
- * the reason `submissionSchema` gives — enqueuing is idempotent on it, so a
- * retried post answers the ordinal it already has instead of a second turn.
- */
 export const threadMessageSchema = z.strictObject({
   turn: bodyIdentitySchema,
   message: z.string().min(1).max(threadMessageCharsMax),
 });
 
-/** What a member calls their own thread, over the title derived from its
- * first message; a title that trims to nothing clears the override. */
 export const threadRenameRequestSchema = z.strictObject({
   title: z.string().max(threadTitleCharsMax),
 });
 
-/** Whether this thread is on its owner's rail. Nothing is deleted; a hidden
- * thread stays on the threads page. */
-export const threadHideRequestSchema = z.strictObject({
-  hidden: z.boolean(),
-});
+export const threadHideRequestSchema = z.strictObject({ hidden: z.boolean() });
 
-/**
- * What a member asks the lead aside: the session and the turn they mint
- * themselves, and the question they typed. Both identities are the body's
- * rather than a header's for the reason `submissionSchema` gives — opening is
- * idempotent on them, so a retried post answers the ordinal it already has
- * instead of forking the lead a second time.
- */
 export const leadInquirySchema = z.strictObject({
   session: bodyIdentitySchema,
   turn: bodyIdentitySchema,

@@ -47,19 +47,15 @@ test("a reference with nothing held draws the number and no link", () => {
   expect(view.container.querySelector("a")).toBeNull();
 });
 
-test("a reference draws the ticket's title and phase, and links to its screen", () => {
+test("a reference draws the ticket's state and links to its screen", () => {
   render(
-    underShell(
-      heldOf({ 15: { title: "Fix the thing", phase: "Working" } }),
-      report,
-    ),
+    underShell(heldOf({ 15: { title: undefined, state: "Work" } }), report),
   );
 
   const link = screen.getByRole("link");
   expect(link.getAttribute("href")).toBe("/acme/atlas/tickets/15");
   expect(link.textContent).toContain("#15");
-  expect(link.textContent).toContain("Fix the thing");
-  expect(link.textContent).toContain("Working");
+  expect(link.textContent).toContain("Work");
   expect(link.className).toContain("pill-live");
 });
 

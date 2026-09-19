@@ -7,6 +7,7 @@
     "@ts-safeql/eslint-plugin": "^5.4.1",
     "@types/node": "^26.2.0",
     "@types/pg": "^8.23.1",
+    "@types/prismjs": "1.26.6",
     "dependency-cruiser": "^18.2.0",
     "eslint": "^10.8.1",
     "jscpd": "5.0.5",
@@ -17,7 +18,6 @@
   },
   "type": "module",
   "workspaces": [
-    "test/rig",
     "ui/chuggy-ui"
   ],
   "scripts": {
@@ -28,18 +28,26 @@
     "start:scheduler": "node --experimental-strip-types src/roots/scheduler.ts",
     "start:ticket-service": "node --experimental-strip-types src/roots/ticketService.ts",
     "start:worker-plane": "node --experimental-strip-types src/roots/workerPlane.ts",
+    "start:ticket-worker": "node --experimental-strip-types src/roots/ticketWorker.ts",
     "provision:forge-installation": "node --experimental-strip-types src/roots/provisionForgeInstallation.ts",
+    "provision:project": "node --experimental-strip-types src/roots/provisionProject.ts",
     "provision:project-access": "node --experimental-strip-types src/roots/provisionProjectAccess.ts",
     "provision:session": "node --experimental-strip-types src/roots/provisionAgentSession.ts",
-    "bind:project-repository": "node --experimental-strip-types src/roots/bindProjectRepository.ts",
-    "import:repository-configurations": "node --experimental-strip-types src/roots/configurationImporter.ts",
-    "start:selector": "node --experimental-strip-types src/roots/selector.ts"
+    "bind:project-repository": "node --experimental-strip-types src/roots/bindProjectRepository.ts"
   },
   "dependencies": {
+    "@cursorless/tree-sitter-wasms": "0.10.0",
+    "@kasofsk/chug-ticket-domain": "github:kasofsk/chug-ticket-domain#v0.4.0",
     "@ts-safeql/sql-tag": "^0.2.2",
+    "ajv": "8.20.0",
+    "ajv-draft-04": "1.0.0",
     "fastify": "^5.12.1",
     "jose": "^6.2.10",
+    "jsonc-parser": "3.3.1",
     "pg": "^8.23.0",
+    "prismjs": "1.30.0",
+    "web-tree-sitter": "0.27.0",
+    "yaml": "2.9.0",
     "zod": "^4.4.3"
   },
   "overrides": {

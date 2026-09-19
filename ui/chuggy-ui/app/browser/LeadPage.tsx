@@ -41,20 +41,14 @@ import {
   sessionConversationItems,
   sessionConversationTurns,
 } from "../core/sessionConversation.ts";
-import {
-  selectorAttentionTone,
-  sessionStateTone,
-  sessionTurnStateTone,
-} from "../core/tones.ts";
+import { sessionStateTone, sessionTurnStateTone } from "../core/tones.ts";
 import { usePanelList } from "./api.ts";
 import { Conversation } from "./conversation/Conversation.tsx";
 import { DataPanel } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
-import { LeadDecisions } from "./lead/LeadDecisions.tsx";
 import { LeadInquiries, useInquiryBoxes } from "./lead/LeadInquiries.tsx";
 import type { InquiryBoxesHeld } from "./lead/LeadInquiries.tsx";
-import { LeadRefusals } from "./lead/LeadRefusals.tsx";
-import { LeadNote, useLeadTranscript } from "./lead/LeadTranscript.tsx";
+import { useLeadTranscript } from "./lead/LeadTranscript.tsx";
 import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
@@ -101,12 +95,6 @@ function LeadTopBar(props: { readonly lead: LeadResponse }): ReactNode {
         <Pill tone={sessionStateTone(lead.state)} emphasis>
           {lead.state}
         </Pill>
-        <Pill tone={selectorAttentionTone(lead.attention)}>
-          {lead.attention}
-        </Pill>
-        <span className="num text-ink-3 text-sm">
-          {lead.notificationCursor}
-        </span>
       </div>
     </TopBarSlot>
   );
@@ -197,8 +185,6 @@ function LeadDetails(props: {
       <DataPanel title="Turns" state={props.state}>
         {(value) => <LeadTurns lead={value} />}
       </DataPanel>
-      <LeadDecisions partition={props.partition} nowMs={props.nowMs} />
-      <LeadRefusals partition={props.partition} nowMs={props.nowMs} />
       <LeadInquiries
         partition={props.partition}
         head={lead?.agentReference}
@@ -242,7 +228,6 @@ function LeadBody(props: {
         inquiries={props.inquiries}
         nowMs={props.nowMs}
       />
-      <LeadNote note={lead?.handoffNote} />
       <div
         role="region"
         aria-label="Conversation"

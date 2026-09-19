@@ -7,7 +7,6 @@
  * bearer, the API resolves that bearer to the session's principal and authorizes
  * it through the project membership exactly as it authorizes a human's, and the
  * operation row records which session issued it. A decision tool
- * (`./leadDecision.mjs`) writes nothing at all.
  *
  * A ROSTER IS NOT A CONTROL. `allowedTools` and `disallowedTools` are enforced
  * by the agent runtime inside the pod, and the pod is the thing being
@@ -53,17 +52,9 @@
  * text. No retry, no repair, no hiding a 409. A tool that decided what a refusal
  * meant would be deciding something the API decided.
  *
- * DERIVED WORK ONLY IS WHAT `DraftAuthor` ADMITS. `file_dependent` files
- * against a parent that already exists and carries it in the draft's
- * dependencies; a roster holding `DraftAuthor` alone cannot originate work.
- * Origination is `create_draft` under `DraftOriginate` alone. Which capability
- * a session is opened with is the provisioning root's, not this image's, so
- * what is true here is the mapping: a roster without `DraftOriginate` cannot
- * reach the tool, and the derived-work rule is that mapping rather than a
- * sentence in a description.
- * `Prerequisite` is admitted by the schema only so its refusal can name the
- * reason — a released ticket's dependencies are immutable in
- * `model/domain.qnt`, which names re-authoring machinery as deliberately absent.
+ * TICKET ORIGINATION IS A SEPARATE CAPABILITY. `DraftOriginate` admits
+ * `create_ticket`; `DraftAuthor` admits update and lifecycle commands for an
+ * existing adopted ticket.
  *
  * `zod` IS A PEER DEPENDENCY OF THE AGENT SDK, NOT ONE OF ITS DEPENDENCIES, so
  * nothing here imports it: the shapes are functions of a `z` the caller
@@ -80,7 +71,6 @@ import {
   chuggyMediaType,
   chuggyRequest,
 } from "./chuggyApi.mjs";
-import { leadDecisionStaging, leadDecisionToolNames } from "./leadDecision.mjs";
 import { sessionStoreBatchBytesMax } from "./sessionStore.mjs";
 import { transcriptPageAnswer } from "./transcriptPage.mjs";
 
@@ -93,18 +83,8 @@ export const chuggyToolResponseBytesMax = 65_536;
 export const chuggyToolTimeoutMs = 30_000;
 export const chuggyToolPagesMax = 1;
 export const nativeHttpPageItemsMax = 100;
-export const selectorHistoryLimitMax = 50;
-export const agenticRefusalsAnsweredMax = 32;
 export const sessionStorePageBatchesMax = 8;
 export const threadTurnsAnsweredMax = 32;
-export const chuggyBriefIntentLineCharsMax = 512;
-
-/**
- * What a session is told a brief carries, `brief` being an open object on the
- * wire. An intent is bounded a line at a time, so a paragraph filed as one line
- * is refused however short the paragraph is.
- */
-const chuggyBriefDescription = `\`brief\` is {title?, intent, links, checks?, repository?, branch?, finalization?}: \`title\` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; \`intent\` is lines, each at most ${String(chuggyBriefIntentLineCharsMax)} characters — break a sentence across lines rather than shorten it; \`repository\` is the repository the work happens in, which list_configurations reports as an imported configuration's provenance, and a draft carrying none is refused when it is released. A 400 names the rule the brief broke.`;
 
 /**
  * How many times the entry the runtime mirrors carries one answer's text. The
@@ -153,10 +133,6 @@ export function chuggyToolAnswerBytes(text) {
   return Buffer.byteLength(JSON.stringify(text));
 }
 
-/** The relation a filed dependent may carry, and the one it may not. */
-export const allDependentRelations = ["FollowUp", "Prerequisite"];
-export const dependentRelationsAdmitted = ["FollowUp"];
-
 /**
  * The agent runtime's built-in tools as the pinned CLI names them. A tool a
  * later runtime adds is not in `disallowedTools` until this roster carries it,
@@ -185,19 +161,9 @@ export const sessionBuiltInTools = [
 const projectReadTools = [
   "list_tickets",
   "read_ticket",
-  "read_draft",
-  "list_drafts",
-  "list_configurations",
-  "read_configuration",
-  "read_decision_log",
-  "read_refusals",
-  "read_ticket_refusals",
   "read_projects",
   "read_lead",
   "read_lead_transcript",
-  "list_executions",
-  "read_execution",
-  "read_run_transcript",
   "read_operation",
   "list_threads",
   "read_thread",
@@ -205,15 +171,14 @@ const projectReadTools = [
 ];
 
 const draftAuthorTools = [
-  "initialize_draft",
-  "file_dependent",
-  "revise_draft",
-  "delete_draft",
-  "release_draft",
+  "update_ticket",
+  "dispatch_ticket",
+  "revoke_ticket",
+  "resume_ticket",
 ];
 
 /** The one tool that files work nothing derived, which a thread holds and a lead does not. */
-const draftOriginateTools = ["create_draft"];
+const draftOriginateTools = ["create_ticket"];
 
 /**
  * Which capability admits which tool. A capability this image does not know
@@ -226,7 +191,6 @@ export const sessionCapabilityTools = {
   ProjectRead: projectReadTools,
   DraftAuthor: draftAuthorTools,
   DraftOriginate: draftOriginateTools,
-  LeadDecision: leadDecisionToolNames,
 };
 
 /** Every chuggy tool there is, which is every capability's list but the built-ins'. */
@@ -234,7 +198,6 @@ export const allChuggyTools = [
   ...projectReadTools,
   ...draftAuthorTools,
   ...draftOriginateTools,
-  ...leadDecisionToolNames,
 ];
 
 /**
@@ -348,6 +311,30 @@ function read(context, path) {
   return relay(context, path, { method: "GET" });
 }
 
+async function readAdoptedTicket(context, wanted) {
+  const response = await context.request(
+    context.task,
+    context.bearer,
+    `${ticketMachinePath(context.task)}/tickets`,
+    { method: "GET" },
+  );
+  const { text } = await chuggyBoundedBody(
+    response,
+    chuggyToolResponseBytesMax,
+  );
+  if (response.status >= 400)
+    return answered(`HTTP ${String(response.status)}\n${text}`, true);
+  try {
+    const page = JSON.parse(text);
+    const found = page?.tickets?.find((held) => held?.ticket === wanted);
+    return found === undefined
+      ? answered(`ticket ${String(wanted)} was not found`, true)
+      : answered(`HTTP 200\n${JSON.stringify(found)}`);
+  } catch {
+    return answered("the ticket route answered invalid JSON", true);
+  }
+}
+
 /**
  * One transcript page, cut to the whole entries this answer can carry. The
  * route's own body is parsed rather than relayed, which is what lets the answer
@@ -394,6 +381,18 @@ function write(context, path, method, body, headers = {}) {
   });
 }
 
+function writeTicketYaml(context, path, method, source, headers) {
+  return relay(context, path, {
+    method,
+    headers: { "content-type": "application/yaml", ...headers },
+    body: source,
+  });
+}
+
+function ticketMachinePath(task) {
+  return `${partitionPath(task)}/ticket-machine`;
+}
+
 /**
  * The identity a submitted command carries, minted from the turn and the command
  * itself, so a tool call the model repeats within one turn is the same operation
@@ -426,7 +425,6 @@ const ordinal = (z) => z.number().int().min(1);
  * the model no tools at all. `images/worker/toolProbe.mjs` is what holds that
  * shut at build time.
  */
-const anyObject = (z) => z.looseObject({});
 
 /**
  * The tools whose route this installation's API does not serve yet, and what
@@ -447,12 +445,6 @@ const anyObject = (z) => z.looseObject({});
  * named here refuses before it makes a request, and no tool outside it does.
  */
 export const chuggyToolsNotYetServed = {
-  read_decision_log:
-    "This project's decision log cannot be read by this installation yet.",
-  read_refusals:
-    "This project's standing refusals cannot be read by this installation yet. This turn's observation carries them.",
-  read_ticket_refusals:
-    "A ticket's refusal ledger cannot be read by this installation yet. This turn's observation carries the standing refusals.",
   read_lead: "The lead session cannot be read by this installation yet.",
   read_lead_transcript:
     "The lead's own transcript cannot be read by this installation yet.",
@@ -469,114 +461,17 @@ export const chuggyProjectTools = [
   {
     name: "list_tickets",
     description:
-      "One page of this project's tickets, ascending by number. Answers `nextAfter` for the next page; `after` resumes from it.",
-    shape: (z) => ({
-      after: ticket(z).optional(),
-      limit: limit(z, nativeHttpPageItemsMax),
-      phase: z.array(z.string().min(1)).max(16).optional(),
-    }),
-    call: (context, { after, limit: pageLimit, phase }) =>
-      read(
-        context,
-        `${partitionPath(context.task)}${search({ after, limit: pageLimit, phase })}`,
-      ),
+      "The adopted ticket graph: every ticket's revision, state, dependencies and work cycles.",
+    shape: () => ({}),
+    call: (context) =>
+      read(context, `${ticketMachinePath(context.task)}/tickets`),
   },
   {
     name: "read_ticket",
     description:
-      "One ticket: its phase, its version, its authoring and its brief.",
+      "One adopted ticket from the current graph: its revision, state, dependencies and work cycles.",
     shape: (z) => ({ ticket: ticket(z) }),
-    call: (context, args) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/tickets/${String(args.ticket)}`,
-      ),
-  },
-  {
-    name: "read_draft",
-    description:
-      "One draft still open on this project, by the ticket number it holds.",
-    shape: (z) => ({ ticket: ticket(z) }),
-    call: (context, args) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/drafts/${String(args.ticket)}`,
-      ),
-  },
-  {
-    name: "list_drafts",
-    description:
-      "One page of the drafts this project still holds open, ascending by ticket.",
-    shape: (z) => ({
-      limit: limit(z, nativeHttpPageItemsMax),
-      cursor: identity(z).optional(),
-    }),
-    call: (context, { cursor, limit: pageLimit }) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/drafts${search({ cursor, limit: pageLimit })}`,
-      ),
-  },
-  {
-    name: "list_configurations",
-    description:
-      "One page of this project's configuration revisions, newest first, with the cursor for the next.",
-    shape: (z) => ({
-      cursor: identity(z).optional(),
-      limit: limit(z, nativeHttpPageItemsMax),
-    }),
-    call: (context, { cursor, limit: pageLimit }) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/configurations${search({ cursor, limit: pageLimit })}`,
-      ),
-  },
-  {
-    name: "read_configuration",
-    description:
-      "One configuration revision, canonical, as a draft is authored against it.",
-    shape: (z) => ({ revision: identity(z) }),
-    call: (context, { revision }) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/configurations/${encodeURIComponent(revision)}`,
-      ),
-  },
-  {
-    name: "read_decision_log",
-    description:
-      "One page of this project's past selector decisions, newest first: what each chose and under which settings.",
-    shape: (z) => ({
-      after: count(z).optional(),
-      limit: limit(z, selectorHistoryLimitMax),
-    }),
-    call: (context, { after, limit: pageLimit }) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/selector-history${search({ after, limit: pageLimit })}`,
-      ),
-  },
-  {
-    name: "read_refusals",
-    description:
-      "The refusals standing across this project, with the ticket version each names.",
-    shape: (z) => ({ limit: limit(z, agenticRefusalsAnsweredMax) }),
-    call: (context, { limit: pageLimit }) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/agentic-refusals${search({ limit: pageLimit })}`,
-      ),
-  },
-  {
-    name: "read_ticket_refusals",
-    description:
-      "One ticket's whole refusal ledger: every refusal recorded on it and every lift.",
-    shape: (z) => ({ ticket: ticket(z) }),
-    call: (context, args) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/tickets/${String(args.ticket)}/agentic-refusals`,
-      ),
+    call: (context, args) => readAdoptedTicket(context, args.ticket),
   },
   {
     name: "read_projects",
@@ -615,48 +510,6 @@ export const chuggyProjectTools = [
       ),
   },
   {
-    name: "list_executions",
-    description:
-      "One page of this project's executions, narrowed by ticket or by state.",
-    shape: (z) => ({
-      ticket: ticket(z).optional(),
-      state: z.array(z.string().min(1)).max(16).optional(),
-      cursor: identity(z).optional(),
-      limit: limit(z, nativeHttpPageItemsMax),
-    }),
-    call: (context, { ticket: onTicket, state, cursor, limit: pageLimit }) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/executions${search({ ticket: onTicket, state, cursor, limit: pageLimit })}`,
-      ),
-  },
-  {
-    name: "read_execution",
-    description:
-      "One execution: its ticket, its attempts, its state and its outcome.",
-    shape: (z) => ({ execution: identity(z) }),
-    call: (context, { execution }) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/executions/${encodeURIComponent(execution)}`,
-      ),
-  },
-  {
-    name: "read_run_transcript",
-    description:
-      "One page of one attempt's run transcript, from the batch after the one named.",
-    shape: (z) => ({
-      execution: identity(z),
-      attempt: identity(z),
-      after: count(z).optional(),
-    }),
-    call: (context, { execution, attempt, after }) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/executions/${encodeURIComponent(execution)}/attempts/${encodeURIComponent(attempt)}/transcript${search({ after })}`,
-      ),
-  },
-  {
     name: "read_operation",
     description:
       "One submitted operation's outcome. This is the only way to learn what a command did.",
@@ -664,7 +517,7 @@ export const chuggyProjectTools = [
     call: (context, { operation }) =>
       read(
         context,
-        `${partitionPath(context.task)}/operations/${encodeURIComponent(operation)}`,
+        `${ticketMachinePath(context.task)}/operations${search({ identity: operation })}`,
       ),
   },
   {
@@ -707,128 +560,91 @@ export const chuggyProjectTools = [
       ),
   },
   {
-    name: "initialize_draft",
+    name: "create_ticket",
     description:
-      "The defaults, the dependency candidates and the fence a new draft is filed against, for one configuration revision.",
-    shape: (z) => ({ revision: identity(z) }),
-    call: (context, { revision }) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/draft-initializations/${encodeURIComponent(revision)}`,
-      ),
-  },
-  {
-    name: "file_dependent",
-    description: `Files a new draft derived from an existing ticket. \`relation\` admits FollowUp only, and \`authoring.dependencies\` must carry the parent. The fence comes from initialize_draft. ${chuggyBriefDescription}`,
+      "Creates an adopted ticket from version-2 ticket YAML at an exact catalog commit. Answers a stable operation identity; poll it with read_operation.",
     shape: (z) => ({
-      parent: ticket(z),
-      relation: z.enum(allDependentRelations),
-      configurationRevision: identity(z),
-      configurationDigest: identity(z),
-      expectedProjectSequence: count(z),
-      authoring: anyObject(z),
-      brief: anyObject(z),
+      source: z.string().min(1),
+      catalogCommit: identity(z),
+      repository: identity(z).optional(),
     }),
     call: (context, args) => {
-      if (!dependentRelationsAdmitted.includes(args.relation))
-        return answered(
-          `${args.relation} is not derivable: a released ticket's dependencies are immutable in this machine, so ticket ${String(args.parent)} cannot come to depend on a new one. File a FollowUp instead; a prerequisite of a ticket still in draft is a revise_draft of that draft's dependencies.`,
-          true,
-        );
-      const dependencies = args.authoring?.dependencies;
-      if (!Array.isArray(dependencies) || !dependencies.includes(args.parent))
-        return answered(
-          `a dependent must carry its parent: authoring.dependencies does not name ticket ${String(args.parent)}.`,
-          true,
-        );
-      return write(context, `${partitionPath(context.task)}/drafts`, "POST", {
-        configurationRevision: args.configurationRevision,
-        configurationDigest: args.configurationDigest,
-        expectedProjectSequence: args.expectedProjectSequence,
-        authoring: args.authoring,
-        brief: args.brief,
+      const operation = chuggyOperationIdentity(claimedTurn(context), {
+        mutation: "CreateTicket",
+        ...args,
       });
-    },
-  },
-  {
-    name: "revise_draft",
-    description: `Replaces one open draft's authoring and brief, fenced on the version read. ${chuggyBriefDescription} The brief is replaced whole, so send back the \`repository\` read_draft answered or the revision clears it.`,
-    shape: (z) => ({
-      ticket: ticket(z),
-      expectedVersion: count(z),
-      configurationRevision: identity(z),
-      authoring: anyObject(z),
-      brief: anyObject(z),
-    }),
-    call: (context, args) =>
-      write(
+      return writeTicketYaml(
         context,
-        `${partitionPath(context.task)}/drafts/${String(args.ticket)}`,
-        "PUT",
-        {
-          expectedVersion: args.expectedVersion,
-          configurationRevision: args.configurationRevision,
-          authoring: args.authoring,
-          brief: args.brief,
-        },
-      ),
-  },
-  {
-    name: "delete_draft",
-    description: "Deletes one open draft, fenced on the version read.",
-    shape: (z) => ({ ticket: ticket(z), expectedVersion: count(z) }),
-    call: (context, args) =>
-      write(
-        context,
-        `${partitionPath(context.task)}/drafts/${String(args.ticket)}${search({ expectedVersion: args.expectedVersion })}`,
-        "DELETE",
-      ),
-  },
-  {
-    name: "release_draft",
-    description:
-      "Submits the release of one draft. Answers an accepted operation and its id, never an outcome: read that with read_operation.",
-    shape: (z) => ({
-      ticket: ticket(z),
-      authoringVersion: count(z),
-      configurationRevision: identity(z),
-    }),
-    call: (context, args) => {
-      const mutation = {
-        mutation: "ReleaseDraft",
-        ticket: args.ticket,
-        authoringVersion: args.authoringVersion,
-        configurationRevision: args.configurationRevision,
-      };
-      const operation = chuggyOperationIdentity(claimedTurn(context), mutation);
-      return write(
-        context,
-        `${partitionPath(context.task)}/operations`,
+        `${ticketMachinePath(context.task)}/tickets`,
         "POST",
-        { operation, mutation },
-        { "idempotency-key": operation },
+        args.source,
+        {
+          "idempotency-key": operation,
+          "x-chug-catalog-commit": args.catalogCommit,
+          ...(args.repository === undefined
+            ? {}
+            : { "x-chug-repository": args.repository }),
+        },
       );
     },
   },
   {
-    name: "create_draft",
-    description: `Files a new draft for work your owner asked for, derived from nothing. The fence comes from initialize_draft. ${chuggyBriefDescription}`,
+    name: "update_ticket",
+    description:
+      "Replaces an adopted ticket definition with version-2 ticket YAML, fenced by its revision and pinned catalog commit. Poll the returned operation with read_operation.",
     shape: (z) => ({
-      configurationRevision: identity(z),
-      configurationDigest: identity(z),
-      expectedProjectSequence: count(z),
-      authoring: anyObject(z),
-      brief: anyObject(z),
+      ticket: ticket(z),
+      expectedRevision: ticket(z),
+      source: z.string().min(1),
+      catalogCommit: identity(z),
+      repository: identity(z).optional(),
     }),
-    call: (context, args) =>
-      write(context, `${partitionPath(context.task)}/drafts`, "POST", {
-        configurationRevision: args.configurationRevision,
-        configurationDigest: args.configurationDigest,
-        expectedProjectSequence: args.expectedProjectSequence,
-        authoring: args.authoring,
-        brief: args.brief,
-      }),
+    call: (context, args) => {
+      const operation = chuggyOperationIdentity(claimedTurn(context), {
+        mutation: "UpdateTicket",
+        ...args,
+      });
+      return writeTicketYaml(
+        context,
+        `${ticketMachinePath(context.task)}/tickets/${String(args.ticket)}`,
+        "PUT",
+        args.source,
+        {
+          "idempotency-key": operation,
+          "if-match": String(args.expectedRevision),
+          "x-chug-catalog-commit": args.catalogCommit,
+          ...(args.repository === undefined
+            ? {}
+            : { "x-chug-repository": args.repository }),
+        },
+      );
+    },
   },
+  ...["dispatch", "revoke", "resume"].map((action) => ({
+    name: `${action}_ticket`,
+    description: `${action[0].toUpperCase()}${action.slice(1)}s one adopted ticket. Poll the returned operation with read_operation.`,
+    shape: (z) => ({
+      ticket: ticket(z),
+      ...(action === "dispatch"
+        ? { repository: identity(z), commit: identity(z) }
+        : {}),
+    }),
+    call: (context, args) => {
+      const operation = chuggyOperationIdentity(claimedTurn(context), {
+        mutation: `${action[0].toUpperCase()}${action.slice(1)}Ticket`,
+        ...args,
+      });
+      return write(
+        context,
+        `${ticketMachinePath(context.task)}/tickets/${String(args.ticket)}/${action}`,
+        "POST",
+        action === "dispatch"
+          ? { repository: args.repository, commit: args.commit }
+          : {},
+        { "idempotency-key": operation },
+      );
+    },
+  })),
 ];
 
 /**
@@ -852,9 +668,7 @@ export function chuggyToolDefinitions(context) {
         : answered(unserved, true);
     },
   }));
-  return [...project, ...context.staging.definitions].filter((definition) =>
-    admitted.has(definition.name),
-  );
+  return project.filter((definition) => admitted.has(definition.name));
 }
 
 /**
@@ -946,7 +760,7 @@ export function chuggyToolServer(context, sdk) {
   });
 }
 
-/** What one session's tools are held in: its task, its bearer, and this turn's staging. */
+/** What one session's tools are held in. */
 export function chuggyToolContext(task, bearer, services = {}) {
   return {
     task,
@@ -955,6 +769,5 @@ export function chuggyToolContext(task, bearer, services = {}) {
     version: services.version ?? "1",
     request: services.request ?? chuggyRequest,
     turn: services.turn ?? (() => undefined),
-    staging: services.staging ?? leadDecisionStaging(),
   };
 }

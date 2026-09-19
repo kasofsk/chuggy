@@ -7,11 +7,21 @@
  * suite sends a frame after the screen it is testing has done something.
  */
 
-import type {
-  ProjectStreamPorts,
-  StreamBody,
-  StreamResponse,
-} from "../app/core/projectStream.ts";
+interface StreamBody {
+  getReader(): { read(): Promise<StreamChunkRead>; cancel(): Promise<void> };
+}
+
+interface StreamResponse {
+  readonly status: number;
+  readonly body: StreamBody | null;
+}
+
+interface ProjectStreamPorts {
+  readonly fetch: typeof fetch;
+  readonly bearer: () => Promise<string>;
+  readonly sleepMs: (ms: number, signal: AbortSignal) => Promise<void>;
+  readonly nowMs: () => number;
+}
 
 export interface StreamOpening {
   readonly status: number;
@@ -95,7 +105,13 @@ export function streamServer(
   let pending: StreamChunkWaiter | undefined;
   let queued: string[] = [];
   const ports: ProjectStreamPorts = {
-    fetch: (_url, init) => {
+    fetch: ((
+      _url: string,
+      init: {
+        readonly headers: Record<string, string>;
+        readonly signal: AbortSignal;
+      },
+    ) => {
       headersSeen.push(init.headers);
       const opening = openings[opened] ?? { status: 500 };
       opened += 1;
@@ -117,7 +133,7 @@ export function streamServer(
             : null,
       };
       return Promise.resolve(response);
-    },
+    }) as unknown as typeof fetch,
     bearer: () => Promise.resolve(bearer),
     sleepMs: (ms, signal) => {
       delaysMs.push(ms);

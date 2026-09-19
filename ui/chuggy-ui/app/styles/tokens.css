@@ -50,6 +50,12 @@
     --tone-retired: var(--ink-3);
     --tone-on-danger: light-dark(#ffffff, #0e1210);
 
+    /* syntax — the ticket editor's YAML, the only text the console colours by meaning */
+    --syntax-key: light-dark(#3658c7, #93a9f2);
+    --syntax-string: light-dark(#25664b, #6fbf95);
+    --syntax-value: light-dark(#80489b, #c79ae0);
+    --syntax-note: var(--ink-3);
+
     /* washes — a tone at background strength, for notices and meter cells */
     --wash: 10%;
     --wash-pass: color-mix(

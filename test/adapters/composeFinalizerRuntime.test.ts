@@ -64,7 +64,6 @@ function settings(
     CHUG_FINALIZER_DATABASE_URL: "postgres://finalizer@localhost/chuggy",
     CHUG_FINALIZER_OWNER: "finalizer-1",
     CHUG_FINALIZER_RECOVERY_EPOCH: "epoch-1",
-    CHUG_FINALIZER_ARTIFACT_ROOT: root,
     CHUG_FINALIZER_GIT_SCRATCH_ROOT: join(root, "scratch"),
     CHUG_FINALIZER_GIT_COMMIT_NAME: "chuggy",
     CHUG_FINALIZER_GIT_COMMIT_EMAIL: "chuggy@example.invalid",
@@ -75,14 +74,13 @@ function settings(
   });
 }
 
-test("a deployment is held to its git, its scratch, its storage and its credentials", async (t) => {
+test("a deployment is held to its git, scratch and credentials", async (t) => {
   const composition = composeFinalizerRuntime(settings(t));
   assert.deepEqual(
     composition.preconditions.map((precondition) => precondition.name),
     [
       "git-available",
       "git-scratch-writable",
-      "artifact-root-writable",
       "repository-credentials-available",
       "forge-credentials-available",
     ],
@@ -185,10 +183,9 @@ test("a forge binding naming no API host composes no adapter at all", (t) => {
   );
 });
 
-test("the composed service promotes through the port and stores under the named root", (t) => {
+test("the composed service promotes through the configured git port", (t) => {
   const parsed = settings(t);
   const service = composeFinalizerRuntime(parsed).service(unusedPool);
-  assert.equal(service.artifactRoot, parsed.artifactRoot);
   assert.equal(typeof service.git.promoteCandidate, "function");
 });
 
@@ -196,7 +193,7 @@ test("composing yields no git port until one is asked for", (t) => {
   const parsed = settings(t);
   const composition = composeFinalizerRuntime({
     ...parsed,
-    git: { ...parsed.git, environment: { PATH: parsed.artifactRoot } },
+    git: { ...parsed.git, environment: { PATH: parsed.git.scratchDirectory } },
   });
   assert.throws(() => composition.service(unusedPool));
 });

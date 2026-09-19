@@ -36,13 +36,23 @@ naming no worker pair answers a worker claim `ForgeNotConfigured`.
 `deploy/rig/images/README.md` carries these rows and the two bounds beside
 them.
 
-**The finalizer, the ticket service and the importer mount the portal key too**
-and mint for themselves rather than asking the API, which widens the key from
-the API's pod to theirs: each of them can now do anything the portal App's
-installation may on any account a tenant claimed it under — the ruleset admits
-it to protected `main`, which is what a promotion and a proposal both need —
-where each was previously bounded by the per-repository tokens its deployment
-mounted.
+The API and finalizer mount the portal App key and mint credentials for their
+repository operations. The scheduler uses the worker App key for ticket execution.
+
+**AN INSTALLATION THAT REACHES NO FORGE STILL NEEDS BOTH KEYS.** The refusal
+below is at start-up and is made by the configuration rather than by the first
+act, so a deployment that names an App and mounts no usable key is a pod that
+never becomes ready and says nothing about a forge. Two throwaway RSA keys
+satisfy every precondition on a rig that mints nothing, and GitHub is asked
+about neither:
+
+```sh
+openssl genrsa -traditional -out portal.pem 4096
+openssl genrsa -traditional -out worker.pem 4096
+```
+
+`deploy/rig/preflight.sh` reports both Secrets absent rather than leaving the
+pods to.
 
 The key is read once per mint rather than held, and the process refuses to start
 unless the file it names is a readable RSA private key — so a Secret mounted at
@@ -54,30 +64,6 @@ and `administer` on `Tenant`.** The credential route asks the first, the
 onboarding routes ask the other two, and the API's readiness probes every permit
 the code asks for, so an authority carrying a model without one of them reports
 NOT READY at the pod's door.
-
-## What a bound repository starts on
-
-A repository is read the moment a project binds it: the API resolves where the
-repository's own HEAD points, imports the configurations it declares there, and
-where it declares none authors a **bootstrap** configuration for the project —
-a review-only configuration whose whole brief is to write the repository's own
-`.chug/configurations` and stop running on it. The worker image that
-configuration commands is a setting, and a deployment naming none authors no
-bootstrap:
-
-```
-CHUG_API_BOOTSTRAP_WORKER_IMAGE=<a digest reference the scheduler admits>
-```
-
-It is not checked against the scheduler's admitted images — the API does not
-hold that list — so an image the rig will not run is refused at placement with
-`ExecutionPolicyDenied` rather than here.
-
-The step runs after the binding row exists and never refuses one. The bind's
-answer carries `configurations`, which is an import, a bootstrap, or a
-`Deferred` naming what stopped it; a deferred step is re-run through
-`POST /api/v1/tenants/<tenant>/projects/<project>/configurations/imports` and
-the authoring route, both of which already exist.
 
 ## Create a repository over the API
 
@@ -128,7 +114,7 @@ POST /api/v1/tenants/<tenant>/forge-installations
 ```
 
 Onboarding installs **two** Apps on the account, and the claim names which: the
-portal App the API, finalizer, ticket service and importer act as, and the
+portal App the API and finalizer act as, and the
 worker App the plane mints under. Each has its own installation id on the same
 account, so a claim is made twice — once per App.
 

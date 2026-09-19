@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { finalizerDefaults } from "../../src/interpreter/finalizer.ts";
+import { ticketFinalizerDefaults } from "../../src/interpreter/ticketFinalizer.ts";
 import {
   finalizerGitEnvironmentNames,
   finalizerRuntimeDefaults,
@@ -28,8 +28,7 @@ const credentialSources = JSON.stringify([
 const complete: FinalizerEnvironment = {
   CHUG_FINALIZER_DATABASE_URL: "postgres://finalizer@localhost/chuggy",
   CHUG_FINALIZER_OWNER: "finalizer-1",
-  CHUG_FINALIZER_RECOVERY_EPOCH: "epoch-3",
-  CHUG_FINALIZER_ARTIFACT_ROOT: "/var/lib/chuggy/artifacts",
+  CHUG_FINALIZER_RECOVERY_EPOCH: "epoch-1",
   CHUG_FINALIZER_GIT_SCRATCH_ROOT: "/var/lib/chuggy/scratch",
   CHUG_FINALIZER_GIT_COMMIT_NAME: "chuggy",
   CHUG_FINALIZER_GIT_COMMIT_EMAIL: "chuggy@example.invalid",
@@ -47,8 +46,7 @@ test("a complete environment parses into plain data the composition takes", () =
   const settings = finalizerSettingsOf(complete);
   assert.equal(settings.databaseUrl, complete["CHUG_FINALIZER_DATABASE_URL"]);
   assert.equal(settings.owner, "finalizer-1");
-  assert.equal(settings.recoveryEpoch, "epoch-3");
-  assert.equal(settings.artifactRoot, "/var/lib/chuggy/artifacts");
+  assert.equal(settings.recoveryEpoch, "epoch-1");
   assert.equal(settings.git.scratchDirectory, "/var/lib/chuggy/scratch");
   assert.equal(settings.git.commitName, "chuggy");
   assert.equal(settings.git.commitEmail, "chuggy@example.invalid");
@@ -56,7 +54,7 @@ test("a complete environment parses into plain data the composition takes", () =
     { repository: "https://example.invalid/one.git", path: "/run/secrets/one" },
   ]);
   assert.deepEqual(settings.runtime, finalizerRuntimeDefaults);
-  assert.deepEqual(settings.finalizer, finalizerDefaults);
+  assert.deepEqual(settings.finalizer, ticketFinalizerDefaults);
 });
 
 test("every required variable is named when it is missing", () => {
@@ -98,12 +96,6 @@ test("every pass and pace bound a deployment names reaches the parsed configurat
     CHUG_FINALIZER_SHUTDOWN_DRAIN_MS: "2000",
     CHUG_FINALIZER_REQUEST_CLAIM_LEASE_SECS: "60",
     CHUG_FINALIZER_REQUESTS_PER_PASS_MAX: "4",
-    CHUG_FINALIZER_PREPARATION_RESTARTS_MAX: "2",
-    CHUG_FINALIZER_PREPARATIONS_PER_PASS_MAX: "3",
-    CHUG_FINALIZER_PROMOTIONS_PER_PASS_MAX: "5",
-    CHUG_FINALIZER_RECONCILIATIONS_PER_PASS_MAX: "6",
-    CHUG_FINALIZER_HELD_PERMITS_PER_PASS_MAX: "7",
-    CHUG_FINALIZER_PROPOSALS_PER_PASS_MAX: "9",
     CHUG_FINALIZER_PROPOSAL_CREATIONS_MAX: "11",
     CHUG_FINALIZER_PROPOSAL_RECONCILIATIONS_MAX: "10",
     CHUG_FINALIZER_PROPOSAL_MERGES_MAX: "12",
@@ -116,12 +108,6 @@ test("every pass and pace bound a deployment names reaches the parsed configurat
   assert.deepEqual(settings.finalizer, {
     requestClaimLeaseSecs: 60,
     requestsPerPassMax: 4,
-    preparationRestartsMax: 2,
-    preparationsPerPassMax: 3,
-    promotionsPerPassMax: 5,
-    reconciliationsPerPassMax: 6,
-    heldPermitsPerPassMax: 7,
-    proposalsPerPassMax: 9,
     proposalCreationsMax: 11,
     proposalReconciliationsMax: 10,
     proposalMergesMax: 12,

@@ -22,7 +22,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
 import { apiOrThrow } from "../core/apiRequest.ts";
 import type { ApiPorts, ApiResult } from "../core/apiRequest.ts";
 import { panelReason, panelStateFromQuery } from "../core/freshness.ts";
@@ -31,10 +30,13 @@ import {
   projectResourceKey,
   projectsInventoryKey,
 } from "../core/projectQueryKeys.ts";
-import type { ProjectList, ProjectQueryKey } from "../core/projectQueryKeys.ts";
+import type {
+  ProjectList,
+  ProjectQueryKey,
+  ProjectResourceKind,
+} from "../core/projectQueryKeys.ts";
 import { apiFetch, sleepMs } from "./ports.ts";
 import { useSessionHolder } from "./session.tsx";
-import { useProjectListRefresh } from "./stream.tsx";
 
 type PanelRead<T> = (
   ports: ApiPorts,
@@ -98,7 +100,7 @@ function usePanelQuery<T>(
  * under one, which no frame names and the partition's refetch reaches. */
 export function usePanelResource<T>(
   partition: PartitionIdentity,
-  kind: ProjectChangeKind,
+  kind: ProjectResourceKind,
   resource: string,
   read: PanelRead<T>,
 ): PanelState<T> {
@@ -110,7 +112,6 @@ export function usePanelList<T>(
   list: ProjectList<T>,
   read: PanelRead<T>,
 ): PanelState<T> {
-  useProjectListRefresh(list);
   return usePanelQuery(list.key, read);
 }
 

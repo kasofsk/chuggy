@@ -154,9 +154,6 @@ test("the bar spans the frame rather than sharing the row with the pane", async 
     nav?.closest("[data-chat]"),
     "the bar was drawn inside the tracks the chat pane divides",
   ).toBeNull();
-  expect(
-    document.querySelector(".shell-banner")?.closest("[data-chat]"),
-  ).toBeNull();
   expect(chatDrawn()?.closest("[data-chat]")).not.toBeNull();
   styleless();
 });
@@ -223,7 +220,7 @@ test("pressing a screen puts a filled pane back beside the pages", async () => {
   await pressed("Full screen");
   expect(frameTracks()).toContain("grid-cols-1");
   await turned(() => {
-    screen.getByRole("link", { name: /Inbox/u }).click();
+    screen.getByRole("link", { name: /^Lead/u }).click();
   });
   await settled();
   expect(frameTracks()).toContain(
@@ -238,7 +235,7 @@ test("pressing a screen leaves a collapsed pane collapsed", async () => {
   await mounted(viewportDeskEm);
   await pressed("Collapse");
   await turned(() => {
-    screen.getByRole("link", { name: /Inbox/u }).click();
+    screen.getByRole("link", { name: /^Lead/u }).click();
   });
   await settled();
   expect(frameTracks()).toContain(

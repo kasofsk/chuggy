@@ -120,6 +120,34 @@ export const sessionTurnToolNameCharsMax = 128;
 /** How many already-confirmed entry uuids one stream's adapter remembers. */
 export const sessionStoreUuidsRemembered = 4_096;
 
+/**
+ * The most turns one attempt's run is measured over. A run past it is measured
+ * up to it and no further, because a series nothing bounds is a series a pool
+ * this tree does not run can make as long as it likes.
+ */
+export const ticketExecutionRunTurnsMax = 1_000;
+
+/** The most turns one report of them carries, which a longer run pages over. */
+export const ticketExecutionRunTurnsPageMax = 100;
+
+/** The longest model identity one turn of a run names. */
+export const ticketExecutionRunModelCharsMax = 128;
+
+/** The most models one run's totals break down by. */
+export const ticketExecutionRunModelsMax = 32;
+
+/** The longest subtype or stop reason a run's totals carry. */
+export const ticketExecutionRunReasonCharsMax = 64;
+
+/** The most transcript batches one attempt's run is stored as, in arrival order. */
+export const ticketExecutionRunTranscriptBatchesMax = 4_096;
+
+/** The largest one transcript batch is, which a longer run splits rather than trims. */
+export const ticketExecutionRunTranscriptBytesMax = 65_536;
+
+/** The largest configuration snapshot one attempt records of what it ran under. */
+export const ticketExecutionRunConfigurationBytesMax = 1_048_576;
+
 /** The largest body one worker-plane upload carries, which an artifact is written against. */
 export const workerPlaneUploadBytesMax = 4_194_304;
 
@@ -132,12 +160,6 @@ export const runModelCharsMax = 128;
 /** The longest settings text the wire carries, which is what its column holds. */
 export const selectorSettingsTextCharsMax = 65_536;
 
-/** The most names one selector allowlist carries. */
-export const selectorAllowlistNamesMax = 64;
-
-/** The longest name one selector allowlist entry carries. */
-export const selectorAllowlistNameCharsMax = 256;
-
 /** The largest handoff note the wire carries, which is what its column holds. */
 export const selectorHandoffNoteBytesMax = 65_536;
 
@@ -149,17 +171,6 @@ export const selectorHandoffNoteBytesMax = 65_536;
  * control reporting a number the parser would refuse the lead for spending.
  */
 export const leadDispatchesMax = 8;
-
-/**
- * How much of the handoff note the lead read carries. The note's own ceiling is
- * a whole wire body, and the lead read carries a mailbox tail and a stream
- * listing beside it, so a note at its bound would put that one response past
- * what the wire admits.
- */
-export const selectorHandoffNotePreviewCharsMax = 4_096;
-
-/** How many of one project's decisions a single history page answers with. */
-export const selectorHistoryLimitMax = 50;
 
 /**
  * The longest reason one agentic refusal carries. It is what makes a page of
@@ -309,43 +320,15 @@ export const nativeHttpRoutes = {
   forgeInstallationRepositories: `${nativeHttpBasePath}/tenants/:tenant/forge-installations/:installationId/repositories`,
   projects: `${nativeHttpBasePath}/projects`,
   project: `${nativeHttpBasePath}/tenants/:tenant/projects/:project`,
-  tickets: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets`,
-  ticket: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket`,
-  ticketNativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/native-actions`,
-  ticketAgenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/agentic-refusals`,
-  nativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/native-actions`,
-  agenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/agentic-refusals`,
-  operationalStatus: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operational-status`,
-  selectorContext: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-context`,
-  selectorSettings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-settings`,
-  selectorSettingsHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-settings/history`,
-  selectorHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-history`,
   lead: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead`,
   leadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/transcript`,
   leadInquiries: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/inquiries`,
   leadInquiry: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/inquiries/:session`,
-  executions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions`,
-  execution: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution`,
-  outputContent: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/artifacts/:ordinal`,
-  runTurns: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/turns`,
-  runTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/transcript`,
-  runConfiguration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/configuration`,
-  operations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operations`,
-  operation: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operations/:operation`,
-  notifications: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/notifications`,
-  events: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/events`,
-  configurations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations`,
-  configurationImports: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/imports`,
-  configuration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/:revision`,
   forgeCredentials: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/forge-credentials`,
   projectRepositories: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories`,
   projectRepositoriesNew: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/new`,
   projectRepositoryLanding: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/landing`,
   projectRepositoryRetirement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/retirement`,
-  drafts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts`,
-  draftInitialization: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/draft-initializations/:revision`,
-  draft: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts/:ticket`,
-  dispatchView: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/dispatch-view`,
   threads: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads`,
   thread: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session`,
   threadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/transcript`,
@@ -353,6 +336,18 @@ export const nativeHttpRoutes = {
   threadClose: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/close`,
   threadRename: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/rename`,
   threadHide: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/hide`,
+  ticketMachineAdmission: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine`,
+  tickets: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/tickets`,
+  ticket: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/tickets/:ticket`,
+  ticketValidation: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/tickets/validate`,
+  ticketCatalog: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/catalog`,
+  ticketOperation: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/operations`,
+  ticketOperations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/operations/recent`,
+  ticketExecutions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/executions`,
+  ticketExecution: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/executions/:task`,
+  ticketExecutionTurns: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/executions/:task/attempts/:attempt/turns`,
+  ticketExecutionTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/executions/:task/attempts/:attempt/transcript`,
+  ticketExecutionConfiguration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/ticket-machine/executions/:task/attempts/:attempt/configuration`,
 } as const;
 
 export type NativeHttpRoute = keyof typeof nativeHttpRoutes;

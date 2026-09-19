@@ -15,8 +15,6 @@ import {
   projectAccessTimeoutMsDefault,
   type ProjectAccess,
 } from "../../src/interpreter/projectAccess.ts";
-import { executionSchedulerAuthorityKind } from "../../src/interpreter/executionScheduler.ts";
-import { finalizerAuthorityKind } from "../../src/interpreter/finalizer.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 
 const partitionOf = (tenant: string, project: string) => ({
@@ -62,11 +60,6 @@ test("the derived authority is the principal under one kind", () => {
     kind: memberAuthorityKind,
     subject: principal,
   });
-});
-
-test("the derived kind is neither boundary kind a completion is reserved to", () => {
-  assert.notEqual(memberAuthorityKind, executionSchedulerAuthorityKind);
-  assert.notEqual(memberAuthorityKind, finalizerAuthorityKind);
 });
 
 test("a principal too wide to be audited is refused where it is composed", () => {

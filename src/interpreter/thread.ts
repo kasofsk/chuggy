@@ -36,10 +36,8 @@ import {
   textCodePointsCount,
   threadMessageCharsMax,
   threadSeedingCharsMax,
-  threadWakeCharsMax,
 } from "../contract/http.ts";
 import {
-  resolvedThreadStandingRules,
   threadDraftsHeading,
   threadNorthStarHeading,
   threadRefusalsHeading,
@@ -86,115 +84,6 @@ export function threadStanding(input: {
   return input.state === "Open" && input.owner === undefined
     ? "Orphaned"
     : input.state;
-}
-
-/**
- * Why a thread was woken without its owner typing: a closed roster, so a wake
- * names a reason rather than carrying a payload.
- */
-export const allThreadWakeReasons = [
-  "TicketRefused",
-  "RefusalLifted",
-  "DraftDeleted",
-  "TicketEscalated",
-  "TicketCompleted",
-  "TicketAbandoned",
-] as const;
-export type ThreadWakeReason = (typeof allThreadWakeReasons)[number];
-
-/** The version every wake document this release writes carries. */
-export const threadWakeVersion = 1;
-
-/** What one wake turn's input says, and it says nothing else. */
-export interface ThreadWakeDocument {
-  readonly version: typeof threadWakeVersion;
-  readonly wake: ThreadWakeReason;
-  /** The ticket the event is about, as the change row named it. */
-  readonly resource: string;
-  readonly at: string;
-  /** The standing rules, carried on the turn that could break them. */
-  readonly standing: string;
-}
-
-/** One wake document, with the project's standing rules resolved onto it rather
- * than left to a caller. */
-export function threadWakeDocument(input: {
-  readonly wake: ThreadWakeReason;
-  readonly resource: string;
-  readonly at: string;
-  /** The project's own standing rules, absent where it takes the default. */
-  readonly standingRules?: string;
-}): ThreadWakeDocument {
-  if (input.resource.length === 0)
-    throw new RangeError("wake document: the resource is empty");
-  if (input.at.length === 0)
-    throw new RangeError("wake document: the instant is empty");
-  return {
-    version: threadWakeVersion,
-    wake: input.wake,
-    resource: input.resource,
-    at: input.at,
-    standing: resolvedThreadStandingRules(input.standingRules),
-  };
-}
-
-/**
- * One wake document as the mailbox holds it. The bound is checked here rather
- * than by the row, so a document no roster member could have produced is
- * refused where it is composed instead of where it is stored.
- */
-export function threadWakeText(document: ThreadWakeDocument): string {
-  const text = JSON.stringify(document);
-  if (textCodePointsCount(text) > threadWakeCharsMax)
-    throw new RangeError(
-      `a wake document must be at most ${String(threadWakeCharsMax)} characters`,
-    );
-  return text;
-}
-
-function wakeField(
-  fields: Readonly<Record<string, unknown>>,
-  name: string,
-): string {
-  const value = fields[name];
-  if (typeof value !== "string" || value.length === 0)
-    throw new RangeError(`wake document: ${name} is not a value one carries`);
-  return value;
-}
-
-/**
- * One wake document read back. It REFUSES RATHER THAN REPAIRS: a version this
- * release does not write, a reason outside the roster, a missing field or a
- * document larger than the column holds are each a document some other writer
- * produced, and a reader that filled in the difference would be inventing the
- * notice it was asked to deliver.
- */
-export function parseThreadWake(text: string): ThreadWakeDocument {
-  if (textCodePointsCount(text) > threadWakeCharsMax)
-    throw new RangeError("wake document: larger than one is written at");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new RangeError("wake document: not the JSON one is written as");
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
-    throw new RangeError("wake document: not an object");
-  const fields = parsed as Readonly<Record<string, unknown>>;
-  if (fields["version"] !== threadWakeVersion)
-    throw new RangeError(
-      "wake document: a version this release does not write",
-    );
-  const wake = wakeField(fields, "wake");
-  if (!(allThreadWakeReasons as readonly string[]).includes(wake))
-    throw new RangeError("wake document: a reason outside the roster");
-  return {
-    version: threadWakeVersion,
-    wake: wake as ThreadWakeReason,
-    resource: wakeField(fields, "resource"),
-    at: wakeField(fields, "at"),
-    standing: wakeField(fields, "standing"),
-  };
 }
 
 /**

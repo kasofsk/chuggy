@@ -180,7 +180,7 @@ test("every prerequisite variable is refused by its own name", async () => {
   }
 });
 
-test("the credential route is composed and stands in front of the attempt authority", async () => {
+test("the legacy attempt credential route is absent", async () => {
   const port = await freePort();
   const child = planeProcess(planeEnvironment(port));
   try {
@@ -189,8 +189,7 @@ test("the credential route is composed and stands in front of the attempt author
       `http://127.0.0.1:${String(port)}/v1/credential`,
       { method: "POST" },
     );
-    assert.equal(answered.status, 401);
-    assert.deepEqual(await answered.json(), { action: "stop" });
+    assert.equal(answered.status, 404);
   } finally {
     child.kill("SIGKILL");
   }

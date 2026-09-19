@@ -40,44 +40,13 @@
  * that mints is refused by the same `Denied` the minting source already
  * answers an unclaimed owner with.
  *
- * A NEWLY BOUND REPOSITORY IS READ ONCE AND LEFT CONFIGURED EITHER WAY. A
- * project that binds a repository declaring configurations wanted them, and one
- * that binds a repository declaring none still needs something to run its first
- * ticket on — so the bind imports what is there and authors the bootstrap where
- * there is nothing, at the repository's own head because the caller holds no
- * ticket to take a commit from.
- *
- * THAT STEP IS BEST EFFORT AND THE BIND IS NOT. The binding is already durable
- * when it runs, so every way it can fail is a reason reported beside a
- * repository that is bound rather than a refusal that would claim it is not;
- * `AlreadyBound` runs nothing, a project having had its one chance at the
- * moment the repository became its own.
  */
-
 import { assertNever } from "../domain/assertNever.ts";
-import {
-  asConfigurationRevisionId,
-  type AuthoringStore,
-  type ConfigurationRevisionId,
-} from "./authoring.ts";
-import {
-  bootstrapConfiguration,
-  bootstrapConfigurationCommitMessage,
-  bootstrapConfigurationFile,
-  bootstrapConfigurationName,
-  bootstrapConfigurationPath,
-} from "./bootstrapConfiguration.ts";
 import type {
-  GitRefName,
   RepositoryBinding,
   RepositoryCredentialPort,
   RepositoryId,
 } from "./finalizer.ts";
-import {
-  importRepositoryConfigurations,
-  type RepositoryConfigurationImportPorts,
-  type RepositoryDefaultBranchPort,
-} from "./repositoryConfiguration.ts";
 import type {
   ForgeAppDescription,
   ForgeApps,
@@ -180,50 +149,12 @@ export type ForgeRepositoriesResult =
   | { readonly result: "NotFound" }
   | { readonly result: "Unavailable" };
 
-/**
- * Why a newly bound repository came away with no configurations of its own.
- * Every one of them is a step that did not run or did not take, and none of
- * them says anything about whether the repository is bound.
- */
-export const allProjectRepositoryConfigurationsDeferrals = [
-  "NotConfigured",
-  "NoBootstrapImage",
-  "DefaultBranchAbsent",
-  "DefaultBranchUnavailable",
-  "RepositoryAbsent",
-  "SnapshotAbsent",
-  "SnapshotUnavailable",
-  "SnapshotRefused",
-  "DeclarationsRefused",
-  "IdentityConflict",
-  "StaleBinding",
-  "NotFound",
-  "ParentNotFound",
-  "StepFailed",
-] as const;
-
-export type ProjectRepositoryConfigurationsDeferral =
-  (typeof allProjectRepositoryConfigurationsDeferrals)[number];
-
-/** What configuring one newly bound repository came to. */
-export type ProjectRepositoryConfigurationsResult =
-  | { readonly result: "Imported"; readonly count: number }
-  | {
-      readonly result: "Bootstrapped";
-      readonly revision: ConfigurationRevisionId;
-    }
-  | {
-      readonly result: "Deferred";
-      readonly reason: ProjectRepositoryConfigurationsDeferral;
-    };
-
 /** What binding one repository to one project came to. */
 export type ProjectRepositoryBindResult =
   | {
       readonly result: "Bound";
       readonly repository: RepositoryId;
       readonly landing: RepositoryLanding;
-      readonly configurations: ProjectRepositoryConfigurationsResult;
     }
   | { readonly result: "AlreadyBound"; readonly repository: RepositoryId }
   | { readonly result: "NotInstalled" }
@@ -272,7 +203,6 @@ export type ProjectRepositoryCreateResult =
       readonly created: ProjectRepositoryMade;
       readonly seeded: boolean;
       readonly ruleset: ProjectRepositoryRulesetResult;
-      readonly configurations: ProjectRepositoryConfigurationsResult;
     }
   | { readonly result: "InstallationMissing"; readonly app: ForgeApp }
   | { readonly result: "PersonalAccountCreatesOnGitHub" }
@@ -363,19 +293,6 @@ export interface RepositoryOnboardingForgeApp {
 }
 
 /**
- * The half a bind's configuration step is composed with. `bootstrapImage` is
- * the worker image a bootstrap configuration commands, and a deployment naming
- * none imports what a repository declares and defers the rest: a configuration
- * commanding no image is one nothing could run.
- */
-export interface RepositoryConfigurationsPorts {
-  readonly heads: RepositoryDefaultBranchPort;
-  readonly imports: RepositoryConfigurationImportPorts;
-  readonly authoring: Pick<AuthoringStore, "createConfiguration">;
-  readonly bootstrapImage?: string;
-}
-
-/**
  * The half creating a repository is composed with: which forge it makes one on,
  * the three acts it makes one by, and the repository a personal account's is
  * copied from. A deployment naming no template creates for organizations only,
@@ -398,7 +315,6 @@ export interface RepositoryOnboardingPorts {
   readonly binding: ProjectRepositoryBindingWrite;
   readonly landing: ProjectRepositoryLandingStore;
   readonly retirement: ProjectRepositoryRetirementStore;
-  readonly configurations?: RepositoryConfigurationsPorts;
   readonly creation?: RepositoryCreationPorts;
 }
 
@@ -573,121 +489,6 @@ async function installationRepositories(
 }
 
 /**
- * The bootstrap configuration authored as this project's own, at the revision
- * the name itself is. A second repository in one project needing a bootstrap
- * meets the first one's revision: identical text is that revision and different
- * text is `IdentityConflict`, which is the deferral saying the project already
- * has a bootstrap to bind the second repository's tickets against.
- */
-async function bindRepositoryBootstrapped(
-  configurations: RepositoryConfigurationsPorts,
-  binding: RepositoryBinding,
-  defaultBranch: GitRefName,
-  authority: Authority,
-): Promise<ProjectRepositoryConfigurationsResult> {
-  if (configurations.bootstrapImage === undefined)
-    return { result: "Deferred", reason: "NoBootstrapImage" };
-  const revision = asConfigurationRevisionId(bootstrapConfigurationName);
-  const created = await configurations.authoring.createConfiguration({
-    partition: binding.partition,
-    authority,
-    revision,
-    canonical: bootstrapConfiguration({
-      repository: binding.repository,
-      defaultBranch,
-      image: configurations.bootstrapImage,
-    }),
-  });
-  switch (created.created) {
-    case "Created":
-    case "AlreadyExists":
-      return { result: "Bootstrapped", revision: created.revision.revision };
-    case "IdentityConflict":
-      return { result: "Deferred", reason: "IdentityConflict" };
-    case "ParentNotFound":
-      return { result: "Deferred", reason: "ParentNotFound" };
-    default:
-      return assertNever(created);
-  }
-}
-
-/**
- * What a newly bound repository declares, imported at its own head, and the
- * bootstrap where it declares nothing. A snapshot absent for want of the
- * configuration directory is the one outcome that is not a deferral: it is the
- * repository saying it has none, which is what the bootstrap is for.
- */
-async function bindRepositoryConfigurations(
-  ports: RepositoryOnboardingPorts,
-  binding: RepositoryBinding,
-  authority: Authority,
-): Promise<ProjectRepositoryConfigurationsResult> {
-  const configurations = ports.configurations;
-  if (configurations === undefined)
-    return { result: "Deferred", reason: "NotConfigured" };
-  const head = await configurations.heads.defaultBranch(binding);
-  if (head.read === "Absent")
-    return { result: "Deferred", reason: "DefaultBranchAbsent" };
-  if (head.read === "Unavailable")
-    return { result: "Deferred", reason: "DefaultBranchUnavailable" };
-  const imported = await importRepositoryConfigurations({
-    partition: binding.partition,
-    repository: binding.repository,
-    commit: head.commit,
-    authority,
-    ports: configurations.imports,
-  });
-  switch (imported.result) {
-    case "Imported":
-      return { result: "Imported", count: imported.declarations };
-    case "SnapshotAbsent":
-      return imported.absent === "ConfigurationDirectory"
-        ? bindRepositoryBootstrapped(
-            configurations,
-            binding,
-            head.branch,
-            authority,
-          )
-        : { result: "Deferred", reason: "SnapshotAbsent" };
-    case "Unavailable":
-      return { result: "Deferred", reason: "SnapshotUnavailable" };
-    case "SnapshotRefused":
-      return { result: "Deferred", reason: "SnapshotRefused" };
-    case "DeclarationsRefused":
-      return { result: "Deferred", reason: "DeclarationsRefused" };
-    case "IdentityConflict":
-      return { result: "Deferred", reason: "IdentityConflict" };
-    case "StaleBinding":
-      return { result: "Deferred", reason: "StaleBinding" };
-    case "RepositoryAbsent":
-      return { result: "Deferred", reason: "RepositoryAbsent" };
-    case "NotFound":
-      return { result: "Deferred", reason: "NotFound" };
-    default:
-      return assertNever(imported);
-  }
-}
-
-/**
- * The configuration step under the binding it follows, contained. The binding
- * row is committed before this runs, so a port that raises rather than answers
- * — a store that lost its connection, a scratch the reader cannot write — is
- * reported as a deferral beside a repository that is bound, never as a failure
- * claiming it is not.
- */
-async function boundRepositoryConfigurations(
-  ports: RepositoryOnboardingPorts,
-  binding: RepositoryBinding,
-  authority: Authority,
-): Promise<ProjectRepositoryConfigurationsResult> {
-  try {
-    return await bindRepositoryConfigurations(ports, binding, authority);
-  } catch {
-    return { result: "Deferred", reason: "StepFailed" };
-  }
-}
-
-/**
  * The landing the row a bind just made stands at, read rather than assumed:
  * what a repository nobody has edited lands by is the durable column's default
  * and not a value this tree also holds.
@@ -757,11 +558,6 @@ async function boundRepository(
         result: "Bound",
         repository: request.repository,
         landing: await boundRepositoryLanding(ports, partition, request),
-        configurations: await boundRepositoryConfigurations(
-          ports,
-          binding,
-          authority,
-        ),
       };
     case "AlreadyBound":
       return { result: "AlreadyBound", repository: request.repository };
@@ -821,59 +617,6 @@ function createRepositoryMode(
   return creation.template === undefined
     ? undefined
     : { mode: "Template", template: creation.template };
-}
-
-/**
- * How far the first commit got, which is what puts a branch under a created
- * repository. A refusal is the forge's own and settled; an outage is the
- * caller's to retry, and the retry meets `RepositoryExists`.
- */
-type CreateRepositorySeeding =
-  | { readonly seeding: "Seeded" }
-  | { readonly seeding: "Unseeded" }
-  | { readonly seeding: "Refused"; readonly message: string }
-  | { readonly seeding: "Unavailable" };
-
-/**
- * The first commit, written where there is an image to command. A deployment
- * naming no bootstrap image seeds nothing: the file it would write is a
- * configuration commanding no image, which nothing could run.
- */
-async function createRepositorySeeded(
-  ports: RepositoryOnboardingPorts,
-  creation: RepositoryCreationPorts,
-  installation: ForgeInstallation,
-  request: ProjectRepositoryCreateRequest,
-  made: ForgeRepositoryMade,
-): Promise<CreateRepositorySeeding> {
-  const image = ports.configurations?.bootstrapImage;
-  if (image === undefined) return { seeding: "Unseeded" };
-  const seeded = await creation.repositories.seed({
-    installation,
-    name: request.name,
-    branch: made.defaultBranch,
-    path: bootstrapConfigurationPath,
-    message: bootstrapConfigurationCommitMessage,
-    /**
-     * Uncontained, unlike the bind's step: the generator's only raise is its
-     * postcondition, over inputs branded shorter than the bound it checks.
-     */
-    content: bootstrapConfigurationFile({
-      repository: made.url,
-      defaultBranch: made.defaultBranch,
-      image,
-    }),
-  });
-  switch (seeded.seeded) {
-    case "Seeded":
-      return { seeding: "Seeded" };
-    case "Refused":
-      return { seeding: "Refused", message: seeded.message };
-    case "Unavailable":
-      return { seeding: "Unavailable" };
-    default:
-      return assertNever(seeded);
-  }
 }
 
 /**
@@ -984,17 +727,7 @@ async function createRepositoryBound(
   context: CreateRepositoryContext,
   made: ForgeRepositoryMade,
 ): Promise<ProjectRepositoryCreateResult> {
-  const seeding = await createRepositorySeeded(
-    ports,
-    creation,
-    context.installation,
-    context.request,
-    made,
-  );
-  if (seeding.seeding === "Refused")
-    return { result: "ForgeRefused", step: "seed", message: seeding.message };
-  if (seeding.seeding === "Unavailable") return { result: "Unavailable" };
-  const seeded = seeding.seeding === "Seeded";
+  const seeded = false;
   const ruleset = await createRepositoryRuleset(
     creation,
     context.installation,
@@ -1019,7 +752,6 @@ async function createRepositoryBound(
     },
     seeded,
     ruleset,
-    configurations: bound.configurations,
   };
 }
 

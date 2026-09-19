@@ -3,13 +3,6 @@
  * row holds, which are the refusals on this boundary no column constraint
  * repeats.
  *
- * WHY IT IS NOT BESIDE THE CAPS. `test/postgres/keying.test.ts` drives the
- * length caps next to the digests because a bounded column states each one
- * again, and reaching that column needs a server. A lone surrogate reaches no
- * column at all — it is refused before a digest is taken — so the case belongs
- * where it runs, and a pair of them is what says the refusal buys something: a
- * digest cannot separate two keys whose encodings are the same value.
- *
  * A NUL IS THE SAME KIND OF VALUE FOR A DIFFERENT REASON. No PostgreSQL text or
  * `jsonb` value holds one, and what refuses it there is the encoding rather than
  * a constraint — which is a raise from underneath whatever statement carried it,
@@ -23,7 +16,6 @@ import {
   asAuthorityKind,
   asAuthoritySubject,
   asIdempotencyKey,
-  asOperationCommand,
   asOperationId,
 } from "../../src/interpreter/operationInbox.ts";
 
@@ -41,7 +33,6 @@ const boundedConstructors: readonly ((value: string) => string)[] = [
   asAuthorityKind,
   asAuthoritySubject,
   asIdempotencyKey,
-  asOperationCommand,
   asOperationId,
 ];
 

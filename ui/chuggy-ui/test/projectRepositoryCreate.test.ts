@@ -33,7 +33,6 @@ function created(
     },
     seeded: true,
     ruleset: { result: "Created" },
-    configurations: { result: "Bootstrapped", revision: "r1" },
     ...over,
   };
 }
@@ -80,20 +79,17 @@ test("every step the create took is a row of its own", () => {
   expect(repositoryCreatedRows(created({}))).toEqual([
     { label: "Seed", detail: "Seeded" },
     { label: "Ruleset", detail: "Created" },
-    { label: "Configurations", detail: "Bootstrapped" },
   ]);
   expect(
     repositoryCreatedRows(
       created({
         seeded: false,
         ruleset: { result: "Skipped" },
-        configurations: { result: "Deferred", reason: "StepFailed" },
       }),
     ),
   ).toEqual([
     { label: "Seed", detail: "Not seeded" },
     { label: "Ruleset", detail: "Skipped" },
-    { label: "Configurations", detail: "Deferred · StepFailed" },
   ]);
 });
 

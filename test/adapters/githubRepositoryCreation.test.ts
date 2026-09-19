@@ -24,7 +24,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { githubRepositoryCreation } from "../../src/adapters/forge/githubRepositoryCreation.ts";
-import { bootstrapConfigurationPath } from "../../src/interpreter/bootstrapConfiguration.ts";
+const repositorySeedPath = "catalog.yaml";
 import {
   asForgeAccount,
   asForgeApp,
@@ -112,7 +112,7 @@ function fixtureSeed() {
     installation: fixtureInstallation,
     name: fixtureName,
     branch: fixtureBranch,
-    path: bootstrapConfigurationPath,
+    path: repositorySeedPath,
     message: "Add the bootstrap chuggy configuration",
     content: "{}\n",
   };
@@ -235,7 +235,7 @@ test("the seed writes the file at the branch the repository was made with", asyn
   const [call] = recorder.calls;
   assert.equal(
     call?.url,
-    `${fixtureApiUrl}/repos/kasofsk/engine/contents/.chug/configurations/bootstrap.json`,
+    `${fixtureApiUrl}/repos/kasofsk/engine/contents/catalog.yaml`,
   );
   assert.equal(call?.method, "PUT");
   const body = JSON.parse(call?.body ?? "") as Record<string, unknown>;

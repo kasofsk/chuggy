@@ -49,6 +49,24 @@ request `git-http-backend` would dispatch as one — a URL ending in
 The reader validates against writers there and against readers on every other
 path that reaches the backend; no query string enters the choice.
 
+**A REPOSITORY MADE BY HAND NEEDS ITS HEAD SET.** `seed.sh` creates the ones it
+knows about and sets `HEAD` on each; a repository created beside them with a
+bare `git init --bare` gets `HEAD -> refs/heads/master`, and a push of a `main`
+branch leaves that HEAD naming a ref the repository does not have. Nothing
+refuses the push and nothing reports it. What meets it is the clone: it comes
+down with no working tree, `git rev-parse HEAD` in it fails with *ambiguous
+argument 'HEAD'*, and an attempt that clones the repository fails there rather
+than anywhere near the cause. So create one with its branch named, or set the
+symref afterwards:
+
+```sh
+kubectl -n chuggy-git exec deployment/git -- git init --bare -b main /git/chuggy.git
+kubectl -n chuggy-git exec deployment/git -- git -C /git/chuggy.git symbolic-ref HEAD refs/heads/main
+```
+
+`deploy/rig/preflight.sh` resolves that HEAD on every run, which is what turns
+this from a thing to remember into a thing that is checked.
+
 nginx decides who may push at all and cannot see a ref. What an admitted
 credential may then do is `pre-receive.sh`'s, and it decides per repository:
 `seed.sh` installs that one file on every repository under the served root, so

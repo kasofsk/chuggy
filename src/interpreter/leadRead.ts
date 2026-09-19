@@ -2,12 +2,6 @@
  * What a project's owner may read of its lead: the session's standing, the tail
  * of its mailbox, and a page of the transcript behind it.
  *
- * THE NOTE IS PREVIEWED RATHER THAN CARRIED. A handoff note may weigh a whole
- * wire body on its own, and this read carries a mailbox tail and a stream
- * listing beside it, so the note crosses as its size and its leading
- * characters. A reader that needs the note whole is the lead itself, and it is
- * given the note in its observation rather than over the wire.
- *
  * A BATCH THAT CANNOT BE DRAWN IS ELIDED, NOT FATAL. Only an outage on the
  * page's OWN batches refuses the page: a batch that is gone or fails its digest
  * is counted, because a run that died leaves exactly that and the batches beside
@@ -45,8 +39,6 @@ import {
   sessionStorePageBatchesMax,
   sessionTranscriptEntriesMax,
   sessionTranscriptHeldBatchesMax,
-  selectorHandoffNotePreviewCharsMax,
-  textCodePointsCount,
 } from "../contract/http.ts";
 import type {
   SessionId,
@@ -64,7 +56,6 @@ import type {
 } from "./sessionPlane.ts";
 import type { SessionStoreRead } from "./sessionStore.ts";
 import type { Partition } from "./projectStore.ts";
-import type { JsonValue, SelectorProjectState } from "./selector.ts";
 
 /** One turn of the lead's mailbox as a reader sees it; its input is not a reader's business. */
 export interface LeadTurnRecord {
@@ -83,9 +74,6 @@ export interface LeadStanding {
   readonly session: SessionId;
   readonly state: SessionState;
   readonly agentReference?: string;
-  readonly attention: SelectorProjectState["attention"];
-  readonly notificationCursor: number;
-  readonly handoffNote: JsonValue;
   readonly turns: readonly LeadTurnRecord[];
 }
 
@@ -135,13 +123,6 @@ export interface LeadReadStore extends SessionStoreRowsRead {
   ): Promise<readonly SessionStoreStreamRow[]>;
 }
 
-/** How large the handoff note is, and as much of it as the lead read carries. */
-export interface HandoffNotePreview {
-  readonly bytes: number;
-  readonly preview: string;
-  readonly truncated: boolean;
-}
-
 export type LeadRead =
   | { readonly result: "NotFound" }
   | {
@@ -177,16 +158,6 @@ export type LeadTranscriptRead =
   | { readonly read: "NotFound" }
   | { readonly read: "Unavailable"; readonly retryAfterSeconds: number }
   | { readonly read: "Page"; readonly page: LeadTranscriptPage };
-
-/** The note as the lead read carries it: its whole size, and its leading characters. */
-export function handoffNotePreview(note: JsonValue): HandoffNotePreview {
-  const text = JSON.stringify(note ?? null) ?? "null";
-  return {
-    bytes: new TextEncoder().encode(text).byteLength,
-    preview: [...text].slice(0, selectorHandoffNotePreviewCharsMax).join(""),
-    truncated: textCodePointsCount(text) > selectorHandoffNotePreviewCharsMax,
-  };
-}
 
 export function checkedLeadTranscriptQuery(
   query: LeadTranscriptQuery,

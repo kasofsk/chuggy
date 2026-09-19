@@ -15,26 +15,22 @@
  * than against this list.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { conversationMentionItem } from "../../core/conversationMention.ts";
 import type { ConversationMentionItem } from "../../core/conversationMention.ts";
-import {
-  ticketFilterAll,
-  ticketFilterList,
-} from "../../core/projectTableFilters.ts";
-import { usePanelList } from "../api.ts";
-import { ticketRowsRead } from "../ProjectTable.tsx";
+import { adoptedTickets } from "../../core/adoptedTickets.ts";
+import { usePanelResource } from "../api.ts";
 
 export function useConversationMentions(
   partition: PartitionIdentity,
 ): readonly ConversationMentionItem[] {
-  const client = useQueryClient();
-  const state = usePanelList(
-    ticketFilterList(partition, ticketFilterAll),
-    (ports) => ticketRowsRead(client, ports, partition, ticketFilterAll),
+  const state = usePanelResource(
+    partition,
+    "Ticket",
+    "adopted-tickets",
+    (ports) => adoptedTickets(ports, partition),
   );
   /** The same array until the rows themselves change: the popover derives its
    * navigable list from this, and a fresh array on every render would put the

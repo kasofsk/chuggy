@@ -1358,17 +1358,20 @@ function credentialPlane(
   asked: unknown[] = [],
 ) {
   return createWorkerPlaneApp({
-    ...inertAttempt,
     sessions: inertSessions,
+    ready: inertAttempt.ready,
+    ...(inertAttempt.ticketExecutions === undefined
+      ? {}
+      : { ticketExecutions: inertAttempt.ticketExecutions }),
     ...(minted === undefined
       ? {}
       : {
           credentials: {
-            attempt: () => Promise.resolve({ minted: "NotFound" } as const),
             session: (partition: unknown, repository: unknown) => {
               asked.push({ partition, repository });
               return Promise.resolve(minted);
             },
+            attempt: () => Promise.resolve(minted),
           },
         }),
   });

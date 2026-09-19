@@ -78,7 +78,11 @@ test("each project relation carries exactly the kinds the model follows from it"
   );
   assert.deepEqual(
     await held(await granted(partition, "developer", "developers"), partition),
-    ["Read", "Mutate", "ProposeDispatch", "Execute"],
+    ["Read", "Mutate", "ProposeDispatch"],
+  );
+  assert.deepEqual(
+    await held(await granted(partition, "pool", "pools"), partition),
+    ["Execute"],
   );
   assert.deepEqual(
     await held(

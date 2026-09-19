@@ -2,27 +2,13 @@
  * The durable project authority: what a ticket-service writer needs of PostgreSQL before
  * it may decide anything for one project partition.
  *
- * WHY ONE PORT AND NOT THREE. Ownership, the journal and the recovery epoch
- * read as three contracts, and splitting them would be the obvious shape — but
+ * WHY ONE PORT AND NOT THREE. Ownership and the recovery epoch read as two
+ * contracts, and splitting them would be the obvious shape — but
  * a lease is only worth holding if the fencing epoch and the recovery epoch it
  * was issued under are rechecked wherever it is presented. Three ports invite
  * an implementation that checks ownership in one call and acts in the next,
- * which is exactly the race issue #180
- * forbids when it says every decision commit checks both the observed journal
- * head and the current fencing epoch. So the lease is an argument — to `load`
- * too, because a replay that ran before acquisition is missing whatever the
- * previous owner committed after it, and an entry computed from that state
- * extends a journal it never saw. Taking the lease is what makes
- * replay-then-acquire unrepresentable rather than merely discouraged, since
- * the adapter rechecks it against the same locked row the deciding transaction
- * will recheck.
- *
- * NOTHING HERE APPENDS. An entry names exactly one durable cause and settles
- * it in the same transaction, so a method that wrote an entry alone would be a
- * way to move the head and leave the operation that authorized it pending —
- * the half-written decision the transaction exists to prevent.
- * `./projectDecision.ts` is where an entry is written, and it is the only
- * place.
+ * which is exactly the race a fenced writer must prevent. The adapter rechecks
+ * the lease against the locked row wherever the adopted machine presents it.
  *
  * NO CLOCK CROSSES THIS BOUNDARY. Database time determines lease validity, so
  * a lease carries a duration to grant and never an instant to compare; the
@@ -31,7 +17,7 @@
  * one — the interpreter names no ambient capability, and `eslint.config.js`
  * says so for this directory.
  *
- * NOT EVERY METHOD IS THE RUNTIME'S. `acquire`, `renew`, `release`, `load`,
+ * NOT EVERY METHOD IS THE RUNTIME'S. `acquire`, `renew`, `release`,
  * `standing` and `currentRecoveryEpoch` are what a ticket-service writer holds.
  * `establishRecoveryEpoch`, `createProject` and `fence` are the control
  * plane's, and the runtime database role is granted nothing that would let it
@@ -47,10 +33,6 @@
  * cannot decide its way around.
  *
  */
-
-import type { StoredEntry } from "../actor/journal.ts";
-import type { Parsed } from "./wire.ts";
-import type { DispatchContractPin } from "./dispatchView.ts";
 
 declare const tenantIdBrand: unique symbol;
 declare const projectIdBrand: unique symbol;
@@ -179,7 +161,7 @@ export interface ProjectStore {
   /** Records a new global epoch, fencing every authority issued under an older one; refuses one already used. */
   establishRecoveryEpoch(epoch: RecoveryEpoch): Promise<RecoveryEpoch>;
 
-  /** Provisions an `Active` project with an empty journal, idempotently on the composite key. */
+  /** Provisions an `Active` project, idempotently on the composite key. */
   createProject(partition: Partition): Promise<ProjectStanding>;
 
   /** What the project row says, or undefined when no such project was ever provisioned. */
@@ -207,23 +189,30 @@ export interface ProjectStore {
   release(lease: Lease): Promise<void>;
 
   /**
-   * Every stored entry for the lease's partition in sequence order, each with
-   * the decision semantics its row declares, replayed under the lease the
-   * decision will present and parsed at this boundary. A lease the row no
-   * longer honours is refused rather than served a prefix, because entries read
-   * outside a tenure say nothing about what that tenure begins on.
-   */
-  load(lease: Lease): Promise<Parsed<readonly StoredEntry[]>>;
-
-  /** Immutable release-contract pins used when reconstructing the strict dispatch view. */
-  loadDispatchContracts?(
-    lease: Lease,
-  ): Promise<ReadonlyMap<number, DispatchContractPin>>;
-
-  /**
    * Advances the lifecycle generation and the fencing epoch and clears
    * ownership in one transaction, which is the primitive an audited suspension
    * or closure is later built from.
    */
   fence(partition: Partition, lifecycle: Lifecycle): Promise<ProjectStanding>;
+}
+
+/**
+ * The administrative door that provisions a partition, narrower than
+ * `ProjectStore` because provisioning writes the row and reads nothing else.
+ *
+ * `writer` exists for the reason `RepositoryBindingAdministration`'s does: the
+ * `project` table grants INSERT to no runtime role, and a permission denied on
+ * a table says nothing about which identity a deployment should have named —
+ * so it is asked as a privilege rather than as a role name, because a
+ * deployment answering it with some other identity is answering it correctly.
+ */
+export interface ProjectProvisioning {
+  /** The identity the command connected as, and whether it may insert a partition. */
+  writer(): Promise<{ readonly role: string; readonly canInsert: boolean }>;
+
+  /** What the partition row says, or undefined when nothing provisioned it. */
+  standing(partition: Partition): Promise<ProjectStanding | undefined>;
+
+  /** Provisions an `Active` partition, absorbing a repeat on the composite key. */
+  create(partition: Partition): Promise<ProjectStanding>;
 }

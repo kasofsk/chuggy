@@ -11,14 +11,6 @@
 // module names no forbidden global, and a decider that reads a clock imports
 // nothing.
 //
-// THE ACTOR TAKES THE SAME AMBIENT HALF, under its own claim rather than house
-// rule 2. Every step in `src/actor/` is a deterministic function of the state
-// and its named picks, which is what makes crashing at every observable seam
-// exhaustive rather than a scheduling problem; a clock read or a drawn number
-// ends that and adds no edge for `actor-sees-domain-only` to catch. The roster
-// of capabilities has one home, below — only the subject of the message
-// differs, because only one of the layers is house rule 2's.
-//
 // SO DOES THE INTERPRETER, and for a reason of its own: its ports ARE its
 // capabilities, and a capability it reached past them would be one no port
 // declares, no adapter answers and no boundary rule can see. That it awaits is
@@ -191,6 +183,13 @@ export default tseslint.config(
     ignores: [
       "node_modules/**",
       "model/**",
+      "vendor/chuggernaut/**",
+      "src/domain/chuggernaut/**",
+      "src/interpreter/chuggernaut/**",
+      "src/adapters/catalog/chuggernaut/**",
+      "src/adapters/runtime/chuggernaut/**",
+      "test/chuggernaut/conformance/**",
+      "test/chuggernaut/domain/**",
       "docs/**",
       ".chug/**",
       ".claude/**",
@@ -282,13 +281,6 @@ export default tseslint.config(
           ],
         },
       ],
-    },
-  },
-  {
-    files: ["src/actor/**/*.ts"],
-    rules: {
-      "no-restricted-globals": noAmbientGlobals("the journaled actor"),
-      "no-restricted-properties": noAmbientDraws("the journaled actor"),
     },
   },
   {

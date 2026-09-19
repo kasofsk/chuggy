@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "chug://result-contracts/spike-result-v1",
+  "title": "Report-only spike result",
+  "x-chug-purpose": "work",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "report", "checks", "notes", "limitations", "sources"],
+  "properties": {
+    "summary": {"type": "string", "minLength": 1, "maxLength": 4000, "pattern": "\\S"},
+    "report": {"type": "string", "minLength": 1, "maxLength": 64000, "pattern": "\\S"},
+    "checks": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 1000}},
+    "notes": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 1000}},
+    "limitations": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 1000}},
+    "sources": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 2000}}
+  }
+}

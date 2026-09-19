@@ -433,7 +433,7 @@ test("a new binding draws what its own configurations came to", async () => {
       ),
   });
   await chooseFree();
-  expect(statusesOf()).toStrictEqual(["Bound", "Imported"]);
+  expect(statusesOf()).toStrictEqual(["Bound"]);
 });
 
 test("a binding that already stood draws the one word and no more", async () => {
@@ -504,10 +504,7 @@ test("a create names what it asked for and draws every step it took", async () =
   expect(posted?.key).toBeTruthy();
   const rows = within(screen.getByRole("dialog")).getByRole("status");
   expect(rows.textContent).toBe(
-    "Repositoryscratch" +
-      "SeedSeeded" +
-      "RulesetRefused · no branch yet" +
-      "ConfigurationsDeferred · StepFailed",
+    "Repositoryscratch" + "SeedSeeded" + "RulesetRefused · no branch yet",
   );
   expect(
     within(rows).getByRole<HTMLAnchorElement>("link", { name: "scratch" }).href,

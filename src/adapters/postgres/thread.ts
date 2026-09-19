@@ -34,21 +34,11 @@ import {
 } from "../../interpreter/agentSession.ts";
 import { asPrincipal, type Principal } from "../../interpreter/principal.ts";
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
+import type { Partition } from "../../interpreter/projectStore.ts";
 import {
-  asProjectId,
-  asTenantId,
-  type Partition,
-} from "../../interpreter/projectStore.ts";
-import {
-  allThreadWakeReasons,
   type ThreadSeededDraft,
   type ThreadSeededRefusal,
 } from "../../interpreter/thread.ts";
-import type {
-  ThreadWakeCandidate,
-  ThreadWakeOffered,
-  ThreadWakeStore,
-} from "../../interpreter/threadWake.ts";
 import type {
   ThreadClosed,
   ThreadHidden,
@@ -556,143 +546,6 @@ export function postgresThreadSeeding(pool: pg.Pool): ThreadSeedingRead {
         ),
         reason: sessionRowText(row.reason, "refusal reason"),
       }));
-    },
-  };
-}
-
-/** The wake pass's three doors, answering the ports
- * `src/interpreter/threadWake.ts` declares. */
-function threadWokenRow(row: {
-  readonly enqueued: string | null;
-  readonly ordinal: string | null;
-}): ThreadWakeOffered {
-  const woken = row.enqueued;
-  if (woken === "NoThread" || woken === "Closed" || woken === "Backlogged")
-    return { woken };
-  if ((woken === "Woken" || woken === "AlreadyWoken") && row.ordinal !== null)
-    return {
-      woken,
-      ordinal: projectRowCounter(row.ordinal, "wake turn ordinal"),
-    };
-  throw new Error(
-    `postgres thread wake: the mailbox answered ${String(woken)}`,
-  );
-}
-
-/** One candidate row, narrowed to the values the pass acts on. */
-function threadWakeCandidateOf(row: {
-  readonly sequence: string | null;
-  readonly tenant: string | null;
-  readonly project: string | null;
-  readonly resource: string | null;
-  readonly reason: string | null;
-  readonly principal: string | null;
-  readonly session: string | null;
-  readonly thread_standing_rules: string | null;
-}): ThreadWakeCandidate {
-  return {
-    ...(row.thread_standing_rules === null
-      ? {}
-      : { standingRules: row.thread_standing_rules }),
-    sequence: projectRowCounter(
-      sessionRowText(row.sequence, "change sequence"),
-      "change sequence",
-    ),
-    partition: {
-      tenant: asTenantId(sessionRowText(row.tenant, "tenant")),
-      project: asProjectId(sessionRowText(row.project, "project")),
-    },
-    resource: sessionRowText(row.resource, "change resource"),
-    reason: sessionRowMember(
-      allThreadWakeReasons,
-      row.reason,
-      "thread wake reason",
-    ),
-    principal: asPrincipal(sessionRowText(row.principal, "principal")),
-    session: asSessionId(sessionRowText(row.session, "session")),
-  };
-}
-
-/**
- * One page of candidates, with the standing rules of the project each names
- * hung off it: the settings row is keyed by the partition the page already
- * carries, so the join adds a column and no candidate. It restates the
- * definer's order, which a join over a function's rows does not preserve.
- */
-async function threadWakeCandidates(
-  pool: pg.Pool,
-  after: number,
-  limit: number,
-): Promise<readonly ThreadWakeCandidate[]> {
-  const found = await pool.query<{
-    sequence: string | null;
-    tenant: string | null;
-    project: string | null;
-    resource: string | null;
-    reason: string | null;
-    principal: string | null;
-    session: string | null;
-    thread_standing_rules: string | null;
-  }>(
-    sql`SELECT candidate.sequence::text AS sequence,candidate.tenant,
-               candidate.project,candidate.resource,candidate.reason,
-               candidate.principal,candidate.session,settings.thread_standing_rules
-          FROM thread_wake_candidates(${after},${limit}) candidate
-          LEFT JOIN selector_project_settings settings
-            ON settings.tenant=candidate.tenant
-           AND settings.project=candidate.project
-         ORDER BY candidate.sequence,candidate.session`,
-  );
-  return found.rows.map(threadWakeCandidateOf);
-}
-
-async function threadWake(
-  pool: pg.Pool,
-  input: {
-    readonly partition: Partition;
-    readonly principal: Principal;
-    readonly turn: SessionTurnId;
-    readonly input: string;
-  },
-): Promise<ThreadWakeOffered> {
-  const answered = await pool.query<{
-    enqueued: string | null;
-    ordinal: string | null;
-  }>(
-    sql`SELECT enqueued,ordinal::text AS ordinal FROM wake_member_thread(
-          ${input.partition.tenant},${input.partition.project},
-          ${input.principal},${input.turn},${input.input})`,
-  );
-  const row = answered.rows[0];
-  if (row === undefined)
-    throw new Error("postgres thread wake: the door returned no verdict");
-  return threadWokenRow(row);
-}
-
-export function postgresThreadWakes(pool: pg.Pool): ThreadWakeStore {
-  return {
-    cursor: async () => {
-      const found = await pool.query<{ sequence: string }>(
-        sql`SELECT sequence::text AS sequence FROM thread_wake_cursor`,
-      );
-      const row = found.rows[0];
-      if (row === undefined)
-        throw new Error("postgres thread wake: the cursor row is missing");
-      return projectRowCounter(
-        sessionRowText(row.sequence, "wake cursor"),
-        "wake cursor",
-      );
-    },
-    candidates: (after, limit) => threadWakeCandidates(pool, after, limit),
-    wake: (input) => threadWake(pool, input),
-    advance: async (sequence) => {
-      const moved = await pool.query<{ sequence: string | null }>(
-        sql`SELECT advance_thread_wake_cursor(${sequence})::text AS sequence`,
-      );
-      return projectRowCounter(
-        sessionRowText(moved.rows[0]?.sequence ?? null, "wake cursor"),
-        "wake cursor",
-      );
     },
   };
 }

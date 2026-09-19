@@ -1,0 +1,7 @@
+kind: workload
+runner: codex
+model: gpt-5.6-terra
+prompt: agents/reviewer.md
+permission_mode: read-only
+allowed_tools: []
+result_contract: result-contracts/review-result-v2.schema.json

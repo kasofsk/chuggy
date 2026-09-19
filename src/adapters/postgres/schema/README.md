@@ -9,6 +9,17 @@ issue #180 requires 5 things of every
 new mutable relation, so each one states them here rather than in a doc that
 would drift from the DDL beside it.
 
+UNSERVED RELATIONS ARE KEPT DELIBERATELY. The selector's settings, its
+readiness and its proposal review, the lead's mailbox, the project change log
+and the repository configuration import each still have their relations, roles,
+grants and routines here, and nothing in `src/` calls them: the automatic
+selector and the configuration surface were taken out of the control plane
+ahead of being rebuilt on the adopted ticket machine. They stay because
+dropping them is a migration that a rebuild would have to write back, and a
+half-dropped authority is worse than an idle one. What is gone is the
+TypeScript that reached them, so a reader finds no module claiming to serve
+them; the routes that did answer are registered as retired and say so.
+
 `recovery_epoch` — the global, unpredictable, never-reused epoch a restore
 advances before it permits any mutation. Owned by the control plane; the
 ticket-service role may read it and may not write it, because a runtime that
@@ -214,10 +225,10 @@ moves with it: an effect materializes one action, and an approval no effect
 produced is unique by the attempt it names instead.
 
 A QUESTION AND ITS ANSWERS ARE ONE ROSTER, AND THE SERVER HOLDS THEM TO IT.
-`src/interpreter/ticketCommand.ts` pairs each action kind with the answers it
-admits, and `native_action_resolution_pairs_with_its_kind` refuses a row
-offering the other kind's answer — which a CHECK cannot see, because the kind
-is on the action and the answer is on a row of its own.
+`native_action_resolution_pairs_with_its_kind` pairs each action kind with
+the answers it admits and refuses a row offering the other kind's answer —
+which a CHECK cannot see, because the kind is on the action and the answer
+is on a row of its own.
 
 AN ANSWERED OPERATION IS TERMINAL WITH NO ENTRY BEHIND IT. `Approve` and
 `Decline` name no domain command, so the input that carried one settles

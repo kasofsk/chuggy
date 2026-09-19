@@ -14,30 +14,17 @@ import {
   nativeHttpVersion,
 } from "./http.ts";
 import {
-  configurationCreationSchema,
-  draftCreationSchema,
-  draftRevisionSchema,
   forgeCredentialRequestSchema,
   forgeInstallationClaimSchema,
   projectRepositoryBindSchema,
   projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
   projectRepositoryRetirementSchema,
-  publicMutationSchema,
-  repositoryConfigurationImportSchema,
-  selectorProjectSettingsSchema,
 } from "./requests.ts";
 
 /** Every request body the document publishes, as the JSON Schema its own parser induces. */
 function nativeHttpContractDocumentSchemas(): unknown {
   return {
-    publicMutation: z.toJSONSchema(publicMutationSchema),
-    configurationCreation: z.toJSONSchema(configurationCreationSchema),
-    repositoryConfigurationImport: z.toJSONSchema(
-      repositoryConfigurationImportSchema,
-    ),
-    draftCreation: z.toJSONSchema(draftCreationSchema),
-    draftRevision: z.toJSONSchema(draftRevisionSchema),
     forgeCredential: z.toJSONSchema(forgeCredentialRequestSchema),
     forgeInstallationClaim: z.toJSONSchema(forgeInstallationClaimSchema),
     projectRepositoryBind: z.toJSONSchema(projectRepositoryBindSchema),
@@ -47,7 +34,6 @@ function nativeHttpContractDocumentSchemas(): unknown {
       projectRepositoryRetirementSchema,
     ),
     leadInquiry: z.toJSONSchema(nativeHttpEndpoints.askLead.body),
-    selectorProjectSettings: z.toJSONSchema(selectorProjectSettingsSchema),
     threadMessage: z.toJSONSchema(nativeHttpEndpoints.sendThreadMessage.body),
     threadRename: z.toJSONSchema(nativeHttpEndpoints.renameThread.body),
     threadHide: z.toJSONSchema(nativeHttpEndpoints.hideThread.body),
@@ -66,44 +52,23 @@ export function nativeHttpContractDocument(): unknown {
       session:
         "a session bearer authorizes as the session's principal and is recorded on the operation",
     },
-    notifications: "bounded-polling",
-    events: "sse",
     caching: "no-store",
     cors: "same-origin",
     credentials: "authorization bearer header; no cookies",
-    ticketPhaseFilter: {
-      query: "phase",
-      all: "omit phase",
-      nonTerminal: "phase=NonTerminal",
-      selected: "repeat phase with one or more exact phase names",
-    },
     identities: {
       installation: "canonical UUID authority identity",
       tenant: "percent-encoded opaque UTF-8 path segment",
       project: "percent-encoded opaque UTF-8 path segment",
-      ticket: "canonical positive decimal integer",
-      operation: "percent-encoded opaque UTF-8 path segment",
       cursor: "opaque canonical base64url",
     },
-    executionOrder: {
-      order: "ticket then task, ascending",
-      cursor: "a position in that order; the ticket filter narrows it",
-      mismatch: "a cursor resuming an unselected ticket is refused",
-    },
-    briefFinalization:
-      "a PullRequest finalization requires the brief to name a branch, and a target that is not it where it names one; a proposal naming no target opens into the repository's default branch",
-    selectorProjectSettings:
-      "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
     forgeInstallations:
       "a tenant's administrator claims an installation of this deployment's app; an installation another tenant holds is a conflict, and a claim is never released",
     repositoryBinding:
       "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
     repositoryLanding:
-      "a repository's landing default is the mode a ticket in it lands by unless its brief names one; it is written against the value the writer read, and a ticket authored with no finalizer may name no landing",
+      "a repository's landing default is written against the value the writer read",
     repositoryRetirement:
       "a retired repository stays bound and stays readable by name, and stops being the one a session is placed against, the importer reads or a brief may name; this route only retires and repeating it changes nothing, and binding the repository again reinstates it",
-    repositoryConfigurations:
-      "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it",
     repositoryCreation:
       "creating a repository requires this tenant's claims of both apps on the account; the repository is the forge's from the moment it answers, so a later refusal is reported beside one that stands and a name already taken is bound rather than created",
     routes: nativeHttpRoutes,

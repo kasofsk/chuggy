@@ -1,111 +1,71 @@
-import {
-  record,
-  fieldsOnly,
-  textField,
-  integerField,
-} from "../../contract/fields.ts";
-import type { z } from "zod";
-import { nativeHttpEndpoints } from "../../contract/endpoints.ts";
-
 import fastify, {
   type FastifyInstance,
   type FastifyReply,
   type FastifyRequest,
 } from "fastify";
-
-import type { TicketId } from "../../domain/ids.ts";
 import {
   asSessionId,
   asSessionStoreStream,
   type SessionId,
 } from "../../interpreter/agentSession.ts";
 import type { InstallationAuthorityRead } from "../../interpreter/installationAuthority.ts";
-import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
-import {
-  allExecutionStatuses,
-  type ExecutionStatus,
-} from "../../interpreter/executionScheduler.ts";
 import type { Principal } from "../../interpreter/nativeWeb.ts";
-import type { ExecutionListQuery } from "../../interpreter/operationsView.ts";
 import {
   asTenantId,
   type Partition,
   type TenantId,
 } from "../../interpreter/projectStore.ts";
 import type { NativeWeb } from "../../interpreter/nativeWeb.ts";
-import { asOperationId } from "../../interpreter/operationInbox.ts";
-import {
-  asAttemptId,
-  asExecutionId,
-} from "../../interpreter/schedulerIdentity.ts";
-import {
-  asConfigurationRevisionId,
-  draftPageLimitDefault,
-} from "../../interpreter/authoring.ts";
-import type {
-  ProjectStream,
-  ProjectStreamHub,
-} from "../../interpreter/projectStream.ts";
-import type { SelectorProjectSettingsAdministration } from "../../interpreter/selectorProjectSettings.ts";
 import type { ForgeCredentialMinting } from "../../interpreter/forgeCredentials.ts";
+import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
 import type { RepositoryOnboarding } from "../../interpreter/repositoryOnboarding.ts";
-import { projectStreamSocket } from "./eventStream.ts";
+import type {
+  TicketApplication,
+  TicketApplicationResult,
+  TicketCatalogWrite,
+} from "../../interpreter/ticketApplication.ts";
+import { TicketId as AdoptedTicketId } from "../../domain/chuggernaut/task.js";
+import type { Ticket as AdoptedTicket } from "../../domain/chuggernaut/ticket.js";
+import { asGitObjectId, asRepositoryId } from "../../interpreter/finalizer.ts";
+import { encode as encodeChuggernaut } from "../../interpreter/codec.ts";
+import type { TicketExecutionReads } from "../../interpreter/ticketExecutionRead.ts";
 import { nativeHttpContractDocument } from "../../contract/document.ts";
+import { integerField, textField } from "../../contract/fields.ts";
 import {
-  selectorHistoryOrders,
-  type SelectorHistoryOrder,
-} from "../../contract/rosters.ts";
-import {
-  agenticRefusalsAnsweredMax,
   nativeHttpBodyBytesMax,
   nativeHttpError,
   nativeHttpHeaderBytesMax,
   nativeHttpMediaType,
+  nativeHttpPageItemsDefault,
+  nativeHttpPageItemsMax,
   nativeHttpPathSegmentCharsMax,
-  selectorHistoryLimitMax,
+  nativeHttpRoutes,
+  sessionStorePageBatchesMax,
+  threadTurnsAnsweredMax,
 } from "../../contract/http.ts";
 import {
-  parseConfigurationCursor,
-  parseDraftCursor,
-  parseExecutionCursor,
   parseInventoryCursor,
-  parseNativeActionCursor,
-  parseTicketActivityCursor,
-  parseConfigurationCreation,
   parseForgeCredentialRequest,
+  parseWorkerPoolRedemption,
+  parseWorkerPoolTokenRequest,
   parseForgeInstallationClaim,
   parseForgeInstallationId,
   parseProjectRepositoryBind,
   parseProjectRepositoryCreate,
   parseProjectRepositoryLanding,
   parseProjectRepositoryRetirement,
-  parseRepositoryConfigurationImport,
-  parseDraftCreation,
-  parseDraftRevision,
   parsePartition,
-  parseSelectorProjectSettings,
-  parseSubmission,
   parseLeadInquiry,
   parseThreadHide,
   parseThreadMessage,
   parseThreadRename,
 } from "./contract.ts";
 import {
-  cancellationResponse,
-  configurationCreationResponse,
-  repositoryConfigurationImportResponse,
-  configurationResponse,
-  configurationsResponse,
-  dispatchViewResponse,
-  draftCreationResponse,
-  draftInitializationResponse,
-  draftDeletionResponse,
-  draftResponse,
-  draftRevisionResponse,
-  draftsResponse,
   failureResponse,
   forgeAppsResponse,
   forgeCredentialResponse,
+  workerPoolRedemptionResponse,
+  workerPoolTokenResponse,
   forgeInstallationClaimResponse,
   forgeInstallationsResponse,
   forgeRepositoriesResponse,
@@ -115,30 +75,8 @@ import {
   projectRepositoryLandingResponse,
   projectRepositoryRetirementResponse,
   inventoryResponse,
-  nativeActionsResponse,
-  notificationsResponse,
-  operationResponse,
-  projectResponse,
-  projectEntryResponse,
-  ticketNativeActionsResponse,
-  ticketResponse,
-  executionResponse,
-  executionsResponse,
-  operationalStatusResponse,
-  agenticRefusalsResponse,
   leadResponse,
   leadTranscriptResponse,
-  selectorHistoryResponse,
-  ticketAgenticRefusalsResponse,
-  selectorOperationalContextResponse,
-  selectorProjectSettingsResponse,
-  selectorProjectSettingsWriteResponse,
-  selectorSettingsHistoryResponse,
-  outputContentResponse,
-  runConfigurationResponse,
-  runTranscriptResponse,
-  runTurnsResponse,
-  submissionResponse,
   askLeadResponse,
   leadInquiriesResponse,
   leadInquiryResponse,
@@ -189,59 +127,29 @@ export const nativeHttpLimitsDefault: NativeHttpLimits = {
   requestTimeoutMs: 15_000,
 };
 
-type InitialNativeWeb = Pick<
-  NativeWeb,
-  | "cancel"
-  | "configuration"
-  | "configurations"
-  | "createConfiguration"
-  | "importRepositoryConfigurations"
-  | "createDraft"
-  | "initializeDraft"
-  | "deleteDraft"
-  | "dispatchView"
-  | "draft"
-  | "drafts"
-  | "notifications"
-  | "operation"
-  | "project"
-  | "projectInventory"
-  | "reviseDraft"
-  | "submit"
-  | "ticket"
-  | "ticketNativeActions"
-  | "nativeActions"
-  | "execution"
-  | "executions"
-  | "operationalStatus"
-  | "selectorOperationalContext"
-  | "lead"
-  | "leadTranscript"
-  | "agenticRefusals"
-  | "ticketAgenticRefusals"
-  | "selectorHistory"
-  | "outputContent"
-  | "runTurns"
-  | "runTranscript"
-  | "runConfiguration"
-  | "threads"
-  | "thread"
-  | "threadTranscript"
-  | "openThread"
-  | "sendThreadMessage"
-  | "closeThread"
-  | "renameThread"
-  | "hideThread"
-  | "leadInquiries"
-  | "leadInquiry"
-  | "askLead"
->;
+type InitialNativeWeb = NativeWeb;
 
 function send(reply: FastifyReply, result: NativeHttpResponse): void {
   for (const [name, value] of Object.entries(result.headers)) {
     void reply.header(name, value);
   }
   void reply.code(result.status).send(result.body);
+}
+
+function record(value: unknown): Readonly<Record<string, unknown>> {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new TypeError("request fields are not an object");
+  return value as Readonly<Record<string, unknown>>;
+}
+
+function fieldsOnly(
+  value: unknown,
+  allowed: readonly string[],
+): Readonly<Record<string, unknown>> {
+  const found = record(value);
+  if (Object.keys(found).some((name) => !allowed.includes(name)))
+    throw new TypeError("request has an unknown field");
+  return found;
 }
 
 function bearer(authorization: string | undefined): string | undefined {
@@ -460,371 +368,62 @@ function partitionOf(
   );
 }
 
-function registerProject(app: FastifyInstance, web: InitialNativeWeb): void {
-  const root = "/api/v1/tenants/:tenant/projects/:project";
-  const projectRead = async (request: FastifyRequest, reply: FastifyReply) => {
-    const query = fieldsOnly(request.query, [
-      "after",
-      "cursor",
-      "limit",
-      "minimumSequence",
-      "order",
-      "phase",
-    ]);
-    const after = query["after"];
-    const order = query["order"];
-    if (order !== undefined && order !== "RecentActivity")
-      throw new TypeError("order is invalid");
-    if (query["cursor"] !== undefined && order !== "RecentActivity")
-      throw new TypeError("cursor requires recent activity order");
-    if (after !== undefined && order === "RecentActivity")
-      throw new TypeError("after cannot order recent activity");
-    const partition = partitionOf(request);
-    const result = await web.project(principalOf(request), partition, {
-      ...(after === undefined
-        ? {}
-        : { after: asTicketIdField(query, "after") }),
-      limit: integerField(query, "limit", 50),
-      ...(order === undefined ? {} : { order }),
-      ...(query["cursor"] === undefined
-        ? {}
-        : {
-            recentActivityAfter: parseTicketActivityCursor(
-              textField(query, "cursor"),
-              partition,
-            ),
-          }),
-      ...(query["minimumSequence"] === undefined
-        ? {}
-        : { minimumSequence: integerField(query, "minimumSequence") }),
-      ...phaseFilter(query["phase"]),
-    });
-    send(reply, projectResponse(result));
-  };
-  app.get(root, projectRead);
-  app.get(`${root}/tickets`, projectRead);
-  app.get(`${root}/tickets/:ticket`, async (request, reply) => {
-    const params = record(request.params);
-    const resource = await web.ticket(
-      principalOf(request),
-      partitionOf(request),
-      asTicketIdField(params, "ticket"),
-    );
-    send(reply, ticketResponse(resource));
-  });
-  registerNativeActions(app, web, root);
-  registerAgenticRefusals(app, web, root);
-  registerOperationalRoutes(app, web, root);
-  registerRunEvidenceRoutes(app, web);
-}
-
-function registerLead(app: FastifyInstance, web: InitialNativeWeb): void {
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.lead,
-    (_request, principal, partition) => web.lead(principal, partition),
-    leadResponse,
+async function legacyTicketEndpoint(
+  service: NativeTicketApplication,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<void> {
+  const model = await service.application.graph(
+    principalOf(request),
+    partitionOf(request),
   );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.leadTranscript,
-    (request, principal, partition) => {
-      const query = nativeHttpEndpoints.leadTranscript.query.parse(
-        request.query,
-      );
-      return web.leadTranscript(principal, partition, {
-        ...(query.stream === undefined
-          ? {}
-          : { stream: asSessionStoreStream(query.stream) }),
-        after: query.after,
-        limit: query.limit,
-      });
-    },
-    leadTranscriptResponse,
-  );
-}
-
-/** The lead's refusals, across a project and under the one ticket each names. */
-function registerAgenticRefusals(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-  root: string,
-): void {
-  app.get(`${root}/agentic-refusals`, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["limit"]);
-    send(
-      reply,
-      agenticRefusalsResponse(
-        await web.agenticRefusals(
-          principalOf(request),
-          partitionOf(request),
-          integerField(query, "limit", agenticRefusalsAnsweredMax),
-        ),
+  if (model.result === "NotFound") {
+    adoptedTicketReply(reply, model);
+    return;
+  }
+  void reply
+    .code(409)
+    .send(
+      nativeHttpError(
+        model.result === "LegacyModelUnsupported"
+          ? "LegacyModelUnsupported"
+          : "EndpointUnsupported",
+        model.result === "LegacyModelUnsupported"
+          ? "This project uses the legacy ticket model."
+          : "Use the ticket-machine ticket API for this project.",
       ),
     );
-  });
-  app.get(
-    `${root}/tickets/:ticket/agentic-refusals`,
-    async (request, reply) => {
-      const params = record(request.params);
-      send(
-        reply,
-        ticketAgenticRefusalsResponse(
-          await web.ticketAgenticRefusals(
-            principalOf(request),
-            partitionOf(request),
-            asTicketIdField(params, "ticket"),
-          ),
-        ),
-      );
-    },
-  );
-}
-
-/** Which end of the decision log a request asked for, defaulting to the oldest. */
-function selectorHistoryOrder(value: unknown): SelectorHistoryOrder {
-  if (value === undefined) return "oldest";
-  const order = selectorHistoryOrders.find((known) => known === value);
-  if (order === undefined)
-    throw new TypeError("selector history order is not a known order");
-  return order;
-}
-
-/** The decision log, beside the settings the decisions were made under. */
-function registerSelectorHistory(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-  root: string,
-): void {
-  app.get(`${root}/selector-history`, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["after", "limit", "order"]);
-    send(
-      reply,
-      selectorHistoryResponse(
-        await web.selectorHistory(principalOf(request), partitionOf(request), {
-          ...(query["after"] === undefined
-            ? {}
-            : { after: integerField(query, "after") }),
-          limit: integerField(query, "limit", selectorHistoryLimitMax),
-          order: selectorHistoryOrder(query["order"]),
-        }),
-      ),
-    );
-  });
-}
-
-function registerRunEvidenceRoutes(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-): void {
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.runTurns,
-    (request, principal, partition) => {
-      const params = record(request.params);
-      const query = nativeHttpEndpoints.runTurns.query.parse(request.query);
-      return web.runTurns(
-        principal,
-        partition,
-        asExecutionId(textField(params, "execution")),
-        asAttemptId(textField(params, "attempt")),
-        {
-          ...(query.after === undefined ? {} : { after: query.after }),
-          limit: query.limit,
-        },
-      );
-    },
-    runTurnsResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.runTranscript,
-    (request, principal, partition) => {
-      const params = record(request.params);
-      const query = nativeHttpEndpoints.runTranscript.query.parse(
-        request.query,
-      );
-      return web.runTranscript(
-        principal,
-        partition,
-        asExecutionId(textField(params, "execution")),
-        asAttemptId(textField(params, "attempt")),
-        query.after,
-      );
-    },
-    runTranscriptResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.runConfiguration,
-    (request, principal, partition) => {
-      const params = record(request.params);
-      return web.runConfiguration(
-        principal,
-        partition,
-        asExecutionId(textField(params, "execution")),
-        asAttemptId(textField(params, "attempt")),
-      );
-    },
-    runConfigurationResponse,
-  );
-}
-
-function registerNativeActions(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-  root: string,
-): void {
-  app.get(`${root}/tickets/:ticket/native-actions`, async (request, reply) => {
-    const params = record(request.params);
-    const actions = await web.ticketNativeActions(
-      principalOf(request),
-      partitionOf(request),
-      asTicketIdField(params, "ticket"),
-    );
-    send(reply, ticketNativeActionsResponse(actions));
-  });
-  app.get(`${root}/native-actions`, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["cursor", "limit"]);
-    const partition = partitionOf(request);
-    const result = await web.nativeActions(principalOf(request), partition, {
-      ...(query["cursor"] === undefined
-        ? {}
-        : {
-            after: parseNativeActionCursor(
-              textField(query, "cursor"),
-              partition,
-            ),
-          }),
-      limit: integerField(query, "limit", 50),
-    });
-    send(reply, nativeActionsResponse(partition, result));
-  });
-}
-
-function registerOperationalRoutes(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-  root: string,
-): void {
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.operationalStatus,
-    (_request, principal, partition) =>
-      web.operationalStatus(principal, partition),
-    operationalStatusResponse,
-  );
-  app.get(`${root}/executions`, async (request, reply) => {
-    const partition = partitionOf(request);
-    send(
-      reply,
-      executionsResponse(
-        partition,
-        await web.executions(
-          principalOf(request),
-          partition,
-          executionListQuery(request.query, partition),
-        ),
-      ),
-    );
-  });
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.execution,
-    (request, principal, partition) =>
-      web.execution(
-        principal,
-        partition,
-        asExecutionId(textField(record(request.params), "execution")),
-      ),
-    executionResponse,
-  );
-  app.get(
-    `${root}/executions/:execution/artifacts/:ordinal`,
-    async (request, reply) => {
-      const params = record(request.params);
-      send(
-        reply,
-        outputContentResponse(
-          await web.outputContent(
-            principalOf(request),
-            partitionOf(request),
-            asExecutionId(textField(params, "execution")),
-            integerField(params, "ordinal"),
-          ),
-        ),
-      );
-    },
-  );
-}
-
-function registerSelectorContext(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-): void {
-  app.get(
-    "/api/v1/tenants/:tenant/projects/:project/selector-context",
-    async (request, reply) => {
-      send(
-        reply,
-        selectorOperationalContextResponse(
-          await web.selectorOperationalContext(
-            principalOf(request),
-            partitionOf(request),
-          ),
-        ),
-      );
-    },
-  );
 }
 
 /**
- * A project's own selector settings, read and written whole under the
- * `ManageProjectSelector` access the administration itself checks. The history
- * is beside them because a rollback is a write of a revision this read named.
+ * The lead's own read and a page of its transcript. The transcript defaults to
+ * the session's own stream, because a reader who has not asked for one wants
+ * the conversation rather than a subagent's.
  */
-function registerSelectorSettings(
+function registerLead(
   app: FastifyInstance,
-  settings: SelectorProjectSettingsAdministration,
+  web: InitialNativeWeb,
+  root: string,
 ): void {
-  const root = "/api/v1/tenants/:tenant/projects/:project/selector-settings";
-  app.get(root, async (request, reply) => {
+  app.get(`${root}/lead`, async (request, reply) => {
     send(
       reply,
-      selectorProjectSettingsResponse(
-        await settings.read(principalOf(request), partitionOf(request)),
-      ),
+      leadResponse(await web.lead(principalOf(request), partitionOf(request))),
     );
   });
-  app.put(
-    root,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      const written = parseSelectorProjectSettings(request.body);
-      send(
-        reply,
-        selectorProjectSettingsWriteResponse(
-          await settings.write(
-            principalOf(request),
-            partitionOf(request),
-            written.expectedRevision,
-            written.overrides,
-          ),
-        ),
-      );
-    },
-  );
-  app.get(`${root}/history`, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["after", "limit"]);
+  app.get(`${root}/lead/transcript`, async (request, reply) => {
+    const query = fieldsOnly(request.query, ["stream", "after", "limit"]);
+    const stream = query["stream"];
     send(
       reply,
-      selectorSettingsHistoryResponse(
-        await settings.history(
-          principalOf(request),
-          partitionOf(request),
-          integerField(query, "after", 0),
-          integerField(query, "limit", 50),
-        ),
+      leadTranscriptResponse(
+        await web.leadTranscript(principalOf(request), partitionOf(request), {
+          ...(stream === undefined
+            ? {}
+            : { stream: asSessionStoreStream(textField(query, "stream")) }),
+          after: integerField(query, "after", 0),
+          limit: integerField(query, "limit", sessionStorePageBatchesMax),
+        }),
       ),
     );
   });
@@ -851,6 +450,49 @@ function registerForgeCredentials(
             partitionOf(request),
             parseForgeCredentialRequest(request.body),
           ),
+        ),
+      );
+    },
+  );
+}
+
+/**
+ * The two ends of registering a pool: an owner mints a short-lived single-use
+ * token for one project, and whoever holds that token redeems it once for a
+ * client and its secret. The redemption carries no bearer and is declared
+ * `public` because it is authenticated by the token in its body — a machine
+ * being configured has no principal yet, which is the whole reason an owner had
+ * to mint the token for it.
+ */
+function registerWorkerPools(
+  app: FastifyInstance,
+  pools: WorkerPoolRegistrationService,
+  partitionRoot: string,
+): void {
+  app.post(
+    `${partitionRoot}/worker-pool-registration-tokens`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        workerPoolTokenResponse(
+          await pools.mint(
+            principalOf(request),
+            partitionOf(request),
+            parseWorkerPoolTokenRequest(request.body),
+          ),
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/v1/worker-pool-registrations",
+    { config: { public: true }, preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        workerPoolRedemptionResponse(
+          await pools.redeem(parseWorkerPoolRedemption(request.body)),
         ),
       );
     },
@@ -1052,561 +694,851 @@ function registerProjectRepositoryRetirement(
   );
 }
 
-/** The executions read's own parameters: its cursor, its size and what it narrows to. */
-function executionListQuery(
-  value: unknown,
-  partition: Partition,
-): ExecutionListQuery {
-  const query = fieldsOnly(value, ["cursor", "limit", "state", "ticket"]);
-  return {
-    ...(query["cursor"] === undefined
-      ? {}
-      : {
-          after: parseExecutionCursor(textField(query, "cursor"), partition),
-        }),
-    limit: integerField(query, "limit", 50),
-    ...(query["ticket"] === undefined
-      ? {}
-      : { ticket: asTicketIdField(query, "ticket") }),
-    ...executionSelection(query["state"]),
-  };
-}
-
-function executionSelection(value: unknown): {
-  readonly selection?:
-    | { readonly selection: "NonTerminal" }
-    | {
-        readonly selection: "Selected";
-        readonly states: readonly ExecutionStatus[];
-      };
-} {
-  if (value === undefined) return {};
-  const values = Array.isArray(value) ? value : [value];
-  if (values.some((state) => typeof state !== "string"))
-    throw new TypeError("state is not text");
-  if (values.length === 1 && values[0] === "NonTerminal")
-    return { selection: { selection: "NonTerminal" } };
-  if (
-    values.length < 1 ||
-    values.some(
-      (state) =>
-        state === "NonTerminal" ||
-        !allExecutionStatuses.includes(state as ExecutionStatus),
-    )
-  )
-    throw new RangeError("execution state selection is invalid");
-  return {
-    selection: {
-      selection: "Selected",
-      states: values as ExecutionStatus[],
-    },
-  };
-}
-
-function phaseFilter(value: unknown): {
-  readonly phaseFilter?:
-    | { readonly selection: "NonTerminal" }
-    | { readonly selection: "Selected"; readonly phases: readonly Phase[] };
-} {
-  if (value === undefined) return {};
-  const values = Array.isArray(value) ? value : [value];
-  if (values.some((phase) => typeof phase !== "string"))
-    throw new TypeError("phase is not text");
-  if (values.length === 1 && values[0] === "NonTerminal")
-    return { phaseFilter: { selection: "NonTerminal" } };
-  if (
-    values.length < 1 ||
-    values.some(
-      (phase) => phase === "NonTerminal" || !phaseTags.includes(phase as Phase),
-    )
-  )
-    throw new RangeError("phase selection is invalid");
-  return {
-    phaseFilter: { selection: "Selected", phases: values as Phase[] },
-  };
-}
-
-function asTicketIdField(
-  fields: Readonly<Record<string, unknown>>,
-  name: string,
-): TicketId {
-  const value = integerField(fields, name);
-  if (value < 1) throw new RangeError(`${name} is below the first ticket`);
-  return value as TicketId;
-}
-
-function registerOperations(app: FastifyInstance, web: InitialNativeWeb): void {
-  const root = "/api/v1/tenants/:tenant/projects/:project/operations";
-  app.post(
-    root,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      const partition = partitionOf(request);
-      const fields = fieldsOnly(request.body, ["operation", "mutation"]);
-      const key = request.headers["idempotency-key"];
-      if (typeof key !== "string")
-        throw new TypeError("idempotency key is absent");
-      const parsed = parseSubmission(
-        textField(fields, "operation"),
-        key,
-        fields["mutation"],
-      );
-      const session = request.viaSession;
-      const result = await web.submit(principalOf(request), {
-        partition,
-        ...parsed,
-        ...(session === undefined ? {} : { viaSession: session }),
-      });
-      send(reply, submissionResponse(partition, result));
-    },
-  );
-  app.get(`${root}/:operation`, async (request, reply) => {
-    const params = record(request.params);
-    const result = await web.operation(
-      principalOf(request),
-      partitionOf(request),
-      asOperationId(textField(params, "operation")),
-    );
-    send(reply, operationResponse(result));
-  });
-  app.delete(`${root}/:operation`, async (request, reply) => {
-    const params = record(request.params);
-    const result = await web.cancel(
-      principalOf(request),
-      partitionOf(request),
-      asOperationId(textField(params, "operation")),
-    );
-    send(reply, cancellationResponse(result));
-  });
-}
-
-function registerConfigurations(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-): void {
-  const root = "/api/v1/tenants/:tenant/projects/:project/configurations";
-  app.get(root, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["cursor", "limit"]);
-    const cursor = query["cursor"];
-    const partition = partitionOf(request);
-    const result = await web.configurations(principalOf(request), partition, {
-      ...(cursor === undefined
-        ? {}
-        : {
-            after: parseConfigurationCursor(
-              textField(query, "cursor"),
-              partition,
-            ),
-          }),
-      limit: integerField(query, "limit", 50),
-    });
-    send(reply, configurationsResponse(result));
-  });
-  app.post(
-    root,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      const result = await web.createConfiguration(principalOf(request), {
-        partition: partitionOf(request),
-        ...parseConfigurationCreation(request.body),
-      });
-      send(reply, configurationCreationResponse(result));
-    },
-  );
-  app.post(
-    `${root}/imports`,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      const result = await web.importRepositoryConfigurations(
-        principalOf(request),
-        partitionOf(request),
-        parseRepositoryConfigurationImport(request.body),
-      );
-      send(reply, repositoryConfigurationImportResponse(result));
-    },
-  );
-  app.get(`${root}/:revision`, async (request, reply) => {
-    const params = record(request.params);
-    const result = await web.configuration(
-      principalOf(request),
-      partitionOf(request),
-      asConfigurationRevisionId(textField(params, "revision")),
-    );
-    send(reply, configurationResponse(result));
-  });
-}
-
-function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
-  const root = "/api/v1/tenants/:tenant/projects/:project/drafts";
-  app.get(
-    "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
-    async (request, reply) => {
-      const result = await web.initializeDraft(
-        principalOf(request),
-        partitionOf(request),
-        asConfigurationRevisionId(
-          textField(record(request.params), "revision"),
-        ),
-      );
-      send(reply, draftInitializationResponse(result));
-    },
-  );
-  app.get(root, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["cursor", "limit"]);
-    const cursor = query["cursor"];
-    const partition = partitionOf(request);
-    const result = await web.drafts(principalOf(request), partition, {
-      ...(cursor === undefined
-        ? {}
-        : { cursor: parseDraftCursor(textField(query, "cursor"), partition) }),
-      limit: integerField(query, "limit", draftPageLimitDefault),
-    });
-    send(reply, draftsResponse(result));
-  });
-  app.post(
-    root,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      const result = await web.createDraft(principalOf(request), {
-        partition: partitionOf(request),
-        ...parseDraftCreation(request.body),
-      });
-      send(reply, draftCreationResponse(result));
-    },
-  );
-  app.get(`${root}/:ticket`, async (request, reply) => {
-    const result = await web.draft(
-      principalOf(request),
-      partitionOf(request),
-      asTicketIdField(record(request.params), "ticket"),
-    );
-    send(reply, draftResponse(result));
-  });
-  app.put(
-    `${root}/:ticket`,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      const result = await web.reviseDraft(principalOf(request), {
-        partition: partitionOf(request),
-        ticket: asTicketIdField(record(request.params), "ticket"),
-        ...parseDraftRevision(request.body),
-      });
-      send(reply, draftRevisionResponse(result));
-    },
-  );
-  app.delete(`${root}/:ticket`, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["expectedVersion"]);
-    const result = await web.deleteDraft(principalOf(request), {
-      partition: partitionOf(request),
-      ticket: asTicketIdField(record(request.params), "ticket"),
-      expectedVersion: integerField(query, "expectedVersion"),
-    });
-    send(reply, draftDeletionResponse(result));
-  });
-}
-
-function registerEndpoint<Value>(
-  app: FastifyInstance,
-  endpoint: {
-    readonly method: "GET" | "POST";
-    readonly path: string;
-    readonly body?: z.ZodType;
-  },
-  read: (
-    request: FastifyRequest,
-    principal: Principal,
-    partition: Partition,
-  ) => Promise<Value>,
-  respond: (value: Value, partition: Partition) => NativeHttpResponse,
-): void {
-  app.route({
-    method: endpoint.method,
-    url: endpoint.path,
-    ...(endpoint.body === undefined
-      ? {}
-      : { preValidation: requireVersionedJson }),
-    handler: async (request, reply) => {
-      const partition = partitionOf(request);
-      send(
-        reply,
-        respond(
-          await read(request, principalOf(request), partition),
-          partition,
-        ),
-      );
-    },
-  });
-}
-
-function registerEndpointSession(request: FastifyRequest): SessionId {
-  return asSessionId(textField(record(request.params), "session"));
-}
-
+/**
+ * The project's threads and one thread's own pages, every bound checked at this
+ * door so a bad cursor or a bad stream is a status rather than a raise from a
+ * store.
+ */
 function registerThreadReads(
   app: FastifyInstance,
   web: InitialNativeWeb,
+  root: string,
 ): void {
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.threads,
-    (_request, principal, partition) => web.threads(principal, partition),
-    threadsResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.thread,
-    (request, principal, partition) => {
-      const query = nativeHttpEndpoints.thread.query.parse(request.query);
-      return web.thread(
-        principal,
-        partition,
-        registerEndpointSession(request),
-        {
-          ...(query.before === undefined ? {} : { before: query.before }),
-          limit: query.limit,
-        },
-      );
-    },
-    threadResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.threadTranscript,
-    (request, principal, partition) => {
-      const query = nativeHttpEndpoints.threadTranscript.query.parse(
-        request.query,
-      );
-      return web.threadTranscript(
-        principal,
-        partition,
-        registerEndpointSession(request),
-        {
-          ...(query.stream === undefined
-            ? {}
-            : { stream: asSessionStoreStream(query.stream) }),
-          after: query.after,
-          limit: query.limit,
-        },
-      );
-    },
-    leadTranscriptResponse,
-  );
-}
-
-function registerThreadWrites(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-): void {
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.openThread,
-    (request, principal, partition) => {
-      nativeHttpEndpoints.openThread.body.parse(request.body);
-      return web.openThread(principal, partition);
-    },
-    (result, partition) => openThreadResponse(partition, result),
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.sendThreadMessage,
-    (request, principal, partition) =>
-      web.sendThreadMessage(principal, partition, {
-        session: registerEndpointSession(request),
-        ...parseThreadMessage(request.body),
-      }),
-    threadMessageResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.closeThread,
-    (request, principal, partition) => {
-      nativeHttpEndpoints.closeThread.body.parse(request.body);
-      return web.closeThread(
-        principal,
-        partition,
-        registerEndpointSession(request),
-      );
-    },
-    closeThreadResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.renameThread,
-    (request, principal, partition) =>
-      web.renameThread(principal, partition, {
-        session: registerEndpointSession(request),
-        ...parseThreadRename(request.body),
-      }),
-    renameThreadResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.hideThread,
-    (request, principal, partition) =>
-      web.hideThread(principal, partition, {
-        session: registerEndpointSession(request),
-        ...parseThreadHide(request.body),
-      }),
-    hideThreadResponse,
-  );
-}
-
-function registerLeadInquiries(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-): void {
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.leadInquiries,
-    (_request, principal, partition) => web.leadInquiries(principal, partition),
-    leadInquiriesResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.leadInquiry,
-    (request, principal, partition) =>
-      web.leadInquiry(principal, partition, registerEndpointSession(request)),
-    leadInquiryResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.askLead,
-    (request, principal, partition) =>
-      web.askLead(principal, partition, parseLeadInquiry(request.body)),
-    (result, partition) => askLeadResponse(partition, result),
-  );
-}
-
-function registerDispatchView(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-): void {
-  app.get(
-    "/api/v1/tenants/:tenant/projects/:project/dispatch-view",
-    async (request, reply) => {
-      const query = fieldsOnly(request.query, ["after", "limit", "watermark"]);
-      const result = await web.dispatchView(
-        principalOf(request),
-        partitionOf(request),
-        {
-          ...(query["after"] === undefined
-            ? {}
-            : { after: asTicketIdField(query, "after") }),
-          limit: integerField(query, "limit", 50),
-          ...(query["watermark"] === undefined
-            ? {}
-            : { watermark: integerField(query, "watermark") }),
-        },
-      );
-      send(reply, dispatchViewResponse(result));
-    },
-  );
-}
-
-function registerNotifications(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-): void {
-  app.get(
-    "/api/v1/tenants/:tenant/projects/:project/notifications",
-    async (request, reply) => {
-      const query = fieldsOnly(request.query, ["after", "limit"]);
-      const result = await web.notifications(
-        principalOf(request),
-        partitionOf(request),
-        {
-          after: integerField(query, "after", 0),
-          limit: integerField(query, "limit", 50),
-        },
-      );
-      send(reply, notificationsResponse(result));
-    },
-  );
-}
-
-/** Where a reconnecting stream says it got to, by header or by the fetch client's query. */
-function streamCursor(request: FastifyRequest): number | undefined {
-  const query = fieldsOnly(request.query, ["after"]);
-  if (query["after"] !== undefined) return integerField(query, "after");
-  const header = request.headers["last-event-id"];
-  if (header === undefined) return undefined;
-  if (typeof header !== "string")
-    throw new TypeError("last event id is not text");
-  return integerField({ "last-event-id": header }, "last-event-id");
+  app.get(`${root}/threads`, async (request, reply) => {
+    send(
+      reply,
+      threadsResponse(
+        await web.threads(principalOf(request), partitionOf(request)),
+      ),
+    );
+  });
+  app.get(`${root}/threads/:session`, async (request, reply) => {
+    const query = fieldsOnly(request.query, ["before", "limit"]);
+    const before = query["before"];
+    send(
+      reply,
+      threadResponse(
+        await web.thread(
+          principalOf(request),
+          partitionOf(request),
+          asSessionId(textField(record(request.params), "session")),
+          {
+            ...(before === undefined
+              ? {}
+              : { before: integerField(query, "before") }),
+            limit: integerField(query, "limit", threadTurnsAnsweredMax),
+          },
+        ),
+      ),
+    );
+  });
+  app.get(`${root}/threads/:session/transcript`, async (request, reply) => {
+    const query = fieldsOnly(request.query, ["stream", "after", "limit"]);
+    const stream = query["stream"];
+    send(
+      reply,
+      leadTranscriptResponse(
+        await web.threadTranscript(
+          principalOf(request),
+          partitionOf(request),
+          asSessionId(textField(record(request.params), "session")),
+          {
+            ...(stream === undefined
+              ? {}
+              : { stream: asSessionStoreStream(textField(query, "stream")) }),
+            after: integerField(query, "after", 0),
+            limit: integerField(query, "limit", sessionStorePageBatchesMax),
+          },
+        ),
+      ),
+    );
+  });
 }
 
 /**
- * Nothing here is hijacked until the stream has read everything it opens with,
- * because a refusal that had already sent a head would be a refusal a browser
- * reads as a stream. The socket may go away during those reads, so the handler
- * that gives the slot back is attached before they begin.
+ * The five thread doors, each behind the versioned media type. Opening takes an
+ * empty body because a thread is the caller's own, a message takes the turn
+ * identity the caller minted because that identity is the idempotency, closing
+ * takes an empty body because the URL already names the thread, and renaming
+ * and hiding take the one field each writes.
  */
-async function serveProjectEvents(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  web: InitialNativeWeb,
-  hub: ProjectStreamHub,
-): Promise<void> {
-  const partition = partitionOf(request);
-  const principal = principalOf(request);
-  const after = streamCursor(request);
-  const standing = await web.project(principal, partition, { limit: 1 });
-  if (standing.result !== "Found") {
-    send(reply, projectEntryResponse(standing));
-    return;
-  }
-  const watching: { stream?: ProjectStream; abandoned: boolean } = {
-    abandoned: false,
-  };
-  request.raw.on("close", () => {
-    watching.abandoned = true;
-    watching.stream?.close();
-  });
-  const opened = await hub.open({
-    partition,
-    principal,
-    after,
-    expiresAtMs: request.bearerExpiresAtMs,
-  });
-  if (opened.opened === "AtCapacity") {
-    await reply
-      .code(503)
-      .header("retry-after", "1")
-      .type(nativeHttpMediaType)
-      .send(nativeHttpError("ServerBusy", "The server is at capacity."));
-    return;
-  }
-  watching.stream = opened.stream;
-  if (watching.abandoned) {
-    opened.stream.close();
-    return;
-  }
-  reply.hijack();
-  opened.stream.begin(projectStreamSocket(reply));
-}
-
-function registerProjectEvents(
+function registerThreadWrites(
   app: FastifyInstance,
   web: InitialNativeWeb,
-  hub: ProjectStreamHub,
+  root: string,
 ): void {
-  app.get(
-    "/api/v1/tenants/:tenant/projects/:project/events",
-    { config: { streaming: true } },
-    (request, reply) => serveProjectEvents(request, reply, web, hub),
+  app.post(
+    `${root}/threads`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      fieldsOnly(request.body ?? {}, []);
+      send(
+        reply,
+        openThreadResponse(
+          partitionOf(request),
+          await web.openThread(principalOf(request), partitionOf(request)),
+        ),
+      );
+    },
+  );
+  app.post(
+    `${root}/threads/:session/messages`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        threadMessageResponse(
+          await web.sendThreadMessage(
+            principalOf(request),
+            partitionOf(request),
+            {
+              session: asSessionId(
+                textField(record(request.params), "session"),
+              ),
+              ...parseThreadMessage(request.body),
+            },
+          ),
+        ),
+      );
+    },
+  );
+  app.post(
+    `${root}/threads/:session/close`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      fieldsOnly(request.body ?? {}, []);
+      send(
+        reply,
+        closeThreadResponse(
+          await web.closeThread(
+            principalOf(request),
+            partitionOf(request),
+            asSessionId(textField(record(request.params), "session")),
+          ),
+        ),
+      );
+    },
+  );
+  registerThreadWritesMemberView(app, web, root);
+}
+
+/** The two doors that write a member's own view of a thread: its name and whether it is on their rail. */
+function registerThreadWritesMemberView(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+  root: string,
+): void {
+  app.post(
+    `${root}/threads/:session/rename`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        renameThreadResponse(
+          await web.renameThread(principalOf(request), partitionOf(request), {
+            session: asSessionId(textField(record(request.params), "session")),
+            ...parseThreadRename(request.body),
+          }),
+        ),
+      );
+    },
+  );
+  app.post(
+    `${root}/threads/:session/hide`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        hideThreadResponse(
+          await web.hideThread(principalOf(request), partitionOf(request), {
+            session: asSessionId(textField(record(request.params), "session")),
+            ...parseThreadHide(request.body),
+          }),
+        ),
+      );
+    },
   );
 }
 
-export function createNativeHttpApp(
+/**
+ * The lead's inquiries: the listing, one of them, and the door that asks. All
+ * three are gated on `Read` inside the boundary, so nothing about the gate is
+ * decided here; what IS decided here is that the ask door sits behind the
+ * versioned media type like every other write, and that the two identities come
+ * off the body because they are the idempotency.
+ */
+function registerLeadInquiries(
+  app: FastifyInstance,
   web: InitialNativeWeb,
+  root: string,
+): void {
+  app.get(`${root}/lead/inquiries`, async (request, reply) => {
+    send(
+      reply,
+      leadInquiriesResponse(
+        await web.leadInquiries(principalOf(request), partitionOf(request)),
+      ),
+    );
+  });
+  app.get(`${root}/lead/inquiries/:session`, async (request, reply) => {
+    send(
+      reply,
+      leadInquiryResponse(
+        await web.leadInquiry(
+          principalOf(request),
+          partitionOf(request),
+          asSessionId(textField(record(request.params), "session")),
+        ),
+      ),
+    );
+  });
+  app.post(
+    `${root}/lead/inquiries`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        askLeadResponse(
+          partitionOf(request),
+          await web.askLead(
+            principalOf(request),
+            partitionOf(request),
+            parseLeadInquiry(request.body),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+export interface NativeTicketApplication {
+  readonly application: TicketApplication;
+  readonly reads?: TicketExecutionReads;
+  identity(input: {
+    readonly principal: Principal;
+    readonly partition: Partition;
+    readonly key: string;
+    readonly operation: string;
+  }): string;
+}
+
+function adoptedTicketNumber(
+  request: FastifyRequest,
+): ReturnType<typeof AdoptedTicketId> {
+  return AdoptedTicketId(integerField(record(request.params), "ticket"));
+}
+
+function adoptedTicketIdentity(
+  service: NativeTicketApplication,
+  request: FastifyRequest,
+  operation: string,
+): string {
+  const key = request.headers["idempotency-key"];
+  if (typeof key !== "string" || key.length === 0)
+    throw new TypeError("Idempotency-Key is required");
+  return service.identity({
+    principal: principalOf(request),
+    partition: partitionOf(request),
+    key,
+    operation,
+  });
+}
+
+function adoptedTicketReply(reply: FastifyReply, result: unknown): void {
+  const value = result as { readonly result: string; readonly value?: unknown };
+  if (value.result === "NotFound") {
+    void reply
+      .code(404)
+      .send(nativeHttpError("NotFound", "Resource not found."));
+    return;
+  }
+  if (value.result === "LegacyModelUnsupported") {
+    void reply
+      .code(409)
+      .send(
+        nativeHttpError(
+          "LegacyModelUnsupported",
+          "This project uses the legacy ticket model.",
+        ),
+      );
+    return;
+  }
+  const accepted = (value.value as { readonly accepted?: string } | undefined)
+    ?.accepted;
+  if (accepted === "InputConflict") {
+    void reply
+      .code(409)
+      .send(nativeHttpError("InputConflict", "Idempotency input conflicts."));
+    return;
+  }
+  if (accepted === "AuthoringRefused") {
+    const refusal = value.value as { readonly message?: string };
+    void reply
+      .code(400)
+      .send(
+        nativeHttpError(
+          "AuthoringRefused",
+          refusal.message ?? "The ticket definition was refused.",
+        ),
+      );
+    return;
+  }
+  if (accepted === "Backpressure") {
+    void reply
+      .code(503)
+      .send(nativeHttpError("ServerBusy", "The server is at capacity."));
+    return;
+  }
+  void reply.code(202).send(value.value);
+}
+
+function adoptedTicketMutationReply(
+  reply: FastifyReply,
+  identity: string,
+  result: unknown,
+): void {
+  const value = result as { readonly result: string; readonly value?: unknown };
+  const acceptance = value.value as { readonly accepted?: string } | undefined;
+  if (
+    value.result === "Authorized" &&
+    (acceptance?.accepted === "Accepted" ||
+      acceptance?.accepted === "AlreadyAccepted")
+  ) {
+    void reply.code(202).send({ identity, accepted: acceptance.accepted });
+    return;
+  }
+  adoptedTicketReply(reply, result);
+}
+
+function registerAdoptedTicketReads(
+  app: FastifyInstance,
+  service: NativeTicketApplication,
+): void {
+  const root = nativeHttpRoutes.tickets;
+  app.get(nativeHttpRoutes.ticketOperation, async (request, reply) => {
+    const query = fieldsOnly(request.query, ["identity"]);
+    const result = await service.application.outcome(
+      principalOf(request),
+      partitionOf(request),
+      textField(query, "identity"),
+    );
+    if (result.result !== "Authorized") {
+      adoptedTicketReply(reply, result);
+      return;
+    }
+    if (result.value === undefined) {
+      void reply
+        .code(404)
+        .send(nativeHttpError("NotFound", "Operation not found."));
+      return;
+    }
+    void reply.code(200).send({
+      sequence: result.value.sequence,
+      decision: JSON.parse(encodeChuggernaut(result.value.decision)) as unknown,
+    });
+  });
+  app.get(root, async (request, reply) => {
+    const result = await service.application.graph(
+      principalOf(request),
+      partitionOf(request),
+    );
+    if (result.result !== "Authorized") {
+      adoptedTicketReply(reply, result);
+      return;
+    }
+    void reply.code(200).send({
+      tickets: [...result.value.tickets.values()]
+        .map(adoptedTicketView)
+        .sort((left, right) => left.ticket - right.ticket),
+    });
+  });
+  app.get(`${root}/:ticket`, async (request, reply) => {
+    const result = await service.application.definition(
+      principalOf(request),
+      partitionOf(request),
+      adoptedTicketNumber(request),
+    );
+    if (result.result !== "Authorized") {
+      adoptedTicketReply(reply, result);
+      return;
+    }
+    if (result.value === undefined) {
+      void reply
+        .code(404)
+        .send(nativeHttpError("NotFound", "Ticket not found."));
+      return;
+    }
+    void reply.code(200).send({
+      ...adoptedTicketView(result.value.held),
+      /** Null rather than absent, so a release predating source retention still reads. */
+      source: result.value.source ?? null,
+    });
+  });
+}
+
+function adoptedTicketView(held: AdoptedTicket) {
+  return {
+    ticket: held.definition.id,
+    revision: held.revision,
+    workCyclesStarted: held.work_cycles_started,
+    state: held.state.kind,
+    dependencies: [...held.definition.dependencies].sort(
+      (left, right) => left - right,
+    ),
+  };
+}
+
+/**
+ * Which catalog a request works against. The server resolves the bound
+ * repository's tip itself; `X-Chug-Repository` names which binding when a
+ * project holds more than one, and `If-Catalog-Match` is the commit the caller
+ * last saw, which a write is refused against when the tree has moved.
+ */
+function adoptedCatalogRequest(request: FastifyRequest) {
+  const query = record(request.query);
+  const repository =
+    query["repository"] ?? request.headers["x-chug-repository"];
+  const expected = request.headers["if-catalog-match"];
+  return {
+    partition: partitionOf(request),
+    ...(typeof repository === "string"
+      ? { repository: asRepositoryId(repository) }
+      : {}),
+    ...(typeof expected === "string"
+      ? { expectedCatalogCommit: asGitObjectId(expected) }
+      : {}),
+  };
+}
+
+function registerAdoptedTicketCatalog(
+  app: FastifyInstance,
+  service: NativeTicketApplication,
+): void {
+  const root = nativeHttpRoutes.ticketCatalog;
+  const answer = (
+    reply: FastifyReply,
+    result: TicketApplicationResult<object | undefined>,
+  ): void => {
+    if (result.result !== "Authorized") {
+      adoptedTicketReply(reply, result);
+      return;
+    }
+    if (result.value === undefined) {
+      void reply
+        .code(404)
+        .send(nativeHttpError("NotFound", "Catalog not found."));
+      return;
+    }
+    void reply.code(200).send(result.value);
+  };
+  /** An absent path asks what the catalog holds, a present one asks for that file. */
+  app.get(root, async (request, reply) => {
+    const path = record(request.query)["path"];
+    const catalog = adoptedCatalogRequest(request);
+    answer(
+      reply,
+      typeof path === "string"
+        ? await service.application.catalogFile(
+            principalOf(request),
+            catalog,
+            path,
+          )
+        : await service.application.catalog(principalOf(request), catalog),
+    );
+  });
+  /** A runtime fragment is written and removed by the reference it is read under. */
+  app.put(root, async (request, reply) => {
+    if (typeof request.body !== "string")
+      throw new TypeError("catalog fragment body must be text");
+    adoptedCatalogWriteReply(
+      reply,
+      await service.application.writeCatalogFile(
+        principalOf(request),
+        adoptedCatalogRequest(request),
+        textField(record(request.query), "path"),
+        request.body,
+      ),
+    );
+  });
+  app.delete(root, async (request, reply) => {
+    adoptedCatalogWriteReply(
+      reply,
+      await service.application.removeCatalogFile(
+        principalOf(request),
+        adoptedCatalogRequest(request),
+        textField(record(request.query), "path"),
+      ),
+    );
+  });
+}
+
+/** A refused fragment is a conflict with the repository, which the caller resolves there. */
+function adoptedCatalogWriteReply(
+  reply: FastifyReply,
+  result: TicketApplicationResult<TicketCatalogWrite | undefined>,
+): void {
+  if (result.result !== "Authorized") {
+    adoptedTicketReply(reply, result);
+    return;
+  }
+  if (result.value === undefined) {
+    void reply
+      .code(404)
+      .send(nativeHttpError("NotFound", "Catalog not found."));
+    return;
+  }
+  if (result.value.written === "Refused") {
+    void reply
+      .code(409)
+      .send(nativeHttpError("CatalogFragmentRefused", result.value.message));
+    return;
+  }
+  if (result.value.written === "NotHeld") {
+    void reply
+      .code(404)
+      .send(nativeHttpError("NotFound", "Catalog fragment not found."));
+    return;
+  }
+  void reply.code(200).send({ written: result.value.written });
+}
+
+function registerAdoptedTicketValidation(
+  app: FastifyInstance,
+  service: NativeTicketApplication,
+): void {
+  app.post(nativeHttpRoutes.ticketValidation, async (request, reply) => {
+    if (typeof request.body !== "string")
+      throw new TypeError("ticket body must be YAML text");
+    const result = await service.application.validate(principalOf(request), {
+      ...adoptedCatalogRequest(request),
+      source: request.body,
+    });
+    if (result.result !== "Authorized") {
+      adoptedTicketReply(reply, result);
+      return;
+    }
+    void reply.code(200).send(result.value);
+  });
+}
+
+function registerAdoptedTicketAuthoring(
+  app: FastifyInstance,
+  service: NativeTicketApplication,
+): void {
+  const root = nativeHttpRoutes.tickets;
+  app.post(root, async (request, reply) => {
+    if (typeof request.body !== "string")
+      throw new TypeError("ticket body must be YAML text");
+    const identity = adoptedTicketIdentity(service, request, "CreateTicket");
+    adoptedTicketMutationReply(
+      reply,
+      identity,
+      await service.application.create(principalOf(request), {
+        ...adoptedCatalogRequest(request),
+        identity,
+        source: request.body,
+      }),
+    );
+  });
+  app.put(`${root}/:ticket`, async (request, reply) => {
+    if (typeof request.body !== "string")
+      throw new TypeError("ticket body must be YAML text");
+    const revision = request.headers["if-match"];
+    if (typeof revision !== "string" || !/^[1-9][0-9]*$/u.test(revision))
+      throw new TypeError("If-Match must be a positive ticket revision");
+    const identity = adoptedTicketIdentity(service, request, "UpdateTicket");
+    adoptedTicketMutationReply(
+      reply,
+      identity,
+      await service.application.update(principalOf(request), {
+        ...adoptedCatalogRequest(request),
+        identity,
+        ticket: adoptedTicketNumber(request),
+        expectedRevision: Number(revision),
+        source: request.body,
+      }),
+    );
+  });
+}
+
+function registerAdoptedTicketActions(
+  app: FastifyInstance,
+  service: NativeTicketApplication,
+): void {
+  const root = nativeHttpRoutes.tickets;
+  for (const action of ["revoke", "resume"] as const)
+    app.post(`${root}/:ticket/${action}`, async (request, reply) => {
+      const operation = action === "revoke" ? "RevokeTicket" : "ResumeTicket";
+      const identity = adoptedTicketIdentity(service, request, operation);
+      adoptedTicketMutationReply(
+        reply,
+        identity,
+        await service.application[action](principalOf(request), {
+          partition: partitionOf(request),
+          identity,
+          ticket: adoptedTicketNumber(request),
+        }),
+      );
+    });
+  app.post(`${root}/:ticket/dispatch`, async (request, reply) => {
+    const body = fieldsOnly(request.body, ["repository", "commit"]);
+    const identity = adoptedTicketIdentity(service, request, "DispatchTicket");
+    adoptedTicketMutationReply(
+      reply,
+      identity,
+      await service.application.dispatch(principalOf(request), {
+        partition: partitionOf(request),
+        identity,
+        ticket: adoptedTicketNumber(request),
+        repository: textField(body, "repository"),
+        commit: textField(body, "commit"),
+      }),
+    );
+  });
+}
+
+/** One task key as a path segment, which is opaque text this tree never interprets. */
+function adoptedTaskKey(request: FastifyRequest): string {
+  return textField(record(request.params), "task");
+}
+
+/** The attempt one read names, which is a whole count and nothing else. */
+function adoptedAttempt(request: FastifyRequest): number {
+  return integerField(record(request.params), "attempt");
+}
+
+/** A page size the caller may narrow but never widen past the wire's own bound. */
+function adoptedPageLimit(request: FastifyRequest): number {
+  const asked = record(request.query)["limit"];
+  const held =
+    typeof asked === "string" ? integerField({ limit: asked }, "limit") : 0;
+  return held > 0
+    ? Math.min(held, nativeHttpPageItemsMax)
+    : nativeHttpPageItemsDefault;
+}
+
+/**
+ * What one attempt ran, spent and left behind, and the record of what people
+ * asked of this project. Every one conceals a project the caller may not see as
+ * a project that is not there, which is why the bare admission read exists at
+ * all: the path it replaces is retired and answers a conflict.
+ */
+function registerAdoptedTicketEvidence(
+  app: FastifyInstance,
+  reads: TicketExecutionReads,
+): void {
+  const answer = (
+    reply: FastifyReply,
+    result: TicketApplicationResult<unknown>,
+  ): void => {
+    if (result.result !== "Authorized") {
+      adoptedTicketReply(reply, result);
+      return;
+    }
+    if (result.value === undefined) {
+      void reply.code(404).send(nativeHttpError("NotFound", "Not found."));
+      return;
+    }
+    void reply.code(200).send(result.value);
+  };
+  app.get(nativeHttpRoutes.ticketMachineAdmission, async (request, reply) => {
+    answer(
+      reply,
+      await reads.admitted(principalOf(request), partitionOf(request)),
+    );
+  });
+  app.get(nativeHttpRoutes.ticketExecutions, async (request, reply) => {
+    const found = await reads.executions(
+      principalOf(request),
+      partitionOf(request),
+      adoptedPageLimit(request),
+    );
+    answer(
+      reply,
+      found.result === "Authorized"
+        ? { result: "Authorized", value: { executions: found.value } }
+        : found,
+    );
+  });
+  app.get(nativeHttpRoutes.ticketOperations, async (request, reply) => {
+    const found = await reads.operations(
+      principalOf(request),
+      partitionOf(request),
+      adoptedPageLimit(request),
+    );
+    answer(
+      reply,
+      found.result === "Authorized"
+        ? { result: "Authorized", value: { operations: found.value } }
+        : found,
+    );
+  });
+  app.get(nativeHttpRoutes.ticketExecution, async (request, reply) => {
+    answer(
+      reply,
+      await reads.execution(
+        principalOf(request),
+        partitionOf(request),
+        adoptedTaskKey(request),
+      ),
+    );
+  });
+  registerAdoptedTicketRunReads(app, reads, answer);
+}
+
+/**
+ * One attempt's own measure and the bytes it left, each read by the attempt
+ * number the execution read named.
+ */
+function registerAdoptedTicketRunReads(
+  app: FastifyInstance,
+  reads: TicketExecutionReads,
+  answer: (
+    reply: FastifyReply,
+    result: TicketApplicationResult<unknown>,
+  ) => void,
+): void {
+  app.get(nativeHttpRoutes.ticketExecutionTurns, async (request, reply) => {
+    answer(
+      reply,
+      await reads.turns(
+        principalOf(request),
+        partitionOf(request),
+        adoptedTaskKey(request),
+        adoptedAttempt(request),
+        adoptedCursor(request),
+        adoptedPageLimit(request),
+      ),
+    );
+  });
+  app.get(
+    nativeHttpRoutes.ticketExecutionTranscript,
+    async (request, reply) => {
+      answer(
+        reply,
+        await reads.transcript(
+          principalOf(request),
+          partitionOf(request),
+          adoptedTaskKey(request),
+          adoptedAttempt(request),
+          adoptedCursor(request),
+        ),
+      );
+    },
+  );
+  app.get(
+    nativeHttpRoutes.ticketExecutionConfiguration,
+    async (request, reply) => {
+      answer(
+        reply,
+        await reads.configuration(
+          principalOf(request),
+          partitionOf(request),
+          adoptedTaskKey(request),
+          adoptedAttempt(request),
+        ),
+      );
+    },
+  );
+}
+
+/** Where a page resumes, which is absent on the first page and a count after that. */
+function adoptedCursor(request: FastifyRequest): number {
+  const asked = record(request.query)["after"];
+  return typeof asked === "string"
+    ? integerField({ after: asked }, "after")
+    : 0;
+}
+
+function registerAdoptedTickets(
+  app: FastifyInstance,
+  service: NativeTicketApplication,
+): void {
+  registerAdoptedTicketReads(app, service);
+  registerAdoptedTicketValidation(app, service);
+  registerAdoptedTicketCatalog(app, service);
+  registerAdoptedTicketAuthoring(app, service);
+  registerAdoptedTicketActions(app, service);
+}
+
+function registerRetiredLegacyTicketRoutes(
+  app: FastifyInstance,
+  service: NativeTicketApplication,
+): void {
+  const root = "/api/v1/tenants/:tenant/projects/:project";
+  const guard = (request: FastifyRequest, reply: FastifyReply) =>
+    legacyTicketEndpoint(service, request, reply);
+  for (const route of [
+    { method: ["GET"] as const, url: root },
+    { method: ["GET"] as const, url: `${root}/tickets` },
+    { method: ["GET"] as const, url: `${root}/tickets/:ticket` },
+    { method: ["GET", "POST"] as const, url: `${root}/configurations` },
+    { method: ["POST"] as const, url: `${root}/configurations/imports` },
+    { method: ["GET"] as const, url: `${root}/configurations/:revision` },
+    {
+      method: ["GET"] as const,
+      url: `${root}/draft-initializations/:revision`,
+    },
+    { method: ["GET", "POST"] as const, url: `${root}/drafts` },
+    {
+      method: ["GET", "PUT", "DELETE"] as const,
+      url: `${root}/drafts/:ticket`,
+    },
+    {
+      method: ["GET", "POST", "DELETE"] as const,
+      url: `${root}/operations/:operation`,
+    },
+    { method: ["POST"] as const, url: `${root}/operations` },
+    { method: ["GET"] as const, url: `${root}/selector-context` },
+    { method: ["GET"] as const, url: `${root}/selector-history` },
+    { method: ["GET", "PUT"] as const, url: `${root}/selector-settings` },
+    { method: ["GET"] as const, url: `${root}/selector-settings/history` },
+    { method: ["GET"] as const, url: `${root}/dispatch-view` },
+    { method: ["GET"] as const, url: `${root}/native-actions` },
+    { method: ["GET"] as const, url: `${root}/tickets/:ticket/native-actions` },
+    { method: ["GET"] as const, url: `${root}/agentic-refusals` },
+    {
+      method: ["GET"] as const,
+      url: `${root}/tickets/:ticket/agentic-refusals`,
+    },
+  ])
+    app.route({ method: [...route.method], url: route.url, handler: guard });
+}
+
+function configureNativeHttpApp(
+  app: FastifyInstance,
+  ticketService?: NativeTicketApplication,
+): void {
+  app.addContentTypeParser(
+    nativeHttpMediaType,
+    { parseAs: "string", bodyLimit: nativeHttpBodyBytesMax },
+    app.getDefaultJsonParser("error", "error"),
+  );
+  if (ticketService !== undefined)
+    app.addContentTypeParser(
+      ["application/yaml", "text/yaml"],
+      { parseAs: "string", bodyLimit: nativeHttpBodyBytesMax },
+      (_request, body, done) => {
+        done(null, body);
+      },
+    );
+  app.addHook("onSend", (_request, reply) => {
+    if (!reply.hasHeader("cache-control"))
+      void reply.header("cache-control", "no-store");
+    return Promise.resolve();
+  });
+}
+
+export function createNativeHttpApp(
+  web: NativeWeb,
   authentication: PrincipalAuthentication,
   readiness: NativeHttpReadiness,
   authority: InstallationAuthorityRead,
   limits: NativeHttpLimits = nativeHttpLimitsDefault,
-  hub?: ProjectStreamHub,
-  selectorSettings?: SelectorProjectSettingsAdministration,
   forgeCredentials?: ForgeCredentialMinting,
   onboarding?: RepositoryOnboarding,
+  ticketService?: NativeTicketApplication,
+  workerPools?: WorkerPoolRegistrationService,
 ): FastifyInstance {
   const app = fastify({
     bodyLimit: nativeHttpBodyBytesMax,
@@ -1615,17 +1547,7 @@ export function createNativeHttpApp(
     forceCloseConnections: "idle",
     http: { maxHeaderSize: nativeHttpHeaderBytesMax },
   });
-  app.addContentTypeParser(
-    nativeHttpMediaType,
-    { parseAs: "string", bodyLimit: nativeHttpBodyBytesMax },
-    app.getDefaultJsonParser("error", "error"),
-  );
-  app.addHook("onSend", (_request, reply) => {
-    if (!reply.hasHeader("cache-control")) {
-      void reply.header("cache-control", "no-store");
-    }
-    return Promise.resolve();
-  });
+  configureNativeHttpApp(app, ticketService);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
   registerCapacity(app, limits.concurrentRequestsMax);
   registerAuthentication(app, authentication);
@@ -1633,29 +1555,26 @@ export function createNativeHttpApp(
   registerContract(app);
   registerInstallation(app, authority);
   registerInventory(app, web);
-  registerProject(app, web);
-  registerLead(app, web);
-  registerSelectorContext(app, web);
-  registerSelectorHistory(app, web, partitionRoot);
-  if (selectorSettings !== undefined)
-    registerSelectorSettings(app, selectorSettings);
+  if (ticketService !== undefined) {
+    registerAdoptedTickets(app, ticketService);
+    if (ticketService.reads !== undefined)
+      registerAdoptedTicketEvidence(app, ticketService.reads);
+    registerRetiredLegacyTicketRoutes(app, ticketService);
+  }
+  registerLead(app, web, partitionRoot);
   if (forgeCredentials !== undefined)
     registerForgeCredentials(app, forgeCredentials);
+  if (workerPools !== undefined)
+    registerWorkerPools(app, workerPools, partitionRoot);
   if (onboarding !== undefined) {
     registerForgeInstallations(app, onboarding);
     registerProjectRepositories(app, onboarding);
     registerProjectRepositoryLanding(app, onboarding);
     registerProjectRepositoryRetirement(app, onboarding);
   }
-  registerOperations(app, web);
-  registerNotifications(app, web);
-  if (hub !== undefined) registerProjectEvents(app, web, hub);
-  registerConfigurations(app, web);
-  registerDrafts(app, web);
-  registerThreadReads(app, web);
-  registerThreadWrites(app, web);
-  registerLeadInquiries(app, web);
-  registerDispatchView(app, web);
+  registerThreadReads(app, web, partitionRoot);
+  registerThreadWrites(app, web, partitionRoot);
+  registerLeadInquiries(app, web, partitionRoot);
   app.setErrorHandler((failure, _request, reply) => {
     send(reply, failureResponse(failure));
   });

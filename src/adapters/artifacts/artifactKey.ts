@@ -10,31 +10,13 @@
  * segment or a name longer than a filesystem component would otherwise pick the
  * directory.
  *
- * A DECLARED PATH IS KEPT AS ITSELF, because it is what the worker stored the
- * object under and a rewritten one would name a key nobody wrote.
- * `../../interpreter/resultManifest.ts` has already refused every shape that
- * could climb out of the tree, and the resolution below is what proves the
- * refusal held rather than assuming it. That proof is lexical and about the
- * name alone: where the components of that name really lead is
- * `./artifactStore.ts`'s, which resolves the directory an object stands in
- * through its links and refuses a link at the object itself.
  */
 
 import { createHash } from "node:crypto";
-import { resolve, sep } from "node:path";
+import { resolve } from "node:path";
 
 import { sessionStoreBatchesMax } from "../../contract/http.ts";
-import {
-  artifactPathRejection,
-  type ArtifactPath,
-} from "../../interpreter/resultManifest.ts";
-
-/** The directory one attempt's own immutable outputs stand in. */
-const artifactAttemptDirectory = "attempt";
-
-/** The directory a project's own finalization evidence stands in. */
-const artifactOwnedDirectory = "artifact";
-
+import type { BlobHolder } from "../../interpreter/blobStore.ts";
 /**
  * The directory one session's own transcript stands in. It is keyed by the
  * session and never by the attempt that wrote it: an attempt-keyed object is
@@ -58,64 +40,53 @@ export function artifactProjectDirectory(
 }
 
 /**
- * The file one project-owned artifact is stored as. Its identity is opaque, so
- * it is a digest here like every other identity.
+ * The directory holding every batch one holder wrote. A holder's kind names the
+ * directory it stands in and each of its parts becomes a digest before it is
+ * one, for the reason this module's header gives.
  */
-export function artifactOwnedFile(
+export function artifactHolderRoot(
   projectDirectory: string,
-  artifact: string,
+  holder: BlobHolder,
 ): string {
   return resolve(
     projectDirectory,
-    artifactOwnedDirectory,
-    artifactKeyOf(artifact),
+    holder.kind,
+    ...holder.parts.map((part) => artifactKeyOf(part)),
   );
 }
 
-/** Whether one resolved path is still inside the project directory it was resolved from. */
-export function artifactWithinProject(
+/** The file one batch is stored as, refusing a number outside the bound it was given. */
+export function artifactHolderFile(
   projectDirectory: string,
-  file: string,
-): boolean {
-  return file.startsWith(`${projectDirectory}${sep}`);
-}
-
-/**
- * The file one declared artifact of one attempt is stored as, or nothing where
- * the declared path is not one this store will resolve.
- */
-export function artifactAttemptFile(
-  projectDirectory: string,
-  execution: string,
-  attempt: string,
-  path: ArtifactPath,
-): string | undefined {
-  if (artifactPathRejection(path) !== undefined) return undefined;
-  const file = resolve(
-    projectDirectory,
-    artifactAttemptDirectory,
-    artifactKeyOf(execution),
-    artifactKeyOf(attempt),
-    path,
+  holder: BlobHolder,
+  batch: number,
+  batchesMax: number,
+): string {
+  if (!Number.isSafeInteger(batch) || batch < 1 || batch > batchesMax)
+    throw new RangeError("a store batch is outside the holder's bound");
+  return resolve(
+    artifactHolderRoot(projectDirectory, holder),
+    `${String(batch)}.jsonl`,
   );
-  return artifactWithinProject(projectDirectory, file) ? file : undefined;
 }
 
-/**
- * The directory holding every batch of one stream of one session's store. A
- * session and a stream are both opaque text, so both become digests before they
- * are directories, for the reason this module's header gives.
- */
+/** The holder one session's stream is stored under, which is the spelling it has always had. */
+export function artifactSessionHolder(
+  session: string,
+  stream: string,
+): BlobHolder {
+  return { kind: artifactSessionDirectory, parts: [session, stream] };
+}
+
+/** The directory holding every batch of one stream of one session's store. */
 export function artifactSessionRoot(
   projectDirectory: string,
   session: string,
   stream: string,
 ): string {
-  return resolve(
+  return artifactHolderRoot(
     projectDirectory,
-    artifactSessionDirectory,
-    artifactKeyOf(session),
-    artifactKeyOf(stream),
+    artifactSessionHolder(session, stream),
   );
 }
 
@@ -126,28 +97,10 @@ export function artifactSessionFile(
   stream: string,
   batch: number,
 ): string {
-  if (
-    !Number.isSafeInteger(batch) ||
-    batch < 1 ||
-    batch > sessionStoreBatchesMax
-  )
-    throw new RangeError("a store batch is outside the session's bound");
-  return resolve(
-    artifactSessionRoot(projectDirectory, session, stream),
-    `${String(batch)}.jsonl`,
-  );
-}
-
-/** The directory containing every immutable output written by one attempt. */
-export function artifactAttemptRoot(
-  projectDirectory: string,
-  execution: string,
-  attempt: string,
-): string {
-  return resolve(
+  return artifactHolderFile(
     projectDirectory,
-    artifactAttemptDirectory,
-    artifactKeyOf(execution),
-    artifactKeyOf(attempt),
+    artifactSessionHolder(session, stream),
+    batch,
+    sessionStoreBatchesMax,
   );
 }

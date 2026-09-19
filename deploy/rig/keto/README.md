@@ -28,10 +28,17 @@ loss is accepted rather than repaired.
 
 ## Grant a project access
 
-`src/roots/provisionProjectAccess.ts` is the only way a tuple is written from
-this tree. It reaches Keto's **write** port and nothing else: the API holds no
-credential for that port, so the API process cannot widen its own
-authorization, and this command needs no database at all.
+`src/roots/provisionProjectAccess.ts` is how a person's tuple is written from
+this tree. It reaches Keto's **write** port and nothing else, and it needs no
+database at all.
+
+It is not the only thing in this tree that reaches that port. The API names it
+too, under `CHUG_API_KETO_WRITE_URL`, because registering a worker pool writes
+a `pools` tuple and is a route rather than a command -- so an installation that
+serves registration does put the write port within the API process's reach. An
+installation naming neither that variable nor `CHUG_API_HYDRA_ADMIN_URL` serves
+no registration route and reaches neither; naming one without the other refuses
+to start.
 
 Supply the issuer and the subject the token carries; the command derives the
 principal with the same function the API derives it from, so neither side has
@@ -47,11 +54,19 @@ CHUG_PROVISION_ACTION=grant npm run provision:project-access
 ```
 
 `CHUG_PROVISION_RELATION` names one relation, and the model is what turns it
-into the permits a route asks for: `admins`, `developers`, `dispatchers` and
-`agents` are the project's, and `admins`, `members` and `hosted_execution` are
-the tenant's. A grant with `CHUG_PROVISION_PROJECT` absent is a tenant grant,
-and one whose relation is `tenant` names the tenant the project inherits from
-rather than a person — the one arm that reads no issuer or subject.
+into the permits a route asks for: `admins`, `developers`, `dispatchers`,
+`agents` and `pools` are the project's, and `admins`, `members` and
+`hosted_execution` are the tenant's. `pools` is written by registration rather
+than by hand — `deploy/rig/pools/README.md` is the procedure — and it is the
+only relation `execute` follows from, so no person's relation carries it.
+
+A grant with `CHUG_PROVISION_PROJECT` absent is a tenant grant, and one whose
+relation is `tenant` names the tenant the project inherits from rather than a
+person — the one arm that reads no issuer or subject.
+
+A project needs both arms before it answers anybody, so `deploy/rig/bring-up.sh`
+writes them together in its `access` stage: the tenant grant and one member's,
+from the same issuer and subject.
 
 A grant is a PUT and writes one tuple, so re-running it changes nothing and
 granting a second relation adds to what the principal holds rather than

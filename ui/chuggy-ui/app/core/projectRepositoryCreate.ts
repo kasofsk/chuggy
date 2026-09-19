@@ -21,10 +21,7 @@ import type {
 } from "../../../../src/contract/responses.ts";
 
 import type { ApiResult } from "./apiRequest.ts";
-import {
-  repositoryConfigurationsStatus,
-  repositoryRefusalStatus,
-} from "./projectRepositories.ts";
+import { repositoryRefusalStatus } from "./projectRepositories.ts";
 
 /** What the dialog holds, which is the body the route takes and nothing else. */
 export type RepositoryCreateForm = z.infer<
@@ -158,9 +155,5 @@ export function repositoryCreatedRows(
   return [
     { label: "Seed", detail: created.seeded ? "Seeded" : "Not seeded" },
     { label: "Ruleset", detail: repositoryRulesetStatus(created.ruleset) },
-    {
-      label: "Configurations",
-      detail: repositoryConfigurationsStatus(created.configurations),
-    },
   ];
 }

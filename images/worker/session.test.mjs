@@ -335,7 +335,7 @@ test("an inquiry's roster leaves every tool that writes disallowed by name", asy
     [],
     "a read-only roster was given a built-in",
   );
-  for (const tool of ["release_draft", "revise_draft", "dispatch"])
+  for (const tool of ["update_ticket", "dispatch_ticket"])
     assert.ok(
       disallowedTools.includes(`${chuggyToolPrefix}${tool}`),
       `${tool} is not disallowed`,
@@ -670,7 +670,7 @@ test("the one chuggy server is served in-process, with the tools the roster admi
 });
 
 test("a session with no ProjectRead registers no read and disallows every one by name", async () => {
-  const plane = planeOf([], { ...leadFacts, capabilities: ["LeadDecision"] });
+  const plane = planeOf([], { ...leadFacts, capabilities: [] });
   const { seen, query } = queryOf(() => []);
 
   await run({ request: plane.request, query });
@@ -678,17 +678,10 @@ test("a session with no ProjectRead registers no read and disallows every one by
   const registered = seen.options.mcpServers.chuggy.tools.map(
     ({ name }) => name,
   );
-  assert.deepEqual(registered, [
-    "dispatch",
-    "refuse",
-    "lift",
-    "set_attention",
-    "set_handoff_note",
-    "set_planning_intent",
-  ]);
+  assert.deepEqual(registered, []);
   const disallowed = seen.options.disallowedTools;
   assert.ok(disallowed.includes(`${chuggyToolPrefix}read_ticket`));
-  assert.ok(disallowed.includes(`${chuggyToolPrefix}release_draft`));
+  assert.ok(disallowed.includes(`${chuggyToolPrefix}update_ticket`));
   for (const tool of sessionBuiltInTools)
     assert.ok(disallowed.includes(tool), `${tool} was left ungoverned`);
 });
@@ -724,34 +717,6 @@ test("a session row that carries no objectives still takes its turn", async () =
   }
 });
 
-test("an observation answered with decision tools posts the document they composed", async () => {
-  const plane = planeOf([observationTurn], leadFacts);
-  const { query } = queryOf((_asked, _index, options) => [
-    async () => {
-      const tools = options.mcpServers.chuggy.tools;
-      const staged = (name, args) =>
-        tools.find((tool) => tool.name === name).handler(args);
-      await staged("dispatch", { ticket: 4, expectedTicketVersion: 2 });
-      await staged("set_attention", { attention: "Attention" });
-    },
-    result("success", { result: "I dispatched ticket 4." }),
-  ]);
-
-  await run({ request: plane.request, query });
-
-  const answered = plane.calls.find(
-    ({ path }) => path === "/v1/session/turn/answer",
-  ).body;
-  assert.deepEqual(JSON.parse(answered.result), {
-    version: 1,
-    dispatches: [{ ticket: 4, expectedTicketVersion: 2 }],
-    refusals: [],
-    lifts: [],
-    attention: "Attention",
-    handoffNote: { carried: "note" },
-  });
-});
-
 test("an observation that called no decision tool still answers in the model's own text", async () => {
   const plane = planeOf([observationTurn], leadFacts);
   const { query } = queryOf(() => [
@@ -767,142 +732,15 @@ test("an observation that called no decision tool still answers in the model's o
   );
 });
 
-/**
- * The kinds answered to a reader rather than to the selector. The roster here
- * is a lead's, because a thread holds no decision tool at all and a turn that
- * staged nothing would prove only that `document()` is empty: what is under
- * test is that the branch is the INPUT KIND and not whether anything was
- * staged, and only a staged turn can tell those two apart.
- */
-test("a turn that is not an observation is answered in text however many decision tools it called", async () => {
-  for (const inputKind of ["UserMessage", "Wake"]) {
-    const plane = planeOf([{ ...observationTurn, inputKind }], leadFacts);
-    const { query } = queryOf((_asked, _index, options) => [
-      async () => {
-        const tools = options.mcpServers.chuggy.tools;
-        await tools
-          .find((tool) => tool.name === "set_attention")
-          .handler({ attention: "Stopped" });
-        await tools
-          .find((tool) => tool.name === "dispatch")
-          .handler({ ticket: 4, expectedTicketVersion: 2 });
-      },
-      result("success", { result: "here is the plan" }),
-    ]);
-
-    await run({ request: plane.request, query });
-
-    assert.equal(
-      plane.calls.find(({ path }) => path === "/v1/session/turn/answer").body
-        .result,
-      "here is the plan",
-      inputKind,
-    );
-  }
-});
-
-test("one turn's staging never reaches the next turn's answer", async () => {
-  const plane = planeOf(
-    [observationTurn, { ...observationTurn, turn: "turn-2" }],
-    leadFacts,
-  );
-  const { query } = queryOf((_asked, index, options) => [
-    async () => {
-      if (index > 0) return;
-      const tools = options.mcpServers.chuggy.tools;
-      await tools
-        .find((tool) => tool.name === "dispatch")
-        .handler({ ticket: 4, expectedTicketVersion: 2 });
-    },
-    result("success", { result: "done" }),
-  ]);
-
-  await run({ request: plane.request, query });
-
-  const answers = plane.calls.filter(
-    ({ path }) => path === "/v1/session/turn/answer",
-  );
-  assert.equal(answers.length, 2);
-  assert.deepEqual(JSON.parse(answers[0].body.result).dispatches, [
-    { ticket: 4, expectedTicketVersion: 2 },
-  ]);
-  assert.equal(answers[1].body.result, "done");
-});
-
-/**
- * The two arms this branch and the decision tools each added meet here, and the
- * order they meet in is the property: a turn whose account was refused is a turn
- * the session never got, so the choices its tools staged are not an answer to
- * post. The result below is a *success* carrying text, which is what makes the
- * ordering load-bearing rather than incidental.
- */
-test("a held turn posts no answer, so the decision its tools staged is never settled", async () => {
-  const plane = planeOf([observationTurn], leadFacts);
-  const { query } = queryOf((_asked, _index, options) => [
-    async () => {
-      const tools = options.mcpServers.chuggy.tools;
-      await tools
-        .find((tool) => tool.name === "dispatch")
-        .handler({ ticket: 4, expectedTicketVersion: 2 });
-    },
-    rejection,
-    result("success", { result: "I dispatched ticket 4." }),
-  ]);
-
-  const code = await run({ request: plane.request, query });
-
-  assert.equal(code, 0);
-  assert.deepEqual(
-    plane.calls.filter(({ path }) => path === "/v1/session/held").length,
-    1,
-  );
-  assert.deepEqual(
-    plane.calls.filter(({ path }) => path.startsWith("/v1/session/turn/")),
-    [],
-    "a held turn was settled",
-  );
-});
-
-test("a composed decision is scrubbed of what the pod was handed, exactly as prose is", async () => {
-  const plane = planeOf([observationTurn], leadFacts);
-  const { query } = queryOf((_asked, _index, options) => [
-    async () => {
-      const tools = options.mcpServers.chuggy.tools;
-      const staged = (name, args) =>
-        tools.find((tool) => tool.name === name).handler(args);
-      await staged("refuse", {
-        ticket: 4,
-        ticketVersion: 2,
-        reason: `the run logged ${token} and ${bearer}`,
-      });
-      await staged("set_handoff_note", { note: { seen: bearer } });
-    },
-    result("success", { result: "refused" }),
-  ]);
-
-  await run({ request: plane.request, query });
-
-  const answered = plane.calls.find(
-    ({ path }) => path === "/v1/session/turn/answer",
-  ).body.result;
-  assert.ok(!answered.includes(token), "the credential reached the mailbox");
-  assert.ok(!answered.includes(bearer), "the bearer reached the mailbox");
-  assert.ok(answered.includes("[redacted credential]"));
-  assert.equal(
-    JSON.parse(answered).refusals.length,
-    1,
-    "the scrub broke the document",
-  );
-});
-
 test("a project tool reaches the API under the session's own bearer", async () => {
   const plane = planeOf([observationTurn], leadFacts);
   const seenApi = [];
   const { query } = queryOf((_asked, _index, options) => [
     async () => {
-      await options.mcpServers.chuggy.tools
+      const answer = await options.mcpServers.chuggy.tools
         .find((tool) => tool.name === "read_ticket")
         .handler({ ticket: 4 });
+      assert.notEqual(answer.isError, true);
     },
     result("success", { result: "read" }),
   ]);
@@ -912,13 +750,27 @@ test("a project tool reaches the API under the session's own bearer", async () =
     query,
     chuggyRequest: async (_task, apiBearer, path, init) => {
       seenApi.push({ apiBearer, path, init });
-      return { status: 200, text: async () => "{}" };
+      return {
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            tickets: [
+              {
+                ticket: 4,
+                revision: 1,
+                state: "Pending",
+                dependencies: [],
+                workCyclesStarted: 0,
+              },
+            ],
+          }),
+      };
     },
   });
 
   assert.deepEqual(
     seenApi.map(({ path }) => path),
-    ["/api/v1/tenants/vteng/projects/chuggy/tickets/4"],
+    ["/api/v1/tenants/vteng/projects/chuggy/ticket-machine/tickets"],
   );
   assert.equal(seenApi[0].apiBearer, bearer);
 });
@@ -954,7 +806,7 @@ test("a thread is served origination and the thread reads, and no decision tool"
     ({ name }) => name,
   );
   for (const tool of [
-    "create_draft",
+    "create_ticket",
     "list_threads",
     "read_thread",
     "read_thread_transcript",
@@ -963,20 +815,6 @@ test("a thread is served origination and the thread reads, and no decision tool"
     assert.ok(
       seen.options.allowedTools.includes(`${chuggyToolPrefix}${tool}`),
       `${tool} was served and not allowed`,
-    );
-  }
-  for (const tool of [
-    "dispatch",
-    "refuse",
-    "lift",
-    "set_attention",
-    "set_handoff_note",
-    "set_planning_intent",
-  ]) {
-    assert.ok(!registered.includes(tool), `${tool} was served to a thread`);
-    assert.ok(
-      seen.options.disallowedTools.includes(`${chuggyToolPrefix}${tool}`),
-      `${tool} was left ungoverned for a thread`,
     );
   }
   assert.equal(
@@ -996,11 +834,11 @@ test("a lead is served no origination, and it is disallowed by name", async () =
     ({ name }) => name,
   );
   assert.ok(
-    !registered.includes("create_draft"),
+    !registered.includes("create_ticket"),
     "a lead was served the tool that files from nothing",
   );
   assert.ok(
-    seen.options.disallowedTools.includes(`${chuggyToolPrefix}create_draft`),
+    seen.options.disallowedTools.includes(`${chuggyToolPrefix}create_ticket`),
     "a lead was left ungoverned for origination",
   );
 });
@@ -1025,13 +863,10 @@ test("a thread originates through the API under its own session bearer, and answ
   const { query } = queryOf((_asked, _index, options) => [
     async () => {
       await options.mcpServers.chuggy.tools
-        .find((tool) => tool.name === "create_draft")
+        .find((tool) => tool.name === "create_ticket")
         .handler({
-          configurationRevision: "r1",
-          configurationDigest: "d1",
-          expectedProjectSequence: 12,
-          authoring: { dependencies: [] },
-          brief: { title: "the footer" },
+          source: "version: 2\ntitle: the footer\n",
+          catalogCommit: "a".repeat(40),
         });
     },
     result("success", { result: "filed ticket 14" }),
@@ -1049,7 +884,7 @@ test("a thread originates through the API under its own session bearer, and answ
   assert.deepEqual(seenApi, [
     {
       apiBearer: bearer,
-      path: "/api/v1/tenants/vteng/projects/chuggy/drafts",
+      path: "/api/v1/tenants/vteng/projects/chuggy/ticket-machine/tickets",
       method: "POST",
     },
   ]);

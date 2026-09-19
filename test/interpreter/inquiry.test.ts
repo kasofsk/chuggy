@@ -185,17 +185,13 @@ test("the roster admits exactly the project's reads and nothing further", () => 
     "RepositoryRead",
     "ProjectRead",
     "DraftAuthor",
-    "LeadDecision",
   ]);
   assert.ok(
     admitted.every((name) => lead.includes(name)) &&
       admitted.length < lead.length,
     "the inquiry roster is not a strict subset of the lead's",
   );
-  for (const tool of [
-    ...chuggyToolCapabilities.DraftAuthor,
-    ...chuggyToolCapabilities.LeadDecision,
-  ])
+  for (const tool of chuggyToolCapabilities.DraftAuthor)
     assert.ok(
       !admitted.includes(`${chuggyToolPrefix}${tool}`),
       `${tool} is admitted by a roster that may not write`,

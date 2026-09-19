@@ -21,10 +21,8 @@ import { test, type TestContext } from "node:test";
 import { githubRepositoryHost } from "../../src/adapters/forge/githubAddress.ts";
 import {
   composeApiRepositoryCredentials,
-  composeConfigurationImporterCredentials,
   composeFinalizerForgeCredentials,
   composeFinalizerRepositoryCredentials,
-  composeTicketServiceCredentials,
   type RepositoryCredentialMinting,
 } from "../../src/compose.ts";
 import {
@@ -117,30 +115,6 @@ test("the finalizer opens a proposal under a token that may open one", async () 
   assert.deepEqual(asked, ["propose"]);
 });
 
-test("the ticket service observes a source under a token that only reads", async () => {
-  const asked: ForgePermissionSet[] = [];
-  const credentials = composeTicketServiceCredentials(
-    { sources: [] },
-    recordingMinting(asked),
-  );
-
-  await credentials.credential(binding);
-
-  assert.deepEqual(asked, ["read"]);
-});
-
-test("the importer reads a snapshot under a token that only reads", async () => {
-  const asked: ForgePermissionSet[] = [];
-  const credentials = composeConfigurationImporterCredentials(
-    { sources: [] },
-    recordingMinting(asked),
-  );
-
-  await credentials.credential(binding);
-
-  assert.deepEqual(asked, ["read"]);
-});
-
 test("the api reads a repository under a token that only reads", async () => {
   const asked: ForgePermissionSet[] = [];
   const credentials = composeApiRepositoryCredentials(
@@ -154,7 +128,7 @@ test("the api reads a repository under a token that only reads", async () => {
 });
 
 test("a deployment holding no app key is answered by its files alone", async () => {
-  const credentials = composeTicketServiceCredentials(
+  const credentials = composeApiRepositoryCredentials(
     { sources: [] },
     undefined,
   );
@@ -177,7 +151,7 @@ function mountedCredential(t: TestContext, value: string): string {
 
 test("a deployment that mints still reaches another host through its files", async (t) => {
   const asked: ForgePermissionSet[] = [];
-  const credentials = composeTicketServiceCredentials(
+  const credentials = composeApiRepositoryCredentials(
     {
       sources: [
         {

@@ -7,7 +7,6 @@
 
 import type {
   ForgeRepositoryResponse,
-  ProjectRepositoryConfigurationsResponse,
   ProjectRepositoryResponse,
 } from "../../../../src/contract/responses.ts";
 
@@ -77,24 +76,10 @@ export function repositoryRefusalStatus(
  * drawn beside the binding. A `Deferred` names its reason because the reason
  * is what says whether anything can be done about it.
  */
-export function repositoryConfigurationsStatus(
-  configurations: ProjectRepositoryConfigurationsResponse,
-): string {
-  switch (configurations.result) {
-    case "Imported":
-      return "Imported";
-    case "Bootstrapped":
-      return "Bootstrapped";
-    case "Deferred":
-      return `Deferred · ${configurations.reason}`;
-  }
-}
-
 export type RepositoryBindOutcome =
   | {
       readonly outcome: "Bound";
       readonly repository: string;
-      readonly configurations: ProjectRepositoryConfigurationsResponse;
     }
   | { readonly outcome: "AlreadyBound"; readonly repository: string }
   | { readonly outcome: "Refused"; readonly status: string };
@@ -109,11 +94,10 @@ export function repositoryBindOutcome(
   result: ApiResult<ProjectRepositoryBindAnswer>,
 ): RepositoryBindOutcome {
   if (result.outcome === "Ok")
-    return "configurations" in result.value
+    return "landing" in result.value
       ? {
           outcome: "Bound",
           repository: result.value.repository,
-          configurations: result.value.configurations,
         }
       : { outcome: "AlreadyBound", repository: result.value.repository };
   if (result.outcome === "Rejected")
@@ -152,7 +136,5 @@ export function repositoryBindLines(
   outcome: RepositoryBindOutcome,
 ): readonly string[] {
   const status = repositoryBindStatus(outcome);
-  return outcome.outcome === "Bound"
-    ? [status, repositoryConfigurationsStatus(outcome.configurations)]
-    : [status];
+  return [status];
 }

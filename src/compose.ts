@@ -1,12 +1,24 @@
-import { createHash, randomUUID } from "node:crypto";
+import type { OwnerId, RecoveryEpoch } from "./interpreter/projectStore.ts";
+import { createHash } from "node:crypto";
 
 import type pg from "pg";
-
-import { artifactRootPrecondition } from "./adapters/artifacts/artifactRoot.ts";
+import { postgresTicketMachine } from "./adapters/postgres/ticketMachine.ts";
 import {
-  artifactStore,
-  type ArtifactStoreOptions,
-} from "./adapters/artifacts/artifactStore.ts";
+  postgresTicketMachineInbox,
+  postgresTicketMachineQueue,
+} from "./adapters/postgres/ticketMachineInbox.ts";
+import { postgresTicketExecution } from "./adapters/postgres/ticketExecution.ts";
+import { postgresTicketFinalizer } from "./adapters/postgres/ticketFinalizer.ts";
+import { postgresTicketContent } from "./adapters/postgres/ticketContent.ts";
+import { ticketMachineTaskKey } from "./interpreter/ticketMachine.ts";
+import {
+  ticketFinalizerRegistration,
+  ticketFinalizerDefaults,
+  type TicketFinalizerConfig,
+  type TicketFinalizerService,
+} from "./interpreter/ticketFinalizer.ts";
+import type { TicketMachineRuntime } from "./interpreter/ticketMachineRun.ts";
+
 import {
   credentialFiles,
   credentialFilesPrecondition,
@@ -43,10 +55,7 @@ import {
   gitScratchWritablePrecondition,
 } from "./adapters/git/gitPrerequisites.ts";
 import { gitPromotion } from "./adapters/git/gitPromotion.ts";
-import { postgresOperationInbox } from "./adapters/postgres/operationInbox.ts";
 import { postgresLeadInquiries } from "./adapters/postgres/leadInquiry.ts";
-import { postgresNativeReads } from "./adapters/postgres/nativeReads.ts";
-import { postgresAuthoring } from "./adapters/postgres/authoring.ts";
 import { postgresProjectRepositoryBinding } from "./adapters/postgres/repositoryConfiguration.ts";
 import {
   forgeCredentialMinting,
@@ -55,6 +64,7 @@ import {
 import {
   githubForgeId,
   portalForgeApp,
+  type ForgeApp,
   type ForgeAppKey,
   type ForgeInstallationTokens,
   type ForgePermissionSet,
@@ -62,7 +72,6 @@ import {
 } from "./interpreter/forgeInstallation.ts";
 import {
   repositoryOnboarding,
-  type RepositoryConfigurationsPorts,
   type RepositoryCreationPorts,
   type RepositoryOnboarding,
   type RepositoryOnboardingForgeApp,
@@ -77,174 +86,30 @@ import {
   postgresProjectRepositoryRetirement,
   postgresRepositoryBinding,
 } from "./adapters/postgres/repositoryBinding.ts";
-import { postgresNotifications } from "./adapters/postgres/notifications.ts";
-import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
 import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
-import {
-  postgresSelectorProjectSettings,
-  postgresSelectorRuntimeControl,
-  postgresSelectorState,
-} from "./adapters/postgres/selector.ts";
 import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
-import { postgresAgenticRefusalLedger } from "./adapters/postgres/agenticRefusal.ts";
-import { postgresLeadMailbox } from "./adapters/postgres/leadMailbox.ts";
-import type { LeadSessionMint } from "./interpreter/leadMailbox.ts";
 import {
-  leadSelectorPolicy,
-  type LeadPolicyClock,
-  type LeadPolicyConfig,
-} from "./interpreter/leadPolicyHost.ts";
-import {
-  selectorPolicyHost,
-  type SelectorHostDeadline,
-} from "./interpreter/selectorPolicyHost.ts";
-import {
-  selectorRunOnce,
-  type SelectorIdentityFactory,
-  type SelectorRunResult,
-  type SelectorRuntimeConfig,
-  type SelectorRuntimeSource,
-} from "./interpreter/selectorRuntime.ts";
-import {
-  selectorProjectSettingsAdministration,
-  type SelectorProjectSettingsAdministration,
-} from "./interpreter/selectorProjectSettings.ts";
-import { postgresFinalizer } from "./adapters/postgres/finalizer.ts";
-import { postgresTicketBrief } from "./adapters/postgres/ticketBrief.ts";
-import {
-  asFinalizationAttemptId,
-  asInputBundleId,
-  checkedFinalizerConfig,
-  finalizerDefaults,
-  type FinalizerConfig,
+  asCommitPermitId,
+  asRepositoryId,
+  type FinalizerOwnerId,
   type GitPromotionPort,
   type RepositoryCredentialPort,
 } from "./interpreter/finalizer.ts";
-import {
-  asProjectArtifactId,
-  type CanonicalFinalization,
-  type FinalizerIdentityFactory,
-} from "./interpreter/finalizerPreparation.ts";
-import type { FinalizerService } from "./interpreter/finalizerRun.ts";
+import { asChangeProposalRequestIdentity } from "./interpreter/changeProposal.ts";
 import type {
   FinalizerSettings,
   ForgeBindingFile,
   RepositoryCredentialFile,
 } from "./interpreter/finalizerSettings.ts";
 import type { RuntimePrecondition } from "./interpreter/serviceRuntime.ts";
-import {
-  silentFinalizerTelemetry,
-  type FinalizerTelemetry,
-} from "./interpreter/finalizerTelemetry.ts";
-import { postgresProjectDecision } from "./adapters/postgres/projectDecision.ts";
-import { postgresProjectDiscovery } from "./adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "./adapters/postgres/projectStore.ts";
-import type { IdempotencyKeying } from "./adapters/postgres/keying.ts";
-import type { OperationInbox } from "./interpreter/operationInbox.ts";
 import {
   nativeWeb,
   type NativeLeadPorts,
   type NativeThreadPorts,
   type NativeWeb,
   type ProjectAccess,
-  type ProjectInventory,
 } from "./interpreter/nativeWeb.ts";
-import type { ProjectDecision } from "./interpreter/projectDecision.ts";
-import type { ProjectDiscovery } from "./interpreter/projectDiscovery.ts";
-import type { ProjectStore } from "./interpreter/projectStore.ts";
-import type { ExecutionBacklogGuard } from "./interpreter/schedulerContext.ts";
-import { postgresOperationalReads } from "./adapters/postgres/operationalReads.ts";
-import { postgresRunEvidenceReads } from "./adapters/postgres/runEvidence.ts";
-import type { OutputContentPort } from "./interpreter/operationsView.ts";
-import type { RunEvidenceContentPort } from "./interpreter/runEvidence.ts";
-import type { SelectorOperationalContextRead } from "./interpreter/selectorOperationalContext.ts";
-import type {
-  RepositoryConfigurationSnapshotPort,
-  RepositoryDefaultBranchPort,
-} from "./interpreter/repositoryConfiguration.ts";
-import {
-  silentTicketServiceMetrics,
-  ticketServiceDefaults,
-  type TicketServiceConfig,
-  type TicketServiceMetrics,
-} from "./interpreter/ticketService.ts";
-
-export interface TicketService {
-  readonly inbox: OperationInbox;
-  readonly discovery: ProjectDiscovery;
-  readonly decisions: ProjectDecision;
-  readonly projects: ProjectStore;
-}
-
-export interface SelectorRuntimeService {
-  runOnce(): Promise<SelectorRunResult>;
-}
-
-/**
- * Wires the independently operated selector runtime to its owned persistence
- * and to the lead whose turn each decision is. The policy is built here rather
- * than passed in, because every door it opens is on the pool this function
- * already holds and a caller handed the host would need that pool to build it.
- */
-export function composeSelectorRuntime(
-  selectorPool: pg.Pool,
-  source: SelectorRuntimeSource,
-  lead: SelectorLeadRuntime,
-  identities: SelectorIdentityFactory,
-  config?: SelectorRuntimeConfig,
-): SelectorRuntimeService {
-  const store = postgresSelectorState(selectorPool);
-  const settings = postgresSelectorRuntimeControl(selectorPool);
-  const refusals = postgresAgenticRefusalLedger(selectorPool);
-  const policy = selectorPolicyHost(
-    leadSelectorPolicy(
-      postgresLeadMailbox(selectorPool),
-      store,
-      lead.sessions,
-      lead.clock,
-      lead.policy,
-    ),
-    lead.deadline,
-    { controlDeadlineMs: lead.controlDeadlineMs },
-  );
-  return {
-    runOnce: () =>
-      selectorRunOnce(
-        refusals,
-        store,
-        source,
-        policy,
-        identities,
-        settings,
-        config,
-      ),
-  };
-}
-
-/** What the selector process answers the lead host's own ports with. */
-export interface SelectorLeadRuntime {
-  readonly sessions: LeadSessionMint;
-  readonly clock: LeadPolicyClock;
-  readonly deadline: SelectorHostDeadline;
-  readonly policy: LeadPolicyConfig;
-  readonly controlDeadlineMs: number;
-}
-
-/**
- * Wires a project's own selector settings to API-role credentials and the
- * project membership that bounds them. The installation defaults stay the
- * selector control role's, so a project administrator overrides for their own
- * project and cannot move what every other project inherits.
- */
-export function composeSelectorProjectSettings(
-  apiPool: pg.Pool,
-  access: ProjectAccess,
-): SelectorProjectSettingsAdministration {
-  return selectorProjectSettingsAdministration(
-    access,
-    postgresSelectorProjectSettings(apiPool),
-  );
-}
 
 /**
  * What one process resolves a repository's credential with: what it mints under
@@ -284,6 +149,7 @@ export function repositoryCredentialFileOptions(
 export function composeForgeRepositoryMinting(
   pool: pg.Pool,
   forge: ForgeAppKey | undefined,
+  app: ForgeApp = portalForgeApp,
 ): RepositoryCredentialMinting | undefined {
   if (forge === undefined) return undefined;
   const installationTokens = githubInstallationTokens(
@@ -293,7 +159,7 @@ export function composeForgeRepositoryMinting(
     installationTokens,
     tokens: mintedRepositoryTokens({
       forge: githubForgeId,
-      app: portalForgeApp,
+      app,
       repositoryHost: githubRepositoryHost,
       installations: postgresForgeInstallations(pool),
       tokens: installationTokens,
@@ -342,37 +208,10 @@ export function composeFinalizerRepositoryCredentials(
 }
 
 /**
- * What the ticket service asks a forge for: it observes a source's refs and
- * nothing else, so a token it holds can do nothing else either.
- */
-export function composeTicketServiceCredentials(
-  options: CredentialFilesOptions,
-  minting: RepositoryCredentialMinting | undefined,
-): RepositoryCredentialPort {
-  return composeRepositoryCredentials({
-    ...(minting === undefined ? {} : { minting }),
-    permissions: "read",
-    ...options,
-  });
-}
-
-/**
  * What the API asks a forge for: it proves a binding and reads a repository's
  * declarations, and opens nothing and pushes nothing under its own credential.
  */
 export function composeApiRepositoryCredentials(
-  options: CredentialFilesOptions,
-  minting: RepositoryCredentialMinting | undefined,
-): RepositoryCredentialPort {
-  return composeRepositoryCredentials({
-    ...(minting === undefined ? {} : { minting }),
-    permissions: "read",
-    ...options,
-  });
-}
-
-/** What the importer asks a forge for: it reads a repository and writes nothing to one. */
-export function composeConfigurationImporterCredentials(
   options: CredentialFilesOptions,
   minting: RepositoryCredentialMinting | undefined,
 ): RepositoryCredentialPort {
@@ -414,36 +253,7 @@ export interface RepositoryOnboardingComposition {
   readonly access: ProjectAccess;
   readonly credentials: RepositoryCredentialPort;
   readonly forgeApps: readonly RepositoryOnboardingForgeApp[];
-  /**
-   * The repository reads a bind's configuration step takes, which is one
-   * adapter answering both: a deployment with no scratch has neither, and a
-   * bind reports that step as deferred rather than refusing.
-   */
-  readonly repositories?: RepositoryConfigurationSnapshotPort &
-    RepositoryDefaultBranchPort;
-  readonly bootstrapImage?: string;
   readonly creation?: RepositoryCreationPorts;
-}
-
-/** The configuration step's own half, over the one adapter that reads a repository. */
-function composeRepositoryConfigurations(
-  composition: RepositoryOnboardingComposition,
-  repositories: RepositoryConfigurationSnapshotPort &
-    RepositoryDefaultBranchPort,
-): RepositoryConfigurationsPorts {
-  const authoring = postgresAuthoring(composition.apiPool);
-  return {
-    heads: repositories,
-    imports: {
-      bindings: postgresProjectRepositoryBinding(composition.apiPool),
-      snapshots: repositories,
-      store: authoring,
-    },
-    authoring,
-    ...(composition.bootstrapImage === undefined
-      ? {}
-      : { bootstrapImage: composition.bootstrapImage }),
-  };
 }
 
 export function composeRepositoryOnboarding(
@@ -459,14 +269,6 @@ export function composeRepositoryOnboarding(
     binding: postgresRepositoryBinding(composition.apiPool),
     landing: postgresProjectRepositoryLanding(composition.apiPool),
     retirement: postgresProjectRepositoryRetirement(composition.apiPool),
-    ...(composition.repositories === undefined
-      ? {}
-      : {
-          configurations: composeRepositoryConfigurations(
-            composition,
-            composition.repositories,
-          ),
-        }),
     ...(composition.creation === undefined
       ? {}
       : { creation: composition.creation }),
@@ -477,8 +279,6 @@ export function composeRepositoryOnboarding(
 export interface FinalizerServiceRuntime {
   readonly git: GitPromotionPort;
   readonly forges: ChangeProposalForges;
-  readonly artifactRoot: string;
-  readonly artifacts?: ArtifactStoreOptions;
 }
 
 /**
@@ -521,22 +321,6 @@ export function composeChangeProposalForges(
   };
 }
 
-/** The identities one preparation mints, which the layer below may not draw for itself. */
-function finalizerIdentities(): FinalizerIdentityFactory {
-  return {
-    next: () => ({
-      attempt: asFinalizationAttemptId(`attempt-${randomUUID()}`),
-      bundle: asInputBundleId(`bundle-${randomUUID()}`),
-      conflict: asProjectArtifactId(`conflict-${randomUUID()}`),
-    }),
-  };
-}
-
-/** The hash the finalizer's canonical bytes are digested under. */
-function finalizerDigestOf(canonical: CanonicalFinalization): string {
-  return createHash("sha256").update(canonical, "utf8").digest("hex");
-}
-
 /**
  * Wires the finalizer's durable authority to its finalizer-role credentials, the
  * Git port its caller composes, the brief its target is narrowed by and one
@@ -546,24 +330,66 @@ function finalizerDigestOf(canonical: CanonicalFinalization): string {
 export function composeFinalizerService(
   finalizerPool: pg.Pool,
   runtime: FinalizerServiceRuntime,
-  config: FinalizerConfig = finalizerDefaults,
-  metrics: FinalizerTelemetry = silentFinalizerTelemetry,
-): FinalizerService {
-  const artifacts = artifactStore({
-    ...runtime.artifacts,
-    root: runtime.artifactRoot,
-  });
+  owner: FinalizerOwnerId,
+  recoveryEpoch: RecoveryEpoch,
+  config: TicketFinalizerConfig = ticketFinalizerDefaults,
+): TicketFinalizerService {
+  const store = postgresTicketFinalizer(finalizerPool);
+  const inbox = postgresTicketMachineInbox(finalizerPool);
   return {
-    store: postgresFinalizer(finalizerPool),
+    owner,
+    recoveryEpoch,
+    leaseMs: config.requestClaimLeaseSecs * 1000,
+    store,
     git: runtime.git,
-    forges: runtime.forges,
-    ticketBriefs: postgresTicketBrief(finalizerPool),
-    handoffs: artifacts,
-    artifacts,
-    identities: finalizerIdentities(),
-    digestOf: finalizerDigestOf,
-    config: checkedFinalizerConfig(config),
-    metrics,
+    contents: (partition) => postgresTicketContent(finalizerPool, partition),
+    bindings: postgresProjectRepositoryBinding(finalizerPool),
+    forges: {
+      binding: (repository) =>
+        runtime.forges.bindingOf(asRepositoryId(repository)),
+      proposal: (forge) => runtime.forges.selector.select(forge as never),
+    },
+    inbox: {
+      submit: async (partition, identity, command) => {
+        const answer = await inbox.submit(partition, {
+          identity,
+          origin: "Finalizer",
+          command,
+          authorization: {
+            principal: owner,
+            authorizedOperation: "ReportFinalizationResult",
+            authorityKind: "Service",
+            authoritySubject: owner,
+            policyRevision: "ticket-finalizer-v1",
+          },
+        });
+        return (
+          answer.accepted === "Accepted" ||
+          answer.accepted === "AlreadyAccepted"
+        );
+      },
+    },
+    bounds: {
+      publication: {
+        creationsMax: config.proposalCreationsMax,
+        reconciliationsMax: config.proposalReconciliationsMax,
+      },
+      merging: {
+        mergesMax: config.proposalMergesMax,
+        readingsMax: config.proposalMergeReadingsMax,
+      },
+    },
+    identities: (claim) => {
+      const digest = createHash("sha256")
+        .update(
+          `${claim.partition.tenant}\0${claim.partition.project}\0${claim.identity}`,
+        )
+        .digest("hex");
+      return {
+        request: asChangeProposalRequestIdentity(digest),
+        permit: asCommitPermitId(digest),
+      };
+    },
   };
 }
 
@@ -625,7 +451,6 @@ export function composeFinalizerRuntime(
     preconditions: [
       gitAvailablePrecondition(git.environment),
       gitScratchWritablePrecondition(git.scratchDirectory),
-      artifactRootPrecondition(settings.artifactRoot),
       credentialFilesPrecondition(credentialOptions),
       forgeCredentialFilesPrecondition(forgeOptions),
       ...(settings.forge === undefined
@@ -681,7 +506,6 @@ function finalizerServiceRuntime(
         ? {}
         : { promotionTimeoutSecsMax: git.promotionTimeoutSecsMax }),
     }),
-    artifactRoot: settings.artifactRoot,
   };
 }
 
@@ -697,60 +521,45 @@ function finalizerServiceRuntime(
  */
 export function composeNativeWeb(
   apiPool: pg.Pool,
-  keying: IdempotencyKeying,
   access: ProjectAccess,
-  backlog: ExecutionBacklogGuard,
-  config: TicketServiceConfig = ticketServiceDefaults,
-  metrics: TicketServiceMetrics = silentTicketServiceMetrics,
-  inventory?: ProjectInventory,
-  outputContents?: OutputContentPort & RunEvidenceContentPort,
-  selectorContexts?: SelectorOperationalContextRead,
-  repositoryConfigurationSnapshots?: RepositoryConfigurationSnapshotPort,
-  leads?: NativeLeadPorts,
-  threads?: NativeThreadPorts,
+  leads: NativeLeadPorts,
+  threads: NativeThreadPorts,
 ): NativeWeb {
-  const inbox = postgresOperationInbox(apiPool, keying, config, metrics);
-  const authoring = postgresAuthoring(apiPool);
   return nativeWeb(
     access,
-    postgresNativeReads(apiPool),
-    inbox,
-    authoring,
-    postgresNotifications(apiPool),
-    backlog,
-    postgresDispatchViews(apiPool),
-    inventory ??
-      authorizedProjectInventory(access, postgresProjectInventory(apiPool)),
-    postgresOperationalReads(apiPool),
-    outputContents,
-    selectorContexts,
-    repositoryConfigurationSnapshots === undefined
-      ? undefined
-      : {
-          bindings: postgresProjectRepositoryBinding(apiPool),
-          snapshots: repositoryConfigurationSnapshots,
-          store: authoring,
-        },
-    postgresRunEvidenceReads(apiPool),
-    outputContents,
+    authorizedProjectInventory(access, postgresProjectInventory(apiPool)),
     leads,
     threads,
     postgresLeadInquiries(apiPool),
   );
 }
 
-/** Wires the ticket-service contracts to separate API and writer credentials. */
-export function composeTicketService(
-  apiPool: pg.Pool,
-  writerPool: pg.Pool,
-  keying: IdempotencyKeying,
-  config: TicketServiceConfig = ticketServiceDefaults,
-  metrics: TicketServiceMetrics = silentTicketServiceMetrics,
-): TicketService {
+export function composeTicketMachineRuntime(
+  pool: pg.Pool,
+  owner: OwnerId,
+): TicketMachineRuntime {
+  const execution = postgresTicketExecution(pool);
   return {
-    inbox: postgresOperationInbox(apiPool, keying, config, metrics),
-    discovery: postgresProjectDiscovery(writerPool, metrics),
-    decisions: postgresProjectDecision(writerPool, metrics),
-    projects: postgresProjectStore(writerPool),
+    projects: postgresProjectStore(pool),
+    store: postgresTicketMachine(pool),
+    inbox: postgresTicketMachineInbox(pool),
+    queue: postgresTicketMachineQueue(pool),
+    owner,
+    effects: {
+      execute: (partition, identity, obligation) =>
+        execution.execute(
+          partition,
+          identity,
+          ticketMachineTaskKey(obligation.task.task),
+          obligation.task,
+        ),
+      cancel: (partition, identity, obligation) =>
+        execution.cancel(
+          partition,
+          identity,
+          ticketMachineTaskKey(obligation.task),
+        ),
+      ...ticketFinalizerRegistration(postgresTicketFinalizer(pool)),
+    },
   };
 }

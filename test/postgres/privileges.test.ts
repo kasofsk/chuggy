@@ -20,6 +20,7 @@ import {
   repositoryLandingReadFunction,
   repositoryLandingWriteFunction,
   repositoryRetirementWriteFunction,
+  poolPlaneRole,
   schedulerRole,
   selectorReviewRole,
   selectorServiceRole,
@@ -967,6 +968,17 @@ const schedulerWritePrivileges = [
     columns:
       "attempt,evidence,execution,incident,kind,observed_at,project,tenant",
   },
+  {
+    table_name: "ticket_execution",
+    privilege_type: "UPDATE",
+    columns:
+      "assignment,attempt,attempts_unreported,available_at,capability_digest,claim_expires_at,claim_owner,last_reported_at,pool,pool_refusal,recovery_epoch,state,terminal_input_identity,worker_outcome,worker_view",
+  },
+  {
+    table_name: "ticket_machine_content",
+    privilege_type: "INSERT",
+    columns: "content,digest,media_type,project,reference,tenant",
+  },
 ];
 
 test("the scheduler's write surface is exactly the columns execution and capacity need", async () => {
@@ -1012,16 +1024,23 @@ test("the scheduler reads execution and capacity, and of the project only its li
       "execution_result_artifact",
       "execution_result_report",
       "execution_result_source",
+      "forge_installation",
       "input_bundle_reference",
       "project",
       "recovery_epoch",
       "scheduler_incident",
       "schema_migration",
+      "ticket_execution",
+      "ticket_machine_content",
     ],
   );
   assert.equal(
+    read.find((row) => row.relation === "forge_installation")?.columns,
+    "account,app,forge,installation_id,tenant",
+  );
+  assert.equal(
     read.find((row) => row.relation === "project")?.columns,
-    "lifecycle,lifecycle_generation,manifest_next,project,tenant",
+    "lifecycle,lifecycle_generation,manifest_next,project,tenant,ticket_model",
   );
 });
 
@@ -1208,4 +1227,155 @@ test("only the boundary owner may move the columns the doors write", async () =>
   for (const column of ["landing_mode", "retired_at"])
     assert.equal(await granted(boundaryOwnerRole, column), true, column);
   assert.equal(await granted(boundaryOwnerRole, "bound_at"), false);
+});
+
+/**
+ * The whole argument for a plane of its own is this pair of surfaces. The plane
+ * pools poll claims work and leases it and cannot write an outcome; the plane a
+ * harness reaches writes an outcome and cannot claim, and cannot read the
+ * relation a pool is registered in at all.
+ */
+test("the plane pools poll claims work and can write no outcome", async () => {
+  assert.deepEqual(
+    await harness.query(
+      `SELECT table_name, privilege_type,
+              string_agg(column_name, ',' ORDER BY column_name) AS columns
+         FROM information_schema.role_column_grants
+        WHERE grantee=$1 AND table_schema='public'
+          AND privilege_type <> 'SELECT'
+        GROUP BY table_name, privilege_type
+        ORDER BY table_name, privilege_type`,
+      [poolPlaneRole],
+    ),
+    [
+      {
+        table_name: "ticket_execution",
+        privilege_type: "UPDATE",
+        columns:
+          "assignment,attempt,attempts_unreported,available_at,capability_digest,claim_expires_at,claim_owner,last_reported_at,pool,pool_refusal,recovery_epoch,state",
+      },
+    ],
+  );
+  const read = (await harness.query(
+    `SELECT table_name AS relation,
+            string_agg(column_name, ',' ORDER BY column_name) AS columns
+       FROM information_schema.role_column_grants
+      WHERE grantee=$1 AND table_schema='public' AND privilege_type='SELECT'
+      GROUP BY table_name ORDER BY table_name`,
+    [poolPlaneRole],
+  )) as readonly { relation: string; columns: string }[];
+  assert.deepEqual(
+    read.map((row) => row.relation),
+    ["project", "recovery_epoch", "ticket_execution", "worker_pool"],
+  );
+  assert.equal(
+    read.find((row) => row.relation === "ticket_execution")?.columns,
+    "assignment,attempt,attempts_unreported,available_at,claim_expires_at,claim_owner,last_reported_at,pool,pool_refusal,recovery_epoch,required_capabilities,state,task_key,tenant,project,worker_outcome,worker_view"
+      .split(",")
+      .sort()
+      .join(","),
+  );
+  assert.equal(
+    read.find((row) => row.relation === "worker_pool")?.columns,
+    "capabilities,pool,principal,project,tenant",
+    "a poll resolves its pool by the principal the issuer vouched for, and reads the client id of nothing",
+  );
+});
+
+test("the plane a harness reaches holds nothing on the relation a pool is registered in", async () => {
+  assert.equal(
+    await harness
+      .query(
+        `SELECT 1 AS granted FROM information_schema.role_table_grants
+        WHERE grantee=$1 AND table_name='worker_pool'`,
+        [workerPlaneRole],
+      )
+      .then((rows) => rows.length),
+    0,
+  );
+  assert.equal(
+    await harness
+      .query(
+        `SELECT 1 AS granted FROM information_schema.role_column_grants
+        WHERE grantee=$1 AND table_name='ticket_execution'
+          AND column_name='worker_outcome' AND privilege_type='UPDATE'`,
+        [poolPlaneRole],
+      )
+      .then((rows) => rows.length),
+    0,
+  );
+});
+
+/**
+ * Redeeming a registration token creates a client at the issuer, so the relation
+ * a token lives in is the API's and the plane pools poll holds nothing on it —
+ * the process that verifies tokens cannot spend one and cannot cause a client to
+ * exist.
+ */
+test("only the API may spend a registration token, and the pool plane may not", async () => {
+  assert.deepEqual(
+    await harness.query(
+      `SELECT privilege_type,
+              string_agg(column_name, ',' ORDER BY column_name) AS columns
+         FROM information_schema.role_column_grants
+        WHERE grantee=$1 AND table_name='worker_pool_registration_token'
+        GROUP BY privilege_type ORDER BY privilege_type`,
+      [apiRole],
+    ),
+    [
+      {
+        privilege_type: "INSERT",
+        columns:
+          "capabilities,expires_at,minted_at,project,redeemed_at,tenant,token_digest",
+      },
+      {
+        privilege_type: "SELECT",
+        columns:
+          "capabilities,expires_at,minted_at,project,redeemed_at,tenant,token_digest",
+      },
+      { privilege_type: "UPDATE", columns: "redeemed_at" },
+    ],
+  );
+  for (const role of [poolPlaneRole, workerPlaneRole])
+    assert.equal(
+      await harness
+        .query(
+          `SELECT 1 AS granted FROM information_schema.role_table_grants
+          WHERE grantee=$1 AND table_name='worker_pool_registration_token'`,
+          [role],
+        )
+        .then((rows) => rows.length),
+      0,
+      role,
+    );
+  assert.equal(
+    await harness
+      .query(
+        `SELECT 1 AS granted FROM information_schema.role_table_grants
+        WHERE grantee=$1 AND table_name='worker_pool' AND privilege_type='INSERT'`,
+        [poolPlaneRole],
+      )
+      .then((rows) => rows.length),
+    0,
+    "the plane pools poll registers nothing, however a caller asks",
+  );
+});
+
+test("the plane pools poll is non-login and non-escalating", async () => {
+  assert.deepEqual(
+    await harness.query(
+      `SELECT rolcanlogin, rolsuper, rolcreaterole, rolcreatedb, rolbypassrls
+       FROM pg_roles WHERE rolname=$1`,
+      [poolPlaneRole],
+    ),
+    [
+      {
+        rolcanlogin: false,
+        rolsuper: false,
+        rolcreaterole: false,
+        rolcreatedb: false,
+        rolbypassrls: false,
+      },
+    ],
+  );
 });

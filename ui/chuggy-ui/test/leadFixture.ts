@@ -10,11 +10,9 @@
  */
 
 import type {
-  AgenticRefusalsResponse,
   LeadInquiriesResponse,
   LeadResponse,
   LeadTranscriptResponse,
-  SelectorHistoryResponse,
 } from "../../../src/contract/responses.ts";
 
 export const leadSession = "lead-atlas";
@@ -24,9 +22,11 @@ export const leadStream = "1a2b3c";
 export const leadBoundaryUuid = "uuid-c";
 
 /** How much of the note the lead read carries, and how much of it is missing. */
-export function leadHandoffNote(
-  truncated: boolean,
-): LeadResponse["handoffNote"] {
+export function leadHandoffNote(truncated: boolean): {
+  readonly bytes: number;
+  readonly preview: string;
+  readonly truncated: boolean;
+} {
   return {
     bytes: truncated ? 9_000 : 42,
     preview: "watch ticket 41",
@@ -34,24 +34,16 @@ export function leadHandoffNote(
   };
 }
 
-export function leadBody(
-  batches: number,
-  turns: number,
-  note = leadHandoffNote(false),
-): LeadResponse {
+export function leadBody(batches: number, turns: number): LeadResponse {
   return {
     session: leadSession,
     state: "Open",
-    attention: "Monitoring",
     agentReference: leadStream,
-    notificationCursor: 1204,
-    handoffNote: note,
     turns: Array.from({ length: turns }, (_unused, at) => ({
       turn: `turn-${String(at + 1)}`,
       ordinal: at + 1,
       inputKind: "Observation" as const,
       state: "Answered" as const,
-      decision: `selector-decision-${String(at + 1)}`,
       model: "claude-opus-4",
       tokens: 52_100,
       costMicros: 210_000,
@@ -155,160 +147,8 @@ export function leadUnstarted(): LeadResponse {
   return {
     session: leadSession,
     state: "Open",
-    attention: "Monitoring",
-    notificationCursor: 0,
-    handoffNote: { bytes: 0, preview: "", truncated: false },
     turns: [],
     streams: [],
-  };
-}
-
-/** A decision that dispatched nothing, refused nothing and moved no attention. */
-export const leadDecisionIdle: SelectorHistoryResponse["decisions"][number] = {
-  ordinal: 1_200,
-  decision: "selector-decision-0",
-  instructionsVersion: "12.3",
-  dispatches: [],
-  refused: [],
-  lifted: [],
-  modelRevision: "m1",
-  policyRevision: "p1",
-  startedAt: "2026-09-01T08:00:00Z",
-  completedAt: "2026-09-01T08:01:00Z",
-};
-
-/** The decision that refused a ticket, which is the older of the two. */
-export const leadDecisionRefusing: SelectorHistoryResponse["decisions"][number] =
-  {
-    ordinal: 1_201,
-    decision: "selector-decision-1",
-    instructionsVersion: "12.3",
-    dispatches: [],
-    refused: [42],
-    lifted: [],
-    attention: "Attention",
-    modelRevision: "m1",
-    policyRevision: "p1",
-    tokens: 30_000,
-    costMicros: 120_000,
-    durationMs: 41_000,
-    startedAt: "2026-09-01T09:00:00Z",
-    completedAt: "2026-09-01T09:01:00Z",
-  };
-
-/** The decision that ran last, which is the one the panel opens on. */
-export const leadDecisionDispatching: SelectorHistoryResponse["decisions"][number] =
-  {
-    ordinal: 1_202,
-    decision: "selector-decision-2",
-    instructionsVersion: "12.4",
-    dispatches: [{ ticket: 41, state: "Submitted" }],
-    refused: [],
-    lifted: [40],
-    attention: "Monitoring",
-    modelRevision: "m1",
-    policyRevision: "p1",
-    tokens: 41_234,
-    costMicros: 182_000,
-    durationMs: 74_210,
-    startedAt: "2026-09-01T10:00:00Z",
-    completedAt: "2026-09-01T10:01:00Z",
-  };
-
-/**
- * One decision, three dispatches, three different landings: one still queued,
- * one the writer took, and one it refused on a fence that had moved. A panel
- * that drew a decision's dispatches as one arm would have to pick one of the
- * three states to draw them all in.
- */
-export const leadDecisionLanding: SelectorHistoryResponse["decisions"][number] =
-  {
-    ...leadDecisionDispatching,
-    ordinal: 1_203,
-    decision: "selector-decision-3",
-    dispatches: [
-      { ticket: 51, state: "Pending" },
-      { ticket: 52, state: "Terminal", outcome: "Succeeded" },
-      { ticket: 53, state: "Terminal", outcome: "SelectionChanged" },
-    ],
-    refused: [42],
-    lifted: [],
-  };
-
-/** A decision the writer refused every dispatch of, which is the partial-failure
- * shape at its limit and the one group nothing in should read as a landing. */
-export const leadDecisionRefusedEvery: SelectorHistoryResponse["decisions"][number] =
-  {
-    ...leadDecisionLanding,
-    ordinal: 1_204,
-    decision: "selector-decision-4",
-    dispatches: [
-      { ticket: 61, state: "Terminal", outcome: "SelectionChanged" },
-      { ticket: 62, state: "Terminal", outcome: "TicketChanged" },
-    ],
-    attention: "Attention",
-  };
-
-/**
- * A dispatch the record settled and cannot say the outcome of, which a
- * retained outcome this reader could not speak for leaves behind, and a
- * dispatch a reviewer has yet to answer.
- */
-export const leadDecisionUnsaid: SelectorHistoryResponse["decisions"][number] =
-  {
-    ...leadDecisionLanding,
-    ordinal: 1_205,
-    decision: "selector-decision-5",
-    dispatches: [
-      { ticket: 71, state: "Terminal" },
-      { ticket: 72, state: "AwaitingApproval" },
-    ],
-  };
-
-/**
- * One decision, one settled dispatch on the word the caller names, and nothing
- * refused or lifted. `outcome` is a free string on the wire and the writer
- * fills it from a command's refusal code, its operation state or the word the
- * door accepted it as, so the settled words are not one roster.
- */
-export function leadDecisionSettledOn(
-  outcome: string,
-): SelectorHistoryResponse["decisions"][number] {
-  return {
-    ...leadDecisionLanding,
-    ordinal: 1_206,
-    decision: "selector-decision-6",
-    dispatches: [{ ticket: 81, state: "Terminal", outcome }],
-    refused: [],
-    lifted: [],
-  };
-}
-
-/**
- * The newest arm's own answer: descending ordinal, one bounded page, no cursor.
- * A panel that reordered it would draw the oldest decision it holds as the one
- * that just ran.
- */
-export const leadHistory: SelectorHistoryResponse = {
-  decisions: [leadDecisionDispatching, leadDecisionRefusing],
-};
-
-export function leadRefusals(
-  superseded: boolean,
-  reason = "the brief names no reference",
-): AgenticRefusalsResponse {
-  return {
-    refusals: [
-      {
-        ticket: 42,
-        ticketVersion: 2,
-        reason,
-        decision: "selector-decision-1",
-        recordedAt: "2026-09-01T09:01:00Z",
-        superseded,
-      },
-    ],
-    more: false,
   };
 }
 
@@ -351,8 +191,7 @@ export function leadInquiry(
 export interface LeadServed {
   readonly batches: number;
   readonly turns: number;
-  readonly refusals: AgenticRefusalsResponse;
-  readonly note?: LeadResponse["handoffNote"];
+  readonly note?: ReturnType<typeof leadHandoffNote>;
   readonly inquiries?: LeadInquiriesResponse;
 }
 
@@ -370,15 +209,7 @@ export function leadRouteAnswer(
     return found(leadTranscriptPage(Number(asked ?? "0"), served.batches));
   }
   if (url.includes("/lead"))
-    return found(
-      leadBody(
-        served.batches,
-        served.turns,
-        served.note ?? leadHandoffNote(false),
-      ),
-    );
-  if (url.includes("/selector-history")) return found(leadHistory);
-  if (url.includes("/agentic-refusals")) return found(served.refusals);
+    return found(leadBody(served.batches, served.turns));
   if (url.includes("/native-actions")) return found({ actions: [] });
   return found({ partition: leadPartition, sequence: 12, tickets: [] });
 }

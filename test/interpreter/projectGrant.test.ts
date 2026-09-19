@@ -83,6 +83,7 @@ test("a relation the namespace does not declare is refused", () => {
     "agents",
     "developers",
     "dispatchers",
+    "pools",
   ]);
   assert.deepEqual([...allTenantGrantRelations].sort(), [
     "admins",

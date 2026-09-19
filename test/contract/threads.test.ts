@@ -345,15 +345,7 @@ test("a turn's measurement carries exactly the fields a pod reports", () => {
 
   assert.deepEqual(
     Object.keys(leadTurnResponseSchema.shape).sort(),
-    [
-      ...measured,
-      "decision",
-      "failure",
-      "inputKind",
-      "ordinal",
-      "state",
-      "turn",
-    ].sort(),
+    [...measured, "failure", "inputKind", "ordinal", "state", "turn"].sort(),
   );
   assert.deepEqual(
     Object.keys(threadTurnResponseSchema.shape).sort(),

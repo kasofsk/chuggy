@@ -30,24 +30,26 @@ import type {
 } from "../app/browser/conversation/Conversation.tsx";
 import { conversationMentionItem } from "../app/core/conversationMention.ts";
 import type { ConversationExchange } from "../app/core/conversation.ts";
-import type { TicketResponse } from "../../../src/contract/responses.ts";
+import type { AdoptedTicket } from "../../../src/contract/adoptedTickets.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
 
-function ticketOf(ticket: number, title: string): TicketResponse {
+function ticketOf(
+  ticket: number,
+  state: AdoptedTicket["state"],
+): AdoptedTicket {
   return {
     ticket,
-    title,
-    phase: "Working",
-    sequence: 1,
-    changedAt: "2026-09-11T00:00:00.000Z",
+    revision: 1,
+    workCyclesStarted: 0,
+    state,
+    dependencies: [],
   };
 }
 
-const offered = [
-  ticketOf(15, "Fix the thing"),
-  ticketOf(16, "Ship the console"),
-].map(conversationMentionItem);
+const offered = [ticketOf(15, "Work"), ticketOf(16, "Evaluation")].map(
+  conversationMentionItem,
+);
 
 const answered: ConversationExchange = {
   id: "x1",
@@ -129,7 +131,7 @@ test("an address offers every ticket, and typing the kind still offers them", as
 
 /** The case the library's own matcher could not answer: its query ends at the
  * first whitespace, so the space here would have closed the list. */
-test("a query runs over the space after the kind, by number and by title", async () => {
+test("a query runs over the space after the kind, by number and by state", async () => {
   render(
     <Conversation
       exchanges={[answered]}
@@ -143,7 +145,7 @@ test("a query runs over the space after the kind, by number and by title", async
   });
   expect(mentioned().join(" ")).not.toContain("#16");
 
-  await typed("@ticket ship the console");
+  await typed("@ticket evaluation");
   await waitFor(() => {
     expect(mentioned().join(" ")).toContain("#16");
   });

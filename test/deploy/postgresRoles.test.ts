@@ -59,8 +59,8 @@
  * `src/roots/` command connects as and no migration grants that read is a pool
  * that authenticates and is then refused the first statement it makes — which
  * is what the API's selector-review pool was, and the deployment could not work
- * around it. The two sides are matched rather than listed, so a group nothing
- * connects as is left without the read and a grant to one is red as well.
+ * around it. Every serving group must hold the read; historical migrations
+ * also retain grants for retired service groups.
  */
 
 import assert from "node:assert/strict";
@@ -69,7 +69,7 @@ import { test } from "node:test";
 
 import * as schema from "../../src/adapters/postgres/schema.ts";
 
-const { apiRole, migrations, selectorReviewRole, workerPlaneRole } = schema;
+const { migrations, poolPlaneRole, workerPlaneRole } = schema;
 const rolesFilePath = "deploy/rig/postgres/postgres-roles.sql";
 const rolesFile = readFileSync(rolesFilePath, "utf8")
   .replaceAll(/--.*$/gmu, " ")
@@ -228,14 +228,18 @@ test("every group role a serving command asserts is granted to a login role", ()
   );
 });
 
-test("only serving groups with the schema-readiness contract read the ledger", () => {
+test("serving groups with the schema-readiness contract can read the ledger", () => {
   const expected = new Set(rootAssertedRoles());
-  expected.delete(workerPlaneRole);
-  assert.deepEqual(
-    migrationLedgerReaders(),
-    expected,
-    "the worker plane proves readiness through its EXECUTE-only functions; other serving groups read schema_migration before serving",
-  );
+  const planes = [workerPlaneRole, poolPlaneRole];
+  for (const plane of planes) expected.delete(plane);
+  const readers = migrationLedgerReaders();
+  for (const role of expected)
+    assert.ok(readers.has(role), `${role} cannot read schema readiness`);
+  for (const plane of planes)
+    assert.ok(
+      !readers.has(plane),
+      `${plane} answers readiness from the role it connected as`,
+    );
 });
 
 test("each login role is granted the group its own name is made of", () => {
@@ -336,14 +340,4 @@ test("every login role's password is the distinct variable its own name names", 
       `${rolesFilePath} fills ${variable} from an environment name that is not ${role}'s`,
     );
   }
-});
-
-test("the API's credential can become the role its second pool asserts", () => {
-  const login = /GRANT chuggy_api TO (chuggy_\w+);/u.exec(rolesFile)?.[1];
-  assert.equal(login, `${apiRole}_login`);
-  assert.match(
-    rolesFile,
-    new RegExp(`GRANT ${selectorReviewRole} TO ${String(login)};`, "u"),
-    `${rolesFilePath} leaves ${selectorReviewRole} with no login role, and the API refuses to start without one`,
-  );
 });

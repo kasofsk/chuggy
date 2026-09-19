@@ -491,7 +491,7 @@ export type ChangeProposalPublication =
       readonly publication: "Unanswered";
       readonly creations: number;
       readonly reconciliations: number;
-      readonly reading: ChangeProposalReconciliationStored | undefined;
+      readonly reading?: ChangeProposalReconciliationStored | undefined;
     }
   | {
       readonly publication: "Answered";
@@ -788,7 +788,7 @@ export type ChangeProposalMerging =
       readonly merging: "Unanswered";
       readonly merges: number;
       readonly readings: number;
-      readonly reading: ChangeProposalMergeReconciliationStored | undefined;
+      readonly reading?: ChangeProposalMergeReconciliationStored | undefined;
     }
   | { readonly merging: "Answered"; readonly merge: ChangeProposalMergeAnswer };
 

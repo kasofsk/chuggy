@@ -39,31 +39,13 @@ const validConfiguration = {
     idleIntervalMilliseconds: 10,
     shutdownDrainMilliseconds: 100,
   },
-  pass: { projectsPerPassMax: 1, projectLeaseSeconds: 10 },
-  domain: {
-    nTickets: 3,
-    nTasks: 2,
-    reworkPolicy: { type: "BudgetedRework", value: 1 },
-    gas: 3,
-    finalizationPricing: { type: "Budgeted", value: 1 },
-    maxStages: 2,
+  pass: {
+    projectsPerPassMax: 1,
+    projectLeaseSeconds: 10,
+    inputsPerProjectMax: 32,
+    obligationsPerProjectMax: 1000,
   },
   owner: "ticket-service-1",
-  source: {
-    scratchDirectory: "/tmp/chuggy-ticket-source",
-    identity: { name: "Chuggy", email: "chuggy@example.invalid" },
-    environment: {
-      PATH: process.env["PATH"],
-      HOME: process.env["HOME"],
-      TMPDIR: process.env["TMPDIR"] ?? "/tmp",
-    },
-    sources: [
-      {
-        repository: "repository",
-        path: "/run/secrets/repository-read",
-      },
-    ],
-  },
 };
 
 test("the command parses its complete plain-data configuration", async () => {
@@ -107,49 +89,12 @@ const parseProgram = `
   }
 `;
 
-test("a ticket service holding an app key mounts no repository credential", async () => {
-  const minting = {
+test("the ticket service rejects legacy domain budget settings", async () => {
+  const parsed = await configured(parseProgram, {
     ...validConfiguration,
-    forge: { appId: "1234", keyFile: "/run/secrets/portal.pem" },
-    source: { ...validConfiguration.source, sources: undefined },
-  };
-  const parsed = await configured(parseProgram, minting);
-  assert.deepEqual((parsed["source"] as { sources: unknown }).sources, []);
-  assert.deepEqual(parsed["forge"], {
-    appId: "1234",
-    keyFile: "/run/secrets/portal.pem",
+    domain: { gas: 3 },
   });
-});
-
-test("a ticket service with neither a key nor a credential file is refused", async () => {
-  const neither = {
-    ...validConfiguration,
-    source: { ...validConfiguration.source, sources: [] },
-  };
-  const parsed = await configured(parseProgram, neither);
-  assert.match(
-    String(parsed["refused"]),
-    /CHUG_TICKET_SERVICE_CONFIG.forge or CHUG_TICKET_SERVICE_CONFIG.source.sources is required/u,
-  );
-});
-
-test("a forge api url and timeout reach the parsed key", async () => {
-  const minting = {
-    ...validConfiguration,
-    forge: {
-      appId: "1234",
-      keyFile: "/run/secrets/portal.pem",
-      apiUrl: "https://api.github.invalid",
-      timeoutMs: 9000,
-    },
-  };
-  const parsed = await configured(parseProgram, minting);
-  assert.deepEqual(parsed["forge"], {
-    appId: "1234",
-    keyFile: "/run/secrets/portal.pem",
-    apiUrl: "https://api.github.invalid",
-    requestTimeoutMs: 9000,
-  });
+  assert.match(String(parsed["refused"]), /CHUG_TICKET_SERVICE_CONFIG/u);
 });
 
 test("optional pool bounds are omitted rather than carried as undefined", async () => {
@@ -212,21 +157,17 @@ test("a pool bound the schema does not publish is refused", async () => {
   );
 });
 
-test("the command rejects a fractional finalization budget", async () => {
-  const invalid = {
-    ...validConfiguration,
-    domain: {
-      ...validConfiguration.domain,
-      finalizationPricing: { type: "Budgeted", value: 0.5 },
-    },
-  };
+test("the command rejects a fractional input quantum", async () => {
   const found = await executeFailure({
-    CHUG_TICKET_SERVICE_CONFIG: JSON.stringify(invalid),
+    CHUG_TICKET_SERVICE_CONFIG: JSON.stringify({
+      ...validConfiguration,
+      pass: { ...validConfiguration.pass, inputsPerProjectMax: 0.5 },
+    }),
   });
   assert.equal(found.code, 2);
   assert.equal(
     found.stderr,
-    "ticket service configuration: CHUG_TICKET_SERVICE_CONFIG.domain.finalizationPricing is invalid\n",
+    "ticket service configuration: CHUG_TICKET_SERVICE_CONFIG.pass.inputsPerProjectMax is invalid\n",
   );
 });
 

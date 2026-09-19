@@ -1915,7 +1915,7 @@ ALTER FUNCTION public.open_member_thread(in_tenant text, in_project text, in_pri
            (tenant,project,session,kind,principal,capabilities,credential_slot,
             account,cluster,system_prompt)
          VALUES(in_tenant,in_project,in_session,'Lead',in_principal,
-                ARRAY['RepositoryRead', 'ProjectRead', 'DraftAuthor', 'LeadDecision']::text[],in_credential_slot,
+                ARRAY['RepositoryRead', 'ProjectRead', 'DraftAuthor']::text[],in_credential_slot,
                 drawn.account,drawn.cluster,in_system_prompt);
        EXCEPTION WHEN unique_violation THEN
          SELECT s.session INTO held FROM agent_session s

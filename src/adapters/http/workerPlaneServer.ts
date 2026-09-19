@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-import { setTimeout as delay } from "node:timers/promises";
 import fastify, {
   type FastifyInstance,
   type FastifyReply,
@@ -10,11 +8,6 @@ import { z } from "zod";
 import {
   countSchema,
   nativeHttpPageItemsMax,
-  runConfigurationBytesMax,
-  runModelCharsMax,
-  runTranscriptBatchBytesMax,
-  runTranscriptBatchesMax,
-  runTurnSeriesMax,
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
@@ -22,12 +15,12 @@ import {
   sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
-  textCodePointsCount,
+  ticketExecutionRunModelCharsMax,
+  ticketExecutionRunModelsMax,
+  ticketExecutionRunReasonCharsMax,
+  ticketExecutionRunTurnsMax,
+  ticketExecutionRunTurnsPageMax,
 } from "../../contract/http.ts";
-import {
-  runModelUsageSchema,
-  runTotalsSchema,
-} from "../../contract/responses.ts";
 import { isBoundedText } from "../../interpreter/boundedText.ts";
 import {
   allAgentReportedTurnFailures,
@@ -59,61 +52,23 @@ import type {
   SessionStoreWritePort,
 } from "../../interpreter/sessionStore.ts";
 import {
-  asAttemptCapabilitySecret,
-  type AttemptCapabilitySecret,
-} from "../../interpreter/executionScheduler.ts";
-import {
-  runConfigurationPath,
-  runEndedEvidences,
-  runTranscriptBatchPath,
-  type RunEvidenceStored,
-  type RunTotals,
-  type WorkerRunConfigurationPort,
-  type WorkerRunEndedPort,
-  type WorkerRunTotalPort,
-  type WorkerRunTranscriptPort,
-  type WorkerRunTurnsPort,
-} from "../../interpreter/runEvidence.ts";
-import {
   asRepositoryId,
   finalizerIdentityCharsMax,
 } from "../../interpreter/finalizer.ts";
+import type { TicketExecutionCredentialSubject } from "../../interpreter/ticketExecution.ts";
+import type {
+  TicketExecutionRunEvidenceStored,
+  TicketExecutionRunPort,
+  TicketExecutionRunStored,
+} from "../../interpreter/ticketExecutionRun.ts";
 import type {
   WorkerPlaneCredentialMinted,
   WorkerPlaneCredentialMinting,
 } from "../../interpreter/workerPlaneCredentials.ts";
-import {
-  artifactPathRejection,
-  asArtifactDigest,
-  resultManifestTextCharsMax,
-  type ArtifactFailure,
-  type ArtifactPath,
-  type ArtifactSite,
-  type ManifestRejection,
-} from "../../interpreter/resultManifest.ts";
-import type {
-  WorkerArtifactReservationPort,
-  WorkerArtifactStored,
-  WorkerArtifactUploadPort,
-  WorkerAttemptHeartbeatPort,
-  WorkerAttemptAuthority,
-  WorkerPlaneAuthority,
-  WorkerReportPort,
-} from "../../interpreter/workerPlane.ts";
 
 export const workerPlaneRoutes = [
   "/health/live",
   "/health/ready",
-  "/v1/input",
-  "/v1/heartbeat",
-  "/v1/artifacts/*",
-  "/v1/report",
-  "/v1/run/configuration",
-  "/v1/run/transcript/*",
-  "/v1/run/turns",
-  "/v1/run/totals",
-  "/v1/run/ended",
-  "/v1/credential",
   "/v1/session",
   "/v1/session/heartbeat",
   "/v1/session/reference",
@@ -124,29 +79,18 @@ export const workerPlaneRoutes = [
   "/v1/session/store",
   "/v1/session/store/*",
   "/v1/session/credential",
+  "/v1/ticket-execution/terminal",
+  "/v1/ticket-execution/view",
+  "/v1/ticket-execution/credentials",
+  "/v1/ticket-execution/heartbeat",
+  "/v1/ticket-execution/run/turns",
+  "/v1/ticket-execution/run/totals",
+  "/v1/ticket-execution/run/transcript/:batch",
+  "/v1/ticket-execution/run/configuration",
 ] as const;
 
-/** What marks a route as one only a composed session plane answers. */
-const sessionRoutePrefix = "/v1/session";
-
-/** Where a store route's own segments begin, which is what the raw url is cut at. */
 const sessionStorePrefix = "/v1/session/store/";
 
-/** The ports a run's own evidence is written through, all five attempt-fenced. */
-export interface WorkerRunEvidencePorts {
-  readonly configurations: WorkerRunConfigurationPort;
-  readonly transcripts: WorkerRunTranscriptPort;
-  readonly turns: WorkerRunTurnsPort;
-  readonly totals: WorkerRunTotalPort;
-  readonly endings: WorkerRunEndedPort;
-}
-
-/**
- * Everything one session pod is answered through: the durable ports, the store
- * its bytes land in, and the bounds its mailbox waits under. It is one value
- * because it is one composition — a plane holding some of these and not others
- * could only answer a session wrongly.
- */
 export interface SessionPlaneService {
   readonly authority: SessionPlaneAuthority;
   readonly heartbeats: SessionHeartbeatPort;
@@ -158,128 +102,27 @@ export interface SessionPlaneService {
   readonly records: SessionStoreRecordPort;
   readonly queries: SessionStoreQueryPort;
   readonly store: SessionStoreWritePort & SessionStoreReadPort;
-  /** How often a waiting mailbox asks again, and for how long one request waits. */
   readonly turnPollIntervalMs: number;
   readonly turnPollSecsMax: number;
-  /** How many mailbox waits are held at once, above which a caller is answered empty. */
   readonly pollsMax: number;
 }
 
 export interface WorkerPlaneServerService {
-  readonly authority: WorkerPlaneAuthority;
-  readonly heartbeats: WorkerAttemptHeartbeatPort;
-  readonly heartbeatLeaseSecs: number;
-  readonly artifacts: WorkerArtifactUploadPort;
-  readonly reservations: WorkerArtifactReservationPort;
-  readonly reports: WorkerReportPort;
-  readonly runEvidence: WorkerRunEvidencePorts;
-  /**
-   * The session plane, where a deployment has composed one. A plane without it
-   * serves no session route at all: an absent route is an answer a pod's
-   * transport can act on, where a route standing in front of ports that are not
-   * there could only answer wrongly.
-   */
   readonly sessions?: SessionPlaneService;
-  /**
-   * The minting a deployment holding a forge app key composes. Without one both
-   * credential routes answer not found, which is the pod resolving the
-   * credential its launcher mounted exactly as it did before this plane minted
-   * anything.
-   */
   readonly credentials?: WorkerPlaneCredentialMinting;
   readonly ready: () => Promise<boolean>;
-  readonly uploadBytesMax: number;
-}
-
-/** Which of this plane's routes a service composed like this one serves. */
-export function workerPlaneServed(
-  service: WorkerPlaneServerService,
-): readonly string[] {
-  return service.sessions === undefined
-    ? workerPlaneRoutes.filter((route) => !route.startsWith(sessionRoutePrefix))
-    : workerPlaneRoutes;
-}
-
-/** One turn as a worker offers it; the server is what dates the stored row. */
-const workerRunTurnsSchema = z.strictObject({
-  turns: z
-    .array(
-      z.strictObject({
-        ordinal: z.number().int().positive().max(runTurnSeriesMax),
-        model: z.string().min(1).max(runModelCharsMax),
-        tokensInput: countSchema,
-        tokensOutput: countSchema,
-        tokensCacheCreation: countSchema,
-        tokensCacheRead: countSchema,
-      }),
-    )
-    .min(1)
-    .max(nativeHttpPageItemsMax),
-});
-
-/**
- * The same figures as a worker offers them. A response schema drops a field the
- * wire does not name, so an older browser survives a newer server; a write
- * refuses one instead, because a field the plane dropped in silence is a figure
- * the worker believes it put on record.
- */
-const workerRunTotalsSchema = z.strictObject({
-  ...runTotalsSchema.shape,
-  models: z
-    .array(z.strictObject(runModelUsageSchema.shape))
-    .max(nativeHttpPageItemsMax),
-});
-
-const workerRunEndedSchema = z.strictObject({
-  evidence: z.enum(runEndedEvidences),
-});
-
-/** The offered totals as the durable port takes them, an absent label omitted. */
-function workerRunTotals(
-  offered: z.infer<typeof workerRunTotalsSchema>,
-): RunTotals {
-  const { resultSubtype, stopReason, ...rest } = offered;
-  return {
-    ...rest,
-    ...(resultSubtype === undefined ? {} : { resultSubtype }),
-    ...(stopReason === undefined ? {} : { stopReason }),
+  readonly ticketExecutions?: {
+    report(
+      secret: string,
+      body: unknown,
+    ): Promise<"Recorded" | "Conflict" | "Fenced">;
+    heartbeat(secret: string): Promise<"Recorded" | "Fenced">;
+    readonly run?: TicketExecutionRunPort;
+    view(secret: string): Promise<unknown>;
+    credential(
+      secret: string,
+    ): Promise<TicketExecutionCredentialSubject | undefined>;
   };
-}
-
-/** The status one refused evidence write is answered with, quota apart from refusal. */
-function workerRunStatus(stored: RunEvidenceStored): number {
-  return stored === "QuotaExceeded" ? 413 : 409;
-}
-
-/**
- * How many events one batch carries, counted as the newline-terminated records
- * it is written as, so the count is a property of the bytes and not a reading
- * of them.
- */
-function workerRunEvents(content: Uint8Array): number {
-  let events = 0;
-  for (const byte of content) if (byte === 0x0a) events += 1;
-  return events;
-}
-
-function workerHeartbeatRoute(
-  app: FastifyInstance,
-  service: WorkerPlaneServerService,
-): void {
-  app.post(workerPlaneRoutes[3], async (request, reply) => {
-    const secret = workerBearer(request);
-    if (secret === undefined) return reply.code(401).send({ action: "stop" });
-    const authority = await workerAuthority(service, request);
-    if (authority === undefined || !authority.live)
-      return reply.code(401).send({ action: "stop" });
-    return (await service.heartbeats.heartbeat(
-      secret,
-      authority.generation,
-      service.heartbeatLeaseSecs,
-    ))
-      ? reply.code(204).send()
-      : reply.code(409).send({ action: "stop" });
-  });
 }
 
 function workerHealthRoutes(
@@ -294,368 +137,296 @@ function workerHealthRoutes(
   );
 }
 
-async function workerAuthority(
-  service: WorkerPlaneServerService,
-  request: FastifyRequest,
-): Promise<WorkerAttemptAuthority | undefined> {
-  const secret = workerBearer(request);
-  return secret === undefined
-    ? undefined
-    : service.authority.authenticate(secret);
-}
-
-/**
- * One attempt bearer as this plane reads it. A token written in the session
- * language is not offered here at all: the two languages are disjoint by
- * construction, and a token handed to the wrong authority is a token that
- * authority now has.
- */
-function workerBearer(request: FastifyRequest) {
+function rawBearer(request: FastifyRequest): string | undefined {
   const header = request.headers.authorization;
-  if (header === undefined || !header.startsWith("Bearer ")) return undefined;
-  const token = header.slice("Bearer ".length);
-  return token.length > 0 &&
-    token.length <= 256 &&
-    !sessionBearerPattern.test(token)
-    ? asAttemptCapabilitySecret(token)
+  return header?.startsWith("Bearer ") && header.length > "Bearer ".length
+    ? header.slice("Bearer ".length)
     : undefined;
 }
 
-function workerInputRoute(
-  app: FastifyInstance,
-  service: WorkerPlaneServerService,
-): void {
-  app.get(workerPlaneRoutes[2], async (request, reply) => {
-    const authority = await workerAuthority(service, request);
-    if (authority === undefined || !authority.live)
-      return reply.code(401).send({ action: "stop" });
-    return {
-      bundle: authority.inputBundle,
-      digest: authority.inputBundleDigest,
-      references: authority.inputs,
-    };
-  });
-}
+/**
+ * The envelope a terminal arrives in, which is checked at the door while what it
+ * carries is not. An outcome this tree cannot read is a process failure the next
+ * cycle is told about, so only a body with nowhere to put an outcome is refused
+ * here.
+ */
+const ticketTerminalSchema = z
+  .strictObject({ outcome: z.unknown() })
+  .refine((offered) => offered.outcome !== undefined);
 
-function workerUploadRoute(
+/**
+ * What one attempt is and what it produced, both reached by the same attempt
+ * bearer and by nothing else. Neither route names a pod, a namespace or a
+ * launcher: a harness a worker pool started on a machine this tree has never
+ * seen calls exactly these, which is the whole point of them being here.
+ */
+function ticketExecutionRoutes(
   app: FastifyInstance,
   service: WorkerPlaneServerService,
 ): void {
-  app.put(workerPlaneRoutes[4], async (request, reply) => {
-    const authority = await workerAuthority(service, request);
-    if (authority === undefined || !authority.live)
-      return reply.code(401).send({ action: "stop" });
-    const path = (request.params as { "*": string })["*"];
-    if (!(request.body instanceof Uint8Array))
-      return reply.code(415).send({ action: "stop" });
-    if (artifactPathRejection(path) !== undefined)
-      return reply.code(400).send({ action: "stop", reason: "InvalidPath" });
-    const secret = workerBearer(request);
+  const attempts = service.ticketExecutions;
+  if (attempts === undefined) return;
+  app.post(workerPlaneRoutes[12], async (request, reply) => {
+    const secret = rawBearer(request);
     if (secret === undefined) return reply.code(401).send({ action: "stop" });
-    const digest = createHash("sha256").update(request.body).digest("hex");
-    const reserved = await service.reservations.reserve({
-      secret,
-      path,
-      digest,
-      bytes: request.body.byteLength,
-    });
-    if (reserved.reserved !== "Reserved")
+    const offered = ticketTerminalSchema.safeParse(request.body);
+    if (!offered.success)
       return reply
-        .code(reserved.reserved === "QuotaExceeded" ? 413 : 409)
-        .send({ action: "stop", reason: reserved.reserved });
-    const stored = await service.artifacts.store({
-      authority,
-      path,
-      content: request.body,
-    });
-    switch (stored.stored) {
-      case "Stored":
-        return reply.code(204).send();
-      case "Conflict":
-        return reply.code(409).send({ action: "stop" });
-      case "Refused":
-        return reply
-          .code(stored.reason === "InvalidPath" ? 400 : 413)
-          .send({ action: "stop", reason: stored.reason });
-      case "Unavailable":
-        return reply
-          .header("retry-after", String(stored.retryAfterSeconds))
-          .code(503)
-          .send({ action: "retry" });
-    }
+        .code(400)
+        .send({ action: "stop", reason: "InvalidTerminal" });
+    const reported = await attempts.report(secret, offered.data);
+    return reported === "Recorded"
+      ? reply.code(204).send()
+      : reply.code(409).send({ action: "stop", reason: reported });
   });
+  app.get(workerPlaneRoutes[13], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const view = await attempts.view(secret);
+    return view === undefined
+      ? reply.code(401).send({ action: "stop" })
+      : reply.code(200).send(view);
+  });
+  ticketCredentialRoute(app, service, attempts);
+  ticketHeartbeatRoute(app, attempts);
+  ticketRunRoutes(app, attempts);
 }
 
-/** The live attempt one run-evidence write is keyed by, or nothing at all. */
-async function workerRunWriter(
-  service: WorkerPlaneServerService,
-  request: FastifyRequest,
-): Promise<
-  | {
-      readonly authority: WorkerAttemptAuthority;
-      readonly secret: AttemptCapabilitySecret;
-    }
-  | undefined
-> {
-  const authority = await workerAuthority(service, request);
-  const secret = workerBearer(request);
-  return authority === undefined || !authority.live || secret === undefined
-    ? undefined
-    : { authority, secret };
+const ticketRunModelSchema = z
+  .string()
+  .refine((value) => isBoundedText(value, ticketExecutionRunModelCharsMax));
+
+const ticketRunReasonSchema = z
+  .string()
+  .refine((value) => isBoundedText(value, ticketExecutionRunReasonCharsMax));
+
+const ticketRunTokensSchema = {
+  tokensInput: countSchema,
+  tokensOutput: countSchema,
+  tokensCacheCreation: countSchema,
+  tokensCacheRead: countSchema,
+};
+
+const ticketRunTurnsSchema = z.strictObject({
+  turns: z
+    .array(
+      z.strictObject({
+        ordinal: z.number().int().positive().max(ticketExecutionRunTurnsMax),
+        model: ticketRunModelSchema,
+        ...ticketRunTokensSchema,
+      }),
+    )
+    .max(ticketExecutionRunTurnsPageMax),
+});
+
+const ticketRunTotalsSchema = z.strictObject({
+  turns: countSchema,
+  durationMs: countSchema,
+  durationApiMs: countSchema,
+  ...ticketRunTokensSchema,
+  costUsdMicros: countSchema,
+  costBasis: z.literal("List"),
+  permissionDenials: countSchema,
+  models: z
+    .array(
+      z.strictObject({
+        model: ticketRunModelSchema,
+        ...ticketRunTokensSchema,
+        costUsdMicros: countSchema,
+      }),
+    )
+    .max(ticketExecutionRunModelsMax),
+  resultSubtype: ticketRunReasonSchema.optional(),
+  stopReason: ticketRunReasonSchema.optional(),
+});
+
+/** How stored evidence answers, each refusal separated because they are acted on differently. */
+function ticketRunEvidenceStored(
+  reply: FastifyReply,
+  stored: TicketExecutionRunEvidenceStored,
+): FastifyReply {
+  if (stored === "Stored" || stored === "AlreadyStored")
+    return reply.code(204).send();
+  if (stored === "TooLarge")
+    return reply.code(413).send({ action: "stop", reason: stored });
+  if (stored === "Unavailable")
+    return reply
+      .code(503)
+      .header("retry-after", "1")
+      .send({ action: "stop", reason: stored });
+  return reply.code(409).send({ action: "stop", reason: stored });
 }
 
 /**
- * What one refused write answers with, decided before any of it is sent. It is
- * the plane's and not a run's: a status, a body and a retry interval are what
- * every route here refuses with, and a second copy under a session name would
- * be a second renderer to keep true.
+ * The bytes a run left behind, measured here rather than believed. A harness
+ * states a batch number and nothing else about what it sends: the digest, the
+ * size and the event count are all read off what arrived.
  */
+function ticketRunEvidenceRoutes(
+  app: FastifyInstance,
+  run: TicketExecutionRunPort,
+): void {
+  app.put(workerPlaneRoutes[18], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const batch = Number(
+      (request.params as Record<string, string>)["batch"] ?? "",
+    );
+    if (!Number.isSafeInteger(batch))
+      return reply.code(400).send({ action: "stop", reason: "InvalidBatch" });
+    const content = ticketRunBody(request);
+    if (content === undefined)
+      return reply.code(400).send({ action: "stop", reason: "InvalidBody" });
+    return ticketRunEvidenceStored(
+      reply,
+      await run.transcript(secret, batch, content),
+    );
+  });
+  app.put(workerPlaneRoutes[19], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const content = ticketRunBody(request);
+    if (content === undefined)
+      return reply.code(400).send({ action: "stop", reason: "InvalidBody" });
+    return ticketRunEvidenceStored(
+      reply,
+      await run.configuration(secret, content),
+    );
+  });
+}
+
+/** The bytes a harness uploaded, which only an octet-stream body carries. */
+function ticketRunBody(request: FastifyRequest): Uint8Array | undefined {
+  return Buffer.isBuffer(request.body)
+    ? new Uint8Array(request.body)
+    : undefined;
+}
+
+/** How a measure that was refused answers, a fence and a conflict read alike by the harness. */
+function ticketRunStored(
+  reply: FastifyReply,
+  stored: TicketExecutionRunStored,
+): FastifyReply {
+  return stored === "Stored" || stored === "AlreadyStored"
+    ? reply.code(204).send()
+    : reply.code(409).send({ action: "stop", reason: stored });
+}
+
+/**
+ * What one attempt's run spent, reported while it runs and settled by nothing.
+ * A measure moves no lease and ends no attempt, so a plane composed without
+ * somewhere to put one serves these routes not at all rather than accepting a
+ * report it would drop.
+ */
+function ticketRunRoutes(
+  app: FastifyInstance,
+  attempts: NonNullable<WorkerPlaneServerService["ticketExecutions"]>,
+): void {
+  const run = attempts.run;
+  if (run === undefined) return;
+  app.post(workerPlaneRoutes[16], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const offered = ticketRunTurnsSchema.safeParse(request.body);
+    if (!offered.success)
+      return reply.code(400).send({ action: "stop", reason: "InvalidMeasure" });
+    return ticketRunStored(reply, await run.turns(secret, offered.data.turns));
+  });
+  ticketRunEvidenceRoutes(app, run);
+  app.post(workerPlaneRoutes[17], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const offered = ticketRunTotalsSchema.safeParse(request.body);
+    if (!offered.success)
+      return reply.code(400).send({ action: "stop", reason: "InvalidMeasure" });
+    const { resultSubtype, stopReason, ...measured } = offered.data;
+    return ticketRunStored(
+      reply,
+      await run.totals(secret, {
+        ...measured,
+        ...(resultSubtype === undefined ? {} : { resultSubtype }),
+        ...(stopReason === undefined ? {} : { stopReason }),
+      }),
+    );
+  });
+}
+
+/**
+ * That the workload is still going, said by the workload and by nothing else.
+ * A lease renewed by a pool's poll says its fabric still lists a pod, which a
+ * wedged harness keeps true, so this is the one signal that separates a run
+ * making progress from a run that stopped making any.
+ */
+function ticketHeartbeatRoute(
+  app: FastifyInstance,
+  attempts: NonNullable<WorkerPlaneServerService["ticketExecutions"]>,
+): void {
+  app.post(workerPlaneRoutes[15], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    return (await attempts.heartbeat(secret)) === "Recorded"
+      ? reply.code(204).send()
+      : reply.code(409).send({ action: "stop", reason: "Fenced" });
+  });
+}
+
+/**
+ * The credential one attempt works under. It carries no body: the repository is
+ * the one the attempt's own input bundle pinned and the permission set follows
+ * from the kind of task the scheduler recorded, so there is nothing here for a
+ * harness to name and nothing for it to widen.
+ */
+function ticketCredentialRoute(
+  app: FastifyInstance,
+  service: WorkerPlaneServerService,
+  attempts: NonNullable<WorkerPlaneServerService["ticketExecutions"]>,
+): void {
+  app.post(workerPlaneRoutes[14], async (request, reply) => {
+    const secret = rawBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const subject = await attempts.credential(secret);
+    if (subject === undefined) return reply.code(401).send({ action: "stop" });
+    const credentials = service.credentials;
+    return credentials === undefined
+      ? reply.code(404).send(workerCredentialNotConfigured)
+      : workerCredentialAnswered(
+          reply,
+          await credentials.attempt(
+            subject.partition,
+            subject.repository,
+            subject.access,
+          ),
+        );
+  });
+}
+
+export function workerPlaneServed(
+  service: WorkerPlaneServerService,
+): readonly string[] {
+  return service.sessions === undefined
+    ? workerPlaneRoutes.filter((route) => !route.startsWith("/v1/session"))
+    : workerPlaneRoutes;
+}
+
 interface WorkerPlaneRefusal {
   readonly status: number;
-  readonly body: Readonly<Record<string, string>>;
+  readonly body: Readonly<Record<string, unknown>>;
   readonly retryAfterSeconds?: number;
-}
-
-/** The refusal storing one object earned, or nothing where its bytes are kept. */
-function workerRunObjectRefusal(
-  kept: WorkerArtifactStored,
-): WorkerPlaneRefusal | undefined {
-  switch (kept.stored) {
-    case "Stored":
-      return undefined;
-    case "Conflict":
-      return { status: 409, body: { action: "stop", reason: "Conflict" } };
-    case "Refused":
-      return {
-        status: kept.reason === "InvalidPath" ? 400 : 413,
-        body: { action: "stop", reason: kept.reason },
-      };
-    case "Unavailable":
-      return {
-        status: 503,
-        body: { action: "retry" },
-        retryAfterSeconds: kept.retryAfterSeconds,
-      };
-  }
-}
-
-/**
- * The bytes of one run-evidence object, kept before the row that points at
- * them: an object no row names is inert, while a row whose object is absent is
- * a hole the transcript's own high-water mark would then advance past.
- */
-async function workerRunObjectKept(
-  service: WorkerPlaneServerService,
-  authority: WorkerAttemptAuthority,
-  path: ArtifactPath,
-  content: Uint8Array,
-): Promise<WorkerPlaneRefusal | undefined> {
-  return workerRunObjectRefusal(
-    await service.artifacts.store({ authority, path, content }),
-  );
 }
 
 function workerPlaneRefused(
   reply: FastifyReply,
   refusal: WorkerPlaneRefusal,
 ): FastifyReply {
-  return refusal.retryAfterSeconds === undefined
-    ? reply.code(refusal.status).send(refusal.body)
-    : reply
-        .header("retry-after", String(refusal.retryAfterSeconds))
-        .code(refusal.status)
-        .send(refusal.body);
+  if (refusal.retryAfterSeconds !== undefined)
+    void reply.header("retry-after", String(refusal.retryAfterSeconds));
+  return reply.code(refusal.status).send(refusal.body);
 }
 
-/** The digest of what a worker offered, which is what the durable row pins. */
-function workerRunDigest(content: Uint8Array) {
-  return asArtifactDigest(createHash("sha256").update(content).digest("hex"));
-}
-
-function workerRunConfigurationRoute(
-  app: FastifyInstance,
-  service: WorkerPlaneServerService,
-): void {
-  app.put(workerPlaneRoutes[6], async (request, reply) => {
-    const writer = await workerRunWriter(service, request);
-    if (writer === undefined) return reply.code(401).send({ action: "stop" });
-    if (!(request.body instanceof Uint8Array))
-      return reply.code(415).send({ action: "stop" });
-    if (request.body.byteLength > runConfigurationBytesMax)
-      return reply.code(413).send({ action: "stop", reason: "QuotaExceeded" });
-    const refusal = await workerRunObjectKept(
-      service,
-      writer.authority,
-      runConfigurationPath(),
-      request.body,
-    );
-    if (refusal !== undefined) return workerPlaneRefused(reply, refusal);
-    const stored = await service.runEvidence.configurations.record({
-      secret: writer.secret,
-      generation: writer.authority.generation,
-      digest: workerRunDigest(request.body),
-      bytes: request.body.byteLength,
-    });
-    return stored === "Stored" || stored === "AlreadyStored"
-      ? reply.code(204).send()
-      : reply
-          .code(workerRunStatus(stored))
-          .send({ action: "stop", reason: stored });
-  });
-}
-
-function workerRunTranscriptRoute(
-  app: FastifyInstance,
-  service: WorkerPlaneServerService,
-): void {
-  app.put(workerPlaneRoutes[7], async (request, reply) => {
-    const writer = await workerRunWriter(service, request);
-    if (writer === undefined) return reply.code(401).send({ action: "stop" });
-    if (!(request.body instanceof Uint8Array))
-      return reply.code(415).send({ action: "stop" });
-    const named = (request.params as { "*": string })["*"];
-    const batch = /^[1-9][0-9]*$/u.test(named) ? Number(named) : 0;
-    if (batch < 1 || batch > runTranscriptBatchesMax)
-      return reply.code(400).send({ action: "stop", reason: "InvalidBatch" });
-    if (request.body.byteLength > runTranscriptBatchBytesMax)
-      return reply.code(413).send({ action: "stop", reason: "QuotaExceeded" });
-    const refusal = await workerRunObjectKept(
-      service,
-      writer.authority,
-      runTranscriptBatchPath(batch),
-      request.body,
-    );
-    if (refusal !== undefined) return workerPlaneRefused(reply, refusal);
-    const stored = await service.runEvidence.transcripts.record({
-      secret: writer.secret,
-      generation: writer.authority.generation,
-      batch,
-      digest: workerRunDigest(request.body),
-      bytes: request.body.byteLength,
-      events: workerRunEvents(request.body),
-    });
-    return stored === "Stored" || stored === "AlreadyStored"
-      ? reply.code(204).send()
-      : reply
-          .code(workerRunStatus(stored))
-          .send({ action: "stop", reason: stored });
-  });
-}
-
-function workerRunFigureRoutes(
-  app: FastifyInstance,
-  service: WorkerPlaneServerService,
-): void {
-  app.post(workerPlaneRoutes[8], async (request, reply) => {
-    const writer = await workerRunWriter(service, request);
-    if (writer === undefined) return reply.code(401).send({ action: "stop" });
-    const offered = workerRunTurnsSchema.safeParse(request.body);
-    if (!offered.success) return reply.code(400).send({ action: "stop" });
-    const recorded = await service.runEvidence.turns.record({
-      secret: writer.secret,
-      generation: writer.authority.generation,
-      turns: offered.data.turns,
-    });
-    return recorded.recorded === "Recorded"
-      ? reply.code(200).send({ turnsRecorded: recorded.turnsRecorded })
-      : reply.code(409).send({ action: "stop", reason: recorded.recorded });
-  });
-  app.post(workerPlaneRoutes[9], async (request, reply) => {
-    const writer = await workerRunWriter(service, request);
-    if (writer === undefined) return reply.code(401).send({ action: "stop" });
-    const offered = workerRunTotalsSchema.safeParse(request.body);
-    if (!offered.success) return reply.code(400).send({ action: "stop" });
-    const stored = await service.runEvidence.totals.record({
-      secret: writer.secret,
-      generation: writer.authority.generation,
-      totals: workerRunTotals(offered.data),
-    });
-    return stored === "Stored" || stored === "AlreadyStored"
-      ? reply.code(204).send()
-      : reply
-          .code(workerRunStatus(stored))
-          .send({ action: "stop", reason: stored });
-  });
-  app.post(workerPlaneRoutes[10], async (request, reply) => {
-    const writer = await workerRunWriter(service, request);
-    if (writer === undefined) return reply.code(401).send({ action: "stop" });
-    const offered = workerRunEndedSchema.safeParse(request.body);
-    if (!offered.success) return reply.code(400).send({ action: "stop" });
-    return (await service.runEvidence.endings.end({
-      secret: writer.secret,
-      generation: writer.authority.generation,
-      evidence: offered.data.evidence,
-    }))
-      ? reply.code(204).send()
-      : reply.code(409).send({ action: "stop" });
-  });
-}
-
-/**
- * The body a refused report is answered with, naming the roster member it was
- * refused for and the row that was reached where there is one. Both rosters are
- * closed, so what a worker may write into an error artifact is bounded.
- */
-function workerReportRefused(
-  reason: ManifestRejection | ArtifactFailure,
-  at: ArtifactSite | undefined,
-): {
-  readonly action: "stop";
-  readonly reason: ManifestRejection | ArtifactFailure;
-  readonly at?: ArtifactSite;
-} {
-  return at === undefined
-    ? { action: "stop", reason }
-    : { action: "stop", reason, at };
-}
-
-function workerReportRoute(
-  app: FastifyInstance,
-  service: WorkerPlaneServerService,
-): void {
-  app.post(workerPlaneRoutes[5], async (request, reply) => {
-    const secret = workerBearer(request);
-    if (secret === undefined) return reply.code(401).send({ action: "stop" });
-    const authority = await workerAuthority(service, request);
-    if (authority === undefined)
-      return reply.code(401).send({ action: "stop" });
-    if (
-      typeof request.body !== "string" ||
-      textCodePointsCount(request.body) > resultManifestTextCharsMax
-    )
-      return reply.code(400).send({ action: "stop" });
-    const ingested = await service.reports.report(secret, {
-      partition: authority.partition,
-      execution: authority.execution,
-      attempt: authority.attempt,
-      generation: authority.generation,
-      manifest: authority.manifest,
-      text: request.body,
-    });
-    switch (ingested.ingested) {
-      case "Terminalized":
-      case "Absorbed":
-        return reply.code(202).send({ action: "stop" });
-      case "Unavailable":
-        return reply
-          .header("retry-after", String(ingested.retryAfterSeconds))
-          .code(503)
-          .send({ action: "retry" });
-      case "Fenced":
-      case "Stale":
-      case "NotAdmitted":
-      case "Conflicting":
-        return reply.code(409).send({ action: "stop" });
-      case "Malformed":
-        return reply
-          .code(409)
-          .send(workerReportRefused(ingested.code, ingested.at));
-      case "Unconfirmed":
-        return reply
-          .code(409)
-          .send(workerReportRefused(ingested.failure, ingested.at));
-    }
-  });
+function sessionStoreEvents(content: Uint8Array): number {
+  let events = 0;
+  for (const byte of content) if (byte === 0x0a) events += 1;
+  return events;
 }
 
 /** How long a pod leaves a plane that could not reach the forge before asking again. */
@@ -699,27 +470,6 @@ function workerCredentialAnswered(
 }
 
 /**
- * The credential one attempt works under. It carries no body: the repository is
- * the one the attempt's own input bundle pinned and the permission set follows
- * from the kind of task the scheduler recorded, so there is nothing here for a
- * pod to name and nothing for it to widen.
- */
-function workerCredentialRoute(
-  app: FastifyInstance,
-  service: WorkerPlaneServerService,
-): void {
-  app.post(workerPlaneRoutes[11], async (request, reply) => {
-    const authority = await workerAuthority(service, request);
-    if (authority === undefined || !authority.live)
-      return reply.code(401).send({ action: "stop" });
-    const credentials = service.credentials;
-    return credentials === undefined
-      ? reply.code(404).send(workerCredentialNotConfigured)
-      : workerCredentialAnswered(reply, await credentials.attempt(authority));
-  });
-}
-
-/**
  * The credential one session reads its tree under. It names its repository,
  * because a site may have placed the session against a mirror of the binding
  * rather than the binding itself; the minting holds that name to the project's
@@ -730,7 +480,7 @@ function sessionCredentialRoute(
   service: WorkerPlaneServerService,
   sessions: SessionPlaneService,
 ): void {
-  app.post(workerPlaneRoutes[21], async (request, reply) => {
+  app.post(workerPlaneRoutes[11], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const offered = sessionCredentialSchema.safeParse(request.body);
@@ -909,7 +659,7 @@ function sessionFactsRoute(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.get(workerPlaneRoutes[12], async (request, reply) => {
+  app.get(workerPlaneRoutes[2], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const identity = caller.identity;
@@ -937,7 +687,7 @@ function sessionHeartbeatRoute(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.post(workerPlaneRoutes[13], async (request, reply) => {
+  app.post(workerPlaneRoutes[3], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     return (await sessions.heartbeats.heartbeat(
@@ -954,7 +704,7 @@ function sessionReferenceRoute(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.put(workerPlaneRoutes[14], async (request, reply) => {
+  app.put(workerPlaneRoutes[4], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const offered = sessionReferenceSchema.safeParse(request.body);
@@ -985,7 +735,7 @@ function sessionTurnRoute(
     Math.ceil((sessions.turnPollSecsMax * 1_000) / sessions.turnPollIntervalMs),
   );
   let waiting = 0;
-  app.get(workerPlaneRoutes[15], async (request, reply) => {
+  app.get(workerPlaneRoutes[5], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     if (waiting >= sessions.pollsMax) return reply.code(204).send();
@@ -1010,7 +760,7 @@ function sessionSettleRoutes(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.post(workerPlaneRoutes[16], async (request, reply) => {
+  app.post(workerPlaneRoutes[6], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const offered = sessionTurnAnswerSchema.safeParse(request.body);
@@ -1029,7 +779,7 @@ function sessionSettleRoutes(
       }),
     );
   });
-  app.post(workerPlaneRoutes[17], async (request, reply) => {
+  app.post(workerPlaneRoutes[7], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const offered = sessionTurnFailureSchema.safeParse(request.body);
@@ -1044,7 +794,7 @@ function sessionSettleRoutes(
       }),
     );
   });
-  app.post(workerPlaneRoutes[18], async (request, reply) => {
+  app.post(workerPlaneRoutes[8], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const held = await sessions.holds.hold(
@@ -1081,7 +831,7 @@ function sessionStoreWriteRoute(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.put(workerPlaneRoutes[20], async (request, reply) => {
+  app.put(workerPlaneRoutes[10], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     if (!(request.body instanceof Uint8Array))
@@ -1116,7 +866,7 @@ function sessionStoreWriteRoute(
       batch,
       digest: createHash("sha256").update(request.body).digest("hex"),
       bytes: request.body.byteLength,
-      events: workerRunEvents(request.body),
+      events: sessionStoreEvents(request.body),
     });
     if (recorded === "Stored" || recorded === "AlreadyStored")
       return reply.code(204).send();
@@ -1140,7 +890,7 @@ function sessionStoreReadRoute(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.get(workerPlaneRoutes[20], async (request, reply) => {
+  app.get(workerPlaneRoutes[10], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const segments = sessionStoreSegments(request);
@@ -1217,7 +967,7 @@ function sessionStoreStreamsRoute(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.get(workerPlaneRoutes[19], async (request, reply) => {
+  app.get(workerPlaneRoutes[9], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const asked = (request.query as Record<string, unknown>)["stream"];
@@ -1263,7 +1013,7 @@ function sessionBoundsChecked(sessions: SessionPlaneService): void {
 export function createWorkerPlaneApp(
   service: WorkerPlaneServerService,
 ): FastifyInstance {
-  const app = fastify({ logger: false, bodyLimit: service.uploadBytesMax });
+  const app = fastify({ logger: false });
   app.addContentTypeParser(
     "application/octet-stream",
     { parseAs: "buffer" },
@@ -1272,14 +1022,7 @@ export function createWorkerPlaneApp(
     },
   );
   workerHealthRoutes(app, service);
-  workerInputRoute(app, service);
-  workerHeartbeatRoute(app, service);
-  workerUploadRoute(app, service);
-  workerReportRoute(app, service);
-  workerRunConfigurationRoute(app, service);
-  workerRunTranscriptRoute(app, service);
-  workerRunFigureRoutes(app, service);
-  workerCredentialRoute(app, service);
+  ticketExecutionRoutes(app, service);
   const sessions = service.sessions;
   if (sessions !== undefined) {
     sessionBoundsChecked(sessions);
@@ -1295,3 +1038,5 @@ export function createWorkerPlaneApp(
   }
   return app;
 }
+import { createHash } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";

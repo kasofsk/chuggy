@@ -1,19 +1,7 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { test } from "node:test";
 
-const execute = promisify(execFile);
-
-async function evaluated(program: string): Promise<string> {
-  return (
-    await execute(
-      process.execPath,
-      ["--experimental-strip-types", "--input-type=module", "--eval", program],
-      { cwd: process.cwd() },
-    )
-  ).stdout;
-}
+import { evaluatedModule as evaluated } from "./harness.ts";
 
 const environment = {
   CHUG_BIND_REPOSITORY_TENANT: "tenant",

@@ -63,8 +63,8 @@ import type {
 } from "./agentSession.ts";
 import type {
   AttemptPlacementOutcome,
-  ExecutionProfile,
-} from "./executionScheduler.ts";
+  SessionExecutionProfile,
+} from "./workloadPlacement.ts";
 import type { RepositoryId } from "./finalizer.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import type { PlacementId } from "./schedulerIdentity.ts";
@@ -90,7 +90,7 @@ export interface SessionPlacement extends FencedSessionAttempt {
   readonly capabilities: readonly SessionCapability[];
   readonly credentialSlot: string;
   readonly agentReference?: string;
-  readonly profile: ExecutionProfile;
+  readonly profile: SessionExecutionProfile;
   readonly image: string;
   readonly authority: PolicyAuthorityGrant;
   readonly bearer: SessionBearer;
@@ -136,7 +136,7 @@ export type RepositoryMirrors = Readonly<Record<string, RepositoryId>>;
 
 /** What a site resolves for every session it runs: one image, one profile, one grant, one set of mirrors. */
 export interface SessionPolicy {
-  readonly profile: ExecutionProfile;
+  readonly profile: SessionExecutionProfile;
   readonly image: string;
   readonly grant: PolicyAuthorityGrant;
   readonly mirrors: RepositoryMirrors;

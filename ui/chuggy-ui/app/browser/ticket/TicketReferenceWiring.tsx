@@ -21,32 +21,28 @@ import { useMemo } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import {
-  ticketFilterAll,
-  ticketFilterList,
-} from "../../core/projectTableFilters.ts";
-import { usePanelList } from "../api.ts";
-import { ticketRowsRead } from "../ProjectTable.tsx";
+import { adoptedTickets } from "../../core/adoptedTickets.ts";
+import { usePanelResource } from "../api.ts";
 import { TicketReferenceProvider } from "../ui/ticketReferenceHeld.tsx";
 import type { TicketReferenceFacts } from "../ui/ticketReferenceHeld.tsx";
-import { useQueryClient } from "@tanstack/react-query";
 
 export function TicketReferenceWiring(props: {
   readonly partition: PartitionIdentity;
   readonly children: ReactNode;
 }): ReactNode {
   const partition = props.partition;
-  const client = useQueryClient();
   const navigate = useNavigate();
-  const state = usePanelList(
-    ticketFilterList(partition, ticketFilterAll),
-    (ports) => ticketRowsRead(client, ports, partition, ticketFilterAll),
+  const state = usePanelResource(
+    partition,
+    "Ticket",
+    "adopted-tickets",
+    (ports) => adoptedTickets(ports, partition),
   );
   const known = useMemo(() => {
     const byNumber = new Map<number, TicketReferenceFacts>();
     if (state.state === "Ready")
       for (const row of state.value.tickets)
-        byNumber.set(row.ticket, { title: row.title, phase: row.phase });
+        byNumber.set(row.ticket, { title: undefined, state: row.state });
     return byNumber;
   }, [state]);
   const held = useMemo(

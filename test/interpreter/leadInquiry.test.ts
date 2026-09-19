@@ -34,6 +34,8 @@ import {
 } from "../../src/interpreter/leadInquiry.ts";
 import {
   nativeWeb,
+  type NativeLeadPorts,
+  type NativeThreadPorts,
   type ProjectAccess,
 } from "../../src/interpreter/nativeWeb.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
@@ -47,7 +49,6 @@ import {
   asAuthorityKind,
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
-import { unaskedNativeWebPorts } from "./nativeWebFixtures.ts";
 
 const partition: Partition = {
   tenant: asTenantId("vteng"),
@@ -124,17 +125,9 @@ function storeAnswering(
 function webOver(store: LeadInquiryStore, access: ProjectAccess) {
   return nativeWeb(
     access,
-    ...unaskedNativeWebPorts,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
+    { projects: () => Promise.resolve({ projects: [] }) },
+    {} as NativeLeadPorts,
+    {} as NativeThreadPorts,
     store,
   );
 }

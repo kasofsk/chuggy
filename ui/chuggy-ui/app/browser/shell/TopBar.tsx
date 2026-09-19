@@ -13,14 +13,12 @@ import { Separator } from "radix-ui";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import { inboxCountLabel } from "../../core/inboxList.ts";
 import { shellNav } from "../../core/shellNav.ts";
 import type { NavEntry } from "../../core/shellNav.ts";
 import { sessionStateTone } from "../../core/tones.ts";
 import type { Tone } from "../../core/tones.ts";
 import { chatPaneRestored } from "../../core/chatPane.ts";
 import { Footer } from "../Footer.tsx";
-import { useInboxRows } from "../Inbox.tsx";
 import { useLead } from "../LeadPage.tsx";
 import { useSessionHolder } from "../session.tsx";
 import { Button } from "../ui/Button.tsx";
@@ -87,14 +85,12 @@ function TopBarNav(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const lead = useLead(props.partition);
-  const inbox = useInboxRows(props.partition);
   const entries = shellNav({
     partition: props.partition,
     leadStanding:
       lead.state === "Ready"
         ? { word: lead.value.state, tone: sessionStateTone(lead.value.state) }
         : undefined,
-    inboxCount: inboxCountLabel(inbox.union),
   });
   return (
     <nav aria-label="Console" className="min-w-0">

@@ -4,12 +4,12 @@
  *
  * A PREREQUISITE IS NOT A MISCONFIGURATION, and they leave with different
  * statuses. A configuration this cannot parse is a mistake somebody has to fix;
- * a git, a scratch, an artifact root, a credential, a schema, a role or an
- * epoch that is not there is a could-not-run, named by the precondition it
- * failed. Neither is ever reported as readiness.
+ * a git, a scratch, a credential, a schema or a role that is not there is a
+ * could-not-run, named by the precondition it failed. Neither is ever reported
+ * as readiness.
  *
  * THE LOCAL PREREQUISITES ARE CHECKED BEFORE ANYTHING DURABLE IS OPENED, so a
- * deployment missing its git, its storage or its credentials says which without
+ * deployment missing its git or credentials says which without
  * a database to ask. The signal handlers go on once there is something for them
  * to shut down, and until then the default disposition is the bounded one.
  *

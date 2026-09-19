@@ -37,17 +37,13 @@
  * the roster a lead is opened with rather than written beside it, and the
  * runtime built-ins it also carries are held to the image's own.
  *
- * DERIVED WORK ONLY IS THE LEAD'S RULE, AND THE MODEL IS WHY. `DraftAuthor`
- * carries no bare create: a dependent is filed against a parent that already
- * exists, and a roster holding only it cannot originate work. `create_draft` is
+ * ORIGINATION IS SEPARATE FROM AUTHORING. `DraftAuthor` updates and operates
+ * existing adopted tickets but carries no bare create. `create_ticket` is
  * admitted by `DraftOriginate` alone — a capability a thread is opened with
  * (`./thread.ts`'s `threadCapabilitiesDefault`) and a lead is not — so the rule
  * is a fact about which capability admits which tool rather than a sentence in
  * a description. Which capabilities any one session is opened with is the
- * provisioning root's, and nothing here can state it. No capability admits a
- * tool that re-authors a released ticket — merge, split, supersede, re-point a
- * dependency — because a released ticket's dependencies are immutable in
- * `model/domain.qnt`, which names re-authoring machinery as deliberately absent.
+ * provisioning root's.
  */
 
 import {
@@ -56,7 +52,10 @@ import {
   textCodePointsCount,
 } from "../contract/http.ts";
 import type { SessionCapability } from "./agentSession.ts";
-import type { SelectorResolvedSettings } from "./selector.ts";
+export interface LeadToolSettings {
+  readonly basePrompt: string;
+  readonly northStar?: string;
+}
 
 /** The one MCP server every session is given, and the prefix its tool names carry. */
 export const chuggyToolServerName = "chuggy";
@@ -84,30 +83,19 @@ const chuggyToolRoster = {
   ProjectRead: [
     "list_tickets",
     "read_ticket",
-    "read_draft",
-    "list_drafts",
-    "list_configurations",
-    "read_configuration",
-    "read_decision_log",
-    "read_refusals",
-    "read_ticket_refusals",
     "read_projects",
     "read_lead",
     "read_lead_transcript",
-    "list_executions",
-    "read_execution",
-    "read_run_transcript",
     "read_operation",
     "list_threads",
     "read_thread",
     "read_thread_transcript",
   ],
   DraftAuthor: [
-    "initialize_draft",
-    "file_dependent",
-    "revise_draft",
-    "delete_draft",
-    "release_draft",
+    "update_ticket",
+    "dispatch_ticket",
+    "revoke_ticket",
+    "resume_ticket",
   ],
   /**
    * A member's own authorship, which no lead roster carries: a thread files the
@@ -115,15 +103,7 @@ const chuggyToolRoster = {
    * where the work came from. It is one tool and it is not in `DraftAuthor`,
    * for the reason `DraftAuthor` exists.
    */
-  DraftOriginate: ["create_draft"],
-  LeadDecision: [
-    "dispatch",
-    "refuse",
-    "lift",
-    "set_attention",
-    "set_handoff_note",
-    "set_planning_intent",
-  ],
+  DraftOriginate: ["create_ticket"],
 } as const satisfies Readonly<Record<SessionCapability, readonly string[]>>;
 
 /**
@@ -134,7 +114,6 @@ export const allChuggyTools = [
   ...chuggyToolRoster.ProjectRead,
   ...chuggyToolRoster.DraftAuthor,
   ...chuggyToolRoster.DraftOriginate,
-  ...chuggyToolRoster.LeadDecision,
 ] as const;
 export type ChuggyTool = (typeof allChuggyTools)[number];
 
@@ -172,7 +151,6 @@ export const leadSessionCapabilities = [
   "RepositoryRead",
   "ProjectRead",
   "DraftAuthor",
-  "LeadDecision",
 ] as const satisfies readonly SessionCapability[];
 
 /**
@@ -192,55 +170,19 @@ export const leadToolAllowlist: readonly string[] = [
   ...chuggyToolNames(leadSessionCapabilities),
 ];
 
-/**
- * The relation a filed dependent may carry, and the one it may not. A follow-up
- * points from the new draft to the existing ticket and changes nothing already
- * released; a prerequisite points the other way, which would re-author a
- * released ticket's dependencies, so it is admitted by the schema only so that
- * its refusal can name the reason.
- */
-export const allDependentRelations = ["FollowUp", "Prerequisite"] as const;
-export type DependentRelation = (typeof allDependentRelations)[number];
-export const dependentRelationsAdmitted = ["FollowUp"] as const;
-
-/** The relations the schema names so that their refusal can name the reason. */
-export const dependentRelationsRefused: readonly DependentRelation[] =
-  allDependentRelations.filter(
-    (relation) =>
-      !(dependentRelationsAdmitted as readonly DependentRelation[]).includes(
-        relation,
-      ),
-  );
-
-/** One list of relations as a sentence holds them. */
-function relationsSaid(relations: readonly DependentRelation[]): string {
-  return relations.map((relation) => `\`${relation}\``).join(" and ");
-}
-
-/**
- * What a lead is told about its own tools, beside what the project tells it.
- * Which relation `file_dependent` admits is read off the roster rather than
- * written again here, so the prompt cannot say the opposite of the schema.
- */
+/** What a lead is told about its own tools, beside what the project tells it. */
 const leadStandingInstructions = `# How you act on this project
 
 - Two channels. A project tool is a command any member of this project has: it
   goes over the API under this project's membership and is recorded as yours.
   A decision tool writes nothing — it composes this turn's answer, and the
   selector runtime is what dispatches, refuses and lifts, under its own fence.
-- Derived work only. \`file_dependent\` files a draft against a parent ticket
-  that already exists; there is no bare create. It admits ${relationsSaid(
-    dependentRelationsAdmitted,
-  )} and refuses ${relationsSaid(dependentRelationsRefused)}. Its brief carries
-  a title of one short line naming the work, which is what tickets are listed
-  by.
-- A released ticket cannot be re-authored. A follow-up points from the new
-  draft at the ticket it derives from and rewrites nothing; a prerequisite
-  would point from an existing ticket at the new one, which rewrites
-  dependencies that are immutable once released. A prerequisite of a draft is
-  a revision of that draft's own dependencies.
-- \`release_draft\` answers an accepted operation rather than an outcome. Read
-  the operation to learn what happened.`;
+- You cannot originate a ticket. Use \`list_tickets\` and \`read_ticket\` to
+  inspect the adopted ticket graph. Use \`update_ticket\` only to revise an
+  existing ticket, with its current revision.
+- \`dispatch_ticket\`, \`revoke_ticket\`, \`resume_ticket\`, and \`update_ticket\`
+  answer an accepted operation rather than an outcome. Use \`read_operation\`
+  to learn whether the ticket machine decided or refused it.`;
 
 /** The objectives themselves, before the bound they are checked against is known. */
 function leadObjectives(
@@ -271,9 +213,7 @@ export { sessionSystemPromptCharsMax };
  * is checked here rather than by the row, so text no project could have set is
  * refused where the prompt is composed.
  */
-export function leadSystemPrompt(
-  settings: Pick<SelectorResolvedSettings, "basePrompt" | "northStar">,
-): string {
+export function leadSystemPrompt(settings: LeadToolSettings): string {
   const prompt = leadObjectives(settings.basePrompt, settings.northStar);
   if (textCodePointsCount(prompt) > sessionSystemPromptCharsMax)
     throw new RangeError(

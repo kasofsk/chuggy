@@ -1,93 +1,44 @@
+import {
+  composeFinalizerService,
+  composeTicketMachineRuntime,
+  type FinalizerServiceRuntime,
+} from "../compose.ts";
+import { runtimePair } from "../interpreter/runtimePair.ts";
+import { ticketMachineRunOnce } from "../interpreter/ticketMachineRun.ts";
 import type {
   ClusterId,
   SchedulerOwnerId,
-} from "../interpreter/executionScheduler.ts";
-import { executionSchedulerPass } from "../interpreter/executionSchedulerRun.ts";
-import type { ExecutionSchedulerService } from "../interpreter/executionSchedulerRun.ts";
+} from "../interpreter/schedulerIdentity.ts";
 import type { FinalizerOwnerId } from "../interpreter/finalizer.ts";
 import {
-  finalizerPass,
-  type FinalizerService,
-} from "../interpreter/finalizerRun.ts";
-import type { ProjectAccessSettings } from "../interpreter/projectAccess.ts";
+  ticketFinalizerPass,
+  type TicketFinalizerService,
+} from "../interpreter/ticketFinalizer.ts";
 import type { Partition, RecoveryEpoch } from "../interpreter/projectStore.ts";
 import {
   sessionSchedulerPass,
   type SessionSchedulerService,
 } from "../interpreter/sessionSchedulerRun.ts";
-import {
-  threadWakePass,
-  type ThreadWakeService,
-} from "../interpreter/threadWake.ts";
 import type {
   RuntimePrecondition,
   ServiceRuntime,
   ServiceRuntimeConfig,
 } from "../interpreter/serviceRuntime.ts";
 import { serviceRuntime } from "../interpreter/serviceRuntime.ts";
-import {
-  ticketServiceRunOnce,
-  type TicketServiceRuntimeConfig,
-  type TicketServiceRuntimeService,
-} from "../interpreter/ticketServiceRun.ts";
-import type {
-  SelectorLeadRuntime,
-  SelectorRuntimeService,
-} from "../compose.ts";
-import {
-  composeFinalizerService,
-  composeForgeRepositoryMinting,
-  composeSelectorRuntime,
-  composeTicketServiceCredentials,
-  type FinalizerServiceRuntime,
-} from "../compose.ts";
-import {
-  githubInstallationTokensOptions,
-  githubInstallationTokensPrecondition,
-} from "../adapters/forge/githubInstallationTokens.ts";
-import type { ForgeAppKey } from "../interpreter/forgeInstallation.ts";
-import { ketoProjectAccess } from "../adapters/keto/projectAccess.ts";
 import { systemPacing } from "../adapters/runtime/systemPacing.ts";
 import type pg from "pg";
 import {
   postgresPool,
   type PostgresLimits,
 } from "../adapters/postgres/pool.ts";
-import { postgresLeadDoorsRefused } from "../adapters/postgres/leadMailbox.ts";
-import { postgresProjectDecision } from "../adapters/postgres/projectDecision.ts";
-import { postgresProjectDiscovery } from "../adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../adapters/postgres/projectStore.ts";
 import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
-import { postgresExecutionSourceHistory } from "../adapters/postgres/executionSourceHistory.ts";
-import { executionSourceObservation } from "../interpreter/executionSourceObservation.ts";
-import {
-  credentialFilesPrecondition,
-  type CredentialFilesOptions,
-} from "../adapters/credentials/credentialFiles.ts";
-import {
-  gitPromotion,
-  type GitPromotionOptions,
-} from "../adapters/git/gitPromotion.ts";
-import {
-  gitAvailablePrecondition,
-  gitScratchWritablePrecondition,
-} from "../adapters/git/gitPrerequisites.ts";
-import { postgresExecutionScheduler } from "../adapters/postgres/scheduler.ts";
 import { postgresSessionScheduler } from "../adapters/postgres/sessionScheduler.ts";
-import { postgresThreadWakes } from "../adapters/postgres/thread.ts";
-import {
-  postgresPriorEvaluationReports,
-  postgresPriorWorkReports,
-} from "../adapters/postgres/evaluationReports.ts";
-import { postgresTicketBrief } from "../adapters/postgres/ticketBrief.ts";
-import { postgresPinnedConfigurations } from "../adapters/postgres/pinnedConfigurations.ts";
 import {
   finalizerRole,
   schedulerRole,
-  selectorServiceRole,
   ticketServiceRole,
 } from "../adapters/postgres/schema.ts";
-import { postgresDomainConfigurationPrecondition } from "../adapters/postgres/domainConfiguration.ts";
 import { postgresWorkerCatalogPrecondition } from "../adapters/postgres/workerCatalog.ts";
 import type { AdmittedWorker } from "../interpreter/workerCatalog.ts";
 import {
@@ -95,20 +46,14 @@ import {
   postgresRuntimeSchema,
 } from "../adapters/postgres/runtimeSchema.ts";
 import {
-  journalLegalityPrecondition,
   runtimePreconditionAnswer,
   schemaCompatibilityPrecondition,
 } from "../interpreter/serviceRuntime.ts";
-import { postgresJournalLegality } from "../adapters/postgres/journal.ts";
-import type { Config } from "../domain/config.ts";
 import { asOwnerId } from "../interpreter/projectStore.ts";
-import type {
-  SelectorIdentityFactory,
-  SelectorRuntimeConfig,
-  SelectorRuntimeSource,
-} from "../interpreter/selectorRuntime.ts";
-import type { TicketServiceConfig } from "../interpreter/ticketService.ts";
-import type { FinalizerConfig } from "../interpreter/finalizer.ts";
+import {
+  ticketFinalizerDefaults,
+  type TicketFinalizerConfig,
+} from "../interpreter/ticketFinalizer.ts";
 
 /** The database preconditions shared by every control-plane process. */
 export function controlPlanePreconditions(
@@ -204,127 +149,16 @@ function processPreconditions(
   ];
 }
 
-/**
- * Drives the selector's own pass and the thread wake pass in ONE tick of ONE
- * pacing loop, the runtime STRICTLY FIRST: the runtime pass ends by appending
- * the change rows the wake pass exists to read, so a tick that started them
- * together would read the log before this tick's refusals were in it, and one
- * loop is the whole of the pacing because a second loop over the same cursor
- * would be a second writer to it. A change whose fan-out one pass cannot read
- * is the one arm in which a notice is dropped for good, so it reaches stderr
- * the way a contained ticket service fault does.
- */
-export function selectorProcess(
-  service: SelectorRuntimeService,
-  wakes: ThreadWakeService,
-  requirements: ControlPlaneRequirements,
-  config: ServiceRuntimeConfig,
-): ServiceRuntime {
-  return serviceRuntime(
-    {
-      run: async () => {
-        await service.runOnce();
-        const report = await threadWakePass(wakes);
-        if (report.truncatedAt !== undefined)
-          process.stderr.write(
-            `thread wakes: change ${String(report.truncatedAt)} wakes more threads than one pass reads, and the pass moved past it\n`,
-          );
-      },
-    },
-    systemPacing,
-    processPreconditions(requirements),
-    config,
-  );
-}
-
-/**
- * Drives both schedulers in one tick of one pacing loop, execution first: either
- * cleanup raises on a cluster answering `Unavailable` to a cancel and
- * `../interpreter/serviceRuntime.ts` ends the loop on a raise out of `run`, so
- * the order decides only which half has finished its pass when the other stops
- * the tick, and this slice's newest infrastructure does not get to deny the
- * proved execution machine a dispatch on its way out.
- */
-export function schedulerProcess(
-  service: ExecutionSchedulerService,
-  sessions: SessionSchedulerService,
-  identity: {
-    readonly owner: SchedulerOwnerId;
-    readonly recoveryEpoch: RecoveryEpoch;
-    readonly cluster: ClusterId;
-  },
-  requirements: ControlPlaneRequirements,
-  config: ServiceRuntimeConfig,
-): ServiceRuntime {
-  return serviceRuntime(
-    {
-      run: async () => {
-        await executionSchedulerPass(
-          service,
-          identity.owner,
-          identity.recoveryEpoch,
-          identity.cluster,
-        );
-        await sessionSchedulerPass(sessions, identity.recoveryEpoch);
-      },
-    },
-    systemPacing,
-    processPreconditions(requirements),
-    config,
-  );
-}
-
-/**
- * Holds the discovery cursor and the diagnosis a contained failure would
- * otherwise leave nowhere. The pass contains a project it cannot activate, so
- * this is the only place an operator learns which one.
- */
-export function ticketServiceProcess(
-  service: TicketServiceRuntimeService,
-  runtimeConfig: TicketServiceRuntimeConfig,
-  requirements: ControlPlaneRequirements,
-  config: ServiceRuntimeConfig,
-): ServiceRuntime {
-  let resumeAfter: Partition | undefined = undefined;
-  return serviceRuntime(
-    {
-      run: async () => {
-        const report = await ticketServiceRunOnce(
-          service,
-          runtimeConfig,
-          resumeAfter,
-        );
-        resumeAfter = report.resumeAfter;
-        for (const failure of report.failures) {
-          process.stderr.write(
-            `ticket service: ${failure.partition.tenant}/${failure.partition.project} ${failure.reason}: ${failure.message}\n`,
-          );
-        }
-      },
-    },
-    systemPacing,
-    processPreconditions(requirements),
-    config,
-  );
-}
-
 export function finalizerProcess(
-  service: FinalizerService,
-  identity: {
-    readonly owner: FinalizerOwnerId;
-    readonly recoveryEpoch: RecoveryEpoch;
-  },
+  service: TicketFinalizerService,
+  requestsPerPassMax: number,
   requirements: ControlPlaneRequirements,
   config: ServiceRuntimeConfig,
 ): ServiceRuntime {
   return serviceRuntime(
     {
       run: async () =>
-        void (await finalizerPass(
-          service,
-          identity.owner,
-          identity.recoveryEpoch,
-        )),
+        void (await ticketFinalizerPass(service, requestsPerPassMax)),
     },
     systemPacing,
     processPreconditions(requirements),
@@ -332,110 +166,16 @@ export function finalizerProcess(
   );
 }
 
-export interface SelectorProcessRootConfig {
-  readonly database: ProcessDatabaseConfig;
-  readonly runtime: ServiceRuntimeConfig;
-  readonly selector?: SelectorRuntimeConfig;
-  /**
-   * The wake pass's bound. It is required rather than defaulted here, because a
-   * root that supplied its own default would be a second place the default
-   * lives and an arm in which a deployment's bound is not the bound that runs.
-   */
-  readonly wakes: { readonly wakesPerPassMax: number };
-  /**
-   * Where the project authority is. The wake pass asks it whether a thread's
-   * principal may still read the project, which no row in this database says.
-   */
-  readonly access: ProjectAccessSettings;
-}
-
-/**
- * Owns the selector-role pool and composes the independently deployable
- * selector process, the lead host included: every door a decision opens is on
- * this pool, so the host is built where the pool is.
- */
-export function selectorProcessRoot(
-  config: SelectorProcessRootConfig,
-  source: SelectorRuntimeSource,
-  lead: SelectorLeadRuntime,
-  identities: SelectorIdentityFactory,
-  additional: readonly RuntimePrecondition[] = [],
-): ServiceRuntime {
-  const pool = processPool(config.database);
-  const service = composeSelectorRuntime(
-    pool,
-    source,
-    lead,
-    identities,
-    config.selector,
-  );
-  return ownedProcess(
-    pool,
-    selectorProcess(
-      service,
-      {
-        store: postgresThreadWakes(pool),
-        access: ketoProjectAccess(config.access),
-        clock: { nowIso: () => new Date().toISOString() },
-        wakesPerPassMax: config.wakes.wakesPerPassMax,
-      },
-      { pool, additional: selectorProcessPreconditions(pool, additional) },
-      config.runtime,
-    ),
-  );
-}
-
-/**
- * What the selector process must be able to do before it takes a decision: it
- * must be the role it claims, and it must hold every door a decision opens.
- */
-export function selectorProcessPreconditions(
-  pool: pg.Pool,
-  additional: readonly RuntimePrecondition[] = [],
-): readonly RuntimePrecondition[] {
-  return [
-    postgresRolePrecondition(pool, selectorServiceRole),
-    leadMailboxPrivilegePrecondition(pool),
-    ...additional,
-  ];
-}
-
-/**
- * Whether this process may open the doors a decision needs. A readiness check
- * asked a host whether it felt able to answer; a privilege check asks the
- * database whether this role is allowed to ask at all, which is the thing that
- * silently fails on a migration that granted one door and not the next.
- */
-function leadMailboxPrivilegePrecondition(pool: pg.Pool): RuntimePrecondition {
-  return {
-    name: "selector-lead-doors",
-    check: async (signal) => {
-      signal.throwIfAborted();
-      const refused = await postgresLeadDoorsRefused(pool);
-      signal.throwIfAborted();
-      return runtimePreconditionAnswer(
-        refused.length === 0,
-        `this role may not execute ${refused.join(", ")}`,
-      );
-    },
-  };
-}
-
 export interface TicketServiceProcessRootConfig {
   readonly database: ProcessDatabaseConfig;
   readonly runtime: ServiceRuntimeConfig;
-  readonly pass: TicketServiceRuntimeConfig;
-  readonly domain: Config;
+  readonly pass: {
+    readonly projectsPerPassMax: number;
+    readonly projectLeaseSeconds: number;
+    readonly inputsPerProjectMax?: number;
+    readonly obligationsPerProjectMax?: number;
+  };
   readonly owner: string;
-  readonly ticket?: TicketServiceConfig;
-  readonly source: Omit<GitPromotionOptions, "credentials"> &
-    CredentialFilesOptions;
-  /**
-   * The App key this deployment observes a source through, when it holds one.
-   * A deployment naming neither a key nor a credential file could observe
-   * nothing, which its configuration is what refuses.
-   */
-  readonly forge?: ForgeAppKey;
 }
 
 /** Owns the writer-role pool and composes the independently deployable ticket service. */
@@ -443,54 +183,37 @@ export function ticketServiceProcessRoot(
   config: TicketServiceProcessRootConfig,
 ): ServiceRuntime {
   const pool = processPool(config.database);
-  const credentials = composeTicketServiceCredentials(
-    config.source,
-    composeForgeRepositoryMinting(pool, config.forge),
-  );
-  const git = gitPromotion({ ...config.source, credentials });
-  const service: TicketServiceRuntimeService = {
-    domain: config.domain,
-    discovery: postgresProjectDiscovery(pool),
-    decisions: postgresProjectDecision(pool),
-    projects: postgresProjectStore(pool),
-    owner: asOwnerId(config.owner),
-    monotonicNow: () => performance.now(),
-    executionSources: executionSourceObservation(
-      postgresProjectRepositoryBinding(pool),
-      git,
-      postgresExecutionSourceHistory(pool),
-    ),
-    ticketBriefs: postgresTicketBrief(pool),
-    ...(config.ticket === undefined ? {} : { ticketConfig: config.ticket }),
-  };
-  return ownedProcess(
-    pool,
-    ticketServiceProcess(
-      service,
-      config.pass,
-      {
-        pool,
-        additional: [
-          postgresRolePrecondition(pool, ticketServiceRole),
-          postgresDomainConfigurationPrecondition(pool, config.domain),
-          journalLegalityPrecondition(
-            postgresJournalLegality(pool, config.domain),
-          ),
-          gitAvailablePrecondition(config.source.environment),
-          gitScratchWritablePrecondition(config.source.scratchDirectory),
-          credentialFilesPrecondition(config.source),
-          ...(config.forge === undefined
-            ? []
-            : [
-                githubInstallationTokensPrecondition(
-                  githubInstallationTokensOptions(config.forge),
-                ),
-              ]),
-        ],
+  const service = composeTicketMachineRuntime(pool, asOwnerId(config.owner));
+  let after: Partition | undefined;
+  const runtime = serviceRuntime(
+    {
+      run: async () => {
+        const report = await ticketMachineRunOnce(
+          service,
+          {
+            projectsPerPassMax: config.pass.projectsPerPassMax,
+            inputsPerProjectMax: config.pass.inputsPerProjectMax ?? 32,
+            obligationsPerProjectMax:
+              config.pass.obligationsPerProjectMax ?? 1000,
+            leaseSeconds: config.pass.projectLeaseSeconds,
+          },
+          after,
+        );
+        after = report.resumeAfter;
+        for (const failure of report.failures)
+          process.stderr.write(
+            `ticket service: ${failure.partition.tenant}/${failure.partition.project}: ${failure.message}\n`,
+          );
       },
-      config.runtime,
-    ),
+    },
+    systemPacing,
+    processPreconditions({
+      pool,
+      additional: [postgresRolePrecondition(pool, ticketServiceRole)],
+    }),
+    config.runtime,
   );
+  return ownedProcess(pool, runtime);
 }
 
 export interface SchedulerProcessRootConfig {
@@ -501,36 +224,14 @@ export interface SchedulerProcessRootConfig {
     readonly recoveryEpoch: RecoveryEpoch;
     readonly cluster: ClusterId;
   };
-  readonly service: Omit<
-    ExecutionSchedulerService,
-    | "store"
-    | "configurations"
-    | "priorWorkReports"
-    | "priorEvaluationReports"
-    | "ticketBriefs"
-  >;
   /**
    * The session half of the same process; its own store and its binding read
    * come from the same pool, so a deployment names neither.
    */
+  readonly tickets: (pool: pg.Pool) => { run(): Promise<void> };
   readonly sessions: Omit<SessionSchedulerService, "store" | "bindings">;
   readonly workerCatalog: readonly AdmittedWorker[];
   readonly additional?: readonly RuntimePrecondition[];
-}
-
-/** Composes the scheduler service with the PostgreSQL ports its process owns. */
-export function schedulerProcessRootService(
-  pool: pg.Pool,
-  service: SchedulerProcessRootConfig["service"],
-): ExecutionSchedulerService {
-  return {
-    ...service,
-    store: postgresExecutionScheduler(pool),
-    configurations: postgresPinnedConfigurations(pool),
-    priorWorkReports: postgresPriorWorkReports(pool),
-    priorEvaluationReports: postgresPriorEvaluationReports(pool),
-    ticketBriefs: postgresTicketBrief(pool),
-  };
 }
 
 /**
@@ -556,25 +257,31 @@ export function schedulerProcessRoot(
   config: SchedulerProcessRootConfig,
 ): ServiceRuntime {
   const pool = processPool(config.database);
-  const service = schedulerProcessRootService(pool, config.service);
-  return ownedProcess(
+  const tickets = config.tickets(pool);
+  const sessions = schedulerProcessRootSessions(pool, config.sessions);
+  const checks = processPreconditions({
     pool,
-    schedulerProcess(
-      service,
-      schedulerProcessRootSessions(pool, config.sessions),
-      config.identity,
+    additional: [
+      postgresRolePrecondition(pool, schedulerRole),
+      recoveryEpochPrecondition(pool, config.identity.recoveryEpoch),
+      postgresWorkerCatalogPrecondition(pool, config.workerCatalog),
+      ...(config.additional ?? []),
+    ],
+  });
+  const runtime = runtimePair(
+    serviceRuntime(tickets, systemPacing, checks, config.runtime),
+    serviceRuntime(
       {
-        pool,
-        additional: [
-          postgresRolePrecondition(pool, schedulerRole),
-          recoveryEpochPrecondition(pool, config.identity.recoveryEpoch),
-          postgresWorkerCatalogPrecondition(pool, config.workerCatalog),
-          ...(config.additional ?? []),
-        ],
+        run: async () => {
+          await sessionSchedulerPass(sessions, config.identity.recoveryEpoch);
+        },
       },
+      systemPacing,
+      [],
       config.runtime,
     ),
   );
+  return ownedProcess(pool, runtime);
 }
 
 export interface FinalizerProcessRootConfig {
@@ -591,7 +298,7 @@ export interface FinalizerProcessRootConfig {
    * limit to hold this role under.
    */
   readonly service: (pool: pg.Pool) => FinalizerServiceRuntime;
-  readonly finalizer?: FinalizerConfig;
+  readonly finalizer?: TicketFinalizerConfig;
 }
 
 /** Owns the finalizer-role pool while repository access remains an explicit port. */
@@ -602,13 +309,16 @@ export function finalizerProcessRoot(
   const service = composeFinalizerService(
     pool,
     config.service(pool),
+    config.identity.owner,
+    config.identity.recoveryEpoch,
     config.finalizer,
   );
   return ownedProcess(
     pool,
     finalizerProcess(
       service,
-      config.identity,
+      config.finalizer?.requestsPerPassMax ??
+        ticketFinalizerDefaults.requestsPerPassMax,
       {
         pool,
         additional: [

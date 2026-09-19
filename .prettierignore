@@ -39,3 +39,7 @@ model/
 .claude/
 package-lock.json
 ui/*/dist/
+
+src/adapters/catalog/schemas/workload.json
+src/adapters/catalog/schemas/evaluator.json
+src/adapters/catalog/schemas/evaluation-plan.json

@@ -22,7 +22,7 @@
  * reference resolves against a read rather than against this list.
  */
 
-import type { TicketResponse } from "../../../../src/contract/responses.ts";
+import type { AdoptedTicket } from "../../../../src/contract/adoptedTickets.ts";
 import {
   ticketReferenceSerialize,
   ticketReferenceSplit,
@@ -49,13 +49,13 @@ function conversationMentionLabel(ticket: number): string {
 /** One ticket as the list offers it: the number leads, because that is what a
  * reference is, and the title is what a member is searching by. */
 export function conversationMentionItem(
-  ticket: TicketResponse,
+  ticket: AdoptedTicket,
 ): ConversationMentionItem {
   return {
     id: String(ticket.ticket),
     type: conversationMentionKind,
     label: conversationMentionLabel(ticket.ticket),
-    description: ticket.title ?? ticket.phase,
+    description: ticket.state,
   };
 }
 

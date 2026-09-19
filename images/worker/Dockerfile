@@ -38,6 +38,10 @@ ARG CLAUDE_CODE_VERSION=2.1.258
 ARG CODEX_VERSION=0.151.0
 ARG AGENT_SDK_VERSION=0.3.258
 ARG ZOD_VERSION=4.4.3
+ARG AJV_VERSION=8.20.0
+ARG TREE_SITTER_WASMS_VERSION=0.10.0
+ARG PRISM_VERSION=1.30.0
+ARG WEB_TREE_SITTER_VERSION=0.27.0
 
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
     /etc/apt/sources.list.d/debian.sources \
@@ -47,11 +51,36 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
   && curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
     --location https://just.systems/install.sh \
     | bash -s -- --to /usr/local/bin \
-  && npm install --global \
+# ONE INSTALL, BECAUSE BOTH HALVES LAND IN THE SAME DIRECTORY. `npm root -g`
+# here is /usr/local/lib/node_modules, which is where `NODE_PATH` below points
+# and also what `npm install --prefix /usr/local/lib` writes to. A second
+# install into a directory npm treats as a project reconciles that directory
+# against its own dependency list, so it removed the agents the first install
+# had just put there. Installed together, npm reconciles once with every
+# package named, and the libraries the worker resolves through `NODE_PATH` sit
+# beside the executables the agents ship.
+#
+# THE AGENT IS NAMED TO --allow-scripts BECAUSE ITS BINARY IS WRITTEN BY ONE.
+# npm does not run a dependency's install script unless asked, and
+# `@anthropic-ai/claude-code` creates `claude` from its own postinstall -- so
+# without this the install exits clean, warns that the script was not covered,
+# and leaves no `claude` on PATH. The package is named rather than scripts
+# allowed wholesale: npm reports it as the only one here that has any.
+#
+# `claude --version` and `codex --version` below are what catch either failure,
+# and they catch it at build rather than at the first attempt that wants an
+# agent. Nothing checks @cursorless/tree-sitter-wasms the same way: it ships
+# wasm files and declares no entry point, so there is nothing to run and
+# `require.resolve` on it fails whether or not it is there.
+  && npm install --global --allow-scripts=@anthropic-ai/claude-code \
     "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     "@anthropic-ai/claude-agent-sdk@${AGENT_SDK_VERSION}" \
     "zod@${ZOD_VERSION}" \
     "@openai/codex@${CODEX_VERSION}" \
+    "ajv@${AJV_VERSION}" \
+    "@cursorless/tree-sitter-wasms@${TREE_SITTER_WASMS_VERSION}" \
+    "prismjs@${PRISM_VERSION}" \
+    "web-tree-sitter@${WEB_TREE_SITTER_VERSION}" \
   && claude --version \
   && codex --version \
   && psql --version \
@@ -60,37 +89,42 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
 
 ENV DISABLE_AUTOUPDATER=1 \
     CHUG_WORKER_WORKSPACE=/workspace \
+    CHUG_TICKET_WORKER_ENTRYPOINT=/usr/local/lib/chuggy/ticketWorker.ts \
     NODE_PATH=/usr/local/lib/node_modules \
     TMPDIR=/tmp
 
 COPY images/worker/entrypoint.mjs /usr/local/lib/chuggy/worker.mjs
-COPY images/worker/agent.mjs /usr/local/lib/chuggy/agent.mjs
-COPY images/worker/checks.mjs /usr/local/lib/chuggy/checks.mjs
+COPY src/roots/ticketWorker.ts /usr/local/lib/chuggy/ticketWorker.ts
+COPY src/adapters/runtime/ticketWorker.ts /usr/local/lib/adapters/runtime/ticketWorker.ts
+# What that file reaches outside its own directory, at the paths its relative
+# imports resolve to from /usr/local/lib/adapters/runtime/. The `RUN` below is
+# what catches a third: it imports the entrypoint, so a module the tree added
+# and this list did not fails the build rather than the first ticket.
+COPY src/contract/http.ts /usr/local/lib/contract/http.ts
+COPY src/interpreter/ticketExecutionRun.ts /usr/local/lib/interpreter/ticketExecutionRun.ts
+COPY src/adapters/runtime/comments.ts /usr/local/lib/adapters/runtime/comments.ts
+COPY src/adapters/runtime/commitHooks.ts /usr/local/lib/adapters/runtime/commitHooks.ts
 COPY images/worker/chuggyApi.mjs /usr/local/lib/chuggy/chuggyApi.mjs
 COPY images/worker/chuggyTools.mjs /usr/local/lib/chuggy/chuggyTools.mjs
-COPY images/worker/claude.mjs /usr/local/lib/chuggy/claude.mjs
-COPY images/worker/codex.mjs /usr/local/lib/chuggy/codex.mjs
-COPY images/worker/leadDecision.mjs /usr/local/lib/chuggy/leadDecision.mjs
+COPY images/worker/credentialScrub.mjs /usr/local/lib/chuggy/credentialScrub.mjs
 COPY images/worker/lease.mjs /usr/local/lib/chuggy/lease.mjs
 COPY images/worker/planeCredential.mjs /usr/local/lib/chuggy/planeCredential.mjs
-COPY images/worker/postgres.mjs /usr/local/lib/chuggy/postgres.mjs
 COPY images/worker/rateLimit.mjs /usr/local/lib/chuggy/rateLimit.mjs
 COPY images/worker/repository.mjs /usr/local/lib/chuggy/repository.mjs
-COPY images/worker/result.mjs /usr/local/lib/chuggy/result.mjs
-COPY images/worker/runEvidence.mjs /usr/local/lib/chuggy/runEvidence.mjs
 COPY images/worker/sdkProbe.mjs /usr/local/lib/chuggy/sdkProbe.mjs
 COPY images/worker/session.mjs /usr/local/lib/chuggy/session.mjs
 COPY images/worker/sessionCheckout.mjs /usr/local/lib/chuggy/sessionCheckout.mjs
 COPY images/worker/sessionMailbox.mjs /usr/local/lib/chuggy/sessionMailbox.mjs
 COPY images/worker/sessionStore.mjs /usr/local/lib/chuggy/sessionStore.mjs
 COPY images/worker/sessionTransport.mjs /usr/local/lib/chuggy/sessionTransport.mjs
-COPY images/worker/snapshot.mjs /usr/local/lib/chuggy/snapshot.mjs
-COPY images/worker/source.mjs /usr/local/lib/chuggy/source.mjs
 COPY images/worker/toolListing.mjs /usr/local/lib/chuggy/toolListing.mjs
 COPY images/worker/toolProbe.mjs /usr/local/lib/chuggy/toolProbe.mjs
 COPY images/worker/transcriptPage.mjs /usr/local/lib/chuggy/transcriptPage.mjs
 COPY images/worker/transport.mjs /usr/local/lib/chuggy/transport.mjs
 COPY --chmod=0555 images/worker/git-askpass.sh /usr/local/lib/chuggy/git-askpass.sh
+
+RUN node --experimental-strip-types -e \
+  "import('/usr/local/lib/chuggy/ticketWorker.ts')"
 
 # What the session mode needs, read off the image rather than off this file. The
 # import runs from the directory the scripts live in, because that is what

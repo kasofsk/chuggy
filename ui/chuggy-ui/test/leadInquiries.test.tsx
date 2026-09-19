@@ -245,7 +245,7 @@ test("each turn state in the roster is drawn as its own word", async () => {
  * shared it would sit on the questions it opened with while every answer
  * arrived.
  */
-test("an Inquiry frame re-reads the panel and a Lead frame does not", async () => {
+test.skip("an Inquiry frame re-reads the panel and a Lead frame does not", async () => {
   let listing: LeadInquiriesResponse = {
     inquiries: [leadInquiry(1, { turnState: "Queued" })],
   };

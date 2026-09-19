@@ -23,24 +23,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  agenticRefusalReasonCharsMax,
-  agenticRefusalsAnsweredMax,
   nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
-  selectorHandoffNoteBytesMax,
-  selectorHistoryLimitMax,
   sessionStorePageBatchesMax,
-  sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
   threadTurnsAnsweredMax,
 } from "../../src/contract/http.ts";
-import { briefLineCharsMax } from "../../src/contract/brief.ts";
 import { allSessionCapabilities } from "../../src/interpreter/agentSession.ts";
 import { inquiryCapabilities } from "../../src/interpreter/inquiry.ts";
 import {
   allChuggyTools,
-  allDependentRelations,
   chuggyToolCapabilities,
   chuggyToolNames,
   chuggyToolPagesMax,
@@ -48,17 +41,11 @@ import {
   chuggyToolResponseBytesMax,
   chuggyToolServerName,
   chuggyToolTimeoutMs,
-  dependentRelationsAdmitted,
   leadSessionCapabilities,
   leadToolAllowlist,
 } from "../../src/interpreter/leadTools.ts";
-import {
-  leadDispatchesMax,
-  leadRefusalsPerDecisionMax,
-} from "../../src/interpreter/selector.ts";
 import { threadCapabilitiesDefault } from "../../src/interpreter/thread.ts";
 import * as image from "../../images/worker/chuggyTools.mjs";
-import * as decision from "../../images/worker/leadDecision.mjs";
 import { leadRoster, threadRoster } from "./sessionRosterFixture.ts";
 
 /**
@@ -116,42 +103,19 @@ test("every bound the image copies is the contract's own value", () => {
       chuggyToolTimeoutMs: image.chuggyToolTimeoutMs,
       chuggyToolPagesMax: image.chuggyToolPagesMax,
       nativeHttpPageItemsMax: image.nativeHttpPageItemsMax,
-      selectorHistoryLimitMax: image.selectorHistoryLimitMax,
-      agenticRefusalsAnsweredMax: image.agenticRefusalsAnsweredMax,
       sessionStorePageBatchesMax: image.sessionStorePageBatchesMax,
       threadTurnsAnsweredMax: image.threadTurnsAnsweredMax,
-      chuggyBriefIntentLineCharsMax: image.chuggyBriefIntentLineCharsMax,
-      leadDispatchesMax: decision.leadDispatchesMax,
-      leadRefusalsPerDecisionMax: decision.leadRefusalsPerDecisionMax,
-      agenticRefusalReasonCharsMax: decision.agenticRefusalReasonCharsMax,
-      selectorHandoffNoteBytesMax: decision.selectorHandoffNoteBytesMax,
-      leadDecisionBytesMax: decision.leadDecisionBytesMax,
     },
     {
       chuggyToolResponseBytesMax,
       chuggyToolTimeoutMs,
       chuggyToolPagesMax,
       nativeHttpPageItemsMax,
-      selectorHistoryLimitMax,
-      agenticRefusalsAnsweredMax,
       sessionStorePageBatchesMax,
       threadTurnsAnsweredMax,
-      chuggyBriefIntentLineCharsMax: briefLineCharsMax,
-      leadDispatchesMax,
-      leadRefusalsPerDecisionMax,
-      agenticRefusalReasonCharsMax,
-      selectorHandoffNoteBytesMax,
-      leadDecisionBytesMax: sessionTurnResultCharsMax,
     },
   );
   assert.equal(chuggyToolResponseBytesMax, nativeHttpBodyBytesMax);
-});
-
-test("the relations the image offers and refuses are the roster's own", () => {
-  assert.deepEqual(image.allDependentRelations, [...allDependentRelations]);
-  assert.deepEqual(image.dependentRelationsAdmitted, [
-    ...dependentRelationsAdmitted,
-  ]);
 });
 
 test("the allowlist the installation seeds is the roster the image admits", () => {
@@ -195,7 +159,7 @@ test("either roster fits one measured turn's tool list", () => {
  * reachable inside the pod.
  */
 test("a thread's roster allows origination by name and a lead's disallows it by name", () => {
-  const originating = `${chuggyToolPrefix}create_draft`;
+  const originating = `${chuggyToolPrefix}create_ticket`;
   const thread = image.sessionAllowedTools([...threadRoster]);
   const lead = image.sessionAllowedTools([...leadRoster]);
 
@@ -234,10 +198,9 @@ test("a roster of reads disallows every tool that writes", () => {
   const { allowedTools, disallowedTools } = image.sessionAllowedTools([
     ...inquiryCapabilities,
   ]);
-  const writes = [
-    ...chuggyToolCapabilities.DraftAuthor,
-    ...chuggyToolCapabilities.LeadDecision,
-  ].map((tool) => `${chuggyToolPrefix}${tool}`);
+  const writes = chuggyToolCapabilities.DraftAuthor.map(
+    (tool) => `${chuggyToolPrefix}${tool}`,
+  );
 
   for (const name of writes) {
     assert.ok(disallowedTools.includes(name), `${name} is not disallowed`);
