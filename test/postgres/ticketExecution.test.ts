@@ -15,12 +15,12 @@ import * as task from "../../src/domain/chuggernaut/task.js";
 import * as ticket from "../../src/domain/chuggernaut/ticket.js";
 import {
   Driver,
-  PLAN,
   released,
   dispatch,
   work_obligation,
 } from "../chuggernaut/domain/testing.js";
 import type { TicketExecutionView } from "../../src/interpreter/ticketExecution.ts";
+import { obligationNeeding } from "./executionFixtures.ts";
 import {
   postgresHarnessOpen,
   postgresHarnessEpoch,
@@ -60,31 +60,6 @@ const workerView = {
 function obligation() {
   const driver = new Driver();
   driver.submit(new ticket.CreateTicket(released(1)));
-  driver.submit(dispatch(1));
-  return work_obligation(driver.graph, 1);
-}
-
-function obligationNeeding(capabilities: readonly string[]) {
-  const driver = new Driver();
-  const base = released(1);
-  driver.submit(
-    new ticket.CreateTicket(
-      new ticket.ReleasedTicket(
-        base.id,
-        base.content,
-        base.input_bindings,
-        base.dependencies,
-        new task.TaskDefinition(
-          base.work_configuration.workload,
-          base.work_configuration.inputs,
-          new task.ExecutionRequirements(capabilities),
-          base.work_configuration.result_contract,
-        ),
-        PLAN,
-        base.finalization_configuration,
-      ),
-    ),
-  );
   driver.submit(dispatch(1));
   return work_obligation(driver.graph, 1);
 }

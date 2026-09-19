@@ -1,0 +1,187 @@
+/**
+ * The registry a pool is known by and the durable side of every assignment it
+ * holds, both of them reachable without one line of the ticket machine.
+ *
+ * A POOL'S CREDENTIAL NEVER LANDS IN A ROW. Only its SHA-256 does, and it is
+ * looked up in `worker_pool` alone — a relation the plane that serves harnesses
+ * holds no privilege on. So a pool presenting its registration credential where
+ * an attempt bearer is expected matches no attempt, and the separation is the
+ * grant rather than a check any caller could forget.
+ *
+ * EVERY STATEMENT IS SCOPED TO THE POOL THAT ASKED. An assignment is the only
+ * handle a pool has, and each one is resolved together with the pool holding it
+ * and its project, so nothing a pool can say reaches another pool's work.
+ */
+import { sql } from "@ts-safeql/sql-tag";
+import { createHash } from "node:crypto";
+import type pg from "pg";
+
+import type { Partition } from "../../interpreter/projectStore.ts";
+import type {
+  WorkerPoolAssignments,
+  WorkerPoolIdentity,
+  WorkerPoolRegistry,
+} from "../../interpreter/workerPool.ts";
+import { postgresTransaction } from "./pool.ts";
+
+function workerPoolDigest(credential: string): string {
+  return createHash("sha256").update(credential).digest("hex");
+}
+
+/** Registration is a fresh registration every time, so a re-register rotates the credential. */
+async function workerPoolRegistered(
+  client: pg.PoolClient,
+  partition: Partition,
+  pool: string,
+  capabilities: readonly string[],
+  credential: string,
+): Promise<boolean> {
+  await client.query(sql`DELETE FROM worker_pool
+    WHERE tenant=${partition.tenant} AND project=${partition.project} AND pool=${pool}`);
+  const inserted =
+    await client.query(sql`INSERT INTO worker_pool(tenant,project,pool,capabilities,credential_digest)
+    SELECT ${partition.tenant},${partition.project},${pool},${[...capabilities]}::text[],${workerPoolDigest(credential)}
+    WHERE EXISTS(SELECT 1 FROM project p
+      WHERE p.tenant=${partition.tenant} AND p.project=${partition.project} AND p.lifecycle='Active')`);
+  return (inserted.rowCount ?? 0) === 1;
+}
+
+export function postgresWorkerPoolRegistry(pool: pg.Pool): WorkerPoolRegistry {
+  return {
+    register: (partition, named, capabilities, credential) =>
+      postgresTransaction(pool, (client) =>
+        workerPoolRegistered(
+          client,
+          partition,
+          named,
+          capabilities,
+          credential,
+        ),
+      ),
+    deregister: async (partition, named) => {
+      const deleted = await pool.query(sql`DELETE FROM worker_pool
+        WHERE tenant=${partition.tenant} AND project=${partition.project} AND pool=${named}`);
+      return (deleted.rowCount ?? 0) === 1;
+    },
+    authenticate: async (credential) => {
+      const found = await pool.query<{
+        tenant: string;
+        project: string;
+        pool: string;
+        capabilities: string[];
+      }>(sql`SELECT w.tenant,w.project,w.pool,w.capabilities FROM worker_pool w
+        WHERE w.credential_digest=${workerPoolDigest(credential)}
+          AND EXISTS(SELECT 1 FROM project p
+            WHERE p.tenant=w.tenant AND p.project=w.project
+              AND p.lifecycle='Active' AND p.ticket_model='Chuggernaut')`);
+      const row = found.rows[0];
+      return row === undefined
+        ? undefined
+        : {
+            partition: {
+              tenant: row.tenant,
+              project: row.project,
+            } as Partition,
+            pool: row.pool,
+            capabilities: row.capabilities,
+          };
+    },
+  };
+}
+
+/**
+ * One queued row taken for this pool, bound to the assignment it will be
+ * cancelled by and to the bearer its harness answers under. The epoch is read
+ * in the statement rather than carried by the caller: this process fences
+ * nothing, and a claim written under an epoch that has since moved is a claim
+ * the orchestrator would refuse the terminal of.
+ */
+async function workerPoolClaimed(
+  pool: pg.Pool,
+  identity: WorkerPoolIdentity,
+  leaseSecs: number,
+  assignment: string,
+  bearer: string,
+): Promise<{ view: unknown; capabilities: string[] } | undefined> {
+  const found = await pool.query<{
+    worker_view: unknown;
+    required_capabilities: string[];
+  }>(sql`UPDATE ticket_execution e SET
+      state='Running',attempt=e.attempt+1,claim_owner=${identity.pool},pool=${identity.pool},
+      assignment=${assignment},capability_digest=${workerPoolDigest(bearer)},pool_refusal=NULL,
+      claim_expires_at=now()+make_interval(secs=>${leaseSecs}::double precision),
+      recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)
+    WHERE (e.tenant,e.project,e.task_key) IN (
+      SELECT q.tenant,q.project,q.task_key FROM ticket_execution q
+      WHERE q.tenant=${identity.partition.tenant} AND q.project=${identity.partition.project}
+        AND (q.state='Queued' OR (q.state='Running' AND q.claim_expires_at<=now()))
+        AND q.available_at<=now() AND q.worker_view IS NOT NULL
+        AND q.required_capabilities <@ ${[...identity.capabilities]}::text[]
+        AND EXISTS(SELECT 1 FROM project p
+          WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active'
+            AND p.ticket_model='Chuggernaut')
+        ORDER BY q.available_at,q.task_key
+      LIMIT 1 FOR UPDATE SKIP LOCKED)
+    RETURNING e.worker_view,e.required_capabilities`);
+  const row = found.rows[0];
+  return row === undefined
+    ? undefined
+    : { view: row.worker_view, capabilities: row.required_capabilities };
+}
+
+export function postgresWorkerPoolAssignments(
+  pool: pg.Pool,
+): WorkerPoolAssignments {
+  return {
+    claim: async (identity, leaseSecs, assignment, bearer) => {
+      if (!Number.isSafeInteger(leaseSecs) || leaseSecs < 1)
+        throw new RangeError("invalid worker pool lease");
+      return workerPoolClaimed(pool, identity, leaseSecs, assignment, bearer);
+    },
+    renew: async (identity, assignment, leaseSecs) => {
+      if (!Number.isSafeInteger(leaseSecs) || leaseSecs < 1)
+        throw new RangeError("invalid worker pool lease");
+      const updated =
+        await pool.query(sql`UPDATE ticket_execution e SET claim_expires_at=now()+make_interval(secs=>${leaseSecs}::double precision)
+        WHERE e.tenant=${identity.partition.tenant} AND e.project=${identity.partition.project}
+          AND e.assignment=${assignment} AND e.pool=${identity.pool} AND e.state='Running'
+          AND e.claim_expires_at>now() AND e.pool_refusal IS NULL
+          AND e.recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)
+          AND EXISTS(SELECT 1 FROM project p
+            WHERE p.tenant=e.tenant AND p.project=e.project AND p.lifecycle='Active')`);
+      return (updated.rowCount ?? 0) === 1;
+    },
+    refuse: async (identity, assignment, evidence) => {
+      const updated =
+        await pool.query(sql`UPDATE ticket_execution e SET pool_refusal=${evidence}
+        WHERE e.tenant=${identity.partition.tenant} AND e.project=${identity.partition.project}
+          AND e.assignment=${assignment} AND e.pool=${identity.pool} AND e.state='Running'
+          AND e.claim_expires_at>now() AND e.pool_refusal IS NULL
+          AND e.recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`);
+      return (updated.rowCount ?? 0) === 1;
+    },
+    release: async (identity, assignment, retryAfterSecs) => {
+      if (!Number.isSafeInteger(retryAfterSecs) || retryAfterSecs < 1)
+        throw new RangeError("invalid worker pool retry interval");
+      const updated =
+        await pool.query(sql`UPDATE ticket_execution e SET state='Queued',
+          claim_owner=NULL,claim_expires_at=NULL,recovery_epoch=NULL,pool=NULL,assignment=NULL,
+          capability_digest=NULL,
+          available_at=now()+make_interval(secs=>${retryAfterSecs}::double precision)
+        WHERE e.tenant=${identity.partition.tenant} AND e.project=${identity.partition.project}
+          AND e.assignment=${assignment} AND e.pool=${identity.pool} AND e.state='Running'
+          AND e.claim_expires_at>now() AND e.pool_refusal IS NULL
+          AND e.recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`);
+      return (updated.rowCount ?? 0) === 1;
+    },
+    held: async (identity, assignment) => {
+      const found = await pool.query<{ held: number }>(sql`SELECT 1 AS held
+        FROM ticket_execution e
+        WHERE e.tenant=${identity.partition.tenant} AND e.project=${identity.partition.project}
+          AND e.assignment=${assignment} AND e.pool=${identity.pool} AND e.state='Running'
+          AND e.claim_expires_at>now()
+          AND e.recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`);
+      return found.rows.length === 1;
+    },
+  };
+}

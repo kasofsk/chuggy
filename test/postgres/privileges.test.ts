@@ -20,6 +20,7 @@ import {
   repositoryLandingReadFunction,
   repositoryLandingWriteFunction,
   repositoryRetirementWriteFunction,
+  poolPlaneRole,
   schedulerRole,
   selectorReviewRole,
   selectorServiceRole,
@@ -1226,4 +1227,95 @@ test("only the boundary owner may move the columns the doors write", async () =>
   for (const column of ["landing_mode", "retired_at"])
     assert.equal(await granted(boundaryOwnerRole, column), true, column);
   assert.equal(await granted(boundaryOwnerRole, "bound_at"), false);
+});
+
+/**
+ * The whole argument for a plane of its own is this pair of surfaces. The plane
+ * pools poll claims work and leases it and cannot write an outcome; the plane a
+ * harness reaches writes an outcome and cannot claim, and cannot read the
+ * relation a pool's credential is looked up in at all.
+ */
+test("the plane pools poll claims work and can write no outcome", async () => {
+  assert.deepEqual(
+    await harness.query(
+      `SELECT table_name, privilege_type,
+              string_agg(column_name, ',' ORDER BY column_name) AS columns
+         FROM information_schema.role_column_grants
+        WHERE grantee=$1 AND table_schema='public'
+          AND privilege_type <> 'SELECT'
+        GROUP BY table_name, privilege_type
+        ORDER BY table_name, privilege_type`,
+      [poolPlaneRole],
+    ),
+    [
+      {
+        table_name: "ticket_execution",
+        privilege_type: "UPDATE",
+        columns:
+          "assignment,attempt,available_at,capability_digest,claim_expires_at,claim_owner,pool,pool_refusal,recovery_epoch,state",
+      },
+    ],
+  );
+  const read = (await harness.query(
+    `SELECT table_name AS relation,
+            string_agg(column_name, ',' ORDER BY column_name) AS columns
+       FROM information_schema.role_column_grants
+      WHERE grantee=$1 AND table_schema='public' AND privilege_type='SELECT'
+      GROUP BY table_name ORDER BY table_name`,
+    [poolPlaneRole],
+  )) as readonly { relation: string; columns: string }[];
+  assert.deepEqual(
+    read.map((row) => row.relation),
+    ["project", "recovery_epoch", "ticket_execution", "worker_pool"],
+  );
+  assert.equal(
+    read.find((row) => row.relation === "ticket_execution")?.columns,
+    "assignment,attempt,available_at,claim_expires_at,claim_owner,pool,pool_refusal,recovery_epoch,required_capabilities,state,task_key,tenant,project,worker_view"
+      .split(",")
+      .sort()
+      .join(","),
+  );
+});
+
+test("the plane a harness reaches holds nothing on the relation a pool is registered in", async () => {
+  assert.equal(
+    await harness
+      .query(
+        `SELECT 1 AS granted FROM information_schema.role_table_grants
+        WHERE grantee=$1 AND table_name='worker_pool'`,
+        [workerPlaneRole],
+      )
+      .then((rows) => rows.length),
+    0,
+  );
+  assert.equal(
+    await harness
+      .query(
+        `SELECT 1 AS granted FROM information_schema.role_column_grants
+        WHERE grantee=$1 AND table_name='ticket_execution'
+          AND column_name='worker_outcome' AND privilege_type='UPDATE'`,
+        [poolPlaneRole],
+      )
+      .then((rows) => rows.length),
+    0,
+  );
+});
+
+test("the plane pools poll is non-login and non-escalating", async () => {
+  assert.deepEqual(
+    await harness.query(
+      `SELECT rolcanlogin, rolsuper, rolcreaterole, rolcreatedb, rolbypassrls
+       FROM pg_roles WHERE rolname=$1`,
+      [poolPlaneRole],
+    ),
+    [
+      {
+        rolcanlogin: false,
+        rolsuper: false,
+        rolcreaterole: false,
+        rolcreatedb: false,
+        rolbypassrls: false,
+      },
+    ],
+  );
 });
