@@ -108,7 +108,7 @@ whole_rig() {
 	mkdir -p "$DIR"
 	: > "$LOG"
 	printf 'super-secret' > "$DIR/secret.postgres-superuser.password"
-	for key in owner ticket-service api scheduler finalizer worker-plane; do
+	for key in owner ticket-service api scheduler finalizer worker-plane pool-plane; do
 		printf 'pw-%s' "$key" > "$DIR/secret.chuggy-postgres-credentials.$key-password"
 	done
 	# A password with the characters that would make a URL a different URL.
