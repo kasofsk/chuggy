@@ -84,6 +84,7 @@ test("catalog resolves adopted ticket structure and immutable execution configur
   const work = release.definition.work_configuration;
   assert.deepEqual(work.execution_requirements.required_capabilities, [
     "large",
+    "runner-codex",
   ]);
   const workload = blobs.get(work.workload)?.content;
   assert.ok(workload?.includes('"publishes_repository_result":true'));
@@ -102,6 +103,44 @@ test("catalog resolves adopted ticket structure and immutable execution configur
     blobs.get(release.definition.finalization_configuration)?.content,
     '{"branch_prefix":"tickets/","kind":"finalizer","operation":"pull-request","target_ref":"refs/heads/main"}',
   );
+});
+
+test("a released workload requires its runner, so no claimant without it takes the work", async () => {
+  const { catalog } = setup(
+    new Map([
+      [
+        catalogPath("workloads/work.yaml"),
+        "kind: workload\nrunner: claude\nmodel: test\nprompt: agents/work.md\nresult_contract: result-contracts/work.schema.json",
+      ],
+    ]),
+  );
+  const release = await catalog.release(TicketId(1), document);
+  assert.deepEqual(
+    release.definition.work_configuration.execution_requirements
+      .required_capabilities,
+    ["runner-claude"],
+  );
+  const stage = release.definition.evaluation_plan.stages[0];
+  assert.deepEqual(
+    stage?.evaluators[0]?.task.execution_requirements.required_capabilities,
+    ["runner-script"],
+  );
+});
+
+test("a runner no capability token can spell is refused at release", async () => {
+  for (const runner of ["not a runner", "-leading", "x".repeat(64)])
+    await assert.rejects(
+      setup(
+        new Map([
+          [
+            catalogPath("workloads/work.yaml"),
+            `kind: workload\nrunner: ${runner}\nmodel: test\nprompt: agents/work.md\nresult_contract: result-contracts/work.schema.json`,
+          ],
+        ]),
+      ).catalog.release(TicketId(1), document),
+      TypeError,
+      runner,
+    );
 });
 
 test("evaluator workloads cannot request publication access", async () => {

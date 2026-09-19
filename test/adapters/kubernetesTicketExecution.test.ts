@@ -51,6 +51,7 @@ const config: KubernetesTicketExecutionConfig = {
     },
   },
   environment: { TICKET_SITE: "configured" },
+  capabilityCredentials: { "runner-codex": "codex-auth" },
   podNamePrefix: "ticket",
   image: "registry.invalid/ticket-worker:1",
   callbackUrl: "https://worker.invalid/v1/ticket-execution",
@@ -108,7 +109,7 @@ const view: TicketExecutionView = {
   commit: "0123456789012345678901234567890123456789",
   source: task.ContentRef(3),
   access: "ReadRepository",
-  requiredCapabilities: ["shell"],
+  requiredCapabilities: ["shell", "runner-codex"],
   context: [],
 };
 
@@ -269,6 +270,91 @@ for (const [name, unavailableView] of [
     assert.equal(placement.placed, "Unavailable");
     assert.equal(bound, false);
   });
+
+test("a token this site delivers no credential for mounts none and names none", async () => {
+  const requests: ClusterRequest[] = [];
+  const outcomes = { reads: 0 };
+  const runner = kubernetesTicketExecutionRunner(
+    {
+      bind: () => Promise.resolve(true),
+      outcome: () => ticketOutcome(outcomes),
+      renew: () => Promise.resolve(true),
+    },
+    config,
+    clusterFetch(requests),
+    () => "attempt-secret",
+  );
+  await runner.run(claim, { ...view, requiredCapabilities: ["shell"] });
+  const secret = JSON.parse(postedBody(requests, "/secrets")) as {
+    readonly stringData: { readonly task: string };
+  };
+  const envelope = JSON.parse(secret.stringData.task) as Record<
+    string,
+    unknown
+  >;
+  assert.equal(envelope["providerCredentialFile"], undefined);
+  const pod = JSON.parse(postedBody(requests, "/pods")) as {
+    readonly spec: {
+      readonly containers: readonly {
+        readonly volumeMounts: readonly { readonly mountPath: string }[];
+      }[];
+    };
+  };
+  assert.equal(
+    pod.spec.containers[0]?.volumeMounts.some(({ mountPath }) =>
+      mountPath.startsWith("/var/run/chuggy/codex"),
+    ),
+    false,
+  );
+});
+
+test("work requiring two of this site's credentials is unavailable rather than launched", async () => {
+  const runner = kubernetesTicketExecutionRunner(
+    {
+      bind: () => Promise.resolve(true),
+      outcome: () => Promise.resolve(undefined),
+      renew: () => Promise.resolve(true),
+    },
+    {
+      ...config,
+      credentialMounts: {
+        ...config.credentialMounts,
+        "claude-code": {
+          secretName: "claude-code",
+          key: "token",
+          mountPath: "/var/run/chuggy/claude/token",
+        },
+      },
+      capabilityCredentials: {
+        "runner-codex": "codex-auth",
+        "runner-claude": "claude-code",
+      },
+    },
+  );
+  const placement = await runner.run(claim, {
+    ...view,
+    requiredCapabilities: ["runner-codex", "runner-claude"],
+  });
+  assert.equal(placement.placed, "Unavailable");
+});
+
+test("a deployment delivering a capability with a credential no mount serves is refused", () => {
+  assert.throws(
+    () =>
+      kubernetesTicketExecutionRunner(
+        {
+          bind: () => Promise.resolve(true),
+          outcome: () => Promise.resolve(undefined),
+          renew: () => Promise.resolve(true),
+        },
+        {
+          ...config,
+          capabilityCredentials: { "runner-claude": "claude-code" },
+        },
+      ),
+    RangeError,
+  );
+});
 
 test("cancellation deletes the deterministic task pod", async () => {
   const paths: string[] = [];

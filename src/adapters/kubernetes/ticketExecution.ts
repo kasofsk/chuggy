@@ -71,6 +71,12 @@ export interface KubernetesTicketExecutionConfig extends KubernetesPodSite {
   readonly leaseSecs: number;
   readonly retryAfterSecs: number;
   readonly environment: Readonly<Record<string, string>>;
+  /**
+   * What each capability token is delivered as here, which is the whole of
+   * what this deployment says about agent credentials. A token it does not map
+   * is satisfied by something other than a credential, or by nothing.
+   */
+  readonly capabilityCredentials: Readonly<Record<string, string>>;
   readonly database?: KubernetesWorkloadDatabase;
 }
 
@@ -119,6 +125,11 @@ function ticketConfig(
     throw new RangeError(
       "ticket outcome poll interval must be shorter than the claim lease",
     );
+  for (const credential of Object.values(config.capabilityCredentials))
+    if (config.credentialMounts[credential] === undefined)
+      throw new RangeError(
+        `ticket execution credential is served by no mount: ${credential}`,
+      );
   if (config.image.length === 0)
     throw new RangeError("ticket worker image is empty");
   if (config.database !== undefined && config.database.image.length === 0)
@@ -169,13 +180,21 @@ function ticketEnvelope(
   });
 }
 
+/**
+ * The site credential this work requires, which is the one its capability
+ * tokens name. Nothing here reads the runner: what a token is delivered as is
+ * the deployment's own business, and a claimant that does not declare the
+ * token never sees the work.
+ */
 function ticketProviderCredential(
+  config: KubernetesTicketExecutionConfig,
   view: TicketExecutionView,
-): string | undefined {
-  const workload = ticketRecord(view.workload, "workload");
-  if (workload["runner"] === "codex") return "codex-auth";
-  if (workload["runner"] === "claude") return "claude-code";
-  return undefined;
+): { readonly credential?: string } | undefined {
+  const named = view.requiredCapabilities
+    .map((capability) => config.capabilityCredentials[capability])
+    .filter((credential) => credential !== undefined);
+  if (named.length > 1) return undefined;
+  return named[0] === undefined ? {} : { credential: named[0] };
 }
 
 function ticketExecutionProfile(
@@ -394,7 +413,12 @@ async function ticketLaunch(
   view: TicketExecutionView,
   bearer: string,
 ): Promise<TicketExecutionPlacement> {
-  const providerCredential = ticketProviderCredential(view);
+  const required = ticketProviderCredential(state.config, view);
+  if (required === undefined)
+    return ticketUnavailable(
+      "ticket work requires more than one provider credential",
+    );
+  const providerCredential = required.credential;
   const credentials = kubernetesCredentials(
     state.config,
     {

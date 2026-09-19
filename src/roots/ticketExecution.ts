@@ -118,6 +118,7 @@ function ticketExecutionRuntimeRunner(
     {
       ...config.workers,
       image: settings.image,
+      capabilityCredentials: settings.capabilityCredentials,
       callbackUrl: new URL(
         "/v1/ticket-execution",
         config.workers.workerPlaneUrl,

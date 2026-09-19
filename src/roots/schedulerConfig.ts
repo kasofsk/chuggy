@@ -67,7 +67,16 @@ export interface SchedulerCommandConfig {
 
 export interface SchedulerTicketExecutionConfig {
   readonly image: string;
+  /**
+   * What this deployment's own claimant may take, which is a claim of what it
+   * can deliver rather than a proof. A released workload requires its runner's
+   * token, so the token belongs here before that work is released and not
+   * after: work naming a token nothing declares is claimed by nobody and is
+   * settled as unavailable once its window passes.
+   */
   readonly capabilities: readonly string[];
+  /** What each of those tokens is delivered as, named among this site's credential mounts. */
+  readonly capabilityCredentials: Readonly<Record<string, string>>;
   readonly leaseSecs: number;
   readonly attemptsMax: number;
   readonly outputBytesMax: number;
@@ -155,6 +164,9 @@ const schedulerTicketExecutionSchema = z.strictObject({
     "must be pinned by a sha256 digest",
   ),
   capabilities: z.array(schedulerTextSchema).default([]),
+  capabilityCredentials: z
+    .record(schedulerTextSchema, schedulerTextSchema)
+    .default({}),
   leaseSecs: schedulerSafePositiveSchema.default(300),
   attemptsMax: schedulerCountSchema.default(3),
   outputBytesMax: schedulerSafePositiveSchema.default(1_048_576),

@@ -197,6 +197,7 @@ const parsed = {
   tickets: {
     image: ticketImage,
     capabilities: [],
+    capabilityCredentials: {},
     leaseSecs: 300,
     attemptsMax: 3,
     outputBytesMax: 1_048_576,
@@ -606,7 +607,8 @@ async function parsedTicketExecution(value: unknown): Promise<{
 test("ticket execution accepts the complete deployment configuration", async () => {
   const configured = {
     image: ticketImage,
-    capabilities: ["git", "pull-request"],
+    capabilities: ["git", "pull-request", "runner-claude"],
+    capabilityCredentials: { "runner-claude": "claude-code" },
     leaseSecs: 60,
     attemptsMax: 5,
     outputBytesMax: 2_000_000,
