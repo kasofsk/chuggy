@@ -24,7 +24,66 @@ import type {
   WorkerPoolRegistration,
   WorkerPoolRegistry,
 } from "../../interpreter/workerPool.ts";
+import type {
+  WorkerPoolRegistrationTokens,
+  WorkerPoolRegistrationTokenTerms,
+} from "../../interpreter/workerPoolRegistrationToken.ts";
 import { postgresTransaction } from "./pool.ts";
+
+/** One token's terms as either statement returns them, read the same way by both. */
+function workerPoolTokenTerms(row: {
+  tenant: string;
+  project: string;
+  capabilities: string[];
+}): WorkerPoolRegistrationTokenTerms {
+  return {
+    partition: { tenant: row.tenant, project: row.project } as Partition,
+    capabilities: row.capabilities,
+  };
+}
+
+/**
+ * The tokens an owner mints and a machine spends. `consume` is a conditional
+ * update rather than a read and a write, so two machines redeeming one token
+ * are separated by the statement and not by this process.
+ */
+export function postgresWorkerPoolRegistrationTokens(
+  pool: pg.Pool,
+): WorkerPoolRegistrationTokens {
+  return {
+    mint: async (partition, digest, capabilities, expiresAtMs) => {
+      const inserted =
+        await pool.query(sql`INSERT INTO worker_pool_registration_token(token_digest,tenant,project,capabilities,expires_at)
+        SELECT ${digest},${partition.tenant},${partition.project},${[...capabilities]}::text[],to_timestamp(${expiresAtMs}::double precision/1000)
+        WHERE EXISTS(SELECT 1 FROM project p
+          WHERE p.tenant=${partition.tenant} AND p.project=${partition.project}
+            AND p.lifecycle='Active' AND p.ticket_model='Chuggernaut')`);
+      return (inserted.rowCount ?? 0) === 1;
+    },
+    permitted: async (digest) => {
+      const found = await pool.query<{
+        tenant: string;
+        project: string;
+        capabilities: string[];
+      }>(sql`SELECT t.tenant,t.project,t.capabilities
+        FROM worker_pool_registration_token t
+        WHERE t.token_digest=${digest} AND t.redeemed_at IS NULL AND t.expires_at>now()`);
+      const row = found.rows[0];
+      return row === undefined ? undefined : workerPoolTokenTerms(row);
+    },
+    consume: async (digest) => {
+      const spent = await pool.query<{
+        tenant: string;
+        project: string;
+        capabilities: string[];
+      }>(sql`UPDATE worker_pool_registration_token t SET redeemed_at=now()
+        WHERE t.token_digest=${digest} AND t.redeemed_at IS NULL AND t.expires_at>now()
+        RETURNING t.tenant,t.project,t.capabilities`);
+      const row = spent.rows[0];
+      return row === undefined ? undefined : workerPoolTokenTerms(row);
+    },
+  };
+}
 
 /** The digest one attempt bearer is stored as, which is the only secret this module handles. */
 function workerPoolDigest(bearer: string): string {

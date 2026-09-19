@@ -3,6 +3,7 @@ import net from "node:net";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
+import type { WorkerPoolRegistrationService } from "../../src/interpreter/workerPoolRegistrationToken.ts";
 import {
   createNativeHttpApp,
   type NativeHttpLimits,
@@ -93,6 +94,39 @@ function fakeForgeCredentials(calls: string[]): ForgeCredentialMinting {
   };
 }
 
+/**
+ * Registration as the routes see it: one token stands for one project, and the
+ * capability bound is the interpreter's rather than the route's.
+ */
+function fakeWorkerPools(calls: string[]): WorkerPoolRegistrationService {
+  return {
+    mint: (_principal, partition, request) => {
+      calls.push(
+        `worker-pool-token:${partition.project}:${request.capabilities.join("+")}:${String(request.lifetimeSecs)}`,
+      );
+      return Promise.resolve(
+        partition.project === "atlas"
+          ? {
+              result: "Minted",
+              value: { token: "a-token", expiresAtMs: 1_757_500_000_000 },
+            }
+          : { result: "NotFound" },
+      );
+    },
+    redeem: (offered) => {
+      calls.push(`worker-pool-redeem:${offered.pool}`);
+      if (offered.pool === "unpermitted")
+        return Promise.resolve({ result: "CapabilityNotPermitted" });
+      if (offered.pool === "spent")
+        return Promise.resolve({ result: "NotFound" });
+      return Promise.resolve({
+        result: "Registered",
+        value: { clientId: "chuggy-pool-one", clientSecret: "a-secret" },
+      });
+    },
+  };
+}
+
 function appOf(
   calls: string[],
   authenticated = true,
@@ -116,6 +150,9 @@ function appOf(
     authority,
     limits,
     minting ?? fakeForgeCredentials(calls),
+    undefined,
+    undefined,
+    fakeWorkerPools(calls),
   );
 }
 
@@ -881,4 +918,86 @@ test("a catalog guard that is not a commit is a bad request", async () => {
     },
   });
   assert.equal(response.statusCode, 400);
+});
+
+const workerPoolTokenPath =
+  "/api/v1/tenants/acme/projects/atlas/worker-pool-registration-tokens";
+const workerPoolRedemptionPath = "/api/v1/worker-pool-registrations";
+const versionedJson = { "content-type": "application/vnd.chuggy.v1+json" };
+
+test("an owner mints a registration token and a project they may not administer is not found", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const minted = await app.inject({
+    method: "POST",
+    url: workerPoolTokenPath,
+    headers: { authorization: "Bearer valid", ...versionedJson },
+    payload: JSON.stringify({
+      capabilities: ["linux-containers"],
+      lifetimeSecs: 900,
+    }),
+  });
+  assert.equal(minted.statusCode, 201);
+  assert.deepEqual(minted.json(), {
+    token: "a-token",
+    expiresAtMs: 1_757_500_000_000,
+  });
+  const absent = await app.inject({
+    method: "POST",
+    url: "/api/v1/tenants/acme/projects/other/worker-pool-registration-tokens",
+    headers: { authorization: "Bearer valid", ...versionedJson },
+    payload: JSON.stringify({ capabilities: [], lifetimeSecs: 900 }),
+  });
+  assert.equal(absent.statusCode, 404);
+  assert.deepEqual(calls, [
+    "worker-pool-token:atlas:linux-containers:900",
+    "worker-pool-token:other::900",
+  ]);
+});
+
+test("minting a registration token needs a bearer, and redeeming one needs none", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const unauthenticated = await app.inject({
+    method: "POST",
+    url: workerPoolTokenPath,
+    headers: versionedJson,
+    payload: JSON.stringify({ capabilities: [], lifetimeSecs: 60 }),
+  });
+  assert.equal(unauthenticated.statusCode, 401);
+  const redeemed = await app.inject({
+    method: "POST",
+    url: workerPoolRedemptionPath,
+    headers: versionedJson,
+    payload: JSON.stringify({
+      token: "a-token",
+      pool: "pool-one",
+      capabilities: ["linux-containers"],
+    }),
+  });
+  assert.equal(redeemed.statusCode, 201);
+  assert.deepEqual(redeemed.json(), {
+    clientId: "chuggy-pool-one",
+    clientSecret: "a-secret",
+  });
+  assert.deepEqual(calls, ["worker-pool-redeem:pool-one"]);
+});
+
+test("a capability the token does not permit is named, and a spent token is not found", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const redemption = (pool: string) => ({
+    method: "POST" as const,
+    url: workerPoolRedemptionPath,
+    headers: versionedJson,
+    payload: JSON.stringify({ token: "a-token", pool, capabilities: [] }),
+  });
+  const refused = await app.inject(redemption("unpermitted"));
+  assert.equal(refused.statusCode, 403);
+  assert.equal(
+    refused.json<HttpErrorEnvelope>().error.code,
+    "CapabilityNotPermitted",
+  );
+  const spent = await app.inject(redemption("spent"));
+  assert.equal(spent.statusCode, 404);
 });

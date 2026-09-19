@@ -17,6 +17,7 @@ import {
 } from "../../interpreter/projectStore.ts";
 import type { NativeWeb } from "../../interpreter/nativeWeb.ts";
 import type { ForgeCredentialMinting } from "../../interpreter/forgeCredentials.ts";
+import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
 import type { RepositoryOnboarding } from "../../interpreter/repositoryOnboarding.ts";
 import type {
   TicketApplication,
@@ -41,6 +42,8 @@ import {
 import {
   parseInventoryCursor,
   parseForgeCredentialRequest,
+  parseWorkerPoolRedemption,
+  parseWorkerPoolTokenRequest,
   parseForgeInstallationClaim,
   parseForgeInstallationId,
   parseProjectRepositoryBind,
@@ -57,6 +60,8 @@ import {
   failureResponse,
   forgeAppsResponse,
   forgeCredentialResponse,
+  workerPoolRedemptionResponse,
+  workerPoolTokenResponse,
   forgeInstallationClaimResponse,
   forgeInstallationsResponse,
   forgeRepositoriesResponse,
@@ -441,6 +446,49 @@ function registerForgeCredentials(
             partitionOf(request),
             parseForgeCredentialRequest(request.body),
           ),
+        ),
+      );
+    },
+  );
+}
+
+/**
+ * The two ends of registering a pool: an owner mints a short-lived single-use
+ * token for one project, and whoever holds that token redeems it once for a
+ * client and its secret. The redemption carries no bearer and is declared
+ * `public` because it is authenticated by the token in its body — a machine
+ * being configured has no principal yet, which is the whole reason an owner had
+ * to mint the token for it.
+ */
+function registerWorkerPools(
+  app: FastifyInstance,
+  pools: WorkerPoolRegistrationService,
+  partitionRoot: string,
+): void {
+  app.post(
+    `${partitionRoot}/worker-pool-registration-tokens`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        workerPoolTokenResponse(
+          await pools.mint(
+            principalOf(request),
+            partitionOf(request),
+            parseWorkerPoolTokenRequest(request.body),
+          ),
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/v1/worker-pool-registrations",
+    { config: { public: true }, preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        workerPoolRedemptionResponse(
+          await pools.redeem(parseWorkerPoolRedemption(request.body)),
         ),
       );
     },
@@ -1344,6 +1392,7 @@ export function createNativeHttpApp(
   forgeCredentials?: ForgeCredentialMinting,
   onboarding?: RepositoryOnboarding,
   ticketService?: NativeTicketApplication,
+  workerPools?: WorkerPoolRegistrationService,
 ): FastifyInstance {
   const app = fastify({
     bodyLimit: nativeHttpBodyBytesMax,
@@ -1367,6 +1416,8 @@ export function createNativeHttpApp(
   registerLead(app, web, partitionRoot);
   if (forgeCredentials !== undefined)
     registerForgeCredentials(app, forgeCredentials);
+  if (workerPools !== undefined)
+    registerWorkerPools(app, workerPools, partitionRoot);
   if (onboarding !== undefined) {
     registerForgeInstallations(app, onboarding);
     registerProjectRepositories(app, onboarding);

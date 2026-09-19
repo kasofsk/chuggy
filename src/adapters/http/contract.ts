@@ -52,6 +52,13 @@ import {
   type RepositoryLanding,
 } from "../../interpreter/repositoryBinding.ts";
 
+import {
+  workerPoolRedemptionSchema,
+  workerPoolRegistrationTokenRequestSchema,
+  type WorkerPoolRedemptionRequest,
+  type WorkerPoolRegistrationTokenRequest,
+} from "../../contract/workerPool.ts";
+
 const inventoryCursorSchema = z.strictObject({
   version: z.literal(nativeHttpVersion),
   tenant: z.string(),
@@ -66,6 +73,18 @@ export function parseForgeCredentialRequest(
     repository: asRepositoryId(parsed.repository),
     permissions: parsed.permissions,
   };
+}
+
+export function parseWorkerPoolTokenRequest(
+  body: unknown,
+): WorkerPoolRegistrationTokenRequest {
+  return workerPoolRegistrationTokenRequestSchema.parse(body);
+}
+
+export function parseWorkerPoolRedemption(
+  body: unknown,
+): WorkerPoolRedemptionRequest {
+  return workerPoolRedemptionSchema.parse(body);
 }
 
 export function parseForgeInstallationClaim(

@@ -104,6 +104,8 @@ to start without the required ones.
 | `CHUG_API_OIDC_AUDIENCE` | required | |
 | `CHUG_API_OIDC_ALGORITHMS` | required | comma-separated, surrounding spaces trimmed; every entry must be one `oidcVerifiableAlgorithms` in `src/adapters/http/oidc.ts` admits, and anything else — a shared-secret algorithm, `none`, an empty entry, a name with a typo — refuses to start, naming what it refused |
 | `CHUG_API_KETO_READ_URL` | required | the read API of the authority that answers project access, HTTP or HTTPS and carrying no credentials |
+| `CHUG_API_KETO_WRITE_URL` | with the Hydra admin URL, or neither | the write API the `Execute` relation a redeemed registration token grants is written through |
+| `CHUG_API_HYDRA_ADMIN_URL` | with the Keto write URL, or neither | the issuer's admin API, where a pool's `client_credentials` client is created; an API naming neither serves no worker-pool registration route, and one naming a single variable refuses to start |
 | `CHUG_API_ARTIFACT_ROOT` | required | see below |
 | `CHUG_API_GIT_SCRATCH_ROOT` | required | writable scratch for exact-commit configuration reads |
 | `CHUG_API_THREAD_CREDENTIAL_SLOT` | required | the named credential mount a member's thread speaks through |
@@ -143,6 +145,49 @@ API only ever reads — the web composition passes the store to one read port �
 so the deployment mounts the artifact volume there and may mount it read-only.
 Nothing creates the directory for the API, and a path that is not there reads as
 an artifact that is missing rather than as a failure.
+
+## Registering a worker pool
+
+A pool is a confidential OAuth2 client of the issuer this installation already
+runs, and nothing about it is a secret this tree stores. An owner mints a
+short-lived single-use registration token for one project over the API, an
+operator configures the machine with it, and redeeming it creates the client,
+writes the `developers` relation the authority answers `Execute` from, and
+answers the client id and secret once.
+
+`src/roots/registerWorkerPool.ts` is the same three writes as an owner's own
+command, for a machine the owner is at. It reads `CHUG_WORKER_POOL_DATABASE_URL`,
+`CHUG_WORKER_POOL_TENANT`, `CHUG_WORKER_POOL_PROJECT`, `CHUG_WORKER_POOL_POOL`,
+`CHUG_WORKER_POOL_CAPABILITIES`, `CHUG_WORKER_POOL_OPERATION`,
+`CHUG_WORKER_POOL_OIDC_ISSUER`, `CHUG_WORKER_POOL_OIDC_AUDIENCE`,
+`CHUG_WORKER_POOL_HYDRA_ADMIN_URL` and `CHUG_WORKER_POOL_KETO_WRITE_URL`.
+
+**A pool must ask for the audience at the token endpoint.** The client is
+created with the API's audience in its own list, and Hydra puts an `aud` in an
+access token only where the token request names one; a `client_credentials`
+request that asks for none is answered a token the plane refuses.
+
+## Configuring the plane a pool polls
+
+`src/roots/poolPlane.ts` verifies a pool's token against the issuer and asks the
+authority what the pool may do, and it names no admin address of either: it
+mints nothing.
+
+| Variable | | |
+|---|---|---|
+| `CHUG_POOL_PLANE_OIDC_ISSUER` | required | the same issuer the API names, an HTTPS URL with no credentials, query or fragment |
+| `CHUG_POOL_PLANE_OIDC_AUDIENCE` | required | the API's audience, which is the one a pool's client is created with |
+| `CHUG_POOL_PLANE_OIDC_ALGORITHMS` | required | comma-separated, under the same admission `CHUG_API_OIDC_ALGORITHMS` is |
+| `CHUG_POOL_PLANE_OIDC_DISCOVERY_TIMEOUT_MS` | 5000 | discovery happens once, at start-up, so an issuer that cannot be reached refuses the start |
+| `CHUG_POOL_PLANE_OIDC_JWKS_TIMEOUT_MS` | 5000 | how long one key-set fetch may take before verification is undecided |
+| `CHUG_POOL_PLANE_KETO_READ_URL` | required | the read API that answers whether a pool holds `Execute` on its project |
+| `CHUG_POOL_PLANE_KETO_TIMEOUT_MS` | | how long one access question may take before a poll is answered with a retry |
+
+**An outage and a refusal are different answers to a pool.** A token this side
+read and rejected is 401, a caller no registration names or the authority
+refuses is 404, and an issuer or authority that could not answer is 503 asking
+for a retry — so a pool polling through a Keto outage comes back rather than
+stopping.
 
 ## Configuring the worker plane's minting
 

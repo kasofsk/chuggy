@@ -1306,6 +1306,61 @@ test("the plane a harness reaches holds nothing on the relation a pool is regist
   );
 });
 
+/**
+ * Redeeming a registration token creates a client at the issuer, so the relation
+ * a token lives in is the API's and the plane pools poll holds nothing on it —
+ * the process that verifies tokens cannot spend one and cannot cause a client to
+ * exist.
+ */
+test("only the API may spend a registration token, and the pool plane may not", async () => {
+  assert.deepEqual(
+    await harness.query(
+      `SELECT privilege_type,
+              string_agg(column_name, ',' ORDER BY column_name) AS columns
+         FROM information_schema.role_column_grants
+        WHERE grantee=$1 AND table_name='worker_pool_registration_token'
+        GROUP BY privilege_type ORDER BY privilege_type`,
+      [apiRole],
+    ),
+    [
+      {
+        privilege_type: "INSERT",
+        columns:
+          "capabilities,expires_at,minted_at,project,redeemed_at,tenant,token_digest",
+      },
+      {
+        privilege_type: "SELECT",
+        columns:
+          "capabilities,expires_at,minted_at,project,redeemed_at,tenant,token_digest",
+      },
+      { privilege_type: "UPDATE", columns: "redeemed_at" },
+    ],
+  );
+  for (const role of [poolPlaneRole, workerPlaneRole])
+    assert.equal(
+      await harness
+        .query(
+          `SELECT 1 AS granted FROM information_schema.role_table_grants
+          WHERE grantee=$1 AND table_name='worker_pool_registration_token'`,
+          [role],
+        )
+        .then((rows) => rows.length),
+      0,
+      role,
+    );
+  assert.equal(
+    await harness
+      .query(
+        `SELECT 1 AS granted FROM information_schema.role_table_grants
+        WHERE grantee=$1 AND table_name='worker_pool' AND privilege_type='INSERT'`,
+        [poolPlaneRole],
+      )
+      .then((rows) => rows.length),
+    0,
+    "the plane pools poll registers nothing, however a caller asks",
+  );
+});
+
 test("the plane pools poll is non-login and non-escalating", async () => {
   assert.deepEqual(
     await harness.query(

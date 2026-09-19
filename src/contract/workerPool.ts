@@ -83,8 +83,33 @@ export const workerPoolRegistrationSchema = z.strictObject({
   capabilities: workerPoolCapabilitiesSchema,
 });
 
+/**
+ * What an owner asks a registration token for: the capabilities the machine it
+ * is about to configure may claim, and how long the token stands.
+ */
+export const workerPoolRegistrationTokenRequestSchema = z.strictObject({
+  capabilities: workerPoolCapabilitiesSchema,
+  lifetimeSecs: z.number().int().positive().safe(),
+});
+
+/**
+ * What an operator redeems with: the token, the name the pool takes, and the
+ * capabilities it declares — which the token bounds rather than confirms.
+ */
+export const workerPoolRedemptionSchema = z.strictObject({
+  token: z.string().min(1).max(workerPoolIdentityCharsMax),
+  pool: z.string().min(1).max(workerPoolIdentityCharsMax),
+  capabilities: workerPoolCapabilitiesSchema,
+});
+
 export type WorkerPoolAssignment = z.infer<typeof workerPoolAssignmentSchema>;
 export type AssignmentOutcome = z.infer<typeof assignmentOutcomeSchema>;
 export type WorkerPoolRegistration = z.infer<
   typeof workerPoolRegistrationSchema
+>;
+export type WorkerPoolRegistrationTokenRequest = z.infer<
+  typeof workerPoolRegistrationTokenRequestSchema
+>;
+export type WorkerPoolRedemptionRequest = z.infer<
+  typeof workerPoolRedemptionSchema
 >;

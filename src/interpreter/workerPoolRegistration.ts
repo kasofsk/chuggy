@@ -29,7 +29,11 @@ import {
 } from "./projectGrant.ts";
 import type { ProjectAccessKind } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
-import type { WorkerPoolClients, WorkerPoolRegistry } from "./workerPool.ts";
+import type {
+  WorkerPoolClients,
+  WorkerPoolClientSecret,
+  WorkerPoolRegistry,
+} from "./workerPool.ts";
 
 export type RegisterPoolEnvironment = Readonly<
   Record<string, string | undefined>
@@ -66,14 +70,18 @@ export function registerPoolRequired(
   return value;
 }
 
-/** What the command was asked to do, refused here rather than by the registry. */
-export interface RegisterPoolRequest {
+/** One pool as the three writes need it named, whichever caller asked for them. */
+export interface WorkerPoolRegistrationRequest {
   readonly partition: Partition;
   readonly pool: string;
   readonly capabilities: readonly string[];
-  readonly operation: "register" | "deregister";
   readonly issuer: string;
 }
+
+/** What the command was asked to do, refused here rather than by the registry. */
+export type RegisterPoolRequest = WorkerPoolRegistrationRequest & {
+  readonly operation: "register" | "deregister";
+};
 
 export function registerPoolRequestOf(
   environment: RegisterPoolEnvironment,
@@ -105,7 +113,7 @@ export function registerPoolRequestOf(
 
 /** The tuple one pool's client is written as, derived from the same subject the row records. */
 function registerPoolGrant(
-  request: RegisterPoolRequest,
+  request: WorkerPoolRegistrationRequest,
   clientId: string,
 ): ProjectGrant {
   return projectPrincipalGrant({
@@ -125,33 +133,45 @@ export interface RegisterPoolPorts {
 }
 
 /**
- * The register arm: a client, a relation and a row, undone in that order where
- * the row could not be written.
+ * The three writes registering one pool is — a client, a relation and a row —
+ * each undone where the next could not be made, and answering nothing where the
+ * row names no active project.
  */
-async function registerPoolRegistered(
-  request: RegisterPoolRequest,
+export async function workerPoolRegisteredAt(
+  request: WorkerPoolRegistrationRequest,
   ports: RegisterPoolPorts,
-  named: string,
-): Promise<string> {
+): Promise<WorkerPoolClientSecret | undefined> {
   const minted = await ports.clients.create(ports.clientId());
   const grant = registerPoolGrant(request, minted.clientId);
+  let registered;
   try {
     await ports.grants.write(grant);
-    if (
-      !(await ports.registry.register({
-        partition: request.partition,
-        pool: request.pool,
-        capabilities: request.capabilities,
-        clientId: minted.clientId,
-        principal: oidcPrincipal(request.issuer, minted.clientId),
-      }))
-    )
-      throw new Error(`NotRegistered: ${named} names no active project`);
+    registered = await ports.registry.register({
+      partition: request.partition,
+      pool: request.pool,
+      capabilities: request.capabilities,
+      clientId: minted.clientId,
+      principal: oidcPrincipal(request.issuer, minted.clientId),
+    });
   } catch (failure) {
     await ports.grants.remove(grant);
     await ports.clients.remove(minted.clientId);
     throw failure;
   }
+  if (registered) return minted;
+  await ports.grants.remove(grant);
+  await ports.clients.remove(minted.clientId);
+  return undefined;
+}
+
+async function registerPoolRegistered(
+  request: RegisterPoolRequest,
+  ports: RegisterPoolPorts,
+  named: string,
+): Promise<string> {
+  const minted = await workerPoolRegisteredAt(request, ports);
+  if (minted === undefined)
+    throw new Error(`NotRegistered: ${named} names no active project`);
   return [
     `Registered: ${named} declaring ${request.capabilities.join(",")}`,
     `holding ${workerPoolGrantedAccess} as ${workerPoolGrantRelation}`,
