@@ -4,10 +4,11 @@
  *
  * IT IS THE SAME PLACEMENT THE IN-CLUSTER LAUNCHER MAKES, WITH LESS TO GO ON. A
  * pod named for its identity, an `activeDeadlineSeconds`, a resource budget and
- * an envelope projected through a pod-owned Secret are `kubernetesSite.ts`'s
- * and are shared with `workerPod.ts`; what differs is that a pool is handed six
- * fields rather than a briefed placement, so nothing here reads a requirement,
- * a configuration or an invocation.
+ * an envelope projected through a pod-owned Secret are assembled by
+ * `kubernetesSite.ts`, whose pod and Secret helpers this backend is the one
+ * caller of; what differs is that a pool is handed six fields rather than a
+ * briefed placement, so nothing here reads a requirement, a configuration or an
+ * invocation.
  *
  * WHAT IS RUNNING IS READ FROM THE CLUSTER. `held` lists this pool's own pods
  * by its label and reads each assignment off an annotation, so a restarted

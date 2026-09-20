@@ -253,7 +253,7 @@ export function kubernetesPositiveNumber(value: number, what: string): number {
   return value;
 }
 
-/** The one attempt a pod and every object beside it are named for, as a digest of it. */
+/** A digest over an ordered list of parts, each length-prefixed so no two lists spell one string. */
 export function kubernetesIdentityDigest(parts: readonly string[]): string {
   return createHash("sha256")
     .update(parts.map((part) => `${String(part.length)}:${part}`).join("/"))
