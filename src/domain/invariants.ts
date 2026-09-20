@@ -76,9 +76,7 @@ export const revokedNeverCompletes: Invariant = (_config, view) =>
 export const noFinalizationWithoutAKind: Invariant = (_config, view) =>
   everyLiveTicket(
     view.post,
-    (t) =>
-      t.finalizer !== "NoFinalizer" ||
-      !["Finalizing", "PublishingHandoff", "HandoffBlocked"].includes(t.phase),
+    (t) => t.finalizer !== "NoFinalizer" || t.phase !== "Finalizing",
   );
 
 /** Nothing is Done without having produced the artifact its dependents read. */
@@ -94,9 +92,7 @@ export const finalizerWellFormed: Invariant = (_config, view) =>
 
 /** Terminal outcomes absorb: no transition ever leaves one. */
 export const terminalsAbsorbing: Invariant = (_config, view) =>
-  view.rec.transitions.every(
-    (t) => !["Done", "Abandoned", "Revoked"].includes(t.from),
-  );
+  view.rec.transitions.every((t) => !["Done", "Revoked"].includes(t.from));
 
 /**
  * The desk's two equivalences. A ticket carries a reason exactly while it is
@@ -107,8 +103,7 @@ export const deskConsistent: Invariant = (_config, view) =>
   everyLiveTicket(view.post, (t) => {
     const parked = t.phase === "Escalated";
     const named = t.reason !== "NoReason";
-    const resumable =
-      (parked && modeledResumeExists(t)) || t.phase === "HandoffBlocked";
+    const resumable = parked && modeledResumeExists(t);
     return parked === named && (t.resumeAt !== "NoResume") === resumable;
   });
 
@@ -289,10 +284,7 @@ export const noStructuralDeadlock: Invariant = (_config, view) => {
   return everyLiveTicket(
     view.post,
     (t, id) =>
-      finishable.has(id) ||
-      t.phase === "Revoked" ||
-      t.phase === "Abandoned" ||
-      hasOpenHumanTask(t),
+      finishable.has(id) || t.phase === "Revoked" || hasOpenHumanTask(t),
   );
 };
 
@@ -317,7 +309,7 @@ function stepDescendsExempt(view: StepView): boolean {
   if (label === "ticket-resumed") {
     return view.rec.transitions.some(
       (t) =>
-        ["Evaluating", "Finalizing", "PublishingHandoff"].includes(t.to) &&
+        ["Evaluating", "Finalizing"].includes(t.to) &&
         ticketAt(view.post, t.ticket as TicketId).resumePricing === "RetryFree",
     );
   }

@@ -30,7 +30,6 @@ import {
   type Config,
 } from "../../src/domain/config.ts";
 import {
-  abandonableHandoffsIn,
   dependableIn,
   dispatchableIn,
   executionBlockedReasons,
@@ -280,9 +279,6 @@ export const walkActions: readonly WalkAction[] = [
   overTicketSet("workReduce", (_config, core) => reducibleWorkIn(core)),
   overTicketSet("evalReduce", (_config, core) => reducibleEvalIn(core)),
   finalizationResult,
-  overTicketSet("abandonHandoff", (_config, core) =>
-    abandonableHandoffsIn(core),
-  ),
   executionBlocked,
   overTicketSet("resumeTicket", (_config, core) => retryablesIn(core)),
   settle,

@@ -14,10 +14,8 @@ import { phaseTags, type Phase } from "./generated/modelTypes.ts";
 
 /** Nothing is below settled: Done, Escalated and Revoked all rank here. */
 export const rankSettled = 0;
-export const rankHandoffBlocked = rankSettled + 1;
-export const rankPublishingHandoff = rankHandoffBlocked + 1;
-/** The point of no return sits above the post-promotion publication states. */
-export const rankFinalizing = rankPublishingHandoff + 1;
+/** Finalization resolves to completion, priced rework, or a wall. */
+export const rankFinalizing = rankSettled + 1;
 export const rankEvaluating = rankFinalizing + 1;
 export const rankWorking = rankEvaluating + 1;
 /** The released waiting room, from which Ready and Blocked re-derive, and the ladder's top. */
@@ -36,12 +34,7 @@ export function phaseRank(phase: Phase): number {
       return rankEvaluating;
     case "Finalizing":
       return rankFinalizing;
-    case "PublishingHandoff":
-      return rankPublishingHandoff;
-    case "HandoffBlocked":
-      return rankHandoffBlocked;
     case "Done":
-    case "Abandoned":
     case "Escalated":
     case "Revoked":
       return rankSettled;
@@ -57,7 +50,7 @@ export function isSettled(phase: Phase): boolean {
 
 /** The absorbing lifecycle endpoints; Escalated remains resumable. */
 export function isTerminalPhase(phase: Phase): boolean {
-  return phase === "Done" || phase === "Abandoned" || phase === "Revoked";
+  return phase === "Done" || phase === "Revoked";
 }
 
 /** The domain-owned meaning of the public non-terminal ticket selection. */

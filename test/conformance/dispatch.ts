@@ -23,7 +23,6 @@
 import type { Config } from "../../src/domain/config.ts";
 import type { Decision } from "../../src/domain/core.ts";
 import {
-  decideAbandonHandoff,
   decideDispatch,
   decideEvalStageReduce,
   decideExecutionBlocked,
@@ -62,7 +61,6 @@ export const replayActions: readonly string[] = [
   "workReduce",
   "evalReduce",
   "finalizationResult",
-  "abandonHandoff",
   "executionBlocked",
   "resumeTicket",
   "settle",
@@ -173,8 +171,6 @@ export function replayStep(
         j(),
         decodeFinalizationOutcome(itfToWire(need(picks.outcome, "out"))),
       );
-    case "abandonHandoff":
-      return decideAbandonHandoff(pre, j());
     case "executionBlocked":
       return decideExecutionBlocked(
         pre,

@@ -25,7 +25,7 @@ import { evalStage, nextTaskId, retiredInIdOrder, spawnTasks } from "./task.ts";
  * it would need the equivalence proved.
  */
 export function hasOpenHumanTask(ticket: Ticket): boolean {
-  return ticket.phase === "Escalated" || ticket.phase === "HandoffBlocked";
+  return ticket.phase === "Escalated";
 }
 
 /**
