@@ -130,7 +130,7 @@ export function kubernetesSecretMatches(
         readonly namespace?: unknown;
         readonly ownerReferences?: unknown;
       };
-      readonly data?: { readonly bearer?: unknown };
+      readonly data?: Readonly<Record<string, unknown>>;
     };
     return (
       document.apiVersion === expected.apiVersion &&
@@ -141,9 +141,12 @@ export function kubernetesSecretMatches(
       JSON.stringify(document.metadata.ownerReferences) ===
         JSON.stringify(expected.metadata.ownerReferences) &&
       document.data !== undefined &&
-      Object.keys(document.data).length === 1 &&
-      document.data.bearer ===
-        Buffer.from(expected.stringData.bearer).toString("base64")
+      Object.keys(document.data).length ===
+        Object.keys(expected.stringData).length &&
+      Object.entries(expected.stringData).every(
+        ([key, value]) =>
+          document.data?.[key] === Buffer.from(value).toString("base64"),
+      )
     );
   } catch {
     return false;
@@ -261,6 +264,43 @@ export function kubernetesPodEnd(reached: KubernetesReached): KubernetesPodEnd {
   } catch {
     return "Unended";
   }
+}
+
+/**
+ * The assignments this pool's own pods carry, read off an annotation. A listing
+ * that could not be made raises rather than answering an empty cluster, because
+ * the emptier answer is the one that loses work.
+ */
+export async function kubernetesListedPodAnnotations(
+  site: KubernetesPodSite,
+  fetcher: typeof fetch,
+  labelSelector: string,
+  annotation: string,
+): Promise<readonly string[]> {
+  const reached = await kubernetesReach(site, fetcher, {
+    method: "GET",
+    path: `${kubernetesPodsPath(site)}?labelSelector=${encodeURIComponent(labelSelector)}`,
+  });
+  if (reached.reached !== "Status" || reached.status !== 200)
+    throw new Error("the cluster could not be listed");
+  let document: {
+    readonly items?: readonly {
+      readonly metadata?: {
+        readonly annotations?: Readonly<Record<string, unknown>>;
+      };
+    }[];
+  };
+  try {
+    document = JSON.parse(reached.body) as typeof document;
+  } catch {
+    throw new Error("the cluster listed pods this side cannot read");
+  }
+  const named: string[] = [];
+  for (const item of document.items ?? []) {
+    const value = item.metadata?.annotations?.[annotation];
+    if (typeof value === "string" && value.length > 0) named.push(value);
+  }
+  return named;
 }
 
 /** Deletes one named pod, which is what both cancellation and a failed placement do. */

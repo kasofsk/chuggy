@@ -164,6 +164,20 @@ function clientCredentialsHoldMs(
     : Math.floor(lifetimeMs / 2);
 }
 
+/**
+ * The issuer's own refusal of this client, which is not the same news as an
+ * issuer that could not be reached: a caller told its credential is wrong
+ * learns nothing by presenting it again, and one told nothing at all does.
+ */
+export class ClientCredentialsRefused extends Error {
+  readonly status: number;
+  constructor(status: number) {
+    super(`client credentials grant returned ${String(status)}`);
+    this.name = "ClientCredentialsRefused";
+    this.status = status;
+  }
+}
+
 async function clientCredentialsMinted(
   config: ClientCredentialsConfig,
   transport: typeof fetch,
@@ -185,9 +199,11 @@ async function clientCredentialsMinted(
   });
   if (response.status !== 200) {
     await response.body?.cancel();
-    throw new Error(
-      `client credentials grant returned ${String(response.status)}`,
-    );
+    throw response.status >= 400 && response.status < 500
+      ? new ClientCredentialsRefused(response.status)
+      : new Error(
+          `client credentials grant returned ${String(response.status)}`,
+        );
   }
   const bytes = await boundedResponseBytes(
     response,
