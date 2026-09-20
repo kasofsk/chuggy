@@ -1,5 +1,10 @@
 /**
- * One bound repository.
+ * One bound repository: how a finished ticket in it lands, and what it
+ * declares that a ticket here is run and finished under.
+ *
+ * Only what a reader can act on is drawn. A fragment's own fields are the
+ * fragment's and are read where it is; what belongs here is what a ticket in
+ * this repository will be run and finished under.
  */
 
 import { useParams } from "@tanstack/react-router";
@@ -15,15 +20,14 @@ import { PanelUnready } from "../DataPanel.tsx";
 import { TopBarSlot } from "../shell/slots.tsx";
 import { Breadcrumb, BreadcrumbLink } from "../ui/Breadcrumb.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
-import { Field, Fields } from "../ui/Fields.tsx";
-import { Panel } from "../ui/Panel.tsx";
 import { projectRepositoriesResource } from "./AddRepository.tsx";
+import { RepositoryDeclaredSection } from "./RepositoryDeclaredSection.tsx";
+import { RepositoryLandingSection } from "./RepositoryLandingSection.tsx";
 
 /** This page's own address, which its reads take their partition from. */
 export const repositoryRoutePath = "/$tenant/$project/repositories/$repository";
 
-/** No frame names either read, so the partition's own refetch is what reaches
- * them; the revisions are the project's, so every repository's page shares one. */
+/** No frame names either read, so the partition's own refetch is what reaches them. */
 export function RepositoryPage(): ReactNode {
   const params = useParams({ from: repositoryRoutePath });
   const partition: PartitionIdentity = {
@@ -58,11 +62,13 @@ export function RepositoryPage(): ReactNode {
         <EmptyState label="Not bound" />
       ) : null}
       {binding === undefined ? null : (
-        <Panel variant="section" title="Binding">
-          <Fields variant="inline">
-            <Field name="Repository">{binding.repository}</Field>
-          </Fields>
-        </Panel>
+        <>
+          <RepositoryLandingSection partition={partition} binding={binding} />
+          <RepositoryDeclaredSection
+            partition={partition}
+            repository={repository}
+          />
+        </>
       )}
     </div>
   );

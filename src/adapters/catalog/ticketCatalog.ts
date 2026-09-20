@@ -18,11 +18,12 @@ import {
   copy_json_metadata,
   parse_json,
 } from "../../interpreter/json.ts";
-import type {
-  TicketCatalog,
-  TicketCatalogSource,
-  TicketContentStore,
-  TicketCatalogRelease,
+import {
+  ticketCatalogFinalizersDirectory,
+  type TicketCatalog,
+  type TicketCatalogSource,
+  type TicketContentStore,
+  type TicketCatalogRelease,
 } from "../../interpreter/ticketCatalog.ts";
 import type { TicketFinalizerConfiguration } from "../../interpreter/ticketFinalizer.ts";
 import { textCodePointsCount } from "../../contract/http.ts";
@@ -339,7 +340,7 @@ async function catalogRelease(
   const finalizer = await catalogFragment<TicketFinalizerConfiguration>(
     context,
     document.finalization,
-    "finalizers",
+    ticketCatalogFinalizersDirectory,
     "finalizer",
   );
   if (finalizer.operation !== "no-op" && !work.publishes)

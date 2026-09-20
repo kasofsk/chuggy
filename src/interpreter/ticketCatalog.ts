@@ -26,6 +26,9 @@ export const ticketCatalogRoot = ".chug/";
 /** A reference longer than this names nothing a repository or a writer can hold. */
 export const ticketCatalogReferenceBytesMax = 512;
 
+/** The directory a ticket's `finalization` reference is resolved under. */
+export const ticketCatalogFinalizersDirectory = "finalizers";
+
 /**
  * Names a catalog read must never serve, even from inside the catalog
  * directory: a repository keeps credentials under these, and a caller who can
@@ -108,6 +111,23 @@ export interface TicketCatalogSnapshotRead {
   readonly snapshot: TicketCatalogSnapshot;
   /** The catalog paths this view holds, so an author can be offered what exists. */
   entries(): Promise<readonly TicketCatalogEntry[]>;
+}
+
+/**
+ * What one bound repository declares: what a ticket in it is run under, how
+ * many reworks it may take, and the finalizers it may be finished with.
+ *
+ * No fragment's own fields are here, because they are read where the fragment
+ * is; this is the roster a ticket in this repository chooses from.
+ */
+export interface TicketCatalogDeclarations {
+  readonly repository: string;
+  readonly reworkLimit: number;
+  readonly cloudProject?: string;
+  /** Sorted, because the order a mapping was authored in says nothing. */
+  readonly executionProfiles: readonly string[];
+  /** The references under the finalizers directory, sorted, each without its directory. */
+  readonly finalizers: readonly string[];
 }
 
 /** Which repository a request works against, and where that repository stands. */

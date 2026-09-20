@@ -46,6 +46,7 @@ test("the golden names every route and not an empty stand-in", () => {
     "project",
     "projectRepositories",
     "projectRepositoriesNew",
+    "projectRepositoryDeclarations",
     "projectRepositoryLanding",
     "projectRepositoryRetirement",
     "projects",

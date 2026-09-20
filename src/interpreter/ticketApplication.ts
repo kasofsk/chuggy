@@ -10,6 +10,7 @@ import {
   CatalogSchemaError,
   ticketCatalogRoot,
   type TicketCatalog,
+  type TicketCatalogDeclarations,
   type TicketCatalogEntry,
   type TicketCatalogFragments,
   type TicketCatalogRelease,
@@ -64,6 +65,10 @@ export interface PinnedTicketCatalogs {
   snapshot(
     selection: PinnedTicketCatalogSelection,
   ): Promise<TicketCatalogSnapshotRead | undefined>;
+  /** What the pinned tree's own project document and finalizer roster declare. */
+  declarations(
+    selection: PinnedTicketCatalogSelection,
+  ): Promise<TicketCatalogDeclarations | undefined>;
   /** Where the bound repository stands now, which is what every request pins to. */
   tip(selection: {
     readonly partition: Partition;
@@ -142,6 +147,15 @@ export interface TicketCatalogFile extends TicketCatalogEntry {
 }
 
 /**
+ * What a bound repository declares, with the commit it was read at. The commit
+ * is the reader's only way to tell a stale panel from a repository that has
+ * not moved, because nothing raises a frame when the tree does.
+ */
+export interface RepositoryDeclarationsRead extends TicketCatalogDeclarations {
+  readonly commit: GitObjectId;
+}
+
+/**
  * What writing or removing a runtime fragment came to. A refusal carries the
  * sentence a caller is shown, because the reason it names — a reference the
  * repository already holds — is the caller's to act on.
@@ -176,6 +190,16 @@ export interface TicketApplication {
     principal: Principal,
     request: TicketCatalogRequest,
   ): Promise<TicketApplicationResult<TicketCatalogEntries | undefined>>;
+  /**
+   * What the bound repository declares at the commit it stands on. This is a
+   * read of the repository rather than of its catalog's files, so it asks the
+   * reading authority `projectRepositories` asks and not the authoring one
+   * `catalog` asks.
+   */
+  declarations(
+    principal: Principal,
+    request: TicketCatalogRequest,
+  ): Promise<TicketApplicationResult<RepositoryDeclarationsRead | undefined>>;
   catalogFile(
     principal: Principal,
     request: TicketCatalogRequest,
@@ -489,6 +513,37 @@ function ticketApplicationCatalogEntries(
     return {
       result: "Authorized",
       value: { entries: ticketApplicationSorted(await pinned.entries()) },
+    };
+  };
+}
+
+/**
+ * What the bound repository declares, behind the authority a repository read
+ * asks for. `projectRepositories` answers a refused reader `NotFound` and this
+ * is the same page's other half, so it answers the same rather than admitting
+ * that a project it will not describe exists.
+ */
+function ticketApplicationDeclarations(
+  ports: TicketApplicationPorts,
+): TicketApplication["declarations"] {
+  return async (principal, request) => {
+    const authorization = await ticketApplicationAuthority(
+      ports,
+      principal,
+      request.partition,
+      "Read",
+    );
+    if (authorization === undefined) return { result: "NotFound" };
+    const pin = await ticketApplicationPin(ports, request, false);
+    if (pin.pinned !== "Pinned")
+      return { result: "Authorized", value: undefined };
+    const declared = await ports.catalogs.declarations(pin.selection);
+    return {
+      result: "Authorized",
+      value:
+        declared === undefined
+          ? undefined
+          : { ...declared, commit: pin.selection.commit },
     };
   };
 }
@@ -844,6 +899,7 @@ export function ticketApplication(
     definition: ticketApplicationDefinition(ports),
     validate: ticketApplicationValidate(ports),
     catalog: ticketApplicationCatalogEntries(ports),
+    declarations: ticketApplicationDeclarations(ports),
     catalogFile: ticketApplicationCatalogFile(ports),
     writeCatalogFile: ticketApplicationCatalogWrite(ports),
     removeCatalogFile: ticketApplicationCatalogRemove(ports),

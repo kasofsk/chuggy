@@ -21,6 +21,7 @@ import {
   projectRepositoryBoundSchema,
   projectRepositoryCreatedSchema,
   projectRepositoryLandingWrittenSchema,
+  repositoryDeclarationsResponseSchema,
 } from "../../../../src/contract/responses.ts";
 import type {
   ForgeAppsResponse,
@@ -34,6 +35,7 @@ import type {
   ProjectRepositoryBoundResponse,
   ProjectRepositoryCreatedResponse,
   ProjectRepositoryResponse,
+  RepositoryDeclarationsResponse,
 } from "../../../../src/contract/responses.ts";
 import type {
   forgeInstallationClaimSchema,
@@ -295,6 +297,26 @@ export function apiWriteProjectRepositoryLanding(
       body: written,
     },
     (value) => projectRepositoryLandingWrittenSchema.parse(value).repository,
+  );
+}
+
+/**
+ * What the bound repository declares at the commit it stands on: what a ticket
+ * in it is run under, how many reworks it may take, and the finalizers it may
+ * be finished with. The repository is named as a query arm because the route
+ * elects the project's own where a caller names none.
+ */
+export function apiProjectRepositoryDeclarations(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  repository: string,
+): Promise<ApiResult<RepositoryDeclarationsResponse>> {
+  return apiGet(
+    ports,
+    apiPath(apiSegments(partition, "repositories", "declarations"), {
+      repository,
+    }),
+    (value) => repositoryDeclarationsResponseSchema.parse(value),
   );
 }
 

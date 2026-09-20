@@ -25,6 +25,7 @@ import type {
   AdoptedExecution,
   AdoptedExecutionState,
 } from "./adoptedExecutions.ts";
+import type { BriefFinalizationMode } from "../../../../src/contract/rosters.ts";
 
 /** A ticket's number as the console writes it, so a row, a chip and a
  * dependency all name the same ticket the same way. */
@@ -94,4 +95,26 @@ export function adoptedExecutionRunsLabel(
     ...(running === 0 ? [] : [`${String(running)} running`]),
     ...(unmeasured === 0 ? [] : [`${String(unmeasured)} unmeasured`]),
   ].join(" · ");
+/** How a finished ticket in a repository lands, as the choice is named. */
+export function landingLabel(mode: BriefFinalizationMode): string {
+  switch (mode) {
+    case "Push":
+      return "Push";
+    case "PullRequest":
+      return "Pull request";
+    case "PullRequestMerge":
+      return "Pull request, then merge";
+  }
+}
+
+/** What choosing that landing does, which is what the choice is made on. */
+export function landingEffect(mode: BriefFinalizationMode): string {
+  switch (mode) {
+    case "Push":
+      return "Commits straight onto the target branch";
+    case "PullRequest":
+      return "Opens a pull request into the target branch";
+    case "PullRequestMerge":
+      return "Opens a pull request into the target branch, then merges it";
+  }
 }

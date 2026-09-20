@@ -6,12 +6,14 @@ import type {
   PinnedTicketCatalogSelection,
   PinnedTicketCatalogs,
 } from "../../interpreter/ticketApplication.ts";
-import type {
-  TicketCatalog,
-  TicketCatalogFragments,
-  TicketCatalogSnapshotPort,
-  TicketCatalogSnapshotRead,
-  TicketContentStore,
+import {
+  ticketCatalogFinalizersDirectory,
+  type TicketCatalog,
+  type TicketCatalogDeclarations,
+  type TicketCatalogFragments,
+  type TicketCatalogSnapshotPort,
+  type TicketCatalogSnapshotRead,
+  type TicketContentStore,
 } from "../../interpreter/ticketCatalog.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 
@@ -56,10 +58,43 @@ export function pinnedTicketCatalogs(
     );
     return ticketCatalog(source, store);
   };
+  /**
+   * The merged view read as a roster rather than as files: the project
+   * document's own settings, and the finalizers a ticket here may name. The
+   * finalizer references are taken from the entries rather than by listing the
+   * directory, so a runtime fragment counts exactly as a committed one does.
+   */
+  const declarations = async (
+    selection: PinnedTicketCatalogSelection,
+  ): Promise<TicketCatalogDeclarations | undefined> => {
+    const view = await merged(selection);
+    if (view === undefined) return undefined;
+    const source = await projectTicketCatalogSource(
+      view.snapshot,
+      view.repository,
+    );
+    const directory = `${ticketCatalogFinalizersDirectory}/`;
+    const finalizers = (await view.entries())
+      .filter((entry) => entry.path.startsWith(directory))
+      .map((entry) => entry.path.slice(directory.length))
+      .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+    return {
+      repository: source.repository,
+      reworkLimit: source.reworkLimit,
+      ...(source.cloudProject === undefined
+        ? {}
+        : { cloudProject: source.cloudProject }),
+      executionProfiles: [...source.executionProfiles.keys()].sort(
+        (left, right) => (left < right ? -1 : left > right ? 1 : 0),
+      ),
+      finalizers,
+    };
+  };
   return {
     catalog: (selection) => build(selection, content(selection.partition)),
     draft: (selection) => build(selection, draftTicketContent()),
     snapshot: merged,
+    declarations,
     tip: (selection) => snapshots.tip(selection),
   };
 }
