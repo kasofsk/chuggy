@@ -432,7 +432,11 @@ function sessionStoreEvents(content: Uint8Array): number {
 /** How long a pod leaves a plane that could not reach the forge before asking again. */
 const workerCredentialRetryAfterSeconds = 1;
 
-/** What a plane holding no app key answers, which is the pod's signal to fall back. */
+/**
+ * What a plane holding neither an app key nor a mounted source answers, which
+ * is the pod's signal to fall back. A plane holding either composes a minting
+ * and refuses a repository it cannot answer for with `NotMinted` instead.
+ */
 const workerCredentialNotConfigured = { reason: "ForgeNotConfigured" };
 
 /** What a plane that mints answers for a repository it may not mint for. */
