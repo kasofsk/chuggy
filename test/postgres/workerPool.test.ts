@@ -15,6 +15,7 @@ import { after, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import type pg from "pg";
 
+import { workerPoolRetryAfterSecsMax } from "../../src/contract/workerPool.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   apiRole,
@@ -415,6 +416,15 @@ test("deregistration names the client the row holds, goes with that client alone
     [project.partition.tenant, project.partition.project, attempt.attempt],
   )) as readonly { pool: string | null }[];
   assert.deepEqual(left, [{ pool: "gone" }]);
+});
+
+test("a release past the bound on a pool's retry-after is refused before it is written", async () => {
+  const project = await poolProject("pool-retry-bound");
+  const mine = await registered(project.partition, "bounded", []);
+  await assert.rejects(
+    assignments.release(mine, "never-claimed", workerPoolRetryAfterSecsMax + 1),
+    RangeError,
+  );
 });
 
 test("a released attempt outlives the reaper for the backoff it was given", async () => {

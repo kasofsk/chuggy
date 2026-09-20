@@ -9,6 +9,7 @@ import test from "node:test";
 
 import {
   assignmentOutcomeSchema,
+  workerPoolRetryAfterSecsMax,
   workerPoolAssignmentSchema,
   workerPoolCapabilitiesMax,
   workerPoolIdentityCharsMax,
@@ -80,6 +81,21 @@ test("an outcome tells a settled no from the pool's own backpressure", () => {
       evidence: "busy",
     }).success,
     false,
+  );
+  assert.equal(
+    assignmentOutcomeSchema.safeParse({
+      outcome: "Unavailable",
+      retryAfterSecs: workerPoolRetryAfterSecsMax,
+    }).success,
+    true,
+  );
+  assert.equal(
+    assignmentOutcomeSchema.safeParse({
+      outcome: "Unavailable",
+      retryAfterSecs: workerPoolRetryAfterSecsMax + 1,
+    }).success,
+    false,
+    "a pool's word on how long to wait is bounded",
   );
 });
 

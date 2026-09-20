@@ -26,9 +26,10 @@
  * is what renews its lease. Nothing here retries a settlement, because the
  * lease is the retry.
  */
-import type {
-  AssignmentOutcome,
-  WorkerPoolAssignment,
+import {
+  workerPoolRetryAfterSecsMax,
+  type AssignmentOutcome,
+  type WorkerPoolAssignment,
 } from "../contract/workerPool.ts";
 
 /** What placing one assignment came to, which is the contract's outcome before it is posted. */
@@ -158,6 +159,10 @@ export function checkedWorkerPoolClientSettings(
       throw new RangeError(
         `worker pool client ${name} must be a positive safe integer`,
       );
+  if (settings.retryAfterSecs > workerPoolRetryAfterSecsMax)
+    throw new RangeError(
+      "worker pool client retryAfterSecs is past what the wire accepts",
+    );
   return settings;
 }
 

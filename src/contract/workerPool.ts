@@ -18,10 +18,18 @@
 
 import { z } from "zod";
 
+import { retryAfterSecondsMax } from "./outcomes.ts";
+
 export const workerPoolTokenCharsMax = 63;
 export const workerPoolIdentityCharsMax = 256;
 export const workerPoolCapabilitiesMax = 64;
 export const workerPoolEvidenceCharsMax = 4_096;
+/**
+ * The longest a pool may ask the orchestrator to wait before offering again,
+ * which is the same ceiling a `retry-after` header is held to: a wait taken on
+ * the other side's word is bounded by this side.
+ */
+export const workerPoolRetryAfterSecsMax = retryAfterSecondsMax;
 
 /**
  * A capability token, free-form and per-project: a claim rather than a proof,
@@ -83,7 +91,12 @@ export const assignmentOutcomeSchema = z.discriminatedUnion("outcome", [
   }),
   z.strictObject({
     outcome: z.literal("Unavailable"),
-    retryAfterSecs: z.number().int().positive().safe(),
+    retryAfterSecs: z
+      .number()
+      .int()
+      .positive()
+      .safe()
+      .max(workerPoolRetryAfterSecsMax),
   }),
 ]);
 

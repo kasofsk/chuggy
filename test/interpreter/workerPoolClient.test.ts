@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
 import {
+  workerPoolRetryAfterSecsMax,
+  type WorkerPoolAssignment,
+} from "../../src/contract/workerPool.ts";
+import {
+  checkedWorkerPoolClientSettings,
   workerPoolClientPass,
   workerPoolClientRun,
   type WorkerPoolBackend,
@@ -472,6 +476,24 @@ test("an issuer that refused the grant stops the run and one that faltered does 
   );
   assert.equal(outage.passed, "Unavailable");
   assert.equal(waited, 2);
+});
+
+test("the retry-after a client answers with is bounded as the wire bounds it", () => {
+  assert.equal(
+    checkedWorkerPoolClientSettings({
+      ...settings,
+      retryAfterSecs: workerPoolRetryAfterSecsMax,
+    }).retryAfterSecs,
+    workerPoolRetryAfterSecsMax,
+  );
+  assert.throws(
+    () =>
+      checkedWorkerPoolClientSettings({
+        ...settings,
+        retryAfterSecs: workerPoolRetryAfterSecsMax + 1,
+      }),
+    RangeError,
+  );
 });
 
 test("a run refuses a bound that is not a positive whole number", async () => {

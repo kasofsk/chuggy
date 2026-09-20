@@ -42,6 +42,7 @@ import { sql } from "@ts-safeql/sql-tag";
 import { createHash } from "node:crypto";
 import type pg from "pg";
 
+import { workerPoolRetryAfterSecsMax } from "../../contract/workerPool.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type {
   WorkerPoolAssignments,
@@ -268,6 +269,35 @@ async function workerPoolClaimed(
     : { capabilities: row.capabilities ?? [] };
 }
 
+/** One assignment given back: the row parked under the attempt's own lease, and the backoff written beside it. */
+function workerPoolReleased(
+  pool: pg.Pool,
+  identity: WorkerPoolIdentity,
+  assignment: string,
+  retryAfterSecs: number,
+): Promise<boolean> {
+  return postgresTransaction(pool, async (client) => {
+    const released = await client.query<{
+      tenant: string;
+      project: string;
+      execution: string;
+    }>(sql`UPDATE execution_attempt a SET pool=NULL,assignment=NULL,pool_refusal=NULL,
+            lease_owner=a.attempt,
+            lease_expires_at=a.lease_expires_at+make_interval(secs=>${retryAfterSecs}::double precision)
+          WHERE a.tenant=${identity.partition.tenant} AND a.project=${identity.partition.project}
+            AND a.assignment=${assignment} AND a.pool=${identity.pool} AND a.state='Placing'
+            AND a.lease_expires_at>now() AND a.pool_refusal IS NULL
+            AND a.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)
+          RETURNING a.tenant,a.project,a.execution`);
+    const row = released.rows[0];
+    if (row === undefined) return false;
+    await client.query(sql`UPDATE execution e
+          SET placement_backoff_from=now()+make_interval(secs=>${retryAfterSecs}::double precision)
+          WHERE e.tenant=${row.tenant} AND e.project=${row.project} AND e.execution=${row.execution}`);
+    return true;
+  });
+}
+
 export function postgresWorkerPoolAssignments(
   pool: pg.Pool,
 ): WorkerPoolAssignments {
@@ -302,28 +332,13 @@ export function postgresWorkerPoolAssignments(
       return (updated.rowCount ?? 0) === 1;
     },
     release: async (identity, assignment, retryAfterSecs) => {
-      if (!Number.isSafeInteger(retryAfterSecs) || retryAfterSecs < 1)
+      if (
+        !Number.isSafeInteger(retryAfterSecs) ||
+        retryAfterSecs < 1 ||
+        retryAfterSecs > workerPoolRetryAfterSecsMax
+      )
         throw new RangeError("invalid worker pool retry interval");
-      return postgresTransaction(pool, async (client) => {
-        const released = await client.query<{
-          tenant: string;
-          project: string;
-          execution: string;
-        }>(sql`UPDATE execution_attempt a SET pool=NULL,assignment=NULL,pool_refusal=NULL,
-            lease_owner=a.attempt,
-            lease_expires_at=a.lease_expires_at+make_interval(secs=>${retryAfterSecs}::double precision)
-          WHERE a.tenant=${identity.partition.tenant} AND a.project=${identity.partition.project}
-            AND a.assignment=${assignment} AND a.pool=${identity.pool} AND a.state='Placing'
-            AND a.lease_expires_at>now() AND a.pool_refusal IS NULL
-            AND a.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)
-          RETURNING a.tenant,a.project,a.execution`);
-        const row = released.rows[0];
-        if (row === undefined) return false;
-        await client.query(sql`UPDATE execution e
-          SET placement_backoff_from=now()+make_interval(secs=>${retryAfterSecs}::double precision)
-          WHERE e.tenant=${row.tenant} AND e.project=${row.project} AND e.execution=${row.execution}`);
-        return true;
-      });
+      return workerPoolReleased(pool, identity, assignment, retryAfterSecs);
     },
     held: async (identity, assignment) => {
       const found = await pool.query<{ held: number }>(sql`SELECT 1 AS held
