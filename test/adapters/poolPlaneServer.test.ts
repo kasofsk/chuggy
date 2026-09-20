@@ -117,7 +117,8 @@ function plane(
     access,
     registry: {
       register: () => Promise.resolve(true),
-      deregister: () => Promise.resolve(undefined),
+      clientOf: () => Promise.resolve(undefined),
+      deregister: () => Promise.resolve(false),
       identify: (principal) =>
         Promise.resolve(principal === poolPrincipal ? identity : undefined),
     },

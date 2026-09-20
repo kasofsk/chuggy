@@ -42,7 +42,8 @@ function registryOf(
   };
   return {
     register: () => Promise.resolve(true),
-    deregister: () => Promise.resolve(undefined),
+    clientOf: () => Promise.resolve(undefined),
+    deregister: () => Promise.resolve(false),
     identify: (asked) =>
       Promise.resolve(asked === principal ? identity : undefined),
   };

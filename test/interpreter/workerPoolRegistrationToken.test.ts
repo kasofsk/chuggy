@@ -67,7 +67,8 @@ function ports(): RegisterPoolPorts & { readonly made: unknown[] } {
     registry: {
       register: (registration) =>
         Promise.resolve((made.push(["register", registration]), true)),
-      deregister: () => Promise.resolve(undefined),
+      clientOf: () => Promise.resolve(undefined),
+      deregister: () => Promise.resolve(false),
       identify: () => Promise.resolve(undefined),
     },
     clients: {

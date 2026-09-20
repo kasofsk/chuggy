@@ -346,7 +346,7 @@ test("the plane serving pools cannot write an attempt's outcome", async () => {
   );
 });
 
-test("deregistration answers with the client it removed and leaves the work it held", async () => {
+test("deregistration names the client the row holds, goes with that client alone, and leaves the work it held", async () => {
   const project = await poolProject("pool-deregister");
   const principal = asPrincipal("https://issuer.invalid#pool-gone");
   const clientId = `chuggy-pool-${randomUUID()}`;
@@ -372,8 +372,23 @@ test("deregistration answers with the client it removed and leaves the work it h
     ),
     undefined,
   );
-  assert.equal(await registry.deregister(project.partition, "gone"), clientId);
+  assert.equal(await registry.clientOf(project.partition, "gone"), clientId);
+  assert.equal(
+    await registry.deregister(project.partition, "gone", "chuggy-pool-other"),
+    false,
+    "the row goes only with the client that was read out of it",
+  );
+  assert.notEqual(await registry.identify(principal), undefined);
+  assert.equal(
+    await registry.deregister(project.partition, "gone", clientId),
+    true,
+  );
   assert.equal(await registry.identify(principal), undefined);
+  assert.equal(await registry.clientOf(project.partition, "gone"), undefined);
+  assert.equal(
+    await registry.deregister(project.partition, "gone", clientId),
+    false,
+  );
   const left = (await rig.harness.query(
     `SELECT pool FROM execution_attempt WHERE tenant=$1 AND project=$2 AND attempt=$3`,
     [project.partition.tenant, project.partition.project, attempt.attempt],

@@ -12,7 +12,9 @@
  * A HALF-REGISTRATION IS UNDONE RATHER THAN LEFT. No transaction spans the
  * three, so a failure after the client exists removes the client and the
  * relation before it reports — leaving a client nobody recorded is leaving a
- * credential with no owner.
+ * credential with no owner. Deregistration is the same order reversed for the
+ * same reason: the client and the relation go first and the row that names
+ * them last, so a failure part-way leaves a row the re-run starts from.
  *
  * IT DECIDES NOTHING ABOUT A TICKET and reads no journal, which is why it is
  * here rather than in the command that composes it: what the command holds is
@@ -213,12 +215,35 @@ export async function registerPoolRun(input: {
   const named = `${request.partition.tenant}/${request.partition.project} pool ${request.pool}`;
   if (request.operation === "register")
     return registerPoolRegistered(request, input.ports, named);
-  const removed = await input.ports.registry.deregister(
+  return registerPoolDeregistered(request, input.ports, named);
+}
+
+/**
+ * The three writes taken back: the client, the relation, and last the row that
+ * named them. The row goes only with the client that was read out of it, so a
+ * pool registered again in between keeps its newer client and this run says so.
+ */
+async function registerPoolDeregistered(
+  request: RegisterPoolRequest,
+  ports: RegisterPoolPorts,
+  named: string,
+): Promise<string> {
+  const clientId = await ports.registry.clientOf(
     request.partition,
     request.pool,
   );
-  if (removed === undefined) return `NotRegistered: ${named}`;
-  await input.ports.grants.remove(registerPoolGrant(request, removed));
-  await input.ports.clients.remove(removed);
+  if (clientId === undefined) return `NotRegistered: ${named}`;
+  await ports.clients.remove(clientId);
+  await ports.grants.remove(registerPoolGrant(request, clientId));
+  if (
+    !(await ports.registry.deregister(
+      request.partition,
+      request.pool,
+      clientId,
+    ))
+  )
+    throw new Error(
+      `${named} was registered again while it was being taken off; run again`,
+    );
   return `Deregistered: ${named}`;
 }

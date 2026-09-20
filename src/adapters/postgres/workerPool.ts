@@ -125,13 +125,18 @@ export function postgresWorkerPoolRegistry(pool: pg.Pool): WorkerPoolRegistry {
       postgresTransaction(pool, (client) =>
         workerPoolRegistered(client, registration),
       ),
-    deregister: async (partition, named) => {
-      const deleted = await pool.query<{ client_id: string }>(
-        sql`DELETE FROM worker_pool
-        WHERE tenant=${partition.tenant} AND project=${partition.project} AND pool=${named}
-        RETURNING client_id`,
+    clientOf: async (partition, named) => {
+      const found = await pool.query<{ client_id: string }>(
+        sql`SELECT w.client_id FROM worker_pool w
+        WHERE w.tenant=${partition.tenant} AND w.project=${partition.project} AND w.pool=${named}`,
       );
-      return deleted.rows[0]?.client_id;
+      return found.rows[0]?.client_id;
+    },
+    deregister: async (partition, named, clientId) => {
+      const deleted = await pool.query(sql`DELETE FROM worker_pool
+        WHERE tenant=${partition.tenant} AND project=${partition.project} AND pool=${named}
+          AND client_id=${clientId}`);
+      return (deleted.rowCount ?? 0) === 1;
     },
     identify: async (principal) => {
       const found = await pool.query<{

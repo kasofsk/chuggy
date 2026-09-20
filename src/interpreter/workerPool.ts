@@ -51,17 +51,23 @@ export interface WorkerPoolRegistration {
 }
 
 /**
- * Registration, deregistration and the lookup a poll resolves its pool by. No
- * secret passes through here — a pool authenticates as an OAuth2 client of the
- * issuer this installation already runs, and what a row keeps is the principal
- * that client's subject resolves to — and deregistration answers with the
- * client it took off rather than a flag, because the command that removes the
- * row is the one that has to remove the client and nothing else in this tree
- * may read a subject back out of a principal.
+ * Registration, deregistration and the lookup a poll resolves its pool by; no
+ * secret passes through here, because a pool authenticates as an OAuth2 client
+ * of the issuer this installation already runs and a row keeps only the
+ * principal that client's subject resolves to. Taking a pool off is a read of
+ * the client its row names and a delete conditional on that client, so the
+ * command that has to remove the client and the relation before the row can
+ * do so in that order, and a pool registered again in between keeps its newer
+ * one.
  */
 export interface WorkerPoolRegistry {
   register(registration: WorkerPoolRegistration): Promise<boolean>;
-  deregister(partition: Partition, pool: string): Promise<string | undefined>;
+  clientOf(partition: Partition, pool: string): Promise<string | undefined>;
+  deregister(
+    partition: Partition,
+    pool: string,
+    clientId: string,
+  ): Promise<boolean>;
   identify(principal: Principal): Promise<WorkerPoolIdentity | undefined>;
 }
 
