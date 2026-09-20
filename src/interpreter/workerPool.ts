@@ -2,13 +2,15 @@
  * The ports a worker pool registers and polls through, and the reconciliation
  * one poll is.
  *
- * ONE CHANNEL DOES FOUR JOBS. A pool sends what it currently holds and is
- * answered with the assignments it may claim and the ones it must stop; the
- * same call extends the lease on everything it still holds, and a pool that
- * stops making it goes quiet, its leases run out, and the reaper that already
- * ends a lapsed attempt takes the work back. That is why there is no heartbeat
- * here, no capacity field and no job-status call: a pool at capacity polls for
- * the control signals alone, and liveness is the poll.
+ * ONE CHANNEL DOES FOUR JOBS. A pool sends what it currently holds and how
+ * many more it has room for, and is answered with the assignments it may
+ * claim and the ones it must stop; the same call extends the lease on
+ * everything it still holds, and a pool that stops making it goes quiet, its
+ * leases run out, and the reaper that already ends a lapsed attempt takes the
+ * work back. That is why there is no heartbeat here, no declared capacity and
+ * no job-status call: a pool's room is stated by the poll that would fill it,
+ * a pool with none polls for the control signals alone, and liveness is the
+ * poll.
  *
  * NOTHING HERE READS THE TICKET MACHINE. An assignment is built from the
  * attempt row's own columns, so the process serving pools never holds a
@@ -202,9 +204,8 @@ async function workerPoolHeldReconciled(
 
 /**
  * The claims one poll makes, each one a row taken and bound to a fresh bearer
- * in the same statement. A pool already holding its own limit sends its whole
- * list and asks for none, which is how a pool at capacity still gets its
- * control signals.
+ * in the same statement. A pool with no room asks for none and none is
+ * claimed, so a full pool's poll costs no row a pool with room could take.
  */
 async function workerPoolClaims(
   assignments: WorkerPoolAssignments,
@@ -237,26 +238,34 @@ async function workerPoolClaims(
   return claimed;
 }
 
-/** One reconciliation pass, which is a renewal of what is held and a claim of what is not. */
+/**
+ * One reconciliation pass, which is a renewal of what is held and a claim of
+ * what is not. The pool's `wanted` is its room and the plane's settings are
+ * the plane's, so what is claimed is the least of the three.
+ */
 export async function workerPoolReconcile(
   assignments: WorkerPoolAssignments,
   identity: WorkerPoolIdentity,
   held: readonly string[],
+  wanted: number,
   settings: WorkerPoolPollSettings,
   mint: WorkerPoolMint,
 ): Promise<WorkerPoolReconciliation> {
   workerPoolCheckedSettings(settings);
   if (held.length > settings.heldMax)
     throw new RangeError("worker pool holds more than its bound");
+  if (!Number.isSafeInteger(wanted) || wanted < 0)
+    throw new RangeError("worker pool wanted must be a non-negative integer");
   const stop = await workerPoolHeldReconciled(
     assignments,
     identity,
     held,
     settings.leaseSecs,
   );
-  const wanted = Math.min(
+  const claimable = Math.min(
+    wanted,
     settings.assignmentsPerPollMax,
-    Math.max(settings.heldMax - held.length, 0),
+    settings.heldMax - held.length,
   );
   return {
     assignments: await workerPoolClaims(
@@ -264,7 +273,7 @@ export async function workerPoolReconcile(
       identity,
       settings,
       mint,
-      wanted,
+      claimable,
     ),
     stop,
   };
@@ -279,6 +288,7 @@ export async function workerPoolPoll(
   assignments: WorkerPoolAssignments,
   identity: WorkerPoolIdentity,
   held: readonly string[],
+  wanted: number,
   settings: WorkerPoolPollSettings,
   mint: WorkerPoolMint,
 ): Promise<WorkerPoolReconciliation> {
@@ -286,6 +296,7 @@ export async function workerPoolPoll(
     assignments,
     identity,
     held,
+    wanted,
     settings,
     mint,
   );
@@ -301,6 +312,7 @@ export async function workerPoolPoll(
       assignments,
       identity,
       held,
+      wanted,
       settings,
       mint,
     );

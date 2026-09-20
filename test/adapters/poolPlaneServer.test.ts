@@ -6,6 +6,7 @@ import type { PoolPlaneService } from "../../src/adapters/http/poolPlaneServer.t
 import {
   workerPoolPollQuery,
   workerPoolPollRoute,
+  workerPoolReconciliationSchema,
   workerPoolSettlementPath,
 } from "../../src/contract/workerPool.ts";
 import type {
@@ -32,12 +33,13 @@ const identity: WorkerPoolIdentity = {
 
 const issuer = "https://issuer.invalid";
 
-/** The poll's address carrying one `held` per assignment. */
-function polling(held: readonly string[]): string {
-  const query = new URLSearchParams(
-    held.map((assignment) => [workerPoolPollQuery.held, assignment]),
-  ).toString();
-  return query === "" ? workerPoolPollRoute : `${workerPoolPollRoute}?${query}`;
+/** The poll's address carrying one `held` per assignment and the room asked for. */
+function polling(held: readonly string[], wanted = 1): string {
+  const query = new URLSearchParams([
+    ...held.map((assignment) => [workerPoolPollQuery.held, assignment]),
+    [workerPoolPollQuery.wanted, String(wanted)],
+  ]).toString();
+  return `${workerPoolPollRoute}?${query}`;
 }
 /** The one client the fake issuer knows, and the principal its subject resolves to. */
 const poolToken = "pool-token";
@@ -163,6 +165,51 @@ test("one poll renews what is held, says what must stop and hands over what it c
     ["renew", "gone"],
     ["claim", "minted-1"],
   ]);
+});
+
+test("a pool wanting none is renewed, told what to stop and claimed nothing", async () => {
+  const recorded = calls();
+  const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
+    method: "GET",
+    url: polling(["live", "gone"], 0),
+    headers: { authorization: "Bearer pool-token" },
+  });
+  assert.equal(answered.statusCode, 200);
+  assert.deepEqual(answered.json(), { assignments: [], stop: ["gone"] });
+  assert.deepEqual(recorded.made, [
+    ["renew", "live"],
+    ["renew", "gone"],
+  ]);
+});
+
+test("a pool wanting more than the plane hands out per poll is claimed the plane's bound", async () => {
+  const recorded = calls();
+  const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
+    method: "GET",
+    url: polling([], 5),
+    headers: { authorization: "Bearer pool-token" },
+  });
+  assert.equal(answered.statusCode, 200);
+  assert.equal(
+    workerPoolReconciliationSchema.parse(answered.json()).assignments.length,
+    1,
+  );
+  assert.deepEqual(recorded.made, [["claim", "minted-1"]]);
+});
+
+test("a poll that does not say its room, or says it as no count, is refused", async () => {
+  const recorded = calls();
+  const app = createPoolPlaneApp(plane(recorded.ports));
+  for (const query of ["", "?wanted=-1", "?wanted=two", "?wanted=1&wanted=2"]) {
+    const answered = await app.inject({
+      method: "GET",
+      url: `${workerPoolPollRoute}${query}`,
+      headers: { authorization: "Bearer pool-token" },
+    });
+    assert.equal(answered.statusCode, 400, query);
+    assert.equal(answered.body, "");
+  }
+  assert.deepEqual(recorded.made, []);
 });
 
 test("a pool already at its bound still polls and is answered with control alone", async () => {

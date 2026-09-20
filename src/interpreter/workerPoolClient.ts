@@ -82,7 +82,11 @@ export type WorkerPoolSettled =
 
 /** The plane's two calls as a pool makes them, each one carrying the token it currently holds. */
 export interface WorkerPoolPlane {
-  poll(token: string, held: readonly string[]): Promise<WorkerPoolPolled>;
+  poll(
+    token: string,
+    held: readonly string[],
+    wanted: number,
+  ): Promise<WorkerPoolPolled>;
   settle(
     token: string,
     assignment: string,
@@ -112,9 +116,9 @@ export interface WorkerPoolTokens {
 }
 
 export interface WorkerPoolClientSettings {
-  /** How many assignments this pool holds at once, which is its only statement of capacity. */
+  /** How many assignments this pool holds at once, which every poll's `wanted` is measured from. */
   readonly concurrencyMax: number;
-  /** What a pool at capacity asks the orchestrator to wait before offering the work again. */
+  /** What a pool offered more than it asked for tells the orchestrator to wait before offering again. */
   readonly retryAfterSecs: number;
   /** How long a pass waits after an outage before the next one. */
   readonly outageBackoffMs: number;
@@ -225,9 +229,10 @@ interface WorkerPoolTally {
 }
 
 /**
- * Places what there is room for and answers backpressure for the rest, which is
- * the whole of this client's capacity statement. Room is measured against what
- * the backend held at the top of the pass plus what this pass has placed since.
+ * Places what there is room for and answers backpressure for the rest. The poll
+ * asked for no more than the room there was, so the rest is a plane that offered
+ * past what it was asked, and room is measured against what the backend held at
+ * the top of the pass plus what this pass has placed since.
  */
 async function workerPoolClientPlaced(
   client: WorkerPoolClient,
@@ -257,10 +262,10 @@ async function workerPoolClientPlaced(
 }
 
 /**
- * One reconciliation pass: read what is running, poll, stop what must stop,
- * place what there is room for. A token the plane rejected is discarded at the
- * issuer port, so the next pass acquires a fresh one and the lease covers the
- * gap.
+ * One reconciliation pass: read what is running, poll for the room that
+ * leaves, stop what must stop, place what was offered. The room is asked
+ * before the stops are known, so it is what the backend holds against the
+ * ceiling and a stop this pass delivers frees room the next pass asks for.
  */
 export async function workerPoolClientPass(
   client: WorkerPoolClient,
@@ -268,7 +273,11 @@ export async function workerPoolClientPass(
   const minted = await workerPoolClientToken(client);
   if (!("token" in minted)) return minted;
   const held = await client.backend.held();
-  const polled = await client.plane.poll(minted.token, held);
+  const polled = await client.plane.poll(
+    minted.token,
+    held,
+    Math.max(client.settings.concurrencyMax - held.length, 0),
+  );
   if (polled.polled === "Stale") {
     client.tokens.invalidate(minted.token);
     return { passed: "Unavailable", evidence: "the pool token was rejected" };

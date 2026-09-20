@@ -123,9 +123,49 @@ test("what the pool holds is read from the backend rather than remembered", asyn
   assert.equal(passed.passed, "Reconciled");
 });
 
-test("a pool at its own ceiling answers backpressure and places nothing", async () => {
+test("a poll asks for the room left under the ceiling, and none at it", async () => {
+  const asked: number[] = [];
+  const plane: WorkerPoolPlane = {
+    ...quiet,
+    poll: (_token, _held, wanted) => {
+      asked.push(wanted);
+      return Promise.resolve<WorkerPoolPolled>({
+        polled: "Reconciled",
+        assignments: [],
+        stop: [],
+      });
+    },
+  };
+  await workerPoolClientPass(
+    client({
+      settings: { ...settings, concurrencyMax: 3 },
+      backend: { ...idle, held: () => Promise.resolve(["one"]) },
+      plane,
+    }),
+  );
+  await workerPoolClientPass(
+    client({
+      settings: { ...settings, concurrencyMax: 3 },
+      backend: {
+        ...idle,
+        held: () => Promise.resolve(["one", "two", "three"]),
+      },
+      plane,
+    }),
+  );
+  await workerPoolClientPass(
+    client({
+      backend: { ...idle, held: () => Promise.resolve(["one", "two"]) },
+      plane,
+    }),
+  );
+  assert.deepEqual(asked, [2, 0, 0]);
+});
+
+test("a pool at its own ceiling polls for none, and places nothing it is offered anyway", async () => {
   let placed = 0;
   const posted: string[] = [];
+  const asked: number[] = [];
   const passed = await workerPoolClientPass(
     client({
       backend: {
@@ -137,12 +177,14 @@ test("a pool at its own ceiling answers backpressure and places nothing", async 
         },
       },
       plane: {
-        poll: () =>
-          Promise.resolve<WorkerPoolPolled>({
+        poll: (_token, _held, wanted) => {
+          asked.push(wanted);
+          return Promise.resolve<WorkerPoolPolled>({
             polled: "Reconciled",
             assignments: [assignment("offered")],
             stop: [],
-          }),
+          });
+        },
         settle: (_token, _assignment, outcome) => {
           posted.push(
             outcome.outcome === "Unavailable"
@@ -154,6 +196,7 @@ test("a pool at its own ceiling answers backpressure and places nothing", async 
       },
     }),
   );
+  assert.deepEqual(asked, [0]);
   assert.equal(placed, 0);
   assert.deepEqual(posted, ["Unavailable:7"]);
   assert.deepEqual(passed, {

@@ -97,14 +97,16 @@ function poolPlaneUrl(settings: PoolPlaneClientSettings, route: string): URL {
   return new URL(route.replace(/^\//u, ""), settings.baseUrl);
 }
 
-/** The poll's address, the held list repeated as the plane reads it. */
+/** The poll's address: the held list repeated and the room stated, as the plane reads them. */
 function poolPlaneAssignmentsUrl(
   settings: PoolPlaneClientSettings,
   held: readonly string[],
+  wanted: number,
 ): URL {
   const url = poolPlaneUrl(settings, workerPoolPollRoute);
   for (const assignment of held)
     url.searchParams.append(workerPoolPollQuery.held, assignment);
+  url.searchParams.set(workerPoolPollQuery.wanted, String(wanted));
   return url;
 }
 
@@ -159,10 +161,11 @@ async function poolPlanePolled(
   fetcher: typeof fetch,
   token: string,
   held: readonly string[],
+  wanted: number,
 ): Promise<WorkerPoolPolled> {
   let answered: Response;
   try {
-    answered = await fetcher(poolPlaneAssignmentsUrl(settings, held), {
+    answered = await fetcher(poolPlaneAssignmentsUrl(settings, held, wanted), {
       method: "GET",
       signal: AbortSignal.timeout(settings.pollTimeoutMs),
       headers: { accept: "application/json", authorization: `Bearer ${token}` },
@@ -232,7 +235,8 @@ export function poolPlaneClient(
 ): WorkerPoolPlane {
   const settings = checkedPoolPlaneClientSettings(input);
   return {
-    poll: (token, held) => poolPlanePolled(settings, fetcher, token, held),
+    poll: (token, held, wanted) =>
+      poolPlanePolled(settings, fetcher, token, held, wanted),
     settle: (token, assignment, outcome) =>
       poolPlaneSettled(settings, fetcher, token, assignment, outcome),
   };

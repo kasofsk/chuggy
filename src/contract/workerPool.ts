@@ -116,15 +116,25 @@ export function workerPoolSettlementPath(
   );
 }
 
-/** The poll's query parameters by name, `held` repeated once per assignment. */
-export const workerPoolPollQuery = { held: "held" } as const;
+/** The poll's query parameters by name, `held` repeated once per assignment and `wanted` once. */
+export const workerPoolPollQuery = { held: "held", wanted: "wanted" } as const;
+
+/** A count as a query string carries one: decimal, canonical, and within what a number can hold. */
+const workerPoolQueryCountSchema = z
+  .string()
+  .regex(/^(?:0|[1-9][0-9]*)$/u)
+  .transform(Number)
+  .pipe(z.number().int().nonnegative().safe());
 
 /**
- * The poll's query as the plane reads it. `held` is the assignments the pool is
+ * The poll's query as the plane reads it: `held`, the assignments the pool is
  * still running, repeated or single or absent as a query carries a list, and
- * its length is bounded by the plane's own setting rather than by a figure
- * written here — a list longer than that is refused whole, never cut, because a
- * cut list reads as a pool that let go of work it is still running.
+ * `wanted`, how many more it has room for now. The held list's length is the
+ * plane's own setting rather than a figure written here, and a list longer
+ * than that is refused whole rather than cut, because a cut list reads as a
+ * pool that let go of work it is still running; the plane bounds `wanted` by
+ * its own settings and never exceeds it, and a pool sending zero is still
+ * answered with what it must stop.
  */
 export function workerPoolPollQuerySchema(heldMax: number) {
   return z.strictObject({
@@ -137,6 +147,7 @@ export function workerPoolPollQuerySchema(heldMax: number) {
             : [value],
       z.array(workerPoolAssignmentIdentitySchema).max(heldMax),
     ),
+    [workerPoolPollQuery.wanted]: workerPoolQueryCountSchema,
   });
 }
 

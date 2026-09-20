@@ -99,16 +99,27 @@ test("a reconciliation carries what to place and what to stop, each name bounded
     );
 });
 
-test("a poll's query is the held list as a query carries one, bounded by the plane", () => {
+test("a poll's query is the held list as a query carries one, bounded by the plane, and the room", () => {
   const query = workerPoolPollQuerySchema(2);
-  assert.deepEqual(query.parse({}), { held: [] });
-  assert.deepEqual(query.parse({ held: "a" }), { held: ["a"] });
-  assert.deepEqual(query.parse({ held: ["a", "b"] }), { held: ["a", "b"] });
+  assert.deepEqual(query.parse({ wanted: "0" }), { held: [], wanted: 0 });
+  assert.deepEqual(query.parse({ held: "a", wanted: "3" }), {
+    held: ["a"],
+    wanted: 3,
+  });
+  assert.deepEqual(query.parse({ held: ["a", "b"], wanted: "1" }), {
+    held: ["a", "b"],
+    wanted: 1,
+  });
   for (const invalid of [
-    { held: ["a", "b", "c"] },
-    { held: "x".repeat(workerPoolIdentityCharsMax + 1) },
-    { held: "" },
-    { held: "a", capacity: "4" },
+    { held: ["a", "b", "c"], wanted: "0" },
+    { held: "x".repeat(workerPoolIdentityCharsMax + 1), wanted: "0" },
+    { held: "", wanted: "0" },
+    { held: "a" },
+    { held: "a", wanted: "-1" },
+    { held: "a", wanted: "01" },
+    { held: "a", wanted: "1.5" },
+    { held: "a", wanted: ["1", "2"] },
+    { held: "a", wanted: "0", capacity: "4" },
   ])
     assert.equal(query.safeParse(invalid).success, false);
 });

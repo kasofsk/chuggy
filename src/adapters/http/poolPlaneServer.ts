@@ -10,9 +10,9 @@
  * is the direction this tree keeps narrowing.
  *
  * FOUR JOBS THROUGH ONE CALL. A poll renews every lease the pool says it holds,
- * answers which of them must stop, claims what the pool's capabilities cover,
- * and by being made at all says the pool is alive. Nothing here is a heartbeat
- * and nothing here is a placement.
+ * answers which of them must stop, claims what the pool's capabilities cover
+ * up to the room it said it has, and by being made at all says the pool is
+ * alive. Nothing here is a heartbeat and nothing here is a placement.
  *
  * IT VERIFIES AND IT NEVER MINTS. A pool arrives as an OAuth2 client of the
  * issuer this installation already runs, so what this process holds is the
@@ -162,6 +162,7 @@ function poolAssignmentsRoute(
       service.assignments,
       caller.identity,
       query.data[workerPoolPollQuery.held],
+      query.data[workerPoolPollQuery.wanted],
       service.settings,
       service.mint,
     );

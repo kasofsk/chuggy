@@ -61,7 +61,7 @@ function answered(status: number, body: string): Response {
   return new Response(status === 204 ? null : body, { status });
 }
 
-test("a poll names what the pool holds and carries its own token", async () => {
+test("a poll names what the pool holds and wants, and carries its own token", async () => {
   const seen: { url: string; authorization: string } = {
     url: "",
     authorization: "",
@@ -73,10 +73,10 @@ test("a poll names what the pool holds and carries its own token", async () => {
       answered(200, JSON.stringify({ assignments: [assignment], stop: ["a"] })),
     );
   });
-  const polled = await plane.poll("pool-token", ["one", "two"]);
+  const polled = await plane.poll("pool-token", ["one", "two"], 3);
   assert.equal(
     seen.url,
-    "https://pool-plane.invalid/v1/assignments?held=one&held=two",
+    "https://pool-plane.invalid/v1/assignments?held=one&held=two&wanted=3",
   );
   assert.equal(seen.authorization, "Bearer pool-token");
   assert.equal(polled.polled, "Reconciled");
@@ -96,7 +96,7 @@ test("each refusing status is the arm the plane means by it", async () => {
     const plane = poolPlaneClient(planeSettings, () =>
       Promise.resolve(answered(status, "{}")),
     );
-    const polled = await plane.poll("pool-token", []);
+    const polled = await plane.poll("pool-token", [], 1);
     assert.equal(polled.polled, expected, `status ${String(status)}`);
   }
 });
@@ -106,7 +106,7 @@ test("an answer this pool cannot read is an outage rather than a refusal", async
     const plane = poolPlaneClient(planeSettings, () =>
       Promise.resolve(answered(200, body)),
     );
-    const polled = await plane.poll("pool-token", []);
+    const polled = await plane.poll("pool-token", [], 1);
     assert.equal(polled.polled, "Unavailable");
   }
 });
@@ -115,7 +115,7 @@ test("a plane that could not be reached is an outage and raises nothing", async 
   const plane = poolPlaneClient(planeSettings, () =>
     Promise.reject(new Error("connection refused")),
   );
-  const polled = await plane.poll("pool-token", []);
+  const polled = await plane.poll("pool-token", [], 1);
   assert.equal(polled.polled, "Unavailable");
 });
 
