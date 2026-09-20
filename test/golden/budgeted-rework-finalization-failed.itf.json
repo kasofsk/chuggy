@@ -125,16 +125,16 @@
         "finalizationPricing_": {
           "tag": "Some",
           "value": {
-            "tag": "DeadlineOnly",
+            "tag": "Budgeted",
             "value": {
-              "#tup": []
+              "#bigint": "1"
             }
           }
         },
         "finalizer_": {
           "tag": "Some",
           "value": {
-            "tag": "NoFinalizer",
+            "tag": "ManagedFinalizer",
             "value": {
               "#tup": []
             }
@@ -143,7 +143,7 @@
         "j": {
           "tag": "Some",
           "value": {
-            "#bigint": "6"
+            "#bigint": "3"
           }
         },
         "out": {
@@ -157,7 +157,7 @@
           "value": [
             {
               "combinator": {
-                "tag": "AnyPass",
+                "tag": "UnanimousPass",
                 "value": {
                   "#tup": []
                 }
@@ -168,7 +168,7 @@
             },
             {
               "combinator": {
-                "tag": "AnyPass",
+                "tag": "UnanimousPass",
                 "value": {
                   "#tup": []
                 }
@@ -182,7 +182,7 @@
         "resumePricing_": {
           "tag": "Some",
           "value": {
-            "tag": "RetryFree",
+            "tag": "RetryCharged",
             "value": {
               "#tup": []
             }
@@ -237,7 +237,7 @@
         "#map": [
           [
             {
-              "#bigint": "6"
+              "#bigint": "3"
             },
             {
               "artifact": {
@@ -253,16 +253,16 @@
                 "#set": []
               },
               "finalizationLeft": {
-                "#bigint": "0"
+                "#bigint": "1"
               },
               "finalizationPricing": {
-                "tag": "DeadlineOnly",
+                "tag": "Budgeted",
                 "value": {
-                  "#tup": []
+                  "#bigint": "1"
                 }
               },
               "finalizer": {
-                "tag": "NoFinalizer",
+                "tag": "ManagedFinalizer",
                 "value": {
                   "#tup": []
                 }
@@ -279,7 +279,7 @@
               "program": [
                 {
                   "combinator": {
-                    "tag": "AnyPass",
+                    "tag": "UnanimousPass",
                     "value": {
                       "#tup": []
                     }
@@ -290,7 +290,7 @@
                 },
                 {
                   "combinator": {
-                    "tag": "AnyPass",
+                    "tag": "UnanimousPass",
                     "value": {
                       "#tup": []
                     }
@@ -314,7 +314,7 @@
                 }
               },
               "resumePricing": {
-                "tag": "RetryFree",
+                "tag": "RetryCharged",
                 "value": {
                   "#tup": []
                 }
@@ -369,7 +369,7 @@
         "j": {
           "tag": "Some",
           "value": {
-            "#bigint": "6"
+            "#bigint": "3"
           }
         },
         "out": {
@@ -433,7 +433,7 @@
               }
             },
             "ticket": {
-              "#bigint": "6"
+              "#bigint": "3"
             },
             "to": {
               "tag": "Revoked",
@@ -445,13 +445,13 @@
         ]
       },
       "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
-        "#bigint": "873"
+        "#bigint": "711"
       },
       "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
         "#map": [
           [
             {
-              "#bigint": "6"
+              "#bigint": "3"
             },
             []
           ]
@@ -461,7 +461,7 @@
         "#map": [
           [
             {
-              "#bigint": "6"
+              "#bigint": "3"
             },
             {
               "artifact": {
@@ -477,16 +477,16 @@
                 "#set": []
               },
               "finalizationLeft": {
-                "#bigint": "0"
+                "#bigint": "1"
               },
               "finalizationPricing": {
-                "tag": "DeadlineOnly",
+                "tag": "Budgeted",
                 "value": {
-                  "#tup": []
+                  "#bigint": "1"
                 }
               },
               "finalizer": {
-                "tag": "NoFinalizer",
+                "tag": "ManagedFinalizer",
                 "value": {
                   "#tup": []
                 }
@@ -503,7 +503,7 @@
               "program": [
                 {
                   "combinator": {
-                    "tag": "AnyPass",
+                    "tag": "UnanimousPass",
                     "value": {
                       "#tup": []
                     }
@@ -514,7 +514,7 @@
                 },
                 {
                   "combinator": {
-                    "tag": "AnyPass",
+                    "tag": "UnanimousPass",
                     "value": {
                       "#tup": []
                     }
@@ -538,7 +538,7 @@
                 }
               },
               "resumePricing": {
-                "tag": "RetryFree",
+                "tag": "RetryCharged",
                 "value": {
                   "#tup": []
                 }
@@ -583,14 +583,14 @@
           "value": {
             "tag": "Budgeted",
             "value": {
-              "#bigint": "1"
+              "#bigint": "0"
             }
           }
         },
         "finalizer_": {
           "tag": "Some",
           "value": {
-            "tag": "ManagedFinalizer",
+            "tag": "NoFinalizer",
             "value": {
               "#tup": []
             }
@@ -599,7 +599,7 @@
         "j": {
           "tag": "Some",
           "value": {
-            "#bigint": "2"
+            "#bigint": "6"
           }
         },
         "out": {
@@ -619,7 +619,7 @@
                 }
               },
               "fanout": {
-                "#bigint": "1"
+                "#bigint": "2"
               }
             }
           ]
@@ -673,13 +673,13 @@
         "transitions": []
       },
       "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
-        "#bigint": "819"
+        "#bigint": "675"
       },
       "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
         "#map": [
           [
             {
-              "#bigint": "6"
+              "#bigint": "3"
             },
             []
           ]
@@ -689,7 +689,7 @@
         "#map": [
           [
             {
-              "#bigint": "2"
+              "#bigint": "3"
             },
             {
               "artifact": {
@@ -723,7 +723,7 @@
                 "#bigint": "3"
               },
               "phase": {
-                "tag": "Pending",
+                "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
@@ -737,7 +737,18 @@
                     }
                   },
                   "fanout": {
-                    "#bigint": "1"
+                    "#bigint": "2"
+                  }
+                },
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -755,7 +766,7 @@
                 }
               },
               "resumePricing": {
-                "tag": "RetryFree",
+                "tag": "RetryCharged",
                 "value": {
                   "#tup": []
                 }
@@ -801,9 +812,9 @@
                 "#bigint": "0"
               },
               "finalizationPricing": {
-                "tag": "DeadlineOnly",
+                "tag": "Budgeted",
                 "value": {
-                  "#tup": []
+                  "#bigint": "0"
                 }
               },
               "finalizer": {
@@ -816,7 +827,7 @@
                 "#bigint": "3"
               },
               "phase": {
-                "tag": "Revoked",
+                "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
@@ -824,18 +835,7 @@
               "program": [
                 {
                   "combinator": {
-                    "tag": "AnyPass",
-                    "value": {
-                      "#tup": []
-                    }
-                  },
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "combinator": {
-                    "tag": "AnyPass",
+                    "tag": "UnanimousPass",
                     "value": {
                       "#tup": []
                     }
@@ -891,434 +891,6 @@
       "#meta": {
         "index": 4
       },
-      "mbt::actionTaken": "releaseTicket",
-      "mbt::nondetPicks": {
-        "deps_": {
-          "tag": "Some",
-          "value": {
-            "#set": [
-              {
-                "#bigint": "2"
-              }
-            ]
-          }
-        },
-        "finalizationPricing_": {
-          "tag": "Some",
-          "value": {
-            "tag": "Budgeted",
-            "value": {
-              "#bigint": "0"
-            }
-          }
-        },
-        "finalizer_": {
-          "tag": "Some",
-          "value": {
-            "tag": "ManagedFinalizer",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "j": {
-          "tag": "Some",
-          "value": {
-            "#bigint": "1"
-          }
-        },
-        "out": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "prog": {
-          "tag": "Some",
-          "value": [
-            {
-              "combinator": {
-                "tag": "UnanimousPass",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "fanout": {
-                "#bigint": "2"
-              }
-            }
-          ]
-        },
-        "resumePricing_": {
-          "tag": "Some",
-          "value": {
-            "tag": "RetryFree",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "reworkPolicy_": {
-          "tag": "Some",
-          "value": {
-            "tag": "BudgetedRework",
-            "value": {
-              "#bigint": "1"
-            }
-          }
-        },
-        "tid": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "v": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "why": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "workFanout_": {
-          "tag": "Some",
-          "value": {
-            "#bigint": "1"
-          }
-        }
-      },
-      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "ticket-released",
-        "transitions": []
-      },
-      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
-        "#bigint": "1818"
-      },
-      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
-        "#map": [
-          [
-            {
-              "#bigint": "2"
-            },
-            []
-          ],
-          [
-            {
-              "#bigint": "6"
-            },
-            []
-          ]
-        ]
-      },
-      "mc_chuggy_budgeted::chuggy_domain::tickets": {
-        "#map": [
-          [
-            {
-              "#bigint": "1"
-            },
-            {
-              "artifact": {
-                "tag": "NoArtifact",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "completions": {
-                "#bigint": "0"
-              },
-              "deps": {
-                "#set": [
-                  {
-                    "#bigint": "2"
-                  }
-                ]
-              },
-              "finalizationLeft": {
-                "#bigint": "0"
-              },
-              "finalizationPricing": {
-                "tag": "Budgeted",
-                "value": {
-                  "#bigint": "0"
-                }
-              },
-              "finalizer": {
-                "tag": "ManagedFinalizer",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "gasLeft": {
-                "#bigint": "3"
-              },
-              "phase": {
-                "tag": "Pending",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "program": [
-                {
-                  "combinator": {
-                    "tag": "UnanimousPass",
-                    "value": {
-                      "#tup": []
-                    }
-                  },
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                }
-              ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "resumePricing": {
-                "tag": "RetryFree",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "reworkLeft": {
-                "#bigint": "1"
-              },
-              "reworkPolicy": {
-                "tag": "BudgetedRework",
-                "value": {
-                  "#bigint": "1"
-                }
-              },
-              "spawned": {
-                "#bigint": "0"
-              },
-              "tasks": {
-                "#set": []
-              },
-              "workFanout": {
-                "#bigint": "1"
-              }
-            }
-          ],
-          [
-            {
-              "#bigint": "2"
-            },
-            {
-              "artifact": {
-                "tag": "NoArtifact",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "completions": {
-                "#bigint": "0"
-              },
-              "deps": {
-                "#set": []
-              },
-              "finalizationLeft": {
-                "#bigint": "1"
-              },
-              "finalizationPricing": {
-                "tag": "Budgeted",
-                "value": {
-                  "#bigint": "1"
-                }
-              },
-              "finalizer": {
-                "tag": "ManagedFinalizer",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "gasLeft": {
-                "#bigint": "3"
-              },
-              "phase": {
-                "tag": "Pending",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "program": [
-                {
-                  "combinator": {
-                    "tag": "UnanimousPass",
-                    "value": {
-                      "#tup": []
-                    }
-                  },
-                  "fanout": {
-                    "#bigint": "1"
-                  }
-                }
-              ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "resumePricing": {
-                "tag": "RetryFree",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "reworkLeft": {
-                "#bigint": "1"
-              },
-              "reworkPolicy": {
-                "tag": "BudgetedRework",
-                "value": {
-                  "#bigint": "1"
-                }
-              },
-              "spawned": {
-                "#bigint": "0"
-              },
-              "tasks": {
-                "#set": []
-              },
-              "workFanout": {
-                "#bigint": "1"
-              }
-            }
-          ],
-          [
-            {
-              "#bigint": "6"
-            },
-            {
-              "artifact": {
-                "tag": "NoArtifact",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "completions": {
-                "#bigint": "0"
-              },
-              "deps": {
-                "#set": []
-              },
-              "finalizationLeft": {
-                "#bigint": "0"
-              },
-              "finalizationPricing": {
-                "tag": "DeadlineOnly",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "finalizer": {
-                "tag": "NoFinalizer",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "gasLeft": {
-                "#bigint": "3"
-              },
-              "phase": {
-                "tag": "Revoked",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "program": [
-                {
-                  "combinator": {
-                    "tag": "AnyPass",
-                    "value": {
-                      "#tup": []
-                    }
-                  },
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "combinator": {
-                    "tag": "AnyPass",
-                    "value": {
-                      "#tup": []
-                    }
-                  },
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                }
-              ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "resumePricing": {
-                "tag": "RetryFree",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "reworkLeft": {
-                "#bigint": "1"
-              },
-              "reworkPolicy": {
-                "tag": "BudgetedRework",
-                "value": {
-                  "#bigint": "1"
-                }
-              },
-              "spawned": {
-                "#bigint": "0"
-              },
-              "tasks": {
-                "#set": []
-              },
-              "workFanout": {
-                "#bigint": "1"
-              }
-            }
-          ]
-        ]
-      }
-    },
-    {
-      "#meta": {
-        "index": 5
-      },
       "mbt::actionTaken": "dispatch",
       "mbt::nondetPicks": {
         "deps_": {
@@ -1342,7 +914,7 @@
         "j": {
           "tag": "Some",
           "value": {
-            "#bigint": "2"
+            "#bigint": "6"
           }
         },
         "out": {
@@ -1406,7 +978,7 @@
               }
             },
             "ticket": {
-              "#bigint": "2"
+              "#bigint": "6"
             },
             "to": {
               "tag": "Working",
@@ -1418,19 +990,13 @@
         ]
       },
       "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
-        "#bigint": "2691"
+        "#bigint": "1296"
       },
       "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
         "#map": [
           [
             {
-              "#bigint": "1"
-            },
-            []
-          ],
-          [
-            {
-              "#bigint": "2"
+              "#bigint": "3"
             },
             []
           ],
@@ -1446,7 +1012,7 @@
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "3"
             },
             {
               "artifact": {
@@ -1459,19 +1025,15 @@
                 "#bigint": "0"
               },
               "deps": {
-                "#set": [
-                  {
-                    "#bigint": "2"
-                  }
-                ]
+                "#set": []
               },
               "finalizationLeft": {
-                "#bigint": "0"
+                "#bigint": "1"
               },
               "finalizationPricing": {
                 "tag": "Budgeted",
                 "value": {
-                  "#bigint": "0"
+                  "#bigint": "1"
                 }
               },
               "finalizer": {
@@ -1484,7 +1046,111 @@
                 "#bigint": "3"
               },
               "phase": {
-                "tag": "Pending",
+                "tag": "Revoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                },
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "reason": {
+                "tag": "NoReason",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "NoResume",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "resumePricing": {
+                "tag": "RetryCharged",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "reworkPolicy": {
+                "tag": "BudgetedRework",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "workFanout": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "artifact": {
+                "tag": "NoArtifact",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "finalizationLeft": {
+                "#bigint": "0"
+              },
+              "finalizationPricing": {
+                "tag": "Budgeted",
+                "value": {
+                  "#bigint": "0"
+                }
+              },
+              "finalizer": {
+                "tag": "NoFinalizer",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "gasLeft": {
+                "#bigint": "2"
+              },
+              "phase": {
+                "tag": "Working",
                 "value": {
                   "#tup": []
                 }
@@ -1531,19 +1197,166 @@
                 }
               },
               "spawned": {
-                "#bigint": "0"
+                "#bigint": "1"
               },
               "tasks": {
-                "#set": []
+                "#set": [
+                  {
+                    "id": {
+                      "#bigint": "1"
+                    },
+                    "kind": {
+                      "tag": "Work",
+                      "value": {
+                        "#tup": []
+                      }
+                    },
+                    "state": {
+                      "tag": "Outstanding",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                ]
               },
               "workFanout": {
                 "#bigint": "1"
               }
             }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "mbt::actionTaken": "executionBlocked",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "finalizationPricing_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "finalizer_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "6"
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "resumePricing_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reworkPolicy_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "why": {
+          "tag": "Some",
+          "value": {
+            "tag": "RuntimeVersionUnsupported",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "workFanout_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": ["OpenHumanTask"],
+        "label": "ticket-escalated execution_blocked",
+        "transitions": [
+          {
+            "from": {
+              "tag": "Working",
+              "value": {
+                "#tup": []
+              }
+            },
+            "ticket": {
+              "#bigint": "6"
+            },
+            "to": {
+              "tag": "Escalated",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "1108"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "3"
+            },
+            []
           ],
           [
             {
-              "#bigint": "2"
+              "#bigint": "6"
+            },
+            []
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "3"
             },
             {
               "artifact": {
@@ -1574,7 +1387,476 @@
                 }
               },
               "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "Revoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                },
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "reason": {
+                "tag": "NoReason",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "NoResume",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "resumePricing": {
+                "tag": "RetryCharged",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "reworkPolicy": {
+                "tag": "BudgetedRework",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "workFanout": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "artifact": {
+                "tag": "NoArtifact",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "finalizationLeft": {
+                "#bigint": "0"
+              },
+              "finalizationPricing": {
+                "tag": "Budgeted",
+                "value": {
+                  "#bigint": "0"
+                }
+              },
+              "finalizer": {
+                "tag": "NoFinalizer",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "gasLeft": {
                 "#bigint": "2"
+              },
+              "phase": {
+                "tag": "Escalated",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "reason": {
+                "tag": "RuntimeVersionUnsupported",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
+              "resumeAt": {
+                "tag": "ResumeWorking",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "resumePricing": {
+                "tag": "RetryFree",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "reworkPolicy": {
+                "tag": "BudgetedRework",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "spawned": {
+                "#bigint": "1"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "workFanout": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "mbt::actionTaken": "resumeTicket",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "finalizationPricing_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "finalizer_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "6"
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "resumePricing_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reworkPolicy_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "why": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "workFanout_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": ["SpawnWorkTasks"],
+        "label": "ticket-resumed",
+        "transitions": [
+          {
+            "from": {
+              "tag": "Escalated",
+              "value": {
+                "#tup": []
+              }
+            },
+            "ticket": {
+              "#bigint": "6"
+            },
+            "to": {
+              "tag": "Working",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "1080"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "3"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "Work",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "Resolved",
+                  "value": {
+                    "tag": "Cancelled",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "artifact": {
+                "tag": "NoArtifact",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "finalizationLeft": {
+                "#bigint": "1"
+              },
+              "finalizationPricing": {
+                "tag": "Budgeted",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "finalizer": {
+                "tag": "ManagedFinalizer",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "Revoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                },
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "reason": {
+                "tag": "NoReason",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "NoResume",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "resumePricing": {
+                "tag": "RetryCharged",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "reworkPolicy": {
+                "tag": "BudgetedRework",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "workFanout": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "artifact": {
+                "tag": "NoArtifact",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "finalizationLeft": {
+                "#bigint": "0"
+              },
+              "finalizationPricing": {
+                "tag": "Budgeted",
+                "value": {
+                  "#bigint": "0"
+                }
+              },
+              "finalizer": {
+                "tag": "NoFinalizer",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "gasLeft": {
+                "#bigint": "1"
               },
               "phase": {
                 "tag": "Working",
@@ -1586,6 +1868,798 @@
                 {
                   "combinator": {
                     "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "reason": {
+                "tag": "NoReason",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
+              "resumeAt": {
+                "tag": "NoResume",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "resumePricing": {
+                "tag": "RetryFree",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "reworkPolicy": {
+                "tag": "BudgetedRework",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "spawned": {
+                "#bigint": "2"
+              },
+              "tasks": {
+                "#set": [
+                  {
+                    "id": {
+                      "#bigint": "2"
+                    },
+                    "kind": {
+                      "tag": "Work",
+                      "value": {
+                        "#tup": []
+                      }
+                    },
+                    "state": {
+                      "tag": "Outstanding",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                ]
+              },
+              "workFanout": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "mbt::actionTaken": "revoke",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "finalizationPricing_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "finalizer_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "6"
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "resumePricing_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reworkPolicy_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "why": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "workFanout_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": ["CancelTicketWork"],
+        "label": "ticket-revoked",
+        "transitions": [
+          {
+            "from": {
+              "tag": "Working",
+              "value": {
+                "#tup": []
+              }
+            },
+            "ticket": {
+              "#bigint": "6"
+            },
+            "to": {
+              "tag": "Revoked",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "928"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "3"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "Work",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "Resolved",
+                  "value": {
+                    "tag": "Cancelled",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "artifact": {
+                "tag": "NoArtifact",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "finalizationLeft": {
+                "#bigint": "1"
+              },
+              "finalizationPricing": {
+                "tag": "Budgeted",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "finalizer": {
+                "tag": "ManagedFinalizer",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "Revoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                },
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "reason": {
+                "tag": "NoReason",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "NoResume",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "resumePricing": {
+                "tag": "RetryCharged",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "reworkPolicy": {
+                "tag": "BudgetedRework",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "workFanout": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "artifact": {
+                "tag": "NoArtifact",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "finalizationLeft": {
+                "#bigint": "0"
+              },
+              "finalizationPricing": {
+                "tag": "Budgeted",
+                "value": {
+                  "#bigint": "0"
+                }
+              },
+              "finalizer": {
+                "tag": "NoFinalizer",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "gasLeft": {
+                "#bigint": "1"
+              },
+              "phase": {
+                "tag": "Revoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "reason": {
+                "tag": "NoReason",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
+              "resumeAt": {
+                "tag": "NoResume",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "resumePricing": {
+                "tag": "RetryFree",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "reworkPolicy": {
+                "tag": "BudgetedRework",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "spawned": {
+                "#bigint": "2"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "workFanout": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "mbt::actionTaken": "releaseTicket",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "Some",
+          "value": {
+            "#set": []
+          }
+        },
+        "finalizationPricing_": {
+          "tag": "Some",
+          "value": {
+            "tag": "DeadlineOnly",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "finalizer_": {
+          "tag": "Some",
+          "value": {
+            "tag": "ManagedFinalizer",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "4"
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "Some",
+          "value": [
+            {
+              "combinator": {
+                "tag": "AnyPass",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "fanout": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        },
+        "resumePricing_": {
+          "tag": "Some",
+          "value": {
+            "tag": "RetryCharged",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "reworkPolicy_": {
+          "tag": "Some",
+          "value": {
+            "tag": "BudgetedRework",
+            "value": {
+              "#bigint": "1"
+            }
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "why": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "workFanout_": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "1"
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": [],
+        "label": "ticket-released",
+        "transitions": []
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "900"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "3"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "Work",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "Resolved",
+                  "value": {
+                    "tag": "Cancelled",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "2"
+                },
+                "kind": {
+                  "tag": "Work",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "Resolved",
+                  "value": {
+                    "tag": "Cancelled",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "artifact": {
+                "tag": "NoArtifact",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "finalizationLeft": {
+                "#bigint": "1"
+              },
+              "finalizationPricing": {
+                "tag": "Budgeted",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "finalizer": {
+                "tag": "ManagedFinalizer",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "Revoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                },
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "reason": {
+                "tag": "NoReason",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "NoResume",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "resumePricing": {
+                "tag": "RetryCharged",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "reworkPolicy": {
+                "tag": "BudgetedRework",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "workFanout": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "artifact": {
+                "tag": "NoArtifact",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "finalizationLeft": {
+                "#bigint": "0"
+              },
+              "finalizationPricing": {
+                "tag": "DeadlineOnly",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "finalizer": {
+                "tag": "ManagedFinalizer",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "Pending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "AnyPass",
                     "value": {
                       "#tup": []
                     }
@@ -1609,7 +2683,511 @@
                 }
               },
               "resumePricing": {
+                "tag": "RetryCharged",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "reworkPolicy": {
+                "tag": "BudgetedRework",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "workFanout": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "artifact": {
+                "tag": "NoArtifact",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "finalizationLeft": {
+                "#bigint": "0"
+              },
+              "finalizationPricing": {
+                "tag": "Budgeted",
+                "value": {
+                  "#bigint": "0"
+                }
+              },
+              "finalizer": {
+                "tag": "NoFinalizer",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "gasLeft": {
+                "#bigint": "1"
+              },
+              "phase": {
+                "tag": "Revoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "reason": {
+                "tag": "NoReason",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
+              "resumeAt": {
+                "tag": "NoResume",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "resumePricing": {
                 "tag": "RetryFree",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "reworkPolicy": {
+                "tag": "BudgetedRework",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "spawned": {
+                "#bigint": "2"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "workFanout": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "mbt::actionTaken": "dispatch",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "finalizationPricing_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "finalizer_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "4"
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "resumePricing_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reworkPolicy_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "why": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "workFanout_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": ["SpawnWorkTasks"],
+        "label": "dispatch",
+        "transitions": [
+          {
+            "from": {
+              "tag": "Pending",
+              "value": {
+                "#tup": []
+              }
+            },
+            "ticket": {
+              "#bigint": "4"
+            },
+            "to": {
+              "tag": "Working",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "1521"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "3"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "Work",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "Resolved",
+                  "value": {
+                    "tag": "Cancelled",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "2"
+                },
+                "kind": {
+                  "tag": "Work",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "Resolved",
+                  "value": {
+                    "tag": "Cancelled",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "artifact": {
+                "tag": "NoArtifact",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "finalizationLeft": {
+                "#bigint": "1"
+              },
+              "finalizationPricing": {
+                "tag": "Budgeted",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "finalizer": {
+                "tag": "ManagedFinalizer",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "Revoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                },
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "reason": {
+                "tag": "NoReason",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "NoResume",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "resumePricing": {
+                "tag": "RetryCharged",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "reworkPolicy": {
+                "tag": "BudgetedRework",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "workFanout": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "artifact": {
+                "tag": "NoArtifact",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "finalizationLeft": {
+                "#bigint": "0"
+              },
+              "finalizationPricing": {
+                "tag": "DeadlineOnly",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "finalizer": {
+                "tag": "ManagedFinalizer",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "gasLeft": {
+                "#bigint": "2"
+              },
+              "phase": {
+                "tag": "Working",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "AnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "1"
+                  }
+                }
+              ],
+              "reason": {
+                "tag": "NoReason",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "NoResume",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "resumePricing": {
+                "tag": "RetryCharged",
                 "value": {
                   "#tup": []
                 }
@@ -1673,9 +3251,9 @@
                 "#bigint": "0"
               },
               "finalizationPricing": {
-                "tag": "DeadlineOnly",
+                "tag": "Budgeted",
                 "value": {
-                  "#tup": []
+                  "#bigint": "0"
                 }
               },
               "finalizer": {
@@ -1685,7 +3263,7 @@
                 }
               },
               "gasLeft": {
-                "#bigint": "3"
+                "#bigint": "1"
               },
               "phase": {
                 "tag": "Revoked",
@@ -1696,18 +3274,7 @@
               "program": [
                 {
                   "combinator": {
-                    "tag": "AnyPass",
-                    "value": {
-                      "#tup": []
-                    }
-                  },
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "combinator": {
-                    "tag": "AnyPass",
+                    "tag": "UnanimousPass",
                     "value": {
                       "#tup": []
                     }
@@ -1723,7 +3290,48 @@
                   "#tup": []
                 }
               },
-              "record": [],
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
               "resumeAt": {
                 "tag": "NoResume",
                 "value": {
@@ -1746,7 +3354,7 @@
                 }
               },
               "spawned": {
-                "#bigint": "0"
+                "#bigint": "2"
               },
               "tasks": {
                 "#set": []
@@ -1761,7 +3369,7 @@
     },
     {
       "#meta": {
-        "index": 6
+        "index": 10
       },
       "mbt::actionTaken": "taskDone",
       "mbt::nondetPicks": {
@@ -1786,7 +3394,7 @@
         "j": {
           "tag": "Some",
           "value": {
-            "#bigint": "2"
+            "#bigint": "4"
           }
         },
         "out": {
@@ -1847,19 +3455,19 @@
         "transitions": []
       },
       "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
-        "#bigint": "2431"
+        "#bigint": "1333"
       },
       "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "3"
             },
             []
           ],
           [
             {
-              "#bigint": "2"
+              "#bigint": "4"
             },
             []
           ],
@@ -1867,7 +3475,48 @@
             {
               "#bigint": "6"
             },
-            []
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "Work",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "Resolved",
+                  "value": {
+                    "tag": "Cancelled",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "2"
+                },
+                "kind": {
+                  "tag": "Work",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "Resolved",
+                  "value": {
+                    "tag": "Cancelled",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
           ]
         ]
       },
@@ -1875,7 +3524,7 @@
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "3"
             },
             {
               "artifact": {
@@ -1888,19 +3537,15 @@
                 "#bigint": "0"
               },
               "deps": {
-                "#set": [
-                  {
-                    "#bigint": "2"
-                  }
-                ]
+                "#set": []
               },
               "finalizationLeft": {
-                "#bigint": "0"
+                "#bigint": "1"
               },
               "finalizationPricing": {
                 "tag": "Budgeted",
                 "value": {
-                  "#bigint": "0"
+                  "#bigint": "1"
                 }
               },
               "finalizer": {
@@ -1913,12 +3558,23 @@
                 "#bigint": "3"
               },
               "phase": {
-                "tag": "Pending",
+                "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
               },
               "program": [
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                },
                 {
                   "combinator": {
                     "tag": "UnanimousPass",
@@ -1945,7 +3601,7 @@
                 }
               },
               "resumePricing": {
-                "tag": "RetryFree",
+                "tag": "RetryCharged",
                 "value": {
                   "#tup": []
                 }
@@ -1972,7 +3628,7 @@
           ],
           [
             {
-              "#bigint": "2"
+              "#bigint": "4"
             },
             {
               "artifact": {
@@ -1988,12 +3644,12 @@
                 "#set": []
               },
               "finalizationLeft": {
-                "#bigint": "1"
+                "#bigint": "0"
               },
               "finalizationPricing": {
-                "tag": "Budgeted",
+                "tag": "DeadlineOnly",
                 "value": {
-                  "#bigint": "1"
+                  "#tup": []
                 }
               },
               "finalizer": {
@@ -2014,7 +3670,7 @@
               "program": [
                 {
                   "combinator": {
-                    "tag": "UnanimousPass",
+                    "tag": "AnyPass",
                     "value": {
                       "#tup": []
                     }
@@ -2038,7 +3694,7 @@
                 }
               },
               "resumePricing": {
-                "tag": "RetryFree",
+                "tag": "RetryCharged",
                 "value": {
                   "#tup": []
                 }
@@ -2105,9 +3761,9 @@
                 "#bigint": "0"
               },
               "finalizationPricing": {
-                "tag": "DeadlineOnly",
+                "tag": "Budgeted",
                 "value": {
-                  "#tup": []
+                  "#bigint": "0"
                 }
               },
               "finalizer": {
@@ -2117,7 +3773,7 @@
                 }
               },
               "gasLeft": {
-                "#bigint": "3"
+                "#bigint": "1"
               },
               "phase": {
                 "tag": "Revoked",
@@ -2128,18 +3784,7 @@
               "program": [
                 {
                   "combinator": {
-                    "tag": "AnyPass",
-                    "value": {
-                      "#tup": []
-                    }
-                  },
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "combinator": {
-                    "tag": "AnyPass",
+                    "tag": "UnanimousPass",
                     "value": {
                       "#tup": []
                     }
@@ -2155,7 +3800,48 @@
                   "#tup": []
                 }
               },
-              "record": [],
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
               "resumeAt": {
                 "tag": "NoResume",
                 "value": {
@@ -2178,7 +3864,7 @@
                 }
               },
               "spawned": {
-                "#bigint": "0"
+                "#bigint": "2"
               },
               "tasks": {
                 "#set": []
@@ -2193,7 +3879,7 @@
     },
     {
       "#meta": {
-        "index": 7
+        "index": 11
       },
       "mbt::actionTaken": "workReduce",
       "mbt::nondetPicks": {
@@ -2218,7 +3904,7 @@
         "j": {
           "tag": "Some",
           "value": {
-            "#bigint": "2"
+            "#bigint": "4"
           }
         },
         "out": {
@@ -2282,7 +3968,7 @@
               }
             },
             "ticket": {
-              "#bigint": "2"
+              "#bigint": "4"
             },
             "to": {
               "tag": "Evaluating",
@@ -2294,19 +3980,19 @@
         ]
       },
       "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
-        "#bigint": "2430"
+        "#bigint": "1332"
       },
       "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "3"
             },
             []
           ],
           [
             {
-              "#bigint": "2"
+              "#bigint": "4"
             },
             []
           ],
@@ -2314,7 +4000,48 @@
             {
               "#bigint": "6"
             },
-            []
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "Work",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "Resolved",
+                  "value": {
+                    "tag": "Cancelled",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "2"
+                },
+                "kind": {
+                  "tag": "Work",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "Resolved",
+                  "value": {
+                    "tag": "Cancelled",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
           ]
         ]
       },
@@ -2322,7 +4049,7 @@
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "3"
             },
             {
               "artifact": {
@@ -2335,19 +4062,15 @@
                 "#bigint": "0"
               },
               "deps": {
-                "#set": [
-                  {
-                    "#bigint": "2"
-                  }
-                ]
+                "#set": []
               },
               "finalizationLeft": {
-                "#bigint": "0"
+                "#bigint": "1"
               },
               "finalizationPricing": {
                 "tag": "Budgeted",
                 "value": {
-                  "#bigint": "0"
+                  "#bigint": "1"
                 }
               },
               "finalizer": {
@@ -2360,12 +4083,23 @@
                 "#bigint": "3"
               },
               "phase": {
-                "tag": "Pending",
+                "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
               },
               "program": [
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                },
                 {
                   "combinator": {
                     "tag": "UnanimousPass",
@@ -2392,7 +4126,7 @@
                 }
               },
               "resumePricing": {
-                "tag": "RetryFree",
+                "tag": "RetryCharged",
                 "value": {
                   "#tup": []
                 }
@@ -2419,7 +4153,7 @@
           ],
           [
             {
-              "#bigint": "2"
+              "#bigint": "4"
             },
             {
               "artifact": {
@@ -2435,12 +4169,12 @@
                 "#set": []
               },
               "finalizationLeft": {
-                "#bigint": "1"
+                "#bigint": "0"
               },
               "finalizationPricing": {
-                "tag": "Budgeted",
+                "tag": "DeadlineOnly",
                 "value": {
-                  "#bigint": "1"
+                  "#tup": []
                 }
               },
               "finalizer": {
@@ -2461,7 +4195,7 @@
               "program": [
                 {
                   "combinator": {
-                    "tag": "UnanimousPass",
+                    "tag": "AnyPass",
                     "value": {
                       "#tup": []
                     }
@@ -2506,7 +4240,7 @@
                 }
               },
               "resumePricing": {
-                "tag": "RetryFree",
+                "tag": "RetryCharged",
                 "value": {
                   "#tup": []
                 }
@@ -2570,9 +4304,9 @@
                 "#bigint": "0"
               },
               "finalizationPricing": {
-                "tag": "DeadlineOnly",
+                "tag": "Budgeted",
                 "value": {
-                  "#tup": []
+                  "#bigint": "0"
                 }
               },
               "finalizer": {
@@ -2582,7 +4316,7 @@
                 }
               },
               "gasLeft": {
-                "#bigint": "3"
+                "#bigint": "1"
               },
               "phase": {
                 "tag": "Revoked",
@@ -2593,18 +4327,7 @@
               "program": [
                 {
                   "combinator": {
-                    "tag": "AnyPass",
-                    "value": {
-                      "#tup": []
-                    }
-                  },
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "combinator": {
-                    "tag": "AnyPass",
+                    "tag": "UnanimousPass",
                     "value": {
                       "#tup": []
                     }
@@ -2620,7 +4343,48 @@
                   "#tup": []
                 }
               },
-              "record": [],
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
               "resumeAt": {
                 "tag": "NoResume",
                 "value": {
@@ -2643,7 +4407,7 @@
                 }
               },
               "spawned": {
-                "#bigint": "0"
+                "#bigint": "2"
               },
               "tasks": {
                 "#set": []
@@ -2658,7 +4422,7 @@
     },
     {
       "#meta": {
-        "index": 8
+        "index": 12
       },
       "mbt::actionTaken": "taskDone",
       "mbt::nondetPicks": {
@@ -2683,7 +4447,7 @@
         "j": {
           "tag": "Some",
           "value": {
-            "#bigint": "2"
+            "#bigint": "4"
           }
         },
         "out": {
@@ -2744,19 +4508,19 @@
         "transitions": []
       },
       "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
-        "#bigint": "2425"
+        "#bigint": "1327"
       },
       "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "3"
             },
             []
           ],
           [
             {
-              "#bigint": "2"
+              "#bigint": "4"
             },
             [
               {
@@ -2785,7 +4549,48 @@
             {
               "#bigint": "6"
             },
-            []
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "Work",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "Resolved",
+                  "value": {
+                    "tag": "Cancelled",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "2"
+                },
+                "kind": {
+                  "tag": "Work",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "Resolved",
+                  "value": {
+                    "tag": "Cancelled",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
           ]
         ]
       },
@@ -2793,7 +4598,7 @@
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "3"
             },
             {
               "artifact": {
@@ -2806,19 +4611,15 @@
                 "#bigint": "0"
               },
               "deps": {
-                "#set": [
-                  {
-                    "#bigint": "2"
-                  }
-                ]
+                "#set": []
               },
               "finalizationLeft": {
-                "#bigint": "0"
+                "#bigint": "1"
               },
               "finalizationPricing": {
                 "tag": "Budgeted",
                 "value": {
-                  "#bigint": "0"
+                  "#bigint": "1"
                 }
               },
               "finalizer": {
@@ -2831,12 +4632,23 @@
                 "#bigint": "3"
               },
               "phase": {
-                "tag": "Pending",
+                "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
               },
               "program": [
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                },
                 {
                   "combinator": {
                     "tag": "UnanimousPass",
@@ -2863,7 +4675,7 @@
                 }
               },
               "resumePricing": {
-                "tag": "RetryFree",
+                "tag": "RetryCharged",
                 "value": {
                   "#tup": []
                 }
@@ -2890,7 +4702,7 @@
           ],
           [
             {
-              "#bigint": "2"
+              "#bigint": "4"
             },
             {
               "artifact": {
@@ -2906,12 +4718,12 @@
                 "#set": []
               },
               "finalizationLeft": {
-                "#bigint": "1"
+                "#bigint": "0"
               },
               "finalizationPricing": {
-                "tag": "Budgeted",
+                "tag": "DeadlineOnly",
                 "value": {
-                  "#bigint": "1"
+                  "#tup": []
                 }
               },
               "finalizer": {
@@ -2932,7 +4744,7 @@
               "program": [
                 {
                   "combinator": {
-                    "tag": "UnanimousPass",
+                    "tag": "AnyPass",
                     "value": {
                       "#tup": []
                     }
@@ -2977,7 +4789,7 @@
                 }
               },
               "resumePricing": {
-                "tag": "RetryFree",
+                "tag": "RetryCharged",
                 "value": {
                   "#tup": []
                 }
@@ -3044,9 +4856,9 @@
                 "#bigint": "0"
               },
               "finalizationPricing": {
-                "tag": "DeadlineOnly",
+                "tag": "Budgeted",
                 "value": {
-                  "#tup": []
+                  "#bigint": "0"
                 }
               },
               "finalizer": {
@@ -3056,268 +4868,7 @@
                 }
               },
               "gasLeft": {
-                "#bigint": "3"
-              },
-              "phase": {
-                "tag": "Revoked",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "program": [
-                {
-                  "combinator": {
-                    "tag": "AnyPass",
-                    "value": {
-                      "#tup": []
-                    }
-                  },
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "combinator": {
-                    "tag": "AnyPass",
-                    "value": {
-                      "#tup": []
-                    }
-                  },
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                }
-              ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "resumePricing": {
-                "tag": "RetryFree",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "reworkLeft": {
                 "#bigint": "1"
-              },
-              "reworkPolicy": {
-                "tag": "BudgetedRework",
-                "value": {
-                  "#bigint": "1"
-                }
-              },
-              "spawned": {
-                "#bigint": "0"
-              },
-              "tasks": {
-                "#set": []
-              },
-              "workFanout": {
-                "#bigint": "1"
-              }
-            }
-          ]
-        ]
-      }
-    },
-    {
-      "#meta": {
-        "index": 9
-      },
-      "mbt::actionTaken": "revoke",
-      "mbt::nondetPicks": {
-        "deps_": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "finalizationPricing_": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "finalizer_": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "j": {
-          "tag": "Some",
-          "value": {
-            "#bigint": "1"
-          }
-        },
-        "out": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "prog": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "resumePricing_": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "reworkPolicy_": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "tid": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "v": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "why": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "workFanout_": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        }
-      },
-      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": ["CancelTicketWork"],
-        "label": "ticket-revoked",
-        "transitions": [
-          {
-            "from": {
-              "tag": "Pending",
-              "value": {
-                "#tup": []
-              }
-            },
-            "ticket": {
-              "#bigint": "1"
-            },
-            "to": {
-              "tag": "Revoked",
-              "value": {
-                "#tup": []
-              }
-            }
-          }
-        ]
-      },
-      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
-        "#bigint": "2424"
-      },
-      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
-        "#map": [
-          [
-            {
-              "#bigint": "1"
-            },
-            []
-          ],
-          [
-            {
-              "#bigint": "2"
-            },
-            [
-              {
-                "id": {
-                  "#bigint": "1"
-                },
-                "kind": {
-                  "tag": "Work",
-                  "value": {
-                    "#tup": []
-                  }
-                },
-                "state": {
-                  "tag": "Resolved",
-                  "value": {
-                    "tag": "Passed",
-                    "value": {
-                      "#tup": []
-                    }
-                  }
-                }
-              }
-            ]
-          ],
-          [
-            {
-              "#bigint": "6"
-            },
-            []
-          ]
-        ]
-      },
-      "mc_chuggy_budgeted::chuggy_domain::tickets": {
-        "#map": [
-          [
-            {
-              "#bigint": "1"
-            },
-            {
-              "artifact": {
-                "tag": "NoArtifact",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "completions": {
-                "#bigint": "0"
-              },
-              "deps": {
-                "#set": [
-                  {
-                    "#bigint": "2"
-                  }
-                ]
-              },
-              "finalizationLeft": {
-                "#bigint": "0"
-              },
-              "finalizationPricing": {
-                "tag": "Budgeted",
-                "value": {
-                  "#bigint": "0"
-                }
-              },
-              "finalizer": {
-                "tag": "ManagedFinalizer",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "gasLeft": {
-                "#bigint": "3"
               },
               "phase": {
                 "tag": "Revoked",
@@ -3335,99 +4886,6 @@
                   },
                   "fanout": {
                     "#bigint": "2"
-                  }
-                }
-              ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "resumePricing": {
-                "tag": "RetryFree",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "reworkLeft": {
-                "#bigint": "1"
-              },
-              "reworkPolicy": {
-                "tag": "BudgetedRework",
-                "value": {
-                  "#bigint": "1"
-                }
-              },
-              "spawned": {
-                "#bigint": "0"
-              },
-              "tasks": {
-                "#set": []
-              },
-              "workFanout": {
-                "#bigint": "1"
-              }
-            }
-          ],
-          [
-            {
-              "#bigint": "2"
-            },
-            {
-              "artifact": {
-                "tag": "ProducedArtifact",
-                "value": {
-                  "#bigint": "1"
-                }
-              },
-              "completions": {
-                "#bigint": "0"
-              },
-              "deps": {
-                "#set": []
-              },
-              "finalizationLeft": {
-                "#bigint": "1"
-              },
-              "finalizationPricing": {
-                "tag": "Budgeted",
-                "value": {
-                  "#bigint": "1"
-                }
-              },
-              "finalizer": {
-                "tag": "ManagedFinalizer",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "gasLeft": {
-                "#bigint": "2"
-              },
-              "phase": {
-                "tag": "Evaluating",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "program": [
-                {
-                  "combinator": {
-                    "tag": "UnanimousPass",
-                    "value": {
-                      "#tup": []
-                    }
-                  },
-                  "fanout": {
-                    "#bigint": "1"
                   }
                 }
               ],
@@ -3451,7 +4909,27 @@
                   "state": {
                     "tag": "Resolved",
                     "value": {
-                      "tag": "Passed",
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
                       "value": {
                         "#tup": []
                       }
@@ -3484,131 +4962,6 @@
                 "#bigint": "2"
               },
               "tasks": {
-                "#set": [
-                  {
-                    "id": {
-                      "#bigint": "2"
-                    },
-                    "kind": {
-                      "tag": "Evaluation",
-                      "value": {
-                        "#bigint": "0"
-                      }
-                    },
-                    "state": {
-                      "tag": "Resolved",
-                      "value": {
-                        "tag": "Passed",
-                        "value": {
-                          "#tup": []
-                        }
-                      }
-                    }
-                  }
-                ]
-              },
-              "workFanout": {
-                "#bigint": "1"
-              }
-            }
-          ],
-          [
-            {
-              "#bigint": "6"
-            },
-            {
-              "artifact": {
-                "tag": "NoArtifact",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "completions": {
-                "#bigint": "0"
-              },
-              "deps": {
-                "#set": []
-              },
-              "finalizationLeft": {
-                "#bigint": "0"
-              },
-              "finalizationPricing": {
-                "tag": "DeadlineOnly",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "finalizer": {
-                "tag": "NoFinalizer",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "gasLeft": {
-                "#bigint": "3"
-              },
-              "phase": {
-                "tag": "Revoked",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "program": [
-                {
-                  "combinator": {
-                    "tag": "AnyPass",
-                    "value": {
-                      "#tup": []
-                    }
-                  },
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "combinator": {
-                    "tag": "AnyPass",
-                    "value": {
-                      "#tup": []
-                    }
-                  },
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                }
-              ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "resumePricing": {
-                "tag": "RetryFree",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "reworkLeft": {
-                "#bigint": "1"
-              },
-              "reworkPolicy": {
-                "tag": "BudgetedRework",
-                "value": {
-                  "#bigint": "1"
-                }
-              },
-              "spawned": {
-                "#bigint": "0"
-              },
-              "tasks": {
                 "#set": []
               },
               "workFanout": {
@@ -3621,7 +4974,7 @@
     },
     {
       "#meta": {
-        "index": 10
+        "index": 13
       },
       "mbt::actionTaken": "evalReduce",
       "mbt::nondetPicks": {
@@ -3646,7 +4999,7 @@
         "j": {
           "tag": "Some",
           "value": {
-            "#bigint": "2"
+            "#bigint": "4"
           }
         },
         "out": {
@@ -3710,7 +5063,7 @@
               }
             },
             "ticket": {
-              "#bigint": "2"
+              "#bigint": "4"
             },
             "to": {
               "tag": "Finalizing",
@@ -3722,19 +5075,19 @@
         ]
       },
       "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
-        "#bigint": "2370"
+        "#bigint": "1326"
       },
       "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "3"
             },
             []
           ],
           [
             {
-              "#bigint": "2"
+              "#bigint": "4"
             },
             [
               {
@@ -3763,7 +5116,48 @@
             {
               "#bigint": "6"
             },
-            []
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "Work",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "Resolved",
+                  "value": {
+                    "tag": "Cancelled",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "2"
+                },
+                "kind": {
+                  "tag": "Work",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "Resolved",
+                  "value": {
+                    "tag": "Cancelled",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
           ]
         ]
       },
@@ -3771,7 +5165,7 @@
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "3"
             },
             {
               "artifact": {
@@ -3784,19 +5178,15 @@
                 "#bigint": "0"
               },
               "deps": {
-                "#set": [
-                  {
-                    "#bigint": "2"
-                  }
-                ]
+                "#set": []
               },
               "finalizationLeft": {
-                "#bigint": "0"
+                "#bigint": "1"
               },
               "finalizationPricing": {
                 "tag": "Budgeted",
                 "value": {
-                  "#bigint": "0"
+                  "#bigint": "1"
                 }
               },
               "finalizer": {
@@ -3825,6 +5215,17 @@
                   "fanout": {
                     "#bigint": "2"
                   }
+                },
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
                 }
               ],
               "reason": {
@@ -3841,7 +5242,7 @@
                 }
               },
               "resumePricing": {
-                "tag": "RetryFree",
+                "tag": "RetryCharged",
                 "value": {
                   "#tup": []
                 }
@@ -3868,7 +5269,7 @@
           ],
           [
             {
-              "#bigint": "2"
+              "#bigint": "4"
             },
             {
               "artifact": {
@@ -3884,12 +5285,12 @@
                 "#set": []
               },
               "finalizationLeft": {
-                "#bigint": "1"
+                "#bigint": "0"
               },
               "finalizationPricing": {
-                "tag": "Budgeted",
+                "tag": "DeadlineOnly",
                 "value": {
-                  "#bigint": "1"
+                  "#tup": []
                 }
               },
               "finalizer": {
@@ -3910,7 +5311,7 @@
               "program": [
                 {
                   "combinator": {
-                    "tag": "UnanimousPass",
+                    "tag": "AnyPass",
                     "value": {
                       "#tup": []
                     }
@@ -3975,7 +5376,7 @@
                 }
               },
               "resumePricing": {
-                "tag": "RetryFree",
+                "tag": "RetryCharged",
                 "value": {
                   "#tup": []
                 }
@@ -4021,9 +5422,9 @@
                 "#bigint": "0"
               },
               "finalizationPricing": {
-                "tag": "DeadlineOnly",
+                "tag": "Budgeted",
                 "value": {
-                  "#tup": []
+                  "#bigint": "0"
                 }
               },
               "finalizer": {
@@ -4033,7 +5434,7 @@
                 }
               },
               "gasLeft": {
-                "#bigint": "3"
+                "#bigint": "1"
               },
               "phase": {
                 "tag": "Revoked",
@@ -4044,18 +5445,7 @@
               "program": [
                 {
                   "combinator": {
-                    "tag": "AnyPass",
-                    "value": {
-                      "#tup": []
-                    }
-                  },
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "combinator": {
-                    "tag": "AnyPass",
+                    "tag": "UnanimousPass",
                     "value": {
                       "#tup": []
                     }
@@ -4071,7 +5461,48 @@
                   "#tup": []
                 }
               },
-              "record": [],
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
               "resumeAt": {
                 "tag": "NoResume",
                 "value": {
@@ -4094,7 +5525,7 @@
                 }
               },
               "spawned": {
-                "#bigint": "0"
+                "#bigint": "2"
               },
               "tasks": {
                 "#set": []
@@ -4109,7 +5540,7 @@
     },
     {
       "#meta": {
-        "index": 11
+        "index": 14
       },
       "mbt::actionTaken": "finalizationResult",
       "mbt::nondetPicks": {
@@ -4134,7 +5565,7 @@
         "j": {
           "tag": "Some",
           "value": {
-            "#bigint": "2"
+            "#bigint": "4"
           }
         },
         "out": {
@@ -4201,7 +5632,7 @@
               }
             },
             "ticket": {
-              "#bigint": "2"
+              "#bigint": "4"
             },
             "to": {
               "tag": "Working",
@@ -4213,19 +5644,19 @@
         ]
       },
       "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
-        "#bigint": "2358"
+        "#bigint": "1314"
       },
       "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "3"
             },
             []
           ],
           [
             {
-              "#bigint": "2"
+              "#bigint": "4"
             },
             [
               {
@@ -4274,7 +5705,48 @@
             {
               "#bigint": "6"
             },
-            []
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "Work",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "Resolved",
+                  "value": {
+                    "tag": "Cancelled",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "2"
+                },
+                "kind": {
+                  "tag": "Work",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "Resolved",
+                  "value": {
+                    "tag": "Cancelled",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
           ]
         ]
       },
@@ -4282,7 +5754,7 @@
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "3"
             },
             {
               "artifact": {
@@ -4295,19 +5767,15 @@
                 "#bigint": "0"
               },
               "deps": {
-                "#set": [
-                  {
-                    "#bigint": "2"
-                  }
-                ]
+                "#set": []
               },
               "finalizationLeft": {
-                "#bigint": "0"
+                "#bigint": "1"
               },
               "finalizationPricing": {
                 "tag": "Budgeted",
                 "value": {
-                  "#bigint": "0"
+                  "#bigint": "1"
                 }
               },
               "finalizer": {
@@ -4336,6 +5804,17 @@
                   "fanout": {
                     "#bigint": "2"
                   }
+                },
+                {
+                  "combinator": {
+                    "tag": "UnanimousPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
                 }
               ],
               "reason": {
@@ -4352,7 +5831,7 @@
                 }
               },
               "resumePricing": {
-                "tag": "RetryFree",
+                "tag": "RetryCharged",
                 "value": {
                   "#tup": []
                 }
@@ -4379,7 +5858,7 @@
           ],
           [
             {
-              "#bigint": "2"
+              "#bigint": "4"
             },
             {
               "artifact": {
@@ -4398,9 +5877,9 @@
                 "#bigint": "0"
               },
               "finalizationPricing": {
-                "tag": "Budgeted",
+                "tag": "DeadlineOnly",
                 "value": {
-                  "#bigint": "1"
+                  "#tup": []
                 }
               },
               "finalizer": {
@@ -4421,7 +5900,7 @@
               "program": [
                 {
                   "combinator": {
-                    "tag": "UnanimousPass",
+                    "tag": "AnyPass",
                     "value": {
                       "#tup": []
                     }
@@ -4486,7 +5965,7 @@
                 }
               },
               "resumePricing": {
-                "tag": "RetryFree",
+                "tag": "RetryCharged",
                 "value": {
                   "#tup": []
                 }
@@ -4550,9 +6029,9 @@
                 "#bigint": "0"
               },
               "finalizationPricing": {
-                "tag": "DeadlineOnly",
+                "tag": "Budgeted",
                 "value": {
-                  "#tup": []
+                  "#bigint": "0"
                 }
               },
               "finalizer": {
@@ -4562,7 +6041,7 @@
                 }
               },
               "gasLeft": {
-                "#bigint": "3"
+                "#bigint": "1"
               },
               "phase": {
                 "tag": "Revoked",
@@ -4573,18 +6052,7 @@
               "program": [
                 {
                   "combinator": {
-                    "tag": "AnyPass",
-                    "value": {
-                      "#tup": []
-                    }
-                  },
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "combinator": {
-                    "tag": "AnyPass",
+                    "tag": "UnanimousPass",
                     "value": {
                       "#tup": []
                     }
@@ -4600,7 +6068,48 @@
                   "#tup": []
                 }
               },
-              "record": [],
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "Work",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "Resolved",
+                    "value": {
+                      "tag": "Cancelled",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
               "resumeAt": {
                 "tag": "NoResume",
                 "value": {
@@ -4623,7 +6132,7 @@
                 }
               },
               "spawned": {
-                "#bigint": "0"
+                "#bigint": "2"
               },
               "tasks": {
                 "#set": []
