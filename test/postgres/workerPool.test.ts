@@ -316,7 +316,7 @@ test("an assignment is renewed, refused and released by the pool holding it", as
   );
   assert.equal(await assignments.release(mine, handle.assignment, 30), true);
   const after = (await rig.harness.query(
-    `SELECT a.pool, a.assignment, e.placement_backoff_from IS NOT NULL AS backing_off
+    `SELECT a.pool, a.assignment, e.placement_backoff_from > now() AS backing_off
        FROM execution_attempt a
        JOIN execution e ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
       WHERE a.tenant=$1 AND a.project=$2 AND a.attempt=$3`,
@@ -330,6 +330,22 @@ test("an assignment is renewed, refused and released by the pool holding it", as
     { pool: null, assignment: null, backing_off: true },
   ]);
   assert.equal(await assignments.release(mine, handle.assignment, 30), false);
+  const again = handles("again");
+  assert.equal(
+    await assignments.claim(mine, leaseSecs, again.assignment, again.bearer),
+    undefined,
+    "a released attempt is offered to no pool before its backoff elapses",
+  );
+  await rig.harness.query(
+    `UPDATE execution SET placement_backoff_from=now()-interval '1 second'
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [project.partition.tenant, project.partition.project, released.execution],
+  );
+  assert.notEqual(
+    await assignments.claim(mine, leaseSecs, again.assignment, again.bearer),
+    undefined,
+    "a backoff that has elapsed offers the attempt again",
+  );
 });
 
 test("the plane serving harnesses cannot read the relation a pool is registered in", async () => {

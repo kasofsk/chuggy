@@ -85,7 +85,8 @@ export const migration002: Migration = {
     `GRANT SELECT,INSERT ON TABLE public.worker_pool_registration_token TO ${apiRole}`,
     `GRANT UPDATE(redeemed_at) ON TABLE public.worker_pool_registration_token TO ${apiRole}`,
     `GRANT SELECT(tenant,project,pool,capabilities,principal) ON TABLE public.worker_pool TO ${poolPlaneRole}`,
-    `GRANT SELECT(tenant,project,execution,status,placement,requirement_value) ON TABLE public.execution TO ${poolPlaneRole}`,
+    `GRANT SELECT(tenant,project,execution,status,placement,placement_backoff_from,requirement_value)
+       ON TABLE public.execution TO ${poolPlaneRole}`,
     `GRANT UPDATE(placement_backoff_from) ON TABLE public.execution TO ${poolPlaneRole}`,
     `GRANT EXECUTE ON FUNCTION public.execution_status_move_is_legal(before text, after text) TO ${poolPlaneRole}`,
     `GRANT SELECT(tenant,project,execution,attempt,generation,recovery_epoch,state,

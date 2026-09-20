@@ -17,6 +17,13 @@
  * the scheduler minted went to an in-cluster pod that was never launched, and
  * an attempt whose bearer nobody holds is an attempt nothing can report.
  *
+ * A RELEASE IS A BACKOFF THE NEXT CLAIM READS. On the pool path
+ * `placement_backoff_from` holds the instant a claim may next take the
+ * execution — the pool's own `retryAfterSecs` from now — and the claim
+ * predicate offers nothing before it. The scheduler writes the same column as
+ * the instant its own interval counts from and reads it on the path that
+ * places work itself, which is the other value of `placement`.
+ *
  * THE CAPABILITIES COME BACK NULLABLE BECAUSE THE CHECKER CANNOT SEE OTHERWISE.
  * A correlated subquery over a joined row is a value `check-queries` proves
  * nothing about, so the row type says what the checker can see and the absence
@@ -197,6 +204,7 @@ async function workerPoolClaimed(
         WHERE q.tenant=${identity.partition.tenant} AND q.project=${identity.partition.project}
           AND q.state='Placing' AND q.pool IS NULL
           AND e.placement='Pool' AND e.status IN ('Admitted','Launching')
+          AND (e.placement_backoff_from IS NULL OR e.placement_backoff_from<=now())
           AND q.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)
           AND COALESCE(ARRAY(SELECT jsonb_array_elements_text(e.requirement_value->'capabilities')),'{}'::text[])
               <@ ${[...identity.capabilities]}::text[]
