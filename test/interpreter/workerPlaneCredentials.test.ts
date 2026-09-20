@@ -1,9 +1,13 @@
 /**
- * What the plane mints for one pod, which is the whole of what a pod may obtain
- * by asking: the repository its own row names, the permission set its recorded
- * task kind needs, and a refusal that is kept apart from an outage all the way
- * out — because one leaves the pod on its launcher's mount and the other does
- * not.
+ * What the plane answers one pod with, which is the whole of what a pod may
+ * obtain by asking: the repository its own row names, the permission set its
+ * recorded task kind needs, and a refusal that is kept apart from an outage all
+ * the way out — because one leaves the pod on its launcher's mount and the
+ * other does not.
+ *
+ * The mounted source is what a deployment whose git is not a forge answers
+ * from, and these cases pin the order between it and the mint: the mint is
+ * asked first, only its settled refusal falls through, and its outage does not.
  */
 
 import assert from "node:assert/strict";
@@ -16,7 +20,9 @@ import {
   type ForgeRepositoryTokens,
 } from "../../src/interpreter/forgeInstallation.ts";
 import {
+  asRepositoryCredential,
   asRepositoryId,
+  type CredentialResolved,
   type RepositoryBinding,
   type RepositoryId,
 } from "../../src/interpreter/finalizer.ts";
@@ -29,7 +35,9 @@ import {
 import type { ProjectRepositoryBindingRead } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
   forgeCredentialUsername,
+  mountedCredentialLifetimeMs,
   workerPlaneCredentialMinting,
+  type WorkerPlaneMountedCredentials,
 } from "../../src/interpreter/workerPlaneCredentials.ts";
 
 const partition: Partition = {
@@ -135,4 +143,135 @@ test("a binding store that could not be read is an outage, not an absent binding
     minted: "Unavailable",
   });
   assert.deepEqual(asked, [], "an unread binding was minted for");
+});
+
+/** The mounted half a deployment whose git is not a forge composes. */
+function mountedOf(
+  resolved: CredentialResolved | Error,
+  asked: RepositoryBinding[] = [],
+): WorkerPlaneMountedCredentials {
+  return {
+    credentials: {
+      credential: (binding) => {
+        asked.push(binding);
+        return resolved instanceof Error
+          ? Promise.reject(resolved)
+          : Promise.resolve(resolved);
+      },
+    },
+    username: "chuggy-ci",
+    now: () => nowMs,
+  };
+}
+
+const nowMs = 1_700_000_500_000;
+const mounted = asRepositoryCredential("mounted-secret");
+const held: CredentialResolved = {
+  resolved: "Credential",
+  credential: mounted,
+};
+
+test("a remote no installation covers is answered from the mount its binding names", async () => {
+  const asked: Asked[] = [];
+  const read: RepositoryBinding[] = [];
+  const binding = bindingOf(mirror);
+  const minting = workerPlaneCredentialMinting({
+    tokens: tokensOf({ minted: "Denied" }, asked),
+    bindings: bindingsOf(binding),
+    mounted: mountedOf(held, read),
+  });
+
+  assert.deepEqual(await minting.session(partition, mirror), {
+    minted: "Credential",
+    value: {
+      username: "chuggy-ci",
+      password: mounted,
+      expiresAtMs: nowMs + mountedCredentialLifetimeMs,
+    },
+  });
+  assert.deepEqual(asked, [
+    { repository: mirror, tenant: partition.tenant, permissions: "read" },
+  ]);
+  assert.deepEqual(
+    read,
+    [binding],
+    "the whole binding did not reach the mount",
+  );
+});
+
+test("a repository the forge mints for is never read from the mount", async () => {
+  const read: RepositoryBinding[] = [];
+  const minting = workerPlaneCredentialMinting({
+    tokens: tokensOf(granted, []),
+    bindings: bindingsOf(bindingOf(repository)),
+    mounted: mountedOf(held, read),
+  });
+
+  assert.deepEqual(await minting.session(partition, repository), {
+    minted: "Credential",
+    value: { username: forgeCredentialUsername, password: token, expiresAtMs },
+  });
+  assert.deepEqual(read, [], "a minted repository was read from the mount");
+});
+
+test("a forge that could not be reached does not fall through to the wider mount", async () => {
+  const read: RepositoryBinding[] = [];
+  const minting = workerPlaneCredentialMinting({
+    tokens: tokensOf({ minted: "Unavailable" }, []),
+    bindings: bindingsOf(bindingOf(mirror)),
+    mounted: mountedOf(held, read),
+  });
+
+  assert.deepEqual(await minting.session(partition, mirror), {
+    minted: "Unavailable",
+  });
+  assert.deepEqual(read, [], "an outage was answered from the mount");
+});
+
+test("a deployment holding no app key answers from its mounts alone", async () => {
+  const minting = workerPlaneCredentialMinting({
+    bindings: bindingsOf(bindingOf(mirror)),
+    mounted: mountedOf(held),
+  });
+
+  assert.deepEqual(await minting.attempt(partition, mirror, "ReadRepository"), {
+    minted: "Credential",
+    value: {
+      username: "chuggy-ci",
+      password: mounted,
+      expiresAtMs: nowMs + mountedCredentialLifetimeMs,
+    },
+  });
+});
+
+test("a repository this deployment mounts no file for is not found", async () => {
+  const minting = workerPlaneCredentialMinting({
+    bindings: bindingsOf(bindingOf(mirror)),
+    mounted: mountedOf({ resolved: "Denied" }),
+  });
+
+  assert.deepEqual(await minting.session(partition, mirror), {
+    minted: "NotFound",
+  });
+});
+
+test("a mount that could not be read is an outage, not an absent credential", async () => {
+  const minting = workerPlaneCredentialMinting({
+    bindings: bindingsOf(bindingOf(mirror)),
+    mounted: mountedOf(new Error("the mount did not arrive")),
+  });
+
+  assert.deepEqual(await minting.session(partition, mirror), {
+    minted: "Unavailable",
+  });
+});
+
+test("a deployment holding neither an app key nor a mount answers nothing", async () => {
+  const minting = workerPlaneCredentialMinting({
+    bindings: bindingsOf(bindingOf(mirror)),
+  });
+
+  assert.deepEqual(await minting.session(partition, mirror), {
+    minted: "NotFound",
+  });
 });

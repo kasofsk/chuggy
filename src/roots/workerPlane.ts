@@ -5,6 +5,7 @@ import {
   sessionArtifactStore,
   type ArtifactStore,
 } from "../adapters/artifacts/artifactStore.ts";
+import { credentialFiles } from "../adapters/credentials/credentialFiles.ts";
 import { githubRepositoryHost } from "../adapters/forge/githubAddress.ts";
 import {
   githubInstallationTokens,
@@ -34,9 +35,11 @@ import {
   workerPodForgeApp,
 } from "../interpreter/forgeInstallation.ts";
 import { sessionSchedulerDefaults } from "../interpreter/sessionScheduler.ts";
+import { repositoryCredentialFilesOf } from "../interpreter/finalizerSettings.ts";
 import {
   workerPlaneCredentialMinting,
   type WorkerPlaneCredentialMinting,
+  type WorkerPlaneMountedCredentials,
 } from "../interpreter/workerPlaneCredentials.ts";
 
 /**
@@ -117,33 +120,69 @@ function planeForgeOptions(): GithubInstallationTokensOptions | undefined {
 }
 
 /**
- * The minting a pod's credential routes answer from, or nothing where this
- * deployment holds no app key and every pod resolves what its launcher mounted.
- * A key this process could not sign with refuses the start, leaving no pool
- * open behind it: minting that fails at every attempt is worse than not minting
- * at all, because the pods cannot tell the two apart.
+ * The credential files this plane holds for the remotes no forge app covers,
+ * and the username their secret is presented under. A credential file holds the
+ * secret half alone and a host validating basic auth needs both, so the name is
+ * named here rather than mounted; it is required beside the sources, because a
+ * deployment that mounted a secret and left the name out can only present it
+ * wrongly.
+ */
+const repositoryCredentialSourcesVariable =
+  "CHUG_WORKER_PLANE_REPOSITORY_CREDENTIAL_SOURCES";
+const gitCredentialUsernameVariable =
+  "CHUG_WORKER_PLANE_GIT_CREDENTIAL_USERNAME";
+
+function planeMountedCredentials(): WorkerPlaneMountedCredentials | undefined {
+  const encoded = process.env[repositoryCredentialSourcesVariable];
+  if (encoded === undefined || encoded.length === 0) return undefined;
+  const sources = repositoryCredentialFilesOf(
+    encoded,
+    repositoryCredentialSourcesVariable,
+  );
+  if (sources.length === 0) return undefined;
+  return {
+    credentials: credentialFiles({ sources }),
+    username: planeEnvironmentRequired(gitCredentialUsernameVariable),
+    now: () => Date.now(),
+  };
+}
+
+/**
+ * What a pod's credential routes answer from, or nothing where this deployment
+ * holds neither an app key nor a mount and every pod resolves what its launcher
+ * gave it. A key this process could not sign with refuses the start, leaving no
+ * pool open behind it: minting that fails at every attempt is worse than not
+ * minting at all, because the pods cannot tell the two apart.
  */
 async function planeCredentials(
   pool: ReturnType<typeof postgresPool>,
 ): Promise<WorkerPlaneCredentialMinting | undefined> {
+  const mounted = planeMountedCredentials();
   const options = planeForgeOptions();
-  if (options === undefined) return undefined;
-  const verdict = await githubInstallationTokensPrecondition(options).check(
-    new AbortController().signal,
-  );
-  if (verdict.met !== "Met") {
-    await pool.end();
-    throw new Error(`${forgeAppKeyFileVariable}: ${verdict.why}`);
+  if (options === undefined && mounted === undefined) return undefined;
+  if (options !== undefined) {
+    const verdict = await githubInstallationTokensPrecondition(options).check(
+      new AbortController().signal,
+    );
+    if (verdict.met !== "Met") {
+      await pool.end();
+      throw new Error(`${forgeAppKeyFileVariable}: ${verdict.why}`);
+    }
   }
   return workerPlaneCredentialMinting({
-    tokens: mintedRepositoryTokens({
-      forge: githubForgeId,
-      app: workerPodForgeApp,
-      repositoryHost: githubRepositoryHost,
-      installations: postgresForgeInstallations(pool),
-      tokens: githubInstallationTokens(options),
-    }),
+    ...(options === undefined
+      ? {}
+      : {
+          tokens: mintedRepositoryTokens({
+            forge: githubForgeId,
+            app: workerPodForgeApp,
+            repositoryHost: githubRepositoryHost,
+            installations: postgresForgeInstallations(pool),
+            tokens: githubInstallationTokens(options),
+          }),
+        }),
     bindings: postgresProjectRepositoryBinding(pool),
+    ...(mounted === undefined ? {} : { mounted }),
   });
 }
 
