@@ -14,6 +14,7 @@ import {
   workerPoolTokenRedeem,
   type WorkerPoolRegistrationTokenTerms,
   type WorkerPoolTokenMinting,
+  type WorkerPoolTokenWritten,
 } from "../../src/interpreter/workerPoolRegistrationToken.ts";
 
 const issuer = "https://issuer.invalid";
@@ -32,7 +33,7 @@ function authority(allowed: boolean): ProjectAccess {
 /** A token store holding at most one token, so single use is what a case reads. */
 function minting(input?: {
   readonly held?: WorkerPoolRegistrationTokenTerms;
-  readonly accepts?: boolean;
+  readonly answers?: WorkerPoolTokenWritten;
 }): WorkerPoolTokenMinting & { readonly made: unknown[] } {
   const made: unknown[] = [];
   let held = input?.held;
@@ -46,7 +47,7 @@ function minting(input?: {
       mint: (named, digest, capabilities, expiresAtMs) =>
         Promise.resolve(
           (made.push(["mint", named, digest, capabilities, expiresAtMs]),
-          input?.accepts ?? true),
+          input?.answers ?? "Minted"),
         ),
       permitted: (digest) =>
         Promise.resolve((made.push(["permitted", digest]), held)),
@@ -124,6 +125,23 @@ test("a caller the authority does not admit mints nothing and is told nothing", 
   );
   assert.deepEqual(store.made, []);
 });
+
+for (const [answers, result] of [
+  ["NotFound", "NotFound"],
+  ["LimitReached", "LimitReached"],
+] as const)
+  test(`a store answering ${answers} mints nothing and says so`, async () => {
+    assert.deepEqual(
+      await workerPoolTokenMint(
+        authority(true),
+        minting({ answers }),
+        principal,
+        partition,
+        { capabilities: [], lifetimeSecs: 60 },
+      ),
+      { result },
+    );
+  });
 
 for (const lifetimeSecs of [0, -1, 1.5, workerPoolTokenLifetimeSecsMax + 1])
   test(`a lifetime of ${String(lifetimeSecs)} is refused before anything is asked`, async () => {

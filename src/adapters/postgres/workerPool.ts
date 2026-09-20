@@ -44,9 +44,11 @@ import type {
   WorkerPoolRegistration,
   WorkerPoolRegistry,
 } from "../../interpreter/workerPool.ts";
-import type {
-  WorkerPoolRegistrationTokens,
-  WorkerPoolRegistrationTokenTerms,
+import {
+  workerPoolTokensLiveMax,
+  type WorkerPoolRegistrationTokens,
+  type WorkerPoolRegistrationTokenTerms,
+  type WorkerPoolTokenWritten,
 } from "../../interpreter/workerPoolRegistrationToken.ts";
 import { postgresTransaction } from "./pool.ts";
 
@@ -63,6 +65,43 @@ function workerPoolTokenTerms(row: {
 }
 
 /**
+ * One mint under the project's bound: the project's mints are serialized on an
+ * advisory lock, its spent and expired tokens are swept, and the row is written
+ * only where an active project is named and fewer than `workerPoolTokensLiveMax`
+ * live tokens remain. The sweep is here rather than on a schedule because the
+ * mint is the one write that grows the table, so the table is bounded by the
+ * same statement that would otherwise grow it.
+ */
+async function workerPoolTokenMinted(
+  client: pg.PoolClient,
+  partition: Partition,
+  digest: string,
+  capabilities: readonly string[],
+  expiresAtMs: number,
+): Promise<WorkerPoolTokenWritten> {
+  await client.query<{ locked: string | null }>(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(
+          'worker-pool-token:' || ${partition.tenant} || '/' || ${partition.project}, 0))::text AS locked`,
+  );
+  await client.query(sql`DELETE FROM worker_pool_registration_token t
+    WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
+      AND (t.redeemed_at IS NOT NULL OR t.expires_at<=now())`);
+  const counted = await client.query<{ active: boolean; live: number }>(
+    sql`SELECT EXISTS(SELECT 1 FROM project p
+          WHERE p.tenant=${partition.tenant} AND p.project=${partition.project}
+            AND p.lifecycle='Active') AS active,
+        (SELECT count(*)::int FROM worker_pool_registration_token t
+          WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}) AS live`,
+  );
+  const row = counted.rows[0];
+  if (row === undefined || !row.active) return "NotFound";
+  if (row.live >= workerPoolTokensLiveMax) return "LimitReached";
+  await client.query(sql`INSERT INTO worker_pool_registration_token(token_digest,tenant,project,capabilities,expires_at)
+    VALUES(${digest},${partition.tenant},${partition.project},${[...capabilities]}::text[],to_timestamp(${expiresAtMs}::double precision/1000))`);
+  return "Minted";
+}
+
+/**
  * The tokens an owner mints and a machine spends. `consume` is a conditional
  * update rather than a read and a write, so two machines redeeming one token
  * are separated by the statement and not by this process.
@@ -71,15 +110,16 @@ export function postgresWorkerPoolRegistrationTokens(
   pool: pg.Pool,
 ): WorkerPoolRegistrationTokens {
   return {
-    mint: async (partition, digest, capabilities, expiresAtMs) => {
-      const inserted =
-        await pool.query(sql`INSERT INTO worker_pool_registration_token(token_digest,tenant,project,capabilities,expires_at)
-        SELECT ${digest},${partition.tenant},${partition.project},${[...capabilities]}::text[],to_timestamp(${expiresAtMs}::double precision/1000)
-        WHERE EXISTS(SELECT 1 FROM project p
-          WHERE p.tenant=${partition.tenant} AND p.project=${partition.project}
-            AND p.lifecycle='Active')`);
-      return (inserted.rowCount ?? 0) === 1;
-    },
+    mint: (partition, digest, capabilities, expiresAtMs) =>
+      postgresTransaction(pool, (client) =>
+        workerPoolTokenMinted(
+          client,
+          partition,
+          digest,
+          capabilities,
+          expiresAtMs,
+        ),
+      ),
     permitted: async (digest) => {
       const found = await pool.query<{
         tenant: string;

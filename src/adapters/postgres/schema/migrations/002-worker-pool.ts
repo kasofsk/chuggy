@@ -82,7 +82,7 @@ export const migration002: Migration = {
        minted_at timestamptz NOT NULL DEFAULT now(),
        FOREIGN KEY(tenant,project) REFERENCES public.project(tenant,project))`,
     `GRANT SELECT,INSERT,DELETE ON TABLE public.worker_pool TO ${apiRole}`,
-    `GRANT SELECT,INSERT ON TABLE public.worker_pool_registration_token TO ${apiRole}`,
+    `GRANT SELECT,INSERT,DELETE ON TABLE public.worker_pool_registration_token TO ${apiRole}`,
     `GRANT UPDATE(redeemed_at) ON TABLE public.worker_pool_registration_token TO ${apiRole}`,
     `GRANT SELECT(tenant,project,pool,capabilities,principal) ON TABLE public.worker_pool TO ${poolPlaneRole}`,
     `GRANT SELECT(tenant,project,execution,status,placement,placement_backoff_from,requirement_value)

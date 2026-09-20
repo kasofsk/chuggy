@@ -476,6 +476,8 @@ function fakeWorkerPools(calls: string[]): WorkerPoolRegistrationService {
       calls.push(
         `worker-pool-token:${partition.project}:${request.capabilities.join("+")}:${String(request.lifetimeSecs)}`,
       );
+      if (partition.project === "full")
+        return Promise.resolve({ result: "LimitReached" });
       return Promise.resolve(
         partition.project === "atlas"
           ? {
@@ -1699,6 +1701,21 @@ test("an owner mints a registration token and a project they may not administer 
       "worker-pool-token:atlas:linux-containers:900",
       "worker-pool-token:other::900",
     ],
+  );
+});
+
+test("a project already holding its bound of live tokens is answered a conflict", async () => {
+  await using app = appOf([]);
+  const refused = await app.inject({
+    method: "POST",
+    url: "/api/v1/tenants/acme/projects/full/worker-pool-registration-tokens",
+    headers: { authorization: "Bearer valid", ...workerPoolJson },
+    payload: JSON.stringify({ capabilities: [], lifetimeSecs: 900 }),
+  });
+  assert.equal(refused.statusCode, 409);
+  assert.equal(
+    refused.json<HttpErrorEnvelope>().error.code,
+    "TokenLimitReached",
   );
 });
 

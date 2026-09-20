@@ -25,6 +25,7 @@
  * stays spent is a redemption that was answered.
  */
 
+import { assertNever } from "../domain/assertNever.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
@@ -40,11 +41,19 @@ export interface WorkerPoolRegistrationTokenTerms {
   readonly capabilities: readonly string[];
 }
 
+/** The most live tokens one project holds at once, which is what bounds the table they sit in. */
+export const workerPoolTokensLiveMax = 16;
+
+/** What one mint wrote: a row, nothing because no active project was named, or nothing because the project is at its bound. */
+export type WorkerPoolTokenWritten = "Minted" | "NotFound" | "LimitReached";
+
 /**
- * The durable side of a token's whole life. `permitted` reads a token that is
- * neither spent nor expired, `consume` is the single write that spends it, so
- * nothing but that write decides which of two redeemers won, and `restore`
- * gives back an unexpired one whose redemption faulted.
+ * The durable side of a token's whole life. `mint` writes a row only under the
+ * project's bound and sweeps that project's spent and expired tokens as it
+ * does, `permitted` reads a token that is neither spent nor expired, `consume`
+ * is the single write that spends it, so nothing but that write decides which
+ * of two redeemers won, and `restore` gives back an unexpired one whose
+ * redemption faulted.
  */
 export interface WorkerPoolRegistrationTokens {
   mint(
@@ -52,7 +61,7 @@ export interface WorkerPoolRegistrationTokens {
     digest: string,
     capabilities: readonly string[],
     expiresAtMs: number,
-  ): Promise<boolean>;
+  ): Promise<WorkerPoolTokenWritten>;
   permitted(
     digest: string,
   ): Promise<WorkerPoolRegistrationTokenTerms | undefined>;
@@ -69,6 +78,7 @@ export interface WorkerPoolRegistrationTokens {
  */
 export type WorkerPoolTokenMinted =
   | { readonly result: "NotFound" }
+  | { readonly result: "LimitReached" }
   | {
       readonly result: "Minted";
       readonly value: { readonly token: string; readonly expiresAtMs: number };
@@ -127,14 +137,22 @@ export async function workerPoolTokenMint(
   const token = minting.draw();
   const expiresAtMs =
     minting.nowMs() + request.lifetimeSecs * millisecondsPerSecond;
-  return (await minting.tokens.mint(
+  const written = await minting.tokens.mint(
     partition,
     minting.digest(token),
     request.capabilities,
     expiresAtMs,
-  ))
-    ? { result: "Minted", value: { token, expiresAtMs } }
-    : { result: "NotFound" };
+  );
+  switch (written) {
+    case "Minted":
+      return { result: "Minted", value: { token, expiresAtMs } };
+    case "NotFound":
+      return { result: "NotFound" };
+    case "LimitReached":
+      return { result: "LimitReached" };
+    default:
+      return assertNever(written);
+  }
 }
 
 /** What one redemption offers: the token it holds, the name it takes and what it claims. */
