@@ -30,12 +30,9 @@ import { LeadPage } from "./LeadPage.tsx";
 import { persistentStore } from "./ports.ts";
 import { RepositoriesPage } from "./RepositoriesPage.tsx";
 import { RepositoryPage } from "./repositories/RepositoryPage.tsx";
+import { ProjectTable } from "./ProjectTable.tsx";
 import { Shell } from "./Shell.tsx";
-import {
-  AdoptedTicketCreation,
-  AdoptedTicketPage,
-  AdoptedTickets,
-} from "./AdoptedTickets.tsx";
+import { AdoptedTicketCreation, AdoptedTicketPage } from "./AdoptedTickets.tsx";
 
 export function Landing(): ReactNode {
   const navigate = useNavigate();
@@ -96,7 +93,7 @@ const partitionRoute = createRoute({
 const projectRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/",
-  component: AdoptedTickets,
+  component: ProjectTable,
 });
 
 const leadRoute = createRoute({

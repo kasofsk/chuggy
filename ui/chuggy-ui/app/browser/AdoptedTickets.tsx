@@ -21,7 +21,7 @@ import {
 } from "./editor/useTicketAuthoring.ts";
 import type { EditorFinding } from "./editor/chugEditor.ts";
 import type { FragmentCatalog } from "./editor/fragments.ts";
-import { Button, ButtonLink } from "./ui/Button.tsx";
+import { Button } from "./ui/Button.tsx";
 import { Dialog } from "./ui/Dialog.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import {
@@ -61,60 +61,6 @@ function failureSentence(failure: ApiFailure): string {
 
 function newIdentity(): string {
   return crypto.randomUUID();
-}
-
-export function AdoptedTickets(): ReactNode {
-  const partition = useParams({ from: "/$tenant/$project" });
-  const ports = useApiPorts();
-  const [tickets, setTickets] = useState<readonly AdoptedTicket[]>();
-  const [failure, setFailure] = useState<string>();
-  useEffect(() => {
-    let active = true;
-    void adoptedTickets(ports, {
-      tenant: partition.tenant,
-      project: partition.project,
-    }).then((result) => {
-      if (!active) return;
-      if (result.outcome === "Ok") setTickets(result.value.tickets);
-      else setFailure(failureSentence(result));
-    });
-    return () => {
-      active = false;
-    };
-  }, [ports, partition.tenant, partition.project]);
-  return (
-    <main className="grid gap-4 p-4">
-      <div className="flex items-center justify-between">
-        <h1>Tickets</h1>
-        <ButtonLink to="/$tenant/$project/tickets/new" params={partition}>
-          New ticket
-        </ButtonLink>
-      </div>
-      {failure === undefined ? null : (
-        <p className="text-tone-fail">{failure}</p>
-      )}
-      {tickets === undefined ? (
-        <p className="panel-note">Loading tickets…</p>
-      ) : (
-        <div className="grid gap-2">
-          {tickets.length === 0 ? (
-            <p className="panel-absent">No tickets have been authored.</p>
-          ) : (
-            tickets.map((ticket) => (
-              <ButtonLink
-                key={ticket.ticket}
-                to="/$tenant/$project/tickets/$ticket"
-                params={{ ...partition, ticket: String(ticket.ticket) }}
-              >
-                Ticket {ticket.ticket} · {ticket.state} · revision{" "}
-                {ticket.revision}
-              </ButtonLink>
-            ))
-          )}
-        </div>
-      )}
-    </main>
-  );
 }
 
 interface AuthoringFields {
