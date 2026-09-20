@@ -307,7 +307,11 @@ test("an assignment is renewed, refused and released by the pool holding it", as
     false,
     "a refused assignment is not renewed again",
   );
+});
 
+test("a released attempt backs off for as long as the pool said before it is offered again", async () => {
+  const project = await poolProject("pool-releases");
+  const mine = await registered(project.partition, "releasing", []);
   const released = await poolAttempt(project, "released");
   const handle = handles("released");
   assert.notEqual(
