@@ -3,6 +3,12 @@ import { test } from "node:test";
 
 import { createPoolPlaneApp } from "../../src/adapters/http/poolPlaneServer.ts";
 import type { PoolPlaneService } from "../../src/adapters/http/poolPlaneServer.ts";
+import {
+  workerPoolPollQuery,
+  workerPoolPollRoute,
+  workerPoolReconciliationSchema,
+  workerPoolSettlementPath,
+} from "../../src/contract/workerPool.ts";
 import type {
   WorkerPoolAssignments,
   WorkerPoolIdentity,
@@ -26,6 +32,15 @@ const identity: WorkerPoolIdentity = {
 };
 
 const issuer = "https://issuer.invalid";
+
+/** The poll's address carrying one `held` per assignment and the room asked for. */
+function polling(held: readonly string[], wanted = 1): string {
+  const query = new URLSearchParams([
+    ...held.map((assignment) => [workerPoolPollQuery.held, assignment]),
+    [workerPoolPollQuery.wanted, String(wanted)],
+  ]).toString();
+  return `${workerPoolPollRoute}?${query}`;
+}
 /** The one client the fake issuer knows, and the principal its subject resolves to. */
 const poolToken = "pool-token";
 const poolPrincipal = oidcPrincipal(issuer, "client-one");
@@ -102,7 +117,8 @@ function plane(
     access,
     registry: {
       register: () => Promise.resolve(true),
-      deregister: () => Promise.resolve(undefined),
+      clientOf: () => Promise.resolve(undefined),
+      deregister: () => Promise.resolve(false),
       identify: (principal) =>
         Promise.resolve(principal === poolPrincipal ? identity : undefined),
     },
@@ -127,7 +143,7 @@ test("one poll renews what is held, says what must stop and hands over what it c
   const recorded = calls();
   const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
     method: "GET",
-    url: "/v1/assignments?held=live&held=gone",
+    url: polling(["live", "gone"]),
     headers: { authorization: "Bearer pool-token" },
   });
   assert.equal(answered.statusCode, 200);
@@ -152,11 +168,56 @@ test("one poll renews what is held, says what must stop and hands over what it c
   ]);
 });
 
+test("a pool wanting none is renewed, told what to stop and claimed nothing", async () => {
+  const recorded = calls();
+  const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
+    method: "GET",
+    url: polling(["live", "gone"], 0),
+    headers: { authorization: "Bearer pool-token" },
+  });
+  assert.equal(answered.statusCode, 200);
+  assert.deepEqual(answered.json(), { assignments: [], stop: ["gone"] });
+  assert.deepEqual(recorded.made, [
+    ["renew", "live"],
+    ["renew", "gone"],
+  ]);
+});
+
+test("a pool wanting more than the plane hands out per poll is claimed the plane's bound", async () => {
+  const recorded = calls();
+  const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
+    method: "GET",
+    url: polling([], 5),
+    headers: { authorization: "Bearer pool-token" },
+  });
+  assert.equal(answered.statusCode, 200);
+  assert.equal(
+    workerPoolReconciliationSchema.parse(answered.json()).assignments.length,
+    1,
+  );
+  assert.deepEqual(recorded.made, [["claim", "minted-1"]]);
+});
+
+test("a poll that does not say its room, or says it as no count, is refused", async () => {
+  const recorded = calls();
+  const app = createPoolPlaneApp(plane(recorded.ports));
+  for (const query of ["", "?wanted=-1", "?wanted=two", "?wanted=1&wanted=2"]) {
+    const answered = await app.inject({
+      method: "GET",
+      url: `${workerPoolPollRoute}${query}`,
+      headers: { authorization: "Bearer pool-token" },
+    });
+    assert.equal(answered.statusCode, 400, query);
+    assert.equal(answered.body, "");
+  }
+  assert.deepEqual(recorded.made, []);
+});
+
 test("a pool already at its bound still polls and is answered with control alone", async () => {
   const recorded = calls();
   const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
     method: "GET",
-    url: "/v1/assignments?held=live&held=live&held=live",
+    url: polling(["live", "live", "live"]),
     headers: { authorization: "Bearer pool-token" },
   });
   assert.deepEqual(answered.json(), { assignments: [], stop: [] });
@@ -170,36 +231,34 @@ test("a pool already at its bound still polls and is answered with control alone
 test("a list longer than the bound is refused rather than cut", async () => {
   const answered = await createPoolPlaneApp(plane(calls().ports)).inject({
     method: "GET",
-    url: "/v1/assignments?held=one&held=two&held=three&held=four",
+    url: polling(["one", "two", "three", "four"]),
     headers: { authorization: "Bearer pool-token" },
   });
   assert.equal(answered.statusCode, 400);
-  assert.deepEqual(answered.json(), { action: "stop", reason: "InvalidHeld" });
+  assert.equal(answered.body, "");
 });
 
-for (const [why, headers, status, body] of [
-  ["no token at all", {}, 401, { action: "stop" }],
+for (const [why, headers, status] of [
+  ["no token at all", {}, 401],
   [
     "a token the issuer does not vouch for",
     { authorization: "Bearer other" },
     401,
-    { action: "stop" },
   ],
   [
     "an issuer that could not answer",
     { authorization: "Bearer issuer-down" },
     503,
-    { action: "retry" },
   ],
 ] as const)
-  test(`a poll carrying ${why} is answered ${String(status)}`, async () => {
+  test(`a poll carrying ${why} is answered ${String(status)} and nothing else`, async () => {
     const answered = await createPoolPlaneApp(plane(calls().ports)).inject({
       method: "GET",
-      url: "/v1/assignments",
+      url: polling([]),
       headers,
     });
     assert.equal(answered.statusCode, status);
-    assert.deepEqual(answered.json(), body);
+    assert.equal(answered.body, "");
   });
 
 test("a pool the authority refuses is told it is not there rather than told to retry", async () => {
@@ -207,11 +266,11 @@ test("a pool the authority refuses is told it is not there rather than told to r
     plane(calls().ports, authority("Refuse")),
   ).inject({
     method: "GET",
-    url: "/v1/assignments",
+    url: polling([]),
     headers: { authorization: "Bearer pool-token" },
   });
   assert.equal(answered.statusCode, 404);
-  assert.deepEqual(answered.json(), { action: "stop" });
+  assert.equal(answered.body, "");
 });
 
 test("a pool polling through an authority outage is told to retry", async () => {
@@ -220,11 +279,11 @@ test("a pool polling through an authority outage is told to retry", async () => 
     plane(recorded.ports, authority("Outage")),
   ).inject({
     method: "GET",
-    url: "/v1/assignments",
+    url: polling([]),
     headers: { authorization: "Bearer pool-token" },
   });
   assert.equal(answered.statusCode, 503);
-  assert.deepEqual(answered.json(), { action: "retry" });
+  assert.equal(answered.body, "");
   assert.deepEqual(
     recorded.made,
     [],
@@ -235,11 +294,12 @@ test("a pool polling through an authority outage is told to retry", async () => 
 test("each settlement route reaches the one port its own path names", async () => {
   const recorded = calls();
   const app = createPoolPlaneApp(plane(recorded.ports));
-  for (const [url, payload] of [
-    ["/v1/assignments/one/accepted", {}],
-    ["/v1/assignments/one/refused", { evidence: "no runner" }],
-    ["/v1/assignments/one/unavailable", { retryAfterSecs: 30 }],
+  for (const [outcome, payload] of [
+    ["Accepted", {}],
+    ["Refused", { evidence: "no runner" }],
+    ["Unavailable", { retryAfterSecs: 30 }],
   ] as const) {
+    const url = workerPoolSettlementPath(outcome, "one");
     const answered = await app.inject({
       method: "POST",
       url,
@@ -259,14 +319,11 @@ test("a settlement whose body does not carry what its path needs is refused", as
   const recorded = calls();
   const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
     method: "POST",
-    url: "/v1/assignments/one/refused",
+    url: workerPoolSettlementPath("Refused", "one"),
     headers: { authorization: "Bearer pool-token" },
     payload: { retryAfterSecs: 30 },
   });
   assert.equal(answered.statusCode, 400);
-  assert.deepEqual(answered.json(), {
-    action: "stop",
-    reason: "InvalidOutcome",
-  });
+  assert.equal(answered.body, "");
   assert.deepEqual(recorded.made, []);
 });

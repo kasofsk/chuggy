@@ -218,11 +218,6 @@ export function poolClientConfig(
     client: {
       concurrencyMax: poolClientPositive(environment, "CONCURRENCY_MAX", 4),
       retryAfterSecs: poolClientPositive(environment, "RETRY_AFTER_SECS", 30),
-      tokenRefreshBeforeSecs: poolClientPositive(
-        environment,
-        "TOKEN_REFRESH_BEFORE_SECS",
-        60,
-      ),
       outageBackoffMs: poolClientPositive(
         environment,
         "OUTAGE_BACKOFF_MS",

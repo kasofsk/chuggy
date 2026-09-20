@@ -14,6 +14,7 @@ import {
   workerPoolTokenRedeem,
   type WorkerPoolRegistrationTokenTerms,
   type WorkerPoolTokenMinting,
+  type WorkerPoolTokenWritten,
 } from "../../src/interpreter/workerPoolRegistrationToken.ts";
 
 const issuer = "https://issuer.invalid";
@@ -32,10 +33,11 @@ function authority(allowed: boolean): ProjectAccess {
 /** A token store holding at most one token, so single use is what a case reads. */
 function minting(input?: {
   readonly held?: WorkerPoolRegistrationTokenTerms;
-  readonly accepts?: boolean;
+  readonly answers?: WorkerPoolTokenWritten;
 }): WorkerPoolTokenMinting & { readonly made: unknown[] } {
   const made: unknown[] = [];
   let held = input?.held;
+  let spent: WorkerPoolRegistrationTokenTerms | undefined;
   return {
     made,
     draw: () => "a-drawn-token",
@@ -45,15 +47,20 @@ function minting(input?: {
       mint: (named, digest, capabilities, expiresAtMs) =>
         Promise.resolve(
           (made.push(["mint", named, digest, capabilities, expiresAtMs]),
-          input?.accepts ?? true),
+          input?.answers ?? "Minted"),
         ),
       permitted: (digest) =>
         Promise.resolve((made.push(["permitted", digest]), held)),
       consume: (digest) => {
         made.push(["consume", digest]);
-        const spent = held;
+        spent = held;
         held = undefined;
         return Promise.resolve(spent);
+      },
+      restore: (digest) => {
+        made.push(["restore", digest]);
+        held = spent;
+        return Promise.resolve(held !== undefined);
       },
     },
   };
@@ -67,7 +74,8 @@ function ports(): RegisterPoolPorts & { readonly made: unknown[] } {
     registry: {
       register: (registration) =>
         Promise.resolve((made.push(["register", registration]), true)),
-      deregister: () => Promise.resolve(undefined),
+      clientOf: () => Promise.resolve(undefined),
+      deregister: () => Promise.resolve(false),
       identify: () => Promise.resolve(undefined),
     },
     clients: {
@@ -117,6 +125,23 @@ test("a caller the authority does not admit mints nothing and is told nothing", 
   );
   assert.deepEqual(store.made, []);
 });
+
+for (const [answers, result] of [
+  ["NotFound", "NotFound"],
+  ["LimitReached", "LimitReached"],
+] as const)
+  test(`a store answering ${answers} mints nothing and says so`, async () => {
+    assert.deepEqual(
+      await workerPoolTokenMint(
+        authority(true),
+        minting({ answers }),
+        principal,
+        partition,
+        { capabilities: [], lifetimeSecs: 60 },
+      ),
+      { result },
+    );
+  });
 
 for (const lifetimeSecs of [0, -1, 1.5, workerPoolTokenLifetimeSecsMax + 1])
   test(`a lifetime of ${String(lifetimeSecs)} is refused before anything is asked`, async () => {
@@ -204,4 +229,30 @@ test("a token no store holds registers nothing", async () => {
     { result: "NotFound" },
   );
   assert.deepEqual(made.made, []);
+});
+
+test("a registration that faulted after the spend gives the token back for the retry", async () => {
+  const store = minting({ held: { partition, capabilities: ["linux"] } });
+  const made = ports();
+  const outage = new Error("the issuer is unreachable");
+  made.clients.create = () => Promise.reject(outage);
+  const offered = {
+    token: "a-drawn-token",
+    pool: "pool-one",
+    capabilities: ["linux"],
+  };
+  await assert.rejects(
+    workerPoolTokenRedeem(store, made, issuer, offered),
+    outage,
+  );
+  assert.deepEqual(store.made.slice(-2), [
+    ["consume", "digest-of-a-drawn-token"],
+    ["restore", "digest-of-a-drawn-token"],
+  ]);
+  made.clients.create = (clientId) =>
+    Promise.resolve({ clientId, clientSecret: "a-secret" });
+  assert.equal(
+    (await workerPoolTokenRedeem(store, made, issuer, offered)).result,
+    "Registered",
+  );
 });

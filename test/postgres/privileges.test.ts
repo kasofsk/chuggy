@@ -10,6 +10,7 @@ import {
   continuationFunction,
   finalizerRole,
   notificationPublishFunction,
+  poolPlaneRole,
   projectChangeAppendFunction,
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
@@ -94,6 +95,7 @@ test("no runtime role but the API reads a project's bindings through the door", 
     schedulerRole,
     finalizerRole,
     workerPlaneRole,
+    poolPlaneRole,
     configurationImporterRole,
   ])
     assert.match(
@@ -134,6 +136,7 @@ test("only the importer lists every binding there is", async () => {
     schedulerRole,
     finalizerRole,
     workerPlaneRole,
+    poolPlaneRole,
   ])
     assert.match(
       (await harness.attemptAs(role, listing)) ?? "",
@@ -162,6 +165,7 @@ test("no runtime role but the API binds a repository, and none records one", asy
     schedulerRole,
     finalizerRole,
     workerPlaneRole,
+    poolPlaneRole,
     configurationImporterRole,
   ]) {
     assert.match(

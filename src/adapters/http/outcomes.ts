@@ -802,6 +802,14 @@ export function workerPoolTokenResponse(
   switch (result.result) {
     case "NotFound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "LimitReached":
+      return response(
+        409,
+        nativeHttpError(
+          "TokenLimitReached",
+          "The project already holds its bound of live registration tokens.",
+        ),
+      );
     case "Minted":
       return response(201, {
         token: result.value.token,

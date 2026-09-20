@@ -12,7 +12,9 @@
  * A HALF-REGISTRATION IS UNDONE RATHER THAN LEFT. No transaction spans the
  * three, so a failure after the client exists removes the client and the
  * relation before it reports — leaving a client nobody recorded is leaving a
- * credential with no owner.
+ * credential with no owner. Deregistration is the same order reversed for the
+ * same reason: the client and the relation go first and the row that names
+ * them last, so a failure part-way leaves a row the re-run starts from.
  *
  * IT DECIDES NOTHING ABOUT A TICKET and reads no journal, which is why it is
  * here rather than in the command that composes it: what the command holds is
@@ -20,7 +22,7 @@
  * written in.
  */
 
-import { workerPoolCapabilitySchema } from "../contract/workerPool.ts";
+import { workerPoolCapabilitiesSchema } from "../contract/workerPool.ts";
 import { oidcPrincipal } from "./principal.ts";
 import {
   projectPrincipalGrant,
@@ -96,10 +98,9 @@ export function registerPoolRequestOf(
       `${registerPoolVariables.operation} must be register or deregister`,
     );
   const declared = environment[registerPoolVariables.capabilities];
-  const capabilities =
-    declared === undefined || declared.length === 0 ? [] : declared.split(",");
-  for (const capability of capabilities)
-    workerPoolCapabilitySchema.parse(capability);
+  const capabilities = workerPoolCapabilitiesSchema.parse(
+    declared === undefined || declared.length === 0 ? [] : declared.split(","),
+  );
   return {
     partition: {
       tenant: registerPoolRequired(environment, registerPoolVariables.tenant),
@@ -134,6 +135,28 @@ export interface RegisterPoolPorts {
 }
 
 /**
+ * The client and the relation taken back, each attempted whether or not the
+ * other could be: the authority that refused to write a relation refuses to
+ * remove it too, and the client must not outlive that refusal. Answers the
+ * first removal that failed, for the caller to raise where nothing else did.
+ */
+async function workerPoolRegistrationUndone(
+  ports: RegisterPoolPorts,
+  grant: ProjectGrant,
+  clientId: string,
+): Promise<Error | undefined> {
+  const settled = await Promise.allSettled([
+    ports.clients.remove(clientId),
+    ports.grants.remove(grant),
+  ]);
+  const failed = settled.find((outcome) => outcome.status === "rejected");
+  if (failed === undefined) return undefined;
+  return failed.reason instanceof Error
+    ? failed.reason
+    : new Error(String(failed.reason));
+}
+
+/**
  * The three writes registering one pool is — a client, a relation and a row —
  * each undone where the next could not be made, and answering nothing where the
  * row names no active project.
@@ -155,13 +178,16 @@ export async function workerPoolRegisteredAt(
       principal: oidcPrincipal(request.issuer, minted.clientId),
     });
   } catch (failure) {
-    await ports.grants.remove(grant);
-    await ports.clients.remove(minted.clientId);
+    await workerPoolRegistrationUndone(ports, grant, minted.clientId);
     throw failure;
   }
   if (registered) return minted;
-  await ports.grants.remove(grant);
-  await ports.clients.remove(minted.clientId);
+  const left = await workerPoolRegistrationUndone(
+    ports,
+    grant,
+    minted.clientId,
+  );
+  if (left !== undefined) throw left;
   return undefined;
 }
 
@@ -189,12 +215,35 @@ export async function registerPoolRun(input: {
   const named = `${request.partition.tenant}/${request.partition.project} pool ${request.pool}`;
   if (request.operation === "register")
     return registerPoolRegistered(request, input.ports, named);
-  const removed = await input.ports.registry.deregister(
+  return registerPoolDeregistered(request, input.ports, named);
+}
+
+/**
+ * The three writes taken back: the client, the relation, and last the row that
+ * named them. The row goes only with the client that was read out of it, so a
+ * pool registered again in between keeps its newer client and this run says so.
+ */
+async function registerPoolDeregistered(
+  request: RegisterPoolRequest,
+  ports: RegisterPoolPorts,
+  named: string,
+): Promise<string> {
+  const clientId = await ports.registry.clientOf(
     request.partition,
     request.pool,
   );
-  if (removed === undefined) return `NotRegistered: ${named}`;
-  await input.ports.grants.remove(registerPoolGrant(request, removed));
-  await input.ports.clients.remove(removed);
+  if (clientId === undefined) return `NotRegistered: ${named}`;
+  await ports.clients.remove(clientId);
+  await ports.grants.remove(registerPoolGrant(request, clientId));
+  if (
+    !(await ports.registry.deregister(
+      request.partition,
+      request.pool,
+      clientId,
+    ))
+  )
+    throw new Error(
+      `${named} was registered again while it was being taken off; run again`,
+    );
   return `Deregistered: ${named}`;
 }

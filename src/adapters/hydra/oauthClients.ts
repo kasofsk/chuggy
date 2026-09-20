@@ -18,6 +18,9 @@
  * body it cannot read and every connection it could not open raise
  * `WorkerPoolClientUnavailable`, because a registration reported as denied when
  * the issuer was merely unreachable is an owner deleting a pool that exists.
+ * The one status a removal asks for beyond success is not-found: a client the
+ * issuer no longer holds is the state the removal is for, and answering a fault
+ * to it would make a deregistration that failed after this step unrepeatable.
  */
 
 import { z } from "zod";
@@ -93,6 +96,8 @@ async function hydraRequest(input: {
   readonly settings: HydraClientSettings;
   readonly fetcher: typeof fetch;
   readonly body?: unknown;
+  /** Whether the issuer answering that there is no such client is the outcome asked for. */
+  readonly absentIsDone?: boolean;
 }): Promise<unknown> {
   const what = `${input.method} ${input.url.pathname}`;
   let answered: Response;
@@ -114,6 +119,7 @@ async function hydraRequest(input: {
     );
   }
   const text = await hydraBoundedText(answered);
+  if (answered.status === 404 && input.absentIsDone === true) return undefined;
   if (!answered.ok)
     throw new WorkerPoolClientUnavailable(
       `${what} answered ${String(answered.status)}`,
@@ -180,6 +186,7 @@ export function hydraWorkerPoolClients(
         method: "DELETE",
         settings,
         fetcher,
+        absentIsDone: true,
       });
     },
   };

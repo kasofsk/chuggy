@@ -69,6 +69,21 @@ test("a client is removed by the id it was created under", async () => {
   assert.equal(asked?.method, "DELETE");
 });
 
+test("a client the issuer no longer holds is already removed", async () => {
+  await hydraWorkerPoolClients(settings, () =>
+    Promise.resolve(Response.json({ error: "Not Found" }, { status: 404 })),
+  ).remove("chuggy-pool-gone");
+});
+
+test("a removal the issuer refused for any other reason is a fault", async () => {
+  await assert.rejects(
+    hydraWorkerPoolClients(settings, () =>
+      Promise.resolve(new Response("nope", { status: 500 })),
+    ).remove("chuggy-pool-one"),
+    { name: "WorkerPoolClientUnavailable" },
+  );
+});
+
 for (const [why, answering] of [
   [
     "a status this side did not ask for",

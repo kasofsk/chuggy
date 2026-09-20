@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { workerPoolCapabilitiesMax } from "../../src/contract/workerPool.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import type { ProjectGrant } from "../../src/interpreter/projectGrant.ts";
 import type { WorkerPoolRegistration } from "../../src/interpreter/workerPool.ts";
@@ -23,9 +24,24 @@ const environment = {
 /** Every call the command made, so what it did at three authorities is what a case reads. */
 function ports(input?: {
   readonly registered?: boolean;
-  readonly deregistered?: string | undefined;
+  readonly registeredClient?: string | undefined;
+  /** One removal at the named authority fails, and the next succeeds. */
+  readonly outage?: {
+    readonly at: "clients" | "grants";
+    readonly failure: Error;
+  };
 }): RegisterPoolPorts & { readonly made: unknown[] } {
   const made: unknown[] = [];
+  let held = input?.registeredClient;
+  let outages = input?.outage === undefined ? 0 : 1;
+  const removed = (at: "clients" | "grants", call: unknown[]) => {
+    if (input?.outage?.at === at && outages > 0) {
+      outages -= 1;
+      return Promise.reject(input.outage.failure);
+    }
+    made.push(call);
+    return Promise.resolve(undefined);
+  };
   return {
     made,
     registry: {
@@ -33,8 +49,14 @@ function ports(input?: {
         Promise.resolve(
           (made.push(["register", registration]), input?.registered ?? true),
         ),
-      deregister: (_partition, pool) =>
-        Promise.resolve((made.push(["deregister", pool]), input?.deregistered)),
+      clientOf: (_partition, pool) =>
+        Promise.resolve((made.push(["clientOf", pool]), held)),
+      deregister: (_partition, pool, clientId) => {
+        made.push(["deregister", pool, clientId]);
+        if (held !== clientId) return Promise.resolve(false);
+        held = undefined;
+        return Promise.resolve(true);
+      },
       identify: () => Promise.resolve(undefined),
     },
     clients: {
@@ -43,14 +65,13 @@ function ports(input?: {
           (made.push(["create", clientId]),
           { clientId, clientSecret: "a-secret" }),
         ),
-      remove: (clientId) =>
-        Promise.resolve((made.push(["remove", clientId]), undefined)),
+      remove: (clientId) => removed("clients", ["remove", clientId]),
     },
     grants: {
       write: (grant: ProjectGrant) =>
         Promise.resolve((made.push(["write", grant.relation]), undefined)),
       remove: (grant: ProjectGrant) =>
-        Promise.resolve((made.push(["revoke", grant.relation]), undefined)),
+        removed("grants", ["revoke", grant.relation]),
     },
     clientId: () => "chuggy-pool-fixed",
   };
@@ -85,43 +106,88 @@ test("a registration the row refused leaves neither a client nor a relation behi
     /NotRegistered/u,
   );
   assert.deepEqual(made.made.slice(3), [
+    ["remove", "chuggy-pool-fixed"],
     ["revoke", "pools"],
+  ]);
+});
+
+test("an authority that cannot write the relation still has the client removed", async () => {
+  const made = ports();
+  const outage = new Error("the authority is unreachable");
+  made.grants.write = () => Promise.reject(outage);
+  made.grants.remove = () => Promise.reject(outage);
+  await assert.rejects(registerPoolRun({ environment, ports: made }), outage);
+  assert.deepEqual(made.made, [
+    ["create", "chuggy-pool-fixed"],
     ["remove", "chuggy-pool-fixed"],
   ]);
 });
 
-test("deregistration takes off the client the row named", async () => {
-  const made = ports({ deregistered: "chuggy-pool-was-here" });
+const deregistering = {
+  ...environment,
+  CHUG_WORKER_POOL_OPERATION: "deregister",
+};
+
+test("deregistration takes off the client and the relation the row names, and the row last", async () => {
+  const made = ports({ registeredClient: "chuggy-pool-was-here" });
   assert.equal(
-    await registerPoolRun({
-      environment: {
-        ...environment,
-        CHUG_WORKER_POOL_OPERATION: "deregister",
-      },
-      ports: made,
-    }),
+    await registerPoolRun({ environment: deregistering, ports: made }),
     "Deregistered: tenant/project pool pool-one",
   );
   assert.deepEqual(made.made, [
-    ["deregister", "pool-one"],
-    ["revoke", "pools"],
+    ["clientOf", "pool-one"],
     ["remove", "chuggy-pool-was-here"],
+    ["revoke", "pools"],
+    ["deregister", "pool-one", "chuggy-pool-was-here"],
   ]);
 });
 
 test("deregistering a pool no row names touches no issuer at all", async () => {
-  const made = ports({ deregistered: undefined });
+  const made = ports({ registeredClient: undefined });
   assert.equal(
-    await registerPoolRun({
-      environment: {
-        ...environment,
-        CHUG_WORKER_POOL_OPERATION: "deregister",
-      },
-      ports: made,
-    }),
+    await registerPoolRun({ environment: deregistering, ports: made }),
     "NotRegistered: tenant/project pool pool-one",
   );
-  assert.deepEqual(made.made, [["deregister", "pool-one"]]);
+  assert.deepEqual(made.made, [["clientOf", "pool-one"]]);
+});
+
+for (const [authority, failing] of [
+  ["issuer", "clients"],
+  ["authority", "grants"],
+] as const)
+  test(`a deregistration the ${authority} could not complete leaves the row for the re-run`, async () => {
+    const outage = new Error(`the ${authority} is unreachable`);
+    const made = ports({
+      registeredClient: "chuggy-pool-was-here",
+      outage: { at: failing, failure: outage },
+    });
+    await assert.rejects(
+      registerPoolRun({ environment: deregistering, ports: made }),
+      outage,
+    );
+    assert.equal(
+      made.made.some((call) => (call as unknown[])[0] === "deregister"),
+      false,
+      "the row outlives a removal that did not happen",
+    );
+    assert.equal(
+      await registerPoolRun({ environment: deregistering, ports: made }),
+      "Deregistered: tenant/project pool pool-one",
+    );
+  });
+
+test("a pool registered again while it was being taken off keeps its newer client", async () => {
+  const made = ports({ registeredClient: "chuggy-pool-was-here" });
+  made.registry.clientOf = () => Promise.resolve("chuggy-pool-older");
+  await assert.rejects(
+    registerPoolRun({ environment: deregistering, ports: made }),
+    /registered again/u,
+  );
+  assert.deepEqual(made.made.at(-1), [
+    "deregister",
+    "pool-one",
+    "chuggy-pool-older",
+  ]);
 });
 
 for (const absent of [
@@ -151,4 +217,21 @@ test("a capability the contract would not accept refuses the whole command", asy
       ports: ports(),
     }),
   );
+});
+
+test("more capabilities than the wire admits refuse the whole command", async () => {
+  const made = ports();
+  await assert.rejects(
+    registerPoolRun({
+      environment: {
+        ...environment,
+        CHUG_WORKER_POOL_CAPABILITIES: Array.from(
+          { length: workerPoolCapabilitiesMax + 1 },
+          (_, index) => `capability-${String(index)}`,
+        ).join(","),
+      },
+      ports: made,
+    }),
+  );
+  assert.deepEqual(made.made, []);
 });

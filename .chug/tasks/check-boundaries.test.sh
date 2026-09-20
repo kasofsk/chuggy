@@ -295,6 +295,39 @@ printf '%s\n' 'import { wired } from "../src/roots/service.ts"' 'export const z 
 seal
 check "importing a process root is a finding" 1 "$RC" "nothing-imports-a-process-root:"
 
+# --- pool-plane-mints-no-credential -------------------------------------------
+
+# The allowed shape first: the plane's root reaches a registry adapter and the
+# owner's command reaches the issuer's admin adapter. A red here would mean the
+# rule refuses the one root that exists to hold that privilege.
+fixture
+mkdir -p "$R/src/roots" "$R/src/adapters/hydra" "$R/src/adapters/postgres"
+printf '%s\n' 'export const clients = 1' > "$R/src/adapters/hydra/clients.ts"
+printf '%s\n' 'export const registry = 1' > "$R/src/adapters/postgres/registry.ts"
+printf '%s\n' 'import { registry } from "../adapters/postgres/registry.ts"' 'export const plane = registry' > "$R/src/roots/poolPlane.ts"
+printf '%s\n' 'import { clients } from "../adapters/hydra/clients.ts"' 'export const registered = clients' > "$R/src/roots/registerWorkerPool.ts"
+seal
+check "the plane's root may reach a registry, and the owner's command the issuer" 0 "$RC" "graph clean"
+
+fixture
+mkdir -p "$R/src/roots" "$R/src/adapters/hydra"
+printf '%s\n' 'export const clients = 1' > "$R/src/adapters/hydra/clients.ts"
+printf '%s\n' 'import { clients } from "../adapters/hydra/clients.ts"' 'export const plane = clients' > "$R/src/roots/poolPlane.ts"
+seal
+check "the plane's root may not import the issuer's admin adapter" 1 "$RC" "pool-plane-mints-no-credential:"
+
+# The composition helper belongs to neither the root nor the adapter, so no
+# edge leaves src/roots/poolPlane.ts for src/adapters/hydra/ and only
+# reachability sees it. Without `reachable: true` on the rule this tree is
+# clean and no other case notices.
+fixture
+mkdir -p "$R/src/roots" "$R/src/adapters/hydra"
+printf '%s\n' 'export const clients = 1' > "$R/src/adapters/hydra/clients.ts"
+printf '%s\n' 'import { clients } from "./adapters/hydra/clients.ts"' 'export const wired = clients' > "$R/src/compose.ts"
+printf '%s\n' 'import { wired } from "../compose.ts"' 'export const plane = wired' > "$R/src/roots/poolPlane.ts"
+seal
+check "the plane's root may not REACH the issuer's admin adapter through a composition helper" 1 "$RC" "pool-plane-mints-no-credential:"
+
 # --- no-source-reaches-a-suite, under its own name ----------------------------
 
 # From the domain the broader purity rule catches this first, which is why the

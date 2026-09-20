@@ -12,8 +12,10 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { after, test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import type pg from "pg";
 
+import { workerPoolRetryAfterSecsMax } from "../../src/contract/workerPool.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   apiRole,
@@ -307,7 +309,11 @@ test("an assignment is renewed, refused and released by the pool holding it", as
     false,
     "a refused assignment is not renewed again",
   );
+});
 
+test("a released attempt backs off for as long as the pool said before it is offered again", async () => {
+  const project = await poolProject("pool-releases");
+  const mine = await registered(project.partition, "releasing", []);
   const released = await poolAttempt(project, "released");
   const handle = handles("released");
   assert.notEqual(
@@ -316,7 +322,7 @@ test("an assignment is renewed, refused and released by the pool holding it", as
   );
   assert.equal(await assignments.release(mine, handle.assignment, 30), true);
   const after = (await rig.harness.query(
-    `SELECT a.pool, a.assignment, e.placement_backoff_from IS NOT NULL AS backing_off
+    `SELECT a.pool, a.assignment, e.placement_backoff_from > now() AS backing_off
        FROM execution_attempt a
        JOIN execution e ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
       WHERE a.tenant=$1 AND a.project=$2 AND a.attempt=$3`,
@@ -330,6 +336,22 @@ test("an assignment is renewed, refused and released by the pool holding it", as
     { pool: null, assignment: null, backing_off: true },
   ]);
   assert.equal(await assignments.release(mine, handle.assignment, 30), false);
+  const again = handles("again");
+  assert.equal(
+    await assignments.claim(mine, leaseSecs, again.assignment, again.bearer),
+    undefined,
+    "a released attempt is offered to no pool before its backoff elapses",
+  );
+  await rig.harness.query(
+    `UPDATE execution SET placement_backoff_from=now()-interval '1 second'
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [project.partition.tenant, project.partition.project, released.execution],
+  );
+  assert.notEqual(
+    await assignments.claim(mine, leaseSecs, again.assignment, again.bearer),
+    undefined,
+    "a backoff that has elapsed offers the attempt again",
+  );
 });
 
 test("the plane serving harnesses cannot read the relation a pool is registered in", async () => {
@@ -346,7 +368,7 @@ test("the plane serving pools cannot write an attempt's outcome", async () => {
   );
 });
 
-test("deregistration answers with the client it removed and leaves the work it held", async () => {
+test("deregistration names the client the row holds, goes with that client alone, and leaves the work it held", async () => {
   const project = await poolProject("pool-deregister");
   const principal = asPrincipal("https://issuer.invalid#pool-gone");
   const clientId = `chuggy-pool-${randomUUID()}`;
@@ -372,11 +394,77 @@ test("deregistration answers with the client it removed and leaves the work it h
     ),
     undefined,
   );
-  assert.equal(await registry.deregister(project.partition, "gone"), clientId);
+  assert.equal(await registry.clientOf(project.partition, "gone"), clientId);
+  assert.equal(
+    await registry.deregister(project.partition, "gone", "chuggy-pool-other"),
+    false,
+    "the row goes only with the client that was read out of it",
+  );
+  assert.notEqual(await registry.identify(principal), undefined);
+  assert.equal(
+    await registry.deregister(project.partition, "gone", clientId),
+    true,
+  );
   assert.equal(await registry.identify(principal), undefined);
+  assert.equal(await registry.clientOf(project.partition, "gone"), undefined);
+  assert.equal(
+    await registry.deregister(project.partition, "gone", clientId),
+    false,
+  );
   const left = (await rig.harness.query(
     `SELECT pool FROM execution_attempt WHERE tenant=$1 AND project=$2 AND attempt=$3`,
     [project.partition.tenant, project.partition.project, attempt.attempt],
   )) as readonly { pool: string | null }[];
   assert.deepEqual(left, [{ pool: "gone" }]);
+});
+
+test("a release past the bound on a pool's retry-after is refused before it is written", async () => {
+  const project = await poolProject("pool-retry-bound");
+  const mine = await registered(project.partition, "bounded", []);
+  await assert.rejects(
+    assignments.release(mine, "never-claimed", workerPoolRetryAfterSecsMax + 1),
+    RangeError,
+  );
+});
+
+test("a released attempt outlives the reaper for the backoff it was given", async () => {
+  const project = await poolProject("pool-parked");
+  const mine = await registered(project.partition, "parking", []);
+  const parked = await poolAttempt(project, "parked");
+  const handle = handles("parked");
+  assert.notEqual(
+    await assignments.claim(mine, 1, handle.assignment, handle.bearer),
+    undefined,
+  );
+  assert.equal(await assignments.release(mine, handle.assignment, 3), true);
+  await delay(1_500);
+  assert.equal(
+    await rig.store.reapLapsedAttempts(project.epoch, 10),
+    0,
+    "the parked row is not the reaper's",
+  );
+  const after = (await rig.harness.query(
+    `SELECT a.state, a.lease_owner, e.retries_spent::int AS retries_spent
+       FROM execution_attempt a
+       JOIN execution e ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
+      WHERE a.tenant=$1 AND a.project=$2 AND a.attempt=$3`,
+    [project.partition.tenant, project.partition.project, parked.attempt],
+  )) as readonly {
+    state: string;
+    lease_owner: string | null;
+    retries_spent: number;
+  }[];
+  assert.deepEqual(after, [
+    { state: "Placing", lease_owner: parked.attempt, retries_spent: 0 },
+  ]);
+  await rig.harness.query(
+    `UPDATE execution SET placement_backoff_from=now()-interval '1 second'
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [project.partition.tenant, project.partition.project, parked.execution],
+  );
+  const again = handles("parked-again");
+  assert.notEqual(
+    await assignments.claim(mine, leaseSecs, again.assignment, again.bearer),
+    undefined,
+  );
 });

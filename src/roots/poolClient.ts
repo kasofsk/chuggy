@@ -49,8 +49,6 @@ export async function poolClientMain(
       plane: poolPlaneClient(config.plane),
       backend: poolClientBackend(config.site),
       settings: checkedWorkerPoolClientSettings(config.client),
-      now: () => Date.now(),
-      held: undefined,
     },
     async (ms) => {
       await delay(ms);

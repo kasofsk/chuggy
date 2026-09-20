@@ -49,11 +49,77 @@ test("a claim is asked for only as far as the pool's remaining room", async () =
     },
     identity,
     ["one"],
+    settings.assignmentsPerPollMax,
     settings,
     () => `minted-${String(asked)}`,
   );
   assert.equal(asked, 1);
   assert.equal(answered.assignments.length, 1);
+});
+
+test("a pool wanting none is claimed nothing and still renewed and told what to stop", async () => {
+  let asked = 0;
+  const renewed: string[] = [];
+  const answered = await workerPoolReconcile(
+    {
+      ...idle,
+      claim: () => {
+        asked += 1;
+        return Promise.resolve({ capabilities: [] });
+      },
+      renew: (_identity, assignment) => {
+        renewed.push(assignment);
+        return Promise.resolve(assignment === "live");
+      },
+    },
+    identity,
+    ["live", "gone"],
+    0,
+    { ...settings, heldMax: 4 },
+    () => "minted",
+  );
+  assert.equal(asked, 0);
+  assert.deepEqual(renewed, ["live", "gone"]);
+  assert.deepEqual(answered, { assignments: [], stop: ["gone"] });
+});
+
+test("a pool wanting more than the plane allows is claimed the plane's bound", async () => {
+  let asked = 0;
+  const claiming = {
+    ...idle,
+    claim: () => {
+      asked += 1;
+      return Promise.resolve({ capabilities: [] });
+    },
+  };
+  const perPoll = await workerPoolReconcile(
+    claiming,
+    identity,
+    [],
+    settings.assignmentsPerPollMax + 5,
+    { ...settings, heldMax: 10 },
+    () => `minted-${String(asked)}`,
+  );
+  assert.equal(perPoll.assignments.length, settings.assignmentsPerPollMax);
+  asked = 0;
+  const room = await workerPoolReconcile(
+    claiming,
+    identity,
+    ["one"],
+    settings.assignmentsPerPollMax + 5,
+    { ...settings, assignmentsPerPollMax: 10 },
+    () => `minted-${String(asked)}`,
+  );
+  assert.equal(room.assignments.length, settings.heldMax - 1);
+});
+
+test("a wanted that is not a whole count refuses the poll", async () => {
+  for (const wanted of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])
+    await assert.rejects(
+      () =>
+        workerPoolReconcile(idle, identity, [], wanted, settings, () => "m"),
+      /wanted must be a non-negative integer/u,
+    );
 });
 
 test("a held list longer than the bound is a refusal rather than a truncation", async () => {
@@ -63,6 +129,7 @@ test("a held list longer than the bound is a refusal rather than a truncation", 
         idle,
         identity,
         ["one", "two", "three"],
+        1,
         settings,
         () => "minted",
       ),
@@ -77,6 +144,7 @@ test("a bound that is not a positive whole number refuses the poll", async () =>
         idle,
         identity,
         [],
+        1,
         { ...settings, pollIntervalMs: 0 },
         () => "minted",
       ),
@@ -96,6 +164,7 @@ test("a long poll reconciles to its bound and answers empty rather than waiting 
     },
     identity,
     [],
+    1,
     settings,
     () => "minted",
   );
@@ -115,6 +184,7 @@ test("a long poll stops at the first pass with a stop flag to deliver", async ()
     },
     identity,
     ["one"],
+    1,
     settings,
     () => "minted",
   );

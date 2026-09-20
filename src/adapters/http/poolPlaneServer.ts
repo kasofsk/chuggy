@@ -10,9 +10,9 @@
  * is the direction this tree keeps narrowing.
  *
  * FOUR JOBS THROUGH ONE CALL. A poll renews every lease the pool says it holds,
- * answers which of them must stop, claims what the pool's capabilities cover,
- * and by being made at all says the pool is alive. Nothing here is a heartbeat
- * and nothing here is a placement.
+ * answers which of them must stop, claims what the pool's capabilities cover
+ * up to the room it said it has, and by being made at all says the pool is
+ * alive. Nothing here is a heartbeat and nothing here is a placement.
  *
  * IT VERIFIES AND IT NEVER MINTS. A pool arrives as an OAuth2 client of the
  * issuer this installation already runs, so what this process holds is the
@@ -31,9 +31,13 @@ import fastify, {
 
 import {
   assignmentOutcomeSchema,
-  workerPoolIdentityCharsMax,
+  workerPoolAssignmentIdentitySchema,
+  workerPoolPollQuery,
+  workerPoolPollQuerySchema,
+  workerPoolPollRoute,
+  workerPoolSettlementRoutes,
+  type AssignmentOutcome,
 } from "../../contract/workerPool.ts";
-import { isBoundedText } from "../../interpreter/boundedText.ts";
 import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
 import type { ProjectAccess } from "../../interpreter/projectAccess.ts";
 import {
@@ -46,15 +50,6 @@ import {
   type WorkerPoolRegistry,
 } from "../../interpreter/workerPool.ts";
 import type { PrincipalAuthentication } from "./server.ts";
-
-export const poolPlaneRoutes = [
-  "/health/live",
-  "/health/ready",
-  "/v1/assignments",
-  "/v1/assignments/:assignment/accepted",
-  "/v1/assignments/:assignment/refused",
-  "/v1/assignments/:assignment/unavailable",
-] as const;
 
 export interface PoolPlaneService {
   readonly authentication: PrincipalAuthentication;
@@ -113,61 +108,38 @@ async function poolCaller(
     : { caller: "Pool", identity };
 }
 
-/** The one answer each refusal is given, so no route spells a status of its own. */
+/**
+ * The one answer each refusal is given, so no route spells a status of its
+ * own. The status is the whole answer: a pool reads nothing else from it.
+ */
 function poolRefused(
   reply: FastifyReply,
   caller: Exclude<PoolCaller["caller"], "Pool">,
 ): FastifyReply {
   switch (caller) {
     case "InvalidToken":
-      return reply.code(401).send({ action: "stop" });
+      return reply.code(401).send();
     case "Unknown":
-      return reply.code(404).send({ action: "stop" });
+      return reply.code(404).send();
     case "Unavailable":
-      return reply.code(503).send({ action: "retry" });
+      return reply.code(503).send();
   }
 }
 
-/**
- * What the pool says it holds, read off a repeated query parameter. A list
- * longer than the bound is refused rather than cut, because a cut list reads as
- * a pool that let go of work it is still running.
- */
-function poolHeld(
-  request: FastifyRequest,
-  heldMax: number,
-): readonly string[] | undefined {
-  const asked = (request.query as Record<string, unknown>)["held"];
-  const held =
-    asked === undefined
-      ? []
-      : Array.isArray(asked)
-        ? (asked as unknown[])
-        : [asked];
-  if (held.length > heldMax) return undefined;
-  return held.every(
-    (value) =>
-      typeof value === "string" &&
-      isBoundedText(value, workerPoolIdentityCharsMax),
-  )
-    ? (held as string[])
-    : undefined;
-}
-
+/** The assignment a settlement's path names, held to the same bound as everywhere else on the wire. */
 function poolAssignmentNamed(request: FastifyRequest): string | undefined {
-  const named = (request.params as Record<string, unknown>)["assignment"];
-  return typeof named === "string" &&
-    isBoundedText(named, workerPoolIdentityCharsMax)
-    ? named
-    : undefined;
+  const named = workerPoolAssignmentIdentitySchema.safeParse(
+    (request.params as Record<string, unknown>)["assignment"],
+  );
+  return named.success ? named.data : undefined;
 }
 
 function poolHealthRoutes(
   app: FastifyInstance,
   service: PoolPlaneService,
 ): void {
-  app.get(poolPlaneRoutes[0], () => ({ status: "live" }));
-  app.get(poolPlaneRoutes[1], async (_request, reply) =>
+  app.get("/health/live", () => ({ status: "live" }));
+  app.get("/health/ready", async (_request, reply) =>
     (await service.ready())
       ? { status: "ready" }
       : reply.code(503).send({ status: "unready" }),
@@ -179,16 +151,18 @@ function poolAssignmentsRoute(
   app: FastifyInstance,
   service: PoolPlaneService,
 ): void {
-  app.get(poolPlaneRoutes[2], async (request, reply) => {
+  app.get(workerPoolPollRoute, async (request, reply) => {
     const caller = await poolCaller(service, request);
     if (caller.caller !== "Pool") return poolRefused(reply, caller.caller);
-    const held = poolHeld(request, service.settings.heldMax);
-    if (held === undefined)
-      return reply.code(400).send({ action: "stop", reason: "InvalidHeld" });
+    const query = workerPoolPollQuerySchema(service.settings.heldMax).safeParse(
+      request.query,
+    );
+    if (!query.success) return reply.code(400).send();
     const answered = await workerPoolPoll(
       service.assignments,
       caller.identity,
-      held,
+      query.data[workerPoolPollQuery.held],
+      query.data[workerPoolPollQuery.wanted],
       service.settings,
       service.mint,
     );
@@ -206,54 +180,43 @@ function poolOutcomeRoutes(
   app: FastifyInstance,
   service: PoolPlaneService,
 ): void {
-  app.post(poolPlaneRoutes[3], async (request, reply) =>
-    poolOutcomeAnswered(service, request, reply, "Accepted"),
-  );
-  app.post(poolPlaneRoutes[4], async (request, reply) =>
-    poolOutcomeAnswered(service, request, reply, "Refused"),
-  );
-  app.post(poolPlaneRoutes[5], async (request, reply) =>
-    poolOutcomeAnswered(service, request, reply, "Unavailable"),
-  );
+  for (const outcome of ["Accepted", "Refused", "Unavailable"] as const)
+    app.post(workerPoolSettlementRoutes[outcome], async (request, reply) =>
+      poolOutcomeAnswered(service, request, reply, outcome),
+    );
 }
 
 async function poolOutcomeAnswered(
   service: PoolPlaneService,
   request: FastifyRequest,
   reply: FastifyReply,
-  outcome: "Accepted" | "Refused" | "Unavailable",
+  outcome: AssignmentOutcome["outcome"],
 ): Promise<unknown> {
   const caller = await poolCaller(service, request);
   if (caller.caller !== "Pool") return poolRefused(reply, caller.caller);
   const assignment = poolAssignmentNamed(request);
-  if (assignment === undefined)
-    return reply
-      .code(400)
-      .send({ action: "stop", reason: "InvalidAssignment" });
+  if (assignment === undefined) return reply.code(400).send();
   const body =
     request.body === undefined || request.body === null ? {} : request.body;
   const offered = assignmentOutcomeSchema.safeParse({
     outcome,
     ...(body as Record<string, unknown>),
   });
-  if (!offered.success)
-    return reply.code(400).send({ action: "stop", reason: "InvalidOutcome" });
+  if (!offered.success) return reply.code(400).send();
   const settled = await poolOutcomeSettled(
     service,
     caller.identity,
     assignment,
     offered.data,
   );
-  return settled
-    ? reply.code(204).send()
-    : reply.code(409).send({ action: "stop" });
+  return settled ? reply.code(204).send() : reply.code(409).send();
 }
 
 async function poolOutcomeSettled(
   service: PoolPlaneService,
   identity: WorkerPoolIdentity,
   assignment: string,
-  offered: ReturnType<typeof assignmentOutcomeSchema.parse>,
+  offered: AssignmentOutcome,
 ): Promise<boolean> {
   switch (offered.outcome) {
     case "Accepted":

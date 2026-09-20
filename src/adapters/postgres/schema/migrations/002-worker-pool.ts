@@ -2,7 +2,6 @@ import {
   apiRole,
   poolPlaneRole,
   roleStatement,
-  schedulerRole,
   type Migration,
 } from "../shared.ts";
 
@@ -34,8 +33,11 @@ import {
  * so that the credential a pool polls with never needs the privilege a harness
  * reports a result under, and the scheduler turns it into the attempt's
  * terminal where every other terminal is decided — which is the slice that
- * routes work to a pool, and is why the scheduler is granted nothing on these
- * columns here beyond the `placement` its launch read now names.
+ * routes work to a pool. Nothing here grants the scheduler anything: its
+ * table-level SELECT on `execution` already reads `placement`, its table-level
+ * INSERT on `execution_attempt` reaches the three new columns as it reaches
+ * every column and writes none of them, and its column-scoped UPDATE names none
+ * of them.
  *
  * `placement` IS WHAT ROUTES ONE EXECUTION AND NOTHING SETS IT YET. Every row
  * is `InCluster`, which is what the scheduler's own launch already does, so a
@@ -82,10 +84,11 @@ export const migration002: Migration = {
        minted_at timestamptz NOT NULL DEFAULT now(),
        FOREIGN KEY(tenant,project) REFERENCES public.project(tenant,project))`,
     `GRANT SELECT,INSERT,DELETE ON TABLE public.worker_pool TO ${apiRole}`,
-    `GRANT SELECT,INSERT ON TABLE public.worker_pool_registration_token TO ${apiRole}`,
+    `GRANT SELECT,INSERT,DELETE ON TABLE public.worker_pool_registration_token TO ${apiRole}`,
     `GRANT UPDATE(redeemed_at) ON TABLE public.worker_pool_registration_token TO ${apiRole}`,
     `GRANT SELECT(tenant,project,pool,capabilities,principal) ON TABLE public.worker_pool TO ${poolPlaneRole}`,
-    `GRANT SELECT(tenant,project,execution,status,placement,requirement_value) ON TABLE public.execution TO ${poolPlaneRole}`,
+    `GRANT SELECT(tenant,project,execution,status,placement,placement_backoff_from,requirement_value)
+       ON TABLE public.execution TO ${poolPlaneRole}`,
     `GRANT UPDATE(placement_backoff_from) ON TABLE public.execution TO ${poolPlaneRole}`,
     `GRANT EXECUTE ON FUNCTION public.execution_status_move_is_legal(before text, after text) TO ${poolPlaneRole}`,
     `GRANT SELECT(tenant,project,execution,attempt,generation,recovery_epoch,state,
@@ -95,6 +98,5 @@ export const migration002: Migration = {
        ON TABLE public.execution_attempt TO ${poolPlaneRole}`,
     `GRANT SELECT(tenant,project,lifecycle) ON TABLE public.project TO ${poolPlaneRole}`,
     `GRANT SELECT ON TABLE public.recovery_epoch TO ${poolPlaneRole}`,
-    `GRANT SELECT(placement) ON TABLE public.execution TO ${schedulerRole}`,
   ],
 };

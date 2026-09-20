@@ -1,11 +1,10 @@
 /**
  * The two reads a plane's process makes of its own environment.
  *
- * A PLANE IS COMPOSED FROM VARIABLES AND NOTHING ELSE, so both planes made the
- * same pair of readers and the duplication gate is right that one of them is
- * enough. A missing required value refuses the start rather than defaulting,
- * and a bound that is not a positive whole number refuses it too: a plane that
- * started on a zero interval is a loop with no wait in it.
+ * A PLANE IS COMPOSED FROM VARIABLES AND NOTHING ELSE. A missing required
+ * value refuses the start rather than defaulting, and a bound that is not a
+ * positive whole number refuses it too: a plane that started on a zero
+ * interval is a loop with no wait in it.
  */
 
 /** The value a process cannot start without, or the refusal naming what is absent. */
