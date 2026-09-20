@@ -23,6 +23,7 @@ import type {
   TicketApplication,
   TicketApplicationResult,
   TicketCatalogWrite,
+  TicketDefinitionRead,
 } from "../../interpreter/ticketApplication.ts";
 import { TicketId as AdoptedTicketId } from "../../domain/chuggernaut/task.js";
 import type { Ticket as AdoptedTicket } from "../../domain/chuggernaut/ticket.js";
@@ -1074,12 +1075,21 @@ function registerAdoptedTicketReads(
         .send(nativeHttpError("NotFound", "Ticket not found."));
       return;
     }
-    void reply.code(200).send({
-      ...adoptedTicketView(result.value.held, result.value.reworkLimit),
-      /** Null rather than absent, so a release predating source retention still reads. */
-      source: result.value.source ?? null,
-    });
+    void reply.code(200).send(adoptedTicketBody(result.value));
   });
+}
+
+/**
+ * One ticket as every reader of one receives it: the GET, and the frame the
+ * stream sends when that ticket moves. A second assembly beside this one is how
+ * a frame and a read of the same ticket come to disagree.
+ */
+function adoptedTicketBody(read: TicketDefinitionRead) {
+  return {
+    ...adoptedTicketView(read.held, read.reworkLimit),
+    /** Null rather than absent, so a release predating source retention still reads. */
+    source: read.source ?? null,
+  };
 }
 
 function adoptedTicketView(held: AdoptedTicket, reworkLimit: number | null) {
@@ -1545,14 +1555,7 @@ export function nativeProjectStreamReads(
       );
       if (found.result !== "Authorized" || found.value === undefined)
         return gone;
-      return {
-        status: 200,
-        headers: {},
-        body: {
-          ...adoptedTicketView(found.value.held),
-          source: found.value.source ?? null,
-        },
-      };
+      return { status: 200, headers: {}, body: adoptedTicketBody(found.value) };
     },
     execution: async (principal, partition, task) => {
       const reads = service?.reads;

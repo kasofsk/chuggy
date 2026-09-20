@@ -55,6 +55,7 @@ function ticketOf(
     ticket,
     revision: 1,
     workCyclesStarted: 0,
+    reworkLimit: null,
     state,
     dependencies: [...dependencies],
   };
