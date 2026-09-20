@@ -39,7 +39,7 @@ export function creationSummary(
         practices: [],
         workInstructionsCount: 1,
         reviewInstructionsCount: 1,
-        finalization: { approvalRequired: false, handoff: "None" as const },
+        finalization: { approvalRequired: false },
         evaluationStagesCount: 1,
       };
 }

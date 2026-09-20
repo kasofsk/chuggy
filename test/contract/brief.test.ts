@@ -37,8 +37,8 @@ import {
   asRepositoryId,
   finalizerIdentityCharsMax,
   gitRefNameCharsMax,
+  gitRefNamePrefix,
 } from "../../src/interpreter/finalizer.ts";
-import { handoffRefPrefix } from "../../src/interpreter/handoffConfiguration.ts";
 import {
   briefingLineCharsMax,
   briefingLinesMax,
@@ -55,7 +55,7 @@ test("every wire bound on a brief is the interpreter bound it was taken from", (
   assert.equal(briefLineCharsMax, briefingLineCharsMax);
   assert.equal(briefLinksMax, briefingLinesMax);
   assert.equal(briefBranchCharsMax, gitRefNameCharsMax);
-  assert.equal(briefBranchPrefix, handoffRefPrefix);
+  assert.equal(briefBranchPrefix, gitRefNamePrefix);
   assert.equal(briefRepositoryCharsMax, finalizerIdentityCharsMax);
 });
 

@@ -77,7 +77,7 @@ test("the ready revision is this repository's own newest", () => {
   expect(repositoryReadyConfiguration(held, scratch)).toBe(undefined);
 });
 
-test("a ready row states four facts, and an incomplete one states none", () => {
+test("a ready row states three facts, and an incomplete one states none", () => {
   const ready = declared("r6", chuggy, "chuggy");
   expect(repositoryConfigurationRow(ready)).toStrictEqual({
     revision: "r6",
@@ -86,7 +86,6 @@ test("a ready row states four facts, and an incomplete one states none", () => {
       worker: { text: "an-image", title: "an-image" },
       stages: "1",
       approval: "Not required",
-      handoff: "None",
     },
   });
   expect(

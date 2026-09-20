@@ -16,7 +16,6 @@ import { asTaskId } from "../../src/domain/ids.ts";
 import {
   allNativeActionResolutions,
   isApprovalResolution,
-  nativeActionResolutions,
   type ApprovalResolution,
   type NativeActionResolution,
 } from "../../src/interpreter/ticketCommand.ts";
@@ -29,11 +28,7 @@ import {
   postgresHarnessSubmission,
   type PostgresHarness,
 } from "./harness.ts";
-import {
-  seedOpenAction,
-  seededPhase,
-  type SeededAction,
-} from "./nativeActionFixture.ts";
+import { seedOpenAction, type SeededAction } from "./nativeActionFixture.ts";
 
 let harness: PostgresHarness;
 before(async () => {
@@ -136,20 +131,17 @@ test("ready resumes strictly after the cursor it is given", async () => {
 });
 
 /**
- * The park a seeded desk task stands on, as a `Core`, at the gas a case hands
- * it. The phase and the wall are the seed's own; the resume point and its
- * pricing are this suite's, because the projection carries neither, and they
- * are what the two resume answers below turn on.
+ * The park a seeded escalation stands on, as a `Core`, at the gas a case hands
+ * it. The wall is the seed's own; the resume point and its pricing are this
+ * suite's, because the projection carries neither, and they are what the resume
+ * answer below turns on.
  */
 function parkedCore(action: SeededAction, gasLeft: number): Core {
   return coreOf([
     ticketOn(refinementInstance, "ManagedFinalizer", {
-      phase: seededPhase(action.kind),
+      phase: "Escalated",
       reason: action.reason,
-      resumeAt:
-        action.kind === "HandoffBlock"
-          ? "ResumePublishingHandoff"
-          : "ResumeWorking",
+      resumeAt: "ResumeWorking",
       resumePricing: "RetryCharged",
       gasLeft,
     }),
@@ -158,9 +150,9 @@ function parkedCore(action: SeededAction, gasLeft: number): Core {
 
 /**
  * The command one answer names, decided by the answer alone. A settle answer
- * has a decider of its own — `decideRevoke`, `decideAbandonHandoff` — so its
- * name is one of the machine's event tags; every other answer routes to
- * `decideResumeTicket` (`model/domain.qnt`).
+ * has a decider of its own — `decideRevoke` — so its name is one of the
+ * machine's event tags; every other answer routes to `decideResumeTicket`
+ * (`model/domain.qnt`).
  */
 function answerNames(
   resolution: Exclude<NativeActionResolution, ApprovalResolution>,
@@ -194,18 +186,6 @@ function assertAnswerNames(
   );
 }
 
-/** Which desk task asks for one answer, read off the contract's own pairing. */
-function resolutionKind(
-  resolution: NativeActionResolution,
-): SeededAction["kind"] {
-  const asking = (["TicketEscalation", "HandoffBlock"] as const).find((kind) =>
-    nativeActionResolutions[kind].some((each) => each === resolution),
-  );
-  if (asking === undefined)
-    throw new Error(`readiness case: no desk task asks for ${resolution}`);
-  return asking;
-}
-
 /** The event discovery resolved an accepted answer into, from the one consumable item. */
 async function resolvedAnswer(
   partition: Parameters<typeof postgresHarnessSubmission>[0],
@@ -223,17 +203,14 @@ test("every answer a desk task admits becomes the domain command it names", asyn
     ): resolution is Exclude<NativeActionResolution, ApprovalResolution> =>
       !isApprovalResolution(resolution),
   );
-  const asked = new Set<string>();
   for (const resolution of answerable) {
     const label = `resolution-${resolution}`;
     const partition = await postgresHarnessProject(harness.store, label);
     const actionId = `${label}-action`;
-    const kind = resolutionKind(resolution);
     const seeded: SeededAction = {
       ticket: 1,
       sequence: 1,
-      kind,
-      reason: kind === "HandoffBlock" ? "NoReason" : "WorkFailed",
+      reason: "WorkFailed",
       offers: [resolution],
     };
     await seedOpenAction(harness, partition, actionId, seeded);
@@ -251,11 +228,5 @@ test("every answer a desk task admits becomes the domain command it names", asyn
     const event = await resolvedAnswer(partition);
     assert.ok(event !== undefined, resolution);
     assertAnswerNames(resolution, seeded, event);
-    asked.add(kind);
   }
-  assert.deepEqual(
-    [...asked].sort(),
-    ["HandoffBlock", "TicketEscalation"],
-    "the answers this case drove did not reach both parked desk tasks",
-  );
 });

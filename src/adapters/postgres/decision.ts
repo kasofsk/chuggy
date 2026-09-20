@@ -85,13 +85,6 @@ import {
   asInputBundleId,
   asRepositoryId,
 } from "../../interpreter/finalizer.ts";
-import {
-  pinnedHandoffConfigurationReadiness,
-  promoteForHandoffConfiguration,
-  publishHandoffConfiguration,
-  type PromoteForHandoffRequestConfiguration,
-  type PublishHandoffRequestConfiguration,
-} from "../../interpreter/handoffConfiguration.ts";
 import { inputBundleReferencesOf } from "../../interpreter/decisionPlan.ts";
 import {
   postgresInputBundleOf,
@@ -358,7 +351,6 @@ async function decisionFinalization(
   client: pg.PoolClient,
   partition: Partition,
   outcome: JournaledOutcome,
-  configuration: DecisionConfiguration,
 ): Promise<void> {
   const seq = outcome.entry.seq;
   for (const ticket of outcome.materialization.fulfillFinalizationFor) {
@@ -369,145 +361,15 @@ async function decisionFinalization(
     );
   }
   for (const request of outcome.materialization.finalization) {
-    const acceptedPromotion =
-      request.kind === "PublishHandoff"
-        ? await decisionAcceptedPromotion(
-            client,
-            partition,
-            request.ticket,
-            request.acceptedPromotion,
-          )
-        : undefined;
-    const handoff = decisionHandoffRequest(
-      request,
-      configuration,
-      acceptedPromotion,
-    );
-    const kind = handoff?.kind ?? request.kind;
     await client.query(
       sql`INSERT INTO finalization_request
        (tenant, project, request, authorizing_seq, effect_position, ticket,
         ticket_version, request_generation, kind)
        VALUES (${partition.tenant},${partition.project},${request.request},${seq},
                ${request.effectPosition},${request.ticket},${request.ticketVersion},
-               ${request.requestGeneration},${kind})`,
-    );
-    if (handoff !== undefined) {
-      await decisionHandoffConfiguration(
-        client,
-        partition,
-        request.request,
-        handoff,
-      );
-    }
-  }
-}
-
-type AcceptedPromotion = NonNullable<
-  JournaledOutcome["materialization"]["finalization"][number]["acceptedPromotion"]
->;
-
-async function decisionAcceptedPromotion(
-  client: pg.PoolClient,
-  partition: Partition,
-  ticket: number,
-  offered: AcceptedPromotion | undefined,
-): Promise<AcceptedPromotion> {
-  if (offered !== undefined) return offered;
-  const found = await client.query<{
-    repository: string | null;
-    candidate_commit: string | null;
-    configuration_revision: string | null;
-    configuration_digest: string | null;
-  }>(
-    sql`SELECT repository,candidate_commit,configuration_revision,configuration_digest
-      FROM read_accepted_handoff_promotion(
-        ${partition.tenant},${partition.project},${ticket})`,
-  );
-  const accepted = found.rows[0];
-  if (
-    accepted === undefined ||
-    accepted.repository === null ||
-    accepted.candidate_commit === null ||
-    accepted.configuration_revision === null ||
-    accepted.configuration_digest === null
-  )
-    throw new Error("handoff retry has no accepted work promotion");
-  return {
-    repository: accepted.repository,
-    commit: accepted.candidate_commit,
-    configurationRevision: accepted.configuration_revision,
-    configurationDigest: accepted.configuration_digest,
-  };
-}
-
-type DecisionHandoffConfiguration =
-  PromoteForHandoffRequestConfiguration | PublishHandoffRequestConfiguration;
-
-function decisionHandoffRequest(
-  request: JournaledOutcome["materialization"]["finalization"][number],
-  configuration: DecisionConfiguration,
-  acceptedPromotion: AcceptedPromotion | undefined,
-): DecisionHandoffConfiguration | undefined {
-  const readiness = pinnedHandoffConfigurationReadiness(
-    configuration.canonical,
-    {
-      revision: configuration.configurationRevision,
-      digest: configuration.configurationDigest,
-    },
-    configurationRevisionDigest,
-  );
-  if (readiness.readiness === "Incomplete") {
-    if (
-      request.kind === "RunFinalizer" &&
-      readiness.fault === "HandoffShapeMissing"
-    )
-      return undefined;
-    throw new Error(
-      `finalization handoff configuration is incomplete: ${readiness.fault}`,
+               ${request.requestGeneration},${request.kind})`,
     );
   }
-  if (request.kind === "RunFinalizer")
-    return promoteForHandoffConfiguration(readiness.configuration);
-  if (request.kind !== "PublishHandoff") return undefined;
-  const accepted = acceptedPromotion;
-  if (
-    accepted === undefined ||
-    accepted.configurationRevision !== configuration.configurationRevision ||
-    accepted.configurationDigest !== configuration.configurationDigest ||
-    accepted.repository !== readiness.configuration.work.repository
-  )
-    throw new Error(
-      "handoff publication is not bound to its accepted promotion",
-    );
-  return publishHandoffConfiguration(
-    readiness.configuration,
-    accepted.commit,
-    configurationRevisionDigest,
-  );
-}
-
-async function decisionHandoffConfiguration(
-  client: pg.PoolClient,
-  partition: Partition,
-  request: string,
-  configuration: DecisionHandoffConfiguration,
-): Promise<void> {
-  await client.query(
-    sql`INSERT INTO finalization_request_configuration
-      (tenant,project,request,kind,configuration_revision,configuration_digest,
-       repository,target_ref,credential_reference,accepted_work_repository,
-       accepted_work_commit,destination_path,output,request_digest)
-      VALUES (${partition.tenant},${partition.project},${request},${configuration.kind},
-       ${configuration.pin.revision},${configuration.pin.digest},
-       ${configuration.repository.repository},${configuration.repository.targetRef},
-       ${configuration.repository.credential},
-       ${configuration.kind === "PublishHandoff" ? configuration.acceptedWorkRepository : null},
-       ${configuration.kind === "PublishHandoff" ? configuration.acceptedWorkCommit : null},
-       ${configuration.kind === "PublishHandoff" ? configuration.destinationPath : null},
-       ${configuration.kind === "PublishHandoff" ? configuration.output : null},
-       ${configuration.kind === "PublishHandoff" ? configuration.requestDigest : null})`,
-  );
 }
 
 /**
@@ -603,7 +465,7 @@ async function decisionMaterialize(
   configuration: DecisionConfiguration,
 ): Promise<void> {
   await decisionExecution(client, lease.partition, outcome, configuration);
-  await decisionFinalization(client, lease.partition, outcome, configuration);
+  await decisionFinalization(client, lease.partition, outcome);
   await decisionActions(client, lease.partition, outcome);
   await decisionContinuation(client, lease.partition, outcome);
 }

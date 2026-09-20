@@ -1654,11 +1654,7 @@ function wakeTicketPhase(
   return threadRigTicketPhase(rig, partition, ticket, phase);
 }
 
-/**
- * One project, one member and a change for every reason the roster names. Two
- * ticket phases map to `TicketAbandoned` and both are here: a fixture holding
- * one of them agrees with a join deriving that reason from the other alone.
- */
+/** One project, one member and a change for every reason the roster names. */
 async function wakeFixture(label: string): Promise<{
   readonly partition: Partition;
   readonly member: ThreadRigMember;
@@ -1682,7 +1678,6 @@ async function wakeFixture(label: string): Promise<{
   const deleted = await threadDraft(partition, revision, member);
   const escalated = await threadDraft(partition, revision, member);
   const done = await threadDraft(partition, revision, member);
-  const abandoned = await threadDraft(partition, revision, member);
   const revoked = await threadDraft(partition, revision, member);
 
   await wakeRefusals(partition, label, refused, lifted);
@@ -1697,7 +1692,6 @@ async function wakeFixture(label: string): Promise<{
   for (const [ticket, phase] of [
     [escalated, "Escalated"],
     [done, "Done"],
-    [abandoned, "Abandoned"],
     [revoked, "Revoked"],
   ] as const)
     await wakeTicketPhase(partition, ticket, phase);
@@ -1713,7 +1707,6 @@ async function wakeFixture(label: string): Promise<{
       ["DraftDeleted", deleted],
       ["TicketEscalated", escalated],
       ["TicketCompleted", done],
-      ["TicketAbandoned", abandoned],
       ["TicketAbandoned", revoked],
     ],
   };

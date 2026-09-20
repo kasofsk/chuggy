@@ -22,7 +22,7 @@ function RepositoryConfigurationFacts(props: {
   const facts = props.row.facts;
   if (facts === undefined)
     return (
-      <td colSpan={4}>
+      <td colSpan={3}>
         <Pill tone="neutral">Incomplete</Pill>
       </td>
     );
@@ -35,7 +35,6 @@ function RepositoryConfigurationFacts(props: {
       </td>
       <td className="tabular-nums">{facts.stages}</td>
       <td>{facts.approval}</td>
-      <td>{facts.handoff}</td>
     </>
   );
 }
@@ -64,7 +63,6 @@ export function RepositoryConfigurationTable(props: {
             <th scope="col">Worker</th>
             <th scope="col">Stages</th>
             <th scope="col">Approval</th>
-            <th scope="col">Handoff</th>
           </tr>
         </thead>
         <tbody>

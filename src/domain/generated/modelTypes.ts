@@ -35,15 +35,10 @@ export type TaskResultRef = {
 };
 
 export type FinalizationOutcome =
-  | "FinalizationSucceeded"
-  | "FinalizationFailed"
-  | "PromotionAccepted"
-  | "HandoffPublicationUnproven";
+  "FinalizationSucceeded" | "FinalizationFailed";
 export const finalizationOutcomeTags = [
   "FinalizationSucceeded",
   "FinalizationFailed",
-  "PromotionAccepted",
-  "HandoffPublicationUnproven",
 ] as const;
 
 export type Reason =
@@ -106,7 +101,6 @@ export type DecisionEvent =
         readonly out: FinalizationOutcome;
       };
     }
-  | { readonly type: "AbandonHandoff"; readonly value: number }
   | {
       readonly type: "ExecutionBlocked";
       readonly value: { readonly ticket: number; readonly reason: Reason };
@@ -120,7 +114,6 @@ export const decisionEventTags = [
   "WorkReduce",
   "EvalReduce",
   "FinalizationResult",
-  "AbandonHandoff",
   "ExecutionBlocked",
   "ResumeTicket",
 ] as const;
@@ -130,10 +123,7 @@ export type Phase =
   | "Working"
   | "Evaluating"
   | "Finalizing"
-  | "PublishingHandoff"
-  | "HandoffBlocked"
   | "Done"
-  | "Abandoned"
   | "Escalated"
   | "Revoked";
 export const phaseTags = [
@@ -141,10 +131,7 @@ export const phaseTags = [
   "Working",
   "Evaluating",
   "Finalizing",
-  "PublishingHandoff",
-  "HandoffBlocked",
   "Done",
-  "Abandoned",
   "Escalated",
   "Revoked",
 ] as const;
@@ -189,15 +176,13 @@ export type Resume =
   | "ResumeWorking"
   | "ResumeReworking"
   | "ResumeEvaluating"
-  | "ResumeFinalizing"
-  | "ResumePublishingHandoff";
+  | "ResumeFinalizing";
 export const resumeTags = [
   "NoResume",
   "ResumeWorking",
   "ResumeReworking",
   "ResumeEvaluating",
   "ResumeFinalizing",
-  "ResumePublishingHandoff",
 ] as const;
 
 export type ArtifactMark =

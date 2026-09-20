@@ -14,10 +14,7 @@ import { createHash } from "node:crypto";
 import { test } from "node:test";
 
 import { asTicketId } from "../../src/domain/ids.ts";
-import {
-  briefFinalizationModes,
-  type BriefFinalizationMode,
-} from "../../src/contract/rosters.ts";
+import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import {
   asForgeBindingId,
@@ -2291,58 +2288,6 @@ test("a brief that pushes reaches no forge however the deployment is bound", asy
   assert.deepEqual(store.opened, []);
 });
 
-test("a handoff promotion never proposes, whatever mode its ticket's brief names", async () => {
-  const store = recordingStore([
-    {
-      ...proposedView("request-one"),
-      claim: {
-        ...proposedView("request-one").claim,
-        kind: "PromoteForHandoff",
-      },
-    },
-  ]);
-  const forge = recordingForge(store);
-  const git = recordingGit();
-  const report = await passOver(proposingService(store, git, forge));
-  assert.equal(report.conclusions, 1);
-  assert.equal(report.proposals, 0);
-  assert.deepEqual(forge.creates, []);
-  assert.equal(
-    git.observations[0]?.targetRef,
-    landingBranch,
-    "a handoff promotes onto the reference its brief targets, as it always did",
-  );
-});
-
-test("a handoff prepares onto the reference its brief targets whatever mode it names", async () => {
-  for (const mode of populated<BriefFinalizationMode>(
-    briefFinalizationModes,
-    "briefFinalizationModes",
-  )) {
-    const store = recordingStore([
-      {
-        ...preparableView("request-one"),
-        claim: {
-          ...preparableView("request-one").claim,
-          kind: "PromoteForHandoff",
-        },
-      },
-    ]);
-    const git = recordingGit();
-
-    await passOver({
-      ...serviceOf(store, git),
-      ticketBriefs: briefsOf(briefBranch, landingBranch, mode),
-    });
-
-    assert.equal(
-      store.attempts[0]?.target.ref,
-      landingBranch,
-      `${mode}: a handoff is promoted onto the reference its brief targets`,
-    );
-  }
-});
-
 test("a proposal already proved concludes though its base branch is gone", async () => {
   const store = recordingStore([proposedView("request-one")]);
   const forge = recordingForge(store);
@@ -2491,77 +2436,6 @@ test("a ticket that reworked prepares the source its latest passed work declared
       .map((each) => each.reference),
     ["manifest-rework"],
   );
-});
-
-/** The release remote a publication names, which is no repository the ticket worked in. */
-const handoffRepository: RepositoryBinding = {
-  partition,
-  repository: asRepositoryId("ssh://git.internal/platform-releases"),
-  recoveryEpoch: epoch,
-  targetRef: asGitRefName("refs/heads/team-blue"),
-  credentialReference: "platform-release-writer",
-};
-
-/** One claimed publication of an accepted work commit into that release remote. */
-function publicationView(request: string): FinalizationView {
-  return {
-    lifecycle: "Active",
-    claim: { ...claimOf(request), kind: "PublishHandoff" as const },
-    repository: handoffRepository,
-    handoffRequest: {
-      kind: "PublishHandoff",
-      configurationRevision: "revision-run",
-      configurationDigest: digestOf("revision-run"),
-      repository: handoffRepository,
-      acceptedWorkRepository: asRepositoryId(
-        "ssh://git.internal/unrelated-service",
-      ),
-      acceptedWorkCommit: asGitObjectId(commitOf("f")),
-      destinationPath: "builds/unrelated/request.json",
-      output: '{"source":"immutable"}',
-      requestDigest: digestOf("publication"),
-    },
-    approval: "Pending",
-    attemptsMade: 0,
-  };
-}
-
-test("a publication prepares only its pinned request in the handoff repository", async () => {
-  const store = recordingStore([publicationView("publish-unrelated-service")]);
-  const git = recordingGit();
-  const artifacts = recordingArtifacts();
-
-  await passOver(serviceOf(store, git, {}, artifacts));
-
-  assert.equal(artifacts.requests.length, 0);
-  assert.equal(git.preparations.length, 1);
-  assert.equal(
-    git.preparations[0]?.repository.repository,
-    handoffRepository.repository,
-  );
-  assert.deepEqual(git.preparations[0]?.files, [
-    {
-      path: "builds/unrelated/request.json",
-      content: new TextEncoder().encode('{"source":"immutable"}'),
-    },
-  ]);
-  assert.equal(store.attempts[0]?.configuration.revision, "revision-run");
-});
-
-test("a publication keeps the destination it pinned however the ticket's brief reads", async () => {
-  const store = recordingStore([publicationView("publish-unrelated-service")]);
-  const git = recordingGit();
-
-  await passOver({
-    ...serviceOf(store, git),
-    ticketBriefs: briefsOf(briefBranch),
-  });
-
-  assert.deepEqual(
-    git.observations.map((each) => each.targetRef),
-    [handoffRepository.targetRef, handoffRepository.targetRef],
-  );
-  assert.equal(store.attempts[0]?.target.ref, handoffRepository.targetRef);
 });
 
 test("the pinned revision is what says a candidate needs a person's approval", async () => {

@@ -171,11 +171,20 @@ test("every golden's step count matches what its manifest row records", () => {
   }
 });
 
+/**
+ * An aim is either `lastStep.label != "x"` or `not(lastStep.label == "x" and
+ * ...)`; both are refuted only by a step labelled `x`, so a trace that reaches
+ * neither has drifted from its row. Any other shape is refused rather than
+ * skipped: an aim this test cannot read is an aim nothing checks.
+ */
 test("an aimed golden actually contains what it was aimed at", () => {
   for (const row of corpus.rows) {
     if (row.invariant === "") continue;
-    const aimed = /lastStep\.label != "([^"]+)"/.exec(row.invariant);
-    if (!aimed?.[1]) continue;
+    const aimed = /lastStep\.label (?:!=|==) "([^"]+)"/.exec(row.invariant);
+    assert.ok(
+      aimed?.[1],
+      `${row.name} is aimed by an invariant this test cannot read: ${row.invariant}`,
+    );
     const fired: Fired = corpus.firedForRow(row);
     assert.ok(
       fired.labels.has(aimed[1]),

@@ -1,11 +1,10 @@
 /**
  * What a ticket's work is observed against: the binding of the repository the
- * ticket's brief names, narrowed by the configuration's handoff role and then
- * by the branch that brief says its work happens on, which is the most specific
- * of the three and therefore the last word. Where that work lands is the
- * brief's separate answer and the finalizer's to read. An evaluation is
- * observed against the work instead, because what it judges is what the work
- * produced rather than what the work was handed.
+ * ticket's brief names, narrowed by the branch that brief says its work happens
+ * on, which is the more specific of the two and therefore the last word. Where
+ * that work lands is the brief's separate answer and the finalizer's to read.
+ * An evaluation is observed against the work instead, because what it judges is
+ * what the work produced rather than what the work was handed.
  *
  * A BRIEF NAMING NO REPOSITORY IS UNREADABLE RATHER THAN THE PROJECT'S OLDEST
  * BINDING. Migration 82 backfills every brief it left null, so a released
@@ -25,11 +24,9 @@ import {
   repositoryTargetObserved,
   type GitObjectId,
   type GitPromotionPort,
-  type RepositoryBinding,
   type RepositoryId,
 } from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
-import { authoredHandoffConfigurationReadiness } from "./handoffConfiguration.ts";
 import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
 import type {
@@ -75,25 +72,6 @@ function executionSourceEvaluated(
   };
 }
 
-function executionSourceConfiguredWork(canonical: string | undefined):
-  | {
-      readonly repository: RepositoryBinding["repository"];
-      readonly targetRef: NonNullable<RepositoryBinding["targetRef"]>;
-      readonly credentialReference: string;
-    }
-  | undefined {
-  if (canonical === undefined) return undefined;
-  const readiness = authoredHandoffConfigurationReadiness(
-    JSON.parse(canonical) as unknown,
-  );
-  if (readiness.readiness === "Incomplete") return undefined;
-  return {
-    repository: readiness.configuration.work.repository,
-    targetRef: readiness.configuration.work.targetRef,
-    credentialReference: readiness.configuration.work.credential,
-  };
-}
-
 export function executionSourceObservation(
   bindings: ProjectRepositoryBindingRead,
   git: Pick<GitPromotionPort, "observeTarget">,
@@ -118,27 +96,12 @@ export function executionSourceObservation(
       );
       if (bound === undefined)
         return { observed: "Unreadable", evidence: "RefUnreadable" };
-      const work = executionSourceConfiguredWork(
-        request.configurationCanonical,
-      );
-      const repository: RepositoryBinding = {
-        ...bound,
-        ...(work === undefined ? {} : { repository: work.repository }),
-        ...(work === undefined ? {} : { targetRef: work.targetRef }),
-        ...(work === undefined
-          ? {}
-          : { credentialReference: work.credentialReference }),
-      };
-      const observed = await repositoryTargetObserved(
-        git,
-        repository,
-        request.ref,
-      );
+      const observed = await repositoryTargetObserved(git, bound, request.ref);
       return observed.observed === "Target"
         ? {
             observed: "Source",
             source: {
-              repository: repository.repository,
+              repository: bound.repository,
               target: {
                 ref: observed.target.ref,
                 commit: observed.target.commit,

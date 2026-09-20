@@ -295,7 +295,6 @@ module chuggy_refinement {
     | WorkReduce(int)
     | EvalReduce(int)
     | FinalizationResult({ ticket: int, out: FinalizationOutcome })
-    | AbandonHandoff(int)
     | ExecutionBlocked({ ticket: int, reason: Reason })
     | ResumeTicket(int)
 
@@ -330,7 +329,6 @@ module chuggy_refinement {
     | WorkReduce(j) => decideWorkReduce(c, j)
     | EvalReduce(j) => decideEvalStageReduce(c, j)
     | FinalizationResult(a) => decideFinalizationResult(c, a.ticket, a.out)
-    | AbandonHandoff(j) => decideAbandonHandoff(c, j)
     | ExecutionBlocked(a) => decideExecutionBlocked(c, a.ticket, a.reason)
     | ResumeTicket(j) => decideResumeTicket(c, j)
   }
@@ -368,8 +366,6 @@ module chuggy_refinement {
     | FinalizationResult(a) => c.tickets.keys().contains(a.ticket) and
         finalizationOutcomes.contains(a.out) and
         finalizationOutcomeEnabled(c, a.ticket, a.out)
-    | AbandonHandoff(j) => c.tickets.keys().contains(j) and
-        c.tickets.get(j).phase == HandoffBlocked
     | ExecutionBlocked(a) => and {
         taskPhaseIn(c).contains(a.ticket),
         Set(ExecutionPolicyDenied, TicketConfigIncompatible,
@@ -621,11 +617,6 @@ module chuggy_refinement {
     journalStep(FinalizationResult({ ticket: j, out: out }))
   }
 
-  action actorAbandonHandoff = all {
-    liveTickets.exists(k => tickets.get(k).phase == HandoffBlocked),
-    nondet j = liveTickets.filter(k => tickets.get(k).phase == HandoffBlocked).oneOf()
-    journalStep(AbandonHandoff(j))
-  }
   action actorResumeTicket = all {
     retryableEscalated.size() > 0,
     nondet j = retryableEscalated.oneOf()
@@ -664,7 +655,7 @@ module chuggy_refinement {
   action rstep = any {
     actorReleaseTicket, actorRevoke, actorDispatch,
     actorTaskDone, actorWorkReduce, actorEvalReduce, actorFinalizationResult,
-    actorAbandonHandoff, actorResumeTicket,
+    actorResumeTicket,
     emitNext, crashRecover
   }
 

@@ -876,26 +876,6 @@ test("a ticket the machine is working on now keeps its open span", async () => {
 });
 
 /**
- * `revocableIn` excludes a blocked handoff, so the wall's line must not name a
- * Revoke the page is not drawing.
- */
-test("a blocked handoff is not told that revoke is its exit", async () => {
-  await drawTicket({
-    shapes: ticket21Parked,
-    ticket: {
-      ...parkedTicket,
-      phase: "HandoffBlocked",
-      reason: undefined,
-      resumeAt: "ResumePublishingHandoff",
-      accounts: { gasLeft: 0, gasMax: 8, reworkLeft: 0 },
-    },
-  });
-  expect(screen.queryByRole("button", { name: "Revoke" })).toBeNull();
-  expect(screen.getByText("No gas left")).toBeDefined();
-  expect(screen.queryByText(/only Revoke exits this wall/u)).toBeNull();
-});
-
-/**
  * A set holds its tasks in the wire's order, not by instant, so the wait is
  * measured from the earliest start and not from the first-listed one.
  */

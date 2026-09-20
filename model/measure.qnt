@@ -34,7 +34,7 @@
 ///
 /// THE DIGIT-ORDER ARGUMENT (why stagesLeft sits BELOW phase rank and
 /// ABOVE — not beside — the outstanding-task count):
-///   - BELOW rank: entering Evaluating (work-passed, rank 4->3) makes the
+///   - BELOW rank: entering Evaluating (work-passed) makes the
 ///     stage digit APPEAR at its maximum (stagesLeft 0 -> L <= maxStages)
 ///     while the stage-0 fan-out spawns (outstanding 0 -> <= nTasks). The one
 ///     rank step must dominate both at once, which forces
@@ -102,25 +102,27 @@
 ///
 ///   label                               descends via
 ///   ----------------------------------- ---------------------------------
-///   ticket-released                        rank 6->5 (authoring: release —
-///                                       Pending straight into the pipeline;
-///                                       Ready/Blocked stay derived)
-///   ticket-revoked (from any rank>0 phase) rank {6,5,4,3,2,1}->0, stage
-///                                       digit and live tasks cleared
-///                                       (retired to the record, which the
-///                                       measure does not read); every
-///                                       dependent the atomic cascade parks
-///                                       adds its own rank {6,5}->0 drop
-///                                       (see the AUTHORING set for the
-///                                       desk-only flat case)
+///   ticket-released                     records no transition: a fresh
+///                                       Pending arrives (Ready/Blocked stay
+///                                       derived), so nothing descends — the
+///                                       AUTHORING set below is what bounds it
+///   ticket-revoked (from Pending,         that phase's rung -> settled,
+///     Working or Evaluating —             stage digit and live tasks cleared
+///     revocableIn stops at Finalizing)    (retired to the record, which the
+///                                         measure does not read); every
+///                                         dependent the atomic cascade parks
+///                                         adds its own Pending -> settled
+///                                         drop (see the AUTHORING set for the
+///                                         desk-only flat case)
 ///   dispatch                            gas -1 (micro also falls:
-///                                       rank 5->4 dominates the spawn:
-///                                       −rankWeight + nTasks < 0)
+///                                       Pending -> Working dominates the
+///                                       spawn: −rankWeight + nTasks < 0)
 ///   task-done (an outstanding task resolves) task count -1
-///   work-passed                         rank 4->3 (dominates the stage
-///                                       digit appearing at L <= maxStages
-///                                       AND the stage-0 fan-out spawn —
-///                                       the rankWeight bound above.
+///   work-passed                         Working -> Evaluating (dominates the
+///                                       stage digit appearing at
+///                                       L <= maxStages AND the stage-0
+///                                       fan-out spawn — the rankWeight bound
+///                                       above.
 ///                                       A scoped re-entry
 ///                                       spawns r <= fanout OUTSTANDING tasks
 ///                                       — carried tasks are born settled
@@ -133,42 +135,44 @@
 ///                                         spawns r <= fanout outstanding, so
 ///                                         -stageWeight + r <= -1 a
 ///                                         fortiori)
-///   ticket-escalated work_failed           rank 4->0 (cycle-level resolution:
-///                                       the fabric already retried the
-///                                       container below the cycle grain,
-///                                       which this model trusts rather
-///                                       than models)
-///   eval-passed (the FINAL stage        rank 5->4 AND stagesLeft 1->0 (the
-///     passes)                             ticket enters Finalizing —
-///                                         Finalizing is the queued state)
-///   wrapup-preparation-started          rank 4->3; the ticket takes the
-///                                         project-local repository slot
-///   wrapup-awaiting-approval            rank 3->2
-///   wrapup-commit-permitted             rank {3,2}->1
+///   ticket-escalated work_failed           Working -> settled (cycle-level
+///                                       resolution: the fabric already
+///                                       retried the container below the
+///                                       cycle grain, which this model trusts
+///                                       rather than models)
+///   eval-passed (the FINAL stage        Evaluating -> Finalizing AND
+///     passes)                             stagesLeft 1->0 (Finalizing is the
+///                                         queued state)
 ///   rework-started eval_failure         gas -1 AND reworkLeft -1 (the
-///     (a stage FAILS: the short-circuit   micro reset — rank 3->4, stage
-///     — later stages never spawn)         digit ->0, work respawn — is
-///                                         dominated by the account drop)
-///   ticket-escalated rework_budget_exhausted rank 3->0 (and stage digit ->0)
-///   ticket-escalated gas_exhausted         rank {6,5,4,3,2,1}->0
-///   ticket-done                            rank {5,1}->0 (5: a NoFinalizer
+///     (a stage FAILS: the short-circuit   micro reset — Evaluating ->
+///     — later stages never spawn)         Working, stage digit ->0, work
+///                                         respawn — is dominated by the
+///                                         account drop)
+///   ticket-escalated rework_budget_exhausted Evaluating -> settled (and
+///                                       stage digit ->0)
+///   ticket-escalated gas_exhausted      Evaluating or Finalizing -> settled
+///   ticket-done                         Evaluating or Finalizing -> settled
+///                                       (from Evaluating: a NoFinalizer
 ///                                       ticket, whose passing evaluation IS
-///                                       its completion — it enters neither
-///                                       wrap-up phase; 1: a conclusive
-///                                       permitted commit)
-///   rework-started wrapup_*             gas -1 (AND finalizationLeft -1 when
-///                                       Budgeted); failure leaves preparing,
-///                                       approval, or committing (rank
-///                                       {3,2,1}->6 climb + respawn, dominated
-///                                       by the gas drop)
-///   ticket-escalated wrapup_budget_exhausted rank {3,2,1}->0 (Budgeted only)
-///   ticket-escalated execution_blocked rank {6,5}->0
+///                                       its completion — it never enters
+///                                       Finalizing; from Finalizing: a
+///                                       finalizer's conclusive success)
+///   rework-started finalization_failed  gas -1 (AND finalizationLeft -1 when
+///                                       Budgeted); the failure leaves
+///                                       Finalizing (a Finalizing -> Working
+///                                       climb + respawn, dominated by the
+///                                       gas drop)
+///   ticket-escalated finalization_budget_exhausted Finalizing -> settled
+///                                       (Budgeted only)
+///   ticket-escalated execution_blocked  Working or Evaluating -> settled
 ///   ticket-resumed, whenever it charges gas -1 (dominates the rank climb
-///     gas (ResumeWorking always — standing     back to 4/3/2 + respawn — for the
-///     rule 2; ResumeEvaluating/ResumeFinalizing        ResumeEvaluating resume that includes
-///     under RetryCharged)                 the stage digit reappearing at L:
-///                                         the whole climb is < microBound,
-///                                         which gas outweighs; ResumeFinalizing
+///     gas (ResumeWorking always —         back to Working, Evaluating or
+///     standing rule 2;                    Finalizing + respawn — for the
+///     ResumeEvaluating/ResumeFinalizing   ResumeEvaluating resume that
+///     under RetryCharged)                 includes the stage digit
+///                                         reappearing at L: the whole climb
+///                                         is < microBound, which gas
+///                                         outweighs; ResumeFinalizing
 ///                                         re-ENQUEUES — resumes to
 ///                                         Finalizing, never into the gate)
 ///   ticket-resumed, ResumeReworking     gas -1 ALWAYS (a Working entry —
@@ -326,14 +330,8 @@ module chuggy_measure {
   /// An eval stage advance gets NO phase — it is an Evaluating ->
   /// Evaluating edge, because within-phase progress lives in the stage
   /// digit rather than in new phases.
-  ///
-  /// Finalizing precedes the accepted-promotion boundary. PublishingHandoff
-  /// and HandoffBlocked make the irreversible side of that boundary explicit;
-  /// queueing, approval, permits, and immutable external identities remain
-  /// operational protocol rather than Core state.
   type Phase =
-    Pending | Working | Evaluating | Finalizing | PublishingHandoff |
-    HandoffBlocked | Done | Abandoned | Escalated | Revoked
+    Pending | Working | Evaluating | Finalizing | Done | Escalated | Revoked
 
   /// What a task IS for (task records are first-class — they carry the
   /// anatomy):
@@ -451,7 +449,7 @@ module chuggy_measure {
   /// artifact, which is a work cycle.
   type Resume =
     NoResume | ResumeWorking | ResumeReworking | ResumeEvaluating |
-    ResumeFinalizing | ResumePublishingHandoff
+    ResumeFinalizing
 
   /// Why a ticket sits on the human desk. The termination requirement
   /// names no individual wall; the reason is
@@ -477,9 +475,7 @@ module chuggy_measure {
   ///   - WOk      the step committed the artifact.
   ///   - WFailed  it did not, and is drawable only when the environment
   ///              invalidated the artifact (domain.qnt finalizerOutcomes).
-  type FinalizationOutcome =
-    FinalizationSucceeded | FinalizationFailed | PromotionAccepted |
-    HandoffPublicationUnproven
+  type FinalizationOutcome = FinalizationSucceeded | FinalizationFailed
 
   /// HOW A TICKET FINISHES (design 002), authored data on the ticket exactly
   /// like the eval program — eval-is-data applied one seam later.
@@ -612,8 +608,7 @@ module chuggy_measure {
   /// coverage: a dependent stuck behind a Revoked dep gets no visibility
   /// through its dep, so the cascade parks it with a task of its OWN
   /// (DependencyRevoked; domain.qnt `cascadeSafety`).
-  pure def hasOpenHumanTask(ticket: Ticket): bool =
-    ticket.phase == Escalated or ticket.phase == HandoffBlocked
+  pure def hasOpenHumanTask(ticket: Ticket): bool = ticket.phase == Escalated
 
   /// The machine's observed state, as the pure deciders see it. A record
   /// (not a bare map) so the ticket-source shape stays open.  attached
@@ -682,18 +677,13 @@ module chuggy_measure {
   /// Stalled merged into Escalated. Nothing is below settled.
   pure val rankSettled: int = 0
   /// Finalization resolves to completion, priced rework, or a wall.
-  pure val rankHandoffBlocked: int = rankSettled + 1
-  pure val rankPublishingHandoff: int = rankHandoffBlocked + 1
-  pure val rankFinalizing: int = rankPublishingHandoff + 1
+  pure val rankFinalizing: int = rankSettled + 1
   pure val rankEvaluating: int = rankFinalizing + 1
   pure val rankWorking: int = rankEvaluating + 1
   /// The released waiting room (Ready/Blocked derive from it).
   pure val rankPending: int = rankWorking + 1
-  /// The ladder's ceiling — the highest rank any phase takes (Pending).
-  /// microBound's multiplier is radix(rankCeiling): the
-  /// compression (6 -> 5)'s two new rungs (5 -> 7) and
-  /// the grouping removal (7 -> 6) each propagated to the multiplier
-  /// (7 -> 6 -> 8 -> 7) by derivation, not by editing a literal.
+  /// The ladder's ceiling — the highest rank any phase takes (Pending), and
+  /// the multiplier microBound derives from.
   pure val rankCeiling: int = rankPending
 
   /// How far from settled a ticket's lifecycle position is. The wildcard is
@@ -706,8 +696,6 @@ module chuggy_measure {
       | Working => rankWorking
       | Evaluating => rankEvaluating
       | Finalizing => rankFinalizing
-      | PublishingHandoff => rankPublishingHandoff
-      | HandoffBlocked => rankHandoffBlocked
       | _ => rankSettled
     }
 

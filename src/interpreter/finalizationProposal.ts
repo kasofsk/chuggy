@@ -32,11 +32,6 @@
  * the row exists the request is rebuilt from it, so a proposal already proved
  * concludes whatever became of the branch it was opened into afterwards.
  *
- * A HANDOFF NEVER PROPOSES. A handoff promotion lands in a repository the ticket
- * never worked in and carries its own publication afterwards, so the mode a
- * brief names says nothing about it and the promotion concludes as it always
- * has. This step is reached only under `RunFinalizer`.
- *
  * THIS STEP AWAITS NOTHING AND REACHES NO FORGE. The request, the durable row
  * and any observation they needed are gathered before it runs, so what it reads
  * of a proposal is what was written down about one and never what a forge says

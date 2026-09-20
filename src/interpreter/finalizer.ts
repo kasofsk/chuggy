@@ -32,8 +32,7 @@
  * by opening a change proposal, the conditional ref update is the same act it
  * always was and the proposal is what follows it, so a promotion authorizes
  * `Propose` rather than a conclusion and `./finalizationProposal.ts` says which
- * act that comes to. A handoff is exempt whatever its brief reads: its
- * promotion is into a repository the ticket never worked in.
+ * act that comes to.
  *
  * A HOLD IS A STATE AND NOT AN ABSENCE. An unreadable ref, a timeout and
  * contradictory evidence are one durable answer recorded on the reconciliation,
@@ -191,6 +190,43 @@ export function asGitRefName(value: string): GitRefName {
   return asBoundedText(value, "ref name", gitRefNameCharsMax) as GitRefName;
 }
 
+/** The one reference namespace this tree writes to, wherever a ref is written. */
+export const gitRefNamePrefix = "refs/heads/";
+
+function gitRefNameHasInvalidCharacter(value: string): boolean {
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code <= 0x20 || code === 0x7f || "~^:?*[\\]".includes(character))
+      return true;
+  }
+  return false;
+}
+
+/** The one reference-name grammar this tree accepts, wherever a ref is written. */
+export function parsedGitRefName(value: unknown): GitRefName | undefined {
+  if (
+    typeof value !== "string" ||
+    !value.startsWith(gitRefNamePrefix) ||
+    value.endsWith("/") ||
+    value.endsWith(".") ||
+    value.includes("..") ||
+    value.includes("@{") ||
+    gitRefNameHasInvalidCharacter(value) ||
+    value
+      .split("/")
+      .some(
+        (part) =>
+          part.length === 0 || part.startsWith(".") || part.endsWith(".lock"),
+      )
+  )
+    return undefined;
+  try {
+    return asGitRefName(value);
+  } catch {
+    return undefined;
+  }
+}
+
 /** Brands a commit identity, refusing anything git's own object-id widths do not admit. */
 export function asGitObjectId(value: string): GitObjectId {
   if (!new RegExp(gitObjectIdPattern(), "u").test(value)) {
@@ -219,14 +255,11 @@ export const allFinalizationRequestStates: readonly FinalizationRequestState[] =
   ["Open", "Registered", "Fulfilled", "Invalidated"];
 
 /** The durable effect whose external work one finalization request performs. */
-export type FinalizationRequestKind =
-  "RunFinalizer" | "PromoteForHandoff" | "PublishHandoff";
+export type FinalizationRequestKind = "RunFinalizer";
 
 /** Every finalization request kind, so storage and the live protocol share one roster. */
 export const allFinalizationRequestKinds: readonly FinalizationRequestKind[] = [
   "RunFinalizer",
-  "PromoteForHandoff",
-  "PublishHandoff",
 ];
 
 /**
@@ -407,28 +440,6 @@ export async function repositoryTargetObserved(
     : base;
 }
 
-export interface PromoteForHandoffRequest {
-  readonly kind: "PromoteForHandoff";
-  readonly configurationRevision: string;
-  readonly configurationDigest: string;
-  readonly repository: RepositoryBinding;
-}
-
-export interface PublishHandoffRequest {
-  readonly kind: "PublishHandoff";
-  readonly configurationRevision: string;
-  readonly configurationDigest: string;
-  readonly repository: RepositoryBinding;
-  readonly acceptedWorkRepository: RepositoryId;
-  readonly acceptedWorkCommit: GitObjectId;
-  readonly destinationPath: string;
-  readonly output: string;
-  readonly requestDigest: string;
-}
-
-export type HandoffFinalizationRequest =
-  PromoteForHandoffRequest | PublishHandoffRequest;
-
 /**
  * The immutable target one preparation observed, re-read from the remote and
  * never remembered. `baseRef` names the ref the commit was read from where the
@@ -546,7 +557,6 @@ export interface FinalizationView {
   readonly targetBranch?: GitRefName;
   /** How the ticket's brief lands its work, absent for a ticket carrying no brief at all. */
   readonly finalizationMode?: BriefFinalizationMode;
-  readonly handoffRequest?: HandoffFinalizationRequest;
   readonly observedTarget?: ObservedTarget;
   /** What the branch the work happened on holds, which is the tree a candidate is built over. */
   readonly observedWorkBranch?: ObservedTarget;
@@ -605,13 +615,6 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
 /** The one conclusive thing `Core` is told, which carries a kind only where the model prices a failure. */
 export type FinalizationConclusion =
   | { readonly outcome: Extract<FinalizationOutcome, "FinalizationSucceeded"> }
-  | { readonly outcome: Extract<FinalizationOutcome, "PromotionAccepted"> }
-  | {
-      readonly outcome: Extract<
-        FinalizationOutcome,
-        "HandoffPublicationUnproven"
-      >;
-    }
   | {
       readonly outcome: Extract<FinalizationOutcome, "FinalizationFailed">;
       readonly kind: FinalizationFailureKind;
@@ -714,19 +717,12 @@ function finalizationNextRestart(
 /**
  * What a promoted candidate concludes as. A brief landing by pull request is
  * not finished when the branch moved — the proposal it asked for still has to
- * exist — where a handoff never proposes at all, its promotion being into a
- * repository the ticket never worked in.
+ * exist.
  */
 function finalizationNextPromoted(
   view: FinalizationView,
 ): FinalizationDecision {
-  if (view.claim.kind === "PromoteForHandoff") {
-    return { decide: "Conclude", conclusion: { outcome: "PromotionAccepted" } };
-  }
-  if (
-    view.claim.kind === "RunFinalizer" &&
-    briefFinalizationProposes(view.finalizationMode)
-  ) {
+  if (briefFinalizationProposes(view.finalizationMode)) {
     return { decide: "Propose" };
   }
   return {
@@ -762,12 +758,6 @@ function finalizationNextUnderPermit(
     return { decide: "Reconcile", permit: permit.permit };
   }
   if (reconciliation.verdict === "Unreadable") {
-    if (view.claim.kind === "PublishHandoff") {
-      return {
-        decide: "Conclude",
-        conclusion: { outcome: "HandoffPublicationUnproven" },
-      };
-    }
     return { decide: "Hold", hold: "ReconciliationUnreadable" };
   }
   return { decide: "Hold", hold: "ContradictoryEvidence" };
@@ -788,10 +778,7 @@ function finalizationNextBeforePermit(
   if (attempt?.outcome === "Failed" && attempt.failureKind !== undefined) {
     return {
       decide: "Conclude",
-      conclusion:
-        view.claim.kind === "PublishHandoff"
-          ? { outcome: "HandoffPublicationUnproven" }
-          : { outcome: "FinalizationFailed", kind: attempt.failureKind },
+      conclusion: { outcome: "FinalizationFailed", kind: attempt.failureKind },
     };
   }
   const aborting = view.observedTarget ?? attempt?.target;

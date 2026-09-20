@@ -11,17 +11,9 @@
  * that entry decided an operation the real inbox accepted, and every row is
  * written through the ordinary tables — so a seed the server's own constraints
  * refuse is refused here too.
- *
- * THE SERVER HAS NO CONSTRAINT PAIRING AN ACTION'S KIND WITH ITS TICKET'S
- * PHASE, and that is the coherence a case leans on hardest: only the
- * `HandoffBlocked` arm of `nativeAction` raises a `HandoffBlock`, and the model
- * raises the hold and the phase in one decision. Deriving the phase from the
- * kind is not enough to keep that true, because a derivation can be edited and
- * nothing notices, so the pairing is read back off the committed rows and
- * refused here instead.
  */
 
-import type { Phase, Reason } from "../../src/domain/generated/modelTypes.ts";
+import type { Reason } from "../../src/domain/generated/modelTypes.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { NativeActionResolution } from "../../src/interpreter/ticketCommand.ts";
 import {
@@ -30,18 +22,12 @@ import {
   type PostgresTransaction,
 } from "./harness.ts";
 
-/** One desk task to seed, at the journal sequence its answer has to name. */
+/** One escalation to seed, at the journal sequence its answer has to name. */
 export interface SeededAction {
   readonly ticket: number;
   readonly sequence: number;
-  readonly kind: "TicketEscalation" | "HandoffBlock";
   readonly reason: Reason;
   readonly offers: readonly NativeActionResolution[];
-}
-
-/** The phase a desk task of this kind stands on, and the only one the check below accepts. */
-export function seededPhase(kind: SeededAction["kind"]): Phase {
-  return kind === "HandoffBlock" ? "HandoffBlocked" : "Escalated";
 }
 
 async function seededEpoch(harness: PostgresHarness): Promise<string> {
@@ -114,7 +100,7 @@ export async function seedOpenAction(
       partition.tenant,
       partition.project,
       action.ticket,
-      seededPhase(action.kind),
+      "Escalated",
       action.sequence,
       action.reason,
     ],
@@ -123,14 +109,13 @@ export async function seedOpenAction(
     `INSERT INTO native_action
        (tenant,project,action,authorizing_seq,effect_position,ticket,
         action_version,kind,reason,required_capability)
-     VALUES ($1,$2,$3,$4,0,$5,$4,$6,$7,'ResolveTicket')`,
+     VALUES ($1,$2,$3,$4,0,$5,$4,'TicketEscalation',$6,'ResolveTicket')`,
     [
       partition.tenant,
       partition.project,
       label,
       action.sequence,
       action.ticket,
-      action.kind,
       action.reason,
     ],
   );
@@ -141,33 +126,5 @@ export async function seedOpenAction(
       [partition.tenant, partition.project, label, offered],
     );
   await seeding.commit();
-  await seededPairing(harness, partition, label);
   return label;
-}
-
-/**
- * Refuses a committed action whose kind and whose ticket's phase are a pair the
- * desk cannot raise, naming the phase each kind stands on rather than calling
- * `seededPhase` — a check that calls the derivation it is checking verifies
- * nothing, and the rows it reads are what the seed actually committed.
- */
-async function seededPairing(
-  harness: PostgresHarness,
-  partition: Partition,
-  label: string,
-): Promise<void> {
-  const found = (await harness.query(
-    `SELECT a.kind, t.phase FROM native_action a
-       JOIN ticket_projection t USING (tenant, project, ticket)
-      WHERE a.tenant=$1 AND a.project=$2 AND a.action=$3`,
-    [partition.tenant, partition.project, label],
-  )) as readonly { kind: string; phase: string }[];
-  const row = found[0];
-  if (found.length !== 1 || row === undefined)
-    throw new Error(`native action fixture: ${label} stands on no one ticket`);
-  const stands = row.kind === "HandoffBlock" ? "HandoffBlocked" : "Escalated";
-  if (row.phase !== stands)
-    throw new Error(
-      `native action fixture: a ${row.kind} stands on ${stands}, not on a ticket in ${row.phase}`,
-    );
 }

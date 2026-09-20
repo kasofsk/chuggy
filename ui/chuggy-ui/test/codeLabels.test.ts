@@ -12,7 +12,6 @@ import { expect, test } from "vitest";
 
 import {
   briefFinalizationModes,
-  configurationHandoffs,
   escalationReasons,
   finalizers,
   operationRefusalCodes,
@@ -24,7 +23,6 @@ import {
   approvalLabel,
   briefLandingLine,
   finalizerLabel,
-  handoffLabel,
   landingEffect,
   landingLabel,
   resumeActionEffect,
@@ -49,8 +47,6 @@ const ticketActionNames: readonly TicketActionName[] = [
   "Dispatch",
   "Resume",
   "Revoke",
-  "Retry",
-  "Abandon",
   "Approve",
   "Decline",
 ];
@@ -179,16 +175,15 @@ test("a wall the ticket cannot pay for offers nothing, and says why", () => {
 });
 
 /**
- * `revocableIn` excludes a blocked handoff, so revoke is not its exit and the
- * line must name what the page is actually drawing beside it — nothing at all
- * where the page draws no other answer.
+ * The exit named is always what the page's own read admits, never assumed
+ * from the wall — nothing at all where the page draws no other answer.
  */
 test("a wall names the exits the page draws, and none where it draws none", () => {
   expect(wallExitLine(["Resume", "Revoke"])).toBe(
     "only Revoke exits this wall",
   );
-  expect(wallExitLine(["Resume", "Retry", "Abandon"])).toBe(
-    "only Retry or Abandon exit this wall",
+  expect(wallExitLine(["Resume", "Approve", "Decline"])).toBe(
+    "only Approve or Decline exit this wall",
   );
   expect(wallExitLine(["Resume"])).toBe(undefined);
   expect(wallExitLine([])).toBe(undefined);
@@ -198,9 +193,9 @@ test("a wall names the exits the page draws, and none where it draws none", () =
   expect(
     ticketActionEffect("Resume", { kind: "NoGas" }, undefined, [
       "Resume",
-      "Abandon",
+      "Revoke",
     ]).more,
-  ).toBe("only Abandon exits this wall");
+  ).toBe("only Revoke exits this wall");
 });
 
 /**
@@ -284,7 +279,6 @@ test("every resume point draws the effect and the consequence the machine gives 
       "Keeps the current artifact · rework stays 0/2",
     ],
     ["ResumeFinalizing", "Re-runs finalization", ""],
-    ["ResumePublishingHandoff", "Republishes the handoff", ""],
   ]);
 });
 
@@ -389,12 +383,11 @@ test("every step of a follow draws one line, and only a settled one stops", () =
   expect(refused.wrong).toBe(true);
 });
 
-test("every landing, finalizer, handoff and approval label is inside the budget", () => {
+test("every landing, finalizer and approval label is inside the budget", () => {
   const drawn = [
     ...briefFinalizationModes.map(landingLabel),
     ...briefFinalizationModes.map(landingEffect),
     ...finalizers.map(finalizerLabel),
-    ...configurationHandoffs.map(handoffLabel),
     approvalLabel(true),
     approvalLabel(false),
   ];
@@ -423,12 +416,8 @@ test("a landing is named as a noun and explained as what it does", () => {
   ]);
 });
 
-test("a finalizer, a handoff and an approval each read as one noun", () => {
+test("a finalizer and an approval each read as one noun", () => {
   expect(finalizers.map(finalizerLabel)).toStrictEqual(["None", "Managed"]);
-  expect(configurationHandoffs.map(handoffLabel)).toStrictEqual([
-    "None",
-    "Direct commit",
-  ]);
   expect(approvalLabel(true)).toBe("Required");
   expect(approvalLabel(false)).toBe("Not required");
 });

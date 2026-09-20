@@ -39,7 +39,6 @@ test("every phase, verdict and standing draws a tone the pill knows", () => {
 
 test("the machine's own meanings keep their own hues", () => {
   expect(phaseTone("Escalated")).toBe("parked");
-  expect(phaseTone("HandoffBlocked")).toBe("parked");
   expect(phaseTone("Evaluating")).toBe("live");
   expect(phaseTone("Pending")).toBe("queued");
   expect(phaseTone("Done")).toBe("pass");

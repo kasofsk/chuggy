@@ -126,7 +126,6 @@ interface HeldPermitRow {
   readonly binding_epoch: string;
   readonly target_ref: string;
   readonly candidate_commit: string;
-  readonly credential_reference: string | null;
 }
 
 /** The refusal a grant answers with, which is a value and never a raised failure. */
@@ -362,7 +361,7 @@ export async function finalizerPermitHolds(
   const found = await client.query<HeldPermitRow>(
     sql`SELECT p.tenant, p.project, p.permit, b.repository,
             b.recovery_epoch AS binding_epoch,
-            r.target_ref, r.candidate_commit, h.credential_reference
+            r.target_ref, r.candidate_commit
        FROM commit_permit p
        JOIN finalization_attempt a
          ON a.tenant=p.tenant AND a.project=p.project AND a.attempt=p.attempt
@@ -371,8 +370,6 @@ export async function finalizerPermitHolds(
        JOIN project_repository b
          ON b.tenant = p.tenant AND b.project = p.project
         AND b.repository = a.repository
-       LEFT JOIN finalization_request_configuration h
-         ON h.tenant=a.tenant AND h.project=a.project AND h.request=a.request
       WHERE p.state = 'Granted' AND r.verdict = 'Unreadable'
         AND p.recovery_epoch = ${epoch}
       ORDER BY p.tenant, p.project, p.permit LIMIT ${permitsMax}`,
@@ -389,9 +386,6 @@ export async function finalizerPermitHolds(
         partition,
         repository: asRepositoryId(row.repository),
         recoveryEpoch: asRecoveryEpoch(row.binding_epoch),
-        ...(row.credential_reference === null
-          ? {}
-          : { credentialReference: row.credential_reference }),
       },
       target: asGitRefName(row.target_ref),
       candidate: asGitObjectId(row.candidate_commit),

@@ -4,10 +4,9 @@
  *
  * The sections are the reader's questions in order: what needs a human, what is
  * moving, what is next, what finished, what stopped. `NeedsYou` is the model's
- * own `hasOpenHumanTask` — Escalated together with HandoffBlocked, not
- * Escalated alone (`model/measure.qnt`) — and `Revoked` sits beside Abandoned
- * rather than beside Done because a reader scanning for what went wrong is
- * looking for both.
+ * own `hasOpenHumanTask`, which is Escalated alone (`model/measure.qnt`), and
+ * `Revoked` sits in `Stopped` rather than beside Done because a reader
+ * scanning for what went wrong is looking for it there.
  *
  * `UpNext` IS EVERY PENDING TICKET AND NOT THE UNBLOCKED FRONTIER. Unblocked
  * would need each ticket to name what it waits on and the phase of those
@@ -43,18 +42,15 @@ export const ticketSectionTitles: Readonly<Record<TicketSection, string>> = {
 export function ticketSectionOf(phase: TicketPhase): TicketSection {
   switch (phase) {
     case "Escalated":
-    case "HandoffBlocked":
       return "NeedsYou";
     case "Working":
     case "Evaluating":
     case "Finalizing":
-    case "PublishingHandoff":
       return "InProgress";
     case "Pending":
       return "UpNext";
     case "Done":
       return "Done";
-    case "Abandoned":
     case "Revoked":
       return "Stopped";
   }
@@ -100,6 +96,5 @@ export function ticketBadgeLabel(
   reason: EscalationReason | undefined,
 ): string | undefined {
   if (reason !== undefined) return escalationBadgeLabel(reason);
-  if (phase === "HandoffBlocked") return "handoff blocked";
   return phase === "Escalated" ? "escalated" : undefined;
 }

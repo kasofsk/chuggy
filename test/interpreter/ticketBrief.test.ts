@@ -5,8 +5,8 @@
  * is what holds those to the interpreter constants they came from; this suite
  * is about the shapes a bound alone does not decide — the lines an intent
  * renders as, the one scheme a link is read over, and the reference-name
- * grammar the branch and the finalization target borrow from the handoff
- * configuration rather than restating.
+ * grammar the branch and the finalization target borrow from
+ * `parsedGitRefName` rather than restating.
  */
 
 import assert from "node:assert/strict";
@@ -102,7 +102,7 @@ test("the longest link the server accepts is the longest one the wire publishes"
   );
 });
 
-test("a branch is a reference name by the grammar the handoff already states", () => {
+test("a branch is a reference name by the one grammar this tree states", () => {
   assert.equal(
     asBriefBranch("refs/heads/rt/ticket-brief"),
     "refs/heads/rt/ticket-brief",

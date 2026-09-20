@@ -13,10 +13,7 @@ import {
 } from "../../src/actor/decisionEvent.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { retryableIn } from "../../src/domain/enablement.ts";
-import type {
-  DecisionEvent,
-  Phase,
-} from "../../src/domain/generated/modelTypes.ts";
+import type { DecisionEvent } from "../../src/domain/generated/modelTypes.ts";
 import {
   reasonTags,
   resumeTags,
@@ -167,8 +164,7 @@ test("every answer but the safety one is ordinary, and each belongs to one quest
       parsed: "Ok",
       value: offered,
     });
-    const reducing =
-      resolution === safetyResolution || resolution === "AbandonHandoff";
+    const reducing = resolution === safetyResolution;
     assert.deepEqual(
       classifyCommand({ ...command, resolution }),
       {
@@ -305,12 +301,6 @@ function finalizationInput(event: DecisionEvent): DecisionInput {
         request: command.request,
         requestGeneration: command.requestGeneration,
         open: true,
-        acceptedPromotion: {
-          repository: "unrelated-work",
-          commit: "a".repeat(40),
-          configurationRevision: "revision",
-          configurationDigest: "b".repeat(64),
-        },
       },
     },
   };
@@ -331,55 +321,14 @@ test("a decision leaving finalization withdraws the approval it left unanswered"
   assert.deepEqual(planned.withdrawActionsFor, [id(1)]);
 });
 
-test("promotion and an unproven publication materialize a resumable handoff hold", () => {
-  const before = finalizing();
-  const promotion = finalizationResultEvent(id(1), "PromotionAccepted");
-  const publishing = journalStep(refinementInstance, before, promotion);
-  const promotionEntry = publishing.journal.at(-1);
-  assert.ok(promotionEntry !== undefined);
-  const promotionPlan = materializationOf(
-    finalizationInput(promotion),
-    memoryCore(before),
-    memoryCore(publishing),
-    promotionEntry,
-  );
-  assert.equal(promotionPlan.finalization.length, 1);
-  assert.match(promotionPlan.finalization[0]?.request ?? "", /PublishHandoff/u);
-  assert.equal(
-    promotionPlan.finalization[0]?.acceptedPromotion?.repository,
-    "unrelated-work",
-  );
-
-  const unproven = finalizationResultEvent(id(1), "HandoffPublicationUnproven");
-  const blocked = journalStep(refinementInstance, publishing, unproven);
-  const blockedEntry = blocked.journal.at(-1);
-  assert.ok(blockedEntry !== undefined);
-  const blockedPlan = materializationOf(
-    finalizationInput(unproven),
-    memoryCore(publishing),
-    memoryCore(blocked),
-    blockedEntry,
-  );
-  assert.deepEqual(
-    blockedPlan.actions.map((action) => action.kind),
-    ["HandoffBlock"],
-  );
-  assert.deepEqual(blockedPlan.actions[0]?.resolutions, [
-    "RetryHandoff",
-    "AbandonHandoff",
-  ]);
-});
-
 /** The raise's own record: the transition every park writes, and the task it opens. */
-function parkEntry(
-  phase: Extract<Phase, "Escalated" | "HandoffBlocked">,
-): Entry {
+function parkEntry(): Entry {
   return {
     seq: 4,
     event: evalReduceEvent(id(1)),
     rec: {
       label: "ticket-escalated",
-      transitions: [{ ticket: 1, from: "Evaluating", to: phase }],
+      transitions: [{ ticket: 1, from: "Evaluating", to: "Escalated" }],
       effects: ["OpenHumanTask"],
     },
   };
@@ -404,100 +353,40 @@ function continuationInput(event: DecisionEvent): DecisionInput {
 
 test("an open action admits exactly the answers the actor's enablement accepts", () => {
   const offered = new Set<string>();
-  for (const phase of ["Escalated", "HandoffBlocked"] as const) {
-    for (const reason of reasonTags) {
-      for (const resumeAt of resumeTags) {
-        for (const resumePricing of retryPricingTags) {
-          for (const gasLeft of [0, 1]) {
-            const post = coreOf([
-              ticketOn(refinementInstance, "ManagedFinalizer", {
-                phase,
-                reason,
-                resumeAt,
-                resumePricing,
-                gasLeft,
-              }),
-            ]);
-            const entry = parkEntry(phase);
-            const planned = materializationOf(
-              continuationInput(entry.event),
-              coreOf([]),
-              post,
-              entry,
-            );
-            const answers =
-              phase === "HandoffBlocked"
-                ? (["RetryHandoff", "AbandonHandoff"] as const)
-                : (["Resume", "Revoke"] as const);
-            const expected = retryableIn(post, id(1))
-              ? [answers[0], answers[1]]
-              : [answers[1]];
-            assert.deepEqual(
-              planned.actions[0]?.resolutions,
-              expected,
-              [phase, reason, resumeAt, resumePricing, gasLeft].join("/"),
-            );
-            offered.add(expected.join(","));
-          }
+  for (const reason of reasonTags) {
+    for (const resumeAt of resumeTags) {
+      for (const resumePricing of retryPricingTags) {
+        for (const gasLeft of [0, 1]) {
+          const post = coreOf([
+            ticketOn(refinementInstance, "ManagedFinalizer", {
+              phase: "Escalated",
+              reason,
+              resumeAt,
+              resumePricing,
+              gasLeft,
+            }),
+          ]);
+          const entry = parkEntry();
+          const planned = materializationOf(
+            continuationInput(entry.event),
+            coreOf([]),
+            post,
+            entry,
+          );
+          const expected = retryableIn(post, id(1))
+            ? ["Resume", "Revoke"]
+            : ["Revoke"];
+          assert.deepEqual(
+            planned.actions[0]?.resolutions,
+            expected,
+            [reason, resumeAt, resumePricing, gasLeft].join("/"),
+          );
+          offered.add(expected.join(","));
         }
       }
     }
   }
-  assert.deepEqual([...offered].sort(), [
-    "AbandonHandoff",
-    "Resume,Revoke",
-    "RetryHandoff,AbandonHandoff",
-    "Revoke",
-  ]);
-});
-
-/**
- * A ticket that spends its gas on a rework and a finalizer retry, and whose
- * promoted handoff then goes unproven. It reaches the hold with nothing left to
- * pay for the republication its resume point names.
- */
-function handoffBlockedWithoutGas(): ReturnType<typeof journalStep> {
-  const steps: readonly DecisionEvent[] = [
-    releaseTicketEvent(id(1), plainAuthoring),
-    dispatchEvent(id(1)),
-    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
-    workReduceEvent(id(1)),
-    taskDoneEvent(id(1), asTaskId(2), "Fail", plainResult),
-    evalReduceEvent(id(1)),
-    taskDoneEvent(id(1), asTaskId(3), "Pass", plainResult),
-    workReduceEvent(id(1)),
-    taskDoneEvent(id(1), asTaskId(4), "Pass", plainResult),
-    evalReduceEvent(id(1)),
-    finalizationResultEvent(id(1), "FinalizationFailed"),
-    taskDoneEvent(id(1), asTaskId(5), "Pass", plainResult),
-    workReduceEvent(id(1)),
-    taskDoneEvent(id(1), asTaskId(6), "Pass", plainResult),
-    evalReduceEvent(id(1)),
-    finalizationResultEvent(id(1), "PromotionAccepted"),
-  ];
-  return steps.reduce(
-    (state, event) => journalStep(refinementInstance, state, event),
-    actorInit(),
-  );
-}
-
-test("a handoff hold with no gas for its republication admits only the abandon", () => {
-  const publishing = handoffBlockedWithoutGas();
-  const unproven = finalizationResultEvent(id(1), "HandoffPublicationUnproven");
-  const blocked = journalStep(refinementInstance, publishing, unproven);
-  const entry = blocked.journal.at(-1);
-  assert.ok(entry !== undefined);
-  const post = memoryCore(blocked);
-  assert.equal(post.tickets.get(id(1))?.gasLeft, 0);
-  assert.equal(post.tickets.get(id(1))?.resumeAt, "ResumePublishingHandoff");
-  assert.equal(retryableIn(post, id(1)), false);
-  const planned = materializationOf(
-    finalizationInput(unproven),
-    memoryCore(publishing),
-    post,
-    entry,
-  );
-  assert.deepEqual(planned.actions[0]?.resolutions, ["AbandonHandoff"]);
+  assert.deepEqual([...offered].sort(), ["Resume,Revoke", "Revoke"]);
 });
 
 test("a decision that leaves a ticket where it found it withdraws nothing", () => {

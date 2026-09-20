@@ -143,7 +143,7 @@ function draw(
             practices: [],
             workInstructionsCount: 1,
             reviewInstructionsCount: 1,
-            finalization: { approvalRequired: false, handoff: "None" },
+            finalization: { approvalRequired: false },
             evaluationStagesCount: 1,
           },
           initialization: next,

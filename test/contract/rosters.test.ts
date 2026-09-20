@@ -16,7 +16,6 @@ import {
   artifactRoles,
   attemptEvidences,
   attemptStates,
-  configurationHandoffs,
   configurationProvenanceSources,
   configurationReadinesses,
   draftStates,
@@ -166,7 +165,6 @@ import type {
   ConfigurationRevisionSummary,
   DraftState,
 } from "../../src/interpreter/authoring.ts";
-import type { PinnedHandoffConfiguration } from "../../src/interpreter/handoffConfiguration.ts";
 import type { RepositoryConfigurationFault } from "../../src/interpreter/repositoryConfiguration.ts";
 import type { SelectorRuntimeSettings } from "../../src/interpreter/selector.ts";
 
@@ -430,14 +428,6 @@ test("the authoring rosters are exhaustive over the model unions", () => {
   assert.deepEqual(sorted(configurationProvenanceSources), keysOf(provenance));
   assert.deepEqual(sorted(configurationReadinesses), keysOf(readiness));
   assert.deepEqual(sorted(repositoryConfigurationFaults), keysOf(faults));
-});
-
-test("the handoff roster is every mode a configuration pins, and none", () => {
-  const handoff: Record<PinnedHandoffConfiguration["mode"] | "None", true> = {
-    None: true,
-    DirectCommit: true,
-  };
-  assert.deepEqual(sorted(configurationHandoffs), keysOf(handoff));
 });
 
 test("the stream carries every polled kind and the four polling omits", () => {

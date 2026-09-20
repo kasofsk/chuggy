@@ -32,10 +32,10 @@
  * authoring rather than refused at the door, and `draftReleaseReadiness` is
  * where the release refuses to take it further.
  *
- * A BRANCH IS A REFERENCE NAME AND SHARES ITS GRAMMAR. `handoffRef` is the one
- * statement of what a reference name is in this tree, and a second spelling of
- * it here would be a second answer to the same question. A finalization's
- * target is a reference name too and takes the same grammar.
+ * A BRANCH IS A REFERENCE NAME AND SHARES ITS GRAMMAR. `parsedGitRefName` is
+ * the one statement of what a reference name is in this tree, and a second
+ * spelling of it here would be a second answer to the same question. A
+ * finalization's target is a reference name too and takes the same grammar.
  *
  * WHERE THE WORK LANDS IS SAID APART FROM WHERE IT STARTS. `branch` is the
  * branch the work happens on and the ref its executions are observed at; a
@@ -79,10 +79,10 @@ import {
 } from "../contract/rosters.ts";
 import {
   asRepositoryId,
+  parsedGitRefName,
   type GitRefName,
   type RepositoryId,
 } from "./finalizer.ts";
-import { handoffRef } from "./handoffConfiguration.ts";
 import type { Partition } from "./projectStore.ts";
 import { taskConfigurationLineFault } from "./taskConfiguration.ts";
 
@@ -223,7 +223,7 @@ export function asBriefBranch(value: string): GitRefName {
   const ref =
     textCodePointsCount(value) > briefBranchCharsMax
       ? undefined
-      : handoffRef(value);
+      : parsedGitRefName(value);
   if (ref === undefined)
     throw new RangeError("ticket branch: the value is not a reference name");
   return ref;

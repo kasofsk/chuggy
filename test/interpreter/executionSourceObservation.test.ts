@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { canonicalConfigurationOf } from "../../src/interpreter/authoring.ts";
 import { executionSourceObservation } from "../../src/interpreter/executionSourceObservation.ts";
 import {
   asGitObjectId,
@@ -20,35 +19,6 @@ const partition = {
   tenant: asTenantId("tenant"),
   project: asProjectId("project"),
 };
-
-const configuredWorkSource = canonicalConfigurationOf({
-  finalizationHandoff: {
-    version: 1,
-    mode: "DirectCommit",
-    repositories: {
-      work: {
-        repository: "work-repository",
-        targetRef: "refs/heads/work",
-      },
-      handoff: {
-        repository: "handoff-repository",
-        targetRef: "refs/heads/handoff",
-      },
-    },
-    credentials: { work: "work-reader", handoff: "handoff-writer" },
-    renderer: {
-      identity: "ContainerBuildRequest",
-      version: 1,
-      parameters: {
-        targetImageRepository: "registry.example/work",
-        builderProfile: "rootless",
-        platforms: ["linux/amd64"],
-      },
-    },
-    destinationPath: "build/request.json",
-    outputBytesMax: 4_096,
-  },
-});
 
 /** An observation over the project's default binding, recording what was asked about. */
 function observingBinding(
@@ -78,32 +48,6 @@ function observingBinding(
     { workSource: () => Promise.resolve(undefined) },
   );
 }
-
-test("configured work source selects its own repository, ref and credential", async () => {
-  const observed: unknown[] = [];
-  const subject = observingBinding(observed);
-  assert.equal(
-    (
-      await subject.observe({
-        partition,
-        ticket: 1,
-        kind: "Work",
-        repository: asRepositoryId("project-default"),
-        configurationCanonical: configuredWorkSource,
-      })
-    ).observed,
-    "Source",
-  );
-  assert.deepEqual(observed, [
-    {
-      partition,
-      repository: "work-repository",
-      recoveryEpoch: "epoch",
-      targetRef: "refs/heads/work",
-      credentialReference: "work-reader",
-    },
-  ]);
-});
 
 /** An observation whose binding read is counted and whose Git port refuses every call. */
 function observingUncalled(): {
@@ -145,16 +89,14 @@ test("the ticket's own branch is the last word on what work is observed against"
     ticket: 1,
     kind: "Work",
     repository: asRepositoryId("project-default"),
-    configurationCanonical: configuredWorkSource,
     ref: asGitRefName("refs/heads/ticket"),
   });
   assert.deepEqual(observed, [
     {
       partition,
-      repository: "work-repository",
+      repository: "project-default",
       recoveryEpoch: "epoch",
       targetRef: "refs/heads/ticket",
-      credentialReference: "work-reader",
     },
   ]);
   assert.equal(
@@ -218,14 +160,13 @@ test("a brief branch the remote does not hold is based on the binding's own targ
     ticket: 1,
     kind: "Work",
     repository: asRepositoryId("project-default"),
-    configurationCanonical: configuredWorkSource,
     ref: asGitRefName(ticketBranch),
   });
-  assert.deepEqual(observed, [ticketBranch, "refs/heads/work"]);
+  assert.deepEqual(observed, [ticketBranch, undefined]);
   assert.deepEqual(source, {
     observed: "Source",
     source: {
-      repository: "work-repository",
+      repository: "project-default",
       target: { ref: ticketBranch, commit: workRefCommit },
       manifests: [],
     },
@@ -243,7 +184,6 @@ test("a branch nobody can read is unreadable still, and is asked about once", as
     ticket: 1,
     kind: "Work",
     repository: asRepositoryId("project-default"),
-    configurationCanonical: configuredWorkSource,
     ref: asGitRefName(ticketBranch),
   });
   assert.deepEqual(source, {

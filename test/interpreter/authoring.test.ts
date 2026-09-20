@@ -16,14 +16,11 @@ import {
   releaseConfigurationReadiness,
 } from "../../src/interpreter/authoring.ts";
 import {
-  asBriefBranch,
   asBriefCheckLine,
   asBriefIntent,
 } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { approvalRequiredField } from "../../src/interpreter/finalizerPreparation.ts";
-import { handoffConfigurationField } from "../../src/interpreter/handoffConfiguration.ts";
-import { handoffFixture } from "./handoffFixture.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
@@ -158,50 +155,6 @@ test("a present invalid worker mode is not interpreted as a legacy worker", () =
   );
 });
 
-test("a configuration that hands off refuses a brief that would propose a change", () => {
-  const parsed = JSON.parse(readyConfiguration) as Record<string, unknown>;
-  const handing = canonicalConfigurationOf({
-    ...parsed,
-    finalizationHandoff: handoffFixture(),
-  });
-  for (const mode of ["PullRequest", "PullRequestMerge"] as const)
-    assert.deepEqual(
-      releaseConfigurationReadiness(handing, {
-        checks: [],
-        finalization: {
-          mode,
-          target: asBriefBranch("refs/heads/rt/landing"),
-        },
-      }),
-      { readiness: "Incomplete", fault: "HandoffProposesChange" },
-      mode,
-    );
-  assert.equal(
-    releaseConfigurationReadiness(handing, {
-      checks: [],
-      finalization: { mode: "Push" },
-    }).readiness,
-    "Ready",
-    "the same configuration releases under every other mode",
-  );
-  assert.equal(
-    releaseConfigurationReadiness(handing).readiness,
-    "Ready",
-    "and for a caller with no brief to read",
-  );
-  assert.equal(
-    releaseConfigurationReadiness(readyConfiguration, {
-      checks: [],
-      finalization: {
-        mode: "PullRequest",
-        target: asBriefBranch("refs/heads/rt/landing"),
-      },
-    }).readiness,
-    "Ready",
-    "a configuration that hands nothing off is proposed against freely",
-  );
-});
-
 test("a configuration commanding no check stage refuses a brief that appends check lines", () => {
   const parsed = JSON.parse(readyConfiguration) as Record<string, unknown>;
   const commanding = canonicalConfigurationOf({
@@ -307,23 +260,27 @@ test("a release refuses a configuration imported from another repository", () =>
 });
 
 test("the configuration's own refusals are answered before the repository's", () => {
-  const parsed = JSON.parse(readyConfiguration) as Record<string, unknown>;
+  const uncommanded = {
+    readiness: "Incomplete",
+    fault: "BriefChecksUncommanded",
+  };
   assert.deepEqual(
     draftReleaseReadiness(
-      canonicalConfigurationOf({
-        ...parsed,
-        finalizationHandoff: handoffFixture(),
-      }),
-      {
-        checks: [],
-        finalization: {
-          mode: "PullRequest",
-          target: asBriefBranch("refs/heads/rt/landing"),
-        },
-      },
+      readyConfiguration,
+      { checks: [asBriefCheckLine("npm test")] },
+      undefined,
+    ),
+    uncommanded,
+    "before a brief that names no repository",
+  );
+  assert.deepEqual(
+    draftReleaseReadiness(
+      readyConfiguration,
+      { checks: [asBriefCheckLine("npm test")], repository: firstRepository },
       secondRepository,
     ),
-    { readiness: "Incomplete", fault: "HandoffProposesChange" },
+    uncommanded,
+    "and before a configuration read in another repository",
   );
 });
 
@@ -369,7 +326,7 @@ test("configuration summaries expose registry fields without canonical content",
       practices: [],
       workInstructionsCount: 0,
       reviewInstructionsCount: 0,
-      finalization: { approvalRequired: false, handoff: "None" },
+      finalization: { approvalRequired: false },
       evaluationStagesCount: 0,
     },
   );
@@ -421,17 +378,17 @@ function summaryOf(fields: Record<string, unknown>) {
  */
 test("a summary answers what its revision decides about finishing and evaluating", () => {
   assert.deepEqual(summaryOf({ [approvalRequiredField]: true }), {
-    finalization: { approvalRequired: true, handoff: "None" },
+    finalization: { approvalRequired: true },
     evaluationStagesCount: 0,
   });
   assert.deepEqual(summaryOf({ [approvalRequiredField]: false }), {
-    finalization: { approvalRequired: false, handoff: "None" },
+    finalization: { approvalRequired: false },
     evaluationStagesCount: 0,
   });
   assert.deepEqual(
     summaryOf({}),
     {
-      finalization: { approvalRequired: false, handoff: "None" },
+      finalization: { approvalRequired: false },
       evaluationStagesCount: 0,
     },
     "a revision saying nothing about approval asks for none",
@@ -439,17 +396,10 @@ test("a summary answers what its revision decides about finishing and evaluating
   assert.deepEqual(
     summaryOf({ [approvalRequiredField]: "yes" }),
     {
-      finalization: { approvalRequired: true, handoff: "None" },
+      finalization: { approvalRequired: true },
       evaluationStagesCount: 0,
     },
     "a policy this tree cannot read is a person in the way",
-  );
-  assert.deepEqual(
-    summaryOf({ [handoffConfigurationField]: handoffFixture() }),
-    {
-      finalization: { approvalRequired: false, handoff: "DirectCommit" },
-      evaluationStagesCount: 0,
-    },
   );
   assert.deepEqual(
     summaryOf({
@@ -459,7 +409,7 @@ test("a summary answers what its revision decides about finishing and evaluating
       ],
     }),
     {
-      finalization: { approvalRequired: false, handoff: "None" },
+      finalization: { approvalRequired: false },
       evaluationStagesCount: 2,
     },
   );

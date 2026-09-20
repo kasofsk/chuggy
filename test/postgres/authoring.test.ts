@@ -61,7 +61,6 @@ import {
   type DraftBrief,
 } from "../../src/interpreter/ticketBrief.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
-import { handoffFixture } from "../interpreter/handoffFixture.ts";
 import {
   postgresHarnessBinding,
   postgresHarnessBrief,
@@ -1078,12 +1077,6 @@ test("the writer's own role commits a release", async () => {
   }
 });
 
-/** The configuration a handing-off project pins, which no proposal may be opened under. */
-const handoffConfiguration = canonicalConfigurationOf({
-  ...(JSON.parse(postgresHarnessConfiguration) as Record<string, unknown>),
-  finalizationHandoff: handoffFixture(),
-});
-
 const commandedCheckConfiguration = canonicalConfigurationOf({
   ...(JSON.parse(postgresHarnessConfiguration) as Record<string, unknown>),
   evaluations: [{ purpose: "Check", checks: [".chug/tasks/ci.sh"] }],
@@ -1183,17 +1176,6 @@ async function appendFixtureCheck(
   );
 }
 
-test("a brief that proposes a change refuses release against a handing-off configuration", async () => {
-  const fixture = await draftFixture(handoffConfiguration);
-  await harness.query(
-    `UPDATE draft_brief
-        SET finalization_mode='PullRequest',finalization_target='refs/heads/rt/landing'
-      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
-    [fixture.partition.tenant, fixture.partition.project, fixture.draft.ticket],
-  );
-  await assertReleaseRefused(fixture, "handoff-proposes");
-});
-
 test("a brief that appends check lines refuses release against a configuration commanding none", async () => {
   const fixture = await draftFixture();
   await appendFixtureCheck(fixture);
@@ -1205,14 +1187,6 @@ test("a configuration commanding a check stage releases a brief that appends to 
   await appendFixtureCheck(fixture);
 
   const { result } = await releaseDecision(fixture, "checks-commanded");
-
-  assert.equal(result.decided.decided, "Committed");
-});
-
-test("the same handing-off configuration releases a brief that pushes", async () => {
-  const fixture = await draftFixture(handoffConfiguration);
-
-  const { result } = await releaseDecision(fixture, "handoff-pushes");
 
   assert.equal(result.decided.decided, "Committed");
 });

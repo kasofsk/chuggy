@@ -416,17 +416,6 @@ function projectWriterPreflight(
   return { command };
 }
 
-function projectWriterSourceConfiguration(
-  memory: ProjectMemory,
-  item: DecisionInput,
-  ticket: number,
-): string | undefined {
-  const draft =
-    item.source.kind === "Operation" ? item.source.draftRelease : undefined;
-  const contract = draft ?? memory.dispatchContracts?.get(ticket);
-  return contract?.configurationCanonical;
-}
-
 /** What the source a decision's spawns would run on was observed to be. */
 type SpawnSourceObserved =
   | {
@@ -488,17 +477,11 @@ async function projectWriterExecutionSource(
   if (spawned === undefined)
     throw new IntegrityContradiction("a spawn effect has no ticket transition");
   const ticket = asTicketId(spawned);
-  const configurationCanonical = projectWriterSourceConfiguration(
-    memory,
-    item,
-    ticket,
-  );
   const brief = await writer.ticketBriefs.brief(memory.lease.partition, ticket);
   const observed = await writer.executionSources.observe({
     partition: memory.lease.partition,
     ticket,
     kind: effect === "SpawnWorkTasks" ? "Work" : "Evaluation",
-    ...(configurationCanonical === undefined ? {} : { configurationCanonical }),
     ...(brief?.repository === undefined
       ? {}
       : { repository: brief.repository }),

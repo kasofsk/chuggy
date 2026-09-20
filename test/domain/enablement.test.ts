@@ -360,8 +360,6 @@ test("the finalizer reports every lifecycle result, and a block names an executi
   assert.deepEqual(finalizationOutcomes, [
     "FinalizationSucceeded",
     "FinalizationFailed",
-    "PromotionAccepted",
-    "HandoffPublicationUnproven",
   ]);
   assert.ok(
     !executionBlockedReasons.includes("WorkFailed"),

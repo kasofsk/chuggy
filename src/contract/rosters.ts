@@ -18,10 +18,7 @@ export const phaseRoster = [
   "Working",
   "Evaluating",
   "Finalizing",
-  "PublishingHandoff",
-  "HandoffBlocked",
   "Done",
-  "Abandoned",
   "Escalated",
   "Revoked",
 ] as const;
@@ -58,7 +55,6 @@ export const resumePoints = [
   "ResumeReworking",
   "ResumeEvaluating",
   "ResumeFinalizing",
-  "ResumePublishingHandoff",
 ] as const;
 export type ResumePoint = (typeof resumePoints)[number];
 
@@ -288,14 +284,6 @@ export function briefFinalizationProposes(mode: string | undefined): boolean {
   return mode === "PullRequest" || mode === "PullRequestMerge";
 }
 
-/**
- * What a configuration hands its work off as, `None` standing for a
- * configuration that declares no handoff at all — the interpreter says that by
- * carrying no handoff shape rather than by a mode, so the wire names it.
- */
-export const configurationHandoffs = ["None", "DirectCommit"] as const;
-export type ConfigurationHandoff = (typeof configurationHandoffs)[number];
-
 export const configurationReadinesses = ["Ready", "Incomplete"] as const;
 export type ConfigurationReadiness = (typeof configurationReadinesses)[number];
 
@@ -324,7 +312,6 @@ export type RepositoryConfigurationFault =
 /** The kinds of question a native action puts to a person. */
 export const nativeActionKinds = [
   "TicketEscalation",
-  "HandoffBlock",
   "FinalizationApproval",
 ] as const;
 export type NativeActionKind = (typeof nativeActionKinds)[number];
@@ -336,14 +323,12 @@ export type NativeActionKind = (typeof nativeActionKinds)[number];
  */
 export const nativeActionKindResolutions = {
   TicketEscalation: ["Resume", "Revoke"],
-  HandoffBlock: ["RetryHandoff", "AbandonHandoff"],
   FinalizationApproval: ["Approve", "Decline"],
 } as const;
 
 /** Every resolution the wire names, which is every kind's flattened in kind order. */
 export const nativeActionResolutions = [
   ...nativeActionKindResolutions.TicketEscalation,
-  ...nativeActionKindResolutions.HandoffBlock,
   ...nativeActionKindResolutions.FinalizationApproval,
 ] as const;
 export type NativeActionResolution = (typeof nativeActionResolutions)[number];

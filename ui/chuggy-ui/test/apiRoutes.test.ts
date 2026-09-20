@@ -177,11 +177,11 @@ test("a filter names every phase it selects, not only the last of them", async (
   await apiProject(held.ports, partition, {
     order: "RecentActivity",
     limit: 100,
-    phase: ["HandoffBlocked", "Escalated"],
+    phase: ["Revoked", "Escalated"],
   });
   expect(held.urls[0]).toBe(
     `${nativeHttpBasePath}/tenants/acme/projects/at%20las` +
-      `?limit=100&order=RecentActivity&phase=HandoffBlocked&phase=Escalated`,
+      `?limit=100&order=RecentActivity&phase=Revoked&phase=Escalated`,
   );
 });
 

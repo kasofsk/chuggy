@@ -66,11 +66,11 @@ const parked = page([
     reason: "WorkFailed",
     ...ticketInstants,
   },
-  { ticket: 2, phase: "HandoffBlocked", sequence: 8, ...ticketInstants },
+  { ticket: 2, phase: "Escalated", sequence: 8, ...ticketInstants },
 ]);
 
 test("the inbox holds exactly the phases that are an open human task", () => {
-  expect([...inboxPhases]).toStrictEqual(["HandoffBlocked", "Escalated"]);
+  expect([...inboxPhases]).toStrictEqual(["Escalated"]);
 });
 
 test("a frame for any other phase takes its row out of the inbox", () => {
@@ -85,35 +85,6 @@ test("a frame for any other phase takes its row out of the inbox", () => {
     const holds = folded?.tickets.some((ticket) => ticket.ticket === 4);
     expect(holds).toBe(inboxPhases.includes(phase));
   }
-});
-
-test("a row offers what the phase enables, and a blocked handoff no revoke", () => {
-  const offered = (ticket: TicketResponse) =>
-    actionsFor(ticket).map((action) => action.action);
-  expect(
-    offered({
-      ticket: 4,
-      phase: "Escalated",
-      sequence: 9,
-      reason: "WorkFailed",
-      ...ticketInstants,
-    }),
-  ).toStrictEqual(["Resume", "Revoke"]);
-  expect(
-    offered({
-      ticket: 2,
-      phase: "HandoffBlocked",
-      sequence: 8,
-      ...ticketInstants,
-    }),
-  ).toStrictEqual(["Resume"]);
-  for (const phase of phaseRoster)
-    if (!inboxPhases.includes(phase))
-      expect(
-        offered({ ticket: 1, phase, sequence: 1, ...ticketInstants }).includes(
-          "Resume",
-        ),
-      ).toBe(false);
 });
 
 test("a row's answer is the mutation the wire carries for that ticket", () => {

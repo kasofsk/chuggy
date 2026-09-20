@@ -51,13 +51,11 @@
   font-weight: 700;
 }
 
-.phase-escalated,
-.phase-handoffblocked {
+.phase-escalated {
   color: var(--tone-parked);
 }
 
-.phase-revoked,
-.phase-abandoned {
+.phase-revoked {
   color: var(--tone-fail);
 }
 

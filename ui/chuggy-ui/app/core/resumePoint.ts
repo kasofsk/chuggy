@@ -32,8 +32,8 @@ import type {
 } from "../../../../src/contract/rosters.ts";
 import type { ClosedSet } from "./ticketLedger.ts";
 
-/** Which of the ticket's four asks the resume issues again. */
-export type ResumeRerun = "work" | "evaluation" | "finalization" | "handoff";
+/** Which of the ticket's three asks the resume issues again. */
+export type ResumeRerun = "work" | "evaluation" | "finalization";
 
 export interface ResumeSituation {
   readonly phase: TicketPhase;
@@ -111,7 +111,6 @@ export function ticketResumePoint(
   situation: ResumeSituation,
 ): ResumePoint | undefined {
   if (situation.resumeAt !== undefined) return situation.resumeAt;
-  if (situation.phase === "HandoffBlocked") return "ResumePublishingHandoff";
   if (situation.phase !== "Escalated") return undefined;
   const reason = situation.reason;
   return reason === undefined ? undefined : walledPoint(reason, situation);
@@ -127,8 +126,6 @@ export function resumeReenters(point: ResumePoint): TicketPhase {
       return "Evaluating";
     case "ResumeFinalizing":
       return "Finalizing";
-    case "ResumePublishingHandoff":
-      return "PublishingHandoff";
   }
 }
 
@@ -142,8 +139,6 @@ export function resumeRerun(point: ResumePoint): ResumeRerun {
       return "evaluation";
     case "ResumeFinalizing":
       return "finalization";
-    case "ResumePublishingHandoff":
-      return "handoff";
   }
 }
 

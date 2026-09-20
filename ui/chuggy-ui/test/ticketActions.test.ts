@@ -26,10 +26,7 @@ const offeredBy: Readonly<Record<TicketPhase, readonly string[]>> = {
   Working: ["Revoke"],
   Evaluating: ["Revoke"],
   Finalizing: [],
-  PublishingHandoff: [],
-  HandoffBlocked: ["Resume"],
   Done: [],
-  Abandoned: [],
   Escalated: ["Resume", "Revoke"],
   Revoked: [],
 };

@@ -52,9 +52,9 @@ const escalated: TicketResponse = {
   ...ticketInstants,
 };
 
-const blocked: TicketResponse = {
+const secondEscalated: TicketResponse = {
   ticket: 2,
-  phase: "HandoffBlocked",
+  phase: "Escalated",
   sequence: 8,
   ...ticketInstants,
 };
@@ -99,7 +99,7 @@ const escalation: ProjectNativeActionResponse = {
 
 const parked = projectTicketRowsAppend(
   projectTicketRowsEmpty,
-  ticketPage([escalated, blocked]),
+  ticketPage([escalated, secondEscalated]),
 );
 
 const open = projectNativeActionRowsAppend(
@@ -119,7 +119,7 @@ test("a ticket the phase page reached carries its row and its open actions", () 
   expect(four?.held).toStrictEqual(escalated);
   expect(four?.actions).toStrictEqual([escalation]);
   const two = union.entries.find((entry) => entry.ticket === 2);
-  expect(two?.held).toStrictEqual(blocked);
+  expect(two?.held).toStrictEqual(secondEscalated);
   expect(two?.actions).toStrictEqual([]);
 });
 

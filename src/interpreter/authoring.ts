@@ -9,10 +9,6 @@ import {
   nativeHttpPageItemsDefault,
   nativeHttpPageItemsMax,
 } from "../contract/http.ts";
-import {
-  briefFinalizationProposes,
-  type ConfigurationHandoff,
-} from "../contract/rosters.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import {
   defaultProgram,
@@ -36,11 +32,6 @@ import type {
 import type { Worker } from "./workerCatalog.ts";
 import { encodeDecisionEventText, parseDecisionEventText } from "./wire.ts";
 import { executionRequirementConfigurationIsValid } from "./executionRequirement.ts";
-import {
-  authoredHandoffConfigurationReadiness,
-  handoffConfigurationField,
-  type HandoffConfigurationFault,
-} from "./handoffConfiguration.ts";
 import { handoffApprovalRequired } from "./finalizerPreparation.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 import type { DraftBrief, ReleaseBrief } from "./ticketBrief.ts";
@@ -65,23 +56,20 @@ export type ReleaseConfiguration = Readonly<Record<string, unknown>> & {
 } & AuthoredTaskConfiguration;
 
 /**
- * Why one configuration is not releasable. `HandoffProposesChange`,
- * `BriefChecksUncommanded`, `BriefNamesNoRepository` and
- * `ConfigurationFromAnotherRepository` are faults about the pairing rather than
- * the document, either document alone being fine: a configuration carrying a
- * handoff contradicts a brief that opens a change proposal, one commanding no
- * check stage contradicts a brief that appends check lines to it, a brief
- * naming no repository has nothing to pair with, and a configuration imported
- * from a repository contradicts a brief working in a different one.
+ * Why one configuration is not releasable. `BriefChecksUncommanded`,
+ * `BriefNamesNoRepository` and `ConfigurationFromAnotherRepository` are faults
+ * about the pairing rather than the document, either document alone being fine:
+ * a configuration commanding no check stage contradicts a brief that appends
+ * check lines to it, a brief naming no repository has nothing to pair with, and
+ * a configuration imported from a repository contradicts a brief working in a
+ * different one.
  */
 export type ReleaseConfigurationFault =
   | "ReleaseShapeInvalid"
-  | "HandoffProposesChange"
   | "BriefChecksUncommanded"
   | "BriefNamesNoRepository"
   | "ConfigurationFromAnotherRepository"
-  | TaskConfigurationFault
-  | HandoffConfigurationFault;
+  | TaskConfigurationFault;
 
 export type ReleaseConfigurationReadiness =
   | {
@@ -165,14 +153,6 @@ export function releaseConfigurationReadiness(
     firstCommandedCheckStage(authored.configuration) === undefined
   )
     return { readiness: "Incomplete", fault: "BriefChecksUncommanded" };
-  if (
-    (value as Record<string, unknown>)[handoffConfigurationField] !== undefined
-  ) {
-    if (briefFinalizationProposes(brief?.finalization?.mode))
-      return { readiness: "Incomplete", fault: "HandoffProposesChange" };
-    const handoff = authoredHandoffConfigurationReadiness(value);
-    if (handoff.readiness === "Incomplete") return handoff;
-  }
   return {
     readiness: "Ready",
     configuration: value as ReleaseConfiguration,
@@ -303,12 +283,10 @@ export type ConfigurationRevisionProvenance =
 
 /**
  * What one ready configuration decides about finishing, for a reader choosing
- * between configurations without opening either. `None` is a configuration
- * declaring no handoff at all, which is what carrying no handoff shape means.
+ * between configurations without opening either.
  */
 export interface ConfigurationFinalization {
   readonly approvalRequired: boolean;
-  readonly handoff: ConfigurationHandoff;
 }
 
 export type ConfigurationRevisionSummary =
@@ -358,15 +336,8 @@ export const configurationPageLimitMax = 100;
  */
 function configurationFinalizationOf(
   canonical: CanonicalConfiguration,
-  configuration: ReleaseConfiguration,
 ): ConfigurationFinalization {
-  return {
-    approvalRequired: handoffApprovalRequired(canonical) ?? true,
-    handoff:
-      configuration[handoffConfigurationField] === undefined
-        ? "None"
-        : "DirectCommit",
-  };
+  return { approvalRequired: handoffApprovalRequired(canonical) ?? true };
 }
 
 export function configurationRevisionSummary(input: {
@@ -398,10 +369,7 @@ export function configurationRevisionSummary(input: {
           readiness.configuration.work.instructions?.length ?? 0,
         reviewInstructionsCount:
           readiness.configuration.review.instructions.length,
-        finalization: configurationFinalizationOf(
-          input.canonical,
-          readiness.configuration,
-        ),
+        finalization: configurationFinalizationOf(input.canonical),
         evaluationStagesCount: readiness.configuration.evaluations?.length ?? 0,
       };
 }

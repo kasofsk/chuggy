@@ -264,7 +264,7 @@ function ActionButtons(props: {
               : { refusedBecause: effect.refusedBecause })}
             offered={effect.offered}
             busy={props.busy}
-            danger={action.action === "Revoke" || action.action === "Abandon"}
+            danger={action.action === "Revoke"}
             onChoose={() => {
               props.onChoose(action);
             }}

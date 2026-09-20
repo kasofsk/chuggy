@@ -73,12 +73,9 @@ export function phaseIsRunning(phase: TicketResponse["phase"]): boolean {
     case "Working":
     case "Evaluating":
     case "Finalizing":
-    case "PublishingHandoff":
       return true;
     case "Pending":
-    case "HandoffBlocked":
     case "Done":
-    case "Abandoned":
     case "Escalated":
     case "Revoked":
       return false;
