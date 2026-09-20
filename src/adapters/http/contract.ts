@@ -137,6 +137,12 @@ const nativeActionCursorSchema = inventoryCursorSchema.extend({
   action: z.string().min(1),
 });
 
+import {
+  workerPoolRedemptionSchema,
+  workerPoolRegistrationTokenRequestSchema,
+  type WorkerPoolRedemptionRequest,
+  type WorkerPoolRegistrationTokenRequest,
+} from "../../contract/workerPool.ts";
 export interface ParsedConfigurationCreation {
   readonly revision: ConfigurationRevisionId;
   readonly parent?: ConfigurationRevisionId;
@@ -146,6 +152,23 @@ export interface ParsedConfigurationCreation {
 export interface ParsedRepositoryConfigurationImport {
   readonly repository: RepositoryId;
   readonly commit: GitObjectId;
+}
+
+/**
+ * What an owner asks a registration token for, and what a machine redeems one
+ * with. Both are the contract's own schemas: a pool is registered by a third
+ * party's machine, so the shapes are where the wire is.
+ */
+export function parseWorkerPoolTokenRequest(
+  body: unknown,
+): WorkerPoolRegistrationTokenRequest {
+  return workerPoolRegistrationTokenRequestSchema.parse(body);
+}
+
+export function parseWorkerPoolRedemption(
+  body: unknown,
+): WorkerPoolRedemptionRequest {
+  return workerPoolRedemptionSchema.parse(body);
 }
 
 export function parseRepositoryConfigurationImport(

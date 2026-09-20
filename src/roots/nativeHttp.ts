@@ -120,6 +120,19 @@ import type {
 } from "../interpreter/repositoryConfiguration.ts";
 import type { RepositoryCreationPorts } from "../interpreter/repositoryOnboarding.ts";
 import type { ProjectAccess } from "../interpreter/projectAccess.ts";
+import { randomBytes, createHash, randomUUID } from "node:crypto";
+import type pg from "pg";
+import { hydraWorkerPoolClients } from "../adapters/hydra/oauthClients.ts";
+import { ketoProjectGrants } from "../adapters/keto/projectGrants.ts";
+import { checkedProjectGrantSettings } from "../interpreter/projectGrant.ts";
+import {
+  postgresWorkerPoolRegistrationTokens,
+  postgresWorkerPoolRegistry,
+} from "../adapters/postgres/workerPool.ts";
+import {
+  workerPoolRegistrationService,
+  type WorkerPoolRegistrationService,
+} from "../interpreter/workerPoolRegistrationToken.ts";
 
 const databaseUrlVariable = "CHUG_API_DATABASE_URL";
 const idempotencyKeyingVariable = "CHUG_API_IDEMPOTENCY_KEYING";
@@ -128,6 +141,15 @@ const oidcAudienceVariable = "CHUG_API_OIDC_AUDIENCE";
 const oidcAlgorithmsVariable = "CHUG_API_OIDC_ALGORITHMS";
 const artifactRootVariable = "CHUG_API_ARTIFACT_ROOT";
 const ketoReadUrlVariable = "CHUG_API_KETO_READ_URL";
+/**
+ * The two addresses registering a worker pool needs, and the only two this
+ * process names that write rather than read. An installation naming neither
+ * serves no registration route at all; naming one without the other refuses the
+ * start, because a half-composed registration would mint a client the authority
+ * was never told about.
+ */
+const ketoWriteUrlVariable = "CHUG_API_KETO_WRITE_URL";
+const hydraAdminUrlVariable = "CHUG_API_HYDRA_ADMIN_URL";
 const ketoTimeoutVariable = "CHUG_API_KETO_TIMEOUT_MS";
 /**
  * The named credential mount a member's thread speaks through. It is REQUIRED
@@ -165,6 +187,50 @@ const forgeRepositoriesMaxVariable = "CHUG_API_FORGE_REPOSITORIES_MAX";
  */
 const bootstrapWorkerImageVariable = "CHUG_API_BOOTSTRAP_WORKER_IMAGE";
 const forgeTemplateRepositoryVariable = "CHUG_API_FORGE_TEMPLATE_REPOSITORY";
+
+/**
+ * The registration half of worker pools, composed only where an installation
+ * named both addresses it needs. It is the one place in this tree that holds
+ * the issuer's admin privilege beside an owner's command, which is what keeps
+ * it off the plane a pool polls.
+ */
+function nativeWorkerPools(
+  pool: pg.Pool,
+  access: ProjectAccess,
+): WorkerPoolRegistrationService | undefined {
+  if (
+    process.env[hydraAdminUrlVariable] === undefined &&
+    process.env[ketoWriteUrlVariable] === undefined
+  )
+    return undefined;
+  return workerPoolRegistrationService({
+    access,
+    issuer: requiredEnvironment(oidcIssuerVariable),
+    minting: {
+      tokens: postgresWorkerPoolRegistrationTokens(pool),
+      draw: () => randomBytes(32).toString("base64url"),
+      digest: (token) => createHash("sha256").update(token).digest("hex"),
+      nowMs: () => Date.now(),
+    },
+    ports: {
+      registry: postgresWorkerPoolRegistry(pool),
+      clients: hydraWorkerPoolClients({
+        adminUrl: requiredEnvironment(hydraAdminUrlVariable),
+        audience: requiredEnvironment(oidcAudienceVariable),
+        requestTimeoutMs: positiveEnvironment(
+          ketoTimeoutVariable,
+          projectAccessTimeoutMsDefault,
+        ),
+      }),
+      grants: ketoProjectGrants(
+        checkedProjectGrantSettings({
+          writeUrl: requiredEnvironment(ketoWriteUrlVariable),
+        }),
+      ),
+      clientId: () => `chuggy-pool-${randomUUID()}`,
+    },
+  });
+}
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
@@ -882,6 +948,7 @@ async function main(): Promise<void> {
     composeSelectorProjectSettings(pool, access),
     forge.minting,
     forge.onboarding,
+    nativeWorkerPools(pool, access),
   );
   app.addHook("onClose", async () => {
     await hub.close();

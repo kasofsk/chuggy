@@ -105,6 +105,8 @@ to start without the required ones.
 | `CHUG_API_OIDC_AUDIENCE` | required | |
 | `CHUG_API_OIDC_ALGORITHMS` | required | comma-separated, surrounding spaces trimmed; every entry must be one `oidcVerifiableAlgorithms` in `src/adapters/http/oidc.ts` admits, and anything else — a shared-secret algorithm, `none`, an empty entry, a name with a typo — refuses to start, naming what it refused |
 | `CHUG_API_KETO_READ_URL` | required | the read API of the authority that answers project access, HTTP or HTTPS and carrying no credentials |
+| `CHUG_API_KETO_WRITE_URL` | optional | the write API of that authority, which registering a worker pool needs and nothing else here does; set it with `CHUG_API_HYDRA_ADMIN_URL` or with neither |
+| `CHUG_API_HYDRA_ADMIN_URL` | optional | the issuer's admin API, where a registered pool's OAuth2 client is minted; naming it without the write URL refuses the start |
 | `CHUG_API_ARTIFACT_ROOT` | required | see below |
 | `CHUG_API_GIT_SCRATCH_ROOT` | required | writable scratch for exact-commit configuration reads |
 | `CHUG_API_THREAD_CREDENTIAL_SLOT` | required | the named credential mount a member's thread speaks through |

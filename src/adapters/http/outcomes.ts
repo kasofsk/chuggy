@@ -110,6 +110,10 @@ import {
   encodeProposalSubmissionResponse,
 } from "./codecs.ts";
 
+import type {
+  WorkerPoolTokenMinted,
+  WorkerPoolTokenRedeemed,
+} from "../../interpreter/workerPoolRegistrationToken.ts";
 export interface NativeHttpResponse {
   readonly status: number;
   readonly headers: Readonly<Record<string, string>>;
@@ -781,6 +785,56 @@ export function forgeCredentialResponse(
       return response(200, {
         token: result.value.token,
         expiresAtMs: result.value.expiresAtMs,
+      });
+    default:
+      return assertNever(result);
+  }
+}
+
+/**
+ * A minted registration token, answered once. A caller the authority does not
+ * admit is told nothing more than that there is nothing there, which is what
+ * every other project-scoped refusal here answers.
+ */
+export function workerPoolTokenResponse(
+  result: WorkerPoolTokenMinted,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Minted":
+      return response(201, {
+        token: result.value.token,
+        expiresAtMs: result.value.expiresAtMs,
+      });
+    default:
+      return assertNever(result);
+  }
+}
+
+/**
+ * A redemption, answered with the client and its secret once. A capability the
+ * token does not permit is named rather than folded into `NotFound`, because it
+ * is the one refusal here an operator can act on.
+ */
+export function workerPoolRedemptionResponse(
+  result: WorkerPoolTokenRedeemed,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "CapabilityNotPermitted":
+      return response(
+        403,
+        nativeHttpError(
+          "CapabilityNotPermitted",
+          "The registration token does not permit every capability declared.",
+        ),
+      );
+    case "Registered":
+      return response(201, {
+        clientId: result.value.clientId,
+        clientSecret: result.value.clientSecret,
       });
     default:
       return assertNever(result);
