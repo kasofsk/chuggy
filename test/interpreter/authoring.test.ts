@@ -260,13 +260,27 @@ test("a release refuses a configuration imported from another repository", () =>
 });
 
 test("the configuration's own refusals are answered before the repository's", () => {
+  const uncommanded = {
+    readiness: "Incomplete",
+    fault: "BriefChecksUncommanded",
+  };
+  assert.deepEqual(
+    draftReleaseReadiness(
+      readyConfiguration,
+      { checks: [asBriefCheckLine("npm test")] },
+      undefined,
+    ),
+    uncommanded,
+    "before a brief that names no repository",
+  );
   assert.deepEqual(
     draftReleaseReadiness(
       readyConfiguration,
       { checks: [asBriefCheckLine("npm test")], repository: firstRepository },
       secondRepository,
     ),
-    { readiness: "Incomplete", fault: "BriefChecksUncommanded" },
+    uncommanded,
+    "and before a configuration read in another repository",
   );
 });
 
