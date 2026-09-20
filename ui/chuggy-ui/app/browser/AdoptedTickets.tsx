@@ -1,8 +1,26 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import type { ReactNode } from "react";
-import type { AdoptedTicket } from "../../../../src/contract/adoptedTickets.ts";
+import type {
+  AdoptedTicket,
+  AdoptedTicketDefinition,
+} from "../../../../src/contract/adoptedTickets.ts";
+import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ApiFailure } from "../core/apiRequest.ts";
+import {
+  adoptedExecutions,
+  adoptedExecutionsShort,
+} from "../core/adoptedExecutions.ts";
+import type { AdoptedExecutions } from "../core/adoptedExecutions.ts";
+import type { PanelState } from "../core/freshness.ts";
+import {
+  projectListRereadNamed,
+  projectPartitionKey,
+} from "../core/projectQueryKeys.ts";
+import { ticketLedgerOf } from "../core/ticketLedger.ts";
+import { ticketTaskKeyNamesTicket } from "../core/ticketTaskKey.ts";
+import { ticketUsageOf } from "../core/ticketUsage.ts";
 import { envelopeMessage } from "../../../../src/contract/outcomes.ts";
 import {
   adoptedOperation,
@@ -11,10 +29,21 @@ import {
   adoptedTicketCreate,
   adoptedTicketDefinition,
   adoptedTicketUpdate,
-  adoptedTickets,
   type CatalogPin,
 } from "../core/adoptedTickets.ts";
-import { useApiPorts } from "./api.ts";
+import { useApiPorts, usePanelList, usePanelResource } from "./api.ts";
+import { PanelUnready } from "./DataPanel.tsx";
+import { useNowMs } from "./Freshness.tsx";
+import {
+  TicketFacts,
+  TicketSituation,
+} from "./ticket/TicketSituation.tsx";
+import {
+  TicketLedgerPanel,
+  ticketLedgerSummary,
+} from "./ticket/TicketLedgerPanel.tsx";
+import { TicketProvenance } from "./ticket/TicketProvenance.tsx";
+import { TicketUsage } from "./ticket/TicketUsage.tsx";
 import {
   useTicketCatalog,
   useTicketValidation,
@@ -23,7 +52,9 @@ import type { EditorFinding } from "./editor/chugEditor.ts";
 import type { FragmentCatalog } from "./editor/fragments.ts";
 import { Button } from "./ui/Button.tsx";
 import { Dialog } from "./ui/Dialog.tsx";
+import { EmptyState } from "./ui/EmptyState.tsx";
 import { Notice } from "./ui/Notice.tsx";
+import { Panel } from "./ui/Panel.tsx";
 import {
   EditorBoundary,
   useLeaveGuard,
@@ -447,30 +478,6 @@ function Action(props: {
   );
 }
 
-function TicketFacts(props: { readonly ticket: AdoptedTicket }): ReactNode {
-  const ticket = props.ticket;
-  return (
-    <dl className="grid gap-2">
-      <div>
-        <dt>State</dt>
-        <dd>{ticket.state}</dd>
-      </div>
-      <div>
-        <dt>Revision</dt>
-        <dd>{ticket.revision}</dd>
-      </div>
-      <div>
-        <dt>Work cycles</dt>
-        <dd>{ticket.workCyclesStarted}</dd>
-      </div>
-      <div>
-        <dt>Dependencies</dt>
-        <dd>{ticket.dependencies.join(", ") || "none"}</dd>
-      </div>
-    </dl>
-  );
-}
-
 function TicketDispatch(props: {
   readonly dispatch: { readonly repository: string; readonly commit: string };
   readonly setDispatch: (value: { repository: string; commit: string }) => void;
@@ -550,117 +557,226 @@ async function runTicketUpdate(input: {
   await waitForOperation(input.ports, input.partition, result.value.identity);
 }
 
-/** Undefined while the read is in flight, null when the release retained no source. */
-function useTicketSource(
-  tenant: string,
-  project: string,
+
+/**
+ * The ticket's own definition, which is the read that carries its state, its
+ * revision, the limit it is metered against and the document it was authored
+ * as. It is a resource rather than a list, so the change frame naming this
+ * ticket stales it and the page re-reads on the machine's own move.
+ */
+function useTicketDefinition(
+  partition: PartitionIdentity,
   ticket: number,
-): string | null | undefined {
-  const ports = useApiPorts();
-  const [source, setSource] = useState<string | null>();
-  useEffect(() => {
-    let active = true;
-    void adoptedTicketDefinition(ports, { tenant, project }, ticket).then(
-      (result) => {
-        if (active)
-          setSource(result.outcome === "Ok" ? result.value.source : null);
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [ports, tenant, project, ticket]);
-  return source;
+): PanelState<AdoptedTicketDefinition> {
+  return usePanelResource(partition, "Ticket", String(ticket), (ports) =>
+    adoptedTicketDefinition(ports, partition, ticket),
+  );
+}
+
+/** One entry per ticket, so two ticket pages open at once do not share one. */
+function ticketExecutionsListName(ticket: number): string {
+  return `executions:${String(ticket)}`;
+}
+
+/**
+ * This ticket's runs. An `Execution` frame carries the task key as its
+ * resource, so the key itself is what says whether a frame belongs to this
+ * ticket — which is why the entry is re-read on the frames that name it and
+ * left alone by every other ticket's.
+ */
+function useTicketExecutions(
+  partition: PartitionIdentity,
+  ticket: number,
+): PanelState<AdoptedExecutions> {
+  return usePanelList(
+    projectListRereadNamed<AdoptedExecutions>(
+      partition,
+      "Execution",
+      ticketExecutionsListName(ticket),
+      (change) => ticketTaskKeyNamesTicket(change.resource, ticket),
+    ),
+    (ports, signal) => adoptedExecutions(ports, partition, ticket, signal),
+  );
+}
+
+/** What a settled write does to the cache: the partition is re-asked, because
+ * an operation moves more than the one row the caller named. */
+function useSettled(partition: PartitionIdentity): () => Promise<void> {
+  const client = useQueryClient();
+  return async () => {
+    await client.invalidateQueries({
+      queryKey: projectPartitionKey(partition),
+    });
+  };
 }
 
 export function AdoptedTicketPage(): ReactNode {
   const params = useParams({ from: "/$tenant/$project/tickets/$ticket" });
-  const partition = { tenant: params.tenant, project: params.project };
-  const ticketNumber = Number(params.ticket);
-  const ports = useApiPorts();
-  const [ticket, setTicket] = useState<AdoptedTicket>();
-  const [failure, setFailure] = useState<string>();
-  const [dispatch, setDispatch] = useState({ repository: "", commit: "" });
-  const source = useTicketSource(params.tenant, params.project, ticketNumber);
-  const refresh = async (): Promise<void> => {
-    const result = await adoptedTickets(ports, partition);
-    if (result.outcome !== "Ok") {
-      setFailure(failureSentence(result));
-      return;
-    }
-    setTicket(
-      result.value.tickets.find((item) => item.ticket === ticketNumber),
-    );
-  };
-  useEffect(() => {
-    let active = true;
-    void adoptedTickets(ports, {
-      tenant: params.tenant,
-      project: params.project,
-    }).then((result) => {
-      if (!active) return;
-      if (result.outcome !== "Ok") setFailure(failureSentence(result));
-      else
-        setTicket(
-          result.value.tickets.find((item) => item.ticket === ticketNumber),
-        );
-    });
-    return () => {
-      active = false;
-    };
-  }, [ports, params.tenant, params.project, ticketNumber]);
-  const act = async (
-    action: "dispatch" | "revoke" | "resume",
-  ): Promise<void> => {
-    const key = newIdentity();
-    const result = await adoptedTicketAction(
-      ports,
-      partition,
-      ticketNumber,
-      action,
-      key,
-      action === "dispatch" ? dispatch : undefined,
-    );
-    if (result.outcome !== "Ok") throw new Error(failureSentence(result));
-    await waitForOperation(ports, partition, result.value.identity);
-    await refresh();
-  };
-  const update = async (submission: AuthoringSubmission): Promise<void> => {
-    if (ticket === undefined) return;
-    await runTicketUpdate({ ports, partition, ticket, submission });
-    await refresh();
-  };
-  if (ticket === undefined)
-    return <main className="p-4">{failure ?? "Loading ticket…"}</main>;
+  const ticket = Number(params.ticket);
+  if (!Number.isSafeInteger(ticket) || ticket <= 0)
+    return <EmptyState label="No such ticket" variant="page" />;
   return (
-    <TicketBody
-      {...{ ticket, failure, dispatch, setDispatch, act, source, update }}
+    <TicketScreen
+      partition={{ tenant: params.tenant, project: params.project }}
+      ticket={ticket}
     />
   );
 }
 
-function TicketBody(props: {
-  readonly ticket: AdoptedTicket;
-  readonly failure: string | undefined;
-  readonly dispatch: { readonly repository: string; readonly commit: string };
-  readonly setDispatch: (value: { repository: string; commit: string }) => void;
-  readonly act: (action: "dispatch" | "revoke" | "resume") => Promise<void>;
-  readonly source: string | null | undefined;
-  readonly update: (submission: AuthoringSubmission) => Promise<void>;
+function TicketScreen(props: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: number;
 }): ReactNode {
+  const definition = useTicketDefinition(props.partition, props.ticket);
+  const executions = useTicketExecutions(props.partition, props.ticket);
+  if (definition.state !== "Ready")
+    return (
+      <main className="grid gap-5 p-4">
+        <h1>Ticket {props.ticket}</h1>
+        <PanelUnready state={definition} />
+      </main>
+    );
+  return (
+    <TicketBody
+      partition={props.partition}
+      definition={definition.value}
+      executions={executions}
+    />
+  );
+}
+
+/** Every mutation this page offers, and what each does to the cache after it
+ * settles. The controls are unchanged: dispatch, resume, revoke, and the form
+ * that writes a new definition. */
+function useTicketWrites(
+  partition: PartitionIdentity,
+  definition: AdoptedTicketDefinition,
+  dispatch: { readonly repository: string; readonly commit: string },
+): {
+  readonly act: (action: "dispatch" | "revoke" | "resume") => Promise<void>;
+  readonly update: (submission: AuthoringSubmission) => Promise<void>;
+} {
+  const ports = useApiPorts();
+  const settled = useSettled(partition);
+  return {
+    act: async (action) => {
+      const result = await adoptedTicketAction(
+        ports,
+        partition,
+        definition.ticket,
+        action,
+        newIdentity(),
+        action === "dispatch" ? dispatch : undefined,
+      );
+      if (result.outcome !== "Ok") throw new Error(failureSentence(result));
+      await waitForOperation(ports, partition, result.value.identity);
+      await settled();
+    },
+    update: async (submission) => {
+      await runTicketUpdate({
+        ports,
+        partition,
+        ticket: definition,
+        submission,
+      });
+      await settled();
+    },
+  };
+}
+
+/** The runs this page read, and what the ledger and the usage make of them. */
+function TicketRuns(props: {
+  readonly ticket: number;
+  readonly executions: PanelState<AdoptedExecutions>;
+  readonly nowMs: number;
+}): ReactNode {
+  const page =
+    props.executions.state === "Ready" ? props.executions.value : undefined;
+  if (page === undefined)
+    return (
+      <>
+        <Panel title="Cycles" level={2}>
+          <PanelUnready state={props.executions} />
+        </Panel>
+        <Panel title="Usage" level={2} meta="list price">
+          <PanelUnready state={props.executions} />
+        </Panel>
+      </>
+    );
+  const short = adoptedExecutionsShort(page);
+  const ledger = ticketLedgerOf(props.ticket, page.executions);
+  return (
+    <>
+      <Panel
+        title="Cycles"
+        level={2}
+        about="Each work cycle, and the runs that judged what it produced."
+        meta={ticketLedgerSummary(ledger)}
+      >
+        <TicketLedgerPanel ledger={ledger} short={short} nowMs={props.nowMs} />
+      </Panel>
+      <Panel
+        title="Usage"
+        level={2}
+        about="What this ticket has spent. There is no budget to draw it against."
+        meta="list price"
+      >
+        <TicketUsage usage={ticketUsageOf(ledger)} />
+      </Panel>
+    </>
+  );
+}
+
+function TicketBody(props: {
+  readonly partition: PartitionIdentity;
+  readonly definition: AdoptedTicketDefinition;
+  readonly executions: PanelState<AdoptedExecutions>;
+}): ReactNode {
+  const definition = props.definition;
+  const nowMs = useNowMs();
+  const [dispatch, setDispatch] = useState({ repository: "", commit: "" });
+  const [documentOpen, setDocumentOpen] = useState(false);
+  const writes = useTicketWrites(props.partition, definition, dispatch);
+  const page =
+    props.executions.state === "Ready" ? props.executions.value : undefined;
+  const short = page !== undefined && adoptedExecutionsShort(page);
   return (
     <main className="grid gap-5 p-4">
-      <h1>Ticket {props.ticket.ticket}</h1>
-      <TicketFacts ticket={props.ticket} />
-      {props.failure === undefined ? null : (
-        <p className="text-tone-fail">{props.failure}</p>
-      )}
-      <TicketDispatch
-        dispatch={props.dispatch}
-        setDispatch={props.setDispatch}
-        act={props.act}
+      <h1>Ticket {definition.ticket}</h1>
+      <TicketSituation
+        ticket={definition}
+        executions={page?.executions}
+        short={short}
+        nowMs={nowMs}
       />
-      <TicketUpdate source={props.source} submit={props.update} />
+      <TicketFacts
+        ticket={definition}
+        executions={page?.executions}
+        short={short}
+      />
+      <TicketRuns
+        ticket={definition.ticket}
+        executions={props.executions}
+        nowMs={nowMs}
+      />
+      <Panel
+        title="Provenance"
+        level={2}
+        about="What this ticket was authored as."
+      >
+        <TicketProvenance
+          ticket={definition}
+          source={definition.source}
+          open={documentOpen}
+          setOpen={setDocumentOpen}
+        />
+      </Panel>
+      <TicketDispatch
+        dispatch={dispatch}
+        setDispatch={setDispatch}
+        act={writes.act}
+      />
+      <TicketUpdate source={definition.source} submit={writes.update} />
     </main>
   );
 }
