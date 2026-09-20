@@ -407,6 +407,45 @@ test("definition revisions retain the released rework policy", async () => {
   assert.deepEqual(metadata?.stageNames, [[1, "revised"]]);
 });
 
+test("the project's rework limits are read in one answer, ticket by ticket", async () => {
+  const lease = await held("ticket-machine-release-limits");
+  const store = postgresTicketMachine(writerPool);
+  for (const [identity, limit] of [
+    ["bounded", 3],
+    ["unbounded", null],
+  ] as const) {
+    const created = await ticketMachineProcess(
+      store,
+      lease,
+      {
+        identity,
+        origin: "Author",
+        authorization,
+        command: new ticket.CreateTicket(
+          released(limit === null ? 2 : 1, new Set()),
+        ),
+        metadata: {
+          stageNames: [[1, "check"]],
+          evaluatorNames: [[1, "test"]],
+          reworkLimit: limit,
+        },
+      },
+      ticket.rework_policy,
+    );
+    assert.equal(created.processed, "Committed");
+  }
+  const limits = await postgresTicketMachineInbox(
+    writerPool,
+  ).releaseReworkLimits(lease.partition);
+  assert.deepEqual(
+    [...limits].sort((left, right) => left[0] - right[0]),
+    [
+      [TicketId(1), 3],
+      [TicketId(2), null],
+    ],
+  );
+});
+
 test("API credentials can read adopted graphs without writer authority", async () => {
   const lease = await held("ticket-machine-api-read");
   await ticketMachineProcess(

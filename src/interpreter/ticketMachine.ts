@@ -115,6 +115,17 @@ export function ticketMachineEventTicket(event: ticket.TicketEvent): TicketId {
   return event.kind === "TicketCreated" ? event.definition.id : event.ticket;
 }
 
+/**
+ * Where `ticketMachineTaskKey` starts for one ticket, one prefix per task kind,
+ * so a reader asking about that ticket matches on the key it already stores.
+ * A kind added above without a prefix here is a kind such a reader would miss.
+ */
+export function ticketMachineTaskKeyPrefixes(
+  ticket: TicketId,
+): readonly string[] {
+  return [`work:${String(ticket)}:`, `evaluation:${String(ticket)}:`];
+}
+
 export function ticketMachineOrigin(
   command: ticket.TicketCommand,
 ): TicketMachineOrigin {

@@ -118,6 +118,8 @@ function inboxDouble(
         reworkLimit: frozen,
         source: 11,
       }),
+    releaseReworkLimits: () =>
+      Promise.resolve(new Map([[TicketId(7), frozen]])),
   };
 }
 
@@ -289,6 +291,16 @@ test("authorization precedes legacy model rejection", async () => {
   });
 });
 
+test("a graph read carries the limit each release froze beside the graph", async () => {
+  const held = new Ticket(released(TicketId(7)), 2, 1, new Pending());
+  const graph = new TicketGraph(new Map([[TicketId(7), held]]));
+  const { application } = setup(true, undefined, 4, "Available", graph);
+  const read = await application.graph(principal, partition);
+  assert.equal(read.result, "Authorized");
+  assert.equal(read.value.graph, graph);
+  assert.deepEqual([...read.value.reworkLimits], [[TicketId(7), 4]]);
+});
+
 test("update and dispatch stop before side effects when the project is unavailable", async () => {
   for (const availability of ["LegacyModelUnsupported", "Inactive"] as const) {
     const { application, effects, submitted } = setup(
@@ -373,7 +385,10 @@ test("a definition read returns the held ticket beside its retained source", asy
   );
   assert.deepEqual(
     await application.definition(principal, partition, TicketId(7)),
-    { result: "Authorized", value: { held, source: "title: kept\n" } },
+    {
+      result: "Authorized",
+      value: { held, reworkLimit: 3, source: "title: kept\n" },
+    },
   );
   assert.deepEqual(
     await application.definition(principal, partition, TicketId(8)),

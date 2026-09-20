@@ -14,6 +14,12 @@ export const adoptedTicketSchema = z.strictObject({
   ticket: z.number().int().positive().safe(),
   revision: z.number().int().positive().safe(),
   workCyclesStarted: z.number().int().nonnegative().safe(),
+  /**
+   * The most work cycles the release allows before a failed evaluation
+   * escalates, and null when nothing bounds them. Zero is a limit like any
+   * other, so it is not how an unbounded ticket is written.
+   */
+  reworkLimit: z.number().int().nonnegative().safe().nullable(),
   state: adoptedTicketStateSchema,
   dependencies: z.array(z.number().int().positive().safe()),
 });

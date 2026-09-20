@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { artifactStore } from "../../src/adapters/artifacts/artifactStore.ts";
 import { postgresTicketExecutionRun } from "../../src/adapters/postgres/ticketExecutionRun.ts";
+import { postgresTicketExecutionReads } from "../../src/adapters/postgres/ticketExecutionReads.ts";
 import { postgresTicketMachineInbox } from "../../src/adapters/postgres/ticketMachineInbox.ts";
 import {
   apiRole,
@@ -577,4 +578,51 @@ test("queueing and claiming an execution append it to the change log", async () 
   } finally {
     await reader.end();
   }
+});
+
+/** The reads' blob half, which no execution listing reaches. */
+const unreadBlobs = {
+  readBlob: () => Promise.reject(new Error("a listing reads no blob")),
+};
+
+test("an execution listing for one ticket pages that ticket, not the project", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "execution-reads-ticket",
+  );
+  const execution = postgresTicketExecution(writer);
+  const queued = [
+    "work:1:1",
+    "evaluation:1:1:10:1:11",
+    "work:2:1",
+    "work:11:1",
+  ] as const;
+  for (const taskKey of queued)
+    await execution.execute(partition, taskKey, taskKey, obligation());
+  /**
+   * Ticket 2 becomes the oldest row, so a project page of one ends before
+   * reaching it and a filter applied after such a page answers empty.
+   */
+  await harness.pool.query(
+    "UPDATE ticket_execution SET queued_at=now()-make_interval(secs=>600)" +
+      " WHERE tenant=$1 AND project=$2 AND task_key LIKE 'work:2:%'",
+    [partition.tenant, partition.project],
+  );
+  const reads = postgresTicketExecutionReads(harness.pool, unreadBlobs, 8);
+  assert.deepEqual(
+    (await reads.executions(partition, 1, task.TicketId(2))).map(
+      (held) => held.taskKey,
+    ),
+    ["work:2:1"],
+  );
+  assert.deepEqual(
+    (await reads.executions(partition, 10, task.TicketId(1)))
+      .map((held) => held.taskKey)
+      .sort(),
+    ["evaluation:1:1:10:1:11", "work:1:1"],
+  );
+  assert.deepEqual(
+    (await reads.executions(partition, 10)).map((held) => held.taskKey).sort(),
+    [...queued].sort(),
+  );
 });

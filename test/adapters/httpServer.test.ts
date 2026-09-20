@@ -15,6 +15,7 @@ import {
   TicketGraph,
 } from "../../src/domain/chuggernaut/ticket.js";
 import { released } from "../chuggernaut/domain/testing.js";
+import { adoptedTicketsSchema } from "../../src/contract/adoptedTickets.ts";
 import { TicketId } from "../../src/domain/chuggernaut/task.js";
 import {
   asPrincipal,
@@ -513,7 +514,13 @@ function retiredTicketApp(
       graph: () =>
         Promise.resolve(
           result === "Fresh"
-            ? { result: "Authorized", value: new TicketGraph(new Map()) }
+            ? {
+                result: "Authorized",
+                value: {
+                  graph: new TicketGraph(new Map()),
+                  reworkLimits: new Map(),
+                },
+              }
             : { result },
         ),
       definition: unavailable,
@@ -639,6 +646,32 @@ test("the evidence reads answer a member and conceal a project it may not see", 
     headers: { authorization: "Bearer valid" },
   });
   assert.equal(concealed.statusCode, 404, concealed.body);
+});
+
+test("an executions listing forwards the ticket it was asked about", async () => {
+  const asked: (number | undefined)[] = [];
+  const reads: TicketExecutionReads = {
+    ...evidenceReads("atlas"),
+    executions: (_principal, _partition, _limit, ticket) => {
+      asked.push(ticket);
+      return Promise.resolve({ result: "Authorized", value: [] });
+    },
+  };
+  await using app = adoptedTicketRouteApp({
+    ...retiredTicketApp("Fresh"),
+    reads,
+  });
+  const get = (query: string) =>
+    app.inject({
+      method: "GET",
+      url: `/api/v1/tenants/acme/projects/atlas/ticket-machine/executions${query}`,
+      headers: { authorization: "Bearer valid" },
+    });
+  assert.equal((await get("")).statusCode, 200);
+  assert.equal((await get("?ticket=7")).statusCode, 200);
+  assert.deepEqual(asked, [undefined, 7]);
+  assert.equal((await get("?ticket=seven")).statusCode, 400);
+  assert.deepEqual(asked, [undefined, 7]);
 });
 
 test("a plane composed with no read half serves no evidence route", async () => {
@@ -805,7 +838,7 @@ test("a ticket point read carries the authored source beside its revision", asyn
           ticket === 4
             ? {
                 result: "Authorized",
-                value: { held, source: "title: kept\n" },
+                value: { held, reworkLimit: 3, source: "title: kept\n" },
               }
             : { result: "Authorized", value: undefined },
         ),
@@ -822,6 +855,7 @@ test("a ticket point read carries the authored source beside its revision", asyn
     ticket: 4,
     revision: 3,
     workCyclesStarted: 0,
+    reworkLimit: 3,
     state: "Pending",
     dependencies: [],
     source: "title: kept\n",
@@ -832,6 +866,49 @@ test("a ticket point read carries the authored source beside its revision", asyn
     headers: { authorization: "Bearer valid" },
   });
   assert.equal(missing.statusCode, 404);
+});
+
+test("the ticket list carries each release's limit, and null where none bounds it", async () => {
+  const service = retiredTicketApp("Fresh");
+  const bounded = new Ticket(released(TicketId(4)), 1, 2, new Pending());
+  const unbounded = new Ticket(released(TicketId(5)), 1, 9, new Pending());
+  const application: NativeTicketApplication = {
+    ...service,
+    application: {
+      ...service.application,
+      graph: () =>
+        Promise.resolve({
+          result: "Authorized",
+          value: {
+            graph: new TicketGraph(
+              new Map([
+                [TicketId(4), bounded],
+                [TicketId(5), unbounded],
+              ]),
+            ),
+            reworkLimits: new Map([
+              [TicketId(4), 3],
+              [TicketId(5), null],
+            ]),
+          },
+        }),
+    },
+  };
+  await using app = adoptedTicketRouteApp(application);
+  const response = await app.inject({
+    method: "GET",
+    url: "/api/v1/tenants/acme/projects/atlas/ticket-machine/tickets",
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(response.statusCode, 200, response.body);
+  const read = adoptedTicketsSchema.parse(response.json());
+  assert.deepEqual(
+    read.tickets.map((held) => [held.ticket, held.reworkLimit]),
+    [
+      [4, 3],
+      [5, null],
+    ],
+  );
 });
 
 test("validation answers with findings and never reaches authoring", async () => {

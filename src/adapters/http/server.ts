@@ -1049,9 +1049,12 @@ function registerAdoptedTicketReads(
       adoptedTicketReply(reply, result);
       return;
     }
+    const { graph, reworkLimits } = result.value;
     void reply.code(200).send({
-      tickets: [...result.value.tickets.values()]
-        .map(adoptedTicketView)
+      tickets: [...graph.tickets.values()]
+        .map((held) =>
+          adoptedTicketView(held, reworkLimits.get(held.definition.id) ?? null),
+        )
         .sort((left, right) => left.ticket - right.ticket),
     });
   });
@@ -1072,18 +1075,20 @@ function registerAdoptedTicketReads(
       return;
     }
     void reply.code(200).send({
-      ...adoptedTicketView(result.value.held),
+      ...adoptedTicketView(result.value.held, result.value.reworkLimit),
       /** Null rather than absent, so a release predating source retention still reads. */
       source: result.value.source ?? null,
     });
   });
 }
 
-function adoptedTicketView(held: AdoptedTicket) {
+function adoptedTicketView(held: AdoptedTicket, reworkLimit: number | null) {
   return {
     ticket: held.definition.id,
     revision: held.revision,
     workCyclesStarted: held.work_cycles_started,
+    /** Null is unbounded rework, which is what an unreleased limit also runs as. */
+    reworkLimit,
     state: held.state.kind,
     dependencies: [...held.definition.dependencies].sort(
       (left, right) => left - right,
@@ -1311,6 +1316,16 @@ function adoptedAttempt(request: FastifyRequest): number {
 }
 
 /** A page size the caller may narrow but never widen past the wire's own bound. */
+/** Which ticket a listing is about, and undefined for the project-wide one. */
+function adoptedExecutionTicket(
+  request: FastifyRequest,
+): ReturnType<typeof AdoptedTicketId> | undefined {
+  const asked = record(request.query)["ticket"];
+  return asked === undefined
+    ? undefined
+    : AdoptedTicketId(integerField({ ticket: asked }, "ticket"));
+}
+
 function adoptedPageLimit(request: FastifyRequest): number {
   const asked = record(request.query)["limit"];
   const held =
@@ -1355,6 +1370,7 @@ function registerAdoptedTicketEvidence(
       principalOf(request),
       partitionOf(request),
       adoptedPageLimit(request),
+      adoptedExecutionTicket(request),
     );
     answer(
       reply,
