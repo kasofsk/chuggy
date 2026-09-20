@@ -1046,9 +1046,12 @@ function registerAdoptedTicketReads(
       adoptedTicketReply(reply, result);
       return;
     }
+    const { graph, reworkLimits } = result.value;
     void reply.code(200).send({
-      tickets: [...result.value.tickets.values()]
-        .map(adoptedTicketView)
+      tickets: [...graph.tickets.values()]
+        .map((held) =>
+          adoptedTicketView(held, reworkLimits.get(held.definition.id) ?? null),
+        )
         .sort((left, right) => left.ticket - right.ticket),
     });
   });
@@ -1069,18 +1072,20 @@ function registerAdoptedTicketReads(
       return;
     }
     void reply.code(200).send({
-      ...adoptedTicketView(result.value.held),
+      ...adoptedTicketView(result.value.held, result.value.reworkLimit),
       /** Null rather than absent, so a release predating source retention still reads. */
       source: result.value.source ?? null,
     });
   });
 }
 
-function adoptedTicketView(held: AdoptedTicket) {
+function adoptedTicketView(held: AdoptedTicket, reworkLimit: number | null) {
   return {
     ticket: held.definition.id,
     revision: held.revision,
     workCyclesStarted: held.work_cycles_started,
+    /** Null is unbounded rework, which is what an unreleased limit also runs as. */
+    reworkLimit,
     state: held.state.kind,
     dependencies: [...held.definition.dependencies].sort(
       (left, right) => left - right,

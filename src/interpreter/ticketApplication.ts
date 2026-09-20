@@ -71,10 +71,16 @@ export interface PinnedTicketCatalogs {
   }): Promise<TicketCatalogTip | undefined>;
 }
 
-export interface TicketGraphRead {
+export interface TicketGraphStore {
   read(
     partition: Partition,
   ): Promise<ticket.TicketGraph | "LegacyModelUnsupported" | undefined>;
+}
+
+/** The project's tickets as a reader sees them: the graph, and what each release froze. */
+export interface TicketGraphRead {
+  readonly graph: ticket.TicketGraph;
+  readonly reworkLimits: ReadonlyMap<task.TicketId, number | null>;
 }
 
 export type TicketApplicationResult<Value> =
@@ -146,6 +152,8 @@ export type TicketCatalogWrite =
 
 export interface TicketDefinitionRead {
   readonly held: ticket.Ticket;
+  /** Null when nothing bounds the ticket's work cycles, which is the domain's own policy. */
+  readonly reworkLimit: number | null;
   /** Absent when the release predates source retention, since nothing can reconstruct it. */
   readonly source: string | undefined;
 }
@@ -154,7 +162,7 @@ export interface TicketApplication {
   graph(
     principal: Principal,
     partition: Partition,
-  ): Promise<TicketApplicationResult<ticket.TicketGraph>>;
+  ): Promise<TicketApplicationResult<TicketGraphRead>>;
   definition(
     principal: Principal,
     partition: Partition,
@@ -214,7 +222,7 @@ export interface TicketApplication {
 interface TicketApplicationPorts {
   readonly access: ProjectAccess;
   readonly inbox: TicketApplicationInbox;
-  readonly graphs: TicketGraphRead;
+  readonly graphs: TicketGraphStore;
   readonly catalogs: PinnedTicketCatalogs;
   readonly content: (partition: Partition) => TicketContentStore;
   readonly fragments: TicketCatalogFragments;
@@ -618,7 +626,11 @@ function ticketApplicationDefinition(
         : await ports.content(partition).read(task.ContentRef(reference));
     return {
       result: "Authorized",
-      value: { held: found, source: stored?.content },
+      value: {
+        held: found,
+        reworkLimit: metadata?.reworkLimit ?? null,
+        source: stored?.content,
+      },
     };
   };
 }
@@ -637,9 +649,14 @@ function ticketApplicationReads(
       if (authorization === undefined) return { result: "NotFound" };
       const graph = await ports.graphs.read(partition);
       if (graph === undefined) return { result: "NotFound" };
-      return graph === "LegacyModelUnsupported"
-        ? { result: graph }
-        : { result: "Authorized", value: graph };
+      if (graph === "LegacyModelUnsupported") return { result: graph };
+      return {
+        result: "Authorized",
+        value: {
+          graph,
+          reworkLimits: await ports.inbox.releaseReworkLimits(partition),
+        },
+      };
     },
     outcome: async (principal, partition, identity) => {
       const authorization = await ticketApplicationAuthority(

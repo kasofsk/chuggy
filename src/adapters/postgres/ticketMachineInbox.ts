@@ -162,6 +162,19 @@ export function postgresTicketMachineInbox(pool: pg.Pool): TicketMachineInbox {
         ? undefined
         : metadata.parse(JSON.parse(row.metadata));
     },
+    releaseReworkLimits: async (partition) => {
+      const found = await pool.query<{ ticket: string; metadata: string }>(
+        sql`SELECT ticket::text,metadata FROM ticket_machine_release WHERE tenant=${partition.tenant} AND project=${partition.project}`,
+      );
+      return new Map(
+        found.rows.map((row) => [
+          TicketId(
+            z.number().int().positive().safe().parse(Number(row.ticket)),
+          ),
+          metadata.parse(JSON.parse(row.metadata)).reworkLimit,
+        ]),
+      );
+    },
   };
 }
 

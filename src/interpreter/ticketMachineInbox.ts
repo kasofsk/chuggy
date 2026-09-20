@@ -37,6 +37,15 @@ export interface TicketMachineInbox {
     partition: Partition,
     ticket: TicketId,
   ): Promise<TicketMachineReleaseMetadata | undefined>;
+  /**
+   * Every released ticket's frozen rework limit, for a reader asking about a
+   * whole project. Null is the domain's own unbounded policy, which is also
+   * what a ticket with no release row runs under, so a ticket absent here and
+   * a ticket here with null are the same thing to the machine.
+   */
+  releaseReworkLimits(
+    partition: Partition,
+  ): Promise<ReadonlyMap<TicketId, number | null>>;
 }
 
 export interface TicketMachineQueue {
