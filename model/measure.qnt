@@ -326,14 +326,8 @@ module chuggy_measure {
   /// An eval stage advance gets NO phase — it is an Evaluating ->
   /// Evaluating edge, because within-phase progress lives in the stage
   /// digit rather than in new phases.
-  ///
-  /// Finalizing precedes the accepted-promotion boundary. PublishingHandoff
-  /// and HandoffBlocked make the irreversible side of that boundary explicit;
-  /// queueing, approval, permits, and immutable external identities remain
-  /// operational protocol rather than Core state.
   type Phase =
-    Pending | Working | Evaluating | Finalizing | PublishingHandoff |
-    HandoffBlocked | Done | Abandoned | Escalated | Revoked
+    Pending | Working | Evaluating | Finalizing | Done | Escalated | Revoked
 
   /// What a task IS for (task records are first-class — they carry the
   /// anatomy):
@@ -451,7 +445,7 @@ module chuggy_measure {
   /// artifact, which is a work cycle.
   type Resume =
     NoResume | ResumeWorking | ResumeReworking | ResumeEvaluating |
-    ResumeFinalizing | ResumePublishingHandoff
+    ResumeFinalizing
 
   /// Why a ticket sits on the human desk. The termination requirement
   /// names no individual wall; the reason is
@@ -477,9 +471,7 @@ module chuggy_measure {
   ///   - WOk      the step committed the artifact.
   ///   - WFailed  it did not, and is drawable only when the environment
   ///              invalidated the artifact (domain.qnt finalizerOutcomes).
-  type FinalizationOutcome =
-    FinalizationSucceeded | FinalizationFailed | PromotionAccepted |
-    HandoffPublicationUnproven
+  type FinalizationOutcome = FinalizationSucceeded | FinalizationFailed
 
   /// HOW A TICKET FINISHES (design 002), authored data on the ticket exactly
   /// like the eval program — eval-is-data applied one seam later.
@@ -612,8 +604,7 @@ module chuggy_measure {
   /// coverage: a dependent stuck behind a Revoked dep gets no visibility
   /// through its dep, so the cascade parks it with a task of its OWN
   /// (DependencyRevoked; domain.qnt `cascadeSafety`).
-  pure def hasOpenHumanTask(ticket: Ticket): bool =
-    ticket.phase == Escalated or ticket.phase == HandoffBlocked
+  pure def hasOpenHumanTask(ticket: Ticket): bool = ticket.phase == Escalated
 
   /// The machine's observed state, as the pure deciders see it. A record
   /// (not a bare map) so the ticket-source shape stays open.  attached
@@ -682,18 +673,13 @@ module chuggy_measure {
   /// Stalled merged into Escalated. Nothing is below settled.
   pure val rankSettled: int = 0
   /// Finalization resolves to completion, priced rework, or a wall.
-  pure val rankHandoffBlocked: int = rankSettled + 1
-  pure val rankPublishingHandoff: int = rankHandoffBlocked + 1
-  pure val rankFinalizing: int = rankPublishingHandoff + 1
+  pure val rankFinalizing: int = rankSettled + 1
   pure val rankEvaluating: int = rankFinalizing + 1
   pure val rankWorking: int = rankEvaluating + 1
   /// The released waiting room (Ready/Blocked derive from it).
   pure val rankPending: int = rankWorking + 1
-  /// The ladder's ceiling — the highest rank any phase takes (Pending).
-  /// microBound's multiplier is radix(rankCeiling): the
-  /// compression (6 -> 5)'s two new rungs (5 -> 7) and
-  /// the grouping removal (7 -> 6) each propagated to the multiplier
-  /// (7 -> 6 -> 8 -> 7) by derivation, not by editing a literal.
+  /// The ladder's ceiling — the highest rank any phase takes (Pending), and
+  /// the multiplier microBound derives from.
   pure val rankCeiling: int = rankPending
 
   /// How far from settled a ticket's lifecycle position is. The wildcard is
@@ -706,8 +692,6 @@ module chuggy_measure {
       | Working => rankWorking
       | Evaluating => rankEvaluating
       | Finalizing => rankFinalizing
-      | PublishingHandoff => rankPublishingHandoff
-      | HandoffBlocked => rankHandoffBlocked
       | _ => rankSettled
     }
 
