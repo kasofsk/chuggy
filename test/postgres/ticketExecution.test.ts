@@ -11,6 +11,7 @@ import { artifactStore } from "../../src/adapters/artifacts/artifactStore.ts";
 import { postgresTicketExecutionRun } from "../../src/adapters/postgres/ticketExecutionRun.ts";
 import { postgresTicketMachineInbox } from "../../src/adapters/postgres/ticketMachineInbox.ts";
 import {
+  apiRole,
   schedulerRole,
   ticketServiceRole,
   workerPlaneRole,
@@ -550,4 +551,30 @@ test("a scheduler from a prior recovery epoch cannot claim fresh work", async ()
   assert.ok(claim);
   assert.equal(claim.recoveryEpoch, current);
   assert.equal(claim.attempt, 1);
+});
+
+test("queueing and claiming an execution append it to the change log", async () => {
+  const { partition, store, epoch, mine } = await queuedNeeding(
+    "execution-change",
+    [],
+  );
+  assert.equal(mine(await store.claim("pool", epoch, 30, 10, [], 3)).length, 1);
+  const reader = postgresHarnessRolePool(apiRole);
+  try {
+    const appended = await reader.query<{ kind: string; resource: string }>(
+      `SELECT kind,resource FROM project_change
+        WHERE tenant=$1 AND project=$2 ORDER BY sequence`,
+      [partition.tenant, partition.project],
+    );
+    assert.deepEqual(
+      appended.rows,
+      [
+        { kind: "Execution", resource: "work:1:1" },
+        { kind: "Execution", resource: "work:1:1" },
+      ],
+      "the insert and the claim each append the task key the execution reads back by",
+    );
+  } finally {
+    await reader.end();
+  }
 });

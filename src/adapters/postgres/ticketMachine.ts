@@ -9,10 +9,11 @@ import {
   TICKET_DECISION,
 } from "../../interpreter/codec.ts";
 import type { Lease, Partition } from "../../interpreter/projectStore.ts";
-import type {
-  TicketMachineInput,
-  TicketMachineProcessed,
-  TicketMachineStore,
+import {
+  ticketMachineEventTicket,
+  type TicketMachineInput,
+  type TicketMachineProcessed,
+  type TicketMachineStore,
 } from "../../interpreter/ticketMachine.ts";
 import { postgresTransaction } from "./pool.ts";
 import {
@@ -161,6 +162,12 @@ async function machineRecord(
   }
   await client.query(sql`INSERT INTO ticket_machine_event(tenant,project,sequence,input_identity,event)
     VALUES(${partition.tenant},${partition.project},${sequence},${input.identity},${encode(decision.event)})`);
+  /** The moved ticket, appended under the project lock this decision already holds. */
+  await client.query<{ appended: string | null }>(
+    sql`SELECT append_project_change(
+      ${partition.tenant},${partition.project},'Ticket',
+      ${String(ticketMachineEventTicket(decision.event))})::text AS appended`,
+  );
   for (const [position, obligation] of decision.obligations.entries()) {
     const identity = `${String(sequence)}:${String(position)}`;
     await client.query(sql`INSERT INTO ticket_machine_obligation(tenant,project,identity,sequence,position,obligation)
