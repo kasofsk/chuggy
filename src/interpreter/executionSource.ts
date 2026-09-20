@@ -18,7 +18,6 @@ export interface ExecutionSourceObservationPort {
     readonly partition: Partition;
     readonly ticket: number;
     readonly kind: "Work" | "Evaluation";
-    readonly configurationCanonical?: string;
     readonly repository?: RepositoryId;
     readonly ref?: ObservedTarget["ref"];
     readonly credentialReference?: string;

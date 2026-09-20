@@ -257,14 +257,7 @@ test("a source observation is gathered before a spawn bundle is materialized", a
     manualDispatch,
     recordingSources(observed),
   );
-  assert.deepEqual(observed, [
-    {
-      partition,
-      ticket: id(1),
-      kind: "Work",
-      configurationCanonical: '{"worker":"one"}',
-    },
-  ]);
+  assert.deepEqual(observed, [{ partition, ticket: id(1), kind: "Work" }]);
   assert.deepEqual(
     decision.outcome.outcome === "Journaled"
       ? decision.outcome.materialization.execution[0]?.bundle?.source

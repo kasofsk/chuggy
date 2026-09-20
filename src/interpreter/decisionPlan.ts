@@ -6,19 +6,18 @@
  * `decisionEventEnabled` puts a resume through `retryableIn`, so an action that
  * offers a resume the machine refuses hands a person a button whose only
  * outcome is `NotEnabled` — and by the time they read why, they have already
- * been told the ticket is resumable. The other answer of each pair is admitted
- * unconditionally, because each is enabled on the phase alone: revoke on every
- * `Escalated` ticket (`revocableIn`), abandon on every `HandoffBlocked` one.
+ * been told the ticket is resumable. The revoke beside it is admitted
+ * unconditionally, because it is enabled on the phase alone (`revocableIn`).
  *
  * THE SET IS DECIDED AT THE RAISE, AND THAT IS ENOUGH BECAUSE A PARKED
  * TICKET'S ACCOUNTS CANNOT MOVE. `model/domain.qnt` charges gas at the
  * dispatch, at a rework, at a finalizer's retry and at a resume, and every one
  * of those steps out of a live phase — none of them is reachable from
- * `Escalated` or `HandoffBlocked`. The resume is the exception that proves it:
- * it is the one charge a parked ticket can take, and taking it both leaves the
- * phase and answers this action. So a set that is right when the action opens
- * stays right for as long as there is anyone to serve it to, which is why
- * `nativeActionAdmits` reading the stored row back is sound.
+ * `Escalated`. The resume is the exception that proves it: it is the one charge
+ * a parked ticket can take, and taking it both leaves the phase and answers
+ * this action. So a set that is right when the action opens stays right for as
+ * long as there is anyone to serve it to, which is why `nativeActionAdmits`
+ * reading the stored row back is sound.
  */
 
 import type { Entry } from "../actor/journal.ts";
@@ -167,7 +166,6 @@ function executionRequest(
       };
     }
     case "RunFinalizer":
-    case "PublishHandoff":
     case "OpenHumanTask":
       throw new Error(`decision plan: ${effect} is not an execution request`);
   }
@@ -180,27 +178,12 @@ function nativeAction(
 ): NativeActionPlan {
   const ticket = subject(entry, effectPosition);
   const value = ticketAt(post, ticket);
-  if (value.phase !== "Escalated" && value.phase !== "HandoffBlocked") {
+  if (value.phase !== "Escalated") {
     throw new Error(
       "decision plan: a native action requires an escalated ticket",
     );
   }
-  const resumable = retryableIn(post, ticket);
-  if (value.phase === "HandoffBlocked") {
-    return {
-      action: identity(entry, effectPosition, "HandoffBlock"),
-      effectPosition,
-      ticket,
-      version: entry.seq,
-      kind: "HandoffBlock",
-      reason: "NoReason",
-      capability: "ResolveTicket",
-      resolutions: resumable
-        ? ["RetryHandoff", "AbandonHandoff"]
-        : ["AbandonHandoff"],
-    };
-  }
-  const resolutions = resumable
+  const resolutions = retryableIn(post, ticket)
     ? ["Resume" as const, "Revoke" as const]
     : ["Revoke" as const];
   return {
@@ -243,18 +226,13 @@ function effectPlans(
       case "OpenHumanTask":
         actions.push(nativeAction(entry, effectPosition, post));
         break;
-      case "RunFinalizer":
-      case "PublishHandoff": {
+      case "RunFinalizer": {
         const ticket = subject(entry, effectPosition);
-        const expectedPhase =
-          effect === "RunFinalizer" ? "Finalizing" : "PublishingHandoff";
         if (
-          pre.tickets.get(ticket)?.phase === expectedPhase ||
-          ticketAt(post, ticket).phase !== expectedPhase
+          pre.tickets.get(ticket)?.phase === "Finalizing" ||
+          ticketAt(post, ticket).phase !== "Finalizing"
         ) {
-          throw new Error(
-            `decision plan: ${effect} does not enter ${expectedPhase}`,
-          );
+          throw new Error(`decision plan: ${effect} does not enter Finalizing`);
         }
         finalization.push({
           request: identity(entry, effectPosition, effect),
@@ -263,14 +241,6 @@ function effectPlans(
           ticketVersion: entry.seq,
           requestGeneration: entry.seq,
           kind: effect,
-          ...(effect === "PublishHandoff" &&
-          input.source.kind === "Operation" &&
-          input.source.finalizationRequest?.acceptedPromotion !== undefined
-            ? {
-                acceptedPromotion:
-                  input.source.finalizationRequest.acceptedPromotion,
-              }
-            : {}),
         });
         break;
       }
@@ -356,8 +326,6 @@ export function inputBundleReferencesOf(
 const materializationActionablePhases: readonly Phase[] = [
   "Escalated",
   "Finalizing",
-  "PublishingHandoff",
-  "HandoffBlocked",
 ];
 
 /**

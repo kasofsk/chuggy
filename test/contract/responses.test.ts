@@ -807,7 +807,7 @@ const readyConfiguration = {
   workInstructionsCount: 2,
   reviewInstructionsCount: 1,
   provenance: { source: "Authored" },
-  finalization: { approvalRequired: true, handoff: "DirectCommit" },
+  finalization: { approvalRequired: true },
   evaluationStagesCount: 2,
 } as const;
 
@@ -821,14 +821,7 @@ test("a ready configuration names its finalization facts and its evaluation stag
   for (const configuration of [
     { ...readyConfiguration, finalization: undefined },
     { ...readyConfiguration, evaluationStagesCount: undefined },
-    {
-      ...readyConfiguration,
-      finalization: { approvalRequired: true, handoff: "PullRequest" },
-    },
-    {
-      ...readyConfiguration,
-      finalization: { handoff: "DirectCommit" },
-    },
+    { ...readyConfiguration, finalization: {} },
   ])
     assert.throws(
       () =>

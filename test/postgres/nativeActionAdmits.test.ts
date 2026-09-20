@@ -13,13 +13,6 @@
  * a plan that offers the revoke and nothing else. The resume answered in
  * between is also the charge that empties the account, and the rework it
  * re-enters is what walls the ticket a second time with nothing left to spend.
- *
- * THE HANDOFF HOLD IS NOT REACHED HERE. A publication request is materialized
- * only for a project whose configuration carries a whole handoff shape, so
- * `HandoffBlocked` needs that slice's fixture rather than this one's — the hold
- * is driven through the real journal by `test/interpreter/i3.test.ts`, and what
- * this tier adds for it is `nativeReads.test.ts` serving a hold that recorded
- * the abandon alone.
  */
 
 import assert from "node:assert/strict";

@@ -383,18 +383,10 @@ test("a ticket's open action carries its kind, its fence, and what it offered", 
     {
       ticket: 1,
       sequence: 1,
-      kind: "TicketEscalation",
       reason: "WorkFailed",
       offers: ["Resume", "Revoke"],
     },
   );
-  await seedOpenAction(subject.harness, partition, "native-actions-handoff", {
-    ticket: 2,
-    sequence: 2,
-    kind: "HandoffBlock",
-    reason: "NoReason",
-    offers: ["RetryHandoff", "AbandonHandoff"],
-  });
   const reads = postgresNativeReads(subject.pool);
   assert.deepEqual(await reads.ticketNativeActions(partition, id(1)), [
     {
@@ -402,14 +394,6 @@ test("a ticket's open action carries its kind, its fence, and what it offered", 
       kind: "TicketEscalation",
       authorizingSequence: 1,
       admits: ["Resume", "Revoke"],
-    },
-  ]);
-  assert.deepEqual(await reads.ticketNativeActions(partition, id(2)), [
-    {
-      action: "native-actions-handoff",
-      kind: "HandoffBlock",
-      authorizingSequence: 2,
-      admits: ["RetryHandoff", "AbandonHandoff"],
     },
   ]);
 });
@@ -426,7 +410,6 @@ test("an escalation offers what it recorded, not what its kind may ask for", asy
     {
       ticket: 1,
       sequence: 1,
-      kind: "TicketEscalation",
       reason: "DependencyRevoked",
       offers: ["Revoke"],
     },
@@ -447,39 +430,6 @@ test("an escalation offers what it recorded, not what its kind may ask for", asy
   );
 });
 
-test("a handoff hold offers what it recorded, not what its kind may ask for", async () => {
-  const partition = await postgresHarnessProject(
-    subject.harness.store,
-    "native-actions-abandon-only",
-  );
-  await seedOpenAction(
-    subject.harness,
-    partition,
-    "native-actions-unrepublishable",
-    {
-      ticket: 1,
-      sequence: 1,
-      kind: "HandoffBlock",
-      reason: "NoReason",
-      offers: ["AbandonHandoff"],
-    },
-  );
-  assert.deepEqual(
-    await postgresNativeReads(subject.pool).ticketNativeActions(
-      partition,
-      id(1),
-    ),
-    [
-      {
-        action: "native-actions-unrepublishable",
-        kind: "HandoffBlock",
-        authorizingSequence: 1,
-        admits: ["AbandonHandoff"],
-      },
-    ],
-  );
-});
-
 test("a resolved action stops listing, and an unknown ticket is not found", async () => {
   const partition = await postgresHarnessProject(
     subject.harness.store,
@@ -492,7 +442,6 @@ test("a resolved action stops listing, and an unknown ticket is not found", asyn
     {
       ticket: 1,
       sequence: 1,
-      kind: "TicketEscalation",
       reason: "WorkFailed",
       offers: ["Resume", "Revoke"],
     },
@@ -526,12 +475,8 @@ test("a project's open actions list newest first and page behind their bound", a
       {
         ticket,
         sequence: ticket,
-        kind: ticket === 2 ? "HandoffBlock" : "TicketEscalation",
-        reason: ticket === 2 ? "NoReason" : "WorkFailed",
-        offers:
-          ticket === 2
-            ? ["RetryHandoff", "AbandonHandoff"]
-            : ["Resume", "Revoke"],
+        reason: "WorkFailed",
+        offers: ["Resume", "Revoke"],
       },
     );
   const reads = postgresNativeReads(subject.pool);
@@ -540,7 +485,7 @@ test("a project's open actions list newest first and page behind their bound", a
     first.actions.map(({ ticket, kind }) => [ticket, kind]),
     [
       [3, "TicketEscalation"],
-      [2, "HandoffBlock"],
+      [2, "TicketEscalation"],
     ],
   );
   assert.deepEqual(first.nextAfter, {
@@ -586,7 +531,6 @@ test("a project's open actions are its own, and an empty project lists none", as
   await seedOpenAction(subject.harness, mine, "native-actions-mine-one", {
     ticket: 1,
     sequence: 1,
-    kind: "TicketEscalation",
     reason: "WorkFailed",
     offers: ["Resume", "Revoke"],
   });
@@ -614,7 +558,6 @@ test("a stored answer the kind cannot ask for stops both reads", async () => {
     {
       ticket: 1,
       sequence: 1,
-      kind: "TicketEscalation",
       reason: "WorkFailed",
       offers: ["Resume", "Revoke"],
     },
@@ -654,7 +597,6 @@ test("the fence the read publishes is the one acceptance admits", async () => {
   await seedOpenAction(subject.harness, partition, "native-actions-fenced", {
     ticket: 1,
     sequence: 1,
-    kind: "TicketEscalation",
     reason: "WorkFailed",
     offers: ["Resume", "Revoke"],
   });

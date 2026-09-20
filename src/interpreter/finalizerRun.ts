@@ -42,26 +42,18 @@
  *
  * THE TICKET'S OWN BRIEF IS THE LAST WORD ON WHERE ITS WORK LANDS, AND SAYS IT
  * APART FROM WHERE THE WORK HAPPENED. The target is the project's binding
- * narrowed by the configuration's handoff role and then by the brief: by the
- * reference its finalization targets, or by the branch the work happened on
- * where it targets none. So a ticket is promoted onto the branch its brief
- * named and never onto whatever the remote's default happens to hold. A
- * publication is the one exception, its destination being a repository the
- * ticket never worked in.
+ * narrowed by the brief: by the reference its finalization targets, or by the
+ * branch the work happened on where it targets none. So a ticket is promoted
+ * onto the branch its brief named and never onto whatever the remote's default
+ * happens to hold.
  *
- * A PULL REQUEST MOVES THAT TARGET, AND ONLY FOR THE FINALIZATION THAT OPENS
- * ONE. Under `RunFinalizer` a brief that proposes lands on the branch its work
- * happened on, because that branch is the head the proposal is opened from and
- * the reference its finalization names is the base, the remote's own default
- * branch standing as that base where it names none. A handoff request narrows
- * by that reference exactly as a push does: its promotion is into a repository
- * the ticket never worked in and has nothing to do with the brief's mode. The
- * pairing is refused where the two are written — a configuration that hands off
- * will not release a brief that proposes — so this is a narrowing and not a
- * decision about which of them wins. A proposing brief naming no branch of its
- * own is a hold and never a fallback: the branch it does not name is the head
- * the proposal needs, and the binding's default is somebody else's line of
- * development rather than a stand-in for it.
+ * A PULL REQUEST MOVES THAT TARGET. A brief that proposes lands on the branch
+ * its work happened on, because that branch is the head the proposal is opened
+ * from and the reference its finalization names is the base, the remote's own
+ * default branch standing as that base where it names none. A proposing brief
+ * naming no branch of its own is a hold and never a fallback: the branch it
+ * does not name is the head the proposal needs, and the binding's default is
+ * somebody else's line of development rather than a stand-in for it.
  *
  * A BRIEF NAMING BOTH IS READ TWICE, AND THE TWO READS DO DIFFERENT JOBS. The
  * branch the work happened on — the one `./executionSourceObservation.ts`
@@ -459,42 +451,25 @@ interface FinalizerBranches {
 }
 
 /**
- * Whether this claim lands its work by opening a proposal, which is what makes
- * the brief's branch the head rather than the destination. A handoff publishes
- * into a repository of its own, whatever the ticket's brief says.
- */
-function finalizerProposes(
-  view: FinalizationView,
-  brief: DraftBrief | undefined,
-): boolean {
-  return (
-    view.claim.kind === "RunFinalizer" &&
-    briefFinalizationProposes(brief?.finalization?.mode)
-  );
-}
-
-/**
  * What the ticket's brief says about each: a push lands on the reference its
- * finalization names or on the work's own branch where it names none, a pull
- * request always lands on the work's branch — that branch being the head a
- * proposal is opened from and its finalization's reference the base — and a
- * publication names none, its destination being a repository the ticket never
- * worked in. A proposing brief naming no branch of its own is answered by none
- * of them, because such a brief is refused where briefs are written and the
- * binding's default is not a stand-in for the head a proposal opens from.
+ * finalization names or on the work's own branch where it names none, and a
+ * pull request always lands on the work's branch — that branch being the head a
+ * proposal is opened from and its finalization's reference the base. A
+ * proposing brief naming no branch of its own is answered by neither, because
+ * such a brief is refused where briefs are written and the binding's default is
+ * not a stand-in for the head a proposal opens from.
  */
 async function finalizerGatherBranches(
   service: FinalizerService,
   view: FinalizationView,
 ): Promise<FinalizerBranches | undefined> {
-  if (view.handoffRequest?.kind === "PublishHandoff") return {};
   const brief = await service.ticketBriefs.brief(
     view.claim.partition,
     view.claim.ticket,
   );
   if (brief === undefined) return {};
   const finalization = brief.finalization;
-  const proposing = finalizerProposes(view, brief);
+  const proposing = briefFinalizationProposes(brief.finalization?.mode);
   if (proposing && brief.branch === undefined) return undefined;
   const target = proposing
     ? brief.branch
@@ -537,12 +512,11 @@ async function finalizerGatherWorkBranch(
  */
 async function finalizerGatherProposalBase(
   service: FinalizerService,
-  view: FinalizationView,
   binding: RepositoryBinding,
   branches: FinalizerBranches,
 ): Promise<TargetObserved | undefined> {
   if (
-    !finalizerProposes(view, branches.brief) ||
+    !briefFinalizationProposes(branches.brief?.finalization?.mode) ||
     branches.brief?.finalization?.target !== undefined
   )
     return undefined;
@@ -575,7 +549,6 @@ async function finalizerGather(
     return { gathered: "Held", hold: "ProposalUnbranched" };
   const base = await finalizerGatherProposalBase(
     service,
-    durable,
     durable.repository,
     branches,
   );
@@ -748,7 +721,6 @@ function finalizerBundleOf(
   pinned: {
     readonly configuration: PinnedConfiguration;
     readonly manifests: readonly ResultManifestId[];
-    readonly acceptedWorkCommit?: GitObjectId;
   },
 ): InputBundle {
   const references: readonly InputBundleReference[] = [
@@ -762,14 +734,6 @@ function finalizerBundleOf(
       kind: "ResultManifest" as const,
       reference: manifest,
     })),
-    ...(pinned.acceptedWorkCommit === undefined
-      ? []
-      : [
-          {
-            kind: "TargetCommit" as const,
-            reference: pinned.acceptedWorkCommit,
-          },
-        ]),
   ];
   if (references.length > inputBundleReferencesMax) {
     throw new RangeError(
@@ -1117,10 +1081,6 @@ async function finalizerPrepare(
   target: ObservedTarget,
   tally: FinalizerTally,
 ): Promise<void> {
-  if (view.handoffRequest?.kind === "PublishHandoff") {
-    await finalizerPreparePublication(service, view, target, tally);
-    return;
-  }
   const gathered = await finalizerGathered(service, view, target, tally);
   if (gathered === undefined) return;
   const { subject, handoff } = gathered;
@@ -1145,53 +1105,6 @@ async function finalizerPrepare(
     return;
   }
   await finalizerBuild(service, subject, read.files, tally);
-}
-
-async function finalizerPreparePublication(
-  service: FinalizerService,
-  view: FinalizationView,
-  target: ObservedTarget,
-  tally: FinalizerTally,
-): Promise<void> {
-  const request = view.handoffRequest;
-  const repository = view.repository;
-  if (request?.kind !== "PublishHandoff" || repository === undefined)
-    throw new Error("finalizer publication: no pinned publication request");
-  const identity = service.identities.next(view.claim.partition);
-  const configuration: PinnedConfiguration = {
-    revision: request.configurationRevision,
-    digest: request.configurationDigest,
-  };
-  const subject: FinalizerPreparation = {
-    view,
-    repository,
-    identity,
-    bundle: finalizerBundleOf(
-      service,
-      view.claim,
-      identity.bundle,
-      repository,
-      {
-        configuration,
-        manifests: [],
-        acceptedWorkCommit: request.acceptedWorkCommit,
-      },
-    ),
-    target,
-    configuration,
-    approvalRequired: false,
-  };
-  await finalizerBuild(
-    service,
-    subject,
-    [
-      {
-        path: request.destinationPath,
-        content: new TextEncoder().encode(request.output),
-      },
-    ],
-    tally,
-  );
 }
 
 /** Opens the approval one prepared attempt needs, leaving the finalization where it stood. */

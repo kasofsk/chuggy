@@ -71,7 +71,6 @@ import {
   artifactRoles,
   attemptEvidences,
   attemptStates,
-  configurationHandoffs,
   draftStates,
   escalationReasons,
   executionCapabilities,
@@ -748,10 +747,7 @@ const configurationSummarySchema = z.discriminatedUnion("readiness", [
     practices: page(z.string().min(1)),
     workInstructionsCount: countSchema,
     reviewInstructionsCount: countSchema,
-    finalization: z.strictObject({
-      approvalRequired: z.boolean(),
-      handoff: z.enum(configurationHandoffs),
-    }),
+    finalization: z.strictObject({ approvalRequired: z.boolean() }),
     evaluationStagesCount: countSchema,
   }),
 ]);

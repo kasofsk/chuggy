@@ -617,75 +617,6 @@ test("a concluded reconciliation promotes or restarts, and nothing else", () => 
   );
 });
 
-test("handoff promotion requires its explicit durable request kind", () => {
-  const promoting = {
-    ...viewWith({}),
-    claim: { ...viewWith({}).claim, kind: "PromoteForHandoff" as const },
-  };
-  assert.deepEqual(
-    finalizationNext(finalizerDefaults, {
-      ...promoting,
-      attempt: prepared,
-      attemptsMade: 1,
-      permit: permitIn("Concluded"),
-      reconciliation: reconciliationOf("Promoted"),
-    }),
-    { decide: "Conclude", conclusion: { outcome: "PromotionAccepted" } },
-  );
-  assert.deepEqual(
-    finalizationNext(finalizerDefaults, {
-      ...promoting,
-      attempt: attemptFailed("MergeConflict"),
-      attemptsMade: 1,
-    }),
-    {
-      decide: "Conclude",
-      conclusion: { outcome: "FinalizationFailed", kind: "MergeConflict" },
-    },
-  );
-});
-
-test("publication concludes only from publication-specific durable evidence", () => {
-  const publishing = {
-    ...viewWith({}),
-    claim: { ...viewWith({}).claim, kind: "PublishHandoff" as const },
-  };
-  assert.deepEqual(
-    finalizationNext(finalizerDefaults, {
-      ...publishing,
-      attempt: prepared,
-      attemptsMade: 1,
-      permit: permitIn("Concluded"),
-      reconciliation: reconciliationOf("Promoted"),
-    }),
-    { decide: "Conclude", conclusion: { outcome: "FinalizationSucceeded" } },
-  );
-  assert.deepEqual(
-    finalizationNext(finalizerDefaults, {
-      ...publishing,
-      attempt: prepared,
-      attemptsMade: 1,
-      permit: permitIn("Granted"),
-      reconciliation: reconciliationOf("Unreadable"),
-    }),
-    {
-      decide: "Conclude",
-      conclusion: { outcome: "HandoffPublicationUnproven" },
-    },
-  );
-  assert.deepEqual(
-    finalizationNext(finalizerDefaults, {
-      ...publishing,
-      attempt: attemptFailed("PreparationFailed"),
-      attemptsMade: 1,
-    }),
-    {
-      decide: "Conclude",
-      conclusion: { outcome: "HandoffPublicationUnproven" },
-    },
-  );
-});
-
 test("a promoted candidate whose brief proposes is not concluded by the promotion", () => {
   const promoted = {
     attempt: prepared,
@@ -714,35 +645,6 @@ test("a promoted candidate whose brief proposes is not concluded by the promotio
     { decide: "Conclude", conclusion: { outcome: "FinalizationSucceeded" } },
     "a ticket carrying no brief lands where it always did",
   );
-});
-
-test("a handoff never proposes, whatever mode its ticket's brief names", () => {
-  for (const kind of ["PromoteForHandoff", "PublishHandoff"] as const) {
-    const decision = finalizationNext(
-      finalizerDefaults,
-      viewWith({
-        claim: { ...viewWith({}).claim, kind },
-        finalizationMode: "PullRequest",
-        attempt: prepared,
-        attemptsMade: 1,
-        permit: permitIn("Concluded"),
-        reconciliation: reconciliationOf("Promoted"),
-      }),
-    );
-    assert.deepEqual(
-      decision,
-      {
-        decide: "Conclude",
-        conclusion: {
-          outcome:
-            kind === "PromoteForHandoff"
-              ? "PromotionAccepted"
-              : "FinalizationSucceeded",
-        },
-      },
-      kind,
-    );
-  }
 });
 
 test("nothing before the promotion is decided by the mode a brief names", () => {

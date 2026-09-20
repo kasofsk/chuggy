@@ -109,17 +109,6 @@ const nativeActionsByTicket = new Map<number, readonly TicketNativeAction[]>([
     2,
     [
       {
-        action: "handoff",
-        kind: "HandoffBlock",
-        authorizingSequence: 12,
-        admits: ["RetryHandoff", "AbandonHandoff"],
-      },
-    ],
-  ],
-  [
-    3,
-    [
-      {
         action: "approval",
         kind: "FinalizationApproval",
         authorizingSequence: 13,
@@ -127,7 +116,7 @@ const nativeActionsByTicket = new Map<number, readonly TicketNativeAction[]>([
       },
     ],
   ],
-  [4, []],
+  [3, []],
 ]);
 
 function fakeTicketNativeActions(
@@ -1023,26 +1012,17 @@ test("a ticket's open actions answer per kind with the fence and the answers", a
   ]);
   assert.deepEqual(await listed(2), [
     {
-      action: "handoff",
-      kind: "HandoffBlock",
-      authorizingSequence: 12,
-      admits: ["RetryHandoff", "AbandonHandoff"],
-    },
-  ]);
-  assert.deepEqual(await listed(3), [
-    {
       action: "approval",
       kind: "FinalizationApproval",
       authorizingSequence: 13,
       admits: ["Approve", "Decline"],
     },
   ]);
-  assert.deepEqual(await listed(4), []);
+  assert.deepEqual(await listed(3), []);
   assert.deepEqual(calls, [
     "nativeActions:1",
     "nativeActions:2",
     "nativeActions:3",
-    "nativeActions:4",
   ]);
 });
 
@@ -1080,8 +1060,7 @@ test("a project's open actions page behind an opaque cursor of its own", async (
     page.actions.map(({ ticket, kind }) => [ticket, kind]),
     [
       [1, "TicketEscalation"],
-      [2, "HandoffBlock"],
-      [3, "FinalizationApproval"],
+      [2, "FinalizationApproval"],
     ],
   );
   const cursor = page.nextCursor;

@@ -182,7 +182,7 @@ export interface NativeActionPlan {
   readonly effectPosition: number;
   readonly ticket: TicketId;
   readonly version: number;
-  readonly kind: "TicketEscalation" | "HandoffBlock";
+  readonly kind: "TicketEscalation";
   readonly reason: string;
   readonly capability: "ResolveTicket";
   readonly resolutions: readonly NativeActionResolution[];
@@ -217,13 +217,7 @@ export interface DecisionMaterialization {
     readonly ticket: TicketId;
     readonly ticketVersion: number;
     readonly requestGeneration: number;
-    readonly kind: "RunFinalizer" | "PromoteForHandoff" | "PublishHandoff";
-    readonly acceptedPromotion?: {
-      readonly repository: string;
-      readonly commit: string;
-      readonly configurationRevision: string;
-      readonly configurationDigest: string;
-    };
+    readonly kind: "RunFinalizer";
   }[];
   readonly fulfillFinalizationFor: readonly TicketId[];
   readonly withdrawActionsFor: readonly TicketId[];
