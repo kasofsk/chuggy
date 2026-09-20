@@ -14,6 +14,7 @@ import type {
   SessionState,
   SessionTurnState,
 } from "../../../../src/contract/rosters.ts";
+import type { AdoptedTicket } from "../../../../src/contract/adoptedTickets.ts";
 import type { ConversationStanding } from "./conversation.ts";
 import type { ForgeAppStanding } from "./forgeInstallation.ts";
 
@@ -35,6 +36,29 @@ export function sessionStateTone(state: SessionState): Tone {
     case "Open":
       return "live";
     case "Closed":
+      return "retired";
+  }
+}
+
+/**
+ * Where one ticket stands, in the hue the table and a reference chip both draw
+ * it in. The three states the machine is carrying a ticket through share one
+ * hue because the reader's question is whether it is moving, not which leg of
+ * the run it is on; the word beside the mark is what separates them.
+ */
+export function adoptedTicketStateTone(state: AdoptedTicket["state"]): Tone {
+  switch (state) {
+    case "Pending":
+      return "queued";
+    case "Work":
+    case "Evaluation":
+    case "Finalization":
+      return "live";
+    case "Escalated":
+      return "parked";
+    case "Done":
+      return "pass";
+    case "Revoked":
       return "retired";
   }
 }

@@ -2,10 +2,10 @@
  * A ticket named inside prose, drawn as the chip the rest of the console draws
  * a ticket as, and followed to the ticket's own screen.
  *
- * IT IS A `Pill` WEARING A LINK. A reference says the same three things a phase
+ * IT IS A `Pill` WEARING A LINK. A reference says the same three things a state
  * chip says — a mark, a tone and a word — so it takes the same classes rather
  * than a second tone mapping of its own, and a roster the wire grows reaches it
- * through `phaseTone` like everything else.
+ * through `core/tones.ts` like everything else.
  *
  * IT DRAWS AND PERFORMS NOTHING. The number is in the reference itself; the
  * title, the phase and where following it goes are `ticketReferenceHeld`'s, so
@@ -20,35 +20,12 @@
 
 import type { MouseEvent, ReactNode } from "react";
 
-import type { AdoptedTicket } from "../../../../../src/contract/adoptedTickets.ts";
-import type { Tone } from "../../core/tones.ts";
+import { adoptedTicketWord } from "../../core/codeLabels.ts";
+import { adoptedTicketStateTone } from "../../core/tones.ts";
 import { useTicketReferenceHeld } from "./ticketReferenceHeld.tsx";
 import type { TicketReferenceHeld } from "./ticketReferenceHeld.tsx";
 
 import "./TicketReference.css";
-
-/** The number as the console writes it everywhere else, so a reference and a
- * row name the same ticket the same way. */
-function ticketReferenceWord(ticket: number): string {
-  return `#${String(ticket)}`;
-}
-
-function ticketReferenceTone(state: AdoptedTicket["state"]): Tone {
-  switch (state) {
-    case "Pending":
-      return "queued";
-    case "Work":
-    case "Evaluation":
-    case "Finalization":
-      return "live";
-    case "Escalated":
-      return "parked";
-    case "Done":
-      return "pass";
-    case "Revoked":
-      return "retired";
-  }
-}
 
 /** A press the shell can answer, which is every press but the ones a reader
  * means for their browser — a new tab, a new window, a download. */
@@ -69,7 +46,7 @@ function TicketReferenceChip(props: {
   const ticket = props.ticket;
   const facts = props.held.factsOf(ticket);
   const tone =
-    facts === undefined ? "neutral" : ticketReferenceTone(facts.state);
+    facts === undefined ? "neutral" : adoptedTicketStateTone(facts.state);
   return (
     <a
       href={props.held.hrefOf(ticket)}
@@ -81,7 +58,7 @@ function TicketReferenceChip(props: {
       }}
     >
       <i className="pill-mark" aria-hidden="true" />
-      <span className="num">{ticketReferenceWord(ticket)}</span>
+      <span className="num">{adoptedTicketWord(ticket)}</span>
       {facts?.title === undefined ? null : (
         <span className="ticket-reference-title">{facts.title}</span>
       )}
@@ -95,6 +72,6 @@ function TicketReferenceChip(props: {
 export function TicketReference(props: { readonly ticket: number }): ReactNode {
   const held = useTicketReferenceHeld();
   if (held === undefined)
-    return <span className="num">{ticketReferenceWord(props.ticket)}</span>;
+    return <span className="num">{adoptedTicketWord(props.ticket)}</span>;
   return <TicketReferenceChip ticket={props.ticket} held={held} />;
 }
