@@ -236,14 +236,18 @@ test("what the pool holds is its own labelled pods, read off their annotation", 
           items: [
             {
               metadata: {
+                name: "pool-one",
                 annotations: { [kubernetesPoolAssignmentAnnotation]: "one" },
               },
+              status: { phase: "Running" },
             },
-            { metadata: { annotations: {} } },
+            { metadata: { name: "pool-other", annotations: {} } },
             {
               metadata: {
+                name: "pool-two",
                 annotations: { [kubernetesPoolAssignmentAnnotation]: "two" },
               },
+              status: { phase: "Pending" },
             },
           ],
         }),
@@ -257,6 +261,53 @@ test("what the pool holds is its own labelled pods, read off their annotation", 
   assert.match(
     reached[0]?.path ?? "",
     /labelSelector=chuggy.internal%2Fpool%3Dpool-one/u,
+  );
+});
+
+test("a pod that has ended is not held, and is deleted so its lease lapses", async () => {
+  const { reached, fetcher } = cluster((made) =>
+    made.method === "GET"
+      ? new Response(
+          JSON.stringify({
+            items: [
+              {
+                metadata: {
+                  name: "pool-failed",
+                  annotations: { [kubernetesPoolAssignmentAnnotation]: "one" },
+                },
+                status: { phase: "Failed" },
+              },
+              {
+                metadata: {
+                  name: "pool-succeeded",
+                  annotations: { [kubernetesPoolAssignmentAnnotation]: "two" },
+                },
+                status: { phase: "Succeeded" },
+              },
+              {
+                metadata: {
+                  name: "pool-running",
+                  annotations: {
+                    [kubernetesPoolAssignmentAnnotation]: "three",
+                  },
+                },
+                status: { phase: "Running" },
+              },
+            ],
+          }),
+          { status: 200 },
+        )
+      : new Response("{}", { status: 200 }),
+  );
+  assert.deepEqual(await kubernetesPoolBackend(config, fetcher).held(), [
+    "three",
+  ]);
+  assert.deepEqual(
+    reached.filter((made) => made.method === "DELETE").map((made) => made.path),
+    [
+      "/api/v1/namespaces/pool/pods/pool-failed",
+      "/api/v1/namespaces/pool/pods/pool-succeeded",
+    ],
   );
 });
 

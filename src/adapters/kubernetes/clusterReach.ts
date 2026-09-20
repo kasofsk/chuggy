@@ -252,31 +252,43 @@ export async function kubernetesReadPod(
   });
 }
 
+/** One pod document's phase as an end, which is the reading a single pod and a listing share. */
+function kubernetesPhaseEnd(phase: unknown): KubernetesPodEnd {
+  return phase === "Succeeded" || phase === "Failed" ? phase : "Unended";
+}
+
 export function kubernetesPodEnd(reached: KubernetesReached): KubernetesPodEnd {
   if (reached.reached !== "Status" || reached.status !== 200) return "Unended";
   try {
     const document = JSON.parse(reached.body) as {
       readonly status?: { readonly phase?: unknown };
     };
-    const phase = document.status?.phase;
-    if (phase === "Succeeded" || phase === "Failed") return phase;
-    return "Unended";
+    return kubernetesPhaseEnd(document.status?.phase);
   } catch {
     return "Unended";
   }
 }
 
+/** One pod a listing found carrying the annotation asked for: its name, the annotation's value, and whether it has ended. */
+export interface KubernetesListedPod {
+  readonly name: string;
+  readonly value: string;
+  readonly end: KubernetesPodEnd;
+}
+
 /**
- * The assignments this pool's own pods carry, read off an annotation. A listing
- * that could not be made raises rather than answering an empty cluster, because
- * the emptier answer is the one that loses work.
+ * The pods under a label that carry an annotation, each with the annotation's
+ * value and its phase read as an end, so a caller can tell a workload still
+ * running from one the cluster is keeping the record of. A listing that could
+ * not be made raises rather than answering an empty cluster, because the
+ * emptier answer is the one that loses work.
  */
-export async function kubernetesListedPodAnnotations(
+export async function kubernetesListedPods(
   site: KubernetesPodSite,
   fetcher: typeof fetch,
   labelSelector: string,
   annotation: string,
-): Promise<readonly string[]> {
+): Promise<readonly KubernetesListedPod[]> {
   const reached = await kubernetesReach(site, fetcher, {
     method: "GET",
     path: `${kubernetesPodsPath(site)}?labelSelector=${encodeURIComponent(labelSelector)}`,
@@ -286,8 +298,10 @@ export async function kubernetesListedPodAnnotations(
   let document: {
     readonly items?: readonly {
       readonly metadata?: {
+        readonly name?: unknown;
         readonly annotations?: Readonly<Record<string, unknown>>;
       };
+      readonly status?: { readonly phase?: unknown };
     }[];
   };
   try {
@@ -295,12 +309,16 @@ export async function kubernetesListedPodAnnotations(
   } catch {
     throw new Error("the cluster listed pods this side cannot read");
   }
-  const named: string[] = [];
+  const listed: KubernetesListedPod[] = [];
   for (const item of document.items ?? []) {
     const value = item.metadata?.annotations?.[annotation];
-    if (typeof value === "string" && value.length > 0) named.push(value);
+    if (typeof value !== "string" || value.length === 0) continue;
+    const name = item.metadata?.name;
+    if (typeof name !== "string" || name.length === 0)
+      throw new Error("the cluster listed pods this side cannot read");
+    listed.push({ name, value, end: kubernetesPhaseEnd(item.status?.phase) });
   }
-  return named;
+  return listed;
 }
 
 /** Deletes one named pod, which is what both cancellation and a failed placement do. */

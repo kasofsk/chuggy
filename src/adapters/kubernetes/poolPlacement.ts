@@ -11,9 +11,12 @@
  *
  * WHAT IS RUNNING IS READ FROM THE CLUSTER. `held` lists this pool's own pods
  * by its label and reads each assignment off an annotation, so a restarted
- * client recovers its workloads instead of orphaning them; a listing that could
- * not be made raises rather than answering an empty cluster, because the
- * emptier answer is the one that loses work.
+ * client recovers its workloads instead of orphaning them. Only a pod still
+ * running or starting is answered: one that has ended is deleted instead, so
+ * the assignment it carried stops renewing a lease and the scheduler's reaper
+ * takes the work back. A listing that could not be made raises rather than
+ * answering an empty cluster, because the emptier answer is the one that
+ * loses work.
  *
  * A CAPABILITY IS A PLACEMENT CONSTRAINT AND NOTHING ELSE. A token the site
  * maps contributes a node selector and the tolerations that let a node kept for
@@ -31,7 +34,8 @@ import type {
 } from "../../interpreter/workerPoolClient.ts";
 import {
   kubernetesCancelPod,
-  kubernetesListedPodAnnotations,
+  kubernetesDeletePod,
+  kubernetesListedPods,
   kubernetesPlacePod,
 } from "./clusterReach.ts";
 import {
@@ -319,6 +323,30 @@ async function poolPlacementStopped(
       };
 }
 
+/**
+ * The assignments this pool's pods still carry. A pod that has ended is
+ * deleted rather than answered, so its assignment leaves the list the next
+ * poll renews; a delete the cluster did not take leaves the pod for the next
+ * pass to find again.
+ */
+async function poolPlacementHeld(
+  config: KubernetesPoolPlacementConfig,
+  fetcher: typeof fetch,
+): Promise<readonly string[]> {
+  const listed = await kubernetesListedPods(
+    config,
+    fetcher,
+    `${config.poolLabel.name}=${config.poolLabel.value}`,
+    kubernetesPoolAssignmentAnnotation,
+  );
+  const held: string[] = [];
+  for (const pod of listed) {
+    if (pod.end === "Unended") held.push(pod.value);
+    else await kubernetesDeletePod(config, fetcher, pod.name);
+  }
+  return held;
+}
+
 export function kubernetesPoolBackend(
   input: KubernetesPoolPlacementConfig,
   fetcher: typeof fetch = fetch,
@@ -327,12 +355,6 @@ export function kubernetesPoolBackend(
   return {
     place: (assignment) => poolPlacementPlaced(config, fetcher, assignment),
     stop: (assignment) => poolPlacementStopped(config, fetcher, assignment),
-    held: () =>
-      kubernetesListedPodAnnotations(
-        config,
-        fetcher,
-        `${config.poolLabel.name}=${config.poolLabel.value}`,
-        kubernetesPoolAssignmentAnnotation,
-      ),
+    held: () => poolPlacementHeld(config, fetcher),
   };
 }
