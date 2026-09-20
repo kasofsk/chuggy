@@ -130,7 +130,7 @@ export function kubernetesSecretMatches(
         readonly namespace?: unknown;
         readonly ownerReferences?: unknown;
       };
-      readonly data?: { readonly bearer?: unknown };
+      readonly data?: Readonly<Record<string, unknown>>;
     };
     return (
       document.apiVersion === expected.apiVersion &&
@@ -141,9 +141,12 @@ export function kubernetesSecretMatches(
       JSON.stringify(document.metadata.ownerReferences) ===
         JSON.stringify(expected.metadata.ownerReferences) &&
       document.data !== undefined &&
-      Object.keys(document.data).length === 1 &&
-      document.data.bearer ===
-        Buffer.from(expected.stringData.bearer).toString("base64")
+      Object.keys(document.data).length ===
+        Object.keys(expected.stringData).length &&
+      Object.entries(expected.stringData).every(
+        ([key, value]) =>
+          document.data?.[key] === Buffer.from(value).toString("base64"),
+      )
     );
   } catch {
     return false;
@@ -249,18 +252,73 @@ export async function kubernetesReadPod(
   });
 }
 
+/** One pod document's phase as an end, which is the reading a single pod and a listing share. */
+function kubernetesPhaseEnd(phase: unknown): KubernetesPodEnd {
+  return phase === "Succeeded" || phase === "Failed" ? phase : "Unended";
+}
+
 export function kubernetesPodEnd(reached: KubernetesReached): KubernetesPodEnd {
   if (reached.reached !== "Status" || reached.status !== 200) return "Unended";
   try {
     const document = JSON.parse(reached.body) as {
       readonly status?: { readonly phase?: unknown };
     };
-    const phase = document.status?.phase;
-    if (phase === "Succeeded" || phase === "Failed") return phase;
-    return "Unended";
+    return kubernetesPhaseEnd(document.status?.phase);
   } catch {
     return "Unended";
   }
+}
+
+/** One pod a listing found carrying the annotation asked for: its name, the annotation's value, and whether it has ended. */
+export interface KubernetesListedPod {
+  readonly name: string;
+  readonly value: string;
+  readonly end: KubernetesPodEnd;
+}
+
+/**
+ * The pods under a label that carry an annotation, each with the annotation's
+ * value and its phase read as an end, so a caller can tell a workload still
+ * running from one the cluster is keeping the record of. A listing that could
+ * not be made raises rather than answering an empty cluster, because the
+ * emptier answer is the one that loses work.
+ */
+export async function kubernetesListedPods(
+  site: KubernetesPodSite,
+  fetcher: typeof fetch,
+  labelSelector: string,
+  annotation: string,
+): Promise<readonly KubernetesListedPod[]> {
+  const reached = await kubernetesReach(site, fetcher, {
+    method: "GET",
+    path: `${kubernetesPodsPath(site)}?labelSelector=${encodeURIComponent(labelSelector)}`,
+  });
+  if (reached.reached !== "Status" || reached.status !== 200)
+    throw new Error("the cluster could not be listed");
+  let document: {
+    readonly items?: readonly {
+      readonly metadata?: {
+        readonly name?: unknown;
+        readonly annotations?: Readonly<Record<string, unknown>>;
+      };
+      readonly status?: { readonly phase?: unknown };
+    }[];
+  };
+  try {
+    document = JSON.parse(reached.body) as typeof document;
+  } catch {
+    throw new Error("the cluster listed pods this side cannot read");
+  }
+  const listed: KubernetesListedPod[] = [];
+  for (const item of document.items ?? []) {
+    const value = item.metadata?.annotations?.[annotation];
+    if (typeof value !== "string" || value.length === 0) continue;
+    const name = item.metadata?.name;
+    if (typeof name !== "string" || name.length === 0)
+      throw new Error("the cluster listed pods this side cannot read");
+    listed.push({ name, value, end: kubernetesPhaseEnd(item.status?.phase) });
+  }
+  return listed;
 }
 
 /** Deletes one named pod, which is what both cancellation and a failed placement do. */

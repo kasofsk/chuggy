@@ -89,6 +89,8 @@ import {
   parseThreadHide,
   parseThreadMessage,
   parseThreadRename,
+  parseWorkerPoolRedemption,
+  parseWorkerPoolTokenRequest,
 } from "./contract.ts";
 import {
   cancellationResponse,
@@ -151,7 +153,10 @@ import {
   threadsResponse,
   type NativeHttpResponse,
   authorityRetryAfterSeconds,
+  workerPoolRedemptionResponse,
+  workerPoolTokenResponse,
 } from "./outcomes.ts";
+import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
 
 /** Who the bearer is, and when it stops saying so, for a route that outlives one request. */
 export interface AuthenticatedBearer {
@@ -851,6 +856,49 @@ function registerForgeCredentials(
             partitionOf(request),
             parseForgeCredentialRequest(request.body),
           ),
+        ),
+      );
+    },
+  );
+}
+
+/**
+ * The two doors a pool is registered through: an owner with `Administer` on the
+ * project mints a single-use token for it, and whoever holds that token redeems
+ * it once for a client and its secret. The redemption carries no bearer and is
+ * declared `public` because it is authenticated by the token in its body — a
+ * machine being configured has no principal yet, which is the whole reason an
+ * owner had to mint the token for it.
+ */
+function registerWorkerPools(
+  app: FastifyInstance,
+  pools: WorkerPoolRegistrationService,
+  partitionRoot: string,
+): void {
+  app.post(
+    `${partitionRoot}/worker-pool-registration-tokens`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        workerPoolTokenResponse(
+          await pools.mint(
+            principalOf(request),
+            partitionOf(request),
+            parseWorkerPoolTokenRequest(request.body),
+          ),
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/v1/worker-pool-registrations",
+    { config: { public: true }, preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        workerPoolRedemptionResponse(
+          await pools.redeem(parseWorkerPoolRedemption(request.body)),
         ),
       );
     },
@@ -1607,6 +1655,7 @@ export function createNativeHttpApp(
   selectorSettings?: SelectorProjectSettingsAdministration,
   forgeCredentials?: ForgeCredentialMinting,
   onboarding?: RepositoryOnboarding,
+  workerPools?: WorkerPoolRegistrationService,
 ): FastifyInstance {
   const app = fastify({
     bodyLimit: nativeHttpBodyBytesMax,
@@ -1656,6 +1705,8 @@ export function createNativeHttpApp(
   registerThreadWrites(app, web);
   registerLeadInquiries(app, web);
   registerDispatchView(app, web);
+  if (workerPools !== undefined)
+    registerWorkerPools(app, workerPools, partitionRoot);
   app.setErrorHandler((failure, _request, reply) => {
     send(reply, failureResponse(failure));
   });

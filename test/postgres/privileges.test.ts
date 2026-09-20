@@ -10,6 +10,7 @@ import {
   continuationFunction,
   finalizerRole,
   notificationPublishFunction,
+  poolPlaneRole,
   projectChangeAppendFunction,
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
@@ -94,6 +95,7 @@ test("no runtime role but the API reads a project's bindings through the door", 
     schedulerRole,
     finalizerRole,
     workerPlaneRole,
+    poolPlaneRole,
     configurationImporterRole,
   ])
     assert.match(
@@ -134,6 +136,7 @@ test("only the importer lists every binding there is", async () => {
     schedulerRole,
     finalizerRole,
     workerPlaneRole,
+    poolPlaneRole,
   ])
     assert.match(
       (await harness.attemptAs(role, listing)) ?? "",
@@ -162,6 +165,7 @@ test("no runtime role but the API binds a repository, and none records one", asy
     schedulerRole,
     finalizerRole,
     workerPlaneRole,
+    poolPlaneRole,
     configurationImporterRole,
   ]) {
     assert.match(
@@ -930,7 +934,7 @@ const schedulerWritePrivileges = [
     table_name: "execution_attempt",
     privilege_type: "INSERT",
     columns:
-      "attempt,attempt_number,capability,capability_secret_digest,cleanup_completed_at,ended_at,evidence,execution,generation,lease_expires_at,lease_owner,manifest,opened_at,project,recovery_epoch,state,tenant,workload",
+      "assignment,attempt,attempt_number,capability,capability_secret_digest,cleanup_completed_at,ended_at,evidence,execution,generation,lease_expires_at,lease_owner,manifest,opened_at,pool,pool_refusal,project,recovery_epoch,state,tenant,workload",
   },
   {
     table_name: "execution_attempt",

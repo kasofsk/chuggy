@@ -128,6 +128,22 @@ module.exports = {
       },
     },
     {
+      name: "pool-plane-mints-no-credential",
+      comment:
+        "The plane a worker pool polls is the least-trusted outward-facing " +
+        "process this tree runs, and the one privilege it must never hold is " +
+        "the issuer's client registration: a pool that took that process " +
+        "could mint itself a second client and be some other project's pool. " +
+        "So the root that composes it may not reach the admin adapter at " +
+        "all — reachability rather than an import, because the shape that " +
+        "breaks it is a shared composition helper that names the admin " +
+        "address for both roots. Registration is an owner's command, and " +
+        "that is another root.",
+      severity: "error",
+      from: { path: "^src/roots/poolPlane[.]ts$" },
+      to: { reachable: true, path: "^src/adapters/hydra/" },
+    },
+    {
       name: "nothing-imports-a-process-root",
       comment:
         "src/roots/ holds the graph's executable roots: they may import " +

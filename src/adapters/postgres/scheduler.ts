@@ -1017,6 +1017,7 @@ async function schedulerUnlaunched(
          ON c.tenant = e.tenant AND c.project = e.project
         AND c.revision = e.configuration_revision AND c.digest = e.configuration_digest
       WHERE e.status IN ('Admitted', 'Launching', 'Running')
+        AND e.placement = 'InCluster'
         AND NOT EXISTS (SELECT 1 FROM execution_attempt a
                          WHERE a.tenant = e.tenant AND a.project = e.project
                            AND a.execution = e.execution

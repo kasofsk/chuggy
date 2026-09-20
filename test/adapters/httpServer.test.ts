@@ -65,6 +65,7 @@ import {
   sessionBearerPrefix,
 } from "../../src/interpreter/agentSession.ts";
 import { unservedLeadInquiries, unservedThreads } from "./threadFixtures.ts";
+import type { WorkerPoolRegistrationService } from "../../src/interpreter/workerPoolRegistrationToken.ts";
 
 const authority = {
   installationAuthority: () =>
@@ -465,6 +466,41 @@ function fakeForgeCredentials(calls: string[]): ForgeCredentialMinting {
   };
 }
 
+/**
+ * Registration as the routes see it: one token stands for one project, and the
+ * capability bound is the interpreter's rather than the route's.
+ */
+function fakeWorkerPools(calls: string[]): WorkerPoolRegistrationService {
+  return {
+    mint: (_principal, partition, request) => {
+      calls.push(
+        `worker-pool-token:${partition.project}:${request.capabilities.join("+")}:${String(request.lifetimeSecs)}`,
+      );
+      if (partition.project === "full")
+        return Promise.resolve({ result: "LimitReached" });
+      return Promise.resolve(
+        partition.project === "atlas"
+          ? {
+              result: "Minted",
+              value: { token: "a-token", expiresAtMs: 1_757_500_000_000 },
+            }
+          : { result: "NotFound" },
+      );
+    },
+    redeem: (offered) => {
+      calls.push(`worker-pool-redeem:${offered.pool}`);
+      if (offered.pool === "unpermitted")
+        return Promise.resolve({ result: "CapabilityNotPermitted" });
+      if (offered.pool === "spent")
+        return Promise.resolve({ result: "NotFound" });
+      return Promise.resolve({
+        result: "Registered",
+        value: { clientId: "chuggy-pool-one", clientSecret: "a-secret" },
+      });
+    },
+  };
+}
+
 function appOf(
   calls: string[],
   authenticated = true,
@@ -490,6 +526,8 @@ function appOf(
     undefined,
     fakeSelectorSettings(calls),
     minting ?? fakeForgeCredentials(calls),
+    undefined,
+    fakeWorkerPools(calls),
   );
 }
 
@@ -1625,5 +1663,106 @@ test("a malformed session bearer is refused, and never reported as an outage", a
       false,
       `${token} reached the session authority`,
     );
+  }
+});
+
+const workerPoolTokenPath =
+  "/api/v1/tenants/acme/projects/atlas/worker-pool-registration-tokens";
+const workerPoolRedemptionPath = "/api/v1/worker-pool-registrations";
+const workerPoolJson = { "content-type": "application/vnd.chuggy.v1+json" };
+
+test("an owner mints a registration token and a project they may not administer is not found", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const minted = await app.inject({
+    method: "POST",
+    url: workerPoolTokenPath,
+    headers: { authorization: "Bearer valid", ...workerPoolJson },
+    payload: JSON.stringify({
+      capabilities: ["linux-containers"],
+      lifetimeSecs: 900,
+    }),
+  });
+  assert.equal(minted.statusCode, 201);
+  assert.deepEqual(minted.json(), {
+    token: "a-token",
+    expiresAtMs: 1_757_500_000_000,
+  });
+  const absent = await app.inject({
+    method: "POST",
+    url: "/api/v1/tenants/acme/projects/other/worker-pool-registration-tokens",
+    headers: { authorization: "Bearer valid", ...workerPoolJson },
+    payload: JSON.stringify({ capabilities: [], lifetimeSecs: 900 }),
+  });
+  assert.equal(absent.statusCode, 404);
+  assert.deepEqual(
+    calls.filter((call) => call.startsWith("worker-pool-")),
+    [
+      "worker-pool-token:atlas:linux-containers:900",
+      "worker-pool-token:other::900",
+    ],
+  );
+});
+
+test("a project already holding its bound of live tokens is answered a conflict", async () => {
+  await using app = appOf([]);
+  const refused = await app.inject({
+    method: "POST",
+    url: "/api/v1/tenants/acme/projects/full/worker-pool-registration-tokens",
+    headers: { authorization: "Bearer valid", ...workerPoolJson },
+    payload: JSON.stringify({ capabilities: [], lifetimeSecs: 900 }),
+  });
+  assert.equal(refused.statusCode, 409);
+  assert.equal(
+    refused.json<HttpErrorEnvelope>().error.code,
+    "TokenLimitReached",
+  );
+});
+
+test("minting a registration token needs a bearer, and redeeming one needs none", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const unauthenticated = await app.inject({
+    method: "POST",
+    url: workerPoolTokenPath,
+    headers: workerPoolJson,
+    payload: JSON.stringify({ capabilities: [], lifetimeSecs: 60 }),
+  });
+  assert.equal(unauthenticated.statusCode, 401);
+  const redeemed = await app.inject({
+    method: "POST",
+    url: workerPoolRedemptionPath,
+    headers: workerPoolJson,
+    payload: JSON.stringify({
+      token: "a-token",
+      pool: "pool-one",
+      capabilities: ["linux-containers"],
+    }),
+  });
+  assert.equal(redeemed.statusCode, 201);
+  assert.deepEqual(redeemed.json(), {
+    clientId: "chuggy-pool-one",
+    clientSecret: "a-secret",
+  });
+  assert.deepEqual(
+    calls.filter((call) => call.startsWith("worker-pool-")),
+    ["worker-pool-redeem:pool-one"],
+  );
+});
+
+test("a capability the token does not permit is named, and a spent token is not found", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  for (const [pool, status] of [
+    ["unpermitted", 403],
+    ["spent", 404],
+  ] as const) {
+    const answered = await app.inject({
+      method: "POST",
+      url: workerPoolRedemptionPath,
+      headers: workerPoolJson,
+      payload: JSON.stringify({ token: "a-token", pool, capabilities: [] }),
+    });
+    assert.equal(answered.statusCode, status, pool);
   }
 });

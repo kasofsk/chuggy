@@ -45,22 +45,10 @@ import {
   workerPlaneCredentialMinting,
   type WorkerPlaneCredentialMinting,
 } from "../interpreter/workerPlaneCredentials.ts";
-
-function required(name: string): string {
-  const value = process.env[name];
-  if (value === undefined || value.length === 0)
-    throw new Error(`${name} is required`);
-  return value;
-}
-
-function positive(name: string, fallback: number): number {
-  const value = process.env[name];
-  if (value === undefined) return fallback;
-  const parsed = Number(value);
-  if (!/^[1-9][0-9]*$/u.test(value) || !Number.isSafeInteger(parsed))
-    throw new Error(`${name} must be a positive integer`);
-  return parsed;
-}
+import {
+  planeEnvironmentPositive as positive,
+  planeEnvironmentRequired as required,
+} from "./planeEnvironment.ts";
 
 /**
  * The session half of this plane, over the same pool and the same artifact
