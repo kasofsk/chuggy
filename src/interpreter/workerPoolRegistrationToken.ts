@@ -19,7 +19,10 @@
  * capabilities would burn an owner's token on an operator's typo, so what the
  * token permits is read first and the consuming update is still the only thing
  * that decides single use — a second redeemer racing the first is answered by
- * that update and by nothing here.
+ * that update and by nothing here. A fault after the spend — an issuer or an
+ * authority that could not answer — gives the token back before it is raised,
+ * so an outage costs the operator a retry and not the owner a token; what
+ * stays spent is a redemption that was answered.
  */
 
 import type { Principal } from "./principal.ts";
@@ -39,8 +42,9 @@ export interface WorkerPoolRegistrationTokenTerms {
 
 /**
  * The durable side of a token's whole life. `permitted` reads a token that is
- * neither spent nor expired and `consume` is the single write that spends it,
- * so nothing but that write decides which of two redeemers won.
+ * neither spent nor expired, `consume` is the single write that spends it, so
+ * nothing but that write decides which of two redeemers won, and `restore`
+ * gives back an unexpired one whose redemption faulted.
  */
 export interface WorkerPoolRegistrationTokens {
   mint(
@@ -55,6 +59,7 @@ export interface WorkerPoolRegistrationTokens {
   consume(
     digest: string,
   ): Promise<WorkerPoolRegistrationTokenTerms | undefined>;
+  restore(digest: string): Promise<boolean>;
 }
 
 /**
@@ -161,15 +166,21 @@ export async function workerPoolTokenRedeem(
     return { result: "CapabilityNotPermitted" };
   const spent = await minting.tokens.consume(digest);
   if (spent === undefined) return { result: "NotFound" };
-  const registered = await workerPoolRegisteredAt(
-    {
-      partition: spent.partition,
-      pool: offered.pool,
-      capabilities: offered.capabilities,
-      issuer,
-    },
-    ports,
-  );
+  let registered;
+  try {
+    registered = await workerPoolRegisteredAt(
+      {
+        partition: spent.partition,
+        pool: offered.pool,
+        capabilities: offered.capabilities,
+        issuer,
+      },
+      ports,
+    );
+  } catch (failure) {
+    await minting.tokens.restore(digest);
+    throw failure;
+  }
   return registered === undefined
     ? { result: "NotFound" }
     : { result: "Registered", value: registered };

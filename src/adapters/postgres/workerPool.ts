@@ -95,6 +95,12 @@ export function postgresWorkerPoolRegistrationTokens(
       const row = spent.rows[0];
       return row === undefined ? undefined : workerPoolTokenTerms(row);
     },
+    restore: async (digest) => {
+      const restored =
+        await pool.query(sql`UPDATE worker_pool_registration_token t SET redeemed_at=NULL
+        WHERE t.token_digest=${digest} AND t.expires_at>now()`);
+      return (restored.rowCount ?? 0) === 1;
+    },
   };
 }
 

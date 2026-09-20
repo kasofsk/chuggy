@@ -36,6 +36,7 @@ function minting(input?: {
 }): WorkerPoolTokenMinting & { readonly made: unknown[] } {
   const made: unknown[] = [];
   let held = input?.held;
+  let spent: WorkerPoolRegistrationTokenTerms | undefined;
   return {
     made,
     draw: () => "a-drawn-token",
@@ -51,9 +52,14 @@ function minting(input?: {
         Promise.resolve((made.push(["permitted", digest]), held)),
       consume: (digest) => {
         made.push(["consume", digest]);
-        const spent = held;
+        spent = held;
         held = undefined;
         return Promise.resolve(spent);
+      },
+      restore: (digest) => {
+        made.push(["restore", digest]);
+        held = spent;
+        return Promise.resolve(held !== undefined);
       },
     },
   };
@@ -205,4 +211,30 @@ test("a token no store holds registers nothing", async () => {
     { result: "NotFound" },
   );
   assert.deepEqual(made.made, []);
+});
+
+test("a registration that faulted after the spend gives the token back for the retry", async () => {
+  const store = minting({ held: { partition, capabilities: ["linux"] } });
+  const made = ports();
+  const outage = new Error("the issuer is unreachable");
+  made.clients.create = () => Promise.reject(outage);
+  const offered = {
+    token: "a-drawn-token",
+    pool: "pool-one",
+    capabilities: ["linux"],
+  };
+  await assert.rejects(
+    workerPoolTokenRedeem(store, made, issuer, offered),
+    outage,
+  );
+  assert.deepEqual(store.made.slice(-2), [
+    ["consume", "digest-of-a-drawn-token"],
+    ["restore", "digest-of-a-drawn-token"],
+  ]);
+  made.clients.create = (clientId) =>
+    Promise.resolve({ clientId, clientSecret: "a-secret" });
+  assert.equal(
+    (await workerPoolTokenRedeem(store, made, issuer, offered)).result,
+    "Registered",
+  );
 });

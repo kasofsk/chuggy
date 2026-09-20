@@ -78,6 +78,35 @@ test("a token past its expiry is neither readable nor spendable", async () => {
   assert.equal(await tokens.consume(digest), undefined);
 });
 
+test("a token given back after its spend is spendable again, unless it has expired", async () => {
+  const partition = await project("token-restore");
+  const tokens = postgresWorkerPoolRegistrationTokens(api);
+  const digest = digestOf("dee");
+  assert.equal(
+    await tokens.mint(partition, digest, ["linux"], Date.now() + 60_000),
+    true,
+  );
+  assert.notEqual(await tokens.consume(digest), undefined);
+  assert.equal(await tokens.restore(digest), true);
+  assert.deepEqual(await tokens.permitted(digest), {
+    partition,
+    capabilities: ["linux"],
+  });
+  assert.notEqual(await tokens.consume(digest), undefined);
+  assert.equal(
+    await tokens.consume(digest),
+    undefined,
+    "a restored token is still single use",
+  );
+  const expired = digestOf("eef");
+  assert.equal(
+    await tokens.mint(partition, expired, ["linux"], Date.now() - 1_000),
+    true,
+  );
+  assert.equal(await tokens.restore(expired), false);
+  assert.equal(await tokens.permitted(expired), undefined);
+});
+
 test("a token names no project this installation holds", async () => {
   const tokens = postgresWorkerPoolRegistrationTokens(api);
   assert.equal(
