@@ -27,12 +27,7 @@ import type {
 } from "../../core/ticketLedger.ts";
 import { adoptedExecutionStateTone } from "../../core/tones.ts";
 import { EmptyState } from "../ui/EmptyState.tsx";
-import {
-  Ledger,
-  LedgerBlock,
-  LedgerGroup,
-  LedgerRow,
-} from "../ui/Ledger.tsx";
+import { Ledger, LedgerBlock, LedgerGroup, LedgerRow } from "../ui/Ledger.tsx";
 
 /** What the page holds is not what the ticket has, where the read came back full. */
 export const ledgerShortPageNote =

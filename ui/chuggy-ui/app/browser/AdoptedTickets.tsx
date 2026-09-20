@@ -34,10 +34,7 @@ import {
 import { useApiPorts, usePanelList, usePanelResource } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
-import {
-  TicketFacts,
-  TicketSituation,
-} from "./ticket/TicketSituation.tsx";
+import { TicketFacts, TicketSituation } from "./ticket/TicketSituation.tsx";
 import {
   TicketLedgerPanel,
   ticketLedgerSummary,
@@ -556,7 +553,6 @@ async function runTicketUpdate(input: {
   if (result.outcome !== "Ok") throw new Error(failureSentence(result));
   await waitForOperation(input.ports, input.partition, result.value.identity);
 }
-
 
 /**
  * The ticket's own definition, which is the read that carries its state, its

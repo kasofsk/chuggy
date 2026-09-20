@@ -31,7 +31,11 @@ const secondStageCost = 30_000;
 function usage() {
   return ticketUsageOf(
     ticketLedgerOf(ticket, [
-      workRun(ticket, 1, runTotals(workCost, [runModel("opus", workCost, 900)])),
+      workRun(
+        ticket,
+        1,
+        runTotals(workCost, [runModel("opus", workCost, 900)]),
+      ),
       evaluationRun(
         ticket,
         1,

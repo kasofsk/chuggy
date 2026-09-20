@@ -38,7 +38,9 @@ export const situationShortPageNote = "on this page";
 const reworkMeterName = "Work cycles";
 
 /** A notice a reader is meant to stop on is one whose state stopped the machine. */
-function situationTone(state: AdoptedTicket["state"]): "info" | "live" | "parked" {
+function situationTone(
+  state: AdoptedTicket["state"],
+): "info" | "live" | "parked" {
   switch (state) {
     case "Work":
     case "Evaluation":
@@ -109,9 +111,7 @@ function SituationRuns(props: {
     );
   return (
     <Field name="Runs">
-      <span className="num">
-        {adoptedExecutionRunsLabel(props.executions)}
-      </span>
+      <span className="num">{adoptedExecutionRunsLabel(props.executions)}</span>
       {props.short ? (
         <span className="fig-dim"> {situationShortPageNote}</span>
       ) : null}
@@ -144,10 +144,7 @@ export function TicketFacts(props: {
               ? "none"
               : ticket.dependencies.map(adoptedTicketWord).join(", ")}
           </Field>
-          <SituationRuns
-            executions={props.executions}
-            short={props.short}
-          />
+          <SituationRuns executions={props.executions} short={props.short} />
         </Fields>
         <ReworkMeter
           name={reworkMeterName}

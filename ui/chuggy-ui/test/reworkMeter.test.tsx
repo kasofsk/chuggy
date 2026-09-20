@@ -9,7 +9,10 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
-import { ReworkMeter, reworkMeterCellsMax } from "../app/browser/ticket/ReworkMeter.tsx";
+import {
+  ReworkMeter,
+  reworkMeterCellsMax,
+} from "../app/browser/ticket/ReworkMeter.tsx";
 import { reworkMeterOf } from "../app/core/ticketMeter.ts";
 import { styleless } from "./styleless.ts";
 
@@ -29,9 +32,9 @@ test("a bounded ticket draws one cell per cycle the release allows", () => {
   const view = draw(2, 5);
 
   expect(view.container.querySelectorAll(".meter-cell")).toHaveLength(5);
-  expect(
-    view.container.querySelectorAll(".meter-cell-started"),
-  ).toHaveLength(2);
+  expect(view.container.querySelectorAll(".meter-cell-started")).toHaveLength(
+    2,
+  );
   expect(view.container.querySelectorAll(".meter-cell-left")).toHaveLength(3);
   expect(view.container.querySelector("[style]")).toBeNull();
   styleless();
@@ -50,9 +53,9 @@ test("an unbounded ticket draws no bar to fill and no cells at all", () => {
 test("a ticket at its limit fills the track without being drawn as wrong", () => {
   const view = draw(5, 5);
 
-  expect(
-    view.container.querySelectorAll(".meter-cell-started"),
-  ).toHaveLength(5);
+  expect(view.container.querySelectorAll(".meter-cell-started")).toHaveLength(
+    5,
+  );
   expect(view.container.querySelectorAll(".meter-cell-left")).toHaveLength(0);
   expect(view.container.querySelector(".meter-atlimit")).not.toBeNull();
   expect(view.container.querySelector(".meter-over")).toBeNull();

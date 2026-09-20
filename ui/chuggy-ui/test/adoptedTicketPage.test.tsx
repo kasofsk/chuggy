@@ -15,7 +15,12 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { AdoptedTicketPage } from "../app/browser/AdoptedTickets.tsx";
-import { answer, openedStream, ScreenHarness, settled } from "./screenHarness.tsx";
+import {
+  answer,
+  openedStream,
+  ScreenHarness,
+  settled,
+} from "./screenHarness.tsx";
 import { leadPartition } from "./leadFixture.ts";
 import { evaluationRun, runModel, runTotals, workRun } from "./ticketRuns.ts";
 
@@ -70,17 +75,14 @@ async function drawn(served?: {
   readonly executions?: readonly unknown[];
 }): Promise<readonly Asked[]> {
   const asked: Asked[] = [];
-  vi.stubGlobal(
-    "fetch",
-    (url: string) => {
-      asked.push({ url });
-      if (url.includes("/executions"))
-        return Promise.resolve(
-          answer({ executions: served?.executions ?? executions }),
-        );
-      return Promise.resolve(answer(served?.ticket ?? definition));
-    },
-  );
+  vi.stubGlobal("fetch", (url: string) => {
+    asked.push({ url });
+    if (url.includes("/executions"))
+      return Promise.resolve(
+        answer({ executions: served?.executions ?? executions }),
+      );
+    return Promise.resolve(answer(served?.ticket ?? definition));
+  });
   render(
     <ScreenHarness
       partition={leadPartition}
@@ -187,7 +189,9 @@ test("provenance offers the document the ticket was authored as", async () => {
 test("a release that retained no document says so rather than drawing an empty panel", async () => {
   await drawn({ ticket: { ...definition, source: null } });
 
-  expect(screen.getByText(/released before its document was kept/u)).toBeDefined();
+  expect(
+    screen.getByText(/released before its document was kept/u),
+  ).toBeDefined();
   expect(screen.queryByText("Show document")).toBeNull();
 });
 

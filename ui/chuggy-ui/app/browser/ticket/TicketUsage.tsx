@@ -74,9 +74,7 @@ function UsageTotals(props: { readonly total: RunSpend }): ReactNode {
   );
 }
 
-function UsageByModel(props: {
-  readonly usage: TicketUsageValue;
-}): ReactNode {
+function UsageByModel(props: { readonly usage: TicketUsageValue }): ReactNode {
   const basis = props.usage.total.totals?.costBasis;
   if (basis === undefined || props.usage.byModel.length === 0) return null;
   return (
@@ -152,9 +150,7 @@ function StageCells(props: { readonly spend: RunSpend }): ReactNode {
   );
 }
 
-function UsageByStage(props: {
-  readonly usage: TicketUsageValue;
-}): ReactNode {
+function UsageByStage(props: { readonly usage: TicketUsageValue }): ReactNode {
   if (props.usage.byStage.length === 0) return null;
   return (
     <Table caption="Usage by stage">

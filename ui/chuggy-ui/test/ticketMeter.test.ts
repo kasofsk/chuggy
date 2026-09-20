@@ -10,10 +10,7 @@
 
 import { describe, expect, test } from "vitest";
 
-import {
-  reworkMeterOf,
-  reworkMeterStates,
-} from "../app/core/ticketMeter.ts";
+import { reworkMeterOf, reworkMeterStates } from "../app/core/ticketMeter.ts";
 
 function meter(workCyclesStarted: number, reworkLimit: number | null) {
   return reworkMeterOf({ workCyclesStarted, reworkLimit }, "Work cycles");
@@ -98,12 +95,9 @@ describe("the words", () => {
   });
 
   test("every state the meter can reach is on its roster", () => {
-    const reached = [
-      meter(0, 5),
-      meter(5, 5),
-      meter(6, 5),
-      meter(0, null),
-    ].map((held) => held.state);
+    const reached = [meter(0, 5), meter(5, 5), meter(6, 5), meter(0, null)].map(
+      (held) => held.state,
+    );
 
     expect([...reached].sort()).toEqual([...reworkMeterStates].sort());
   });

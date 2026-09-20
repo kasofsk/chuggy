@@ -28,11 +28,7 @@ function MeterCells(props: { readonly meter: ReworkMeterValue }): ReactNode {
   const limit = props.meter.limit ?? 0;
   if (limit > reworkMeterCellsMax)
     return (
-      <meter
-        className="meter-native"
-        value={props.meter.started}
-        max={limit}
-      />
+      <meter className="meter-native" value={props.meter.started} max={limit} />
     );
   return (
     <div className="meter-cells" aria-hidden="true">

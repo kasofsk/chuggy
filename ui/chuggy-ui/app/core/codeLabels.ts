@@ -95,6 +95,8 @@ export function adoptedExecutionRunsLabel(
     ...(running === 0 ? [] : [`${String(running)} running`]),
     ...(unmeasured === 0 ? [] : [`${String(unmeasured)} unmeasured`]),
   ].join(" · ");
+}
+
 /** How a finished ticket in a repository lands, as the choice is named. */
 export function landingLabel(mode: BriefFinalizationMode): string {
   switch (mode) {
