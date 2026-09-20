@@ -15,6 +15,7 @@ import type {
   SessionTurnState,
 } from "../../../../src/contract/rosters.ts";
 import type { AdoptedTicket } from "../../../../src/contract/adoptedTickets.ts";
+import type { AdoptedExecutionState } from "./adoptedExecutions.ts";
 import type { ConversationStanding } from "./conversation.ts";
 import type { ForgeAppStanding } from "./forgeInstallation.ts";
 
@@ -119,5 +120,23 @@ export function conversationStandingArm(
       return { word: "Abandoned", tone: sessionTurnStateTone("Abandoned") };
     case "Open":
       return { word: "Open", tone: "live" };
+  }
+}
+
+/**
+ * Where one execution stands. `Terminal` takes no verdict hue: the run ended
+ * and whether it passed is not on this read, so drawing it in the passing hue
+ * would answer a question nothing asked.
+ */
+export function adoptedExecutionStateTone(state: AdoptedExecutionState): Tone {
+  switch (state) {
+    case "Queued":
+      return "queued";
+    case "Running":
+      return "live";
+    case "Terminal":
+      return "neutral";
+    case "Cancelled":
+      return "retired";
   }
 }

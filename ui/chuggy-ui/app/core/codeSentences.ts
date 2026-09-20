@@ -14,6 +14,7 @@
  */
 
 import type { AdoptedTicket } from "../../../../src/contract/adoptedTickets.ts";
+import type { AdoptedExecutionState } from "./adoptedExecutions.ts";
 
 /** What being in this state means for the ticket, in one line. */
 export function adoptedTicketStateSentence(
@@ -34,5 +35,21 @@ export function adoptedTicketStateSentence(
       return "the ticket finished and the machine will not run it again";
     case "Revoked":
       return "the ticket was called off, so nothing further will run for it";
+  }
+}
+
+/** What one execution's standing means, in one line. */
+export function adoptedExecutionStateSentence(
+  state: AdoptedExecutionState,
+): string {
+  switch (state) {
+    case "Queued":
+      return "the run is registered and no worker has taken it yet";
+    case "Running":
+      return "a worker has the run and has not reported an outcome";
+    case "Terminal":
+      return "the run reported an outcome, which this read does not carry";
+    case "Cancelled":
+      return "the machine called the run off before it reported";
   }
 }

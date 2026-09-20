@@ -20,6 +20,11 @@
  */
 
 import type { AdoptedTicket } from "../../../../src/contract/adoptedTickets.ts";
+import { adoptedExecutionSettled } from "./adoptedExecutions.ts";
+import type {
+  AdoptedExecution,
+  AdoptedExecutionState,
+} from "./adoptedExecutions.ts";
 
 /** A ticket's number as the console writes it, so a row, a chip and a
  * dependency all name the same ticket the same way. */
@@ -47,4 +52,46 @@ export function adoptedTicketStateLabel(state: AdoptedTicket["state"]): string {
     case "Revoked":
       return state;
   }
+}
+
+/**
+ * Where one execution stands, as the column word for it. `Terminal` is the
+ * machine's word for a run that reported and is drawn as `Ended`, because what
+ * a reader wants from the column is whether it is still going — and whether it
+ * passed is a verdict this read does not carry and this word must not imply.
+ */
+export function adoptedExecutionStateLabel(
+  state: AdoptedExecutionState,
+): string {
+  switch (state) {
+    case "Queued":
+      return "Queued";
+    case "Running":
+      return "Running";
+    case "Terminal":
+      return "Ended";
+    case "Cancelled":
+      return "Cancelled";
+  }
+}
+
+/**
+ * How many runs a page holds, how many are still going and how many carry no
+ * figures — each clause dropped where it counts nothing, so a settled and fully
+ * measured ticket reads as a bare number.
+ */
+export function adoptedExecutionRunsLabel(
+  executions: readonly AdoptedExecution[],
+): string {
+  const running = executions.filter(
+    (row) => !adoptedExecutionSettled(row),
+  ).length;
+  const unmeasured = executions.filter(
+    (row) => row.totals === undefined,
+  ).length;
+  return [
+    String(executions.length),
+    ...(running === 0 ? [] : [`${String(running)} running`]),
+    ...(unmeasured === 0 ? [] : [`${String(unmeasured)} unmeasured`]),
+  ].join(" · ");
 }
