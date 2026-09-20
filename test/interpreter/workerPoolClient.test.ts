@@ -14,12 +14,12 @@ import {
   type WorkerPoolStopped,
   type WorkerPoolSettled,
   type WorkerPoolTokenAcquired,
+  type WorkerPoolTokens,
 } from "../../src/interpreter/workerPoolClient.ts";
 
 const settings: WorkerPoolClientSettings = {
   concurrencyMax: 1,
   retryAfterSecs: 7,
-  tokenRefreshBeforeSecs: 5,
   outageBackoffMs: 1,
   passesMax: 1,
 };
@@ -63,19 +63,41 @@ function client(
     tokens: {
       acquire: () =>
         Promise.resolve(
-          parts.token ?? {
-            acquired: "Token",
-            token: "pool-token",
-            expiresInSecs: 3_600,
-          },
+          parts.token ?? { acquired: "Token", token: "pool-token" },
         ),
+      invalidate: () => undefined,
     },
     plane: quiet,
     backend: idle,
     settings,
-    now: () => 0,
-    held: undefined,
     ...parts,
+  };
+}
+
+/** A tokens port minting a fresh token per acquire and recording what it is told to discard. */
+function counting(): {
+  readonly tokens: WorkerPoolTokens;
+  readonly minted: string[];
+  readonly invalidated: string[];
+} {
+  const minted: string[] = [];
+  const invalidated: string[] = [];
+  return {
+    minted,
+    invalidated,
+    tokens: {
+      acquire: () => {
+        const token = `pool-token-${String(minted.length + 1)}`;
+        minted.push(token);
+        return Promise.resolve<WorkerPoolTokenAcquired>({
+          acquired: "Token",
+          token,
+        });
+      },
+      invalidate: (token) => {
+        invalidated.push(token);
+      },
+    },
   };
 }
 
@@ -305,52 +327,63 @@ test("a refused placement is reported as evidence rather than as backpressure", 
   assert.equal(passed.passed, "Reconciled");
 });
 
-test("a token is minted once and reused until its refresh window", async () => {
-  let minted = 0;
-  const running = client({
-    settings: { ...settings, passesMax: 3 },
-    token: { acquired: "Token", token: "pool-token", expiresInSecs: 3_600 },
-  });
-  const counted: WorkerPoolClient = {
-    ...running,
-    tokens: {
-      acquire: () => {
-        minted += 1;
-        return running.tokens.acquire();
-      },
-    },
-  };
-  await workerPoolClientRun(counted, () => Promise.resolve());
-  assert.equal(minted, 1);
+test("a token is acquired every pass and nothing is discarded unasked", async () => {
+  const source = counting();
+  await workerPoolClientRun(
+    client({ settings: { ...settings, passesMax: 3 }, tokens: source.tokens }),
+    () => Promise.resolve(),
+  );
+  assert.equal(source.minted.length, 3);
+  assert.deepEqual(source.invalidated, []);
 });
 
-test("a token inside its refresh window is replaced before the poll", async () => {
-  let minted = 0;
-  const running: WorkerPoolClient = {
-    ...client({ settings: { ...settings, passesMax: 2 } }),
-    tokens: {
-      acquire: () => {
-        minted += 1;
-        return Promise.resolve<WorkerPoolTokenAcquired>({
-          acquired: "Token",
-          token: `pool-token-${String(minted)}`,
-          expiresInSecs: 1,
+test("a token the poll was refused with is invalidated, and the next pass acquires again", async () => {
+  const source = counting();
+  const polledWith: string[] = [];
+  const running = client({
+    tokens: source.tokens,
+    plane: {
+      ...quiet,
+      poll: (token) => {
+        polledWith.push(token);
+        return Promise.resolve<WorkerPoolPolled>(
+          polledWith.length === 1
+            ? { polled: "Stale" }
+            : { polled: "Reconciled", assignments: [], stop: [] },
+        );
+      },
+    },
+  });
+  const first = await workerPoolClientPass(running);
+  assert.equal(first.passed, "Unavailable");
+  assert.deepEqual(source.invalidated, ["pool-token-1"]);
+  const second = await workerPoolClientPass(running);
+  assert.equal(second.passed, "Reconciled");
+  assert.deepEqual(polledWith, ["pool-token-1", "pool-token-2"]);
+});
+
+test("a token a settlement was refused with is invalidated, and the next pass acquires again", async () => {
+  const source = counting();
+  const polledWith: string[] = [];
+  const running = client({
+    tokens: source.tokens,
+    plane: {
+      poll: (token) => {
+        polledWith.push(token);
+        return Promise.resolve<WorkerPoolPolled>({
+          polled: "Reconciled",
+          assignments: [assignment("offered")],
+          stop: [],
         });
       },
+      settle: () => Promise.resolve<WorkerPoolSettled>("Stale"),
     },
-    now: () => minted * 10_000,
-  };
-  await workerPoolClientRun(running, () => Promise.resolve());
-  assert.equal(minted, 2);
-});
-
-test("a rejected token is dropped and the pass reports an outage rather than a denial", async () => {
-  const running = client({
-    plane: { ...quiet, poll: () => Promise.resolve({ polled: "Stale" }) },
   });
   const passed = await workerPoolClientPass(running);
-  assert.equal(passed.passed, "Unavailable");
-  assert.equal(running.held, undefined);
+  assert.equal(passed.passed, "Reconciled");
+  assert.deepEqual(source.invalidated, ["pool-token-1"]);
+  await workerPoolClientPass(running);
+  assert.deepEqual(polledWith, ["pool-token-1", "pool-token-2"]);
 });
 
 test("a pool the plane serves no registration for stops rather than retrying", async () => {

@@ -10,9 +10,11 @@
  *
  * A GRANT IS ASKED FOR EVERY PASS AND MINTED FAR LESS OFTEN. The source holds
  * its own grant until its refresh margin and shares one mint between the
- * callers waiting on it, so the expiry reported here is the shortest one the
- * client's own cache can hold — the caching that matters already happened, and
- * a second copy of it in the client would be a second account of one grant.
+ * callers waiting on it, so nothing is cached here and the client holds no
+ * token between passes: a second copy of the grant would be a second account
+ * of it. A token the plane rejected is handed back through `invalidate`, which
+ * discards the source's grant so the next acquire mints, under the source's
+ * own cooldown.
  */
 
 import {
@@ -24,9 +26,6 @@ import type {
   WorkerPoolTokenAcquired,
   WorkerPoolTokens,
 } from "../../interpreter/workerPoolClient.ts";
-
-/** How long one acquired token is reported as usable, which is the source's own answer to hold. */
-const poolTokenHeldSecs = 1;
 
 export function poolClientTokens(
   config: ClientCredentialsConfig,
@@ -40,7 +39,6 @@ export function poolClientTokens(
           token: await source.token(
             AbortSignal.timeout(config.requestTimeoutMs),
           ),
-          expiresInSecs: poolTokenHeldSecs,
         };
       } catch (failure) {
         if (failure instanceof ClientCredentialsRefused)
@@ -53,6 +51,9 @@ export function poolClientTokens(
               : "the issuer could not be reached",
         };
       }
+    },
+    invalidate: (token) => {
+      source.invalidate(token);
     },
   };
 }

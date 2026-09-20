@@ -258,3 +258,32 @@ test("a granted token is handed over with the audience the pool was registered f
   assert.equal(acquired.acquired, "Token");
   assert.equal(acquired.acquired === "Token" ? acquired.token : "", "minted");
 });
+
+test("a token the plane refused is minted again on the next acquire", async () => {
+  let granted = 0;
+  let elapsedMs = 0;
+  const tokens = poolClientTokens({
+    ...tokenSettings(() => {
+      granted += 1;
+      return Promise.resolve(
+        answered(
+          200,
+          JSON.stringify({
+            access_token: `minted-${String(granted)}`,
+            token_type: "bearer",
+            expires_in: 3_600,
+          }),
+        ),
+      );
+    }),
+    monotonicMs: () => (elapsedMs += 5_000),
+  });
+  const first = await tokens.acquire();
+  assert.equal(first.acquired === "Token" ? first.token : "", "minted-1");
+  const again = await tokens.acquire();
+  assert.equal(again.acquired === "Token" ? again.token : "", "minted-1");
+  tokens.invalidate("minted-1");
+  const replaced = await tokens.acquire();
+  assert.equal(replaced.acquired === "Token" ? replaced.token : "", "minted-2");
+  assert.equal(granted, 2);
+});

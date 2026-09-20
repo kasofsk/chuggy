@@ -7,7 +7,9 @@
  * recovers the workloads its predecessor placed instead of orphaning them and
  * claiming more beside them. That is the whole reason `held` is a backend
  * operation and not a field: an in-process list is a second account of what is
- * running, and the process that owns it is the one that just died.
+ * running, and the process that owns it is the one that just died. Nor is the
+ * token held here: the issuer port holds its grant, every pass asks it, and a
+ * token the plane rejects is told back to it through `invalidate`.
  *
  * EVERY FAILURE PARTS THE SAME WAY, AND NONE OF THE REMEDIES IS A
  * RETRY-EVERYTHING LOOP. A token the issuer refuses and a token it could not
@@ -94,17 +96,19 @@ export interface WorkerPoolPlane {
  * own two apart: only the second is worth asking again.
  */
 export type WorkerPoolTokenAcquired =
-  | {
-      readonly acquired: "Token";
-      readonly token: string;
-      readonly expiresInSecs: number;
-    }
+  | { readonly acquired: "Token"; readonly token: string }
   | { readonly acquired: "Denied"; readonly evidence: string }
   | { readonly acquired: "Unavailable"; readonly evidence: string };
 
-/** Where a pool's own credential becomes a token, which is the issuer and never the plane. */
+/**
+ * Where a pool's own credential becomes a token, which is the issuer and never
+ * the plane. The port holds the grant, so `acquire` is asked every pass and
+ * `invalidate` is how a token the plane rejected is discarded before its
+ * stated expiry.
+ */
 export interface WorkerPoolTokens {
   acquire(): Promise<WorkerPoolTokenAcquired>;
+  invalidate(token: string): void;
 }
 
 export interface WorkerPoolClientSettings {
@@ -112,8 +116,6 @@ export interface WorkerPoolClientSettings {
   readonly concurrencyMax: number;
   /** What a pool at capacity asks the orchestrator to wait before offering the work again. */
   readonly retryAfterSecs: number;
-  /** How long before a token's stated expiry this client replaces it. */
-  readonly tokenRefreshBeforeSecs: number;
   /** How long a pass waits after an outage before the next one. */
   readonly outageBackoffMs: number;
   /** How many passes one run makes, so the loop is bounded like every other. */
@@ -131,24 +133,13 @@ export type WorkerPoolPass =
   | { readonly passed: "Denied"; readonly evidence: string }
   | { readonly passed: "Unavailable"; readonly evidence: string };
 
-/** A token this client holds and the moment it stops using it. */
-interface WorkerPoolHeldToken {
-  readonly token: string;
-  readonly usableUntilMs: number;
-}
-
-/** Everything one running client is, which is its ports, its bounds and its one token. */
+/** Everything one running client is, which is its ports and its bounds. */
 export interface WorkerPoolClient {
   readonly tokens: WorkerPoolTokens;
   readonly plane: WorkerPoolPlane;
   readonly backend: WorkerPoolBackend;
   readonly settings: WorkerPoolClientSettings;
-  readonly now: () => number;
-  held: WorkerPoolHeldToken | undefined;
 }
-
-/** How many milliseconds a stated second is, so one conversion is spelled once. */
-const millisecondsPerSecond = 1_000;
 
 export function checkedWorkerPoolClientSettings(
   settings: WorkerPoolClientSettings,
@@ -156,7 +147,6 @@ export function checkedWorkerPoolClientSettings(
   for (const [name, bound] of [
     ["concurrencyMax", settings.concurrencyMax],
     ["retryAfterSecs", settings.retryAfterSecs],
-    ["tokenRefreshBeforeSecs", settings.tokenRefreshBeforeSecs],
     ["outageBackoffMs", settings.outageBackoffMs],
     ["passesMax", settings.passesMax],
   ] as const)
@@ -168,33 +158,19 @@ export function checkedWorkerPoolClientSettings(
 }
 
 /**
- * The token this pass acts under, minted where the held one is absent or too
- * near its expiry to outlive a long poll. A denial and an outage travel back as
- * themselves rather than as a missing token.
+ * The token this pass acts under, asked of the issuer port each time. A denial
+ * and an outage travel back as themselves rather than as a missing token.
  */
 async function workerPoolClientToken(
   client: WorkerPoolClient,
 ): Promise<
   { readonly token: string } | Exclude<WorkerPoolPass, { passed: "Reconciled" }>
 > {
-  const held = client.held;
-  if (held !== undefined && client.now() < held.usableUntilMs)
-    return { token: held.token };
   const acquired = await client.tokens.acquire();
   if (acquired.acquired === "Denied")
     return { passed: "Denied", evidence: acquired.evidence };
   if (acquired.acquired === "Unavailable")
     return { passed: "Unavailable", evidence: acquired.evidence };
-  client.held = {
-    token: acquired.token,
-    usableUntilMs:
-      client.now() +
-      Math.max(
-        acquired.expiresInSecs - client.settings.tokenRefreshBeforeSecs,
-        0,
-      ) *
-        millisecondsPerSecond,
-  };
   return { token: acquired.token };
 }
 
@@ -246,7 +222,6 @@ function workerPoolClientOutcome(
 interface WorkerPoolTally {
   placed: number;
   refused: number;
-  stale: boolean;
 }
 
 /**
@@ -260,7 +235,7 @@ async function workerPoolClientPlaced(
   offered: readonly WorkerPoolAssignment[],
   running: number,
 ): Promise<WorkerPoolTally> {
-  const tally: WorkerPoolTally = { placed: 0, refused: 0, stale: false };
+  const tally: WorkerPoolTally = { placed: 0, refused: 0 };
   for (const assignment of offered) {
     const placement: WorkerPoolPlacement =
       running + tally.placed < client.settings.concurrencyMax
@@ -276,15 +251,16 @@ async function workerPoolClientPlaced(
       assignment.assignment,
       workerPoolClientOutcome(placement),
     );
-    if (settled === "Stale") tally.stale = true;
+    if (settled === "Stale") client.tokens.invalidate(token);
   }
   return tally;
 }
 
 /**
  * One reconciliation pass: read what is running, poll, stop what must stop,
- * place what there is room for. A stale token settles nothing further this
- * pass — the next one mints a fresh one and the lease covers the gap.
+ * place what there is room for. A token the plane rejected is discarded at the
+ * issuer port, so the next pass acquires a fresh one and the lease covers the
+ * gap.
  */
 export async function workerPoolClientPass(
   client: WorkerPoolClient,
@@ -294,7 +270,7 @@ export async function workerPoolClientPass(
   const held = await client.backend.held();
   const polled = await client.plane.poll(minted.token, held);
   if (polled.polled === "Stale") {
-    client.held = undefined;
+    client.tokens.invalidate(minted.token);
     return { passed: "Unavailable", evidence: "the pool token was rejected" };
   }
   if (polled.polled !== "Reconciled")
@@ -307,7 +283,6 @@ export async function workerPoolClientPass(
     polled.assignments,
     held.length - stopped.stopped,
   );
-  if (tally.stale) client.held = undefined;
   return {
     passed: "Reconciled",
     placed: tally.placed,
