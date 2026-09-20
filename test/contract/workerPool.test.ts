@@ -11,7 +11,13 @@ import {
   assignmentOutcomeSchema,
   workerPoolAssignmentSchema,
   workerPoolCapabilitiesMax,
+  workerPoolIdentityCharsMax,
+  workerPoolPollQuerySchema,
+  workerPoolPollRoute,
+  workerPoolReconciliationSchema,
   workerPoolRegistrationSchema,
+  workerPoolSettlementPath,
+  workerPoolSettlementRoutes,
 } from "../../src/contract/workerPool.ts";
 
 const assignment = {
@@ -74,6 +80,48 @@ test("an outcome tells a settled no from the pool's own backpressure", () => {
       evidence: "busy",
     }).success,
     false,
+  );
+});
+
+test("a reconciliation carries what to place and what to stop, each name bounded", () => {
+  const answer = { assignments: [assignment], stop: ["01HY"] };
+  assert.deepEqual(workerPoolReconciliationSchema.parse(answer), answer);
+  for (const invalid of [
+    { ...answer, stop: ["x".repeat(workerPoolIdentityCharsMax + 1)] },
+    { ...answer, stop: [""] },
+    { ...answer, assignments: [{ ...assignment, deadlineSecs: 0 }] },
+    { ...answer, lease: 30 },
+    { assignments: [] },
+  ])
+    assert.equal(
+      workerPoolReconciliationSchema.safeParse(invalid).success,
+      false,
+    );
+});
+
+test("a poll's query is the held list as a query carries one, bounded by the plane", () => {
+  const query = workerPoolPollQuerySchema(2);
+  assert.deepEqual(query.parse({}), { held: [] });
+  assert.deepEqual(query.parse({ held: "a" }), { held: ["a"] });
+  assert.deepEqual(query.parse({ held: ["a", "b"] }), { held: ["a", "b"] });
+  for (const invalid of [
+    { held: ["a", "b", "c"] },
+    { held: "x".repeat(workerPoolIdentityCharsMax + 1) },
+    { held: "" },
+    { held: "a", capacity: "4" },
+  ])
+    assert.equal(query.safeParse(invalid).success, false);
+});
+
+test("each settlement route is the poll route, the assignment and the outcome", () => {
+  for (const outcome of ["Accepted", "Refused", "Unavailable"] as const)
+    assert.equal(
+      workerPoolSettlementRoutes[outcome],
+      `${workerPoolPollRoute}/:assignment/${outcome.toLowerCase()}`,
+    );
+  assert.equal(
+    workerPoolSettlementPath("Refused", "a/b c"),
+    `${workerPoolPollRoute}/a%2Fb%20c/refused`,
   );
 });
 

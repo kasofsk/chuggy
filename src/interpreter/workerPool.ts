@@ -24,7 +24,10 @@
  */
 import { setTimeout as delay } from "node:timers/promises";
 
-import type { WorkerPoolAssignment } from "../contract/workerPool.ts";
+import type {
+  WorkerPoolAssignment,
+  WorkerPoolReconciliation,
+} from "../contract/workerPool.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
@@ -156,12 +159,6 @@ export interface WorkerPoolPollSettings {
   readonly pollsMax: number;
 }
 
-/** What a poll answers: what the pool may take, and what it must stop. */
-export interface WorkerPoolReconciliation {
-  readonly assignments: readonly WorkerPoolAssignment[];
-  readonly stop: readonly string[];
-}
-
 /** Draws the one-shot bearer an assignment's harness answers under. */
 export type WorkerPoolMint = () => string;
 
@@ -193,7 +190,7 @@ async function workerPoolHeldReconciled(
   identity: WorkerPoolIdentity,
   held: readonly string[],
   leaseSecs: number,
-): Promise<readonly string[]> {
+): Promise<string[]> {
   const renewed = await Promise.all(
     held.map(async (assignment) => ({
       assignment,
@@ -215,7 +212,7 @@ async function workerPoolClaims(
   settings: WorkerPoolPollSettings,
   mint: WorkerPoolMint,
   wanted: number,
-): Promise<readonly WorkerPoolAssignment[]> {
+): Promise<WorkerPoolAssignment[]> {
   const claimed: WorkerPoolAssignment[] = [];
   for (let taken = 0; taken < wanted; taken += 1) {
     const assignment = mint();

@@ -39,9 +39,15 @@ const workerPoolCapabilitiesSchema = z
   .array(workerPoolCapabilitySchema)
   .max(workerPoolCapabilitiesMax);
 
+/** The name an assignment goes by on every leg of the wire, opaque to the pool. */
+export const workerPoolAssignmentIdentitySchema = z
+  .string()
+  .min(1)
+  .max(workerPoolIdentityCharsMax);
+
 export const workerPoolAssignmentSchema = z.strictObject({
-  /** The idempotency key and the cancel handle in one, opaque to the pool. */
-  assignment: z.string().min(1).max(workerPoolIdentityCharsMax),
+  /** The idempotency key and the cancel handle in one. */
+  assignment: workerPoolAssignmentIdentitySchema,
   capabilities: workerPoolCapabilitiesSchema,
   /**
    * The size of the box, which no capability token expresses. Omit them and
@@ -80,6 +86,70 @@ export const assignmentOutcomeSchema = z.discriminatedUnion("outcome", [
   }),
 ]);
 
+/**
+ * The poll, which is the one call a pool makes for work: a GET at this path
+ * whose query is `workerPoolPollQuerySchema`, answered with
+ * `workerPoolReconciliationSchema`. Every lease the query names is renewed by
+ * the call, so a pool that stops making it is a pool whose work comes back.
+ */
+export const workerPoolPollRoute = "/v1/assignments";
+
+/**
+ * Where a pool reports what it did with an assignment, keyed by the outcome:
+ * a POST at the path, whose body is that arm of `assignmentOutcomeSchema`
+ * without its `outcome`. A route pattern is what a server registers, and
+ * `workerPoolSettlementPath` is the same route as a client fills it.
+ */
+export const workerPoolSettlementRoutes = {
+  Accepted: `${workerPoolPollRoute}/:assignment/accepted`,
+  Refused: `${workerPoolPollRoute}/:assignment/refused`,
+  Unavailable: `${workerPoolPollRoute}/:assignment/unavailable`,
+} as const;
+
+export function workerPoolSettlementPath(
+  outcome: keyof typeof workerPoolSettlementRoutes,
+  assignment: string,
+): string {
+  return workerPoolSettlementRoutes[outcome].replace(
+    ":assignment",
+    encodeURIComponent(assignment),
+  );
+}
+
+/** The poll's query parameters by name, `held` repeated once per assignment. */
+export const workerPoolPollQuery = { held: "held" } as const;
+
+/**
+ * The poll's query as the plane reads it. `held` is the assignments the pool is
+ * still running, repeated or single or absent as a query carries a list, and
+ * its length is bounded by the plane's own setting rather than by a figure
+ * written here — a list longer than that is refused whole, never cut, because a
+ * cut list reads as a pool that let go of work it is still running.
+ */
+export function workerPoolPollQuerySchema(heldMax: number) {
+  return z.strictObject({
+    [workerPoolPollQuery.held]: z.preprocess(
+      (value): unknown[] =>
+        value === undefined
+          ? []
+          : Array.isArray(value)
+            ? (value as unknown[])
+            : [value],
+      z.array(workerPoolAssignmentIdentitySchema).max(heldMax),
+    ),
+  });
+}
+
+/**
+ * What a poll is answered with: the assignments the pool may now place, and
+ * the ones it must stop. Each list is as long as the plane's own bounds allow
+ * and no longer, so a reader bounds the body it takes in.
+ */
+export const workerPoolReconciliationSchema = z.strictObject({
+  assignments: z.array(workerPoolAssignmentSchema),
+  stop: z.array(workerPoolAssignmentIdentitySchema),
+});
+
 export const workerPoolRegistrationSchema = z.strictObject({
   pool: z.string().min(1).max(workerPoolIdentityCharsMax),
   capabilities: workerPoolCapabilitiesSchema,
@@ -106,6 +176,9 @@ export const workerPoolRedemptionSchema = z.strictObject({
 
 export type WorkerPoolAssignment = z.infer<typeof workerPoolAssignmentSchema>;
 export type AssignmentOutcome = z.infer<typeof assignmentOutcomeSchema>;
+export type WorkerPoolReconciliation = z.infer<
+  typeof workerPoolReconciliationSchema
+>;
 export type WorkerPoolRegistration = z.infer<
   typeof workerPoolRegistrationSchema
 >;

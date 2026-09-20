@@ -4,9 +4,9 @@
  *
  * THE STATUS LINE IS THE TAXONOMY AND THIS MODULE ONLY READS IT. The plane
  * already separates a token it rejected, a caller it does not serve and an
- * authority it could not ask, and each of its answers carries the action it
- * expects; nothing here re-decides that, and nothing here retries — a pass is
- * what comes back.
+ * authority it could not ask, and its status is the whole of each answer;
+ * nothing here re-decides that, and nothing here retries — a pass is what
+ * comes back.
  *
  * A MALFORMED ANSWER IS AN OUTAGE AND NOT A DENIAL. An assignment this side
  * cannot parse is a plane this client cannot work with, which is a condition an
@@ -19,11 +19,11 @@
  * plane's configuration and this process cannot read it.
  */
 
-import { z } from "zod";
-
 import {
-  workerPoolAssignmentSchema,
-  workerPoolIdentityCharsMax,
+  workerPoolPollQuery,
+  workerPoolPollRoute,
+  workerPoolReconciliationSchema,
+  workerPoolSettlementPath,
   type AssignmentOutcome,
 } from "../../contract/workerPool.ts";
 import type {
@@ -61,14 +61,6 @@ async function poolPlaneAnswerText(
   }
 }
 
-/** The plane's own two paths, spelled here because a pool reaches them by address alone. */
-const poolPlaneAssignmentsPath = "v1/assignments";
-
-const poolPlaneReconciliationSchema = z.object({
-  assignments: z.array(workerPoolAssignmentSchema),
-  stop: z.array(z.string().min(1).max(workerPoolIdentityCharsMax)),
-});
-
 export interface PoolPlaneClientSettings {
   readonly baseUrl: string;
   readonly pollTimeoutMs: number;
@@ -96,17 +88,27 @@ export function checkedPoolPlaneClientSettings(
   return { ...input, baseUrl: url.toString() };
 }
 
+/**
+ * One of the plane's routes under this pool's base address. The contract spells
+ * a route from the plane's root, and the base may carry a prefix of its own, so
+ * the route is joined beneath it rather than replacing its path.
+ */
+function poolPlaneUrl(settings: PoolPlaneClientSettings, route: string): URL {
+  return new URL(route.replace(/^\//u, ""), settings.baseUrl);
+}
+
 /** The poll's address, the held list repeated as the plane reads it. */
 function poolPlaneAssignmentsUrl(
   settings: PoolPlaneClientSettings,
   held: readonly string[],
 ): URL {
-  const url = new URL(poolPlaneAssignmentsPath, settings.baseUrl);
-  for (const assignment of held) url.searchParams.append("held", assignment);
+  const url = poolPlaneUrl(settings, workerPoolPollRoute);
+  for (const assignment of held)
+    url.searchParams.append(workerPoolPollQuery.held, assignment);
   return url;
 }
 
-/** What each refusing status means to a pool, which is what the plane's own `action` says. */
+/** What each refusing status means to a pool, read from the status alone. */
 function poolPlaneRefusal(
   status: number,
 ): Exclude<WorkerPoolPolled, { polled: "Reconciled" }> {
@@ -139,7 +141,7 @@ async function poolPlaneReconciled(
   } catch {
     return { polled: "Unavailable", evidence: "the plane answered no JSON" };
   }
-  const read = poolPlaneReconciliationSchema.safeParse(parsed);
+  const read = workerPoolReconciliationSchema.safeParse(parsed);
   return read.success
     ? {
         polled: "Reconciled",
@@ -176,18 +178,6 @@ async function poolPlanePolled(
     : poolPlaneRefusal(answered.status);
 }
 
-/** The settlement's own path segment, which is where the outcome is said rather than in a body. */
-function poolPlaneOutcomePath(outcome: AssignmentOutcome): string {
-  switch (outcome.outcome) {
-    case "Accepted":
-      return "accepted";
-    case "Refused":
-      return "refused";
-    case "Unavailable":
-      return "unavailable";
-  }
-}
-
 /** What a settlement carries beyond its path, which is nothing at all for an acceptance. */
 function poolPlaneOutcomeBody(outcome: AssignmentOutcome): string {
   switch (outcome.outcome) {
@@ -215,9 +205,9 @@ async function poolPlaneSettled(
   assignment: string,
   outcome: AssignmentOutcome,
 ): Promise<WorkerPoolSettled> {
-  const url = new URL(
-    `${poolPlaneAssignmentsPath}/${encodeURIComponent(assignment)}/${poolPlaneOutcomePath(outcome)}`,
-    settings.baseUrl,
+  const url = poolPlaneUrl(
+    settings,
+    workerPoolSettlementPath(outcome.outcome, assignment),
   );
   try {
     const answered = await fetcher(url, {
