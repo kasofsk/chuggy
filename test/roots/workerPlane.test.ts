@@ -245,3 +245,77 @@ test("a session bound that is not a positive integer is refused by its own name"
     );
   }
 });
+
+/**
+ * The mounted credential half, which is what a deployment whose remote is not a
+ * forge composes. Each case holds no app key, because a plane holding a mount
+ * and nothing else is the composition this half exists for and the only one
+ * that proves the forge tokens are optional.
+ */
+function mountedEnvironment(
+  port: number,
+  path: string,
+): Readonly<Record<string, string>> {
+  return {
+    ...planeEnvironment(port),
+    CHUG_WORKER_PLANE_REPOSITORY_CREDENTIAL_SOURCES: JSON.stringify([
+      { repository: "rig.example.test/rig/chuggy", path },
+    ]),
+  };
+}
+
+const mountedUsername = { CHUG_WORKER_PLANE_GIT_CREDENTIAL_USERNAME: "sync" };
+
+test("mounted sources without the username they are presented under refuse to start by name", async () => {
+  const port = await freePort();
+  const mounted = join(root, "mounted-credential");
+  writeFileSync(mounted, "a credential\n");
+
+  const refused = await planeRefusal(mountedEnvironment(port, mounted));
+
+  assert.equal(refused.code, 1);
+  assert.match(
+    refused.stderr,
+    /CHUG_WORKER_PLANE_GIT_CREDENTIAL_USERNAME is required/u,
+  );
+});
+
+test("a mounted credential the plane cannot read refuses to start rather than answering Unavailable forever", async () => {
+  const port = await freePort();
+
+  const refused = await planeRefusal({
+    ...mountedEnvironment(port, join(root, "absent-credential")),
+    ...mountedUsername,
+  });
+
+  assert.equal(refused.code, 1);
+  assert.match(
+    refused.stderr,
+    /CHUG_WORKER_PLANE_REPOSITORY_CREDENTIAL_SOURCES:/u,
+  );
+});
+
+test("a plane holding a mount and no app key starts and serves the credential route", async () => {
+  const port = await freePort();
+  const mounted = join(root, "readable-credential");
+  writeFileSync(mounted, "a credential\n");
+  const child = planeProcess({
+    ...mountedEnvironment(port, mounted),
+    ...mountedUsername,
+  });
+
+  try {
+    await planeListening(port, child);
+    const answered = await fetch(
+      `http://127.0.0.1:${String(port)}/v1/ticket-execution/credentials`,
+      { method: "POST" },
+    );
+    assert.equal(
+      answered.status,
+      401,
+      "the credential route was not served in front of an authority",
+    );
+  } finally {
+    child.kill("SIGKILL");
+  }
+});

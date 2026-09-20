@@ -5,7 +5,10 @@ import {
   sessionArtifactStore,
   type ArtifactStore,
 } from "../adapters/artifacts/artifactStore.ts";
-import { credentialFiles } from "../adapters/credentials/credentialFiles.ts";
+import {
+  credentialFiles,
+  credentialFilesPrecondition,
+} from "../adapters/credentials/credentialFiles.ts";
 import { githubRepositoryHost } from "../adapters/forge/githubAddress.ts";
 import {
   githubInstallationTokens,
@@ -35,11 +38,14 @@ import {
   workerPodForgeApp,
 } from "../interpreter/forgeInstallation.ts";
 import { sessionSchedulerDefaults } from "../interpreter/sessionScheduler.ts";
-import { repositoryCredentialFilesOf } from "../interpreter/finalizerSettings.ts";
+import {
+  repositoryCredentialFilesOf,
+  type RepositoryCredentialFile,
+} from "../interpreter/finalizerSettings.ts";
+import type { RuntimePrecondition } from "../interpreter/serviceRuntime.ts";
 import {
   workerPlaneCredentialMinting,
   type WorkerPlaneCredentialMinting,
-  type WorkerPlaneMountedCredentials,
 } from "../interpreter/workerPlaneCredentials.ts";
 
 /**
@@ -132,7 +138,13 @@ const repositoryCredentialSourcesVariable =
 const gitCredentialUsernameVariable =
   "CHUG_WORKER_PLANE_GIT_CREDENTIAL_USERNAME";
 
-function planeMountedCredentials(): WorkerPlaneMountedCredentials | undefined {
+/** The files this deployment names and the name their secret is presented under. */
+interface PlaneMountedSources {
+  readonly sources: readonly RepositoryCredentialFile[];
+  readonly username: string;
+}
+
+function planeMountedSources(): PlaneMountedSources | undefined {
   const encoded = process.env[repositoryCredentialSourcesVariable];
   if (encoded === undefined || encoded.length === 0) return undefined;
   const sources = repositoryCredentialFilesOf(
@@ -141,34 +153,64 @@ function planeMountedCredentials(): WorkerPlaneMountedCredentials | undefined {
   );
   if (sources.length === 0) return undefined;
   return {
-    credentials: credentialFiles({ sources }),
+    sources,
     username: planeEnvironmentRequired(gitCredentialUsernameVariable),
-    now: () => Date.now(),
   };
+}
+
+/**
+ * One source this process may not start without, refused by the name of the
+ * variable that composed it and with the pool closed behind it.
+ */
+async function planeRequires(
+  pool: ReturnType<typeof postgresPool>,
+  variable: string,
+  precondition: RuntimePrecondition,
+): Promise<void> {
+  const verdict = await precondition.check(new AbortController().signal);
+  if (verdict.met === "Met") return;
+  await pool.end();
+  throw new Error(`${variable}: ${verdict.why}`);
 }
 
 /**
  * What a pod's credential routes answer from, or nothing where this deployment
  * holds neither an app key nor a mount and every pod resolves what its launcher
- * gave it. A key this process could not sign with refuses the start, leaving no
- * pool open behind it: minting that fails at every attempt is worse than not
- * minting at all, because the pods cannot tell the two apart.
+ * gave it.
+ *
+ * NEITHER SOURCE MAY BE COMPOSED UNUSABLE: a key this process could not sign
+ * with and a file it could not read both refuse the start, leaving no pool open
+ * behind them, because a source that fails at every attempt is worse than not
+ * holding it at all — an unreadable mount answers `Unavailable` for as long as
+ * the process runs, which a pod retries against forever rather than falling
+ * back from.
  */
 async function planeCredentials(
   pool: ReturnType<typeof postgresPool>,
 ): Promise<WorkerPlaneCredentialMinting | undefined> {
-  const mounted = planeMountedCredentials();
+  const mountedSources = planeMountedSources();
   const options = planeForgeOptions();
-  if (options === undefined && mounted === undefined) return undefined;
-  if (options !== undefined) {
-    const verdict = await githubInstallationTokensPrecondition(options).check(
-      new AbortController().signal,
+  if (options === undefined && mountedSources === undefined) return undefined;
+  if (options !== undefined)
+    await planeRequires(
+      pool,
+      forgeAppKeyFileVariable,
+      githubInstallationTokensPrecondition(options),
     );
-    if (verdict.met !== "Met") {
-      await pool.end();
-      throw new Error(`${forgeAppKeyFileVariable}: ${verdict.why}`);
-    }
-  }
+  if (mountedSources !== undefined)
+    await planeRequires(
+      pool,
+      repositoryCredentialSourcesVariable,
+      credentialFilesPrecondition({ sources: mountedSources.sources }),
+    );
+  const mounted =
+    mountedSources === undefined
+      ? undefined
+      : {
+          credentials: credentialFiles({ sources: mountedSources.sources }),
+          username: mountedSources.username,
+          now: () => Date.now(),
+        };
   return workerPlaneCredentialMinting({
     ...(options === undefined
       ? {}

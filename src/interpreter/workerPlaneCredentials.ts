@@ -101,10 +101,13 @@ export interface WorkerPlaneMountedCredentials {
 }
 
 /**
- * Everything the minting is composed with, all of it read under the caller's
- * own tenant. A deployment holding no forge app names no `tokens` and answers
- * from its mounts alone; one mounting nothing names no `mounted` and is the
- * deployment this tree already had.
+ * Everything the minting is composed with, the binding read being what carries
+ * the caller's tenant and what gates both sources: a mint goes out under the
+ * tenant beside the repository, and a mount is keyed on the repository alone,
+ * so which file a pod can reach is decided by whose binding named it rather
+ * than by the map. A deployment holding no forge app names no `tokens` and
+ * answers from its mounts alone; one mounting nothing names no `mounted` and is
+ * the deployment this tree already had.
  */
 export interface WorkerPlaneCredentialOptions {
   readonly tokens?: ForgeRepositoryTokens;
@@ -144,8 +147,9 @@ async function workerPlaneCredentialMinted(
 
 /**
  * One read of the mount this deployment holds for the binding, under the whole
- * binding rather than its name alone — the file a repository is answered from
- * is the one its own `credentialReference` selects.
+ * binding rather than its name alone, so that a deployment naming one file per
+ * credential rather than one per repository is selected from the way it is
+ * everywhere else this port is composed.
  */
 async function workerPlaneCredentialMounted(
   mounted: WorkerPlaneMountedCredentials,
