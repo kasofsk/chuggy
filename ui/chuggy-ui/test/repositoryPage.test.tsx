@@ -128,7 +128,7 @@ function declared(
         practices: [],
         workInstructionsCount: 1,
         reviewInstructionsCount: 1,
-        finalization: { approvalRequired: true, handoff: "DirectCommit" },
+        finalization: { approvalRequired: true },
         evaluationStagesCount: 2,
       };
 }
@@ -367,8 +367,8 @@ test("the configurations are this repository's own, incomplete rows saying so", 
   expect(
     rows.map((row) => [...row.children].map((cell) => cell.textContent)),
   ).toStrictEqual([
-    ["Configuration", "Worker", "Stages", "Approval", "Handoff"],
-    ["chuggy #12", "worker:1", "2", "Required", "Direct commit"],
+    ["Configuration", "Worker", "Stages", "Approval"],
+    ["chuggy #12", "worker:1", "2", "Required"],
     ["nightly #12", "Incomplete"],
   ]);
 });

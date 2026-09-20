@@ -43,14 +43,11 @@ export function phaseTone(phase: TicketPhase): Tone {
     case "Working":
     case "Evaluating":
     case "Finalizing":
-    case "PublishingHandoff":
       return "live";
-    case "HandoffBlocked":
     case "Escalated":
       return "parked";
     case "Done":
       return "pass";
-    case "Abandoned":
     case "Revoked":
       return "retired";
   }

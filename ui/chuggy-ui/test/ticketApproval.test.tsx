@@ -67,11 +67,11 @@ const approval = {
   admits: ["Approve", "Decline"],
 };
 
-const blocked = {
-  action: "action-blocked",
-  kind: "HandoffBlock",
+const escalated = {
+  action: "action-escalated",
+  kind: "TicketEscalation",
   authorizingSequence: 52,
-  admits: ["AbandonHandoff"],
+  admits: ["Revoke"],
 };
 
 /** One ticket waiting on an approval, until an answer has been submitted. */
@@ -148,12 +148,12 @@ test("a frame moves what the page offers without the page reading again", async 
       frame("NativeAction", "12", {
         version: 1,
         resource: "11",
-        representation: { actions: [blocked] },
+        representation: { actions: [escalated] },
       }),
     );
   });
   await settled();
   expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Abandon" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "Revoke" })).toBeDefined();
   expect(held.api.submitted()).toBeUndefined();
 });

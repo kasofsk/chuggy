@@ -146,7 +146,7 @@ function sameKind(left: TaskKind, right: TaskKind): boolean {
 /** The console's whole view of a ticket a decision has just parked. */
 function situationOf(before: Ticket, after: Ticket): ResumeSituation {
   return {
-    phase: after.phase === "HandoffBlocked" ? "HandoffBlocked" : "Escalated",
+    phase: "Escalated",
     reason: after.reason === "NoReason" ? undefined : after.reason,
     lastSet: lastSetOf(before),
     stageCount: before.program.length,
@@ -317,17 +317,6 @@ test("a ticket parked by a revoked dependency is offered no resume", () => {
   const after = ticketAt(decideRevoke(fleetOfTwo, core, id).post, dependent);
   assert.equal(after.reason, "DependencyRevoked");
   agrees(ticketAt(core, dependent), after, "a revoked dependency");
-});
-
-test("a handoff nothing could prove parks at its own publication", () => {
-  const before = ticketIn({ phase: "PublishingHandoff" });
-  const after = ticketAt(
-    decideFinalizationResult(coreWith(before), id, "HandoffPublicationUnproven")
-      .post,
-    id,
-  );
-  assert.equal(after.phase, "HandoffBlocked");
-  agrees(before, after, "an unproven handoff");
 });
 
 test("each point re-enters the phase the console names, at the charge it names", () => {

@@ -42,8 +42,6 @@ function openAction(
 const namedBy: Readonly<Record<NativeActionResolution, string>> = {
   Resume: "Resume",
   Revoke: "Revoke",
-  RetryHandoff: "Retry",
-  AbandonHandoff: "Abandon",
   Approve: "Approve",
   Decline: "Decline",
 };
@@ -119,12 +117,12 @@ test("an action admitting one answer offers exactly that one", () => {
 test("the answers over a list are every action's, in the order it listed them", () => {
   const listed = nativeActionsAnswers([
     openAction("FinalizationApproval", ["Decline"]),
-    { ...openAction("HandoffBlock"), action: "action-two" },
+    { ...openAction("TicketEscalation"), action: "action-two" },
   ]);
   expect(listed.map((answer) => answer.action)).toStrictEqual([
     "Decline",
-    "Retry",
-    "Abandon",
+    "Resume",
+    "Revoke",
   ]);
   expect(nativeActionsAnswers([])).toStrictEqual([]);
 });

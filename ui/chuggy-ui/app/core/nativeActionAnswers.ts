@@ -27,10 +27,6 @@ export function nativeActionAnswerName(
       return "Resume";
     case "Revoke":
       return "Revoke";
-    case "RetryHandoff":
-      return "Retry";
-    case "AbandonHandoff":
-      return "Abandon";
     case "Approve":
       return "Approve";
     case "Decline":

@@ -42,12 +42,8 @@ test("a filter's key stays under its partition, so a reset still reaches it", ()
 });
 
 test("a section filter asks the wire for that section's phases and no others", () => {
-  expect(ticketFilterPhases("NeedsYou")).toStrictEqual([
-    "HandoffBlocked",
-    "Escalated",
-  ]);
+  expect(ticketFilterPhases("NeedsYou")).toStrictEqual(["Escalated"]);
   expect(ticketFilterPage("NeedsYou", undefined).phase).toStrictEqual([
-    "HandoffBlocked",
     "Escalated",
   ]);
 });

@@ -18,7 +18,6 @@
 import {
   operationRefusalCodes,
   type BriefFinalizationMode,
-  type ConfigurationHandoff,
   type EscalationReason,
   type FinalizerChoice,
   type OperationRefusalCode,
@@ -148,16 +147,11 @@ export function escalationDetailLine(
 /** Where the ticket is, in the machine's own word for the phase. */
 export function phaseLabel(phase: TicketPhase): string {
   switch (phase) {
-    case "PublishingHandoff":
-      return "Publishing";
-    case "HandoffBlocked":
-      return "Handoff blocked";
     case "Pending":
     case "Working":
     case "Evaluating":
     case "Finalizing":
     case "Done":
-    case "Abandoned":
     case "Escalated":
     case "Revoked":
       return phase;
@@ -232,16 +226,6 @@ export function finalizerLabel(finalizer: FinalizerChoice): string {
   }
 }
 
-/** What a configuration hands its finished work off as. */
-export function handoffLabel(handoff: ConfigurationHandoff): string {
-  switch (handoff) {
-    case "None":
-      return "None";
-    case "DirectCommit":
-      return "Direct commit";
-  }
-}
-
 /** Whether finalization waits for a person before it runs. */
 export function approvalLabel(required: boolean): string {
   return required ? "Required" : "Not required";
@@ -306,8 +290,6 @@ function resumeEffect(resume: ResumeDrawn): string {
       return "Re-runs evaluation from stage 1";
     case "ResumeFinalizing":
       return "Re-runs finalization";
-    case "ResumePublishingHandoff":
-      return "Republishes the handoff";
   }
 }
 
@@ -339,10 +321,9 @@ function offered(effect: string, cost: string): ActionEffect {
 
 /**
  * What is left at a wall the resume is not an answer to, named from the answers
- * the page is drawing beside it rather than from the wall. Revoke is the exit
- * from an escalation and Abandon from a blocked handoff, which `revocableIn`
- * separates, so naming one of them for both would name a button that is not
- * there.
+ * the page is drawing beside it rather than assumed: `revocableIn` decides
+ * which phases offer Revoke, so the exit named here is always one the ticket's
+ * own read admits.
  */
 export function wallExitLine(exits: WallExits): string | undefined {
   const left = exits.filter((action) => action !== "Resume");
@@ -410,10 +391,6 @@ export function ticketActionEffect(
       return resumeActionEffect(resume, rework, exits);
     case "Revoke":
       return offered("Parks every dependent ticket", "free");
-    case "Retry":
-      return offered("Republishes the handoff", "free");
-    case "Abandon":
-      return offered("Abandons dependents too", "free");
     case "Approve":
       return offered("Lets finalization proceed", "free");
     case "Decline":

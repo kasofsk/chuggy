@@ -30,10 +30,7 @@ const sectionOfPhase: Readonly<Record<TicketPhase, TicketSection>> = {
   Working: "InProgress",
   Evaluating: "InProgress",
   Finalizing: "InProgress",
-  PublishingHandoff: "InProgress",
-  HandoffBlocked: "NeedsYou",
   Done: "Done",
-  Abandoned: "Stopped",
   Escalated: "NeedsYou",
   Revoked: "Stopped",
 };
@@ -74,9 +71,8 @@ test("no two reasons are drawn with the same badge", () => {
   expect(new Set(drawn).size).toBe(drawn.length);
 });
 
-test("an escalated row's badge is its reason and a blocked handoff's is its phase", () => {
+test("an escalated row's badge is its reason", () => {
   expect(ticketBadgeLabel("Escalated", "GasExhausted")).toBe("gas spent");
-  expect(ticketBadgeLabel("HandoffBlocked", undefined)).toBe("handoff blocked");
 });
 
 test("a row with nothing to answer for carries no badge", () => {

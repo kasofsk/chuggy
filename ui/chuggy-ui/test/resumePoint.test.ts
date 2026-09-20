@@ -123,22 +123,12 @@ test("a blocked execution resumes into the phase that held the set it stopped", 
   ).toBeUndefined();
 });
 
-test("a blocked handoff resumes its publication, with no reason to read", () => {
-  expect(
-    ticketResumePoint({
-      ...parked("WorkFailed"),
-      phase: "HandoffBlocked",
-      reason: undefined,
-    }),
-  ).toBe("ResumePublishingHandoff");
-});
-
 test("only a parked phase has anything to resume", () => {
   const resumable = phaseRoster.filter(
     (phase) =>
       ticketResumePoint({ ...parked("WorkFailed"), phase }) !== undefined,
   );
-  expect(resumable).toEqual(["HandoffBlocked", "Escalated"]);
+  expect(resumable).toEqual(["Escalated"]);
 });
 
 test("an escalation whose reason the read omits names no point", () => {
@@ -220,7 +210,6 @@ test("each point is re-run in the ticket's own word for it", () => {
     ["ResumeReworking", "work"],
     ["ResumeEvaluating", "evaluation"],
     ["ResumeFinalizing", "finalization"],
-    ["ResumePublishingHandoff", "handoff"],
   ]);
 });
 

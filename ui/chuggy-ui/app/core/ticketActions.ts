@@ -26,18 +26,12 @@ import type { ProjectList, ProjectQueryKey } from "./projectQueryKeys.ts";
 /** Settled, or past the point of no return: the complement of `revocableIn`. */
 export const ticketUnrevocablePhases: readonly TicketPhase[] = [
   "Done",
-  "Abandoned",
   "Revoked",
   "Finalizing",
-  "PublishingHandoff",
-  "HandoffBlocked",
 ];
 
 /** The phases a parked ticket waits in, which is `retryableIn`'s first term. */
-export const ticketResumablePhases: readonly TicketPhase[] = [
-  "Escalated",
-  "HandoffBlocked",
-];
+export const ticketResumablePhases: readonly TicketPhase[] = ["Escalated"];
 
 /**
  * Every word a button in this console carries. `actionsFor` reaches the first
@@ -46,13 +40,7 @@ export const ticketResumablePhases: readonly TicketPhase[] = [
  * so that one component draws both.
  */
 export type TicketActionName =
-  | "Dispatch"
-  | "Resume"
-  | "Revoke"
-  | "Retry"
-  | "Abandon"
-  | "Approve"
-  | "Decline";
+  "Dispatch" | "Resume" | "Revoke" | "Approve" | "Decline";
 
 export interface TicketAction {
   readonly action: TicketActionName;
@@ -179,10 +167,6 @@ export function ticketActionSentence(
       return resumeSentence(context);
     case "Revoke":
       return "revoke this ticket, and park every ticket that depends on it";
-    case "Retry":
-      return "publish this ticket's handoff again";
-    case "Abandon":
-      return "abandon this ticket, and every waiting ticket that depends on it";
     case "Approve":
       return "let this ticket's finalization go ahead";
     case "Decline":

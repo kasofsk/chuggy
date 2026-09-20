@@ -54,8 +54,6 @@ export function nativeActionKindSentence(kind: NativeActionKind): string {
   switch (kind) {
     case "TicketEscalation":
       return "escalated";
-    case "HandoffBlock":
-      return "handoff blocked";
     case "FinalizationApproval":
       return "awaiting your approval";
   }

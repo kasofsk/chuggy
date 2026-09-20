@@ -5,7 +5,7 @@
  * The listing arrives newest first, so the first revision of a name is that
  * name's current one and the rest are its history, which this page is not.
  * Only what a reader can act on is drawn: an incomplete revision decides
- * nothing yet and carries none of the four facts, so it is a row saying so.
+ * nothing yet and carries none of the three facts, so it is a row saying so.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -13,7 +13,7 @@ import type { ConfigurationSummary } from "../../../../src/contract/responses.ts
 
 import type { ApiPorts, ApiResult } from "./apiRequest.ts";
 import { apiConfigurations, configurationPagesMax } from "./apiRoutes.ts";
-import { approvalLabel, handoffLabel } from "./codeLabels.ts";
+import { approvalLabel } from "./codeLabels.ts";
 import { configurationLabel, workerLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
 import { latestReadyConfiguration } from "./ticketCreation.ts";
@@ -23,7 +23,6 @@ export interface RepositoryConfigurationFacts {
   readonly worker: Label;
   readonly stages: string;
   readonly approval: string;
-  readonly handoff: string;
 }
 
 /** One row: the revision it names, and its facts where it has any. */
@@ -64,7 +63,6 @@ export function repositoryConfigurationRow(
             worker: workerLabel(summary.worker, summary.image),
             stages: String(summary.evaluationStagesCount),
             approval: approvalLabel(summary.finalization.approvalRequired),
-            handoff: handoffLabel(summary.finalization.handoff),
           },
   };
 }
