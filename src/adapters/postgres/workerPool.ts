@@ -22,7 +22,12 @@
  * execution — the pool's own `retryAfterSecs` from now — and the claim
  * predicate offers nothing before it. The scheduler writes the same column as
  * the instant its own interval counts from and reads it on the path that
- * places work itself, which is the other value of `placement`.
+ * places work itself, which is the other value of `placement`. A released row
+ * is put back as the scheduler opened it: the lease is the attempt's own
+ * again, and it is pushed past the backoff by the whole of what the pool held,
+ * so the reaper — which ends any placing attempt whose lease has lapsed —
+ * cannot reach the row before a pool may claim it, and still bounds a row no
+ * pool ever comes back for.
  *
  * THE CAPABILITIES COME BACK NULLABLE BECAUSE THE CHECKER CANNOT SEE OTHERWISE.
  * A correlated subquery over a joined row is a value `check-queries` proves
@@ -304,7 +309,9 @@ export function postgresWorkerPoolAssignments(
           tenant: string;
           project: string;
           execution: string;
-        }>(sql`UPDATE execution_attempt a SET pool=NULL,assignment=NULL,pool_refusal=NULL
+        }>(sql`UPDATE execution_attempt a SET pool=NULL,assignment=NULL,pool_refusal=NULL,
+            lease_owner=a.attempt,
+            lease_expires_at=a.lease_expires_at+make_interval(secs=>${retryAfterSecs}::double precision)
           WHERE a.tenant=${identity.partition.tenant} AND a.project=${identity.partition.project}
             AND a.assignment=${assignment} AND a.pool=${identity.pool} AND a.state='Placing'
             AND a.lease_expires_at>now() AND a.pool_refusal IS NULL

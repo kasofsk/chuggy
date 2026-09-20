@@ -12,6 +12,7 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { after, test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import type pg from "pg";
 
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
@@ -414,4 +415,42 @@ test("deregistration names the client the row holds, goes with that client alone
     [project.partition.tenant, project.partition.project, attempt.attempt],
   )) as readonly { pool: string | null }[];
   assert.deepEqual(left, [{ pool: "gone" }]);
+});
+
+test("a released attempt outlives the reaper for the backoff it was given", async () => {
+  const project = await poolProject("pool-parked");
+  const mine = await registered(project.partition, "parking", []);
+  const parked = await poolAttempt(project, "parked");
+  const handle = handles("parked");
+  assert.notEqual(
+    await assignments.claim(mine, 1, handle.assignment, handle.bearer),
+    undefined,
+  );
+  assert.equal(await assignments.release(mine, handle.assignment, 3), true);
+  await delay(1_500);
+  await rig.store.reapLapsedAttempts(project.epoch, 10);
+  const after = (await rig.harness.query(
+    `SELECT a.state, a.lease_owner, e.retries_spent::int AS retries_spent
+       FROM execution_attempt a
+       JOIN execution e ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
+      WHERE a.tenant=$1 AND a.project=$2 AND a.attempt=$3`,
+    [project.partition.tenant, project.partition.project, parked.attempt],
+  )) as readonly {
+    state: string;
+    lease_owner: string | null;
+    retries_spent: number;
+  }[];
+  assert.deepEqual(after, [
+    { state: "Placing", lease_owner: parked.attempt, retries_spent: 0 },
+  ]);
+  await rig.harness.query(
+    `UPDATE execution SET placement_backoff_from=now()-interval '1 second'
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [project.partition.tenant, project.partition.project, parked.execution],
+  );
+  const again = handles("parked-again");
+  assert.notEqual(
+    await assignments.claim(mine, leaseSecs, again.assignment, again.bearer),
+    undefined,
+  );
 });
