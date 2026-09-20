@@ -66,11 +66,11 @@ function workerPoolTokenTerms(row: {
 
 /**
  * One mint under the project's bound: the project's mints are serialized on an
- * advisory lock, its spent and expired tokens are swept, and the row is written
- * only where an active project is named and fewer than `workerPoolTokensLiveMax`
- * live tokens remain. The sweep is here rather than on a schedule because the
- * mint is the one write that grows the table, so the table is bounded by the
- * same statement that would otherwise grow it.
+ * advisory lock, its expired tokens are swept, and the row is written only
+ * where an active project is named and fewer than `workerPoolTokensLiveMax`
+ * unspent, unexpired tokens remain. A spent token is left until it expires,
+ * because its redemption may still be under way and a fault there gives the
+ * token back; the lifetime bound is what bounds how long a spent row stays.
  */
 async function workerPoolTokenMinted(
   client: pg.PoolClient,
@@ -85,13 +85,14 @@ async function workerPoolTokenMinted(
   );
   await client.query(sql`DELETE FROM worker_pool_registration_token t
     WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
-      AND (t.redeemed_at IS NOT NULL OR t.expires_at<=now())`);
+      AND t.expires_at<=now()`);
   const counted = await client.query<{ active: boolean; live: number }>(
     sql`SELECT EXISTS(SELECT 1 FROM project p
           WHERE p.tenant=${partition.tenant} AND p.project=${partition.project}
             AND p.lifecycle='Active') AS active,
         (SELECT count(*)::int FROM worker_pool_registration_token t
-          WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}) AS live`,
+          WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
+            AND t.redeemed_at IS NULL AND t.expires_at>now()) AS live`,
   );
   const row = counted.rows[0];
   if (row === undefined || !row.active) return "NotFound";

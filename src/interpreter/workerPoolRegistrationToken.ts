@@ -49,8 +49,7 @@ export type WorkerPoolTokenWritten = "Minted" | "NotFound" | "LimitReached";
 
 /**
  * The durable side of a token's whole life. `mint` writes a row only under the
- * project's bound and sweeps that project's spent and expired tokens as it
- * does, `permitted` reads a token that is neither spent nor expired, `consume`
+ * project's bound and sweeps that project's expired tokens as it does, `permitted` reads a token that is neither spent nor expired, `consume`
  * is the single write that spends it, so nothing but that write decides which
  * of two redeemers won, and `restore` gives back an unexpired one whose
  * redemption faulted.
