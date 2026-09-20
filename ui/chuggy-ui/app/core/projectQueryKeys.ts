@@ -8,9 +8,13 @@
  * the partition by prefix and a project switch leaves the other partition's
  * entries where they are. `["projects"]` is the inventory, which belongs to no
  * partition. The `resource` element is what the change frame carries for that
- * kind: a ticket number for `Ticket`, `Draft` and `NativeAction`, an execution
- * id, an operation id, a configuration revision, and the project's own identity
- * for `Project`.
+ * kind: a ticket number for `Ticket`, an execution id for `Execution`, and the
+ * session's own identity for `Session`.
+ *
+ * THE KINDS ARE WIDER THAN THE STREAM'S, and are checked to include them: a key
+ * may name a kind no frame carries, as the repository panels name `Project` and
+ * read it once, but a kind the stream carries and no key can name is a frame
+ * with nowhere to land.
  *
  * NOT EVERY ENTRY IS A READ. `projectHeldKey` is what a screen keeps for itself
  * — the cache being the only thing under a partition that outlives the screen
@@ -36,8 +40,17 @@
  * other.
  */
 
+import type { ProjectStreamKind } from "../../../../src/contract/events.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-export type ProjectResourceKind = "Project" | "Session" | "Thread" | "Ticket";
+
+export type ProjectResourceKind =
+  "Execution" | "Project" | "Session" | "Thread" | "Ticket";
+
+type ProjectStreamKindIsResourceKind =
+  ProjectStreamKind extends ProjectResourceKind ? true : never;
+
+/** Fails to compile where the stream grows a kind no key can be built for. */
+export const projectStreamKindsAreResourceKinds: ProjectStreamKindIsResourceKind = true;
 
 export const projectQueryScope = "project";
 export const projectsQueryScope = "projects";

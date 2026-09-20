@@ -32,6 +32,7 @@ import { RepositoriesPage } from "./RepositoriesPage.tsx";
 import { RepositoryPage } from "./repositories/RepositoryPage.tsx";
 import { ProjectTable } from "./ProjectTable.tsx";
 import { Shell } from "./Shell.tsx";
+import { ProjectStreamProvider } from "./stream.tsx";
 import { AdoptedTicketCreation, AdoptedTicketPage } from "./AdoptedTickets.tsx";
 
 export function Landing(): ReactNode {
@@ -73,7 +74,11 @@ export function Landing(): ReactNode {
 
 function PartitionLayout(): ReactNode {
   const partition = useParams({ from: "/$tenant/$project" });
-  return <Shell partition={partition} />;
+  return (
+    <ProjectStreamProvider partition={partition}>
+      <Shell partition={partition} />
+    </ProjectStreamProvider>
+  );
 }
 
 const rootRoute = createRootRoute({ component: Outlet });
