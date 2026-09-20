@@ -1,5 +1,5 @@
 import * as ticket from "../domain/chuggernaut/ticket.js";
-import type { TaskId } from "../domain/chuggernaut/task.js";
+import type { TaskId, TicketId } from "../domain/chuggernaut/task.js";
 import { assertNever } from "../domain/assertNever.ts";
 import type { Lease, Partition } from "./projectStore.ts";
 
@@ -103,6 +103,16 @@ export function ticketMachineTaskKey(task: TaskId): string {
     default:
       return assertNever(task);
   }
+}
+
+/**
+ * The ticket an event moved: every event but a creation names it directly, and a
+ * creation names the definition it was allocated on. Narrowing on that one
+ * exception is what makes an event kind arriving without a `ticket` a compile
+ * error here rather than a move nothing publishes.
+ */
+export function ticketMachineEventTicket(event: ticket.TicketEvent): TicketId {
+  return event.kind === "TicketCreated" ? event.definition.id : event.ticket;
 }
 
 export function ticketMachineOrigin(

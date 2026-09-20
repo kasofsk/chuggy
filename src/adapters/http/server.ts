@@ -29,6 +29,9 @@ import type { Ticket as AdoptedTicket } from "../../domain/chuggernaut/ticket.js
 import { asGitObjectId, asRepositoryId } from "../../interpreter/finalizer.ts";
 import { encode as encodeChuggernaut } from "../../interpreter/codec.ts";
 import type { TicketExecutionReads } from "../../interpreter/ticketExecutionRead.ts";
+import type { ProjectStreamHub } from "../../interpreter/projectStream.ts";
+import { projectStreamSocket, type ProjectStreamReads } from "./eventStream.ts";
+import { projectStreamCursorHeader } from "../../contract/events.ts";
 import { nativeHttpContractDocument } from "../../contract/document.ts";
 import { integerField, textField } from "../../contract/fields.ts";
 import {
@@ -1505,6 +1508,103 @@ function registerRetiredLegacyTicketRoutes(
     app.route({ method: [...route.method], url: route.url, handler: guard });
 }
 
+/**
+ * The reads a change row is turned into a frame by, each answering the body its
+ * own route answers with, so a route whose body moves takes the stream with it.
+ * A project holding no ticket service answers every ticket and execution row as
+ * a tombstone, which is what a resource no route can read already means.
+ */
+export function nativeProjectStreamReads(
+  web: NativeWeb,
+  service?: NativeTicketApplication,
+): ProjectStreamReads {
+  const gone: NativeHttpResponse = { status: 404, headers: {} };
+  return {
+    ticket: async (principal, partition, ticket) => {
+      if (service === undefined) return gone;
+      const found = await service.application.definition(
+        principal,
+        partition,
+        AdoptedTicketId(ticket),
+      );
+      if (found.result !== "Authorized" || found.value === undefined)
+        return gone;
+      return {
+        status: 200,
+        headers: {},
+        body: {
+          ...adoptedTicketView(found.value.held),
+          source: found.value.source ?? null,
+        },
+      };
+    },
+    execution: async (principal, partition, task) => {
+      const reads = service?.reads;
+      if (reads === undefined) return gone;
+      const found = await reads.execution(principal, partition, task);
+      if (found.result !== "Authorized" || found.value === undefined)
+        return gone;
+      return { status: 200, headers: {}, body: found.value };
+    },
+    lead: async (principal, partition) =>
+      leadResponse(await web.lead(principal, partition)),
+    thread: async (principal, partition, session) =>
+      threadResponse(
+        await web.thread(principal, partition, session, {
+          limit: threadTurnsAnsweredMax,
+        }),
+      ),
+    inquiry: async (principal, partition, session) =>
+      leadInquiryResponse(await web.leadInquiry(principal, partition, session)),
+  };
+}
+
+/** Where a stream resumes from, which is a consumer's own cursor or nothing. */
+function streamCursor(request: FastifyRequest): number | undefined {
+  const held = request.headers[projectStreamCursorHeader];
+  if (typeof held !== "string" || !/^(?:0|[1-9][0-9]*)$/u.test(held))
+    return undefined;
+  const cursor = Number(held);
+  return Number.isSafeInteger(cursor) ? cursor : undefined;
+}
+
+/**
+ * The live stream over the durable change log. Every refusal is decided and
+ * answered before the reply is hijacked, because a socket handed over has
+ * already written a 200 and a browser reads that as a stream that said nothing.
+ */
+function registerProjectEventStream(
+  app: FastifyInstance,
+  hub: ProjectStreamHub,
+): void {
+  app.get(
+    nativeHttpRoutes.events,
+    { config: { streaming: true } },
+    async (request, reply) => {
+      const opened = await hub.open({
+        partition: partitionOf(request),
+        principal: principalOf(request),
+        after: streamCursor(request),
+        expiresAtMs: request.bearerExpiresAtMs,
+      });
+      if (opened.opened === "AtCapacity") {
+        await reply
+          .code(503)
+          .header("retry-after", "1")
+          .type(nativeHttpMediaType)
+          .send(nativeHttpError("ServerBusy", "The server is at capacity."));
+        return reply;
+      }
+      reply.hijack();
+      request.raw.on("close", () => {
+        opened.stream.close();
+      });
+      opened.stream.begin(projectStreamSocket(reply));
+      return reply;
+    },
+  );
+}
+
 function configureNativeHttpApp(
   app: FastifyInstance,
   ticketService?: NativeTicketApplication,
@@ -1539,6 +1639,7 @@ export function createNativeHttpApp(
   onboarding?: RepositoryOnboarding,
   ticketService?: NativeTicketApplication,
   workerPools?: WorkerPoolRegistrationService,
+  stream?: ProjectStreamHub,
 ): FastifyInstance {
   const app = fastify({
     bodyLimit: nativeHttpBodyBytesMax,
@@ -1572,6 +1673,7 @@ export function createNativeHttpApp(
     registerProjectRepositoryLanding(app, onboarding);
     registerProjectRepositoryRetirement(app, onboarding);
   }
+  if (stream !== undefined) registerProjectEventStream(app, stream);
   registerThreadReads(app, web, partitionRoot);
   registerThreadWrites(app, web, partitionRoot);
   registerLeadInquiries(app, web, partitionRoot);

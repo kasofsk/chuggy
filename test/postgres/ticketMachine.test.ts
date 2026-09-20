@@ -466,3 +466,44 @@ test("a journal is replayed in the column's order past the tenth input", async (
   }
   assert.ok((await store.read(lease.partition)) instanceof ticket.TicketGraph);
 });
+
+test("a committed decision appends the moved ticket to the change log", async () => {
+  const lease = await held("ticket-machine-change");
+  const store = postgresTicketMachine(writerPool);
+  const readerPool = postgresHarnessRolePool(apiRole);
+  try {
+    const create = {
+      identity: "create",
+      origin: "Author" as const,
+      authorization,
+      command: new ticket.CreateTicket(released(7)),
+    };
+    const refuse = {
+      identity: "refuse",
+      origin: "Author" as const,
+      authorization,
+      command: dispatch(4096),
+    };
+    for (const input of [create, refuse])
+      assert.equal(
+        (await ticketMachineProcess(store, lease, input, ticket.rework_policy))
+          .processed,
+        "Committed",
+      );
+    const appended = await readerPool.query<{
+      kind: string;
+      resource: string;
+    }>(
+      `SELECT kind,resource FROM project_change
+        WHERE tenant=$1 AND project=$2 ORDER BY sequence`,
+      [lease.partition.tenant, lease.partition.project],
+    );
+    assert.deepEqual(
+      appended.rows,
+      [{ kind: "Ticket", resource: "7" }],
+      "a decision appends the ticket it moved, and a refusal moves none",
+    );
+  } finally {
+    await readerPool.end();
+  }
+});

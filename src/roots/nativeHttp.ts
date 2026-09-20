@@ -10,6 +10,7 @@ import {
 } from "../adapters/keto/projectAccess.ts";
 import {
   createNativeHttpApp,
+  nativeProjectStreamReads,
   nativeHttpLimitsDefault,
   type NativeTicketApplication,
   type PrincipalAuthentication,
@@ -117,6 +118,13 @@ import {
 import type { ForgeTemplateRepository } from "../interpreter/forgeRepositoryCreation.ts";
 import { githubRepositoryCreation } from "../adapters/forge/githubRepositoryCreation.ts";
 import { postgresProjectChangeRetention } from "../adapters/postgres/projectChangeRetention.ts";
+import {
+  postgresProjectChangeDoorbell,
+  postgresProjectChangeLog,
+} from "../adapters/postgres/projectChangeLog.ts";
+import { projectStreamHub } from "../interpreter/projectStream.ts";
+import { projectResourceReader } from "../adapters/http/eventStream.ts";
+import { systemTimers } from "../adapters/runtime/systemTimers.ts";
 import { systemPacing } from "../adapters/runtime/systemPacing.ts";
 import {
   projectChangeRetentionDefaults,
@@ -798,11 +806,13 @@ function nativeMetricsListener(pool: pg.Pool): FastifyInstance | undefined {
 function nativeApiClosing(
   app: FastifyInstance,
   retention: { stop: () => Promise<void> },
+  stream: { close: () => Promise<void> },
   metrics: FastifyInstance | undefined,
   pool: pg.Pool,
 ): void {
   app.addHook("onClose", async () => {
     await retention.stop();
+    await stream.close();
     await metrics?.close();
     await closePool(pool);
   });
@@ -816,6 +826,45 @@ async function nativeMetricsListening(
   await metrics.listen({
     host: process.env["CHUG_API_METRICS_HOST"] ?? "127.0.0.1",
     port: positiveEnvironment("CHUG_API_METRICS_PORT", 0),
+  });
+}
+
+/** The bounded sweep that holds the change log to its retention. */
+function nativeChangeRetention(pool: ReturnType<typeof postgresPool>) {
+  return projectChangeRetentionMaintenance(
+    postgresProjectChangeRetention(pool),
+    systemPacing,
+    projectChangeRetentionDefaults,
+    (failure) => {
+      const message =
+        failure instanceof Error ? failure.message : "unknown failure";
+      process.stderr.write(`project change retention: ${message}\n`);
+    },
+  );
+}
+
+/**
+ * The live stream over the durable change log: one log reader on the API pool,
+ * one listening connection of its own, and the reads each frame's
+ * representation is taken from.
+ */
+function nativeProjectStream(
+  pool: ReturnType<typeof postgresPool>,
+  web: Parameters<typeof nativeProjectStreamReads>[0],
+  tickets: Parameters<typeof nativeProjectStreamReads>[1],
+) {
+  return projectStreamHub({
+    log: postgresProjectChangeLog(pool),
+    doorbell: postgresProjectChangeDoorbell(
+      requiredEnvironment(databaseUrlVariable),
+    ),
+    reader: projectResourceReader(nativeProjectStreamReads(web, tickets)),
+    timers: systemTimers,
+    report: {
+      noted: (note) => {
+        process.stderr.write(`project stream: ${JSON.stringify(note)}\n`);
+      },
+    },
   });
 }
 
@@ -846,6 +895,14 @@ async function main(): Promise<void> {
     nativeLeadPorts(pools, sessionArtifactStore(artifacts)),
     nativeThreadPorts(pools, sessionArtifactStore(artifacts)),
   );
+  const tickets = nativeTicketApplication(
+    pools,
+    access,
+    forge,
+    keying,
+    artifacts,
+  );
+  const stream = nativeProjectStream(pool, web, tickets);
   const app = createNativeHttpApp(
     web,
     authentication,
@@ -854,21 +911,13 @@ async function main(): Promise<void> {
     nativeHttpLimitsDefault,
     forge.minting,
     forge.onboarding,
-    nativeTicketApplication(pools, access, forge, keying, artifacts),
+    tickets,
     nativeWorkerPools(pool, access),
+    stream,
   );
-  const retention = projectChangeRetentionMaintenance(
-    postgresProjectChangeRetention(pool),
-    systemPacing,
-    projectChangeRetentionDefaults,
-    (failure) => {
-      const message =
-        failure instanceof Error ? failure.message : "unknown failure";
-      process.stderr.write(`project change retention: ${message}\n`);
-    },
-  );
+  const retention = nativeChangeRetention(pool);
   const metrics = nativeMetricsListener(pool);
-  nativeApiClosing(app, retention, metrics, pool);
+  nativeApiClosing(app, retention, stream, metrics, pool);
   const shutdown = nativeShutdown(
     app,
     positiveEnvironment("CHUG_API_SHUTDOWN_DRAIN_MS", 15_000),

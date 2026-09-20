@@ -30,6 +30,7 @@
     "forgeInstallationRepositories": "/api/v1/tenants/:tenant/forge-installations/:installationId/repositories",
     "projects": "/api/v1/projects",
     "project": "/api/v1/tenants/:tenant/projects/:project",
+    "events": "/api/v1/tenants/:tenant/projects/:project/events",
     "lead": "/api/v1/tenants/:tenant/projects/:project/lead",
     "leadTranscript": "/api/v1/tenants/:tenant/projects/:project/lead/transcript",
     "leadInquiries": "/api/v1/tenants/:tenant/projects/:project/lead/inquiries",
