@@ -71,7 +71,7 @@
       "invariant": "lastStep.label != \"ticket-escalated work_failed\"",
       "steps": 8,
       "quintVersion": "0.32.0",
-      "purpose": "The work wall, and the operator-retry that follows it \u2014 which is where the pre-work resume exemption arm is fired."
+      "purpose": "The work wall: the work set resolves Failed and the whole cycle escalates, parking the ticket at ResumeWorking with an open desk task. The revoke earlier in the walk is an unrelated ticket's."
     },
     {
       "name": "budgeted-finalization-budget-exhausted",
