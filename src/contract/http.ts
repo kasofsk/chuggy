@@ -320,6 +320,7 @@ export const nativeHttpRoutes = {
   forgeInstallationRepositories: `${nativeHttpBasePath}/tenants/:tenant/forge-installations/:installationId/repositories`,
   projects: `${nativeHttpBasePath}/projects`,
   project: `${nativeHttpBasePath}/tenants/:tenant/projects/:project`,
+  events: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/events`,
   lead: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead`,
   leadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/transcript`,
   leadInquiries: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/inquiries`,
