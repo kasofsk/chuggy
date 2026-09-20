@@ -262,6 +262,13 @@ export const forgeInstallationsAnsweredMax = 64;
 export const projectRepositoriesAnsweredMax = 200;
 
 /**
+ * How many names one bound repository's declarations answer with, per roster.
+ * A repository declaring more than this is declaring more than a reader of one
+ * page can act on, and the bound is what stops the panel growing without one.
+ */
+export const repositoryDeclarationsAnsweredMax = 200;
+
+/**
  * How many repositories one installation's listing answers with at the most,
  * whatever bound a deployment sets: a deployment naming a wider one is refused
  * where the setting is read, so the wire's bound is the one a reader relies on.
@@ -330,6 +337,7 @@ export const nativeHttpRoutes = {
   projectRepositoriesNew: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/new`,
   projectRepositoryLanding: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/landing`,
   projectRepositoryRetirement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/retirement`,
+  projectRepositoryDeclarations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/declarations`,
   threads: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads`,
   thread: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session`,
   threadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/transcript`,

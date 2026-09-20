@@ -40,6 +40,7 @@
     "projectRepositoriesNew": "/api/v1/tenants/:tenant/projects/:project/repositories/new",
     "projectRepositoryLanding": "/api/v1/tenants/:tenant/projects/:project/repositories/landing",
     "projectRepositoryRetirement": "/api/v1/tenants/:tenant/projects/:project/repositories/retirement",
+    "projectRepositoryDeclarations": "/api/v1/tenants/:tenant/projects/:project/repositories/declarations",
     "threads": "/api/v1/tenants/:tenant/projects/:project/threads",
     "thread": "/api/v1/tenants/:tenant/projects/:project/threads/:session",
     "threadTranscript": "/api/v1/tenants/:tenant/projects/:project/threads/:session/transcript",

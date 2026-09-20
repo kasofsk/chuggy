@@ -12,6 +12,7 @@ import {
   nativeHttpPageItemsMax,
   partitionSchema,
   projectRepositoriesAnsweredMax,
+  repositoryDeclarationsAnsweredMax,
   sessionStoreStreamCharsMax,
   sessionStoreStreamsAnswered,
   sessionTranscriptEntriesMax,
@@ -314,4 +315,27 @@ export const projectRepositoriesResponseSchema = z.object({
 });
 export type ProjectRepositoriesResponse = z.infer<
   typeof projectRepositoriesResponseSchema
+>;
+
+/**
+ * What one bound repository declares at the commit it was read at: what a
+ * ticket in it is run under, how many reworks it may take, and the finalizers
+ * it may be finished with.
+ *
+ * A fragment's own fields are not here. They are the fragment's and are read
+ * where it is; what this carries is the roster a ticket in this repository
+ * chooses from, which is what a reader of the repository can act on.
+ */
+export const repositoryDeclarationsResponseSchema = z.object({
+  repository: z.string().min(1),
+  commit: z.string().min(1),
+  reworkLimit: z.number().int().positive(),
+  cloudProject: z.string().min(1).optional(),
+  executionProfiles: z
+    .array(z.string().min(1))
+    .max(repositoryDeclarationsAnsweredMax),
+  finalizers: z.array(z.string().min(1)).max(repositoryDeclarationsAnsweredMax),
+});
+export type RepositoryDeclarationsResponse = z.infer<
+  typeof repositoryDeclarationsResponseSchema
 >;

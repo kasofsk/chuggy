@@ -526,6 +526,7 @@ function retiredTicketApp(
       definition: unavailable,
       validate: unavailable,
       catalog: unavailable,
+      declarations: unavailable,
       catalogFile: unavailable,
       writeCatalogFile: unavailable,
       removeCatalogFile: unavailable,
@@ -1012,6 +1013,68 @@ test("the catalog routes name the binding alone and answer its tree", async () =
       path: "workloads/work.yaml",
     },
   ]);
+});
+
+test("the declarations route names the binding and answers what it declares", async () => {
+  const service = retiredTicketApp("Fresh");
+  const requests: unknown[] = [];
+  const declared = {
+    repository: "github.com/acme/atlas",
+    commit: asGitObjectId("a".repeat(40)),
+    reworkLimit: 5,
+    executionProfiles: ["small"],
+    finalizers: ["pull-request.yaml"],
+  };
+  await using app = adoptedTicketRouteApp({
+    ...service,
+    application: {
+      ...service.application,
+      declarations: (_principal, request) => {
+        requests.push(request);
+        return Promise.resolve({ result: "Authorized", value: declared });
+      },
+    },
+  });
+  const answered = await app.inject({
+    method: "GET",
+    url: "/api/v1/tenants/acme/projects/atlas/repositories/declarations?repository=github.com/acme/atlas",
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(answered.statusCode, 200, answered.body);
+  assert.deepEqual(answered.json(), declared);
+  assert.deepEqual(requests, [
+    {
+      partition: { tenant: "acme", project: "atlas" },
+      repository: "github.com/acme/atlas",
+    },
+  ]);
+});
+
+/**
+ * A refused reader is told the project is not there rather than that it is and
+ * they may not read it, which is what every other read of this partition does.
+ */
+test("the declarations route answers a refused principal as a project that is not there", async () => {
+  const service = retiredTicketApp("Fresh");
+  const asked: unknown[] = [];
+  await using app = adoptedTicketRouteApp({
+    ...service,
+    application: {
+      ...service.application,
+      declarations: (_principal, request) => {
+        asked.push(request);
+        return Promise.resolve({ result: "NotFound" });
+      },
+    },
+  });
+  const refused = await app.inject({
+    method: "GET",
+    url: "/api/v1/tenants/acme/projects/atlas/repositories/declarations",
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(refused.statusCode, 404, refused.body);
+  /** An unregistered route answers 404 too, so the refusal is the read's own. */
+  assert.equal(asked.length, 1);
 });
 
 const adoptedCatalogRoot =

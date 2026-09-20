@@ -1190,6 +1190,38 @@ function registerAdoptedTicketCatalog(
   });
 }
 
+/**
+ * What the bound repository declares, for the page that draws one. It answers
+ * the repository's roster rather than its files, so it is a read of the
+ * repository and asks the reading authority, while browsing the catalog beside
+ * it asks the authoring one.
+ */
+function registerProjectRepositoryDeclarations(
+  app: FastifyInstance,
+  service: NativeTicketApplication,
+): void {
+  app.get(
+    nativeHttpRoutes.projectRepositoryDeclarations,
+    async (request, reply) => {
+      const result = await service.application.declarations(
+        principalOf(request),
+        adoptedCatalogRequest(request),
+      );
+      if (result.result !== "Authorized") {
+        adoptedTicketReply(reply, result);
+        return;
+      }
+      if (result.value === undefined) {
+        void reply
+          .code(404)
+          .send(nativeHttpError("NotFound", "Repository not bound."));
+        return;
+      }
+      void reply.code(200).send(result.value);
+    },
+  );
+}
+
 /** A refused fragment is a conflict with the repository, which the caller resolves there. */
 function adoptedCatalogWriteReply(
   reply: FastifyReply,
@@ -1486,6 +1518,7 @@ function registerAdoptedTickets(
   registerAdoptedTicketReads(app, service);
   registerAdoptedTicketValidation(app, service);
   registerAdoptedTicketCatalog(app, service);
+  registerProjectRepositoryDeclarations(app, service);
   registerAdoptedTicketAuthoring(app, service);
   registerAdoptedTicketActions(app, service);
 }

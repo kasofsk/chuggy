@@ -55,7 +55,20 @@ type Effects = {
   drafts: number;
   snapshots: number;
   tips: number;
+  declarations: number;
 };
+
+/** Every port counted from zero, so `setup` states the tally in one line. */
+function noEffects(): Effects {
+  return {
+    catalogs: 0,
+    content: 0,
+    drafts: 0,
+    snapshots: 0,
+    tips: 0,
+    declarations: 0,
+  };
+}
 
 /** The catalog port, whose draft refuses anything the create double accepts. */
 function catalogsDouble(
@@ -76,6 +89,16 @@ function catalogsDouble(
       return Promise.resolve({
         release: (identity: ReturnType<typeof TicketId>) =>
           catalogRelease(identity, release),
+      });
+    },
+    declarations: () => {
+      effects.declarations += 1;
+      return Promise.resolve({
+        repository: "repository",
+        reworkLimit: 5,
+        cloudProject: "acme/atlas",
+        executionProfiles: ["large", "small"],
+        finalizers: ["git-merge.yaml", "pull-request.yaml"],
       });
     },
     snapshot: () => {
@@ -123,11 +146,16 @@ function inboxDouble(
   };
 }
 
-function accessDouble(authorized: boolean) {
+/**
+ * A boolean grants or refuses every kind; a kind grants that one alone, which
+ * is what tells a route asking for the wrong authority from one asking for
+ * none.
+ */
+function accessDouble(authorized: boolean | string) {
   return {
     authorize: (_principal: unknown, _partition: unknown, operation: string) =>
       Promise.resolve(
-        authorized
+        (typeof authorized === "string" ? authorized === operation : authorized)
           ? {
               kind: asAuthorityKind("Member"),
               subject: asAuthoritySubject(`${principal}:${operation}`),
@@ -153,7 +181,7 @@ function draftDouble(
 }
 
 function setup(
-  authorized = true,
+  authorized: boolean | string = true,
   release: { readonly reworkLimit: number; readonly declared: boolean } = {
     reworkLimit: 3,
     declared: true,
@@ -168,7 +196,7 @@ function setup(
   const submitted: TicketMachineInput[] = [];
   const inbox = inboxDouble(submitted, frozen);
   let content = 0;
-  const effects = { catalogs: 0, content: 0, drafts: 0, snapshots: 0, tips: 0 };
+  const effects = noEffects();
   const reads: string[] = [];
   const held = new Map<string, string>();
   const application = ticketApplication({
@@ -329,13 +357,7 @@ test("update and dispatch stop before side effects when the project is unavailab
         : "NotFound";
     assert.deepEqual(update, { result });
     assert.deepEqual(dispatch, { result });
-    assert.deepEqual(effects, {
-      catalogs: 0,
-      content: 0,
-      drafts: 0,
-      snapshots: 0,
-      tips: 0,
-    });
+    assert.deepEqual(effects, noEffects());
     assert.equal(submitted.length, 0);
   }
 });
@@ -419,13 +441,7 @@ test("validation reports findings over draft content and writes nothing", async 
       },
     },
   );
-  assert.deepEqual(effects, {
-    catalogs: 0,
-    content: 0,
-    drafts: 2,
-    snapshots: 0,
-    tips: 2,
-  });
+  assert.deepEqual(effects, { ...noEffects(), drafts: 2, tips: 2 });
   assert.equal(submitted.length, 0);
 });
 
@@ -666,4 +682,51 @@ test("a fragment write is refused to a principal that may not author", async () 
     { result: "NotFound" },
   );
   assert.equal(held.size, 0);
+});
+
+test("declarations are the pinned repository's own, at the commit it stands on", async () => {
+  const { application, effects } = setup();
+  const result = await application.declarations(principal, { partition });
+  assert.equal(result.result, "Authorized");
+  assert.deepEqual(result.value, {
+    repository: "repository",
+    commit,
+    reworkLimit: 5,
+    cloudProject: "acme/atlas",
+    executionProfiles: ["large", "small"],
+    finalizers: ["git-merge.yaml", "pull-request.yaml"],
+  });
+  assert.equal(effects.declarations, 1);
+});
+
+/**
+ * The page draws this beside the binding `projectRepositories` answers, which
+ * refuses a reader it will not describe a project to with `NotFound` rather
+ * than confirming the project exists.
+ */
+test("declarations refuse a principal holding no project access", async () => {
+  const { application, effects } = setup(false);
+  const result = await application.declarations(principal, { partition });
+  assert.equal(result.result, "NotFound");
+  assert.equal(effects.declarations, 0);
+  assert.equal(effects.tips, 0);
+});
+
+/**
+ * Asking for the authoring authority the catalog browse asks for would lock a
+ * reader out of the repository page they can already read the binding on, and
+ * a check that passed on any authority at all would not catch it.
+ */
+test("declarations ask the reading authority and not the authoring one", async () => {
+  const reader = setup("Read");
+  assert.equal(
+    (await reader.application.declarations(principal, { partition })).result,
+    "Authorized",
+  );
+  const author = setup("Mutate");
+  assert.equal(
+    (await author.application.declarations(principal, { partition })).result,
+    "NotFound",
+  );
+  assert.equal(author.effects.declarations, 0);
 });
