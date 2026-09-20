@@ -3,7 +3,10 @@ import { test } from "node:test";
 
 import { workerPoolCapabilitiesMax } from "../../src/contract/workerPool.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
-import type { ProjectGrant } from "../../src/interpreter/projectGrant.ts";
+import type {
+  ProjectGrant,
+  ProjectGrantWriter,
+} from "../../src/interpreter/projectGrant.ts";
 import type { WorkerPoolRegistration } from "../../src/interpreter/workerPool.ts";
 import {
   registerPoolRun,
@@ -25,7 +28,13 @@ const environment = {
 function ports(input?: {
   readonly registered?: boolean;
   readonly deregistered?: string | undefined;
-}): RegisterPoolPorts & { readonly made: unknown[] } {
+}): RegisterPoolPorts & {
+  readonly made: unknown[];
+  readonly grants: {
+    write: ProjectGrantWriter["write"];
+    remove: ProjectGrantWriter["remove"];
+  };
+} {
   const made: unknown[] = [];
   return {
     made,
@@ -86,7 +95,19 @@ test("a registration the row refused leaves neither a client nor a relation behi
     /NotRegistered/u,
   );
   assert.deepEqual(made.made.slice(3), [
+    ["remove", "chuggy-pool-fixed"],
     ["revoke", "pools"],
+  ]);
+});
+
+test("an authority that cannot write the relation still has the client removed", async () => {
+  const made = ports();
+  const outage = new Error("the authority is unreachable");
+  made.grants.write = () => Promise.reject(outage);
+  made.grants.remove = () => Promise.reject(outage);
+  await assert.rejects(registerPoolRun({ environment, ports: made }), outage);
+  assert.deepEqual(made.made, [
+    ["create", "chuggy-pool-fixed"],
     ["remove", "chuggy-pool-fixed"],
   ]);
 });

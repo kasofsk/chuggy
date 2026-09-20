@@ -133,6 +133,28 @@ export interface RegisterPoolPorts {
 }
 
 /**
+ * The client and the relation taken back, each attempted whether or not the
+ * other could be: the authority that refused to write a relation refuses to
+ * remove it too, and the client must not outlive that refusal. Answers the
+ * first removal that failed, for the caller to raise where nothing else did.
+ */
+async function workerPoolRegistrationUndone(
+  ports: RegisterPoolPorts,
+  grant: ProjectGrant,
+  clientId: string,
+): Promise<Error | undefined> {
+  const settled = await Promise.allSettled([
+    ports.clients.remove(clientId),
+    ports.grants.remove(grant),
+  ]);
+  const failed = settled.find((outcome) => outcome.status === "rejected");
+  if (failed === undefined) return undefined;
+  return failed.reason instanceof Error
+    ? failed.reason
+    : new Error(String(failed.reason));
+}
+
+/**
  * The three writes registering one pool is — a client, a relation and a row —
  * each undone where the next could not be made, and answering nothing where the
  * row names no active project.
@@ -154,13 +176,16 @@ export async function workerPoolRegisteredAt(
       principal: oidcPrincipal(request.issuer, minted.clientId),
     });
   } catch (failure) {
-    await ports.grants.remove(grant);
-    await ports.clients.remove(minted.clientId);
+    await workerPoolRegistrationUndone(ports, grant, minted.clientId);
     throw failure;
   }
   if (registered) return minted;
-  await ports.grants.remove(grant);
-  await ports.clients.remove(minted.clientId);
+  const left = await workerPoolRegistrationUndone(
+    ports,
+    grant,
+    minted.clientId,
+  );
+  if (left !== undefined) throw left;
   return undefined;
 }
 
