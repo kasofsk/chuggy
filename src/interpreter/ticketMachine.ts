@@ -1,5 +1,5 @@
 import * as ticket from "../domain/chuggernaut/ticket.js";
-import type { TaskId } from "../domain/chuggernaut/task.js";
+import type { TaskId, TicketId } from "../domain/chuggernaut/task.js";
 import { assertNever } from "../domain/assertNever.ts";
 import type { Lease, Partition } from "./projectStore.ts";
 
@@ -103,6 +103,17 @@ export function ticketMachineTaskKey(task: TaskId): string {
     default:
       return assertNever(task);
   }
+}
+
+/**
+ * Where `ticketMachineTaskKey` starts for one ticket, one prefix per task kind,
+ * so a reader asking about that ticket matches on the key it already stores.
+ * A kind added above without a prefix here is a kind such a reader would miss.
+ */
+export function ticketMachineTaskKeyPrefixes(
+  ticket: TicketId,
+): readonly string[] {
+  return [`work:${String(ticket)}:`, `evaluation:${String(ticket)}:`];
 }
 
 export function ticketMachineOrigin(

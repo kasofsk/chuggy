@@ -6,7 +6,9 @@ import {
   type BlobRead,
   type BlobReadPort,
 } from "../../interpreter/blobStore.ts";
+import type { TicketId } from "../../domain/chuggernaut/task.js";
 import type { Partition } from "../../interpreter/projectStore.ts";
+import { ticketMachineTaskKeyPrefixes } from "../../interpreter/ticketMachine.ts";
 import type {
   TicketExecutionConfiguration,
   TicketExecutionReadStore,
@@ -148,16 +150,28 @@ async function readTotals(
     : totalsOf(row, await readModels(pool, partition, taskKey, attempt));
 }
 
+/**
+ * The project's executions, or one ticket's. A ticket is matched by the key
+ * prefixes the machine renders for it, which keeps the page a page of that
+ * ticket's rows rather than a project page a caller filters afterwards and
+ * finds short.
+ */
 async function readExecutions(
   pool: pg.Pool,
   partition: Partition,
   limit: number,
+  ticket: TicketId | undefined,
 ): Promise<readonly TicketExecutionSummary[]> {
+  const patterns =
+    ticket === undefined
+      ? null
+      : ticketMachineTaskKeyPrefixes(ticket).map((prefix) => `${prefix}%`);
   const found =
     await pool.query<ExecutionSummaryRow>(sql`SELECT task_key,state,attempt,
       attempts_unreported,queued_at,last_reported_at,pool
     FROM ticket_execution
     WHERE tenant=${partition.tenant} AND project=${partition.project}
+      AND (${patterns}::text[] IS NULL OR task_key LIKE ANY(${patterns}::text[]))
     ORDER BY queued_at DESC, task_key LIMIT ${limit}`);
   return found.rows.map((row) => summaryOf(row));
 }
@@ -339,7 +353,8 @@ export function postgresTicketExecutionReads(
   return {
     models: (partition, taskKey, attempt) =>
       readModels(pool, partition, taskKey, attempt),
-    executions: (partition, limit) => readExecutions(pool, partition, limit),
+    executions: (partition, limit, ticket) =>
+      readExecutions(pool, partition, limit, ticket),
     execution: (partition, taskKey) => readExecution(pool, partition, taskKey),
     turns: (partition, taskKey, attempt, after, limit) =>
       readTurns(pool, partition, taskKey, attempt, after, limit),

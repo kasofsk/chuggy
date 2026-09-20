@@ -1313,6 +1313,16 @@ function adoptedAttempt(request: FastifyRequest): number {
 }
 
 /** A page size the caller may narrow but never widen past the wire's own bound. */
+/** Which ticket a listing is about, and undefined for the project-wide one. */
+function adoptedExecutionTicket(
+  request: FastifyRequest,
+): ReturnType<typeof AdoptedTicketId> | undefined {
+  const asked = record(request.query)["ticket"];
+  return asked === undefined
+    ? undefined
+    : AdoptedTicketId(integerField({ ticket: asked }, "ticket"));
+}
+
 function adoptedPageLimit(request: FastifyRequest): number {
   const asked = record(request.query)["limit"];
   const held =
@@ -1357,6 +1367,7 @@ function registerAdoptedTicketEvidence(
       principalOf(request),
       partitionOf(request),
       adoptedPageLimit(request),
+      adoptedExecutionTicket(request),
     );
     answer(
       reply,

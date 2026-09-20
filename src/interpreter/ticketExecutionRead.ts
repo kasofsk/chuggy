@@ -13,6 +13,7 @@
  * bounded and shaped on arrival rather than one that was checked.
  */
 
+import type { TicketId } from "../domain/chuggernaut/task.js";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
 import type { Principal } from "./principal.ts";
@@ -78,9 +79,11 @@ export interface TicketOperationEntry {
 
 /** Where the rows behind these reads are drawn from, with no authorization of its own. */
 export interface TicketExecutionReadStore {
+  /** Every execution of the project, or only the named ticket's when one is asked for. */
   executions(
     partition: Partition,
     limit: number,
+    ticket?: TicketId,
   ): Promise<readonly TicketExecutionSummary[]>;
   execution(
     partition: Partition,
@@ -125,6 +128,7 @@ export interface TicketExecutionReads {
     principal: Principal,
     partition: Partition,
     limit: number,
+    ticket?: TicketId,
   ): Promise<TicketApplicationResult<readonly TicketExecutionSummary[]>>;
   execution(
     principal: Principal,
@@ -186,9 +190,9 @@ export function ticketExecutionReads(ports: {
       answered(principal, partition, () =>
         Promise.resolve({ admitted: true } as const),
       ),
-    executions: (principal, partition, limit) =>
+    executions: (principal, partition, limit, ticket) =>
       answered(principal, partition, () =>
-        ports.store.executions(partition, limit),
+        ports.store.executions(partition, limit, ticket),
       ),
     execution: (principal, partition, taskKey) =>
       answered(principal, partition, () =>

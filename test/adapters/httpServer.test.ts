@@ -648,6 +648,32 @@ test("the evidence reads answer a member and conceal a project it may not see", 
   assert.equal(concealed.statusCode, 404, concealed.body);
 });
 
+test("an executions listing forwards the ticket it was asked about", async () => {
+  const asked: (number | undefined)[] = [];
+  const reads: TicketExecutionReads = {
+    ...evidenceReads("atlas"),
+    executions: (_principal, _partition, _limit, ticket) => {
+      asked.push(ticket);
+      return Promise.resolve({ result: "Authorized", value: [] });
+    },
+  };
+  await using app = adoptedTicketRouteApp({
+    ...retiredTicketApp("Fresh"),
+    reads,
+  });
+  const get = (query: string) =>
+    app.inject({
+      method: "GET",
+      url: `/api/v1/tenants/acme/projects/atlas/ticket-machine/executions${query}`,
+      headers: { authorization: "Bearer valid" },
+    });
+  assert.equal((await get("")).statusCode, 200);
+  assert.equal((await get("?ticket=7")).statusCode, 200);
+  assert.deepEqual(asked, [undefined, 7]);
+  assert.equal((await get("?ticket=seven")).statusCode, 400);
+  assert.deepEqual(asked, [undefined, 7]);
+});
+
 test("a plane composed with no read half serves no evidence route", async () => {
   await using app = adoptedTicketRouteApp(retiredTicketApp("Fresh"));
   const response = await app.inject({
