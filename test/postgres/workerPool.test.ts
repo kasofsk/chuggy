@@ -438,7 +438,11 @@ test("a released attempt outlives the reaper for the backoff it was given", asyn
   );
   assert.equal(await assignments.release(mine, handle.assignment, 3), true);
   await delay(1_500);
-  await rig.store.reapLapsedAttempts(project.epoch, 10);
+  assert.equal(
+    await rig.store.reapLapsedAttempts(project.epoch, 10),
+    0,
+    "the parked row is not the reaper's",
+  );
   const after = (await rig.harness.query(
     `SELECT a.state, a.lease_owner, e.retries_spent::int AS retries_spent
        FROM execution_attempt a

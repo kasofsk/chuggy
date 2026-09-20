@@ -131,7 +131,7 @@ async function tokensOf(partition: Partition): Promise<number> {
   return counted[0]?.["held"] as number;
 }
 
-test("a project holds at most its bound of live tokens, and a mint sweeps what is spent or expired", async () => {
+test("a project holds at most its bound of unspent tokens, and a spent one stays until it expires", async () => {
   const partition = await project("token-bound");
   const tokens = postgresWorkerPoolRegistrationTokens(api);
   const digest = (ordinal: number) =>

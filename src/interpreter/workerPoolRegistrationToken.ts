@@ -41,7 +41,7 @@ export interface WorkerPoolRegistrationTokenTerms {
   readonly capabilities: readonly string[];
 }
 
-/** The most live tokens one project holds at once, which is what bounds the table they sit in. */
+/** The most tokens one project may have outstanding for redemption at once. */
 export const workerPoolTokensLiveMax = 16;
 
 /** What one mint wrote: a row, nothing because no active project was named, or nothing because the project is at its bound. */

@@ -24,10 +24,12 @@
  * the instant its own interval counts from and reads it on the path that
  * places work itself, which is the other value of `placement`. A released row
  * is put back as the scheduler opened it: the lease is the attempt's own
- * again, and it is pushed past the backoff by the whole of what the pool held,
- * so the reaper — which ends any placing attempt whose lease has lapsed —
- * cannot reach the row before a pool may claim it, and still bounds a row no
- * pool ever comes back for.
+ * again, and it ends past the backoff by what remained of the pool's lease at
+ * the release — a pool that took most of its lease to answer has the rest to
+ * claim again, and nothing here extends a lease a pool did not renew — so the
+ * reaper, which ends any placing attempt whose lease has lapsed, cannot reach
+ * the row before a pool may claim it and still bounds a row no pool comes back
+ * for.
  *
  * THE CAPABILITIES COME BACK NULLABLE BECAUSE THE CHECKER CANNOT SEE OTHERWISE.
  * A correlated subquery over a joined row is a value `check-queries` proves
