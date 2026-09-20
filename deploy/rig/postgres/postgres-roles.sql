@@ -154,6 +154,7 @@
 \getenv finalizer_password CHUG_PG_FINALIZER_PASSWORD
 \getenv worker_plane_password CHUG_PG_WORKER_PLANE_PASSWORD
 \getenv configuration_importer_password CHUG_PG_CONFIGURATION_IMPORTER_PASSWORD
+\getenv pool_plane_password CHUG_PG_POOL_PLANE_PASSWORD
 BEGIN;
 
 -- The group roles the migration would otherwise be first to create. A DO block
@@ -163,7 +164,7 @@ SELECT format('CREATE ROLE %I NOLOGIN', role_name)
   FROM unnest(ARRAY['chuggy_boundary_owner', 'chuggy_ticket_service', 'chuggy_api',
                     'chuggy_selector_service', 'chuggy_selector_control',
                     'chuggy_selector_review', 'chuggy_scheduler',
-                    'chuggy_finalizer', 'chuggy_worker_plane',
+                    'chuggy_finalizer', 'chuggy_worker_plane', 'chuggy_pool_plane',
                     'chuggy_configuration_importer']) AS role_name
  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = role_name)
 \gexec
@@ -173,6 +174,7 @@ SELECT format('CREATE ROLE %I LOGIN', role_name)
   FROM unnest(ARRAY['chuggy_owner', 'chuggy_ticket_service_login', 'chuggy_api_login',
                     'chuggy_selector_service_login', 'chuggy_scheduler_login',
                     'chuggy_finalizer_login', 'chuggy_worker_plane_login',
+                    'chuggy_pool_plane_login',
                     'chuggy_configuration_importer_login']) AS role_name
  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = role_name)
 \gexec
@@ -197,6 +199,8 @@ ALTER ROLE chuggy_finalizer WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATE
   CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
 ALTER ROLE chuggy_worker_plane WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
+ALTER ROLE chuggy_pool_plane WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+  CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
 ALTER ROLE chuggy_configuration_importer WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
 ALTER ROLE chuggy_owner WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB CREATEROLE NOREPLICATION NOBYPASSRLS
@@ -213,6 +217,8 @@ ALTER ROLE chuggy_finalizer_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCR
   CONNECTION LIMIT -1 VALID UNTIL 'infinity';
 ALTER ROLE chuggy_worker_plane_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 VALID UNTIL 'infinity';
+ALTER ROLE chuggy_pool_plane_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+  CONNECTION LIMIT -1 VALID UNTIL 'infinity';
 ALTER ROLE chuggy_configuration_importer_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 VALID UNTIL 'infinity';
 
@@ -223,6 +229,7 @@ ALTER ROLE chuggy_selector_service_login PASSWORD :'selector_service_password';
 ALTER ROLE chuggy_scheduler_login PASSWORD :'scheduler_password';
 ALTER ROLE chuggy_finalizer_login PASSWORD :'finalizer_password';
 ALTER ROLE chuggy_worker_plane_login PASSWORD :'worker_plane_password';
+ALTER ROLE chuggy_pool_plane_login PASSWORD :'pool_plane_password';
 ALTER ROLE chuggy_configuration_importer_login PASSWORD :'configuration_importer_password';
 
 -- A service holds its capability through the group and never directly, so
@@ -233,11 +240,13 @@ GRANT chuggy_selector_service TO chuggy_selector_service_login;
 GRANT chuggy_scheduler TO chuggy_scheduler_login;
 GRANT chuggy_finalizer TO chuggy_finalizer_login;
 GRANT chuggy_worker_plane TO chuggy_worker_plane_login;
+GRANT chuggy_pool_plane TO chuggy_pool_plane_login;
 GRANT chuggy_configuration_importer TO chuggy_configuration_importer_login;
 GRANT chuggy_selector_review TO chuggy_api_login;
 GRANT chuggy_boundary_owner, chuggy_ticket_service, chuggy_api, chuggy_selector_service,
       chuggy_selector_control, chuggy_selector_review, chuggy_scheduler,
-      chuggy_finalizer, chuggy_worker_plane, chuggy_configuration_importer TO chuggy_owner;
+      chuggy_finalizer, chuggy_worker_plane, chuggy_pool_plane,
+      chuggy_configuration_importer TO chuggy_owner;
 
 -- PUBLIC HOLDS CONNECT ON A STOCK DATABASE, AND EVERY ROLE ON THE SERVER IS
 -- PUBLIC. It is not a read of any relation — the grants below and the
@@ -256,6 +265,7 @@ SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), role_nam
   FROM unnest(ARRAY['chuggy_owner', 'chuggy_ticket_service_login', 'chuggy_api_login',
                     'chuggy_selector_service_login', 'chuggy_scheduler_login',
                     'chuggy_finalizer_login', 'chuggy_worker_plane_login',
+                    'chuggy_pool_plane_login',
                     'chuggy_configuration_importer_login']) AS role_name
 \gexec
 
@@ -264,6 +274,7 @@ GRANT CREATE ON SCHEMA public TO chuggy_boundary_owner;
 GRANT USAGE ON SCHEMA public TO chuggy_boundary_owner, chuggy_ticket_service, chuggy_api,
                                 chuggy_selector_service, chuggy_selector_control,
                                 chuggy_selector_review, chuggy_scheduler, chuggy_finalizer,
-                                chuggy_worker_plane, chuggy_configuration_importer;
+                                chuggy_worker_plane, chuggy_pool_plane,
+                                chuggy_configuration_importer;
 
 COMMIT;
