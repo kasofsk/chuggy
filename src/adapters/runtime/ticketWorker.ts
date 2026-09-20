@@ -494,13 +494,22 @@ function run(
   });
 }
 
+/**
+ * One git call in a directory this harness made, told so by name: git refuses a
+ * repository whose directory another user owns, which is the right default for
+ * a workstation and the wrong one for a placement whose workspace the launcher
+ * mounts and the harness alone has ever written to. The exemption names the
+ * directory the call runs in and is never a pattern, so a repository anywhere
+ * else is refused exactly as before and nothing is written to a configuration
+ * the workload could read.
+ */
 async function git(
   argv: readonly string[],
   directory: string,
   held: TicketWorkerEnvelope,
 ): Promise<string> {
   const ran = await run(
-    ["git", ...argv],
+    ["git", "-c", `safe.directory=${directory}`, ...argv],
     directory,
     childEnvironment(),
     held.timeoutSecsMax,
