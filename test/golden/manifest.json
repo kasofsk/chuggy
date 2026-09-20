@@ -116,7 +116,7 @@
       "purpose": "The same wall on a ticket whose author bought a rework budget: it stamps the resume that refills that account and re-enters work. The pair is the whole of the wall — which exit a park offers is read off the authored policy, not off the wall."
     },
     {
-      "name": "budgeted-direct-finalization-succeeded",
+      "name": "budgeted-finalization-succeeded",
       "instance": "mc_chuggy_budgeted",
       "module": "mc_chuggy_directed_budgeted",
       "source": "model/mc/mc_chuggy_directed.qnt",
@@ -124,10 +124,24 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 60,
-      "invariant": "lastStep.label != \"ticket-done\"",
+      "invariant": "not(lastStep.label == \"ticket-done\" and lastStep.transitions.foldl(false, (b, t) => b or t.from == Finalizing))",
+      "steps": 29,
+      "quintVersion": "0.32.0",
+      "purpose": "A managed finalizer draws FinalizationSucceeded and the ticket completes Finalizing -> Done \u2014 the completion route that runs a finalizer at all. budgeted-nofinalizer-completion is the other one."
+    },
+    {
+      "name": "budgeted-nofinalizer-completion",
+      "instance": "mc_chuggy_budgeted",
+      "module": "mc_chuggy_directed_budgeted",
+      "source": "model/mc/mc_chuggy_directed.qnt",
+      "step": "gateLoopStep",
+      "seed": "0x1",
+      "maxSamples": 60000,
+      "maxSteps": 60,
+      "invariant": "not(lastStep.label == \"ticket-done\" and lastStep.transitions.foldl(false, (b, t) => b or t.from == Evaluating))",
       "steps": 11,
       "quintVersion": "0.32.0",
-      "purpose": "A managed finalizer reports success and the ticket completes from Finalizing."
+      "purpose": "A ticket authored NoFinalizer completes Evaluating -> Done: its passing final stage IS its completion, so it never enters Finalizing and no finalizer runs."
     },
     {
       "name": "deadline-only-walk",
