@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { workerPoolCapabilitiesMax } from "../../src/contract/workerPool.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import type { ProjectGrant } from "../../src/interpreter/projectGrant.ts";
 import type { WorkerPoolRegistration } from "../../src/interpreter/workerPool.ts";
@@ -151,4 +152,21 @@ test("a capability the contract would not accept refuses the whole command", asy
       ports: ports(),
     }),
   );
+});
+
+test("more capabilities than the wire admits refuse the whole command", async () => {
+  const made = ports();
+  await assert.rejects(
+    registerPoolRun({
+      environment: {
+        ...environment,
+        CHUG_WORKER_POOL_CAPABILITIES: Array.from(
+          { length: workerPoolCapabilitiesMax + 1 },
+          (_, index) => `capability-${String(index)}`,
+        ).join(","),
+      },
+      ports: made,
+    }),
+  );
+  assert.deepEqual(made.made, []);
 });

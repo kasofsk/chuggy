@@ -35,7 +35,8 @@ export const workerPoolCapabilitySchema = z
   .regex(/^[A-Za-z0-9][A-Za-z0-9_:-]*$/u)
   .max(workerPoolTokenCharsMax);
 
-const workerPoolCapabilitiesSchema = z
+/** What a pool declares, bounded the same wherever it is parsed: the wire, and the owner's command. */
+export const workerPoolCapabilitiesSchema = z
   .array(workerPoolCapabilitySchema)
   .max(workerPoolCapabilitiesMax);
 

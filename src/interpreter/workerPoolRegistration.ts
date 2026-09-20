@@ -20,7 +20,7 @@
  * written in.
  */
 
-import { workerPoolCapabilitySchema } from "../contract/workerPool.ts";
+import { workerPoolCapabilitiesSchema } from "../contract/workerPool.ts";
 import { oidcPrincipal } from "./principal.ts";
 import {
   projectPrincipalGrant,
@@ -96,10 +96,9 @@ export function registerPoolRequestOf(
       `${registerPoolVariables.operation} must be register or deregister`,
     );
   const declared = environment[registerPoolVariables.capabilities];
-  const capabilities =
-    declared === undefined || declared.length === 0 ? [] : declared.split(",");
-  for (const capability of capabilities)
-    workerPoolCapabilitySchema.parse(capability);
+  const capabilities = workerPoolCapabilitiesSchema.parse(
+    declared === undefined || declared.length === 0 ? [] : declared.split(","),
+  );
   return {
     partition: {
       tenant: registerPoolRequired(environment, registerPoolVariables.tenant),
