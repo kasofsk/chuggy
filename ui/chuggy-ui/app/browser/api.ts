@@ -37,6 +37,7 @@ import type {
 } from "../core/projectQueryKeys.ts";
 import { apiFetch, sleepMs } from "./ports.ts";
 import { useSessionHolder } from "./session.tsx";
+import { useProjectListRefresh } from "./stream.tsx";
 
 type PanelRead<T> = (
   ports: ApiPorts,
@@ -112,6 +113,7 @@ export function usePanelList<T>(
   list: ProjectList<T>,
   read: PanelRead<T>,
 ): PanelState<T> {
+  useProjectListRefresh(list);
   return usePanelQuery(list.key, read);
 }
 
