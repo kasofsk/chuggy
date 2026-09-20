@@ -27,7 +27,10 @@
  * rather than by a node.
  */
 
-import type { WorkerPoolAssignment } from "../../contract/workerPool.ts";
+import {
+  workerPoolRetryAfterSecsMax,
+  type WorkerPoolAssignment,
+} from "../../contract/workerPool.ts";
 import type {
   WorkerPoolBackend,
   WorkerPoolPlacement,
@@ -95,6 +98,8 @@ export function checkedKubernetesPoolPlacementConfig(
   kubernetesPodNamePrefix(config.podNamePrefix, "pool placement pod prefix");
   kubernetesPositive(config.timeoutSecsMax, "pool workload timeout");
   kubernetesPositive(config.outputBytesMax, "pool workload output bound");
+  if (config.unavailableRetryAfterSecs > workerPoolRetryAfterSecsMax)
+    throw new RangeError("pool retry-after is more than the plane accepts");
   if (config.image.length === 0)
     throw new RangeError("pool worker image is empty");
   if (config.poolLabel.name.length === 0 || config.poolLabel.value.length === 0)

@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
+import {
+  workerPoolRetryAfterSecsMax,
+  type WorkerPoolAssignment,
+} from "../../src/contract/workerPool.ts";
 import {
   checkedKubernetesPoolPlacementConfig,
   kubernetesPoolAssignmentAnnotation,
@@ -369,6 +372,24 @@ test("a site is refused where its provider credential is served by no mount", ()
         providerCredential: "claude-code",
       }),
     RangeError,
+  );
+});
+
+test("a site is refused where its retry-after is more than the plane accepts", () => {
+  assert.throws(
+    () =>
+      checkedKubernetesPoolPlacementConfig({
+        ...config,
+        unavailableRetryAfterSecs: workerPoolRetryAfterSecsMax + 1,
+      }),
+    RangeError,
+  );
+  assert.equal(
+    checkedKubernetesPoolPlacementConfig({
+      ...config,
+      unavailableRetryAfterSecs: workerPoolRetryAfterSecsMax,
+    }).unavailableRetryAfterSecs,
+    workerPoolRetryAfterSecsMax,
   );
 });
 
