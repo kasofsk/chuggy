@@ -8,13 +8,16 @@ import type { Migration } from "../shared.ts";
  * around them.
  *
  * THE GUARD IS THE FIRST STATEMENT BECAUSE A NARROWED CHECK IS NOT A NO-OP
- * OVER LIVE ROWS. `ADD CONSTRAINT` validates what is already stored, so an
- * installation still holding a ticket mid-handoff would otherwise fail partway
- * down this list; it refuses at the top instead, naming the relations that
- * hold the rows, and the whole migration rolls back with its ledger row. It
- * reads live rows only: a journal entry or an accepted operation that once
- * carried the vocabulary stays as it was written, and what the narrowed
- * rosters answer for is the state a ticket is in now.
+ * OVER STORED ROWS. `ADD CONSTRAINT` revalidates what the relation already
+ * holds, settled rows as much as live ones, so an installation that ever
+ * completed a handoff would otherwise fail partway down this list; it refuses
+ * at the top instead, naming the relations that hold the rows, and the whole
+ * migration rolls back with its ledger row. The line it draws is not live
+ * against settled: `journal_entry` and `operation` record what was once
+ * written and are left alone, while the relations the narrowed checks
+ * revalidate — none of which deletes a row — must hold none of the
+ * vocabulary. So the migration applies only where no handoff was ever
+ * completed, not merely where none is in flight.
  *
  * `finalization_request_configuration` HELD NOTHING ELSE. Its own kind check
  * admitted the two handoff kinds and no others, so the table goes with them

@@ -1034,8 +1034,11 @@ test("fresh selector settings carry current controls and only their initial hist
 });
 
 /**
- * One insert per constraint the handoff removal narrowed, each carrying the
+ * One insert per narrowed constraint a row can reach, each carrying the
  * literal that constraint used to admit.
+ * `native_action_kind_names_its_capability` has no reachable row of its own,
+ * because PostgreSQL evaluates a relation's checks in name order and
+ * `native_action_kind_is_known` refuses `HandoffBlock` first.
  */
 const handoffLiterals: readonly (readonly [string, string])[] = [
   [
@@ -1106,7 +1109,7 @@ test("a fresh install records the handoff removal and keeps none of its objects"
   });
 });
 
-test("every narrowed constraint refuses the literal the handoff phases left it", async () => {
+test("every narrowed constraint a row can reach refuses the literal the handoff phases left it", async () => {
   await migrationDatabase("nohandoff_checks", async (subject) => {
     await postgresMigrate(subject);
     /**
