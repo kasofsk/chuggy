@@ -1,4 +1,5 @@
 import { leadToolAllowlist } from "../../src/interpreter/leadTools.ts";
+import { migration003 } from "../../src/adapters/postgres/schema/migrations/003-no-handoff.ts";
 import {
   leadDispatchesPerDecision,
   leadObservationTokensPerDecision,
@@ -9,10 +10,12 @@ import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import {
+  acceptanceFunction,
   apiRole,
   boundaryOwnerRole,
   draftCreateFunction,
   draftReviseFunction,
+  finalizationFunction,
   finalizerRole,
   migrations,
   migrationLedger,
@@ -36,6 +39,7 @@ import {
 import {
   currentRuntimeSchemaContract,
   postgresRuntimeSchema,
+  runtimeSchemaContract,
 } from "../../src/adapters/postgres/runtimeSchema.ts";
 import {
   agentSessionPromptCharsMax,
@@ -1025,6 +1029,176 @@ test("fresh selector settings carry current controls and only their initial hist
         )
       ).rows,
       [current],
+    );
+  });
+});
+
+/**
+ * One insert per narrowed constraint a row can reach, each carrying the
+ * literal that constraint used to admit.
+ * `native_action_kind_names_its_capability` has no reachable row of its own,
+ * because PostgreSQL evaluates a relation's checks in name order and
+ * `native_action_kind_is_known` refuses `HandoffBlock` first.
+ */
+const handoffLiterals: readonly (readonly [string, string])[] = [
+  [
+    "ticket_projection_phase_is_known",
+    `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
+     VALUES('tenant-3','project-3',1,'PublishingHandoff',1)`,
+  ],
+  [
+    "ticket_projection_resume_is_known",
+    `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,resume_at)
+     VALUES('tenant-3','project-3',1,'Working',1,'ResumePublishingHandoff')`,
+  ],
+  [
+    "project_continuation_expected_phase_check",
+    `INSERT INTO project_continuation
+       (tenant,project,continuation,kind,authorizing_seq,effect_position,
+        ticket,expected_ticket_version,expected_phase,task_set_generation)
+     VALUES('tenant-3','project-3','continuation-3','ReduceWork',1,0,1,1,'HandoffBlocked',1)`,
+  ],
+  [
+    "finalization_request_kind_is_known",
+    `INSERT INTO finalization_request
+       (tenant,project,request,authorizing_seq,effect_position,
+        ticket,ticket_version,request_generation,kind)
+     VALUES('tenant-3','project-3','request-3',1,0,1,1,1,'PromoteForHandoff')`,
+  ],
+  [
+    "native_action_kind_is_known",
+    `INSERT INTO native_action
+       (tenant,project,action,authorizing_seq,effect_position,
+        ticket,action_version,kind,reason,required_capability)
+     VALUES('tenant-3','project-3','action-3',1,0,1,1,'HandoffBlock','NoReason','ResolveTicket')`,
+  ],
+  [
+    "native_action_resolution_is_known",
+    `INSERT INTO native_action_resolution(tenant,project,action,resolution)
+     VALUES('tenant-3','project-3','action-3','RetryHandoff')`,
+  ],
+];
+
+test("a fresh install records the handoff removal and keeps none of its objects", async () => {
+  await migrationDatabase("nohandoff_install", async (subject) => {
+    assert.ok((await postgresMigrate(subject)).includes(migration003.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT version,name FROM schema_migration WHERE version=$1",
+          [migration003.version],
+        )
+      ).rows,
+      [
+        {
+          version: migration003.version,
+          name: "the handoff phases leave the schema",
+        },
+      ],
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT to_regclass('finalization_request_configuration')::text AS table_left,
+                  to_regprocedure('read_accepted_handoff_promotion(text,text,bigint)')::text AS promotion_left,
+                  to_regprocedure('finalization_request_configuration_is_written_once()')::text AS trigger_left`,
+        )
+      ).rows,
+      [{ table_left: null, promotion_left: null, trigger_left: null }],
+    );
+  });
+});
+
+test("every narrowed constraint a row can reach refuses the literal the handoff phases left it", async () => {
+  await migrationDatabase("nohandoff_checks", async (subject) => {
+    await postgresMigrate(subject);
+    /**
+     * The pairing trigger runs before the row is checked and would refuse a
+     * handoff resolution first, so it stands aside for its own constraint.
+     */
+    await subject.query(
+      `ALTER TABLE native_action_resolution
+       DISABLE TRIGGER native_action_resolution_pairs_with_its_kind`,
+    );
+    for (const [constraint, refused] of handoffLiterals)
+      await assert.rejects(
+        subject.query(refused),
+        new RegExp(constraint, "u"),
+        constraint,
+      );
+  });
+});
+
+test("the boundary admits neither a handoff outcome nor a handoff resolution", async () => {
+  await migrationDatabase("nohandoff_boundary", async (subject) => {
+    await postgresMigrate(subject);
+    await assert.rejects(
+      subject.query(
+        `SELECT * FROM ${finalizationFunction}(
+           'tenant-3','project-3','request-3','attempt-3','PromotionAccepted',
+           NULL,1,'epoch-3','operation-3','finalizer')`,
+      ),
+      /PromotionAccepted is not one this boundary submits/u,
+    );
+    const resolution = JSON.stringify({
+      version: 1,
+      command: "ResolveNativeAction",
+      action: "action-3",
+      authorizingSeq: 1,
+      resolution: "RetryHandoff",
+    });
+    assert.deepEqual(
+      (
+        await subject.query<{ admitted: boolean }>(
+          "SELECT public_ticket_command_is_valid($1::jsonb) AS admitted",
+          [resolution],
+        )
+      ).rows,
+      [{ admitted: false }],
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ result: string }>(
+          `SELECT result FROM ${acceptanceFunction}(
+             'tenant-3','project-3','operation-3','User','author','v1',
+             'key-3','payload-3','{}'::text[],'{}'::text[],$1,10,20,NULL)`,
+          [resolution],
+        )
+      ).rows,
+      [{ result: "InvalidCommand" }],
+    );
+  });
+});
+
+test("a ticket still in a handoff phase refuses the migration untouched", async () => {
+  await migrationDatabase("nohandoff_guard", async (subject) => {
+    const before = migrations
+      .slice(0, migration003.version - 1)
+      .map(({ version, name }) => ({ version, name }));
+    const held = runtimeSchemaContract(before);
+    assert.deepEqual(
+      await postgresMigrateCompatible(subject, {
+        current: held,
+        retainedPrevious: held,
+      }),
+      { migrated: "Applied", versions: before.map(({ version }) => version) },
+    );
+    await subject.query(
+      `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-3','project-3','Active')`,
+    );
+    await subject.query(
+      `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
+       VALUES('tenant-3','project-3',1,'PublishingHandoff',1)`,
+    );
+    await assert.rejects(
+      postgresMigrate(subject),
+      /handoff rows remain in ticket_projection/u,
+    );
+    assert.deepEqual(
+      await postgresRuntimeSchema(subject).applied(
+        new AbortController().signal,
+      ),
+      before,
     );
   });
 });
