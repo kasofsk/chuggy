@@ -1,10 +1,10 @@
 import { leadToolAllowlist } from "../../src/interpreter/leadTools.ts";
 import { migration003 } from "../../src/adapters/postgres/schema/migrations/003-no-handoff.ts";
-import { migration004 } from "../../src/adapters/postgres/schema/migrations/004-no-accounts.ts";
 import {
-  leadDispatchesPerDecision,
-  leadObservationTokensPerDecision,
-} from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
+  leadObservationTokensPerDecisionAt004,
+  migration004,
+} from "../../src/adapters/postgres/schema/migrations/004-no-accounts.ts";
+import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -1018,7 +1018,7 @@ test("fresh selector settings carry current controls and only their initial hist
     assert.deepEqual(controls.toolAllowlist, leadToolAllowlist);
     assert.equal(
       controls.limits.tokensPerDecision,
-      leadObservationTokensPerDecision,
+      leadObservationTokensPerDecisionAt004,
     );
     assert.equal(
       controls.limits.dispatchesPerDecision,
