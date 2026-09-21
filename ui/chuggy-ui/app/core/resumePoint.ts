@@ -72,6 +72,8 @@ function walledPoint(
       return "ResumeRework";
     case "WorkExecutionUnavailableEscalated":
       return interruptedPoint(situation.lastSet);
+    case "FinalizationUnavailableEscalated":
+      return "ResumeFinalization";
   }
 }
 

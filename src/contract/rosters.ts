@@ -33,6 +33,7 @@ export const escalationReasons = [
   "WorkFailureEscalated",
   "EvaluationFailureEscalated",
   "WorkExecutionUnavailableEscalated",
+  "FinalizationUnavailableEscalated",
 ] as const;
 export type EscalationReason = (typeof escalationReasons)[number];
 
