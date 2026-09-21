@@ -75,7 +75,7 @@ test("room for one more release runs out exactly at the fleet bound", () => {
 test("an id is claimable once: not outside the universe, and never again after", () => {
   const held = sparseCore([
     [2, ticketOn(config)],
-    [5, ticketOn(config, "ManagedFinalizer", { phase: "Done" })],
+    [5, ticketOn(config, { phase: "Done" })],
   ]);
   assert.ok(canReleaseIn(config, held, id(4)));
   assert.ok(
@@ -100,33 +100,29 @@ test("an id is claimable once: not outside the universe, and never again after",
 
 test("a release may depend on anything but a tombstone", () => {
   const core = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Revoked" }),
-    ticketOn(config, "ManagedFinalizer", {
-      phase: "Escalated",
-      reason: "DependencyRevoked",
-    }),
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, { phase: "Pending" }),
+    ticketOn(config, { phase: "Revoked" }),
+    ticketOn(config, {
       phase: "Escalated",
       reason: "WorkFailed",
       resumeAt: "ResumeWorking",
     }),
   ]);
-  assert.deepEqual(dependableIn(core), [id(1), id(4)]);
+  assert.deepEqual(dependableIn(core), [id(1), id(3)]);
 });
 
 test("the absorbing terminals and the point of no return are the unrevocable phases", () => {
   const core = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, { phase: "Pending" }),
+    ticketOn(config, {
       phase: "Escalated",
       reason: "WorkFailed",
       resumeAt: "ResumeWorking",
     }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Working" }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Done" }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Revoked" }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Finalizing" }),
+    ticketOn(config, { phase: "Working" }),
+    ticketOn(config, { phase: "Done" }),
+    ticketOn(config, { phase: "Revoked" }),
+    ticketOn(config, { phase: "Finalizing" }),
   ]);
   assert.deepEqual(revocablesIn(core), [id(1), id(2), id(3)]);
   assert.ok(!revocableIn(core, id(4)));
@@ -139,19 +135,19 @@ test("the absorbing terminals and the point of no return are the unrevocable pha
 
 test("a dependency that is not Done blocks, whatever else it is doing", () => {
   const blocked = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Working" }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Working" }),
+    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
   ]);
   assert.ok(isBlockedIn(blocked, id(2)));
   assert.ok(!isReadyIn(blocked, id(2)));
   assert.deepEqual(readiesIn(blocked), []);
 
   const landed = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Done",
       artifact: produced(2),
     }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
   ]);
   assert.ok(isReadyIn(landed, id(2)));
   assert.ok(!isBlockedIn(landed, id(2)));
@@ -163,21 +159,21 @@ test("what a ticket waits on is what its dependencies produced, read in id order
   const core = sparseCore([
     [
       1,
-      ticketOn(config, "ManagedFinalizer", {
+      ticketOn(config, {
         phase: "Done",
         artifact: produced(2),
       }),
     ],
     [
       4,
-      ticketOn(config, "ManagedFinalizer", {
+      ticketOn(config, {
         phase: "Done",
         artifact: produced(5),
       }),
     ],
     [
       6,
-      ticketOn(config, "ManagedFinalizer", {
+      ticketOn(config, {
         phase: "Pending",
         deps: depsOf(4, 1),
       }),
@@ -196,23 +192,23 @@ test("what a ticket waits on is what its dependencies produced, read in id order
 
 test("only the two task phases can receive a completion, and only a resolved set reduces", () => {
   const core = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Working",
       tasks: new Set([workOutstanding(1), workTask(2, "Passed")]),
       spawned: 2,
     }),
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Evaluating",
       tasks: new Set([evalTask(1, 0, "Failed")]),
       spawned: 1,
     }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Finalizing" }),
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, { phase: "Finalizing" }),
+    ticketOn(config, {
       phase: "Working",
       tasks: new Set([workTask(1, "Passed")]),
       spawned: 1,
     }),
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Evaluating",
       tasks: new Set([evalOutstanding(1, 0)]),
       spawned: 1,
@@ -225,9 +221,9 @@ test("only the two task phases can receive a completion, and only a resolved set
 
 test("the phase holding the finalizer obligation is the only one a result resolves from", () => {
   const core = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Finalizing" }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Evaluating" }),
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, { phase: "Finalizing" }),
+    ticketOn(config, { phase: "Evaluating" }),
+    ticketOn(config, {
       phase: "Done",
       artifact: produced(2),
       completions: 1,
@@ -245,13 +241,13 @@ test("the phase holding the finalizer obligation is the only one a result resolv
 
 test("the fabric may still report on exactly the tasks a ticket has outstanding", () => {
   const core = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Evaluating",
       record: [workTask(1, "Passed"), workTask(2, "Passed")],
       tasks: new Set([evalOutstanding(4, 0), evalTask(3, 0, "Passed")]),
       spawned: 4,
     }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
+    ticketOn(config, { phase: "Pending" }),
   ]);
   assert.deepEqual(outstandingTaskIdsIn(core, id(1)), [4]);
   assert.ok(outstandingTaskIn(core, id(1), 4));
@@ -268,33 +264,25 @@ test("the fabric may still report on exactly the tasks a ticket has outstanding"
 
 test("a park is retryable exactly when its wall stamped a resume", () => {
   const parked = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Escalated",
       resumeAt: "ResumeFinalizing",
       reason: "ExecutionProfileUnavailable",
     }),
-    ticketOn(config, "ManagedFinalizer", {
-      phase: "Escalated",
-      reason: "DependencyRevoked",
-    }),
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Escalated",
       resumeAt: "ResumeWorking",
       reason: "WorkFailed",
     }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Working" }),
+    ticketOn(config, { phase: "Working" }),
   ]);
   assert.ok(retryableIn(parked, id(1)));
+  assert.ok(retryableIn(parked, id(2)));
   assert.ok(
-    !retryableIn(parked, id(2)),
-    "the cascade wall has no modeled resume, so its only exit is a revoke",
-  );
-  assert.ok(retryableIn(parked, id(3)));
-  assert.ok(
-    !retryableIn(parked, id(4)),
+    !retryableIn(parked, id(3)),
     "a ticket that is not parked has nothing to resume from",
   );
-  assert.deepEqual(retryablesIn(parked), [id(1), id(3)]);
+  assert.deepEqual(retryablesIn(parked), [id(1), id(2)]);
 });
 
 test("the finalizer reports every lifecycle result, and a block names an execution reason", () => {
@@ -308,7 +296,7 @@ test("the finalizer reports every lifecycle result, and a block names an executi
   );
   for (const reason of executionBlockedReasons) {
     assert.ok(
-      reason !== "NoReason" && reason !== "DependencyRevoked",
+      reason !== "NoReason",
       `${reason} is not something infrastructure reports`,
     );
   }
@@ -318,15 +306,10 @@ test("a release draws every authored value from a universe, and is refused outsi
   const authoring = {
     prog: defaultProgram(config),
     workFanout: config.nTasks,
-    finalizer: "ManagedFinalizer" as const,
   };
   assert.ok(releasableAuthoring(config, authoring));
   assert.ok(
-    releasableAuthoring(config, {
-      ...authoring,
-      workFanout: 1,
-      finalizer: "NoFinalizer",
-    }),
+    releasableAuthoring(config, { ...authoring, workFanout: 1 }),
     "a ticket may be authored narrower than its fleet",
   );
   assert.ok(!releasableAuthoring(config, { ...authoring, prog: [] }));
@@ -341,13 +324,13 @@ test("a release draws every authored value from a universe, and is refused outsi
 
 test("the stutter is enabled exactly on a fully-released fleet of terminals", () => {
   const settled = [
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Done",
       artifact: produced(2),
       completions: 1,
     }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Revoked" }),
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, { phase: "Revoked" }),
+    ticketOn(config, {
       phase: "Done",
       artifact: produced(2),
       completions: 1,
@@ -361,10 +344,7 @@ test("the stutter is enabled exactly on a fully-released fleet of terminals", ()
   assert.ok(
     !quietIn(
       config,
-      coreOf([
-        ...settled.slice(0, -1),
-        ticketOn(config, "ManagedFinalizer", { phase: "Working" }),
-      ]),
+      coreOf([...settled.slice(0, -1), ticketOn(config, { phase: "Working" })]),
     ),
     "a live ticket means some other action is enabled",
   );
@@ -373,7 +353,7 @@ test("the stutter is enabled exactly on a fully-released fleet of terminals", ()
       config,
       coreOf([
         ...settled.slice(0, -1),
-        ticketOn(config, "ManagedFinalizer", {
+        ticketOn(config, {
           phase: "Escalated",
           reason: "WorkFailed",
           resumeAt: "ResumeWorking",

@@ -2,11 +2,10 @@
  * Each anti-vacuity witness refuted by a step this machine actually takes.
  *
  * A GREEN WITNESS IS A WITNESS THAT PROVED NOTHING. `model/domain.qnt` expects
- * both of these violated, and the violation is what makes the invariants beside
- * them mean something: that the cascade really parks dependents on reachable
- * states rather than leaving `cascadeSafety` vacuous, and that multi-stage
- * programs really run stage by stage rather than leaving `eval-stage-passed`
- * unfired and the interpreter's advance edge untested.
+ * this one violated, and the violation is what makes the invariants beside it
+ * mean something: that multi-stage programs really run stage by stage rather
+ * than leaving `eval-stage-passed` unfired and the interpreter's advance edge
+ * untested.
  *
  * EVERY REFUTATION BELOW COMES OUT OF A DECIDER rather than out of a
  * hand-written record, because a record nobody's machine produced would refute
@@ -25,11 +24,7 @@ import {
 } from "../../src/domain/deciders.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
 
-import {
-  cascadeParkNever,
-  stageAdvanceNever,
-  witnesses,
-} from "../../src/domain/witnesses.ts";
+import { stageAdvanceNever, witnesses } from "../../src/domain/witnesses.ts";
 import { modelInstance } from "./configs.ts";
 import {
   coreOf,
@@ -51,14 +46,11 @@ function stepped(
   return { pre, rec: decided.rec, post: decided.post };
 }
 
-const twoStage: readonly Stage[] = [
-  { fanout: 1, combinator: "UnanimousPass" },
-  { fanout: 1, combinator: "UnanimousPass" },
-];
+const twoStage: readonly Stage[] = [{ fanout: 1 }, { fanout: 1 }];
 
 /** A ticket whose lowest eval stage has just passed with a later stage still to run. */
 const midProgram = coreOf([
-  ticketOn(config, "ManagedFinalizer", {
+  ticketOn(config, {
     phase: "Evaluating",
     program: twoStage,
     record: [workTask(1, "Passed"), workTask(2, "Passed")],
@@ -67,15 +59,12 @@ const midProgram = coreOf([
   }),
 ]);
 
-const cascade = ((): StepView => {
+const revoked = ((): StepView => {
   const pre = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
-    ticketOn(config, "ManagedFinalizer", {
-      phase: "Pending",
-      deps: depsOf(1),
-    }),
+    ticketOn(config, { phase: "Pending" }),
+    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
   ]);
-  return stepped(pre, decideRevoke(config, pre, id(1)));
+  return stepped(pre, decideRevoke(pre, id(1)));
 })();
 
 const advance = stepped(
@@ -83,28 +72,14 @@ const advance = stepped(
   decideEvalStageReduce(midProgram, id(1), "ReworkEvaluationFailure"),
 );
 
-test("a revoke parks its pre-flight dependents, which is what keeps cascadeSafety from being vacuous", () => {
-  assert.equal(cascade.rec.label, "ticket-revoked");
-  assert.equal(cascade.rec.transitions.length, 2);
-  assert.ok(!cascadeParkNever(config, cascade));
-  const lone = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
-  ]);
-  assert.ok(
-    cascadeParkNever(config, stepped(lone, decideRevoke(config, lone, id(1)))),
-    "a revoke with nothing hanging off it parks nobody",
-  );
-});
-
 test("an eval stage advances, which is what keeps eval-stage-passed exercised", () => {
   assert.equal(advance.rec.label, "eval-stage-passed");
   assert.ok(!stageAdvanceNever(config, advance));
-  assert.ok(stageAdvanceNever(config, cascade));
+  assert.ok(stageAdvanceNever(config, revoked));
 });
 
 test("every witness the domain declares is refuted by a step this machine takes", () => {
   const refutations: Record<string, { config: Config; view: StepView }> = {
-    cascadeParkNever: { config, view: cascade },
     stageAdvanceNever: { config, view: advance },
   };
   for (const { witness, claim } of witnesses) {

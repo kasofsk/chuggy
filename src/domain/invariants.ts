@@ -13,19 +13,12 @@
  * trust.
  */
 
-import { finalizerChoices, type Config } from "./config.ts";
+import { type Config } from "./config.ts";
 import { liveTickets, ticketAt } from "./core.ts";
-import {
-  canFinishSet,
-  coveredSet,
-  revokeDoomed,
-  stuckSet,
-  subsetOf,
-} from "./derived.ts";
+import { coveredSet, stuckSet, subsetOf } from "./derived.ts";
 import type { Core, StepRecord, Task, Ticket } from "./generated/modelTypes.ts";
 import { firstTaskId, type TicketId } from "./ids.ts";
 import { evalStage, tasksInIdOrder, taskEquals } from "./task.ts";
-import { hasOpenHumanTask, modeledResumeExists } from "./ticket.ts";
 
 /** What one invariant is evaluated against: the last decision, and the states either side of it. */
 export interface StepView {
@@ -69,13 +62,6 @@ export const revokedNeverCompletes: Invariant = (_config, view) =>
     (t) => t.phase !== "Revoked" || t.completions === 0,
   );
 
-/** A ticket authored without a finalizer never reaches the phase that runs one. */
-export const noFinalizationWithoutAKind: Invariant = (_config, view) =>
-  everyLiveTicket(
-    view.post,
-    (t) => t.finalizer !== "NoFinalizer" || t.phase !== "Finalizing",
-  );
-
 /** Nothing is Done without having produced the artifact its dependents read. */
 export const artifactWellFormed: Invariant = (_config, view) =>
   everyLiveTicket(
@@ -83,25 +69,20 @@ export const artifactWellFormed: Invariant = (_config, view) =>
     (t) => t.phase !== "Done" || t.artifact !== "NoArtifact",
   );
 
-/** Every ticket's finish kind is one a release could have drawn. */
-export const finalizerWellFormed: Invariant = (_config, view) =>
-  everyLiveTicket(view.post, (t) => finalizerChoices.includes(t.finalizer));
-
 /** Terminal outcomes absorb: no transition ever leaves one. */
 export const terminalsAbsorbing: Invariant = (_config, view) =>
   view.rec.transitions.every((t) => !["Done", "Revoked"].includes(t.from));
 
 /**
  * The desk's two equivalences. A ticket carries a reason exactly while it is
- * parked, and a resume point exactly while its wall has a modeled resume —
- * saying so structurally is what stops a desk task promising one it lacks.
+ * parked and a resume point exactly while it is parked, so a desk task never
+ * offers a continuation the deciders would refuse.
  */
 export const deskConsistent: Invariant = (_config, view) =>
   everyLiveTicket(view.post, (t) => {
     const parked = t.phase === "Escalated";
     const named = t.reason !== "NoReason";
-    const resumable = parked && modeledResumeExists(t);
-    return parked === named && (t.resumeAt !== "NoResume") === resumable;
+    return parked === named && (t.resumeAt !== "NoResume") === parked;
   });
 
 /** Whether these ids are exactly the contiguous run of `count` starting at `start`. */
@@ -243,26 +224,6 @@ export const ticketIdsWellFormed: Invariant = (config, view) => {
 export const stuckSubsetCovered: Invariant = (_config, view) =>
   subsetOf(stuckSet(view.post), coveredSet(view.post));
 
-/** Every ticket doomed by a revocation is itself revoked, or parked naming that revocation. */
-export const cascadeSafety: Invariant = (_config, view) =>
-  [...revokeDoomed(view.post)].every((id) => {
-    const t = ticketAt(view.post, id);
-    return (
-      t.phase === "Revoked" ||
-      (t.phase === "Escalated" && t.reason === "DependencyRevoked")
-    );
-  });
-
-/** Every live ticket has a route to Done, is revoked, or is on the desk where a human can act. */
-export const noStructuralDeadlock: Invariant = (_config, view) => {
-  const finishable = canFinishSet(view.post);
-  return everyLiveTicket(
-    view.post,
-    (t, id) =>
-      finishable.has(id) || t.phase === "Revoked" || hasOpenHumanTask(t),
-  );
-};
-
 /**
  * Every predicate the model's bundle names, in the order it names them.
  * `test/domain/bundle.test.ts` holds this roster against `model/domain.qnt`
@@ -271,12 +232,7 @@ export const noStructuralDeadlock: Invariant = (_config, view) => {
 export const invariantBundle: readonly NamedInvariant[] = [
   { invariant: "completionExclusive", holds: completionExclusive },
   { invariant: "revokedNeverCompletes", holds: revokedNeverCompletes },
-  {
-    invariant: "noFinalizationWithoutAKind",
-    holds: noFinalizationWithoutAKind,
-  },
   { invariant: "artifactWellFormed", holds: artifactWellFormed },
-  { invariant: "finalizerWellFormed", holds: finalizerWellFormed },
   { invariant: "terminalsAbsorbing", holds: terminalsAbsorbing },
   { invariant: "deskConsistent", holds: deskConsistent },
   { invariant: "tasksWellFormed", holds: tasksWellFormed },
@@ -287,8 +243,6 @@ export const invariantBundle: readonly NamedInvariant[] = [
   { invariant: "depsAcyclic", holds: depsAcyclic },
   { invariant: "ticketIdsWellFormed", holds: ticketIdsWellFormed },
   { invariant: "stuckSubsetCovered", holds: stuckSubsetCovered },
-  { invariant: "cascadeSafety", holds: cascadeSafety },
-  { invariant: "noStructuralDeadlock", holds: noStructuralDeadlock },
 ];
 
 /** The members that came back false, named. An empty list is the green answer. */

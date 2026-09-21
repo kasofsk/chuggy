@@ -133,7 +133,7 @@ test("every init conjunct refuses as the model's init does, and a valid instance
 
 test("the release's program draw ranges over exactly the well-formed set", () => {
   const programs = validProgramsIn(modelInstance);
-  assert.equal(programs.length, 20);
+  assert.equal(programs.length, 6);
   assert.ok(programs.every((p) => isValidProgram(modelInstance, p)));
   assert.equal(
     new Set(programs.map((p) => JSON.stringify(p))).size,
@@ -151,7 +151,6 @@ test("the release's permit refuses the dep named twice", () => {
     deps: [id(1), id(1)],
     program,
     workFanout: 1,
-    finalizer: "ManagedFinalizer",
   };
   const release = walkActionOf("releaseTicket");
   assert.equal(release.permitsIn(modelInstance, core, drawn), false);
@@ -170,7 +169,7 @@ test("a run is a pure function of its seed", () => {
 
 test("the accumulator rebuilds the ghost and can go red in every direction", () => {
   const done = coreOf([
-    ticketOn(modelInstance, "ManagedFinalizer", {
+    ticketOn(modelInstance, {
       phase: "Done",
       artifact: { type: "ProducedArtifact", value: 1 },
       completions: 1,

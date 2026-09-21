@@ -20,7 +20,6 @@
  * model, it is a failure the moment the model moves.
  */
 
-import type { Config } from "../../src/domain/config.ts";
 import type { Decision } from "../../src/domain/core.ts";
 import {
   decideDispatch,
@@ -39,7 +38,6 @@ import type { TicketId } from "../../src/domain/ids.ts";
 import {
   decodeEvaluationFailureDisposition,
   decodeFinalizationOutcome,
-  decodeFinalizer,
   decodeReason,
   decodeStage,
   decodeVerdict,
@@ -76,7 +74,6 @@ export interface Picks {
   readonly deps: ItfValue | undefined;
   readonly program: ItfValue | undefined;
   readonly workFanout: ItfValue | undefined;
-  readonly finalizer: ItfValue | undefined;
   readonly onFailure: ItfValue | undefined;
   readonly taskId: ItfValue | undefined;
   readonly verdict: ItfValue | undefined;
@@ -117,12 +114,7 @@ function drawn(
  * Replays one recorded step through this implementation's deciders. The caller
  * guarantees the action was enabled at `pre`, which the golden's existence is.
  */
-export function replayStep(
-  config: Config,
-  pre: Core,
-  action: string,
-  picks: Picks,
-): Decision {
+export function replayStep(pre: Core, action: string, picks: Picks): Decision {
   const need = (value: ItfValue | undefined, name: string): ItfValue =>
     drawn(value, name, action);
   const j = (): TicketId => decodeTicketId(need(picks.ticket, "j"));
@@ -133,12 +125,9 @@ export function replayStep(
         deps: new Set(drawnIds(need(picks.deps, "deps_"))),
         program: drawnProgram(need(picks.program, "prog")),
         workFanout: Number(itfToWire(need(picks.workFanout, "workFanout_"))),
-        finalizer: decodeFinalizer(
-          itfToWire(need(picks.finalizer, "finalizer_")),
-        ),
       });
     case "revoke":
-      return decideRevoke(config, pre, j());
+      return decideRevoke(pre, j());
     case "dispatch":
       return decideDispatch(pre, j());
     case "taskDone":

@@ -71,7 +71,7 @@ function folded(): ReadonlyMap<number, TicketProjection> {
   const table = new Map<number, TicketProjection>();
   let core: Core = genesis;
   for (const event of history) {
-    const post = execDecisionEvent(refinementInstance, core, event).post;
+    const post = execDecisionEvent(core, event).post;
     for (const row of projectionChanges(core, post)) {
       table.set(row.ticket, row);
     }
@@ -82,10 +82,7 @@ function folded(): ReadonlyMap<number, TicketProjection> {
 
 test("folding what each decision changed reaches the table a rebuild reads", () => {
   const rebuilt = new Map(
-    projectionOf(replayCore(refinementInstance, journalOf())).map((row) => [
-      row.ticket,
-      row,
-    ]),
+    projectionOf(replayCore(journalOf())).map((row) => [row.ticket, row]),
   );
   assert.deepEqual(folded(), rebuilt);
   assert.equal(rebuilt.get(id(1))?.phase, "Working");
@@ -199,12 +196,12 @@ function walledHistory(): readonly DecisionEvent[] {
     dispatchEvent(id(1)),
   ];
   let core = events.reduce(
-    (state, event) => execDecisionEvent(refinementInstance, state, event).post,
+    (state, event) => execDecisionEvent(state, event).post,
     genesis,
   );
   const step = (event: DecisionEvent) => {
     events.push(event);
-    core = execDecisionEvent(refinementInstance, core, event).post;
+    core = execDecisionEvent(core, event).post;
   };
   for (const cycle of [0, 1]) {
     step(
@@ -248,7 +245,7 @@ test("every projected row is the core the step it names left behind", () => {
   let core: Core = genesis;
   const seen: string[] = [];
   for (const event of walledHistory()) {
-    core = execDecisionEvent(refinementInstance, core, event).post;
+    core = execDecisionEvent(core, event).post;
     const row = projectionOf(core).find((each) => each.ticket === id(1));
     assert.ok(row !== undefined);
     assert.deepEqual(ticketFacts(ticketAt(core, id(1))), {

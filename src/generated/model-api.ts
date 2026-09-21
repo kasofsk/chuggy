@@ -9,15 +9,13 @@ import type {
   TaskKind,
   Task,
   Verdict,
-  Combinator,
   Stage,
   EvaluationFailureDisposition,
   Resume,
   Reason,
   FinalizationOutcome,
-  Phase,
-  Finalizer,
   ArtifactMark,
+  Phase,
   Ticket,
   InstallationId,
   TicketRef,
@@ -157,26 +155,11 @@ export function decodeVerdict(value: unknown): Verdict {
   return verdictSchemaWire.parse(value);
 }
 
-export const combinatorSchema: z.ZodType<Combinator> = z.union([
-  z.literal("UnanimousPass"),
-  z.literal("AnyPass"),
-]);
-const combinatorSchemaWire: z.ZodType<Combinator> = z.union([
-  z.literal("UnanimousPass"),
-  z.literal("AnyPass"),
-]);
-export function encodeCombinator(value: Combinator): ModelJson {
-  return encodeJson(value);
-}
-export function decodeCombinator(value: unknown): Combinator {
-  return combinatorSchemaWire.parse(value);
-}
-
 export const stageSchema: z.ZodType<Stage> = z
-  .object({ fanout: z.number().int().safe(), combinator: combinatorSchema })
+  .object({ fanout: z.number().int().safe() })
   .readonly();
 const stageSchemaWire: z.ZodType<Stage> = z
-  .object({ fanout: z.number().int().safe(), combinator: combinatorSchemaWire })
+  .object({ fanout: z.number().int().safe() })
   .readonly();
 export function encodeStage(value: Stage): ModelJson {
   return encodeJson(value);
@@ -231,7 +214,6 @@ export const reasonSchema: z.ZodType<Reason> = z.union([
   z.literal("NoReason"),
   z.literal("WorkFailed"),
   z.literal("ReworkBudgetExhausted"),
-  z.literal("DependencyRevoked"),
   z.literal("ExecutionPolicyDenied"),
   z.literal("TicketConfigIncompatible"),
   z.literal("ExecutionProfileUnavailable"),
@@ -242,7 +224,6 @@ const reasonSchemaWire: z.ZodType<Reason> = z.union([
   z.literal("NoReason"),
   z.literal("WorkFailed"),
   z.literal("ReworkBudgetExhausted"),
-  z.literal("DependencyRevoked"),
   z.literal("ExecutionPolicyDenied"),
   z.literal("TicketConfigIncompatible"),
   z.literal("ExecutionProfileUnavailable"),
@@ -274,46 +255,6 @@ export function decodeFinalizationOutcome(value: unknown): FinalizationOutcome {
   return finalizationOutcomeSchemaWire.parse(value);
 }
 
-export const phaseSchema: z.ZodType<Phase> = z.union([
-  z.literal("Pending"),
-  z.literal("Working"),
-  z.literal("Evaluating"),
-  z.literal("Finalizing"),
-  z.literal("Done"),
-  z.literal("Escalated"),
-  z.literal("Revoked"),
-]);
-const phaseSchemaWire: z.ZodType<Phase> = z.union([
-  z.literal("Pending"),
-  z.literal("Working"),
-  z.literal("Evaluating"),
-  z.literal("Finalizing"),
-  z.literal("Done"),
-  z.literal("Escalated"),
-  z.literal("Revoked"),
-]);
-export function encodePhase(value: Phase): ModelJson {
-  return encodeJson(value);
-}
-export function decodePhase(value: unknown): Phase {
-  return phaseSchemaWire.parse(value);
-}
-
-export const finalizerSchema: z.ZodType<Finalizer> = z.union([
-  z.literal("NoFinalizer"),
-  z.literal("ManagedFinalizer"),
-]);
-const finalizerSchemaWire: z.ZodType<Finalizer> = z.union([
-  z.literal("NoFinalizer"),
-  z.literal("ManagedFinalizer"),
-]);
-export function encodeFinalizer(value: Finalizer): ModelJson {
-  return encodeJson(value);
-}
-export function decodeFinalizer(value: unknown): Finalizer {
-  return finalizerSchemaWire.parse(value);
-}
-
 export const artifactMarkSchema: z.ZodType<ArtifactMark> = z.union([
   z.literal("NoArtifact"),
   z
@@ -339,11 +280,35 @@ export function decodeArtifactMark(value: unknown): ArtifactMark {
   return artifactMarkSchemaWire.parse(value);
 }
 
+export const phaseSchema: z.ZodType<Phase> = z.union([
+  z.literal("Pending"),
+  z.literal("Working"),
+  z.literal("Evaluating"),
+  z.literal("Finalizing"),
+  z.literal("Done"),
+  z.literal("Escalated"),
+  z.literal("Revoked"),
+]);
+const phaseSchemaWire: z.ZodType<Phase> = z.union([
+  z.literal("Pending"),
+  z.literal("Working"),
+  z.literal("Evaluating"),
+  z.literal("Finalizing"),
+  z.literal("Done"),
+  z.literal("Escalated"),
+  z.literal("Revoked"),
+]);
+export function encodePhase(value: Phase): ModelJson {
+  return encodeJson(value);
+}
+export function decodePhase(value: unknown): Phase {
+  return phaseSchemaWire.parse(value);
+}
+
 export const ticketSchema: z.ZodType<Ticket> = z
   .object({
     phase: phaseSchema,
     deps: z.set(z.number().int().safe()).readonly(),
-    finalizer: finalizerSchema,
     artifact: artifactMarkSchema,
     workFanout: z.number().int().safe(),
     program: z.array(stageSchema).readonly(),
@@ -362,7 +327,6 @@ const ticketSchemaWire: z.ZodType<Ticket> = z
       .array(z.number().int().safe())
       .refine(distinctJson, { message: "set contains a duplicate" })
       .transform((items) => new Set(items)),
-    finalizer: finalizerSchemaWire,
     artifact: artifactMarkSchemaWire,
     workFanout: z.number().int().safe(),
     program: z.array(stageSchemaWire).readonly(),
@@ -505,7 +469,6 @@ export const decisionEventSchema: z.ZodType<DecisionEvent> = z.union([
           deps: z.set(z.number().int().safe()).readonly(),
           prog: z.array(stageSchema).readonly(),
           workFanout: z.number().int().safe(),
-          finalizer: finalizerSchema,
         })
         .readonly(),
     })
@@ -579,7 +542,6 @@ const decisionEventSchemaWire: z.ZodType<DecisionEvent> = z.union([
             .transform((items) => new Set(items)),
           prog: z.array(stageSchemaWire).readonly(),
           workFanout: z.number().int().safe(),
-          finalizer: finalizerSchemaWire,
         })
         .readonly(),
     })

@@ -2,13 +2,13 @@
  * The invariant bundle asked one leaf at a time, so a predicate that cannot be
  * evaluated on a state is named rather than taking the run down with it.
  *
- * THE BUNDLE IS A CONJUNCTION AND ITS MEMBERS ARE PARTIAL. `allInvariants`
- * short-circuits, so a leaf that walks the dependency graph is only ever
- * reached on a state where `depsAcyclic` already held; `failedInvariants` asks
- * every member, and on a state with a dangling dep `cascadeSafety` reaches
- * `ticketAt` for a key that is not there and throws. That is the model's own
- * partiality — `model/domain.qnt` looks the same key up the same way — and it
- * is not a defect in either.
+ * THE BUNDLE IS A CONJUNCTION AND A MEMBER OF IT MAY BE PARTIAL. A leaf that
+ * walks the dependency graph reaches `ticketAt` for whatever key the edges
+ * name, and on a state with a dangling dep that key is not there. That is the
+ * model's own partiality — `model/domain.qnt` looks the same key up the same
+ * way — and it is not a defect in either. `allInvariants` short-circuits, so
+ * such a leaf is only ever reached where the leaves before it held;
+ * `failedInvariants` asks every member.
  *
  * IT BITES HERE BECAUSE A REPLAY MEETS EXACTLY THOSE STATES. A conformance run
  * evaluates the bundle on what the deciders produced, and the state most worth
@@ -24,7 +24,11 @@
  */
 
 import type { Config } from "../../src/domain/config.ts";
-import { invariantBundle, type StepView } from "../../src/domain/invariants.ts";
+import {
+  invariantBundle,
+  type NamedInvariant,
+  type StepView,
+} from "../../src/domain/invariants.ts";
 
 /** One state's answers: the members that came back false, and those that could not be asked. */
 export interface BundleVerdict {
@@ -32,11 +36,15 @@ export interface BundleVerdict {
   readonly refused: readonly string[];
 }
 
-/** Every member of `invariantBundle`, in the model's order, each asked on its own. */
-export function evaluateBundle(config: Config, view: StepView): BundleVerdict {
+/** Every member of `roster`, in the model's order, each asked on its own. */
+export function evaluateBundle(
+  config: Config,
+  view: StepView,
+  roster: readonly NamedInvariant[] = invariantBundle,
+): BundleVerdict {
   const failed: string[] = [];
   const refused: string[] = [];
-  for (const member of invariantBundle) {
+  for (const member of roster) {
     try {
       if (!member.holds(config, view)) failed.push(member.invariant);
     } catch (error: unknown) {

@@ -15,10 +15,9 @@ const core: Core = {
       {
         phase: "Pending",
         deps: new Set([3]),
-        finalizer: "NoFinalizer",
         artifact: "NoArtifact",
         workFanout: 1,
-        program: [{ fanout: 1, combinator: "UnanimousPass" }],
+        program: [{ fanout: 1 }],
         tasks: new Set(),
         record: [],
         spawned: 0,
@@ -39,10 +38,9 @@ test("generated JSON codec round-trips nested lists, sets, maps and records", ()
         {
           phase: "Pending",
           deps: [3],
-          finalizer: "NoFinalizer",
           artifact: "NoArtifact",
           workFanout: 1,
-          program: [{ fanout: 1, combinator: "UnanimousPass" }],
+          program: [{ fanout: 1 }],
           tasks: [],
           record: [],
           spawned: 0,
@@ -77,9 +75,8 @@ test("generated codecs refuse duplicates that JSON could otherwise collapse", ()
       value: {
         ticket: 7,
         deps: [3, 3],
-        prog: [{ fanout: 1, combinator: "UnanimousPass" }],
+        prog: [{ fanout: 1 }],
         workFanout: 1,
-        finalizer: "NoFinalizer",
       },
     }),
   );

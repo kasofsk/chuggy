@@ -84,7 +84,7 @@ function depsInOrder(deps: ReadonlySet<number>): readonly number[] {
 }
 
 function ticketEqualsStage(left: Stage, right: Stage): boolean {
-  return left.fanout === right.fanout && left.combinator === right.combinator;
+  return left.fanout === right.fanout;
 }
 
 /** Whether two tickets carry the same record, every declared field compared. */
@@ -92,7 +92,6 @@ export function ticketEquals(left: Ticket, right: Ticket): boolean {
   return (
     left.phase === right.phase &&
     listEquals(depsInOrder(left.deps), depsInOrder(right.deps), sameValue) &&
-    left.finalizer === right.finalizer &&
     ticketEqualsArtifact(left.artifact, right.artifact) &&
     left.workFanout === right.workFanout &&
     listEquals(left.program, right.program, ticketEqualsStage) &&

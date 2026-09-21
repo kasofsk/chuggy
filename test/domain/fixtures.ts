@@ -74,14 +74,12 @@ export const evalOutstanding = (value: number, stage: number): Task => ({
 /** A ticket as a release leaves it, with whatever the caller overrides. */
 export function ticketOn(
   config: Config,
-  finalizer: Ticket["finalizer"] = "ManagedFinalizer",
   overrides: Partial<Ticket> = {},
 ): Ticket {
   const born = freshTicket({
     deps: new Set<number>(),
     program: defaultProgram(config),
     workFanout: config.nTasks,
-    finalizer,
   });
   return { ...born, ...overrides };
 }
@@ -121,18 +119,18 @@ export function healthyFleet(config: Config): readonly Ticket[] {
     artifact: { type: "ProducedArtifact", value: width } as const,
   };
   return [
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       ...finished,
       phase: "Done",
       completions: 1,
     }),
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Working",
       deps: new Set([1]),
       tasks: live,
       spawned: width,
     }),
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       ...finished,
       phase: "Finalizing",
     }),

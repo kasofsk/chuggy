@@ -60,7 +60,7 @@ function dispositionsUnder(
 ): readonly string[] {
   let core: Core = genesis;
   const step = (event: DecisionEvent) => {
-    core = execDecisionEvent(config, core, event).post;
+    core = execDecisionEvent(core, event).post;
   };
   const evaluated = (verdict: "Pass" | "Fail") => {
     step(

@@ -20,7 +20,6 @@
  */
 
 import {
-  finalizerChoices,
   isValidProgram,
   stageChoices,
   workFanoutChoices,
@@ -47,7 +46,6 @@ import {
   type Core,
   type EvaluationFailureDisposition,
   type FinalizationOutcome,
-  type Finalizer,
   type Reason,
   type Stage,
   type Verdict,
@@ -69,7 +67,6 @@ export interface Drawn {
   readonly deps?: readonly TicketId[];
   readonly program?: readonly Stage[];
   readonly workFanout?: number;
-  readonly finalizer?: Finalizer;
   readonly onFailure?: EvaluationFailureDisposition;
   readonly taskId?: TaskId;
   readonly verdict?: Verdict;
@@ -132,16 +129,14 @@ const releaseTicket: WalkAction = {
     deps: subsetFrom(random, dependableIn(core)),
     program: pickFrom(random, validProgramsIn(config)),
     workFanout: pickFrom(random, workFanoutChoices(config)),
-    finalizer: pickFrom(random, finalizerChoices),
   }),
   permitsIn: (config, core, drawn) => {
-    const { ticket, deps, program, workFanout, finalizer } = drawn;
+    const { ticket, deps, program, workFanout } = drawn;
     if (
       ticket === undefined ||
       deps === undefined ||
       program === undefined ||
-      workFanout === undefined ||
-      finalizer === undefined
+      workFanout === undefined
     ) {
       return false;
     }
@@ -150,8 +145,7 @@ const releaseTicket: WalkAction = {
       deps.every((d) => dependableIn(core).includes(d)) &&
       new Set(deps).size === deps.length &&
       isValidProgram(config, program) &&
-      workFanoutChoices(config).includes(workFanout) &&
-      finalizerChoices.includes(finalizer)
+      workFanoutChoices(config).includes(workFanout)
     );
   },
 };
@@ -288,7 +282,6 @@ export function drawnWire(drawn: Drawn): Readonly<Record<string, unknown>> {
   ): unknown => (value === undefined ? undefined : encode(value));
   return {
     deps_: opt(drawn.deps, (deps) => encodeDeps(new Set(deps))),
-    finalizer_: opt(drawn.finalizer, encodeNullaryTag),
     j: opt(drawn.ticket, encodeInt),
     onFailure: opt(drawn.onFailure, encodeNullaryTag),
     out: opt(drawn.outcome, encodeNullaryTag),
@@ -312,7 +305,6 @@ export function drawnPicks(drawn: Drawn): Picks {
     deps: itf(wire["deps_"]),
     program: itf(wire["prog"]),
     workFanout: itf(wire["workFanout_"]),
-    finalizer: itf(wire["finalizer_"]),
     onFailure: itf(wire["onFailure"]),
     taskId: itf(wire["tid"]),
     verdict: itf(wire["v"]),

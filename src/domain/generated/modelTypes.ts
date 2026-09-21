@@ -21,13 +21,7 @@ export type Task = {
 export type Verdict = "Pass" | "Fail";
 export const verdictTags = ["Pass", "Fail"] as const;
 
-export type Combinator = "UnanimousPass" | "AnyPass";
-export const combinatorTags = ["UnanimousPass", "AnyPass"] as const;
-
-export type Stage = {
-  readonly fanout: number;
-  readonly combinator: Combinator;
-};
+export type Stage = { readonly fanout: number };
 
 export type EvaluationFailureDisposition =
   "ReworkEvaluationFailure" | "EscalateEvaluationFailure";
@@ -54,7 +48,6 @@ export type Reason =
   | "NoReason"
   | "WorkFailed"
   | "ReworkBudgetExhausted"
-  | "DependencyRevoked"
   | "ExecutionPolicyDenied"
   | "TicketConfigIncompatible"
   | "ExecutionProfileUnavailable"
@@ -64,7 +57,6 @@ export const reasonTags = [
   "NoReason",
   "WorkFailed",
   "ReworkBudgetExhausted",
-  "DependencyRevoked",
   "ExecutionPolicyDenied",
   "TicketConfigIncompatible",
   "ExecutionProfileUnavailable",
@@ -78,6 +70,10 @@ export const finalizationOutcomeTags = [
   "FinalizationSucceeded",
   "FinalizationFailed",
 ] as const;
+
+export type ArtifactMark =
+  "NoArtifact" | { readonly type: "ProducedArtifact"; readonly value: number };
+export const artifactMarkTags = ["NoArtifact", "ProducedArtifact"] as const;
 
 export type Phase =
   | "Pending"
@@ -97,17 +93,9 @@ export const phaseTags = [
   "Revoked",
 ] as const;
 
-export type Finalizer = "NoFinalizer" | "ManagedFinalizer";
-export const finalizerTags = ["NoFinalizer", "ManagedFinalizer"] as const;
-
-export type ArtifactMark =
-  "NoArtifact" | { readonly type: "ProducedArtifact"; readonly value: number };
-export const artifactMarkTags = ["NoArtifact", "ProducedArtifact"] as const;
-
 export type Ticket = {
   readonly phase: Phase;
   readonly deps: ReadonlySet<number>;
-  readonly finalizer: Finalizer;
   readonly artifact: ArtifactMark;
   readonly workFanout: number;
   readonly program: readonly Stage[];
@@ -154,7 +142,6 @@ export type DecisionEvent =
         readonly deps: ReadonlySet<number>;
         readonly prog: readonly Stage[];
         readonly workFanout: number;
-        readonly finalizer: Finalizer;
       };
     }
   | { readonly type: "Revoke"; readonly value: number }

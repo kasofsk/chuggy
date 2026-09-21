@@ -56,13 +56,11 @@ const baseTicket: Ticket = freshTicket({
   deps: new Set<number>(),
   program: flatProgram,
   workFanout: 1,
-  finalizer: "ManagedFinalizer",
 });
 
 const ticketMutants: FieldMutants<Ticket> = {
   phase: (t) => ({ ...t, phase: "Done" }),
   deps: (t) => ({ ...t, deps: new Set([2]) }),
-  finalizer: (t) => ({ ...t, finalizer: "NoFinalizer" }),
   artifact: (t) => ({
     ...t,
     artifact: { type: "ProducedArtifact", value: 1 },
@@ -98,11 +96,10 @@ const transitionMutants: FieldMutants<Transition> = {
   to: (t) => ({ ...t, to: "Done" }),
 };
 
-const baseStage: Stage = { fanout: 1, combinator: "UnanimousPass" };
+const baseStage: Stage = { fanout: 1 };
 
 const stageMutants: FieldMutants<Stage> = {
   fanout: (s) => ({ ...s, fanout: s.fanout + 1 }),
-  combinator: (s) => ({ ...s, combinator: "AnyPass" }),
 };
 
 test("ticketEquals reads every field Ticket declares", () => {
@@ -143,7 +140,7 @@ test("a list of equal length is compared member by member, not by length alone",
     program: [stage, stage],
   });
   assert.ok(
-    !ticketEquals(twice(baseStage), twice(stageMutants.combinator(baseStage))),
+    !ticketEquals(twice(baseStage), twice(stageMutants.fanout(baseStage))),
   );
 });
 

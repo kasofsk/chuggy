@@ -53,7 +53,6 @@ import {
 const bare: Ticket = {
   phase: "Pending",
   deps: new Set(),
-  finalizer: "NoFinalizer",
   artifact: "NoArtifact",
   workFanout: 1,
   program: [],
@@ -190,27 +189,20 @@ test("a string that is not one of this machine's effects is refused", () => {
   );
 });
 
-test("the combinators are what the model says they are", () => {
-  const passed: ReadonlySet<Task> = new Set([
+test("a stage passes only when every task in it passed", () => {
+  const mixed: ReadonlySet<Task> = new Set([
     { id: asTaskId(1), kind: tkWork, state: tsResolved("Passed") },
     { id: asTaskId(2), kind: tkWork, state: tsResolved("Failed") },
   ]);
-  assert.equal(combine("UnanimousPass", passed), false);
-  assert.equal(combine("AnyPass", passed), true);
-  assert.equal(
-    combine("UnanimousPass", new Set()),
-    true,
-    "vacuously, as forall does",
-  );
-  assert.equal(combine("AnyPass", new Set()), false);
+  assert.equal(combine(mixed), false);
+  assert.equal(combine(new Set()), true, "vacuously, as forall does");
 });
 
-test("a cancelled task fails both combinators, so a revoked set never passes", () => {
+test("a cancelled task fails its stage, so a revoked set never passes", () => {
   const cancelled: ReadonlySet<Task> = new Set([
     { id: asTaskId(1), kind: tkWork, state: tsResolved("Cancelled") },
   ]);
-  assert.equal(combine("UnanimousPass", cancelled), false);
-  assert.equal(combine("AnyPass", cancelled), false);
+  assert.equal(combine(cancelled), false);
 });
 
 test("an identifier outside the exactly representable range is refused, not truncated", () => {

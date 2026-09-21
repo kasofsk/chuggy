@@ -171,10 +171,7 @@ export function encodeDeps(deps: ReadonlySet<number>): ItfValue {
 
 export function encodeProgram(program: Ticket["program"]): ItfValue {
   return program.map((stage) =>
-    encodeRecord([
-      ["fanout", encodeInt(stage.fanout)],
-      ["combinator", encodeNullary(stage.combinator)],
-    ]),
+    encodeRecord([["fanout", encodeInt(stage.fanout)]]),
   );
 }
 
@@ -193,7 +190,6 @@ function encodeTicket(ticket: Ticket): ItfValue {
   return encodeRecord([
     ["phase", encodeNullary(ticket.phase)],
     ["deps", encodeDeps(ticket.deps)],
-    ["finalizer", encodeNullary(ticket.finalizer)],
     ["artifact", encodeSum(ticket.artifact, (mark: number) => encodeInt(mark))],
     ["workFanout", encodeInt(ticket.workFanout)],
     ["program", encodeProgram(ticket.program)],

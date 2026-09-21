@@ -4,21 +4,30 @@
  *
  * BOTH HALVES ARE NEEDED. Agreeing with `failedInvariants` wherever nothing
  * throws is what says this is the model's bundle and not a second opinion of
- * it; naming the leaf that threw on a state where `failedInvariants` cannot
- * return at all is what it was written for. A guard nobody has seen catch
- * anything is the unverified control this repo refuses.
+ * it; naming the leaf that threw is what it was written for. Every member of
+ * today's bundle answers on the malformed state below, so the refusal is
+ * demonstrated against a partial leaf handed to the evaluation directly — a
+ * guard nobody has seen catch anything is the unverified control this repo
+ * refuses.
  */
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { failedInvariants } from "../../src/domain/invariants.ts";
+import { ticketAt } from "../../src/domain/core.ts";
+import type { TicketId } from "../../src/domain/ids.ts";
+import {
+  failedInvariants,
+  invariantBundle,
+  type NamedInvariant,
+} from "../../src/domain/invariants.ts";
 import { modelInstance } from "../domain/configs.ts";
 import {
   coreOf,
   depsOf,
   fleetBut,
   healthyFleet,
+  id,
   initialView,
   ticketOn,
 } from "../domain/fixtures.ts";
@@ -29,9 +38,7 @@ const fleet = healthyFleet(config);
 const healthy = initialView(fleetBut(fleet, 0, {}));
 
 /** A ticket whose dependency is not in the map, which is where a derived walk falls over. */
-const dangling = initialView(
-  coreOf([ticketOn(config, "ManagedFinalizer", { deps: depsOf(9) })]),
-);
+const dangling = initialView(coreOf([ticketOn(config, { deps: depsOf(9) })]));
 
 test("a healthy state answers every leaf, and answers each of them yes", () => {
   const verdict = evaluateBundle(config, healthy);
@@ -53,20 +60,33 @@ test("where nothing throws, the guarded evaluation is the bundle itself", () => 
   }
 });
 
-test("a malformed state names the leaf that could not be asked", () => {
-  assert.throws(
-    () => failedInvariants(config, dangling),
-    /no ticket 9/,
-    "the unguarded bundle no longer throws here, so this guard has nothing to catch",
-  );
+test("a malformed state fails the leaf that names it, and answers every other", () => {
   const verdict = evaluateBundle(config, dangling);
-  assert.ok(
-    verdict.failed.includes("depsAcyclic"),
-    "the leaf that names the defect answered rather than being skipped",
+  assert.deepEqual(verdict.failed, ["depsAcyclic"]);
+  assert.deepEqual(
+    verdict.refused,
+    [],
+    "every member of today's bundle is total on this state",
   );
-  assert.ok(
-    verdict.refused.some((why) => why.startsWith("cascadeSafety")),
-    "the leaf that walks the closure was not reported as refusing",
-  );
+  assert.ok(!bundleHolds(verdict));
+});
+
+test("a leaf that cannot be asked is named rather than taking the run down", () => {
+  const partial: NamedInvariant = {
+    invariant: "readsADanglingDep",
+    holds: (_config, view) =>
+      [...ticketAt(view.post, id(1)).deps].every(
+        (d) => ticketAt(view.post, d as TicketId).phase !== "Revoked",
+      ),
+  };
+  assert.throws(() => partial.holds(config, dangling), /no ticket 9/);
+  const verdict = evaluateBundle(config, dangling, [
+    ...invariantBundle,
+    partial,
+  ]);
+  assert.deepEqual(verdict.failed, ["depsAcyclic"]);
+  assert.deepEqual(verdict.refused, [
+    "readsADanglingDep (core: no ticket 9; a decider was called on a state that refuses it)",
+  ]);
   assert.ok(!bundleHolds(verdict), "a refusal is a finding, not a pass");
 });

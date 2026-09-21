@@ -1,7 +1,7 @@
 /**
- * The derived sets the safety invariants are stated over: the visibility
- * edges, the two walks that guard each other, the revocation closure, and the
- * upward fixpoint that says a ticket still has a route to Done.
+ * The derived sets the safety invariants are stated over — the visibility
+ * edges and the two walks that guard each other — and the derived read the
+ * desk is shown: which of a ticket's dependencies were revoked.
  *
  * THE BOUNDED SWEEP IS THE TERMINATION ARGUMENT, NOT AN IMPLEMENTATION
  * DETAIL. Each of these is a fixpoint computed by repeating a monotone step
@@ -14,10 +14,6 @@
  * the sweep is what lets a future edge kind point upward with no rewrite. An
  * implementer who reads a summary writes the fold and silently drops that.
  *
- * `revokeDoomed` is swept for a reason the others are not: ids are drawn from
- * a sparse universe, so a dependency may name a numerically larger ticket and
- * no single ascending pass decides each id after the ids it depends on.
- *
  * ITERATION ORDER IS EXPLICIT EVERYWHERE HERE. Every pass reads `liveTickets`,
  * which sorts, rather than inheriting a map's insertion order — stable in
  * JavaScript, which is exactly why relying on it would pass every test until
@@ -26,7 +22,6 @@
 
 import { liveTickets, ticketAt } from "./core.ts";
 import type { Core } from "./generated/modelTypes.ts";
-import { waitsOn } from "./enablement.ts";
 import type { TicketId } from "./ids.ts";
 import { hasOpenHumanTask } from "./ticket.ts";
 
@@ -88,32 +83,16 @@ export function coveredSet(core: Core): ReadonlySet<TicketId> {
 }
 
 /**
- * Tickets with a reachable route to Done, as a least fixpoint upward from the
- * terminal — the opposite direction from `stuckSet`, because a dependency
- * cycle has no base case and would never be reached growing outward from one.
+ * The dependencies of this ticket that their own authors revoked, in id order.
+ * Direct edges only: a ticket further up the chain blocks this one through the
+ * dependency between them, and it is that one's author who holds the decision.
  */
-export function canFinishSet(core: Core): ReadonlySet<TicketId> {
-  return sweep(core, (c, id, finishable) => {
-    const phase = ticketAt(c, id).phase;
-    return (
-      phase === "Done" ||
-      (phase !== "Revoked" &&
-        [...waitsOn(c, id)].every((d) => finishable.has(d as TicketId)))
-    );
-  });
-}
-
-/**
- * Tickets transitively doomed by a revocation: a revoked ticket anywhere in the
- * dependency closure means this one can never unblock.
- */
-export function revokeDoomed(core: Core): ReadonlySet<TicketId> {
-  return sweep(core, (c, id, doomed) =>
-    [...ticketAt(c, id).deps].some(
-      (d) =>
-        ticketAt(c, d as TicketId).phase === "Revoked" ||
-        doomed.has(d as TicketId),
-    ),
+export function revokedDependencies(
+  core: Core,
+  id: TicketId,
+): readonly TicketId[] {
+  return visEdges(core, id).filter(
+    (d) => ticketAt(core, d).phase === "Revoked",
   );
 }
 

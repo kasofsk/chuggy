@@ -7,9 +7,7 @@
  *
  * The seams are the model's: post-journal pre-emission at the dispatch, the
  * rework and the completion; total cursor loss with every re-emission absorbed
- * by decision identity; and a final full-loss recovery at rest. The
- * finalizer-free run walks the one route that never enters Finalizing, so the
- * same obligations are carried on a ticket whose evaluation is its completion.
+ * by decision identity; and a final full-loss recovery at rest.
  */
 
 import { test } from "node:test";
@@ -60,7 +58,7 @@ function phaseDispatchSurvives(): ActorState {
   );
   assert.equal(state.journal.length, 1);
   assertStep(config, state, "release (journaled)");
-  state = crashRecoverTo(config, state, 0);
+  state = crashRecoverTo(state, 0);
   assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Pending");
   assert.equal(state.applied, 0);
   assert.equal(state.journal.length, 1);
@@ -72,7 +70,7 @@ function phaseDispatchSurvives(): ActorState {
   assert.equal(journalSpawns(state, id(1)), 1);
   assert.equal(worldSpawns(state, id(1)), 0);
   assertStep(config, state, "dispatch (journaled)");
-  state = crashRecoverTo(config, state, 1);
+  state = crashRecoverTo(state, 1);
   assert.equal(worldSpawns(state, id(1)), 0);
   assert.equal(state.applied, 1);
   assertStep(config, state, "crash at the dispatch seam");
@@ -118,7 +116,7 @@ function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
   assert.equal(journalSpawns(state, id(1)), 2);
   assert.equal(worldSpawns(state, id(1)), 1);
   assertStep(config, state, "rework (journaled)");
-  state = crashRecoverTo(config, state, 0);
+  state = crashRecoverTo(state, 0);
   assert.equal(state.applied, 0);
   assert.equal(worldSpawns(state, id(1)), 1);
   assert.equal(state.worldEffects.size, 5);
@@ -171,7 +169,7 @@ function phaseCompletionLandsOnce(state: ActorState): void {
   assert.equal(worldCompletions(state, id(1)), 0);
   assert.ok(!decisionEventEnabled(config, memoryCore(state), succeeded));
   assertStep(config, state, "completion (journaled, untold)");
-  state = crashRecoverTo(config, state, 10);
+  state = crashRecoverTo(state, 10);
   assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
   assert.equal(ticketAt(memoryCore(state), id(1)).completions, 1);
   assert.equal(worldCompletions(state, id(1)), 0);
@@ -179,7 +177,7 @@ function phaseCompletionLandsOnce(state: ActorState): void {
   state = emitNext(state);
   assert.equal(worldCompletions(state, id(1)), 1);
   assertStep(config, state, "the completion reaches the world");
-  state = crashRecoverTo(config, state, 0);
+  state = crashRecoverTo(state, 0);
   assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
   assert.equal(state.journal.length, 11);
   while (state.applied < state.journal.length) state = emitNext(state);
@@ -191,80 +189,5 @@ function phaseCompletionLandsOnce(state: ActorState): void {
 test("crash, recover, continue: the disciplined machine at every observable seam", () => {
   phaseCompletionLandsOnce(
     phaseReworkSurvivesCursorLoss(phaseDispatchSurvives()),
-  );
-});
-
-function passWorkAndEvaluationTasks(state: ActorState): ActorState {
-  state = stepEmit(
-    config,
-    state,
-    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
-    "task-done",
-  );
-  state = stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
-  return stepEmit(
-    config,
-    state,
-    taskDoneEvent(id(1), asTaskId(2), "Pass", plainResult),
-    "task-done",
-  );
-}
-
-/** The finalizer-free ticket journaled to the completion its passing evaluation is. */
-function walkFinalizerFreeToCompletion(): ActorState {
-  let state = stepEmit(
-    config,
-    actorInit(),
-    releaseTicketEvent(id(1), { ...plainAuthoring, finalizer: "NoFinalizer" }),
-    "ticket-released",
-  );
-  assert.equal(ticketAt(memoryCore(state), id(1)).finalizer, "NoFinalizer");
-  state = stepEmit(config, state, dispatchEvent(id(1)), "dispatch");
-  state = passWorkAndEvaluationTasks(state);
-  state = journalStep(
-    config,
-    state,
-    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
-  );
-  assert.equal(state.view.rec.label, "ticket-done");
-  assert.deepEqual(state.view.rec.transitions, [
-    { ticket: id(1), from: "Evaluating", to: "Done" },
-  ]);
-  assert.deepEqual(state.view.rec.effects, []);
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
-  assert.equal(journalCompletions(state, id(1)), 1);
-  assert.equal(worldCompletions(state, id(1)), 0);
-  assertStep(config, state, "the evaluation's pass is the completion");
-  return state;
-}
-
-test("a finalizer-free ticket recovers at its completion seam and completes exactly once", () => {
-  let state = walkFinalizerFreeToCompletion();
-  state = crashRecoverTo(config, state, 0);
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
-  assert.equal(ticketAt(memoryCore(state), id(1)).finalizer, "NoFinalizer");
-  assert.equal(ticketAt(memoryCore(state), id(1)).completions, 1);
-  assert.equal(state.applied, 0);
-  assert.equal(worldCompletions(state, id(1)), 0);
-  assertStep(config, state, "total loss at the completion seam");
-  while (state.applied < state.journal.length) state = emitNext(state);
-  assert.equal(state.applied, 6);
-  assert.equal(worldCompletions(state, id(1)), 1);
-  assert.equal(worldSpawns(state, id(1)), 1);
-  const ranFinalizer = state.journal.some(
-    (entry) =>
-      entry.rec.effects.includes("RunFinalizer") ||
-      entry.rec.transitions.some(
-        (transition) => transition.to === "Finalizing",
-      ),
-  );
-  assert.ok(
-    !ranFinalizer,
-    "no journaled decision runs a finalizer, so the pass alone completed the ticket",
-  );
-  assertStep(
-    config,
-    state,
-    "the whole journal re-emitted, the completion landed once",
   );
 });

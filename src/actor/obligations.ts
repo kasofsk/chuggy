@@ -44,8 +44,8 @@ export const journalLegal: Obligation = (config, state) =>
   journalLegalOn(config, state.journal);
 
 /** Recovery completeness: replay of the current journal is exactly the state the actor holds. */
-export const recoveryComplete: Obligation = (config, state) =>
-  coreEquals(replayCore(config, state.journal), memoryCore(state));
+export const recoveryComplete: Obligation = (_config, state) =>
+  coreEquals(replayCore(state.journal), memoryCore(state));
 
 /**
  * The executor's bookkeeping is sound: the cursor stays inside the journal,

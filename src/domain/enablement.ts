@@ -13,7 +13,6 @@
  */
 
 import {
-  finalizerChoices,
   isValidProgram,
   ticketIdUniverse,
   workFanoutChoices,
@@ -24,7 +23,6 @@ import type {
   ArtifactMark,
   Core,
   FinalizationOutcome,
-  Finalizer,
   Reason,
   Stage,
 } from "./generated/modelTypes.ts";
@@ -38,9 +36,8 @@ export function revocableIn(core: Core, id: TicketId): boolean {
 }
 
 /**
- * A parked ticket with a modeled resume. The one wall without is a revoked
- * dependency, which stamps no resume point because deps are immutable: nothing
- * the desk can do makes the predecessor live again.
+ * A parked ticket with a stamped resume. Every wall stamps one, so the second
+ * conjunct holds this to the stamp rather than to the phase alone.
  */
 export function retryableIn(core: Core, id: TicketId): boolean {
   const ticket = ticketAt(core, id);
@@ -90,18 +87,11 @@ export function canReleaseIn(
 }
 
 /**
- * What a release may depend on: anything not revoked, and not already parked
- * by a revoked dependency. Both can never reach Done, so depending on one is
- * authoring a ticket that can never run.
+ * What a release may depend on: anything not revoked. A revoked ticket never
+ * reaches Done, so depending on one is authoring a ticket that can never run.
  */
 export function dependableIn(core: Core): readonly TicketId[] {
-  return ticketIds(core).filter((k) => {
-    const ticket = ticketAt(core, k);
-    return (
-      ticket.phase !== "Revoked" &&
-      !(ticket.phase === "Escalated" && ticket.reason === "DependencyRevoked")
-    );
-  });
+  return ticketIds(core).filter((k) => ticketAt(core, k).phase !== "Revoked");
 }
 
 export function revocablesIn(core: Core): readonly TicketId[] {
@@ -207,13 +197,11 @@ export function releasableAuthoring(
   authoring: {
     readonly prog: readonly Stage[];
     readonly workFanout: number;
-    readonly finalizer: Finalizer;
   },
 ): boolean {
   return (
     isValidProgram(config, authoring.prog) &&
-    workFanoutChoices(config).includes(authoring.workFanout) &&
-    finalizerChoices.includes(authoring.finalizer)
+    workFanoutChoices(config).includes(authoring.workFanout)
   );
 }
 

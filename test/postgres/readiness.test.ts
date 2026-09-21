@@ -139,7 +139,7 @@ test("ready resumes strictly after the cursor it is given", async () => {
  */
 function parkedCore(action: SeededAction, resumeAt: Resume): Core {
   return coreOf([
-    ticketOn(refinementInstance, "ManagedFinalizer", {
+    ticketOn(refinementInstance, {
       phase: "Escalated",
       reason: action.reason,
       resumeAt,

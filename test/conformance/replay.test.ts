@@ -222,7 +222,6 @@ function picksOf(state: ItfState): Picks {
     deps: some("deps_"),
     program: some("prog"),
     workFanout: some("workFanout_"),
-    finalizer: some("finalizer_"),
     onFailure: some("onFailure"),
     taskId: some("tid"),
     verdict: some("v"),
@@ -473,7 +472,7 @@ function checkStep(
   const pre = decodeCore(
     stateValue(stateAt(golden, index - 1), golden.ticketsVar),
   );
-  const decision = replayStep(config, pre, action, picksOf(after));
+  const decision = replayStep(pre, action, picksOf(after));
   run.steps++;
   run.decided.add(decision.rec.label);
   run.findings.push(

@@ -96,7 +96,7 @@ test("the same history read as this image's own decisions is not legal", () => {
 });
 
 test("replay under the first semantics resumes the walled ticket into evaluation", () => {
-  const replayed = storedReplayCore(config, storedAt(reworkedWall, 1));
+  const replayed = storedReplayCore(storedAt(reworkedWall, 1));
   assert.equal(ticketAt(replayed, id(1)).phase, "Evaluating");
   assert.equal(ticketAt(replayed, id(1)).resumeAt, "NoResume");
 });
@@ -125,23 +125,23 @@ test("the two-wall history holds an EvalReduce row on each disposition edge", ()
 
 test("a second-semantics EvalReduce takes the edge its record records", () => {
   const toTheWall = storedAt(walls.slice(0, 6), 2);
-  const walled = ticketAt(storedReplayCore(config, toTheWall), id(1));
+  const walled = ticketAt(storedReplayCore(toTheWall), id(1));
   assert.equal(walled.phase, "Escalated");
   assert.equal(walled.reason, "ReworkBudgetExhausted");
 
   const toTheRework = storedAt(walls.slice(0, 13), 2);
-  const reworked = ticketAt(storedReplayCore(config, toTheRework), id(2));
+  const reworked = ticketAt(storedReplayCore(toTheRework), id(2));
   assert.equal(reworked.phase, "Working");
 });
 
 test("the first semantics parks the wall at the eval resume, the second where this machine does", () => {
   const toTheWall = walls.slice(0, 6);
   assert.equal(
-    ticketAt(storedReplayCore(config, storedAt(toTheWall, 1)), id(1)).resumeAt,
+    ticketAt(storedReplayCore(storedAt(toTheWall, 1)), id(1)).resumeAt,
     "ResumeEvaluating",
   );
   assert.equal(
-    ticketAt(storedReplayCore(config, storedAt(toTheWall, 2)), id(1)).resumeAt,
+    ticketAt(storedReplayCore(storedAt(toTheWall, 2)), id(1)).resumeAt,
     "ResumeReworking",
   );
 });
@@ -150,7 +150,7 @@ test("a parked ticket is resumable whichever semantics walled it", () => {
   const resume = resumeTicketEvent(id(1));
   const toTheWall = walls.slice(0, 6);
   for (const semantics of [1, 2] as const) {
-    const at = storedReplayCore(config, storedAt(toTheWall, semantics));
+    const at = storedReplayCore(storedAt(toTheWall, semantics));
     assert.ok(decisionEventEnabled(config, at, resume));
   }
 });

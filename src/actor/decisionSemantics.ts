@@ -30,7 +30,6 @@
  *     replays retryable though the machine that wrote it refused a retry.
  */
 
-import type { Config } from "../domain/config.ts";
 import { ticketAt, withTicket, type Decision } from "../domain/core.ts";
 import type {
   Core,
@@ -132,7 +131,6 @@ function decisionAtReworkWallParkedEvaluating(
  */
 export function execDecisionEventAt(
   semantics: DecisionSemanticsVersion,
-  config: Config,
   core: Core,
   row: JournaledDecision,
 ): Decision {
@@ -140,11 +138,11 @@ export function execDecisionEventAt(
     case 1:
       return decisionAtReworkWallParkedEvaluating(
         row.event,
-        execDecisionEvent(config, core, eventAtRecordedDisposition(row)),
+        execDecisionEvent(core, eventAtRecordedDisposition(row)),
       );
     case 2:
-      return execDecisionEvent(config, core, eventAtRecordedDisposition(row));
+      return execDecisionEvent(core, eventAtRecordedDisposition(row));
     case 3:
-      return execDecisionEvent(config, core, row.event);
+      return execDecisionEvent(core, row.event);
   }
 }

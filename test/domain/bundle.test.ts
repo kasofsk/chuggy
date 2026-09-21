@@ -58,7 +58,7 @@ test("the reader is reading the model rather than agreeing with itself", () => {
     "the bundle roster did not parse",
   );
   assert.ok(
-    declared.includes("noStructuralDeadlock"),
+    declared.includes("stuckSubsetCovered"),
     "the bundle roster stopped short of its last member",
   );
 });

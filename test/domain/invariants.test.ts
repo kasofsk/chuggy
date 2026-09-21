@@ -20,15 +20,7 @@
  * it names — with that conjunct gone the invariant returns true on the fixture
  * and the case fails, which is what says the two are about the same thing.
  *
- * ONE OF THEM CANNOT BE MADE RED BY A STATE, and saying so is the honest
- * report rather than substituting a weaker check. `finalizerWellFormed` asks
- * that a ticket's finish kind is one a release could have drawn, and the finish
- * kinds are a closed sum: the universe it checks against is the type, so no
- * `Ticket` this tree can build carries the defect. What is checkable is that
- * the universe stays the model's own roster, which is the only edit that could
- * make the predicate fail, and that is what its case pins.
- *
- * `stuckSubsetCovered` IS THE OTHER SHAPE OF HARD. It is a tautology over its
+ * `stuckSubsetCovered` IS THE SHAPE OF HARD. It is a tautology over its
  * two walks and the model says so at length, so the defect it names is an edit
  * to a definition rather than a state: the demonstrations below mutate one
  * walk through the same sweep operator the real one is built from, which is
@@ -43,7 +35,6 @@ import type {
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { finalizerChoices } from "../../src/domain/config.ts";
 import { liveTickets, ticketAt } from "../../src/domain/core.ts";
 import { decideRevoke } from "../../src/domain/deciders.ts";
 import {
@@ -53,18 +44,13 @@ import {
   sweep,
   visEdges,
 } from "../../src/domain/derived.ts";
-import { finalizerTags } from "../../src/domain/generated/modelTypes.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   artifactWellFormed,
-  cascadeSafety,
   completionExclusive,
   depsAcyclic,
   deskConsistent,
-  finalizerWellFormed,
   idsAccounted,
-  noFinalizationWithoutAKind,
-  noStructuralDeadlock,
   programsWellFormed,
   recordMonotone,
   recordWellFormed,
@@ -138,35 +124,15 @@ test("completionExclusive rejects a ledger that disagrees with the phase", () =>
 
 test("revokedNeverCompletes rejects a revoked ticket that completed", () => {
   const spent = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Revoked", completions: 1 }),
+    ticketOn(config, { phase: "Revoked", completions: 1 }),
   ]);
   assert.ok(!revokedNeverCompletes(config, stateView(spent)));
-  const revoked = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Revoked" }),
-  ]);
+  const revoked = coreOf([ticketOn(config, { phase: "Revoked" })]);
   assert.ok(
     revokedNeverCompletes(config, stateView(revoked)),
     "a revoke settles the ticket before any completion is recorded",
   );
   assert.ok(revokedNeverCompletes(config, healthy));
-});
-
-test("noFinalizationWithoutAKind rejects a ticket running a finalizer it never carried", () => {
-  assert.ok(
-    !noFinalizationWithoutAKind(
-      config,
-      stateView(fleetBut(fleet, 2, { finalizer: "NoFinalizer" })),
-    ),
-    "the finalizing ticket has no finish kind to run",
-  );
-  assert.ok(
-    noFinalizationWithoutAKind(
-      config,
-      stateView(fleetBut(fleet, 1, { finalizer: "NoFinalizer" })),
-    ),
-    "a ticket with no finish kind is fine anywhere but the phase that runs one",
-  );
-  assert.ok(noFinalizationWithoutAKind(config, healthy));
 });
 
 test("artifactWellFormed rejects a completed ticket that produced nothing", () => {
@@ -176,31 +142,11 @@ test("artifactWellFormed rejects a completed ticket that produced nothing", () =
       stateView(fleetBut(fleet, 0, { artifact: "NoArtifact" })),
     ),
   );
-  const revoked = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Revoked" }),
-  ]);
+  const revoked = coreOf([ticketOn(config, { phase: "Revoked" })]);
   assert.ok(
     artifactWellFormed(config, stateView(revoked)),
     "a revoked ticket may never have run",
   );
-});
-
-test("finalizerWellFormed holds against the model's own roster, which is what could still shrink", () => {
-  for (const finalizer of finalizerTags) {
-    assert.ok(
-      finalizerWellFormed(
-        config,
-        stateView(coreOf([ticketOn(config, finalizer)])),
-      ),
-      `${finalizer} is a kind a release draws, so no state carrying it may be refused`,
-    );
-  }
-  assert.deepEqual(
-    [...finalizerChoices].sort(),
-    [...finalizerTags].sort(),
-    "the universe this checks against is the model's whole roster; a shorter one would refuse a released ticket",
-  );
-  assert.ok(finalizerWellFormed(config, healthy));
 });
 
 test("terminalsAbsorbing rejects a transition out of a terminal", () => {
@@ -239,49 +185,37 @@ test("deskConsistent rejects a wall without a park, a park without a wall and a 
     ),
     "a named wall on a ticket that is not parked",
   );
-  const nameless = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Escalated" }),
-  ]);
+  const nameless = coreOf([ticketOn(config, { phase: "Escalated" })]);
   assert.ok(
     !deskConsistent(config, stateView(nameless)),
     "a park with no wall",
   );
-  const cascadeWall = {
-    phase: "Escalated" as const,
-    reason: "DependencyRevoked" as const,
-  };
   assert.ok(
     !deskConsistent(
       config,
       stateView(
         coreOf([
-          ticketOn(config, "ManagedFinalizer", {
-            ...cascadeWall,
-            resumeAt: "ResumeWorking",
-          }),
-        ]),
-      ),
-    ),
-    "the cascade wall has no modeled resume, so it may stamp no resume point",
-  );
-  assert.ok(
-    !deskConsistent(
-      config,
-      stateView(
-        coreOf([
-          ticketOn(config, "ManagedFinalizer", {
+          ticketOn(config, {
             phase: "Escalated",
             reason: "WorkFailed",
           }),
         ]),
       ),
     ),
-    "every retryable wall stamps the point its resume re-enters at",
+    "every wall stamps the point its resume re-enters at",
   );
   assert.ok(
     deskConsistent(
       config,
-      stateView(coreOf([ticketOn(config, "ManagedFinalizer", cascadeWall)])),
+      stateView(
+        coreOf([
+          ticketOn(config, {
+            phase: "Escalated",
+            reason: "WorkFailed",
+            resumeAt: "ResumeWorking",
+          }),
+        ]),
+      ),
     ),
   );
 });
@@ -328,7 +262,7 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
 test("tasksWellFormed rejects an eval stage the program is not running", () => {
   const evaluating = (tasks: ReadonlySet<Task>): Core =>
     coreOf([
-      ticketOn(config, "ManagedFinalizer", {
+      ticketOn(config, {
         phase: "Evaluating",
         record: [workTask(1, "Passed"), workTask(2, "Passed")],
         tasks,
@@ -384,7 +318,7 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
 test("recordWellFormed rejects a log that is not the resolved history in identity order", () => {
   const finalizing = (record: readonly Task[]): Core =>
     coreOf([
-      ticketOn(config, "ManagedFinalizer", {
+      ticketOn(config, {
         phase: "Finalizing",
         record,
         spawned: record.length,
@@ -439,7 +373,7 @@ test("recordMonotone rejects a record that shrank, was rewritten, or lost its ti
 
 test("idsAccounted rejects the task set a decider dropped instead of retiring", () => {
   const dropped = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Escalated",
       reason: "WorkFailed",
       resumeAt: "ResumeWorking",
@@ -456,7 +390,7 @@ test("idsAccounted rejects the task set a decider dropped instead of retiring", 
 });
 
 test("programsWellFormed rejects a program no release could have carried", () => {
-  const stage = { fanout: 1, combinator: "UnanimousPass" } as const;
+  const stage = { fanout: 1 } as const;
   const overlong = Array.from({ length: config.maxStages + 1 }, () => stage);
   for (const program of [[], [{ ...stage, fanout: 0 }], overlong]) {
     assert.ok(
@@ -488,8 +422,8 @@ test("depsAcyclic rejects a dependency that points at nothing or back at itself"
     "no ticket waits on itself",
   );
   const cyclic = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(2) }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", deps: depsOf(2) }),
+    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
   ]);
   assert.ok(
     !depsAcyclic(config, stateView(cyclic)),
@@ -511,10 +445,7 @@ test("ticketIdsWellFormed rejects an id off the universe and a fleet past its bo
     !ticketIdsWellFormed(config, stateView(offUniverse)),
     "a release draws its id from a finite universe",
   );
-  const overfull = coreOf([
-    ...fleet,
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
-  ]);
+  const overfull = coreOf([...fleet, ticketOn(config, { phase: "Pending" })]);
   assert.ok(
     !ticketIdsWellFormed(config, stateView(overfull)),
     "releases are bounded by the fleet cap, which the id universe deliberately is not",
@@ -535,8 +466,8 @@ test("ticketIdsWellFormed rejects an id off the universe and a fleet past its bo
 
 test("stuckSubsetCovered goes red when one walk gets a base case the other lacks", () => {
   const running = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Finalizing" }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Finalizing" }),
+    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
   ]);
   assert.ok(stuckSubsetCovered(config, stateView(running)));
   const finalizingIsStuck = sweep(running, (core, each, stuck) => {
@@ -551,12 +482,12 @@ test("stuckSubsetCovered goes red when one walk gets a base case the other lacks
     "a base case that is not a desk phase is stuck with nothing covering it",
   );
   const parked = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Escalated",
       reason: "WorkFailed",
       resumeAt: "ResumeWorking",
     }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
   ]);
   const guardedCoverage = sweep(
     parked,
@@ -574,8 +505,8 @@ test("stuckSubsetCovered goes red when one walk gets a base case the other lacks
 
 test("stuckSubsetCovered goes red when one walk gets an edge kind the other lacks", () => {
   const upstream = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, { phase: "Pending" }),
+    ticketOn(config, {
       phase: "Escalated",
       reason: "WorkFailed",
       resumeAt: "ResumeWorking",
@@ -597,12 +528,12 @@ test("stuckSubsetCovered goes red when one walk gets an edge kind the other lack
     "an edge kind added to one walk and not the other is exactly what this guards",
   );
   const wider = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Escalated",
       reason: "WorkFailed",
       resumeAt: "ResumeWorking",
     }),
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Done",
       deps: depsOf(1),
       artifact: produced(1),
@@ -616,86 +547,27 @@ test("stuckSubsetCovered goes red when one walk gets an edge kind the other lack
   );
 });
 
-test("cascadeSafety rejects a doomed ticket left waiting invisibly", () => {
-  const unparked = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Revoked" }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
-  ]);
-  assert.ok(!cascadeSafety(config, stateView(unparked)));
-  const parked = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Revoked" }),
-    ticketOn(config, "ManagedFinalizer", {
-      phase: "Escalated",
-      reason: "DependencyRevoked",
-      deps: depsOf(1),
-    }),
-  ]);
-  assert.ok(cascadeSafety(config, stateView(parked)));
-  const wrongWall = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Revoked" }),
-    ticketOn(config, "ManagedFinalizer", {
-      phase: "Escalated",
-      reason: "WorkFailed",
-      resumeAt: "ResumeWorking",
-      deps: depsOf(1),
-    }),
-  ]);
-  assert.ok(
-    !cascadeSafety(config, stateView(wrongWall)),
-    "a doomed ticket parked behind a retryable wall is a resume the desk would offer on a ticket that can never run",
-  );
-  assert.ok(
-    noStructuralDeadlock(config, stateView(wrongWall)),
-    "the desk task is open either way, so the wall's own name is the only thing that catches this",
-  );
-  const transitive = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Revoked" }),
-    ticketOn(config, "ManagedFinalizer", {
-      phase: "Escalated",
-      reason: "DependencyRevoked",
-      deps: depsOf(1),
-    }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(2) }),
-  ]);
-  assert.ok(
-    !cascadeSafety(config, stateView(transitive)),
-    "the closure is transitive, so the grandchild is doomed too",
-  );
-});
-
-test("the cascade the revoke performs is what makes cascadeSafety hold in every state", () => {
+test("a revoke leaves its dependents where they were, and depsAcyclic is what refuses a cycle", () => {
   const chain = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(2) }),
+    ticketOn(config, { phase: "Pending" }),
+    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", deps: depsOf(2) }),
   ]);
-  const revoked = decideRevoke(config, chain, id(1));
-  assert.equal(revoked.rec.transitions.length, 3);
-  assert.ok(cascadeSafety(config, stateView(revoked.post)));
-  assert.ok(noStructuralDeadlock(config, stateView(revoked.post)));
-});
-
-test("noStructuralDeadlock rejects a ticket with no continuation at all", () => {
+  const revoked = decideRevoke(chain, id(1));
+  assert.equal(revoked.rec.transitions.length, 1);
+  for (const invariant of [deskConsistent, stuckSubsetCovered, depsAcyclic]) {
+    assert.ok(invariant(config, stateView(revoked.post)));
+  }
   const cyclic = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(2) }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", deps: depsOf(2) }),
+    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
   ]);
-  assert.ok(!noStructuralDeadlock(config, stateView(cyclic)));
   assert.ok(
-    cascadeSafety(config, stateView(cyclic)),
-    "nothing is revoked, so the cascade gate has nothing to say",
+    !depsAcyclic(config, stateView(cyclic)),
+    "a cycle is what the release's construction refuses",
   );
   assert.ok(
     stuckSubsetCovered(config, stateView(cyclic)),
     "the walks agree here as they do on every state, which is why this one is the machine-checked half",
   );
-  assert.ok(
-    !depsAcyclic(config, stateView(cyclic)),
-    "a cycle is what the release's construction refuses",
-  );
-  const behindRevoked = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Revoked" }),
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
-  ]);
-  assert.ok(!noStructuralDeadlock(config, stateView(behindRevoked)));
 });

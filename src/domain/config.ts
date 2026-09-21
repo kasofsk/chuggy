@@ -12,7 +12,7 @@
  * against one mid-flight.
  */
 
-import type { Finalizer, Stage } from "./generated/modelTypes.ts";
+import type { Stage } from "./generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "./ids.ts";
 
 /** One deployment's constants. */
@@ -33,12 +33,6 @@ export function ticketIdUniverse(config: Config): readonly TicketId[] {
   return universe;
 }
 
-/** Both finish kinds. A ticket authored with no finalizer completes out of evaluation. */
-export const finalizerChoices: readonly Finalizer[] = [
-  "NoFinalizer",
-  "ManagedFinalizer",
-];
-
 /** The work-set widths a release may author. */
 export function workFanoutChoices(config: Config): readonly number[] {
   const choices: number[] = [];
@@ -46,23 +40,17 @@ export function workFanoutChoices(config: Config): readonly number[] {
   return choices;
 }
 
-/** The stage vocabulary an author may draw from: any fan-out in range, either combinator. */
+/** The stage vocabulary an author may draw from: any fan-out in range. */
 export function stageChoices(config: Config): readonly Stage[] {
   const choices: Stage[] = [];
-  for (let fanout = 1; fanout <= config.nTasks; fanout++) {
-    choices.push({ fanout, combinator: "UnanimousPass" });
-    choices.push({ fanout, combinator: "AnyPass" });
-  }
+  for (let fanout = 1; fanout <= config.nTasks; fanout++)
+    choices.push({ fanout });
   return choices;
 }
 
-/**
- * The default program: one stage, full fan-out, unanimous pass. There is no
- * machine-wide combinator constant, because the combinator is data on the
- * ticket and a constant would be the machinery eval-is-data rules out.
- */
+/** The default program: one stage at full fan-out, which every evaluator sharing stage 0 behaves as. */
 export function defaultProgram(config: Config): readonly Stage[] {
-  return [{ fanout: config.nTasks, combinator: "UnanimousPass" }];
+  return [{ fanout: config.nTasks }];
 }
 
 /**

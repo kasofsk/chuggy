@@ -26,7 +26,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { modelInstance } from "../domain/configs.ts";
 import { declaredActions } from "../domain/declared.ts";
 import {
   replayActions,
@@ -36,7 +35,6 @@ import {
 } from "./dispatch.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
-const config = modelInstance;
 const emptyCore: Core = { tickets: new Map() };
 
 /** A state that records no draw at all, so an arm that needs one refuses by naming it. */
@@ -45,7 +43,6 @@ const noPicks: Picks = {
   deps: undefined,
   program: undefined,
   workFanout: undefined,
-  finalizer: undefined,
   onFailure: undefined,
   taskId: undefined,
   verdict: undefined,
@@ -67,7 +64,7 @@ function settleLabel(): string {
 /** Why a call refused, or nothing when it returned. */
 function refusal(action: string): string | undefined {
   try {
-    replayStep(config, emptyCore, action, noPicks);
+    replayStep(emptyCore, action, noPicks);
     return undefined;
   } catch (error: unknown) {
     return error instanceof Error ? error.message : String(error);
@@ -113,7 +110,7 @@ test("an action outside the roster is refused rather than routed to a neighbour"
 });
 
 test("the arm with no decider returns the state it was handed, under the model's label", () => {
-  const decision = replayStep(config, emptyCore, "settle", noPicks);
+  const decision = replayStep(emptyCore, "settle", noPicks);
   assert.equal(
     decision.post,
     emptyCore,
