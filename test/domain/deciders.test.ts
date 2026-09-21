@@ -60,7 +60,6 @@ const authoring = {
   deps: depsOf(),
   program: defaultProgram(config),
   workFanout: config.nTasks,
-  finalizer: "ManagedFinalizer" as const,
 };
 
 test("a release arrives already Pending, having spawned nothing", () => {
@@ -252,6 +251,19 @@ test("one failing stage, two edges, and the disposition is the whole difference"
   assert.equal(parked.resumeAt, "ResumeReworking");
   assert.equal(parked.tasks.size, 0);
   assert.ok(retryableIn(escalated.post, id(1)));
+
+  const revoked = decideRevoke(escalated.post, id(1));
+  assert.deepEqual(revoked.rec.transitions, [
+    { ticket: id(1), from: "Escalated", to: "Revoked" },
+  ]);
+  const settled = ticketAt(revoked.post, id(1));
+  assert.equal(settled.reason, "NoReason");
+  assert.equal(settled.resumeAt, "NoResume");
+  assert.equal(
+    retryableIn(revoked.post, id(1)),
+    false,
+    "revoking a parked ticket clears its wall along with its desk task",
+  );
 });
 
 /** A ticket running its finalizer, nothing outstanding, its artifact stamped. */
