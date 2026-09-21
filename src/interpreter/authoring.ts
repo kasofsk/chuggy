@@ -26,7 +26,10 @@ import type {
   RepositoryConfigurationPath,
 } from "./repositoryConfigurationIdentity.ts";
 import type { Worker } from "./workerCatalog.ts";
-import { encodeDecisionEventText, parseDecisionEventText } from "./wire.ts";
+import {
+  encodeDecisionEventText,
+  parseStoredDecisionEventText,
+} from "./wire.ts";
 import { executionRequirementConfigurationIsValid } from "./executionRequirement.ts";
 import { handoffApprovalRequired } from "./finalizerPreparation.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
@@ -221,9 +224,9 @@ export function encodeDraftAuthoring(authoring: ReleaseAuthoring): string {
   return encodeDecisionEventText(releaseTicketEvent(asTicketId(1), authoring));
 }
 
-/** Reads stored draft semantics through the same model codec used by the journal. */
+/** Reads stored draft semantics through the same model codec used by the journal, at the current vocabulary. */
 export function parseDraftAuthoring(value: string): ReleaseAuthoring {
-  const parsed = parseDecisionEventText(value);
+  const parsed = parseStoredDecisionEventText(value);
   if (parsed.parsed === "Refused")
     throw new TypeError(`draft authoring is unreadable: ${parsed.why}`);
   const event = parsed.value;
