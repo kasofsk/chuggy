@@ -37,6 +37,15 @@ test("draft authoring round-trips through the generated domain codec", () => {
   );
 });
 
+test("a draft authored before the rename reads as the same authoring", () => {
+  const stored = encodeDraftAuthoring(plainAuthoring).replace(
+    '"type":"CreateTicket"',
+    '"type":"ReleaseTicket"',
+  );
+  assert.notEqual(stored, encodeDraftAuthoring(plainAuthoring));
+  assert.deepEqual(parseDraftAuthoring(stored), plainAuthoring);
+});
+
 test("draft initialization exposes deployment choices with server defaults", () => {
   const policy = draftInitializationPolicy(refinementInstance);
   assert.deepEqual(policy.defaults, {
