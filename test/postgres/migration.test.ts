@@ -10,11 +10,13 @@ import {
 } from "../../src/adapters/postgres/schema/migrations/005-three-deletions.ts";
 import { migration006 } from "../../src/adapters/postgres/schema/migrations/006-rename.ts";
 import { migration007 } from "../../src/adapters/postgres/schema/migrations/007-finalization-unavailable.ts";
+import { migration008 } from "../../src/adapters/postgres/schema/migrations/008-escalation-sum.ts";
 import { encodeDispatchProgram } from "../../src/interpreter/dispatchView.ts";
 import type { StageDefinition } from "../../src/domain/generated/modelTypes.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { promisify } from "node:util";
@@ -23,6 +25,7 @@ import {
   apiRole,
   boundaryOwnerRole,
   draftCreateFunction,
+  draftReleaseFunction,
   draftReviseFunction,
   finalizationFunction,
   finalizerRole,
@@ -1039,7 +1042,9 @@ test("fresh selector settings carry current controls and only their initial hist
  * literal that constraint used to admit.
  * `native_action_kind_names_its_capability` has no reachable row of its own,
  * because PostgreSQL evaluates a relation's checks in name order and
- * `native_action_kind_is_known` refuses `HandoffBlock` first.
+ * `native_action_kind_is_known` refuses `HandoffBlock` first. The rows carry
+ * the phase and resume spellings 006 renamed, so 006 is the schema they are
+ * asked of.
  */
 const handoffLiterals: readonly (readonly [string, string])[] = [
   [
@@ -1112,7 +1117,7 @@ test("a fresh install records the handoff removal and keeps none of its objects"
 
 test("every narrowed constraint a row can reach refuses the literal the handoff phases left it", async () => {
   await migrationDatabase("nohandoff_checks", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration006.version);
     /**
      * The pairing trigger runs before the row is checked and would refuse a
      * handoff resolution first, so it stands aside for its own constraint.
@@ -1297,7 +1302,7 @@ async function accountedInstallation(subject: pg.Pool): Promise<void> {
 
 test("a fresh install records the accounts leaving and keeps none of their columns", async () => {
   await migrationDatabase("noaccounts_install", async (subject) => {
-    assert.ok((await postgresMigrate(subject)).includes(migration004.version));
+    await installationAt(subject, migration004.version);
     assert.deepEqual(
       (
         await subject.query(
@@ -1335,7 +1340,7 @@ test("a fresh install records the accounts leaving and keeps none of their colum
 
 test("every narrowed reason check refuses the literals the accounts left it", async () => {
   await migrationDatabase("noaccounts_checks", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration004.version);
     for (const [constraint, refused] of accountLiterals)
       await assert.rejects(
         subject.query(refused),
@@ -1347,7 +1352,7 @@ test("every narrowed reason check refuses the literals the accounts left it", as
 
 test("the release the boundary admits carries no pricing, and no blocked reason names an account", async () => {
   await migrationDatabase("noaccounts_boundary", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration004.version);
     const admits = async (event: unknown): Promise<boolean | null> =>
       (
         await subject.query<{ admitted: boolean | null }>(
@@ -1572,22 +1577,39 @@ test("the authoring policy loses the keys the accounts configured", async () => 
   });
 });
 
-/** Brings the subject to the schema the three deleted values were still in. */
+/** Brings the subject to the schema a named migration left, and no further. */
+async function installationAt(
+  subject: pg.Pool,
+  migration: number,
+  what = `the schema migration ${String(migration)} left`,
+): Promise<void> {
+  const through = migrations
+    .slice(0, migration)
+    .map(({ version, name }) => ({ version, name }));
+  const held = runtimeSchemaContract(through);
+  assert.equal(
+    (
+      await postgresMigrateCompatible(subject, {
+        current: held,
+        retainedPrevious: held,
+      })
+    ).migrated,
+    "Applied",
+    what,
+  );
+  assert.deepEqual(
+    await postgresRuntimeSchema(subject).applied(new AbortController().signal),
+    through,
+    what,
+  );
+}
+
+/** Brings the subject to the schema the migration under test is about to change. */
 async function installationBefore(
   subject: pg.Pool,
   migration: number,
 ): Promise<void> {
-  const before = migrations
-    .slice(0, migration - 1)
-    .map(({ version, name }) => ({ version, name }));
-  const held = runtimeSchemaContract(before);
-  assert.deepEqual(
-    await postgresMigrateCompatible(subject, {
-      current: held,
-      retainedPrevious: held,
-    }),
-    { migrated: "Applied", versions: before.map(({ version }) => version) },
-  );
+  await installationAt(subject, migration - 1);
 }
 
 /** What every row below hangs from: a project and an epoch. */
@@ -1755,10 +1777,7 @@ test("a row each arm must not match migrates", async () => {
     await migrationDatabase("threedeletions_admit", async (subject) => {
       await installationBefore(subject, migration005.version);
       await subject.query(`${deletionPartition}\n${seeded}`);
-      assert.ok(
-        (await postgresMigrate(subject)).includes(migration005.version),
-        what,
-      );
+      await installationAt(subject, migration005.version, what);
     });
 });
 
@@ -1809,7 +1828,7 @@ test("a desk task settled at the parked reason migrates and stays what it record
   await migrationDatabase("threedeletions_settled", async (subject) => {
     await installationBefore(subject, migration005.version);
     await subject.query(`${deletionPartition}\n${settledDeskTask}`);
-    assert.ok((await postgresMigrate(subject)).includes(migration005.version));
+    await installationAt(subject, migration005.version);
     assert.deepEqual(
       (
         await subject.query(
@@ -1840,7 +1859,7 @@ const parkedReasonRows: readonly (readonly [string, string])[] = [
 
 test("the narrowed reason checks refuse a live row at the parked reason", async () => {
   await migrationDatabase("threedeletions_checks", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration005.version);
     await subject.query(deletionPartition);
     for (const [constraint, refused] of parkedReasonRows)
       await assert.rejects(
@@ -1905,7 +1924,7 @@ test("a stored dispatch program is rewritten as the encoder without the combinat
 
 test("the boundary admits the surviving spellings and the absent keys, and refuses the deleted ones", async () => {
   await migrationDatabase("threedeletions_boundary", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration005.version);
     const admits = async (event: unknown): Promise<boolean | null> =>
       (
         await subject.query<{ admitted: boolean | null }>(
@@ -2257,7 +2276,7 @@ test("every stored spelling in a rewritten column becomes the package's", async 
   await migrationDatabase("rename_rewrite", async (subject) => {
     await installationBefore(subject, migration006.version);
     await subject.query(`${deletionPartition}\n${renamedSeed}`);
-    assert.ok((await postgresMigrate(subject)).includes(migration006.version));
+    await installationAt(subject, migration006.version);
     assert.deepEqual(
       (
         await subject.query(
@@ -2339,7 +2358,7 @@ const renamedAway: readonly (readonly [string, string])[] = [
 
 test("each rewritten column refuses the spelling it left", async () => {
   await migrationDatabase("rename_checks", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration006.version);
     await subject.query(`${deletionPartition}\n${deletionJournalRow(1, "{}")}`);
     for (const [constraint, refused] of renamedAway)
       await assert.rejects(
@@ -2434,7 +2453,7 @@ const renamedEvents: readonly (readonly [unknown, boolean])[] = [
 
 test("the boundary admits a stored event's spelling and the one it writes next", async () => {
   await migrationDatabase("rename_boundary", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration006.version);
     for (const [event, admitted] of renamedEvents)
       assert.equal(
         (
@@ -2718,7 +2737,7 @@ test("a fresh install records the escalation a held finalization reaches", async
 
 test("the two reason rosters admit the escalation and refuse a name neither has", async () => {
   await migrationDatabase("unavailable_reasons", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration007.version);
     await subject.query(`${deletionPartition}\n${deletionJournalRow(1, "{}")}`);
     for (const [ticket, reason, admitted] of [
       [1, "FinalizationUnavailableEscalated", true],
@@ -3085,6 +3104,576 @@ test("the finalizer records a hold the api role reads and cannot record itself",
         )
       ).rows[0]?.owner,
       boundaryOwnerRole,
+    );
+  });
+});
+
+/** A project at a ticket, with one journal entry behind it, as the schema the sum replaces held it. */
+const escalatedProjection = `${deletionJournalRow(1, "{}")};
+  INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,reason,resume_at)
+  VALUES('tenant-5','project-5',1,'Escalated',1,'WorkFailureEscalated','ResumeWork')`;
+
+test("a fresh install records the reason and the resume becoming one escalation", async () => {
+  await migrationDatabase("escalation_install", async (subject) => {
+    assert.ok((await postgresMigrate(subject)).includes(migration008.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT version,name FROM schema_migration WHERE version=$1",
+          [migration008.version],
+        )
+      ).rows,
+      [
+        {
+          version: migration008.version,
+          name: "a parked ticket carries one escalation and the evidence for it",
+        },
+      ],
+    );
+  });
+});
+
+test("a journal with an entry in it refuses the migration and names the wipe", async () => {
+  await migrationDatabase("escalation_guard", async (subject) => {
+    await installationBefore(subject, migration008.version);
+    await subject.query(`${deletionPartition}\n${escalatedProjection}`);
+    await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT reason,resume_at FROM ticket_projection WHERE ticket=1",
+        )
+      ).rows,
+      [{ reason: "WorkFailureEscalated", resume_at: "ResumeWork" }],
+      "the row the guard refused over is the row it left",
+    );
+    assert.deepEqual(
+      (
+        await postgresRuntimeSchema(subject).applied(
+          new AbortController().signal,
+        )
+      )
+        .map(({ version }) => version)
+        .at(-1),
+      migration008.version - 1,
+    );
+  });
+});
+
+/** Every escalation a parked ticket may carry, and one the machine has never had. */
+const escalationKinds = [
+  "NoEscalation",
+  "WorkFailureEscalated",
+  "WorkExecutionUnavailableEscalated",
+  "EvaluationFailureEscalated",
+  "EvaluationBlockedEscalated",
+  "FinalizationUnavailableEscalated",
+] as const;
+
+const escalationUnknown = "ReworkBudgetExhausted";
+
+test("the projection carries one escalation and no name off its roster", async () => {
+  await migrationDatabase("escalation_projection", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(deletionPartition);
+    for (const [index, kind] of escalationKinds.entries())
+      await subject.query(
+        `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,escalation)
+         VALUES('tenant-5','project-5',$1,'Escalated',1,$2)`,
+        [index + 1, kind],
+      );
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT escalation FROM ticket_projection ORDER BY ticket",
+        )
+      ).rows,
+      escalationKinds.map((escalation) => ({ escalation })),
+    );
+    await assert.rejects(
+      subject.query(
+        `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,escalation)
+         VALUES('tenant-5','project-5',90,'Escalated',1,$1)`,
+        [escalationUnknown],
+      ),
+      /ticket_projection_escalation_is_known/u,
+    );
+    await subject.query(
+      `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
+       VALUES('tenant-5','project-5',94,'Pending',1)`,
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT escalation,escalation_evidence FROM ticket_projection WHERE ticket=94",
+        )
+      ).rows,
+      [{ escalation: "NoEscalation", escalation_evidence: null }],
+      "a ticket nothing parked carries the escalation that is none",
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT count(*)::int AS held FROM information_schema.columns
+            WHERE table_name='ticket_projection' AND column_name IN ('reason','resume_at')`,
+        )
+      ).rows,
+      [{ held: 0 }],
+    );
+  });
+});
+
+test("the projection admits evidence only beside an escalation, and the desk reads it", async () => {
+  await migrationDatabase("escalation_evidence", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(deletionPartition);
+    await assert.rejects(
+      subject.query(
+        `INSERT INTO ticket_projection
+           (tenant,project,ticket,phase,seq,escalation,escalation_evidence)
+         VALUES('tenant-5','project-5',91,'Work',1,'NoEscalation','RuntimeVersionUnsupported')`,
+      ),
+      /ticket_projection_evidence_needs_an_escalation/u,
+    );
+    await subject.query(
+      `INSERT INTO ticket_projection
+         (tenant,project,ticket,phase,seq,escalation,escalation_evidence)
+       VALUES('tenant-5','project-5',92,'Escalated',1,
+              'WorkExecutionUnavailableEscalated','RuntimeVersionUnsupported'),
+             ('tenant-5','project-5',93,'Escalated',1,
+              'EvaluationFailureEscalated',NULL)`,
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT escalation_evidence FROM ticket_projection WHERE ticket IN (92,93) ORDER BY ticket",
+        )
+      ).rows,
+      [
+        { escalation_evidence: "RuntimeVersionUnsupported" },
+        { escalation_evidence: null },
+      ],
+      "evidence is what an escalation may carry, not what it must",
+    );
+    for (const [role, privilege, column] of [
+      [apiRole, "SELECT", "escalation"],
+      [apiRole, "SELECT", "escalation_evidence"],
+      [ticketServiceRole, "UPDATE", "escalation"],
+      [ticketServiceRole, "UPDATE", "escalation_evidence"],
+    ] as const)
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_column_privilege($1,'public.ticket_projection',$2,$3) AS granted",
+            [role, column, privilege],
+          )
+        ).rows[0]?.granted,
+        true,
+        `${role} ${privilege} ${column}`,
+      );
+  });
+});
+
+test("the desk task takes the projection's roster and keeps the arm its settled rows are at", async () => {
+  await migrationDatabase("escalation_desk", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(`${deletionPartition}\n${deletionJournalRow(1, "{}")}`);
+    const task = async (
+      index: number,
+      escalation: string,
+      state: string,
+    ): Promise<unknown> =>
+      subject.query(
+        `INSERT INTO native_action
+           (tenant,project,action,authorizing_seq,effect_position,ticket,
+            action_version,kind,escalation,required_capability,state)
+         VALUES('tenant-5','project-5',$1,1,$2,$3,1,'TicketEscalation',$4,'ResolveTicket',$5)`,
+        [`action-${String(index)}`, index, index + 1, escalation, state],
+      );
+    for (const [index, kind] of escalationKinds.entries())
+      await task(index, kind, "Withdrawn");
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT escalation FROM native_action ORDER BY effect_position",
+        )
+      ).rows,
+      escalationKinds.map((escalation) => ({ escalation })),
+    );
+    await task(90, "DependencyRevoked", "Withdrawn");
+    await assert.rejects(
+      task(91, "DependencyRevoked", "Open"),
+      /native_action_escalation_check/u,
+      "the settled arm is the settled rows' and no live row reaches it",
+    );
+    await assert.rejects(
+      task(92, escalationUnknown, "Withdrawn"),
+      /native_action_escalation_check/u,
+    );
+  });
+});
+
+/** An event at each shape the wipe leaves reachable, and the two vintages it does not. */
+const escalationEvents: readonly (readonly [string, unknown, boolean])[] = [
+  [
+    "a block naming its ticket alone",
+    { type: "ExecutionBlocked", value: { ticket: 1 } },
+    true,
+  ],
+  ["a block naming no ticket", { type: "ExecutionBlocked", value: {} }, false],
+  [
+    "the release tag this image writes",
+    {
+      type: "CreateTicket",
+      value: { ticket: 1, deps: [], prog: [], workFanout: 1 },
+    },
+    true,
+  ],
+  [
+    "the release tag it was renamed from",
+    {
+      type: "ReleaseTicket",
+      value: { ticket: 1, deps: [], prog: [], workFanout: 1 },
+    },
+    false,
+  ],
+  [
+    "the finalization outcome this image writes",
+    {
+      type: "FinalizationResult",
+      value: { ticket: 1, out: "FinalizationNeedsWork" },
+    },
+    true,
+  ],
+  [
+    "the outcome it was renamed from",
+    {
+      type: "FinalizationResult",
+      value: { ticket: 1, out: "FinalizationFailed" },
+    },
+    false,
+  ],
+];
+
+test("the boundary admits a block that names only its ticket, and neither spelling the wipe retired", async () => {
+  await migrationDatabase("escalation_events", async (subject) => {
+    await postgresMigrate(subject);
+    for (const [label, event, admitted] of escalationEvents)
+      assert.deepEqual(
+        (
+          await subject.query<{ admitted: boolean }>(
+            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+            [JSON.stringify(event)],
+          )
+        ).rows,
+        [{ admitted }],
+        label,
+      );
+  });
+});
+
+/** A running work execution the scheduler's door can conclude, and the wall it concludes at. */
+const escalationExecution = `${deletionJournalRow(1, "{}")};
+  UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
+  INSERT INTO configuration_revision
+    (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+  VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
+  INSERT INTO input_bundle(tenant,project,bundle,digest)
+  VALUES('tenant-5','project-5','bundle-5',repeat('b',64));
+  INSERT INTO execution_request
+    (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
+     kind,capacity_account,configuration_revision,configuration_digest,
+     input_bundle,input_bundle_digest)
+  SELECT 'tenant-5','project-5','request-5',1,0,1,1,'SpawnWork',a.account,
+         'revision-5','digest-5','bundle-5',repeat('b',64)
+    FROM capacity_account a
+   WHERE a.account=project_capacity_account('tenant-5','project-5');
+  INSERT INTO execution_request_task(tenant,project,request,task,kind)
+  VALUES('tenant-5','project-5','request-5',1,'Work');
+  INSERT INTO execution
+    (tenant,project,execution,ticket,task,source_request,account,cluster,
+     configuration_revision,configuration_digest,status)
+  SELECT 'tenant-5','project-5','execution-5',1,1,'request-5',a.account,a.cluster,
+         'revision-5','digest-5','Running'
+    FROM capacity_account a
+   WHERE a.account=project_capacity_account('tenant-5','project-5')`;
+
+const escalationWall = "ExecutionProfileUnavailable";
+
+test("the scheduler's door journals a block naming its ticket and leaves the wall on the execution", async () => {
+  await migrationDatabase("escalation_block", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(`${deletionPartition}\n${escalationExecution}`);
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT result,operation FROM submit_task_completion
+             ('tenant-5','project-5','execution-5',1,1,0,'Blocked',NULL,NULL,
+              'WorkExecutionUnavailableEscalated','operation-escalated','subject-5')`,
+        )
+      ).rows,
+      [{ result: "BindingMismatch", operation: null }],
+      "the reason this door takes is a wall, not an escalation",
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT result,operation FROM submit_task_completion
+             ('tenant-5','project-5','execution-5',1,1,0,'Blocked',NULL,NULL,$1,
+              'operation-blocked','subject-5')`,
+          [escalationWall],
+        )
+      ).rows,
+      [{ result: "Submitted", operation: "operation-blocked" }],
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ event: unknown }>(
+          "SELECT (command::jsonb)->'event' AS event FROM operation WHERE operation='operation-blocked'",
+        )
+      ).rows,
+      [{ event: { type: "ExecutionBlocked", value: { ticket: 1 } } }],
+      "the event names the ticket and nothing else",
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT status,outcome,blocked_reason FROM execution WHERE execution='execution-5'",
+        )
+      ).rows,
+      [
+        {
+          status: "Terminal",
+          outcome: "Blocked",
+          blocked_reason: escalationWall,
+        },
+      ],
+      "the wall stays evidence beside the execution",
+    );
+  });
+});
+
+test("the approval door writes a desk task at no escalation", async () => {
+  await migrationDatabase("escalation_approval", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(
+      `${deletionPartition}\n${renamedFinalization(renamedAttemptPrepared)};
+       INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
+       VALUES('tenant-5','project-5',1,'Finalization',1)`,
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT result,action FROM request_finalization_approval
+             ('tenant-5','project-5','attempt-5','action-5','epoch-5')`,
+        )
+      ).rows,
+      [{ result: "Requested", action: "action-5" }],
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT escalation FROM native_action WHERE action='action-5'",
+        )
+      ).rows,
+      [{ escalation: "NoEscalation" }],
+    );
+  });
+});
+
+/** The wipe the migration's guard names, read from the tree rather than restated here. */
+const wipeScriptPath = "deploy/rig/wipe-tickets.sql";
+
+function wipeTruncated(script: string): readonly string[] {
+  const named = /TRUNCATE TABLE([\s\S]*?)RESTART IDENTITY/u.exec(script)?.[1];
+  if (named === undefined)
+    throw new Error("the wipe names no relations to truncate");
+  return [...named.matchAll(/public\.(\w+)/gu)].map(([, table]) =>
+    String(table),
+  );
+}
+
+/** What the wipe keeps: what a project is, rather than what it has done. */
+const wipeKept = [
+  "admitted_worker",
+  "capacity_account",
+  "configuration_revision",
+  "deployment_authoring_policy",
+  "execution_cluster",
+  "forge_installation",
+  "installation_authority",
+  "project",
+  "project_repository",
+  "project_repository_bind_operation",
+  "recovery_epoch",
+  "repository_configuration_provenance",
+  "repository_configuration_version",
+  "schema_migration",
+  "selector_inventory_state",
+  "selector_project_settings",
+  "selector_project_settings_history",
+  "selector_runtime_readiness",
+  "selector_runtime_settings",
+  "selector_runtime_settings_history",
+  "thread_wake_cursor",
+  "worker_pool",
+  "worker_pool_registration_token",
+];
+
+/** The history the wipe is run against: a released draft, a journalled decision and the ticket it projected. */
+const wipedHistory = `
+  INSERT INTO operation
+    (tenant,project,operation,authority_kind,authority_subject,admission,
+     key_version,key_digest,payload_digest,command,command_tag)
+  VALUES('tenant-91','project-91','operation-91','User','author','Ordinary',
+         'v1','key-91','payload-91','{}','CreateTicket');
+  INSERT INTO decision_input
+    (tenant,project,ordinal,input_kind,input_id,base_priority,lifecycle_generation,
+     state,decided_seq,terminal_at)
+  VALUES('tenant-91','project-91',50,'Operation','operation-91','Ordinary',1,
+         'Journaled',1,now());
+  INSERT INTO journal_entry
+    (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
+     recovery_epoch,cause_kind,cause_id)
+  VALUES('tenant-91','project-91',1,'{}','digest-91','genesis','owner',1,'epoch-91',
+         'Operation','operation-91');
+  INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,escalation)
+  VALUES('tenant-91','project-91',1,'Escalated',1,'WorkFailureEscalated');
+  UPDATE project SET head=1,ingress_next=51,ticket_next=9,notification_next=4,
+                     manifest_next=7
+   WHERE tenant='tenant-91' AND project='project-91';
+  UPDATE thread_wake_cursor SET sequence=40`;
+
+/** What the seed above fills, so the case proves an emptying rather than an emptiness. */
+const wipedFilled = [
+  "draft",
+  "draft_brief",
+  "draft_revision",
+  "decision_input",
+  "journal_entry",
+  "operation",
+  "project_change",
+  "ticket_projection",
+];
+
+async function wipeCounted(
+  subject: pg.Pool,
+  tables: readonly string[],
+): Promise<Record<string, number>> {
+  const counted: Record<string, number> = {};
+  for (const table of tables)
+    counted[table] = (
+      await subject.query<{ held: number }>(
+        `SELECT count(*)::int AS held FROM public.${table}`,
+      )
+    ).rows[0]?.held as number;
+  return counted;
+}
+
+/** The history the wipe is run against: a released draft, a journalled decision and the ticket it projected. */
+async function wipeSeeded(subject: pg.Pool): Promise<void> {
+  await seedProposingBinding(subject);
+  assert.deepEqual(
+    await createdProposingDraft(subject, "refs/heads/branch-91"),
+    [{ result: "Created", ticket: "1" }],
+  );
+  assert.deepEqual(
+    (
+      await subject.query<{ released: boolean }>(
+        `SELECT ${draftReleaseFunction}
+           ('tenant-91','project-91',1,1,'revision-91','digest-91',true) AS released`,
+      )
+    ).rows,
+    [{ released: true }],
+  );
+  await subject.query(wipedHistory);
+  assert.deepEqual(
+    Object.entries(await wipeCounted(subject, wipedFilled))
+      .filter(([, held]) => held === 0)
+      .map(([table]) => table),
+    [],
+    "every relation the case counts on was filled",
+  );
+}
+
+/** What the wipe leaves standing: a project at a fresh install's counters, and the rows it keeps. */
+async function wipeStanding(subject: pg.Pool): Promise<void> {
+  assert.deepEqual(
+    (
+      await subject.query(
+        `SELECT head::text AS head,ingress_next::text AS ingress,
+                ticket_next::text AS ticket,notification_next::text AS notification,
+                manifest_next::text AS manifest,lifecycle
+           FROM project`,
+      )
+    ).rows,
+    [
+      {
+        head: "0",
+        ingress: "1",
+        ticket: "1",
+        notification: "1",
+        manifest: "1",
+        lifecycle: "Active",
+      },
+    ],
+  );
+  assert.deepEqual(
+    (
+      await subject.query(
+        "SELECT sequence::text AS sequence FROM thread_wake_cursor",
+      )
+    ).rows,
+    [{ sequence: "0" }],
+    "the cursor does not sit past a log that was restarted",
+  );
+  assert.deepEqual(
+    await wipeCounted(subject, [
+      "configuration_revision",
+      "project_repository",
+      "recovery_epoch",
+      "selector_inventory_state",
+      "selector_runtime_readiness",
+      "selector_runtime_settings",
+    ]),
+    {
+      configuration_revision: 1,
+      project_repository: 1,
+      recovery_epoch: 1,
+      selector_inventory_state: 1,
+      selector_runtime_readiness: 1,
+      selector_runtime_settings: 1,
+    },
+  );
+}
+
+test("the wipe empties every relation it names, resets the counters and keeps the project", async () => {
+  const script = await readFile(wipeScriptPath, "utf8");
+  await migrationDatabase("wipe_tickets", async (subject) => {
+    await postgresMigrate(subject);
+    await wipeSeeded(subject);
+
+    await subject.query(script);
+
+    const truncated = wipeTruncated(script);
+    assert.deepEqual(
+      Object.entries(await wipeCounted(subject, truncated))
+        .filter(([, held]) => held !== 0)
+        .map(([table]) => table),
+      [],
+      "every relation the wipe names is empty",
+    );
+    await wipeStanding(subject);
+    assert.deepEqual(
+      (
+        await subject.query<{ tablename: string }>(
+          `SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename`,
+        )
+      ).rows
+        .map(({ tablename }) => tablename)
+        .filter((table) => !truncated.includes(table)),
+      wipeKept,
+      "every relation this schema has is either wiped or kept on purpose",
     );
   });
 });
