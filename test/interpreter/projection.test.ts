@@ -154,7 +154,6 @@ test("a release is a change although it transitions nothing", () => {
 
 test("dependency eligibility distinguishes the escalated reasons", () => {
   const released = execDecisionEvent(
-    refinementInstance,
     genesis,
     releaseTicketEvent(id(1), plainAuthoring),
   ).post;

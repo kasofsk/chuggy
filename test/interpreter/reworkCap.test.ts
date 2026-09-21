@@ -29,14 +29,8 @@ import {
   checkedReworkCap,
   reworkDisposition,
 } from "../../src/interpreter/reworkCap.ts";
-import {
-  plainAuthoring,
-  plainResult,
-  refinementInstance,
-} from "../actor/harness.ts";
+import { plainAuthoring, plainResult } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
-
-const config = refinementInstance;
 
 /** The one outstanding task of a single-width ticket, which is what a completion names. */
 function outstanding(core: Core): number {
