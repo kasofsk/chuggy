@@ -4,20 +4,22 @@
  * Three cycles, two of them superseded, a stage that passed an artifact the
  * ticket no longer holds, a stage the fabric relaunched its container for, and
  * a resume that re-ran the program from its lowest stage. The list is held by
- * execution identity, which is a random stem with the task appended and is an
+ * execution identity — a string the model never gives meaning to — in an
  * order the route no longer answers in, so every suite reading it proves the
- * derivation recovers a cycle from whatever order a page reaches it in.
+ * derivation recovers a cycle from whatever order a page reaches it in; only
+ * `task` orders it, and only each row's own `identity` says which cycle, stage
+ * and generation it belongs to.
  */
 
 import type {
   ExecutionSummary,
   ExecutionsResponse,
   RunTotals,
+  TaskIdentity,
 } from "../../../src/contract/responses.ts";
 import type {
   ExecutionOutcome,
   ExecutionStatus,
-  ExecutionTaskKind,
   RunCostBasis,
 } from "../../../src/contract/rosters.ts";
 import type { TicketAuthoring } from "../app/core/ticketLedger.ts";
@@ -34,15 +36,33 @@ export interface TotalsShape {
 export interface ExecutionShape {
   readonly execution: string;
   readonly task: number;
-  readonly taskKind: ExecutionTaskKind;
-  readonly stage?: number;
+  readonly identity: TaskIdentity;
   readonly status?: ExecutionStatus;
   readonly outcome?: ExecutionOutcome;
   readonly retriesSpent?: number;
-  readonly request?: string;
   readonly totals?: TotalsShape;
   readonly registeredAt?: string;
   readonly terminalAt?: string;
+}
+
+/** A work task's identity, in the cycle a case names. */
+export function workIdentity(cycle: number): TaskIdentity {
+  return { type: "WorkTask", value: { ticket: 21, cycle } };
+}
+
+/** An evaluation task's identity: its cycle, stage and generation a case
+ * names, its evaluator the first of a stage's width unless a fan-out case
+ * names another. */
+export function evalIdentity(
+  cycle: number,
+  stage: number,
+  generation: number,
+  evaluator = 1,
+): TaskIdentity {
+  return {
+    type: "EvaluationTask",
+    value: { ticket: 21, workCycle: cycle, stage, generation, evaluator },
+  };
 }
 
 const digest = "a".repeat(64);
@@ -99,6 +119,7 @@ export function ledgerExecution(shape: ExecutionShape): ExecutionSummary {
     shape.status !== "Cancelled";
   return {
     ticket: 21,
+    taskKind: shape.identity.type === "WorkTask" ? "Work" : "Evaluation",
     cluster: "rig",
     configurationRevision: "r1",
     requirementIdentity: shape.execution,
@@ -148,24 +169,21 @@ export const ticket21Parked: readonly ExecutionShape[] = [
   {
     execution: "execution-38e5111e-2",
     task: 2,
-    taskKind: "Evaluation",
-    stage: 0,
+    identity: evalIdentity(1, 1, 1),
     outcome: "Failed",
     totals: { turns: 12, durationMs: 180_000, costUsdMicros: 420_000 },
   },
   {
     execution: "execution-a3c138a0-5",
     task: 5,
-    taskKind: "Evaluation",
-    stage: 1,
+    identity: evalIdentity(2, 2, 1),
     outcome: "Failed",
     totals: { turns: 14, durationMs: 210_000, costUsdMicros: 500_000 },
   },
   {
     execution: "execution-b8bdfdd4-7",
     task: 7,
-    taskKind: "Evaluation",
-    stage: 0,
+    identity: evalIdentity(3, 1, 1),
     outcome: "Failed",
     retriesSpent: 3,
     totals: { turns: 9, durationMs: 240_000, costUsdMicros: 350_000 },
@@ -173,29 +191,28 @@ export const ticket21Parked: readonly ExecutionShape[] = [
   {
     execution: "execution-bfaa13b2-1",
     task: 1,
-    taskKind: "Work",
+    identity: workIdentity(1),
     outcome: "Passed",
     totals: { turns: 40, durationMs: 600_000, costUsdMicros: 1_800_000 },
   },
   {
     execution: "execution-c004a1fa-6",
     task: 6,
-    taskKind: "Work",
+    identity: workIdentity(3),
     outcome: "Passed",
     totals: { turns: 38, durationMs: 570_000, costUsdMicros: 1_700_000 },
   },
   {
     execution: "execution-ef9d5921-4",
     task: 4,
-    taskKind: "Evaluation",
-    stage: 0,
+    identity: evalIdentity(2, 1, 1),
     outcome: "Passed",
     totals: { turns: 10, durationMs: 150_000, costUsdMicros: 380_000 },
   },
   {
     execution: "execution-f0410b67-3",
     task: 3,
-    taskKind: "Work",
+    identity: workIdentity(2),
     outcome: "Passed",
     totals: { turns: 35, durationMs: 540_000, costUsdMicros: 1_600_000 },
   },
@@ -205,8 +222,7 @@ export const ticket21Parked: readonly ExecutionShape[] = [
 const ticket21Resume: ExecutionShape = {
   execution: "execution-c40de507-8",
   task: 8,
-  taskKind: "Evaluation",
-  stage: 0,
+  identity: evalIdentity(3, 1, 2),
   status: "Running",
 };
 

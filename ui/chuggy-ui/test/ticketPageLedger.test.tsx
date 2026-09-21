@@ -21,10 +21,12 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import {
+  evalIdentity,
   ledgerPage,
   ticket21Authoring,
   ticket21Parked,
   ticket21Resumed,
+  workIdentity,
 } from "./ticketLedgerFixture.ts";
 import type { ExecutionShape } from "./ticketLedgerFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -745,9 +747,7 @@ const fanoutShapes: readonly ExecutionShape[] = [
   {
     execution: "execution-aaaa-1",
     task: 1,
-    taskKind: "Evaluation",
-    stage: 0,
-    request: "spawn-one",
+    identity: evalIdentity(1, 1, 1, 1),
     outcome: "Passed",
     retriesSpent: 1,
     totals: { turns: 10, durationMs: 120_000, costUsdMicros: 400_000 },
@@ -755,9 +755,7 @@ const fanoutShapes: readonly ExecutionShape[] = [
   {
     execution: "execution-aaaa-2",
     task: 2,
-    taskKind: "Evaluation",
-    stage: 0,
-    request: "spawn-one",
+    identity: evalIdentity(1, 1, 1, 2),
     outcome: "Passed",
     retriesSpent: 2,
     totals: { turns: 20, durationMs: 300_000, costUsdMicros: 600_000 },
@@ -765,8 +763,7 @@ const fanoutShapes: readonly ExecutionShape[] = [
   {
     execution: "execution-cccc-4",
     task: 4,
-    taskKind: "Work",
-    request: "spawn-three",
+    identity: workIdentity(2),
     outcome: "Passed",
     totals: { turns: 8, durationMs: 90_000, costUsdMicros: 200_000 },
   },
