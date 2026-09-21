@@ -9,8 +9,8 @@ import type { MouseEvent, ReactNode } from "react";
 
 import type { TicketResponse } from "../../../../../src/contract/responses.ts";
 import {
+  escalationDetail,
   escalationDetailLine,
-  escalationReasonLabel,
   phaseLabel,
   revokedDependencyLine,
 } from "../../core/codeLabels.ts";
@@ -71,7 +71,7 @@ export function SituationNotice(props: {
         tone="parked"
         role="status"
         heading="Parked"
-        detail={escalationReasonLabel(reason)}
+        detail={escalationDetail(reason, props.ticket.executionBlockedBy)}
         {...(more === undefined ? {} : { more })}
       >
         <p className="pt-1">

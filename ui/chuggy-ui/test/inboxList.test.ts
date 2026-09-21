@@ -63,7 +63,7 @@ const parked = page([
     ticket: 4,
     phase: "Escalated",
     sequence: 9,
-    reason: "WorkFailed",
+    reason: "WorkFailureEscalated",
     ...ticketInstants,
   },
   { ticket: 2, phase: "Escalated", sequence: 8, ...ticketInstants },
@@ -136,7 +136,7 @@ test("the count is the rows a page gave, and follows a frame that moves one", ()
   const resumed = projectTicketRowsFold(
     held,
     "4",
-    { ticket: 4, phase: "Working", sequence: 13, ...ticketInstants },
+    { ticket: 4, phase: "Work", sequence: 13, ...ticketInstants },
     inboxPhases,
   );
   expect(phaseCountLabel(resumed)).toBe("1");
@@ -147,7 +147,7 @@ test("the count is the rows a page gave, and follows a frame that moves one", ()
       ticket: 9,
       phase: "Escalated",
       sequence: 14,
-      reason: "ReworkBudgetExhausted",
+      reason: "EvaluationFailureEscalated",
       ...ticketInstants,
     },
     inboxPhases,
@@ -161,7 +161,7 @@ test("folding one frame twice counts the same as folding it once", () => {
     ticket: 9,
     phase: "Escalated" as const,
     sequence: 14,
-    reason: "ReworkBudgetExhausted" as const,
+    reason: "EvaluationFailureEscalated" as const,
     ...ticketInstants,
   };
   const once = projectTicketRowsFold(held, "9", arriving, inboxPhases);

@@ -67,11 +67,11 @@ test("every wall, phase, state and refusal has a label inside the copy budget", 
 });
 
 test("the wall a reader met on ticket 21 reads as a noun and a fragment", () => {
-  expect(escalationReasonLabel("ReworkBudgetExhausted")).toBe(
+  expect(escalationReasonLabel("EvaluationFailureEscalated")).toBe(
     "Rework budget exhausted",
   );
   expect(
-    escalationDetailLine("ReworkBudgetExhausted", {
+    escalationDetailLine("EvaluationFailureEscalated", {
       lastSet: { taskKind: "Evaluation", stage: 0, verdict: "Failed" },
       stageCount: 2,
     }),
@@ -80,8 +80,10 @@ test("the wall a reader met on ticket 21 reads as a noun and a fragment", () => 
 
 test("a detail line names only the facts the page holds", () => {
   const bare = { lastSet: undefined, stageCount: 2 };
-  expect(escalationDetailLine("ReworkBudgetExhausted", bare)).toBe(undefined);
-  expect(escalationDetailLine("WorkFailed", bare)).toBe(
+  expect(escalationDetailLine("EvaluationFailureEscalated", bare)).toBe(
+    undefined,
+  );
+  expect(escalationDetailLine("WorkFailureEscalated", bare)).toBe(
     "Failed work is not reworked",
   );
 });
@@ -89,7 +91,7 @@ test("a detail line names only the facts the page holds", () => {
 test("a resume states what it re-runs", () => {
   const effect = ticketActionEffect("Resume", {
     kind: "Offered",
-    point: "ResumeEvaluating",
+    point: "ResumeEvaluation",
   });
   expect(effect.effect).toBe("Re-runs evaluation from stage 1");
 });
@@ -97,7 +99,7 @@ test("a resume states what it re-runs", () => {
 test("a rework-wall resume says it reworks", () => {
   const effect = ticketActionEffect("Resume", {
     kind: "Offered",
-    point: "ResumeReworking",
+    point: "ResumeRework",
   });
   expect(effect.effect).toBe("Reworks · new artifact");
 });
@@ -159,10 +161,10 @@ test("every resume point draws the effect the machine gives it", () => {
     return [point, effect.effect];
   });
   expect(drawn).toEqual([
-    ["ResumeWorking", "Re-runs the work · new artifact"],
-    ["ResumeReworking", "Reworks · new artifact"],
-    ["ResumeEvaluating", "Re-runs evaluation from stage 1"],
-    ["ResumeFinalizing", "Re-runs finalization"],
+    ["ResumeWork", "Re-runs the work · new artifact"],
+    ["ResumeRework", "Reworks · new artifact"],
+    ["ResumeEvaluation", "Re-runs evaluation from stage 1"],
+    ["ResumeFinalization", "Re-runs finalization"],
   ]);
 });
 
@@ -172,7 +174,7 @@ test("every resume point draws the effect the machine gives it", () => {
  * into it.
  */
 test("every action the phase enables is offered, except a resume with no point", () => {
-  const resume = { kind: "Offered", point: "ResumeEvaluating" } as const;
+  const resume = { kind: "Offered", point: "ResumeEvaluation" } as const;
   for (const action of ticketActionNames)
     expect(ticketActionEffect(action, resume).offered).toBe(true);
   for (const action of ticketActionNames)

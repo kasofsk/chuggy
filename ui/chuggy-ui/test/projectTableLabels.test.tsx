@@ -77,7 +77,7 @@ const title =
 const ticket = {
   ticket: 11,
   title,
-  phase: "Working",
+  phase: "Work",
   sequence: 7,
   ...ticketInstants,
 };
@@ -110,7 +110,7 @@ const escalated = {
   ticket: 12,
   title: "Escalated ticket",
   phase: "Escalated",
-  reason: "WorkFailed",
+  reason: "WorkFailureEscalated",
   sequence: 3,
   ...ticketInstants,
 };
@@ -180,7 +180,7 @@ test("a row whose index was truncated draws no chip for its execution", () => {
   const row: ProjectTableRow = {
     ticket: 9,
     title: undefined,
-    phase: "Working",
+    phase: "Work",
     section: "InProgress",
     badge: undefined,
     executionRead: "IndexTruncated",

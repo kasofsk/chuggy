@@ -23,9 +23,9 @@ import { ticketInstants } from "./ticketInstants.ts";
 
 const offeredBy: Readonly<Record<TicketPhase, readonly string[]>> = {
   Pending: ["Revoke"],
-  Working: ["Revoke"],
-  Evaluating: ["Revoke"],
-  Finalizing: [],
+  Work: ["Revoke"],
+  Evaluation: ["Revoke"],
+  Finalization: [],
   Done: [],
   Escalated: ["Resume", "Revoke"],
   Revoked: [],
@@ -82,11 +82,11 @@ test("resume says what its own wall does, and one wall reworks", () => {
   );
   expect(said.size).toBe(2);
   expect(
-    ticketActionSentence("Resume", { reason: "ReworkBudgetExhausted" }),
+    ticketActionSentence("Resume", { reason: "EvaluationFailureEscalated" }),
   ).toBe("rework this ticket with a fresh cycle");
-  expect(ticketActionSentence("Resume", { reason: "WorkFailed" })).toBe(
-    ticketActionSentence("Resume"),
-  );
+  expect(
+    ticketActionSentence("Resume", { reason: "WorkFailureEscalated" }),
+  ).toBe(ticketActionSentence("Resume"));
 });
 
 test("manual dispatch echoes only the candidate version the view supplied", () => {

@@ -180,14 +180,14 @@ const parkedTicket = {
   phase: "Escalated",
   sequence: 167,
   ...ticketInstants,
-  reason: "ReworkBudgetExhausted",
-  resumeAt: "ResumeReworking",
+  reason: "EvaluationFailureEscalated",
+  resumeAt: "ResumeRework",
   runTotals: ticketTotals,
 };
 
 const resumedTicket = {
   ticket: 21,
-  phase: "Evaluating",
+  phase: "Evaluation",
   sequence: 169,
   ...ticketInstants,
   runTotals: ticketTotals,
@@ -524,8 +524,8 @@ test("a resume the wire stamped is offered before the draft arrives", async () =
 
 test("a page that has read nothing of the wall refuses the resume rather than denying it", async () => {
   const { resumeAt, reason, ...unstamped } = parkedTicket;
-  expect(resumeAt).toBe("ResumeReworking");
-  expect(reason).toBe("ReworkBudgetExhausted");
+  expect(resumeAt).toBe("ResumeRework");
+  expect(reason).toBe("EvaluationFailureEscalated");
   await drawTicket({
     shapes: ticket21Parked,
     ticket: { ...unstamped, phase: "Escalated" },
@@ -634,8 +634,8 @@ test("a row separates its wait from its run where the wire dates the start", asy
  */
 test("a resume this page has not read draws no price at all", async () => {
   const { resumeAt, reason, ...unstamped } = parkedTicket;
-  expect(resumeAt).toBe("ResumeReworking");
-  expect(reason).toBe("ReworkBudgetExhausted");
+  expect(resumeAt).toBe("ResumeRework");
+  expect(reason).toBe("EvaluationFailureEscalated");
   await drawTicket({
     shapes: ticket21Parked,
     ticket: { ...unstamped, phase: "Escalated" },
@@ -667,7 +667,7 @@ test("a settled ticket is not drawn as still running when its runs are unread", 
 test("a ticket the machine is working on now keeps its open span", async () => {
   await drawTicket({
     shapes: [],
-    ticket: { ...resumedTicket, phase: "Evaluating" },
+    ticket: { ...resumedTicket, phase: "Evaluation" },
   });
   const head = document.querySelector(".fields-inline");
   expect(head?.textContent).toContain("running");

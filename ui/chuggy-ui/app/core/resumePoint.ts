@@ -55,9 +55,9 @@ function interruptedPoint(set: ClosedSet | undefined): ResumePoint | undefined {
   if (set === undefined) return undefined;
   switch (set.taskKind) {
     case "Work":
-      return "ResumeWorking";
+      return "ResumeWork";
     case "Evaluation":
-      return "ResumeEvaluating";
+      return "ResumeEvaluation";
   }
 }
 
@@ -66,15 +66,11 @@ function walledPoint(
   situation: ResumeSituation,
 ): ResumePoint | undefined {
   switch (reason) {
-    case "WorkFailed":
-      return "ResumeWorking";
-    case "ReworkBudgetExhausted":
-      return "ResumeReworking";
-    case "ExecutionPolicyDenied":
-    case "TicketConfigIncompatible":
-    case "ExecutionProfileUnavailable":
-    case "RuntimeVersionUnsupported":
-    case "RequiredCapabilityUnavailable":
+    case "WorkFailureEscalated":
+      return "ResumeWork";
+    case "EvaluationFailureEscalated":
+      return "ResumeRework";
+    case "WorkExecutionUnavailableEscalated":
       return interruptedPoint(situation.lastSet);
   }
 }
@@ -95,25 +91,25 @@ export function ticketResumePoint(
 /** The phase the resume re-enters, which is what the point is named for. */
 export function resumeReenters(point: ResumePoint): TicketPhase {
   switch (point) {
-    case "ResumeWorking":
-    case "ResumeReworking":
-      return "Working";
-    case "ResumeEvaluating":
-      return "Evaluating";
-    case "ResumeFinalizing":
-      return "Finalizing";
+    case "ResumeWork":
+    case "ResumeRework":
+      return "Work";
+    case "ResumeEvaluation":
+      return "Evaluation";
+    case "ResumeFinalization":
+      return "Finalization";
   }
 }
 
 /** Which ask is issued again, in the words a reader already has for the ticket. */
 export function resumeRerun(point: ResumePoint): ResumeRerun {
   switch (point) {
-    case "ResumeWorking":
-    case "ResumeReworking":
+    case "ResumeWork":
+    case "ResumeRework":
       return "work";
-    case "ResumeEvaluating":
+    case "ResumeEvaluation":
       return "evaluation";
-    case "ResumeFinalizing":
+    case "ResumeFinalization":
       return "finalization";
   }
 }
@@ -128,7 +124,7 @@ export function ticketResume(
 ): ResumeConsequence | undefined {
   const point = ticketResumePoint(situation);
   if (point === undefined) return undefined;
-  const evaluating = point === "ResumeEvaluating";
+  const evaluating = point === "ResumeEvaluation";
   return {
     point,
     reruns: resumeRerun(point),

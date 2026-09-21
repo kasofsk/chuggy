@@ -42,9 +42,9 @@ export function phaseTone(phase: TicketPhase): Tone {
   switch (phase) {
     case "Pending":
       return "queued";
-    case "Working":
-    case "Evaluating":
-    case "Finalizing":
+    case "Work":
+    case "Evaluation":
+    case "Finalization":
       return "live";
     case "Escalated":
       return "parked";

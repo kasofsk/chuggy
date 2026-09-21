@@ -136,7 +136,7 @@ async function drawTicket(named: Named): Promise<void> {
         });
       return answer({
         ticket: 11,
-        phase: "Working",
+        phase: "Work",
         sequence: 7,
         ...ticketInstants,
       });

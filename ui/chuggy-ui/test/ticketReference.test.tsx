@@ -50,7 +50,7 @@ test("a reference with nothing held draws the number and no link", () => {
 test("a reference draws the ticket's title and phase, and links to its screen", () => {
   render(
     underShell(
-      heldOf({ 15: { title: "Fix the thing", phase: "Working" } }),
+      heldOf({ 15: { title: "Fix the thing", phase: "Work" } }),
       report,
     ),
   );
@@ -59,7 +59,7 @@ test("a reference draws the ticket's title and phase, and links to its screen", 
   expect(link.getAttribute("href")).toBe("/acme/atlas/tickets/15");
   expect(link.textContent).toContain("#15");
   expect(link.textContent).toContain("Fix the thing");
-  expect(link.textContent).toContain("Working");
+  expect(link.textContent).toContain("Work");
   expect(link.className).toContain("pill-live");
 });
 

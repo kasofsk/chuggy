@@ -124,7 +124,7 @@ function unrelatedTicketFrame(): string {
     resource: "40",
     representation: {
       ticket: 40,
-      phase: "Working",
+      phase: "Work",
       sequence: 6,
       ...ticketInstants,
     },

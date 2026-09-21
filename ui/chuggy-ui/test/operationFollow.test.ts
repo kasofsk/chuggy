@@ -196,11 +196,11 @@ test("a confirmation keeps the fields the project row does not carry", () => {
   expect(
     ticketConfirmed(
       { ticket: 7, phase: "Escalated", sequence: 4, brief, ...ticketInstants },
-      { ticket: 7, phase: "Working", sequence: 9, ...ticketInstants },
+      { ticket: 7, phase: "Work", sequence: 9, ...ticketInstants },
     ),
   ).toEqual({
     ticket: 7,
-    phase: "Working",
+    phase: "Work",
     sequence: 9,
     brief,
     ...ticketInstants,
@@ -214,10 +214,10 @@ test("a confirmation drops the fields the project row supersedes", () => {
         ticket: 7,
         phase: "Escalated",
         sequence: 4,
-        reason: "WorkFailed",
+        reason: "WorkFailureEscalated",
         ...ticketInstants,
       },
-      { ticket: 7, phase: "Working", sequence: 9, ...ticketInstants },
+      { ticket: 7, phase: "Work", sequence: 9, ...ticketInstants },
     ).reason,
   ).toBeUndefined();
 });
@@ -232,7 +232,7 @@ test("a confirmation older than what is held does not put it back", () => {
   expect(
     ticketConfirmed(newer, {
       ticket: 7,
-      phase: "Working",
+      phase: "Work",
       sequence: 9,
       ...ticketInstants,
     }),
@@ -242,7 +242,7 @@ test("a confirmation older than what is held does not put it back", () => {
 test("a confirmation at the same sequence is written, not dropped", () => {
   expect(
     ticketConfirmed(
-      { ticket: 7, phase: "Working", sequence: 9, ...ticketInstants },
+      { ticket: 7, phase: "Work", sequence: 9, ...ticketInstants },
       { ticket: 7, phase: "Done", sequence: 9, ...ticketInstants },
     ).phase,
   ).toBe("Done");

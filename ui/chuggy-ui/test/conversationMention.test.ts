@@ -26,7 +26,7 @@ function ticketOf(ticket: number, title: string | undefined): TicketResponse {
   return {
     ticket,
     title,
-    phase: "Working",
+    phase: "Work",
     sequence: 1,
     changedAt: "2026-09-11T00:00:00.000Z",
     revokedDependencies: [],
@@ -83,7 +83,7 @@ describe("what a query answers with", () => {
 
   test("a ticket with no title is still offered, and says its phase", () => {
     const untitled = conversationMentionItem(ticketOf(7, undefined));
-    expect(untitled.description).toBe("Working");
+    expect(untitled.description).toBe("Work");
     expect(conversationMentionFiltered([untitled], "7")).toHaveLength(1);
   });
 });

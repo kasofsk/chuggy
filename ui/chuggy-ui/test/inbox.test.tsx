@@ -60,13 +60,13 @@ const escalated = {
   title: "Serve the reason",
   phase: "Escalated",
   sequence: 9,
-  reason: "WorkFailed",
+  reason: "WorkFailureEscalated",
   ...ticketInstants,
 };
 
 const working = {
   ticket: 4,
-  phase: "Working",
+  phase: "Work",
   sequence: 11,
   ...ticketInstants,
 };

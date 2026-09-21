@@ -1,6 +1,6 @@
 /**
  * The ticket page's action panel, on the decision the phase alone cannot make:
- * a ticket in `Finalizing` enables no public mutation, so every button on
+ * a ticket in `Finalization` enables no public mutation, so every button on
  * screen here came from the ticket's own open question.
  *
  * The answer settles without journalling anything — approval is operational
@@ -83,7 +83,7 @@ function serving(asked: () => unknown): (url: string) => Response {
     if (url.includes("/drafts/")) return answer({}, 404);
     return answer({
       ticket: 11,
-      phase: "Finalizing",
+      phase: "Finalization",
       sequence: 51,
       ...ticketInstants,
     });
