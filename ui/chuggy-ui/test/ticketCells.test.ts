@@ -29,7 +29,7 @@ function row(executionRead: ProjectTableRow["executionRead"]): ProjectTableRow {
     executionOutcome: undefined,
     runsOn: undefined,
     sequence: 9,
-    activityAt: undefined,
+    activityAt: "2026-08-27T00:00:00Z",
   };
 }
 

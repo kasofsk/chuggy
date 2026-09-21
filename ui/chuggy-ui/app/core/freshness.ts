@@ -10,6 +10,7 @@
 
 import { ApiOutcomeError } from "./apiRequest.ts";
 import type { ApiFailure } from "./apiRequest.ts";
+import { elapsedText } from "./figures.ts";
 
 export const freshnessStaleAfterMs = 60_000;
 
@@ -89,22 +90,14 @@ export function panelStateFromQuery<T>(query: PanelQuery<T>): PanelState<T> {
   };
 }
 
-/** Whole units only, because a panel header is read at a glance. */
+/** The rounding is `figures.ts`'s `elapsedText`, which every relative reading
+ * on the console shares; this arm alone is a panel header's own. */
 export function freshnessLabel(
   nowMs: number,
   observedAtMs: number | undefined,
 ): string {
   if (observedAtMs === undefined) return "never observed";
-  const elapsedSeconds = Math.max(
-    Math.floor((nowMs - observedAtMs) / 1_000),
-    0,
-  );
-  if (elapsedSeconds < 60) return `${String(elapsedSeconds)}s ago`;
-  const minutes = Math.floor(elapsedSeconds / 60);
-  if (minutes < 60) return `${String(minutes)}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${String(hours)}h ago`;
-  return `${String(Math.floor(hours / 24))}d ago`;
+  return `${elapsedText(nowMs - observedAtMs)} ago`;
 }
 
 export function freshnessIsStale(

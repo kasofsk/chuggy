@@ -1,6 +1,6 @@
 /**
  * One formatted number with its unit and, for money, its basis: the cell every
- * cost, token count, duration, instant and span is drawn in.
+ * cost, token count, duration, instant, relative reading and span is drawn in.
  *
  * Total over `figureKinds`, and over a span that is open or closed. It formats
  * nothing — `core/figures.ts` did that — so the same quantity cannot be rounded
@@ -66,6 +66,12 @@ export function Figure(props: { readonly figure: FigureValue }): ReactNode {
     case "Instant":
       return (
         <Tooltip text={figure.iso}>
+          <span className="fig">{figure.text}</span>
+        </Tooltip>
+      );
+    case "Ago":
+      return (
+        <Tooltip text={figure.full}>
           <span className="fig">{figure.text}</span>
         </Tooltip>
       );

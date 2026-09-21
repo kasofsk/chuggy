@@ -19,9 +19,12 @@ import { resizeObserverStubbed } from "./resizeObserver.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
+const nowMs = Date.parse("2026-08-27T00:05:00Z");
+
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
+  nowMs: () => nowMs,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -34,15 +37,18 @@ vi.mock("@tanstack/react-router", () => ({
 // jscpd:ignore-end
 
 /**
- * The two columns of the project table that draw a long value, on the two
- * things `projectTableRows.ts` cannot say about them: that the whole value is
- * on the cell, and that the cell still clips.
+ * Three columns of the project table, on what `projectTableRows.ts` cannot say
+ * about how they are drawn: that the title and runs-on cells keep the whole
+ * value on the cell and still clip it, and that the activity cell draws a
+ * relative reading with the absolute one hover away.
  *
- * Both are properties of the markup and of nothing else. A `title` dropped at
- * either call site loses the image or the ticket's own words with no way back
- * to them, and `max-w-aside` dropped lets a value the length of a full digest
- * reference take the column apart. Neither shows up in a row's own value, so
- * neither is provable above this tier.
+ * All three are properties of the markup and of nothing else. A `title`
+ * dropped at either call site loses the image or the ticket's own words with
+ * no way back to them, `max-w-aside` dropped lets a value the length of a full
+ * digest reference take the column apart, and an activity cell that read its
+ * own clock rather than the page's would age off its own schedule. None of
+ * this shows up in a row's own value, so none of it is provable above this
+ * tier.
  */
 
 beforeEach(resizeObserverStubbed);
@@ -130,6 +136,19 @@ test("the runs-on cell keeps the image reference, and keeps clipping it", async 
   expect(cell.className).toContain("max-w-aside");
   fireEvent.focus(cell);
   expect((await screen.findByRole("tooltip")).textContent).toBe(image);
+});
+
+test("the last activity column draws how long ago, and answers the instant on hover", async () => {
+  await drawTable();
+  const row = screen.getByText(title).closest("tr");
+  const cell = row?.lastElementChild;
+  expect(cell?.textContent).toBe("5m ago");
+  expect(cell?.textContent).not.toContain(ticketInstants.changedAt);
+  expect(cell?.textContent).not.toContain(String(ticket.sequence));
+  fireEvent.focus(screen.getByText("5m ago"));
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "2026-08-27 00:00",
+  );
 });
 
 /** The served policy refuses `style-src` but `'self'`, so nothing this table

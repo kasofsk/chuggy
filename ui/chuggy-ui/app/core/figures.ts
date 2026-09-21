@@ -1,7 +1,7 @@
 /**
  * Every number the wire measured, formatted once: money, tokens, duration, a
- * quantity carrying its own unit, an instant, a span, and the absence of any of
- * them.
+ * quantity carrying its own unit, an instant, how long ago something happened,
+ * a span, and the absence of any of them.
  *
  * A MEASURED FIGURE IS SCALED AND A SET ONE IS NOT. What a run spent is read at
  * a glance and rounds; a ceiling somebody typed is the number they typed, so a
@@ -21,10 +21,13 @@
  * `costAmountFigure`'s bare amount is the one exception, legitimate because
  * the line it sits on already names the turn it belongs to.
  *
- * AN INSTANT IS ABSOLUTE AND A FRESHNESS IS RELATIVE. A ledger is compared row
- * to row and a relative time drifts while the page is open, so an instant is
- * the clock face with the full ISO on hover; how long ago a read happened is
- * `Freshness`'s and is not a figure.
+ * AN INSTANT IS ABSOLUTE AND AN `Ago` IS RELATIVE. A ledger is compared row to
+ * row, so its cell is the clock face with the full ISO on hover; a reader
+ * scanning a table for what moved last wants how long ago rather than a row to
+ * compare it against, so `Ago` rounds the elapsed time the same way
+ * `Freshness`'s panel header does, carries the full local date and clock one
+ * hover away, and ages on the page's own clock because it is handed the
+ * instant the page read rather than holding one of its own.
  */
 
 import type { RunTotals } from "../../../../src/contract/responses.ts";
@@ -36,6 +39,7 @@ export const figureKinds = [
   "Duration",
   "Quantity",
   "Instant",
+  "Ago",
   "Span",
   "Absent",
 ] as const;
@@ -52,6 +56,7 @@ export type Figure =
       readonly unit: string;
     }
   | { readonly kind: "Instant"; readonly text: string; readonly iso: string }
+  | { readonly kind: "Ago"; readonly text: string; readonly full: string }
   | {
       readonly kind: "Span";
       readonly start: string;
@@ -295,6 +300,12 @@ function clockOf(at: Date): string {
   return `${padded(at.getHours())}:${padded(at.getMinutes())}`;
 }
 
+/** The date and the clock, unabbreviated, which is what a reader needs to
+ * place an instant with no other row to compare it against. */
+function instantFullText(at: Date): string {
+  return `${String(at.getFullYear())}-${padded(at.getMonth() + 1)}-${padded(at.getDate())} ${clockOf(at)}`;
+}
+
 /**
  * The clock face for today, the date and the clock within the year, and the
  * whole date before it. Browser-local, because the reader's day is the one they
@@ -311,7 +322,7 @@ export function instantText(at: Date, now: Date): string {
   const month = monthNames[at.getMonth()] ?? "";
   if (at.getFullYear() === now.getFullYear())
     return `${month} ${String(at.getDate())} ${clock}`;
-  return `${String(at.getFullYear())}-${padded(at.getMonth() + 1)}-${padded(at.getDate())} ${clock}`;
+  return instantFullText(at);
 }
 
 /** An instant the clock could not read is an absence, never a printed string. */
@@ -322,6 +333,38 @@ export function instantFigure(stated: string, nowMs: number): Figure {
     kind: "Instant",
     text: instantText(new Date(at), new Date(nowMs)),
     iso: new Date(at).toISOString(),
+  };
+}
+
+/**
+ * Whole units, largest first, the one rounding every relative reading on the
+ * console shares. A clock that ran backwards reads as none elapsed rather than
+ * a negative one.
+ */
+export function elapsedText(elapsedMs: number): string {
+  const elapsedSeconds = Math.max(Math.floor(elapsedMs / msPerSecond), 0);
+  if (elapsedSeconds < secondsPerMinute) return `${String(elapsedSeconds)}s`;
+  const minutes = Math.floor(elapsedSeconds / secondsPerMinute);
+  if (minutes < minutesPerHour) return `${String(minutes)}m`;
+  const hours = Math.floor(minutes / minutesPerHour);
+  if (hours < hoursPerDay) return `${String(hours)}h`;
+  return `${String(Math.floor(hours / hoursPerDay))}d`;
+}
+
+/**
+ * How long ago an instant was, for a reader scanning a column for what moved
+ * last rather than comparing one row's clock against another's. The absolute
+ * reading is always the full date and clock, never the bare clock a same-day
+ * `Instant` would draw, because a hover that was a bare clock face would not
+ * say which day.
+ */
+export function agoFigure(stated: string, nowMs: number): Figure {
+  const at = Date.parse(stated);
+  if (!Number.isFinite(at)) return { kind: "Absent", why: "No instant" };
+  return {
+    kind: "Ago",
+    text: `${elapsedText(nowMs - at)} ago`,
+    full: instantFullText(new Date(at)),
   };
 }
 

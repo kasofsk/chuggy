@@ -61,7 +61,7 @@ export interface ProjectTableRow {
   readonly executionOutcome: ExecutionOutcome | undefined;
   readonly runsOn: Label | undefined;
   readonly sequence: number;
-  readonly activityAt: string | undefined;
+  readonly activityAt: string;
 }
 
 /** What the task was placed on, named where the catalog names it: a container
@@ -92,8 +92,15 @@ export function projectTableExecutionRead(
   return indexTruncated ? "IndexTruncated" : "NoneRegistered";
 }
 
-/** The ticket's own last activity is its sequence; an instant is the execution's,
- * because that is where the wire states one. */
+/** The later of two instants, compared as instants rather than as strings, so
+ * an offset that reads lexically later is not mistaken for one that is. */
+function laterInstant(a: string, b: string): string {
+  return Date.parse(b) > Date.parse(a) ? b : a;
+}
+
+/** The ticket's own last activity, joined with its run's where one is joined:
+ * whichever of the ticket's own change and the execution's own instant is the
+ * later. Every ticket carries a change, so the row always has one. */
 export function projectTableRow(
   ticket: TicketResponse,
   known: ProjectExecutionKnown | undefined,
@@ -101,6 +108,7 @@ export function projectTableRow(
 ): ProjectTableRow {
   const read = projectTableExecutionRead(known, indexTruncated);
   const execution = read === "Joined" ? known?.execution : undefined;
+  const executionAt = execution?.terminalAt ?? execution?.registeredAt;
   return {
     ticket: ticket.ticket,
     title: ticket.title,
@@ -112,7 +120,10 @@ export function projectTableRow(
     executionOutcome: execution?.outcome,
     runsOn: execution === undefined ? undefined : projectTableRunsOn(execution),
     sequence: ticket.sequence,
-    activityAt: execution?.terminalAt ?? execution?.registeredAt,
+    activityAt:
+      executionAt === undefined
+        ? ticket.changedAt
+        : laterInstant(ticket.changedAt, executionAt),
   };
 }
 

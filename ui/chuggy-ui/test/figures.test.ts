@@ -12,10 +12,12 @@ import { expect, test } from "vitest";
 
 import type { Figure } from "../app/core/figures.ts";
 import {
+  agoFigure,
   bytesSetFigure,
   costFigure,
   countFigure,
   durationText,
+  elapsedText,
   instantText,
   spanFigure,
   spanSetFigure,
@@ -132,6 +134,38 @@ test("an instant is the clock today, the date within the year, and the year befo
   expect(instantText(new Date(2025, 10, 2, 9, 0), now)).toBe(
     "2025-11-02 09:00",
   );
+});
+
+/**
+ * The rounding every relative reading on the console shares, whole units at
+ * each boundary its scale changes at, the last count below and the first at.
+ */
+test("how long ago is whole units, largest first, at each boundary its scale changes", () => {
+  expect(elapsedText(59_000)).toBe("59s");
+  expect(elapsedText(60_000)).toBe("1m");
+  expect(elapsedText(59 * 60_000)).toBe("59m");
+  expect(elapsedText(60 * 60_000)).toBe("1h");
+  expect(elapsedText(23 * 3_600_000)).toBe("23h");
+  expect(elapsedText(24 * 3_600_000)).toBe("1d");
+});
+
+test("a clock that ran backwards elapses none rather than a negative reading", () => {
+  expect(elapsedText(-5_000)).toBe("0s");
+});
+
+test("an instant the clock cannot read is an absence rather than a printed string", () => {
+  expect(agoFigure("not an instant", 0).kind).toBe("Absent");
+});
+
+/** The hover is the full date and clock, always — even for an instant on the
+ * same day, which is what makes it different from an `Instant` figure's. */
+test("how long ago carries the full local date and clock on hover, always", () => {
+  const at = new Date(2026, 7, 27, 10, 12);
+  const now = new Date(2026, 7, 27, 11, 7);
+  const drawn = agoFigure(at.toISOString(), now.getTime());
+  if (drawn.kind !== "Ago") throw new Error("not an ago figure");
+  expect(drawn.text).toBe("55m ago");
+  expect(drawn.full).toBe("2026-08-27 10:12");
 });
 
 test("a closed span names both ends and an open one says it is still running", () => {

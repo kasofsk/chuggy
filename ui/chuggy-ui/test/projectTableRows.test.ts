@@ -75,7 +75,7 @@ test("a running ticket's row carries its status and what it runs on", () => {
     text: "worker:1",
     title: "registry/worker:1",
   });
-  expect(row.activityAt).toBe("2026-08-26T10:00:00.000Z");
+  expect(row.activityAt).toBe(working.changedAt);
   expect(row.section).toBe("InProgress");
 });
 
@@ -103,7 +103,7 @@ test("a row's title is the ticket's own, and absent where the wire names none", 
   expect(projectTableRow(working, undefined, false).title).toBeUndefined();
 });
 
-test("a ticket running nothing states no execution rather than a blank one", () => {
+test("a ticket running nothing states no execution rather than a blank one, but still answers its own activity", () => {
   const row = projectTableRow(
     { ticket: 4, phase: "Pending", sequence: 1, ...ticketInstants },
     undefined,
@@ -111,7 +111,7 @@ test("a ticket running nothing states no execution rather than a blank one", () 
   );
   expect(row.executionStatus).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
-  expect(row.activityAt).toBeUndefined();
+  expect(row.activityAt).toBe(ticketInstants.changedAt);
   expect(row.sequence).toBe(1);
 });
 
@@ -119,13 +119,33 @@ const failedOlder: ExecutionSummary = {
   ...container,
   status: "Terminal",
   outcome: "Failed",
-  terminalAt: "2026-08-26T12:00:00.000Z",
+  terminalAt: "2026-08-27T12:00:00.000Z",
 };
 
-test("a terminal execution's instant is when it ended", () => {
+test("a terminal execution's instant is when it ended, where that is later than the ticket's own change", () => {
   const row = projectTableRow(working, known(failedOlder), false);
-  expect(row.activityAt).toBe("2026-08-26T12:00:00.000Z");
+  expect(row.activityAt).toBe("2026-08-27T12:00:00.000Z");
   expect(row.executionOutcome).toBe("Failed");
+});
+
+/**
+ * The offset makes the ticket's own change read lexically later than the
+ * run's, though the instant it names is earlier: a string comparison would
+ * pick the change, and only reading the offset picks the run correctly.
+ */
+test("a row's activity is the later of the ticket's own change and its run's, compared as instants and not as strings", () => {
+  const changedAfterRun = projectTableRow(
+    { ...working, changedAt: "2026-08-27T00:00:00Z" },
+    known({ ...container, terminalAt: "2026-08-26T10:30:00Z" }),
+    false,
+  );
+  expect(changedAfterRun.activityAt).toBe("2026-08-27T00:00:00Z");
+  const ranAfterChange = projectTableRow(
+    { ...working, changedAt: "2026-08-27T01:00:00+02:00" },
+    known({ ...container, terminalAt: "2026-08-26T23:30:00Z" }),
+    false,
+  );
+  expect(ranAfterChange.activityAt).toBe("2026-08-26T23:30:00Z");
 });
 
 test("a row the index reached says so, and one it never ran says that", () => {
@@ -151,12 +171,12 @@ test("an execution a truncated walk left may be superseded, so the row is not jo
   expect(row.executionRead).toBe("IndexTruncated");
 });
 
-test("a row that is not joined draws none of the execution it holds", () => {
+test("a row that is not joined draws none of the execution it holds, activity included", () => {
   const row = projectTableRow(working, known(failedOlder, false), true);
   expect(row.executionOutcome).toBeUndefined();
   expect(row.executionStatus).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
-  expect(row.activityAt).toBeUndefined();
+  expect(row.activityAt).toBe(working.changedAt);
 });
 
 test("a row whose entry a walk finished is joined even where others were not", () => {
