@@ -30,7 +30,7 @@
  * is decided again.
  *
  * AN ANSWERED ACTION WRITES NO ENTRY EITHER, AND IT IS NOT A REFUSAL. The two
- * answers a finalization approval admits name no domain command, so `Core`
+ * answers a finalization approval admits name no domain command, so `TicketGraph`
  * learns nothing and there is nothing to journal; the input settles carrying
  * which of the offered answers was given, and the head and the projection are
  * exactly as they were.

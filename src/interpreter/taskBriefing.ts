@@ -87,7 +87,7 @@
  * vocabulary is the model's and is closed; `BriefingFault` is this module's
  * bounded diagnostic beside it, and `./executionSchedulerRun.ts` writes it into
  * the ended attempt's evidence beside the label — so a blocked ticket can be
- * explained without widening what `Core` understands.
+ * explained without widening what `TicketGraph` understands.
  */
 
 import {

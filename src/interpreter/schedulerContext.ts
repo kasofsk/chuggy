@@ -17,7 +17,7 @@
  * service dispatch policy — and it excludes them from the strict dispatch-view
  * digest, so a proposal must survive their changing underneath it. The guard is
  * the opposite: it is retryable infrastructure backpressure applied at ingress,
- * before an operation becomes durable, and it is neither `Core` state, ticket
+ * before an operation becomes durable, and it is neither `TicketGraph` state, ticket
  * eligibility, a commercial entitlement nor a selector reservation.
  *
  * NOTHING CROSSES THE PROJECT BOUNDARY EXCEPT A SAFE AGGREGATE. The active-work

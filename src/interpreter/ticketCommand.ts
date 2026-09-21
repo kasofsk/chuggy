@@ -82,7 +82,7 @@ export type EscalationResolution =
 /**
  * The two answers a finalization approval admits, and the only resolutions that
  * name no domain command at all. Answering one settles its operation and
- * journals nothing, because approval is operational protocol and not `Core` state.
+ * journals nothing, because approval is operational protocol and not `TicketGraph` state.
  */
 export type ApprovalResolution =
   (typeof nativeActionResolutions)["FinalizationApproval"][number];

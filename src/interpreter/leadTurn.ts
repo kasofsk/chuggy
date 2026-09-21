@@ -342,7 +342,7 @@ function leadDecisionLifts(
  * Refuses a decision that names one ticket twice. The ledger holds one row per
  * decision per ticket, so a repeated entry is a decision the database cannot
  * commit; a repeated dispatch is two `Dispatch` events at their own prefixes,
- * the second refused by enablement for a ticket the first left Working — a
+ * the second refused by enablement for a ticket the first left in `Work` — a
  * refusal the lead did not earn.
  */
 function leadDecisionNamesEachTicketOnce(

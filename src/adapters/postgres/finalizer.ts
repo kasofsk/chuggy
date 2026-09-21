@@ -1,7 +1,7 @@
 /**
  * The durable finalization authority against PostgreSQL: ordering the requests
  * a decision authorized, holding one for a bounded stretch, gathering what the
- * pure pass reads, and submitting the one conclusion `Core` is ever told.
+ * pure pass reads, and submitting the one conclusion `TicketGraph` is ever told.
  *
  * THE QUEUE IS THE REQUEST TABLE AND THERE IS NO PROJECTION OF IT. Requests are
  * drawn in `authorizing_seq` order, which is journal-derived and therefore

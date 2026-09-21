@@ -25,7 +25,7 @@
  * AN ANSWERED ACTION IS THAT SAME SHAPE WITH ONE ROW MORE. An approval answer
  * names no domain command, so the transaction records which answer was given
  * and settles the input, and writes no entry, no projection and no focused work
- * — which is the whole of what keeps approval out of `Core`.
+ * — which is the whole of what keeps approval out of `TicketGraph`.
  *
  * THE PROJECTION IS UPSERTED BY THE ROWS THE DECISION CHANGED. Its sequence is
  * the entry's, which is what lets a read say which decision it is looking at,
@@ -45,7 +45,7 @@
  * AND IT PINS THE BUNDLE ITS WORKERS CONSUME, WRITTEN IN THIS SAME TRANSACTION.
  * Issue #180 has the transaction that spawns a work set materialize that set's
  * input bundle from the exact references at that decision, and a decision
- * returning a ticket to `Working` after a finalization failed adds the
+ * returning a ticket to `Work` after a finalization failed adds the
  * immutable evidence that failure named. So a worker forms its reconciliation
  * objective from the bundle rather than from current refs, finalizer logs or
  * the bare outcome.
