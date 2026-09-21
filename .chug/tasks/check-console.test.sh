@@ -139,7 +139,7 @@ check "a manifest nested inside a console is not a second console" 0 "$RC" "4 sc
 # --- `format`, the one optional script ---------------------------------------
 
 # A console that declares no `format` script is not asked for one: unlike the
-# four mandatory scripts, its absence is neither a finding nor part of the tally.
+# mandatory scripts, its absence is neither a finding nor part of the tally.
 fixture
 console built "$WHOLE"
 seal

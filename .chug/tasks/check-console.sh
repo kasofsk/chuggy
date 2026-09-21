@@ -101,7 +101,7 @@ trap 'rm -rf "$work"' EXIT
 # read-only format check fails before the production build has been waited
 # for. `format` alone is optional: a console that declares one has it run and
 # is failed by it, and a console that declares none is asked nothing and
-# stays quiet about it, unlike the four below.
+# stays quiet about it, unlike the mandatory ones below.
 optional="format"
 mandatory="typecheck lint test build"
 required="$optional $mandatory"
