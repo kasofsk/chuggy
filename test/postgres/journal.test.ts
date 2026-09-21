@@ -8,6 +8,12 @@
  * preserves a history the machine would accept, which is the property replay
  * actually needs.
  *
+ * A CASE ABOUT THE PARSE RESTATES THE ENVELOPE IT EDITS. The chain covers the
+ * stored text, so a row edited and left with its old digest never reaches the
+ * parse at all — it is refused as tampering, which is the right answer and not
+ * the one those cases are about. They restate the digest over the bytes they
+ * wrote, so the row is intact and unreadable rather than simply altered.
+ *
  * THE FENCES ARE `decision.test.ts`'S. An entry is written only by the
  * decision transaction now, so what stops one from being written is a claim
  * about that transaction rather than about this file's subject. The load's own
@@ -376,9 +382,15 @@ test("a stored row that is not JSON is refused by returning, not thrown on", asy
   const partition = await postgresHarnessProject(harness.store, "notjson");
   const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
 
-  await harness.query(
-    "UPDATE journal_entry SET entry = 'not json' WHERE tenant = $1 AND project = $2 AND seq = 1",
-    [partition.tenant, partition.project],
+  await restateEnvelope(
+    partition,
+    1,
+    "not json",
+    journalChainGenesis(partition),
+    {
+      eventSchemaVersion: 1,
+      decisionSemanticsVersion: decisionSemanticsVersionCurrent,
+    },
   );
 
   const loaded = await harness.store.load(memory.lease);
@@ -391,9 +403,15 @@ test("a stored row that is JSON but not an entry is refused by the schema", asyn
   const partition = await postgresHarnessProject(harness.store, "notentry");
   const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
 
-  await harness.query(
-    `UPDATE journal_entry SET entry = '{"seq":1}' WHERE tenant = $1 AND project = $2 AND seq = 1`,
-    [partition.tenant, partition.project],
+  await restateEnvelope(
+    partition,
+    1,
+    '{"seq":1}',
+    journalChainGenesis(partition),
+    {
+      eventSchemaVersion: 1,
+      decisionSemanticsVersion: decisionSemanticsVersionCurrent,
+    },
   );
 
   const loaded = await harness.store.load(memory.lease);
