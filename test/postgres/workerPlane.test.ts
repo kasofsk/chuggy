@@ -163,7 +163,8 @@ test("the authority carries the task kind the scheduler recorded for the attempt
   assert.deepEqual(await attemptRead(attempt), ["Work"]);
   const recorded = async (kind: string) =>
     rig.harness.query(
-      `UPDATE execution_request_task t SET kind=$4,stage=0
+      `UPDATE execution_request_task t
+          SET kind=$4,stage=1,generation=1,evaluator=1
          FROM execution e
         WHERE t.tenant=e.tenant AND t.project=e.project
           AND t.request=e.source_request AND t.task=e.task
