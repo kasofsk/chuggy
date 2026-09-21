@@ -15,6 +15,7 @@ import {
   dispatchEvent,
   evalReduceEvent,
   execDecisionEvent,
+  finalizationResultEvent,
   releaseTicketEvent,
   taskDoneEvent,
   workReduceEvent,
@@ -49,25 +50,37 @@ function outstanding(core: Core): number {
 
 /**
  * The dispositions the cap picks, one per failing evaluation, until it parks
- * the ticket. Every step is the decider's, and the failure it feeds the cap is
- * the one the cap's own previous answer produced.
+ * the ticket — after `finalizationFailures` rounds its `ManagedFinalizer`
+ * failed instead. Every step is the decider's, and the failure it feeds the cap
+ * is the one the cap's own previous answer produced.
  */
-function dispositionsUnder(cyclesMax: number): readonly string[] {
+function dispositionsUnder(
+  cyclesMax: number,
+  finalizationFailures = 0,
+): readonly string[] {
   let core: Core = genesis;
   const step = (event: DecisionEvent) => {
     core = execDecisionEvent(config, core, event).post;
   };
-  step(releaseTicketEvent(id(1), plainAuthoring));
-  step(dispatchEvent(id(1)));
-  const picked: string[] = [];
-  for (let round = 0; round <= cyclesMax + 1; round++) {
+  const evaluated = (verdict: "Pass" | "Fail") => {
     step(
       taskDoneEvent(id(1), asTaskId(outstanding(core)), "Pass", plainResult),
     );
     step(workReduceEvent(id(1)));
     step(
-      taskDoneEvent(id(1), asTaskId(outstanding(core)), "Fail", plainResult),
+      taskDoneEvent(id(1), asTaskId(outstanding(core)), verdict, plainResult),
     );
+  };
+  step(releaseTicketEvent(id(1), plainAuthoring));
+  step(dispatchEvent(id(1)));
+  for (let failure = 0; failure < finalizationFailures; failure++) {
+    evaluated("Pass");
+    step(evalReduceEvent(id(1), "ReworkEvaluationFailure"));
+    step(finalizationResultEvent(id(1), "FinalizationFailed"));
+  }
+  const picked: string[] = [];
+  for (let round = 0; round <= cyclesMax + 1; round++) {
+    evaluated("Fail");
     const disposition = reworkDisposition(ticketAt(core, id(1)), cyclesMax);
     picked.push(disposition);
     step(evalReduceEvent(id(1), disposition));
@@ -90,6 +103,14 @@ test("a cap of one reworks once, and a cap of none parks the first failure", () 
     "EscalateEvaluationFailure",
   ]);
   assert.deepEqual(dispositionsUnder(0), ["EscalateEvaluationFailure"]);
+});
+
+test("a finalizer that failed twice leaves the ticket every rework the cap allows", () => {
+  assert.deepEqual(dispositionsUnder(2, 2), [
+    "ReworkEvaluationFailure",
+    "ReworkEvaluationFailure",
+    "EscalateEvaluationFailure",
+  ]);
 });
 
 test("a cap that is not a whole count of cycles is refused where it is configured", () => {
