@@ -734,7 +734,7 @@ test("the by-stage table is work first and then the program's own order", async 
   expect(container.querySelector("#usage")).not.toBeNull();
 });
 
-/** A stage authored three wide, two of its tasks on the page, one of them
+/** A stage authored three wide, two of its tasks on the page and both
  * relaunched, its cycle superseded by the work that ran after it. */
 const fanoutAuthoring: TicketAuthoring = {
   dependencies: [],
@@ -812,11 +812,11 @@ test("a fan-out row is priced and timed over the whole set, not its first task",
 });
 
 /**
- * The state no other fixture reaches: one row that is superseded, relaunched
- * and short of its fan-out at once, which is where three joined fragments would
- * run past the copy budget.
+ * The state no other fixture reaches: a stage row relaunched and short of its
+ * fan-out at once, inside a cycle drawn as superseded, which is where the
+ * joined fragments would run past the copy budget.
  */
-test("a row that is superseded, relaunched and short still fits the copy budget", async () => {
+test("a relaunched, short stage row in a superseded cycle still fits the copy budget", async () => {
   const { container } = await drawFanout();
   const superseded = groups(container).at(-1);
   expect(superseded?.classList.contains("ledger-group-superseded")).toBe(true);
