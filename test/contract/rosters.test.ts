@@ -26,6 +26,7 @@ import {
   executionOutcomes,
   executionStatuses,
   executionTaskKinds,
+  finalizationUnavailableKinds,
   nativeActionKindResolutions,
   nativeActionKinds,
   nativeActionResolutions,
@@ -115,6 +116,10 @@ import {
   allExecutionStatuses,
 } from "../../src/interpreter/executionScheduler.ts";
 import type { ExecutionTaskKind } from "../../src/interpreter/executionScheduler.ts";
+import {
+  allFinalizationHoldKinds,
+  type FinalizationHoldKind,
+} from "../../src/interpreter/finalizer.ts";
 import type {
   Architecture as RequiredArchitecture,
   CapabilityExecutionRequirement,
@@ -183,6 +188,33 @@ test("the escalation reasons are the model's, less the absent one", () => {
  */
 test("the blocked reasons are the interpreter's", () => {
   assert.deepEqual([...blockedReasons], [...allBlockedReasons]);
+});
+
+/**
+ * The unavailable kinds are the wire's own list and the finalizer's holds are
+ * the interpreter's, so this is a containment rather than an equality: what it
+ * holds is that every member is a hold the finalizer can reach, and that the
+ * five left out are exactly the ones named for staying holds. A kind added to
+ * either side without the other lands in one of the two assertions.
+ */
+test("the unavailable kinds are finalization holds, less the five that stay holds", () => {
+  const roster: readonly FinalizationHoldKind[] = finalizationUnavailableKinds;
+  assert.deepEqual(
+    roster.filter((kind) => !allFinalizationHoldKinds.includes(kind)),
+    [],
+  );
+  assert.deepEqual(
+    allFinalizationHoldKinds.filter(
+      (kind) => !roster.some((named) => named === kind),
+    ),
+    [
+      "ApprovalDeclined",
+      "ContradictoryEvidence",
+      "ProposalRefused",
+      "ProposalHeadMoved",
+      "ProposalMergeBlocked",
+    ],
+  );
 });
 
 test("the resume points are the model's, less the absent one", () => {

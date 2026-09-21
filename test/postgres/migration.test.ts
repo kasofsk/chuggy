@@ -64,6 +64,7 @@ import { allSessionTurnFailures } from "../../src/interpreter/agentSession.ts";
 import { allSessionAttemptEvidences } from "../../src/interpreter/sessionScheduler.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import { allFinalizationHoldKinds } from "../../src/interpreter/finalizer.ts";
+import { finalizationUnavailableKinds } from "../../src/contract/rosters.ts";
 import { schemaCompatibilityPrecondition } from "../../src/interpreter/serviceRuntime.ts";
 import { postgresHarnessUrl } from "./harness.ts";
 import type pg from "pg";
@@ -2844,6 +2845,11 @@ test("the hold column is the roster's one home and refuses every kind a resume c
       subject,
       "finalization_request",
       "finalization_request_hold_kind_is_known",
+    );
+    assert.deepEqual(
+      [...installed],
+      [...finalizationUnavailableKinds],
+      "the installed roster matches the runtime, member for member and in order",
     );
     for (const kind of installed)
       assert.ok(
