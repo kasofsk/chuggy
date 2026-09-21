@@ -25,7 +25,6 @@ afterEach(cleanup);
 const authoring: DraftResponse["authoring"] = {
   dependencies: [],
   program: [],
-  workFanout: 1,
 };
 
 function draft(brief?: DraftResponse["brief"]): PanelState<DraftResponse> {

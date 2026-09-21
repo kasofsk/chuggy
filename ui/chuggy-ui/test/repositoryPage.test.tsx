@@ -81,12 +81,10 @@ const initialization = {
   defaults: {
     dependencies: [],
     program: [{ fanout: 1 }],
-    workFanout: 1,
   },
   choices: {
     stages: [{ fanout: 1 }],
     programStagesMax: 2,
-    workFanouts: [1],
   },
   dependencyCandidates: [],
   dependencyCandidatesTruncated: false,

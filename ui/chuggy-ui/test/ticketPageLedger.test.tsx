@@ -196,6 +196,15 @@ function groups(container: HTMLElement): readonly HTMLElement[] {
   return [...container.querySelectorAll<HTMLElement>(".ledger-group")];
 }
 
+/** The row for a stage the program authored, picked out from the work row that
+ * always draws first in its cycle. */
+function stageRow(group: HTMLElement | undefined): HTMLElement | undefined {
+  return [...(group?.querySelectorAll<HTMLElement>(".ledger-row") ?? [])].find(
+    (row) =>
+      row.querySelector(".ledger-label")?.textContent?.startsWith("Stage"),
+  );
+}
+
 function rowsOf(group: HTMLElement): readonly string[] {
   return [...group.querySelectorAll(".ledger-row")].map(
     (row) => row.textContent ?? "",
@@ -658,7 +667,7 @@ test("a fan-out's wait is measured from the earliest task to start", async () =>
     authoring: fanoutAuthoring,
   });
   const when =
-    groups(container).at(-1)?.querySelector(".ledger-row .ledger-when")
+    stageRow(groups(container).at(-1))?.querySelector(".ledger-when")
       ?.textContent ?? "";
   expect(when).toContain("waited 5m");
   expect(when).not.toContain("waited 15m");
@@ -725,17 +734,19 @@ test("the by-stage table is work first and then the program's own order", async 
   expect(container.querySelector("#usage")).not.toBeNull();
 });
 
-/** Three tasks authored, two on the page, one of them relaunched, all superseded. */
-const fanoutAuthoring = {
-  ...ticket21Authoring,
-  workFanout: 3,
+/** A stage authored three wide, two of its tasks on the page, one of them
+ * relaunched, its cycle superseded by the work that ran after it. */
+const fanoutAuthoring: TicketAuthoring = {
+  dependencies: [],
+  program: [{ fanout: 3 }],
 };
 
 const fanoutShapes: readonly ExecutionShape[] = [
   {
     execution: "execution-aaaa-1",
     task: 1,
-    taskKind: "Work",
+    taskKind: "Evaluation",
+    stage: 0,
     request: "spawn-one",
     outcome: "Passed",
     retriesSpent: 1,
@@ -744,20 +755,12 @@ const fanoutShapes: readonly ExecutionShape[] = [
   {
     execution: "execution-aaaa-2",
     task: 2,
-    taskKind: "Work",
+    taskKind: "Evaluation",
+    stage: 0,
     request: "spawn-one",
     outcome: "Passed",
     retriesSpent: 2,
     totals: { turns: 20, durationMs: 300_000, costUsdMicros: 600_000 },
-  },
-  {
-    execution: "execution-bbbb-3",
-    task: 3,
-    taskKind: "Evaluation",
-    stage: 0,
-    request: "spawn-two",
-    outcome: "Failed",
-    totals: { turns: 5, durationMs: 60_000, costUsdMicros: 100_000 },
   },
   {
     execution: "execution-cccc-4",
@@ -790,22 +793,22 @@ test("a fan-out set the wire half-dates draws no wait at all", async () => {
     ticket: parkedTicket,
     authoring: fanoutAuthoring,
   });
-  const work = groups(container).at(-1)?.querySelector(".ledger-row");
-  const when = work?.querySelector(".ledger-when")?.textContent ?? "";
+  const row = stageRow(groups(container).at(-1));
+  const when = row?.querySelector(".ledger-when")?.textContent ?? "";
   expect(when).toContain("15m");
   expect(when).not.toContain("waited");
 });
 
 test("a fan-out row is priced and timed over the whole set, not its first task", async () => {
   const { container } = await drawFanout();
-  const work = groups(container).at(-1)?.querySelector(".ledger-row");
-  expect(work).toBeDefined();
-  expect(work?.querySelector(".ledger-spent")?.textContent).toContain("$1.00");
-  const when = work?.querySelector(".ledger-when")?.textContent ?? "";
+  const row = stageRow(groups(container).at(-1));
+  expect(row).toBeDefined();
+  expect(row?.querySelector(".ledger-spent")?.textContent).toContain("$1.00");
+  const when = row?.querySelector(".ledger-when")?.textContent ?? "";
   expect(when).toContain("15m");
   expect(when).not.toContain("2m");
-  expect(work?.textContent).toContain("Relaunched 3× by fabric");
-  expect(work?.textContent).toContain("2 of 3 tasks on this page");
+  expect(row?.textContent).toContain("Relaunched 3× by fabric");
+  expect(row?.textContent).toContain("2 of 3 tasks on this page");
 });
 
 /**

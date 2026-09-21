@@ -36,7 +36,6 @@ function ticketIn(phase: TicketPhase, over: Partial<Ticket> = {}): Ticket {
     phase,
     deps: new Set<number>(),
     artifact: "NoArtifact",
-    workFanout: 1,
     program: [],
     tasks: new Set(),
     record: [],
