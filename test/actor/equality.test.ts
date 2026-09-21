@@ -21,12 +21,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { recordEquals, ticketEquals } from "../../src/actor/equality.ts";
-import { initRecord } from "../../src/domain/core.ts";
+import { initRecord } from "../../src/domain/ticketGraph.ts";
 import { freshTicket } from "../../src/domain/deciders.ts";
 import { id, workOutstanding, workTask } from "../domain/fixtures.ts";
 import { flatProgram } from "./harness.ts";
 import type {
-  Stage,
+  StageDefinition,
   StepRecord,
   Ticket,
   Transition,
@@ -70,8 +70,8 @@ const ticketMutants: FieldMutants<Ticket> = {
   tasks: (t) => ({ ...t, tasks: new Set([workOutstanding(1)]) }),
   record: (t) => ({ ...t, record: [workTask(1, "Passed")] }),
   spawned: (t) => ({ ...t, spawned: t.spawned + 1 }),
-  resumeAt: (t) => ({ ...t, resumeAt: "ResumeWorking" }),
-  reason: (t) => ({ ...t, reason: "WorkFailed" }),
+  resumeAt: (t) => ({ ...t, resumeAt: "ResumeWork" }),
+  reason: (t) => ({ ...t, reason: "WorkFailureEscalated" }),
   completions: (t) => ({ ...t, completions: t.completions + 1 }),
 };
 
@@ -79,15 +79,15 @@ const recordMutants: FieldMutants<StepRecord> = {
   label: (r) => ({ ...r, label: "ticket-done" }),
   transitions: (r) => ({
     ...r,
-    transitions: [{ ticket: id(1), from: "Pending", to: "Working" }],
+    transitions: [{ ticket: id(1), from: "Pending", to: "Work" }],
   }),
   effects: (r) => ({ ...r, effects: ["SpawnWorkTasks"] }),
 };
 
 const baseTransition: Transition = {
   ticket: id(1),
-  from: "Working",
-  to: "Evaluating",
+  from: "Work",
+  to: "Evaluation",
 };
 
 const transitionMutants: FieldMutants<Transition> = {
@@ -96,9 +96,9 @@ const transitionMutants: FieldMutants<Transition> = {
   to: (t) => ({ ...t, to: "Done" }),
 };
 
-const baseStage: Stage = { fanout: 1 };
+const baseStage: StageDefinition = { fanout: 1 };
 
-const stageMutants: FieldMutants<Stage> = {
+const stageMutants: FieldMutants<StageDefinition> = {
   fanout: (s) => ({ ...s, fanout: s.fanout + 1 }),
 };
 
@@ -122,8 +122,8 @@ test("the transition comparison reads every field Transition declares", () => {
   );
 });
 
-test("the stage comparison reads every field Stage declares", () => {
-  const inTicket = (stage: Stage): Ticket => ({
+test("the stage comparison reads every field StageDefinition declares", () => {
+  const inTicket = (stage: StageDefinition): Ticket => ({
     ...baseTicket,
     program: [stage],
   });
@@ -135,7 +135,7 @@ test("the stage comparison reads every field Stage declares", () => {
 });
 
 test("a list of equal length is compared member by member, not by length alone", () => {
-  const twice = (stage: Stage): Ticket => ({
+  const twice = (stage: StageDefinition): Ticket => ({
     ...baseTicket,
     program: [stage, stage],
   });

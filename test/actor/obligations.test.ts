@@ -7,7 +7,7 @@
  * refinement layer: an obligation added to the model with no counterpart here
  * would otherwise cost nothing. The red demonstrations are the anti-vacuity
  * half — the world-facing members get theirs in `hazard.test.ts`, where the
- * machine itself produces the violation; the core members can only be broken
+ * machine itself produces the violation; the graph members can only be broken
  * by hand-forged states, because the disciplined machine never reaches one.
  */
 
@@ -28,10 +28,10 @@ import {
 import {
   actorInit,
   journalStep,
-  memoryCore,
+  memoryGraph,
   type ActorState,
 } from "../../src/actor/state.ts";
-import { ticketAt, withTicket } from "../../src/domain/core.ts";
+import { ticketAt, withTicket } from "../../src/domain/ticketGraph.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   declaredDecisionEventConstructors,
@@ -53,14 +53,14 @@ function journaledRelease(): ActorState {
   );
 }
 
-test("the core bundle is the model's refinementCore, member for member in order", () => {
+test("the graph bundle is the model's refinementCore, member for member in order", () => {
   assert.deepEqual(
     refinementCore.map((member) => member.obligation),
     [...declaredRefinementCore(ROOT)],
   );
 });
 
-test("the full bundle is the model's refinementInvariants with the nested core expanded", () => {
+test("the full bundle is the model's refinementInvariants with the nested graph expanded", () => {
   assert.deepEqual(
     refinementInvariants.map((member) => member.obligation),
     [...declaredRefinementObligations(ROOT)],
@@ -72,7 +72,7 @@ test("the reader is reading the model rather than agreeing with itself", () => {
   assert.ok(raw.includes("refinementCore"), "the nesting did not parse");
   assert.ok(
     !raw.includes("journalLegal"),
-    "the model's bundle names the core bundle, not its members",
+    "the model's bundle names the graph bundle, not its members",
   );
   assert.ok(
     refinementInvariants.length > raw.length,
@@ -127,8 +127,8 @@ test("a cursor outside the journal, or a gapped received set, fails executorSoun
 
 test("a Done ticket the journal never completed fails the ledger bridge, with the recovery it also broke", () => {
   const state = journaledRelease();
-  const ticket = ticketAt(memoryCore(state), id(1));
-  const forged = withTicket(memoryCore(state), id(1), {
+  const ticket = ticketAt(memoryGraph(state), id(1));
+  const forged = withTicket(memoryGraph(state), id(1), {
     ...ticket,
     phase: "Done",
     completions: 1,

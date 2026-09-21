@@ -17,7 +17,7 @@
  * each entry, so a history spanning a semantics change replays row by row under
  * its own; `decisionEventEnabled` below is this image's, because the change
  * these versions exist for altered no guard, and a change that alters one has
- * to version enablement here too. `journalLegalOn` and `replayCore` are the
+ * to version enablement here too. `journalLegalOn` and `replayGraph` are the
  * same folds over a history this image decided whole, which is every journal
  * `model/` describes.
  *
@@ -31,7 +31,10 @@
  */
 
 import type { Config } from "../domain/config.ts";
-import type { Core, StepRecord } from "../domain/generated/modelTypes.ts";
+import type {
+  TicketGraph,
+  StepRecord,
+} from "../domain/generated/modelTypes.ts";
 import { decisionEventEnabled, type DecisionEvent } from "./decisionEvent.ts";
 import {
   decisionSemanticsVersionCurrent,
@@ -55,7 +58,7 @@ export interface StoredEntry {
 }
 
 /** The journal's base state: the machine's init fleet, empty. */
-export const genesis: Core = { tickets: new Map() };
+export const genesis: TicketGraph = { tickets: new Map() };
 
 /** A history this image decided whole, which is what an in-memory actor and the model both hold. */
 export function storedAtCurrentSemantics(
@@ -68,16 +71,16 @@ export function storedAtCurrentSemantics(
 }
 
 /** Recovery: replay a stored history into a fresh state, each row under its own semantics. */
-export function storedReplayCore(stored: readonly StoredEntry[]): Core {
+export function storedReplayGraph(stored: readonly StoredEntry[]): TicketGraph {
   return stored.reduce(
-    (core, row) => execDecisionEventAt(row.semantics, core, row.entry).post,
+    (graph, row) => execDecisionEventAt(row.semantics, graph, row.entry).post,
     genesis,
   );
 }
 
 /** Recovery: replay the journal into a fresh state, one decision at a time from `genesis`. */
-export function replayCore(journal: readonly Entry[]): Core {
-  return storedReplayCore(storedAtCurrentSemantics(journal));
+export function replayGraph(journal: readonly Entry[]): TicketGraph {
+  return storedReplayGraph(storedAtCurrentSemantics(journal));
 }
 
 /**

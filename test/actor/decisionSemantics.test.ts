@@ -40,7 +40,7 @@ import {
 import {
   journalLegalOn,
   storedJournalLegalOn,
-  storedReplayCore,
+  storedReplayGraph,
   type Entry,
   type StoredEntry,
 } from "../../src/actor/journal.ts";
@@ -50,7 +50,7 @@ import {
   replayableDecision,
 } from "../../src/actor/decisionSemantics.ts";
 import { parseStoredEntry } from "../../src/interpreter/wire.ts";
-import { ticketAt } from "../../src/domain/core.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import { id } from "../domain/fixtures.ts";
 import { refinementInstance } from "./harness.ts";
 
@@ -83,7 +83,8 @@ const walls = pinned("journalAtSemanticsOneWalls.json");
 
 test("the reworked history walks the rework wall and resumes past it", () => {
   const walled = reworkedWall.filter(
-    (entry) => entry.rec.label === "ticket-escalated rework_budget_exhausted",
+    (entry) =>
+      entry.rec.label === "ticket-escalated evaluation_failure_escalated",
   );
   const resumes = reworkedWall.filter(
     (entry) => entry.event.type === "ResumeTicket",
@@ -103,8 +104,8 @@ test("the same history read as this image's own decisions is not legal", () => {
 });
 
 test("replay under the first semantics resumes the walled ticket into evaluation", () => {
-  const replayed = storedReplayCore(storedAt(reworkedWall, 1));
-  assert.equal(ticketAt(replayed, id(1)).phase, "Evaluating");
+  const replayed = storedReplayGraph(storedAt(reworkedWall, 1));
+  assert.equal(ticketAt(replayed, id(1)).phase, "Evaluation");
   assert.equal(ticketAt(replayed, id(1)).resumeAt, "NoResume");
 });
 
@@ -121,9 +122,9 @@ test("the two-wall history holds an EvalReduce row on each disposition edge", ()
   assert.deepEqual(
     reduces.map((entry) => entry.rec.label),
     [
-      "ticket-escalated rework_budget_exhausted",
+      "ticket-escalated evaluation_failure_escalated",
       "rework-started eval_failure",
-      "ticket-escalated rework_budget_exhausted",
+      "ticket-escalated evaluation_failure_escalated",
     ],
   );
   assert.ok(storedJournalLegalOn(config, storedAt(walls, 1)));
@@ -132,24 +133,24 @@ test("the two-wall history holds an EvalReduce row on each disposition edge", ()
 
 test("a second-semantics EvalReduce takes the edge its record records", () => {
   const toTheWall = storedAt(walls.slice(0, 6), 2);
-  const walled = ticketAt(storedReplayCore(toTheWall), id(1));
+  const walled = ticketAt(storedReplayGraph(toTheWall), id(1));
   assert.equal(walled.phase, "Escalated");
-  assert.equal(walled.reason, "ReworkBudgetExhausted");
+  assert.equal(walled.reason, "EvaluationFailureEscalated");
 
   const toTheRework = storedAt(walls.slice(0, 13), 2);
-  const reworked = ticketAt(storedReplayCore(toTheRework), id(2));
-  assert.equal(reworked.phase, "Working");
+  const reworked = ticketAt(storedReplayGraph(toTheRework), id(2));
+  assert.equal(reworked.phase, "Work");
 });
 
 test("the first semantics parks the wall at the eval resume, the second where this machine does", () => {
   const toTheWall = walls.slice(0, 6);
   assert.equal(
-    ticketAt(storedReplayCore(storedAt(toTheWall, 1)), id(1)).resumeAt,
-    "ResumeEvaluating",
+    ticketAt(storedReplayGraph(storedAt(toTheWall, 1)), id(1)).resumeAt,
+    "ResumeEvaluation",
   );
   assert.equal(
-    ticketAt(storedReplayCore(storedAt(toTheWall, 2)), id(1)).resumeAt,
-    "ResumeReworking",
+    ticketAt(storedReplayGraph(storedAt(toTheWall, 2)), id(1)).resumeAt,
+    "ResumeRework",
   );
 });
 
@@ -157,7 +158,7 @@ test("a parked ticket is resumable whichever semantics walled it", () => {
   const resume = resumeTicketEvent(id(1));
   const toTheWall = walls.slice(0, 6);
   for (const semantics of [1, 2] as const) {
-    const at = storedReplayCore(storedAt(toTheWall, semantics));
+    const at = storedReplayGraph(storedAt(toTheWall, semantics));
     assert.ok(decisionEventEnabled(config, at, resume));
   }
 });
@@ -186,12 +187,42 @@ test("a row parked on a wall this machine no longer has cannot be replayed", () 
 });
 
 test("the current semantics is the one whose refusals this module states", () => {
-  assert.equal(decisionSemanticsVersionCurrent, 4);
-  assert.ok(isDecisionSemanticsVersion(4));
+  assert.equal(decisionSemanticsVersionCurrent, 5);
+  assert.ok(isDecisionSemanticsVersion(5));
   assert.ok(
-    !isDecisionSemanticsVersion(5),
+    !isDecisionSemanticsVersion(6),
     "a row from an image this one does not know is not replayable by guessing",
   );
+});
+
+/**
+ * The rename is the whole of semantics 5, so what has to be shown is that the
+ * bytes did not move with it: the pinned rows still say the words the machine
+ * that wrote them said, and every history above is read off them.
+ */
+test("a pinned row says the old words and is read as the new ones", () => {
+  const bytes = readFileSync(
+    join(import.meta.dirname, "journalAtSemanticsOne.json"),
+    "utf8",
+  );
+  for (const said of [
+    "ReleaseTicket",
+    "Working",
+    "Evaluating",
+    "ticket-escalated rework_budget_exhausted",
+  ])
+    assert.ok(bytes.includes(said), `the pinned bytes no longer say ${said}`);
+
+  assert.ok(reworkedWall[0]?.event.type === "CreateTicket");
+  assert.ok(
+    reworkedWall.some(
+      (entry) =>
+        entry.rec.label === "ticket-escalated evaluation_failure_escalated",
+    ),
+  );
+  const moves = reworkedWall.flatMap((entry) => entry.rec.transitions);
+  assert.ok(moves.some((move) => move.to === "Work"));
+  assert.ok(moves.some((move) => move.to === "Evaluation"));
 });
 
 test("a pre-4 row's dropped keys are accepted and decode to the meaning that survived", () => {
@@ -209,7 +240,7 @@ test("a pre-4 row's dropped keys are accepted and decode to the meaning that sur
   ]);
 
   const entry = reworkedWall[0];
-  assert.ok(entry?.event.type === "ReleaseTicket");
+  assert.ok(entry?.event.type === "CreateTicket");
   assert.ok(
     !("finalizer" in entry.event.value),
     "the finish kind reached the actor",
@@ -225,7 +256,7 @@ test("a row that completed a ticket without running a finalizer cannot be replay
     ...done,
     rec: {
       label: "ticket-done",
-      transitions: [{ ticket: id(1), from: "Evaluating", to: "Done" } as const],
+      transitions: [{ ticket: id(1), from: "Evaluation", to: "Done" } as const],
       effects: [],
     },
   };
@@ -236,11 +267,11 @@ test("a row that completed a ticket without running a finalizer cannot be replay
       rec: {
         ...finisherFree.rec,
         transitions: [
-          { ticket: id(1), from: "Finalizing", to: "Done" } as const,
+          { ticket: id(1), from: "Finalization", to: "Done" } as const,
         ],
       },
     }),
-    "the completion this machine takes is the one out of Finalizing",
+    "the completion this machine takes is the one out of Finalization",
   );
   assert.ok(
     !storedJournalLegalOn(config, [{ entry: finisherFree, semantics: 1 }]),

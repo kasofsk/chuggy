@@ -35,7 +35,10 @@ import {
 } from "../../src/actor/state.ts";
 import type { Config } from "../../src/domain/config.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
-import type { Stage, Verdict } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  StageDefinition,
+  Verdict,
+} from "../../src/domain/generated/modelTypes.ts";
 import { bundleHolds, evaluateBundle } from "../conformance/evaluate.ts";
 import { id } from "../domain/fixtures.ts";
 
@@ -49,7 +52,7 @@ export const refinementInstance: Config = {
 /** What a release freezes when a suite does not care which values it froze. */
 export const plainAuthoring = {
   deps: new Set<number>(),
-  prog: [{ fanout: 1 }] as readonly Stage[],
+  prog: [{ fanout: 1 }] as readonly StageDefinition[],
   workFanout: 1,
 } as const;
 
@@ -57,7 +60,7 @@ export const plainAuthoring = {
 export const plainResult = { manifest: 1, digest: 1, schema: 1 } as const;
 
 /** The single-stage program every refinement-model run authors. */
-export const flatProgram: readonly Stage[] = [{ fanout: 1 }];
+export const flatProgram: readonly StageDefinition[] = [{ fanout: 1 }];
 
 /**
  * The per-step gate: the domain bundle green on the carried view, and the

@@ -23,31 +23,40 @@
  *   - at 1 and 2, a row whose record names a wall this machine no longer has
  *     cannot be re-derived at all, and `storedJournalLegalOn` refuses it rather
  *     than replaying it into a state the fleet was never in;
- *   - at 3 and below, a row completing a ticket out of any phase but Finalizing
- *     was decided by a machine where a release could author no finalizer, and
- *     is refused the same way;
+ *   - at 3 and below, a row completing a ticket out of any phase but
+ *     Finalization was decided by a machine where a release could author no
+ *     finalizer, and is refused the same way;
  *   - at 3 and below, a revoke whose record transitions more than one ticket is
  *     the cascade that parked the revoked ticket's dependents, and is refused
  *     the same way;
  *   - at 2, a rework wall's resume gets no correction of its own, so replay
  *     hands it to the current decider — which stamps every rework wall
- *     `ResumeReworking`, there being no budget left to consult. A row parked
+ *     `ResumeRework`, there being no budget left to consult. A row parked
  *     with no rework budget, decided when that wall answered `NoResume`,
  *     replays retryable though the machine that wrote it refused a retry.
+ *
+ * AT 4 AND BELOW EVERY SPELLING IS THE OLD ONE, which is the one correction
+ * that has to run before the codec rather than after it: a stored row names
+ * `Working`, `ReleaseTicket` or `FinalizationFailed`, and the schema this
+ * image generates describes none of them, so there would be no event to
+ * correct. `rowAtCurrentVocabulary` rewrites those fields as one total map,
+ * and every correction above therefore compares against the current
+ * spellings. A row's BYTES do not change — `event_schema_version` stays 1 —
+ * and neither does what it decided; only the words it says it in.
  *
  * TWO OF THOSE REFUSALS ARE READ OFF THE RECORD BECAUSE THE EVENT NO LONGER
  * SPELLS THEM. A pre-4 release row carries a `finalizer` and each of its stages
  * a `combinator`; the model has neither field, so the codec drops both on the
  * way in and `ManagedFinalizer` and `UnanimousPass`, the surviving meaning,
  * replay unchanged. What the dropped keys decided is in the record either way:
- * a finisher-free release completes out of Evaluating, an `AnyPass` stage that
- * passed on a mixed set carries a label this machine's `combine` does not
- * produce, and `storedJournalLegalOn` compares records.
+ * a finisher-free release completes out of Evaluation, an `AnyPass` stage
+ * that passed on a mixed set carries a label this machine's `combine` does
+ * not produce, and `storedJournalLegalOn` compares records.
  */
 
-import { ticketAt, withTicket, type Decision } from "../domain/core.ts";
+import { ticketAt, withTicket, type Decision } from "../domain/ticketGraph.ts";
 import type {
-  Core,
+  TicketGraph,
   EvaluationFailureDisposition,
   StepRecord,
 } from "../domain/generated/modelTypes.ts";
@@ -58,16 +67,125 @@ import {
 } from "./decisionEvent.ts";
 
 /** Which deciders produced a row, as the row's own durable envelope declares it. */
-export type DecisionSemanticsVersion = 1 | 2 | 3 | 4;
+export type DecisionSemanticsVersion = 1 | 2 | 3 | 4 | 5;
 
 /** The semantics every new decision is taken under, and the one `model/` describes. */
-export const decisionSemanticsVersionCurrent: DecisionSemanticsVersion = 4;
+export const decisionSemanticsVersionCurrent: DecisionSemanticsVersion = 5;
 
 /** Whether a stored number names decision semantics this image knows how to replay. */
 export function isDecisionSemanticsVersion(
   value: number,
 ): value is DecisionSemanticsVersion {
-  return value === 1 || value === 2 || value === 3 || value === 4;
+  return value >= 1 && value <= 5 && Number.isInteger(value);
+}
+
+/**
+ * Every word semantics 5 renamed, and what it is called now. One flat map
+ * rather than one per field: no old spelling is also a new one, so rewriting a
+ * row that already speaks the current vocabulary changes nothing, and a reader
+ * never has to know which vintage it holds.
+ */
+const currentVocabulary: ReadonlyMap<string, string> = new Map([
+  ["ReleaseTicket", "CreateTicket"],
+  ["Working", "Work"],
+  ["Evaluating", "Evaluation"],
+  ["Finalizing", "Finalization"],
+  ["WorkFailed", "WorkFailureEscalated"],
+  ["ReworkBudgetExhausted", "EvaluationFailureEscalated"],
+  ["ExecutionPolicyDenied", "WorkExecutionUnavailableEscalated"],
+  ["TicketConfigIncompatible", "WorkExecutionUnavailableEscalated"],
+  ["ExecutionProfileUnavailable", "WorkExecutionUnavailableEscalated"],
+  ["RuntimeVersionUnsupported", "WorkExecutionUnavailableEscalated"],
+  ["RequiredCapabilityUnavailable", "WorkExecutionUnavailableEscalated"],
+  ["FinalizationFailed", "FinalizationNeedsWork"],
+  ["ticket-escalated work_failed", "ticket-escalated work_failure_escalated"],
+  [
+    "ticket-escalated rework_budget_exhausted",
+    "ticket-escalated evaluation_failure_escalated",
+  ],
+  [
+    "ticket-escalated execution_blocked",
+    "ticket-escalated work_execution_unavailable_escalated",
+  ],
+  [
+    "rework-started finalization_failed",
+    "rework-started finalization_needs_work",
+  ],
+]);
+
+/** The fields of a row this map may rewrite, read before the codec has seen it. */
+function objectFields(raw: unknown): Record<string, unknown> | undefined {
+  return typeof raw === "object" && raw !== null && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : undefined;
+}
+
+/** A string field rewritten to its current spelling, or left exactly as it is. */
+function wordAtCurrentVocabulary(value: unknown): unknown {
+  return typeof value === "string"
+    ? (currentVocabulary.get(value) ?? value)
+    : value;
+}
+
+/**
+ * One stored row with every superseded spelling rewritten: the event's tag and
+ * the two payload fields that name vocabulary, the record's label, and both
+ * ends of each transition. Nothing else is walked — a blind walk would rewrite
+ * a future field that happens to hold a renamed string — and a row that is not
+ * the shape named passes through for the codec to refuse on its own terms.
+ */
+export function rowAtCurrentVocabulary(raw: unknown): unknown {
+  const row = objectFields(raw);
+  if (row === undefined) return raw;
+  const event = objectFields(row["event"]);
+  const rec = objectFields(row["rec"]);
+  const value = objectFields(event?.["value"]);
+  const transitions = rec?.["transitions"];
+  return {
+    ...row,
+    ...(event === undefined
+      ? {}
+      : {
+          event: {
+            ...event,
+            type: wordAtCurrentVocabulary(event["type"]),
+            ...(value === undefined
+              ? {}
+              : {
+                  value: {
+                    ...value,
+                    ...("reason" in value
+                      ? { reason: wordAtCurrentVocabulary(value["reason"]) }
+                      : {}),
+                    ...("out" in value
+                      ? { out: wordAtCurrentVocabulary(value["out"]) }
+                      : {}),
+                  },
+                }),
+          },
+        }),
+    ...(rec === undefined
+      ? {}
+      : {
+          rec: {
+            ...rec,
+            label: wordAtCurrentVocabulary(rec["label"]),
+            ...(Array.isArray(transitions)
+              ? {
+                  transitions: transitions.map((t: unknown) => {
+                    const move = objectFields(t);
+                    if (move === undefined) return t;
+                    return {
+                      ...move,
+                      from: wordAtCurrentVocabulary(move["from"]),
+                      to: wordAtCurrentVocabulary(move["to"]),
+                    };
+                  }),
+                }
+              : {}),
+          },
+        }),
+  };
 }
 
 /** A journaled decision as a correction reads it: the event, and the record it wrote. */
@@ -86,7 +204,7 @@ const removedWallLabels: readonly string[] = [
 function completedWithoutFinalizing(rec: StepRecord): boolean {
   return (
     rec.label === "ticket-done" &&
-    rec.transitions.some((t) => t.from !== "Finalizing")
+    rec.transitions.some((t) => t.from !== "Finalization")
   );
 }
 
@@ -146,13 +264,16 @@ function decisionAtReworkWallParkedEvaluating(
   if (event.type !== "EvalReduce") return decision;
   const id = decisionEventSubject(event);
   const parked = ticketAt(decision.post, id);
-  if (parked.phase !== "Escalated" || parked.reason !== "ReworkBudgetExhausted")
+  if (
+    parked.phase !== "Escalated" ||
+    parked.reason !== "EvaluationFailureEscalated"
+  )
     return decision;
   return {
     rec: decision.rec,
     post: withTicket(decision.post, id, {
       ...parked,
-      resumeAt: "ResumeEvaluating",
+      resumeAt: "ResumeEvaluation",
     }),
   };
 }
@@ -164,19 +285,20 @@ function decisionAtReworkWallParkedEvaluating(
  */
 export function execDecisionEventAt(
   semantics: DecisionSemanticsVersion,
-  core: Core,
+  graph: TicketGraph,
   row: JournaledDecision,
 ): Decision {
   switch (semantics) {
     case 1:
       return decisionAtReworkWallParkedEvaluating(
         row.event,
-        execDecisionEvent(core, eventAtRecordedDisposition(row)),
+        execDecisionEvent(graph, eventAtRecordedDisposition(row)),
       );
     case 2:
-      return execDecisionEvent(core, eventAtRecordedDisposition(row));
+      return execDecisionEvent(graph, eventAtRecordedDisposition(row));
     case 3:
     case 4:
-      return execDecisionEvent(core, row.event);
+    case 5:
+      return execDecisionEvent(graph, row.event);
   }
 }

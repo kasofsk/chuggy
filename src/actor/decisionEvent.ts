@@ -21,7 +21,7 @@
  */
 
 import type { Config } from "../domain/config.ts";
-import { ticketAt, type Decision } from "../domain/core.ts";
+import { ticketAt, type Decision } from "../domain/ticketGraph.ts";
 import {
   decideDispatch,
   decideEvalStageReduce,
@@ -52,12 +52,12 @@ import {
 } from "../domain/enablement.ts";
 import { dispositionChoices } from "../domain/deciders.ts";
 import type {
-  Core,
+  TicketGraph,
   DecisionEvent,
   EvaluationFailureDisposition,
   FinalizationOutcome,
   Reason,
-  Stage,
+  StageDefinition,
   TaskResultRef,
   Verdict,
 } from "../domain/generated/modelTypes.ts";
@@ -69,7 +69,7 @@ export type { DecisionEvent };
 /** What a release freezes onto the ticket, every value of it behaviour-affecting. */
 export interface ReleaseAuthoring {
   readonly deps: ReadonlySet<number>;
-  readonly prog: readonly Stage[];
+  readonly prog: readonly StageDefinition[];
   readonly workFanout: number;
 }
 
@@ -77,12 +77,12 @@ export function releaseTicketEvent(
   ticket: TicketId,
   authoring: ReleaseAuthoring,
 ): DecisionEvent {
-  return { type: "ReleaseTicket", value: { ticket, ...authoring } };
+  return { type: "CreateTicket", value: { ticket, ...authoring } };
 }
 
 /** Extracts the frozen authoring contract from a release fact. */
 export function releaseAuthoringOf(event: DecisionEvent): ReleaseAuthoring {
-  if (event.type !== "ReleaseTicket")
+  if (event.type !== "CreateTicket")
     throw new TypeError("decision event is not a ticket release");
   return {
     deps: event.value.deps,
@@ -143,114 +143,117 @@ export function resumeTicketEvent(ticket: TicketId): DecisionEvent {
 }
 
 /** Total dispatch onto the pure deciders — THE actor's decide step, and nothing else's. */
-export function execDecisionEvent(core: Core, event: DecisionEvent): Decision {
+export function execDecisionEvent(
+  graph: TicketGraph,
+  event: DecisionEvent,
+): Decision {
   switch (event.type) {
-    case "ReleaseTicket": {
+    case "CreateTicket": {
       const { ticket, ...authoring } = event.value;
-      return decideReleaseTicket(core, asTicketId(ticket), {
+      return decideReleaseTicket(graph, asTicketId(ticket), {
         deps: authoring.deps,
         program: authoring.prog,
         workFanout: authoring.workFanout,
       });
     }
     case "Revoke":
-      return decideRevoke(core, asTicketId(event.value));
+      return decideRevoke(graph, asTicketId(event.value));
     case "Dispatch":
-      return decideDispatch(core, asTicketId(event.value));
+      return decideDispatch(graph, asTicketId(event.value));
     case "TaskDone":
       return decideTaskDone(
-        core,
+        graph,
         asTicketId(event.value.ticket),
         event.value.tid as TaskId,
         event.value.verdict,
       );
     case "WorkReduce":
-      return decideWorkReduce(core, asTicketId(event.value));
+      return decideWorkReduce(graph, asTicketId(event.value));
     case "EvalReduce":
       return decideEvalStageReduce(
-        core,
+        graph,
         asTicketId(event.value.ticket),
         event.value.onFailure,
       );
     case "FinalizationResult":
       return decideFinalizationResult(
-        core,
+        graph,
         asTicketId(event.value.ticket),
         event.value.out,
       );
     case "ExecutionBlocked":
       return decideExecutionBlocked(
-        core,
+        graph,
         asTicketId(event.value.ticket),
         event.value.reason,
       );
     case "ResumeTicket":
-      return decideResumeTicket(core, asTicketId(event.value));
+      return decideResumeTicket(graph, asTicketId(event.value));
   }
 }
 
 /** The same enablement the machine's own actions carry, re-checked at a replayed state. */
 export function decisionEventEnabled(
   config: Config,
-  core: Core,
+  graph: TicketGraph,
   event: DecisionEvent,
 ): boolean {
   switch (event.type) {
-    case "ReleaseTicket": {
+    case "CreateTicket": {
       const value = event.value;
       const id = asTicketId(value.ticket);
-      const dependable = new Set<number>(dependableIn(core));
+      const dependable = new Set<number>(dependableIn(graph));
       return (
-        canReleaseIn(config, core, id) &&
+        canReleaseIn(config, graph, id) &&
         [...value.deps].every((d) => dependable.has(d)) &&
         releasableAuthoring(config, value)
       );
     }
     case "Revoke":
-      return revocablesIn(core).includes(asTicketId(event.value));
+      return revocablesIn(graph).includes(asTicketId(event.value));
     case "Dispatch":
-      return readiesIn(core).includes(asTicketId(event.value));
+      return readiesIn(graph).includes(asTicketId(event.value));
     case "TaskDone": {
       const id = asTicketId(event.value.ticket);
       return (
-        taskPhaseIn(core).includes(id) &&
+        taskPhaseIn(graph).includes(id) &&
         event.value.result.manifest >= 1 &&
         event.value.result.digest >= 1 &&
         event.value.result.schema >= 1 &&
-        outstandingTaskIn(core, id, event.value.tid)
+        outstandingTaskIn(graph, id, event.value.tid)
       );
     }
     case "WorkReduce":
-      return reducibleWorkIn(core).includes(asTicketId(event.value));
+      return reducibleWorkIn(graph).includes(asTicketId(event.value));
     case "EvalReduce":
       return (
-        reducibleEvalIn(core).includes(asTicketId(event.value.ticket)) &&
+        reducibleEvalIn(graph).includes(asTicketId(event.value.ticket)) &&
         dispositionChoices.includes(event.value.onFailure)
       );
     case "FinalizationResult": {
       const id = asTicketId(event.value.ticket);
       return (
-        finalizableIn(core, id) &&
+        finalizableIn(graph, id) &&
         finalizationOutcomes.includes(event.value.out) &&
-        finalizationOutcomeEnabled(core, id, event.value.out)
+        finalizationOutcomeEnabled(graph, id, event.value.out)
       );
     }
     case "ExecutionBlocked": {
       const id = asTicketId(event.value.ticket);
       return (
-        taskPhaseIn(core).includes(id) &&
+        taskPhaseIn(graph).includes(id) &&
         executionBlockedReasons.includes(event.value.reason)
       );
     }
     case "ResumeTicket":
-      return retryablesIn(core).includes(asTicketId(event.value));
+      return retryablesIn(graph).includes(asTicketId(event.value));
   }
 }
 
 /** The ticket a decision event is about, which every journal reader needs and no arm hides. */
 export function decisionEventSubject(event: DecisionEvent): TicketId {
   switch (event.type) {
-    case "ReleaseTicket":
+    case "CreateTicket":
     case "TaskDone":
     case "FinalizationResult":
     case "ExecutionBlocked":

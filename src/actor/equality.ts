@@ -19,11 +19,11 @@
  * roster is a failing case.
  */
 
-import { ticketAt, ticketIds } from "../domain/core.ts";
+import { ticketAt, ticketIds } from "../domain/ticketGraph.ts";
 import type {
   ArtifactMark,
-  Core,
-  Stage,
+  TicketGraph,
+  StageDefinition,
   StepRecord,
   Ticket,
   Transition,
@@ -83,7 +83,10 @@ function depsInOrder(deps: ReadonlySet<number>): readonly number[] {
   return [...deps].sort((a, b) => a - b);
 }
 
-function ticketEqualsStage(left: Stage, right: Stage): boolean {
+function ticketEqualsStage(
+  left: StageDefinition,
+  right: StageDefinition,
+): boolean {
   return left.fanout === right.fanout;
 }
 
@@ -109,7 +112,7 @@ export function ticketEquals(left: Ticket, right: Ticket): boolean {
 }
 
 /** Whether two cores hold the same fleet: the same ids, and equal tickets under each. */
-export function coreEquals(left: Core, right: Core): boolean {
+export function graphEquals(left: TicketGraph, right: TicketGraph): boolean {
   const leftIds = ticketIds(left);
   return (
     listEquals(leftIds, ticketIds(right), sameValue) &&

@@ -8,7 +8,7 @@
  * decision and that decision's record, which is what every domain invariant is
  * evaluated against. Only `journalStep` advances the pair — the executor and
  * crash steps are not domain steps, so they carry `(pre, rec)` unchanged, the
- * same stale-ghost arrangement `installCore` states in `model/domain.qnt` and
+ * same stale-ghost arrangement `installGraph` states in `model/domain.qnt` and
  * `src/domain/invariants.ts` explains: re-snapshotting `pre` on an emit would
  * present a step that decided nothing as the domain step `recordMonotone` and
  * the rest of the bundle are meant to check — a step the model proves
@@ -28,15 +28,18 @@
  */
 
 import type { Config } from "../domain/config.ts";
-import type { Core, StepRecord } from "../domain/generated/modelTypes.ts";
-import { initRecord, type Decision } from "../domain/core.ts";
+import type {
+  TicketGraph,
+  StepRecord,
+} from "../domain/generated/modelTypes.ts";
+import { initRecord, type Decision } from "../domain/ticketGraph.ts";
 import type { StepView } from "../domain/invariants.ts";
 import {
   decisionEventEnabled,
   execDecisionEvent,
   type DecisionEvent,
 } from "./decisionEvent.ts";
-import { genesis, replayCore, type Entry } from "./journal.ts";
+import { genesis, replayGraph, type Entry } from "./journal.ts";
 
 /** The actor's whole state: the carried view, the journal, the executor cursor, and the world's ledger. */
 export interface ActorState {
@@ -48,7 +51,7 @@ export interface ActorState {
 }
 
 /** The actor's in-memory domain state, which is the carried view's post. */
-export function memoryCore(state: ActorState): Core {
+export function memoryGraph(state: ActorState): TicketGraph {
   return state.view.post;
 }
 
@@ -70,12 +73,12 @@ function decideEnabled(
   event: DecisionEvent,
   step: string,
 ): Decision {
-  if (!decisionEventEnabled(config, memoryCore(state), event)) {
+  if (!decisionEventEnabled(config, memoryGraph(state), event)) {
     throw new Error(
       `${step}: ${event.type} is refused at this state; the actor journals no decision the machine would not take`,
     );
   }
-  return execDecisionEvent(memoryCore(state), event);
+  return execDecisionEvent(memoryGraph(state), event);
 }
 
 /**
@@ -96,7 +99,7 @@ export function journalStep(
     rec: decision.rec,
   };
   return {
-    view: { pre: memoryCore(state), rec: decision.rec, post: decision.post },
+    view: { pre: memoryGraph(state), rec: decision.rec, post: decision.post },
     journal: [...state.journal, entry],
     applied: state.applied,
     worldEffects: state.worldEffects,
@@ -136,7 +139,7 @@ export function crashRecoverTo(state: ActorState, cursor: number): ActorState {
   }
   return {
     ...state,
-    view: { ...state.view, post: replayCore(state.journal) },
+    view: { ...state.view, post: replayGraph(state.journal) },
     applied: cursor,
   };
 }
@@ -155,7 +158,7 @@ export function effectCrash(
   const decision = decideEnabled(config, state, event, "effectCrash");
   return {
     ...state,
-    view: { ...state.view, post: replayCore(state.journal) },
+    view: { ...state.view, post: replayGraph(state.journal) },
     orphans: [...state.orphans, decision.rec],
   };
 }
