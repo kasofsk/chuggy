@@ -5,10 +5,10 @@
 module chuggy_witness_resume_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2, N_TASKS=2, MAX_STAGES=2).* from "../domain"
-  pure val p = [{ fanout: 1, combinator: UnanimousPass }]
+  pure val p = [{ fanout: 1 }]
   action release(j: int, deps: Set[int]): bool = all {
     releasableIds.contains(j), deps.subseteq(dependableTickets), validPrograms.contains(p),
-    apply(decideReleaseTicket(core, j, deps, p, 1, NoFinalizer)) }
+    apply(decideReleaseTicket(core, j, deps, p, 1)) }
   action doDispatch(j: int): bool = all { readyTickets.contains(j), apply(decideDispatch(core,j)) }
   action done(j: int, tid: int): bool = all {
     deliverableTaskIds(core,j).contains(tid), apply(decideTaskDone(core,j,tid,Pass)) }
@@ -52,10 +52,10 @@ module chuggy_witness_resume_test {
 module chuggy_witness_rework_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2, N_TASKS=1, MAX_STAGES=1).* from "../domain"
-  pure val p = [{ fanout: 1, combinator: UnanimousPass }]
+  pure val p = [{ fanout: 1 }]
   action release(j: int): bool = all {
     releasableIds.contains(j), validPrograms.contains(p),
-    apply(decideReleaseTicket(core, j, Set(), p, 1, NoFinalizer)) }
+    apply(decideReleaseTicket(core, j, Set(), p, 1)) }
   action doDispatch(j: int): bool = all { readyTickets.contains(j), apply(decideDispatch(core,j)) }
   action done(j: int, tid: int, v: Verdict): bool = all {
     deliverableTaskIds(core,j).contains(tid), apply(decideTaskDone(core,j,tid,v)) }
@@ -95,31 +95,11 @@ module chuggy_witness_rework_test {
       tickets.get(4).resumeAt == NoResume, allInvariants })
 }
 
-module chuggy_witness_cascade_test {
-  import chuggy_ticket.* from "../ticket"
-  import chuggy_domain(N_TICKETS=3, N_TASKS=1, MAX_STAGES=1).* from "../domain"
-  pure val p = [{ fanout: 1, combinator: UnanimousPass }]
-  action release(j: int, deps: Set[int]): bool = all { releasableIds.contains(j),
-    deps.subseteq(dependableTickets), apply(decideReleaseTicket(core,j,deps,p,1,NoFinalizer)) }
-  action doRevoke(j: int): bool = all { revocableTickets.contains(j), apply(decideRevoke(core,j)) }
-  run sparseReverseCascadeWitness = init
-    .then(release(5, Set())).expect(allInvariants)
-    .then(release(2, Set(5))).expect(and { tickets.get(2).deps == Set(5), allInvariants })
-    .then(release(6, Set(2))).expect(allInvariants)
-    .then(doRevoke(5)).expect(and {
-      lastStep.transitions == [
-        { ticket: 5, from: Pending, to: Revoked },
-        { ticket: 2, from: Pending, to: Escalated },
-        { ticket: 6, from: Pending, to: Escalated }],
-      tickets.get(2).reason == DependencyRevoked,
-      tickets.get(6).reason == DependencyRevoked, allInvariants })
-}
-
 module chuggy_witness_stage_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=1, N_TASKS=2, MAX_STAGES=2).* from "../domain"
-  pure val p = [{ fanout: 1, combinator: UnanimousPass }, { fanout: 1, combinator: AnyPass }]
-  action release: bool = apply(decideReleaseTicket(core,2,Set(),p,1,NoFinalizer))
+  pure val p = [{ fanout: 1 }, { fanout: 1 }]
+  action release: bool = apply(decideReleaseTicket(core,2,Set(),p,1))
   action doDispatch: bool = all { readyTickets.contains(2), apply(decideDispatch(core,2)) }
   action done(tid:int): bool = all { deliverableTaskIds(core,2).contains(tid), apply(decideTaskDone(core,2,tid,Pass)) }
   action wr: bool = all { reducibleWork.contains(2), apply(decideWorkReduce(core,2)) }
@@ -127,31 +107,30 @@ module chuggy_witness_stage_test {
   run stagedProgramWitness = init.then(release).then(doDispatch).then(done(1)).then(wr)
     .then(done(2)).then(er).expect(and { tickets.get(2).phase == Evaluating,
       lastStep.transitions == [{ticket:2, from:Evaluating, to:Evaluating}], allInvariants })
-    .then(done(3)).then(er).expect(and { tickets.get(2).phase == Done, allInvariants })
+    .then(done(3)).then(er).expect(and { tickets.get(2).phase == Finalizing, allInvariants })
 }
 
 /// Authored data is ticket-local and immutable: two tickets released into
-/// one fleet keep the fan-out and the wrap-up kind each was authored with.
+/// one fleet keep the fan-out each was authored with.
 module chuggy_witness_sparse_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2, N_TASKS=2, MAX_STAGES=1).* from "../domain"
-  pure val p = [{ fanout: 1, combinator: UnanimousPass }]
-  action release(j:int, wf:int, f:Finalizer): bool = all {
+  pure val p = [{ fanout: 1 }]
+  action release(j:int, wf:int): bool = all {
     releasableIds.contains(j), workFanoutChoices.contains(wf),
-    apply(decideReleaseTicket(core,j,Set(),p,wf,f)) }
+    apply(decideReleaseTicket(core,j,Set(),p,wf)) }
   run ticketLocalPolicyWitness = init
-    .then(release(1,1,ManagedFinalizer))
-    .then(release(4,2,NoFinalizer))
+    .then(release(1,1))
+    .then(release(4,2))
     .expect(and { tickets.get(1).workFanout == 1, tickets.get(4).workFanout == 2,
-      tickets.get(1).finalizer == ManagedFinalizer,
-      tickets.get(4).finalizer == NoFinalizer, allInvariants })
+      allInvariants })
 }
 
 module chuggy_witness_gate_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2, N_TASKS=1, MAX_STAGES=1).* from "../domain"
-  pure val p=[{fanout:1,combinator:UnanimousPass}]
-  action release(j:int):bool=apply(decideReleaseTicket(core,j,Set(),p,1,ManagedFinalizer))
+  pure val p=[{fanout:1}]
+  action release(j:int):bool=apply(decideReleaseTicket(core,j,Set(),p,1))
   action doDispatch(j:int):bool=all{readyTickets.contains(j),apply(decideDispatch(core,j))}
   action td(j:int,tid:int):bool=all{deliverableTaskIds(core,j).contains(tid),apply(decideTaskDone(core,j,tid,Pass))}
   action wr(j:int):bool=all{reducibleWork.contains(j),apply(decideWorkReduce(core,j))}
@@ -179,21 +158,9 @@ module chuggy_witness_gate_test {
 module chuggy_witness_dependency_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2,N_TASKS=1,MAX_STAGES=1).* from "../domain"
-  pure val p=[{fanout:1,combinator:UnanimousPass}]
+  pure val p=[{fanout:1}]
   run existingDependencyWitness=init
-    .then(apply(decideReleaseTicket(core,4,Set(),p,1,NoFinalizer)))
-    .then(apply(decideReleaseTicket(core,1,Set(4),p,1,NoFinalizer)))
+    .then(apply(decideReleaseTicket(core,4,Set(),p,1)))
+    .then(apply(decideReleaseTicket(core,1,Set(4),p,1)))
     .expect(and{tickets.keys()==Set(1,4),tickets.get(1).deps==Set(4),isBlocked(1),allInvariants})
-}
-
-module chuggy_witness_wrapup_none_test {
-  import chuggy_ticket.* from "../ticket"
-  import chuggy_domain(N_TICKETS=1,N_TASKS=1,MAX_STAGES=1).* from "../domain"
-  pure val p=[{fanout:1,combinator:UnanimousPass}]
-  run noFinalizerWitness=init
-    .then(apply(decideReleaseTicket(core,2,Set(),p,1,NoFinalizer)))
-    .then(apply(decideDispatch(core,2))).then(apply(decideTaskDone(core,2,1,Pass)))
-    .then(apply(decideWorkReduce(core,2))).then(apply(decideTaskDone(core,2,2,Pass)))
-    .then(apply(decideEvalStageReduce(core,2,ReworkEvaluationFailure))).expect(and{tickets.get(2).phase==Done,
-      allInvariants})
 }

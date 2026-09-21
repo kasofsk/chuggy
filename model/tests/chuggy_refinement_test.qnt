@@ -7,10 +7,9 @@ module chuggy_refinement_unit_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
 
-  pure val progFlat: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
+  pure val progFlat: List[Stage] = [{ fanout: 1 }]
   pure val release10: DecisionEvent = ReleaseTicket({
-    ticket: 2, deps: Set(), prog: progFlat, workFanout: 1,
-    finalizer: ManagedFinalizer
+    ticket: 2, deps: Set(), prog: progFlat, workFanout: 1
   })
   pure val d1 = execDecisionEvent(genesis, release10)
   pure val e1: Entry = { seq: 1, event: release10, rec: d1.rec }
@@ -61,12 +60,10 @@ module chuggy_refinement_unit_test {
 
   run journalRefusesInvalidReleasePayloadTest =
     val badDeps: DecisionEvent = ReleaseTicket({
-      ticket: 2, deps: Set(99), prog: progFlat, workFanout: 1,
-      finalizer: ManagedFinalizer
+      ticket: 2, deps: Set(99), prog: progFlat, workFanout: 1
     })
     val badProgram: DecisionEvent = ReleaseTicket({
-      ticket: 2, deps: Set(), prog: [], workFanout: 1,
-      finalizer: ManagedFinalizer
+      ticket: 2, deps: Set(), prog: [], workFanout: 1
     })
     assert(and {
       not(decisionEventEnabled(genesis, badDeps)),
@@ -99,10 +96,9 @@ module chuggy_refinement_witness_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
 
-  pure val progFlat: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
-  pure def release(ticket: int, finalizer: Finalizer): DecisionEvent = ReleaseTicket({
-    ticket: ticket, deps: Set(), prog: progFlat, workFanout: 1,
-    finalizer: finalizer
+  pure val progFlat: List[Stage] = [{ fanout: 1 }]
+  pure def release(ticket: int): DecisionEvent = ReleaseTicket({
+    ticket: ticket, deps: Set(), prog: progFlat, workFanout: 1
   })
 
   /// Every eval reduce below walks a PASSING stage, where the disposition is
@@ -120,7 +116,7 @@ module chuggy_refinement_witness_test {
   /// and resumes by spawning a fresh task under the ticket's pinned policy.
   run executionBlockedResumeRecoversTest =
     rinit
-      .then(stepEmit(release(2, ManagedFinalizer), "ticket-released"))
+      .then(stepEmit(release(2), "ticket-released"))
       .then(stepEmit(Dispatch(2), "dispatch"))
       .then(journalStep(ExecutionBlocked({
         ticket: 2, reason: TicketConfigIncompatible })))
@@ -151,7 +147,7 @@ module chuggy_refinement_witness_test {
   /// completion.
   run finalizationCompletionCrashRecoveryTest =
     rinit
-      .then(stepEmit(release(2, ManagedFinalizer), "ticket-released"))
+      .then(stepEmit(release(2), "ticket-released"))
       .then(stepEmit(Dispatch(2), "dispatch"))
       .then(stepEmit(TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(WorkReduce(2), "work-passed"))
@@ -182,7 +178,7 @@ module chuggy_refinement_witness_test {
 
   run finalizationFailureEntersReworkTest =
     rinit
-      .then(stepEmit(release(2, ManagedFinalizer), "ticket-released"))
+      .then(stepEmit(release(2), "ticket-released"))
       .then(stepEmit(Dispatch(2), "dispatch"))
       .then(stepEmit(TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(WorkReduce(2), "work-passed"))
@@ -196,37 +192,15 @@ module chuggy_refinement_witness_test {
         memCore.tickets.get(2).completions == 0,
         allDomainInvariants, refinementInvariants
       })
-
-  run noFinalizerCompletionRecoversTest =
-    rinit
-      .then(stepEmit(release(4, NoFinalizer), "ticket-released"))
-      .then(stepEmit(Dispatch(4), "dispatch"))
-      .then(stepEmit(TaskDone({ ticket: 4, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
-      .then(stepEmit(WorkReduce(4), "work-passed"))
-      .then(stepEmit(TaskDone({ ticket: 4, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
-      .then(journalStep(evalReduce(4)))
-      .expect(and {
-        obs.label == "ticket-done",
-        memCore.tickets.get(4).phase == Done,
-        journalCompletions(4) == 1,
-        allDomainInvariants, refinementInvariants
-      })
-      .then(crashRecoverTo(0))
-      .expect(and {
-        memCore.tickets.get(4).phase == Done,
-        memCore.tickets.get(4).finalizer == NoFinalizer,
-        allDomainInvariants, refinementInvariants
-      })
 }
 
 module chuggy_refinement_hazard_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
 
-  pure val progFlat: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
+  pure val progFlat: List[Stage] = [{ fanout: 1 }]
   pure val release10: DecisionEvent = ReleaseTicket({
-    ticket: 2, deps: Set(), prog: progFlat, workFanout: 1,
-    finalizer: ManagedFinalizer
+    ticket: 2, deps: Set(), prog: progFlat, workFanout: 1
   })
 
   /// The hazard walks below reach the eval reduce on a PASSED stage once and

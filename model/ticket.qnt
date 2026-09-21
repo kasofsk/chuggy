@@ -107,22 +107,13 @@ module chuggy_ticket {
   /// stored resolution — duplicates of the event must be tolerated).
   type Verdict = Pass | Fail
 
-  /// Verdict combinator over a resolved task set. Not a
-  /// machine-wide parameter — each STAGE of a ticket's authored program
-  /// carries its own, because eval is data. The default, unanimous
-  /// pass, is the default program's combinator
-  /// (domain.qnt defaultProgram). UnanimousPass is the
-  /// required-evaluator rule — every required evaluator in the stage
-  /// passed — at chuggy's grain. The required/advisory split is BELOW that
-  /// grain: an advisory evaluator is one the stage's combinator ignores.
-  type Combinator = UnanimousPass | AnyPass
-
-  /// One stage of a ticket's eval program: a task-set with its own
-  /// fan-out width and its own verdict combinator: one task per evaluator
-  /// in the lowest stage, fanned out in parallel — a
-  /// stage's width is its evaluator count, its combinator is the
-  /// required-pass rule.
-  type Stage = { fanout: int, combinator: Combinator }
+  /// One stage of a ticket's eval program: a task-set with its own fan-out
+  /// width — one task per evaluator in the stage, fanned out in parallel, so
+  /// a stage's width is its evaluator count. What the stage does with the
+  /// verdicts is not per-stage data: every evaluator in it must pass
+  /// (combine below), and the required/advisory split is BELOW that grain —
+  /// an advisory evaluator is one the stage does not carry.
+  type Stage = { fanout: int }
 
   /// WHAT AN EVALUATION FAILURE DOES. The machine consults this at every
   /// failing stage (domain.qnt decideEvalStageReduce) and takes exactly one
@@ -136,10 +127,9 @@ module chuggy_ticket {
     ReworkEvaluationFailure
     | EscalateEvaluationFailure
 
-  /// Where an operator Retry resumes a parked ticket. NoResume when not parked —
-  /// or parked with NO modeled resume: revoke is the only modeled exit from
-  /// the dependency_revoked wall (domain.qnt modeledResumeExists), and
-  /// stamping a resume point on it would be a lie to the desk.
+  /// Where an operator Retry resumes a parked ticket. NoResume when not
+  /// parked: every wall parks with a resume point from the list below, and a
+  /// resume point on an unparked ticket would be a lie to the desk.
   ///
   /// ResumeReworking is the evaluation-failure wall's: it re-enters Working
   /// as a new cycle. That wall is reached by a VERDICT, and a verdict has no
@@ -155,11 +145,10 @@ module chuggy_ticket {
   /// wall: retrying a failed container below the cycle grain is the fabric's
   /// job, trusted here rather than modeled). ReworkBudgetExhausted is the
   /// evaluation-failure wall, reached when the failure's disposition is
-  /// Escalate. DependencyRevoked is the cascade wall and is not retryable;
-  /// its only exit is revoke. The remaining reasons name what infrastructure
-  /// refused when it could not run an intact task set.
+  /// Escalate. The remaining reasons name what infrastructure refused when
+  /// it could not run an intact task set.
   type Reason =
-    NoReason | WorkFailed | ReworkBudgetExhausted | DependencyRevoked |
+    NoReason | WorkFailed | ReworkBudgetExhausted |
     ExecutionPolicyDenied | TicketConfigIncompatible |
     ExecutionProfileUnavailable | RuntimeVersionUnsupported |
     RequiredCapabilityUnavailable
@@ -174,19 +163,6 @@ module chuggy_ticket {
   ///                            environment invalidated the artifact
   ///                            (domain.qnt finalizationOutcomes).
   type FinalizationOutcome = FinalizationSucceeded | FinalizationFailed
-
-  /// HOW A TICKET FINISHES (design 002), authored data on the ticket exactly
-  /// like the eval program — eval-is-data applied one seam later.
-  ///
-  ///   NoFinalizer            the effect was external and already happened during
-  ///                    work; evaluation passing completes the ticket, and
-  ///                    it enters neither wrap-up phase. A deploy, a report.
-  ///   ManagedFinalizer    a constrained, platform-owned finalizer must
-  ///                    conclusively succeed or fail after evaluation.
-  ///
-  /// Mutual exclusion, queue order, approval, and implementation belong to
-  /// durable operational records. Core retains only this requirement.
-  type Finalizer = NoFinalizer | ManagedFinalizer
 
   /// WHAT A TICKET PRODUCED (design 002): an opaque identity for the thing
   /// work built, that evaluation judged, and that wrap-up commits. Its only
@@ -209,10 +185,6 @@ module chuggy_ticket {
     // Upstream dependency ticket ids (acyclic by construction in domain.qnt).
     // Core is project-scoped, so every edge is project-local by construction.
     deps: Set[int],
-    // How this ticket finishes (design 002): authored, immutable after
-    // release, and what decides whether it takes a lease or completes at
-    // eval-pass.
-    finalizer: Finalizer,
     // The artifact this ticket has produced, if it has passed work (design
     // 002). Set at work-passed and superseded by each rework's product.
     artifact: ArtifactMark,
@@ -252,13 +224,11 @@ module chuggy_ticket {
     // DROPPED a task set instead of retiring it would break the equality
     // in the very next state.
     spawned: int,
-    // Operator-resume point (NoResume unless Escalated with a modeled
-    // resume — the dependency_revoked wall has none; see Resume).
+    // Operator-resume point (NoResume unless Escalated; see Resume).
     resumeAt: Resume,
     // Desk reason (NoReason unless Escalated). Deliberately FIRST-CLASS
-    // stored trace vocabulary, not derived from phase — and the
-    // With one parked phase, the reason distinguishes the cascade wall
-    // (DependencyRevoked, not retryable) from retryable pipeline walls.
+    // stored trace vocabulary, not derived from phase: with one parked
+    // phase, the reason is what tells the desk which wall it is looking at.
     reason: Reason,
     // GHOST: completion effects ever emitted for this ticket — the counter the
     // effect-exclusivity invariant (exactly one completion) reads.
@@ -275,10 +245,9 @@ module chuggy_ticket {
   ///
   /// Revoked is deliberately NOT here: revocation is the author's
   /// settled choice — the desk owes a revoked ticket nothing, exactly like
-  /// Done. This is precisely why the revoke cascade needs its own
-  /// coverage: a dependent stuck behind a Revoked dep gets no visibility
-  /// through its dep, so the cascade parks it with a task of its OWN
-  /// (DependencyRevoked; domain.qnt `cascadeSafety`).
+  /// Done. A dependent behind a Revoked dep gets no desk task through that
+  /// dep either: it stays Pending, waiting on a dependency that will never
+  /// be Done, and its author settles it by revoking it too.
   pure def hasOpenHumanTask(ticket: Ticket): bool = ticket.phase == Escalated
 
   /// The machine's observed state, as the pure deciders see it. A record
@@ -384,19 +353,15 @@ module chuggy_ticket {
       if (t.id == tid and t.state == Outstanding) { ...t, state: Resolved(out) }
       else t)
 
-  /// What counts as a PASS to the combinator: a verdict earned this
-  /// incarnation. Named rather than inlined because `combine` reads it
-  /// twice and the tests pin it directly.
+  /// What counts as a PASS to the stage verdict: a verdict earned this
+  /// incarnation. Named rather than inlined because the tests pin it
+  /// directly.
   pure def taskPassed(t: Task): bool = t.state == Resolved(Passed)
 
-  /// The verdict combinator, interpreted per stage (the caller reads
-  /// it off the ticket's program — eval is data, this is the interpreter's
-  /// leaf). Callers guarantee every task is resolved.
-  /// UnanimousPass is "every required evaluator in the stage passed" at
-  /// this grain; Failed and Cancelled both fail it (taskPassed above).
-  pure def combine(c: Combinator, tasks: Set[Task]): bool =
-    match c {
-      | UnanimousPass => tasks.forall(t => taskPassed(t))
-      | AnyPass => tasks.exists(t => taskPassed(t))
-    }
+  /// THE STAGE VERDICT: every evaluator in the stage passed. Callers
+  /// guarantee every task is resolved; Failed and Cancelled both fail it
+  /// (taskPassed above). This is "every required evaluator in the stage
+  /// passed" at chuggy's grain, a stage's roster being its required
+  /// evaluators.
+  pure def combine(tasks: Set[Task]): bool = tasks.forall(t => taskPassed(t))
 }
