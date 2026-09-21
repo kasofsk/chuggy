@@ -22,10 +22,18 @@
  * a second copy of it here.
  *
  * THE SAME FILES CARRY THE KEYS SEMANTICS 4 DROPPED, so the acceptances below
- * are read off them rather than off bytes written to be accepted. The refusals
- * have no such fixture — no history in this tree was decided by the machine
- * that completed without a finalizer or cascaded a revoke — so each is a
- * pinned row under the record that machine would have written.
+ * are read off them rather than off bytes written to be accepted. The refusal
+ * has no such fixture — no history in this tree was decided by the machine that
+ * completed without a finalizer — so it is a pinned row under the record that
+ * machine would have written.
+ *
+ * THE CASCADE HISTORY IS PINNED THE SAME WAY, in the shape the rig's rows
+ * carry: a revoke whose record settles its own ticket and parks the two
+ * dependents behind it, and then each dependent's own revoke out of the park.
+ * Every record in it is written out rather than taken from a decision, because
+ * the record under test is one no decider in this tree writes, and the records
+ * after it are what says the parked tickets were left where a revoke could
+ * still reach them.
  */
 
 import assert from "node:assert/strict";
@@ -35,7 +43,9 @@ import { test } from "node:test";
 
 import {
   decisionEventEnabled,
+  releaseTicketEvent,
   resumeTicketEvent,
+  revokeEvent,
 } from "../../src/actor/decisionEvent.ts";
 import {
   journalLegalOn,
@@ -48,11 +58,14 @@ import {
   decisionSemanticsVersionCurrent,
   isDecisionSemanticsVersion,
   replayableDecision,
+  type DecisionSemanticsVersion,
 } from "../../src/actor/decisionSemantics.ts";
 import { parseStoredEntry } from "../../src/interpreter/wire.ts";
+import type { StepRecord } from "../../src/domain/generated/modelTypes.ts";
 import { ticketAt } from "../../src/domain/core.ts";
+import { modelInstance } from "../domain/configs.ts";
 import { id } from "../domain/fixtures.ts";
-import { refinementInstance } from "./harness.ts";
+import { plainAuthoring, refinementInstance } from "./harness.ts";
 
 const config = refinementInstance;
 
@@ -73,13 +86,61 @@ function pinned(file: string): readonly Entry[] {
 /** A pinned history as a store holding it would present it, every row at one semantics. */
 function storedAt(
   entries: readonly Entry[],
-  semantics: 1 | 2,
+  semantics: DecisionSemanticsVersion,
 ): readonly StoredEntry[] {
   return entries.map((entry) => ({ entry, semantics }));
 }
 
 const reworkedWall = pinned("journalAtSemanticsOne.json");
 const walls = pinned("journalAtSemanticsOneWalls.json");
+
+/** The record a release writes, which moves nothing that was already in the fleet. */
+const released: StepRecord = {
+  label: "ticket-released",
+  transitions: [],
+  effects: [],
+};
+
+/** What a dependent of the revoked ticket was released with. */
+const behindTheRevoked = { ...plainAuthoring, deps: new Set<number>([1]) };
+
+/** The rig's shape: a revoke that parked the two dependents, and their own revokes after it. */
+const cascade: readonly Entry[] = [
+  { seq: 1, event: releaseTicketEvent(id(1), plainAuthoring), rec: released },
+  { seq: 2, event: releaseTicketEvent(id(2), behindTheRevoked), rec: released },
+  { seq: 3, event: releaseTicketEvent(id(3), behindTheRevoked), rec: released },
+  {
+    seq: 4,
+    event: revokeEvent(id(1)),
+    rec: {
+      label: "ticket-revoked",
+      transitions: [
+        { ticket: id(1), from: "Pending", to: "Revoked" },
+        { ticket: id(2), from: "Pending", to: "Escalated" },
+        { ticket: id(3), from: "Pending", to: "Escalated" },
+      ],
+      effects: ["CancelTicketWork", "OpenHumanTask", "OpenHumanTask"],
+    },
+  },
+  {
+    seq: 5,
+    event: revokeEvent(id(2)),
+    rec: {
+      label: "ticket-revoked",
+      transitions: [{ ticket: id(2), from: "Escalated", to: "Revoked" }],
+      effects: ["CancelTicketWork"],
+    },
+  },
+  {
+    seq: 6,
+    event: revokeEvent(id(3)),
+    rec: {
+      label: "ticket-revoked",
+      transitions: [{ ticket: id(3), from: "Escalated", to: "Revoked" }],
+      effects: ["CancelTicketWork"],
+    },
+  },
+];
 
 test("the reworked history walks the rework wall and resumes past it", () => {
   const walled = reworkedWall.filter(
@@ -247,28 +308,36 @@ test("a row that completed a ticket without running a finalizer cannot be replay
   );
 });
 
-test("a revoke that transitioned more than its own ticket cannot be replayed", () => {
-  const row = walls[5];
-  assert.ok(row !== undefined);
-  const settles = { ticket: id(1), from: "Pending", to: "Revoked" } as const;
-  const cascaded = {
-    ...row,
-    rec: {
-      label: "ticket-revoked",
-      transitions: [
-        settles,
-        { ticket: id(2), from: "Pending", to: "Escalated" } as const,
-      ],
-      effects: ["CancelTicketWork", "OpenHumanTask"],
-    },
-  };
-  assert.ok(!replayableDecision(cascaded));
+test("a revoke that parked the tickets behind it is replayed, not refused", () => {
+  const cascaded = cascade[3];
+  assert.ok(cascaded !== undefined);
+  assert.ok(replayableDecision(cascaded));
+  for (const semantics of [1, 2, 3] as const)
+    assert.ok(
+      storedJournalLegalOn(modelInstance, storedAt(cascade, semantics)),
+      `the cascade is a history the machine at ${String(semantics)} took`,
+    );
   assert.ok(
-    replayableDecision({
-      ...cascaded,
-      rec: { ...cascaded.rec, transitions: [settles] },
-    }),
+    !storedJournalLegalOn(modelInstance, storedAt(cascade, 4)),
     "the revoke this machine takes transitions its own ticket alone",
   );
-  assert.ok(!storedJournalLegalOn(config, [{ entry: cascaded, semantics: 1 }]));
+});
+
+test("the cascade parks its dependents where nothing but a revoke reaches them", () => {
+  const parked = storedReplayCore(storedAt(cascade.slice(0, 4), 2));
+  assert.equal(ticketAt(parked, id(1)).phase, "Revoked");
+  for (const dependent of [id(2), id(3)]) {
+    const ticket = ticketAt(parked, dependent);
+    assert.equal(ticket.phase, "Escalated");
+    assert.equal(ticket.reason, "NoReason");
+    assert.equal(ticket.resumeAt, "NoResume");
+    const resume = resumeTicketEvent(dependent);
+    assert.ok(!decisionEventEnabled(modelInstance, parked, resume));
+    assert.ok(
+      decisionEventEnabled(modelInstance, parked, revokeEvent(dependent)),
+    );
+  }
+  const settled = storedReplayCore(storedAt(cascade, 2));
+  for (const dependent of [id(2), id(3)])
+    assert.equal(ticketAt(settled, dependent).phase, "Revoked");
 });
