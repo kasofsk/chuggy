@@ -20,7 +20,7 @@
  * model, it is a failure the moment the model moves.
  */
 
-import type { Decision } from "../../src/domain/core.ts";
+import type { Decision } from "../../src/domain/ticketGraph.ts";
 import {
   decideDispatch,
   decideEvalStageReduce,
@@ -33,13 +33,16 @@ import {
   decideWorkReduce,
   settledRecord,
 } from "../../src/domain/deciders.ts";
-import type { Core, Stage } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  TicketGraph,
+  StageDefinition,
+} from "../../src/domain/generated/modelTypes.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 import {
   decodeEvaluationFailureDisposition,
   decodeFinalizationOutcome,
   decodeReason,
-  decodeStage,
+  decodeStageDefinition,
   decodeVerdict,
 } from "../../src/generated/model-api.ts";
 import type { ItfValue } from "../itf/decode.ts";
@@ -90,10 +93,10 @@ function drawnIds(value: ItfValue): readonly number[] {
 }
 
 /** A drawn program: a list of stages, each read through its own decoder. */
-function drawnProgram(value: ItfValue): readonly Stage[] {
+function drawnProgram(value: ItfValue): readonly StageDefinition[] {
   const raw = itfToWire(value);
   if (!Array.isArray(raw)) throw new Error("replay: a program draw is a list");
-  return raw.map((stage) => decodeStage(stage));
+  return raw.map((stage) => decodeStageDefinition(stage));
 }
 
 /** A draw the action needs, refused rather than defaulted when the trace has none. */
@@ -114,7 +117,11 @@ function drawn(
  * Replays one recorded step through this implementation's deciders. The caller
  * guarantees the action was enabled at `pre`, which the golden's existence is.
  */
-export function replayStep(pre: Core, action: string, picks: Picks): Decision {
+export function replayStep(
+  pre: TicketGraph,
+  action: string,
+  picks: Picks,
+): Decision {
   const need = (value: ItfValue | undefined, name: string): ItfValue =>
     drawn(value, name, action);
   const j = (): TicketId => decodeTicketId(need(picks.ticket, "j"));

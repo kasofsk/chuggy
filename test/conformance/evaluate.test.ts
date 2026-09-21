@@ -14,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { ticketAt } from "../../src/domain/core.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 import {
   failedInvariants,
@@ -23,7 +23,7 @@ import {
 } from "../../src/domain/invariants.ts";
 import { modelInstance } from "../domain/configs.ts";
 import {
-  coreOf,
+  graphOf,
   depsOf,
   fleetBut,
   healthyFleet,
@@ -38,7 +38,7 @@ const fleet = healthyFleet(config);
 const healthy = initialView(fleetBut(fleet, 0, {}));
 
 /** A ticket whose dependency is not in the map, which is where a derived walk falls over. */
-const dangling = initialView(coreOf([ticketOn(config, { deps: depsOf(9) })]));
+const dangling = initialView(graphOf([ticketOn(config, { deps: depsOf(9) })]));
 
 test("a healthy state answers every leaf, and answers each of them yes", () => {
   const verdict = evaluateBundle(config, healthy);
@@ -86,7 +86,7 @@ test("a leaf that cannot be asked is named rather than taking the run down", () 
   ]);
   assert.deepEqual(verdict.failed, ["depsAcyclic"]);
   assert.deepEqual(verdict.refused, [
-    "readsADanglingDep (core: no ticket 9; a decider was called on a state that refuses it)",
+    "readsADanglingDep (graph: no ticket 9; a decider was called on a state that refuses it)",
   ]);
   assert.ok(!bundleHolds(verdict), "a refusal is a finding, not a pass");
 });
