@@ -11,6 +11,7 @@ import {
 import { migration006 } from "../../src/adapters/postgres/schema/migrations/006-rename.ts";
 import { migration007 } from "../../src/adapters/postgres/schema/migrations/007-finalization-unavailable.ts";
 import { migration008 } from "../../src/adapters/postgres/schema/migrations/008-escalation-sum.ts";
+import { migration009 } from "../../src/adapters/postgres/schema/migrations/009-work-fanout.ts";
 import { encodeDispatchProgram } from "../../src/interpreter/dispatchView.ts";
 import type { StageDefinition } from "../../src/domain/generated/modelTypes.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
@@ -3318,7 +3319,11 @@ test("the desk task takes the projection's roster and keeps the arm its settled 
   });
 });
 
-/** An event at each shape the wipe leaves reachable, and the two vintages it does not. */
+/**
+ * An event at each shape the wipe leaves reachable, and the two vintages it
+ * does not — read at the schema 008 left, the last one whose release tag
+ * carries a fan-out.
+ */
 const escalationEvents: readonly (readonly [string, unknown, boolean])[] = [
   [
     "a block naming its ticket alone",
@@ -3362,7 +3367,7 @@ const escalationEvents: readonly (readonly [string, unknown, boolean])[] = [
 
 test("the boundary admits a block that names only its ticket, and neither spelling the wipe retired", async () => {
   await migrationDatabase("escalation_events", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration008.version);
     for (const [label, event, admitted] of escalationEvents)
       assert.deepEqual(
         (
@@ -3482,6 +3487,167 @@ test("the approval door writes a desk task at no escalation", async () => {
         )
       ).rows,
       [{ escalation: "NoEscalation" }],
+    );
+  });
+});
+
+test("a fresh install records the work fan-out leaving the ticket", async () => {
+  await migrationDatabase("fanout_install", async (subject) => {
+    assert.ok((await postgresMigrate(subject)).includes(migration009.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT version,name FROM schema_migration WHERE version=$1",
+          [migration009.version],
+        )
+      ).rows,
+      [
+        {
+          version: migration009.version,
+          name: "a work set is one task, so a ticket authors no fan-out",
+        },
+      ],
+    );
+  });
+});
+
+test("a journal with an entry in it refuses the fan-out leaving and names the wipe", async () => {
+  await migrationDatabase("fanout_guard", async (subject) => {
+    await installationBefore(subject, migration009.version);
+    await subject.query(`${deletionPartition}\n${journaledDecision}`);
+    await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT column_name FROM information_schema.columns
+           WHERE table_name='dispatch_candidate' AND column_name='work_fanout'`,
+        )
+      ).rows,
+      [{ column_name: "work_fanout" }],
+      "the column the guard refused over is the column it left",
+    );
+    assert.deepEqual(
+      (
+        await postgresRuntimeSchema(subject).applied(
+          new AbortController().signal,
+        )
+      )
+        .map(({ version }) => version)
+        .at(-1),
+      migration009.version - 1,
+    );
+  });
+});
+
+/** What a candidate hangs from: the project's dispatch view and the revision it was cut against. */
+const fanoutDispatchView = `
+  INSERT INTO configuration_revision
+    (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+  VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
+  INSERT INTO dispatch_view(tenant,project,recovery_epoch,watermark,schema_version,digest)
+  VALUES('tenant-5','project-5','epoch-5',1,1,repeat('a',64))`;
+
+function fanoutCandidate(ticket: number, version: number): string {
+  return `INSERT INTO dispatch_candidate
+       (tenant,project,ticket,ticket_version,program,
+        configuration_revision,configuration_digest,configuration_canonical)
+     VALUES('tenant-5','project-5',${String(ticket)},${String(version)},'[]',
+            'revision-5','digest-5','{}')`;
+}
+
+test("a candidate publishes no width and keeps the floors that stood beside it", async () => {
+  await migrationDatabase("fanout_candidate", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(`${deletionPartition}\n${fanoutDispatchView}`);
+    await subject.query(fanoutCandidate(1, 1));
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT count(*)::int AS held FROM information_schema.columns
+            WHERE table_name='dispatch_candidate' AND column_name='work_fanout'`,
+        )
+      ).rows,
+      [{ held: 0 }],
+    );
+    for (const [what, ticket, version] of [
+      ["a candidate for no ticket", 0, 1],
+      ["a candidate at no version", 2, 0],
+    ] as const)
+      await assert.rejects(
+        subject.query(fanoutCandidate(ticket, version)),
+        /dispatch_candidate_check/u,
+        what,
+      );
+  });
+});
+
+/** The release tag at each shape, and the width this image refuses to be told. */
+const fanoutEvents: readonly (readonly [string, unknown, boolean])[] = [
+  [
+    "the release tag this image writes",
+    { type: "CreateTicket", value: { ticket: 1, deps: [], prog: [] } },
+    true,
+  ],
+  [
+    "a release still naming the width it was authored at",
+    {
+      type: "CreateTicket",
+      value: { ticket: 1, deps: [], prog: [], workFanout: 1 },
+    },
+    false,
+  ],
+  [
+    "a release naming a width of none",
+    {
+      type: "CreateTicket",
+      value: { ticket: 1, deps: [], prog: [], workFanout: null },
+    },
+    false,
+  ],
+];
+
+test("the boundary admits a release that names no fan-out and refuses one that names any", async () => {
+  await migrationDatabase("fanout_events", async (subject) => {
+    await postgresMigrate(subject);
+    for (const [label, event, admitted] of fanoutEvents)
+      assert.deepEqual(
+        (
+          await subject.query<{ admitted: boolean }>(
+            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+            [JSON.stringify(event)],
+          )
+        ).rows,
+        [{ admitted }],
+        label,
+      );
+  });
+});
+
+/** The validator the fan-out left, named as the grants that govern it name it. */
+const fanoutValidator = "public.decision_event_is_valid(jsonb)";
+
+test("the validator replaced whole stays the boundary owner's and nobody's to execute", async () => {
+  await migrationDatabase("fanout_validator", async (subject) => {
+    await postgresMigrate(subject);
+    for (const role of [apiRole, ticketServiceRole, "public"])
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+            [role, fanoutValidator],
+          )
+        ).rows[0]?.granted,
+        false,
+        role,
+      );
+    assert.equal(
+      (
+        await subject.query<{ owner: string }>(
+          "SELECT pg_get_userbyid(proowner) AS owner FROM pg_proc WHERE oid = $1::regprocedure",
+          [fanoutValidator],
+        )
+      ).rows[0]?.owner,
+      boundaryOwnerRole,
     );
   });
 });
