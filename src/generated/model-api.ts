@@ -221,12 +221,14 @@ export const reasonSchema: z.ZodType<Reason> = z.union([
   z.literal("WorkFailureEscalated"),
   z.literal("EvaluationFailureEscalated"),
   z.literal("WorkExecutionUnavailableEscalated"),
+  z.literal("FinalizationUnavailableEscalated"),
 ]);
 const reasonSchemaWire: z.ZodType<Reason> = z.union([
   z.literal("NoReason"),
   z.literal("WorkFailureEscalated"),
   z.literal("EvaluationFailureEscalated"),
   z.literal("WorkExecutionUnavailableEscalated"),
+  z.literal("FinalizationUnavailableEscalated"),
 ]);
 export function encodeReason(value: Reason): ModelJson {
   return encodeJson(value);
@@ -239,10 +241,12 @@ export const finalizationOutcomeSchema: z.ZodType<FinalizationOutcome> =
   z.union([
     z.literal("FinalizationSucceeded"),
     z.literal("FinalizationNeedsWork"),
+    z.literal("FinalizationResultUnavailable"),
   ]);
 const finalizationOutcomeSchemaWire: z.ZodType<FinalizationOutcome> = z.union([
   z.literal("FinalizationSucceeded"),
   z.literal("FinalizationNeedsWork"),
+  z.literal("FinalizationResultUnavailable"),
 ]);
 export function encodeFinalizationOutcome(
   value: FinalizationOutcome,

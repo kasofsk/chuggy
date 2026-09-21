@@ -48,19 +48,24 @@ export type Reason =
   | "NoReason"
   | "WorkFailureEscalated"
   | "EvaluationFailureEscalated"
-  | "WorkExecutionUnavailableEscalated";
+  | "WorkExecutionUnavailableEscalated"
+  | "FinalizationUnavailableEscalated";
 export const reasonTags = [
   "NoReason",
   "WorkFailureEscalated",
   "EvaluationFailureEscalated",
   "WorkExecutionUnavailableEscalated",
+  "FinalizationUnavailableEscalated",
 ] as const;
 
 export type FinalizationOutcome =
-  "FinalizationSucceeded" | "FinalizationNeedsWork";
+  | "FinalizationSucceeded"
+  | "FinalizationNeedsWork"
+  | "FinalizationResultUnavailable";
 export const finalizationOutcomeTags = [
   "FinalizationSucceeded",
   "FinalizationNeedsWork",
+  "FinalizationResultUnavailable",
 ] as const;
 
 export type ArtifactMark =
