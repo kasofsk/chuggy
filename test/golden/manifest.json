@@ -124,7 +124,7 @@
       "seed": "0x1",
       "maxSamples": 20000,
       "maxSteps": 60,
-      "invariant": "not(lastStep.label == \"ticket-resumed\" and lastStep.transitions.foldl(false, (b, t) => b or (t.to == Work and tickets.get(t.ticket).record.length() > 0 and tickets.get(t.ticket).record[tickets.get(t.ticket).record.length() - 1].kind != WorkTask)))",
+      "invariant": "not(lastStep.label == \"ticket-resumed\" and lastStep.transitions.foldl(false, (b, t) => b or (t.to == Work and tickets.get(t.ticket).record.length() > 0 and match tickets.get(t.ticket).record[tickets.get(t.ticket).record.length() - 1].identity { | WorkTask(_) => false | EvaluationTask(_) => true })))",
       "steps": 13,
       "quintVersion": "0.32.0",
       "purpose": "The desk sends an escalated ticket back: the last thing in its record is the evaluation stage that failed, so this is the evaluation wall's exit, and it re-enters Work with a fresh work task rather than a second opinion on the old artifact."
