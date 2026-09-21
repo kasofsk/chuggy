@@ -20,6 +20,8 @@ import {
   operationStates,
   phaseRoster,
   resumePoints,
+  type EscalationKind,
+  type GitEvidenceLabel,
 } from "../../../src/contract/rosters.ts";
 import {
   approvalLabel,
@@ -189,7 +191,7 @@ test("a rework-wall resume says it reworks", () => {
   expect(effect.effect).toBe("Reworks · new artifact");
 });
 
-test("a wall with no resume point offers nothing and says which exit is left", () => {
+test("a ticket that is not parked offers no resume and says which exit is left", () => {
   const effect = ticketActionEffect("Resume", { kind: "NoPoint" }, [
     "Resume",
     "Revoke",
@@ -238,11 +240,7 @@ test("every resume point draws the effect the machine gives it", () => {
   ]);
 });
 
-/**
- * A wall whose reason names no interrupted set is one the model stamps no
- * resume point on, and a resume is the one answer that must not be offered
- * into it.
- */
+/** A resume is offered only where the read carries a point to resume at. */
 test("every action the phase enables is offered, except a resume with no point", () => {
   const resume = { kind: "Offered", point: "ResumeEvaluation" } as const;
   for (const action of ticketActionNames)
@@ -374,4 +372,42 @@ test("a landing read back names its reference, and a proposal names the default"
   expect(
     briefLandingLine({ mode: "PullRequestMerge", target: undefined }),
   ).toBe("Pull request, then merge · into the default branch");
+});
+
+const labelOfKind: Readonly<Record<EscalationKind, string>> = {
+  WorkFailureEscalated: "Work failed",
+  EvaluationFailureEscalated: "Rework budget exhausted",
+  WorkExecutionUnavailableEscalated: "Execution unavailable",
+  EvaluationBlockedEscalated: "Evaluation blocked",
+  FinalizationUnavailableEscalated: "Finalization unavailable",
+};
+
+test.each(escalationKinds)("the label for %s says what it says", (kind) => {
+  expect(escalationKindLabel(kind)).toBe(labelOfKind[kind]);
+});
+
+test("no two kinds are drawn with the same label", () => {
+  const drawn = escalationKinds.map((kind) => escalationKindLabel(kind));
+  expect(new Set(drawn).size).toBe(drawn.length);
+});
+
+const labelOfGitEvidence: Readonly<Record<GitEvidenceLabel, string>> = {
+  RemoteUnreachable: "Remote unreachable",
+  RemoteDenied: "Remote denied",
+  RefUnreadable: "Ref unreadable",
+  ObjectMissing: "Object missing",
+  IntegrationFailed: "Integration failed",
+  PromotionTimedOut: "Promotion timed out",
+};
+
+test.each(gitEvidences)(
+  "the label for git evidence %s says what it says",
+  (evidence) => {
+    expect(gitEvidenceLabel(evidence)).toBe(labelOfGitEvidence[evidence]);
+  },
+);
+
+test("no two git evidences are drawn with the same label", () => {
+  const drawn = gitEvidences.map((evidence) => gitEvidenceLabel(evidence));
+  expect(new Set(drawn).size).toBe(drawn.length);
 });

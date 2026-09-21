@@ -342,7 +342,8 @@ export interface ActionEffect {
  * What a resume would do: `retryableIn` (`model/domain.qnt`) wants a parked
  * phase, which is `hasOpenHumanTask` and free on the sum's every variant, so
  * a ticket read carries the point the moment it carries an escalation at all.
- * `NoPoint` is a park with no answer left.
+ * `NoPoint` is a ticket that is not parked: the read carries no escalation,
+ * so a resume has nowhere to go.
  */
 export type ResumeOffer =
   | { readonly kind: "Offered"; readonly point: ResumePoint }
