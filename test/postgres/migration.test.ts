@@ -1581,7 +1581,7 @@ test("the authoring policy loses the keys the accounts configured", async () => 
 async function installationAt(
   subject: pg.Pool,
   migration: number,
-  what?: string,
+  what = `the schema migration ${String(migration)} left`,
 ): Promise<void> {
   const through = migrations
     .slice(0, migration)
@@ -3172,7 +3172,7 @@ const escalationKinds = [
 
 const escalationUnknown = "ReworkBudgetExhausted";
 
-test("the projection carries one escalation and admits evidence only beside one", async () => {
+test("the projection carries one escalation and no name off its roster", async () => {
   await migrationDatabase("escalation_projection", async (subject) => {
     await postgresMigrate(subject);
     await subject.query(deletionPartition);
@@ -3198,6 +3198,35 @@ test("the projection carries one escalation and admits evidence only beside one"
       ),
       /ticket_projection_escalation_is_known/u,
     );
+    await subject.query(
+      `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
+       VALUES('tenant-5','project-5',94,'Pending',1)`,
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT escalation,escalation_evidence FROM ticket_projection WHERE ticket=94",
+        )
+      ).rows,
+      [{ escalation: "NoEscalation", escalation_evidence: null }],
+      "a ticket nothing parked carries the escalation that is none",
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT count(*)::int AS held FROM information_schema.columns
+            WHERE table_name='ticket_projection' AND column_name IN ('reason','resume_at')`,
+        )
+      ).rows,
+      [{ held: 0 }],
+    );
+  });
+});
+
+test("the projection admits evidence only beside an escalation, and the desk reads it", async () => {
+  await migrationDatabase("escalation_evidence", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(deletionPartition);
     await assert.rejects(
       subject.query(
         `INSERT INTO ticket_projection
@@ -3225,28 +3254,6 @@ test("the projection carries one escalation and admits evidence only beside one"
         { escalation_evidence: null },
       ],
       "evidence is what an escalation may carry, not what it must",
-    );
-    await subject.query(
-      `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
-       VALUES('tenant-5','project-5',94,'Pending',1)`,
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT escalation,escalation_evidence FROM ticket_projection WHERE ticket=94",
-        )
-      ).rows,
-      [{ escalation: "NoEscalation", escalation_evidence: null }],
-      "a ticket nothing parked carries the escalation that is none",
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT count(*)::int AS held FROM information_schema.columns
-            WHERE table_name='ticket_projection' AND column_name IN ('reason','resume_at')`,
-        )
-      ).rows,
-      [{ held: 0 }],
     );
     for (const [role, privilege, column] of [
       [apiRole, "SELECT", "escalation"],
@@ -3563,32 +3570,88 @@ async function wipeCounted(
   return counted;
 }
 
+/** The history the wipe is run against: a released draft, a journalled decision and the ticket it projected. */
+async function wipeSeeded(subject: pg.Pool): Promise<void> {
+  await seedProposingBinding(subject);
+  assert.deepEqual(
+    await createdProposingDraft(subject, "refs/heads/branch-91"),
+    [{ result: "Created", ticket: "1" }],
+  );
+  assert.deepEqual(
+    (
+      await subject.query<{ released: boolean }>(
+        `SELECT ${draftReleaseFunction}
+           ('tenant-91','project-91',1,1,'revision-91','digest-91',true) AS released`,
+      )
+    ).rows,
+    [{ released: true }],
+  );
+  await subject.query(wipedHistory);
+  assert.deepEqual(
+    Object.entries(await wipeCounted(subject, wipedFilled))
+      .filter(([, held]) => held === 0)
+      .map(([table]) => table),
+    [],
+    "every relation the case counts on was filled",
+  );
+}
+
+/** What the wipe leaves standing: a project at a fresh install's counters, and the rows it keeps. */
+async function wipeStanding(subject: pg.Pool): Promise<void> {
+  assert.deepEqual(
+    (
+      await subject.query(
+        `SELECT head::text AS head,ingress_next::text AS ingress,
+                ticket_next::text AS ticket,notification_next::text AS notification,
+                manifest_next::text AS manifest,lifecycle
+           FROM project`,
+      )
+    ).rows,
+    [
+      {
+        head: "0",
+        ingress: "1",
+        ticket: "1",
+        notification: "1",
+        manifest: "1",
+        lifecycle: "Active",
+      },
+    ],
+  );
+  assert.deepEqual(
+    (
+      await subject.query(
+        "SELECT sequence::text AS sequence FROM thread_wake_cursor",
+      )
+    ).rows,
+    [{ sequence: "0" }],
+    "the cursor does not sit past a log that was restarted",
+  );
+  assert.deepEqual(
+    await wipeCounted(subject, [
+      "configuration_revision",
+      "project_repository",
+      "recovery_epoch",
+      "selector_inventory_state",
+      "selector_runtime_readiness",
+      "selector_runtime_settings",
+    ]),
+    {
+      configuration_revision: 1,
+      project_repository: 1,
+      recovery_epoch: 1,
+      selector_inventory_state: 1,
+      selector_runtime_readiness: 1,
+      selector_runtime_settings: 1,
+    },
+  );
+}
+
 test("the wipe empties every relation it names, resets the counters and keeps the project", async () => {
   const script = await readFile(wipeScriptPath, "utf8");
   await migrationDatabase("wipe_tickets", async (subject) => {
     await postgresMigrate(subject);
-    await seedProposingBinding(subject);
-    assert.deepEqual(
-      await createdProposingDraft(subject, "refs/heads/branch-91"),
-      [{ result: "Created", ticket: "1" }],
-    );
-    assert.deepEqual(
-      (
-        await subject.query<{ released: boolean }>(
-          `SELECT ${draftReleaseFunction}
-             ('tenant-91','project-91',1,1,'revision-91','digest-91',true) AS released`,
-        )
-      ).rows,
-      [{ released: true }],
-    );
-    await subject.query(wipedHistory);
-    assert.deepEqual(
-      Object.entries(await wipeCounted(subject, wipedFilled))
-        .filter(([, held]) => held === 0)
-        .map(([table]) => table),
-      [],
-      "every relation the case counts on was filled",
-    );
+    await wipeSeeded(subject);
 
     await subject.query(script);
 
@@ -3600,53 +3663,7 @@ test("the wipe empties every relation it names, resets the counters and keeps th
       [],
       "every relation the wipe names is empty",
     );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT head::text AS head,ingress_next::text AS ingress,
-                  ticket_next::text AS ticket,notification_next::text AS notification,
-                  manifest_next::text AS manifest,lifecycle
-             FROM project`,
-        )
-      ).rows,
-      [
-        {
-          head: "0",
-          ingress: "1",
-          ticket: "1",
-          notification: "1",
-          manifest: "1",
-          lifecycle: "Active",
-        },
-      ],
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT sequence::text AS sequence FROM thread_wake_cursor",
-        )
-      ).rows,
-      [{ sequence: "0" }],
-      "the cursor does not sit past a log that was restarted",
-    );
-    assert.deepEqual(
-      await wipeCounted(subject, [
-        "configuration_revision",
-        "project_repository",
-        "recovery_epoch",
-        "selector_inventory_state",
-        "selector_runtime_readiness",
-        "selector_runtime_settings",
-      ]),
-      {
-        configuration_revision: 1,
-        project_repository: 1,
-        recovery_epoch: 1,
-        selector_inventory_state: 1,
-        selector_runtime_readiness: 1,
-        selector_runtime_settings: 1,
-      },
-    );
+    await wipeStanding(subject);
     assert.deepEqual(
       (
         await subject.query<{ tablename: string }>(
