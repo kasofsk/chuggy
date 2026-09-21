@@ -25,8 +25,9 @@ import type { Migration } from "../shared.ts";
  * its checks, is rewritten, and takes them back at the new names. The two
  * rosters overlap nowhere, so a rewrite under either of them is a row the
  * relation refuses: under the old one the new spelling, and under the new one
- * the spelling it has not reached yet. The window is inside the transaction
- * the migration applies, and nothing else holds the relation open in it.
+ * the spelling it has not reached yet. Nothing else sees the relation
+ * unrostered, because the drop takes its exclusive lock and the migration's
+ * transaction holds that until the checks are back.
  *
  * THE COLUMNS REWRITTEN ARE THE ONES A CHECK CONSTRAINS: `ticket_projection`'s
  * phase, reason and resume point, `native_action.reason` and
