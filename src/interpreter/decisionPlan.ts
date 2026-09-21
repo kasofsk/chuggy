@@ -3,17 +3,17 @@
  * entry and the two `TicketGraph`s it stands between.
  *
  * AN OPEN ACTION ADMITS THE ANSWERS THE ACTOR WILL ACCEPT, not a part of them.
- * `decisionEventEnabled` puts a resume through `retryableIn`, so an action that
- * offers a resume the machine refuses hands a person a button whose only
- * outcome is `NotEnabled` — and by the time they read why, they have already
- * been told the ticket is resumable. The revoke beside it is admitted
- * unconditionally, because it is enabled on the phase alone (`revocableIn`).
+ * `decisionEventEnabled` puts a resume through `retryableIn`, which is the
+ * ticket being parked and nothing else once the resume is derived from the
+ * escalation: every wall the machine parks a ticket at has one. A raise is on
+ * a parked ticket, so the resume and the revoke (`revocableIn`, the phase
+ * alone) are both enabled at it, and offering fewer would hand a person a
+ * shorter list than the actor accepts.
  *
  * THE SET IS DECIDED AT THE RAISE, AND THAT IS ENOUGH BECAUSE NOTHING A
- * PARKED TICKET ADMITS CAN MOVE WHILE IT IS PARKED. `retryableIn` reads the
- * phase and the resume point the wall stamped, and the only step that rewrites
- * either is the resume itself, which leaves `Escalated` and answers this
- * action. So a set that is right when the action opens stays right for as long
+ * PARKED TICKET ADMITS CAN MOVE WHILE IT IS PARKED. Both answers are enabled
+ * on the phase, and the only steps that leave it are the two this action
+ * offers. So a set that is right when the action opens stays right for as long
  * as there is anyone to serve it to, which is why `nativeActionAdmits` reading
  * the stored row back is sound.
  */
@@ -29,11 +29,7 @@ import type {
 } from "../domain/generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import { tasksInIdOrder } from "../domain/task.ts";
-import {
-  reducibleEvalIn,
-  reducibleWorkIn,
-  retryableIn,
-} from "../domain/enablement.ts";
+import { reducibleEvalIn, reducibleWorkIn } from "../domain/enablement.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
 import type { ExecutionSourceObservation } from "./executionSource.ts";
 import {
@@ -185,18 +181,15 @@ function nativeAction(
       "decision plan: a native action requires an escalated ticket",
     );
   }
-  const resolutions = retryableIn(post, ticket)
-    ? ["Resume" as const, "Revoke" as const]
-    : ["Revoke" as const];
   return {
     action: identity(entry, effectPosition, "TicketEscalation"),
     effectPosition,
     ticket,
     version: entry.seq,
     kind: "TicketEscalation",
-    reason: value.reason,
+    escalation: value.escalation,
     capability: "ResolveTicket",
-    resolutions,
+    resolutions: ["Resume", "Revoke"],
   };
 }
 

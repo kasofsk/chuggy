@@ -24,13 +24,9 @@ import {
 export type { AuthorizedResult } from "./authorizedProject.ts";
 
 import type { Principal } from "./principal.ts";
-import type {
-  BlockedReason,
-  EscalationReason,
-  FinalizationUnavailableKind,
-  ResumePoint,
-} from "../contract/rosters.ts";
+import type { EscalationKind, ResumePoint } from "../contract/rosters.ts";
 import { phaseTags, type Phase } from "../domain/generated/modelTypes.ts";
+import { resumeOf } from "../domain/ticket.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type {
   Accepted,
@@ -254,8 +250,40 @@ export type OperationResource =
   | (OperationResourceBase & { readonly state: "Cancelled" });
 
 /**
- * The reason and the resume point are present exactly when the ticket is parked
- * on the desk, and the brief exactly when it was authored with one. Its two
+ * Where a parked ticket stands, as its own read and a project's page both carry
+ * it: the wall, what the fabric said about that wall, and where a resume
+ * re-enters. The resume is derived from the wall at the read and stored
+ * nowhere, so this object cannot name a point the wall does not imply.
+ */
+export interface TicketEscalationResource {
+  readonly kind: EscalationKind;
+  readonly evidence?: string;
+  readonly resumeAt: ResumePoint;
+}
+
+/**
+ * The escalation the desk offers for one wall. `resumeOf` is total on the sum
+ * and answers `NoResume` for the absent member alone, which is not a kind this
+ * roster holds — so a point the wire does not name is this layer and the model
+ * disagreeing, and it raises rather than answering a ticket with no offer.
+ */
+export function ticketEscalationResource(
+  kind: EscalationKind,
+  evidence?: string,
+): TicketEscalationResource {
+  const resumeAt = resumeOf(kind);
+  if (resumeAt === "NoResume")
+    throw new Error(`native web: escalation ${kind} re-enters nowhere`);
+  return {
+    kind,
+    ...(evidence === undefined ? {} : { evidence }),
+    resumeAt,
+  };
+}
+
+/**
+ * The escalation is present exactly when the ticket is parked on the desk, and
+ * the brief exactly when it was authored with one. Its two
  * instants are the journal's:
  * `changedAt` is when the entry `sequence` names committed, and `releasedAt`
  * when the entry releasing this ticket did — absent when no entry the reader can
@@ -268,24 +296,7 @@ export interface TicketResource {
   readonly sequence: number;
   readonly changedAt: PublicInstant;
   readonly releasedAt?: PublicInstant;
-  readonly reason?: EscalationReason;
-  /**
-   * Which wall the fabric hit, off this ticket's most recent blocked
-   * execution. The machine collapsed the five into one reason, so this is the
-   * evidence that survived; a ticket the read reports no
-   * `WorkExecutionUnavailableEscalated` for carries none, and neither does a
-   * ticket listed in a project's page, which is not read for it.
-   */
-  readonly executionBlockedBy?: BlockedReason;
-  /**
-   * Which hold the finalizer could not get past, off the request this ticket's
-   * escalation came out of. The machine escalates on the outcome alone, so this
-   * is the evidence that says which environment has to change; a ticket the
-   * read reports no `FinalizationUnavailableEscalated` for carries none, and
-   * neither does a ticket listed in a project's page.
-   */
-  readonly finalizationBlockedBy?: FinalizationUnavailableKind;
-  readonly resumeAt?: ResumePoint;
+  readonly escalation?: TicketEscalationResource;
   /**
    * Which of this ticket's own dependencies their authors revoked, ascending.
    * Nothing ever completes one, so a Pending ticket listing any is waiting on

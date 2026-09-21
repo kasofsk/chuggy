@@ -41,6 +41,7 @@ import {
   type TicketCommand,
 } from "./ticketCommand.ts";
 import { checkedSelectorDecisionReference } from "./dispatchView.ts";
+import { finalizationUnavailableKinds } from "../contract/rosters.ts";
 import { dispatchViewSchemaVersion } from "../contract/http.ts";
 import { asTicketId } from "../domain/ids.ts";
 
@@ -219,13 +220,17 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
 
 /**
  * Reads the fields of the finalizer's envelope, refusing one whose fences are
- * not whole.
+ * not whole. The hold kind is held to the outcome it explains, as the mailbox
+ * holds it: the escalation this submission parks a ticket at records the kind
+ * as its evidence, and an envelope naming one for any other outcome names it
+ * for an escalation that will not happen.
  */
 function checkedFinalizationSubmission(
   record: Record<string, unknown>,
 ): FinalizationSubmission {
   const generation = record["requestGeneration"];
   const outcome = record["outcome"];
+  const kind = record["kind"];
   if (
     record["version"] !== 1 ||
     typeof record["request"] !== "string" ||
@@ -238,7 +243,10 @@ function checkedFinalizationSubmission(
     generation < 1 ||
     typeof record["recoveryEpoch"] !== "string" ||
     record["recoveryEpoch"].length === 0 ||
-    !finalizationOutcomeTags.some((tag) => tag === outcome)
+    !finalizationOutcomeTags.some((tag) => tag === outcome) ||
+    (kind !== undefined) !== (outcome === "FinalizationResultUnavailable") ||
+    (kind !== undefined &&
+      !finalizationUnavailableKinds.some((known) => known === kind))
   ) {
     throw new TypeError("finalization submission fields are invalid");
   }
