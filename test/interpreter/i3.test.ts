@@ -13,7 +13,10 @@ import {
 } from "../../src/actor/decisionEvent.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { retryableIn } from "../../src/domain/enablement.ts";
-import type { DecisionEvent } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  DecisionEvent,
+  TaskIdentity,
+} from "../../src/domain/generated/modelTypes.ts";
 import { escalationTags } from "../../src/domain/generated/modelTypes.ts";
 import { actorInit, journalStep, memoryGraph } from "../../src/actor/state.ts";
 import { materializationOf } from "../../src/interpreter/decisionPlan.ts";
@@ -38,6 +41,7 @@ import {
   allNativeActionKinds,
   allNativeActionResolutions,
   isApprovalResolution,
+  isCompletionDecisionEvent,
   nativeActionResolutions,
   safetyResolution,
 } from "../../src/interpreter/ticketCommand.ts";
@@ -55,6 +59,7 @@ import { graphOf, id, ticketOn } from "../domain/fixtures.ts";
 import { populated } from "./roster.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type { DecisionInput } from "../../src/interpreter/projectDiscovery.ts";
 
 const partition = {
@@ -203,6 +208,83 @@ test("dispatch materializes exact logical work tasks from the pure state delta",
   assert.equal(planned.execution.length, 1);
   assert.equal(planned.execution[0]?.kind, "SpawnWork");
   assert.equal(planned.execution[0]?.tasks.length, 1);
+});
+
+/**
+ * How each event reaches a writer: a reduce on its continuation, a public
+ * command on its operation. A release and a completion are left out, because
+ * neither of them spawns.
+ */
+function plannedInput(
+  event: DecisionEvent,
+  ticket: ReturnType<typeof id>,
+  phase: string,
+): DecisionInput | undefined {
+  if (event.type !== "WorkReduce" && event.type !== "EvalReduce")
+    return isCompletionDecisionEvent(event) || event.type === "CreateTicket"
+      ? undefined
+      : input(asOperationDecisionEvent(event));
+  return {
+    partition,
+    ordinal: 1,
+    priority: "Continuation",
+    source: {
+      kind: "Continuation",
+      continuation: "continuation",
+      reduction: {
+        reduce: event.type === "WorkReduce" ? "Work" : "Evaluation",
+        ticket,
+      },
+      expectedTicketVersion: 1,
+      expectedPhase: phase,
+      taskSetGeneration: 1,
+    },
+  };
+}
+
+/**
+ * The wire number is the ticket's own running count and the task's place in
+ * its set, so an evaluation stage takes a contiguous run above the work cycle
+ * it judges and a rework starts above both.
+ */
+test("a ticket's task numbers ascend over its whole history and never repeat", () => {
+  const history = [
+    releaseTicketEvent(id(1), plainAuthoring),
+    dispatchEvent(id(1)),
+    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
+    workReduceEvent(id(1)),
+    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 0, 1, 1), "Fail", plainResult),
+    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
+    taskDoneEvent(id(1), workTaskOf(1, 2), "Pass", plainResult),
+    workReduceEvent(id(1)),
+  ];
+  const minted: { task: number; identity: TaskIdentity }[] = [];
+  let state = actorInit();
+  for (const event of history) {
+    const before = memoryGraph(state);
+    state = journalStep(refinementInstance, state, event);
+    const entry = state.journal.at(-1);
+    assert.ok(entry !== undefined);
+    const post = memoryGraph(state);
+    const decided = plannedInput(
+      entry.event,
+      id(1),
+      ticketAt(post, id(1)).phase,
+    );
+    if (decided === undefined) continue;
+    const planned = materializationOf(decided, before, post, entry);
+    minted.push(...planned.execution.flatMap((request) => [...request.tasks]));
+  }
+  assert.deepEqual(
+    minted.map((each) => each.task),
+    [1, 2, 3, 4],
+  );
+  assert.deepEqual(
+    minted.map((each) => each.identity.type),
+    ["WorkTask", "EvaluationTask", "WorkTask", "EvaluationTask"],
+  );
+  assert.deepEqual(minted[2]?.identity, workTaskOf(1, 2));
+  assert.deepEqual(minted[3]?.identity, evaluationTaskOf(1, 2, 0, 1, 1));
 });
 
 test("a spawn bundle pins its exact source and prior result manifests", () => {
