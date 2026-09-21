@@ -11,6 +11,8 @@
  */
 
 import type {
+  ExecutionOutcome,
+  ExecutionStatus,
   SelectorAttention,
   SelectorMode,
   SessionState,
@@ -51,6 +53,52 @@ export function phaseTone(phase: TicketPhase): Tone {
     case "Revoked":
       return "retired";
   }
+}
+
+/** The hue an outcome earns, once an execution has reached one. `Blocked`
+ * takes the hue `verdictTone` already gives a fan-out set the same word
+ * settles on: stopped rather than passed or failed. */
+function executionOutcomeTone(outcome: ExecutionOutcome): Tone {
+  switch (outcome) {
+    case "Passed":
+      return "pass";
+    case "Failed":
+      return "fail";
+    case "Blocked":
+      return "retired";
+  }
+}
+
+/** The hue a status earns on its own, before any outcome is reached. */
+function executionStatusTone(status: ExecutionStatus): Tone {
+  switch (status) {
+    case "Queued":
+      return "queued";
+    case "Admitted":
+    case "Launching":
+    case "Running":
+      return "live";
+    case "Terminal":
+      return "neutral";
+    case "Cancelled":
+      return "retired";
+  }
+}
+
+/**
+ * An execution's standing, in the hue that belongs beside the word
+ * `projectTableExecutionPhrase` already builds for it: the outcome's hue where
+ * the execution reached one, the status's otherwise. Total over
+ * `executionStatuses` and `executionOutcomes`, so either roster gaining a
+ * member is a compile error here rather than an unstyled chip.
+ */
+export function executionStandingTone(
+  status: ExecutionStatus,
+  outcome: ExecutionOutcome | undefined,
+): Tone {
+  return outcome === undefined
+    ? executionStatusTone(status)
+    : executionOutcomeTone(outcome);
 }
 
 /** How a fan-out set settled, or that it has not. */

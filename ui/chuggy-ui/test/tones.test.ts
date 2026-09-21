@@ -9,9 +9,14 @@
 
 import { expect, test } from "vitest";
 
-import { phaseRoster } from "../../../src/contract/rosters.ts";
+import {
+  executionOutcomes,
+  executionStatuses,
+  phaseRoster,
+} from "../../../src/contract/rosters.ts";
 import {
   conversationStandingArm,
+  executionStandingTone,
   pillTones,
   phaseTone,
   stageArm,
@@ -74,6 +79,13 @@ test("each arm a stage has without a set is its own word and its own tone", () =
       },
     }),
   ).toEqual({ word: "Failed", tone: "fail" });
+});
+
+test("every execution status and every outcome draws a tone the pill knows", () => {
+  for (const status of executionStatuses)
+    expect(pillTones).toContain(executionStandingTone(status, undefined));
+  for (const outcome of executionOutcomes)
+    expect(pillTones).toContain(executionStandingTone("Terminal", outcome));
 });
 
 test("each standing the arm draws is its own word and its own tone", () => {

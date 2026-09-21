@@ -117,7 +117,6 @@ import {
   cellExecutionUnread,
   ticketRowExecutionCell,
   TicketActivityCell,
-  TicketNumberCell,
   TicketTitleCell,
 } from "./TicketCells.tsx";
 import { Button } from "./ui/Button.tsx";
@@ -404,10 +403,6 @@ function InboxRow(props: {
       : projectTableRow(held, props.known, props.truncated);
   return (
     <tr>
-      <TicketNumberCell
-        partition={props.partition}
-        ticket={props.entry.ticket}
-      />
       <TicketTitleCell
         partition={props.partition}
         ticket={props.entry.ticket}
@@ -451,7 +446,6 @@ function InboxTable(props: {
     <Table caption={ticketSectionTitles[inboxSection]}>
       <thead>
         <tr>
-          <th scope="col">ticket</th>
           <th scope="col">title</th>
           <th scope="col">why</th>
           <th scope="col">last execution</th>

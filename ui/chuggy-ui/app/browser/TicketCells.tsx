@@ -1,9 +1,9 @@
 /**
  * The cells every table of tickets draws the same way.
  *
- * A ticket number and the title beside it are both links to that ticket's page
- * wherever they appear, each cell spelling the same route, so a table that
- * drew its own would be a second place the path has to change. The execution
+ * A ticket's number and its title are both links to that ticket's page
+ * wherever they appear, drawn by one cell rather than two so a table that drew
+ * its own would be a second place the route has to change. The execution
  * columns are the same arrangement for a different
  * reason: a dash meaning "not read" and a dash meaning "never ran" are the same
  * dash, and which one a row shows is a decision two screens must not answer
@@ -26,46 +26,39 @@ export const cellAbsent = "—";
 
 export const cellExecutionUnread = "not read";
 
-export function TicketNumberCell(props: {
-  readonly partition: PartitionIdentity;
-  readonly ticket: number;
-}): ReactNode {
-  return (
-    <th scope="row">
-      <Link
-        to="/$tenant/$project/tickets/$ticket"
-        params={{ ...props.partition, ticket: String(props.ticket) }}
-      >
-        {props.ticket}
-      </Link>
-    </th>
-  );
-}
-
-/** What the ticket is called, linking where its number does. A ticket whose
- * brief states nothing a title could be read out of has none. */
+/** The row's heading: the ticket number dim beside it, the title in the row's
+ * own ink carrying the weight a heading needs. A ticket whose brief states
+ * nothing a title could be read out of has none, and the number still links
+ * alone. */
 export function TicketTitleCell(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
   readonly title: string | undefined;
 }): ReactNode {
+  const params = { ...props.partition, ticket: String(props.ticket) };
   return (
-    <td>
-      {props.title === undefined ? (
-        <span className="text-ink-3">{cellAbsent}</span>
-      ) : (
-        <Tooltip text={props.title}>
-          <span className="max-w-aside inline-block truncate align-bottom">
-            <Link
-              to="/$tenant/$project/tickets/$ticket"
-              params={{ ...props.partition, ticket: String(props.ticket) }}
-            >
-              {props.title}
-            </Link>
-          </span>
-        </Tooltip>
-      )}
-    </td>
+    <th scope="row" className="title-cell">
+      <span className="inline-flex items-baseline gap-2">
+        <Link
+          to="/$tenant/$project/tickets/$ticket"
+          params={params}
+          className="text-ink-3 font-mono"
+        >
+          {props.ticket}
+        </Link>
+        {props.title === undefined ? (
+          <span className="text-ink-3">{cellAbsent}</span>
+        ) : (
+          <Tooltip text={props.title}>
+            <span className="max-w-aside inline-block truncate align-bottom">
+              <Link to="/$tenant/$project/tickets/$ticket" params={params}>
+                {props.title}
+              </Link>
+            </span>
+          </Tooltip>
+        )}
+      </span>
+    </th>
   );
 }
 

@@ -5,6 +5,12 @@
  * own words, so a roster the wire grows stops compiling there and never reaches
  * this as `neutral`. The mark is decorative and the word is the signal, so the
  * chip reads the same to someone who sees no colour in it at all.
+ *
+ * Children take a node rather than a string because a column that must keep
+ * clipping its own value — the runs-on chip's image reference — needs the
+ * clip nested inside the chip's own boundary rather than drawn around it; a
+ * second kind of chip for that one column is the conflation this widening
+ * exists to avoid.
  */
 
 import type { ReactNode } from "react";
@@ -19,7 +25,7 @@ export type { Tone };
 
 export function Pill(props: {
   readonly tone: Tone;
-  readonly children: string;
+  readonly children: ReactNode;
   readonly emphasis?: boolean;
 }): ReactNode {
   const emphasis = props.emphasis === true ? " pill-emphasis" : "";

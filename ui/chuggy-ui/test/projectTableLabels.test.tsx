@@ -122,6 +122,66 @@ async function drawTable(): Promise<void> {
   await settled();
 }
 
+const escalatedTicket = {
+  ticket: 21,
+  title: "Needs a human",
+  phase: "Escalated",
+  sequence: 5,
+  reason: "WorkFailed",
+  ...ticketInstants,
+};
+
+/** The table with one ticket escalated for a reason, and nothing that has
+ * run. */
+async function drawEscalatedTable(): Promise<void> {
+  const api = apiDouble({
+    operation: { operation: "op-two", state: "Pending" },
+    route: (url) => {
+      if (url.includes("/executions")) return answer({ executions: [] });
+      return answer({
+        partition: atlas,
+        sequence: 5,
+        tickets: [escalatedTicket],
+      });
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  render(
+    <ScreenHarness
+      partition={atlas}
+      client={new QueryClient()}
+      transport={openedStream().ports.fetch}
+    >
+      <ProjectTable />
+    </ScreenHarness>,
+  );
+  await settled();
+}
+
+/** The same running ticket as `drawTable`, but the index of what each ticket
+ * ran could not be read, so its own entry is one the walk did not reach. */
+async function drawTableExecutionsUnread(): Promise<void> {
+  const api = apiDouble({
+    operation: { operation: "op-one", state: "Pending" },
+    route: (url) => {
+      if (url.includes("/executions"))
+        return answer({ error: { code: "InternalError", message: "no" } }, 500);
+      return answer({ partition: atlas, sequence: 8, tickets: [ticket] });
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  render(
+    <ScreenHarness
+      partition={atlas}
+      client={new QueryClient()}
+      transport={openedStream().ports.fetch}
+    >
+      <ProjectTable />
+    </ScreenHarness>,
+  );
+  await settled();
+}
+
 test("the title cell keeps the whole title, keeps clipping it, and links", async () => {
   await drawTable();
   const cell = screen.getByText(title).parentElement;
@@ -156,4 +216,28 @@ test("nothing the project table draws is a runtime style element", async () => {
   fireEvent.focus(screen.getByText("chuggy-worker v3"));
   await screen.findByRole("tooltip");
   expect(document.querySelectorAll("style").length).toBe(0);
+});
+
+test("the phase column draws the phase as a chip", async () => {
+  await drawTable();
+  const chip = screen.getByText("Working");
+  expect(chip.closest(".pill")?.className).toContain("pill-live");
+});
+
+test("an escalated row answers why on the phase chip's hover", async () => {
+  await drawEscalatedTable();
+  const chip = screen.getByText("Escalated");
+  expect(chip.closest(".pill")?.className).toContain("pill-parked");
+  const trigger = chip.closest('[tabindex="0"]');
+  if (trigger === null)
+    throw new Error("no tooltip trigger around the phase chip");
+  fireEvent.focus(trigger);
+  expect((await screen.findByRole("tooltip")).textContent).toBe("work failed");
+});
+
+test("a row whose index was truncated draws no chip for its execution", async () => {
+  await drawTableExecutionsUnread();
+  const unread = screen.getAllByText("not read");
+  expect(unread.length).toBe(2);
+  for (const cell of unread) expect(cell.closest(".pill")).toBeNull();
 });

@@ -31,6 +31,14 @@
     font-size: var(--mono-optical);
   }
 
+  /* A row header carrying a title reads as prose at a heading's weight, not
+     as the mono every other row header draws a number in. */
+  .tabular tbody th.title-cell {
+    font-family: var(--font-prose);
+    font-weight: var(--weight-medium);
+    font-size: var(--text-md);
+  }
+
   .tabular tbody tr:hover {
     background: var(--surface-2);
   }
