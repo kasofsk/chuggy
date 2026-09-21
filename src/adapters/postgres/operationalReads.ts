@@ -2,6 +2,7 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { asTaskId, asTicketId } from "../../domain/ids.ts";
+import type { TaskIdentity } from "../../domain/generated/modelTypes.ts";
 import {
   asConfigurationRevisionId,
   asCanonicalConfiguration,
@@ -63,7 +64,10 @@ interface ExecutionViewRow extends ConfigurationVersionRow {
   readonly ticket: string;
   readonly task: string;
   readonly task_kind: string;
+  readonly cycle: string;
   readonly stage: string | null;
+  readonly generation: string | null;
+  readonly evaluator: string | null;
   readonly cluster: string;
   readonly configuration_revision: string;
   readonly requirement_identity: string;
@@ -133,6 +137,37 @@ function known<Value extends string>(
   return found;
 }
 
+/**
+ * The identity the task row carries, rebuilt from the columns it is held to.
+ * A `Work` row that names a stage, or an `Evaluation` row missing any of its
+ * three, is a row `execution_request_task_check` could not have admitted, so
+ * it is refused here rather than answered as the other arm.
+ */
+function executionIdentity(row: ExecutionViewRow): TaskIdentity {
+  const ticket = projectRowCounter(row.ticket, "execution ticket");
+  const cycle = projectRowCounter(row.cycle, "execution task cycle");
+  if (taskKind(row.task_kind) === "Work") {
+    if (row.stage !== null || row.generation !== null || row.evaluator !== null)
+      throw new Error("operational read: a work task names an evaluation");
+    return { type: "WorkTask", value: { ticket, cycle } };
+  }
+  if (row.stage === null || row.generation === null || row.evaluator === null)
+    throw new Error("operational read: an evaluation task is half named");
+  return {
+    type: "EvaluationTask",
+    value: {
+      ticket,
+      workCycle: cycle,
+      stage: projectRowCounter(row.stage, "execution task stage"),
+      generation: projectRowCounter(
+        row.generation,
+        "execution task generation",
+      ),
+      evaluator: projectRowCounter(row.evaluator, "execution task evaluator"),
+    },
+  };
+}
+
 function executionSummary(row: ExecutionViewRow): ExecutionSummary {
   const configurationVersion = configurationVersionOf(row);
   return {
@@ -140,9 +175,7 @@ function executionSummary(row: ExecutionViewRow): ExecutionSummary {
     ticket: asTicketId(projectRowCounter(row.ticket, "execution ticket")),
     task: asTaskId(projectRowCounter(row.task, "execution task")),
     taskKind: taskKind(row.task_kind),
-    ...(row.stage === null
-      ? {}
-      : { stage: projectRowCounter(row.stage, "execution task stage") }),
+    identity: executionIdentity(row),
     cluster: asClusterId(row.cluster),
     configurationRevision: asConfigurationRevisionId(
       row.configuration_revision,
@@ -254,7 +287,9 @@ async function executionRows(
   const afterTask = query.after?.task ?? null;
   const found = await pool.query<ExecutionViewRow>(
     sql`SELECT e.execution,e.ticket::text AS ticket,e.task::text AS task,
-               t.kind AS task_kind,t.stage::text AS stage,e.cluster,
+               t.kind AS task_kind,t.cycle::text AS cycle,
+               t.stage::text AS stage,t.generation::text AS generation,
+               t.evaluator::text AS evaluator,e.cluster,
                e.configuration_revision,e.requirement_identity,e.requirement_value,
                e.requirement_digest,e.requirement_source,e.source_request,
                e.platform_default_version::text AS platform_default_version,
@@ -326,7 +361,9 @@ async function oneExecution(
 ): Promise<ExecutionViewRow | undefined> {
   const found = await pool.query<ExecutionViewRow>(
     sql`SELECT e.execution,e.ticket::text AS ticket,e.task::text AS task,
-               t.kind AS task_kind,t.stage::text AS stage,e.cluster,
+               t.kind AS task_kind,t.cycle::text AS cycle,
+               t.stage::text AS stage,t.generation::text AS generation,
+               t.evaluator::text AS evaluator,e.cluster,
                e.configuration_revision,e.requirement_identity,e.requirement_value,
                e.requirement_digest,e.requirement_source,e.source_request,
                e.platform_default_version::text AS platform_default_version,

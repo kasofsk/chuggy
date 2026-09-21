@@ -55,7 +55,9 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { assertNever } from "../../domain/assertNever.ts";
+import type { TaskIdentity } from "../../domain/generated/modelTypes.ts";
 import { decisionEventSubject } from "../../actor/decisionEvent.ts";
+import type { ExecutionTaskKind } from "../../interpreter/executionScheduler.ts";
 import {
   asCanonicalConfiguration,
   draftReleaseReadiness,
@@ -329,14 +331,46 @@ async function decisionExecution(
                ${bundle?.bundle ?? null},${bundle?.digest ?? null})`,
     );
     for (const task of request.tasks) {
+      const row = decisionTaskColumns(task.identity);
       await client.query(
         sql`INSERT INTO execution_request_task
-         (tenant, project, request, task, kind, stage)
+         (tenant, project, request, task, kind, cycle, stage, generation, evaluator)
          VALUES (${partition.tenant},${partition.project},${request.request},${task.task},
-                 ${task.kind},${task.kind === "Evaluation" ? task.stage : null})`,
+                 ${row.kind},${row.cycle},${row.stage},${row.generation},${row.evaluator})`,
       );
     }
   }
+}
+
+/**
+ * One identity as the relation spells it: the kind the wire names, the cycle
+ * both arms carry, and the three an evaluation adds. The `Work` arm writes
+ * nulls rather than leaving them out, because `execution_request_task_check`
+ * states each arm whole and half an identity is refused at the insert.
+ */
+function decisionTaskColumns(identity: TaskIdentity): {
+  readonly kind: ExecutionTaskKind;
+  readonly cycle: number;
+  readonly stage: number | null;
+  readonly generation: number | null;
+  readonly evaluator: number | null;
+} {
+  if (identity.type === "WorkTask") {
+    return {
+      kind: "Work",
+      cycle: identity.value.cycle,
+      stage: null,
+      generation: null,
+      evaluator: null,
+    };
+  }
+  return {
+    kind: "Evaluation",
+    cycle: identity.value.workCycle,
+    stage: identity.value.stage,
+    generation: identity.value.generation,
+    evaluator: identity.value.evaluator,
+  };
 }
 
 async function decisionFinalization(

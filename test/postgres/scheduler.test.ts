@@ -134,8 +134,9 @@ async function schedulerTasks(
   )) as readonly { task: string }[];
   for (let more = declared.length; more < schedulerTasksPerRequest; more++) {
     await harness.query(
-      `INSERT INTO execution_request_task (tenant,project,request,task,kind)
-       VALUES ($1,$2,$3,$4,'Work')`,
+      `INSERT INTO execution_request_task
+         (tenant,project,request,task,kind,cycle)
+       VALUES ($1,$2,$3,$4,'Work',$4)`,
       [...partitioned, more + 1],
     );
   }
@@ -1130,7 +1131,10 @@ test("the completion command carries the manifest ordinal, folded digest and ver
             type: "TaskDone",
             value: {
               ticket: Number(fixture.ticket),
-              tid: Number(fixture.tasks[0]),
+              task: {
+                type: "WorkTask",
+                value: { ticket: Number(fixture.ticket), cycle: 1 },
+              },
               verdict: "Fail",
               result: {
                 manifest: Number(reported.result.ordinal),

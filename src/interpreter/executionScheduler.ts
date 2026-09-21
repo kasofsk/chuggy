@@ -355,6 +355,7 @@ export interface LogicalExecution {
   readonly ticket: TicketId;
   readonly task: TaskId;
   readonly taskKind: ExecutionTaskKind;
+  /** Which stage of the released program an evaluation runs, zero-based. */
   readonly stage?: number;
   readonly sourceRequest: string;
   readonly inputBundle: string;

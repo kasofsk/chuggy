@@ -177,8 +177,9 @@ async function schedulerWidenTasks(
   const already = Number(declared[0]?.declared ?? "0");
   for (let more = already; more < tasks; more++) {
     await rig.harness.query(
-      `INSERT INTO execution_request_task (tenant,project,request,task,kind)
-       VALUES ($1,$2,$3,$4,'Work')`,
+      `INSERT INTO execution_request_task
+         (tenant,project,request,task,kind,cycle)
+       VALUES ($1,$2,$3,$4,'Work',$4)`,
       [partition.tenant, partition.project, request, more + 1],
     );
   }
@@ -706,8 +707,9 @@ export async function schedulerRivalRequest(
     ],
   );
   await rig.harness.query(
-    `INSERT INTO execution_request_task (tenant,project,request,task,kind,stage)
-     VALUES ($1,$2,$3,1,'Evaluation',0)`,
+    `INSERT INTO execution_request_task
+       (tenant,project,request,task,kind,cycle,stage,generation,evaluator)
+     VALUES ($1,$2,$3,1,'Evaluation',1,1,1,1)`,
     [project.partition.tenant, project.partition.project, request],
   );
   return request;

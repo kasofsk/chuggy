@@ -9,6 +9,12 @@
  * site, and it is where a counter too large for an exact integer is refused
  * rather than silently rounded.
  *
+ * THE STAGE COLUMN IS THE IDENTITY'S KEY AND THE PORT'S STAGE IS AN INDEX.
+ * `execution_request_task.stage` is the positive key a task identity names;
+ * what this tree's ports carry is the position in the released program, which
+ * is one less, and every reader of a stage here reads it through this
+ * translation rather than subtracting where it is used.
+ *
  * A REGISTRATION CARRIES NO PROVENANCE OF ITS OWN, so reading one is a join.
  * The authorizing sequence, the effect position, the ticket version, the task
  * kind and the stage all belong to the request and the task row that authorized
@@ -212,7 +218,9 @@ export function executionRowLogical(row: ExecutionRow): LogicalExecution {
     taskKind: executionRowTaskKind(row.task_kind),
     ...(row.stage === null
       ? {}
-      : { stage: asStageIndex(projectRowCounter(row.stage, "task stage")) }),
+      : {
+          stage: asStageIndex(projectRowCounter(row.stage, "task stage") - 1),
+        }),
     sourceRequest: row.source_request,
     inputBundle: row.input_bundle,
     inputBundleDigest: row.input_bundle_digest,
