@@ -26,9 +26,18 @@
  *   - at 3 and below, a row completing a ticket out of any phase but Finalizing
  *     was decided by a machine where a release could author no finalizer, and
  *     is refused the same way;
- *   - at 3 and below, a revoke whose record transitions more than one ticket is
- *     the cascade that parked the revoked ticket's dependents, and is refused
- *     the same way;
+ *   - at 3 and below, a revoke whose record transitions more than one ticket
+ *     cascaded, parking every Pending dependent of the ticket it revoked. Which
+ *     of them it parked is read off that record, and only a ticket the replay
+ *     holds Pending is parked at all: a dependent leaves Pending only once its
+ *     dependencies are Done, and a Done ticket is not revocable, so a record
+ *     parking anything else is a record no cascade wrote. Each is parked at
+ *     `NoReason` and `NoResume`: the reason the cascade stamped left the machine
+ *     with the cascade, and a revoke — which `revocableIn` admits from
+ *     Escalated — is all any stored continuation ever took on a parked
+ *     dependent. At 4 the correction does not run, and `storedJournalLegalOn`
+ *     refuses such a record the way it refuses any other the current decider
+ *     would not produce;
  *   - at 2, a rework wall's resume gets no correction of its own, so replay
  *     hands it to the current decider — which stamps every rework wall
  *     `ResumeReworking`, there being no budget left to consult. A row parked
@@ -45,12 +54,18 @@
  * produce, and `storedJournalLegalOn` compares records.
  */
 
-import { ticketAt, withTicket, type Decision } from "../domain/core.ts";
+import {
+  ticketAt,
+  ticketIds,
+  withTicket,
+  type Decision,
+} from "../domain/core.ts";
 import type {
   Core,
   EvaluationFailureDisposition,
   StepRecord,
 } from "../domain/generated/modelTypes.ts";
+import { asTicketId } from "../domain/ids.ts";
 import {
   decisionEventSubject,
   execDecisionEvent,
@@ -90,22 +105,15 @@ function completedWithoutFinalizing(rec: StepRecord): boolean {
   );
 }
 
-/** Whether this record is the revoke that parked the revoked ticket's dependents. */
-function revokedMoreThanItsOwnTicket(rec: StepRecord): boolean {
-  return rec.label === "ticket-revoked" && rec.transitions.length > 1;
-}
-
 /**
  * Whether this row can be re-derived at all. A row that parked a ticket on an
- * account wall, completed one without running a finalizer, or cascaded a revoke
- * names a decision no current decider makes, so there is nothing to correct it
- * to.
+ * account wall or completed one without running a finalizer names a decision no
+ * current decider makes, so there is nothing to correct it to.
  */
 export function replayableDecision(row: JournaledDecision): boolean {
   return (
     !removedWallLabels.includes(row.rec.label) &&
-    !completedWithoutFinalizing(row.rec) &&
-    !revokedMoreThanItsOwnTicket(row.rec)
+    !completedWithoutFinalizing(row.rec)
   );
 }
 
@@ -158,9 +166,58 @@ function decisionAtReworkWallParkedEvaluating(
 }
 
 /**
+ * The revoke that parked the revoked ticket's dependents, where this machine's
+ * revoke settles the ticket it names alone. Which of them it parked is read off
+ * the record and nothing else is — a ticket the replay holds Pending is parked,
+ * once, and anything else the record names is re-derived without it, so a row
+ * parking a ticket this fleet never held, one already settled or running, or
+ * the same dependent twice fails `storedJournalLegalOn`'s comparison.
+ */
+function decisionAtRevokeCascadedToDependents(
+  row: JournaledDecision,
+  decision: Decision,
+): Decision {
+  if (row.rec.label !== "ticket-revoked") return decision;
+  const pending = new Set<number>(
+    ticketIds(decision.post).filter(
+      (held) => ticketAt(decision.post, held).phase === "Pending",
+    ),
+  );
+  const named = row.rec.transitions
+    .filter((t) => t.to === "Escalated" && pending.has(t.ticket))
+    .map((t) => t.ticket);
+  const parked = [...new Set(named)].map(asTicketId);
+  if (parked.length === 0) return decision;
+  return {
+    rec: {
+      label: decision.rec.label,
+      transitions: [
+        ...decision.rec.transitions,
+        ...parked.map((id) => ({
+          ticket: id,
+          from: ticketAt(decision.post, id).phase,
+          to: "Escalated" as const,
+        })),
+      ],
+      effects: [...decision.rec.effects, ...parked.map(() => "OpenHumanTask")],
+    },
+    post: parked.reduce(
+      (core, id) =>
+        withTicket(core, id, {
+          ...ticketAt(core, id),
+          phase: "Escalated",
+          resumeAt: "NoResume",
+          reason: "NoReason",
+        }),
+      decision.post,
+    ),
+  };
+}
+
+/**
  * One journaled decision re-derived under the semantics its row declares. The
  * record is the current decider's either way; only the disposition it is asked
- * for and the parked resume differ.
+ * for, the parked resume, and the dependents a revoke parked differ.
  */
 export function execDecisionEventAt(
   semantics: DecisionSemanticsVersion,
@@ -169,13 +226,23 @@ export function execDecisionEventAt(
 ): Decision {
   switch (semantics) {
     case 1:
-      return decisionAtReworkWallParkedEvaluating(
-        row.event,
-        execDecisionEvent(core, eventAtRecordedDisposition(row)),
+      return decisionAtRevokeCascadedToDependents(
+        row,
+        decisionAtReworkWallParkedEvaluating(
+          row.event,
+          execDecisionEvent(core, eventAtRecordedDisposition(row)),
+        ),
       );
     case 2:
-      return execDecisionEvent(core, eventAtRecordedDisposition(row));
+      return decisionAtRevokeCascadedToDependents(
+        row,
+        execDecisionEvent(core, eventAtRecordedDisposition(row)),
+      );
     case 3:
+      return decisionAtRevokeCascadedToDependents(
+        row,
+        execDecisionEvent(core, row.event),
+      );
     case 4:
       return execDecisionEvent(core, row.event);
   }
