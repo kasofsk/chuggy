@@ -98,6 +98,7 @@ test("every pass and pace bound a deployment names reaches the parsed configurat
     CHUG_FINALIZER_SHUTDOWN_DRAIN_MS: "2000",
     CHUG_FINALIZER_REQUEST_CLAIM_LEASE_SECS: "60",
     CHUG_FINALIZER_REQUESTS_PER_PASS_MAX: "4",
+    CHUG_FINALIZER_HOLD_PASSES_MAX: "8",
     CHUG_FINALIZER_PREPARATION_RESTARTS_MAX: "2",
     CHUG_FINALIZER_PREPARATIONS_PER_PASS_MAX: "3",
     CHUG_FINALIZER_PROMOTIONS_PER_PASS_MAX: "5",
@@ -116,6 +117,7 @@ test("every pass and pace bound a deployment names reaches the parsed configurat
   assert.deepEqual(settings.finalizer, {
     requestClaimLeaseSecs: 60,
     requestsPerPassMax: 4,
+    holdPassesMax: 8,
     preparationRestartsMax: 2,
     preparationsPerPassMax: 3,
     promotionsPerPassMax: 5,

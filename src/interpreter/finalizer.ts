@@ -73,6 +73,7 @@
 import {
   briefFinalizationProposes,
   type BriefFinalizationMode,
+  type FinalizationUnavailableKind,
 } from "../contract/rosters.ts";
 import type { FinalizationOutcome } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
@@ -617,12 +618,26 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "ProposalUnaddressed",
 ];
 
-/** The one conclusive thing `TicketGraph` is told, which carries a kind only where the model prices a failure. */
+/**
+ * The one thing `TicketGraph` is told, which carries a kind wherever the
+ * conclusion has one to give: the failure the model prices, or the hold the
+ * request is recorded at where the finalization could not be carried out at
+ * all. Only the first two are conclusive — an unavailable result is what the
+ * pass reports of a finalization it reached no result for, and the resume it
+ * escalates to runs the same operation again.
+ */
 export type FinalizationConclusion =
   | { readonly outcome: Extract<FinalizationOutcome, "FinalizationSucceeded"> }
   | {
       readonly outcome: Extract<FinalizationOutcome, "FinalizationNeedsWork">;
       readonly kind: FinalizationFailureKind;
+    }
+  | {
+      readonly outcome: Extract<
+        FinalizationOutcome,
+        "FinalizationResultUnavailable"
+      >;
+      readonly kind: FinalizationUnavailableKind;
     };
 
 /**
@@ -1015,6 +1030,15 @@ export interface RepositoryCredentialPort {
 export interface FinalizerConfig {
   readonly requestClaimLeaseSecs: number;
   readonly requestsPerPassMax: number;
+  /**
+   * How many consecutive passes may find a request held at the same
+   * unavailable kind before the finalizer reports that kind as the result. It
+   * is counted in passes and not in time because nothing here reads a clock,
+   * and a held request is redrawn once its claim lease lapses, so
+   * `requestClaimLeaseSecs` is what the dwell is as long as; a dwell of one
+   * pass would escalate the first blip the forge has.
+   */
+  readonly holdPassesMax: number;
   readonly preparationRestartsMax: number;
   readonly preparationsPerPassMax: number;
   readonly promotionsPerPassMax: number;
@@ -1031,6 +1055,7 @@ export interface FinalizerConfig {
 export const finalizerDefaults: FinalizerConfig = {
   requestClaimLeaseSecs: 30,
   requestsPerPassMax: 32,
+  holdPassesMax: 10,
   preparationRestartsMax: 3,
   preparationsPerPassMax: 8,
   promotionsPerPassMax: 8,
@@ -1126,9 +1151,32 @@ export interface HeldPermit {
 }
 
 /**
+ * What one pass leaves recorded on the request it advanced: the kind it was
+ * held at, or nothing at all where it moved. A record naming no kind clears the
+ * count, so the dwell below measures consecutive passes and not passes in
+ * total.
+ */
+export interface FinalizationHoldRecord {
+  readonly claim: FinalizationClaim;
+  readonly kind?: FinalizationUnavailableKind;
+}
+
+/**
+ * What recording that hold answered, the count including the pass that just
+ * recorded it and absent from every refusal. A refusal wrote nothing: the
+ * claim this pass holds is not the claim the row holds, or the request has
+ * moved out of the open set under it.
+ */
+export type FinalizationHeld =
+  | { readonly held: "Recorded"; readonly passes: number }
+  | { readonly held: "UnknownRequest" }
+  | { readonly held: "BindingMismatch" };
+
+/**
  * One conclusion offered to the one authenticated door, naming the attempt that
- * produced it. A landing that lands nothing names none, because it reaches its
- * conclusion without preparing a candidate for anything to attempt.
+ * produced it. A landing that lands nothing names none, and neither does an
+ * unavailable result, both reaching what they report without preparing a
+ * candidate for anything to attempt.
  */
 export interface FinalizationOffer {
   readonly claim: FinalizationClaim;
@@ -1188,6 +1236,13 @@ export interface FinalizerStore {
     epoch: RecoveryEpoch,
     permitsMax: number,
   ): Promise<readonly HeldPermit[]>;
+
+  /**
+   * Records what one pass left the request held at, or clears that record where
+   * the pass moved it, fenced by the claim the pass holds so that two
+   * finalizers counting the same hold cannot reach the dwell twice as fast.
+   */
+  recordHold(record: FinalizationHoldRecord): Promise<FinalizationHeld>;
 
   /**
    * Offers one conclusion to `submit_finalization_result`, and invalidates the
