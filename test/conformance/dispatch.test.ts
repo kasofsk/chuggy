@@ -42,7 +42,6 @@ const noPicks: Picks = {
   ticket: undefined,
   deps: undefined,
   program: undefined,
-  workFanout: undefined,
   onFailure: undefined,
   taskId: undefined,
   verdict: undefined,

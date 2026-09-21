@@ -22,7 +22,6 @@
 import {
   isValidProgram,
   stageChoices,
-  workFanoutChoices,
   type Config,
 } from "../../src/domain/config.ts";
 import {
@@ -64,7 +63,6 @@ export interface Drawn {
   readonly ticket?: TicketId;
   readonly deps?: readonly TicketId[];
   readonly program?: readonly StageDefinition[];
-  readonly workFanout?: number;
   readonly onFailure?: EvaluationFailureDisposition;
   readonly taskId?: TaskId;
   readonly verdict?: Verdict;
@@ -135,24 +133,17 @@ const releaseTicket: WalkAction = {
     ticket: pickFrom(random, releasableIdsIn(config, graph)),
     deps: subsetFrom(random, dependableIn(graph)),
     program: pickFrom(random, validProgramsIn(config)),
-    workFanout: pickFrom(random, workFanoutChoices(config)),
   }),
   permitsIn: (config, graph, drawn) => {
-    const { ticket, deps, program, workFanout } = drawn;
-    if (
-      ticket === undefined ||
-      deps === undefined ||
-      program === undefined ||
-      workFanout === undefined
-    ) {
+    const { ticket, deps, program } = drawn;
+    if (ticket === undefined || deps === undefined || program === undefined) {
       return false;
     }
     return (
       releasableIdsIn(config, graph).includes(ticket) &&
       deps.every((d) => dependableIn(graph).includes(d)) &&
       new Set(deps).size === deps.length &&
-      isValidProgram(config, program) &&
-      workFanoutChoices(config).includes(workFanout)
+      isValidProgram(config, program)
     );
   },
 };
@@ -291,7 +282,6 @@ export function drawnWire(drawn: Drawn): Readonly<Record<string, unknown>> {
     prog: opt(drawn.program, encodeProgram),
     tid: opt(drawn.taskId, encodeInt),
     v: opt(drawn.verdict, encodeNullaryTag),
-    workFanout_: opt(drawn.workFanout, encodeInt),
   };
 }
 
@@ -306,7 +296,6 @@ export function drawnPicks(drawn: Drawn): Picks {
     ticket: itf(wire["j"]),
     deps: itf(wire["deps_"]),
     program: itf(wire["prog"]),
-    workFanout: itf(wire["workFanout_"]),
     onFailure: itf(wire["onFailure"]),
     taskId: itf(wire["tid"]),
     verdict: itf(wire["v"]),

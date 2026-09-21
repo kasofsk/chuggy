@@ -54,7 +54,6 @@ const bare: Ticket = {
   phase: "Pending",
   deps: new Set(),
   artifact: "NoArtifact",
-  workFanout: 1,
   program: [],
   tasks: new Set(),
   record: [],

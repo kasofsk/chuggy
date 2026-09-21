@@ -292,22 +292,14 @@ test("the finalizer reports every lifecycle result", () => {
 });
 
 test("a release draws every authored value from a universe, and is refused outside one", () => {
-  const authoring = {
-    prog: defaultProgram(config),
-    workFanout: config.nTasks,
-  };
+  const authoring = { prog: defaultProgram(config) };
   assert.ok(releasableAuthoring(config, authoring));
-  assert.ok(
-    releasableAuthoring(config, { ...authoring, workFanout: 1 }),
-    "a ticket may be authored narrower than its fleet",
-  );
-  assert.ok(!releasableAuthoring(config, { ...authoring, prog: [] }));
-  assert.ok(!releasableAuthoring(config, { ...authoring, workFanout: 0 }));
+  assert.ok(!releasableAuthoring(config, { prog: [] }));
   assert.ok(
     !releasableAuthoring(config, {
-      ...authoring,
-      workFanout: config.nTasks + 1,
+      prog: [{ fanout: config.nTasks + 1 }],
     }),
+    "a stage may not fan out past the task ceiling",
   );
 });
 

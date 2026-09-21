@@ -112,8 +112,8 @@ export const tasksWellFormed: Invariant = (_config, view) =>
     const live = tasksInIdOrder(t.tasks);
     if (t.phase === "Work") {
       return (
-        t.tasks.size === t.workFanout &&
-        idsAreTheRunFrom(t.tasks, start, t.workFanout) &&
+        t.tasks.size === 1 &&
+        idsAreTheRunFrom(t.tasks, start, 1) &&
         live.every(
           (task) =>
             task.kind === "WorkTask" &&

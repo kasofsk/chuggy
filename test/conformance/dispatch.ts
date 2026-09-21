@@ -75,7 +75,6 @@ export interface Picks {
   readonly ticket: ItfValue | undefined;
   readonly deps: ItfValue | undefined;
   readonly program: ItfValue | undefined;
-  readonly workFanout: ItfValue | undefined;
   readonly onFailure: ItfValue | undefined;
   readonly taskId: ItfValue | undefined;
   readonly verdict: ItfValue | undefined;
@@ -129,7 +128,6 @@ export function replayStep(
       return decideReleaseTicket(pre, j(), {
         deps: new Set(drawnIds(need(picks.deps, "deps_"))),
         program: drawnProgram(need(picks.program, "prog")),
-        workFanout: Number(itfToWire(need(picks.workFanout, "workFanout_"))),
       });
     case "revoke":
       return decideRevoke(pre, j());

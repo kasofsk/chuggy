@@ -16,7 +16,7 @@ import type {
   Ticket,
 } from "./generated/modelTypes.ts";
 import { isSettled } from "./phase.ts";
-import { nextTaskId, retiredInIdOrder, spawnTasks } from "./task.ts";
+import { nextTaskId, retiredInIdOrder, spawnTasks, tkWork } from "./task.ts";
 
 /**
  * A desk task is open exactly while the ticket is parked, and parked is one
@@ -69,6 +69,15 @@ export function spawnOn(ticket: Ticket, kind: TaskKind, count: number): Ticket {
     ),
     spawned: ticket.spawned + count,
   };
+}
+
+/**
+ * The work spawn: a work cycle is one task, always. Work is not staged and
+ * carries no authored width, so the only fan-out left is an evaluation
+ * stage's, and every work spawn site is this call.
+ */
+export function spawnWork(ticket: Ticket): Ticket {
+  return spawnOn(ticket, tkWork, 1);
 }
 
 /** Move the live set into the retained record, in id order, and leave it empty. */

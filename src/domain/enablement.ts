@@ -12,12 +12,7 @@
  * state — a value, not a live variable.
  */
 
-import {
-  isValidProgram,
-  ticketIdUniverse,
-  workFanoutChoices,
-  type Config,
-} from "./config.ts";
+import { isValidProgram, ticketIdUniverse, type Config } from "./config.ts";
 import { ticketAt, ticketIds } from "./ticketGraph.ts";
 import type {
   ArtifactMark,
@@ -182,15 +177,9 @@ export function outstandingTaskIn(
 /** Every value a release must draw from a universe, checked together. */
 export function releasableAuthoring(
   config: Config,
-  authoring: {
-    readonly prog: readonly StageDefinition[];
-    readonly workFanout: number;
-  },
+  authoring: { readonly prog: readonly StageDefinition[] },
 ): boolean {
-  return (
-    isValidProgram(config, authoring.prog) &&
-    workFanoutChoices(config).includes(authoring.workFanout)
-  );
+  return isValidProgram(config, authoring.prog);
 }
 
 /** The ids a release may still claim, which is what makes a fleet quiet or not. */

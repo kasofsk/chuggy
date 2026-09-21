@@ -25,8 +25,8 @@ import type {
 } from "./generated/modelTypes.ts";
 import type { TaskId, TicketId } from "./ids.ts";
 import { combine } from "./program.ts";
-import { evalStage, resolveTask, tkEval, tkWork } from "./task.ts";
-import { resumeOf, retireLive, spawnOn } from "./ticket.ts";
+import { evalStage, resolveTask, tkEval } from "./task.ts";
+import { resumeOf, retireLive, spawnOn, spawnWork } from "./ticket.ts";
 
 /**
  * Both ways a failing evaluation can be taken. The choice is an input to the
@@ -57,14 +57,12 @@ function move(
 export function freshTicket(authoring: {
   readonly deps: ReadonlySet<number>;
   readonly program: readonly StageDefinition[];
-  readonly workFanout: number;
 }): Ticket {
   return {
     phase: "Pending",
     deps: authoring.deps,
     program: authoring.program,
     artifact: "NoArtifact",
-    workFanout: authoring.workFanout,
     tasks: new Set(),
     record: [],
     spawned: 0,
@@ -84,7 +82,6 @@ export function decideReleaseTicket(
   authoring: {
     readonly deps: ReadonlySet<number>;
     readonly program: readonly StageDefinition[];
-    readonly workFanout: number;
   },
 ): Decision {
   const tickets = new Map(graph.tickets);
@@ -144,7 +141,7 @@ export function decideRevoke(graph: TicketGraph, id: TicketId): Decision {
 export function decideDispatch(graph: TicketGraph, id: TicketId): Decision {
   const ticket = ticketAt(graph, id);
   return move(
-    withTicket(graph, id, spawnOn(ticket, tkWork, ticket.workFanout)),
+    withTicket(graph, id, spawnWork(ticket)),
     id,
     "Work",
     "dispatch",
@@ -257,7 +254,7 @@ export function decideEvalStageReduce(
   switch (onFailure) {
     case "ReworkEvaluationFailure":
       return move(
-        withTicket(graph, id, spawnOn(retired, tkWork, retired.workFanout)),
+        withTicket(graph, id, spawnWork(retired)),
         id,
         "Work",
         "rework-started eval_failure",
@@ -295,14 +292,14 @@ function completeTicket(graph: TicketGraph, id: TicketId): Decision {
 }
 
 /**
- * A failed finalization re-enters work with a fresh work set. There is no wall
+ * A failed finalization re-enters work with a fresh work task. There is no wall
  * on this edge: a finalizer that keeps reporting failure keeps buying cycles,
  * which is the finalizer's problem rather than the machine's.
  */
 function finalizerFailure(graph: TicketGraph, id: TicketId): Decision {
   const ticket = ticketAt(graph, id);
   return move(
-    withTicket(graph, id, spawnOn(ticket, tkWork, ticket.workFanout)),
+    withTicket(graph, id, spawnWork(ticket)),
     id,
     "Work",
     "rework-started finalization_needs_work",
@@ -379,7 +376,7 @@ export function decideResumeTicket(graph: TicketGraph, id: TicketId): Decision {
     case "ResumeWork":
     case "ResumeRework":
       return move(
-        withTicket(graph, id, spawnOn(resumed, tkWork, resumed.workFanout)),
+        withTicket(graph, id, spawnWork(resumed)),
         id,
         "Work",
         "ticket-resumed",

@@ -96,7 +96,6 @@ export type Ticket = {
   readonly phase: Phase;
   readonly deps: ReadonlySet<number>;
   readonly artifact: ArtifactMark;
-  readonly workFanout: number;
   readonly program: readonly StageDefinition[];
   readonly tasks: ReadonlySet<Task>;
   readonly record: readonly Task[];
@@ -139,7 +138,6 @@ export type DecisionEvent =
         readonly ticket: number;
         readonly deps: ReadonlySet<number>;
         readonly prog: readonly StageDefinition[];
-        readonly workFanout: number;
       };
     }
   | { readonly type: "Revoke"; readonly value: number }

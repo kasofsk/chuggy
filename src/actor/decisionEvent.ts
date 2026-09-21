@@ -68,7 +68,6 @@ export type { DecisionEvent };
 export interface ReleaseAuthoring {
   readonly deps: ReadonlySet<number>;
   readonly prog: readonly StageDefinition[];
-  readonly workFanout: number;
 }
 
 export function releaseTicketEvent(
@@ -82,11 +81,7 @@ export function releaseTicketEvent(
 export function releaseAuthoringOf(event: DecisionEvent): ReleaseAuthoring {
   if (event.type !== "CreateTicket")
     throw new TypeError("decision event is not a ticket release");
-  return {
-    deps: event.value.deps,
-    prog: event.value.prog,
-    workFanout: event.value.workFanout,
-  };
+  return { deps: event.value.deps, prog: event.value.prog };
 }
 
 export function revokeEvent(ticket: TicketId): DecisionEvent {
@@ -148,7 +143,6 @@ export function execDecisionEvent(
       return decideReleaseTicket(graph, asTicketId(ticket), {
         deps: authoring.deps,
         program: authoring.prog,
-        workFanout: authoring.workFanout,
       });
     }
     case "Revoke":
