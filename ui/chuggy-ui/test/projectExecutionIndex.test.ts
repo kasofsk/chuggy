@@ -29,6 +29,7 @@ function execution(
   return {
     task: 1,
     taskKind: "Work",
+    identity: { type: "WorkTask", value: { ticket: 1, cycle: 1 } },
     cluster: "rig",
     configurationRevision: "revision-a",
     requirementIdentity: "requirement-a",

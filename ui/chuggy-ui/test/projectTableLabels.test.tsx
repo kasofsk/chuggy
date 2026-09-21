@@ -91,6 +91,7 @@ const execution = {
   ticket: 11,
   task: 1,
   taskKind: "Work",
+  identity: { type: "WorkTask", value: { ticket: 11, cycle: 1 } },
   cluster: "rig",
   configurationRevision: revision,
   configurationVersion: { name: "chuggy", number: 12 },
