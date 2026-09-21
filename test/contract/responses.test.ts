@@ -325,6 +325,15 @@ test("a wall with nothing said about it still names where it re-enters", () => {
       ...ticketCarried,
     }),
   );
+  assert.throws(() =>
+    ticketResponseSchema.parse({
+      ticket: 3,
+      phase: "Escalated",
+      sequence: 9,
+      escalation: { kind: "EvaluationFailureEscalated" },
+      ...ticketCarried,
+    }),
+  );
 });
 
 test("a ticket's open actions carry a fence and only answers their kind asks for", () => {

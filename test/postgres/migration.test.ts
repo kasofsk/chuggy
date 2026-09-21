@@ -3108,10 +3108,11 @@ test("the finalizer records a hold the api role reads and cannot record itself",
   });
 });
 
-/** A project at a ticket, with one journal entry behind it, as the schema the sum replaces held it. */
-const escalatedProjection = `${deletionJournalRow(1, "{}")};
-  INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,reason,resume_at)
-  VALUES('tenant-5','project-5',1,'Escalated',1,'WorkFailureEscalated','ResumeWork')`;
+/**
+ * One journal entry and no projection row: the guard reads the journal the
+ * actor replays, and a projection emptied ahead of it is no wipe.
+ */
+const journaledDecision = deletionJournalRow(1, "{}");
 
 test("a fresh install records the reason and the resume becoming one escalation", async () => {
   await migrationDatabase("escalation_install", async (subject) => {
@@ -3136,16 +3137,18 @@ test("a fresh install records the reason and the resume becoming one escalation"
 test("a journal with an entry in it refuses the migration and names the wipe", async () => {
   await migrationDatabase("escalation_guard", async (subject) => {
     await installationBefore(subject, migration008.version);
-    await subject.query(`${deletionPartition}\n${escalatedProjection}`);
+    await subject.query(`${deletionPartition}\n${journaledDecision}`);
     await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
     assert.deepEqual(
       (
         await subject.query(
-          "SELECT reason,resume_at FROM ticket_projection WHERE ticket=1",
+          `SELECT column_name FROM information_schema.columns
+           WHERE table_name='ticket_projection' AND column_name IN ('reason','resume_at')
+           ORDER BY column_name`,
         )
       ).rows,
-      [{ reason: "WorkFailureEscalated", resume_at: "ResumeWork" }],
-      "the row the guard refused over is the row it left",
+      [{ column_name: "reason" }, { column_name: "resume_at" }],
+      "the columns the guard refused over are the columns it left",
     );
     assert.deepEqual(
       (

@@ -231,12 +231,14 @@ test("every projected row is the graph the step it names left behind", () => {
 
 /**
  * The evidence is the fabric's account of the wall and no ticket holds it, so
- * the row carries what the decision was told and only on the row it is about.
+ * the row carries what the decision was told and only on the row it is about:
+ * a second live ticket in the same graph is projected beside it bare.
  */
 test("a decision's evidence lands on the ticket it escalated and no other", () => {
-  const graph = walledHistory()
-    .slice(0, -1)
-    .reduce((state, event) => execDecisionEvent(state, event).post, genesis);
+  const graph = [
+    releaseTicketEvent(id(2), plainAuthoring),
+    ...walledHistory().slice(0, -1),
+  ].reduce((state, event) => execDecisionEvent(state, event).post, genesis);
   assert.equal(ticketAt(graph, id(1)).escalation, "EvaluationFailureEscalated");
   assert.deepEqual(
     projectionOf(graph, { ticket: id(1), evidence: "RefUnreadable" }),
@@ -247,6 +249,12 @@ test("a decision's evidence lands on the ticket it escalated and no other", () =
         dependable: true,
         escalation: "EvaluationFailureEscalated",
         escalationEvidence: "RefUnreadable",
+      },
+      {
+        ticket: id(2),
+        phase: ticketAt(graph, id(2)).phase,
+        dependable: true,
+        escalation: "NoEscalation",
       },
     ],
   );

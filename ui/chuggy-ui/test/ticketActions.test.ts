@@ -82,6 +82,9 @@ test("resume says what its own wall does, and one wall reworks", () => {
   expect(ticketActionSentence("Resume", { kind: "WorkFailureEscalated" })).toBe(
     ticketActionSentence("Resume"),
   );
+  expect(
+    ticketActionSentence("Resume", { kind: "EvaluationBlockedEscalated" }),
+  ).toBe(ticketActionSentence("Resume"));
 });
 
 test("manual dispatch echoes only the candidate version the view supplied", () => {

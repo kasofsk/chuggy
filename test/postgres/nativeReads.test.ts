@@ -482,6 +482,28 @@ test("a ticket read carries the detail its project page carries", async () => {
   assert.equal(await reads.ticket(partition, id(9)), undefined);
 });
 
+/**
+ * `escalation_evidence` carries no CHECK, so the read is where a value off the
+ * three rosters is caught: it raises rather than serve a name no client spells.
+ */
+test("evidence the wire cannot spell stops the ticket read", async () => {
+  const partition = await postgresHarnessProject(
+    subject.harness.store,
+    "native-evidence-unknown",
+  );
+  await seedEntry(partition, "native-evidence-unknown", 1);
+  await subject.harness.query(
+    `INSERT INTO ticket_projection
+       (tenant,project,ticket,phase,seq,escalation,escalation_evidence)
+     VALUES ($1,$2,1,'Escalated',1,'WorkExecutionUnavailableEscalated','GasExhausted')`,
+    [partition.tenant, partition.project],
+  );
+  await assert.rejects(
+    postgresNativeReads(subject.pool).ticket(partition, id(1)),
+    /GasExhausted is not escalation evidence/u,
+  );
+});
+
 test("a ticket's open action carries its kind, its fence, and what it offered", async () => {
   const partition = await postgresHarnessProject(
     subject.harness.store,

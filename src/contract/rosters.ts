@@ -41,8 +41,9 @@ export type EscalationKind = (typeof escalationKinds)[number];
 
 /**
  * Which wall the fabric hit, restating the interpreter's `allBlockedReasons`.
- * It is evidence and not an escalation kind — the machine has one escalation
- * for all five, and a ticket carries a wall only while that one is its own.
+ * It is evidence and not an escalation kind — a wall parks a ticket at
+ * `WorkExecutionUnavailableEscalated` or `EvaluationBlockedEscalated`, and a
+ * ticket carries a wall only beside one of those two.
  */
 export const blockedReasons = [
   "ExecutionPolicyDenied",
