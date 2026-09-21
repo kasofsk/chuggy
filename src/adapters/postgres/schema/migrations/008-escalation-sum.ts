@@ -43,13 +43,21 @@ import { apiRole, ticketServiceRole, type Migration } from "../shared.ts";
  * every reader had to translate one into an escalation on the live path. The
  * event it builds now names the ticket and nothing else. What the wall was
  * evidence for it still is: `in_reason` is weighed against the same roster and
- * written to `execution.blocked_reason` exactly as before, and the desk reads
- * it off the execution.
+ * written to `execution.blocked_reason` exactly as before, and the writer reads
+ * it off the execution to put on the desk beside the escalation.
  *
  * AND THE TWO NEW COLUMNS TAKE THE GRANTS `reason` HELD. The api role reads
  * the desk and the ticket-service role writes it, by column on this relation,
  * so a column arriving without its pair is a query refused as a whole rather
  * than a field that answers null.
+ *
+ * THE WRITER IS GRANTED THE WALL, BECAUSE IT IS WHAT PUTS IT ON THE DESK. The
+ * event names the ticket alone, so the only account of the wall is the column
+ * `submit_task_completion` writes beside it, and the writer reads it off the
+ * execution its completion settled to record as the escalation's evidence.
+ * That costs the ticket-service role two columns of `execution`: the wall, and
+ * the completion operation a query has to find the row by. It reaches no other
+ * column of that relation and writes none.
  */
 
 const escalationRoster = `ARRAY['NoEscalation'::text, 'WorkFailureEscalated'::text, 'WorkExecutionUnavailableEscalated'::text, 'EvaluationFailureEscalated'::text, 'EvaluationBlockedEscalated'::text, 'FinalizationUnavailableEscalated'::text]`;
@@ -78,6 +86,8 @@ export const migration008: Migration = {
     `GRANT UPDATE(escalation) ON TABLE public.ticket_projection TO ${ticketServiceRole}`,
     `GRANT SELECT(escalation_evidence) ON TABLE public.ticket_projection TO ${apiRole}`,
     `GRANT UPDATE(escalation_evidence) ON TABLE public.ticket_projection TO ${ticketServiceRole}`,
+    `GRANT SELECT(completion_operation) ON TABLE public.execution TO ${ticketServiceRole}`,
+    `GRANT SELECT(blocked_reason) ON TABLE public.execution TO ${ticketServiceRole}`,
     `ALTER TABLE public.native_action
        DROP CONSTRAINT native_action_reason_check`,
     `ALTER TABLE public.native_action RENAME COLUMN reason TO escalation`,

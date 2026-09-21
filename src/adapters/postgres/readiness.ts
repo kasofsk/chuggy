@@ -58,6 +58,7 @@ import type {
   Readiness,
   ReadinessCleared,
 } from "../../interpreter/projectDiscovery.ts";
+import { blockedReasons, type BlockedReason } from "../../contract/rosters.ts";
 import { parseStoredTicketCommand } from "../../interpreter/wire.ts";
 import {
   isApprovalResolution,
@@ -113,6 +114,13 @@ interface InboxRow {
   readonly input_id: string;
   readonly base_priority: string;
   readonly command: string | null;
+  /**
+   * Which wall the execution this operation settled was blocked at, null for
+   * every operation that settled none. `submit_task_completion` writes it to
+   * the execution in the transaction that inserts the decision input, so it is
+   * durable by the time this read can see the item.
+   */
+  readonly blocked_reason: string | null;
   readonly continuation_kind: string | null;
   readonly ticket: string | null;
   readonly expected_ticket_version: string | null;
@@ -125,6 +133,18 @@ function priorityOf(value: string): PriorityClass {
   if (found === undefined)
     throw new Error(`decision input: unknown priority ${value}`);
   return found;
+}
+
+/**
+ * The wall an execution recorded, narrowed against the roster its own CHECK
+ * declares. A value outside it is this layer and the database disagreeing, and
+ * it raises rather than becoming evidence no reader can spell.
+ */
+function inboxBlockedReason(value: string): BlockedReason {
+  const wall = blockedReasons.find((candidate) => candidate === value);
+  if (wall === undefined)
+    throw new Error(`decision input: unknown blocked reason ${value}`);
+  return wall;
 }
 
 async function releaseDraftSource(
@@ -386,18 +406,21 @@ async function operationSource(
   }
   if (command.command === "Decide") {
     /**
-     * A completion reaches here with no join because `accept_operation` answers
-     * `InvalidCommand` for its tag, which leaves `submit_task_completion` the
-     * only writer of one — and that builds the event from the execution, request
-     * and result rows it locked and checked the binding against. Every other
-     * `Decide` is a public command, whose event is the whole of what its
-     * principal offered.
+     * A completion's event needs no join because `accept_operation` answers
+     * `InvalidCommand` for its tag, leaving `submit_task_completion` — which
+     * builds the event from rows it locked — the only writer of one, while every
+     * other `Decide` is a public command whose event is what its principal
+     * offered. What the join beside it answers is the wall that same function
+     * wrote to the execution and left out of the event.
      */
     return {
       kind: "Operation",
       operation: asOperationId(row.input_id),
       command,
       resolvedEvent: command.event,
+      ...(row.blocked_reason === null
+        ? {}
+        : { executionBlockedBy: inboxBlockedReason(row.blocked_reason) }),
     };
   }
   if (command.command === "ReleaseDraft") {
@@ -506,11 +529,13 @@ export async function postgresReadinessConsumable(
        ORDER BY d.base_priority, d.ordinal
      )
      SELECT h.ordinal, h.input_kind, h.input_id, h.base_priority,
-            o.command, c.kind AS continuation_kind, c.ticket::text,
+            o.command, x.blocked_reason,
+            c.kind AS continuation_kind, c.ticket::text,
             c.expected_ticket_version::text, c.expected_phase,
             c.task_set_generation::text
        FROM heads h
        LEFT JOIN operation o ON h.input_kind='Operation' AND o.tenant=${partition.tenant} AND o.project=${partition.project} AND o.operation=h.input_id
+       LEFT JOIN execution x ON h.input_kind='Operation' AND x.tenant=${partition.tenant} AND x.project=${partition.project} AND x.completion_operation=h.input_id
        LEFT JOIN project_continuation c ON h.input_kind='Continuation' AND c.tenant=${partition.tenant} AND c.project=${partition.project} AND c.continuation=h.input_id
       ORDER BY greatest(0,
         CASE h.base_priority WHEN 'Safety' THEN 0 WHEN 'Completion' THEN 1 WHEN 'Continuation' THEN 2 ELSE 3 END
