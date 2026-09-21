@@ -174,7 +174,7 @@ export function outstandingTaskIn(
   );
 }
 
-/** Every value a release must draw from a universe, checked together. */
+/** Every value a release must draw from a universe, which is its program alone. */
 export function releasableAuthoring(
   config: Config,
   authoring: { readonly prog: readonly StageDefinition[] },
