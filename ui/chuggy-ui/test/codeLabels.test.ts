@@ -95,7 +95,7 @@ test("a detail line names only the facts the page holds", () => {
   );
   expect(
     escalationDetailLine("FinalizationUnavailableEscalated", {
-      lastSet: { taskKind: "Work", stage: undefined, verdict: undefined },
+      lastSet: { taskKind: "Work", stage: undefined, verdict: "Cancelled" },
       stageCount: 2,
     }),
   ).toBe(undefined);
