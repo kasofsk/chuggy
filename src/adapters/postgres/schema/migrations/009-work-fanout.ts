@@ -34,7 +34,26 @@ import type { Migration } from "../shared.ts";
  * (`baseline/privileges.ts`), so a column leaving takes no privilege with it —
  * unlike 008's projection, where the grants are per column and a new one
  * arrives ungranted until a line says otherwise.
+ *
+ * THE MAILBOX BOUND IS NARROWED BECAUSE A CANDIDATE NOW WEIGHS LESS, which is
+ * 005's move made again for the same reason: the widest observation one lead
+ * turn may be given is a sum over the parts, and a dispatch candidate that no
+ * longer carries a width shrinks it, so the row that must hold one is
+ * re-rendered at the new figure and the budget seeded from it re-seeded.
+ *
+ * A NARROWED LENGTH CHECK REVALIDATES STORED ROWS, so a second guard holds a
+ * `session_turn` arm at the new figure, as 004 and 005 each held one at
+ * theirs. It stands beside the journal's rather than inside it, so each
+ * refusal names the relation holding the rows it means; the wipe above empties
+ * both.
  */
+
+/**
+ * What this migration renders `sessionTurnInputCharsMax` as, in the mailbox
+ * bound it re-renders and in the observation budget it re-seeds.
+ */
+export const leadObservationTokensPerDecisionAt009 = 17_360_363;
+
 export const migration009: Migration = {
   version: 9,
   name: "a work set is one task, so a ticket authors no fan-out",
@@ -106,5 +125,20 @@ export const migration009: Migration = {
        END LOOP;
        RETURN true;
      END $$;`,
+    `DO $$
+       BEGIN
+         IF EXISTS (SELECT FROM public.session_turn
+                     WHERE length(input) > 17360363) THEN
+           RAISE EXCEPTION 'rows this migration no longer admits remain in session_turn'
+             USING ERRCODE = 'integrity_constraint_violation';
+         END IF;
+       END $$`,
+    `ALTER TABLE public.session_turn
+       DROP CONSTRAINT session_turn_text_is_bounded,
+       ADD CONSTRAINT session_turn_text_is_bounded CHECK ((((length(input) >= 1) AND (length(input) <= 17360363)) AND (COALESCE(length(result), 0) <= 65536)))`,
+    `UPDATE public.selector_runtime_settings
+        SET controls = replace(controls, '"tokensPerDecision":17363763', '"tokensPerDecision":17360363')`,
+    `UPDATE public.selector_runtime_settings_history
+        SET controls = replace(controls, '"tokensPerDecision":17363763', '"tokensPerDecision":17360363')`,
   ],
 };

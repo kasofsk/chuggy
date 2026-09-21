@@ -11,7 +11,10 @@ import {
 import { migration006 } from "../../src/adapters/postgres/schema/migrations/006-rename.ts";
 import { migration007 } from "../../src/adapters/postgres/schema/migrations/007-finalization-unavailable.ts";
 import { migration008 } from "../../src/adapters/postgres/schema/migrations/008-escalation-sum.ts";
-import { migration009 } from "../../src/adapters/postgres/schema/migrations/009-work-fanout.ts";
+import {
+  leadObservationTokensPerDecisionAt009,
+  migration009,
+} from "../../src/adapters/postgres/schema/migrations/009-work-fanout.ts";
 import { encodeDispatchProgram } from "../../src/interpreter/dispatchView.ts";
 import type { StageDefinition } from "../../src/domain/generated/modelTypes.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
@@ -1021,7 +1024,7 @@ test("fresh selector settings carry current controls and only their initial hist
     assert.deepEqual(controls.toolAllowlist, leadToolAllowlist);
     assert.equal(
       controls.limits.tokensPerDecision,
-      leadObservationTokensPerDecisionAt005,
+      leadObservationTokensPerDecisionAt009,
     );
     assert.equal(
       controls.limits.dispatchesPerDecision,
@@ -1499,13 +1502,14 @@ async function turnOfWidth(subject: pg.Pool, chars: number): Promise<void> {
 /**
  * Each migration that narrows the mailbox bound guards it at its own figure,
  * and an arm that never matches reads exactly like one that works, so each is
- * driven at the width only it refuses. Every pending migration applies in one
- * transaction, so either refusal leaves the ledger where the installation
- * started.
+ * driven at a width the arms before it admit and it alone refuses. Every
+ * pending migration applies in one transaction, so any of those refusals
+ * leaves the ledger where the installation started.
  */
 for (const [label, bound] of [
   ["noaccounts", leadObservationTokensPerDecisionAt004],
   ["threedeletions", leadObservationTokensPerDecisionAt005],
+  ["workfanout", leadObservationTokensPerDecisionAt009],
 ] as const)
   test(`a session turn wider than ${label}'s bound refuses the migration untouched`, async () => {
     await migrationDatabase(`${label}_turn_wide`, async (subject) => {
@@ -1526,9 +1530,9 @@ for (const [label, bound] of [
   });
 
 test("a session turn at the narrowed bound migrates", async () => {
-  await migrationDatabase("threedeletions_turn_fits", async (subject) => {
-    await turnOfWidth(subject, leadObservationTokensPerDecisionAt005);
-    assert.ok((await postgresMigrate(subject)).includes(migration005.version));
+  await migrationDatabase("workfanout_turn_fits", async (subject) => {
+    await turnOfWidth(subject, leadObservationTokensPerDecisionAt009);
+    assert.ok((await postgresMigrate(subject)).includes(migration009.version));
   });
 });
 
