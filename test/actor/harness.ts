@@ -6,7 +6,7 @@
  * whole, the way `test/domain/configs.ts` transcribes the corpus instances: a
  * reader checks it against the model by reading down it. It is fixed tiny at
  * the smallest constants that exercise a rework, because the rework is the
- * re-entry that charges — where a double-spend bites.
+ * re-entry a crash can double.
  *
  * `assertStep` is the model tests' per-step gate: the whole domain bundle on
  * the carried view, and the named refinement obligations against an exact

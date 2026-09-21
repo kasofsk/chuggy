@@ -51,8 +51,8 @@ import {
 
 const config = refinementInstance;
 
-/** The release is durable the instant it journals, and the dispatch charge survives its seam. */
-function phaseDispatchChargeSurvives(): ActorState {
+/** The release is durable the instant it journals, and the dispatch survives its seam. */
+function phaseDispatchSurvives(): ActorState {
   let state = journalStep(
     config,
     actorInit(),
@@ -83,7 +83,7 @@ function phaseDispatchChargeSurvives(): ActorState {
   return state;
 }
 
-/** The rework's charge survives total cursor loss, and the whole re-emitted prefix absorbs. */
+/** The rework survives total cursor loss, and the whole re-emitted prefix absorbs. */
 function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
   state = stepEmit(
     config,
@@ -190,7 +190,7 @@ function phaseCompletionLandsOnce(state: ActorState): void {
 
 test("crash, recover, continue: the disciplined machine at every observable seam", () => {
   phaseCompletionLandsOnce(
-    phaseReworkSurvivesCursorLoss(phaseDispatchChargeSurvives()),
+    phaseReworkSurvivesCursorLoss(phaseDispatchSurvives()),
   );
 });
 

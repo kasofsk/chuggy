@@ -608,7 +608,7 @@ module chuggy_refinement {
   // finalization failure's respawn) and the wrap-up resolutions (the
   // dequeue's fast-path squash, the gated promotion). An orphaned bookkeeping
   // effect (OpenHumanTask, OpenHumanTask, ...) is the same shape with
-  // nothing priced riding it — journalCoversWorld still flags it; the
+  // nothing counted riding it — journalCoversWorld still flags it; the
   // demonstration keeps to the shapes the theorems name.
 
   action hazardDispatch = all {

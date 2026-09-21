@@ -152,7 +152,7 @@ function phaseDuplicateCycle(state: ActorState): void {
   assert.ok(obligationsHold(config, state, refinementCore));
 }
 
-test("the dispatch double-spend and the duplicate completion, one effect-first crash each", () => {
+test("the duplicate dispatch and the duplicate completion, one effect-first crash each", () => {
   phaseDuplicateCycle(phaseDispatchDoubleSpend());
 });
 
@@ -161,7 +161,7 @@ function walkToEvalFailure(): ActorState {
   return walkFirstCycle(config, actorInit(), "Fail");
 }
 
-test("the rework double-spend: the fan-out launches and the charge dies with the crash", () => {
+test("the rework crash: the fan-out launches and the step dies with the crash", () => {
   let state = walkToEvalFailure();
   state = effectCrash(
     config,

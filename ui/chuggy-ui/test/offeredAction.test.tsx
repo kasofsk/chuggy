@@ -107,16 +107,16 @@ test("a refused action shows the reason as text, disabled, and does not fire", (
   const chosen = vi.fn();
   render(
     <OfferedAction
-      action="Add rework"
-      effect="Adds one rework cycle"
-      refusedBecause="Not available in this release"
+      action="Open desk"
+      effect="Opens a desk task"
+      refusedBecause="Not offered here"
       onChoose={chosen}
     />,
   );
-  const button = screen.getByRole("button", { name: "Add rework" });
+  const button = screen.getByRole("button", { name: "Open desk" });
   expect(button.hasAttribute("disabled")).toBe(true);
   expect(button.getAttribute("title")).toBeNull();
-  const reason = screen.getByText("Not available in this release");
+  const reason = screen.getByText("Not offered here");
   expect(reason.classList.contains("act-refused")).toBe(true);
   fireEvent.click(button);
   expect(chosen).not.toHaveBeenCalled();
@@ -153,11 +153,11 @@ test("a destructive action is drawn as one", () => {
  * space would split into two references naming nothing.
  */
 test("the effect's reference resolves however the action is spelled", () => {
-  for (const action of ["Resume", "Add rework"]) {
+  for (const action of ["Resume", "Open desk"]) {
     const { container } = render(
       <OfferedAction
         action={action}
-        effect="Adds one rework cycle"
+        effect="Opens a desk task"
         variant="compact"
         onChoose={() => undefined}
       />,
@@ -169,7 +169,7 @@ test("the effect's reference resolves however the action is spelled", () => {
     expect(described ?? "").not.toContain(" ");
     expect(
       container.querySelector(`[id="${String(described)}"]`)?.textContent,
-    ).toContain("Adds one rework cycle");
+    ).toContain("Opens a desk task");
     cleanup();
   }
 });
