@@ -7,10 +7,12 @@ import { briefTitleCharsMax } from "../../contract/brief.ts";
 import {
   blockedReasons,
   escalationReasons,
+  finalizationUnavailableKinds,
   operationRefusalCodes,
   resumePoints,
   type BlockedReason,
   type EscalationReason,
+  type FinalizationUnavailableKind,
   type ResumePoint,
 } from "../../contract/rosters.ts";
 import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
@@ -85,12 +87,14 @@ interface TicketProjectionRow {
 }
 
 /**
- * What the single ticket read adds: the wall behind an escalation, which the
- * project's page does not carry. Null is both a ticket no wall parked and a
- * ticket whose reason is not the wall's, the query asking for neither.
+ * What the single ticket read adds: the two walls behind an escalation, which
+ * the project's page carries neither of. Null is both a ticket no such wall
+ * parked and a ticket whose reason is not that wall's, the query asking for
+ * neither.
  */
 interface TicketExecutionWallRow {
   readonly execution_blocked_by: string | null;
+  readonly finalization_blocked_by: string | null;
 }
 
 /** One open action, or a ticket that has none: every column is then null. */
@@ -264,6 +268,24 @@ function executionBlockedBy(value: string | null): BlockedReason | undefined {
   if (wall === undefined)
     throw new Error(`native read: ${value} is not a blocked reason`);
   return wall;
+}
+
+/**
+ * Which hold the finalizer could not get past, read off the request the
+ * escalation came out of. It narrows like the wall above and for the same
+ * reason: the column is evidence, and a value this layer does not know is a
+ * database and a roster that disagree.
+ */
+function finalizationBlockedBy(
+  value: string | null,
+): FinalizationUnavailableKind | undefined {
+  if (value === null) return undefined;
+  const held = finalizationUnavailableKinds.find(
+    (candidate) => candidate === value,
+  );
+  if (held === undefined)
+    throw new Error(`native read: ${value} is not an unavailable hold kind`);
+  return held;
 }
 
 /** The stored `NoResume` is the machine's absent value, which the wire omits. */
@@ -507,12 +529,14 @@ async function readTicketsByIdentity(
   return found.rows;
 }
 
-/** One ticket with its brief, its run totals and the wall behind an escalation. */
-async function readTicket(
+/** One ticket's projection with its brief and the two walls an escalation may carry. */
+async function readTicketRow(
   pool: pg.Pool,
   partition: Partition,
   ticket: TicketId,
-): Promise<TicketResource | undefined> {
+): Promise<
+  (TicketProjectionRow & DraftBriefRow & TicketExecutionWallRow) | undefined
+> {
   const found = await pool.query<
     TicketProjectionRow & DraftBriefRow & TicketExecutionWallRow
   >(
@@ -539,7 +563,13 @@ async function readTicket(
                    AND x.ticket=t.ticket AND x.outcome='Blocked'
                    AND t.reason='WorkExecutionUnavailableEscalated'
                  ORDER BY x.terminal_at DESC,x.execution DESC
-                 LIMIT 1) AS execution_blocked_by
+                 LIMIT 1) AS execution_blocked_by,
+               (SELECT f.hold_kind FROM finalization_request f
+                 WHERE f.tenant=t.tenant AND f.project=t.project
+                   AND f.ticket=t.ticket
+                   AND t.reason='FinalizationUnavailableEscalated'
+                 ORDER BY f.authorizing_seq DESC
+                 LIMIT 1) AS finalization_blocked_by
           FROM ticket_projection t
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
@@ -560,14 +590,25 @@ async function readTicket(
          WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
            AND t.ticket=${ticket}`,
   );
-  const row = found.rows[0];
+  return found.rows[0];
+}
+
+/** One ticket with its brief, its run totals and the walls behind an escalation. */
+async function readTicket(
+  pool: pg.Pool,
+  partition: Partition,
+  ticket: TicketId,
+): Promise<TicketResource | undefined> {
+  const row = await readTicketRow(pool, partition, ticket);
   if (row === undefined) return undefined;
   const brief = draftBriefOf(row);
   const runTotals = await postgresTicketRunTotals(pool, partition, ticket);
   const wall = executionBlockedBy(row.execution_blocked_by);
+  const held = finalizationBlockedBy(row.finalization_blocked_by);
   return {
     ...ticketResource(row),
     ...(wall === undefined ? {} : { executionBlockedBy: wall }),
+    ...(held === undefined ? {} : { finalizationBlockedBy: held }),
     ...(brief === undefined ? {} : { brief }),
     ...(runTotals === undefined ? {} : { runTotals }),
   };

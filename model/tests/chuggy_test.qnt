@@ -459,6 +459,28 @@ module chuggy_test {
     dFinalizationReworkAgain.post.tickets.get(1).tasks == Set(wr(5), wr(6))
   })
 
+  /// A finalizer that reaches NO result parks the ticket instead, at the
+  /// resume that re-runs the finalizer: the artifact is intact and untried,
+  /// so new work would change nothing.
+  pure val dFinalizationUnavailable =
+    D::decideFinalizationResult(cFinalizing, 1, FinalizationResultUnavailable)
+
+  run finalizationUnavailableEscalatesTest = assert(and {
+    dFinalizationUnavailable.rec.label ==
+      "ticket-escalated finalization_unavailable_escalated",
+    dFinalizationUnavailable.rec.transitions ==
+      [{ ticket: 1, from: Finalization, to: Escalated }],
+    dFinalizationUnavailable.rec.effects == ["OpenHumanTask"],
+    dFinalizationUnavailable.post.tickets.get(1).reason ==
+      FinalizationUnavailableEscalated,
+    dFinalizationUnavailable.post.tickets.get(1).resumeAt == ResumeFinalization,
+    // The wall spawns nothing and retires nothing: Finalization holds no
+    // live task set, and the artifact the finalizer could not commit stays.
+    dFinalizationUnavailable.post.tickets.get(1).tasks == Set(),
+    dFinalizationUnavailable.post.tickets.get(1).artifact ==
+      cFinalizing.tickets.get(1).artifact
+  })
+
   // === The human desk: parks and resumes ===================================
 
   pure val dPark = D::decideExecutionBlocked(c1, 1, WorkExecutionUnavailableEscalated)
@@ -496,10 +518,10 @@ module chuggy_test {
   })
 
   /// EVERY PARK WITH A MODELED RESUME IS RETRYABLE, and the resume returns
-  /// the ticket to the phase its wall stamped.
-  pure val escFinalizer: Ticket = { ...fresh(Set(), progU2),
-    phase: Escalated, resumeAt: ResumeFinalization, reason: WorkFailureEscalated }
-  pure val cEscFinalizer: TicketGraph = { tickets: Map(1 -> escFinalizer) }
+  /// the ticket to the phase its wall stamped. The finalization park is the
+  /// state its own wall wrote rather than one built here: a hand-built park
+  /// can stamp a resume no decider ever pairs with that reason.
+  pure val cEscFinalizer: TicketGraph = dFinalizationUnavailable.post
   pure val dResumeFinalizer = D::decideResumeTicket(cEscFinalizer, 1)
 
   pure val escWorking: Ticket = { ...fresh(Set(), progU2),
@@ -566,9 +588,9 @@ module chuggy_test {
 
   // === Revoke, from every live phase =======================================
   // Every non-terminal may be revoked. Single-ticket fixtures: one per live
-  // phase (Pending, Work, Evaluation, Finalization) and both desk-reason
-  // flavors of the one parked phase (the evaluation wall and a pipeline
-  // wall).
+  // phase (Pending, Work, Evaluation, Finalization), and the one parked phase
+  // twice under different reasons — the pair is there to show a revoke does
+  // not read the wall that parked the ticket, not to enumerate the walls.
 
   pure def revokedShape(j: Ticket): bool = and {
     j.phase == Revoked,
@@ -695,7 +717,8 @@ module chuggy_test {
   })
 
   run finalizationOutcomesDrawRuleTest = assert(
-    D::finalizationOutcomes == Set(FinalizationSucceeded, FinalizationNeedsWork))
+    D::finalizationOutcomes == Set(FinalizationSucceeded, FinalizationNeedsWork,
+      FinalizationResultUnavailable))
 
   /// WORK-PASSED STAMPS AN ARTIFACT, and a rework SUPERSEDES it. The second
   /// half is what makes the mark an identity rather than a flag: two cycles
@@ -744,7 +767,7 @@ module chuggy_test {
     accounted(cFinalizing), accounted(cFinalizingAgain),
     accounted(cChain), accounted(cGateOcc),
     accounted(cXDepPre), accounted(cXDepDone),
-    accountedTicket(escFinalizer), accountedTicket(escWorking),
+    accountedTicket(escWorking),
     accountedTicket(escRework),
     accountedTicket(jBase), accountedTicket(jPend), accountedTicket(jWork),
     accountedTicket(jEval), accountedTicket(jFinalizer),

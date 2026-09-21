@@ -72,6 +72,8 @@ export function escalationBadgeLabel(reason: EscalationReason): string {
       return "rework budget spent";
     case "WorkExecutionUnavailableEscalated":
       return "execution unavailable";
+    case "FinalizationUnavailableEscalated":
+      return "finalization unavailable";
   }
 }
 

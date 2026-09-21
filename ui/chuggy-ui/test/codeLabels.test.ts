@@ -14,6 +14,7 @@ import {
   blockedReasons,
   briefFinalizationModes,
   escalationReasons,
+  finalizationUnavailableKinds,
   operationRefusalCodes,
   operationStates,
   phaseRoster,
@@ -24,6 +25,7 @@ import {
   blockedReasonLabel,
   briefLandingLine,
   escalationDetail,
+  finalizationUnavailableKindLabel,
   landingEffect,
   landingLabel,
   resumeActionEffect,
@@ -58,6 +60,7 @@ test("every wall, phase, state and refusal has a label inside the copy budget", 
   const drawn = [
     ...escalationReasons.map(escalationReasonLabel),
     ...blockedReasons.map(blockedReasonLabel),
+    ...finalizationUnavailableKinds.map(finalizationUnavailableKindLabel),
     ...phaseRoster.map(phaseLabel),
     ...operationStates.map(operationStateLabel),
     ...operationRefusalCodes.map(operationRefusalLabel),
@@ -90,6 +93,12 @@ test("a detail line names only the facts the page holds", () => {
   expect(escalationDetailLine("WorkFailureEscalated", bare)).toBe(
     "Failed work is not reworked",
   );
+  expect(
+    escalationDetailLine("FinalizationUnavailableEscalated", {
+      lastSet: { taskKind: "Work", stage: undefined, verdict: "Cancelled" },
+      stageCount: 2,
+    }),
+  ).toBe(undefined);
 });
 
 /**
@@ -102,11 +111,30 @@ test("the escalation's one line names the wall where the read carries one", () =
     escalationDetail(
       "WorkExecutionUnavailableEscalated",
       "ExecutionProfileUnavailable",
+      undefined,
     ),
   ).toBe("No matching execution profile");
-  expect(escalationDetail("WorkExecutionUnavailableEscalated", undefined)).toBe(
-    "Execution unavailable",
-  );
+  expect(
+    escalationDetail("WorkExecutionUnavailableEscalated", undefined, undefined),
+  ).toBe("Execution unavailable");
+});
+
+/**
+ * Same rule for the finalizer's own wall: the hold's label where
+ * `finalizationBlockedBy` carries one, the reason's generic word where the
+ * ticket parked with no hold recorded to read it off.
+ */
+test("the escalation's one line names the finalization wall where the read carries one", () => {
+  expect(
+    escalationDetail(
+      "FinalizationUnavailableEscalated",
+      undefined,
+      "ProposalDenied",
+    ),
+  ).toBe("Proposal denied");
+  expect(
+    escalationDetail("FinalizationUnavailableEscalated", undefined, undefined),
+  ).toBe("Finalization unavailable");
 });
 
 test("a resume states what it re-runs", () => {

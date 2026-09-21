@@ -152,20 +152,32 @@ module chuggy_ticket {
   /// an adapter records beside the execution, never a distinction a decider
   /// reads — every refusal takes the same edge to the same desk with the
   /// same resume.
+  /// FinalizationUnavailableEscalated is the wall a finalizer hits when it
+  /// reaches no result at all; like the execution wall, WHICH unreachability
+  /// it was is evidence an adapter records beside the finalization request,
+  /// and every one of them takes the same edge to the same desk with the
+  /// same resume.
   type Reason =
     NoReason | WorkFailureEscalated | EvaluationFailureEscalated |
-    WorkExecutionUnavailableEscalated
+    WorkExecutionUnavailableEscalated | FinalizationUnavailableEscalated
 
   /// How a finalization attempt resolves. ONE success, deliberately: an earlier
   /// model named two, because a merge promotes differently depending on
   /// whether it went through the gate — and *which* mechanism a merge uses
   /// is a property of the merge adapter, not of the machine. The domain
-  /// knows only that the step succeeded or failed.
+  /// knows only that the step succeeded, failed, or could not be taken.
   ///   - FinalizationSucceeded  the step committed the artifact.
   ///   - FinalizationNeedsWork     it did not, and is drawable only when the
   ///                            environment invalidated the artifact
   ///                            (domain.qnt finalizationOutcomes).
-  type FinalizationOutcome = FinalizationSucceeded | FinalizationNeedsWork
+  ///   - FinalizationResultUnavailable
+  ///                            it reached no result: the artifact is intact
+  ///                            and untried, and what stood in the way is
+  ///                            outside the ticket. Distinct from NeedsWork
+  ///                            because new work would change nothing.
+  type FinalizationOutcome =
+    FinalizationSucceeded | FinalizationNeedsWork |
+    FinalizationResultUnavailable
 
   /// WHAT A TICKET PRODUCED (design 002): an opaque identity for the thing
   /// work built, that evaluation judged, and that wrap-up commits. Its only

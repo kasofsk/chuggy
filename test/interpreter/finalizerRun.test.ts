@@ -14,7 +14,10 @@ import { createHash } from "node:crypto";
 import { test } from "node:test";
 
 import { asTicketId } from "../../src/domain/ids.ts";
-import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
+import type {
+  BriefFinalizationMode,
+  FinalizationUnavailableKind,
+} from "../../src/contract/rosters.ts";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import {
   asForgeBindingId,
@@ -239,6 +242,8 @@ interface FinalizerRecorder
   readonly grants: PermitRequest[];
   readonly readings: ReconciliationRecord[];
   readonly settled: string[];
+  /** Every hold this store was asked to record, in order, a cleared one naming no kind. */
+  readonly holds: (FinalizationUnavailableKind | undefined)[];
   readonly submitted: string[];
   /** The conclusion each of those offers carried, which is what the request ends as. */
   readonly concluded: FinalizationConclusion[];
@@ -252,6 +257,9 @@ interface FinalizerRecorder
   granted?: PermitGranted;
   /** What the row says the forge was asked for, written when the first attempt is counted. */
   askedProposal?: ChangeProposalAsked;
+  /** What the request row is recorded as held at, which is the whole of what the hold door keeps. */
+  heldKind: FinalizationUnavailableKind | undefined;
+  heldPasses: number;
   /** The counters a change proposal row keeps, which are the whole of its state. */
   proposalAttempts: number;
   proposalRefusals: number;
@@ -521,6 +529,9 @@ function recordingLedgers(): Pick<
   | "grants"
   | "readings"
   | "settled"
+  | "holds"
+  | "heldKind"
+  | "heldPasses"
   | "submitted"
   | "concluded"
   | "attempts"
@@ -533,6 +544,9 @@ function recordingLedgers(): Pick<
     grants: [],
     readings: [],
     settled: [],
+    holds: [],
+    heldKind: undefined,
+    heldPasses: 0,
     submitted: [],
     concluded: [],
     attempts: [],
@@ -564,6 +578,31 @@ function recordingProposalCounters(): Pick<
     proposalMergeRefusals: 0,
     proposalMergeDeclines: 0,
     proposalMergeReadings: 0,
+  };
+}
+
+/**
+ * The hold half of that store, which keeps what the durable authority keeps:
+ * the same kind counts one more pass, another kind starts over, and a record
+ * naming none clears both. Every request one case drives shares the row, as
+ * every other counter here does.
+ */
+function recordingHolds(
+  store: () => FinalizerRecorder,
+): Pick<FinalizerStore, "recordHold"> {
+  return {
+    recordHold: (record) => {
+      const own = store();
+      own.holds.push(record.kind);
+      own.heldPasses =
+        record.kind === undefined
+          ? 0
+          : own.heldKind === record.kind
+            ? own.heldPasses + 1
+            : 1;
+      own.heldKind = record.kind;
+      return Promise.resolve({ held: "Recorded", passes: own.heldPasses });
+    },
   };
 }
 
@@ -615,6 +654,7 @@ function recordingStore(
     },
     heldPermits: (_epoch, permitsMax) =>
       Promise.resolve(held.slice(0, permitsMax)),
+    ...recordingHolds(() => own),
     submitResult: (offer) => {
       own.submitted.push(offer.claim.request);
       own.concluded.push(offer.conclusion);
@@ -768,6 +808,21 @@ function promotableView(request: string): FinalizationView {
     approval: "Pending",
     attemptsMade: 1,
   };
+}
+
+/** A request whose project binds no repository, which is the plainest of the holds a resume could clear. */
+function unboundView(request: string): FinalizationView {
+  return {
+    lifecycle: "Active",
+    claim: claimOf(request),
+    approval: "Pending",
+    attemptsMade: 0,
+  };
+}
+
+/** A candidate a person answered no to, which is the hold a resume would put to the same person again. */
+function declinedView(request: string): FinalizationView {
+  return { ...promotableView(request), approval: "Declined" };
 }
 
 /**
@@ -2772,4 +2827,85 @@ test("a pass over a ticket that lands nothing concludes it and asks no remote", 
   assert.deepEqual(git.preparations, []);
   assert.deepEqual(git.promotions, []);
   assert.deepEqual(artifacts.requests, []);
+});
+
+/**
+ * The dwell, from both sides: a hold a resume could get past is written on the
+ * request every pass that finds it and reported as the result once the record
+ * says the pass count is spent, with the kind as the evidence, and a hold a
+ * resume could not get past is written nowhere and reported never however many
+ * passes find it. Every case here drives the real pass over a recorder that
+ * counts as the durable authority counts, so what is asserted is what the door
+ * would be asked for.
+ */
+test("a hold a resume could clear is recorded every pass and reported once the dwell is spent", async () => {
+  const store = recordingStore([unboundView("request-one")]);
+  const service = serviceOf(store, recordingGit(), { holdPassesMax: 3 });
+  await passOver(service);
+  await passOver(service);
+  assert.deepEqual(store.holds, ["RepositoryUnbound", "RepositoryUnbound"]);
+  assert.deepEqual(store.submitted, [], "two passes are not the dwell");
+  const report = await passOver(service);
+  assert.equal(report.holds, 1, "the third pass held it as the other two did");
+  assert.equal(report.conclusions, 1);
+  assert.deepEqual(store.submitted, ["request-one"]);
+  assert.deepEqual(store.concluded, [
+    { outcome: "FinalizationResultUnavailable", kind: "RepositoryUnbound" },
+  ]);
+});
+
+test("a pass that moves the request clears the count rather than adding to it", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  store.heldKind = "TargetUnreadable";
+  store.heldPasses = 2;
+  const report = await passOver(
+    serviceOf(store, recordingGit(), { holdPassesMax: 3 }),
+  );
+  assert.equal(report.preparations, 1);
+  assert.deepEqual(store.holds, [undefined]);
+  assert.equal(store.heldPasses, 0);
+  assert.deepEqual(store.submitted, []);
+});
+
+test("a hold no resume could get past is never recorded and never reported", async () => {
+  const store = recordingStore([declinedView("request-one")]);
+  const service = serviceOf(store, recordingGit(), { holdPassesMax: 1 });
+  await passOver(service);
+  await passOver(service);
+  assert.deepEqual(
+    store.holds,
+    [],
+    "the record it would write is not one a resume clears",
+  );
+  assert.deepEqual(store.submitted, []);
+  assert.equal(store.heldPasses, 0);
+});
+
+test("a hold off the roster leaves the count another kind is keeping alone", async () => {
+  const store = recordingStore([declinedView("request-one")]);
+  store.heldKind = "TargetUnreadable";
+  store.heldPasses = 1;
+  await passOver(serviceOf(store, recordingGit(), { holdPassesMax: 2 }));
+  assert.deepEqual(store.holds, []);
+  assert.equal(store.heldKind, "TargetUnreadable");
+  assert.equal(store.heldPasses, 1);
+});
+
+/**
+ * The kind a hold is recorded at is the pass's own, cleared before each
+ * request. A request moving behind a held one would otherwise be written at
+ * the kind the held one found, and counted toward a dwell it never entered.
+ */
+test("a request that moves behind a held one records no kind of its own", async () => {
+  const store = recordingStore([
+    unboundView("request-one"),
+    preparableView("request-two"),
+  ]);
+  const report = await passOver(
+    serviceOf(store, recordingGit(), { holdPassesMax: 3 }),
+  );
+  assert.equal(report.holds, 1);
+  assert.equal(report.preparations, 1);
+  assert.deepEqual(store.holds, ["RepositoryUnbound", undefined]);
+  assert.deepEqual(store.submitted, [], "neither request is the dwell");
 });

@@ -292,6 +292,7 @@ test("the finalizer reports every lifecycle result, and a block names an executi
   assert.deepEqual(finalizationOutcomes, [
     "FinalizationSucceeded",
     "FinalizationNeedsWork",
+    "FinalizationResultUnavailable",
   ]);
   assert.ok(
     !executionBlockedReasons.includes("WorkFailureEscalated"),

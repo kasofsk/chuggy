@@ -44,6 +44,13 @@
  *     with no rework budget, decided when that wall answered `NoResume`,
  *     replays retryable though the machine that wrote it refused a retry.
  *
+ * A VALUE ADDED TO A DECIDER'S INPUT ALPHABET MINTS NO VERSION. Every stored
+ * row was decided from an alphabet the new value was not in, so no such row
+ * can name it and every one of them still decides to what it decided: there is
+ * nothing to correct, and a version whose correction is empty is a number that
+ * says nothing. `FinalizationResultUnavailable` and the reason its wall stamps
+ * are that shape, which is why 5 covers rows written either side of them.
+ *
  * AT 4 AND BELOW EVERY SPELLING IS THE OLD ONE, which is the one correction
  * that has to run before the codec rather than after it: a stored row names
  * `Working`, `ReleaseTicket` or `FinalizationFailed`, and the schema this

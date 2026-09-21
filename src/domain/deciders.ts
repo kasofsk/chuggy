@@ -316,7 +316,14 @@ function finalizerFailure(graph: TicketGraph, id: TicketId): Decision {
   );
 }
 
-/** The finalizer service's one report. Success completes the ticket; failure reworks it. */
+/**
+ * The finalizer service's one report: success completes the ticket, failure
+ * reworks it, and no result at all parks it at the resume that runs the
+ * finalizer again — nothing about the ticket has to change for the next
+ * attempt to differ, what stood in the way never being the ticket. Without
+ * that edge a finalization that cannot conclude sits in a phase that is
+ * neither revocable nor retryable until the environment moves under it.
+ */
 export function decideFinalizationResult(
   graph: TicketGraph,
   id: TicketId,
@@ -327,6 +334,14 @@ export function decideFinalizationResult(
       return completeTicket(graph, id);
     case "FinalizationNeedsWork":
       return finalizerFailure(graph, id);
+    case "FinalizationResultUnavailable":
+      return escalate(
+        graph,
+        id,
+        "ResumeFinalization",
+        "FinalizationUnavailableEscalated",
+        "ticket-escalated finalization_unavailable_escalated",
+      );
   }
 }
 

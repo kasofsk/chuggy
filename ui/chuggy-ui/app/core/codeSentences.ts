@@ -32,6 +32,8 @@ export function escalationReasonSentence(reason: EscalationReason): string {
       return "this ticket has failed evaluation more times than rework allows";
     case "WorkExecutionUnavailableEscalated":
       return "the platform could not run this ticket's contract";
+    case "FinalizationUnavailableEscalated":
+      return "the platform could not finalize this ticket";
   }
 }
 

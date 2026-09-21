@@ -155,6 +155,7 @@ const idleIntervalVariable = "CHUG_FINALIZER_IDLE_INTERVAL_MS";
 const shutdownDrainVariable = "CHUG_FINALIZER_SHUTDOWN_DRAIN_MS";
 const requestClaimLeaseVariable = "CHUG_FINALIZER_REQUEST_CLAIM_LEASE_SECS";
 const requestsPerPassVariable = "CHUG_FINALIZER_REQUESTS_PER_PASS_MAX";
+const holdPassesVariable = "CHUG_FINALIZER_HOLD_PASSES_MAX";
 const preparationRestartsVariable = "CHUG_FINALIZER_PREPARATION_RESTARTS_MAX";
 const preparationsPerPassVariable = "CHUG_FINALIZER_PREPARATIONS_PER_PASS_MAX";
 const promotionsPerPassVariable = "CHUG_FINALIZER_PROMOTIONS_PER_PASS_MAX";
@@ -454,6 +455,11 @@ function finalizerSettingsFinalizer(
       requestsPerPassVariable,
       finalizerDefaults.requestsPerPassMax,
     ),
+    holdPassesMax: finalizerSettingsBoundOr(
+      environment,
+      holdPassesVariable,
+      finalizerDefaults.holdPassesMax,
+    ),
     preparationRestartsMax: finalizerSettingsBoundOr(
       environment,
       preparationRestartsVariable,
@@ -479,6 +485,22 @@ function finalizerSettingsFinalizer(
       heldPermitsPerPassVariable,
       finalizerDefaults.heldPermitsPerPassMax,
     ),
+    ...finalizerSettingsProposals(environment),
+  });
+}
+
+/** The bounds a change proposal's own half of a pass works within. */
+function finalizerSettingsProposals(
+  environment: FinalizerEnvironment,
+): Pick<
+  FinalizerConfig,
+  | "proposalsPerPassMax"
+  | "proposalCreationsMax"
+  | "proposalReconciliationsMax"
+  | "proposalMergesMax"
+  | "proposalMergeReadingsMax"
+> {
+  return {
     proposalsPerPassMax: finalizerSettingsBoundOr(
       environment,
       proposalsPerPassVariable,
@@ -504,7 +526,7 @@ function finalizerSettingsFinalizer(
       proposalMergeReadingsVariable,
       finalizerDefaults.proposalMergeReadingsMax,
     ),
-  });
+  };
 }
 
 /**

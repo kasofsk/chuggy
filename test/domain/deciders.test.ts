@@ -339,6 +339,36 @@ test("a failed finalization re-enters work, and does so every time", () => {
   assert.equal(ticketAt(again.post, id(1)).phase, "Work");
 });
 
+test("a finalization that reached no result parks at the finalizer's own resume", () => {
+  const before = finalizing();
+  const walled = decideFinalizationResult(
+    before,
+    id(1),
+    "FinalizationResultUnavailable",
+  );
+  assert.equal(
+    walled.rec.label,
+    "ticket-escalated finalization_unavailable_escalated",
+  );
+  assert.deepEqual(walled.rec.transitions, [
+    { ticket: id(1), from: "Finalization", to: "Escalated" },
+  ]);
+  assert.deepEqual(walled.rec.effects, ["OpenHumanTask"]);
+  const parked = ticketAt(walled.post, id(1));
+  assert.equal(parked.reason, "FinalizationUnavailableEscalated");
+  assert.equal(parked.resumeAt, "ResumeFinalization");
+  assert.equal(
+    parked.artifact,
+    ticketAt(before, id(1)).artifact,
+    "the artifact the finalizer could not commit is untouched: it was never the obstacle",
+  );
+  assert.deepEqual(liveShape(walled.post, id(1)), []);
+
+  const resumed = decideResumeTicket(walled.post, id(1));
+  assert.equal(ticketAt(resumed.post, id(1)).phase, "Finalization");
+  assert.deepEqual(resumed.rec.effects, ["RunFinalizer"]);
+});
+
 test("a blocked execution resumes where the work was, and spends nothing", () => {
   const running = graphOf([
     ticketOn(config, {

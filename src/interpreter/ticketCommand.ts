@@ -162,9 +162,10 @@ export type TicketCommand =
 /**
  * The finalizer's own submission, which its authenticated boundary builds from
  * durable rows. It names the request it answers, the request generation and the
- * epoch it was made under, and the attempt it concluded on except where the
- * brief lands nothing and there was none to prepare, so a writer can fence it
- * and find its evidence before constructing an event.
+ * epoch it was made under, and the attempt it concluded on except where none
+ * was prepared — a brief that lands nothing, or a finalization that reached no
+ * result at all — so a writer can fence it and find its evidence before
+ * constructing an event.
  */
 export interface FinalizationSubmission {
   readonly version: 1;

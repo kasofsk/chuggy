@@ -27,6 +27,7 @@ import type { Principal } from "./principal.ts";
 import type {
   BlockedReason,
   EscalationReason,
+  FinalizationUnavailableKind,
   ResumePoint,
 } from "../contract/rosters.ts";
 import { phaseTags, type Phase } from "../domain/generated/modelTypes.ts";
@@ -276,6 +277,14 @@ export interface TicketResource {
    * ticket listed in a project's page, which is not read for it.
    */
   readonly executionBlockedBy?: BlockedReason;
+  /**
+   * Which hold the finalizer could not get past, off the request this ticket's
+   * escalation came out of. The machine escalates on the outcome alone, so this
+   * is the evidence that says which environment has to change; a ticket the
+   * read reports no `FinalizationUnavailableEscalated` for carries none, and
+   * neither does a ticket listed in a project's page.
+   */
+  readonly finalizationBlockedBy?: FinalizationUnavailableKind;
   readonly resumeAt?: ResumePoint;
   /**
    * Which of this ticket's own dependencies their authors revoked, ascending.

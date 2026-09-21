@@ -33,6 +33,7 @@ export const escalationReasons = [
   "WorkFailureEscalated",
   "EvaluationFailureEscalated",
   "WorkExecutionUnavailableEscalated",
+  "FinalizationUnavailableEscalated",
 ] as const;
 export type EscalationReason = (typeof escalationReasons)[number];
 
@@ -49,6 +50,44 @@ export const blockedReasons = [
   "RequiredCapabilityUnavailable",
 ] as const;
 export type BlockedReason = (typeof blockedReasons)[number];
+
+/**
+ * Which finalization holds the machine reports `FinalizationResultUnavailable`
+ * for — the ones a resume could clear, re-running the same operation against
+ * the same pinned input, reaching the repository, the target, the proposal or
+ * its base a second time and counting the finalizer's own budgets afresh; the
+ * wire owns the list outright as `notificationKinds` is owned here, so the
+ * finalizer recording a hold, the door admitting a result and the desk reading
+ * one all name the same thirteen, and `test/contract/rosters.test.ts` holds it
+ * against the interpreter's `allFinalizationHoldKinds` as
+ * `test/postgres/migration.test.ts` holds it against the column that mirrors
+ * it. The five left out stay holds, each for its own reason:
+ * `ApprovalDeclined` is a human's answer, which a resume would put to the same
+ * human again; `ProposalRefused` is that answer or a pin the rows contradict,
+ * and neither is reachability; `ProposalHeadMoved` is a landing to rebuild
+ * rather than one to retry; `ContradictoryEvidence` is durable rows
+ * disagreeing, which is a defect for telemetry and not a desk item; and
+ * `ProposalMergeBlocked` cannot be told apart from a merge no reviewer has
+ * reached yet, so it must not park a ticket that is merely waiting on a human
+ * at the forge.
+ */
+export const finalizationUnavailableKinds = [
+  "RepositoryUnbound",
+  "TargetUnreadable",
+  "ProposalBaseUnreadable",
+  "ProposalBaseIsHead",
+  "ProposalDenied",
+  "ReconciliationUnreadable",
+  "ProposalEvidenceUnstorable",
+  "ProposalAbsent",
+  "ProposalUnaddressed",
+  "ProposalUnavailable",
+  "PreparationRestartsExhausted",
+  "ProposalCreationsExhausted",
+  "ProposalMergesExhausted",
+] as const;
+export type FinalizationUnavailableKind =
+  (typeof finalizationUnavailableKinds)[number];
 
 /**
  * Where an operator resume re-enters a parked ticket, in the order the model

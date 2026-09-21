@@ -17,8 +17,9 @@
 /// unrestricted choice. Work runs one task set per cycle. Evaluation runs the
 /// ticket's authored program, stage by stage, short-circuiting on a failure.
 /// Then the ticket finalizes: a passing final stage moves it into Finalization,
-/// where a platform-owned finalizer runs and reports one conclusive outcome,
-/// and the ticket leaves the phase by that report.
+/// where a platform-owned finalizer runs and reports one outcome, and the
+/// ticket leaves the phase by that report — including when the report is that
+/// no result was reachable, which parks it at the desk.
 ///
 /// THE EVALUATION-FAILURE DISPOSITION. A failing stage has two continuations
 /// and this machine chooses neither of them: it CONSULTS an
@@ -475,18 +476,21 @@ module chuggy_domain {
             "ticket-escalated evaluation_failure_escalated")
       }
 
-  /// A finalizer reports only a conclusive domain outcome. Queueing,
+  /// A finalizer reports only a domain outcome. Queueing,
   /// preparation, approval, permits and reconciliation are focused durable
   /// operational records; TicketGraph does not learn a finalizer
-  /// implementation.
+  /// implementation. Which conditions a finalizer calls unreachable is the
+  /// same kind of detail: the machine draws the outcome, never the cause.
   pure def finalizationOutcomes: Set[FinalizationOutcome] =
-    Set(FinalizationSucceeded, FinalizationNeedsWork)
+    Set(FinalizationSucceeded, FinalizationNeedsWork,
+      FinalizationResultUnavailable)
 
   pure def finalizationOutcomeEnabled(
       c: TicketGraph, j: int, out: FinalizationOutcome): bool =
     match out {
       | FinalizationSucceeded => c.tickets.get(j).phase == Finalization
       | FinalizationNeedsWork => c.tickets.get(j).phase == Finalization
+      | FinalizationResultUnavailable => c.tickets.get(j).phase == Finalization
     }
 
   /// A finalizer reporting failure re-enters Work as a new cycle: it did
@@ -510,17 +514,26 @@ module chuggy_domain {
         { ...c.tickets.get(j), phase: Done,
           completions: c.tickets.get(j).completions + 1 }) }
 
-  /// A conclusive result resolves only from Finalization. A success is
+  /// A result resolves only from Finalization. A success is
   /// the ticket's single completion
   /// (completeTicket: ghost `completions` counts it, one per ticket); a
-  /// failure re-enters work (finalizerFailure).
+  /// failure re-enters work (finalizerFailure); no result at all parks the
+  /// ticket at ResumeFinalization, which is the only wall whose resume re-runs
+  /// the very step it interrupted — nothing about the ticket has to change for
+  /// the next attempt to differ, because what stood in the way was never the
+  /// ticket. Without this edge a finalizer that cannot reach a result leaves
+  /// the ticket in Finalization, which is neither revocable (revocableIn) nor
+  /// retryable (retryableIn), until the environment changes under it.
   /// A finalizer's internals and recovery protocol stay below this grain: it
-  /// reports one abstract, conclusive verdict.
+  /// reports one abstract verdict, including the verdict that it has none.
   pure def decideFinalizationResult(
       c: TicketGraph, j: int, out: FinalizationOutcome): Decision =
     match out {
       | FinalizationSucceeded => completeTicket(c, j)
       | FinalizationNeedsWork => finalizerFailure(c, j)
+      | FinalizationResultUnavailable =>
+        escalate(c, j, ResumeFinalization, FinalizationUnavailableEscalated,
+          "ticket-escalated finalization_unavailable_escalated")
     }
 
   /// Infrastructure cannot execute the current logical task set. Retire its
@@ -790,7 +803,7 @@ module chuggy_domain {
     apply(decideEvalStageReduce(graph, j, onFailure))
   }
 
-  /// The external finalizer returns one conclusive domain result. Queueing,
+  /// The external finalizer returns one domain result. Queueing,
   /// approval, permits and implementation are durable operational state.
   action finalizationResult = all {
     finalizerTickets.size() > 0,

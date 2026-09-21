@@ -156,9 +156,26 @@
  * `finalizerHold`, which is what keeps the count and the observations in
  * agreement; nothing branches on either, because a sealed sink answers nothing
  * and cannot be read back.
+ *
+ * A HOLD A RESUME COULD CLEAR IS WRITTEN DOWN, AND WHAT IT RECORDS IS THE
+ * DWELL. `finalizationUnavailableKinds` are the holds a fresh request against
+ * the same pinned input could get past, so a pass that ends at one records it
+ * on the request and a pass that ends anywhere else clears the record — which
+ * makes the count consecutive passes rather than passes in total. A hold off
+ * that list is left alone in both directions: it neither counts toward a result
+ * nor wipes a count some other kind is keeping, because a reviewer who has not
+ * merged a proposal says nothing about whether the target became readable.
+ * Once the count reaches `holdPassesMax` the pass reports
+ * `FinalizationResultUnavailable` at that kind, the machine escalates on it and
+ * the operator's resume runs the operation again against a request that counts
+ * from nothing.
  */
 
-import { briefFinalizationProposes } from "../contract/rosters.ts";
+import {
+  briefFinalizationProposes,
+  finalizationUnavailableKinds,
+  type FinalizationUnavailableKind,
+} from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import {
   asChangeProposalRequestIdentity,
@@ -197,6 +214,7 @@ import {
   type FinalizationAttemptId,
   type FinalizationClaim,
   type FinalizationConclusion,
+  type FinalizationOffer,
   type FinalizationReconciliation,
   type FinalizationView,
   type FinalizerConfig,
@@ -279,9 +297,10 @@ export interface FinalizerPassReport {
 }
 
 /**
- * What one pass has spent so far, which is both its ceiling and its report.
- * Re-reading a hold and reconciling a permit nobody has read are counted apart,
- * because one ceiling over both would let a backlog of holds starve recovery.
+ * What one pass has spent so far, which is both its ceiling and its report,
+ * and what the one request in flight was last left at. Re-reading a hold and
+ * reconciling a permit nobody has read are counted apart, because one ceiling
+ * over both would let a backlog of holds starve recovery.
  */
 interface FinalizerTally {
   rereadings: number;
@@ -292,7 +311,18 @@ interface FinalizerTally {
   proposals: number;
   conclusions: number;
   holds: number;
+  /**
+   * Why the request being advanced right now was left where it was found, or
+   * nothing where it moved. A hold is counted inside whatever act reached it
+   * and the record of it is written where the advance ends, so the reason
+   * travels back up the path the count came down; `finalizerAdvance` clears it
+   * before each request, so it never answers for the one before.
+   */
+  heldReason: FinalizerHoldReason | undefined;
 }
+
+/** Every count a pass prices a move against, which is every count it keeps. */
+type FinalizerCeiling = Exclude<keyof FinalizerTally, "heldReason">;
 
 /**
  * The one strategy a preparation integrates with. `merge-tree --write-tree` is
@@ -325,8 +355,8 @@ interface FinalizerCandidate {
 
 /**
  * Counts one finalization the pass left exactly where it found it, and names
- * why. Every hold in this module goes through here, so the report's count and
- * the observations cannot disagree.
+ * why. Every hold in this module goes through here, so the report's count, the
+ * observations and what the advance records on the request cannot disagree.
  */
 function finalizerHold(
   service: FinalizerService,
@@ -334,6 +364,7 @@ function finalizerHold(
   reason: FinalizerHoldReason,
 ): void {
   tally.holds += 1;
+  tally.heldReason = reason;
   recordFinalizer(service.metrics, (metrics) => {
     metrics.holding(reason);
   });
@@ -347,7 +378,7 @@ function finalizerHold(
 function finalizerCeilingReached(
   service: FinalizerService,
   tally: FinalizerTally,
-  spent: keyof FinalizerTally,
+  spent: FinalizerCeiling,
   ceiling: number,
 ): boolean {
   if (tally[spent] < ceiling) return false;
@@ -1638,7 +1669,25 @@ async function finalizerProposal(
   await finalizerProposalDecided(service, view, decision, tally);
 }
 
-/** Offers the one conclusion to the one authenticated door. */
+/** Offers one result to the one authenticated door, counting what it answered. */
+async function finalizerSubmit(
+  service: FinalizerService,
+  offer: FinalizationOffer,
+  tally: FinalizerTally,
+): Promise<void> {
+  const submitted = await service.store.submitResult(offer);
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.conclusion(offer.conclusion.outcome, submitted.submitted);
+  });
+  if (
+    submitted.submitted === "Submitted" ||
+    submitted.submitted === "AlreadySubmitted"
+  ) {
+    tally.conclusions += 1;
+  }
+}
+
+/** Offers the one conclusion an advanced view reached to that door. */
 async function finalizerConclude(
   service: FinalizerService,
   view: FinalizationView,
@@ -1651,41 +1700,91 @@ async function finalizerConclude(
       "finalizer pass: a conclusion named no attempt to carry it",
     );
   }
-  const submitted = await service.store.submitResult({
-    claim: view.claim,
-    ...(attempt === undefined ? {} : { attempt: attempt.attempt }),
-    conclusion,
-  });
-  recordFinalizer(service.metrics, (metrics) => {
-    metrics.conclusion(conclusion.outcome, submitted.submitted);
-  });
-  if (
-    submitted.submitted === "Submitted" ||
-    submitted.submitted === "AlreadySubmitted"
-  ) {
-    tally.conclusions += 1;
-  }
+  await finalizerSubmit(
+    service,
+    {
+      claim: view.claim,
+      ...(attempt === undefined ? {} : { attempt: attempt.attempt }),
+      conclusion,
+    },
+    tally,
+  );
 }
 
-/** Advances one claimed request by at most one decision, or by none at all. */
+/** Which of the holds a resume could get past this pass ended at, if any. */
+function finalizerUnavailableKind(
+  reason: FinalizerHoldReason | undefined,
+): FinalizationUnavailableKind | undefined {
+  return finalizationUnavailableKinds.find((kind) => kind === reason);
+}
+
+/**
+ * Records on the request what this pass left it at, and reports the kind as
+ * the result once the record says the dwell is spent — naming no attempt, the
+ * holds it reports being the ones that prepared none. A hold off the roster
+ * writes nothing in either direction: the record it would make is not one a
+ * resume could clear, and the count it would wipe belongs to a kind that may
+ * still be running.
+ */
+async function finalizerRecordHold(
+  service: FinalizerService,
+  claim: FinalizationClaim,
+  tally: FinalizerTally,
+): Promise<void> {
+  const reason = tally.heldReason;
+  const kind = finalizerUnavailableKind(reason);
+  if (reason !== undefined && kind === undefined) return;
+  const held = await service.store.recordHold({
+    claim,
+    ...(kind === undefined ? {} : { kind }),
+  });
+  const config = checkedFinalizerConfig(service.config);
+  if (
+    kind === undefined ||
+    held.held !== "Recorded" ||
+    held.passes < config.holdPassesMax
+  )
+    return;
+  await finalizerSubmit(
+    service,
+    { claim, conclusion: { outcome: "FinalizationResultUnavailable", kind } },
+    tally,
+  );
+}
+
+/**
+ * Advances one claimed request by at most one decision, or by none at all, and
+ * leaves the request holding what that advance found. A pass that reached a
+ * result records nothing: the request is answered, and the columns it carries
+ * are the evidence of what answered it.
+ */
 async function finalizerAdvance(
   service: FinalizerService,
   claim: FinalizationClaim,
   tally: FinalizerTally,
 ): Promise<void> {
-  const config = checkedFinalizerConfig(service.config);
+  tally.heldReason = undefined;
   const gathered = await finalizerGather(service, claim);
   if (gathered === undefined) return;
-  if (gathered.gathered === "Held") {
+  const spent = tally.conclusions;
+  if (gathered.gathered === "Held")
     finalizerHold(service, tally, gathered.hold);
-    return;
-  }
-  const { view } = gathered;
+  else await finalizerAdvanceDecided(service, gathered.view, tally);
+  if (tally.conclusions === spent)
+    await finalizerRecordHold(service, claim, tally);
+}
+
+/** Performs the one move the pure pass named, every arm of it a durable move or a hold. */
+async function finalizerAdvanceDecided(
+  service: FinalizerService,
+  view: FinalizationView,
+  tally: FinalizerTally,
+): Promise<void> {
+  const config = checkedFinalizerConfig(service.config);
+  const claim = view.claim;
   const decision = finalizationNext(config, view);
-  const ceilingReached = (
-    spent: keyof FinalizerTally,
-    ceiling: number,
-  ): boolean => finalizerCeilingReached(service, tally, spent, ceiling);
+  const ceilingReached = (spent: FinalizerCeiling, ceiling: number): boolean =>
+    finalizerCeilingReached(service, tally, spent, ceiling);
   switch (decision.decide) {
     case "Settled":
       await service.store.settleClaim(claim);
@@ -1748,6 +1847,7 @@ export async function finalizerPass(
     proposals: 0,
     conclusions: 0,
     holds: 0,
+    heldReason: undefined,
   };
   await finalizerReadHolds(service, epoch, tally);
   const claims = await service.store.claimRequests(
@@ -1760,5 +1860,15 @@ export async function finalizerPass(
     metrics.claiming(claims.length, config.requestsPerPassMax);
   });
   for (const claim of claims) await finalizerAdvance(service, claim, tally);
-  return { reopened, ...tally };
+  return {
+    reopened,
+    rereadings: tally.rereadings,
+    preparations: tally.preparations,
+    approvals: tally.approvals,
+    promotions: tally.promotions,
+    reconciliations: tally.reconciliations,
+    proposals: tally.proposals,
+    conclusions: tally.conclusions,
+    holds: tally.holds,
+  };
 }

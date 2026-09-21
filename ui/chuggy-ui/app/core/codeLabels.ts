@@ -20,6 +20,7 @@ import {
   type BlockedReason,
   type BriefFinalizationMode,
   type EscalationReason,
+  type FinalizationUnavailableKind,
   type OperationRefusalCode,
   type OperationState,
   type ResumePoint,
@@ -46,6 +47,8 @@ export function escalationReasonLabel(reason: EscalationReason): string {
       return "Rework budget exhausted";
     case "WorkExecutionUnavailableEscalated":
       return "Execution unavailable";
+    case "FinalizationUnavailableEscalated":
+      return "Finalization unavailable";
   }
 }
 
@@ -72,19 +75,62 @@ export function blockedReasonLabel(reason: BlockedReason): string {
 }
 
 /**
- * The one line beside the escalation: the wall the fabric hit where the read
- * carries one, the reason's own generic word otherwise. `executionBlockedBy`
- * is present only while `reason` is `WorkExecutionUnavailableEscalated`, so a
- * page short of it — the continuation path with no execution row to read it
- * off — still has the reason's own word to draw.
+ * Which hold the finalizer is stuck on, off the ticket's
+ * `finalizationBlockedBy`: the evidence beside the escalation, present only
+ * while `reason` is `FinalizationUnavailableEscalated`, one short label per
+ * member of `finalizationUnavailableKinds`.
+ */
+export function finalizationUnavailableKindLabel(
+  kind: FinalizationUnavailableKind,
+): string {
+  switch (kind) {
+    case "RepositoryUnbound":
+      return "Repository unbound";
+    case "TargetUnreadable":
+      return "Target unreadable";
+    case "ProposalBaseUnreadable":
+      return "Proposal base unreadable";
+    case "ProposalBaseIsHead":
+      return "Proposal base at head";
+    case "ProposalDenied":
+      return "Proposal denied";
+    case "ReconciliationUnreadable":
+      return "Reconciliation unreadable";
+    case "ProposalEvidenceUnstorable":
+      return "Proposal evidence unstorable";
+    case "ProposalAbsent":
+      return "Proposal absent";
+    case "ProposalUnaddressed":
+      return "Proposal unaddressed";
+    case "ProposalUnavailable":
+      return "Proposal unavailable";
+    case "PreparationRestartsExhausted":
+      return "Preparation restarts exhausted";
+    case "ProposalCreationsExhausted":
+      return "Proposal creations exhausted";
+    case "ProposalMergesExhausted":
+      return "Proposal merges exhausted";
+  }
+}
+
+/**
+ * The one line beside the escalation: the wall the fabric or the finalizer
+ * hit where the read carries one, the reason's own generic word otherwise.
+ * `blockedBy` is present only while `reason` is
+ * `WorkExecutionUnavailableEscalated`, `finalizationBlockedBy` only while it
+ * is `FinalizationUnavailableEscalated`, so a page short of both — the
+ * continuation path with no wall row to read it off — still has the reason's
+ * own word to draw.
  */
 export function escalationDetail(
   reason: EscalationReason,
   blockedBy: BlockedReason | undefined,
+  finalizationBlockedBy: FinalizationUnavailableKind | undefined,
 ): string {
-  return blockedBy === undefined
-    ? escalationReasonLabel(reason)
-    : blockedReasonLabel(blockedBy);
+  if (blockedBy !== undefined) return blockedReasonLabel(blockedBy);
+  if (finalizationBlockedBy !== undefined)
+    return finalizationUnavailableKindLabel(finalizationBlockedBy);
+  return escalationReasonLabel(reason);
 }
 
 /** What the page knows about the wall, which is what the second line can name. */
@@ -133,6 +179,8 @@ export function escalationDetailLine(
       return walledStageFailed(facts);
     case "WorkExecutionUnavailableEscalated":
       return interruptedLabel(facts);
+    case "FinalizationUnavailableEscalated":
+      return undefined;
   }
 }
 

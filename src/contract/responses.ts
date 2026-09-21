@@ -72,6 +72,7 @@ import {
   executionOutcomes,
   executionStatuses,
   executionTaskKinds,
+  finalizationUnavailableKinds,
   nativeActionKindResolutions,
   nativeActionKinds,
   nativeActionResolutions,
@@ -228,6 +229,14 @@ export const ticketResponseSchema = z.object({
    * a wall being a thing one ticket's page says and a table has no room for.
    */
   executionBlockedBy: z.enum(blockedReasons).optional(),
+  /**
+   * Which hold the finalizer could not get past, off the request this ticket's
+   * escalation came out of. The machine escalates on the outcome alone, so the
+   * kind is evidence rather than state and is present only on a ticket the read
+   * reports `FinalizationUnavailableEscalated` for; the project table carries
+   * none, for the reason the wall above carries none there.
+   */
+  finalizationBlockedBy: z.enum(finalizationUnavailableKinds).optional(),
   resumeAt: z.enum(resumePoints).optional(),
   /**
    * Which of this ticket's dependencies their own authors revoked, ascending.

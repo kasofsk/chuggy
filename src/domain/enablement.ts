@@ -157,14 +157,16 @@ export function finalizationOutcomeEnabled(
   switch (outcome) {
     case "FinalizationSucceeded":
     case "FinalizationNeedsWork":
+    case "FinalizationResultUnavailable":
       return phase === "Finalization";
   }
 }
 
-/** Both results the finalizer service may report. */
+/** Every result the finalizer service may report. */
 export const finalizationOutcomes: readonly FinalizationOutcome[] = [
   "FinalizationSucceeded",
   "FinalizationNeedsWork",
+  "FinalizationResultUnavailable",
 ];
 
 /**

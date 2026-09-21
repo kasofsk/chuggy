@@ -58,6 +58,7 @@ test("every wall the wire can name has a point or names none", () => {
     ["WorkFailureEscalated", "ResumeWork"],
     ["EvaluationFailureEscalated", "ResumeRework"],
     ["WorkExecutionUnavailableEscalated", "ResumeEvaluation"],
+    ["FinalizationUnavailableEscalated", "ResumeFinalization"],
   ]);
 });
 
