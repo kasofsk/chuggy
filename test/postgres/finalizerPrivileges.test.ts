@@ -31,6 +31,9 @@ after(async () => {
   await harness.close();
 });
 
+/** The door 007 added, and the only way the three hold columns on a request are written. */
+const holdFunction = "record_finalization_hold";
+
 /** The four relations a forged conclusion would have to be written into. */
 const mailbox = [
   "operation",
@@ -409,15 +412,22 @@ test("the finalizer's read surface is exactly the relations its view is gathered
   );
 });
 
-test("the finalizer's two doors are its own and no prior role may open them", async () => {
+test("the finalizer's three doors are its own and no prior role may open them", async () => {
   const doors = [
-    `SELECT * FROM ${finalizationFunction}('t','p','r','a','FinalizationNeedsWork','MergeConflict',1,'e','o','s')`,
-    `SELECT * FROM ${approvalRequestFunction}('t','p','a','n','e')`,
-  ];
-  for (const [door, name] of [
-    [doors[0] ?? "", finalizationFunction],
-    [doors[1] ?? "", approvalRequestFunction],
-  ] as readonly (readonly [string, string])[]) {
+    [
+      `SELECT * FROM ${finalizationFunction}('t','p','r','a','FinalizationNeedsWork','MergeConflict',1,'e','o','s')`,
+      finalizationFunction,
+    ],
+    [
+      `SELECT * FROM ${approvalRequestFunction}('t','p','a','n','e')`,
+      approvalRequestFunction,
+    ],
+    [
+      `SELECT * FROM ${holdFunction}('t','p','r','RepositoryUnbound','o',1,1,'e')`,
+      holdFunction,
+    ],
+  ] as readonly (readonly [string, string])[];
+  for (const [door, name] of doors) {
     for (const role of [apiRole, ticketServiceRole, schedulerRole]) {
       assert.match(
         (await harness.attemptAs(role, door)) ?? "",
@@ -429,16 +439,22 @@ test("the finalizer's two doors are its own and no prior role may open them", as
   }
 });
 
-test("both doors are security definer, boundary-owned and search-path pinned", async () => {
+test("all three doors are security definer, boundary-owned and search-path pinned", async () => {
   assert.deepEqual(
     await harness.query(
       `SELECT p.proname, p.prosecdef, r.rolname AS owner,
               array_to_string(p.proconfig, ',') AS settings
          FROM pg_proc p JOIN pg_roles r ON r.oid = p.proowner
         WHERE p.proname = ANY($1) ORDER BY p.proname`,
-      [[finalizationFunction, approvalRequestFunction]],
+      [[finalizationFunction, approvalRequestFunction, holdFunction]],
     ),
     [
+      {
+        proname: holdFunction,
+        prosecdef: true,
+        owner: "chuggy_boundary_owner",
+        settings: "search_path=pg_catalog, public, pg_temp",
+      },
       {
         proname: approvalRequestFunction,
         prosecdef: true,
