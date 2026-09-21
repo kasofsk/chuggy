@@ -267,6 +267,27 @@ test("a brief names the repository its work happens in, or names none", () => {
   );
 });
 
+/**
+ * A landing the writer may take is one the reader can spell, or a ticket
+ * written under it is unreadable on every validating read, its project's
+ * change log included.
+ */
+test("every landing a brief may be written with is read back", () => {
+  for (const mode of briefFinalizationModes) {
+    const written = briefSchema.parse({
+      intent: "Do it.",
+      links: [],
+      branch: `${briefBranchPrefix}rt/work`,
+      finalization: { mode },
+    });
+    assert.deepEqual(
+      briefResponseSchema.parse(written).finalization,
+      { mode },
+      mode,
+    );
+  }
+});
+
 /** Both modes that open a proposal, which pair with a branch and a target the same way. */
 const proposingModes = ["PullRequest", "PullRequestMerge"] as const;
 

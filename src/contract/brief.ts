@@ -218,6 +218,7 @@ export const briefFinalizationResponseSchema = z.discriminatedUnion("mode", [
   z.object(briefFinalizationShapes.Push),
   z.object(briefFinalizationShapes.PullRequest),
   z.object(briefFinalizationShapes.PullRequestMerge),
+  z.object(briefFinalizationShapes.None),
 ]);
 
 /**
