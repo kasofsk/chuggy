@@ -30,10 +30,10 @@
  * spawn's work and drops the rest, so every refusal below reads one spawn's
  * declarations rather than the ticket's whole history.
  *
- * THE TASK NUMBER IS WHAT ORDERS INCARNATIONS, and `model/domain.qnt`'s
- * completion decider already rests on it: a ticket's task ids are unique across
- * its whole history, so a completion naming an earlier incarnation's task is
- * stale by identity rather than by any record of what it superseded. Election
+ * THE TASK NUMBER IS WHAT ORDERS INCARNATIONS. It is the wire's name for a
+ * task, minted per ticket in `./decisionPlan.ts` and never repeated within
+ * one, so a completion naming an earlier incarnation's task is stale by the
+ * number it carries rather than by any record of what it superseded. Election
  * here is by highest task and not by which work passed last, which name the
  * same spawn except where a superseded spawn's execution reports after a later
  * spawn's — and there the highest task is the incarnation the evaluations
@@ -147,7 +147,7 @@ export interface HandoffWork {
   readonly attempt: AttemptId;
   /** The spawn this execution belongs to, which a rework supersedes whole. */
   readonly spawn: string;
-  /** The ticket-local task number, which every later spawn's tasks exceed. */
+  /** The wire's name for the task, which every later spawn's tasks exceed. */
   readonly task: number;
   readonly manifest: ResultManifestId;
   readonly configuration: PinnedConfiguration;
