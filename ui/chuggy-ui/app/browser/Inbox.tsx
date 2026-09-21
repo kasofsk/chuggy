@@ -41,6 +41,7 @@ import {
   operationRefusalSentence,
   operationStateSentence,
 } from "../core/codeSentences.ts";
+import { phaseLabel } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import {
   inboxAnswerInFlight,
@@ -358,7 +359,7 @@ function InboxWhy(props: {
       text={reason === undefined ? undefined : escalationReasonSentence(reason)}
     >
       <span>
-        <Pill tone="parked">{row.badge ?? row.phase}</Pill>
+        <Pill tone="parked">{row.badge ?? phaseLabel(row.phase)}</Pill>
       </span>
     </Tooltip>
   );
