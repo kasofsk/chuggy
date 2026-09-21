@@ -18,7 +18,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { storedJournalLegalOn, type Entry } from "../../src/actor/journal.ts";
+import { storedJournalLegalOn } from "../../src/actor/journal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   journalChainDigest,
@@ -28,6 +28,8 @@ import {
 import { postgresJournalLegality } from "../../src/adapters/postgres/journal.ts";
 import { refinementInstance } from "../actor/harness.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
+import { encodeEntry } from "../../src/interpreter/wire.ts";
+import { decisionSemanticsVersionCurrent } from "../../src/actor/decisionSemantics.ts";
 import {
   postgresHarnessExpire,
   postgresHarnessHeld,
@@ -102,14 +104,14 @@ test("load refuses a v2 row whose format discriminator is downgraded", async () 
 });
 
 /**
- * Restates one stored row's envelope at the versions given, digest and all, so
- * a case reaches the version guards rather than stopping at the broken digest a
- * bare column edit would leave.
+ * Restates one stored row's bytes and envelope at the versions given, digest
+ * and all, so a case reaches the version guards rather than stopping at the
+ * broken digest a bare column edit would leave.
  */
 async function restateEnvelope(
   partition: Partition,
   seq: number,
-  entry: Entry,
+  entryText: string,
   previous: string,
   versions: {
     readonly eventSchemaVersion: number;
@@ -129,7 +131,7 @@ async function restateEnvelope(
   assert.ok(row !== undefined);
   await harness.query(
     `UPDATE journal_entry
-       SET event_schema_version=$4,decision_semantics_version=$5,entry_digest=$6
+       SET entry=$7,event_schema_version=$4,decision_semantics_version=$5,entry_digest=$6
        WHERE tenant=$1 AND project=$2 AND seq=$3`,
     [
       partition.tenant,
@@ -138,7 +140,7 @@ async function restateEnvelope(
       versions.eventSchemaVersion,
       versions.decisionSemanticsVersion,
       journalEnvelopeDigest(partition, previous, {
-        entry,
+        entryText,
         cause: { kind: "Operation", id: asOperationId(row.cause_id) },
         configuration: {
           configurationRevision: row.configuration_revision,
@@ -146,6 +148,7 @@ async function restateEnvelope(
         },
         ...versions,
       }),
+      entryText,
     ],
   );
 }
@@ -159,8 +162,8 @@ test("load refuses unsupported event and decision semantic versions", async () =
     },
     {
       column: "decision_semantics_version",
-      versions: { eventSchemaVersion: 1, decisionSemanticsVersion: 3 },
-      why: /declares decision semantics 3, which this image has no deciders for/,
+      versions: { eventSchemaVersion: 1, decisionSemanticsVersion: 4 },
+      why: /declares decision semantics 4, which this image has no deciders for/,
     },
   ] as const;
   for (const unsupported of cases) {
@@ -179,7 +182,7 @@ test("load refuses unsupported event and decision semantic versions", async () =
     await restateEnvelope(
       partition,
       1,
-      entry,
+      encodeEntry(entry),
       journalChainGenesis(partition),
       unsupported.versions,
     );
@@ -195,11 +198,44 @@ test("a restated envelope at the versions this image writes still loads", async 
   const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
   const entry = postgresHarnessJournal()[0];
   assert.ok(entry !== undefined);
-  await restateEnvelope(partition, 1, entry, journalChainGenesis(partition), {
-    eventSchemaVersion: 1,
-    decisionSemanticsVersion: 2,
-  });
+  await restateEnvelope(
+    partition,
+    1,
+    encodeEntry(entry),
+    journalChainGenesis(partition),
+    { eventSchemaVersion: 1, decisionSemanticsVersion: 2 },
+  );
   assert.equal((await harness.store.load(memory.lease)).parsed, "Ok");
+});
+
+/**
+ * A release as it was written before the accounts left the event. The three
+ * priced fields are gone from the model, so this image re-encodes the same
+ * decision to shorter bytes — which is why the chain covers what was stored
+ * rather than what a replay would write today.
+ */
+const releaseBeforeTheAccounts =
+  '{"seq":1,"event":{"type":"ReleaseTicket","value":{"ticket":1,"deps":[],"prog":[{"fanout":1,"combinator":"UnanimousPass"}],"workFanout":1,"reworkPolicy":{"type":"BudgetedRework","value":1},"finalizationPricing":{"type":"Budgeted","value":1},"resumePricing":"RetryCharged","finalizer":"ManagedFinalizer"}},"rec":{"label":"ticket-released","transitions":[],"effects":[]}}';
+
+test("a row this image would re-encode differently still verifies and replays", async () => {
+  const partition = await postgresHarnessProject(harness.store, "older-bytes");
+  const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
+  await restateEnvelope(
+    partition,
+    1,
+    releaseBeforeTheAccounts,
+    journalChainGenesis(partition),
+    {
+      eventSchemaVersion: 1,
+      decisionSemanticsVersion: decisionSemanticsVersionCurrent,
+    },
+  );
+
+  const loaded = await harness.store.load(memory.lease);
+  assert.ok(loaded.parsed === "Ok");
+  const first = loaded.value[0];
+  assert.ok(first !== undefined);
+  assert.deepEqual(first.entry, postgresHarnessJournal()[0]);
 });
 
 test("a pre-envelope row replays at the semantics its digest attests, not its column", async () => {
@@ -216,7 +252,7 @@ test("a pre-envelope row replays at the semantics its digest attests, not its co
       partition.tenant,
       partition.project,
       1,
-      journalChainDigest(partition, previous, entry),
+      journalChainDigest(partition, previous, encodeEntry(entry)),
     ],
   );
 
@@ -293,7 +329,7 @@ test("each stored digest chains onto its predecessor, and the first onto the par
     assert.equal(
       row.entry_digest,
       journalEnvelopeDigest(partition, previous, {
-        entry,
+        entryText: encodeEntry(entry),
         cause: { kind: row.cause_kind, id: asOperationId(row.cause_id) },
         configuration: {
           configurationRevision: row.configuration_revision ?? "",
@@ -424,7 +460,7 @@ test("the legality scan names a history whose declared machine could not have de
       partition.project,
       2,
       journalEnvelopeDigest(partition, second.prev_digest, {
-        entry,
+        entryText: encodeEntry(entry),
         cause: { kind: "Operation", id: asOperationId(second.cause_id) },
         configuration: {
           configurationRevision: second.configuration_revision,

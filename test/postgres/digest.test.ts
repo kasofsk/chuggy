@@ -56,14 +56,14 @@ const pinnedGenesis =
 
 /** The wire text of the shared fixture history, entry by entry. */
 const pinnedWire: readonly string[] = [
-  '{"seq":1,"event":{"type":"ReleaseTicket","value":{"ticket":1,"deps":[],"prog":[{"fanout":1,"combinator":"UnanimousPass"}],"workFanout":1,"reworkPolicy":{"type":"BudgetedRework","value":1},"finalizationPricing":{"type":"Budgeted","value":1},"resumePricing":"RetryCharged","finalizer":"ManagedFinalizer"}},"rec":{"label":"ticket-released","transitions":[],"effects":[]}}',
+  '{"seq":1,"event":{"type":"ReleaseTicket","value":{"ticket":1,"deps":[],"prog":[{"fanout":1,"combinator":"UnanimousPass"}],"workFanout":1,"finalizer":"ManagedFinalizer"}},"rec":{"label":"ticket-released","transitions":[],"effects":[]}}',
   '{"seq":2,"event":{"type":"Dispatch","value":1},"rec":{"label":"dispatch","transitions":[{"ticket":1,"from":"Pending","to":"Working"}],"effects":["SpawnWorkTasks"]}}',
 ];
 
 /** The chain those bytes produce under that partition, starting from its genesis. */
 const pinnedDigests: readonly string[] = [
-  "5f2784019b675f71d1d90606603b1e90b9a0ccde578a99930c9b031897c306dc",
-  "6829b7eaa083e50639b956e7c6f9e6b0f5296ae8f95c5930e26d17d255defe20",
+  "988ff8600e706fdd957c353c7b76df24254d4306da7ea8da1b7ff95c39c0b87b",
+  "b780e6288a410bb911b337fb46628cc8006170632622eabce58d805a9092263a",
 ];
 
 test("the encoder writes the bytes these vectors were taken from", () => {
@@ -78,15 +78,15 @@ test("the genesis that partition chains from is the one written down here", () =
 
 test("the chain those bytes produce is the one written down here", () => {
   let previous = pinnedGenesis;
-  const chained = postgresHarnessJournal().map((entry) => {
-    previous = journalChainDigest(pinnedPartition, previous, entry);
+  const chained = pinnedWire.map((text) => {
+    previous = journalChainDigest(pinnedPartition, previous, text);
     return previous;
   });
   assert.deepEqual(chained, pinnedDigests);
 });
 
 test("a chain built for one partition does not verify under another", () => {
-  const first = postgresHarnessEntry(0);
+  const first = encodeEntry(postgresHarnessEntry(0));
   const genesis = journalChainGenesis(pinnedPartition);
   const home = journalChainDigest(pinnedPartition, genesis, first);
   for (const other of otherPartitions) {
@@ -103,7 +103,7 @@ test("the complete envelope digest covers cause and release configuration", () =
   const entry = postgresHarnessEntry(0);
   const previous = journalChainGenesis(pinnedPartition);
   const envelope = {
-    entry,
+    entryText: encodeEntry(entry),
     cause: { kind: "Operation" as const, id: asOperationId("operation") },
     configuration: {
       configurationRevision: "config-1",
@@ -143,5 +143,16 @@ test("the complete envelope digest covers cause and release configuration", () =
       decisionSemanticsVersion: 2,
     }),
     digest,
+  );
+});
+
+test("the chain covers the stored text and not what it decodes to", () => {
+  const stored = pinnedWire[0];
+  assert.ok(stored !== undefined);
+  const spaced = JSON.stringify(JSON.parse(stored), undefined, 1);
+  assert.deepEqual(JSON.parse(spaced), JSON.parse(stored));
+  assert.notEqual(
+    journalChainDigest(pinnedPartition, pinnedGenesis, spaced),
+    journalChainDigest(pinnedPartition, pinnedGenesis, stored),
   );
 });

@@ -75,8 +75,7 @@ import type { RuntimeStoredJournalSource } from "../../interpreter/serviceRuntim
 import type { DispatchContractPin } from "../../interpreter/dispatchView.ts";
 import {
   encodeEntry,
-  parseEntry,
-  parseJournal,
+  parseStoredEntry,
   type Parsed,
 } from "../../interpreter/wire.ts";
 import {
@@ -112,11 +111,12 @@ function storedJournalRowVerified(
   row: StoredJournalRow,
   partition: Partition,
   previous: string,
-  entry: Entry,
 ): boolean {
   if (row.prev_digest !== previous) return false;
   if (row.integrity_version === 1) {
-    return journalChainDigest(partition, previous, entry) === row.entry_digest;
+    return (
+      journalChainDigest(partition, previous, row.entry) === row.entry_digest
+    );
   }
   if (row.integrity_version !== 2) return false;
   if (row.event_schema_version !== 1) return false;
@@ -140,7 +140,7 @@ function storedJournalRowVerified(
     configurationRevisionDigest(row.configuration_canonical) ===
       configuration.configurationDigest &&
     journalEnvelopeDigest(partition, previous, {
-      entry,
+      entryText: row.entry,
       cause,
       configuration,
       eventSchemaVersion: row.event_schema_version,
@@ -179,11 +179,14 @@ export async function postgresJournalDispatchContracts(
       );
     const found = await client.query<{
       entry: string;
+      integrity_version: number;
+      decision_semantics_version: number;
       configuration_revision: string;
       configuration_digest: string;
       configuration_canonical: string;
     }>(
-      sql`SELECT j.entry,j.configuration_revision,j.configuration_digest,
+      sql`SELECT j.entry,j.integrity_version,j.decision_semantics_version,
+              j.configuration_revision,j.configuration_digest,
               c.canonical AS configuration_canonical
          FROM journal_entry j JOIN configuration_revision c
            ON c.tenant=j.tenant AND c.project=j.project
@@ -193,13 +196,21 @@ export async function postgresJournalDispatchContracts(
     );
     const contracts = new Map<number, DispatchContractPin>();
     for (const stored of found.rows) {
-      const parsed = parseJournal([JSON.parse(stored.entry) as unknown]);
+      const semantics = storedJournalRowSemantics(stored);
+      if (!isDecisionSemanticsVersion(semantics))
+        throw new Error(
+          `postgres journal: a dispatch contract entry declares decision semantics ${String(semantics)}, which this image has no deciders for`,
+        );
+      const parsed = parseStoredEntry(
+        JSON.parse(stored.entry) as unknown,
+        semantics,
+      );
       if (parsed.parsed === "Refused")
         throw new Error(
           `postgres journal: dispatch contract entry is unreadable — ${parsed.why}`,
         );
-      const event = parsed.value[0]?.event;
-      if (event?.type === "ReleaseTicket") {
+      const event = parsed.value.event;
+      if (event.type === "ReleaseTicket") {
         contracts.set(event.value.ticket, {
           configurationRevision: stored.configuration_revision,
           configurationDigest: stored.configuration_digest,
@@ -248,8 +259,9 @@ export async function postgresJournalWrite(
     lease.partition,
     lease.head,
   );
+  const entryText = encodeEntry(entry);
   const envelope: JournalIntegrityEnvelope = {
-    entry,
+    entryText,
     cause,
     configuration,
     eventSchemaVersion: 1,
@@ -262,7 +274,7 @@ export async function postgresJournalWrite(
         configuration_digest, event_schema_version, decision_semantics_version,
         integrity_version)
      VALUES (${lease.partition.tenant}, ${lease.partition.project}, ${entry.seq},
-             ${encodeEntry(entry)},
+             ${entryText},
              ${journalEnvelopeDigest(lease.partition, previous, envelope)},
              ${previous}, ${lease.owner}, ${lease.fencingEpoch},
              ${lease.recoveryEpoch}, ${cause.kind}, ${cause.id},
@@ -281,7 +293,10 @@ export async function postgresJournalWrite(
  * no version column, so its semantics is the one that predates the envelope
  * rather than whatever the column has since been set to.
  */
-function storedJournalRowSemantics(row: StoredJournalRow): number {
+function storedJournalRowSemantics(row: {
+  readonly integrity_version: number;
+  readonly decision_semantics_version: number;
+}): number {
   return row.integrity_version === 1 ? 1 : row.decision_semantics_version;
 }
 
@@ -293,21 +308,7 @@ function postgresJournalStored(
   const stored: StoredEntry[] = [];
   let previous = journalChainGenesis(partition);
   for (const row of rows) {
-    let parsed: Parsed<Entry>;
-    try {
-      parsed = parseEntry(JSON.parse(row.entry) as unknown);
-    } catch {
-      return {
-        parsed: "Refused",
-        why: `stored row ${row.seq} is not JSON: ${row.entry}`,
-      };
-    }
-    if (parsed.parsed === "Refused")
-      return {
-        parsed: "Refused",
-        why: `stored row ${row.seq}: ${parsed.why}`,
-      };
-    if (!storedJournalRowVerified(row, partition, previous, parsed.value)) {
+    if (!storedJournalRowVerified(row, partition, previous)) {
       return {
         parsed: "Refused",
         why: `the stored envelope of row ${row.seq} failed integrity verification`,
@@ -320,6 +321,20 @@ function postgresJournalStored(
         why: `stored row ${row.seq} declares decision semantics ${String(semantics)}, which this image has no deciders for`,
       };
     }
+    let parsed: Parsed<Entry>;
+    try {
+      parsed = parseStoredEntry(JSON.parse(row.entry) as unknown, semantics);
+    } catch {
+      return {
+        parsed: "Refused",
+        why: `stored row ${row.seq} is not JSON: ${row.entry}`,
+      };
+    }
+    if (parsed.parsed === "Refused")
+      return {
+        parsed: "Refused",
+        why: `stored row ${row.seq}: ${parsed.why}`,
+      };
     stored.push({ entry: parsed.value, semantics });
     previous = row.entry_digest;
   }
