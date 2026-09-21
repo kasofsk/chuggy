@@ -26,6 +26,7 @@ import { nativeHttpPageItemsMax } from "../../../../src/contract/http.ts";
 import type {
   ExecutionSummary,
   RunTotals,
+  TaskIdentity,
 } from "../../../../src/contract/responses.ts";
 import {
   executionTaskKinds,
@@ -229,8 +230,13 @@ export function runSpanOf(summaries: readonly ExecutionSummary[]): RunSpan {
   return { from: started[0], to: open ? undefined : ended.at(-1) };
 }
 
-/** One stage of one kind, and what the executions grouped under it spent. */
+/**
+ * One stage of one kind in one work cycle, and what the executions grouped
+ * under it spent. A stage number is only unique within its own cycle, so a
+ * row never merges two cycles' same-numbered stage into one figure.
+ */
 export interface RunStageRow {
+  readonly cycle: number;
   readonly taskKind: ExecutionTaskKind;
   readonly stage: number | undefined;
   readonly executions: number;
@@ -238,12 +244,27 @@ export interface RunStageRow {
   readonly totals: RunTotals | undefined;
 }
 
-function runStageKey(summary: ExecutionSummary): string {
-  return `${summary.taskKind}/${summary.stage === undefined ? "" : String(summary.stage)}`;
+/** Which work cycle a task belongs to, a work task's own or an evaluation's. */
+export function identityCycle(identity: TaskIdentity): number {
+  return identity.type === "WorkTask"
+    ? identity.value.cycle
+    : identity.value.workCycle;
 }
 
-/** Stage order first, and within a stage the order the program runs the kinds in. */
+/** An evaluation task's own stage, absent for a work task. */
+function identityStage(identity: TaskIdentity): number | undefined {
+  return identity.type === "WorkTask" ? undefined : identity.value.stage;
+}
+
+function runStageKey(summary: ExecutionSummary): string {
+  const stage = identityStage(summary.identity);
+  return `${String(identityCycle(summary.identity))}/${summary.taskKind}/${stage === undefined ? "" : String(stage)}`;
+}
+
+/** Cycle order first, then stage order, then the order the program runs the kinds in. */
 function runStageBefore(left: RunStageRow, right: RunStageRow): number {
+  const cycles = left.cycle - right.cycle;
+  if (cycles !== 0) return cycles;
   const stages = (left.stage ?? 0) - (right.stage ?? 0);
   return stages === 0
     ? executionTaskKinds.indexOf(left.taskKind) -
@@ -252,8 +273,8 @@ function runStageBefore(left: RunStageRow, right: RunStageRow): number {
 }
 
 /**
- * The ticket's executions grouped on the stage of the program that ran them,
- * each row stating how many of its executions carry figures at all.
+ * The ticket's executions grouped on the cycle and stage of the program that
+ * ran them, each row stating how many of its executions carry figures at all.
  */
 export function runStageRows(
   summaries: readonly ExecutionSummary[],
@@ -273,8 +294,9 @@ export function runStageRows(
       summary.runTotals === undefined ? [] : [summary.runTotals],
     );
     rows.push({
+      cycle: identityCycle(first.identity),
       taskKind: first.taskKind,
-      stage: first.stage,
+      stage: identityStage(first.identity),
       executions: group.length,
       measured: measured.length,
       totals: runTotalsSummed(measured),
@@ -292,8 +314,11 @@ export function runStageCoverageSentence(row: RunStageRow): string {
   return `${executions}, ${String(row.measured)} with figures`;
 }
 
-/** What the row is called, in the program's own words. */
+/** What the row is called: the cycle it ran in, and the stage within it. */
 export function runStageLabel(row: RunStageRow): string {
   const kind = row.taskKind.toLowerCase();
-  return row.stage === undefined ? kind : `${kind} stage ${String(row.stage)}`;
+  const cycle = `cycle ${String(row.cycle)}`;
+  return row.stage === undefined
+    ? `${cycle} ${kind}`
+    : `${cycle} ${kind} stage ${String(row.stage)}`;
 }

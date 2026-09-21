@@ -14,6 +14,7 @@ import { expect, test } from "vitest";
 import type {
   ExecutionResponse,
   ExecutionsResponse,
+  TaskIdentity,
 } from "../../../src/contract/responses.ts";
 import { runStageLabel } from "../app/core/runTotals.ts";
 import {
@@ -22,6 +23,20 @@ import {
 } from "../app/core/ticketExecutions.ts";
 
 const digest = "a".repeat(64);
+
+/** A work task's identity, in the cycle a case names. */
+function workIdentity(cycle: number): TaskIdentity {
+  return { type: "WorkTask", value: { ticket: 7, cycle } };
+}
+
+/** An evaluation task's identity, its stage and cycle a case names, its first
+ * generation and evaluator held constant since no case here reworks. */
+function evalIdentity(cycle: number, stage: number): TaskIdentity {
+  return {
+    type: "EvaluationTask",
+    value: { ticket: 7, workCycle: cycle, stage, generation: 1, evaluator: 1 },
+  };
+}
 
 function execution(
   execution: string,
@@ -33,6 +48,7 @@ function execution(
     ticket: 7,
     task,
     taskKind: "Work",
+    identity: workIdentity(1),
     cluster: "rig",
     configurationRevision: "r1",
     requirementIdentity: "req-1",
@@ -182,20 +198,20 @@ test("the page's executions group into the stages that ran them", () => {
   };
   const stages = ticketExecutionStages(
     page([
-      execution("e1", 1, { taskKind: "Work", stage: 1, runTotals: totals }),
+      execution("e1", 1, { identity: workIdentity(1), runTotals: totals }),
       execution("e2", 2, {
         taskKind: "Evaluation",
-        stage: 1,
+        identity: evalIdentity(1, 1),
         status: "Terminal",
         outcome: "Failed",
         runTotals: totals,
       }),
-      execution("e3", 3, { taskKind: "Work", stage: 1, runTotals: totals }),
+      execution("e3", 3, { identity: workIdentity(1), runTotals: totals }),
     ]),
   );
   expect(stages.map((row) => runStageLabel(row))).toEqual([
-    "work stage 1",
-    "evaluation stage 1",
+    "cycle 1 work",
+    "cycle 1 evaluation stage 1",
   ]);
   expect(stages[0]?.executions).toBe(2);
   expect(stages[0]?.totals?.costUsdMicros).toBe(10_000);
