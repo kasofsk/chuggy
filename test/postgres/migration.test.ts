@@ -3806,6 +3806,44 @@ test("a request task carries a whole identity for its kind and no half of one", 
   });
 });
 
+/** Each source an execution may be registered under, now that no task names one. */
+const identitySources: readonly (readonly [string, string, boolean])[] = [
+  ["a requirement a task named for itself", "ExplicitTask", false],
+  ["a requirement its kind named", "TaskKindDefault", true],
+];
+
+function identityRegistration(source: string): string {
+  return `INSERT INTO execution
+     (tenant,project,execution,ticket,task,source_request,account,cluster,
+      configuration_revision,configuration_digest,requirement_identity,
+      requirement_value,requirement_digest,requirement_source,
+      platform_default_version,status)
+   SELECT 'tenant-5','project-5','execution-${source}',1,1,'request-5',
+          a.account,a.cluster,'revision-5','digest-5','requirement-${source}',
+          '{"mode":"Container","operatingSystem":"Linux","architecture":"Amd64","image":"worker"}'::jsonb,
+          repeat('e',64),'${source}',1,'Running'
+     FROM capacity_account a
+    WHERE a.account=project_capacity_account('tenant-5','project-5')`;
+}
+
+test("an execution registered under a requirement a task named is refused", async () => {
+  await migrationDatabase("identity_sources", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(`${deletionPartition}\n${identityRequest}`);
+    await subject.query(identityTask(1, "kind,cycle", "'Work',1"));
+    for (const [what, source, admitted] of identitySources) {
+      const insert = identityRegistration(source);
+      if (admitted) await subject.query(insert);
+      else
+        await assert.rejects(
+          subject.query(insert),
+          /execution_requirement_source_known/u,
+          what,
+        );
+    }
+  });
+});
+
 /** The identity as the relation holds it, in the order the columns arrived. */
 const identityColumns = [
   "tenant",

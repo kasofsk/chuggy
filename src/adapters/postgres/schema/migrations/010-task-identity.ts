@@ -48,6 +48,16 @@ import { apiRole, type Migration } from "../shared.ts";
  * configuration spells as a stage, and the labels the console used to reach by
  * adding one.
  *
+ * AND THE SOURCE ROSTER LOSES THE MEMBER ONLY A NUMBERED TASK COULD NAME.
+ * `execution_requirement_source_known` admits `ExplicitTask`, which is what a
+ * requirement authored against one task's number materialized as. A task is
+ * named by an identity its ticket mints as it spawns, so there is nothing an
+ * author can write down that reaches one, and neither the model's
+ * `selectedRequirement` nor the interpreter's has an arm that yields it. Left
+ * standing, the CHECK would be this schema's own statement that a source
+ * nothing mints is a source it expects — and the next reader would build for
+ * it. The constraint is dropped by name and written again without it.
+ *
  * ONLY THE NEW COLUMNS TAKE GRANTS. The api role reads this relation column by
  * column, so the three that arrive need a line each; the stage was already
  * granted and keeps that grant through a floor change. Every other role holds
@@ -116,6 +126,9 @@ export const migration010: Migration = {
     `GRANT SELECT(cycle) ON TABLE public.execution_request_task TO ${apiRole}`,
     `GRANT SELECT(generation) ON TABLE public.execution_request_task TO ${apiRole}`,
     `GRANT SELECT(evaluator) ON TABLE public.execution_request_task TO ${apiRole}`,
+    `ALTER TABLE public.execution
+       DROP CONSTRAINT execution_requirement_source_known,
+       ADD CONSTRAINT execution_requirement_source_known CHECK ((requirement_source = ANY (ARRAY['TaskKindDefault'::text, 'TicketDefault'::text, 'PlatformDefault'::text])))`,
     `CREATE OR REPLACE FUNCTION public.decision_event_is_valid(event jsonb) RETURNS boolean
     LANGUAGE plpgsql IMMUTABLE
     AS $$
