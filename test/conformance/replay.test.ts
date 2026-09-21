@@ -222,7 +222,7 @@ function picksOf(state: ItfState): Picks {
     deps: some("deps_"),
     program: some("prog"),
     onFailure: some("onFailure"),
-    taskId: some("tid"),
+    task: some("task"),
     verdict: some("v"),
     outcome: some("out"),
   };

@@ -23,13 +23,13 @@ import type {
   Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
 import { freshTicket } from "../../src/domain/deciders.ts";
-import { asTaskId, asTicketId, type TicketId } from "../../src/domain/ids.ts";
+import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
 import {
-  tkEval,
-  tkWork,
+  evaluationTaskOf,
   tsResolved,
   tsOutstanding,
+  workTaskOf,
 } from "../../src/domain/task.ts";
 
 /** A ticket id, so a fixture reads the way the model's numbering does. */
@@ -39,35 +39,42 @@ export const id = (value: number): TicketId => asTicketId(value);
 export const depsOf = (...values: number[]): ReadonlySet<TicketId> =>
   new Set(values.map(id));
 
-/** A resolved work task, as the retained record holds one. */
-export const workTask = (value: number, outcome: TaskOutcome): Task => ({
-  id: asTaskId(value),
-  kind: tkWork,
+/** A resolved work task of `ticket`'s cycle, as the retained record holds one. */
+export const workTask = (
+  ticket: number,
+  cycle: number,
+  outcome: TaskOutcome,
+): Task => ({
+  identity: workTaskOf(ticket, cycle),
   state: tsResolved(outcome),
 });
 
-/** A resolved task of eval stage `stage`. */
+/** A resolved evaluator of `ticket`'s stage, judging the named cycle. */
 export const evalTask = (
-  value: number,
+  ticket: number,
+  cycle: number,
   stage: number,
+  evaluator: number,
   outcome: TaskOutcome,
 ): Task => ({
-  id: asTaskId(value),
-  kind: tkEval(stage),
+  identity: evaluationTaskOf(ticket, cycle, stage, 1, evaluator),
   state: tsResolved(outcome),
 });
 
 /** A work task still outstanding, as a live set holds one. */
-export const workOutstanding = (value: number): Task => ({
-  id: asTaskId(value),
-  kind: tkWork,
+export const workOutstanding = (ticket: number, cycle: number): Task => ({
+  identity: workTaskOf(ticket, cycle),
   state: tsOutstanding,
 });
 
-/** A task of eval stage `stage`, still outstanding. */
-export const evalOutstanding = (value: number, stage: number): Task => ({
-  id: asTaskId(value),
-  kind: tkEval(stage),
+/** An evaluator of `ticket`'s stage, still outstanding. */
+export const evalOutstanding = (
+  ticket: number,
+  cycle: number,
+  stage: number,
+  evaluator: number,
+): Task => ({
+  identity: evaluationTaskOf(ticket, cycle, stage, 1, evaluator),
   state: tsOutstanding,
 });
 
@@ -104,28 +111,32 @@ export function initialView(post: TicketGraph): StepView {
  * below is one edit away from a state that passes.
  */
 export function healthyFleet(config: Config): readonly Ticket[] {
-  const width = config.nTasks;
-  const record: Task[] = [workTask(1, "Passed")];
-  for (let i = 0; i < width; i++) record.push(evalTask(i + 2, 0, "Passed"));
-  const finished = {
-    record,
-    spawned: record.length,
-    artifact: { type: "ProducedArtifact", value: 1 } as const,
+  const finished = (ticket: number): Partial<Ticket> => {
+    const record: Task[] = [workTask(ticket, 1, "Passed")];
+    for (let i = 0; i < config.nTasks; i++)
+      record.push(evalTask(ticket, 1, 0, i + 1, "Passed"));
+    return {
+      record,
+      workCyclesStarted: 1,
+      spawned: record.length,
+      artifact: { type: "ProducedArtifact", value: 1 },
+    };
   };
   return [
     ticketOn(config, {
-      ...finished,
+      ...finished(1),
       phase: "Done",
       completions: 1,
     }),
     ticketOn(config, {
       phase: "Work",
       deps: new Set([1]),
-      tasks: new Set<Task>([workOutstanding(1)]),
+      tasks: new Set<Task>([workOutstanding(2, 1)]),
+      workCyclesStarted: 1,
       spawned: 1,
     }),
     ticketOn(config, {
-      ...finished,
+      ...finished(3),
       phase: "Finalization",
     }),
   ];
@@ -144,9 +155,18 @@ export function fleetBut(
   );
 }
 
-/** The model's `idsAccounted` for one ticket: every id ever issued is retired or live. */
+/**
+ * The model's `idsAccounted` for one ticket: every task ever spawned is
+ * retired or live, and the work-cycle counter is what its work tasks show.
+ */
 export function accountsFor(ticket: Ticket): boolean {
-  return ticket.spawned === ticket.record.length + ticket.tasks.size;
+  return (
+    ticket.spawned === ticket.record.length + ticket.tasks.size &&
+    ticket.workCyclesStarted ===
+      [...ticket.record, ...ticket.tasks].filter(
+        (task) => task.identity.type === "WorkTask",
+      ).length
+  );
 }
 
 /** The same over a whole graph: a fixture accounts for all of its ids or none of them. */

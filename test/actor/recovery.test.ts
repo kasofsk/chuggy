@@ -37,7 +37,7 @@ import {
   worldSpawns,
 } from "../../src/actor/world.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
-import { asTaskId } from "../../src/domain/ids.ts";
+import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   assertStep,
@@ -86,7 +86,7 @@ function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
     "task-done",
   );
   assert.throws(
@@ -94,7 +94,7 @@ function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
       journalStep(
         config,
         state,
-        taskDoneEvent(id(1), asTaskId(1), "Fail", plainResult),
+        taskDoneEvent(id(1), workTaskOf(1, 1), "Fail", plainResult),
       ),
     /TaskDone is refused/,
     "a task already resolved is no longer outstanding, so a second report is refused",
@@ -104,7 +104,7 @@ function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(2), "Fail", plainResult),
+    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 0, 1, 1), "Fail", plainResult),
     "task-done",
   );
   state = journalStep(
@@ -144,14 +144,14 @@ function phaseCompletionLandsOnce(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(3), "Pass", plainResult),
+    taskDoneEvent(id(1), workTaskOf(1, 2), "Pass", plainResult),
     "task-done",
   );
   state = stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(4), "Pass", plainResult),
+    taskDoneEvent(id(1), evaluationTaskOf(1, 2, 0, 1, 1), "Pass", plainResult),
     "task-done",
   );
   state = stepEmit(

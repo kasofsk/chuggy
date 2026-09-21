@@ -34,7 +34,7 @@ import {
   type ActorState,
 } from "../../src/actor/state.ts";
 import type { Config } from "../../src/domain/config.ts";
-import { asTaskId } from "../../src/domain/ids.ts";
+import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import type {
   StageDefinition,
   Verdict,
@@ -125,14 +125,19 @@ export function walkFirstCycle(
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
     "task-done",
   );
   state = stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
   return stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(2), evalVerdict, plainResult),
+    taskDoneEvent(
+      id(1),
+      evaluationTaskOf(1, 1, 0, 1, 1),
+      evalVerdict,
+      plainResult,
+    ),
     "task-done",
   );
 }

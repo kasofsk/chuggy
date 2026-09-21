@@ -42,10 +42,11 @@ import {
   decodeEvaluationFailureDisposition,
   decodeFinalizationOutcome,
   decodeStageDefinition,
+  decodeTaskIdentity,
   decodeVerdict,
 } from "../../src/generated/model-api.ts";
 import type { ItfValue } from "../itf/decode.ts";
-import { decodeTaskId, decodeTicketId, itfToWire } from "../itf/vocabulary.ts";
+import { decodeTicketId, itfToWire } from "../itf/vocabulary.ts";
 
 /**
  * Every action name this table routes, in the order `model/domain.qnt`'s `step`
@@ -76,7 +77,7 @@ export interface Picks {
   readonly deps: ItfValue | undefined;
   readonly program: ItfValue | undefined;
   readonly onFailure: ItfValue | undefined;
-  readonly taskId: ItfValue | undefined;
+  readonly task: ItfValue | undefined;
   readonly verdict: ItfValue | undefined;
   readonly outcome: ItfValue | undefined;
 }
@@ -137,7 +138,7 @@ export function replayStep(
       return decideTaskDone(
         pre,
         j(),
-        decodeTaskId(need(picks.taskId, "tid")),
+        decodeTaskIdentity(itfToWire(need(picks.task, "task"))),
         decodeVerdict(itfToWire(need(picks.verdict, "v"))),
       );
     case "workReduce":

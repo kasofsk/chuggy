@@ -41,7 +41,7 @@ import {
   worldSpawns,
 } from "../../src/actor/world.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
-import { asTaskId } from "../../src/domain/ids.ts";
+import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   assertStep,
@@ -99,7 +99,7 @@ function phaseDuplicateCycle(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
     "task-done",
     spentWorld,
   );
@@ -113,7 +113,7 @@ function phaseDuplicateCycle(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(2), "Pass", plainResult),
+    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 0, 1, 1), "Pass", plainResult),
     "task-done",
     spentWorld,
   );

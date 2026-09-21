@@ -43,7 +43,7 @@ const noPicks: Picks = {
   deps: undefined,
   program: undefined,
   onFailure: undefined,
-  taskId: undefined,
+  task: undefined,
   verdict: undefined,
   outcome: undefined,
 };

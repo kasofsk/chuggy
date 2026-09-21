@@ -23,7 +23,7 @@ import {
   finalizingIn,
   isBlockedIn,
   isReadyIn,
-  outstandingTaskIdsIn,
+  outstandingTasksIn,
   outstandingTaskIn,
   quietIn,
   readiesIn,
@@ -40,6 +40,7 @@ import {
 } from "../../src/domain/enablement.ts";
 import { defaultProgram } from "../../src/domain/config.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import type {
   TicketGraph,
   Ticket,
@@ -194,24 +195,30 @@ test("only the two task phases can receive a completion, and only a resolved set
   const graph = graphOf([
     ticketOn(config, {
       phase: "Work",
-      tasks: new Set([workOutstanding(1), workTask(2, "Passed")]),
-      spawned: 2,
+      tasks: new Set([workOutstanding(1, 1)]),
+      workCyclesStarted: 1,
+      spawned: 1,
     }),
     ticketOn(config, {
       phase: "Evaluation",
-      tasks: new Set([evalTask(1, 0, "Failed")]),
-      spawned: 1,
+      record: [workTask(2, 1, "Passed")],
+      tasks: new Set([evalTask(2, 1, 0, 1, "Failed")]),
+      workCyclesStarted: 1,
+      spawned: 2,
     }),
     ticketOn(config, { phase: "Finalization" }),
     ticketOn(config, {
       phase: "Work",
-      tasks: new Set([workTask(1, "Passed")]),
+      tasks: new Set([workTask(4, 1, "Passed")]),
+      workCyclesStarted: 1,
       spawned: 1,
     }),
     ticketOn(config, {
       phase: "Evaluation",
-      tasks: new Set([evalOutstanding(1, 0)]),
-      spawned: 1,
+      record: [workTask(5, 1, "Passed")],
+      tasks: new Set([evalOutstanding(5, 1, 0, 1)]),
+      workCyclesStarted: 1,
+      spawned: 2,
     }),
   ]);
   assert.deepEqual(taskPhaseIn(graph), [id(1), id(2), id(4), id(5)]);
@@ -243,23 +250,29 @@ test("the fabric may still report on exactly the tasks a ticket has outstanding"
   const graph = graphOf([
     ticketOn(config, {
       phase: "Evaluation",
-      record: [workTask(1, "Passed"), workTask(2, "Passed")],
-      tasks: new Set([evalOutstanding(4, 0), evalTask(3, 0, "Passed")]),
-      spawned: 4,
+      record: [workTask(1, 1, "Passed")],
+      tasks: new Set([
+        evalOutstanding(1, 1, 0, 2),
+        evalTask(1, 1, 0, 1, "Passed"),
+      ]),
+      workCyclesStarted: 1,
+      spawned: 3,
     }),
     ticketOn(config, { phase: "Pending" }),
   ]);
-  assert.deepEqual(outstandingTaskIdsIn(graph, id(1)), [4]);
-  assert.ok(outstandingTaskIn(graph, id(1), 4));
+  assert.deepEqual(outstandingTasksIn(graph, id(1)), [
+    evaluationTaskOf(1, 1, 0, 1, 2),
+  ]);
+  assert.ok(outstandingTaskIn(graph, id(1), evaluationTaskOf(1, 1, 0, 1, 2)));
   assert.ok(
-    !outstandingTaskIn(graph, id(1), 3),
+    !outstandingTaskIn(graph, id(1), evaluationTaskOf(1, 1, 0, 1, 1)),
     "a duplicate for a resolved task matches nothing outstanding",
   );
   assert.ok(
-    !outstandingTaskIn(graph, id(1), 1),
-    "a stale delivery names an id already retired into the record",
+    !outstandingTaskIn(graph, id(1), workTaskOf(1, 1)),
+    "a stale delivery names an identity already retired into the record",
   );
-  assert.deepEqual(outstandingTaskIdsIn(graph, id(2)), []);
+  assert.deepEqual(outstandingTasksIn(graph, id(2)), []);
 });
 
 test("a park is retryable, and only a park is", () => {
