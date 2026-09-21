@@ -36,11 +36,7 @@ const codexWorker = {
 
 test("legacy release image materializes the identical Linux container default", () => {
   assert.deepEqual(
-    materializeExecutionRequirement(
-      { version: 1, image: "worker:v1" },
-      1,
-      "Work",
-    ),
+    materializeExecutionRequirement({ version: 1, image: "worker:v1" }, "Work"),
     {
       value: {
         mode: "Container",
@@ -61,7 +57,7 @@ test("a single-agent mode keeps the image its configuration pins", () => {
     worker: codexWorker,
   };
   assert.deepEqual(
-    materializeExecutionRequirement(configuration, 1, "Work").value,
+    materializeExecutionRequirement(configuration, "Work").value,
     container("pinned-worker@sha256:842a"),
   );
   assert.equal(
@@ -79,13 +75,13 @@ test("a single-agent mode keeps a pinned image the execution requirements state"
     executionRequirements: {
       platformDefault: container("pinned-worker@sha256:842a"),
       platformDefaultVersion: 3,
-      taskDefaults: { "2": container("other-worker@sha256:de14") },
+      taskKindDefaults: { Work: container("other-worker@sha256:de14") },
     },
   };
   assert.equal(executionRequirementConfigurationIsValid(configuration), true);
-  assert.deepEqual(materializeExecutionRequirement(configuration, 2, "Work"), {
+  assert.deepEqual(materializeExecutionRequirement(configuration, "Work"), {
     value: container("other-worker@sha256:de14"),
-    source: "ExplicitTask",
+    source: "TaskKindDefault",
     platformDefaultVersion: 3,
   });
 });
@@ -151,7 +147,7 @@ test("a single agent is added to an authored capability requirement", () => {
   };
   assert.equal(executionRequirementConfigurationIsValid(configuration), true);
   assert.deepEqual(
-    materializeExecutionRequirement(configuration, 1, "Work").value,
+    materializeExecutionRequirement(configuration, "Work").value,
     {
       ...authoredCapability,
       capabilities: ["Agent:Claude", "Agent:Codex"],
@@ -171,12 +167,12 @@ test("a single-agent worker refuses a native execution requirement", () => {
   };
   assert.equal(executionRequirementConfigurationIsValid(configuration), false);
   assert.throws(
-    () => materializeExecutionRequirement(configuration, 1, "Work"),
+    () => materializeExecutionRequirement(configuration, "Work"),
     /malformed or widening/u,
   );
 });
 
-test("task precedence allows two tasks in one ticket to pin different requirements", () => {
+test("a kind default outranks the ticket's, which outranks the platform's", () => {
   const configuration = {
     version: 1,
     image: "platform",
@@ -185,18 +181,36 @@ test("task precedence allows two tasks in one ticket to pin different requiremen
       platformDefaultVersion: 4,
       ticketDefault: container("ticket"),
       taskKindDefaults: { Work: container("work") },
-      taskDefaults: { "2": container("task") },
     },
   };
-  assert.equal(
-    materializeExecutionRequirement(configuration, 1, "Work").source,
-    "TaskKindDefault",
-  );
-  assert.deepEqual(materializeExecutionRequirement(configuration, 2, "Work"), {
-    value: container("task"),
-    source: "ExplicitTask",
+  assert.deepEqual(materializeExecutionRequirement(configuration, "Work"), {
+    value: container("work"),
+    source: "TaskKindDefault",
     platformDefaultVersion: 4,
   });
+  assert.deepEqual(
+    materializeExecutionRequirement(configuration, "Evaluation", 1),
+    {
+      value: container("ticket"),
+      source: "TicketDefault",
+      platformDefaultVersion: 4,
+    },
+  );
+});
+
+test("a requirement keyed by a task number is a configuration this machine refuses", () => {
+  assert.equal(
+    executionRequirementConfigurationIsValid({
+      version: 1,
+      image: "platform",
+      executionRequirements: {
+        platformDefault: container("platform"),
+        platformDefaultVersion: 1,
+        taskDefaults: { "2": container("task") },
+      },
+    }),
+    false,
+  );
 });
 
 test("stage-qualified evaluation defaults are exact keys with no bare fallback", () => {
@@ -212,21 +226,33 @@ test("stage-qualified evaluation defaults are exact keys with no bare fallback",
       platformDefaultVersion: 1,
       taskKindDefaults: {
         Evaluation: container("bare"),
-        "Evaluation:0": container("review"),
+        "Evaluation:1": container("review"),
       },
     },
   };
   assert.deepEqual(
-    materializeExecutionRequirement(configuration, 1, "Evaluation", 0).value,
+    materializeExecutionRequirement(configuration, "Evaluation", 1).value,
     container("review"),
   );
   assert.deepEqual(
-    materializeExecutionRequirement(configuration, 2, "Evaluation", 1),
+    materializeExecutionRequirement(configuration, "Evaluation", 2),
     {
       value: container("platform"),
       source: "PlatformDefault",
       platformDefaultVersion: 1,
     },
+  );
+  assert.equal(
+    executionRequirementConfigurationIsValid({
+      ...configuration,
+      executionRequirements: {
+        platformDefault: container("platform"),
+        platformDefaultVersion: 1,
+        taskKindDefaults: { "Evaluation:0": container("review") },
+      },
+    }),
+    false,
+    "the contract's stage is a positive key and an index is no key at all",
   );
 });
 
@@ -241,37 +267,9 @@ test("legacy evaluation configurations retain the bare kind default", () => {
     },
   };
   assert.deepEqual(
-    materializeExecutionRequirement(configuration, 1, "Evaluation", 7).value,
+    materializeExecutionRequirement(configuration, "Evaluation", 7).value,
     container("evaluation"),
   );
-});
-
-test("container task overrides retain the platform while selecting another image", () => {
-  const configuration = {
-    version: 1,
-    image: "worker:v1",
-    executionRequirements: {
-      platformDefault: {
-        mode: "Container",
-        operatingSystem: "Linux",
-        architecture: "Amd64",
-        image: "worker:v1",
-      },
-      platformDefaultVersion: 2,
-      taskDefaults: {
-        "2": {
-          mode: "Container",
-          operatingSystem: "Linux",
-          architecture: "Amd64",
-          image: "worker:v2",
-        },
-      },
-    },
-  };
-  const first = materializeExecutionRequirement(configuration, 1, "Work");
-  const second = materializeExecutionRequirement(configuration, 2, "Work");
-  assert.notDeepEqual(first.value, second.value);
-  assert.equal(second.source, "ExplicitTask");
 });
 
 test("malformed and widening requirement configurations are refused", () => {
@@ -286,7 +284,7 @@ test("malformed and widening requirement configurations are refused", () => {
       executionRequirements: {
         platformDefault: container("platform"),
         platformDefaultVersion: 1,
-        taskDefaults: { "1": container("task", "MacOS") },
+        taskKindDefaults: { Work: container("task", "MacOS") },
       },
     }),
     false,
@@ -338,12 +336,10 @@ test("malformed and widening requirement configurations are refused", () => {
 test("a newly changed default produces a new value without mutating the old materialization", () => {
   const oldPinned = materializeExecutionRequirement(
     { version: 1, image: "worker:v1" },
-    1,
     "Work",
   );
   const newPinned = materializeExecutionRequirement(
     { version: 1, image: "worker:v2" },
-    1,
     "Work",
   );
   assert.equal(
