@@ -140,12 +140,24 @@ export interface TicketActionContext {
   readonly reason?: EscalationReason | undefined;
 }
 
+const rejoinSentence =
+  "rejoin the pipeline at the point this ticket was parked at";
+
 /** What the rework wall's Resume does, which is a fresh cycle rather than a
- * pick-up of the one that failed. */
+ * pick-up of the one that failed. Every other wall, and a page that has not
+ * read the reason, rejoins where the ticket parked — named per reason rather
+ * than as a fallback, so a reason the roster gains is a case here too. */
 function resumeSentence(context: TicketActionContext): string {
-  return context.reason === "EvaluationFailureEscalated"
-    ? "rework this ticket with a fresh cycle"
-    : "rejoin the pipeline at the point this ticket was parked at";
+  const reason = context.reason;
+  if (reason === undefined) return rejoinSentence;
+  switch (reason) {
+    case "EvaluationFailureEscalated":
+      return "rework this ticket with a fresh cycle";
+    case "WorkFailureEscalated":
+    case "WorkExecutionUnavailableEscalated":
+    case "FinalizationUnavailableEscalated":
+      return rejoinSentence;
+  }
 }
 
 /**

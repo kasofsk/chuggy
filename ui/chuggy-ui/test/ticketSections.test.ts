@@ -53,6 +53,7 @@ const badgeOfReason: Readonly<Record<EscalationReason, string>> = {
   WorkFailureEscalated: "work failed",
   EvaluationFailureEscalated: "rework budget spent",
   WorkExecutionUnavailableEscalated: "execution unavailable",
+  FinalizationUnavailableEscalated: "finalization unavailable",
 };
 
 test.each(escalationReasons)("the badge for %s says what it says", (reason) => {

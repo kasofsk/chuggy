@@ -71,7 +71,11 @@ export function SituationNotice(props: {
         tone="parked"
         role="status"
         heading="Parked"
-        detail={escalationDetail(reason, props.ticket.executionBlockedBy)}
+        detail={escalationDetail(
+          reason,
+          props.ticket.executionBlockedBy,
+          props.ticket.finalizationBlockedBy,
+        )}
         {...(more === undefined ? {} : { more })}
       >
         <p className="pt-1">
