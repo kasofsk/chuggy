@@ -23,7 +23,8 @@ import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts"
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type { Verdict } from "../../src/domain/generated/modelTypes.ts";
-import { asTaskId } from "../../src/domain/ids.ts";
+import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import type { TicketResource } from "../../src/interpreter/nativeWeb.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
@@ -102,14 +103,14 @@ async function listed(
 async function reported(
   partition: Partition,
   memory: ProjectMemory,
-  task: number,
+  task: TaskIdentity,
   verdict: Verdict,
 ): Promise<ProjectMemory> {
   await postgresHarnessCompletion(
     harness,
     partition,
     `operation-projection-${randomUUID()}`,
-    taskDoneEvent(subject, asTaskId(task), verdict, plainResult),
+    taskDoneEvent(subject, task, verdict, plainResult),
   );
   const drained = await postgresHarnessDrain(harness, partition, memory);
   assert.deepEqual(
@@ -154,12 +155,17 @@ async function walled(
     postgresHarnessJournal().length,
   );
   assert.deepEqual(await projected(partition), carried(memory));
-  memory = await reported(partition, memory, 1, "Pass");
-  memory = await reported(partition, memory, 2, "Fail");
-  memory = await reported(partition, memory, 3, "Pass");
-  memory = await reported(partition, memory, 4, "Fail");
-  memory = await reported(partition, memory, 5, "Pass");
-  return reported(partition, memory, 6, "Fail");
+  for (const cycle of [1, 2]) {
+    memory = await reported(partition, memory, workTaskOf(1, cycle), "Pass");
+    memory = await reported(
+      partition,
+      memory,
+      evaluationTaskOf(1, cycle, 0, 1, 1),
+      "Fail",
+    );
+  }
+  memory = await reported(partition, memory, workTaskOf(1, 3), "Pass");
+  return reported(partition, memory, evaluationTaskOf(1, 3, 0, 1, 1), "Fail");
 }
 
 test("the projection carries the wall's escalation", async () => {

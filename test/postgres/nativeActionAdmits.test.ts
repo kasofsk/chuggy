@@ -23,7 +23,9 @@ import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type { Verdict } from "../../src/domain/generated/modelTypes.ts";
-import { asTaskId, type TicketId } from "../../src/domain/ids.ts";
+import type { TicketId } from "../../src/domain/ids.ts";
+import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   projectWriterDecide,
@@ -74,14 +76,14 @@ async function admitsReport(
   partition: Partition,
   memory: ProjectMemory,
   label: string,
-  task: number,
+  task: TaskIdentity,
   verdict: Verdict,
 ): Promise<ProjectMemory> {
   await postgresHarnessCompletion(
     subject.harness,
     partition,
     `operation-${label}-${randomUUID()}`,
-    taskDoneEvent(id(1), asTaskId(task), verdict, plainResult),
+    taskDoneEvent(id(1), task, verdict, plainResult),
   );
   return admitsDrain(partition, memory);
 }
@@ -156,20 +158,20 @@ test("a park offers the desk its answers and a waiting ticket is asked none", as
     label,
     postgresHarnessJournal().length,
   );
-  for (const [task, verdict] of [
-    [1, "Pass"],
-    [2, "Fail"],
-    [3, "Pass"],
-    [4, "Fail"],
-    [5, "Pass"],
-    [6, "Fail"],
-  ] as const) {
+  for (const cycle of [1, 2, 3]) {
     memory = await admitsReport(
       partition,
       memory,
-      `${label}-${String(task)}`,
-      task,
-      verdict,
+      `${label}-work-${String(cycle)}`,
+      workTaskOf(1, cycle),
+      "Pass",
+    );
+    memory = await admitsReport(
+      partition,
+      memory,
+      `${label}-evaluation-${String(cycle)}`,
+      evaluationTaskOf(1, cycle, 0, 1, 1),
+      "Fail",
     );
   }
 

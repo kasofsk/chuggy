@@ -30,6 +30,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
+import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import type {
   ApprovalStanding,
@@ -394,7 +395,7 @@ async function actionsOf(
 function outstandingTaskOf(
   project: FinalizerProject,
   memory: Awaited<ReturnType<typeof finalizerDrain>>["memory"],
-): number {
+): TaskIdentity {
   const tasks = [
     ...ticketAt(memory.graph, asTicketId(project.ticket)).tasks,
   ].filter((task) => task.state === "Outstanding");
@@ -402,7 +403,7 @@ function outstandingTaskOf(
   if (tasks.length !== 1 || task === undefined) {
     throw new Error("finalizer approval: the rework spawned no single task");
   }
-  return task.id;
+  return task.identity;
 }
 
 test("an ask the phase outlived is withdrawn, and the next desk task can be opened", async () => {

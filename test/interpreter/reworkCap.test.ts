@@ -24,7 +24,7 @@ import {
 import { genesis } from "../../src/actor/journal.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type { TicketGraph } from "../../src/domain/generated/modelTypes.ts";
-import { asTaskId } from "../../src/domain/ids.ts";
+import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import {
   checkedReworkCap,
   reworkDisposition,
@@ -33,13 +33,13 @@ import { plainAuthoring, plainResult } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 
 /** The one outstanding task of a single-width ticket, which is what a completion names. */
-function outstanding(graph: TicketGraph): number {
+function outstanding(graph: TicketGraph): TaskIdentity {
   const task = [...ticketAt(graph, id(1)).tasks].find(
     (candidate) => candidate.state === "Outstanding",
   );
   if (task === undefined)
     throw new Error("rework cap case: the ticket has no outstanding task");
-  return task.id;
+  return task.identity;
 }
 
 /**
@@ -57,13 +57,9 @@ function dispositionsUnder(
     graph = execDecisionEvent(graph, event).post;
   };
   const evaluated = (verdict: "Pass" | "Fail") => {
-    step(
-      taskDoneEvent(id(1), asTaskId(outstanding(graph)), "Pass", plainResult),
-    );
+    step(taskDoneEvent(id(1), outstanding(graph), "Pass", plainResult));
     step(workReduceEvent(id(1)));
-    step(
-      taskDoneEvent(id(1), asTaskId(outstanding(graph)), verdict, plainResult),
-    );
+    step(taskDoneEvent(id(1), outstanding(graph), verdict, plainResult));
   };
   step(releaseTicketEvent(id(1), plainAuthoring));
   step(dispatchEvent(id(1)));

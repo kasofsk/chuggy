@@ -26,9 +26,15 @@ import type {
   TicketGraph,
   Phase,
   Task,
+  TaskIdentity,
+  Ticket,
 } from "../domain/generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
-import { tasksInIdOrder } from "../domain/task.ts";
+import {
+  taskIdentityEquals,
+  taskOrdinal,
+  tasksInOrdinalOrder,
+} from "../domain/task.ts";
 import { reducibleEvalIn, reducibleWorkIn } from "../domain/enablement.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
 import type { ExecutionSourceObservation } from "./executionSource.ts";
@@ -60,15 +66,41 @@ function subject(entry: Entry, effectPosition: number): TicketId {
 }
 
 function outstanding(tasks: ReadonlySet<Task>): readonly Task[] {
-  return tasksInIdOrder(tasks).filter((task) => task.state === "Outstanding");
+  return tasksInOrdinalOrder(tasks).filter(
+    (task) => task.state === "Outstanding",
+  );
 }
 
-function requestTasks(tasks: readonly Task[]): ExecutionRequestPlan["tasks"] {
-  return tasks.map((task) =>
-    task.kind === "WorkTask"
-      ? { task: task.id, kind: "Work" as const }
-      : { task: task.id, kind: "Evaluation" as const, stage: task.kind.value },
-  );
+/** Whether these tasks already hold the named identity. */
+function named(tasks: readonly Task[], wanted: TaskIdentity): boolean {
+  return tasks.some((task) => taskIdentityEquals(task.identity, wanted));
+}
+
+/**
+ * How many tasks the ticket had spawned before the set it holds live now. The
+ * ghost counter is the running total and a live set is the newest run of it,
+ * so the difference is where that set's numbering starts.
+ */
+function spawnedBeforeLiveSet(ticket: Ticket): number {
+  return ticket.spawned - ticket.tasks.size;
+}
+
+/**
+ * THE WIRE'S NAME FOR EACH TASK, MINTED HERE AND NOWHERE ELSE, beside the
+ * identity the machine knows it by: a set's numbers continue the ticket's
+ * spawn count and a task takes its place in its own set, so what a ticket
+ * hands out is injective and ascending over its whole history. Numbering per
+ * cycle or per generation satisfies the identity and turns the repeat that
+ * `execution_names_one_logical_task` catches into a silent no-op insert.
+ */
+function requestTasks(
+  spawnedBefore: number,
+  tasks: readonly Task[],
+): ExecutionRequestPlan["tasks"] {
+  return tasks.map((task) => ({
+    task: spawnedBefore + taskOrdinal(task.identity),
+    identity: task.identity,
+  }));
 }
 
 /**
@@ -122,13 +154,9 @@ function executionRequest(
   switch (effect) {
     case "SpawnWorkTasks":
     case "SpawnEvalTasks": {
-      const beforeIds = new Set(
-        before === undefined
-          ? []
-          : tasksInIdOrder(before.tasks).map((task) => task.id),
-      );
+      const held = before === undefined ? [] : [...before.tasks];
       const created = outstanding(after.tasks).filter(
-        (task) => !beforeIds.has(task.id),
+        (task) => !named(held, task.identity),
       );
       const kind =
         effect === "SpawnWorkTasks" ? "SpawnWork" : "SpawnEvaluation";
@@ -141,18 +169,16 @@ function executionRequest(
         ticketVersion: entry.seq,
         kind,
         bundle: executionRequestBundle(input, entry, effectPosition, source),
-        tasks: requestTasks(created),
+        tasks: requestTasks(spawnedBeforeLiveSet(after), created),
       };
     }
     case "CancelTicketWork": {
-      const afterOutstanding = new Set(
-        outstanding(after.tasks).map((task) => task.id),
-      );
+      const stillOutstanding = outstanding(after.tasks);
       const retired =
         before === undefined
           ? []
           : outstanding(before.tasks).filter(
-              (task) => !afterOutstanding.has(task.id),
+              (task) => !named(stillOutstanding, task.identity),
             );
       return {
         request: identity(entry, effectPosition, effect),
@@ -160,7 +186,10 @@ function executionRequest(
         ticket,
         ticketVersion: entry.seq,
         kind: "CancelTicketWork",
-        tasks: requestTasks(retired),
+        tasks:
+          before === undefined
+            ? []
+            : requestTasks(spawnedBeforeLiveSet(before), retired),
       };
     }
     case "RunFinalizer":

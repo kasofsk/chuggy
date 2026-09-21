@@ -53,7 +53,7 @@ import {
 } from "../actor/harness.ts";
 import { graphOf, id, ticketOn } from "../domain/fixtures.ts";
 import { populated } from "./roster.ts";
-import { asTaskId } from "../../src/domain/ids.ts";
+import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import type { DecisionInput } from "../../src/interpreter/projectDiscovery.ts";
 
@@ -110,7 +110,7 @@ test("trusted classification reserves safety traffic", () => {
 
 test("a completion is no command a principal may offer, and a writer still reads one", () => {
   for (const event of [
-    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
     executionBlockedEvent(id(1)),
   ]) {
     assert.throws(
@@ -262,9 +262,9 @@ function finalizing(): ReturnType<typeof journalStep> {
   const steps: readonly DecisionEvent[] = [
     releaseTicketEvent(id(1), plainAuthoring),
     dispatchEvent(id(1)),
-    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
     workReduceEvent(id(1)),
-    taskDoneEvent(id(1), asTaskId(2), "Pass", plainResult),
+    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 0, 1, 1), "Pass", plainResult),
     evalReduceEvent(id(1), "ReworkEvaluationFailure"),
   ];
   return steps.reduce(

@@ -12,7 +12,7 @@ import {
   decisionEventTags,
   type TicketGraph,
 } from "../../src/domain/generated/modelTypes.ts";
-import { asTaskId } from "../../src/domain/ids.ts";
+import { workTaskOf } from "../../src/domain/task.ts";
 import {
   allNativeActionResolutions,
   isApprovalResolution,
@@ -48,7 +48,7 @@ async function completion(
     harness,
     partition,
     operation,
-    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
   );
   return operation;
 }

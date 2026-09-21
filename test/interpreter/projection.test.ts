@@ -37,7 +37,8 @@ import type {
   TicketGraph,
   Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
-import { asTaskId } from "../../src/domain/ids.ts";
+import { workTaskOf } from "../../src/domain/task.ts";
+import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import { resumeOf } from "../../src/domain/ticket.ts";
 import {
   IntegrityContradiction,
@@ -56,7 +57,7 @@ import { id } from "../domain/fixtures.ts";
 const history: readonly DecisionEvent[] = [
   releaseTicketEvent(id(1), plainAuthoring),
   dispatchEvent(id(1)),
-  taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+  taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
 ];
 
 /** The journal that history writes, which is what a rebuild reads. */
@@ -118,7 +119,7 @@ test("a decision reports exactly the tickets whose complete state changed", () =
   const completed = journalStep(
     refinementInstance,
     dispatched,
-    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
   );
   assert.deepEqual(
     projectionChanges(dispatched.view.post, completed.view.post),
@@ -151,13 +152,13 @@ test("a release is a change although it transitions nothing", () => {
 });
 
 /** The one outstanding task of a single-width ticket, which is what a completion names. */
-function outstandingTask(graph: TicketGraph): number {
+function outstandingTask(graph: TicketGraph): TaskIdentity {
   const task = [...ticketAt(graph, id(1)).tasks].find(
     (candidate) => candidate.state === "Outstanding",
   );
   if (task === undefined)
     throw new Error("projection case: the ticket has no outstanding task");
-  return task.id;
+  return task.identity;
 }
 
 /**
@@ -179,23 +180,9 @@ function walledHistory(): readonly DecisionEvent[] {
     graph = execDecisionEvent(graph, event).post;
   };
   for (const cycle of [0, 1]) {
-    step(
-      taskDoneEvent(
-        id(1),
-        asTaskId(outstandingTask(graph)),
-        "Pass",
-        plainResult,
-      ),
-    );
+    step(taskDoneEvent(id(1), outstandingTask(graph), "Pass", plainResult));
     step(workReduceEvent(id(1)));
-    step(
-      taskDoneEvent(
-        id(1),
-        asTaskId(outstandingTask(graph)),
-        "Fail",
-        plainResult,
-      ),
-    );
+    step(taskDoneEvent(id(1), outstandingTask(graph), "Fail", plainResult));
     step(
       evalReduceEvent(
         id(1),

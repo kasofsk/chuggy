@@ -50,6 +50,7 @@ import {
   finalizerRemotePort,
   finalizerRigOpen,
   finalizerSubject,
+  finalizerEvaluation,
   finalizerTaskDone,
   type FinalizerProject,
   type FinalizerRig,
@@ -154,7 +155,12 @@ async function submittedOf(
 test("a revocation in the mailbox wins the entry, whichever of the two was accepted first", async () => {
   const { partition, memory } = await finalizerEntering(rig, "revoke-first");
   assert.equal(
-    await finalizerAccept(rig.harness, partition, "done", finalizerTaskDone(2)),
+    await finalizerAccept(
+      rig.harness,
+      partition,
+      "done",
+      finalizerTaskDone(finalizerEvaluation(1)),
+    ),
     "Accepted",
   );
   assert.equal(
@@ -213,7 +219,7 @@ test("a boundary write and an acceptance racing on the project row are still res
           rig.harness,
           partition,
           "race-done",
-          finalizerTaskDone(2),
+          finalizerTaskDone(finalizerEvaluation(1)),
         ),
         finalizerAccept(
           rig.harness,
