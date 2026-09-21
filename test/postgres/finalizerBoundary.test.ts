@@ -181,7 +181,12 @@ test("a failed result is submitted only against the attempt and kind that failed
   });
   const before = await mailbox(project);
   assert.equal(
-    await submit(project, attempt, "FinalizationNeedsWork", "PreparationFailed"),
+    await submit(
+      project,
+      attempt,
+      "FinalizationNeedsWork",
+      "PreparationFailed",
+    ),
     "BindingMismatch",
   );
   assert.deepEqual(await mailbox(project), before);
