@@ -3226,15 +3226,44 @@ test("the projection carries one escalation and admits evidence only beside one"
       ],
       "evidence is what an escalation may carry, not what it must",
     );
+    await subject.query(
+      `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
+       VALUES('tenant-5','project-5',94,'Pending',1)`,
+    );
     assert.deepEqual(
       (
         await subject.query(
-          `SELECT count(*)::int AS left FROM information_schema.columns
+          "SELECT escalation,escalation_evidence FROM ticket_projection WHERE ticket=94",
+        )
+      ).rows,
+      [{ escalation: "NoEscalation", escalation_evidence: null }],
+      "a ticket nothing parked carries the escalation that is none",
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT count(*)::int AS held FROM information_schema.columns
             WHERE table_name='ticket_projection' AND column_name IN ('reason','resume_at')`,
         )
       ).rows,
-      [{ left: 0 }],
+      [{ held: 0 }],
     );
+    for (const [role, privilege, column] of [
+      [apiRole, "SELECT", "escalation"],
+      [apiRole, "SELECT", "escalation_evidence"],
+      [ticketServiceRole, "UPDATE", "escalation"],
+      [ticketServiceRole, "UPDATE", "escalation_evidence"],
+    ] as const)
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_column_privilege($1,'public.ticket_projection',$2,$3) AS granted",
+            [role, column, privilege],
+          )
+        ).rows[0]?.granted,
+        true,
+        `${role} ${privilege} ${column}`,
+      );
   });
 });
 
