@@ -13,26 +13,30 @@ import { expect, test } from "vitest";
 import {
   blockedReasons,
   briefFinalizationModes,
-  escalationReasons,
+  escalationKinds,
   finalizationUnavailableKinds,
+  gitEvidences,
   operationRefusalCodes,
   operationStates,
   phaseRoster,
   resumePoints,
+  type EscalationKind,
+  type GitEvidenceLabel,
 } from "../../../src/contract/rosters.ts";
 import {
   approvalLabel,
   blockedReasonLabel,
   briefLandingLine,
   escalationDetail,
+  escalationEvidenceLabel,
+  escalationKindLabel,
   finalizationUnavailableKindLabel,
+  gitEvidenceLabel,
   landingEffect,
   landingLabel,
   resumeActionEffect,
-  resumeNotReadReason,
   wallExitLine,
   escalationDetailLine,
-  escalationReasonLabel,
   mutationDeferralLabel,
   mutationRefusalLabel,
   operationFailureLabel,
@@ -58,8 +62,9 @@ const copyBudgetChars = 60;
 
 test("every wall, phase, state and refusal has a label inside the copy budget", () => {
   const drawn = [
-    ...escalationReasons.map(escalationReasonLabel),
+    ...escalationKinds.map(escalationKindLabel),
     ...blockedReasons.map(blockedReasonLabel),
+    ...gitEvidences.map(gitEvidenceLabel),
     ...finalizationUnavailableKinds.map(finalizationUnavailableKindLabel),
     ...phaseRoster.map(phaseLabel),
     ...operationStates.map(operationStateLabel),
@@ -74,7 +79,7 @@ test("every wall, phase, state and refusal has a label inside the copy budget", 
 });
 
 test("the wall a reader met on ticket 21 reads as a noun and a fragment", () => {
-  expect(escalationReasonLabel("EvaluationFailureEscalated")).toBe(
+  expect(escalationKindLabel("EvaluationFailureEscalated")).toBe(
     "Rework budget exhausted",
   );
   expect(
@@ -93,47 +98,80 @@ test("a detail line names only the facts the page holds", () => {
   expect(escalationDetailLine("WorkFailureEscalated", bare)).toBe(
     "Failed work is not reworked",
   );
-  expect(
-    escalationDetailLine("FinalizationUnavailableEscalated", {
-      lastSet: { taskKind: "Work", stage: undefined, verdict: "Cancelled" },
-      stageCount: 2,
-    }),
-  ).toBe(undefined);
+  expect(escalationDetailLine("FinalizationUnavailableEscalated", bare)).toBe(
+    undefined,
+  );
 });
 
 /**
- * The wall's own label where the read carries one, the reason's generic word
- * where it does not — the continuation path with no execution row to read a
- * wall off.
+ * A blocked execution's cancelled-set line names the phase the kind itself
+ * interrupted — Work for the wall the ticket's own work hit, Evaluation for
+ * the one `EvaluationBlockedEscalated` names — with no fact from the page.
  */
-test("the escalation's one line names the wall where the read carries one", () => {
+test("a blocked execution's line names the phase its own kind interrupted", () => {
+  const bare = { lastSet: undefined, stageCount: 2 };
+  expect(escalationDetailLine("WorkExecutionUnavailableEscalated", bare)).toBe(
+    "Work cancelled",
+  );
+  expect(escalationDetailLine("EvaluationBlockedEscalated", bare)).toBe(
+    "Evaluation cancelled",
+  );
+});
+
+/**
+ * The wall's own label where the read carries evidence, the kind's generic
+ * word where it does not — the continuation path with no execution row to
+ * read a wall off.
+ */
+test("the escalation's one line names the wall where the read carries evidence", () => {
   expect(
-    escalationDetail(
-      "WorkExecutionUnavailableEscalated",
-      "ExecutionProfileUnavailable",
-      undefined,
-    ),
+    escalationDetail({
+      kind: "WorkExecutionUnavailableEscalated",
+      evidence: "ExecutionProfileUnavailable",
+      resumeAt: "ResumeWork",
+    }),
   ).toBe("No matching execution profile");
   expect(
-    escalationDetail("WorkExecutionUnavailableEscalated", undefined, undefined),
+    escalationDetail({
+      kind: "WorkExecutionUnavailableEscalated",
+      resumeAt: "ResumeWork",
+    }),
   ).toBe("Execution unavailable");
 });
 
-/**
- * Same rule for the finalizer's own wall: the hold's label where
- * `finalizationBlockedBy` carries one, the reason's generic word where the
- * ticket parked with no hold recorded to read it off.
- */
-test("the escalation's one line names the finalization wall where the read carries one", () => {
+/** The continuation path's evidence is drawn from the git roster, the third
+ * and disjoint one the same one line reads from. */
+test("the escalation's one line reads the continuation path's own evidence", () => {
   expect(
-    escalationDetail(
-      "FinalizationUnavailableEscalated",
-      undefined,
-      "ProposalDenied",
-    ),
+    escalationDetail({
+      kind: "WorkExecutionUnavailableEscalated",
+      evidence: "RefUnreadable",
+      resumeAt: "ResumeWork",
+    }),
+  ).toBe("Ref unreadable");
+  expect(escalationEvidenceLabel("PromotionTimedOut")).toBe(
+    "Promotion timed out",
+  );
+});
+
+/**
+ * Same rule for the finalizer's own wall: the hold's label where the
+ * evidence carries one, the kind's generic word where the ticket parked with
+ * no hold recorded to read it off.
+ */
+test("the escalation's one line names the finalization wall where the read carries evidence", () => {
+  expect(
+    escalationDetail({
+      kind: "FinalizationUnavailableEscalated",
+      evidence: "ProposalDenied",
+      resumeAt: "ResumeFinalization",
+    }),
   ).toBe("Proposal denied");
   expect(
-    escalationDetail("FinalizationUnavailableEscalated", undefined, undefined),
+    escalationDetail({
+      kind: "FinalizationUnavailableEscalated",
+      resumeAt: "ResumeFinalization",
+    }),
   ).toBe("Finalization unavailable");
 });
 
@@ -153,7 +191,7 @@ test("a rework-wall resume says it reworks", () => {
   expect(effect.effect).toBe("Reworks · new artifact");
 });
 
-test("a wall with no resume point offers nothing and says which exit is left", () => {
+test("a ticket that is not parked offers no resume and says which exit is left", () => {
   const effect = ticketActionEffect("Resume", { kind: "NoPoint" }, [
     "Resume",
     "Revoke",
@@ -186,21 +224,6 @@ test("a wall names the exits the page draws, and none where it draws none", () =
 });
 
 /**
- * A screen that has not finished reading knows neither term, so it disables the
- * control with its reason rather than claiming anything about the wall.
- */
-test("a resume this page has not read enough for is refused, not denied", () => {
-  const effect = ticketActionEffect("Resume", { kind: "NotRead" }, [
-    "Resume",
-    "Revoke",
-  ]);
-  expect(effect.offered).toBe(true);
-  expect(effect.refusedBecause).toBe(resumeNotReadReason);
-  expect(effect.more).toBe(undefined);
-  expect(effect.effect).not.toContain("Revoke");
-});
-
-/**
  * Every point the machine can stamp draws the effect its own decider gives it
  * (`model/domain.qnt`): both work resumes respawn the work set.
  */
@@ -217,11 +240,7 @@ test("every resume point draws the effect the machine gives it", () => {
   ]);
 });
 
-/**
- * A wall whose reason names no interrupted set is one the model stamps no
- * resume point on, and a resume is the one answer that must not be offered
- * into it.
- */
+/** A resume is offered only where the read carries a point to resume at. */
 test("every action the phase enables is offered, except a resume with no point", () => {
   const resume = { kind: "Offered", point: "ResumeEvaluation" } as const;
   for (const action of ticketActionNames)
@@ -353,4 +372,42 @@ test("a landing read back names its reference, and a proposal names the default"
   expect(
     briefLandingLine({ mode: "PullRequestMerge", target: undefined }),
   ).toBe("Pull request, then merge · into the default branch");
+});
+
+const labelOfKind: Readonly<Record<EscalationKind, string>> = {
+  WorkFailureEscalated: "Work failed",
+  EvaluationFailureEscalated: "Rework budget exhausted",
+  WorkExecutionUnavailableEscalated: "Execution unavailable",
+  EvaluationBlockedEscalated: "Evaluation blocked",
+  FinalizationUnavailableEscalated: "Finalization unavailable",
+};
+
+test.each(escalationKinds)("the label for %s says what it says", (kind) => {
+  expect(escalationKindLabel(kind)).toBe(labelOfKind[kind]);
+});
+
+test("no two kinds are drawn with the same label", () => {
+  const drawn = escalationKinds.map((kind) => escalationKindLabel(kind));
+  expect(new Set(drawn).size).toBe(drawn.length);
+});
+
+const labelOfGitEvidence: Readonly<Record<GitEvidenceLabel, string>> = {
+  RemoteUnreachable: "Remote unreachable",
+  RemoteDenied: "Remote denied",
+  RefUnreadable: "Ref unreadable",
+  ObjectMissing: "Object missing",
+  IntegrationFailed: "Integration failed",
+  PromotionTimedOut: "Promotion timed out",
+};
+
+test.each(gitEvidences)(
+  "the label for git evidence %s says what it says",
+  (evidence) => {
+    expect(gitEvidenceLabel(evidence)).toBe(labelOfGitEvidence[evidence]);
+  },
+);
+
+test("no two git evidences are drawn with the same label", () => {
+  const drawn = gitEvidences.map((evidence) => gitEvidenceLabel(evidence));
+  expect(new Set(drawn).size).toBe(drawn.length);
 });

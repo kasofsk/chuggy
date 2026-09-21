@@ -49,7 +49,6 @@
 
 import type { Entry, StoredEntry } from "../actor/journal.ts";
 import { genesis, storedJournalLegalOn } from "../actor/journal.ts";
-import { execDecisionEventAt } from "../actor/decisionSemantics.ts";
 import { ticketEquals } from "../actor/equality.ts";
 import {
   decisionEventEnabled,
@@ -137,20 +136,45 @@ export interface ProjectDecided {
 }
 
 /**
+ * What the fabric said about the wall one decision parks a ticket at. It
+ * travels beside the transition rather than inside it: which escalation a
+ * block is, is the phase it interrupted, and the label is the fabric's account
+ * of the wall, which no decider reads and no entry carries.
+ */
+export interface TicketEscalationEvidence {
+  readonly ticket: TicketId;
+  readonly evidence: string;
+}
+
+/**
  * Every ticket's current standing, which is the whole projection and the
  * rebuild of it. Every field is read off the same `TicketGraph` this decision left
- * behind, so no two of them can be at different journal positions.
+ * behind, so no two of them can be at different journal positions — and the
+ * evidence a decision carried lands on the one row it is about, which is
+ * escalated or the decision contradicts itself.
  */
-export function projectionOf(graph: TicketGraph): readonly TicketProjection[] {
+export function projectionOf(
+  graph: TicketGraph,
+  escalated?: TicketEscalationEvidence,
+): readonly TicketProjection[] {
   const dependable = new Set(dependableIn(graph));
+  if (
+    escalated !== undefined &&
+    ticketAt(graph, escalated.ticket).escalation === "NoEscalation"
+  )
+    throw new IntegrityContradiction(
+      "a decision carries evidence for a ticket it did not escalate",
+    );
   return ticketIds(graph).map((ticket) => {
     const value = ticketAt(graph, ticket);
     return {
       ticket,
       phase: value.phase,
       dependable: dependable.has(ticket),
-      reason: value.reason,
-      resumeAt: value.resumeAt,
+      escalation: value.escalation,
+      ...(escalated?.ticket === ticket
+        ? { escalationEvidence: escalated.evidence }
+        : {}),
     };
   });
 }
@@ -162,8 +186,9 @@ export function projectionOf(graph: TicketGraph): readonly TicketProjection[] {
 export function projectionChanges(
   pre: TicketGraph,
   post: TicketGraph,
+  escalated?: TicketEscalationEvidence,
 ): readonly TicketProjection[] {
-  return projectionOf(post).filter((row) => {
+  return projectionOf(post, escalated).filter((row) => {
     const previous = pre.tickets.get(row.ticket);
     return (
       previous === undefined ||
@@ -209,7 +234,7 @@ export async function projectWriterLoad(
   const ticketVersions = new Map<number, number>();
   let graph: TicketGraph = genesis;
   for (const row of journal) {
-    const post = execDecisionEventAt(row.semantics, graph, row.entry).post;
+    const post = execDecisionEvent(graph, row.entry.event).post;
     for (const projection of projectionChanges(graph, post))
       ticketVersions.set(projection.ticket, row.entry.seq);
     graph = post;
@@ -304,6 +329,7 @@ function journaledPlan(
   item: DecisionInput,
   command: DecisionEvent,
   executionSource: ExecutionSourceObservation | undefined,
+  escalated?: TicketEscalationEvidence,
 ): ProjectPlan {
   const decision = execDecisionEvent(memory.graph, command);
   const entry: Entry = {
@@ -311,7 +337,7 @@ function journaledPlan(
     event: command,
     rec: decision.rec,
   };
-  const projection = projectionChanges(memory.graph, decision.post);
+  const projection = projectionChanges(memory.graph, decision.post, escalated);
   const versions = new Map(memory.ticketVersions);
   for (const row of projection) versions.set(row.ticket, entry.seq);
   const contracts = new Map(memory.dispatchContracts ?? []);
@@ -523,10 +549,40 @@ function projectWriterUnreadableLanding(
     };
   return {
     landing: "Blocked",
-    event: executionBlockedEvent(
-      unreadable.ticket,
-      "WorkExecutionUnavailableEscalated",
-    ),
+    event: executionBlockedEvent(unreadable.ticket),
+  };
+}
+
+/**
+ * What the fabric said about the wall a durable input parks its ticket at: the
+ * blocked reason of the execution the scheduler settled, and the hold kind the
+ * finalizer's pass could not get past. Every other escalation the machine
+ * reaches it reaches by counting its own budgets, which explains itself and
+ * leaves nothing for a boundary to have said.
+ */
+function projectWriterEscalationEvidence(
+  item: DecisionInput,
+  command: DecisionEvent,
+): TicketEscalationEvidence | undefined {
+  if (item.source.kind !== "Operation") return undefined;
+  const source = item.source;
+  if (command.type === "ExecutionBlocked")
+    return source.executionBlockedBy === undefined
+      ? undefined
+      : {
+          ticket: asTicketId(command.value.ticket),
+          evidence: source.executionBlockedBy,
+        };
+  if (
+    command.type !== "FinalizationResult" ||
+    command.value.out !== "FinalizationResultUnavailable" ||
+    source.command.command !== "SubmitFinalizationResult" ||
+    source.command.kind === undefined
+  )
+    return undefined;
+  return {
+    ticket: asTicketId(command.value.ticket),
+    evidence: source.command.kind,
   };
 }
 
@@ -548,7 +604,14 @@ async function projectWriterPlan(
     command,
   );
   if (observed.observed === "Source")
-    return journaledPlan(writer, memory, item, command, observed.source);
+    return journaledPlan(
+      writer,
+      memory,
+      item,
+      command,
+      observed.source,
+      projectWriterEscalationEvidence(item, command),
+    );
   const landing = projectWriterUnreadableLanding(item, observed);
   if (landing.landing === "Deferred") return { deferred: observed.evidence };
   if (landing.landing === "Refused") {
@@ -561,7 +624,10 @@ async function projectWriterPlan(
     throw new IntegrityContradiction(
       "a ticket spawning work is not blockable from the phase it spawns in",
     );
-  return journaledPlan(writer, memory, item, landing.event, undefined);
+  return journaledPlan(writer, memory, item, landing.event, undefined, {
+    ticket: observed.ticket,
+    evidence: observed.evidence,
+  });
 }
 
 /**

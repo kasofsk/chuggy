@@ -373,8 +373,8 @@ test("a native action's own write appends one change naming its ticket", async (
 
   await ticketService.query(
     `INSERT INTO native_action (tenant,project,action,authorizing_seq,effect_position,
-       ticket,action_version,kind,reason,required_capability)
-     VALUES ($1,$2,$3,$4,0,$5,$4,'TicketEscalation','NoReason','ResolveTicket')`,
+       ticket,action_version,kind,escalation,required_capability)
+     VALUES ($1,$2,$3,$4,0,$5,$4,'TicketEscalation','NoEscalation','ResolveTicket')`,
     [...named, action, seq, project.ticket],
   );
   assert.equal(await changeCount(project.partition), before + 1);

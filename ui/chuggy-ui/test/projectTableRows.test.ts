@@ -62,7 +62,10 @@ const tickets: readonly TicketResponse[] = [
     ticket: 2,
     phase: "Escalated",
     sequence: 4,
-    reason: "EvaluationFailureEscalated",
+    escalation: {
+      kind: "EvaluationFailureEscalated",
+      resumeAt: "ResumeRework",
+    },
     ...ticketInstants,
   },
   { ticket: 3, phase: "Pending", sequence: 3, ...ticketInstants },

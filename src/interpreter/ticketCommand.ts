@@ -21,6 +21,7 @@
  */
 
 import type { DecisionEvent } from "../actor/decisionEvent.ts";
+import type { FinalizationUnavailableKind } from "../contract/rosters.ts";
 import type { FinalizationOutcome } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type { DispatchViewToken } from "./dispatchView.ts";
@@ -175,6 +176,13 @@ export interface FinalizationSubmission {
   readonly requestGeneration: number;
   readonly recoveryEpoch: string;
   readonly outcome: FinalizationOutcome;
+  /**
+   * Which hold the pass could not get past, carried exactly when the outcome is
+   * the one it explains. The event the writer journals names the outcome alone,
+   * so this is the evidence the escalation records and the only account of it
+   * that leaves the boundary.
+   */
+  readonly kind?: FinalizationUnavailableKind;
 }
 
 /**

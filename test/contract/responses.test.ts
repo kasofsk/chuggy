@@ -119,6 +119,7 @@ import {
 } from "../../src/interpreter/forgeInstallation.ts";
 import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
+import { ticketEscalationResource } from "../../src/interpreter/nativeWeb.ts";
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
 import {
   asAuthorityKind,
@@ -230,9 +231,7 @@ test("a ticket is always dated by its change and may be undated by its release",
  * What a ticket read puts on the wire, key for key. The body is the resource
  * itself, so comparing the fullest one against the schema's own shape is what
  * catches a field the interpreter added and the contract does not name, or one
- * the contract names that no read carries — and it carries both walls, which no
- * one ticket ever does, the claim being over the keys and a resource omitting
- * one leaving that key unasserted.
+ * the contract names that no read carries.
  */
 test("a ticket read emits exactly the keys the contract names", () => {
   const fullest = ticketResponse({
@@ -240,10 +239,10 @@ test("a ticket read emits exactly the keys the contract names", () => {
     title: "The ticket the contract names",
     phase: "Escalated",
     sequence: 9,
-    reason: "WorkExecutionUnavailableEscalated",
-    executionBlockedBy: "ExecutionPolicyDenied",
-    finalizationBlockedBy: "RepositoryUnbound",
-    resumeAt: "ResumeWork",
+    escalation: ticketEscalationResource(
+      "WorkExecutionUnavailableEscalated",
+      "ExecutionPolicyDenied",
+    ),
     brief,
     runTotals,
     ...ticketCarried,
@@ -255,19 +254,24 @@ test("a ticket read emits exactly the keys the contract names", () => {
   assert.ok(ticketResponseSchema.safeParse(fullest).success);
 });
 
-test("an escalated ticket names its reason and an unparked one omits it", () => {
+test("a parked ticket names its wall and an unparked one names none", () => {
   const escalated = ticketResponseSchema.parse(
     ticketResponse({
       ticket: asTicketId(3),
       phase: "Escalated",
       sequence: 9,
-      reason: "WorkExecutionUnavailableEscalated",
-      executionBlockedBy: "TicketConfigIncompatible",
+      escalation: ticketEscalationResource(
+        "WorkExecutionUnavailableEscalated",
+        "TicketConfigIncompatible",
+      ),
       ...ticketCarried,
     }).body,
   );
-  assert.equal(escalated.reason, "WorkExecutionUnavailableEscalated");
-  assert.equal(escalated.executionBlockedBy, "TicketConfigIncompatible");
+  assert.deepEqual(escalated.escalation, {
+    kind: "WorkExecutionUnavailableEscalated",
+    evidence: "TicketConfigIncompatible",
+    resumeAt: "ResumeWork",
+  });
   assert.equal(
     ticketResponseSchema.parse(
       ticketResponse({
@@ -276,7 +280,7 @@ test("an escalated ticket names its reason and an unparked one omits it", () => 
         sequence: 9,
         ...ticketCarried,
       }).body,
-    ).reason,
+    ).escalation,
     undefined,
   );
   assert.throws(() =>
@@ -284,41 +288,50 @@ test("an escalated ticket names its reason and an unparked one omits it", () => 
       ticket: 3,
       phase: "Escalated",
       sequence: 9,
-      reason: "NoReason",
+      escalation: { kind: "NoEscalation", resumeAt: "ResumeWork" },
       ...ticketCarried,
     }),
   );
 });
 
-test("a parked ticket names where a resume re-enters it, and no other does", () => {
+/**
+ * The evidence is optional and the resume is not, which is the shape the column
+ * behind it has: an escalation the machine reaches by counting says nothing
+ * more, and every escalation re-enters somewhere.
+ */
+test("a wall with nothing said about it still names where it re-enters", () => {
   const parked = ticketResponseSchema.parse(
     ticketResponse({
       ticket: asTicketId(3),
       phase: "Escalated",
       sequence: 9,
-      reason: "EvaluationFailureEscalated",
-      resumeAt: "ResumeEvaluation",
+      escalation: ticketEscalationResource("EvaluationFailureEscalated"),
       ...ticketCarried,
     }).body,
   );
-  assert.equal(parked.resumeAt, "ResumeEvaluation");
-  assert.equal(
-    ticketResponseSchema.parse(
-      ticketResponse({
-        ticket: asTicketId(3),
-        phase: "Work",
-        sequence: 9,
-        ...ticketCarried,
-      }).body,
-    ).resumeAt,
-    undefined,
+  assert.deepEqual(parked.escalation, {
+    kind: "EvaluationFailureEscalated",
+    resumeAt: "ResumeRework",
+  });
+  assert.throws(() =>
+    ticketResponseSchema.parse({
+      ticket: 3,
+      phase: "Escalated",
+      sequence: 9,
+      escalation: {
+        kind: "EvaluationFailureEscalated",
+        resumeAt: "NoResume",
+      },
+      ...ticketCarried,
+    }),
   );
   assert.throws(() =>
     ticketResponseSchema.parse({
       ticket: 3,
       phase: "Escalated",
       sequence: 9,
-      resumeAt: "NoResume",
+      escalation: { kind: "EvaluationFailureEscalated" },
+      ...ticketCarried,
     }),
   );
 });

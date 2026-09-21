@@ -13,7 +13,7 @@
  * refuse is refused here too.
  */
 
-import type { Reason } from "../../src/domain/generated/modelTypes.ts";
+import type { Escalation } from "../../src/domain/generated/modelTypes.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { NativeActionResolution } from "../../src/interpreter/ticketCommand.ts";
 import {
@@ -26,7 +26,7 @@ import {
 export interface SeededAction {
   readonly ticket: number;
   readonly sequence: number;
-  readonly reason: Reason;
+  readonly escalation: Escalation;
   readonly offers: readonly NativeActionResolution[];
 }
 
@@ -94,7 +94,7 @@ export async function seedOpenAction(
     epoch,
   );
   await seeding.query(
-    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,reason)
+    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,escalation)
      VALUES ($1,$2,$3,$4,$5,$6)`,
     [
       partition.tenant,
@@ -102,13 +102,13 @@ export async function seedOpenAction(
       action.ticket,
       "Escalated",
       action.sequence,
-      action.reason,
+      action.escalation,
     ],
   );
   await seeding.query(
     `INSERT INTO native_action
        (tenant,project,action,authorizing_seq,effect_position,ticket,
-        action_version,kind,reason,required_capability)
+        action_version,kind,escalation,required_capability)
      VALUES ($1,$2,$3,$4,0,$5,$4,'TicketEscalation',$6,'ResolveTicket')`,
     [
       partition.tenant,
@@ -116,7 +116,7 @@ export async function seedOpenAction(
       label,
       action.sequence,
       action.ticket,
-      action.reason,
+      action.escalation,
     ],
   );
   for (const offered of action.offers)

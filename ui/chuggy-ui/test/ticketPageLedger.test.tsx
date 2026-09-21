@@ -180,8 +180,7 @@ const parkedTicket = {
   phase: "Escalated",
   sequence: 167,
   ...ticketInstants,
-  reason: "EvaluationFailureEscalated",
-  resumeAt: "ResumeRework",
+  escalation: { kind: "EvaluationFailureEscalated", resumeAt: "ResumeRework" },
   runTotals: ticketTotals,
 };
 
@@ -522,21 +521,6 @@ test("a resume the wire stamped is offered before the draft arrives", async () =
   expect(screen.queryByText(/only Revoke exits this wall/u)).toBeNull();
 });
 
-test("a page that has read nothing of the wall refuses the resume rather than denying it", async () => {
-  const { resumeAt, reason, ...unstamped } = parkedTicket;
-  expect(resumeAt).toBe("ResumeRework");
-  expect(reason).toBe("EvaluationFailureEscalated");
-  await drawTicket({
-    shapes: ticket21Parked,
-    ticket: { ...unstamped, phase: "Escalated" },
-    withDraft: false,
-  });
-  const resume = screen.getByRole("button", { name: "Resume" });
-  expect(resume.hasAttribute("disabled")).toBe(true);
-  expect(screen.getByText("Not read yet")).toBeDefined();
-  expect(screen.queryByText(/only Revoke exits this wall/u)).toBeNull();
-});
-
 /**
  * Truncation is the executions read's own fact and does not wait on the draft,
  * which is what the head's own header claims of it.
@@ -626,23 +610,6 @@ test("a row separates its wait from its run where the wire dates the start", asy
   );
   expect(rows.some((row) => row.includes("waited 1m · ran"))).toBe(true);
   expect(rows.some((row) => row.includes("waited") === false)).toBe(true);
-});
-
-/**
- * The page that has read nothing of the wall has not yet answered whether it
- * offers a resume at all, so it draws neither a price nor a refusal.
- */
-test("a resume this page has not read draws no price at all", async () => {
-  const { resumeAt, reason, ...unstamped } = parkedTicket;
-  expect(resumeAt).toBe("ResumeRework");
-  expect(reason).toBe("EvaluationFailureEscalated");
-  await drawTicket({
-    shapes: ticket21Parked,
-    ticket: { ...unstamped, phase: "Escalated" },
-    withDraft: false,
-  });
-  const act = screen.getByText("Not read yet").closest(".act");
-  expect(act?.textContent).toContain("Not read yet");
 });
 
 /**

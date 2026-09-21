@@ -13,7 +13,7 @@
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
-  EscalationReason,
+  EscalationKind,
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
 import type { PublicMutation } from "../../../../src/contract/requests.ts";
@@ -137,7 +137,7 @@ export function manualDispatchAction(
  * it. Each field is absent on a page that does not read it.
  */
 export interface TicketActionContext {
-  readonly reason?: EscalationReason | undefined;
+  readonly kind?: EscalationKind | undefined;
 }
 
 const rejoinSentence =
@@ -145,16 +145,17 @@ const rejoinSentence =
 
 /** What the rework wall's Resume does, which is a fresh cycle rather than a
  * pick-up of the one that failed. Every other wall, and a page that has not
- * read the reason, rejoins where the ticket parked — named per reason rather
- * than as a fallback, so a reason the roster gains is a case here too. */
+ * read the kind, rejoins where the ticket parked — named per kind rather than
+ * as a fallback, so a kind the roster gains is a case here too. */
 function resumeSentence(context: TicketActionContext): string {
-  const reason = context.reason;
-  if (reason === undefined) return rejoinSentence;
-  switch (reason) {
+  const kind = context.kind;
+  if (kind === undefined) return rejoinSentence;
+  switch (kind) {
     case "EvaluationFailureEscalated":
       return "rework this ticket with a fresh cycle";
     case "WorkFailureEscalated":
     case "WorkExecutionUnavailableEscalated":
+    case "EvaluationBlockedEscalated":
     case "FinalizationUnavailableEscalated":
       return rejoinSentence;
   }

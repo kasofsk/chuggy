@@ -175,8 +175,7 @@ test("a park offers the desk its answers and a waiting ticket is asked none", as
 
   const walled = ticketAt(memory.graph, id(1));
   assert.equal(walled.phase, "Escalated");
-  assert.equal(walled.reason, "EvaluationFailureEscalated");
-  assert.equal(walled.resumeAt, "ResumeRework");
+  assert.equal(walled.escalation, "EvaluationFailureEscalated");
   assert.deepEqual(await admitsOffered(partition, id(1)), [
     ["Resume", "Revoke"],
   ]);
@@ -186,7 +185,6 @@ test("a park offers the desk its answers and a waiting ticket is asked none", as
 
   const stranded = ticketAt(memory.graph, id(2));
   assert.equal(stranded.phase, "Pending");
-  assert.equal(stranded.reason, "NoReason");
-  assert.equal(stranded.resumeAt, "NoResume");
+  assert.equal(stranded.escalation, "NoEscalation");
   assert.deepEqual(await admitsOffered(partition, id(2)), []);
 });

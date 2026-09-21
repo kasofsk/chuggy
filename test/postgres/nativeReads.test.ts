@@ -109,20 +109,29 @@ function seededRelease(ticket: number, deps: readonly number[]): string {
 /** One ticket of each terminal shape, and one parked with the wall it hit. */
 async function seedFilterProjection(partition: Partition) {
   await subject.harness.query(
-    "UPDATE project SET head=4 WHERE tenant=$1 AND project=$2",
+    "UPDATE project SET head=5 WHERE tenant=$1 AND project=$2",
     [partition.tenant, partition.project],
   );
-  for (const [ticket, phase, reason] of [
-    [1, "Done", "NoReason"],
-    [2, "Pending", "NoReason"],
-    [3, "Revoked", "NoReason"],
-    [4, "Escalated", "EvaluationFailureEscalated"],
+  for (const [ticket, phase, escalation, evidence] of [
+    [1, "Done", "NoEscalation", null],
+    [2, "Pending", "NoEscalation", null],
+    [3, "Revoked", "NoEscalation", null],
+    [4, "Escalated", "EvaluationFailureEscalated", null],
+    [5, "Escalated", "WorkExecutionUnavailableEscalated", "RefUnreadable"],
   ] as const) {
     await seedEntry(partition, `native-filter-${String(ticket)}`, ticket);
     await subject.harness.query(
-      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,reason)
-       VALUES ($1,$2,$3,$4,$3,$5)`,
-      [partition.tenant, partition.project, ticket, phase, reason],
+      `INSERT INTO ticket_projection
+         (tenant,project,ticket,phase,seq,escalation,escalation_evidence)
+       VALUES ($1,$2,$3,$4,$3,$5,$6)`,
+      [
+        partition.tenant,
+        partition.project,
+        ticket,
+        phase,
+        escalation,
+        evidence,
+      ],
     );
   }
 }
@@ -391,17 +400,38 @@ test("project reads filter before paging", async () => {
   });
   assert.equal(parked.result, "Found");
   if (parked.result !== "Found") return;
-  assert.equal(parked.project.sequence, 4);
+  assert.equal(parked.project.sequence, 5);
   assert.deepEqual(parked.project.tickets.map(dated), [
     {
       ticket: 4,
       phase: "Escalated",
       sequence: 4,
-      reason: "EvaluationFailureEscalated",
+      escalation: {
+        kind: "EvaluationFailureEscalated",
+        resumeAt: "ResumeRework",
+      },
       changedAt: seededEntryAt(4),
       revokedDependencies: [],
     },
+    {
+      ticket: 5,
+      phase: "Escalated",
+      sequence: 5,
+      escalation: {
+        kind: "WorkExecutionUnavailableEscalated",
+        evidence: "RefUnreadable",
+        resumeAt: "ResumeWork",
+      },
+      changedAt: seededEntryAt(5),
+      revokedDependencies: [],
+    },
   ]);
+});
+
+test("a selected-phase filter answers the terminal tickets alone", async () => {
+  const partition = await filterProject();
+  await seedFilterProjection(partition);
+  const reads = postgresNativeReads(subject.pool);
   const terminal = await reads.project(partition, {
     limit: 10,
     phaseFilter: { selection: "Selected", phases: ["Done", "Revoked"] },
@@ -436,11 +466,42 @@ test("a ticket read carries the detail its project page carries", async () => {
     ticket: 4,
     phase: "Escalated",
     sequence: 4,
-    reason: "EvaluationFailureEscalated",
+    escalation: {
+      kind: "EvaluationFailureEscalated",
+      resumeAt: "ResumeRework",
+    },
     changedAt: seededEntryAt(4),
     revokedDependencies: [],
   });
+  const walled = await reads.ticket(partition, id(5));
+  assert.deepEqual(walled?.escalation, {
+    kind: "WorkExecutionUnavailableEscalated",
+    evidence: "RefUnreadable",
+    resumeAt: "ResumeWork",
+  });
   assert.equal(await reads.ticket(partition, id(9)), undefined);
+});
+
+/**
+ * `escalation_evidence` carries no CHECK, so the read is where a value off the
+ * three rosters is caught: it raises rather than serve a name no client spells.
+ */
+test("evidence the wire cannot spell stops the ticket read", async () => {
+  const partition = await postgresHarnessProject(
+    subject.harness.store,
+    "native-evidence-unknown",
+  );
+  await seedEntry(partition, "native-evidence-unknown", 1);
+  await subject.harness.query(
+    `INSERT INTO ticket_projection
+       (tenant,project,ticket,phase,seq,escalation,escalation_evidence)
+     VALUES ($1,$2,1,'Escalated',1,'WorkExecutionUnavailableEscalated','GasExhausted')`,
+    [partition.tenant, partition.project],
+  );
+  await assert.rejects(
+    postgresNativeReads(subject.pool).ticket(partition, id(1)),
+    /GasExhausted is not escalation evidence/u,
+  );
 });
 
 test("a ticket's open action carries its kind, its fence, and what it offered", async () => {
@@ -455,7 +516,7 @@ test("a ticket's open action carries its kind, its fence, and what it offered", 
     {
       ticket: 1,
       sequence: 1,
-      reason: "WorkFailureEscalated",
+      escalation: "WorkFailureEscalated",
       offers: ["Resume", "Revoke"],
     },
   );
@@ -482,7 +543,7 @@ test("an escalation offers what it recorded, not what its kind may ask for", asy
     {
       ticket: 1,
       sequence: 1,
-      reason: "EvaluationFailureEscalated",
+      escalation: "EvaluationFailureEscalated",
       offers: ["Revoke"],
     },
   );
@@ -514,7 +575,7 @@ test("a resolved action stops listing, and an unknown ticket is not found", asyn
     {
       ticket: 1,
       sequence: 1,
-      reason: "WorkFailureEscalated",
+      escalation: "WorkFailureEscalated",
       offers: ["Resume", "Revoke"],
     },
   );
@@ -547,7 +608,7 @@ test("a project's open actions list newest first and page behind their bound", a
       {
         ticket,
         sequence: ticket,
-        reason: "WorkFailureEscalated",
+        escalation: "WorkFailureEscalated",
         offers: ["Resume", "Revoke"],
       },
     );
@@ -603,7 +664,7 @@ test("a project's open actions are its own, and an empty project lists none", as
   await seedOpenAction(subject.harness, mine, "native-actions-mine-one", {
     ticket: 1,
     sequence: 1,
-    reason: "WorkFailureEscalated",
+    escalation: "WorkFailureEscalated",
     offers: ["Resume", "Revoke"],
   });
   const reads = postgresNativeReads(subject.pool);
@@ -630,7 +691,7 @@ test("a stored answer the kind cannot ask for stops both reads", async () => {
     {
       ticket: 1,
       sequence: 1,
-      reason: "WorkFailureEscalated",
+      escalation: "WorkFailureEscalated",
       offers: ["Resume", "Revoke"],
     },
   );
@@ -669,7 +730,7 @@ test("the fence the read publishes is the one acceptance admits", async () => {
   await seedOpenAction(subject.harness, partition, "native-actions-fenced", {
     ticket: 1,
     sequence: 1,
-    reason: "WorkFailureEscalated",
+    escalation: "WorkFailureEscalated",
     offers: ["Resume", "Revoke"],
   });
   const listed = (

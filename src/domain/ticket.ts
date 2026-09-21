@@ -8,7 +8,13 @@
  * carried so a golden state compares field for field.
  */
 
-import type { Task, TaskKind, Ticket } from "./generated/modelTypes.ts";
+import type {
+  Escalation,
+  Resume,
+  Task,
+  TaskKind,
+  Ticket,
+} from "./generated/modelTypes.ts";
 import { isSettled } from "./phase.ts";
 import { nextTaskId, retiredInIdOrder, spawnTasks } from "./task.ts";
 
@@ -19,6 +25,29 @@ import { nextTaskId, retiredInIdOrder, spawnTasks } from "./task.ts";
  */
 export function hasOpenHumanTask(ticket: Ticket): boolean {
   return ticket.phase === "Escalated";
+}
+
+/**
+ * Where each wall resumes, total on the sum, so every park offers the desk
+ * exactly one continuation and the unparked ticket offers none — which is what
+ * lets the resume point stay off the ticket rather than sit beside the wall
+ * that implies it. The two work walls and the evaluation-failure wall all buy
+ * a new artifact; only the walls they answer differ.
+ */
+export function resumeOf(escalation: Escalation): Resume {
+  switch (escalation) {
+    case "NoEscalation":
+      return "NoResume";
+    case "WorkFailureEscalated":
+    case "WorkExecutionUnavailableEscalated":
+      return "ResumeWork";
+    case "EvaluationFailureEscalated":
+      return "ResumeRework";
+    case "EvaluationBlockedEscalated":
+      return "ResumeEvaluation";
+    case "FinalizationUnavailableEscalated":
+      return "ResumeFinalization";
+  }
 }
 
 /**

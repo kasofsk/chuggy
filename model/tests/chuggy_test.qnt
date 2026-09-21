@@ -242,8 +242,7 @@ module chuggy_test {
   run workFailedWallTest = assert(and {
     dWorkFail.rec.label == "ticket-escalated work_failure_escalated",
     dWorkFail.post.tickets.get(1).phase == Escalated,
-    dWorkFail.post.tickets.get(1).reason == WorkFailureEscalated,
-    dWorkFail.post.tickets.get(1).resumeAt == ResumeWork,
+    dWorkFail.post.tickets.get(1).escalation == WorkFailureEscalated,
     hasOpenHumanTask(dWorkFail.post.tickets.get(1)),
     dWorkFail.rec.effects == ["OpenHumanTask"],
     dWorkFail.post.tickets.get(1).record == [wt(1, Failed), wt(2, Passed)],
@@ -278,8 +277,7 @@ module chuggy_test {
     dEvalEscalate.rec.label == "ticket-escalated evaluation_failure_escalated",
     dEvalEscalate.rec.effects == ["OpenHumanTask"],
     dEvalEscalate.post.tickets.get(1).phase == Escalated,
-    dEvalEscalate.post.tickets.get(1).reason == EvaluationFailureEscalated,
-    dEvalEscalate.post.tickets.get(1).resumeAt == ResumeRework,
+    dEvalEscalate.post.tickets.get(1).escalation == EvaluationFailureEscalated,
     D::retryableIn(dEvalEscalate.post, 1),
     dEvalEscalate.post.tickets.get(1).record == [et(1, 0, Failed), et(2, 0, Passed)],
     dEvalEscalate.post.tickets.get(1).tasks == Set()
@@ -384,7 +382,7 @@ module chuggy_test {
   run stagedShortCircuitEscalatesTest = assert(and {
     dStagedWall.rec.label == "ticket-escalated evaluation_failure_escalated",
     dStagedWall.post.tickets.get(1).phase == Escalated,
-    dStagedWall.post.tickets.get(1).resumeAt == ResumeRework,
+    dStagedWall.post.tickets.get(1).escalation == EvaluationFailureEscalated,
     dStagedWall.post.tickets.get(1).record ==
       [wt(1, Passed), wt(2, Passed), et(3, 0, Failed)],
     dStagedWall.post.tickets.get(1).record.indices().forall(i =>
@@ -471,9 +469,8 @@ module chuggy_test {
     dFinalizationUnavailable.rec.transitions ==
       [{ ticket: 1, from: Finalization, to: Escalated }],
     dFinalizationUnavailable.rec.effects == ["OpenHumanTask"],
-    dFinalizationUnavailable.post.tickets.get(1).reason ==
+    dFinalizationUnavailable.post.tickets.get(1).escalation ==
       FinalizationUnavailableEscalated,
-    dFinalizationUnavailable.post.tickets.get(1).resumeAt == ResumeFinalization,
     // The wall spawns nothing and retires nothing: Finalization holds no
     // live task set, and the artifact the finalizer could not commit stays.
     dFinalizationUnavailable.post.tickets.get(1).tasks == Set(),
@@ -483,31 +480,33 @@ module chuggy_test {
 
   // === The human desk: parks and resumes ===================================
 
-  pure val dPark = D::decideExecutionBlocked(c1, 1, WorkExecutionUnavailableEscalated)
+  pure val dPark = D::decideExecutionBlocked(c1, 1)
   pure val dParkResume = D::decideResumeTicket(dPark.post, 1)
 
   run executionBlockedAndResumeClassifiedTest = assert(and {
     dPark.rec.label == "ticket-escalated work_execution_unavailable_escalated",
     dPark.rec.effects == ["OpenHumanTask"],
     dPark.post.tickets.get(1).phase == Escalated,
-    dPark.post.tickets.get(1).reason == WorkExecutionUnavailableEscalated,
-    dPark.post.tickets.get(1).resumeAt == ResumeWork,
+    dPark.post.tickets.get(1).escalation == WorkExecutionUnavailableEscalated,
     dPark.post.tickets.get(1).record == [wt(1, Cancelled), wt(2, Cancelled)],
     dPark.post.tickets.get(1).tasks == Set(),
     dParkResume.post.tickets.get(1).phase == Work,
-    dParkResume.post.tickets.get(1).reason == NoReason,
+    dParkResume.post.tickets.get(1).escalation == NoEscalation,
     dParkResume.post.tickets.get(1).tasks == Set(wr(3), wr(4))
   })
 
-  /// An infrastructure block during evaluation preserves that source
-  /// boundary. Resume retires the interrupted fan-out and creates a fresh
-  /// lowest-stage fan-out; it never silently restarts work.
-  pure val dEvalPark = D::decideExecutionBlocked(c4, 1, WorkExecutionUnavailableEscalated)
+  /// An infrastructure block during EVALUATION is its own wall, and that is
+  /// what keeps the source boundary: resume retires the interrupted fan-out
+  /// and creates a fresh lowest-stage fan-out, never silently restarting
+  /// work. The same decider on the same ticket in Work names the other wall
+  /// (above), which is the whole of what the phase decides here.
+  pure val dEvalPark = D::decideExecutionBlocked(c4, 1)
   pure val dEvalParkResume = D::decideResumeTicket(dEvalPark.post, 1)
 
   run executionBlockedEvaluationResumeFreshTest = assert(and {
+    dEvalPark.rec.label == "ticket-escalated evaluation_blocked_escalated",
     dEvalPark.post.tickets.get(1).phase == Escalated,
-    dEvalPark.post.tickets.get(1).resumeAt == ResumeEvaluation,
+    dEvalPark.post.tickets.get(1).escalation == EvaluationBlockedEscalated,
     dEvalPark.post.tickets.get(1).record ==
       [wt(1, Passed), wt(2, Passed), et(3, 0, Cancelled), et(4, 0, Cancelled)],
     dEvalPark.post.tickets.get(1).tasks == Set(),
@@ -517,19 +516,34 @@ module chuggy_test {
       [wt(1, Passed), wt(2, Passed), et(3, 0, Cancelled), et(4, 0, Cancelled)]
   })
 
-  /// EVERY PARK WITH A MODELED RESUME IS RETRYABLE, and the resume returns
-  /// the ticket to the phase its wall stamped. The finalization park is the
-  /// state its own wall wrote rather than one built here: a hand-built park
-  /// can stamp a resume no decider ever pairs with that reason.
+  /// THE RESUME IS THE WALL'S, and nothing else's: resumeOf is total on the
+  /// sum, so every state the record can hold offers the desk exactly one
+  /// continuation, and the unparked ticket offers none. This is what lets
+  /// retryableIn ask only whether the desk holds a task.
+  run resumeDerivedFromTheWallTest = assert(and {
+    resumeOf(NoEscalation) == NoResume,
+    resumeOf(WorkFailureEscalated) == ResumeWork,
+    resumeOf(WorkExecutionUnavailableEscalated) == ResumeWork,
+    resumeOf(EvaluationFailureEscalated) == ResumeRework,
+    resumeOf(EvaluationBlockedEscalated) == ResumeEvaluation,
+    resumeOf(FinalizationUnavailableEscalated) == ResumeFinalization,
+    not(D::retryableIn(c1, 1)),
+    D::retryableIn(dPark.post, 1)
+  })
+
+  /// EVERY PARK IS RETRYABLE, and the resume returns the ticket to the phase
+  /// its wall implies. The finalization park is the state its own wall wrote
+  /// rather than one built here — a hand-built park was once able to stamp a
+  /// resume no decider pairs with that wall, which is what the sum removes.
   pure val cEscFinalizer: TicketGraph = dFinalizationUnavailable.post
   pure val dResumeFinalizer = D::decideResumeTicket(cEscFinalizer, 1)
 
   pure val escWorking: Ticket = { ...fresh(Set(), progU2),
-    phase: Escalated, resumeAt: ResumeWork, reason: WorkFailureEscalated }
+    phase: Escalated, escalation: WorkFailureEscalated }
   pure val cEscWorking: TicketGraph = { tickets: Map(1 -> escWorking) }
   pure val dResumeWorking = D::decideResumeTicket(cEscWorking, 1)
 
-  run resumeReturnsToStampedPhaseTest = assert(and {
+  run resumeReturnsToTheWallsPhaseTest = assert(and {
     dResumeFinalizer.rec.label == "ticket-resumed",
     dResumeFinalizer.post.tickets.get(1).phase == Finalization,
     dResumeFinalizer.rec.effects == ["RunFinalizer"],
@@ -547,7 +561,7 @@ module chuggy_test {
   /// execution-blocked park above, where an interruption and not a verdict
   /// did the parking.
   pure val escRework: Ticket = { ...fresh(Set(), progStaged),
-    phase: Escalated, resumeAt: ResumeRework, reason: EvaluationFailureEscalated,
+    phase: Escalated, escalation: EvaluationFailureEscalated,
     record: [wt(1, Passed), wt(2, Passed), et(3, 0, Failed)], spawned: 3 }
   pure val cEscRework: TicketGraph = { tickets: Map(1 -> escRework) }
   pure val dResumeRework = D::decideResumeTicket(cEscRework, 1)
@@ -556,8 +570,7 @@ module chuggy_test {
     dResumeRework.rec.label == "ticket-resumed",
     dResumeRework.rec.effects == ["SpawnWorkTasks"],
     dResumeRework.rec.transitions == [{ ticket: 1, from: Escalated, to: Work }],
-    dResumeRework.post.tickets.get(1).reason == NoReason,
-    dResumeRework.post.tickets.get(1).resumeAt == NoResume,
+    dResumeRework.post.tickets.get(1).escalation == NoEscalation,
     // Fresh work ids above an INTACT record: the failed stage stays retired.
     dResumeRework.post.tickets.get(1).tasks == Set(wr(4), wr(5)),
     dResumeRework.post.tickets.get(1).record ==
@@ -589,15 +602,14 @@ module chuggy_test {
   // === Revoke, from every live phase =======================================
   // Every non-terminal may be revoked. Single-ticket fixtures: one per live
   // phase (Pending, Work, Evaluation, Finalization), and the one parked phase
-  // twice under different reasons — the pair is there to show a revoke does
+  // twice under different walls — the pair is there to show a revoke does
   // not read the wall that parked the ticket, not to enumerate the walls.
 
   pure def revokedShape(j: Ticket): bool = and {
     j.phase == Revoked,
-    j.tasks == Set(),          // Revoked RUNS nothing (live set retired)...
-    j.resumeAt == NoResume,
-    j.reason == NoReason,        // ...and opens NO human task:
-    not(hasOpenHumanTask(j))   // revocation is the author's settled choice
+    j.tasks == Set(),               // Revoked RUNS nothing (live set retired)...
+    j.escalation == NoEscalation,   // ...and opens NO human task:
+    not(hasOpenHumanTask(j))        // revocation is the author's settled choice
   }
 
   pure val jBase: Ticket = fresh(Set(), progU2)
@@ -607,9 +619,9 @@ module chuggy_test {
   pure val jEval: Ticket = { ...jBase, phase: Evaluation, tasks: mixedE0, spawned: 2 }
   pure val jFinalizer: Ticket = { ...jBase, phase: Finalization }
   pure val jEsc: Ticket = { ...jBase, phase: Escalated,
-    resumeAt: ResumeRework, reason: EvaluationFailureEscalated }
+    escalation: EvaluationFailureEscalated }
   pure val jParkPre: Ticket = { ...jBase, phase: Escalated,
-    resumeAt: ResumeWork, reason: WorkExecutionUnavailableEscalated }
+    escalation: WorkExecutionUnavailableEscalated }
 
   pure def revokeOne(j: Ticket): Decision =
     D::decideRevoke({ tickets: Map(1 -> j) }, 1)

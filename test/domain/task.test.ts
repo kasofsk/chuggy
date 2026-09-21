@@ -59,8 +59,7 @@ const bare: Ticket = {
   tasks: new Set(),
   record: [],
   spawned: 0,
-  resumeAt: "NoResume",
-  reason: "NoReason",
+  escalation: "NoEscalation",
   completions: 0,
 };
 

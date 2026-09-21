@@ -18,7 +18,7 @@
 
 import { phaseRoster } from "../../../../src/contract/rosters.ts";
 import type {
-  EscalationReason,
+  EscalationKind,
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
 
@@ -64,25 +64,27 @@ export function ticketSectionPhases(
   return phaseRoster.filter((phase) => ticketSectionOf(phase) === section);
 }
 
-export function escalationBadgeLabel(reason: EscalationReason): string {
-  switch (reason) {
+export function escalationBadgeLabel(kind: EscalationKind): string {
+  switch (kind) {
     case "WorkFailureEscalated":
       return "work failed";
     case "EvaluationFailureEscalated":
       return "rework budget spent";
     case "WorkExecutionUnavailableEscalated":
       return "execution unavailable";
+    case "EvaluationBlockedEscalated":
+      return "evaluation blocked";
     case "FinalizationUnavailableEscalated":
       return "finalization unavailable";
   }
 }
 
-/** An open human task with no reason field to say why is still an open human
- * task, so the phase is what its badge says. */
+/** An escalated ticket with no read of its escalation kind is still an open
+ * human task, so the phase is what its badge says. */
 export function ticketBadgeLabel(
   phase: TicketPhase,
-  reason: EscalationReason | undefined,
+  kind: EscalationKind | undefined,
 ): string | undefined {
-  if (reason !== undefined) return escalationBadgeLabel(reason);
+  if (kind !== undefined) return escalationBadgeLabel(kind);
   return phase === "Escalated" ? "escalated" : undefined;
 }

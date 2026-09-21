@@ -16,7 +16,7 @@
 
 import {
   operationRefusalCodes,
-  type EscalationReason,
+  type EscalationKind,
   type NativeActionKind,
   type OperationRefusalCode,
   type OperationState,
@@ -24,14 +24,16 @@ import {
 import type { ApiFailure } from "./apiRequest.ts";
 
 /** Which wall the ticket hit, in the person's own terms. */
-export function escalationReasonSentence(reason: EscalationReason): string {
-  switch (reason) {
+export function escalationKindSentence(kind: EscalationKind): string {
+  switch (kind) {
     case "WorkFailureEscalated":
       return "the work did not pass its evaluation";
     case "EvaluationFailureEscalated":
       return "this ticket has failed evaluation more times than rework allows";
     case "WorkExecutionUnavailableEscalated":
       return "the platform could not run this ticket's contract";
+    case "EvaluationBlockedEscalated":
+      return "the platform could not run this ticket's evaluation";
     case "FinalizationUnavailableEscalated":
       return "the platform could not finalize this ticket";
   }

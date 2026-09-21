@@ -79,16 +79,15 @@ export const terminalsAbsorbing: Invariant = (_config, view) =>
   view.rec.transitions.every((t) => !["Done", "Revoked"].includes(t.from));
 
 /**
- * The desk's two equivalences. A ticket carries a reason exactly while it is
- * parked and a resume point exactly while it is parked, so a desk task never
- * offers a continuation the deciders would refuse.
+ * The desk's one equivalence. A ticket names a wall exactly while it is
+ * parked; where that wall resumes is derived from it and total, so a desk task
+ * cannot offer a continuation the deciders would refuse.
  */
 export const deskConsistent: Invariant = (_config, view) =>
-  everyLiveTicket(view.post, (t) => {
-    const parked = t.phase === "Escalated";
-    const named = t.reason !== "NoReason";
-    return parked === named && (t.resumeAt !== "NoResume") === parked;
-  });
+  everyLiveTicket(
+    view.post,
+    (t) => (t.phase === "Escalated") === (t.escalation !== "NoEscalation"),
+  );
 
 /** Whether these ids are exactly the contiguous run of `count` starting at `start`. */
 function idsAreTheRunFrom(

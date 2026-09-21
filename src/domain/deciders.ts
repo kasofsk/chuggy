@@ -15,11 +15,10 @@
 import { ticketAt, withTicket, type Decision } from "./ticketGraph.ts";
 import type {
   TicketGraph,
+  Escalation,
   EvaluationFailureDisposition,
   FinalizationOutcome,
   Phase,
-  Reason,
-  Resume,
   StageDefinition,
   Ticket,
   Verdict,
@@ -27,7 +26,7 @@ import type {
 import type { TaskId, TicketId } from "./ids.ts";
 import { combine } from "./program.ts";
 import { evalStage, resolveTask, tkEval, tkWork } from "./task.ts";
-import { retireLive, spawnOn } from "./ticket.ts";
+import { resumeOf, retireLive, spawnOn } from "./ticket.ts";
 
 /**
  * Both ways a failing evaluation can be taken. The choice is an input to the
@@ -69,8 +68,7 @@ export function freshTicket(authoring: {
     tasks: new Set(),
     record: [],
     spawned: 0,
-    resumeAt: "NoResume",
-    reason: "NoReason",
+    escalation: "NoEscalation",
     completions: 0,
   };
 }
@@ -98,21 +96,20 @@ export function decideReleaseTicket(
 }
 
 /**
- * Park a ticket on the desk, naming the wall, where a resume would put it back,
- * and retiring the failed set into the record rather than dropping it. The open
- * desk task is derived from the phase; `OpenHumanTask` is its visible effect.
+ * Park a ticket on the desk, naming the wall and retiring the failed set into
+ * the record rather than dropping it; where a resume puts it back is the
+ * wall's own (`resumeOf`). The open desk task is derived from the phase, and
+ * `OpenHumanTask` is its visible effect.
  */
 function escalate(
   graph: TicketGraph,
   id: TicketId,
-  at: Resume,
-  why: Reason,
+  wall: Escalation,
   label: string,
 ): Decision {
   const parked = withTicket(graph, id, {
     ...retireLive(ticketAt(graph, id)),
-    resumeAt: at,
-    reason: why,
+    escalation: wall,
   });
   return move(parked, id, "Escalated", label, ["OpenHumanTask"]);
 }
@@ -134,8 +131,7 @@ export function decideRevoke(graph: TicketGraph, id: TicketId): Decision {
     post: withTicket(graph, id, {
       ...retireLive(ticketAt(graph, id)),
       phase: "Revoked",
-      resumeAt: "NoResume",
-      reason: "NoReason",
+      escalation: "NoEscalation",
     }),
   };
 }
@@ -197,7 +193,6 @@ export function decideWorkReduce(graph: TicketGraph, id: TicketId): Decision {
     return escalate(
       graph,
       id,
-      "ResumeWork",
       "WorkFailureEscalated",
       "ticket-escalated work_failure_escalated",
     );
@@ -272,7 +267,6 @@ export function decideEvalStageReduce(
       return escalate(
         graph,
         id,
-        "ResumeRework",
         "EvaluationFailureEscalated",
         "ticket-escalated evaluation_failure_escalated",
       );
@@ -338,7 +332,6 @@ export function decideFinalizationResult(
       return escalate(
         graph,
         id,
-        "ResumeFinalization",
         "FinalizationUnavailableEscalated",
         "ticket-escalated finalization_unavailable_escalated",
       );
@@ -347,45 +340,42 @@ export function decideFinalizationResult(
 
 /**
  * Infrastructure cannot run an intact contract, which is not failed work: it
- * names its own reason and resumes back at whichever phase held the work.
+ * names the wall of the phase it interrupted, and which refusal it was is
+ * evidence the adapter records beside the execution. The two phases get two
+ * walls because they resume differently — an evaluation park still has an
+ * intact judgement to make, where a work park buys a new artifact.
  */
 export function decideExecutionBlocked(
   graph: TicketGraph,
   id: TicketId,
-  why: Reason,
 ): Decision {
-  const phase = ticketAt(graph, id).phase;
-  const at: Resume =
-    phase === "Work"
-      ? "ResumeWork"
-      : phase === "Evaluation"
-        ? "ResumeEvaluation"
-        : "NoResume";
-  return escalate(
-    graph,
-    id,
-    at,
-    why,
-    "ticket-escalated work_execution_unavailable_escalated",
-  );
+  return ticketAt(graph, id).phase === "Evaluation"
+    ? escalate(
+        graph,
+        id,
+        "EvaluationBlockedEscalated",
+        "ticket-escalated evaluation_blocked_escalated",
+      )
+    : escalate(
+        graph,
+        id,
+        "WorkExecutionUnavailableEscalated",
+        "ticket-escalated work_execution_unavailable_escalated",
+      );
 }
 
 /**
- * A parked ticket rejoins the pipeline where its wall said it would, and an
- * unparked one refuses and records that it did.
+ * A parked ticket rejoins the pipeline where its wall implies it would
+ * (`resumeOf`), and an unparked one refuses and records that it did.
  *
- * The walls that stamp a work resume take the same exit: an evaluation wall
- * was reached by a verdict, which has no re-judge to offer, so it buys a new
+ * The walls whose resume is work take the same exit: an evaluation failure was
+ * reached by a verdict, which has no re-judge to offer, so it buys a new
  * artifact rather than a second opinion on the old one.
  */
 export function decideResumeTicket(graph: TicketGraph, id: TicketId): Decision {
   const ticket = ticketAt(graph, id);
-  const resumed: Ticket = {
-    ...ticket,
-    reason: "NoReason",
-    resumeAt: "NoResume",
-  };
-  switch (ticket.resumeAt) {
+  const resumed: Ticket = { ...ticket, escalation: "NoEscalation" };
+  switch (resumeOf(ticket.escalation)) {
     case "ResumeWork":
     case "ResumeRework":
       return move(

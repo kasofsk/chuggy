@@ -1,5 +1,5 @@
 /**
- * The resume point, driven onto a real ticket by real decisions and read back
+ * The escalation, driven onto a real ticket by real decisions and read back
  * off the durable projection, the public read and the change row the same
  * decision appended.
  *
@@ -8,10 +8,10 @@
  * it is a read of one post-state — a column right at the end and wrong in the
  * middle is a column a reader believes.
  *
- * THE WALL AND THE RESUME ARE THE TWO STATES WORTH DRIVING TO. `resume_at` is
- * the machine's absent value everywhere else, so a fixture that stopped at
- * `Work` would assert the projection carries a column rather than that it
- * carries the machine.
+ * THE WALL IS THE STATE WORTH DRIVING TO. The escalation is the machine's
+ * absent value everywhere else, so a fixture that stopped at `Work` would
+ * assert the projection carries a column rather than that it carries the
+ * machine.
  */
 
 import assert from "node:assert/strict";
@@ -28,7 +28,7 @@ import type { TicketResource } from "../../src/interpreter/nativeWeb.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
 import { plainResult } from "../actor/harness.ts";
-import { resumePoints } from "../../src/contract/rosters.ts";
+import { escalationTags } from "../../src/domain/generated/modelTypes.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   postgresHarnessCompletion,
@@ -59,13 +59,12 @@ const subject = id(1);
 /** One projection row as the columns this suite is about. */
 interface ProjectedRow {
   readonly phase: string;
-  readonly reason: string;
-  readonly resume_at: string | null;
+  readonly escalation: string;
 }
 
 async function projected(partition: Partition): Promise<ProjectedRow> {
   const found = await harness.query(
-    `SELECT phase, reason, resume_at
+    `SELECT phase, escalation
        FROM ticket_projection
       WHERE tenant=$1 AND project=$2 AND ticket=$3`,
     [partition.tenant, partition.project, subject],
@@ -79,11 +78,7 @@ async function projected(partition: Partition): Promise<ProjectedRow> {
 /** The same facts read off the replayed graph, which is what the row must equal. */
 function carried(memory: ProjectMemory): ProjectedRow {
   const ticket = ticketAt(memory.graph, subject);
-  return {
-    phase: ticket.phase,
-    reason: ticket.reason,
-    resume_at: ticket.resumeAt,
-  };
+  return { phase: ticket.phase, escalation: ticket.escalation };
 }
 
 /** The subject as the project table lists it, in the order the case names. */
@@ -167,7 +162,7 @@ async function walled(
   return reported(partition, memory, 6, "Fail");
 }
 
-test("the projection carries the wall's resume point", async () => {
+test("the projection carries the wall's escalation", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "projection-wall",
@@ -175,8 +170,7 @@ test("the projection carries the wall's resume point", async () => {
   const memory = await walled(partition, "projection-wall");
   assert.deepEqual(await projected(partition), {
     phase: "Escalated",
-    reason: "EvaluationFailureEscalated",
-    resume_at: "ResumeRework",
+    escalation: "EvaluationFailureEscalated",
   });
   assert.deepEqual(await projected(partition), carried(memory));
 });
@@ -213,7 +207,7 @@ test("the change row a decision appends records the phase that decision produced
   );
 });
 
-test("the public read serves the resume point the row holds", async () => {
+test("the public read serves the escalation the row holds", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "projection-read",
@@ -222,13 +216,19 @@ test("the public read serves the resume point the row holds", async () => {
   const reads = postgresNativeReads(pool);
   const parked = await reads.ticket(partition, subject);
   assert.equal(parked?.phase, "Escalated");
-  assert.equal(parked?.resumeAt, "ResumeRework");
+  assert.deepEqual(parked?.escalation, {
+    kind: "EvaluationFailureEscalated",
+    resumeAt: "ResumeRework",
+  });
   for (const order of ["Identity", "RecentActivity"] as const) {
-    assert.equal((await listed(partition, order)).resumeAt, "ResumeRework");
+    assert.deepEqual((await listed(partition, order)).escalation, {
+      kind: "EvaluationFailureEscalated",
+      resumeAt: "ResumeRework",
+    });
   }
 });
 
-test("a resume clears the point it re-entered at", async () => {
+test("a resume clears the escalation it re-entered at", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "projection-resume",
@@ -250,12 +250,11 @@ test("a resume clears the point it re-entered at", async () => {
   assert.deepEqual(drained.decided, ["Committed"]);
   assert.deepEqual(await projected(partition), {
     phase: "Work",
-    reason: "NoReason",
-    resume_at: "NoResume",
+    escalation: "NoEscalation",
   });
   assert.deepEqual(await projected(partition), carried(drained.memory));
   const reads = postgresNativeReads(pool);
-  assert.equal((await reads.ticket(partition, subject))?.resumeAt, undefined);
+  assert.equal((await reads.ticket(partition, subject))?.escalation, undefined);
 });
 
 /**
@@ -299,11 +298,11 @@ async function seedEntryAt(partition: Partition, seq: number): Promise<void> {
 }
 
 /**
- * A row no decision has moved since the projection grew the column. It reads as
- * a ticket whose resume point is not known rather than as one parked at the
- * machine's absent value, which is why the column is not defaulted.
+ * A row naming no escalation, which the column's default is and the phase
+ * contradicts. The read answers the escalation it holds rather than deriving
+ * one from the phase, so such a row serves none.
  */
-test("a row written before the resume point existed serves none", async () => {
+test("a row that names no escalation serves none", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "projection-older",
@@ -317,15 +316,15 @@ test("a row written before the resume point existed serves none", async () => {
   const reads = postgresNativeReads(pool);
   const older = await reads.ticket(partition, subject);
   assert.equal(older?.phase, "Escalated");
-  assert.equal(older?.resumeAt, undefined);
+  assert.equal(older?.escalation, undefined);
 });
 
 /**
- * The resume constraint migration 054 added, against a row carrying the defect
- * it names and against every point the machine stamps — a claim about a
- * constraint is worth what the constraint is worth.
+ * The two escalation constraints migration 008 added, against rows carrying
+ * the defects they name and against every escalation the machine stamps — a
+ * claim about a constraint is worth what the constraint is worth.
  */
-test("the projection refuses a resume point the machine never stamps", async () => {
+test("the projection refuses an escalation the machine never stamps", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "projection-constraints",
@@ -334,17 +333,26 @@ test("the projection refuses a resume point the machine never stamps", async () 
     `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,${rest}`;
   await assert.rejects(
     harness.query(
-      columns("resume_at) VALUES ($1,$2,$3,'Escalated',1,'ResumeNowhere')"),
+      columns("escalation) VALUES ($1,$2,$3,'Escalated',1,'Nowhere')"),
       [partition.tenant, partition.project, 1],
     ),
-    /ticket_projection_resume_is_known/u,
+    /ticket_projection_escalation_is_known/u,
   );
-  for (const point of resumePoints)
+  await assert.rejects(
+    harness.query(
+      columns(
+        "escalation,escalation_evidence) VALUES ($1,$2,$3,'Work',1,'NoEscalation','RuntimeVersionUnsupported')",
+      ),
+      [partition.tenant, partition.project, 2],
+    ),
+    /ticket_projection_evidence_needs_an_escalation/u,
+  );
+  for (const tag of escalationTags)
     await assert.doesNotReject(
       harness.query(
-        columns(`resume_at) VALUES ($1,$2,$3,'Escalated',1,'${point}')`),
-        [partition.tenant, partition.project, resumePoints.indexOf(point) + 2],
+        columns(`escalation) VALUES ($1,$2,$3,'Escalated',1,'${tag}')`),
+        [partition.tenant, partition.project, escalationTags.indexOf(tag) + 3],
       ),
-      `the check admits ${point}, which is a point the machine stamps`,
+      `the check admits ${tag}, which is an escalation the machine stamps`,
     );
 });

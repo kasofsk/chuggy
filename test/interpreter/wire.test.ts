@@ -43,12 +43,10 @@ import {
   encodeEntry,
   parseEntry,
   parseJournal,
-  parseStoredEntry,
   parseStoredTicketCommand,
   parseTicketCommand,
   type Parsed,
 } from "../../src/interpreter/wire.ts";
-import { allBlockedReasons } from "../../src/interpreter/executionScheduler.ts";
 import { asOperationDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
 import {
   plainAuthoring,
@@ -79,10 +77,7 @@ const oneOfEach: Readonly<Record<DecisionEvent["type"], DecisionEvent>> = {
   WorkReduce: workReduceEvent(id(1)),
   EvalReduce: evalReduceEvent(id(1), "ReworkEvaluationFailure"),
   FinalizationResult: finalizationResultEvent(id(1), "FinalizationNeedsWork"),
-  ExecutionBlocked: executionBlockedEvent(
-    id(1),
-    "WorkExecutionUnavailableEscalated",
-  ),
+  ExecutionBlocked: executionBlockedEvent(id(1)),
   ResumeTicket: resumeTicketEvent(id(1)),
 };
 
@@ -300,113 +295,57 @@ test("the finalizer's own envelope is read only by the parse a writer reads its 
 });
 
 /**
- * A finalization submission sits in the inbox until a writer reaches it, so one
- * written before the rename is decided after it. 006 admits both spellings of
- * `outcome`; the writer would otherwise refuse what the database let through.
+ * The scheduler's own envelope. `submit_task_completion` builds its event from
+ * the ticket alone now that the phase says which escalation a block is, so the
+ * wall it recorded travels on the execution and not in these bytes.
  */
-test("a submission stored at the superseded outcome is read as the outcome this image has", () => {
-  const stored = {
+test("a stored block names its ticket and nothing else", () => {
+  assert.deepEqual(
+    parseStoredTicketCommand(
+      JSON.stringify({
+        version: 1,
+        command: "Decide",
+        event: { type: "ExecutionBlocked", value: { ticket: 1 } },
+      }),
+    ),
+    {
+      parsed: "Ok",
+      value: {
+        version: 1,
+        command: "Decide",
+        event: { type: "ExecutionBlocked", value: { ticket: 1 } },
+      },
+    },
+  );
+});
+
+/**
+ * The hold kind is the evidence the escalation records, and the mailbox names
+ * it exactly when the outcome is the one it explains, so a submission pairing
+ * the two any other way is not one the boundary could have written.
+ */
+test("a submission carries its hold kind exactly when it reports one", () => {
+  const held = {
     version: 1,
     command: "SubmitFinalizationResult",
     request: "6:0:RunFinalizer",
     requestGeneration: 6,
     recoveryEpoch: "epoch-1",
-    outcome: "FinalizationFailed",
+    outcome: "FinalizationResultUnavailable",
+    kind: "RepositoryUnbound",
   };
-  assert.deepEqual(parseStoredTicketCommand(JSON.stringify(stored)), {
+  assert.deepEqual(parseStoredTicketCommand(JSON.stringify(held)), {
     parsed: "Ok",
-    value: { ...stored, outcome: "FinalizationNeedsWork" },
+    value: held,
   });
-  const refused = parseStoredTicketCommand(
-    JSON.stringify({ ...stored, outcome: "FinalizationAbandoned" }),
-  );
-  assert.equal(refused.parsed, "Refused");
-  assert.ok(refused.parsed === "Refused");
-  assert.match(refused.why, /finalization submission fields are invalid/);
-});
-
-/**
- * The scheduler's own envelope, whose event the database builds out of
- * `execution.blocked_reason`. That column keeps the five wall names as the
- * evidence the collapsed reason stops carrying, so every block the boundary
- * writes names one and the model describes none of them.
- */
-test("a stored block names the wall it hit and is read as the reason the machine has", () => {
-  for (const wall of allBlockedReasons) {
-    const parsed = parseStoredTicketCommand(
-      JSON.stringify({
-        version: 1,
-        command: "Decide",
-        event: { type: "ExecutionBlocked", value: { ticket: 1, reason: wall } },
-      }),
-    );
-    assert.deepEqual(
-      parsed,
-      {
-        parsed: "Ok",
-        value: {
-          version: 1,
-          command: "Decide",
-          event: {
-            type: "ExecutionBlocked",
-            value: {
-              ticket: 1,
-              reason: "WorkExecutionUnavailableEscalated",
-            },
-          },
-        },
-      },
-      wall,
-    );
-  }
-});
-
-/**
- * A stored row as a pre-3 writer left it: the reduction named only its ticket,
- * and which edge it took is in the record rather than in the event.
- */
-function bareEvalReduceRow(rec: StepRecord): unknown {
-  return { seq: 4, event: { type: "EvalReduce", value: 1 }, rec };
-}
-
-/** The record an evaluation failure wrote when it walled the ticket. */
-const escalatedRecord: StepRecord = {
-  label: "ticket-escalated rework_budget_exhausted",
-  transitions: [{ ticket: id(1), from: "Evaluation", to: "Escalated" }],
-  effects: ["OpenHumanTask"],
-};
-
-/** The record the same event wrote when it sent the ticket back to work. */
-const reworkedRecord: StepRecord = {
-  label: "rework-started eval_failure",
-  transitions: [{ ticket: id(1), from: "Evaluation", to: "Work" }],
-  effects: ["SpawnWorkTasks"],
-};
-
-test("a pre-3 reduction is read at the disposition its own record reports", () => {
-  for (const [rec, onFailure] of [
-    [escalatedRecord, "EscalateEvaluationFailure"],
-    [reworkedRecord, "ReworkEvaluationFailure"],
-  ] as const) {
-    const read = accepted(parseStoredEntry(bareEvalReduceRow(rec), 2));
-    assert.deepEqual(read.event, evalReduceEvent(id(1), onFailure));
-  }
-});
-
-test("a bare reduction stored at the current semantics is refused, not lifted", () => {
-  const refused = parseStoredEntry(bareEvalReduceRow(escalatedRecord), 3);
-  assert.equal(refused.parsed, "Refused");
-});
-
-test("a reduction that names its disposition is read as it stands", () => {
-  const event = evalReduceEvent(id(1), "EscalateEvaluationFailure");
-  const stored = JSON.parse(
-    encodeEntry({ seq: 4, event, rec: escalatedRecord }),
-  ) as unknown;
-  for (const semantics of [1, 2, 3] as const) {
-    assert.deepEqual(
-      accepted(parseStoredEntry(stored, semantics)).event,
-      event,
-    );
+  for (const broken of [
+    { ...held, kind: "ApprovalDeclined" },
+    { ...held, kind: undefined },
+    { ...held, outcome: "FinalizationNeedsWork", attempt: "attempt-1" },
+  ]) {
+    const refused = parseStoredTicketCommand(JSON.stringify(broken));
+    assert.equal(refused.parsed, "Refused", JSON.stringify(broken));
+    assert.ok(refused.parsed === "Refused");
+    assert.match(refused.why, /finalization submission fields are invalid/);
   }
 });

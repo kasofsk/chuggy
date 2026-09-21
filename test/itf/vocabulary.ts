@@ -202,8 +202,7 @@ function encodeTicket(ticket: Ticket): ItfValue {
     ],
     ["record", ticket.record.map(encodeTask)],
     ["spawned", encodeInt(ticket.spawned)],
-    ["resumeAt", encodeNullary(ticket.resumeAt)],
-    ["reason", encodeNullary(ticket.reason)],
+    ["escalation", encodeNullary(ticket.escalation)],
     ["completions", encodeInt(ticket.completions)],
   ]);
 }

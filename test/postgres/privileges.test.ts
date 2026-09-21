@@ -346,7 +346,7 @@ test("a well-formed completion is refused whatever authority it claims", async (
   );
   const completions = [
     `{"version":1,"command":"Decide","event":{"type":"TaskDone","value":{"ticket":1,"tid":1,"verdict":"Pass","result":{"manifest":1,"digest":1,"schema":1}}}}`,
-    `{"version":1,"command":"Decide","event":{"type":"ExecutionBlocked","value":{"ticket":1,"reason":"ExecutionProfileUnavailable"}}}`,
+    `{"version":1,"command":"Decide","event":{"type":"ExecutionBlocked","value":{"ticket":1}}}`,
   ];
   /**
    * The claimed kind is the caller's own text and acceptance compares it to
@@ -786,7 +786,7 @@ test("the API reads a ticket's open questions and no more of the desk", async ()
     "effect_position",
     "action_version",
     "required_capability",
-    "reason",
+    "escalation",
   ]) {
     const refusal = await harness.attemptAs(
       apiRole,

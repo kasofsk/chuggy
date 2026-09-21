@@ -174,7 +174,7 @@ test("a hold still being counted is not yet what the desk reads", async () => {
       asTicketId(project.ticket),
     );
     assert.equal(read?.phase, "Finalization");
-    assert.equal(read?.finalizationBlockedBy, undefined);
+    assert.equal(read?.escalation, undefined);
   } finally {
     await asApi.end();
   }
@@ -211,15 +211,17 @@ test("the escalated ticket keeps the hold as the evidence the desk reads", async
       asTicketId(project.ticket),
     );
     assert.equal(read?.phase, "Escalated");
-    assert.equal(read?.reason, "FinalizationUnavailableEscalated");
-    assert.equal(read?.finalizationBlockedBy, "RepositoryUnbound");
-    assert.equal(read?.resumeAt, "ResumeFinalization");
+    assert.deepEqual(read?.escalation, {
+      kind: "FinalizationUnavailableEscalated",
+      evidence: "RepositoryUnbound",
+      resumeAt: "ResumeFinalization",
+    });
     await laterRequestHeldAt(project, "TargetUnreadable");
     const again = await postgresNativeReads(asApi).ticket(
       project.partition,
       asTicketId(project.ticket),
     );
-    assert.equal(again?.finalizationBlockedBy, "TargetUnreadable");
+    assert.deepEqual(again?.escalation, read?.escalation);
   } finally {
     await asApi.end();
   }
@@ -227,8 +229,8 @@ test("the escalated ticket keeps the hold as the evidence the desk reads", async
 
 /**
  * The request a resume would mint after the first escalation, already settled
- * and holding its own kind: what the desk reads is the newest request's hold,
- * not the first.
+ * and holding its own kind. The desk keeps reading the kind the park recorded,
+ * the evidence being what the submission said and not what a later row holds.
  */
 async function laterRequestHeldAt(
   project: FinalizerProject,

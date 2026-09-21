@@ -25,22 +25,25 @@ export const phaseRoster = [
 export type TicketPhase = (typeof phaseRoster)[number];
 
 /**
- * Why a parked ticket is escalated, in the order the model declares them.
- * The model's `NoReason` is not among them: the machine holds a reason exactly
- * when a ticket is escalated, so the wire omits the field instead of naming it.
+ * Which wall a parked ticket is escalated at, in the order the model declares
+ * them. The model's `NoEscalation` is not among them: the machine holds an
+ * escalation exactly when a ticket is escalated, so the wire omits the whole
+ * object instead of naming that member.
  */
-export const escalationReasons = [
+export const escalationKinds = [
   "WorkFailureEscalated",
-  "EvaluationFailureEscalated",
   "WorkExecutionUnavailableEscalated",
+  "EvaluationFailureEscalated",
+  "EvaluationBlockedEscalated",
   "FinalizationUnavailableEscalated",
 ] as const;
-export type EscalationReason = (typeof escalationReasons)[number];
+export type EscalationKind = (typeof escalationKinds)[number];
 
 /**
  * Which wall the fabric hit, restating the interpreter's `allBlockedReasons`.
- * It is evidence and not an escalation reason — the machine has one reason for
- * all five, and a ticket carries a wall only while that reason is its own.
+ * It is evidence and not an escalation kind — a wall parks a ticket at
+ * `WorkExecutionUnavailableEscalated` or `EvaluationBlockedEscalated`, and a
+ * ticket carries a wall only beside one of those two.
  */
 export const blockedReasons = [
   "ExecutionPolicyDenied",
@@ -90,11 +93,28 @@ export type FinalizationUnavailableKind =
   (typeof finalizationUnavailableKinds)[number];
 
 /**
+ * What a git act reported instead of free text, restating the interpreter's
+ * `allGitEvidence`. It is the third evidence roster, and the one with nowhere
+ * else to be read from: a source no reader could reach leaves no execution row
+ * behind, so the label the observation carried is the only account of the wall
+ * and the escalation carries it itself.
+ */
+export const gitEvidences = [
+  "RemoteUnreachable",
+  "RemoteDenied",
+  "RefUnreadable",
+  "ObjectMissing",
+  "IntegrationFailed",
+  "PromotionTimedOut",
+] as const;
+export type GitEvidenceLabel = (typeof gitEvidences)[number];
+
+/**
  * Where an operator resume re-enters a parked ticket, in the order the model
  * declares them. The model's `NoResume` is not among them: it is that union's
- * absent value, so the wire omits the field rather than naming a value that
- * would read as "not resumable" — a claim the machine never makes, every wall
- * it parks a ticket at having a resume.
+ * absent value, and the only escalation it answers for is the absent one, which
+ * the wire omits the whole object for — so every escalation the wire does name
+ * carries a point out of this list.
  */
 export const resumePoints = [
   "ResumeWork",

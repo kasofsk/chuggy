@@ -12,22 +12,12 @@
  * journal is a sufficient basis for the state because nothing else ever
  * entered a decision.
  *
- * A ROW'S DECIDERS ARE RE-DERIVED BY THE MACHINE THAT DECIDED IT — its
- * deciders, and not its guards. A store keeps the decision semantics beside
- * each entry, so a history spanning a semantics change replays row by row under
- * its own; `decisionEventEnabled` below is this image's, because the change
- * these versions exist for altered no guard, and a change that alters one has
- * to version enablement here too. `journalLegalOn` and `replayGraph` are the
- * same folds over a history this image decided whole, which is every journal
- * `model/` describes.
- *
- * DESCENDING SEMANTICS IS REFUSED: a row decided under an older machine than
- * the row before it would offer an older decider a state only a newer one can
- * reach. Nothing outside this check stops one being written. A rolling deploy
- * runs two images at once, and the older refuses the newer's rows on read only
- * while it demands a single version; an image that accepts a range accepts
- * whatever the range holds, and interleaves. So this refusal is where totality
- * comes from, not a restatement of a guarantee held elsewhere.
+ * A ROW CARRIES THE SEMANTICS IT WAS DECIDED UNDER, and this image has the
+ * deciders for exactly one (`src/actor/decisionSemantics.ts`). A row declaring
+ * another is refused below rather than replayed. A rolling deploy runs two
+ * images at once, and each refuses the other's rows on read while both demand
+ * a single version, which is what makes the refusal total rather than a
+ * restatement of a guarantee held elsewhere.
  */
 
 import type { Config } from "../domain/config.ts";
@@ -35,11 +25,13 @@ import type {
   TicketGraph,
   StepRecord,
 } from "../domain/generated/modelTypes.ts";
-import { decisionEventEnabled, type DecisionEvent } from "./decisionEvent.ts";
+import {
+  decisionEventEnabled,
+  execDecisionEvent,
+  type DecisionEvent,
+} from "./decisionEvent.ts";
 import {
   decisionSemanticsVersionCurrent,
-  execDecisionEventAt,
-  replayableDecision,
   type DecisionSemanticsVersion,
 } from "./decisionSemantics.ts";
 import { recordEquals } from "./equality.ts";
@@ -70,10 +62,10 @@ export function storedAtCurrentSemantics(
   }));
 }
 
-/** Recovery: replay a stored history into a fresh state, each row under its own semantics. */
+/** Recovery: replay a stored history into a fresh state, one decision at a time. */
 export function storedReplayGraph(stored: readonly StoredEntry[]): TicketGraph {
   return stored.reduce(
-    (graph, row) => execDecisionEventAt(row.semantics, graph, row.entry).post,
+    (graph, row) => execDecisionEvent(graph, row.entry.event).post,
     genesis,
   );
 }
@@ -84,14 +76,10 @@ export function replayGraph(journal: readonly Entry[]): TicketGraph {
 }
 
 /**
- * Whether a stored history is a legal domain trace: every row re-derivable at
- * all, non-descending semantics, dense seqs, every decision enabled at its
- * replayed prefix, every record reproduced by the decider that wrote it.
- *
- * Enablement and re-derivability are checked before the decider runs, because
- * deciders assume their guards: a tampered journal and a row naming a wall
- * this machine no longer has are refused rather than crashed on or answered
- * with a different decision.
+ * Whether a stored history is a legal domain trace: this image's semantics on
+ * every row, dense seqs, every decision enabled at its replayed prefix, every
+ * record reproduced by the decider that wrote it. Enablement is checked before
+ * the decider runs, because deciders assume their guards.
  */
 export function storedJournalLegalOn(
   config: Config,
@@ -99,20 +87,17 @@ export function storedJournalLegalOn(
 ): boolean {
   let replayed = genesis;
   let next = 1;
-  let semantics: DecisionSemanticsVersion = 1;
   for (const row of stored) {
     if (
-      !replayableDecision(row.entry) ||
-      row.semantics < semantics ||
+      row.semantics !== decisionSemanticsVersionCurrent ||
       row.entry.seq !== next ||
       !decisionEventEnabled(config, replayed, row.entry.event)
     ) {
       return false;
     }
-    const decision = execDecisionEventAt(row.semantics, replayed, row.entry);
+    const decision = execDecisionEvent(replayed, row.entry.event);
     if (!recordEquals(decision.rec, row.entry.rec)) return false;
     replayed = decision.post;
-    semantics = row.semantics;
     next += 1;
   }
   return true;

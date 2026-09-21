@@ -74,11 +74,15 @@ async function readyConfigurationWorker(
 }
 
 /** When the catalog last published this image, read off the row itself. */
-async function publishedAt(image: string): Promise<Date> {
+/**
+ * The instant as the server holds it, read as text: a `Date` keeps milliseconds
+ * and two publications inside one would tie where the column does not.
+ */
+async function publishedAt(image: string): Promise<string> {
   const rows = (await rig.harness.query(
-    "SELECT published_at FROM admitted_worker WHERE image=$1",
+    "SELECT published_at::text AS published_at FROM admitted_worker WHERE image=$1",
     [image],
-  )) as readonly { published_at: Date }[];
+  )) as readonly { published_at: string }[];
   const row = rows[0];
   if (row === undefined) throw new Error(`${image} is not catalogued`);
   return row.published_at;
@@ -132,7 +136,7 @@ test("a republication moves published_at forward, it being the last one", async 
   const second = await publishedAt(image);
   assert.ok(
     second > first,
-    `published_at stayed at ${first.toISOString()} across a republication`,
+    `published_at stayed at ${first} across a republication`,
   );
 });
 

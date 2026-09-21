@@ -46,7 +46,7 @@
  */
 
 import type { Entry } from "../actor/journal.ts";
-import type { Phase, Reason, Resume } from "../domain/generated/modelTypes.ts";
+import type { Escalation, Phase } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import {
   asAuthorityKind,
@@ -119,14 +119,17 @@ export type DecisionCause =
 
 /**
  * One row of the primary projection: where a ticket currently stands, whether
- * anything may depend on it, and where a resume would re-enter it.
+ * anything may depend on it, and which wall parked it — where a resume re-enters
+ * being `resumeOf` of that wall, which the row does not carry. The evidence is
+ * what the fabric said about the wall, which the machine does not hold, so a
+ * decision that escalates carries it beside the entry.
  */
 export interface TicketProjection {
   readonly ticket: TicketId;
   readonly phase: Phase;
   readonly dependable: boolean;
-  readonly reason: Reason;
-  readonly resumeAt: Resume;
+  readonly escalation: Escalation;
+  readonly escalationEvidence?: string;
 }
 
 /**
@@ -177,7 +180,7 @@ export interface NativeActionPlan {
   readonly ticket: TicketId;
   readonly version: number;
   readonly kind: "TicketEscalation";
-  readonly reason: string;
+  readonly escalation: Escalation;
   readonly capability: "ResolveTicket";
   readonly resolutions: readonly NativeActionResolution[];
 }

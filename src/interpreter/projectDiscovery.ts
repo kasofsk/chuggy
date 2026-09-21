@@ -42,6 +42,7 @@
  */
 
 import type { DecisionEvent } from "../actor/decisionEvent.ts";
+import type { BlockedReason } from "../contract/rosters.ts";
 import type {
   OperationId,
   PriorityClass,
@@ -81,6 +82,13 @@ export interface DecisionInput {
         readonly operation: OperationId;
         readonly command: StoredTicketCommand;
         readonly resolvedEvent?: DecisionEvent;
+        /**
+         * Which wall the execution a scheduler completion settles was blocked
+         * at, read off that execution's own row. The event the boundary built
+         * names the ticket alone, so this is the only account of the wall a
+         * decision has, and it is what the escalation records as its evidence.
+         */
+        readonly executionBlockedBy?: BlockedReason;
         readonly draftRelease?: {
           readonly ticket: number;
           readonly authoringVersion: number;

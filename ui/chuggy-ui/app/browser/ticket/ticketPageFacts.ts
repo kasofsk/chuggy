@@ -9,10 +9,9 @@
  * guess at the rest.
  *
  * A RESUME IS ANSWERED FROM THE WIRE BEFORE THE DRAFT ARRIVES. `resumeAt` is
- * the machine's own answer and needs no authoring to read, so a ticket read
- * that carries one offers its resume on a cold load. "The machine stamped
- * nothing" is claimed only where this page has read enough to know it, which
- * is why `NotRead` is an arm of its own.
+ * the machine's own answer, read straight off the ticket's `escalation` and
+ * needing no authoring or ledger to read, so a ticket read that carries one
+ * offers its resume on a cold load.
  */
 
 import type {
@@ -21,9 +20,8 @@ import type {
   TicketResponse,
 } from "../../../../../src/contract/responses.ts";
 import type { ResumeOffer } from "../../core/codeLabels.ts";
-import { ticketResumePoint } from "../../core/resumePoint.ts";
 import type { ResumePoint } from "../../../../../src/contract/rosters.ts";
-import { ledgerLastSet, ticketLedger } from "../../core/ticketLedger.ts";
+import { ticketLedger } from "../../core/ticketLedger.ts";
 import type {
   Ledger as LedgerFacts,
   TicketAuthoring,
@@ -78,32 +76,6 @@ function resumeOfferOf(point: ResumePoint | undefined): ResumeOffer {
   return point === undefined ? { kind: "NoPoint" } : { kind: "Offered", point };
 }
 
-/**
- * What a resume would do before the draft and the executions have arrived: a
- * point the wire stamped is answered, and without one this page cannot tell a
- * wall with no exit from a read it has not finished.
- */
-function resumeBeforeDraft(ticket: TicketResponse | undefined): ResumeOffer {
-  if (ticket === undefined || ticket.resumeAt === undefined)
-    return { kind: "NotRead" };
-  return resumeOfferOf(ticket.resumeAt);
-}
-
-/** The whole resume, from a page that holds the ticket, its draft and its runs. */
-function resumePointRead(
-  ticket: TicketResponse,
-  authoring: TicketAuthoring,
-  ledger: LedgerFacts,
-): ResumePoint | undefined {
-  return ticketResumePoint({
-    phase: ticket.phase,
-    reason: ticket.reason,
-    lastSet: ledgerLastSet(ledger),
-    stageCount: authoring.program.length,
-    resumeAt: ticket.resumeAt,
-  });
-}
-
 export function ticketPageFacts(
   ticket: TicketResponse | undefined,
   draft: DraftResponse | undefined,
@@ -112,20 +84,9 @@ export function ticketPageFacts(
   const authoring = draft?.authoring;
   const stageCount = authoring?.program.length ?? 0;
   const truncated = page?.nextCursor !== undefined;
+  const resume = resumeOfferOf(ticket?.escalation?.resumeAt);
   if (authoring === undefined || page === undefined || ticket === undefined)
-    return {
-      authoring,
-      stageCount,
-      ledger: undefined,
-      resume: resumeBeforeDraft(ticket),
-      truncated,
-    };
+    return { authoring, stageCount, ledger: undefined, resume, truncated };
   const ledger = ticketLedger(page, authoring);
-  return {
-    authoring,
-    stageCount,
-    ledger,
-    resume: resumeOfferOf(resumePointRead(ticket, authoring, ledger)),
-    truncated,
-  };
+  return { authoring, stageCount, ledger, resume, truncated };
 }

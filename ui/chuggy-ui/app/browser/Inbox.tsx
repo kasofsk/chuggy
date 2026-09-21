@@ -36,7 +36,7 @@ import {
 } from "../core/apiRoutes.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import {
-  escalationReasonSentence,
+  escalationKindSentence,
   nativeActionKindSentence,
   operationRefusalSentence,
   operationStateSentence,
@@ -314,7 +314,7 @@ function InboxActions(props: {
         <Tooltip
           key={action.action}
           text={ticketActionSentence(action.action, {
-            reason: props.entry.held?.reason,
+            kind: props.entry.held?.escalation?.kind,
           })}
         >
           <span>
@@ -353,10 +353,10 @@ function InboxWhy(props: {
         ))}
       </div>
     );
-  const reason = held.reason;
+  const kind = held.escalation?.kind;
   return (
     <Tooltip
-      text={reason === undefined ? undefined : escalationReasonSentence(reason)}
+      text={kind === undefined ? undefined : escalationKindSentence(kind)}
     >
       <span>
         <Pill tone="parked">{row.badge ?? phaseLabel(row.phase)}</Pill>

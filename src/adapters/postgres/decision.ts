@@ -198,14 +198,15 @@ async function decisionProject(
   for (const row of projection) {
     await client.query(
       sql`INSERT INTO ticket_projection
-       (tenant, project, ticket, phase, seq, dependable, reason, resume_at,
+       (tenant, project, ticket, phase, seq, dependable, escalation, escalation_evidence,
         configuration_revision, configuration_digest)
        VALUES (${partition.tenant}, ${partition.project}, ${row.ticket}, ${row.phase}, ${seq}, ${row.dependable},
-               ${row.reason}, ${row.resumeAt},
+               ${row.escalation}, ${row.escalationEvidence ?? null},
                ${configuration.configurationRevision}, ${configuration.configurationDigest})
        ON CONFLICT (tenant, project, ticket)
        DO UPDATE SET phase = EXCLUDED.phase, seq = EXCLUDED.seq, dependable = EXCLUDED.dependable,
-                     reason = EXCLUDED.reason, resume_at = EXCLUDED.resume_at`,
+                     escalation = EXCLUDED.escalation,
+                     escalation_evidence = EXCLUDED.escalation_evidence`,
     );
   }
 }
@@ -401,10 +402,10 @@ async function decisionActions(
     await client.query(
       sql`INSERT INTO native_action
        (tenant, project, action, authorizing_seq, effect_position, ticket,
-        action_version, kind, reason, required_capability)
+        action_version, kind, escalation, required_capability)
        VALUES (${partition.tenant},${partition.project},${action.action},${seq},
                ${action.effectPosition},${action.ticket},${action.version},
-               ${action.kind},${action.reason},${action.capability})`,
+               ${action.kind},${action.escalation},${action.capability})`,
     );
     for (const resolution of action.resolutions) {
       await client.query(

@@ -97,8 +97,7 @@ function parkedAt(ticket: number): unknown {
     ticket,
     phase: "Escalated",
     sequence: 7,
-    reason: "WorkFailureEscalated",
-    resumeAt: "ResumeWork",
+    escalation: { kind: "WorkFailureEscalated", resumeAt: "ResumeWork" },
     ...ticketInstants,
   };
 }

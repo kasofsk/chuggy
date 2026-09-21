@@ -13,30 +13,35 @@ module chuggy_witness_resume_test {
   action done(j: int, tid: int): bool = all {
     deliverableTaskIds(graph,j).contains(tid), apply(decideTaskDone(graph,j,tid,Pass)) }
   action reduceWork(j: int): bool = all { reducibleWork.contains(j), apply(decideWorkReduce(graph,j)) }
-  action blocked(j: int, why: Reason): bool = all { taskPhaseTickets.contains(j),
-    apply(decideExecutionBlocked(graph,j,why)) }
+  action blocked(j: int): bool = all { taskPhaseTickets.contains(j),
+    apply(decideExecutionBlocked(graph,j)) }
   action resume(j: int): bool = all { retryableEscalated.contains(j), apply(decideResumeTicket(graph,j)) }
   run executionBlockedResumeWitness = init
     .then(release(4, Set())).expect(and { tickets.get(4).phase == Pending, allInvariants })
     .then(doDispatch(4)).expect(and { tickets.get(4).phase == Work, allInvariants })
-    .then(blocked(4, WorkExecutionUnavailableEscalated)).expect(and {
-      tickets.get(4).phase == Escalated, tickets.get(4).reason == WorkExecutionUnavailableEscalated,
-      tickets.get(4).resumeAt == ResumeWork, tickets.get(4).tasks.size() == 0,
+    .then(blocked(4)).expect(and {
+      tickets.get(4).phase == Escalated,
+      tickets.get(4).escalation == WorkExecutionUnavailableEscalated,
+      lastStep.label == "ticket-escalated work_execution_unavailable_escalated",
+      resumeOf(tickets.get(4).escalation) == ResumeWork, tickets.get(4).tasks.size() == 0,
       tickets.get(4).record.foldl(true, (ok,t) => ok and t.state == Resolved(Cancelled)), allInvariants })
     .then(resume(4)).expect(and { tickets.get(4).phase == Work,
-      tickets.get(4).reason == NoReason, allInvariants })
+      tickets.get(4).escalation == NoEscalation, allInvariants })
 
-  /// An interrupted EVALUATION resumes into evaluation, not into work: the
-  /// artifact is intact and the judgement is still to make, so the resume is
-  /// a fresh fan-out of the LOWEST stage with new task ids.
+  /// An interrupted EVALUATION parks at its OWN wall and resumes into
+  /// evaluation, not into work: the artifact is intact and the judgement is
+  /// still to make, so the resume is a fresh fan-out of the LOWEST stage
+  /// with new task ids.
   run evaluationResumeWitness = init
     .then(release(4, Set())).expect(allInvariants)
     .then(doDispatch(4)).expect(allInvariants)
     .then(done(4, 1)).expect(allInvariants)
     .then(reduceWork(4)).expect(and {
       tickets.get(4).phase == Evaluation, tickets.get(4).tasks.map(t => t.id) == Set(2), allInvariants })
-    .then(blocked(4, WorkExecutionUnavailableEscalated)).expect(and {
-      tickets.get(4).resumeAt == ResumeEvaluation,
+    .then(blocked(4)).expect(and {
+      tickets.get(4).escalation == EvaluationBlockedEscalated,
+      lastStep.label == "ticket-escalated evaluation_blocked_escalated",
+      resumeOf(tickets.get(4).escalation) == ResumeEvaluation,
       tickets.get(4).record.length() == 2,
       tickets.get(4).record[0].id == 1, tickets.get(4).record[1].id == 2,
       allInvariants })
@@ -86,13 +91,12 @@ module chuggy_witness_rework_test {
     .then(done(4, 1, Pass)).then(reduceWork(4)).expect(allInvariants)
     .then(done(4, 2, Fail)).then(reduceEval(4, EscalateEvaluationFailure)).expect(and {
       tickets.get(4).phase == Escalated,
-      tickets.get(4).reason == EvaluationFailureEscalated,
-      tickets.get(4).resumeAt == ResumeRework,
+      tickets.get(4).escalation == EvaluationFailureEscalated,
+      resumeOf(tickets.get(4).escalation) == ResumeRework,
       retryableEscalated.contains(4), allInvariants })
     .then(resume(4)).expect(and {
       tickets.get(4).phase == Work,
-      tickets.get(4).reason == NoReason,
-      tickets.get(4).resumeAt == NoResume, allInvariants })
+      tickets.get(4).escalation == NoEscalation, allInvariants })
 }
 
 module chuggy_witness_stage_test {
@@ -159,11 +163,11 @@ module chuggy_witness_gate_test {
   run finalizationUnavailableWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,1)).then(wr(1)).then(td(1,2)).then(er(1))
     .then(resolve(1,FinalizationResultUnavailable)).expect(and{tickets.get(1).phase==Escalated,
       lastStep.label=="ticket-escalated finalization_unavailable_escalated",
-      tickets.get(1).reason==FinalizationUnavailableEscalated,
-      tickets.get(1).resumeAt==ResumeFinalization,
+      tickets.get(1).escalation==FinalizationUnavailableEscalated,
+      resumeOf(tickets.get(1).escalation)==ResumeFinalization,
       retryableEscalated.contains(1),allInvariants})
     .then(resume(1)).expect(and{tickets.get(1).phase==Finalization,
-      lastStep.effects==["RunFinalizer"],tickets.get(1).reason==NoReason,allInvariants})
+      lastStep.effects==["RunFinalizer"],tickets.get(1).escalation==NoEscalation,allInvariants})
     .then(resolve(1,FinalizationSucceeded)).expect(and{tickets.get(1).phase==Done,allInvariants})
 
   run revokeBoundaryWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,1)).then(wr(1)).then(td(1,2)).then(er(1))

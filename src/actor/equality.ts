@@ -105,8 +105,7 @@ export function ticketEquals(left: Ticket, right: Ticket): boolean {
     ) &&
     listEquals(left.record, right.record, taskEquals) &&
     left.spawned === right.spawned &&
-    left.resumeAt === right.resumeAt &&
-    left.reason === right.reason &&
+    left.escalation === right.escalation &&
     left.completions === right.completions
   );
 }

@@ -38,7 +38,7 @@ module chuggy_ticket {
   /// directly, with Ready and Blocked derived.
   ///
   /// Escalated is THE parked phase — one parked-with-an-open-human-task
-  /// phase, with the `reason` field carrying the wall classification.
+  /// phase, with the `escalation` field carrying the wall classification.
   ///
   /// Revoked is the other settled terminal: absorbing, runs nothing, never
   /// completes, and opens NO human task, because revocation is the author's
@@ -128,9 +128,11 @@ module chuggy_ticket {
     ReworkEvaluationFailure
     | EscalateEvaluationFailure
 
-  /// Where an operator Retry resumes a parked ticket. NoResume when not
-  /// parked: every wall parks with a resume point from the list below, and a
-  /// resume point on an unparked ticket would be a lie to the desk.
+  /// Where an operator Retry resumes a parked ticket. DERIVED from the wall
+  /// (resumeOf below), never stored: a resume point beside the wall that
+  /// implies it is a stored duplicate of a derivable fact (standing rule 3),
+  /// and the pair could disagree. NoResume belongs to the unparked ticket,
+  /// which has no continuation to offer the desk.
   ///
   /// ResumeRework is the evaluation-failure wall's: it re-enters Work
   /// as a new cycle. That wall is reached by a VERDICT, and a verdict has no
@@ -141,25 +143,53 @@ module chuggy_ticket {
     NoResume | ResumeWork | ResumeRework | ResumeEvaluation |
     ResumeFinalization
 
-  /// Why a ticket sits on the human desk. The reason is what distinguishes
-  /// the parks. WorkFailureEscalated is the CYCLE-level work wall (there is
+  /// WHY A TICKET SITS ON THE HUMAN DESK — one sum, NoEscalation for the
+  /// ticket that is not parked. The wall is what distinguishes the parks,
+  /// and it is the whole of what the desk reads.
+  /// WorkFailureEscalated is the CYCLE-level work wall (there is
   /// no retries wall: retrying a failed container below the cycle grain is
   /// the fabric's job, trusted here rather than modeled).
+  /// WorkExecutionUnavailableEscalated is the wall infrastructure hits when
+  /// it could not run an intact WORK task set; WHICH refusal it was is
+  /// evidence an adapter records beside the execution, never a distinction a
+  /// decider reads — every refusal takes the same edge to the same desk with
+  /// the same resume.
   /// EvaluationFailureEscalated is the evaluation-failure wall, reached when
   /// the failure's disposition is Escalate.
-  /// WorkExecutionUnavailableEscalated is the wall infrastructure hits when
-  /// it could not run an intact task set; WHICH refusal it was is evidence
-  /// an adapter records beside the execution, never a distinction a decider
-  /// reads — every refusal takes the same edge to the same desk with the
-  /// same resume.
+  /// EvaluationBlockedEscalated is the same infrastructure refusal against an
+  /// EVALUATION set. It is its own wall rather than the execution one because
+  /// an interruption is not a verdict: the judgement is intact and unmade, so
+  /// it is the only wall whose resume re-enters evaluation.
   /// FinalizationUnavailableEscalated is the wall a finalizer hits when it
   /// reaches no result at all; like the execution wall, WHICH unreachability
   /// it was is evidence an adapter records beside the finalization request,
   /// and every one of them takes the same edge to the same desk with the
   /// same resume.
-  type Reason =
-    NoReason | WorkFailureEscalated | EvaluationFailureEscalated |
-    WorkExecutionUnavailableEscalated | FinalizationUnavailableEscalated
+  ///
+  /// Nullary, deliberately: what each wall stood in front of is evidence an
+  /// adapter records, and a payload here would be a second home for it.
+  type Escalation =
+    NoEscalation | WorkFailureEscalated | WorkExecutionUnavailableEscalated |
+    EvaluationFailureEscalated | EvaluationBlockedEscalated |
+    FinalizationUnavailableEscalated
+
+  /// WHERE EACH WALL RESUMES — the derivation that lets the resume point
+  /// leave the record (standing rule 3). Total on the sum, so every park the
+  /// machine can reach offers the desk exactly one continuation and the
+  /// unparked ticket offers none.
+  ///
+  /// The two work walls share ResumeWork and the evaluation-failure wall
+  /// takes ResumeRework: all three buy a new artifact, and only the names of
+  /// the walls they answer differ.
+  pure def resumeOf(escalation: Escalation): Resume =
+    match escalation {
+      | NoEscalation => NoResume
+      | WorkFailureEscalated => ResumeWork
+      | WorkExecutionUnavailableEscalated => ResumeWork
+      | EvaluationFailureEscalated => ResumeRework
+      | EvaluationBlockedEscalated => ResumeEvaluation
+      | FinalizationUnavailableEscalated => ResumeFinalization
+    }
 
   /// How a finalization attempt resolves. ONE success, deliberately: an earlier
   /// model named two, because a merge promotes differently depending on
@@ -240,12 +270,11 @@ module chuggy_ticket {
     // DROPPED a task set instead of retiring it would break the equality
     // in the very next state.
     spawned: int,
-    // Operator-resume point (NoResume unless Escalated; see Resume).
-    resumeAt: Resume,
-    // Desk reason (NoReason unless Escalated). Deliberately FIRST-CLASS
-    // stored trace vocabulary, not derived from phase: with one parked
-    // phase, the reason is what tells the desk which wall it is looking at.
-    reason: Reason,
+    // The wall this ticket is parked at (NoEscalation unless Escalated).
+    // Deliberately FIRST-CLASS stored trace vocabulary, not derived from
+    // phase: with one parked phase, the wall is what tells the desk what it
+    // is looking at. Where a retry resumes is derived from it (resumeOf).
+    escalation: Escalation,
     // GHOST: completion effects ever emitted for this ticket — the counter the
     // effect-exclusivity invariant (exactly one completion) reads.
     // Not implementation state.

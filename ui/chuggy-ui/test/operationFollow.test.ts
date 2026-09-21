@@ -214,11 +214,11 @@ test("a confirmation drops the fields the project row supersedes", () => {
         ticket: 7,
         phase: "Escalated",
         sequence: 4,
-        reason: "WorkFailureEscalated",
+        escalation: { kind: "WorkFailureEscalated", resumeAt: "ResumeWork" },
         ...ticketInstants,
       },
       { ticket: 7, phase: "Work", sequence: 9, ...ticketInstants },
-    ).reason,
+    ).escalation,
   ).toBeUndefined();
 });
 

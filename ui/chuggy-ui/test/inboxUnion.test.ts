@@ -48,7 +48,7 @@ const escalated: TicketResponse = {
   ticket: 4,
   phase: "Escalated",
   sequence: 9,
-  reason: "WorkFailureEscalated",
+  escalation: { kind: "WorkFailureEscalated", resumeAt: "ResumeWork" },
   ...ticketInstants,
 };
 

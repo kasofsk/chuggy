@@ -323,7 +323,7 @@ test("an escalation's answer and an approval's answer are not interchangeable", 
   await rig.harness.query(
     `INSERT INTO native_action
        (tenant, project, action, authorizing_seq, effect_position, ticket,
-        action_version, kind, reason, required_capability, state)
+        action_version, kind, escalation, required_capability, state)
      VALUES ($1,$2,$3,$4,9,$5,$4,'TicketEscalation','WorkFailureEscalated','ResolveTicket','Withdrawn')`,
     [
       subject.project.partition.tenant,

@@ -8,12 +8,9 @@
 
 import { expect, test } from "vitest";
 
-import {
-  escalationReasons,
-  phaseRoster,
-} from "../../../src/contract/rosters.ts";
+import { escalationKinds, phaseRoster } from "../../../src/contract/rosters.ts";
 import type {
-  EscalationReason,
+  EscalationKind,
   TicketPhase,
 } from "../../../src/contract/rosters.ts";
 import {
@@ -49,23 +46,24 @@ test("the sections partition the roster, leaving no phase in two and none in non
   expect([...gathered].sort()).toStrictEqual([...phaseRoster].sort());
 });
 
-const badgeOfReason: Readonly<Record<EscalationReason, string>> = {
+const badgeOfKind: Readonly<Record<EscalationKind, string>> = {
   WorkFailureEscalated: "work failed",
   EvaluationFailureEscalated: "rework budget spent",
   WorkExecutionUnavailableEscalated: "execution unavailable",
+  EvaluationBlockedEscalated: "evaluation blocked",
   FinalizationUnavailableEscalated: "finalization unavailable",
 };
 
-test.each(escalationReasons)("the badge for %s says what it says", (reason) => {
-  expect(escalationBadgeLabel(reason)).toBe(badgeOfReason[reason]);
+test.each(escalationKinds)("the badge for %s says what it says", (kind) => {
+  expect(escalationBadgeLabel(kind)).toBe(badgeOfKind[kind]);
 });
 
-test("no two reasons are drawn with the same badge", () => {
-  const drawn = escalationReasons.map((reason) => escalationBadgeLabel(reason));
+test("no two kinds are drawn with the same badge", () => {
+  const drawn = escalationKinds.map((kind) => escalationBadgeLabel(kind));
   expect(new Set(drawn).size).toBe(drawn.length);
 });
 
-test("an escalated row's badge is its reason", () => {
+test("an escalated row's badge is its kind", () => {
   expect(ticketBadgeLabel("Escalated", "EvaluationFailureEscalated")).toBe(
     "rework budget spent",
   );
@@ -75,6 +73,6 @@ test("a row with nothing to answer for carries no badge", () => {
   expect(ticketBadgeLabel("Work", undefined)).toBeUndefined();
 });
 
-test("an escalated row whose reason did not arrive still says it is escalated", () => {
+test("an escalated row whose kind did not arrive still says it is escalated", () => {
   expect(ticketBadgeLabel("Escalated", undefined)).toBe("escalated");
 });

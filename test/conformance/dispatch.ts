@@ -159,11 +159,7 @@ export function replayStep(
         decodeFinalizationOutcome(itfToWire(need(picks.outcome, "out"))),
       );
     case "executionBlocked":
-      return decideExecutionBlocked(
-        pre,
-        j(),
-        "WorkExecutionUnavailableEscalated",
-      );
+      return decideExecutionBlocked(pre, j());
     case "resumeTicket":
       return decideResumeTicket(pre, j());
     case "settle":

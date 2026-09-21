@@ -11,6 +11,7 @@
  */
 
 import type {
+  Escalation,
   TicketGraph,
   StageDefinition,
 } from "../../src/domain/generated/modelTypes.ts";
@@ -33,6 +34,7 @@ import {
   settledRecord,
 } from "../../src/domain/deciders.ts";
 import { retryableIn } from "../../src/domain/enablement.ts";
+import { resumeOf } from "../../src/domain/ticket.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { tasksInIdOrder } from "../../src/domain/task.ts";
 import { modelInstance } from "./configs.ts";
@@ -71,8 +73,7 @@ test("a release arrives already Pending, having spawned nothing", () => {
   assert.equal(born.spawned, 0);
   assert.equal(born.completions, 0);
   assert.equal(born.artifact, "NoArtifact");
-  assert.equal(born.resumeAt, "NoResume");
-  assert.equal(born.reason, "NoReason");
+  assert.equal(born.escalation, "NoEscalation");
   assert.equal(born.tasks.size, 0);
   assert.deepEqual(born.record, []);
 });
@@ -178,8 +179,7 @@ test("a failed work set parks resumable at Work, retiring what failed", () => {
   assert.equal(decision.rec.label, "ticket-escalated work_failure_escalated");
   assert.deepEqual(decision.rec.effects, ["OpenHumanTask"]);
   const parked = ticketAt(decision.post, id(1));
-  assert.equal(parked.reason, "WorkFailureEscalated");
-  assert.equal(parked.resumeAt, "ResumeWork");
+  assert.equal(parked.escalation, "WorkFailureEscalated");
   assert.equal(parked.tasks.size, 0);
   assert.equal(parked.record.length, 2);
   assert.equal(parked.spawned, 2);
@@ -255,8 +255,7 @@ test("one failing stage, two edges, and the disposition is the whole difference"
   );
   assert.deepEqual(escalated.rec.effects, ["OpenHumanTask"]);
   const parked = ticketAt(escalated.post, id(1));
-  assert.equal(parked.reason, "EvaluationFailureEscalated");
-  assert.equal(parked.resumeAt, "ResumeRework");
+  assert.equal(parked.escalation, "EvaluationFailureEscalated");
   assert.equal(parked.tasks.size, 0);
   assert.ok(retryableIn(escalated.post, id(1)));
 
@@ -265,8 +264,7 @@ test("one failing stage, two edges, and the disposition is the whole difference"
     { ticket: id(1), from: "Escalated", to: "Revoked" },
   ]);
   const settled = ticketAt(revoked.post, id(1));
-  assert.equal(settled.reason, "NoReason");
-  assert.equal(settled.resumeAt, "NoResume");
+  assert.equal(settled.escalation, "NoEscalation");
   assert.equal(
     retryableIn(revoked.post, id(1)),
     false,
@@ -355,8 +353,7 @@ test("a finalization that reached no result parks at the finalizer's own resume"
   ]);
   assert.deepEqual(walled.rec.effects, ["OpenHumanTask"]);
   const parked = ticketAt(walled.post, id(1));
-  assert.equal(parked.reason, "FinalizationUnavailableEscalated");
-  assert.equal(parked.resumeAt, "ResumeFinalization");
+  assert.equal(parked.escalation, "FinalizationUnavailableEscalated");
   assert.equal(
     parked.artifact,
     ticketAt(before, id(1)).artifact,
@@ -377,19 +374,14 @@ test("a blocked execution resumes where the work was, and spends nothing", () =>
       spawned: 2,
     }),
   ]);
-  const blocked = decideExecutionBlocked(
-    running,
-    id(1),
-    "WorkExecutionUnavailableEscalated",
-  );
+  const blocked = decideExecutionBlocked(running, id(1));
   assert.equal(
     blocked.rec.label,
     "ticket-escalated work_execution_unavailable_escalated",
   );
   assert.deepEqual(blocked.rec.effects, ["OpenHumanTask"]);
   const parked = ticketAt(blocked.post, id(1));
-  assert.equal(parked.reason, "WorkExecutionUnavailableEscalated");
-  assert.equal(parked.resumeAt, "ResumeWork");
+  assert.equal(parked.escalation, "WorkExecutionUnavailableEscalated");
   assert.deepEqual(
     parked.record.map((t) => t.state),
     [
@@ -400,7 +392,7 @@ test("a blocked execution resumes where the work was, and spends nothing", () =>
   );
 });
 
-test("a block from the phase that holds no task set stamps no resume", () => {
+test("a blocked evaluation is its own wall, because its resume is its own", () => {
   const evaluating = graphOf([
     ticketOn(config, {
       phase: "Evaluation",
@@ -409,53 +401,56 @@ test("a block from the phase that holds no task set stamps no resume", () => {
       spawned: 4,
     }),
   ]);
+  const blocked = decideExecutionBlocked(evaluating, id(1));
   assert.equal(
-    ticketAt(
-      decideExecutionBlocked(
-        evaluating,
-        id(1),
-        "WorkExecutionUnavailableEscalated",
-      ).post,
-      id(1),
-    ).resumeAt,
-    "ResumeEvaluation",
+    blocked.rec.label,
+    "ticket-escalated evaluation_blocked_escalated",
   );
+  const parked = ticketAt(blocked.post, id(1));
+  assert.equal(parked.escalation, "EvaluationBlockedEscalated");
+  assert.equal(resumeOf(parked.escalation), "ResumeEvaluation");
   assert.equal(
-    ticketAt(
-      decideExecutionBlocked(
-        finalizing(),
-        id(1),
-        "WorkExecutionUnavailableEscalated",
-      ).post,
-      id(1),
-    ).resumeAt,
-    "NoResume",
+    ticketAt(decideResumeTicket(blocked.post, id(1)).post, id(1)).phase,
+    "Evaluation",
   );
 });
 
-test("every resume re-enters where its wall said it would", () => {
-  const parkedAt = (
-    at: "ResumeWork" | "ResumeEvaluation" | "ResumeFinalization",
-  ): TicketGraph =>
+test("every resume re-enters where its wall implies", () => {
+  const parkedAt = (wall: Escalation): TicketGraph =>
     graphOf([
       ticketOn(config, {
         phase: "Escalated",
-        resumeAt: at,
-        reason: "WorkExecutionUnavailableEscalated",
+        escalation: wall,
         record: [workTask(1, "Passed"), workTask(2, "Passed")],
         spawned: 2,
       }),
     ]);
-  const work = decideResumeTicket(parkedAt("ResumeWork"), id(1));
+  const work = decideResumeTicket(
+    parkedAt("WorkExecutionUnavailableEscalated"),
+    id(1),
+  );
   assert.equal(work.rec.label, "ticket-resumed");
   assert.deepEqual(work.rec.transitions, [
     { ticket: id(1), from: "Escalated", to: "Work" },
   ]);
   assert.deepEqual(work.rec.effects, ["SpawnWorkTasks"]);
-  assert.equal(ticketAt(work.post, id(1)).reason, "NoReason");
-  assert.equal(ticketAt(work.post, id(1)).resumeAt, "NoResume");
+  assert.equal(ticketAt(work.post, id(1)).escalation, "NoEscalation");
 
-  const evaluate = decideResumeTicket(parkedAt("ResumeEvaluation"), id(1));
+  const rework = decideResumeTicket(
+    parkedAt("EvaluationFailureEscalated"),
+    id(1),
+  );
+  assert.deepEqual(rework.rec.effects, ["SpawnWorkTasks"]);
+  assert.equal(
+    ticketAt(rework.post, id(1)).phase,
+    "Work",
+    "a verdict has no re-judge to offer, so the evaluation wall buys a new artifact",
+  );
+
+  const evaluate = decideResumeTicket(
+    parkedAt("EvaluationBlockedEscalated"),
+    id(1),
+  );
   assert.deepEqual(evaluate.rec.effects, ["SpawnEvalTasks"]);
   assert.deepEqual(
     liveShape(evaluate.post, id(1)).map((t) => t.id),
@@ -463,7 +458,10 @@ test("every resume re-enters where its wall said it would", () => {
     "the retried tasks are new records; the failed ones stay retired in the log",
   );
 
-  const finalize = decideResumeTicket(parkedAt("ResumeFinalization"), id(1));
+  const finalize = decideResumeTicket(
+    parkedAt("FinalizationUnavailableEscalated"),
+    id(1),
+  );
   assert.deepEqual(finalize.rec.effects, ["RunFinalizer"]);
   assert.equal(ticketAt(finalize.post, id(1)).phase, "Finalization");
 });
@@ -472,8 +470,7 @@ test("the evaluation wall's resume buys a work cycle above an intact record", ()
   const walled = graphOf([
     ticketOn(config, {
       phase: "Escalated",
-      resumeAt: "ResumeRework",
-      reason: "EvaluationFailureEscalated",
+      escalation: "EvaluationFailureEscalated",
       record: [workTask(1, "Passed"), evalTask(2, 0, "Failed")],
       spawned: 2,
     }),
@@ -517,8 +514,7 @@ test("a revoke retires what was running and settles without completing", () => {
   assert.deepEqual(revoked.rec.effects, ["CancelTicketWork"]);
   const settled = ticketAt(revoked.post, id(1));
   assert.equal(settled.completions, 0);
-  assert.equal(settled.reason, "NoReason");
-  assert.equal(settled.resumeAt, "NoResume");
+  assert.equal(settled.escalation, "NoEscalation");
   assert.equal(settled.record.length, 2);
   assert.equal(settled.tasks.size, 0);
 });
@@ -542,10 +538,9 @@ test("a revoke deep in a chain transitions its own ticket and nobody else", () =
   assert.deepEqual(decision.rec.effects, ["CancelTicketWork"]);
   for (const waiting of [id(1), id(4)]) {
     assert.equal(ticketAt(stranded, waiting).phase, "Pending");
-    assert.equal(ticketAt(stranded, waiting).reason, "NoReason");
-    assert.equal(ticketAt(stranded, waiting).resumeAt, "NoResume");
+    assert.equal(ticketAt(stranded, waiting).escalation, "NoEscalation");
   }
-  assert.equal(ticketAt(stranded, id(6)).reason, "NoReason");
+  assert.equal(ticketAt(stranded, id(6)).escalation, "NoEscalation");
 });
 
 test("a revoke of the ticket in the middle leaves the one behind it waiting", () => {

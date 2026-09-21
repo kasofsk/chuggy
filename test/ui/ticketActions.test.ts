@@ -7,9 +7,9 @@
  * the copy is written twice and a suite outside both holds them equal. Order is
  * not part of the claim — the offers are compared as an enablement per phase.
  *
- * The console sees less than the model does, and the second half of this suite
- * pins exactly where: a resume also needs a modeled resumption, which the wire
- * does not carry, so the console offers a resume the actor may still refuse.
+ * `retryableIn` is `hasOpenHumanTask`, free on the sum's every variant
+ * (`resumeOf` is total), so the console sees exactly what the model does here:
+ * a phase is the whole of what either predicate needs.
  */
 
 import assert from "node:assert/strict";
@@ -41,8 +41,7 @@ function ticketIn(phase: TicketPhase, over: Partial<Ticket> = {}): Ticket {
     tasks: new Set(),
     record: [],
     spawned: 0,
-    resumeAt: "ResumeWork",
-    reason: "NoReason",
+    escalation: "NoEscalation",
     completions: 0,
     ...over,
   };
@@ -86,10 +85,4 @@ test("what the console offers is what the two predicates enable", () => {
     assert.equal(offered.has("Revoke"), revocableIn(graph, id), phase);
     assert.equal(offered.has("Resume"), retryableIn(graph, id), phase);
   }
-});
-
-test("a park with no modeled resume is offered a resume the actor refuses", () => {
-  const graph = graphWith(ticketIn("Escalated", { resumeAt: "NoResume" }));
-  assert.equal(retryableIn(graph, id), false);
-  assert.equal(ticketResumable("Escalated"), true);
 });

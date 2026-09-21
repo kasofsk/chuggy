@@ -1,64 +1,31 @@
 /**
- * The rework wall's histories under the machine that decided them, on bytes
- * this tree can no longer produce.
+ * The decision semantics this image replays, and what it refuses.
  *
- * THE FIXTURES ARE PINNED AND NOT GENERATED. The golden traces are emitted by
- * the same tree that replays them, so a semantics change moves both sides at
- * once and no trace can witness one. Both files here were written by the
- * deciders at 919c7b6 and are the only record of what that machine decided.
+ * THERE IS ONE, AND THE HISTORIES THAT MADE IT MORE ARE GONE. Three pinned
+ * fixtures used to stand here, written by earlier images and the only record
+ * of what those machines decided. They are deleted: the deployment that
+ * collapsed the desk walls into one sum wiped its journal first, so no row
+ * older than this semantics exists anywhere, and a fixture whose corrections
+ * this image no longer carries proves nothing about a replay nobody performs.
  *
- * THEY COVER THE TWO SHAPES THE WALL CHANGED IN. `journalAtSemanticsOne.json`
- * is one ticket reworked once, walled and resumed, where the first semantics
- * resumed into evaluation and the current one resumes into work — a record
- * divergence. `journalAtSemanticsOneWalls.json` carries two walled tickets,
- * the second reworked before it walled, so one history holds an EvalReduce row
- * on each disposition edge: the bytes name neither, and the record is what
- * says which was taken.
- *
- * A THIRD FILE IS THE VOCABULARY'S OWN. `journalAtSemanticsFour.json` was
- * written by the deciders at 55de9de6, the last image every word of which is
- * the one semantics 5 renamed, and it walks two tickets through every
- * superseded spelling a row can hold: each phase, each of the five walls, the
- * failed finalization and the four step labels. Two spellings are absent
- * because no row carries them — a `Reason` reaches a journal only as an
- * `ExecutionBlocked` event's, and the two that are not walls are a ticket's
- * own reason column — so the case below pins those against the map itself.
- *
- * A PRE-3 ROW'S EVALREDUCE NAMED ONLY ITS TICKET, a shape the wire union this
- * image generates does not describe, so the bytes are lifted before they are
- * an event at all. That lift belongs to the seam a store's load reads a row
- * with, so these files are read through `parseStoredEntry` rather than through
- * a second copy of it here.
- *
- * THE SAME FILES CARRY THE KEYS SEMANTICS 4 DROPPED, so the acceptances below
- * are read off them rather than off bytes written to be accepted. The refusal
- * has no such fixture — no history in this tree was decided by the machine that
- * completed without a finalizer — so it is a pinned row under the record that
- * machine would have written.
- *
- * THE CASCADE HISTORY IS PINNED THE SAME WAY, in the shape the rig's rows
- * carry: a revoke whose record settles its own ticket and parks the two
- * dependents behind it, and then each dependent's own revoke out of the park.
- * Every record in it is written out rather than taken from a decision, because
- * the record under test is one no decider in this tree writes, and the records
- * after it are what says the parked tickets were left where a revoke could
- * still reach them.
+ * WHAT IS LEFT IS THE REFUSAL AND THE ROUND TRIP. A row declaring any other
+ * semantics is refused rather than replayed — by `isDecisionSemanticsVersion`
+ * where a store reads one, and by `storedJournalLegalOn` at the fold — and a
+ * history this image decided, walls and resumes included, replays back to the
+ * state that wrote it.
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { test } from "node:test";
 
 import {
-  decisionEventEnabled,
   dispatchEvent,
   evalReduceEvent,
   execDecisionEvent,
+  executionBlockedEvent,
   finalizationResultEvent,
   releaseTicketEvent,
   resumeTicketEvent,
-  revokeEvent,
   taskDoneEvent,
   workReduceEvent,
   type DecisionEvent,
@@ -74,353 +41,16 @@ import {
 import {
   decisionSemanticsVersionCurrent,
   isDecisionSemanticsVersion,
-  replayableDecision,
-  supersededSpellings,
-  wordAtCurrentVocabulary,
   type DecisionSemanticsVersion,
 } from "../../src/actor/decisionSemantics.ts";
-import { parseStoredEntry } from "../../src/interpreter/wire.ts";
-import type {
-  StepRecord,
-  Transition,
-} from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
-import { modelInstance } from "../domain/configs.ts";
 import { id } from "../domain/fixtures.ts";
 import { plainAuthoring, plainResult, refinementInstance } from "./harness.ts";
 
 const config = refinementInstance;
 
-/** One pinned history, read exactly as a store's load reads a row of that vintage. */
-function pinned(
-  file: string,
-  semantics: DecisionSemanticsVersion,
-): readonly Entry[] {
-  const raw: unknown = JSON.parse(
-    readFileSync(join(import.meta.dirname, file), "utf8"),
-  );
-  assert.ok(Array.isArray(raw), `${file} is not a journal`);
-  return raw.map((row: unknown, at: number) => {
-    const parsed = parseStoredEntry(row, semantics);
-    if (parsed.parsed === "Refused")
-      throw new Error(`${file} row ${String(at)} is unreadable: ${parsed.why}`);
-    return parsed.value;
-  });
-}
-
-/** A pinned history as a store holding it would present it, every row at one semantics. */
-function storedAt(
-  entries: readonly Entry[],
-  semantics: DecisionSemanticsVersion,
-): readonly StoredEntry[] {
-  return entries.map((entry) => ({ entry, semantics }));
-}
-
-const reworkedWall = pinned("journalAtSemanticsOne.json", 1);
-const walls = pinned("journalAtSemanticsOneWalls.json", 1);
-const beforeTheRename = pinned("journalAtSemanticsFour.json", 4);
-
-/** The record a release writes, which moves nothing that was already in the fleet. */
-const released: StepRecord = {
-  label: "ticket-released",
-  transitions: [],
-  effects: [],
-};
-
-/** What a dependent of the revoked ticket was released with. */
-const behindTheRevoked = { ...plainAuthoring, deps: new Set<number>([1]) };
-
-/** The rig's shape: a revoke that parked the two dependents, and their own revokes after it. */
-const cascade: readonly Entry[] = [
-  { seq: 1, event: releaseTicketEvent(id(1), plainAuthoring), rec: released },
-  { seq: 2, event: releaseTicketEvent(id(2), behindTheRevoked), rec: released },
-  { seq: 3, event: releaseTicketEvent(id(3), behindTheRevoked), rec: released },
-  {
-    seq: 4,
-    event: revokeEvent(id(1)),
-    rec: {
-      label: "ticket-revoked",
-      transitions: [
-        { ticket: id(1), from: "Pending", to: "Revoked" },
-        { ticket: id(2), from: "Pending", to: "Escalated" },
-        { ticket: id(3), from: "Pending", to: "Escalated" },
-      ],
-      effects: ["CancelTicketWork", "OpenHumanTask", "OpenHumanTask"],
-    },
-  },
-  {
-    seq: 5,
-    event: revokeEvent(id(2)),
-    rec: {
-      label: "ticket-revoked",
-      transitions: [{ ticket: id(2), from: "Escalated", to: "Revoked" }],
-      effects: ["CancelTicketWork"],
-    },
-  },
-  {
-    seq: 6,
-    event: revokeEvent(id(3)),
-    rec: {
-      label: "ticket-revoked",
-      transitions: [{ ticket: id(3), from: "Escalated", to: "Revoked" }],
-      effects: ["CancelTicketWork"],
-    },
-  },
-];
-
-test("the reworked history walks the rework wall and resumes past it", () => {
-  const walled = reworkedWall.filter(
-    (entry) =>
-      entry.rec.label === "ticket-escalated evaluation_failure_escalated",
-  );
-  const resumes = reworkedWall.filter(
-    (entry) => entry.event.type === "ResumeTicket",
-  );
-  assert.equal(walled.length, 1);
-  assert.equal(resumes.length, 1);
-  assert.deepEqual(resumes[0]?.rec.effects, ["SpawnEvalTasks"]);
-});
-
-test("the reworked history is legal under the semantics its rows declare", () => {
-  assert.ok(storedJournalLegalOn(config, storedAt(reworkedWall, 1)));
-});
-
-test("the same history read as this image's own decisions is not legal", () => {
-  assert.ok(!storedJournalLegalOn(config, storedAt(reworkedWall, 2)));
-  assert.ok(!journalLegalOn(config, reworkedWall));
-});
-
-test("replay under the first semantics resumes the walled ticket into evaluation", () => {
-  const replayed = storedReplayGraph(storedAt(reworkedWall, 1));
-  assert.equal(ticketAt(replayed, id(1)).phase, "Evaluation");
-  assert.equal(ticketAt(replayed, id(1)).resumeAt, "NoResume");
-});
-
-test("a row decided under an older machine than the row before it is refused", () => {
-  const descending = reworkedWall.map((entry, at) => ({
-    entry,
-    semantics: at === 0 ? decisionSemanticsVersionCurrent : 1,
-  }));
-  assert.ok(!storedJournalLegalOn(config, descending));
-});
-
-test("the two-wall history holds an EvalReduce row on each disposition edge", () => {
-  const reduces = walls.filter((entry) => entry.event.type === "EvalReduce");
-  assert.deepEqual(
-    reduces.map((entry) => entry.rec.label),
-    [
-      "ticket-escalated evaluation_failure_escalated",
-      "rework-started eval_failure",
-      "ticket-escalated evaluation_failure_escalated",
-    ],
-  );
-  assert.ok(storedJournalLegalOn(config, storedAt(walls, 1)));
-  assert.ok(!storedJournalLegalOn(config, storedAt(walls, 2)));
-});
-
-test("a second-semantics EvalReduce takes the edge its record records", () => {
-  const toTheWall = storedAt(walls.slice(0, 6), 2);
-  const walled = ticketAt(storedReplayGraph(toTheWall), id(1));
-  assert.equal(walled.phase, "Escalated");
-  assert.equal(walled.reason, "EvaluationFailureEscalated");
-
-  const toTheRework = storedAt(walls.slice(0, 13), 2);
-  const reworked = ticketAt(storedReplayGraph(toTheRework), id(2));
-  assert.equal(reworked.phase, "Work");
-});
-
-test("the first semantics parks the wall at the eval resume, the second where this machine does", () => {
-  const toTheWall = walls.slice(0, 6);
-  assert.equal(
-    ticketAt(storedReplayGraph(storedAt(toTheWall, 1)), id(1)).resumeAt,
-    "ResumeEvaluation",
-  );
-  assert.equal(
-    ticketAt(storedReplayGraph(storedAt(toTheWall, 2)), id(1)).resumeAt,
-    "ResumeRework",
-  );
-});
-
-test("a parked ticket is resumable whichever semantics walled it", () => {
-  const resume = resumeTicketEvent(id(1));
-  const toTheWall = walls.slice(0, 6);
-  for (const semantics of [1, 2] as const) {
-    const at = storedReplayGraph(storedAt(toTheWall, semantics));
-    assert.ok(decisionEventEnabled(config, at, resume));
-  }
-});
-
-test("a row parked on a wall this machine no longer has cannot be replayed", () => {
-  const wall = walls[5];
-  assert.ok(wall !== undefined);
-  assert.ok(replayableDecision(wall));
-  assert.ok(
-    !replayableDecision({
-      event: wall.event,
-      rec: { ...wall.rec, label: "ticket-escalated gas_exhausted" },
-    }),
-  );
-  assert.ok(
-    !storedJournalLegalOn(config, [
-      {
-        entry: {
-          ...wall,
-          rec: { ...wall.rec, label: "ticket-escalated gas_exhausted" },
-        },
-        semantics: 1,
-      },
-    ]),
-  );
-});
-
-test("the current semantics is the one whose refusals this module states", () => {
-  assert.equal(decisionSemanticsVersionCurrent, 5);
-  assert.ok(isDecisionSemanticsVersion(5));
-  assert.ok(
-    !isDecisionSemanticsVersion(6),
-    "a row from an image this one does not know is not replayable by guessing",
-  );
-});
-
-/**
- * The rename is the whole of semantics 5, so what has to be shown is that the
- * bytes did not move with it: the pinned rows still say the words the machine
- * that wrote them said, and every history above is read off them.
- */
-test("a pinned row says the old words and is read as the new ones", () => {
-  const bytes = readFileSync(
-    join(import.meta.dirname, "journalAtSemanticsOne.json"),
-    "utf8",
-  );
-  for (const said of [
-    "ReleaseTicket",
-    "Working",
-    "Evaluating",
-    "ticket-escalated rework_budget_exhausted",
-  ])
-    assert.ok(bytes.includes(said), `the pinned bytes no longer say ${said}`);
-
-  assert.ok(reworkedWall[0]?.event.type === "CreateTicket");
-  assert.ok(
-    reworkedWall.some(
-      (entry) =>
-        entry.rec.label === "ticket-escalated evaluation_failure_escalated",
-    ),
-  );
-  const moves = reworkedWall.flatMap((entry) => entry.rec.transitions);
-  assert.ok(moves.some((move) => move.to === "Work"));
-  assert.ok(moves.some((move) => move.to === "Evaluation"));
-});
-
-/**
- * The two spellings no journal row holds: a ticket's reason reaches a row only
- * as the one an `ExecutionBlocked` event names, and these two are the reason
- * column 006 rewrites. What pins them is the map's own answer below.
- */
-const reasonsNoRowCarries: readonly string[] = [
-  "WorkFailed",
-  "ReworkBudgetExhausted",
-];
-
-test("every superseded spelling a row can hold is in the pinned bytes", () => {
-  const bytes = readFileSync(
-    join(import.meta.dirname, "journalAtSemanticsFour.json"),
-    "utf8",
-  );
-  for (const said of supersededSpellings) {
-    if (reasonsNoRowCarries.includes(said)) continue;
-    assert.ok(bytes.includes(said), `no pinned row says ${said}`);
-  }
-  assert.deepEqual(reasonsNoRowCarries.map(wordAtCurrentVocabulary), [
-    "WorkFailureEscalated",
-    "EvaluationFailureEscalated",
-  ]);
-});
-
-test("the vocabulary history is legal under the semantics its rows declare", () => {
-  assert.ok(storedJournalLegalOn(config, storedAt(beforeTheRename, 4)));
-});
-
-test("replaying the old words leaves the fleet holding the new ones", () => {
-  const replayed = storedReplayGraph(storedAt(beforeTheRename, 4));
-  assert.equal(ticketAt(replayed, id(1)).phase, "Work");
-  const walled = ticketAt(replayed, id(2));
-  assert.equal(walled.phase, "Escalated");
-  assert.equal(walled.reason, "WorkExecutionUnavailableEscalated");
-  assert.equal(walled.resumeAt, "ResumeWork");
-});
-
-test("a pre-4 row's dropped keys are accepted and decode to the meaning that survived", () => {
-  const raw: unknown = JSON.parse(
-    readFileSync(
-      join(import.meta.dirname, "journalAtSemanticsOne.json"),
-      "utf8",
-    ),
-  );
-  assert.ok(Array.isArray(raw));
-  const release = raw[0] as { event: { value: Record<string, unknown> } };
-  assert.equal(release.event.value["finalizer"], "ManagedFinalizer");
-  assert.deepEqual(release.event.value["prog"], [
-    { fanout: 1, combinator: "UnanimousPass" },
-  ]);
-
-  const entry = reworkedWall[0];
-  assert.ok(entry?.event.type === "CreateTicket");
-  assert.ok(
-    !("finalizer" in entry.event.value),
-    "the finish kind reached the actor",
-  );
-  assert.deepEqual(entry.event.value.prog, [{ fanout: 1 }]);
-  assert.ok(storedJournalLegalOn(config, storedAt(reworkedWall, 1)));
-});
-
-test("a row that completed a ticket without running a finalizer cannot be replayed", () => {
-  const done = walls[5];
-  assert.ok(done !== undefined);
-  const finisherFree = {
-    ...done,
-    rec: {
-      label: "ticket-done",
-      transitions: [{ ticket: id(1), from: "Evaluation", to: "Done" } as const],
-      effects: [],
-    },
-  };
-  assert.ok(!replayableDecision(finisherFree));
-  assert.ok(
-    replayableDecision({
-      ...finisherFree,
-      rec: {
-        ...finisherFree.rec,
-        transitions: [
-          { ticket: id(1), from: "Finalization", to: "Done" } as const,
-        ],
-      },
-    }),
-    "the completion this machine takes is the one out of Finalization",
-  );
-  assert.ok(
-    !storedJournalLegalOn(config, [{ entry: finisherFree, semantics: 1 }]),
-  );
-});
-
-test("a revoke that parked the tickets behind it is replayed, not refused", () => {
-  const cascaded = cascade[3];
-  assert.ok(cascaded !== undefined);
-  assert.ok(replayableDecision(cascaded));
-  for (const semantics of [1, 2, 3] as const)
-    assert.ok(
-      storedJournalLegalOn(modelInstance, storedAt(cascade, semantics)),
-      `the cascade is a history the machine at ${String(semantics)} took`,
-    );
-  for (const semantics of [4, 5] as const)
-    assert.ok(
-      !storedJournalLegalOn(modelInstance, storedAt(cascade, semantics)),
-      "the revoke this machine takes transitions its own ticket alone",
-    );
-});
-
-/** A history the current deciders wrote, which is every row of a forgery but its last. */
+/** A history the current deciders wrote, which is the only vintage this image holds. */
 function decided(events: readonly DecisionEvent[]): readonly Entry[] {
   let graph = genesis;
   return events.map((event, at) => {
@@ -430,145 +60,82 @@ function decided(events: readonly DecisionEvent[]): readonly Entry[] {
   });
 }
 
-/** A cascade's record: the revoked ticket settled, and the parks its bytes claim. */
-function cascadeRecord(parked: readonly Transition[]): StepRecord {
-  return {
-    label: "ticket-revoked",
-    transitions: [{ ticket: id(1), from: "Pending", to: "Revoked" }, ...parked],
-    effects: ["CancelTicketWork", ...parked.map(() => "OpenHumanTask")],
-  };
+/** A history as a store holding it would present it, every row at one semantics. */
+function storedAt(
+  entries: readonly Entry[],
+  semantics: DecisionSemanticsVersion,
+): readonly StoredEntry[] {
+  return entries.map((entry) => ({ entry, semantics }));
 }
 
-/** The parks no cascade took: the prefix each is forged onto, and what it claims. */
-const forgedParks: readonly (readonly [
-  string,
-  readonly DecisionEvent[],
-  readonly Transition[],
-])[] = [
-  [
-    "a ticket the fleet never held",
-    [
-      releaseTicketEvent(id(1), plainAuthoring),
-      releaseTicketEvent(id(2), behindTheRevoked),
-    ],
-    [{ ticket: id(4), from: "Pending", to: "Escalated" }],
-  ],
-  [
-    "a dependent its own revoke had already settled",
-    [
-      releaseTicketEvent(id(1), plainAuthoring),
-      releaseTicketEvent(id(2), behindTheRevoked),
-      revokeEvent(id(2)),
-    ],
-    [{ ticket: id(2), from: "Revoked", to: "Escalated" }],
-  ],
-  [
-    "a ticket already working, which no dependent of a revocable ticket is",
-    [
-      releaseTicketEvent(id(1), plainAuthoring),
-      releaseTicketEvent(id(2), plainAuthoring),
-      dispatchEvent(id(2)),
-    ],
-    [{ ticket: id(2), from: "Work", to: "Escalated" }],
-  ],
-  [
-    "the same dependent twice",
-    [
-      releaseTicketEvent(id(1), plainAuthoring),
-      releaseTicketEvent(id(2), behindTheRevoked),
-    ],
-    [
-      { ticket: id(2), from: "Pending", to: "Escalated" },
-      { ticket: id(2), from: "Pending", to: "Escalated" },
-    ],
-  ],
-];
-
-test("a cascade parking anything but a Pending dependent is refused, not thrown on", () => {
-  for (const [what, prefix, parked] of forgedParks) {
-    const before = decided(prefix);
-    const forged = [
-      ...before,
-      {
-        seq: before.length + 1,
-        event: revokeEvent(id(1)),
-        rec: cascadeRecord(parked),
-      },
-    ];
-    assert.ok(!storedJournalLegalOn(modelInstance, storedAt(forged, 2)), what);
-  }
-});
-
-test("the cascade parks its dependents where nothing but a revoke reaches them", () => {
-  const parked = storedReplayGraph(storedAt(cascade.slice(0, 4), 2));
-  assert.equal(ticketAt(parked, id(1)).phase, "Revoked");
-  for (const dependent of [id(2), id(3)]) {
-    const ticket = ticketAt(parked, dependent);
-    assert.equal(ticket.phase, "Escalated");
-    assert.equal(ticket.reason, "NoReason");
-    assert.equal(ticket.resumeAt, "NoResume");
-    const resume = resumeTicketEvent(dependent);
-    assert.ok(!decisionEventEnabled(modelInstance, parked, resume));
-    assert.ok(
-      decisionEventEnabled(modelInstance, parked, revokeEvent(dependent)),
-    );
-  }
-  const settled = storedReplayGraph(storedAt(cascade, 2));
-  for (const dependent of [id(2), id(3)])
-    assert.equal(ticketAt(settled, dependent).phase, "Revoked");
-});
-
 /**
- * A history holding the finalization wall, decided by this tree at the current
- * semantics. The wall's outcome and the reason it stamps are both values no
- * earlier image ever wrote, so no correction and no vocabulary lift has
- * anything to say about them: a row carrying either is legal at 5 exactly
- * because 5 is what decided it.
+ * A history through both infrastructure walls and out the far side: a work set
+ * blocked and resumed, then an evaluation set blocked and resumed, then the
+ * finalizer reaching no result and resuming into a success.
  */
-const finalizationWall = decided([
+const walls = decided([
   releaseTicketEvent(id(1), plainAuthoring),
   dispatchEvent(id(1)),
-  taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
-  workReduceEvent(id(1)),
+  executionBlockedEvent(id(1)),
+  resumeTicketEvent(id(1)),
   taskDoneEvent(id(1), asTaskId(2), "Pass", plainResult),
+  workReduceEvent(id(1)),
+  executionBlockedEvent(id(1)),
+  resumeTicketEvent(id(1)),
+  taskDoneEvent(id(1), asTaskId(4), "Pass", plainResult),
   evalReduceEvent(id(1), "ReworkEvaluationFailure"),
   finalizationResultEvent(id(1), "FinalizationResultUnavailable"),
   resumeTicketEvent(id(1)),
+  finalizationResultEvent(id(1), "FinalizationSucceeded"),
 ]);
 
-test("the finalization wall and its resume replay legal at the current semantics", () => {
-  assert.equal(decisionSemanticsVersionCurrent, 5);
-  assert.ok(
-    storedJournalLegalOn(
-      config,
-      storedAt(finalizationWall, decisionSemanticsVersionCurrent),
-    ),
-  );
-  const parked = ticketAt(
-    storedReplayGraph(
-      storedAt(finalizationWall.slice(0, 7), decisionSemanticsVersionCurrent),
-    ),
-    id(1),
-  );
-  assert.equal(parked.phase, "Escalated");
-  assert.equal(parked.reason, "FinalizationUnavailableEscalated");
-  assert.equal(parked.resumeAt, "ResumeFinalization");
-  const resumed = ticketAt(
-    storedReplayGraph(
-      storedAt(finalizationWall, decisionSemanticsVersionCurrent),
-    ),
-    id(1),
-  );
-  assert.equal(resumed.phase, "Finalization");
+test("this image knows one decision semantics and says which", () => {
+  assert.equal(decisionSemanticsVersionCurrent, 6);
+  assert.ok(isDecisionSemanticsVersion(6));
+  for (const older of [1, 2, 3, 4, 5])
+    assert.ok(
+      !isDecisionSemanticsVersion(older),
+      `${String(older)} names deciders this image does not have`,
+    );
+  assert.ok(!isDecisionSemanticsVersion(7));
+  assert.ok(!isDecisionSemanticsVersion(6.5));
 });
 
-test("neither new word is a spelling the vocabulary lifts", () => {
-  for (const word of [
-    "FinalizationResultUnavailable",
-    "FinalizationUnavailableEscalated",
-    "ticket-escalated finalization_unavailable_escalated",
-  ]) {
-    assert.ok(!supersededSpellings.includes(word));
-    assert.equal(wordAtCurrentVocabulary(word), word);
-  }
+test("a row declaring another semantics is refused rather than replayed", () => {
+  assert.ok(storedJournalLegalOn(config, storedAt(walls, 6)));
+  for (const older of [1, 2, 3, 4, 5])
+    assert.ok(
+      !storedJournalLegalOn(
+        config,
+        storedAt(walls, older as DecisionSemanticsVersion),
+      ),
+      `a history at ${String(older)} is not one this image decided`,
+    );
+});
+
+test("each wall names itself and its resume re-enters the phase it interrupted", () => {
+  const labels = walls.map((entry) => entry.rec.label);
+  assert.deepEqual(
+    labels.filter((label) => label.startsWith("ticket-escalated")),
+    [
+      "ticket-escalated work_execution_unavailable_escalated",
+      "ticket-escalated evaluation_blocked_escalated",
+      "ticket-escalated finalization_unavailable_escalated",
+    ],
+  );
+  const after = (at: number) =>
+    ticketAt(storedReplayGraph(storedAt(walls.slice(0, at), 6)), id(1));
+  assert.equal(after(3).escalation, "WorkExecutionUnavailableEscalated");
+  assert.equal(after(4).phase, "Work");
+  assert.equal(after(7).escalation, "EvaluationBlockedEscalated");
+  assert.equal(after(8).phase, "Evaluation");
+  assert.equal(after(11).escalation, "FinalizationUnavailableEscalated");
+  assert.equal(after(12).phase, "Finalization");
+});
+
+test("the whole history is legal as decisions this image took, and ends Done", () => {
+  assert.ok(journalLegalOn(config, walls));
+  const settled = ticketAt(storedReplayGraph(storedAt(walls, 6)), id(1));
+  assert.equal(settled.phase, "Done");
+  assert.equal(settled.escalation, "NoEscalation");
 });

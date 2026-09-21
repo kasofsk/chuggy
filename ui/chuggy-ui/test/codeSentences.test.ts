@@ -9,12 +9,12 @@
 import { expect, test } from "vitest";
 
 import {
-  escalationReasons,
+  escalationKinds,
   operationRefusalCodes,
   operationStates,
 } from "../../../src/contract/rosters.ts";
 import {
-  escalationReasonSentence,
+  escalationKindSentence,
   mutationDeferralCodes,
   mutationDeferralSentence,
   mutationRefusalCodes,
@@ -46,8 +46,8 @@ test("the refusal two release contradictions share names each of them", () => {
   expect(said).toContain("pull request");
 });
 
-test("every escalation reason reads as a distinct sentence and not as its code", () => {
-  sentences(escalationReasons.map(escalationReasonSentence), escalationReasons);
+test("every escalation kind reads as a distinct sentence and not as its code", () => {
+  sentences(escalationKinds.map(escalationKindSentence), escalationKinds);
 });
 
 test("every operation state reads as a distinct sentence and not as its name", () => {

@@ -713,11 +713,10 @@ test("a definitive inability blocks one execution and releases its slot", async 
 
 /**
  * The wall a block recorded, from the boundary that wrote it to the page that
- * shows it. The domain has one reason for all five, so the wall survives only
- * on the execution row; the writer reading the completion is handed the wall
- * name the database built the event out of, and the read answers it back.
+ * shows it. The event names no wall, so the writer reads it off the execution
+ * the completion settled and puts it on the projection for the read.
  */
-test("a blocked ticket escalates at the one reason and names the wall it hit", async () => {
+test("a blocked ticket escalates at the one wall and records what it hit", async () => {
   const project = await schedulerProject(rig, "wall-read", { tasks: 1 });
   await registerAll(project, "wall-read");
   const attempt = await placedAttempt(project, "wall-read");
@@ -741,8 +740,11 @@ test("a blocked ticket escalates at the one reason and names the wall it hit", a
       asTicketId(project.ticket),
     );
     assert.equal(read?.phase, "Escalated");
-    assert.equal(read?.reason, "WorkExecutionUnavailableEscalated");
-    assert.equal(read?.executionBlockedBy, "RuntimeVersionUnsupported");
+    assert.deepEqual(read?.escalation, {
+      kind: "WorkExecutionUnavailableEscalated",
+      evidence: "RuntimeVersionUnsupported",
+      resumeAt: "ResumeWork",
+    });
   } finally {
     await asApi.end();
   }
@@ -750,11 +752,11 @@ test("a blocked ticket escalates at the one reason and names the wall it hit", a
 
 /**
  * A fan-out is blocked one execution at a time, so a parked ticket can have
- * several. The read names the wall of the last one to terminate, that being
- * the one the ticket is parked at; an earlier wall is history of an execution
- * rather than of the ticket.
+ * several. The first block parks it and the desk keeps that block's wall; the
+ * second reaches a ticket in no task phase and is refused, an already-parked
+ * ticket having nowhere further to be parked.
  */
-test("a ticket blocked twice names the wall its last blocked execution hit", async () => {
+test("a ticket blocked twice keeps the wall of the block that parked it", async () => {
   const project = await schedulerProject(rig, "wall-latest", { tasks: 2 });
   await registerAll(project, "wall-latest");
   for (const wall of [
@@ -770,28 +772,24 @@ test("a ticket blocked twice names the wall its last blocked execution hit", asy
     );
     assert.ok(blocked.blocked === "Blocked", wall);
   }
-  await postgresHarnessDrain(rig.harness, project.partition, project.memory);
-  assert.deepEqual(
-    await rig.harness.query(
-      `SELECT count(DISTINCT terminal_at)::text AS moments FROM execution
-        WHERE tenant=$1 AND project=$2 AND outcome='Blocked'`,
-      [project.partition.tenant, project.partition.project],
-    ),
-    [{ moments: "2" }],
-    "the two blocks have to be orderable for the read to have a last one",
+  const drained = await postgresHarnessDrain(
+    rig.harness,
+    project.partition,
+    project.memory,
   );
+  assert.deepEqual(drained.decided, ["Committed", "Refused"]);
   const read = await postgresNativeReads(rig.harness.pool).ticket(
     project.partition,
     asTicketId(project.ticket),
   );
-  assert.equal(read?.executionBlockedBy, "TicketConfigIncompatible");
+  assert.equal(read?.escalation?.evidence, "ExecutionProfileUnavailable");
 });
 
 /**
  * A resume puts the ticket back to work and leaves the blocked execution where
- * it is, that row being the evidence of what happened rather than of where the
- * ticket stands. So the wall is read off the reason and not off the execution,
- * and a resumed ticket names none though one is still there to find.
+ * it is, that row being the history of an execution rather than of where the
+ * ticket stands. The desk reads the wall off the projection, which the resume
+ * cleared, so a resumed ticket names none though one is still there to find.
  */
 test("a resumed ticket names no wall, though its blocked execution is still there", async () => {
   const project = await schedulerProject(rig, "wall-resumed", { tasks: 1 });
@@ -833,8 +831,7 @@ test("a resumed ticket names no wall, though its blocked execution is still ther
     asTicketId(project.ticket),
   );
   assert.equal(read?.phase, "Work");
-  assert.equal(read?.reason, undefined);
-  assert.equal(read?.executionBlockedBy, undefined);
+  assert.equal(read?.escalation, undefined);
   assert.deepEqual(
     await rig.harness.query(
       `SELECT blocked_reason FROM execution

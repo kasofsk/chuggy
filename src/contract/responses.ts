@@ -67,12 +67,13 @@ import {
   attemptStates,
   blockedReasons,
   draftStates,
-  escalationReasons,
+  escalationKinds,
   executionCapabilities,
   executionOutcomes,
   executionStatuses,
   executionTaskKinds,
   finalizationUnavailableKinds,
+  gitEvidences,
   nativeActionKindResolutions,
   nativeActionKinds,
   nativeActionResolutions,
@@ -193,6 +194,28 @@ export const executionRunSchema = z.object({
 export type ExecutionRun = z.infer<typeof executionRunSchema>;
 
 /**
+ * Where a parked ticket stands: which wall parked it, what the fabric said
+ * about that wall, and where a resume would re-enter it — present exactly when
+ * the ticket is Escalated, which is why it is one object rather than three
+ * optional fields a reader has to check against each other. The evidence is
+ * absent where the escalation explains itself, and is drawn from three disjoint
+ * rosters no ticket is at two of at once; `resumeAt` is derived from the kind
+ * at the read and stored nowhere.
+ */
+export const ticketEscalationSchema = z.object({
+  kind: z.enum(escalationKinds),
+  evidence: z
+    .union([
+      z.enum(blockedReasons),
+      z.enum(gitEvidences),
+      z.enum(finalizationUnavailableKinds),
+    ])
+    .optional(),
+  resumeAt: z.enum(resumePoints),
+});
+export type TicketEscalation = z.infer<typeof ticketEscalationSchema>;
+
+/**
  * A ticket as the project table and its own read both carry it. The title is
  * the one field of the brief the table carries, because a table of documents
  * needs a heading; the rest of the brief is the ticket's own read alone, an
@@ -209,7 +232,7 @@ export const ticketResponseSchema = z.object({
   sequence: countSchema,
   /**
    * When the entry `sequence` names committed, which is when the ticket entered
-   * the phase and reason reported here. Nothing moves a Done or Revoked ticket
+   * the phase and the escalation reported here. Nothing moves a Done or Revoked ticket
    * again, so on one of those this is when it completed and there is no second
    * field for that.
    */
@@ -220,24 +243,7 @@ export const ticketResponseSchema = z.object({
    * admits an entry no reader can parse.
    */
   releasedAt: instantSchema.optional(),
-  reason: z.enum(escalationReasons).optional(),
-  /**
-   * Which wall the fabric hit, off the ticket's most recent blocked execution.
-   * The machine has one reason for all five, so the wall itself is evidence
-   * rather than state and is present only on a ticket the read reports
-   * `WorkExecutionUnavailableEscalated` for; the project table carries none,
-   * a wall being a thing one ticket's page says and a table has no room for.
-   */
-  executionBlockedBy: z.enum(blockedReasons).optional(),
-  /**
-   * Which hold the finalizer could not get past, off the request this ticket's
-   * escalation came out of. The machine escalates on the outcome alone, so the
-   * kind is evidence rather than state and is present only on a ticket the read
-   * reports `FinalizationUnavailableEscalated` for; the project table carries
-   * none, for the reason the wall above carries none there.
-   */
-  finalizationBlockedBy: z.enum(finalizationUnavailableKinds).optional(),
-  resumeAt: z.enum(resumePoints).optional(),
+  escalation: ticketEscalationSchema.optional(),
   /**
    * Which of this ticket's dependencies their own authors revoked, ascending.
    * It is empty for every ticket but a Pending one waiting on such a
