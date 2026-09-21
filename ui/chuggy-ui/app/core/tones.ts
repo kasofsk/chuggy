@@ -11,6 +11,8 @@
  */
 
 import type {
+  ExecutionOutcome,
+  ExecutionStatus,
   SelectorAttention,
   SelectorMode,
   SessionState,
@@ -64,6 +66,37 @@ export function verdictTone(verdict: SetVerdict): Tone {
       return "live";
     case "Cancelled":
     case "Blocked":
+      return "retired";
+  }
+}
+
+/** How an execution stands, from the outcome it reached, or its status where
+ * it has not reached one yet: the same refinement `projectTableExecutionPhrase`
+ * builds the word from, so the hue never disagrees with what the word says. */
+export function executionTone(
+  status: ExecutionStatus,
+  outcome: ExecutionOutcome | undefined,
+): Tone {
+  if (outcome !== undefined) {
+    switch (outcome) {
+      case "Passed":
+        return "pass";
+      case "Failed":
+        return "fail";
+      case "Blocked":
+        return "retired";
+    }
+  }
+  switch (status) {
+    case "Queued":
+      return "queued";
+    case "Admitted":
+    case "Launching":
+    case "Running":
+      return "live";
+    case "Terminal":
+      return "neutral";
+    case "Cancelled":
       return "retired";
   }
 }

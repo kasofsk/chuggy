@@ -26,46 +26,37 @@ export const cellAbsent = "—";
 
 export const cellExecutionUnread = "not read";
 
-export function TicketNumberCell(props: {
-  readonly partition: PartitionIdentity;
-  readonly ticket: number;
-}): ReactNode {
-  return (
-    <th scope="row">
-      <Link
-        to="/$tenant/$project/tickets/$ticket"
-        params={{ ...props.partition, ticket: String(props.ticket) }}
-      >
-        {props.ticket}
-      </Link>
-    </th>
-  );
-}
-
-/** What the ticket is called, linking where its number does. A ticket whose
- * brief states nothing a title could be read out of has none. */
+/** The row's own header: the number beside the title, both linking to the
+ * ticket's page. The number is dim, because the title is what a reader came
+ * for, and a ticket whose brief states nothing a title could be read out of
+ * draws the dash in its place. */
 export function TicketTitleCell(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
   readonly title: string | undefined;
 }): ReactNode {
+  const params = { ...props.partition, ticket: String(props.ticket) };
   return (
-    <td>
+    <th scope="row">
+      <Link
+        to="/$tenant/$project/tickets/$ticket"
+        params={params}
+        className="ticket-row-number"
+      >
+        {props.ticket}
+      </Link>
       {props.title === undefined ? (
         <span className="text-ink-3">{cellAbsent}</span>
       ) : (
         <Tooltip text={props.title}>
           <span className="max-w-aside inline-block truncate align-bottom">
-            <Link
-              to="/$tenant/$project/tickets/$ticket"
-              params={{ ...props.partition, ticket: String(props.ticket) }}
-            >
+            <Link to="/$tenant/$project/tickets/$ticket" params={params}>
               {props.title}
             </Link>
           </span>
         </Tooltip>
       )}
-    </td>
+    </th>
   );
 }
 

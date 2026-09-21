@@ -27,6 +27,11 @@
 
   .tabular tbody th {
     font-weight: var(--weight-regular);
+  }
+
+  .tabular tbody th .ticket-row-number {
+    margin-right: var(--space-2);
+    color: var(--ink-3);
     font-family: var(--font-mono);
     font-size: var(--mono-optical);
   }

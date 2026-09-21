@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { ProjectTable } from "../app/browser/ProjectTable.tsx";
+import { cellExecutionUnread } from "../app/browser/TicketCells.tsx";
 import {
   answer,
   apiDouble,
@@ -99,15 +100,23 @@ const execution = {
   registeredAt: "2026-08-26T10:00:00.000Z",
 };
 
-/** The table with one running ticket, joined to the execution above. */
-async function drawTable(): Promise<void> {
+/** An escalated ticket with nothing joined to it, whose row answers why on the
+ * phase chip's hover rather than in a column of its own. */
+const escalatedTicket = {
+  ticket: 12,
+  title: "Serve the reason on the phase chip",
+  phase: "Escalated",
+  sequence: 8,
+  reason: "WorkFailed",
+  ...ticketInstants,
+};
+
+/** The table drawn from whatever a case wants the server holding, the one
+ * seam every case in this file shares. */
+async function drawTableWith(route: (url: string) => Response): Promise<void> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
-    route: (url) => {
-      if (url.includes("/executions"))
-        return answer({ executions: [execution] });
-      return answer({ partition: atlas, sequence: 8, tickets: [ticket] });
-    },
+    route,
   });
   vi.stubGlobal("fetch", api.fetch);
   render(
@@ -120,6 +129,14 @@ async function drawTable(): Promise<void> {
     </ScreenHarness>,
   );
   await settled();
+}
+
+/** The table with one running ticket, joined to the execution above. */
+async function drawTable(): Promise<void> {
+  await drawTableWith((url) => {
+    if (url.includes("/executions")) return answer({ executions: [execution] });
+    return answer({ partition: atlas, sequence: 8, tickets: [ticket] });
+  });
 }
 
 test("the title cell keeps the whole title, keeps clipping it, and links", async () => {
@@ -144,8 +161,43 @@ test("the runs-on cell keeps the image reference, and keeps clipping it", async 
   await drawTable();
   const cell = screen.getByText("chuggy-worker v3");
   expect(cell.className).toContain("max-w-aside");
-  fireEvent.focus(cell);
+  const trigger = cell.closest('[tabindex="0"]');
+  if (trigger === null) throw new Error("no tooltip trigger around runs-on");
+  fireEvent.focus(trigger);
   expect((await screen.findByRole("tooltip")).textContent).toBe(image);
+});
+
+test("a ticket's row draws its phase as a chip", async () => {
+  await drawTable();
+  expect(screen.getByText("Working").className).toContain("pill");
+});
+
+test("an escalated row answers why on the phase chip's hover", async () => {
+  await drawTableWith((url) => {
+    if (url.includes("/executions")) return answer({ executions: [] });
+    return answer({
+      partition: atlas,
+      sequence: 9,
+      tickets: [escalatedTicket],
+    });
+  });
+  const chip = screen.getByText("Escalated");
+  const trigger = chip.closest('[tabindex="0"]');
+  if (trigger === null)
+    throw new Error("no tooltip trigger around the phase chip");
+  fireEvent.focus(trigger);
+  expect((await screen.findByRole("tooltip")).textContent).toBe("work failed");
+});
+
+test("a row whose index was truncated draws no chip for its execution", async () => {
+  await drawTableWith((url) => {
+    if (url.includes("/executions")) return answer({}, 500);
+    return answer({ partition: atlas, sequence: 8, tickets: [ticket] });
+  });
+  const unread = screen.getAllByText(cellExecutionUnread);
+  expect(unread).toHaveLength(2);
+  for (const cell of unread)
+    expect(cell.closest("td")?.querySelector(".pill")).toBeNull();
 });
 
 /** The served policy refuses `style-src` but `'self'`, so nothing this table
@@ -153,7 +205,11 @@ test("the runs-on cell keeps the image reference, and keeps clipping it", async 
 test("nothing the project table draws is a runtime style element", async () => {
   await drawTable();
   expect(document.querySelectorAll("style").length).toBe(0);
-  fireEvent.focus(screen.getByText("chuggy-worker v3"));
+  const trigger = screen
+    .getByText("chuggy-worker v3")
+    .closest('[tabindex="0"]');
+  if (trigger === null) throw new Error("no tooltip trigger around runs-on");
+  fireEvent.focus(trigger);
   await screen.findByRole("tooltip");
   expect(document.querySelectorAll("style").length).toBe(0);
 });

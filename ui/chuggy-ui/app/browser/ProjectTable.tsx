@@ -35,6 +35,7 @@ import {
   ticketFilterPage,
 } from "../core/projectTableFilters.ts";
 import type { TicketFilter } from "../core/projectTableFilters.ts";
+import { phaseLabel } from "../core/codeLabels.ts";
 import {
   projectTableExecutionPhrase,
   projectTableRows,
@@ -51,16 +52,15 @@ import {
   ticketSectionTitles,
 } from "../core/ticketSections.ts";
 import type { TicketSection } from "../core/ticketSections.ts";
+import { executionTone, phaseTone } from "../core/tones.ts";
 import { useApiPorts, usePanelList } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
 import { useNowMs } from "./Freshness.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
 import {
-  cellAbsent,
   ticketRowExecutionCell,
   TicketActivityCell,
-  TicketNumberCell,
   TicketTitleCell,
 } from "./TicketCells.tsx";
 import { Button, ButtonLink } from "./ui/Button.tsx";
@@ -131,36 +131,62 @@ function useTicketRows(
   };
 }
 
+/** A cell whose row has nothing to draw a chip for: an unread index or a
+ * ticket that never ran. Drawing it as a chip would claim a standing the row
+ * does not have. */
+function TicketRowUnjoinedCell(props: {
+  readonly row: ProjectTableRow;
+}): ReactNode {
+  return (
+    <span className="text-ink-3">
+      {ticketRowExecutionCell(props.row, undefined)}
+    </span>
+  );
+}
+
 function TicketRow(props: {
   readonly row: ProjectTableRow;
   readonly partition: PartitionIdentity;
   readonly nowMs: number;
 }): ReactNode {
   const row = props.row;
-  const status = projectTableExecutionPhrase(row);
   return (
     <tr>
-      <TicketNumberCell partition={props.partition} ticket={row.ticket} />
       <TicketTitleCell
         partition={props.partition}
         ticket={row.ticket}
         title={row.title}
       />
-      <td>{row.phase}</td>
       <td>
-        {row.badge === undefined ? (
-          <span className="text-ink-3">{cellAbsent}</span>
-        ) : (
-          <Pill tone="parked">{row.badge}</Pill>
-        )}
-      </td>
-      <td>{ticketRowExecutionCell(row, status)}</td>
-      <td className="text-ink-3">
-        <Tooltip text={row.runsOn?.title}>
-          <span className="max-w-aside inline-block truncate align-bottom">
-            {ticketRowExecutionCell(row, row.runsOn?.text)}
+        <Tooltip text={row.badge}>
+          <span>
+            <Pill tone={phaseTone(row.phase)}>{phaseLabel(row.phase)}</Pill>
           </span>
         </Tooltip>
+      </td>
+      <td>
+        {row.executionStatus === undefined ? (
+          <TicketRowUnjoinedCell row={row} />
+        ) : (
+          <Pill tone={executionTone(row.executionStatus, row.executionOutcome)}>
+            {projectTableExecutionPhrase(row) ?? row.executionStatus}
+          </Pill>
+        )}
+      </td>
+      <td>
+        {row.runsOn === undefined ? (
+          <TicketRowUnjoinedCell row={row} />
+        ) : (
+          <Tooltip text={row.runsOn.title}>
+            <span>
+              <Pill tone="neutral">
+                <span className="max-w-aside inline-block truncate align-bottom">
+                  {row.runsOn.text}
+                </span>
+              </Pill>
+            </span>
+          </Tooltip>
+        )}
       </td>
       <TicketActivityCell activityAt={row.activityAt} nowMs={props.nowMs} />
     </tr>
@@ -177,10 +203,8 @@ function TicketTable(props: {
     <Table caption={props.caption}>
       <thead>
         <tr>
-          <th scope="col">ticket</th>
           <th scope="col">title</th>
           <th scope="col">phase</th>
-          <th scope="col">why</th>
           <th scope="col">execution</th>
           <th scope="col">runs on</th>
           <th scope="col">last activity</th>
