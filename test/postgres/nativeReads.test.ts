@@ -109,7 +109,7 @@ function seededRelease(ticket: number, deps: readonly number[]): string {
 /** One ticket of each terminal shape, and one parked with the wall it hit. */
 async function seedFilterProjection(partition: Partition) {
   await subject.harness.query(
-    "UPDATE project SET head=4 WHERE tenant=$1 AND project=$2",
+    "UPDATE project SET head=5 WHERE tenant=$1 AND project=$2",
     [partition.tenant, partition.project],
   );
   for (const [ticket, phase, escalation, evidence] of [
@@ -400,7 +400,7 @@ test("project reads filter before paging", async () => {
   });
   assert.equal(parked.result, "Found");
   if (parked.result !== "Found") return;
-  assert.equal(parked.project.sequence, 4);
+  assert.equal(parked.project.sequence, 5);
   assert.deepEqual(parked.project.tickets.map(dated), [
     {
       ticket: 4,
@@ -411,6 +411,18 @@ test("project reads filter before paging", async () => {
         resumeAt: "ResumeRework",
       },
       changedAt: seededEntryAt(4),
+      revokedDependencies: [],
+    },
+    {
+      ticket: 5,
+      phase: "Escalated",
+      sequence: 5,
+      escalation: {
+        kind: "WorkExecutionUnavailableEscalated",
+        evidence: "RefUnreadable",
+        resumeAt: "ResumeWork",
+      },
+      changedAt: seededEntryAt(5),
       revokedDependencies: [],
     },
   ]);
@@ -454,6 +466,12 @@ test("a ticket read carries the detail its project page carries", async () => {
     },
     changedAt: seededEntryAt(4),
     revokedDependencies: [],
+  });
+  const walled = await reads.ticket(partition, id(5));
+  assert.deepEqual(walled?.escalation, {
+    kind: "WorkExecutionUnavailableEscalated",
+    evidence: "RefUnreadable",
+    resumeAt: "ResumeWork",
   });
   assert.equal(await reads.ticket(partition, id(9)), undefined);
 });

@@ -163,13 +163,16 @@ test("load refuses unsupported event and decision semantic versions", async () =
   const cases = [
     {
       column: "event_schema_version",
-      versions: { eventSchemaVersion: 3, decisionSemanticsVersion: 2 },
+      versions: {
+        eventSchemaVersion: 3,
+        decisionSemanticsVersion: decisionSemanticsVersionCurrent,
+      },
       why: /integrity verification/,
     },
     {
       column: "decision_semantics_version",
-      versions: { eventSchemaVersion: 1, decisionSemanticsVersion: 6 },
-      why: /declares decision semantics 6, which this image has no deciders for/,
+      versions: { eventSchemaVersion: 1, decisionSemanticsVersion: 7 },
+      why: /declares decision semantics 7, which this image has no deciders for/,
     },
   ] as const;
   for (const unsupported of cases) {
@@ -209,19 +212,21 @@ test("a restated envelope at the versions this image writes still loads", async 
     1,
     encodeEntry(entry),
     journalChainGenesis(partition),
-    { eventSchemaVersion: 1, decisionSemanticsVersion: 2 },
+    {
+      eventSchemaVersion: 1,
+      decisionSemanticsVersion: decisionSemanticsVersionCurrent,
+    },
   );
   assert.equal((await harness.store.load(memory.lease)).parsed, "Ok");
 });
 
 /**
- * A release as it was written before the accounts left the event. The three
- * priced fields are gone from the model, so this image re-encodes the same
- * decision to shorter bytes — which is why the chain covers what was stored
- * rather than what a replay would write today.
+ * A creation carrying fields the model has since dropped, which the parse
+ * ignores and this image re-encodes to shorter bytes. That is why the chain
+ * covers what was stored rather than what a replay would write today.
  */
-const releaseBeforeTheAccounts =
-  '{"seq":1,"event":{"type":"ReleaseTicket","value":{"ticket":1,"deps":[],"prog":[{"fanout":1,"combinator":"UnanimousPass"}],"workFanout":1,"reworkPolicy":{"type":"BudgetedRework","value":1},"finalizationPricing":{"type":"Budgeted","value":1},"resumePricing":"RetryCharged","finalizer":"ManagedFinalizer"}},"rec":{"label":"ticket-released","transitions":[],"effects":[]}}';
+const createWithDroppedFields =
+  '{"seq":1,"event":{"type":"CreateTicket","value":{"ticket":1,"deps":[],"prog":[{"fanout":1,"combinator":"UnanimousPass"}],"workFanout":1,"reworkPolicy":{"type":"BudgetedRework","value":1},"finalizationPricing":{"type":"Budgeted","value":1},"resumePricing":"RetryCharged"}},"rec":{"label":"ticket-released","transitions":[],"effects":[]}}';
 
 test("a row this image would re-encode differently still verifies and replays", async () => {
   const partition = await postgresHarnessProject(harness.store, "older-bytes");
@@ -229,7 +234,7 @@ test("a row this image would re-encode differently still verifies and replays", 
   await restateEnvelope(
     partition,
     1,
-    releaseBeforeTheAccounts,
+    createWithDroppedFields,
     journalChainGenesis(partition),
     {
       eventSchemaVersion: 1,
@@ -244,7 +249,7 @@ test("a row this image would re-encode differently still verifies and replays", 
   assert.deepEqual(first.entry, postgresHarnessJournal()[0]);
 });
 
-test("a pre-envelope row replays at the semantics its digest attests, not its column", async () => {
+test("a pre-envelope row is refused at the semantics its digest attests, not its column", async () => {
   const partition = await postgresHarnessProject(harness.store, "preenvelope");
   const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
   const entry = postgresHarnessJournal()[0];
@@ -252,7 +257,7 @@ test("a pre-envelope row replays at the semantics its digest attests, not its co
   const previous = journalChainGenesis(partition);
   await harness.query(
     `UPDATE journal_entry
-       SET integrity_version=1,decision_semantics_version=2,entry_digest=$4
+       SET integrity_version=1,decision_semantics_version=6,entry_digest=$4
        WHERE tenant=$1 AND project=$2 AND seq=$3`,
     [
       partition.tenant,
@@ -263,11 +268,8 @@ test("a pre-envelope row replays at the semantics its digest attests, not its co
   );
 
   const loaded = await harness.store.load(memory.lease);
-  assert.ok(loaded.parsed === "Ok");
-  assert.deepEqual(
-    loaded.value.map((row) => row.semantics),
-    [1],
-  );
+  assert.ok(loaded.parsed === "Refused");
+  assert.match(loaded.why, /declares decision semantics 1/u);
 });
 
 test("load re-verifies the retained configuration content", async () => {
@@ -494,6 +496,8 @@ test("the legality scan names a history whose declared machine could not have de
   assert.ok(after.scanned === "Scanned");
   assert.deepEqual(
     after.unreplayable.filter((named_) => named_.startsWith(named)),
-    [`${named}: the stored history is not one this image could have decided`],
+    [
+      `${named}: stored row 2 declares decision semantics 1, which this image has no deciders for`,
+    ],
   );
 });

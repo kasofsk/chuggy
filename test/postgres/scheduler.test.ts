@@ -1280,7 +1280,7 @@ test("an outcome this boundary does not submit is refused before anything is wri
   );
 });
 
-test("a definitive inability completes as a blocked execution with a bounded reason", async () => {
+test("a definitive inability blocks the execution at the wall and journals the ticket alone", async () => {
   const fixture = await schedulerFixture("blocked");
   const execution = await schedulerRegister(fixture, "blocked");
   await schedulerAdvance(fixture, execution, "Admitted");
@@ -1292,7 +1292,8 @@ test("a definitive inability completes as a blocked execution with a bounded rea
   assert.deepEqual(
     await harness.query(
       `SELECT e.status, e.outcome, e.blocked_reason, e.result_manifest,
-              o.command_tag, o.command::jsonb->'event'->'value'->>'reason' AS reason
+              o.command_tag,
+              (o.command::jsonb->'event'->'value') - 'ticket' AS beyond_ticket
          FROM execution e JOIN operation o
            ON o.tenant=e.tenant AND o.project=e.project AND o.operation=e.completion_operation
         WHERE e.tenant=$1 AND e.project=$2 AND e.execution=$3`,
@@ -1305,7 +1306,7 @@ test("a definitive inability completes as a blocked execution with a bounded rea
         blocked_reason: "TicketConfigIncompatible",
         result_manifest: null,
         command_tag: "ExecutionBlocked",
-        reason: "TicketConfigIncompatible",
+        beyond_ticket: {},
       },
     ],
   );

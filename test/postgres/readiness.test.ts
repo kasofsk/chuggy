@@ -221,14 +221,14 @@ test("every answer a desk task admits becomes the domain command it names", asyn
 });
 
 /**
- * A command whose event this machine no longer has. The wall that parked a
- * ticket behind a revoked dependency left with the cascade, and an undecided
- * operation can outlive the upgrade still carrying it, so discovery is where it
- * is caught — refused at decode, under a message naming the operation.
+ * A command whose event this machine no longer has. `ReleaseTicket` became
+ * `CreateTicket`, and an undecided operation can outlive the rename still
+ * naming it, so discovery is where it is caught — refused at decode, under a
+ * message naming the operation.
  */
-test("an operation carrying a wall this machine lost is refused by name", async () => {
-  const partition = await postgresHarnessProject(harness.store, "parked-wall");
-  const submission = postgresHarnessSubmission(partition, "parked-wall");
+test("an operation carrying an event this machine lost is refused by name", async () => {
+  const partition = await postgresHarnessProject(harness.store, "lost-event");
+  const submission = postgresHarnessSubmission(partition, "lost-event");
   assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
   await harness.query(
     `UPDATE operation SET command=$4
@@ -241,8 +241,8 @@ test("an operation carrying a wall this machine lost is refused by name", async 
         version: 1,
         command: "Decide",
         event: {
-          type: "ExecutionBlocked",
-          value: { ticket: 1, reason: "DependencyRevoked" },
+          type: "ReleaseTicket",
+          value: { ticket: 1, deps: [], prog: [], workFanout: 1 },
         },
       }),
     ],
