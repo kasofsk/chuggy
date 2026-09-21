@@ -57,9 +57,9 @@ export interface ExecutionSourceHistoryPort {
 /**
  * The commit an evaluation of that work runs on: the one commit the work
  * declared, or the base it ran against where it declared any other number.
- * A fan-out that declared several names no one tree and none of them may stand
- * for the rest, while the base is the tree every member of it started from and
- * every member's manifest reaches the evaluation regardless.
+ * Work that declared several names no one tree and none of them may stand for
+ * the rest, while the base is the tree they all started from and every manifest
+ * reaches the evaluation regardless.
  */
 function executionSourceEvaluated(
   work: WorkSourceHistory,

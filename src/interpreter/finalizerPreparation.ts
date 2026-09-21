@@ -27,7 +27,7 @@
  * A REWORK SUPERSEDES RATHER THAN CONFLICTS. A ticket whose evaluation failed
  * re-runs its work, so a gathering is several spawns deep and the work the
  * evaluations judged is the latest of them; `handoffSuperseded` keeps that
- * spawn's fan-out and drops the rest, so every refusal below reads one spawn's
+ * spawn's work and drops the rest, so every refusal below reads one spawn's
  * declarations rather than the ticket's whole history.
  *
  * THE TASK NUMBER IS WHAT ORDERS INCARNATIONS, and `model/domain.qnt`'s
@@ -145,7 +145,7 @@ export interface PinnedConfiguration {
 export interface HandoffWork {
   readonly execution: ExecutionId;
   readonly attempt: AttemptId;
-  /** The spawn whose fan-out this execution belongs to, which a rework supersedes whole. */
+  /** The spawn this execution belongs to, which a rework supersedes whole. */
   readonly spawn: string;
   /** The ticket-local task number, which every later spawn's tasks exceed. */
   readonly task: number;
@@ -299,8 +299,8 @@ function handoffArtifactRefusal(
 }
 
 /**
- * The ticket's authoritative passed work: the latest spawn's fan-out, with
- * every earlier spawn's declarations dropped. A gathering naming no passed work
+ * The ticket's authoritative passed work: the latest spawn's, with every
+ * earlier spawn's declarations dropped. A gathering naming no passed work
  * at all is its own answer and comes back untouched.
  */
 export function handoffSuperseded(

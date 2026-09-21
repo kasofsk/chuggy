@@ -274,7 +274,7 @@ export interface PriorWorkReportsPort {
   ): Promise<PriorWorkReportsRead>;
 }
 
-/** The most work reports a review is briefed with; a fanout past it is refused, not truncated. */
+/** The most work reports a review is briefed with; a list past it is refused, not truncated. */
 export const priorWorkReportsMax = 8;
 
 /** The most failed evaluation reports a work task is briefed with, refused past it the same way. */

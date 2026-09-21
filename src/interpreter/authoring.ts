@@ -10,11 +10,7 @@ import {
   nativeHttpPageItemsMax,
 } from "../contract/http.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
-import {
-  defaultProgram,
-  stageChoices,
-  type Config,
-} from "../domain/config.ts";
+import { defaultProgram, stageChoices, type Config } from "../domain/config.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import type { PublicInstant } from "./publicResource.ts";
