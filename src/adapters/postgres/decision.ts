@@ -234,11 +234,11 @@ async function replaceDispatchView(
   for (const candidate of view.candidates) {
     await client.query(
       sql`INSERT INTO dispatch_candidate
-       (tenant,project,ticket,ticket_version,work_fanout,program,
+       (tenant,project,ticket,ticket_version,program,
         configuration_revision,
         configuration_digest,configuration_canonical)
        VALUES (${lease.partition.tenant},${lease.partition.project},${candidate.ticket},
-               ${candidate.ticketVersion},${candidate.workFanout},
+               ${candidate.ticketVersion},
                ${JSON.stringify(encodeDispatchProgram(candidate.program))},
                ${candidate.configurationRevision},
                ${candidate.configurationDigest},${candidate.configurationCanonical})`,

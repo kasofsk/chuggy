@@ -153,7 +153,6 @@ const dispatchCandidateSchema = z
     ticket: z.number().int().safe().positive().transform(asTicketId),
     ticketVersion: z.number().int().safe().positive(),
     dependencies: z.array(z.number().int().safe().positive()).readonly(),
-    workFanout: z.number().int().safe().positive(),
     program: z.array(stageDefinitionSchema).readonly(),
     configurationRevision: z.string(),
     configurationDigest: z.string(),

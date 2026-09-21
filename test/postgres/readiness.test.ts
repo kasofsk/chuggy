@@ -242,7 +242,7 @@ test("an operation carrying an event this machine lost is refused by name", asyn
         command: "Decide",
         event: {
           type: "ReleaseTicket",
-          value: { ticket: 1, deps: [], prog: [], workFanout: 1 },
+          value: { ticket: 1, deps: [], prog: [] },
         },
       }),
     ],

@@ -1272,7 +1272,6 @@ function maximalCandidate(ticket: number): Record<string, unknown> {
   return {
     ticket,
     ticketVersion: Number.MAX_SAFE_INTEGER,
-    workFanout: Number.MAX_SAFE_INTEGER,
     dependencies: Array.from(
       { length: nativeHttpDraftDependenciesMax },
       (_unused, at) => Number.MAX_SAFE_INTEGER - at,

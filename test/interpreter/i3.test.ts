@@ -202,7 +202,7 @@ test("dispatch materializes exact logical work tasks from the pure state delta",
   );
   assert.equal(planned.execution.length, 1);
   assert.equal(planned.execution[0]?.kind, "SpawnWork");
-  assert.equal(planned.execution[0]?.tasks.length, plainAuthoring.workFanout);
+  assert.equal(planned.execution[0]?.tasks.length, 1);
 });
 
 test("a spawn bundle pins its exact source and prior result manifests", () => {
