@@ -13,7 +13,7 @@
  * it.
  *
  * THE CAP IS OVER EVALUATION FAILURES, AS FAR AS THE HISTORY SHOWS THEM. A
- * `FinalizationFailed` re-enters Working too, and the finalizer is what handles
+ * `FinalizationNeedsWork` re-enters Work too, and the finalizer is what handles
  * that loop; a cap consulted only on a failing evaluation could never park such
  * a ticket anyway, so counting its reworks here would only shorten the
  * evaluation allowance. The history cannot always tell the two apart: an

@@ -9,7 +9,7 @@ import {
   migration005,
 } from "../../src/adapters/postgres/schema/migrations/005-three-deletions.ts";
 import { encodeDispatchProgram } from "../../src/interpreter/dispatchView.ts";
-import type { Stage } from "../../src/domain/generated/modelTypes.ts";
+import type { StageDefinition } from "../../src/domain/generated/modelTypes.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -1858,7 +1858,7 @@ test("the narrowed reason checks refuse a live row at the parked reason", async 
 const rewrittenPrograms: readonly (readonly [
   number,
   string,
-  readonly Stage[],
+  readonly StageDefinition[],
 ])[] = [
   [
     1,

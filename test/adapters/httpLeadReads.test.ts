@@ -235,7 +235,7 @@ function readStore(ticketVersion: number): NativeReadStore {
     ticket: (_partition, ticket) =>
       Promise.resolve({
         ticket,
-        phase: "Working",
+        phase: "Work",
         sequence: ticketVersion,
         changedAt: asPublicInstant("2026-09-02T00:00:00Z"),
         revokedDependencies: [],

@@ -93,7 +93,6 @@
  * ticket-wide fact it is not the authority for.
  */
 
-import type { Reason } from "../domain/generated/modelTypes.ts";
 import type { Config as DomainConfig } from "../domain/config.ts";
 import type { TaskId, TicketId } from "../domain/ids.ts";
 import type { TaskPurpose } from "./briefingTemplate.ts";
@@ -601,17 +600,20 @@ export type Blocked =
   | { readonly blocked: "NotAdmitted" }
   | { readonly blocked: "Conflicting"; readonly incident: string };
 
-/** A definitive inability to run the immutable contract, which the model bounds. */
-export type BlockedReason = Extract<
-  Reason,
+/**
+ * A definitive inability to run the immutable contract. The domain has one
+ * reason for all five, because no decider ever read which it was; which
+ * refusal it was is evidence this layer records beside the execution, so the
+ * roster is its own rather than a slice of the model's.
+ */
+export type BlockedReason =
   | "ExecutionPolicyDenied"
   | "TicketConfigIncompatible"
   | "ExecutionProfileUnavailable"
   | "RuntimeVersionUnsupported"
-  | "RequiredCapabilityUnavailable"
->;
+  | "RequiredCapabilityUnavailable";
 
-/** Every blocking reason, in the order `src/domain/enablement.ts` declares them. */
+/** Every blocking reason, in the order `execution_blocked_reason_is_known` declares them. */
 export const allBlockedReasons: readonly BlockedReason[] = [
   "ExecutionPolicyDenied",
   "TicketConfigIncompatible",

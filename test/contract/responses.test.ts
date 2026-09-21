@@ -161,7 +161,7 @@ test("a project read and a ticket read parse as the contract names them", () => 
       tickets: [
         {
           ticket: asTicketId(3),
-          phase: "Working",
+          phase: "Work",
           sequence: 9,
           ...ticketCarried,
         },
@@ -174,7 +174,7 @@ test("a project read and a ticket read parse as the contract names them", () => 
   assert.equal(parsed.nextAfter, 4);
   assert.deepEqual(parsed.tickets[0], {
     ticket: 3,
-    phase: "Working",
+    phase: "Work",
     sequence: 9,
     releasedAt: ticketCarried.releasedAt,
     changedAt: ticketCarried.changedAt,
@@ -266,7 +266,7 @@ test("an escalated ticket names its wall and an unparked one omits it", () => {
     ticketResponseSchema.parse(
       ticketResponse({
         ticket: asTicketId(3),
-        phase: "Working",
+        phase: "Work",
         sequence: 9,
         ...ticketCarried,
       }).body,
@@ -300,7 +300,7 @@ test("a parked ticket names where a resume re-enters it, and no other does", () 
     ticketResponseSchema.parse(
       ticketResponse({
         ticket: asTicketId(3),
-        phase: "Working",
+        phase: "Work",
         sequence: 9,
         ...ticketCarried,
       }).body,
@@ -1058,7 +1058,7 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
   const ticket = ticketResponseSchema.parse(
     ticketResponse({
       ticket: asTicketId(3),
-      phase: "Working",
+      phase: "Work",
       sequence: 9,
       brief,
       ...ticketCarried,
@@ -1074,7 +1074,7 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
     ticketResponseSchema.parse(
       ticketResponse({
         ticket: asTicketId(3),
-        phase: "Working",
+        phase: "Work",
         sequence: 9,
         ...ticketCarried,
       }).body,

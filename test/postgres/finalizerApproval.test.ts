@@ -4,7 +4,7 @@
  * journals nothing, and the standing the finalizer then reads.
  *
  * THE ANSWER IS PROVED BY THE JOURNAL AND NOT BY THE CALL. Approval is
- * operational protocol rather than `Core` state, so the cases about answering
+ * operational protocol rather than `TicketGraph` state, so the cases about answering
  * count `journal_entry` and read the ticket projection either side of it; an
  * answer that was recorded and journaled anyway would satisfy any weaker
  * assertion.
@@ -37,7 +37,7 @@ import type {
   FinalizerStore,
 } from "../../src/interpreter/finalizer.ts";
 import type { NativeActionResolution } from "../../src/interpreter/ticketCommand.ts";
-import { ticketAt } from "../../src/domain/core.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   finalizerAccept,

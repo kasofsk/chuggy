@@ -10,7 +10,7 @@ import {
 } from "../../src/actor/decisionEvent.ts";
 import {
   decisionEventTags,
-  type Core,
+  type TicketGraph,
   type Resume,
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
@@ -20,7 +20,7 @@ import {
   type ApprovalResolution,
   type NativeActionResolution,
 } from "../../src/interpreter/ticketCommand.ts";
-import { coreOf, id, ticketOn } from "../domain/fixtures.ts";
+import { graphOf, id, ticketOn } from "../domain/fixtures.ts";
 import { plainResult, refinementInstance } from "../actor/harness.ts";
 import {
   postgresHarnessOpen,
@@ -132,13 +132,13 @@ test("ready resumes strictly after the cursor it is given", async () => {
 });
 
 /**
- * The park a seeded escalation stands on, as a `Core`, at the resume point a
+ * The park a seeded escalation stands on, as a `TicketGraph`, at the resume point a
  * case hands it. The wall is the seed's own; the resume point is this suite's,
  * because the projection carries none, and it is what the resume answer below
  * turns on.
  */
-function parkedCore(action: SeededAction, resumeAt: Resume): Core {
-  return coreOf([
+function parkedGraph(action: SeededAction, resumeAt: Resume): TicketGraph {
+  return graphOf([
     ticketOn(refinementInstance, {
       phase: "Escalated",
       reason: action.reason,
@@ -177,7 +177,7 @@ function assertAnswerNames(
   assert.ok(
     decisionEventEnabled(
       refinementInstance,
-      parkedCore(action, "ResumeWorking"),
+      parkedGraph(action, "ResumeWork"),
       event,
     ),
     `${resolution} named ${event.type}, which its park does not enable`,
@@ -185,7 +185,7 @@ function assertAnswerNames(
   assert.equal(
     decisionEventEnabled(
       refinementInstance,
-      parkedCore(action, "NoResume"),
+      parkedGraph(action, "NoResume"),
       event,
     ),
     named !== "ResumeTicket",
@@ -217,7 +217,7 @@ test("every answer a desk task admits becomes the domain command it names", asyn
     const seeded: SeededAction = {
       ticket: 1,
       sequence: 1,
-      reason: "WorkFailed",
+      reason: "WorkFailureEscalated",
       offers: [resolution],
     };
     await seedOpenAction(harness, partition, actionId, seeded);

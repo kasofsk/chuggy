@@ -1,6 +1,6 @@
 /**
  * Every durable consequence of one pure decision, derived from the journal
- * entry and the two `Core`s it stands between.
+ * entry and the two `TicketGraph`s it stands between.
  *
  * AN OPEN ACTION ADMITS THE ANSWERS THE ACTOR WILL ACCEPT, not a part of them.
  * `decisionEventEnabled` puts a resume through `retryableIn`, so an action that
@@ -21,8 +21,12 @@
 import type { Entry } from "../actor/journal.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import { effectFromLabel } from "../domain/effect.ts";
-import { ticketAt } from "../domain/core.ts";
-import type { Core, Phase, Task } from "../domain/generated/modelTypes.ts";
+import { ticketAt } from "../domain/ticketGraph.ts";
+import type {
+  TicketGraph,
+  Phase,
+  Task,
+} from "../domain/generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import { tasksInIdOrder } from "../domain/task.ts";
 import {
@@ -65,7 +69,7 @@ function outstanding(tasks: ReadonlySet<Task>): readonly Task[] {
 
 function requestTasks(tasks: readonly Task[]): ExecutionRequestPlan["tasks"] {
   return tasks.map((task) =>
-    task.kind === "Work"
+    task.kind === "WorkTask"
       ? { task: task.id, kind: "Work" as const }
       : { task: task.id, kind: "Evaluation" as const, stage: task.kind.value },
   );
@@ -84,7 +88,7 @@ function executionRequestBundle(
   const evidence =
     input.source.kind === "Operation" &&
     entry.event.type === "FinalizationResult" &&
-    entry.event.value.out === "FinalizationFailed"
+    entry.event.value.out === "FinalizationNeedsWork"
       ? input.source.finalizationRequest?.evidence
       : undefined;
   return {
@@ -109,8 +113,8 @@ function executionRequest(
   input: DecisionInput,
   entry: Entry,
   effectPosition: number,
-  pre: Core,
-  post: Core,
+  pre: TicketGraph,
+  post: TicketGraph,
   source: ExecutionSourceObservation | undefined,
 ): ExecutionRequestPlan {
   const ticket = subject(entry, effectPosition);
@@ -172,7 +176,7 @@ function executionRequest(
 function nativeAction(
   entry: Entry,
   effectPosition: number,
-  post: Core,
+  post: TicketGraph,
 ): NativeActionPlan {
   const ticket = subject(entry, effectPosition);
   const value = ticketAt(post, ticket);
@@ -199,8 +203,8 @@ function nativeAction(
 function effectPlans(
   input: DecisionInput,
   entry: Entry,
-  pre: Core,
-  post: Core,
+  pre: TicketGraph,
+  post: TicketGraph,
   source: ExecutionSourceObservation | undefined,
 ): {
   readonly execution: readonly ExecutionRequestPlan[];
@@ -227,10 +231,12 @@ function effectPlans(
       case "RunFinalizer": {
         const ticket = subject(entry, effectPosition);
         if (
-          pre.tickets.get(ticket)?.phase === "Finalizing" ||
-          ticketAt(post, ticket).phase !== "Finalizing"
+          pre.tickets.get(ticket)?.phase === "Finalization" ||
+          ticketAt(post, ticket).phase !== "Finalization"
         ) {
-          throw new Error(`decision plan: ${effect} does not enter Finalizing`);
+          throw new Error(
+            `decision plan: ${effect} does not enter Finalization`,
+          );
         }
         finalization.push({
           request: identity(entry, effectPosition, effect),
@@ -317,13 +323,13 @@ export function inputBundleReferencesOf(
 
 /**
  * The phases an open native action can stand in: `Escalated` carries the desk
- * task, `Finalizing` carries the finalization approval. `native_action` admits
+ * task, `Finalization` carries the finalization approval. `native_action` admits
  * one open row per ticket, so a ticket leaving either phase must take its
  * question with it or the next one cannot be opened at all.
  */
 const materializationActionablePhases: readonly Phase[] = [
   "Escalated",
-  "Finalizing",
+  "Finalization",
 ];
 
 /**
@@ -334,8 +340,8 @@ const materializationActionablePhases: readonly Phase[] = [
 function materializationWithdrawals(
   input: DecisionInput,
   entry: Entry,
-  pre: Core,
-  post: Core,
+  pre: TicketGraph,
+  post: TicketGraph,
 ): readonly TicketId[] {
   if (
     input.source.kind === "Operation" &&
@@ -360,8 +366,8 @@ function materializationWithdrawals(
 /** Derives every durable consequence of one pure ticket decision. */
 export function materializationOf(
   input: DecisionInput,
-  pre: Core,
-  post: Core,
+  pre: TicketGraph,
+  post: TicketGraph,
   entry: Entry,
   source?: ExecutionSourceObservation,
 ): DecisionMaterialization {

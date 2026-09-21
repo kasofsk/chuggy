@@ -21,7 +21,7 @@ import { test } from "node:test";
 
 import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
-import { ticketAt } from "../../src/domain/core.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type { Verdict } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId, type TicketId } from "../../src/domain/ids.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";

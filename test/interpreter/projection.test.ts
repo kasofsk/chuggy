@@ -30,10 +30,13 @@ import {
   workReduceEvent,
   type DecisionEvent,
 } from "../../src/actor/decisionEvent.ts";
-import { genesis, replayCore, type Entry } from "../../src/actor/journal.ts";
+import { genesis, replayGraph, type Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
-import { ticketAt } from "../../src/domain/core.ts";
-import type { Core, Ticket } from "../../src/domain/generated/modelTypes.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
+import type {
+  TicketGraph,
+  Ticket,
+} from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import {
   projectionChanges,
@@ -65,7 +68,7 @@ function journalOf(): readonly Entry[] {
 /** The table the per-decision changes build, applied one decision at a time. */
 function folded(): ReadonlyMap<number, TicketProjection> {
   const table = new Map<number, TicketProjection>();
-  let core: Core = genesis;
+  let core: TicketGraph = genesis;
   for (const event of history) {
     const post = execDecisionEvent(core, event).post;
     for (const row of projectionChanges(core, post)) {
@@ -78,10 +81,10 @@ function folded(): ReadonlyMap<number, TicketProjection> {
 
 test("folding what each decision changed reaches the table a rebuild reads", () => {
   const rebuilt = new Map(
-    projectionOf(replayCore(journalOf())).map((row) => [row.ticket, row]),
+    projectionOf(replayGraph(journalOf())).map((row) => [row.ticket, row]),
   );
   assert.deepEqual(folded(), rebuilt);
-  assert.equal(rebuilt.get(id(1))?.phase, "Working");
+  assert.equal(rebuilt.get(id(1))?.phase, "Work");
 });
 
 test("a decision reports exactly the tickets whose complete state changed", () => {
@@ -100,7 +103,7 @@ test("a decision reports exactly the tickets whose complete state changed", () =
     [
       {
         ticket: id(1),
-        phase: "Working",
+        phase: "Work",
         dependable: true,
         reason: "NoReason",
         resumeAt: "NoResume",
@@ -121,7 +124,7 @@ test("a decision reports exactly the tickets whose complete state changed", () =
     [
       {
         ticket: id(1),
-        phase: "Working",
+        phase: "Work",
         dependable: true,
         reason: "NoReason",
         resumeAt: "NoResume",
@@ -149,7 +152,7 @@ test("a release is a change although it transitions nothing", () => {
 });
 
 /** The one outstanding task of a single-width ticket, which is what a completion names. */
-function outstandingTask(core: Core): number {
+function outstandingTask(core: TicketGraph): number {
   const task = [...ticketAt(core, id(1)).tasks].find(
     (candidate) => candidate.state === "Outstanding",
   );
@@ -215,7 +218,7 @@ function ticketFacts(ticket: Ticket) {
 }
 
 test("every projected row is the core the step it names left behind", () => {
-  let core: Core = genesis;
+  let core: TicketGraph = genesis;
   const seen: string[] = [];
   for (const event of walledHistory()) {
     core = execDecisionEvent(core, event).post;
@@ -228,6 +231,6 @@ test("every projected row is the core the step it names left behind", () => {
     });
     seen.push(`${row.phase}/${row.resumeAt}`);
   }
-  assert.ok(seen.includes("Escalated/ResumeReworking"));
-  assert.equal(seen.at(-1), "Working/NoResume");
+  assert.ok(seen.includes("Escalated/ResumeRework"));
+  assert.equal(seen.at(-1), "Work/NoResume");
 });

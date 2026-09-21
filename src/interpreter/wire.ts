@@ -22,6 +22,11 @@
  * it, so the decoded event says what the row was decided under. Only a row
  * declaring semantics below 3 is lifted: a semantics-3 row whose event is a
  * bare integer is not an old row, it is a corrupt one, and it is refused.
+ *
+ * A ROW WRITTEN BEFORE SEMANTICS 5 SPELLS THE VOCABULARY THE OLD WAY, and no
+ * generated schema describes those words, so the rename is undone here too —
+ * by the actor's own map, applied to every row, since no old spelling is also
+ * a new one and a current row passes through it unchanged.
  */
 
 import {
@@ -33,6 +38,7 @@ import {
 } from "../generated/model-api.ts";
 import {
   dispositionInRecord,
+  rowAtCurrentVocabulary,
   type DecisionSemanticsVersion,
 } from "../actor/decisionSemantics.ts";
 import {
@@ -116,9 +122,12 @@ export function parseStoredEntry(
   semantics: DecisionSemanticsVersion,
 ): Parsed<Entry> {
   try {
+    const named = rowAtCurrentVocabulary(raw);
     return {
       parsed: "Ok",
-      value: decodeEntry(semantics < 3 ? entryAtRecordedDisposition(raw) : raw),
+      value: decodeEntry(
+        semantics < 3 ? entryAtRecordedDisposition(named) : named,
+      ),
     };
   } catch (error: unknown) {
     return { parsed: "Refused", why: parseRefusal(error) };
@@ -220,7 +229,7 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
       if (
         event.type === "WorkReduce" ||
         event.type === "EvalReduce" ||
-        event.type === "ReleaseTicket" ||
+        event.type === "CreateTicket" ||
         event.type === "FinalizationResult" ||
         isCompletionDecisionEvent(event)
       ) {

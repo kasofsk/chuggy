@@ -422,7 +422,7 @@ test("a ticket's open action carries its kind, its fence, and what it offered", 
     {
       ticket: 1,
       sequence: 1,
-      reason: "WorkFailed",
+      reason: "WorkFailureEscalated",
       offers: ["Resume", "Revoke"],
     },
   );
@@ -449,7 +449,7 @@ test("an escalation offers what it recorded, not what its kind may ask for", asy
     {
       ticket: 1,
       sequence: 1,
-      reason: "ReworkBudgetExhausted",
+      reason: "EvaluationFailureEscalated",
       offers: ["Revoke"],
     },
   );
@@ -481,7 +481,7 @@ test("a resolved action stops listing, and an unknown ticket is not found", asyn
     {
       ticket: 1,
       sequence: 1,
-      reason: "WorkFailed",
+      reason: "WorkFailureEscalated",
       offers: ["Resume", "Revoke"],
     },
   );
@@ -514,7 +514,7 @@ test("a project's open actions list newest first and page behind their bound", a
       {
         ticket,
         sequence: ticket,
-        reason: "WorkFailed",
+        reason: "WorkFailureEscalated",
         offers: ["Resume", "Revoke"],
       },
     );
@@ -570,7 +570,7 @@ test("a project's open actions are its own, and an empty project lists none", as
   await seedOpenAction(subject.harness, mine, "native-actions-mine-one", {
     ticket: 1,
     sequence: 1,
-    reason: "WorkFailed",
+    reason: "WorkFailureEscalated",
     offers: ["Resume", "Revoke"],
   });
   const reads = postgresNativeReads(subject.pool);
@@ -597,7 +597,7 @@ test("a stored answer the kind cannot ask for stops both reads", async () => {
     {
       ticket: 1,
       sequence: 1,
-      reason: "WorkFailed",
+      reason: "WorkFailureEscalated",
       offers: ["Resume", "Revoke"],
     },
   );
@@ -636,7 +636,7 @@ test("the fence the read publishes is the one acceptance admits", async () => {
   await seedOpenAction(subject.harness, partition, "native-actions-fenced", {
     ticket: 1,
     sequence: 1,
-    reason: "WorkFailed",
+    reason: "WorkFailureEscalated",
     offers: ["Resume", "Revoke"],
   });
   const listed = (

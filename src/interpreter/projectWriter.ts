@@ -26,7 +26,7 @@
  * retries — never as a rejection that ends the run the input arrived in.
  *
  * THE PROJECTION IS DERIVED, NEVER OBSERVED. Its rows are a function of the
- * replayed `Core` alone, so rebuilding them from the journal and folding the
+ * replayed `TicketGraph` alone, so rebuilding them from the journal and folding the
  * per-decision changes reach the same table — which is what makes it a
  * projection rather than a second authority.
  *
@@ -60,8 +60,8 @@ import {
 } from "../actor/decisionEvent.ts";
 import type { DecisionEvent } from "../actor/decisionEvent.ts";
 import type { Config } from "../domain/config.ts";
-import { ticketAt, ticketIds } from "../domain/core.ts";
-import type { Core, Reason } from "../domain/generated/modelTypes.ts";
+import { ticketAt, ticketIds } from "../domain/ticketGraph.ts";
+import type { TicketGraph } from "../domain/generated/modelTypes.ts";
 import { dependableIn } from "../domain/enablement.ts";
 import { effectFromLabel } from "../domain/effect.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
@@ -115,7 +115,7 @@ export interface ProjectTicketWriter {
 /** What a writer holds between decisions: the lease that authorizes it, and the state it replayed. */
 export interface ProjectMemory {
   readonly lease: Lease;
-  readonly core: Core;
+  readonly core: TicketGraph;
   readonly ticketVersions: ReadonlyMap<number, number>;
   readonly dispatchContracts?: ReadonlyMap<number, DispatchContractPin>;
 }
@@ -138,10 +138,10 @@ export interface ProjectDecided {
 
 /**
  * Every ticket's current standing, which is the whole projection and the
- * rebuild of it. Every field is read off the same `Core` this decision left
+ * rebuild of it. Every field is read off the same `TicketGraph` this decision left
  * behind, so no two of them can be at different journal positions.
  */
-export function projectionOf(core: Core): readonly TicketProjection[] {
+export function projectionOf(core: TicketGraph): readonly TicketProjection[] {
   const dependable = new Set(dependableIn(core));
   return ticketIds(core).map((ticket) => {
     const value = ticketAt(core, ticket);
@@ -160,8 +160,8 @@ export function projectionOf(core: Core): readonly TicketProjection[] {
  * whose phase it moved. A ticket the decision left alone is not rewritten.
  */
 export function projectionChanges(
-  pre: Core,
-  post: Core,
+  pre: TicketGraph,
+  post: TicketGraph,
 ): readonly TicketProjection[] {
   return projectionOf(post).filter((row) => {
     const previous = pre.tickets.get(row.ticket);
@@ -207,7 +207,7 @@ export async function projectWriterLoad(
 ): Promise<ProjectMemory> {
   const journal = await projectWriterJournal(writer, lease);
   const ticketVersions = new Map<number, number>();
-  let core: Core = genesis;
+  let core: TicketGraph = genesis;
   for (const row of journal) {
     const post = execDecisionEventAt(row.semantics, core, row.entry).post;
     for (const projection of projectionChanges(core, post))
@@ -242,7 +242,7 @@ export async function projectWriterLoad(
 /** A decision offered for commit, and the state it would install if it committed. */
 interface ProjectPlan {
   readonly outcome: DecisionOutcome;
-  readonly post: Core;
+  readonly post: TicketGraph;
 }
 
 function continuationFenceOutcome(
@@ -464,13 +464,6 @@ function executionSourceRefusalCode(evidence: GitEvidence): RefusalCode {
     : "ExecutionSourceUnreadable";
 }
 
-/** The same distinction as a wall the machine already parks an execution on. */
-function executionSourceBlockedReason(evidence: GitEvidence): Reason {
-  return evidence === "RemoteDenied"
-    ? "ExecutionPolicyDenied"
-    : "TicketConfigIncompatible";
-}
-
 async function projectWriterExecutionSource(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
@@ -532,7 +525,7 @@ function projectWriterUnreadableLanding(
     landing: "Blocked",
     event: executionBlockedEvent(
       unreadable.ticket,
-      executionSourceBlockedReason(unreadable.evidence),
+      "WorkExecutionUnavailableEscalated",
     ),
   };
 }

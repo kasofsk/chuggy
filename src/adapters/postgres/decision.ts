@@ -575,7 +575,7 @@ async function decisionAdvanceTicketIdentity(
   partition: Partition,
   outcome: Extract<DecisionOutcome, { outcome: "Journaled" }>,
 ): Promise<void> {
-  if (outcome.entry.event.type !== "ReleaseTicket") return;
+  if (outcome.entry.event.type !== "CreateTicket") return;
   await client.query(
     sql`UPDATE project SET ticket_next=greatest(ticket_next,${outcome.entry.event.value.ticket + 1})
       WHERE tenant=${partition.tenant} AND project=${partition.project}`,

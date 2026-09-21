@@ -31,7 +31,7 @@ import {
 } from "../../src/adapters/postgres/schema.ts";
 import { interactionsReadSignature } from "../../src/adapters/postgres/schema/lead.ts";
 import { decisionSemanticsVersionCurrent } from "../../src/actor/decisionSemantics.ts";
-import { ticketAt } from "../../src/domain/core.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import {
   projectWriterDecide,
   type ProjectMemory,

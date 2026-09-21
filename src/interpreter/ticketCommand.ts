@@ -6,7 +6,7 @@
  * service may conclude a finalizing ticket, so the event is excluded from
  * `OperationDecisionEvent` and the finalizer's own envelope is excluded from
  * `TicketCommand` — a `Decide` carrying one and a submission offering one are
- * both unspellable rather than merely refused. `ReleaseTicket` has been kept
+ * both unspellable rather than merely refused. `CreateTicket` has been kept
  * out this way since I3, and this is the same device at a second seam.
  *
  * `TaskDone` AND `ExecutionBlocked` ARE THE THIRD SEAM. Only the execution
@@ -31,7 +31,7 @@ export type OperationDecisionEvent = Exclude<
     readonly type:
       | "WorkReduce"
       | "EvalReduce"
-      | "ReleaseTicket"
+      | "CreateTicket"
       | "FinalizationResult"
       | "TaskDone"
       | "ExecutionBlocked";
@@ -115,7 +115,7 @@ export function asOperationDecisionEvent(
   if (
     event.type === "WorkReduce" ||
     event.type === "EvalReduce" ||
-    event.type === "ReleaseTicket" ||
+    event.type === "CreateTicket" ||
     event.type === "FinalizationResult" ||
     isCompletionDecisionEvent(event)
   ) {

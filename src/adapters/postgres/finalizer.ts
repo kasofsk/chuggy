@@ -643,7 +643,7 @@ async function finalizerSubmitResult(
 ): Promise<FinalizationSubmitted> {
   const { claim, conclusion } = offer;
   const failure =
-    conclusion.outcome === "FinalizationFailed" ? conclusion.kind : null;
+    conclusion.outcome === "FinalizationNeedsWork" ? conclusion.kind : null;
   const operation = `finalization-${randomUUID()}`;
   const submitted = await client.query<SubmissionRow>(
     sql`SELECT result, operation FROM submit_finalization_result(

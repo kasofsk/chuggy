@@ -32,7 +32,7 @@ import {
   artifactProjectDirectory,
 } from "../../src/adapters/artifacts/artifactKey.ts";
 import { finalizerRowValue } from "../../src/adapters/postgres/finalizerRows.ts";
-import { ticketAt } from "../../src/domain/core.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type { Ticket } from "../../src/domain/generated/modelTypes.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
