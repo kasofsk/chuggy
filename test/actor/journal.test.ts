@@ -46,7 +46,7 @@ import {
   journalSpawnsOn,
   worldSpawnsOn,
 } from "../../src/actor/world.ts";
-import { ticketAt, withTicket, type Decision } from "../../src/domain/core.ts";
+import { ticketAt, type Decision } from "../../src/domain/core.ts";
 import {
   decideExecutionBlocked,
   decideFinalizationResult,
@@ -54,7 +54,6 @@ import {
   decideRevoke,
 } from "../../src/domain/deciders.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
-import { budgeted, reworkBudgetOf } from "../../src/domain/pricing.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   flatProgram,
@@ -85,7 +84,6 @@ test("an honest history is legal, and replay reconstructs what the deciders buil
   assert.ok(coreEquals(replayed, d2.post));
   assert.deepEqual([...replayed.tickets.keys()], [1]);
   assert.equal(ticketAt(replayed, id(1)).phase, "Working");
-  assert.equal(ticketAt(replayed, id(1)).gasLeft, 2);
 });
 
 test("replaying one more entry equals stepping the shorter replay once", () => {
@@ -228,7 +226,7 @@ const toEvaluating: readonly DecisionEvent[] = [
 const toFinalizing: readonly DecisionEvent[] = [
   ...toEvaluating,
   taskDoneEvent(id(1), asTaskId(2), "Pass", plainResult),
-  evalReduceEvent(id(1)),
+  evalReduceEvent(id(1), "ReworkEvaluationFailure"),
 ];
 const toDone: readonly DecisionEvent[] = [
   ...toFinalizing,
@@ -254,17 +252,6 @@ const full = coreAfter([
   ...toPending,
   releaseTicketEvent(id(2), plainAuthoring),
 ]);
-
-/**
- * A Ready ticket out of gas, which the machine cannot reach: gas is spent only
- * by entering Working and nothing returns from there to Pending. Only a forged
- * prefix state refuses on the dispatch's second conjunct, and a replayed
- * journal is exactly where an unreachable prefix can turn up.
- */
-const readyNoGas = withTicket(pending, id(1), {
-  ...ticketAt(pending, id(1)),
-  gasLeft: 0,
-});
 
 interface Refusal {
   readonly conjunct: string;
@@ -299,29 +286,8 @@ const refusals: readonly Refusal[] = [
     at: genesis,
     event: releaseTicketEvent(id(1), { ...plainAuthoring, workFanout: 2 }),
   },
-  {
-    conjunct: "ReleaseTicket/reworkPolicyChoices",
-    at: genesis,
-    event: releaseTicketEvent(id(1), {
-      ...plainAuthoring,
-      reworkPolicy: reworkBudgetOf(2),
-    }),
-  },
-  {
-    conjunct: "ReleaseTicket/finalizationPricingChoices",
-    at: genesis,
-    event: releaseTicketEvent(id(1), {
-      ...plainAuthoring,
-      finalizationPricing: budgeted(2),
-    }),
-  },
   { conjunct: "Revoke/revocablesIn", at: done, event: revokeEvent(id(1)) },
   { conjunct: "Dispatch/readiesIn", at: working, event: dispatchEvent(id(1)) },
-  {
-    conjunct: "Dispatch/dispatchableIn",
-    at: readyNoGas,
-    event: dispatchEvent(id(1)),
-  },
   {
     conjunct: "TaskDone/taskPhaseIn",
     at: pending,
@@ -364,7 +330,7 @@ const refusals: readonly Refusal[] = [
   {
     conjunct: "EvalReduce/reducibleEvalIn",
     at: evaluating,
-    event: evalReduceEvent(id(1)),
+    event: evalReduceEvent(id(1), "ReworkEvaluationFailure"),
   },
   {
     conjunct: "FinalizationResult/finalizableIn",

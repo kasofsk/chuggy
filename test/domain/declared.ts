@@ -10,9 +10,8 @@
  * becomes a failure in this tree instead.
  *
  * EVERY ROSTER COMES OUT OF ONE RULE — a braced declaration holding bare names
- * is a roster, and one holding any expression is not. That is what separates a
- * bundle from a leaf, which is why the invariant counts differ and why neither
- * is written down here; `step` is the same shape read at `any {`.
+ * is a roster, and one holding any expression is not, so neither roster is
+ * written down here; `step` is the same shape read at `any {`.
  */
 
 import { readFileSync } from "node:fs";
@@ -77,14 +76,6 @@ export function declaredBundle(root: string): readonly string[] {
     );
   }
   return names;
-}
-
-/** The same roster with every conjunct that is itself a bundle expanded into its own members. */
-export function declaredLeaves(root: string): readonly string[] {
-  const source = modelSource(root);
-  return declaredBundle(root).flatMap(
-    (name) => conjunctNames(source, name) ?? [name],
-  );
 }
 
 /**

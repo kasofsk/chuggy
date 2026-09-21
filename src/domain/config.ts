@@ -3,9 +3,8 @@
  * generate.
  *
  * The model declares these as module constants and instantiates a module per
- * configuration. Here they are a value passed in, for the reason
- * `model/measure.qnt` gives for passing `Bounds` explicitly: the deciders stay
- * pure functions usable at any configuration, needing no ambient state and no
+ * configuration. Here they are a value passed in, so the deciders stay pure
+ * functions usable at any configuration, needing no ambient state and no
  * module-level instantiation ceremony.
  *
  * The universes below are what a release draws from, which is why an
@@ -13,40 +12,14 @@
  * against one mid-flight.
  */
 
-import type {
-  FinalizationPricing,
-  Finalizer,
-  ReworkPolicy,
-  RetryPricing,
-  Stage,
-} from "./generated/modelTypes.ts";
+import type { Finalizer, Stage } from "./generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "./ids.ts";
-import {
-  budgeted,
-  finalizationBudget,
-  reworkBudget,
-  reworkBudgetOf,
-  type Bounds,
-} from "./pricing.ts";
 
 /** One deployment's constants. */
 export interface Config {
   readonly nTickets: number;
   readonly nTasks: number;
-  readonly reworkPolicy: ReworkPolicy;
-  readonly gas: number;
-  readonly finalizationPricing: FinalizationPricing;
   readonly maxStages: number;
-}
-
-/** What the measure needs, read off the configuration it is measuring. */
-export function boundsOf(config: Config): Bounds {
-  return {
-    reworkPolicy: config.reworkPolicy,
-    nTasks: config.nTasks,
-    maxStages: config.maxStages,
-    finalizationPricing: config.finalizationPricing,
-  };
 }
 
 /**
@@ -72,30 +45,6 @@ export function workFanoutChoices(config: Config): readonly number[] {
   for (let n = 1; n <= config.nTasks; n++) choices.push(n);
   return choices;
 }
-
-/** Every rework grant up to the instance's, so a ticket may be authored poorer than its fleet. */
-export function reworkPolicyChoices(config: Config): readonly ReworkPolicy[] {
-  const choices: ReworkPolicy[] = [];
-  for (let n = 0; n <= reworkBudget(config.reworkPolicy); n++)
-    choices.push(reworkBudgetOf(n));
-  return choices;
-}
-
-/** Every finalization pricing up to the instance's, plus the unbudgeted branch. */
-export function finalizationPricingChoices(
-  config: Config,
-): readonly FinalizationPricing[] {
-  const choices: FinalizationPricing[] = ["DeadlineOnly"];
-  for (let n = 0; n <= finalizationBudget(config.finalizationPricing); n++)
-    choices.push(budgeted(n));
-  return choices;
-}
-
-/** Both resume pricings. `RetryFree` reproduces a known livelock by configuration. */
-export const resumePricingChoices: readonly RetryPricing[] = [
-  "RetryCharged",
-  "RetryFree",
-];
 
 /** The stage vocabulary an author may draw from: any fan-out in range, either combinator. */
 export function stageChoices(config: Config): readonly Stage[] {

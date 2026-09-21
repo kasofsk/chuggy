@@ -55,7 +55,7 @@ import {
 const config = refinementInstance;
 
 /** The two world-facing members an orphaned spawn keeps red for the rest of a run. */
-const spentWorld = ["journalCoversWorld", "noDoubleSpentBudget"];
+const spentWorld = ["journalCoversWorld", "noDoubleSpentWork"];
 
 /** The work set launches, the actor dies before the journal write, and the recovered actor re-decides. */
 function phaseDispatchDoubleSpend(): ActorState {
@@ -69,28 +69,21 @@ function phaseDispatchDoubleSpend(): ActorState {
   state = effectCrash(config, state, dispatchEvent(id(1)));
   assert.equal(state.orphans.length, 1);
   assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Pending");
-  assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 3);
   assert.equal(worldSpawns(state, id(1)), 1);
   assert.equal(journalSpawns(state, id(1)), 0);
-  assertStep(
-    config,
-    state,
-    "an un-keyed work set the book never charged",
-    spentWorld,
-  );
+  assertStep(config, state, "a work set the journal never decided", spentWorld);
   assert.ok(obligationsHold(config, state, refinementCore));
   state = journalStep(config, state, dispatchEvent(id(1)));
-  assertStep(config, state, "the orphan priced against the re-decided charge", [
+  assertStep(config, state, "the orphan against the re-decided step", [
     "journalCoversWorld",
   ]);
   state = emitNext(state);
-  assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 2);
   assert.equal(worldSpawns(state, id(1)), 2);
   assert.equal(journalSpawns(state, id(1)), 1);
   assertStep(
     config,
     state,
-    "two work sets on one journaled charge",
+    "two work sets on one journaled decision",
     spentWorld,
   );
   assert.ok(obligationsHold(config, state, refinementCore));
@@ -127,7 +120,7 @@ function phaseDuplicateCycle(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    evalReduceEvent(id(1)),
+    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
     "eval-passed",
     spentWorld,
   );
@@ -165,36 +158,41 @@ test("the dispatch double-spend and the duplicate completion, one effect-first c
 
 /** The disciplined walk to the state whose next decision is the rework. */
 function walkToEvalFailure(): ActorState {
-  const state = walkFirstCycle(config, actorInit(), "Fail");
-  assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 2);
-  assert.equal(ticketAt(memoryCore(state), id(1)).reworkLeft, 1);
-  return state;
+  return walkFirstCycle(config, actorInit(), "Fail");
 }
 
 test("the rework double-spend: the fan-out launches and the charge dies with the crash", () => {
   let state = walkToEvalFailure();
-  state = effectCrash(config, state, evalReduceEvent(id(1)));
+  state = effectCrash(
+    config,
+    state,
+    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
+  );
   assert.equal(state.orphans.length, 1);
   const recovered = ticketAt(memoryCore(state), id(1));
   assert.equal(recovered.phase, "Evaluating");
-  assert.equal(recovered.gasLeft, 2);
-  assert.equal(recovered.reworkLeft, 1);
   assert.equal(worldSpawns(state, id(1)), 2);
   assert.equal(journalSpawns(state, id(1)), 1);
-  assertStep(config, state, "the fan-out the accounts never paid", spentWorld);
+  assertStep(
+    config,
+    state,
+    "the fan-out the journal never decided",
+    spentWorld,
+  );
   assert.ok(obligationsHold(config, state, refinementCore));
-  state = journalStep(config, state, evalReduceEvent(id(1)));
+  state = journalStep(
+    config,
+    state,
+    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
+  );
   assert.equal(state.view.rec.label, "rework-started eval_failure");
   state = emitNext(state);
-  const charged = ticketAt(memoryCore(state), id(1));
-  assert.equal(charged.gasLeft, 1);
-  assert.equal(charged.reworkLeft, 0);
   assert.equal(worldSpawns(state, id(1)), 3);
   assert.equal(journalSpawns(state, id(1)), 2);
   assertStep(
     config,
     state,
-    "one journaled charge, a world of extra work sets",
+    "one journaled decision, a world of extra work sets",
     spentWorld,
   );
   assert.ok(obligationsHold(config, state, refinementCore));

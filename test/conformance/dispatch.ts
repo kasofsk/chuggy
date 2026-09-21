@@ -37,12 +37,10 @@ import {
 import type { Core, Stage } from "../../src/domain/generated/modelTypes.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 import {
+  decodeEvaluationFailureDisposition,
   decodeFinalizationOutcome,
-  decodeFinalizationPricing,
   decodeFinalizer,
   decodeReason,
-  decodeRetryPricing,
-  decodeReworkPolicy,
   decodeStage,
   decodeVerdict,
 } from "../../src/generated/model-api.ts";
@@ -78,10 +76,8 @@ export interface Picks {
   readonly deps: ItfValue | undefined;
   readonly program: ItfValue | undefined;
   readonly workFanout: ItfValue | undefined;
-  readonly reworkPolicy: ItfValue | undefined;
-  readonly finalizationPricing: ItfValue | undefined;
-  readonly resumePricing: ItfValue | undefined;
   readonly finalizer: ItfValue | undefined;
+  readonly onFailure: ItfValue | undefined;
   readonly taskId: ItfValue | undefined;
   readonly verdict: ItfValue | undefined;
   readonly outcome: ItfValue | undefined;
@@ -133,19 +129,10 @@ export function replayStep(
 
   switch (action) {
     case "releaseTicket":
-      return decideReleaseTicket(config, pre, j(), {
+      return decideReleaseTicket(pre, j(), {
         deps: new Set(drawnIds(need(picks.deps, "deps_"))),
         program: drawnProgram(need(picks.program, "prog")),
         workFanout: Number(itfToWire(need(picks.workFanout, "workFanout_"))),
-        reworkPolicy: decodeReworkPolicy(
-          itfToWire(need(picks.reworkPolicy, "reworkPolicy_")),
-        ),
-        finalizationPricing: decodeFinalizationPricing(
-          itfToWire(need(picks.finalizationPricing, "finalizationPricing_")),
-        ),
-        resumePricing: decodeRetryPricing(
-          itfToWire(need(picks.resumePricing, "resumePricing_")),
-        ),
         finalizer: decodeFinalizer(
           itfToWire(need(picks.finalizer, "finalizer_")),
         ),
@@ -164,7 +151,13 @@ export function replayStep(
     case "workReduce":
       return decideWorkReduce(pre, j());
     case "evalReduce":
-      return decideEvalStageReduce(pre, j());
+      return decideEvalStageReduce(
+        pre,
+        j(),
+        decodeEvaluationFailureDisposition(
+          itfToWire(need(picks.onFailure, "onFailure")),
+        ),
+      );
     case "finalizationResult":
       return decideFinalizationResult(
         pre,

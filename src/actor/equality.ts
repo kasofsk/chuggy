@@ -83,15 +83,6 @@ function depsInOrder(deps: ReadonlySet<number>): readonly number[] {
   return [...deps].sort((a, b) => a - b);
 }
 
-/** One pricing branch carries a budget and the other does not, so the tags compare first. */
-function ticketEqualsPricing(
-  left: Ticket["finalizationPricing"],
-  right: Ticket["finalizationPricing"],
-): boolean {
-  if (left === "DeadlineOnly") return right === "DeadlineOnly";
-  return right !== "DeadlineOnly" && right.value === left.value;
-}
-
 function ticketEqualsStage(left: Stage, right: Stage): boolean {
   return left.fanout === right.fanout && left.combinator === right.combinator;
 }
@@ -104,9 +95,6 @@ export function ticketEquals(left: Ticket, right: Ticket): boolean {
     left.finalizer === right.finalizer &&
     ticketEqualsArtifact(left.artifact, right.artifact) &&
     left.workFanout === right.workFanout &&
-    left.reworkPolicy.value === right.reworkPolicy.value &&
-    ticketEqualsPricing(left.finalizationPricing, right.finalizationPricing) &&
-    left.resumePricing === right.resumePricing &&
     listEquals(left.program, right.program, ticketEqualsStage) &&
     listEquals(
       tasksInIdOrder(left.tasks),
@@ -115,9 +103,6 @@ export function ticketEquals(left: Ticket, right: Ticket): boolean {
     ) &&
     listEquals(left.record, right.record, taskEquals) &&
     left.spawned === right.spawned &&
-    left.reworkLeft === right.reworkLeft &&
-    left.finalizationLeft === right.finalizationLeft &&
-    left.gasLeft === right.gasLeft &&
     left.resumeAt === right.resumeAt &&
     left.reason === right.reason &&
     left.completions === right.completions

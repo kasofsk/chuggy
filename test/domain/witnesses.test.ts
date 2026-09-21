@@ -2,12 +2,11 @@
  * Each anti-vacuity witness refuted by a step this machine actually takes.
  *
  * A GREEN WITNESS IS A WITNESS THAT PROVED NOTHING. `model/domain.qnt` expects
- * every one of these violated, and the violation is what makes the invariants
- * beside them mean something: that a free pipeline resume really climbs the
- * measure and really needs its exemption arm, that the cascade really parks
- * dependents on reachable states rather than leaving `cascadeSafety` vacuous,
- * and that multi-stage programs really run stage by stage rather than leaving
- * the stage digit unexercised.
+ * both of these violated, and the violation is what makes the invariants beside
+ * them mean something: that the cascade really parks dependents on reachable
+ * states rather than leaving `cascadeSafety` vacuous, and that multi-stage
+ * programs really run stage by stage rather than leaving the stage digit
+ * unexercised.
  *
  * EVERY REFUTATION BELOW COMES OUT OF A DECIDER rather than out of a
  * hand-written record, because a record nobody's machine produced would refute
@@ -18,41 +17,31 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { boundsOf, type Config } from "../../src/domain/config.ts";
+import type { Config } from "../../src/domain/config.ts";
 
 import {
   decideEvalStageReduce,
-  decideExecutionBlocked,
-  decideResumeTicket,
   decideRevoke,
 } from "../../src/domain/deciders.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
-import { sysMeasure } from "../../src/domain/measure.ts";
 
 import {
   cascadeParkNever,
-  freeClimbNever,
   stageAdvanceNever,
   witnesses,
 } from "../../src/domain/witnesses.ts";
-import { budgetedInstance, retryFreeInstance } from "./configs.ts";
+import { modelInstance } from "./configs.ts";
 import {
   coreOf,
   depsOf,
-  evalOutstanding,
   evalTask,
   id,
   ticketOn,
   workTask,
 } from "./fixtures.ts";
-import type {
-  Core,
-  RetryPricing,
-  Stage,
-} from "../../src/domain/generated/modelTypes.ts";
+import type { Core, Stage } from "../../src/domain/generated/modelTypes.ts";
 
-const config = budgetedInstance;
-const free = retryFreeInstance;
+const config = modelInstance;
 
 /** The view a decision produces, which is the shape a witness is read at. */
 function stepped(
@@ -60,35 +49,6 @@ function stepped(
   decided: { rec: StepView["rec"]; post: Core },
 ): StepView {
   return { pre, rec: decided.rec, post: decided.post };
-}
-
-/**
- * A ticket parked by an execution block during evaluation, which is the park
- * whose resume re-enters evaluation: an interruption leaves an intact
- * judgement to make, where the rework wall's verdict leaves none. The park is
- * taken from the decider rather than written down, and the resume's price is
- * the ticket's own, so that is what the fixture varies.
- */
-function parkedAtEvaluation(
-  instance: Config,
-  resumePricing: RetryPricing,
-  gasLeft: number,
-): Core {
-  const evaluating = coreOf([
-    ticketOn(instance, "ManagedFinalizer", {
-      phase: "Evaluating",
-      resumePricing,
-      record: [workTask(1, "Passed"), workTask(2, "Passed")],
-      tasks: new Set([evalOutstanding(3, 0), evalOutstanding(4, 0)]),
-      spawned: 4,
-      gasLeft,
-    }),
-  ]);
-  return decideExecutionBlocked(
-    evaluating,
-    id(1),
-    "ExecutionProfileUnavailable",
-  ).post;
 }
 
 const twoStage: readonly Stage[] = [
@@ -107,11 +67,6 @@ const midProgram = coreOf([
   }),
 ]);
 
-const freeResume = ((): StepView => {
-  const pre = parkedAtEvaluation(free, "RetryFree", 0);
-  return stepped(pre, decideResumeTicket(pre, id(1)));
-})();
-
 const cascade = ((): StepView => {
   const pre = coreOf([
     ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
@@ -123,29 +78,10 @@ const cascade = ((): StepView => {
   return stepped(pre, decideRevoke(config, pre, id(1)));
 })();
 
-const advance = stepped(midProgram, decideEvalStageReduce(midProgram, id(1)));
-
-test("a free pipeline resume climbs the measure, which is what the churn arm exempts", () => {
-  assert.equal(freeResume.rec.label, "ticket-resumed");
-  assert.ok(
-    sysMeasure(boundsOf(free), freeResume.post) >
-      sysMeasure(boundsOf(free), freeResume.pre),
-  );
-  assert.ok(
-    !freeClimbNever(free, freeResume),
-    "the witness has to be violated here, or the arm it justifies is dead code",
-  );
-});
-
-test("a charged pipeline resume pays for itself, so the same witness holds", () => {
-  const pre = parkedAtEvaluation(config, "RetryCharged", config.gas);
-  const charged = stepped(pre, decideResumeTicket(pre, id(1)));
-  assert.ok(
-    sysMeasure(boundsOf(config), charged.post) <
-      sysMeasure(boundsOf(config), charged.pre),
-  );
-  assert.ok(freeClimbNever(config, charged));
-});
+const advance = stepped(
+  midProgram,
+  decideEvalStageReduce(midProgram, id(1), "ReworkEvaluationFailure"),
+);
 
 test("a revoke parks its pre-flight dependents, which is what keeps cascadeSafety from being vacuous", () => {
   assert.equal(cascade.rec.label, "ticket-revoked");
@@ -168,7 +104,6 @@ test("an eval stage advances, which is what keeps the stage digit exercised", ()
 
 test("every witness the domain declares is refuted by a step this machine takes", () => {
   const refutations: Record<string, { config: Config; view: StepView }> = {
-    freeClimbNever: { config: free, view: freeResume },
     cascadeParkNever: { config, view: cascade },
     stageAdvanceNever: { config, view: advance },
   };

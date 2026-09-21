@@ -27,9 +27,8 @@ import { join } from "node:path";
 import type { Config } from "../../src/domain/config.ts";
 import { isValidProgram } from "../../src/domain/config.ts";
 
-import { budgeted, reworkBudgetOf } from "../../src/domain/pricing.ts";
 import { declaredActions } from "../domain/declared.ts";
-import { CONFIGS, budgetedInstance } from "../domain/configs.ts";
+import { CONFIGS, modelInstance } from "../domain/configs.ts";
 import { coreOf, id, ticketOn } from "../domain/fixtures.ts";
 import {
   validProgramsIn,
@@ -50,12 +49,8 @@ import {
 
 const ROOT = join(import.meta.dirname, "..", "..");
 
-/** The full-roster instances, in the order the model gate runs them. */
-const INSTANCES = [
-  "mc_chuggy_budgeted",
-  "mc_chuggy_deadline_only",
-  "mc_chuggy_retryfree",
-];
+/** The instances the sweep walks, the ones the model gate runs. */
+const INSTANCES = ["mc_chuggy"];
 
 const samplesDefault = 25;
 
@@ -121,31 +116,25 @@ test("the walk's roster is the model's own action roster, in its order", () => {
   );
 });
 
-test("a gasless instantiation has no initial state", () => {
-  assert.throws(() => walkInit({ ...budgetedInstance, gas: 0 }), /gasless/);
-  assert.equal(walkInit(budgetedInstance).tickets.size, 0);
-});
-
-test("every other init conjunct refuses as the model's init does", () => {
+test("every init conjunct refuses as the model's init does, and a valid instance starts empty", () => {
   const invalid: readonly Partial<Config>[] = [
     { nTasks: 0 },
     { nTickets: 0 },
     { maxStages: 0 },
-    { reworkPolicy: reworkBudgetOf(-1) },
-    { finalizationPricing: budgeted(-1) },
   ];
   for (const broken of invalid) {
     assert.throws(
-      () => walkInit({ ...budgetedInstance, ...broken }),
+      () => walkInit({ ...modelInstance, ...broken }),
       /no initial state/,
     );
   }
+  assert.equal(walkInit(modelInstance).tickets.size, 0);
 });
 
 test("the release's program draw ranges over exactly the well-formed set", () => {
-  const programs = validProgramsIn(budgetedInstance);
+  const programs = validProgramsIn(modelInstance);
   assert.equal(programs.length, 20);
-  assert.ok(programs.every((p) => isValidProgram(budgetedInstance, p)));
+  assert.ok(programs.every((p) => isValidProgram(modelInstance, p)));
   assert.equal(
     new Set(programs.map((p) => JSON.stringify(p))).size,
     programs.length,
@@ -154,37 +143,34 @@ test("the release's program draw ranges over exactly the well-formed set", () =>
 });
 
 test("the release's permit refuses the dep named twice", () => {
-  const core = coreOf([ticketOn(budgetedInstance)]);
-  const program = validProgramsIn(budgetedInstance)[0];
+  const core = coreOf([ticketOn(modelInstance)]);
+  const program = validProgramsIn(modelInstance)[0];
   assert.ok(program);
   const drawn: Drawn = {
     ticket: id(2),
     deps: [id(1), id(1)],
     program,
     workFanout: 1,
-    reworkPolicy: reworkBudgetOf(0),
-    finalizationPricing: budgeted(0),
-    resumePricing: "RetryCharged",
     finalizer: "ManagedFinalizer",
   };
   const release = walkActionOf("releaseTicket");
-  assert.equal(release.permitsIn(budgetedInstance, core, drawn), false);
+  assert.equal(release.permitsIn(modelInstance, core, drawn), false);
   assert.equal(
-    release.permitsIn(budgetedInstance, core, { ...drawn, deps: [id(1)] }),
+    release.permitsIn(modelInstance, core, { ...drawn, deps: [id(1)] }),
     true,
   );
 });
 
 test("a run is a pure function of its seed", () => {
-  const first = walkRun(budgetedInstance, 7, walkStepsMax);
-  const second = walkRun(budgetedInstance, 7, walkStepsMax);
+  const first = walkRun(modelInstance, 7, walkStepsMax);
+  const second = walkRun(modelInstance, 7, walkStepsMax);
   assert.deepEqual(first, second);
   assert.equal(first.steps.length, walkStepsMax);
 });
 
 test("the accumulator rebuilds the ghost and can go red in every direction", () => {
   const done = coreOf([
-    ticketOn(budgetedInstance, "ManagedFinalizer", {
+    ticketOn(modelInstance, "ManagedFinalizer", {
       phase: "Done",
       artifact: { type: "ProducedArtifact", value: 1 },
       completions: 1,
@@ -213,7 +199,7 @@ test("the accumulator rebuilds the ghost and can go red in every direction", () 
     "a ticket Done with nothing counted is the other half of the iff",
   );
 
-  const working = coreOf([ticketOn(budgetedInstance)]);
+  const working = coreOf([ticketOn(modelInstance)]);
   const early: CompletionCounts = new Map();
   creditCompletions(early, id(1), completeRec);
   assert.match(completionFindings(early, working).join(" "), /phase Pending/);
@@ -225,7 +211,7 @@ test("the accumulator rebuilds the ghost and can go red in every direction", () 
   );
 });
 
-test("the full-roster instances hold the bundle and the accumulator under the seeded walk", () => {
+test("the model's instances hold the bundle and the accumulator under the seeded walk", () => {
   let runs = 0;
   let steps = 0;
   const walked = new Set<string>();

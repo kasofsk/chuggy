@@ -6,14 +6,14 @@
  * judge a replayed golden, a randomized walk and a unit fixture without any of
  * them knowing which is which.
  *
- * THE ROSTERS AT THE BOTTOM ARE THE POINT. The model bundles these under
- * `allInvariants`, and `test/domain/bundle.test.ts` holds both rosters here
+ * THE ROSTER AT THE BOTTOM IS THE POINT. The model bundles these under
+ * `allInvariants`, and `test/domain/bundle.test.ts` holds the roster here
  * against the model's own text: an invariant added there and not here is a
- * failure rather than a silent gap. Neither roster is a list a reader is asked
- * to trust.
+ * failure rather than a silent gap. It is not a list a reader is asked to
+ * trust.
  */
 
-import { boundsOf, finalizerChoices, type Config } from "./config.ts";
+import { finalizerChoices, type Config } from "./config.ts";
 import { liveTickets, ticketAt } from "./core.ts";
 import {
   canFinishSet,
@@ -24,9 +24,6 @@ import {
 } from "./derived.ts";
 import type { Core, StepRecord, Task, Ticket } from "./generated/modelTypes.ts";
 import { firstTaskId, type TicketId } from "./ids.ts";
-import { sysMeasure } from "./measure.ts";
-import { phaseRank, rankSettled } from "./phase.ts";
-import { finalizationBudget, reworkBudget } from "./pricing.ts";
 import { evalStage, tasksInIdOrder, taskEquals } from "./task.ts";
 import { hasOpenHumanTask, modeledResumeExists } from "./ticket.ts";
 
@@ -106,28 +103,6 @@ export const deskConsistent: Invariant = (_config, view) =>
     const resumable = parked && modeledResumeExists(t);
     return parked === named && (t.resumeAt !== "NoResume") === resumable;
   });
-
-/** No ticket is walled on an account its pricing never granted. */
-export const finalizerWallNamed: Invariant = (_config, view) =>
-  everyLiveTicket(
-    view.post,
-    (t) =>
-      t.finalizationPricing !== "DeadlineOnly" ||
-      t.reason !== "FinalizationBudgetExhausted",
-  );
-
-/** Every account stays a resource: bounded below by zero, above by its grant. */
-export const accountsBounded: Invariant = (config, view) =>
-  everyLiveTicket(
-    view.post,
-    (t) =>
-      t.gasLeft >= 0 &&
-      t.gasLeft <= config.gas &&
-      t.reworkLeft >= 0 &&
-      t.reworkLeft <= reworkBudget(t.reworkPolicy) &&
-      t.finalizationLeft >= 0 &&
-      t.finalizationLeft <= finalizationBudget(t.finalizationPricing),
-  );
 
 /** Whether these ids are exactly the contiguous run of `count` starting at `start`. */
 function idsAreTheRunFrom(
@@ -288,54 +263,12 @@ export const noStructuralDeadlock: Invariant = (_config, view) => {
   );
 };
 
-/** The measure is a natural number, which is half of what makes it a measure. */
-export const measureNonNegative: Invariant = (config, view) =>
-  sysMeasure(boundsOf(config), view.post) >= 0;
-
 /**
- * Whether this step is one of the declared climbs. Current roster:
- *   init                  — every run's first step;
- *   settled               — the quiet fleet's stutter;
- *   ticket-resumed, RetryFree pipeline flavor
- *                         — the uncharged resume;
- *   ticket-released       — every run's releases;
- *   ticket-revoked, desk-only flat
- *                         — a revoke whose every transition leaves a settled rank.
+ * Every predicate the model's bundle names, in the order it names them.
+ * `test/domain/bundle.test.ts` holds this roster against `model/domain.qnt`
+ * itself rather than against a copy of it.
  */
-function stepDescendsExempt(view: StepView): boolean {
-  const label = view.rec.label;
-  if (label === "init" || label === "settled") return true;
-  if (label === "ticket-released") return true;
-  if (label === "ticket-resumed") {
-    return view.rec.transitions.some(
-      (t) =>
-        ["Evaluating", "Finalizing"].includes(t.to) &&
-        ticketAt(view.post, t.ticket as TicketId).resumePricing === "RetryFree",
-    );
-  }
-  if (label === "ticket-revoked") {
-    return view.rec.transitions.every((t) => phaseRank(t.from) === rankSettled);
-  }
-  return false;
-}
-
-/** Every step either descends the measure or is one of the declared climbs. */
-export const stepDescends: Invariant = (config, view) => {
-  if (stepDescendsExempt(view)) return true;
-  const bounds = boundsOf(config);
-  return sysMeasure(bounds, view.post) < sysMeasure(bounds, view.pre);
-};
-
-/** The two halves the model bundles under one name. */
-export const measureDescends: Invariant = (config, view) =>
-  measureNonNegative(config, view) && stepDescends(config, view);
-
-/**
- * Every leaf predicate, in the order the model's bundle reaches them. This is
- * what a reviewer counts; `invariantBundle` is what a run checks, and
- * `test/domain/bundle.test.ts` holds both against `model/domain.qnt` itself.
- */
-export const invariantLeaves: readonly NamedInvariant[] = [
+export const invariantBundle: readonly NamedInvariant[] = [
   { invariant: "completionExclusive", holds: completionExclusive },
   { invariant: "revokedNeverCompletes", holds: revokedNeverCompletes },
   {
@@ -346,8 +279,6 @@ export const invariantLeaves: readonly NamedInvariant[] = [
   { invariant: "finalizerWellFormed", holds: finalizerWellFormed },
   { invariant: "terminalsAbsorbing", holds: terminalsAbsorbing },
   { invariant: "deskConsistent", holds: deskConsistent },
-  { invariant: "finalizerWallNamed", holds: finalizerWallNamed },
-  { invariant: "accountsBounded", holds: accountsBounded },
   { invariant: "tasksWellFormed", holds: tasksWellFormed },
   { invariant: "recordWellFormed", holds: recordWellFormed },
   { invariant: "recordMonotone", holds: recordMonotone },
@@ -358,29 +289,14 @@ export const invariantLeaves: readonly NamedInvariant[] = [
   { invariant: "stuckSubsetCovered", holds: stuckSubsetCovered },
   { invariant: "cascadeSafety", holds: cascadeSafety },
   { invariant: "noStructuralDeadlock", holds: noStructuralDeadlock },
-  { invariant: "measureNonNegative", holds: measureNonNegative },
-  { invariant: "stepDescends", holds: stepDescends },
 ];
 
-/** The halves the model bundles under one name, which is the only place the two rosters differ. */
-const measureHalves = ["measureNonNegative", "stepDescends"];
-
-/**
- * The bundle a run checks, derived from the leaves rather than listed beside
- * them — a second list would be a second thing to keep current, and the model's
- * own relationship between the two is exactly this substitution.
- */
-export const invariantBundle: readonly NamedInvariant[] = [
-  ...invariantLeaves.filter((m) => !measureHalves.includes(m.invariant)),
-  { invariant: "measureDescends", holds: measureDescends },
-];
-
-/** The leaves that came back false, named. An empty list is the green answer. */
+/** The members that came back false, named. An empty list is the green answer. */
 export function failedInvariants(
   config: Config,
   view: StepView,
 ): readonly string[] {
-  return invariantLeaves
+  return invariantBundle
     .filter((member) => !member.holds(config, view))
     .map((member) => member.invariant);
 }

@@ -13,7 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { failedInvariants } from "../../src/domain/invariants.ts";
-import { budgetedInstance } from "../domain/configs.ts";
+import { modelInstance } from "../domain/configs.ts";
 import {
   coreOf,
   depsOf,
@@ -24,7 +24,7 @@ import {
 } from "../domain/fixtures.ts";
 import { bundleHolds, evaluateBundle } from "./evaluate.ts";
 
-const config = budgetedInstance;
+const config = modelInstance;
 const fleet = healthyFleet(config);
 const healthy = initialView(fleetBut(fleet, 0, {}));
 
@@ -42,17 +42,15 @@ test("a healthy state answers every leaf, and answers each of them yes", () => {
 
 test("where nothing throws, the guarded evaluation is the bundle itself", () => {
   const broke = initialView(fleetBut(fleet, 0, { artifact: "NoArtifact" }));
-  /** An initial view exempts the descent leaf by label, so one view carries a step label instead. */
-  const stepped = { ...healthy, rec: { ...healthy.rec, label: "dispatch" } };
-  for (const view of [healthy, broke, stepped]) {
+  assert.ok(
+    failedInvariants(config, broke).length > 0,
+    "the broken view answers every leaf yes, so the two evaluations agree vacuously",
+  );
+  for (const view of [healthy, broke]) {
     assert.deepEqual(evaluateBundle(config, view).failed, [
       ...failedInvariants(config, view),
     ]);
   }
-  assert.ok(
-    evaluateBundle(config, stepped).failed.includes("stepDescends"),
-    "the leaf that computes rather than exempting was not reached",
-  );
 });
 
 test("a malformed state names the leaf that could not be asked", () => {

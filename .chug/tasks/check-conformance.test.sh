@@ -2,8 +2,8 @@
 # Shell test for check-conformance.sh.
 #
 # WHAT IT HAS TO PROVE IS THAT THE GATE BITES: each case hands it a corpus
-# carrying the defect it names — a record that is not the model's, a row
-# replayed under another instance's constants — and requires a finding.
+# carrying the defect it names — a record that is not the model's, an initial
+# state the bundle refuses — and requires a finding.
 #
 # AND THAT IT ONLY READS. The case that settles the gate's central claim makes
 # every file of the fixture corpus unwritable and requires the same clean
@@ -29,7 +29,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 trap 'chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT
 
 OUT="$WORK/.out"
-GOLDEN="budgeted-work-failed"
+GOLDEN="work-failed"
 
 run_gate() { # <golden-dir>
 	set +e
@@ -38,7 +38,7 @@ run_gate() { # <golden-dir>
 	set -e
 }
 
-fixture() { # <dir> [<instance>]
+fixture() { # <dir>
 	mkdir -p "$1"
 	cp "$ROOT/test/golden/$GOLDEN.itf.json" "$1/$GOLDEN.itf.json"
 	node -e '
@@ -46,9 +46,8 @@ const fs = require("fs")
 const rows = JSON.parse(fs.readFileSync(process.argv[1], "utf8")).goldens
 const row = rows.find((r) => r.name === process.argv[3])
 if (!row) throw new Error("no such row: " + process.argv[3])
-if (process.argv[4]) row.instance = process.argv[4]
 fs.writeFileSync(process.argv[2], JSON.stringify({ goldens: [row] }, null, 2) + "\n")
-' "$ROOT/test/golden/manifest.json" "$1/manifest.json" "$GOLDEN" "${2:-}"
+' "$ROOT/test/golden/manifest.json" "$1/manifest.json" "$GOLDEN"
 }
 
 # What the fixture's manifest accounts for, which is what the gate's clean line
@@ -121,13 +120,22 @@ grep -qF "$GOLDEN state 1" "$OUT" || {
 
 # --- A state the bundle refuses ----------------------------------------------
 #
-# No edit to a trace alone can make a leaf go red — the replay diverges first,
-# before the invariants have anything to disagree with. What the corpus does
-# not fix is the constants the row is replayed under.
+# The initial state is the one state no decider produced, so it is the one the
+# gate asks the bundle about as the trace wrote it. A ticket outside the
+# instance's id bound put there is a leaf red with no decider to blame.
 
-fixture "$WORK/misfiled" mc_chuggy_retryfree
-run_gate "$WORK/misfiled"
-check "a row replayed under another instance's constants is a finding" 1 "$RC" "came back false"
+fixture "$WORK/refused"
+node -e '
+const fs = require("fs")
+const path = process.argv[1]
+const doc = JSON.parse(fs.readFileSync(path, "utf8"))
+const tickets = doc.vars.find((v) => v.endsWith("::tickets"))
+const [[, ticket]] = doc.states[1][tickets]["#map"]
+doc.states[0][tickets] = { "#map": [[{ "#bigint": "99" }, ticket]] }
+fs.writeFileSync(path, JSON.stringify(doc, null, 2) + "\n")
+' "$WORK/refused/$GOLDEN.itf.json"
+run_gate "$WORK/refused"
+check "an initial state the bundle refuses is a finding" 1 "$RC" "came back false"
 grep -qF "ticketIdsWellFormed" "$OUT" || {
 	echo "FAIL - the finding did not name the leaf that came back false"
 	fail=$((fail + 1))

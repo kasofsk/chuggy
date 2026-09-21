@@ -23,17 +23,14 @@ import assert from "node:assert/strict";
 import { recordEquals, ticketEquals } from "../../src/actor/equality.ts";
 import { initRecord } from "../../src/domain/core.ts";
 import { freshTicket } from "../../src/domain/deciders.ts";
-import { budgeted, reworkBudgetOf } from "../../src/domain/pricing.ts";
 import { id, workOutstanding, workTask } from "../domain/fixtures.ts";
-import { flatProgram, refinementInstance } from "./harness.ts";
+import { flatProgram } from "./harness.ts";
 import type {
   Stage,
   StepRecord,
   Ticket,
   Transition,
 } from "../../src/domain/generated/modelTypes.ts";
-
-const config = refinementInstance;
 
 /** One mutation per declared field of a shape; a roster short a field does not compile. */
 type FieldMutants<Shape> = Record<keyof Shape, (value: Shape) => Shape>;
@@ -59,11 +56,7 @@ const baseTicket: Ticket = freshTicket({
   deps: new Set<number>(),
   program: flatProgram,
   workFanout: 1,
-  reworkPolicy: reworkBudgetOf(1),
-  finalizationPricing: budgeted(1),
-  resumePricing: "RetryCharged",
   finalizer: "ManagedFinalizer",
-  gas: config.gas,
 });
 
 const ticketMutants: FieldMutants<Ticket> = {
@@ -75,25 +68,10 @@ const ticketMutants: FieldMutants<Ticket> = {
     artifact: { type: "ProducedArtifact", value: 1 },
   }),
   workFanout: (t) => ({ ...t, workFanout: t.workFanout + 1 }),
-  reworkPolicy: (t) => ({
-    ...t,
-    reworkPolicy: reworkBudgetOf(t.reworkPolicy.value + 1),
-  }),
-  finalizationPricing: (t) => ({
-    ...t,
-    finalizationPricing: "DeadlineOnly",
-  }),
-  resumePricing: (t) => ({ ...t, resumePricing: "RetryFree" }),
   program: (t) => ({ ...t, program: [] }),
   tasks: (t) => ({ ...t, tasks: new Set([workOutstanding(1)]) }),
   record: (t) => ({ ...t, record: [workTask(1, "Passed")] }),
   spawned: (t) => ({ ...t, spawned: t.spawned + 1 }),
-  reworkLeft: (t) => ({ ...t, reworkLeft: t.reworkLeft + 1 }),
-  finalizationLeft: (t) => ({
-    ...t,
-    finalizationLeft: t.finalizationLeft + 1,
-  }),
-  gasLeft: (t) => ({ ...t, gasLeft: t.gasLeft + 1 }),
   resumeAt: (t) => ({ ...t, resumeAt: "ResumeWorking" }),
   reason: (t) => ({ ...t, reason: "WorkFailed" }),
   completions: (t) => ({ ...t, completions: t.completions + 1 }),
@@ -177,16 +155,5 @@ test("each variant arm's payload is compared, not only its tag", () => {
   assert.ok(!ticketEquals(marked(1), marked(2)));
   assert.ok(
     !ticketEquals(marked(1), { ...baseTicket, artifact: "NoArtifact" }),
-  );
-  const priced = (budget: number): Ticket => ({
-    ...baseTicket,
-    finalizationPricing: budgeted(budget),
-  });
-  assert.ok(!ticketEquals(priced(1), priced(2)));
-  assert.ok(
-    !ticketEquals(priced(1), {
-      ...baseTicket,
-      finalizationPricing: "DeadlineOnly",
-    }),
   );
 });

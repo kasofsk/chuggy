@@ -32,24 +32,18 @@ import {
   effectFromLabel,
   effectLabel,
 } from "../../src/domain/effect.ts";
-import {
-  phaseRank,
-  rankCeiling,
-  rankFinalizing,
-  rankPending,
-  rankSettled,
-  isSettled,
-} from "../../src/domain/phase.ts";
+import { isSettled } from "../../src/domain/phase.ts";
 import { combine } from "../../src/domain/program.ts";
 import {
   spawnOn,
   retireLive,
   hasOpenHumanTask,
 } from "../../src/domain/ticket.ts";
-import type {
-  Phase,
-  Task,
-  Ticket,
+import {
+  phaseTags,
+  type Phase,
+  type Task,
+  type Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
 
 const bare: Ticket = {
@@ -58,16 +52,10 @@ const bare: Ticket = {
   finalizer: "NoFinalizer",
   artifact: "NoArtifact",
   workFanout: 1,
-  reworkPolicy: { type: "BudgetedRework", value: 0 },
-  finalizationPricing: "DeadlineOnly",
-  resumePricing: "RetryCharged",
   program: [],
   tasks: new Set(),
   record: [],
   spawned: 0,
-  reworkLeft: 0,
-  finalizationLeft: 0,
-  gasLeft: 0,
   resumeAt: "NoResume",
   reason: "NoReason",
   completions: 0,
@@ -170,16 +158,14 @@ test("a desk task is open exactly while the ticket is parked", () => {
   }
 });
 
-test("the rank ladder is strictly ascending and the settled tier shares its floor", () => {
-  assert.ok(rankSettled < rankFinalizing);
-  assert.equal(rankCeiling, rankPending);
-  assert.equal(phaseRank("Done"), rankSettled);
-  assert.equal(phaseRank("Escalated"), rankSettled);
-  assert.equal(phaseRank("Revoked"), rankSettled);
-  assert.ok(
-    isSettled("Done") && isSettled("Escalated") && isSettled("Revoked"),
-  );
-  assert.ok(!isSettled("Finalizing"));
+test("the settled tier is the phases no work follows from", () => {
+  for (const phase of phaseTags) {
+    assert.equal(
+      isSettled(phase),
+      phase === "Done" || phase === "Escalated" || phase === "Revoked",
+      phase,
+    );
+  }
 });
 
 test("every effect renders to a label and reads back to itself", () => {

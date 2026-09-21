@@ -25,8 +25,8 @@
  * nobody recorded.
  *
  * `walkInit` IS THE FIRST INIT OUTSIDE THE MODEL, and it refuses what the
- * model's `init` refuses: a gasless instantiation has no initial state at all,
- * and the other well-formedness conjuncts hold or there is nothing to walk.
+ * model's `init` refuses: every well-formedness conjunct holds or there is
+ * nothing to walk.
  */
 
 import type { Config } from "../../src/domain/config.ts";
@@ -37,7 +37,6 @@ import type {
   StepRecord,
 } from "../../src/domain/generated/modelTypes.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
-import { finalizationBudget, reworkBudget } from "../../src/domain/pricing.ts";
 import { replayStep, type Picks } from "../conformance/dispatch.ts";
 import { bundleHolds, evaluateBundle } from "../conformance/evaluate.ts";
 import { initialView } from "../domain/fixtures.ts";
@@ -87,29 +86,19 @@ export interface WalkOutcome {
 }
 
 /**
- * The initial state, refusing every instantiation the model's `init` refuses.
- * The gas conjunct is the required-account rule: a gasless graph is invalid,
- * not merely unmetered, and there is no state to walk from.
+ * The initial state, refusing every instantiation the model's `init` refuses:
+ * each conjunct is a validity condition on the instance, so an instance that
+ * admits no task set, no ticket or no well-formed program has no initial state
+ * rather than a degenerate one.
  */
 export function walkInit(config: Config): Core {
   const refusals: string[] = [];
-  if (config.gas < 1) {
-    refusals.push(
-      "a gasless graph is invalid: gas >= 1 or there is no initial state",
-    );
-  }
   if (config.nTasks < 1) refusals.push("a phase carries a real task set");
   if (config.nTickets < 1) {
     refusals.push("the release bound must admit at least one ticket");
   }
   if (config.maxStages < 1) {
     refusals.push("at least one authorable program must exist");
-  }
-  if (reworkBudget(config.reworkPolicy) < 0) {
-    refusals.push("the rework account cannot open overdrawn");
-  }
-  if (finalizationBudget(config.finalizationPricing) < 0) {
-    refusals.push("the finalization account cannot open overdrawn");
   }
   if (refusals.length > 0) {
     throw new Error(`walk: no initial state: ${refusals.join("; ")}`);

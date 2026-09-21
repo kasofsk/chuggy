@@ -23,23 +23,18 @@ import {
   allInvariants,
   failedInvariants,
   invariantBundle,
-  invariantLeaves,
-  measureDescends,
-  measureNonNegative,
-  stepDescends,
 } from "../../src/domain/invariants.ts";
 import { witnesses } from "../../src/domain/witnesses.ts";
-import { budgetedInstance } from "./configs.ts";
-import { declaredBundle, declaredLeaves } from "./declared.ts";
+import { modelInstance } from "./configs.ts";
+import { declaredBundle } from "./declared.ts";
 import { fleetBut, healthyFleet, initialView } from "./fixtures.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
-const config = budgetedInstance;
+const config = modelInstance;
 const fleet = healthyFleet(config);
 const healthy = initialView(fleetBut(fleet, 0, {}));
 
 const bundleNames = invariantBundle.map((member) => member.invariant);
-const leafNames = invariantLeaves.map((member) => member.invariant);
 const sorted = (names: readonly string[]): readonly string[] =>
   [...names].sort();
 
@@ -56,19 +51,6 @@ test("the bundle's membership is the model's, read out of the model", () => {
   );
 });
 
-test("the leaf roster is the model's bundle with every named conjunction expanded", () => {
-  assert.deepEqual(
-    sorted(leafNames),
-    sorted(declaredLeaves(ROOT)),
-    "the implemented leaves and the model's expanded bundle name different things",
-  );
-  assert.deepEqual(leafNames, [...declaredLeaves(ROOT)]);
-  assert.ok(
-    leafNames.length > bundleNames.length,
-    "a conjunct of the model's bundle is itself a conjunction, so the leaves outnumber it",
-  );
-});
-
 test("the reader is reading the model rather than agreeing with itself", () => {
   const declared = declaredBundle(ROOT);
   assert.ok(
@@ -76,23 +58,15 @@ test("the reader is reading the model rather than agreeing with itself", () => {
     "the bundle roster did not parse",
   );
   assert.ok(
-    declared.includes("measureDescends"),
-    "the conjunct that is itself a bundle did not parse",
-  );
-  assert.ok(
-    !declared.includes("measureNonNegative"),
-    "the model's bundle names the conjunction, not its halves",
-  );
-  assert.ok(
-    declaredLeaves(ROOT).includes("measureNonNegative"),
-    "the expansion did not reach the halves",
+    declared.includes("noStructuralDeadlock"),
+    "the bundle roster stopped short of its last member",
   );
 });
 
-test("no anti-vacuity witness is in either roster", () => {
+test("no anti-vacuity witness is in the roster", () => {
   for (const { witness } of witnesses) {
     assert.ok(
-      !bundleNames.includes(witness) && !leafNames.includes(witness),
+      !bundleNames.includes(witness),
       `${witness} is a claim the model expects violated and has been folded into the bundle`,
     );
     assert.ok(
@@ -102,17 +76,13 @@ test("no anti-vacuity witness is in either roster", () => {
   }
 });
 
-test("the two rosters agree, because the conjunction is its halves", () => {
+test("the bundle's verdict is exactly an empty list of failures", () => {
   const views = [
     healthy,
-    initialView(fleetBut(fleet, 1, { gasLeft: -1 })),
+    initialView(fleetBut(fleet, 1, { spawned: 99 })),
     { ...healthy, rec: { ...healthy.rec, label: "dispatch" } },
   ];
   for (const view of views) {
-    assert.equal(
-      measureDescends(config, view),
-      measureNonNegative(config, view) && stepDescends(config, view),
-    );
     assert.equal(
       allInvariants(config, view),
       failedInvariants(config, view).length === 0,
@@ -120,7 +90,7 @@ test("the two rosters agree, because the conjunction is its halves", () => {
   }
 });
 
-test("the bundle is green on a fleet in mid-flight, so no red below is a leaf that always fails", () => {
+test("the bundle is green on a fleet in mid-flight, so no red below is a member that always fails", () => {
   assert.deepEqual(failedInvariants(config, healthy), []);
   assert.ok(allInvariants(config, healthy));
 });

@@ -13,11 +13,8 @@
  */
 
 import {
-  finalizationPricingChoices,
   finalizerChoices,
   isValidProgram,
-  resumePricingChoices,
-  reworkPolicyChoices,
   ticketIdUniverse,
   workFanoutChoices,
   type Config,
@@ -27,17 +24,11 @@ import type {
   ArtifactMark,
   Core,
   FinalizationOutcome,
-  FinalizationPricing,
   Finalizer,
   Reason,
-  Resume,
-  RetryPricing,
-  ReworkPolicy,
   Stage,
-  Ticket,
 } from "./generated/modelTypes.ts";
 import type { TicketId } from "./ids.ts";
-import { reworkBudget } from "./pricing.ts";
 import { outstandingCount } from "./task.ts";
 
 /** Anything not settled and not past the point of no return. */
@@ -47,23 +38,13 @@ export function revocableIn(core: Core, id: TicketId): boolean {
 }
 
 /**
- * What a resume costs. Re-entering Working always meters, because that is the
- * account that makes the graph valid at all; every other resume is priced by
- * the ticket's own authored policy.
+ * A parked ticket with a modeled resume. The one wall without is a revoked
+ * dependency, which stamps no resume point because deps are immutable: nothing
+ * the desk can do makes the predecessor live again.
  */
-export function resumeCharge(ticket: Ticket, at: Resume): number {
-  if (at === "ResumeWorking" || at === "ResumeReworking") return 1;
-  return ticket.resumePricing === "RetryCharged" ? 1 : 0;
-}
-
-/** A parked ticket with a modeled resume, and the gas to pay for it. */
 export function retryableIn(core: Core, id: TicketId): boolean {
   const ticket = ticketAt(core, id);
-  return (
-    ticket.phase === "Escalated" &&
-    ticket.resumeAt !== "NoResume" &&
-    resumeCharge(ticket, ticket.resumeAt) <= ticket.gasLeft
-  );
+  return ticket.phase === "Escalated" && ticket.resumeAt !== "NoResume";
 }
 
 /** What this ticket waits on before it may run — the single definition every reader shares. */
@@ -172,15 +153,6 @@ export function isBlockedIn(core: Core, id: TicketId): boolean {
   return ticketAt(core, id).phase === "Pending" && !depsDoneIn(core, id);
 }
 
-/**
- * May the ticket writer dispatch this ticket? Ready, with gas to charge, since entry
- * to Working always meters — a Pending ticket has never spent gas, so the
- * second conjunct is implied and is stated so the enablement is one predicate.
- */
-export function dispatchableIn(core: Core, id: TicketId): boolean {
-  return isReadyIn(core, id) && ticketAt(core, id).gasLeft > 0;
-}
-
 /** The phase that holds the finalizer obligation, and so may take its result. */
 export function finalizableIn(core: Core, id: TicketId): boolean {
   return core.tickets.has(id) && ticketAt(core, id).phase === "Finalizing";
@@ -207,9 +179,8 @@ export const finalizationOutcomes: readonly FinalizationOutcome[] = [
 
 /**
  * The reasons infrastructure may refuse to run an intact contract. They are a
- * closed set because a blocked execution is not failed work: it consumes no
- * evaluation or rework budget, so anything that could arrive here has to be
- * something the desk can act on.
+ * closed set because a blocked execution is not failed work: anything that
+ * could arrive here has to be something the desk can act on.
  */
 export const executionBlockedReasons: readonly Reason[] = [
   "ExecutionPolicyDenied",
@@ -236,33 +207,14 @@ export function releasableAuthoring(
   authoring: {
     readonly prog: readonly Stage[];
     readonly workFanout: number;
-    readonly reworkPolicy: ReworkPolicy;
-    readonly finalizationPricing: FinalizationPricing;
-    readonly resumePricing: RetryPricing;
     readonly finalizer: Finalizer;
   },
 ): boolean {
   return (
     isValidProgram(config, authoring.prog) &&
     workFanoutChoices(config).includes(authoring.workFanout) &&
-    reworkPolicyChoices(config).some(
-      (p) => reworkBudget(p) === reworkBudget(authoring.reworkPolicy),
-    ) &&
-    finalizationPricingChoices(config).some((p) =>
-      pricingEquals(p, authoring.finalizationPricing),
-    ) &&
-    resumePricingChoices.includes(authoring.resumePricing) &&
     finalizerChoices.includes(authoring.finalizer)
   );
-}
-
-/** Structural equality on a pricing, since one branch carries a budget and the other does not. */
-function pricingEquals(
-  left: FinalizationPricing,
-  right: FinalizationPricing,
-): boolean {
-  if (left === "DeadlineOnly") return right === "DeadlineOnly";
-  return right !== "DeadlineOnly" && right.value === left.value;
 }
 
 /** The ids a release may still claim, which is what makes a fleet quiet or not. */

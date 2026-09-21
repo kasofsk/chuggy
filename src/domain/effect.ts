@@ -3,7 +3,7 @@
  * of constructors rather than the strings the model emits.
  *
  * THEY ARE NULLARY, AND THAT IS THE MODEL'S DECISION RATHER THAN A SHORTCUT.
- * `model/measure.qnt` says the project cannot ride the effect strings because
+ * `model/ticket.qnt` says the project cannot ride the effect strings because
  * there are no dynamic strings at this grain, which is why the step record
  * carries the attribution structurally instead. Giving these constructors
  * payloads would be a change to the domain vocabulary and to `StepRecord`, so

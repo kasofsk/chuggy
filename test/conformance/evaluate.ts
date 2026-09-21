@@ -19,24 +19,24 @@
  *
  * A REFUSAL IS A FINDING. It says the state was malformed enough that a
  * predicate could not be applied to it, which is never a state this machine
- * reaches, and reporting it beside the leaves that answered false is what makes
+ * reaches, and reporting it beside the members that answered false is what makes
  * the pair readable: one names the shape, the other names what fell over on it.
  */
 
 import type { Config } from "../../src/domain/config.ts";
-import { invariantLeaves, type StepView } from "../../src/domain/invariants.ts";
+import { invariantBundle, type StepView } from "../../src/domain/invariants.ts";
 
-/** One state's answers: the leaves that came back false, and the leaves that could not be asked. */
+/** One state's answers: the members that came back false, and those that could not be asked. */
 export interface BundleVerdict {
   readonly failed: readonly string[];
   readonly refused: readonly string[];
 }
 
-/** Every leaf of `invariantLeaves`, in the model's order, each asked on its own. */
+/** Every member of `invariantBundle`, in the model's order, each asked on its own. */
 export function evaluateBundle(config: Config, view: StepView): BundleVerdict {
   const failed: string[] = [];
   const refused: string[] = [];
-  for (const member of invariantLeaves) {
+  for (const member of invariantBundle) {
     try {
       if (!member.holds(config, view)) failed.push(member.invariant);
     } catch (error: unknown) {
