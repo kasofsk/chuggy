@@ -41,7 +41,6 @@ import type { TicketId } from "../../src/domain/ids.ts";
 import {
   decodeEvaluationFailureDisposition,
   decodeFinalizationOutcome,
-  decodeReason,
   decodeStageDefinition,
   decodeVerdict,
 } from "../../src/generated/model-api.ts";
@@ -81,7 +80,6 @@ export interface Picks {
   readonly taskId: ItfValue | undefined;
   readonly verdict: ItfValue | undefined;
   readonly outcome: ItfValue | undefined;
-  readonly reason: ItfValue | undefined;
 }
 
 /** A drawn set of ticket ids, which no single model type names. */
@@ -164,7 +162,7 @@ export function replayStep(
       return decideExecutionBlocked(
         pre,
         j(),
-        decodeReason(itfToWire(need(picks.reason, "why"))),
+        "WorkExecutionUnavailableEscalated",
       );
     case "resumeTicket":
       return decideResumeTicket(pre, j());

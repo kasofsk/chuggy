@@ -47,7 +47,6 @@ const noPicks: Picks = {
   taskId: undefined,
   verdict: undefined,
   outcome: undefined,
-  reason: undefined,
 };
 
 /** The label the model's own `settle` action writes, read where it is written. */

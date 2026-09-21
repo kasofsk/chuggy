@@ -226,7 +226,6 @@ function picksOf(state: ItfState): Picks {
     taskId: some("tid"),
     verdict: some("v"),
     outcome: some("out"),
-    reason: some("why"),
   };
 }
 
