@@ -128,7 +128,7 @@ export const allLifecycles = [
 
 /**
  * A project's operational availability, which is not ticket state and never
- * appears in `Core`. Only `Active` admits a project ticket writer.
+ * appears in `TicketGraph`. Only `Active` admits a project ticket writer.
  */
 export type Lifecycle = (typeof allLifecycles)[number];
 

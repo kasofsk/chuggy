@@ -19,19 +19,22 @@
  * the day a ticket map was rebuilt from a different source.
  */
 
-import { liveTickets, ticketAt } from "./core.ts";
-import type { Core } from "./generated/modelTypes.ts";
+import { liveTickets, ticketAt } from "./ticketGraph.ts";
+import type { TicketGraph } from "./generated/modelTypes.ts";
 import type { TicketId } from "./ids.ts";
 import { hasOpenHumanTask } from "./ticket.ts";
 
 /** The walk's edge relation: the dependency edges, and only those. */
-export function visEdges(core: Core, id: TicketId): readonly TicketId[] {
-  return [...ticketAt(core, id).deps].sort((a, b) => a - b) as TicketId[];
+export function visEdges(
+  graph: TicketGraph,
+  id: TicketId,
+): readonly TicketId[] {
+  return [...ticketAt(graph, id).deps].sort((a, b) => a - b) as TicketId[];
 }
 
 /** Whether a ticket belongs to the set being swept, given what the pass before it admitted. */
 export type SweepStep = (
-  core: Core,
+  graph: TicketGraph,
   id: TicketId,
   admitted: ReadonlySet<TicketId>,
 ) => boolean;
@@ -41,12 +44,15 @@ export type SweepStep = (
  * pass reading only what the pass before it admitted. The repeat count is the
  * bound, and the bound is the construction.
  */
-export function sweep(core: Core, step: SweepStep): ReadonlySet<TicketId> {
-  const ids = liveTickets(core);
+export function sweep(
+  graph: TicketGraph,
+  step: SweepStep,
+): ReadonlySet<TicketId> {
+  const ids = liveTickets(graph);
   let admitted: ReadonlySet<TicketId> = new Set<TicketId>();
   for (let pass = 0; pass < ids.length; pass++) {
     const next = new Set<TicketId>();
-    for (const id of ids) if (step(core, id, admitted)) next.add(id);
+    for (const id of ids) if (step(graph, id, admitted)) next.add(id);
     admitted = next;
   }
   return admitted;
@@ -57,8 +63,8 @@ export function sweep(core: Core, step: SweepStep): ReadonlySet<TicketId> {
  * containing one. A healthy-Blocked ticket is deliberately not stuck — it
  * sits flat while its deps run, and progresses vicariously.
  */
-export function stuckSet(core: Core): ReadonlySet<TicketId> {
-  return sweep(core, (c, id, stuck) => {
+export function stuckSet(graph: TicketGraph): ReadonlySet<TicketId> {
+  return sweep(graph, (c, id, stuck) => {
     const phase = ticketAt(c, id).phase;
     return (
       phase === "Escalated" ||
@@ -72,9 +78,9 @@ export function stuckSet(core: Core): ReadonlySet<TicketId> {
  * propagates through every phase, over the edge relation `stuckSet` walks, so
  * the containment between them is structural per pass.
  */
-export function coveredSet(core: Core): ReadonlySet<TicketId> {
+export function coveredSet(graph: TicketGraph): ReadonlySet<TicketId> {
   return sweep(
-    core,
+    graph,
     (c, id, covered) =>
       hasOpenHumanTask(ticketAt(c, id)) ||
       visEdges(c, id).some((d) => covered.has(d)),

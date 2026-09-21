@@ -9,7 +9,7 @@ import {
   taskDoneEvent,
   ticketAt,
 } from "../../src/actor/decisionEvent.ts";
-import { actorInit, journalStep, memoryCore } from "../../src/actor/state.ts";
+import { actorInit, journalStep, memoryGraph } from "../../src/actor/state.ts";
 import {
   storedAtCurrentSemantics,
   type StoredEntry,
@@ -103,7 +103,7 @@ function releasedMemory(head = 1): ProjectMemory {
       recoveryEpoch: asRecoveryEpoch("epoch"),
       head,
     },
-    core: memoryCore(released),
+    graph: memoryGraph(released),
     ticketVersions: new Map([[id(1), 1]]),
     dispatchContracts: contracts,
   };
@@ -140,7 +140,7 @@ test("a writer rebuilds a history from the machine that decided it, not from its
       head: stored.length,
     },
   );
-  assert.equal(ticketAt(memory.core, id(1)).phase, "Evaluating");
+  assert.equal(ticketAt(memory.graph, id(1)).phase, "Evaluation");
 });
 
 function operationInput(command: TicketCommand): DecisionInput {
@@ -302,7 +302,7 @@ test("proposal validity ignores an unrelated journal-head advance", async () => 
   const memory = releasedMemory(40);
   const candidates = deriveDispatchCandidates(
     refinementInstance,
-    memory.core,
+    memory.graph,
     memory.ticketVersions,
     contracts,
   );
@@ -385,7 +385,7 @@ function currentDigestOf(memory: ProjectMemory): string {
   return dispatchViewDigest(
     deriveDispatchCandidates(
       refinementInstance,
-      memory.core,
+      memory.graph,
       memory.ticketVersions,
       memory.dispatchContracts ?? new Map(),
     ),
@@ -446,13 +446,13 @@ function twoReleasedMemory(): ProjectMemory {
   const ticketVersions = new Map<number, number>();
   let state = actorInit();
   for (const [index, ticket] of tickets.entries()) {
-    const before = memoryCore(state);
+    const before = memoryGraph(state);
     state = journalStep(
       refinementInstance,
       state,
       releaseTicketEvent(ticket, plainAuthoring),
     );
-    for (const row of projectionChanges(before, memoryCore(state)))
+    for (const row of projectionChanges(before, memoryGraph(state)))
       ticketVersions.set(row.ticket, index + 1);
   }
   return {
@@ -463,7 +463,7 @@ function twoReleasedMemory(): ProjectMemory {
       recoveryEpoch: asRecoveryEpoch("epoch"),
       head: tickets.length,
     },
-    core: memoryCore(state),
+    graph: memoryGraph(state),
     ticketVersions,
     dispatchContracts: twoContracts,
   };
@@ -544,8 +544,8 @@ test("both dispatches of one decision land, though the first changed the view", 
   );
   assert.equal(second.decided.decided, "Committed");
   assert.deepEqual(
-    [id(1), id(2)].map((ticket) => ticketAt(second.memory.core, ticket).phase),
-    ["Working", "Working"],
+    [id(1), id(2)].map((ticket) => ticketAt(second.memory.graph, ticket).phase),
+    ["Work", "Work"],
   );
 });
 
@@ -635,12 +635,12 @@ function workPassedMemory(): ProjectMemory {
     state,
     taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
   );
-  return { ...releasedMemory(), core: memoryCore(state) };
+  return { ...releasedMemory(), graph: memoryGraph(state) };
 }
 
 /** The reduce that turns passed work into the evaluation spawn under test. */
 function workReduceInput(memory: ProjectMemory): DecisionInput {
-  const ticket = ticketAt(memory.core, id(1));
+  const ticket = ticketAt(memory.graph, id(1));
   return {
     partition,
     ordinal: 1,
@@ -719,17 +719,21 @@ function unreadableSources(
   };
 }
 
-/** Every durable evidence, beside the refusal it earns and the wall it parks on. */
+/**
+ * Every durable evidence, beside the refusal it earns its client. The wall it
+ * parks on is not a column any more — the model has one reason for a work set
+ * it could not run — and a continuation, having no client to earn a refusal,
+ * parks with that reason and nothing beside it.
+ */
 const durableEvidences = [
-  ["RefUnreadable", "ExecutionSourceUnreadable", "TicketConfigIncompatible"],
-  ["ObjectMissing", "ExecutionSourceUnreadable", "TicketConfigIncompatible"],
-  [
-    "IntegrationFailed",
-    "ExecutionSourceUnreadable",
-    "TicketConfigIncompatible",
-  ],
-  ["RemoteDenied", "ExecutionSourceDenied", "ExecutionPolicyDenied"],
+  ["RefUnreadable", "ExecutionSourceUnreadable"],
+  ["ObjectMissing", "ExecutionSourceUnreadable"],
+  ["IntegrationFailed", "ExecutionSourceUnreadable"],
+  ["RemoteDenied", "ExecutionSourceDenied"],
 ] as const;
+
+/** The one wall a source no dispatch can read parks its ticket on. */
+const unreadableWall = "WorkExecutionUnavailableEscalated";
 
 /** Every evidence a later observation may find readable. */
 const transientEvidences = ["RemoteUnreachable", "PromotionTimedOut"] as const;
@@ -763,7 +767,7 @@ test("a source that may read later defers the input rather than deciding it", as
 });
 
 test("a continuation whose source cannot be read parks its ticket on the desk", async () => {
-  for (const [evidence, , reason] of durableEvidences) {
+  for (const [evidence] of durableEvidences) {
     const memory = workPassedMemory();
     const { offered } = await decidedWith(
       memory,
@@ -774,7 +778,7 @@ test("a continuation whose source cannot be read parks its ticket on the desk", 
     if (offered?.outcome.outcome !== "Journaled") continue;
     assert.deepEqual(offered.outcome.entry.event, {
       type: "ExecutionBlocked",
-      value: { ticket: id(1), reason },
+      value: { ticket: id(1), reason: unreadableWall },
     });
     assert.deepEqual(
       offered.outcome.projection.map((row) => [
@@ -782,7 +786,7 @@ test("a continuation whose source cannot be read parks its ticket on the desk", 
         row.phase,
         row.reason,
       ]),
-      [[id(1), "Escalated", reason]],
+      [[id(1), "Escalated", unreadableWall]],
     );
     assert.deepEqual(
       offered.outcome.materialization.actions.map((action) => [

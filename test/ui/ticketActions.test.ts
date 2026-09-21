@@ -18,7 +18,10 @@ import test from "node:test";
 import { phaseRoster } from "../../src/contract/rosters.ts";
 import type { TicketPhase } from "../../src/contract/rosters.ts";
 import { retryableIn, revocableIn } from "../../src/domain/enablement.ts";
-import type { Core, Ticket } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  Ticket,
+  TicketGraph,
+} from "../../src/domain/generated/modelTypes.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   actionsFor,
@@ -38,14 +41,14 @@ function ticketIn(phase: TicketPhase, over: Partial<Ticket> = {}): Ticket {
     tasks: new Set(),
     record: [],
     spawned: 0,
-    resumeAt: "ResumeWorking",
+    resumeAt: "ResumeWork",
     reason: "NoReason",
     completions: 0,
     ...over,
   };
 }
 
-function coreWith(ticket: Ticket): Core {
+function graphWith(ticket: Ticket): TicketGraph {
   return { tickets: new Map([[id, ticket]]) };
 }
 
@@ -53,7 +56,7 @@ test("the console's revocable phases are the model's, phase by phase", () => {
   for (const phase of phaseRoster)
     assert.equal(
       ticketRevocable(phase),
-      revocableIn(coreWith(ticketIn(phase)), id),
+      revocableIn(graphWith(ticketIn(phase)), id),
       `revocable disagreed at ${phase}`,
     );
 });
@@ -62,14 +65,14 @@ test("the console's resumable phases are the model's, phase by phase", () => {
   for (const phase of phaseRoster)
     assert.equal(
       ticketResumable(phase),
-      retryableIn(coreWith(ticketIn(phase)), id),
+      retryableIn(graphWith(ticketIn(phase)), id),
       `resumable disagreed at ${phase}`,
     );
 });
 
 test("what the console offers is what the two predicates enable", () => {
   for (const phase of phaseRoster) {
-    const core = coreWith(ticketIn(phase));
+    const graph = graphWith(ticketIn(phase));
     const offered = new Set(
       actionsFor({
         ticket: 7,
@@ -80,13 +83,13 @@ test("what the console offers is what the two predicates enable", () => {
         revokedDependencies: [],
       }).map((one) => one.action),
     );
-    assert.equal(offered.has("Revoke"), revocableIn(core, id), phase);
-    assert.equal(offered.has("Resume"), retryableIn(core, id), phase);
+    assert.equal(offered.has("Revoke"), revocableIn(graph, id), phase);
+    assert.equal(offered.has("Resume"), retryableIn(graph, id), phase);
   }
 });
 
 test("a park with no modeled resume is offered a resume the actor refuses", () => {
-  const core = coreWith(ticketIn("Escalated", { resumeAt: "NoResume" }));
-  assert.equal(retryableIn(core, id), false);
+  const graph = graphWith(ticketIn("Escalated", { resumeAt: "NoResume" }));
+  assert.equal(retryableIn(graph, id), false);
   assert.equal(ticketResumable("Escalated"), true);
 });

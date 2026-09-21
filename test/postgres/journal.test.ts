@@ -168,8 +168,8 @@ test("load refuses unsupported event and decision semantic versions", async () =
     },
     {
       column: "decision_semantics_version",
-      versions: { eventSchemaVersion: 1, decisionSemanticsVersion: 5 },
-      why: /declares decision semantics 5, which this image has no deciders for/,
+      versions: { eventSchemaVersion: 1, decisionSemanticsVersion: 6 },
+      why: /declares decision semantics 6, which this image has no deciders for/,
     },
   ] as const;
   for (const unsupported of cases) {

@@ -335,7 +335,7 @@ test("a failed attempt concludes as the one priced failure, carrying its kind", 
       ),
       {
         decide: "Conclude",
-        conclusion: { outcome: "FinalizationFailed", kind },
+        conclusion: { outcome: "FinalizationNeedsWork", kind },
       },
     );
   }
@@ -496,7 +496,7 @@ test("a closing project's abort is recorded once and then concluded, never re-ab
       {
         decide: "Conclude",
         conclusion: {
-          outcome: "FinalizationFailed",
+          outcome: "FinalizationNeedsWork",
           kind: "PreparationFailed",
         },
       },

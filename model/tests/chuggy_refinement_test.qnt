@@ -1,14 +1,14 @@
 /// Refinement tests for the journaled actor. These tests deliberately drive
 /// DecisionEvent values: replay therefore exercises the same pure deciders as
 /// the live actor, including the sparse native ticket id and materialized
-/// ticket policy carried by ReleaseTicket.
+/// ticket policy carried by CreateTicket.
 
 module chuggy_refinement_unit_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
 
-  pure val progFlat: List[Stage] = [{ fanout: 1 }]
-  pure val release10: DecisionEvent = ReleaseTicket({
+  pure val progFlat: List[StageDefinition] = [{ fanout: 1 }]
+  pure val release10: DecisionEvent = CreateTicket({
     ticket: 2, deps: Set(), prog: progFlat, workFanout: 1
   })
   pure val d1 = execDecisionEvent(genesis, release10)
@@ -19,22 +19,22 @@ module chuggy_refinement_unit_test {
   pure val goodJ: List[Entry] = [e1, e2]
 
   run genesisReplayTest = assert(and {
-    journalLegalOn([]), replayCore([]) == genesis
+    journalLegalOn([]), replayGraph([]) == genesis
   })
 
   run sparseReleaseReplayTest = assert(and {
     decisionEventEnabled(genesis, release10),
     journalLegalOn(goodJ),
-    replayCore(goodJ) == d2.post,
-    replayCore(goodJ).tickets.keys() == Set(2),
-    replayCore(goodJ).tickets.get(2).phase == Working,
-    replayCore(goodJ).tickets.get(2).tasks ==
-      Set({ id: 1, kind: Work, state: Outstanding })
+    replayGraph(goodJ) == d2.post,
+    replayGraph(goodJ).tickets.keys() == Set(2),
+    replayGraph(goodJ).tickets.get(2).phase == Work,
+    replayGraph(goodJ).tickets.get(2).tasks ==
+      Set({ id: 1, kind: WorkTask, state: Outstanding })
   })
 
   run replayAppendAgreesTest = assert(and {
-    replayCore(goodJ) == execDecisionEvent(replayCore([e1]), dispatch10).post,
-    replayCore([e1]) == d1.post
+    replayGraph(goodJ) == execDecisionEvent(replayGraph([e1]), dispatch10).post,
+    replayGraph([e1]) == d1.post
   })
 
   run journalRefusesSeqAndRecordTamperingTest = assert(and {
@@ -49,7 +49,7 @@ module chuggy_refinement_unit_test {
     not(decisionEventEnabled(genesis, Dispatch(2))),
     not(decisionEventEnabled(genesis, TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }))),
     not(decisionEventEnabled(genesis, ExecutionBlocked({
-      ticket: 2, reason: TicketConfigIncompatible }))),
+      ticket: 2, reason: WorkExecutionUnavailableEscalated }))),
     not(decisionEventEnabled(genesis, FinalizationResult({ ticket: 2, out: FinalizationSucceeded }))),
     not(decisionEventEnabled(genesis, ResumeTicket(2)))
   })
@@ -59,10 +59,10 @@ module chuggy_refinement_unit_test {
       result: { manifest: 0, digest: 1, schema: 1 } }))))
 
   run journalRefusesInvalidReleasePayloadTest =
-    val badDeps: DecisionEvent = ReleaseTicket({
+    val badDeps: DecisionEvent = CreateTicket({
       ticket: 2, deps: Set(99), prog: progFlat, workFanout: 1
     })
-    val badProgram: DecisionEvent = ReleaseTicket({
+    val badProgram: DecisionEvent = CreateTicket({
       ticket: 2, deps: Set(), prog: [], workFanout: 1
     })
     assert(and {
@@ -96,8 +96,8 @@ module chuggy_refinement_witness_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
 
-  pure val progFlat: List[Stage] = [{ fanout: 1 }]
-  pure def release(ticket: int): DecisionEvent = ReleaseTicket({
+  pure val progFlat: List[StageDefinition] = [{ fanout: 1 }]
+  pure def release(ticket: int): DecisionEvent = CreateTicket({
     ticket: ticket, deps: Set(), prog: progFlat, workFanout: 1
   })
 
@@ -119,24 +119,24 @@ module chuggy_refinement_witness_test {
       .then(stepEmit(release(2), "ticket-released"))
       .then(stepEmit(Dispatch(2), "dispatch"))
       .then(journalStep(ExecutionBlocked({
-        ticket: 2, reason: TicketConfigIncompatible })))
+        ticket: 2, reason: WorkExecutionUnavailableEscalated })))
       .expect(and {
-        memCore.tickets.get(2).phase == Escalated,
-        memCore.tickets.get(2).reason == TicketConfigIncompatible,
-        memCore.tickets.get(2).tasks.forall(t => t.state != Outstanding),
+        memGraph.tickets.get(2).phase == Escalated,
+        memGraph.tickets.get(2).reason == WorkExecutionUnavailableEscalated,
+        memGraph.tickets.get(2).tasks.forall(t => t.state != Outstanding),
         allDomainInvariants, refinementInvariants
       })
       .then(crashRecoverTo(2))
       .expect(and {
-        memCore.tickets.get(2).phase == Escalated,
+        memGraph.tickets.get(2).phase == Escalated,
         worldSpawns(2) == 1,
         allDomainInvariants, refinementInvariants
       })
       .then(emitNext)
       .then(stepEmit(ResumeTicket(2), "ticket-resumed"))
       .expect(and {
-        memCore.tickets.get(2).phase == Working,
-        memCore.tickets.get(2).reason == NoReason,
+        memGraph.tickets.get(2).phase == Work,
+        memGraph.tickets.get(2).reason == NoReason,
         journalSpawns(2) == 2,
         worldSpawns(2) == 2,
         allDomainInvariants, refinementInvariants
@@ -155,17 +155,17 @@ module chuggy_refinement_witness_test {
       .then(stepEmit(evalReduce(2), "eval-passed"))
       .then(journalStep(FinalizationResult({ ticket: 2, out: FinalizationSucceeded })))
       .expect(and {
-        memCore.tickets.get(2).phase == Done,
+        memGraph.tickets.get(2).phase == Done,
         journalCompletions(2) == 1,
         worldCompletions(2) == 0,
-        not(decisionEventEnabled(memCore,
+        not(decisionEventEnabled(memGraph,
           FinalizationResult({ ticket: 2, out: FinalizationSucceeded }))),
         allDomainInvariants, refinementInvariants
       })
       .then(crashRecoverTo(0))
       .expect(and {
-        memCore.tickets.get(2).phase == Done,
-        memCore.tickets.get(2).completions == 1,
+        memGraph.tickets.get(2).phase == Done,
+        memGraph.tickets.get(2).completions == 1,
         worldCompletions(2) == 0,
         allDomainInvariants, refinementInvariants
       })
@@ -184,12 +184,12 @@ module chuggy_refinement_witness_test {
       .then(stepEmit(WorkReduce(2), "work-passed"))
       .then(stepEmit(TaskDone({ ticket: 2, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(evalReduce(2), "eval-passed"))
-      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationFailed }),
-        "rework-started finalization_failed"))
+      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationNeedsWork }),
+        "rework-started finalization_needs_work"))
       .expect(and {
-        memCore.tickets.get(2).phase == Working,
-        memCore.tickets.get(2).tasks.size() == 1,
-        memCore.tickets.get(2).completions == 0,
+        memGraph.tickets.get(2).phase == Work,
+        memGraph.tickets.get(2).tasks.size() == 1,
+        memGraph.tickets.get(2).completions == 0,
         allDomainInvariants, refinementInvariants
       })
 }
@@ -198,8 +198,8 @@ module chuggy_refinement_hazard_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
 
-  pure val progFlat: List[Stage] = [{ fanout: 1 }]
-  pure val release10: DecisionEvent = ReleaseTicket({
+  pure val progFlat: List[StageDefinition] = [{ fanout: 1 }]
+  pure val release10: DecisionEvent = CreateTicket({
     ticket: 2, deps: Set(), prog: progFlat, workFanout: 1
   })
 
@@ -214,7 +214,7 @@ module chuggy_refinement_hazard_test {
       .then(journalStep(release10)).then(emitNext)
       .then(effectCrash(Dispatch(2)))
       .expect(and {
-        memCore.tickets.get(2).phase == Pending,
+        memGraph.tickets.get(2).phase == Pending,
         worldSpawns(2) == 1, journalSpawns(2) == 0,
         not(journalCoversWorld), not(noDoubleSpentWork),
         journalLegal, recoveryComplete, allDomainInvariants
@@ -239,14 +239,14 @@ module chuggy_refinement_hazard_test {
       .then(journalStep(evalReduce(2))).then(emitNext)
       .then(effectCrash(FinalizationResult({ ticket: 2, out: FinalizationSucceeded })))
       .expect(and {
-        memCore.tickets.get(2).phase == Finalizing,
+        memGraph.tickets.get(2).phase == Finalization,
         worldCompletions(2) == 1, journalCompletions(2) == 0,
         journalLegal, recoveryComplete, allDomainInvariants
       })
       .then(journalStep(FinalizationResult({ ticket: 2, out: FinalizationSucceeded })))
       .then(emitNext)
       .expect(and {
-        memCore.tickets.get(2).phase == Done,
+        memGraph.tickets.get(2).phase == Done,
         worldCompletions(2) == 2, journalCompletions(2) == 1,
         not(noDuplicateCycle), refinementCore, allDomainInvariants
       })
@@ -260,7 +260,7 @@ module chuggy_refinement_hazard_test {
       .then(journalStep(TaskDone({ ticket: 2, tid: 2, verdict: Fail, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
       .then(effectCrash(evalReduce(2)))
       .expect(and {
-        memCore.tickets.get(2).phase == Evaluating,
+        memGraph.tickets.get(2).phase == Evaluation,
         worldSpawns(2) == 2, journalSpawns(2) == 1,
         not(noDoubleSpentWork), journalLegal, recoveryComplete,
         allDomainInvariants

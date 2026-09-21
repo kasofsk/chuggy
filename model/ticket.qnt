@@ -3,7 +3,7 @@
 ///
 /// Nothing here decides and nothing here reads a const: domain.qnt is the
 /// machine, refinement.qnt is one runtime shape for it, and both are pure
-/// functions of the `Core` this file declares.
+/// functions of the `TicketGraph` this file declares.
 ///
 /// DERIVE, DON'T STORE (standing rule 3) is what gives the record its shape.
 /// The waiting room (Ready/Blocked), the open desk task, the current eval
@@ -30,9 +30,9 @@ module chuggy_ticket {
   /// domain.qnt, not phases — a ticket that has not started is Pending, and
   /// the waiting-room split is derived. Pending must be stored (phase is
   /// total and "never started" is not expressible as a predicate over the
-  /// other fields without overloading them). Working/Evaluating carry the
-  /// parallel task set; Finalizing is its own phase because its outcome is the
-  /// exclusivity boundary; Done is absorbing; Escalated is the human desk.
+  /// other fields without overloading them). Work/Evaluation carry the
+  /// parallel task set; Finalization is its own phase because its outcome is
+  /// the exclusivity boundary; Done is absorbing; Escalated is the human desk.
   ///
   /// Pending is the ONLY authoring phase: release goes Pending -> Pending
   /// directly, with Ready and Blocked derived.
@@ -44,27 +44,28 @@ module chuggy_ticket {
   /// completes, and opens NO human task, because revocation is the author's
   /// settled choice (see hasOpenHumanTask).
   ///
-  /// An eval stage advance gets NO phase — it is an Evaluating ->
-  /// Evaluating edge, because within-phase progress lives in the live task
+  /// An eval stage advance gets NO phase — it is an Evaluation ->
+  /// Evaluation edge, because within-phase progress lives in the live task
   /// set's stage mark rather than in new phases.
   type Phase =
-    Pending | Working | Evaluating | Finalizing | Done | Escalated | Revoked
+    Pending | Work | Evaluation | Finalization | Done | Escalated | Revoked
 
   /// What a task IS for (task records are first-class — they carry the
   /// anatomy):
-  ///   Work     — a task of the Work phase's single task set (Work stays
+  ///   WorkTask   — a task of the Work phase's single task set (Work stays
   ///                ONE task-set phase per kasofsk's anatomy note; the
   ///                extracted vocabulary agrees
   ///                task creation: "Job enters Work (new cycle): one work
   ///                task", i.e. Work is not staged).
-  ///   Evaluation(s)  — a task of eval stage s (0-based index into the ticket's
+  ///   EvaluationTask(s)
+  ///              — a task of eval stage s (0-based index into the ticket's
   ///                authored program
   ///                `stage:`, "default 0; non-negative; evaluators run in
   ///                ascending stage order; within a stage they fan out in
   ///                parallel"). The kind mark is what makes the CURRENT
   ///                stage derivable from the live task set (evalStage
   ///                below) instead of stored — standing rule 3.
-  type TaskKind = Work | Evaluation(int)
+  type TaskKind = WorkTask | EvaluationTask(int)
 
   /// A settled task's outcome — RESOLVED verdicts only; an outstanding task
   /// cannot carry one (see TaskState). Failed
@@ -113,12 +114,12 @@ module chuggy_ticket {
   /// verdicts is not per-stage data: every evaluator in it must pass
   /// (combine below), and the required/advisory split is BELOW that grain —
   /// an advisory evaluator is one the stage does not carry.
-  type Stage = { fanout: int }
+  type StageDefinition = { fanout: int }
 
   /// WHAT AN EVALUATION FAILURE DOES. The machine consults this at every
   /// failing stage (domain.qnt decideEvalStageReduce) and takes exactly one
-  /// of two edges: Rework re-enters Working as a new cycle; Escalate parks
-  /// the ticket on the desk, where the operator's resume re-enters Working
+  /// of two edges: Rework re-enters Work as a new cycle; Escalate parks
+  /// the ticket on the desk, where the operator's resume re-enters Work
   /// the same way. The machine does not choose between them — the
   /// disposition is an INPUT to the decision, drawn nondeterministically by
   /// the `evalReduce` action and journaled with it, so any policy an
@@ -131,27 +132,29 @@ module chuggy_ticket {
   /// parked: every wall parks with a resume point from the list below, and a
   /// resume point on an unparked ticket would be a lie to the desk.
   ///
-  /// ResumeReworking is the evaluation-failure wall's: it re-enters Working
+  /// ResumeRework is the evaluation-failure wall's: it re-enters Work
   /// as a new cycle. That wall is reached by a VERDICT, and a verdict has no
   /// re-judge to offer — the fabric already relaunched the container below
   /// the cycle grain — so the only honest continuation is a new artifact,
   /// which is a work cycle.
   type Resume =
-    NoResume | ResumeWorking | ResumeReworking | ResumeEvaluating |
-    ResumeFinalizing
+    NoResume | ResumeWork | ResumeRework | ResumeEvaluation |
+    ResumeFinalization
 
   /// Why a ticket sits on the human desk. The reason is what distinguishes
-  /// the parks. WorkFailed is the CYCLE-level work wall (there is no retries
-  /// wall: retrying a failed container below the cycle grain is the fabric's
-  /// job, trusted here rather than modeled). ReworkBudgetExhausted is the
-  /// evaluation-failure wall, reached when the failure's disposition is
-  /// Escalate. The remaining reasons name what infrastructure refused when
-  /// it could not run an intact task set.
+  /// the parks. WorkFailureEscalated is the CYCLE-level work wall (there is
+  /// no retries wall: retrying a failed container below the cycle grain is
+  /// the fabric's job, trusted here rather than modeled).
+  /// EvaluationFailureEscalated is the evaluation-failure wall, reached when
+  /// the failure's disposition is Escalate.
+  /// WorkExecutionUnavailableEscalated is the wall infrastructure hits when
+  /// it could not run an intact task set; WHICH refusal it was is evidence
+  /// an adapter records beside the execution, never a distinction a decider
+  /// reads — every refusal takes the same edge to the same desk with the
+  /// same resume.
   type Reason =
-    NoReason | WorkFailed | ReworkBudgetExhausted |
-    ExecutionPolicyDenied | TicketConfigIncompatible |
-    ExecutionProfileUnavailable | RuntimeVersionUnsupported |
-    RequiredCapabilityUnavailable
+    NoReason | WorkFailureEscalated | EvaluationFailureEscalated |
+    WorkExecutionUnavailableEscalated
 
   /// How a finalization attempt resolves. ONE success, deliberately: an earlier
   /// model named two, because a merge promotes differently depending on
@@ -159,10 +162,10 @@ module chuggy_ticket {
   /// is a property of the merge adapter, not of the machine. The domain
   /// knows only that the step succeeded or failed.
   ///   - FinalizationSucceeded  the step committed the artifact.
-  ///   - FinalizationFailed     it did not, and is drawable only when the
+  ///   - FinalizationNeedsWork     it did not, and is drawable only when the
   ///                            environment invalidated the artifact
   ///                            (domain.qnt finalizationOutcomes).
-  type FinalizationOutcome = FinalizationSucceeded | FinalizationFailed
+  type FinalizationOutcome = FinalizationSucceeded | FinalizationNeedsWork
 
   /// WHAT A TICKET PRODUCED (design 002): an opaque identity for the thing
   /// work built, that evaluation judged, and that wrap-up commits. Its only
@@ -183,7 +186,8 @@ module chuggy_ticket {
   type Ticket = {
     phase: Phase,
     // Upstream dependency ticket ids (acyclic by construction in domain.qnt).
-    // Core is project-scoped, so every edge is project-local by construction.
+    // TicketGraph is project-scoped, so every edge is project-local by
+    // construction.
     deps: Set[int],
     // The artifact this ticket has produced, if it has passed work (design
     // 002). Set at work-passed and superseded by each rework's product.
@@ -199,8 +203,8 @@ module chuggy_ticket {
     // decideEvalStageReduce is the interpreter. Well-formedness (non-empty,
     // length <= MAX_STAGES, every fanout in 1..N_TASKS) is an RELEASE
     // validity condition — domain.qnt programsWellFormed.
-    program: List[Stage],
-    // The LIVE task set of the current Working phase or Evaluating stage;
+    program: List[StageDefinition],
+    // The LIVE task set of the current Work phase or Evaluation stage;
     // empty in every other phase. Task ids are sequential within the ticket
     // across its whole history (nextTaskId below).
     tasks: Set[Task],
@@ -255,13 +259,13 @@ module chuggy_ticket {
   /// authoring here with no widening needed after all — tickets RELEASE by
   /// growing the map's sparse, never-reused id domain through the
   /// `freshTicket` seam, and no decider needed surgery. The shape that
-  /// grew is the Ticket record (program, record, task kinds), not Core.
-  type Core = { tickets: int -> Ticket }
+  /// grew is the Ticket record (program, record, task kinds), not TicketGraph.
+  type TicketGraph = { tickets: int -> Ticket }
 
   /// One observed ticket-phase transition, golden-trace shaped (standing rule
   /// 4: conformance from day one — the model emits, the implementation
   /// replays). from == to is a REAL row, not a degenerate one — the
-  /// stage advance is Evaluating -> Evaluating.
+  /// stage advance is Evaluation -> Evaluation.
   type Transition = { ticket: int, from: Phase, to: Phase }
 
   /// One decision's observable record, mirroring the golden-trace step
@@ -274,7 +278,7 @@ module chuggy_ticket {
   }
 
   /// What a pure decider returns: record performed + post-state.
-  type Decision = { rec: StepRecord, post: Core }
+  type Decision = { rec: StepRecord, post: TicketGraph }
 
   // === Vocabulary helpers (task plumbing shared by machine and tests) ======
 
@@ -291,11 +295,12 @@ module chuggy_ticket {
 
   /// The CURRENT eval stage, DERIVED from the live task set's kind marks
   /// (standing rule 3: no stored stage index) — meaningful only while the
-  /// set is a stage's fan-out (Evaluating; tasksWellFormed pins the set
-  /// uniformly Evaluation(s), so the fold's pick order is irrelevant). 0 on an
-  /// empty or work set (the fold's base: no eval mark, no stage).
+  /// set is a stage's fan-out (Evaluation; tasksWellFormed pins the set
+  /// uniformly EvaluationTask(s), so the fold's pick order is irrelevant).
+  /// 0 on an empty or work set (the fold's base: no eval mark, no stage).
   pure def evalStage(tasks: Set[Task]): int =
-    tasks.fold(0, (acc, t) => match t.kind { | Work => acc | Evaluation(s) => s })
+    tasks.fold(0, (acc, t) =>
+      match t.kind { | WorkTask => acc | EvaluationTask(s) => s })
 
   /// A fresh parallel task set of kind k: n tasks, all outstanding to the
   /// fabric in one step (see TaskState), ids start..start+n-1 — the
@@ -332,7 +337,7 @@ module chuggy_ticket {
       tasks: Set(),
       record: range(start, start + ticket.tasks.size()).foldl(ticket.record, (r, i) =>
         r.append(ticket.tasks.fold(
-          { id: i, kind: Work, state: Resolved(Cancelled) },
+          { id: i, kind: WorkTask, state: Resolved(Cancelled) },
           (acc, t) =>
           if (t.id == i)
             { ...t, state: if (t.state == Outstanding) Resolved(Cancelled) else t.state }

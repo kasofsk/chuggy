@@ -25,11 +25,11 @@ import {
   type TaskId,
 } from "./ids.ts";
 
-export const tkWork: TaskKind = "Work";
+export const tkWork: TaskKind = "WorkTask";
 
 /** An eval task of the given stage. */
 export function tkEval(stage: number): TaskKind {
-  return { type: "Evaluation", value: asStageIndex(stage) };
+  return { type: "EvaluationTask", value: asStageIndex(stage) };
 }
 
 export const tsOutstanding: TaskState = "Outstanding";
@@ -60,7 +60,7 @@ export function evaluationFailureReworksStarted(
   let inWorkRun = false;
   let evaluationFailed = false;
   for (const task of tasksInIdOrder([...record, ...live])) {
-    if (task.kind === "Work") {
+    if (task.kind === "WorkTask") {
       if (!inWorkRun && evaluationFailed) reworks += 1;
       inWorkRun = true;
       continue;
@@ -85,9 +85,9 @@ export function outstandingCount(tasks: ReadonlySet<Task>): number {
 export function evalStage(tasks: ReadonlySet<Task>): StageIndex {
   let stage = asStageIndex(0);
   for (const task of tasksInIdOrder(tasks)) {
-    if (task.kind === "Work") continue;
+    if (task.kind === "WorkTask") continue;
     switch (task.kind.type) {
-      case "Evaluation":
+      case "EvaluationTask":
         stage = asStageIndex(task.kind.value);
         break;
       default:
@@ -149,8 +149,8 @@ export function taskEquals(left: Task, right: Task): boolean {
 
 /** An eval task matches only at the same stage, which is what keeps history from re-labelling itself. */
 function taskEqualsKind(left: TaskKind, right: TaskKind): boolean {
-  if (left === "Work") return right === "Work";
-  return right !== "Work" && right.value === left.value;
+  if (left === "WorkTask") return right === "WorkTask";
+  return right !== "WorkTask" && right.value === left.value;
 }
 
 /** A resolved task matches only on the same outcome; outstanding matches outstanding. */

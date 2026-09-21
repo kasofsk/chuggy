@@ -27,7 +27,7 @@ import {
   crashRecoverTo,
   emitNext,
   journalStep,
-  memoryCore,
+  memoryGraph,
   type ActorState,
 } from "../../src/actor/state.ts";
 import {
@@ -36,7 +36,7 @@ import {
   worldCompletions,
   worldSpawns,
 } from "../../src/actor/world.ts";
-import { ticketAt } from "../../src/domain/core.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import { id } from "../domain/fixtures.ts";
 import {
@@ -59,7 +59,7 @@ function phaseDispatchSurvives(): ActorState {
   assert.equal(state.journal.length, 1);
   assertStep(config, state, "release (journaled)");
   state = crashRecoverTo(state, 0);
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Pending");
+  assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Pending");
   assert.equal(state.applied, 0);
   assert.equal(state.journal.length, 1);
   assertStep(config, state, "crash before the first emission");
@@ -164,21 +164,21 @@ function phaseCompletionLandsOnce(state: ActorState): void {
   state = journalStep(config, state, succeeded);
   assert.equal(state.view.rec.label, "ticket-done");
   assert.deepEqual(state.view.rec.effects, []);
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
+  assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Done");
   assert.equal(journalCompletions(state, id(1)), 1);
   assert.equal(worldCompletions(state, id(1)), 0);
-  assert.ok(!decisionEventEnabled(config, memoryCore(state), succeeded));
+  assert.ok(!decisionEventEnabled(config, memoryGraph(state), succeeded));
   assertStep(config, state, "completion (journaled, untold)");
   state = crashRecoverTo(state, 10);
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
-  assert.equal(ticketAt(memoryCore(state), id(1)).completions, 1);
+  assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Done");
+  assert.equal(ticketAt(memoryGraph(state), id(1)).completions, 1);
   assert.equal(worldCompletions(state, id(1)), 0);
   assertStep(config, state, "crash at the completion seam");
   state = emitNext(state);
   assert.equal(worldCompletions(state, id(1)), 1);
   assertStep(config, state, "the completion reaches the world");
   state = crashRecoverTo(state, 0);
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
+  assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Done");
   assert.equal(state.journal.length, 11);
   while (state.applied < state.journal.length) state = emitNext(state);
   assert.equal(worldCompletions(state, id(1)), 1);

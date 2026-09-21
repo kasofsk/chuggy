@@ -20,6 +20,7 @@
 
 import type { MouseEvent, ReactNode } from "react";
 
+import { phaseLabel } from "../../core/codeLabels.ts";
 import { phaseTone } from "../../core/tones.ts";
 import { useTicketReferenceHeld } from "./ticketReferenceHeld.tsx";
 import type { TicketReferenceHeld } from "./ticketReferenceHeld.tsx";
@@ -67,7 +68,7 @@ function TicketReferenceChip(props: {
         <span className="ticket-reference-title">{facts.title}</span>
       )}
       {facts === undefined ? null : (
-        <span className="visually-hidden">{facts.phase}</span>
+        <span className="visually-hidden">{phaseLabel(facts.phase)}</span>
       )}
     </a>
   );

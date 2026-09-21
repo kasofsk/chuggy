@@ -31,7 +31,7 @@ import {
 } from "../../src/adapters/postgres/schema.ts";
 import { interactionsReadSignature } from "../../src/adapters/postgres/schema/lead.ts";
 import { decisionSemanticsVersionCurrent } from "../../src/actor/decisionSemantics.ts";
-import { ticketAt } from "../../src/domain/core.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import {
   projectWriterDecide,
   type ProjectMemory,
@@ -419,7 +419,7 @@ test("a refused proposal moves the project its lead's next turn waits on", async
       "and it names the operation the proposal was submitted under",
     );
     assert.equal(
-      ticketAt(decided.memory.core, candidate.ticket).phase,
+      ticketAt(decided.memory.graph, candidate.ticket).phase,
       "Pending",
       "a refused dispatch leaves its ticket where the lead will see it again",
     );
@@ -556,9 +556,9 @@ test("one decision's proposals over the same observed page each dispatch", async
     }
     assert.deepEqual(
       page.candidates.map(
-        (candidate) => ticketAt(memory.core, candidate.ticket).phase,
+        (candidate) => ticketAt(memory.graph, candidate.ticket).phase,
       ),
-      ["Working", "Working"],
+      ["Work", "Work"],
     );
     const rows = await harness.query(
       `SELECT seq, decision_semantics_version

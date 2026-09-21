@@ -411,7 +411,7 @@ test("the finalizer's read surface is exactly the relations its view is gathered
 
 test("the finalizer's two doors are its own and no prior role may open them", async () => {
   const doors = [
-    `SELECT * FROM ${finalizationFunction}('t','p','r','a','FinalizationFailed','MergeConflict',1,'e','o','s')`,
+    `SELECT * FROM ${finalizationFunction}('t','p','r','a','FinalizationNeedsWork','MergeConflict',1,'e','o','s')`,
     `SELECT * FROM ${approvalRequestFunction}('t','p','a','n','e')`,
   ];
   for (const [door, name] of [

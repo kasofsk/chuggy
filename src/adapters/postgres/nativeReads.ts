@@ -5,15 +5,17 @@ import type pg from "pg";
 
 import { briefTitleCharsMax } from "../../contract/brief.ts";
 import {
+  blockedReasons,
   escalationReasons,
   operationRefusalCodes,
   resumePoints,
+  type BlockedReason,
   type EscalationReason,
   type ResumePoint,
 } from "../../contract/rosters.ts";
 import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
 import { nonTerminalPhaseTags } from "../../domain/phase.ts";
-import { asTicketId } from "../../domain/ids.ts";
+import { asTicketId, type TicketId } from "../../domain/ids.ts";
 import {
   asPublicInstant,
   type NativeActionPage,
@@ -80,6 +82,15 @@ interface TicketProjectionRow {
    * names none.
    */
   readonly revoked_dependencies: string[] | null;
+}
+
+/**
+ * What the single ticket read adds: the wall behind an escalation, which the
+ * project's page does not carry. Null is both a ticket no wall parked and a
+ * ticket whose reason is not the wall's, the query asking for neither.
+ */
+interface TicketExecutionWallRow {
+  readonly execution_blocked_by: string | null;
 }
 
 /** One open action, or a ticket that has none: every column is then null. */
@@ -239,6 +250,20 @@ function ticketResourceChangedAt(
   if (value === null)
     throw new Error("native read: the journal dates no change for a ticket");
   return nativeReadInstant(value);
+}
+
+/**
+ * Which wall the ticket's last blocked execution recorded. The column is
+ * evidence rather than state, so a value this layer does not know is a
+ * database and a roster that disagree and raises like every other narrowing
+ * here; absent is the ordinary answer for a ticket no wall parked.
+ */
+function executionBlockedBy(value: string | null): BlockedReason | undefined {
+  if (value === null) return undefined;
+  const wall = blockedReasons.find((candidate) => candidate === value);
+  if (wall === undefined)
+    throw new Error(`native read: ${value} is not a blocked reason`);
+  return wall;
 }
 
 /** The stored `NoResume` is the machine's absent value, which the wire omits. */
@@ -424,7 +449,8 @@ async function readTicketsByActivity(
               FROM journal_entry j
              WHERE j.tenant=t.tenant AND j.project=t.project
                AND (CASE WHEN j.entry IS JSON OBJECT
-                         THEN j.entry::jsonb->'event'->>'type' END)='ReleaseTicket'
+                         THEN j.entry::jsonb->'event'->>'type' END)
+                     IN ('ReleaseTicket','CreateTicket')
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'ticket' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
@@ -468,7 +494,8 @@ async function readTicketsByIdentity(
               FROM journal_entry j
              WHERE j.tenant=t.tenant AND j.project=t.project
                AND (CASE WHEN j.entry IS JSON OBJECT
-                         THEN j.entry::jsonb->'event'->>'type' END)='ReleaseTicket'
+                         THEN j.entry::jsonb->'event'->>'type' END)
+                     IN ('ReleaseTicket','CreateTicket')
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'ticket' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
@@ -478,6 +505,72 @@ async function readTicketsByIdentity(
         ORDER BY t.ticket LIMIT ${query.limit + 1}`,
   );
   return found.rows;
+}
+
+/** One ticket with its brief, its run totals and the wall behind an escalation. */
+async function readTicket(
+  pool: pg.Pool,
+  partition: Partition,
+  ticket: TicketId,
+): Promise<TicketResource | undefined> {
+  const found = await pool.query<
+    TicketProjectionRow & DraftBriefRow & TicketExecutionWallRow
+  >(
+    sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,
+               coalesce(b.title,left(substring(b.intent from
+                 '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
+                 AS ticket_title,
+               b.title,b.intent,b.branch,b.repository,
+               b.finalization_mode,b.finalization_target,
+               r.committed_at::text AS released_at,
+               c.committed_at::text AS changed_at,
+               (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
+                  FROM ticket_projection d
+                 WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
+                   AND d.phase='Revoked'
+                   AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
+                 AS revoked_dependencies,
+               (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
+                 WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS links,
+               (SELECT array_agg(k.command ORDER BY k.ordinal) FROM draft_brief_check k
+                 WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS checks,
+               (SELECT x.blocked_reason FROM execution x
+                 WHERE x.tenant=t.tenant AND x.project=t.project
+                   AND x.ticket=t.ticket AND x.outcome='Blocked'
+                   AND t.reason='WorkExecutionUnavailableEscalated'
+                 ORDER BY x.terminal_at DESC,x.execution DESC
+                 LIMIT 1) AS execution_blocked_by
+          FROM ticket_projection t
+          LEFT JOIN journal_entry c
+            ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
+          LEFT JOIN LATERAL (
+            SELECT j.committed_at,
+                   (CASE WHEN j.entry IS JSON OBJECT
+                         THEN j.entry::jsonb->'event'->'value'->'deps' END) AS deps
+              FROM journal_entry j
+             WHERE j.tenant=t.tenant AND j.project=t.project
+               AND (CASE WHEN j.entry IS JSON OBJECT
+                         THEN j.entry::jsonb->'event'->>'type' END)
+                     IN ('ReleaseTicket','CreateTicket')
+               AND (CASE WHEN j.entry IS JSON OBJECT
+                         THEN j.entry::jsonb->'event'->'value'->'ticket' END)=to_jsonb(t.ticket)
+             ORDER BY j.seq LIMIT 1) r ON true
+          LEFT JOIN draft_brief b
+            ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
+         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
+           AND t.ticket=${ticket}`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) return undefined;
+  const brief = draftBriefOf(row);
+  const runTotals = await postgresTicketRunTotals(pool, partition, ticket);
+  const wall = executionBlockedBy(row.execution_blocked_by);
+  return {
+    ...ticketResource(row),
+    ...(wall === undefined ? {} : { executionBlockedBy: wall }),
+    ...(brief === undefined ? {} : { brief }),
+    ...(runTotals === undefined ? {} : { runTotals }),
+  };
 }
 
 /** The three resource reads, each answering one route from the projection. */
@@ -500,55 +593,7 @@ function nativeReadsResources(
       return row === undefined ? undefined : publicOperation(row);
     },
     project: (partition, query) => readProject(pool, partition, query),
-    ticket: async (partition, ticket) => {
-      const found = await pool.query<TicketProjectionRow & DraftBriefRow>(
-        sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,
-                   coalesce(b.title,left(substring(b.intent from
-                     '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
-                     AS ticket_title,
-                   b.title,b.intent,b.branch,b.repository,
-                   b.finalization_mode,b.finalization_target,
-                   r.committed_at::text AS released_at,
-                   c.committed_at::text AS changed_at,
-                   (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
-                      FROM ticket_projection d
-                     WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
-                       AND d.phase='Revoked'
-                       AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
-                     AS revoked_dependencies,
-                   (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
-                     WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS links,
-                   (SELECT array_agg(k.command ORDER BY k.ordinal) FROM draft_brief_check k
-                     WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS checks
-              FROM ticket_projection t
-              LEFT JOIN journal_entry c
-                ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
-              LEFT JOIN LATERAL (
-                SELECT j.committed_at,
-                       (CASE WHEN j.entry IS JSON OBJECT
-                             THEN j.entry::jsonb->'event'->'value'->'deps' END) AS deps
-                  FROM journal_entry j
-                 WHERE j.tenant=t.tenant AND j.project=t.project
-                   AND (CASE WHEN j.entry IS JSON OBJECT
-                             THEN j.entry::jsonb->'event'->>'type' END)='ReleaseTicket'
-                   AND (CASE WHEN j.entry IS JSON OBJECT
-                             THEN j.entry::jsonb->'event'->'value'->'ticket' END)=to_jsonb(t.ticket)
-                 ORDER BY j.seq LIMIT 1) r ON true
-              LEFT JOIN draft_brief b
-                ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
-             WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
-               AND t.ticket=${ticket}`,
-      );
-      const row = found.rows[0];
-      if (row === undefined) return undefined;
-      const brief = draftBriefOf(row);
-      const runTotals = await postgresTicketRunTotals(pool, partition, ticket);
-      return {
-        ...ticketResource(row),
-        ...(brief === undefined ? {} : { brief }),
-        ...(runTotals === undefined ? {} : { runTotals }),
-      };
-    },
+    ticket: (partition, ticket) => readTicket(pool, partition, ticket),
   };
 }
 

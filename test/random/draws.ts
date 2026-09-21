@@ -27,7 +27,6 @@ import {
 } from "../../src/domain/config.ts";
 import {
   dependableIn,
-  executionBlockedReasons,
   finalizationOutcomes,
   finalizationOutcomeEnabled,
   finalizingIn,
@@ -43,11 +42,10 @@ import {
 } from "../../src/domain/enablement.ts";
 import {
   evaluationFailureDispositionTags,
-  type Core,
+  type TicketGraph,
   type EvaluationFailureDisposition,
   type FinalizationOutcome,
-  type Reason,
-  type Stage,
+  type StageDefinition,
   type Verdict,
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId, type TaskId, type TicketId } from "../../src/domain/ids.ts";
@@ -65,21 +63,28 @@ import { pickFrom, subsetFrom, type Random } from "./random.ts";
 export interface Drawn {
   readonly ticket?: TicketId;
   readonly deps?: readonly TicketId[];
-  readonly program?: readonly Stage[];
+  readonly program?: readonly StageDefinition[];
   readonly workFanout?: number;
   readonly onFailure?: EvaluationFailureDisposition;
   readonly taskId?: TaskId;
   readonly verdict?: Verdict;
   readonly outcome?: FinalizationOutcome;
-  readonly reason?: Reason;
 }
 
 /** One action of the machine, as the walk takes it. */
 export interface WalkAction {
   readonly action: string;
-  readonly enabledIn: (config: Config, core: Core) => boolean;
-  readonly drawIn: (config: Config, core: Core, random: Random) => Drawn;
-  readonly permitsIn: (config: Config, core: Core, drawn: Drawn) => boolean;
+  readonly enabledIn: (config: Config, graph: TicketGraph) => boolean;
+  readonly drawIn: (
+    config: Config,
+    graph: TicketGraph,
+    random: Random,
+  ) => Drawn;
+  readonly permitsIn: (
+    config: Config,
+    graph: TicketGraph,
+    drawn: Drawn,
+  ) => boolean;
 }
 
 /** The verdict draw the completion event ranges over, as the model's `taskDone` writes it. */
@@ -89,10 +94,12 @@ const verdictDraws: readonly Verdict[] = ["Pass", "Fail"];
  * Every well-formed authorable program, grown one stage at a time exactly as
  * the model folds `validPrograms`, so a pick here is a pick from that set.
  */
-export function validProgramsIn(config: Config): readonly (readonly Stage[])[] {
+export function validProgramsIn(
+  config: Config,
+): readonly (readonly StageDefinition[])[] {
   const stages = stageChoices(config);
-  let grown: readonly (readonly Stage[])[] = [[]];
-  const programs: (readonly Stage[])[] = [];
+  let grown: readonly (readonly StageDefinition[])[] = [[]];
+  const programs: (readonly StageDefinition[])[] = [];
   for (let length = 1; length <= config.maxStages; length++) {
     grown = grown.flatMap((program) => stages.map((s) => [...program, s]));
     programs.push(...grown);
@@ -103,16 +110,16 @@ export function validProgramsIn(config: Config): readonly (readonly Stage[])[] {
 /** The shape most actions share: one ticket, drawn from one enablement set. */
 function overTicketSet(
   action: string,
-  setIn: (config: Config, core: Core) => readonly TicketId[],
+  setIn: (config: Config, graph: TicketGraph) => readonly TicketId[],
 ): WalkAction {
   return {
     action,
-    enabledIn: (config, core) => setIn(config, core).length > 0,
-    drawIn: (config, core, random) => ({
-      ticket: pickFrom(random, setIn(config, core)),
+    enabledIn: (config, graph) => setIn(config, graph).length > 0,
+    drawIn: (config, graph, random) => ({
+      ticket: pickFrom(random, setIn(config, graph)),
     }),
-    permitsIn: (config, core, drawn) =>
-      drawn.ticket !== undefined && setIn(config, core).includes(drawn.ticket),
+    permitsIn: (config, graph, drawn) =>
+      drawn.ticket !== undefined && setIn(config, graph).includes(drawn.ticket),
   };
 }
 
@@ -123,14 +130,14 @@ function overTicketSet(
  */
 const releaseTicket: WalkAction = {
   action: "releaseTicket",
-  enabledIn: (config, core) => releasableIdsIn(config, core).length > 0,
-  drawIn: (config, core, random) => ({
-    ticket: pickFrom(random, releasableIdsIn(config, core)),
-    deps: subsetFrom(random, dependableIn(core)),
+  enabledIn: (config, graph) => releasableIdsIn(config, graph).length > 0,
+  drawIn: (config, graph, random) => ({
+    ticket: pickFrom(random, releasableIdsIn(config, graph)),
+    deps: subsetFrom(random, dependableIn(graph)),
     program: pickFrom(random, validProgramsIn(config)),
     workFanout: pickFrom(random, workFanoutChoices(config)),
   }),
-  permitsIn: (config, core, drawn) => {
+  permitsIn: (config, graph, drawn) => {
     const { ticket, deps, program, workFanout } = drawn;
     if (
       ticket === undefined ||
@@ -141,8 +148,8 @@ const releaseTicket: WalkAction = {
       return false;
     }
     return (
-      releasableIdsIn(config, core).includes(ticket) &&
-      deps.every((d) => dependableIn(core).includes(d)) &&
+      releasableIdsIn(config, graph).includes(ticket) &&
+      deps.every((d) => dependableIn(graph).includes(d)) &&
       new Set(deps).size === deps.length &&
       isValidProgram(config, program) &&
       workFanoutChoices(config).includes(workFanout)
@@ -152,75 +159,71 @@ const releaseTicket: WalkAction = {
 
 const dispatch: WalkAction = {
   action: "dispatch",
-  enabledIn: (_config, core) => readiesIn(core).length > 0,
-  drawIn: (_config, core, random) => ({
-    ticket: pickFrom(random, readiesIn(core)),
+  enabledIn: (_config, graph) => readiesIn(graph).length > 0,
+  drawIn: (_config, graph, random) => ({
+    ticket: pickFrom(random, readiesIn(graph)),
   }),
-  permitsIn: (_config, core, drawn) =>
-    drawn.ticket !== undefined && readiesIn(core).includes(drawn.ticket),
+  permitsIn: (_config, graph, drawn) =>
+    drawn.ticket !== undefined && readiesIn(graph).includes(drawn.ticket),
 };
 
 /** Tickets with a task the fabric could still report on — the set `tid` is drawn from. */
-function reportableIn(core: Core): readonly TicketId[] {
-  return taskPhaseIn(core).filter(
-    (j) => outstandingTaskIdsIn(core, j).length > 0,
+function reportableIn(graph: TicketGraph): readonly TicketId[] {
+  return taskPhaseIn(graph).filter(
+    (j) => outstandingTaskIdsIn(graph, j).length > 0,
   );
 }
 
 const taskDone: WalkAction = {
   action: "taskDone",
-  enabledIn: (_config, core) => reportableIn(core).length > 0,
-  drawIn: (_config, core, random) => {
-    const ticket = pickFrom(random, reportableIn(core));
+  enabledIn: (_config, graph) => reportableIn(graph).length > 0,
+  drawIn: (_config, graph, random) => {
+    const ticket = pickFrom(random, reportableIn(graph));
     return {
       ticket,
-      taskId: asTaskId(pickFrom(random, outstandingTaskIdsIn(core, ticket))),
+      taskId: asTaskId(pickFrom(random, outstandingTaskIdsIn(graph, ticket))),
       verdict: pickFrom(random, verdictDraws),
     };
   },
-  permitsIn: (_config, core, drawn) =>
+  permitsIn: (_config, graph, drawn) =>
     drawn.ticket !== undefined &&
     drawn.taskId !== undefined &&
     drawn.verdict !== undefined &&
-    reportableIn(core).includes(drawn.ticket) &&
-    outstandingTaskIdsIn(core, drawn.ticket).includes(drawn.taskId),
+    reportableIn(graph).includes(drawn.ticket) &&
+    outstandingTaskIdsIn(graph, drawn.ticket).includes(drawn.taskId),
 };
 
 const finalizationResult: WalkAction = {
   action: "finalizationResult",
-  enabledIn: (_config, core) => finalizingIn(core).length > 0,
-  drawIn: (_config, core, random) => {
-    const ticket = pickFrom(random, finalizingIn(core));
+  enabledIn: (_config, graph) => finalizingIn(graph).length > 0,
+  drawIn: (_config, graph, random) => {
+    const ticket = pickFrom(random, finalizingIn(graph));
     return {
       ticket,
       outcome: pickFrom(
         random,
         finalizationOutcomes.filter((outcome) =>
-          finalizationOutcomeEnabled(core, ticket, outcome),
+          finalizationOutcomeEnabled(graph, ticket, outcome),
         ),
       ),
     };
   },
-  permitsIn: (_config, core, drawn) =>
+  permitsIn: (_config, graph, drawn) =>
     drawn.ticket !== undefined &&
     drawn.outcome !== undefined &&
-    finalizingIn(core).includes(drawn.ticket) &&
+    finalizingIn(graph).includes(drawn.ticket) &&
     finalizationOutcomes.includes(drawn.outcome) &&
-    finalizationOutcomeEnabled(core, drawn.ticket, drawn.outcome),
+    finalizationOutcomeEnabled(graph, drawn.ticket, drawn.outcome),
 };
 
 const executionBlocked: WalkAction = {
   action: "executionBlocked",
-  enabledIn: (_config, core) => taskPhaseIn(core).length > 0,
-  drawIn: (_config, core, random) => ({
-    ticket: pickFrom(random, taskPhaseIn(core)),
-    reason: pickFrom(random, executionBlockedReasons),
+  enabledIn: (_config, graph) => taskPhaseIn(graph).length > 0,
+  drawIn: (_config, graph, random) => ({
+    ticket: pickFrom(random, taskPhaseIn(graph)),
   }),
-  permitsIn: (_config, core, drawn) =>
-    drawn.ticket !== undefined &&
-    drawn.reason !== undefined &&
-    taskPhaseIn(core).includes(drawn.ticket) &&
-    executionBlockedReasons.includes(drawn.reason),
+  permitsIn: (_config, graph, drawn) =>
+    drawn.ticket !== undefined && taskPhaseIn(graph).includes(drawn.ticket),
 };
 
 /**
@@ -229,21 +232,21 @@ const executionBlocked: WalkAction = {
  */
 const evalReduce: WalkAction = {
   action: "evalReduce",
-  enabledIn: (_config, core) => reducibleEvalIn(core).length > 0,
-  drawIn: (_config, core, random) => ({
-    ticket: pickFrom(random, reducibleEvalIn(core)),
+  enabledIn: (_config, graph) => reducibleEvalIn(graph).length > 0,
+  drawIn: (_config, graph, random) => ({
+    ticket: pickFrom(random, reducibleEvalIn(graph)),
     onFailure: pickFrom(random, evaluationFailureDispositionTags),
   }),
-  permitsIn: (_config, core, drawn) =>
+  permitsIn: (_config, graph, drawn) =>
     drawn.ticket !== undefined &&
     drawn.onFailure !== undefined &&
-    reducibleEvalIn(core).includes(drawn.ticket) &&
+    reducibleEvalIn(graph).includes(drawn.ticket) &&
     evaluationFailureDispositionTags.includes(drawn.onFailure),
 };
 
 const settle: WalkAction = {
   action: "settle",
-  enabledIn: (config, core) => quietIn(config, core),
+  enabledIn: (config, graph) => quietIn(config, graph),
   drawIn: () => ({}),
   permitsIn: () => true,
 };
@@ -251,14 +254,14 @@ const settle: WalkAction = {
 /** The roster, in `step`'s order; the suite holds it against the model's own. */
 export const walkActions: readonly WalkAction[] = [
   releaseTicket,
-  overTicketSet("revoke", (_config, core) => revocablesIn(core)),
+  overTicketSet("revoke", (_config, graph) => revocablesIn(graph)),
   dispatch,
   taskDone,
-  overTicketSet("workReduce", (_config, core) => reducibleWorkIn(core)),
+  overTicketSet("workReduce", (_config, graph) => reducibleWorkIn(graph)),
   evalReduce,
   finalizationResult,
   executionBlocked,
-  overTicketSet("resumeTicket", (_config, core) => retryablesIn(core)),
+  overTicketSet("resumeTicket", (_config, graph) => retryablesIn(graph)),
   settle,
 ];
 
@@ -288,7 +291,6 @@ export function drawnWire(drawn: Drawn): Readonly<Record<string, unknown>> {
     prog: opt(drawn.program, encodeProgram),
     tid: opt(drawn.taskId, encodeInt),
     v: opt(drawn.verdict, encodeNullaryTag),
-    why: opt(drawn.reason, encodeNullaryTag),
     workFanout_: opt(drawn.workFanout, encodeInt),
   };
 }
@@ -309,6 +311,5 @@ export function drawnPicks(drawn: Drawn): Picks {
     taskId: itf(wire["tid"]),
     verdict: itf(wire["v"]),
     outcome: itf(wire["out"]),
-    reason: itf(wire["why"]),
   };
 }

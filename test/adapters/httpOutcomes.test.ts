@@ -203,7 +203,7 @@ test("recent ticket pages expose only an opaque continuation cursor", () => {
       tickets: [
         {
           ticket: id(2),
-          phase: "Working",
+          phase: "Work",
           sequence: 7,
           releasedAt: asPublicInstant("2026-01-01T00:00:00Z"),
           changedAt: asPublicInstant("2026-01-01T00:00:07Z"),

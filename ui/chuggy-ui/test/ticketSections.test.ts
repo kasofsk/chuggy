@@ -27,9 +27,9 @@ import type { TicketSection } from "../app/core/ticketSections.ts";
 
 const sectionOfPhase: Readonly<Record<TicketPhase, TicketSection>> = {
   Pending: "UpNext",
-  Working: "InProgress",
-  Evaluating: "InProgress",
-  Finalizing: "InProgress",
+  Work: "InProgress",
+  Evaluation: "InProgress",
+  Finalization: "InProgress",
   Done: "Done",
   Escalated: "NeedsYou",
   Revoked: "Stopped",
@@ -50,13 +50,9 @@ test("the sections partition the roster, leaving no phase in two and none in non
 });
 
 const badgeOfReason: Readonly<Record<EscalationReason, string>> = {
-  WorkFailed: "work failed",
-  ReworkBudgetExhausted: "rework budget spent",
-  ExecutionPolicyDenied: "execution policy denied it",
-  TicketConfigIncompatible: "the configuration does not fit",
-  ExecutionProfileUnavailable: "no execution profile fits",
-  RuntimeVersionUnsupported: "the runtime version is unsupported",
-  RequiredCapabilityUnavailable: "a required capability is missing",
+  WorkFailureEscalated: "work failed",
+  EvaluationFailureEscalated: "rework budget spent",
+  WorkExecutionUnavailableEscalated: "execution unavailable",
 };
 
 test.each(escalationReasons)("the badge for %s says what it says", (reason) => {
@@ -69,13 +65,13 @@ test("no two reasons are drawn with the same badge", () => {
 });
 
 test("an escalated row's badge is its reason", () => {
-  expect(ticketBadgeLabel("Escalated", "ReworkBudgetExhausted")).toBe(
+  expect(ticketBadgeLabel("Escalated", "EvaluationFailureEscalated")).toBe(
     "rework budget spent",
   );
 });
 
 test("a row with nothing to answer for carries no badge", () => {
-  expect(ticketBadgeLabel("Working", undefined)).toBeUndefined();
+  expect(ticketBadgeLabel("Work", undefined)).toBeUndefined();
 });
 
 test("an escalated row whose reason did not arrive still says it is escalated", () => {

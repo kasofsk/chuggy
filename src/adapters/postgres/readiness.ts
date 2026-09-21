@@ -203,7 +203,7 @@ async function finalizationEvidenceOf(
   partition: Partition,
   command: FinalizationSubmission,
 ): Promise<FinalizationEvidence | undefined> {
-  if (command.outcome !== "FinalizationFailed") return undefined;
+  if (command.outcome !== "FinalizationNeedsWork") return undefined;
   const attempted = command.attempt;
   if (attempted === undefined)
     throw new Error(

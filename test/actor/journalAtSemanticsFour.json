@@ -1,0 +1,554 @@
+[
+  {
+    "seq": 1,
+    "event": {
+      "type": "ReleaseTicket",
+      "value": {
+        "ticket": 1,
+        "deps": [],
+        "prog": [
+          {
+            "fanout": 1
+          }
+        ],
+        "workFanout": 1
+      }
+    },
+    "rec": {
+      "label": "ticket-released",
+      "transitions": [],
+      "effects": []
+    }
+  },
+  {
+    "seq": 2,
+    "event": {
+      "type": "Dispatch",
+      "value": 1
+    },
+    "rec": {
+      "label": "dispatch",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Pending",
+          "to": "Working"
+        }
+      ],
+      "effects": ["SpawnWorkTasks"]
+    }
+  },
+  {
+    "seq": 3,
+    "event": {
+      "type": "TaskDone",
+      "value": {
+        "ticket": 1,
+        "tid": 1,
+        "verdict": "Fail",
+        "result": {
+          "manifest": 1,
+          "digest": 1,
+          "schema": 1
+        }
+      }
+    },
+    "rec": {
+      "label": "task-done",
+      "transitions": [],
+      "effects": []
+    }
+  },
+  {
+    "seq": 4,
+    "event": {
+      "type": "WorkReduce",
+      "value": 1
+    },
+    "rec": {
+      "label": "ticket-escalated work_failed",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Working",
+          "to": "Escalated"
+        }
+      ],
+      "effects": ["OpenHumanTask"]
+    }
+  },
+  {
+    "seq": 5,
+    "event": {
+      "type": "ResumeTicket",
+      "value": 1
+    },
+    "rec": {
+      "label": "ticket-resumed",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Escalated",
+          "to": "Working"
+        }
+      ],
+      "effects": ["SpawnWorkTasks"]
+    }
+  },
+  {
+    "seq": 6,
+    "event": {
+      "type": "ExecutionBlocked",
+      "value": {
+        "ticket": 1,
+        "reason": "ExecutionPolicyDenied"
+      }
+    },
+    "rec": {
+      "label": "ticket-escalated execution_blocked",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Working",
+          "to": "Escalated"
+        }
+      ],
+      "effects": ["OpenHumanTask"]
+    }
+  },
+  {
+    "seq": 7,
+    "event": {
+      "type": "ResumeTicket",
+      "value": 1
+    },
+    "rec": {
+      "label": "ticket-resumed",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Escalated",
+          "to": "Working"
+        }
+      ],
+      "effects": ["SpawnWorkTasks"]
+    }
+  },
+  {
+    "seq": 8,
+    "event": {
+      "type": "ExecutionBlocked",
+      "value": {
+        "ticket": 1,
+        "reason": "TicketConfigIncompatible"
+      }
+    },
+    "rec": {
+      "label": "ticket-escalated execution_blocked",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Working",
+          "to": "Escalated"
+        }
+      ],
+      "effects": ["OpenHumanTask"]
+    }
+  },
+  {
+    "seq": 9,
+    "event": {
+      "type": "ResumeTicket",
+      "value": 1
+    },
+    "rec": {
+      "label": "ticket-resumed",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Escalated",
+          "to": "Working"
+        }
+      ],
+      "effects": ["SpawnWorkTasks"]
+    }
+  },
+  {
+    "seq": 10,
+    "event": {
+      "type": "ExecutionBlocked",
+      "value": {
+        "ticket": 1,
+        "reason": "ExecutionProfileUnavailable"
+      }
+    },
+    "rec": {
+      "label": "ticket-escalated execution_blocked",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Working",
+          "to": "Escalated"
+        }
+      ],
+      "effects": ["OpenHumanTask"]
+    }
+  },
+  {
+    "seq": 11,
+    "event": {
+      "type": "ResumeTicket",
+      "value": 1
+    },
+    "rec": {
+      "label": "ticket-resumed",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Escalated",
+          "to": "Working"
+        }
+      ],
+      "effects": ["SpawnWorkTasks"]
+    }
+  },
+  {
+    "seq": 12,
+    "event": {
+      "type": "ExecutionBlocked",
+      "value": {
+        "ticket": 1,
+        "reason": "RuntimeVersionUnsupported"
+      }
+    },
+    "rec": {
+      "label": "ticket-escalated execution_blocked",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Working",
+          "to": "Escalated"
+        }
+      ],
+      "effects": ["OpenHumanTask"]
+    }
+  },
+  {
+    "seq": 13,
+    "event": {
+      "type": "ResumeTicket",
+      "value": 1
+    },
+    "rec": {
+      "label": "ticket-resumed",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Escalated",
+          "to": "Working"
+        }
+      ],
+      "effects": ["SpawnWorkTasks"]
+    }
+  },
+  {
+    "seq": 14,
+    "event": {
+      "type": "ExecutionBlocked",
+      "value": {
+        "ticket": 1,
+        "reason": "RequiredCapabilityUnavailable"
+      }
+    },
+    "rec": {
+      "label": "ticket-escalated execution_blocked",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Working",
+          "to": "Escalated"
+        }
+      ],
+      "effects": ["OpenHumanTask"]
+    }
+  },
+  {
+    "seq": 15,
+    "event": {
+      "type": "ResumeTicket",
+      "value": 1
+    },
+    "rec": {
+      "label": "ticket-resumed",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Escalated",
+          "to": "Working"
+        }
+      ],
+      "effects": ["SpawnWorkTasks"]
+    }
+  },
+  {
+    "seq": 16,
+    "event": {
+      "type": "TaskDone",
+      "value": {
+        "ticket": 1,
+        "tid": 7,
+        "verdict": "Pass",
+        "result": {
+          "manifest": 1,
+          "digest": 1,
+          "schema": 1
+        }
+      }
+    },
+    "rec": {
+      "label": "task-done",
+      "transitions": [],
+      "effects": []
+    }
+  },
+  {
+    "seq": 17,
+    "event": {
+      "type": "WorkReduce",
+      "value": 1
+    },
+    "rec": {
+      "label": "work-passed",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Working",
+          "to": "Evaluating"
+        }
+      ],
+      "effects": ["SpawnEvalTasks"]
+    }
+  },
+  {
+    "seq": 18,
+    "event": {
+      "type": "TaskDone",
+      "value": {
+        "ticket": 1,
+        "tid": 8,
+        "verdict": "Fail",
+        "result": {
+          "manifest": 1,
+          "digest": 1,
+          "schema": 1
+        }
+      }
+    },
+    "rec": {
+      "label": "task-done",
+      "transitions": [],
+      "effects": []
+    }
+  },
+  {
+    "seq": 19,
+    "event": {
+      "type": "EvalReduce",
+      "value": {
+        "ticket": 1,
+        "onFailure": "EscalateEvaluationFailure"
+      }
+    },
+    "rec": {
+      "label": "ticket-escalated rework_budget_exhausted",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Evaluating",
+          "to": "Escalated"
+        }
+      ],
+      "effects": ["OpenHumanTask"]
+    }
+  },
+  {
+    "seq": 20,
+    "event": {
+      "type": "ResumeTicket",
+      "value": 1
+    },
+    "rec": {
+      "label": "ticket-resumed",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Escalated",
+          "to": "Working"
+        }
+      ],
+      "effects": ["SpawnWorkTasks"]
+    }
+  },
+  {
+    "seq": 21,
+    "event": {
+      "type": "TaskDone",
+      "value": {
+        "ticket": 1,
+        "tid": 9,
+        "verdict": "Pass",
+        "result": {
+          "manifest": 1,
+          "digest": 1,
+          "schema": 1
+        }
+      }
+    },
+    "rec": {
+      "label": "task-done",
+      "transitions": [],
+      "effects": []
+    }
+  },
+  {
+    "seq": 22,
+    "event": {
+      "type": "WorkReduce",
+      "value": 1
+    },
+    "rec": {
+      "label": "work-passed",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Working",
+          "to": "Evaluating"
+        }
+      ],
+      "effects": ["SpawnEvalTasks"]
+    }
+  },
+  {
+    "seq": 23,
+    "event": {
+      "type": "TaskDone",
+      "value": {
+        "ticket": 1,
+        "tid": 10,
+        "verdict": "Pass",
+        "result": {
+          "manifest": 1,
+          "digest": 1,
+          "schema": 1
+        }
+      }
+    },
+    "rec": {
+      "label": "task-done",
+      "transitions": [],
+      "effects": []
+    }
+  },
+  {
+    "seq": 24,
+    "event": {
+      "type": "EvalReduce",
+      "value": {
+        "ticket": 1,
+        "onFailure": "ReworkEvaluationFailure"
+      }
+    },
+    "rec": {
+      "label": "eval-passed",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Evaluating",
+          "to": "Finalizing"
+        }
+      ],
+      "effects": ["RunFinalizer"]
+    }
+  },
+  {
+    "seq": 25,
+    "event": {
+      "type": "FinalizationResult",
+      "value": {
+        "ticket": 1,
+        "out": "FinalizationFailed"
+      }
+    },
+    "rec": {
+      "label": "rework-started finalization_failed",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Finalizing",
+          "to": "Working"
+        }
+      ],
+      "effects": ["SpawnWorkTasks"]
+    }
+  },
+  {
+    "seq": 26,
+    "event": {
+      "type": "ReleaseTicket",
+      "value": {
+        "ticket": 2,
+        "deps": [],
+        "prog": [
+          {
+            "fanout": 1
+          }
+        ],
+        "workFanout": 1
+      }
+    },
+    "rec": {
+      "label": "ticket-released",
+      "transitions": [],
+      "effects": []
+    }
+  },
+  {
+    "seq": 27,
+    "event": {
+      "type": "Dispatch",
+      "value": 2
+    },
+    "rec": {
+      "label": "dispatch",
+      "transitions": [
+        {
+          "ticket": 2,
+          "from": "Pending",
+          "to": "Working"
+        }
+      ],
+      "effects": ["SpawnWorkTasks"]
+    }
+  },
+  {
+    "seq": 28,
+    "event": {
+      "type": "ExecutionBlocked",
+      "value": {
+        "ticket": 2,
+        "reason": "ExecutionPolicyDenied"
+      }
+    },
+    "rec": {
+      "label": "ticket-escalated execution_blocked",
+      "transitions": [
+        {
+          "ticket": 2,
+          "from": "Working",
+          "to": "Escalated"
+        }
+      ],
+      "effects": ["OpenHumanTask"]
+    }
+  }
+]

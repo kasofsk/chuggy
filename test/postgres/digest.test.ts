@@ -16,9 +16,10 @@
  * project that hold it, so vectors taken under identities the harness invents
  * afresh each run would pin nothing about that binding.
  *
- * A CHANGE HERE IS A FORMAT CHANGE. If a legitimate encoder change lands,
- * these values move with it and the journal is a new format version, not a
- * corrected constant.
+ * A CHANGE HERE IS A FORMAT CHANGE OR A VOCABULARY ONE. Bytes arranged
+ * differently are a new journal format version; the same arrangement saying a
+ * word the machine renamed is the decision semantics a row declares. Neither
+ * is a corrected constant.
  */
 
 import assert from "node:assert/strict";
@@ -56,14 +57,14 @@ const pinnedGenesis =
 
 /** The wire text of the shared fixture history, entry by entry. */
 const pinnedWire: readonly string[] = [
-  '{"seq":1,"event":{"type":"ReleaseTicket","value":{"ticket":1,"deps":[],"prog":[{"fanout":1}],"workFanout":1}},"rec":{"label":"ticket-released","transitions":[],"effects":[]}}',
-  '{"seq":2,"event":{"type":"Dispatch","value":1},"rec":{"label":"dispatch","transitions":[{"ticket":1,"from":"Pending","to":"Working"}],"effects":["SpawnWorkTasks"]}}',
+  '{"seq":1,"event":{"type":"CreateTicket","value":{"ticket":1,"deps":[],"prog":[{"fanout":1}],"workFanout":1}},"rec":{"label":"ticket-released","transitions":[],"effects":[]}}',
+  '{"seq":2,"event":{"type":"Dispatch","value":1},"rec":{"label":"dispatch","transitions":[{"ticket":1,"from":"Pending","to":"Work"}],"effects":["SpawnWorkTasks"]}}',
 ];
 
 /** The chain those bytes produce under that partition, starting from its genesis. */
 const pinnedDigests: readonly string[] = [
-  "6df45d6da4cd5537bebaa30a58f3ea05e1816d005c4c95d4a64e15c6f4cf4ec5",
-  "ec651df834133a722bcec8157e40810a5f9c7325419590f9b0cdf217af53b190",
+  "7871f9e713d999ad1618b33af972a9ab155c1d937f4ac05b83fff0dec17b1525",
+  "74b4d1ec359dc3f04d87cc22f11f25fa8406d89e52420dea420aaaa1a1a1c320",
 ];
 
 test("the encoder writes the bytes these vectors were taken from", () => {

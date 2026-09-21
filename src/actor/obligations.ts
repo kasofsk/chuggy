@@ -19,10 +19,10 @@
  */
 
 import type { Config } from "../domain/config.ts";
-import { liveTickets, ticketAt } from "../domain/core.ts";
-import { coreEquals } from "./equality.ts";
-import { journalLegalOn, replayCore } from "./journal.ts";
-import { memoryCore, type ActorState } from "./state.ts";
+import { liveTickets, ticketAt } from "../domain/ticketGraph.ts";
+import { graphEquals } from "./equality.ts";
+import { journalLegalOn, replayGraph } from "./journal.ts";
+import { memoryGraph, type ActorState } from "./state.ts";
 import {
   journalCompletions,
   journalSpawns,
@@ -45,7 +45,7 @@ export const journalLegal: Obligation = (config, state) =>
 
 /** Recovery completeness: replay of the current journal is exactly the state the actor holds. */
 export const recoveryComplete: Obligation = (_config, state) =>
-  coreEquals(replayCore(state.journal), memoryCore(state));
+  graphEquals(replayGraph(state.journal), memoryGraph(state));
 
 /**
  * The executor's bookkeeping is sound: the cursor stays inside the journal,
@@ -68,10 +68,10 @@ export const executorSound: Obligation = (_config, state) => {
  * stated anyway so a mutant journal is caught by name.
  */
 export const journalCompletionsMatchLedger: Obligation = (_config, state) =>
-  liveTickets(memoryCore(state)).every(
+  liveTickets(memoryGraph(state)).every(
     (ticket) =>
       journalCompletions(state, ticket) ===
-      ticketAt(memoryCore(state), ticket).completions,
+      ticketAt(memoryGraph(state), ticket).completions,
   );
 
 /** Coverage: every effect the world ever received traces to a journaled decision — no orphans. */
@@ -80,13 +80,13 @@ export const journalCoversWorld: Obligation = (_config, state) =>
 
 /** No double-spent work: the world never runs more work for a ticket than the journal decided. */
 export const noDoubleSpentWork: Obligation = (_config, state) =>
-  liveTickets(memoryCore(state)).every(
+  liveTickets(memoryGraph(state)).every(
     (ticket) => worldSpawns(state, ticket) <= journalSpawns(state, ticket),
   );
 
 /** No duplicate cycle: the world lands a ticket's diff at most once, across crashes at any seam. */
 export const noDuplicateCycle: Obligation = (_config, state) =>
-  liveTickets(memoryCore(state)).every(
+  liveTickets(memoryGraph(state)).every(
     (ticket) => worldCompletions(state, ticket) <= 1,
   );
 
@@ -102,8 +102,8 @@ export const refinementCore: readonly NamedObligation[] = [
 ];
 
 /**
- * The full journal-then-effect bundle: the core plus the world-facing
- * obligations, derived from the core roster rather than listed beside it.
+ * The full journal-then-effect bundle: the graph plus the world-facing
+ * obligations, derived from the graph roster rather than listed beside it.
  */
 export const refinementInvariants: readonly NamedObligation[] = [
   ...refinementCore,

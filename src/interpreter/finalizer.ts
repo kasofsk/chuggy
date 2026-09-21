@@ -9,9 +9,9 @@
  * settle an operation or move a ticket projection. `model/domain.qnt` has a
  * finalizer report a conclusive domain outcome and nothing else, so queueing,
  * approval, permits and the irreversible act itself are operational protocol
- * rather than `Core` state.
+ * rather than `TicketGraph` state.
  *
- * NO REF, COMMIT OR OTHER GIT IDENTIFIER REACHES `Core`. The target branch, the
+ * NO REF, COMMIT OR OTHER GIT IDENTIFIER REACHES `TicketGraph`. The target branch, the
  * base it was observed at and the candidate commit are the service's, recorded
  * on the immutable attempt beside them, so that a repository cannot become part
  * of the frozen ticket contract.
@@ -47,10 +47,10 @@
  *
  * THE FAILURE KINDS ARE `MergeConflict` AND `PreparationFailed`. An integration
  * answered by a conflict is the first and a preparation that produced no
- * candidate is the second; both reduce to the one priced `FinalizationFailed`
+ * candidate is the second; both reduce to the one priced `FinalizationNeedsWork`
  * the model already has, and no hold is either of them: a hold spends nothing
  * and refunds nothing, so a finalizer's own re-preparations stay invisible to
- * `Core`.
+ * `TicketGraph`.
  *
  * A CLOSING PROJECT ABORTS BEFORE THE PERMIT AND RECONCILES AFTER IT. A
  * lifecycle that will never authorize the act again makes another preparation
@@ -288,7 +288,7 @@ export const allFinalizationAttemptOutcomes: readonly FinalizationAttemptOutcome
 
 /**
  * An integration answered by a conflict and a preparation that produced no
- * candidate, both of which reduce to the one priced `FinalizationFailed`.
+ * candidate, both of which reduce to the one priced `FinalizationNeedsWork`.
  */
 export type FinalizationFailureKind = "MergeConflict" | "PreparationFailed";
 
@@ -617,11 +617,11 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "ProposalUnaddressed",
 ];
 
-/** The one conclusive thing `Core` is told, which carries a kind only where the model prices a failure. */
+/** The one conclusive thing `TicketGraph` is told, which carries a kind only where the model prices a failure. */
 export type FinalizationConclusion =
   | { readonly outcome: Extract<FinalizationOutcome, "FinalizationSucceeded"> }
   | {
-      readonly outcome: Extract<FinalizationOutcome, "FinalizationFailed">;
+      readonly outcome: Extract<FinalizationOutcome, "FinalizationNeedsWork">;
       readonly kind: FinalizationFailureKind;
     };
 
@@ -783,7 +783,10 @@ function finalizationNextBeforePermit(
   if (attempt?.outcome === "Failed" && attempt.failureKind !== undefined) {
     return {
       decide: "Conclude",
-      conclusion: { outcome: "FinalizationFailed", kind: attempt.failureKind },
+      conclusion: {
+        outcome: "FinalizationNeedsWork",
+        kind: attempt.failureKind,
+      },
     };
   }
   const aborting = view.observedTarget ?? attempt?.target;

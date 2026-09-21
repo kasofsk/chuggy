@@ -43,7 +43,7 @@ import {
 
 const ticketRepresentation = ticketResponse({
   ticket: asTicketId(3),
-  phase: "Working",
+  phase: "Work",
   sequence: 9,
   ...ticketCarried,
 }).body;
@@ -132,7 +132,7 @@ test("a change frame carries the GET's own representation under its identity", (
   assert.equal(event.event === "Ticket" ? event.sequence : undefined, 42);
   assert.equal(
     event.event === "Ticket" ? event.data.representation?.phase : undefined,
-    "Working",
+    "Work",
   );
 });
 

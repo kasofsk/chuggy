@@ -1,10 +1,10 @@
 /**
  * The two lifecycle collisions a finalizing ticket can meet: a revocation
- * racing the entry into `Finalizing`, and a project closing while a
+ * racing the entry into `Finalization`, and a project closing while a
  * finalization is in flight.
  *
  * ENTRY IS THE POINT OF NO RETURN AND THE MAILBOX IS WHAT DECIDES THE RACE.
- * `revocableIn` excludes `Finalizing`, so the question is only ever which of
+ * `revocableIn` excludes `Finalization`, so the question is only ever which of
  * the two the writer journals first — and that is not the order they were
  * accepted in. A revocation is `Safety` and the completion that enters the
  * phase is `Completion`, so a revocation accepted second is still decided
@@ -195,7 +195,7 @@ test("a revocation offered after entry is refused and the finalizer's request st
   const drained = await finalizerDrain(rig.harness, partition, project.memory);
   assert.deepEqual(drained.decided, ["Refused"]);
   assert.equal(await finalizerEntries(rig, partition), entries);
-  assert.equal(await finalizerPhase(rig, partition), "Finalizing");
+  assert.equal(await finalizerPhase(rig, partition), "Finalization");
   assert.deepEqual(await requestsOf(partition), standing);
 });
 
@@ -281,9 +281,9 @@ test("a closing project aborts an unpermitted attempt without touching the remot
   assert.equal(concluded.conclusions, 1);
   assert.deepEqual(await submittedOf(project), {
     command_tag: "FinalizationResult",
-    outcome: "FinalizationFailed",
+    outcome: "FinalizationNeedsWork",
   });
-  assert.equal(await finalizerPhase(rig, project.partition), "Finalizing");
+  assert.equal(await finalizerPhase(rig, project.partition), "Finalization");
   assert.deepEqual(await permitsOf(project), []);
 });
 

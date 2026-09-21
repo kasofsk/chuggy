@@ -8,13 +8,16 @@ import {
 
 import { decisionEventEnabled } from "../actor/decisionEvent.ts";
 import type { Config } from "../domain/config.ts";
-import { ticketAt, ticketIds } from "../domain/core.ts";
-import type { Core, Stage } from "../domain/generated/modelTypes.ts";
+import { ticketAt, ticketIds } from "../domain/ticketGraph.ts";
+import type {
+  TicketGraph,
+  StageDefinition,
+} from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type { ConfigurationVersion } from "./repositoryConfigurationIdentity.ts";
 import {
-  decodeStage,
-  encodeStage,
+  decodeStageDefinition,
+  encodeStageDefinition,
   type ModelJson,
 } from "../generated/model-api.ts";
 
@@ -27,7 +30,7 @@ export interface DispatchCandidate {
   readonly ticketVersion: number;
   readonly dependencies: readonly number[];
   readonly workFanout: number;
-  readonly program: readonly Stage[];
+  readonly program: readonly StageDefinition[];
   readonly configurationRevision: string;
   readonly configurationDigest: string;
   readonly configurationCanonical: string;
@@ -82,13 +85,13 @@ export function decodeDispatchProgram(
 ): DispatchCandidate["program"] {
   if (!Array.isArray(value))
     throw new TypeError("dispatch program is not an array");
-  return value.map(decodeStage);
+  return value.map(decodeStageDefinition);
 }
 
 export function encodeDispatchProgram(
   value: DispatchCandidate["program"],
 ): ModelJson {
-  return value.map(encodeStage);
+  return value.map(encodeStageDefinition);
 }
 
 function canonicalCandidate(candidate: DispatchCandidate): unknown {
@@ -125,16 +128,16 @@ export function dispatchViewDigest(
 /** Derives selection-visible truth from authoritative state and immutable contract pins. */
 export function deriveDispatchCandidates(
   config: Config,
-  core: Core,
+  graph: TicketGraph,
   ticketVersions: ReadonlyMap<number, number>,
   contracts: ReadonlyMap<number, DispatchContractPin>,
 ): readonly DispatchCandidate[] {
-  return ticketIds(core).flatMap((ticket) => {
+  return ticketIds(graph).flatMap((ticket) => {
     if (
-      !decisionEventEnabled(config, core, { type: "Dispatch", value: ticket })
+      !decisionEventEnabled(config, graph, { type: "Dispatch", value: ticket })
     )
       return [];
-    const value = ticketAt(core, ticket);
+    const value = ticketAt(graph, ticket);
     const ticketVersion = ticketVersions.get(ticket);
     const contract = contracts.get(ticket);
     if (ticketVersion === undefined || contract === undefined)

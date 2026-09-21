@@ -27,7 +27,7 @@ import type { ProjectList, ProjectQueryKey } from "./projectQueryKeys.ts";
 export const ticketUnrevocablePhases: readonly TicketPhase[] = [
   "Done",
   "Revoked",
-  "Finalizing",
+  "Finalization",
 ];
 
 /** The phases a parked ticket waits in, which is `retryableIn`'s first term. */
@@ -143,7 +143,7 @@ export interface TicketActionContext {
 /** What the rework wall's Resume does, which is a fresh cycle rather than a
  * pick-up of the one that failed. */
 function resumeSentence(context: TicketActionContext): string {
-  return context.reason === "ReworkBudgetExhausted"
+  return context.reason === "EvaluationFailureEscalated"
     ? "rework this ticket with a fresh cycle"
     : "rejoin the pipeline at the point this ticket was parked at";
 }

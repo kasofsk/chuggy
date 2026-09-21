@@ -1,7 +1,7 @@
 /**
  * The durable finalization authority against PostgreSQL: ordering the requests
  * a decision authorized, holding one for a bounded stretch, gathering what the
- * pure pass reads, and submitting the one conclusion `Core` is ever told.
+ * pure pass reads, and submitting the one conclusion `TicketGraph` is ever told.
  *
  * THE QUEUE IS THE REQUEST TABLE AND THERE IS NO PROJECTION OF IT. Requests are
  * drawn in `authorizing_seq` order, which is journal-derived and therefore
@@ -643,7 +643,7 @@ async function finalizerSubmitResult(
 ): Promise<FinalizationSubmitted> {
   const { claim, conclusion } = offer;
   const failure =
-    conclusion.outcome === "FinalizationFailed" ? conclusion.kind : null;
+    conclusion.outcome === "FinalizationNeedsWork" ? conclusion.kind : null;
   const operation = `finalization-${randomUUID()}`;
   const submitted = await client.query<SubmissionRow>(
     sql`SELECT result, operation FROM submit_finalization_result(

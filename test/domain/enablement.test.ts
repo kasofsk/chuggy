@@ -41,10 +41,13 @@ import {
 } from "../../src/domain/enablement.ts";
 import { defaultProgram } from "../../src/domain/config.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import type { Core, Ticket } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  TicketGraph,
+  Ticket,
+} from "../../src/domain/generated/modelTypes.ts";
 import { modelInstance } from "./configs.ts";
 import {
-  coreOf,
+  graphOf,
   depsOf,
   evalOutstanding,
   evalTask,
@@ -61,19 +64,19 @@ const produced = (value: number) =>
   ({ type: "ProducedArtifact", value }) as const;
 
 /** A fleet under the sparse ids a release actually draws, which dense fixtures never build. */
-function sparseCore(entries: readonly [number, Ticket][]): Core {
+function sparseGraph(entries: readonly [number, Ticket][]): TicketGraph {
   return { tickets: new Map(entries.map(([at, t]) => [id(at), t])) };
 }
 
 test("room for one more release runs out exactly at the fleet bound", () => {
   const fleet = Array.from({ length: config.nTickets }, () => ticketOn(config));
-  assert.ok(canReleaseIn(config, coreOf([]), id(1)));
-  assert.ok(canReleaseIn(config, coreOf(fleet.slice(0, -1)), id(3)));
-  assert.ok(!canReleaseIn(config, coreOf(fleet), id(4)));
+  assert.ok(canReleaseIn(config, graphOf([]), id(1)));
+  assert.ok(canReleaseIn(config, graphOf(fleet.slice(0, -1)), id(3)));
+  assert.ok(!canReleaseIn(config, graphOf(fleet), id(4)));
 });
 
 test("an id is claimable once: not outside the universe, and never again after", () => {
-  const held = sparseCore([
+  const held = sparseGraph([
     [2, ticketOn(config)],
     [5, ticketOn(config, { phase: "Done" })],
   ]);
@@ -91,7 +94,7 @@ test("an id is claimable once: not outside the universe, and never again after",
   assert.deepEqual(
     releasableIdsIn(
       config,
-      coreOf([ticketOn(config), ticketOn(config), ticketOn(config)]),
+      graphOf([ticketOn(config), ticketOn(config), ticketOn(config)]),
     ),
     [],
     "a fleet at its bound offers nothing, whatever the universe still holds",
@@ -99,50 +102,50 @@ test("an id is claimable once: not outside the universe, and never again after",
 });
 
 test("a release may depend on anything but a tombstone", () => {
-  const core = coreOf([
+  const graph = graphOf([
     ticketOn(config, { phase: "Pending" }),
     ticketOn(config, { phase: "Revoked" }),
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailed",
-      resumeAt: "ResumeWorking",
+      reason: "WorkFailureEscalated",
+      resumeAt: "ResumeWork",
     }),
   ]);
-  assert.deepEqual(dependableIn(core), [id(1), id(3)]);
+  assert.deepEqual(dependableIn(graph), [id(1), id(3)]);
 });
 
 test("the absorbing terminals and the point of no return are the unrevocable phases", () => {
-  const core = coreOf([
+  const graph = graphOf([
     ticketOn(config, { phase: "Pending" }),
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailed",
-      resumeAt: "ResumeWorking",
+      reason: "WorkFailureEscalated",
+      resumeAt: "ResumeWork",
     }),
-    ticketOn(config, { phase: "Working" }),
+    ticketOn(config, { phase: "Work" }),
     ticketOn(config, { phase: "Done" }),
     ticketOn(config, { phase: "Revoked" }),
-    ticketOn(config, { phase: "Finalizing" }),
+    ticketOn(config, { phase: "Finalization" }),
   ]);
-  assert.deepEqual(revocablesIn(core), [id(1), id(2), id(3)]);
-  assert.ok(!revocableIn(core, id(4)));
-  assert.ok(!revocableIn(core, id(5)));
+  assert.deepEqual(revocablesIn(graph), [id(1), id(2), id(3)]);
+  assert.ok(!revocableIn(graph, id(4)));
+  assert.ok(!revocableIn(graph, id(5)));
   assert.ok(
-    !revocableIn(core, id(6)),
+    !revocableIn(graph, id(6)),
     "the finalizer is running, and nothing recalls it",
   );
 });
 
 test("a dependency that is not Done blocks, whatever else it is doing", () => {
-  const blocked = coreOf([
-    ticketOn(config, { phase: "Working" }),
+  const blocked = graphOf([
+    ticketOn(config, { phase: "Work" }),
     ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
   ]);
   assert.ok(isBlockedIn(blocked, id(2)));
   assert.ok(!isReadyIn(blocked, id(2)));
   assert.deepEqual(readiesIn(blocked), []);
 
-  const landed = coreOf([
+  const landed = graphOf([
     ticketOn(config, {
       phase: "Done",
       artifact: produced(2),
@@ -156,7 +159,7 @@ test("a dependency that is not Done blocks, whatever else it is doing", () => {
 });
 
 test("what a ticket waits on is what its dependencies produced, read in id order", () => {
-  const core = sparseCore([
+  const graph = sparseGraph([
     [
       1,
       ticketOn(config, {
@@ -180,101 +183,101 @@ test("what a ticket waits on is what its dependencies produced, read in id order
     ],
   ]);
   assert.deepEqual(
-    [...waitsOn(core, id(6))].sort((a, b) => a - b),
+    [...waitsOn(graph, id(6))].sort((a, b) => a - b),
     [1, 4],
   );
   assert.deepEqual(
-    depArtifacts(core, id(6)),
+    depArtifacts(graph, id(6)),
     [produced(2), produced(5)],
     "the read is ordered by dependency id, so it does not inherit a set's iteration order",
   );
 });
 
 test("only the two task phases can receive a completion, and only a resolved set reduces", () => {
-  const core = coreOf([
+  const graph = graphOf([
     ticketOn(config, {
-      phase: "Working",
+      phase: "Work",
       tasks: new Set([workOutstanding(1), workTask(2, "Passed")]),
       spawned: 2,
     }),
     ticketOn(config, {
-      phase: "Evaluating",
+      phase: "Evaluation",
       tasks: new Set([evalTask(1, 0, "Failed")]),
       spawned: 1,
     }),
-    ticketOn(config, { phase: "Finalizing" }),
+    ticketOn(config, { phase: "Finalization" }),
     ticketOn(config, {
-      phase: "Working",
+      phase: "Work",
       tasks: new Set([workTask(1, "Passed")]),
       spawned: 1,
     }),
     ticketOn(config, {
-      phase: "Evaluating",
+      phase: "Evaluation",
       tasks: new Set([evalOutstanding(1, 0)]),
       spawned: 1,
     }),
   ]);
-  assert.deepEqual(taskPhaseIn(core), [id(1), id(2), id(4), id(5)]);
-  assert.deepEqual(reducibleWorkIn(core), [id(4)]);
-  assert.deepEqual(reducibleEvalIn(core), [id(2)]);
+  assert.deepEqual(taskPhaseIn(graph), [id(1), id(2), id(4), id(5)]);
+  assert.deepEqual(reducibleWorkIn(graph), [id(4)]);
+  assert.deepEqual(reducibleEvalIn(graph), [id(2)]);
 });
 
 test("the phase holding the finalizer obligation is the only one a result resolves from", () => {
-  const core = coreOf([
-    ticketOn(config, { phase: "Finalizing" }),
-    ticketOn(config, { phase: "Evaluating" }),
+  const graph = graphOf([
+    ticketOn(config, { phase: "Finalization" }),
+    ticketOn(config, { phase: "Evaluation" }),
     ticketOn(config, {
       phase: "Done",
       artifact: produced(2),
       completions: 1,
     }),
   ]);
-  assert.deepEqual(finalizingIn(core), [id(1)]);
-  assert.ok(finalizableIn(core, id(1)));
-  assert.ok(!finalizableIn(core, id(2)));
+  assert.deepEqual(finalizingIn(graph), [id(1)]);
+  assert.ok(finalizableIn(graph, id(1)));
+  assert.ok(!finalizableIn(graph, id(2)));
   assert.ok(
-    !finalizableIn(core, asTicketId(9)),
+    !finalizableIn(graph, asTicketId(9)),
     "a result for a ticket the fleet never held is refused rather than looked up",
   );
-  assert.deepEqual(doneIn(core), [id(3)]);
+  assert.deepEqual(doneIn(graph), [id(3)]);
 });
 
 test("the fabric may still report on exactly the tasks a ticket has outstanding", () => {
-  const core = coreOf([
+  const graph = graphOf([
     ticketOn(config, {
-      phase: "Evaluating",
+      phase: "Evaluation",
       record: [workTask(1, "Passed"), workTask(2, "Passed")],
       tasks: new Set([evalOutstanding(4, 0), evalTask(3, 0, "Passed")]),
       spawned: 4,
     }),
     ticketOn(config, { phase: "Pending" }),
   ]);
-  assert.deepEqual(outstandingTaskIdsIn(core, id(1)), [4]);
-  assert.ok(outstandingTaskIn(core, id(1), 4));
+  assert.deepEqual(outstandingTaskIdsIn(graph, id(1)), [4]);
+  assert.ok(outstandingTaskIn(graph, id(1), 4));
   assert.ok(
-    !outstandingTaskIn(core, id(1), 3),
+    !outstandingTaskIn(graph, id(1), 3),
     "a duplicate for a resolved task matches nothing outstanding",
   );
   assert.ok(
-    !outstandingTaskIn(core, id(1), 1),
+    !outstandingTaskIn(graph, id(1), 1),
     "a stale delivery names an id already retired into the record",
   );
-  assert.deepEqual(outstandingTaskIdsIn(core, id(2)), []);
+  assert.deepEqual(outstandingTaskIdsIn(graph, id(2)), []);
 });
 
 test("a park is retryable exactly when its wall stamped a resume", () => {
-  const parked = coreOf([
+  const parked = graphOf([
     ticketOn(config, {
       phase: "Escalated",
-      resumeAt: "ResumeFinalizing",
-      reason: "ExecutionProfileUnavailable",
+      resumeAt: "ResumeFinalization",
+      reason: "WorkExecutionUnavailableEscalated",
     }),
     ticketOn(config, {
       phase: "Escalated",
-      resumeAt: "ResumeWorking",
-      reason: "WorkFailed",
+      resumeAt: "ResumeWork",
+      reason: "WorkFailureEscalated",
     }),
-    ticketOn(config, { phase: "Working" }),
+    ticketOn(config, { phase: "Work" }),
   ]);
   assert.ok(retryableIn(parked, id(1)));
   assert.ok(retryableIn(parked, id(2)));
@@ -288,10 +291,10 @@ test("a park is retryable exactly when its wall stamped a resume", () => {
 test("the finalizer reports every lifecycle result, and a block names an execution reason", () => {
   assert.deepEqual(finalizationOutcomes, [
     "FinalizationSucceeded",
-    "FinalizationFailed",
+    "FinalizationNeedsWork",
   ]);
   assert.ok(
-    !executionBlockedReasons.includes("WorkFailed"),
+    !executionBlockedReasons.includes("WorkFailureEscalated"),
     "a blocked execution is not failed work, so no work wall is drawable here",
   );
   for (const reason of executionBlockedReasons) {
@@ -336,27 +339,27 @@ test("the stutter is enabled exactly on a fully-released fleet of terminals", ()
       completions: 1,
     }),
   ];
-  assert.ok(quietIn(config, coreOf(settled)));
+  assert.ok(quietIn(config, graphOf(settled)));
   assert.ok(
-    !quietIn(config, coreOf(settled.slice(0, -1))),
+    !quietIn(config, graphOf(settled.slice(0, -1))),
     "room for a release means the author can still act",
   );
   assert.ok(
     !quietIn(
       config,
-      coreOf([...settled.slice(0, -1), ticketOn(config, { phase: "Working" })]),
+      graphOf([...settled.slice(0, -1), ticketOn(config, { phase: "Work" })]),
     ),
     "a live ticket means some other action is enabled",
   );
   assert.ok(
     !quietIn(
       config,
-      coreOf([
+      graphOf([
         ...settled.slice(0, -1),
         ticketOn(config, {
           phase: "Escalated",
-          reason: "WorkFailed",
-          resumeAt: "ResumeWorking",
+          reason: "WorkFailureEscalated",
+          resumeAt: "ResumeWork",
         }),
       ]),
     ),

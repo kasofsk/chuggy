@@ -22,8 +22,8 @@ import {
   type DecisionEvent,
 } from "../../src/actor/decisionEvent.ts";
 import { genesis } from "../../src/actor/journal.ts";
-import { ticketAt } from "../../src/domain/core.ts";
-import type { Core } from "../../src/domain/generated/modelTypes.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
+import type { TicketGraph } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import {
   checkedReworkCap,
@@ -33,8 +33,8 @@ import { plainAuthoring, plainResult } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 
 /** The one outstanding task of a single-width ticket, which is what a completion names. */
-function outstanding(core: Core): number {
-  const task = [...ticketAt(core, id(1)).tasks].find(
+function outstanding(graph: TicketGraph): number {
+  const task = [...ticketAt(graph, id(1)).tasks].find(
     (candidate) => candidate.state === "Outstanding",
   );
   if (task === undefined)
@@ -52,17 +52,17 @@ function dispositionsUnder(
   cyclesMax: number,
   finalizationFailures = 0,
 ): readonly string[] {
-  let core: Core = genesis;
+  let graph: TicketGraph = genesis;
   const step = (event: DecisionEvent) => {
-    core = execDecisionEvent(core, event).post;
+    graph = execDecisionEvent(graph, event).post;
   };
   const evaluated = (verdict: "Pass" | "Fail") => {
     step(
-      taskDoneEvent(id(1), asTaskId(outstanding(core)), "Pass", plainResult),
+      taskDoneEvent(id(1), asTaskId(outstanding(graph)), "Pass", plainResult),
     );
     step(workReduceEvent(id(1)));
     step(
-      taskDoneEvent(id(1), asTaskId(outstanding(core)), verdict, plainResult),
+      taskDoneEvent(id(1), asTaskId(outstanding(graph)), verdict, plainResult),
     );
   };
   step(releaseTicketEvent(id(1), plainAuthoring));
@@ -70,12 +70,12 @@ function dispositionsUnder(
   for (let failure = 0; failure < finalizationFailures; failure++) {
     evaluated("Pass");
     step(evalReduceEvent(id(1), "ReworkEvaluationFailure"));
-    step(finalizationResultEvent(id(1), "FinalizationFailed"));
+    step(finalizationResultEvent(id(1), "FinalizationNeedsWork"));
   }
   const picked: string[] = [];
   for (let round = 0; round <= cyclesMax + 1; round++) {
     evaluated("Fail");
-    const disposition = reworkDisposition(ticketAt(core, id(1)), cyclesMax);
+    const disposition = reworkDisposition(ticketAt(graph, id(1)), cyclesMax);
     picked.push(disposition);
     step(evalReduceEvent(id(1), disposition));
     if (disposition === "EscalateEvaluationFailure") return picked;

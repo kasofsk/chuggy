@@ -44,7 +44,7 @@ const container: ExecutionSummary = {
 
 const working: TicketResponse = {
   ticket: 1,
-  phase: "Working",
+  phase: "Work",
   sequence: 5,
   ...ticketInstants,
 };
@@ -62,7 +62,7 @@ const tickets: readonly TicketResponse[] = [
     ticket: 2,
     phase: "Escalated",
     sequence: 4,
-    reason: "ReworkBudgetExhausted",
+    reason: "EvaluationFailureEscalated",
     ...ticketInstants,
   },
   { ticket: 3, phase: "Pending", sequence: 3, ...ticketInstants },

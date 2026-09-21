@@ -3,7 +3,7 @@
  * function can express: the row's membership is decided by two reads, a live
  * frame and the cache between them.
  *
- * `Finalizing` is not a phase the inbox's filter holds, so the phase page here
+ * `Finalization` is not a phase the inbox's filter holds, so the phase page here
  * is empty throughout and every row on screen arrived because a question was
  * opened on the stream. The shell is mounted beside the screen, so the badge
  * and the list are read as the one value they are meant to be.

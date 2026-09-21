@@ -26,20 +26,12 @@ import type { ApiFailure } from "./apiRequest.ts";
 /** Which wall the ticket hit, in the person's own terms. */
 export function escalationReasonSentence(reason: EscalationReason): string {
   switch (reason) {
-    case "WorkFailed":
+    case "WorkFailureEscalated":
       return "the work did not pass its evaluation";
-    case "ReworkBudgetExhausted":
+    case "EvaluationFailureEscalated":
       return "this ticket has failed evaluation more times than rework allows";
-    case "ExecutionPolicyDenied":
-      return "the platform's policy refused to run this ticket's contract";
-    case "TicketConfigIncompatible":
-      return "this ticket's configuration cannot run on the platform it asked for";
-    case "ExecutionProfileUnavailable":
-      return "no execution profile the platform offers matches this ticket";
-    case "RuntimeVersionUnsupported":
-      return "the runtime version this ticket requires is not supported";
-    case "RequiredCapabilityUnavailable":
-      return "a capability this ticket requires is not available to run it";
+    case "WorkExecutionUnavailableEscalated":
+      return "the platform could not run this ticket's contract";
   }
 }
 

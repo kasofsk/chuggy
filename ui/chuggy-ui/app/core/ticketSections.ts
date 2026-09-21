@@ -43,9 +43,9 @@ export function ticketSectionOf(phase: TicketPhase): TicketSection {
   switch (phase) {
     case "Escalated":
       return "NeedsYou";
-    case "Working":
-    case "Evaluating":
-    case "Finalizing":
+    case "Work":
+    case "Evaluation":
+    case "Finalization":
       return "InProgress";
     case "Pending":
       return "UpNext";
@@ -66,20 +66,12 @@ export function ticketSectionPhases(
 
 export function escalationBadgeLabel(reason: EscalationReason): string {
   switch (reason) {
-    case "WorkFailed":
+    case "WorkFailureEscalated":
       return "work failed";
-    case "ReworkBudgetExhausted":
+    case "EvaluationFailureEscalated":
       return "rework budget spent";
-    case "ExecutionPolicyDenied":
-      return "execution policy denied it";
-    case "TicketConfigIncompatible":
-      return "the configuration does not fit";
-    case "ExecutionProfileUnavailable":
-      return "no execution profile fits";
-    case "RuntimeVersionUnsupported":
-      return "the runtime version is unsupported";
-    case "RequiredCapabilityUnavailable":
-      return "a required capability is missing";
+    case "WorkExecutionUnavailableEscalated":
+      return "execution unavailable";
   }
 }
 

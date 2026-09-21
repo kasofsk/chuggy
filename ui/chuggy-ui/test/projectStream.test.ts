@@ -76,7 +76,7 @@ test("a reopen replays from the last sequence the stream delivered", async () =>
           resource: "3",
           representation: {
             ticket: 3,
-            phase: "Working",
+            phase: "Work",
             sequence: 9,
             ...ticketInstants,
           },
@@ -161,7 +161,7 @@ test("a frame the contract rejects ends the connection rather than being skipped
           resource: "4",
           representation: {
             ticket: 4,
-            phase: "Working",
+            phase: "Work",
             sequence: 1,
             ...ticketInstants,
           },

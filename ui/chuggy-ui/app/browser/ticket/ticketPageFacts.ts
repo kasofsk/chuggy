@@ -54,9 +54,9 @@ export function runsLabel(page: ExecutionsResponse | undefined): string {
  */
 export function phaseIsRunning(phase: TicketResponse["phase"]): boolean {
   switch (phase) {
-    case "Working":
-    case "Evaluating":
-    case "Finalizing":
+    case "Work":
+    case "Evaluation":
+    case "Finalization":
       return true;
     case "Pending":
     case "Done":

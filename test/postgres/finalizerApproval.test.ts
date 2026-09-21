@@ -4,7 +4,7 @@
  * journals nothing, and the standing the finalizer then reads.
  *
  * THE ANSWER IS PROVED BY THE JOURNAL AND NOT BY THE CALL. Approval is
- * operational protocol rather than `Core` state, so the cases about answering
+ * operational protocol rather than `TicketGraph` state, so the cases about answering
  * count `journal_entry` and read the ticket projection either side of it; an
  * answer that was recorded and journaled anyway would satisfy any weaker
  * assertion.
@@ -37,7 +37,7 @@ import type {
   FinalizerStore,
 } from "../../src/interpreter/finalizer.ts";
 import type { NativeActionResolution } from "../../src/interpreter/ticketCommand.ts";
-import { ticketAt } from "../../src/domain/core.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   finalizerAccept,
@@ -324,7 +324,7 @@ test("an escalation's answer and an approval's answer are not interchangeable", 
     `INSERT INTO native_action
        (tenant, project, action, authorizing_seq, effect_position, ticket,
         action_version, kind, reason, required_capability, state)
-     VALUES ($1,$2,$3,$4,9,$5,$4,'TicketEscalation','WorkFailed','ResolveTicket','Withdrawn')`,
+     VALUES ($1,$2,$3,$4,9,$5,$4,'TicketEscalation','WorkFailureEscalated','ResolveTicket','Withdrawn')`,
     [
       subject.project.partition.tenant,
       subject.project.partition.project,
@@ -396,7 +396,7 @@ function outstandingTaskOf(
   memory: Awaited<ReturnType<typeof finalizerDrain>>["memory"],
 ): number {
   const tasks = [
-    ...ticketAt(memory.core, asTicketId(project.ticket)).tasks,
+    ...ticketAt(memory.graph, asTicketId(project.ticket)).tasks,
   ].filter((task) => task.state === "Outstanding");
   const task = tasks[0];
   if (tasks.length !== 1 || task === undefined) {
@@ -443,7 +443,7 @@ test("an ask the phase outlived is withdrawn, and the next desk task can be open
     project.memory,
   );
   assert.deepEqual(reworked.decided, ["Committed"]);
-  assert.equal(await finalizerPhase(rig, project.partition), "Working");
+  assert.equal(await finalizerPhase(rig, project.partition), "Work");
   assert.deepEqual(await actionsOf(project), [
     { kind: "FinalizationApproval", state: "Withdrawn" },
   ]);

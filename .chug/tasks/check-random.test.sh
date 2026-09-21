@@ -32,7 +32,7 @@ R="$WORK/repo"
 
 # The seed is pinned to a run that draws a duplicate completion; a mutant that
 # no seed here draws is a case that passes by never reaching the defect.
-SEED=0x3
+SEED=0x1
 
 run_gate() { # <dir> [env=value...]
 	OUT="$WORK/.out"
@@ -103,7 +103,7 @@ const path = process.argv[1]
 const source = fs.readFileSync(path, "utf8")
 const broken = source.replace(
   `rec: { label: "task-done", transitions: [], effects: [] },`,
-  `rec: { label: "task-done", transitions: [{ ticket: id, from: ticketAt(core, id).phase, to: "Done" }], effects: [] },`,
+  `rec: { label: "task-done", transitions: [{ ticket: id, from: ticketAt(graph, id).phase, to: "Done" }], effects: [] },`,
 )
 if (broken === source) throw new Error("the mutant found nothing to break")
 fs.writeFileSync(path, broken)

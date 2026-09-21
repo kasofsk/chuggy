@@ -55,23 +55,21 @@ test("every wall the wire can name has a point or names none", () => {
     ticketResumePoint(parked(reason)),
   ]);
   expect(named).toEqual([
-    ["WorkFailed", "ResumeWorking"],
-    ["ReworkBudgetExhausted", "ResumeReworking"],
-    ["ExecutionPolicyDenied", "ResumeEvaluating"],
-    ["TicketConfigIncompatible", "ResumeEvaluating"],
-    ["ExecutionProfileUnavailable", "ResumeEvaluating"],
-    ["RuntimeVersionUnsupported", "ResumeEvaluating"],
-    ["RequiredCapabilityUnavailable", "ResumeEvaluating"],
+    ["WorkFailureEscalated", "ResumeWork"],
+    ["EvaluationFailureEscalated", "ResumeRework"],
+    ["WorkExecutionUnavailableEscalated", "ResumeEvaluation"],
   ]);
 });
 
 test("a blocked execution resumes into the phase that held the set it stopped", () => {
   expect(
-    ticketResumePoint(parked("ExecutionPolicyDenied", cancelledWork)),
-  ).toBe("ResumeWorking");
+    ticketResumePoint(
+      parked("WorkExecutionUnavailableEscalated", cancelledWork),
+    ),
+  ).toBe("ResumeWork");
   expect(
     ticketResumePoint({
-      ...parked("ExecutionPolicyDenied"),
+      ...parked("WorkExecutionUnavailableEscalated"),
       lastSet: undefined,
     }),
   ).toBeUndefined();
@@ -80,29 +78,30 @@ test("a blocked execution resumes into the phase that held the set it stopped", 
 test("only a parked phase has anything to resume", () => {
   const resumable = phaseRoster.filter(
     (phase) =>
-      ticketResumePoint({ ...parked("WorkFailed"), phase }) !== undefined,
+      ticketResumePoint({ ...parked("WorkFailureEscalated"), phase }) !==
+      undefined,
   );
   expect(resumable).toEqual(["Escalated"]);
 });
 
 test("an escalation whose reason the read omits names no point", () => {
   expect(
-    ticketResumePoint({ ...parked("WorkFailed"), reason: undefined }),
+    ticketResumePoint({ ...parked("WorkFailureEscalated"), reason: undefined }),
   ).toBeUndefined();
 });
 
 test("the machine's own answer wins over every rule here", () => {
   expect(
     ticketResumePoint({
-      ...parked("WorkFailed"),
-      resumeAt: "ResumeFinalizing",
+      ...parked("WorkFailureEscalated"),
+      resumeAt: "ResumeFinalization",
     }),
-  ).toBe("ResumeFinalizing");
+  ).toBe("ResumeFinalization");
 });
 
 test("an evaluation resume re-runs the program from its lowest stage", () => {
-  expect(ticketResume(parked("ExecutionPolicyDenied"))).toEqual({
-    point: "ResumeEvaluating",
+  expect(ticketResume(parked("WorkExecutionUnavailableEscalated"))).toEqual({
+    point: "ResumeEvaluation",
     reruns: "evaluation",
     fromStage: 0,
     ofStages: 2,
@@ -110,8 +109,8 @@ test("an evaluation resume re-runs the program from its lowest stage", () => {
 });
 
 test("the rework wall's resume re-runs the work", () => {
-  expect(ticketResume(parked("ReworkBudgetExhausted"))).toEqual({
-    point: "ResumeReworking",
+  expect(ticketResume(parked("EvaluationFailureEscalated"))).toEqual({
+    point: "ResumeRework",
     reruns: "work",
     fromStage: undefined,
     ofStages: undefined,
@@ -124,9 +123,9 @@ test("each point is re-run in the ticket's own word for it", () => {
     resumeRerun(point),
   ]);
   expect(said).toEqual([
-    ["ResumeWorking", "work"],
-    ["ResumeReworking", "work"],
-    ["ResumeEvaluating", "evaluation"],
-    ["ResumeFinalizing", "finalization"],
+    ["ResumeWork", "work"],
+    ["ResumeRework", "work"],
+    ["ResumeEvaluation", "evaluation"],
+    ["ResumeFinalization", "finalization"],
   ]);
 });

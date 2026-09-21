@@ -27,6 +27,7 @@ import {
   ticketReferenceSerialize,
   ticketReferenceSplit,
 } from "../../../../src/contract/ticketReference.ts";
+import { phaseLabel } from "./codeLabels.ts";
 
 /** The kind a mention carries, which is also the word a member may type after
  * the `@` to mean this kind and nothing else. */
@@ -55,7 +56,7 @@ export function conversationMentionItem(
     id: String(ticket.ticket),
     type: conversationMentionKind,
     label: conversationMentionLabel(ticket.ticket),
-    description: ticket.title ?? ticket.phase,
+    description: ticket.title ?? phaseLabel(ticket.phase),
   };
 }
 

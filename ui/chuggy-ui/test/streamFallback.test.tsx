@@ -49,7 +49,7 @@ async function heldEntryAfter(
   const client = new QueryClient();
   client.setQueryData(held, {
     ticket: 3,
-    phase: "Working",
+    phase: "Work",
     sequence: 9,
     ...ticketInstants,
   });

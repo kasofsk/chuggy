@@ -253,7 +253,7 @@ function representation(
   if (kind === "Ticket")
     return {
       ticket: Number(resource),
-      phase: "Working",
+      phase: "Work",
       sequence: 1,
       ...streamTicketCarried,
     };

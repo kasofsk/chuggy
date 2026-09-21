@@ -29,7 +29,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 trap 'chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT
 
 OUT="$WORK/.out"
-GOLDEN="work-failed"
+GOLDEN="work-failure-escalated"
 
 run_gate() { # <golden-dir>
 	set +e

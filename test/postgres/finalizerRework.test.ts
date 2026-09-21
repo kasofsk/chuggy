@@ -32,7 +32,7 @@ import {
   artifactProjectDirectory,
 } from "../../src/adapters/artifacts/artifactKey.ts";
 import { finalizerRowValue } from "../../src/adapters/postgres/finalizerRows.ts";
-import { ticketAt } from "../../src/domain/core.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type { Ticket } from "../../src/domain/generated/modelTypes.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
@@ -177,13 +177,13 @@ async function reworked(label: string): Promise<{
     remote,
     attempt: await reworkAttemptOf(project),
     bundle: await reworkBundleOf(project),
-    decided: ticketAt(drained.memory.core, asTicketId(project.ticket)),
+    decided: ticketAt(drained.memory.graph, asTicketId(project.ticket)),
   };
 }
 
 /** The ticket the project's history released, as it stood before any finalization. */
 function reworkTicketBefore(project: FinalizerProject): Ticket {
-  return ticketAt(project.memory.core, asTicketId(project.ticket));
+  return ticketAt(project.memory.graph, asTicketId(project.ticket));
 }
 
 /** The spawn registrations this project holds, which is what a rework adds one to. */
@@ -225,7 +225,7 @@ test("a clean automatic integration concludes without spawning a rework", async 
   );
   const port = finalizerRemotePort(rig);
   for (const round of ["promote", "conclude"]) {
-    assert.equal(await reworkPhaseOf(project), "Finalizing", round);
+    assert.equal(await reworkPhaseOf(project), "Finalization", round);
     await finalizerExpireClaim(rig, project);
     const pass = await finalizerPassOnce(rig, project, port, `clean-${round}`);
     assert.equal(pass.holds, 0, round);
@@ -248,7 +248,7 @@ test("a clean automatic integration concludes without spawning a rework", async 
     project.memory,
   );
   assert.deepEqual(drained.decided, ["Committed"]);
-  const decided = ticketAt(drained.memory.core, asTicketId(project.ticket));
+  const decided = ticketAt(drained.memory.graph, asTicketId(project.ticket));
   assert.equal(decided.phase, "Done");
   assert.equal(decided.completions, before.completions + 1);
   assert.equal(decided.spawned, before.spawned, "nothing further was spawned");
@@ -269,7 +269,7 @@ test("a concluded merge conflict returns the ticket to work with a bundle naming
   const before = reworkTicketBefore(project);
   assert.equal(decided.completions, before.completions, "nothing completed");
   assert.ok(decided.spawned > before.spawned, "a fresh work set was spawned");
-  assert.equal(await reworkPhaseOf(project), "Working");
+  assert.equal(await reworkPhaseOf(project), "Work");
   assert.deepEqual(reworkReference(bundle, "FinalizationAttempt"), {
     reference_kind: "FinalizationAttempt",
     reference_id: attempt.attempt,

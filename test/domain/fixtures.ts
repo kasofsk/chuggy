@@ -15,9 +15,9 @@
 
 import type { Config } from "../../src/domain/config.ts";
 import { defaultProgram } from "../../src/domain/config.ts";
-import { initRecord } from "../../src/domain/core.ts";
+import { initRecord } from "../../src/domain/ticketGraph.ts";
 import type {
-  Core,
+  TicketGraph,
   Task,
   TaskOutcome,
   Ticket,
@@ -84,19 +84,19 @@ export function ticketOn(
   return { ...born, ...overrides };
 }
 
-/** A core holding these tickets under dense ids from one, in the order given. */
-export function coreOf(tickets: readonly Ticket[]): Core {
+/** A graph holding these tickets under dense ids from one, in the order given. */
+export function graphOf(tickets: readonly Ticket[]): TicketGraph {
   const map = new Map<TicketId, Ticket>();
   tickets.forEach((ticket, index) => map.set(id(index + 1), ticket));
   return { tickets: map };
 }
 
 /**
- * The view of a state no decision has reached. The previous Core is the empty
+ * The view of a state no decision has reached. The previous TicketGraph is the empty
  * fleet, which is exactly what the model's two ghosts hold after `init`.
  */
-export function initialView(post: Core): StepView {
-  return { pre: coreOf([]), rec: initRecord, post };
+export function initialView(post: TicketGraph): StepView {
+  return { pre: graphOf([]), rec: initRecord, post };
 }
 
 /**
@@ -125,14 +125,14 @@ export function healthyFleet(config: Config): readonly Ticket[] {
       completions: 1,
     }),
     ticketOn(config, {
-      phase: "Working",
+      phase: "Work",
       deps: new Set([1]),
       tasks: live,
       spawned: width,
     }),
     ticketOn(config, {
       ...finished,
-      phase: "Finalizing",
+      phase: "Finalization",
     }),
   ];
 }
@@ -142,8 +142,8 @@ export function fleetBut(
   fleet: readonly Ticket[],
   index: number,
   overrides: Partial<Ticket>,
-): Core {
-  return coreOf(
+): TicketGraph {
+  return graphOf(
     fleet.map((ticket, at) =>
       at === index ? { ...ticket, ...overrides } : ticket,
     ),
@@ -155,7 +155,7 @@ export function accountsFor(ticket: Ticket): boolean {
   return ticket.spawned === ticket.record.length + ticket.tasks.size;
 }
 
-/** The same over a whole core: a fixture accounts for all of its ids or none of them. */
-export function accountsForAll(core: Core): boolean {
-  return [...core.tickets.values()].every(accountsFor);
+/** The same over a whole graph: a fixture accounts for all of its ids or none of them. */
+export function accountsForAll(graph: TicketGraph): boolean {
+  return [...graph.tickets.values()].every(accountsFor);
 }

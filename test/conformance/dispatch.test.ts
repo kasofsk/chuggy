@@ -20,7 +20,7 @@
  * `settle` action writes.
  */
 
-import type { Core } from "../../src/domain/generated/modelTypes.ts";
+import type { TicketGraph } from "../../src/domain/generated/modelTypes.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -35,7 +35,7 @@ import {
 } from "./dispatch.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
-const emptyCore: Core = { tickets: new Map() };
+const emptyGraph: TicketGraph = { tickets: new Map() };
 
 /** A state that records no draw at all, so an arm that needs one refuses by naming it. */
 const noPicks: Picks = {
@@ -47,7 +47,6 @@ const noPicks: Picks = {
   taskId: undefined,
   verdict: undefined,
   outcome: undefined,
-  reason: undefined,
 };
 
 /** The label the model's own `settle` action writes, read where it is written. */
@@ -64,7 +63,7 @@ function settleLabel(): string {
 /** Why a call refused, or nothing when it returned. */
 function refusal(action: string): string | undefined {
   try {
-    replayStep(emptyCore, action, noPicks);
+    replayStep(emptyGraph, action, noPicks);
     return undefined;
   } catch (error: unknown) {
     return error instanceof Error ? error.message : String(error);
@@ -110,10 +109,10 @@ test("an action outside the roster is refused rather than routed to a neighbour"
 });
 
 test("the arm with no decider returns the state it was handed, under the model's label", () => {
-  const decision = replayStep(emptyCore, "settle", noPicks);
+  const decision = replayStep(emptyGraph, "settle", noPicks);
   assert.equal(
     decision.post,
-    emptyCore,
+    emptyGraph,
     "the stutter rebuilt the state instead of keeping it",
   );
   assert.equal(decision.rec.label, settleLabel());

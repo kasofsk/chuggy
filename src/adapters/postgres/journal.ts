@@ -210,7 +210,7 @@ export async function postgresJournalDispatchContracts(
           `postgres journal: dispatch contract entry is unreadable — ${parsed.why}`,
         );
       const event = parsed.value.event;
-      if (event.type === "ReleaseTicket") {
+      if (event.type === "CreateTicket") {
         contracts.set(event.value.ticket, {
           configurationRevision: stored.configuration_revision,
           configurationDigest: stored.configuration_digest,

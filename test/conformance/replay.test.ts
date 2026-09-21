@@ -1,6 +1,6 @@
 /**
  * Every step of every committed golden, replayed through this implementation's
- * own deciders: the model's `StepRecord` and post-`Core` reproduced exactly,
+ * own deciders: the model's `StepRecord` and post-`TicketGraph` reproduced exactly,
  * and the whole invariant bundle evaluated on every state either side of it.
  *
  * REPRODUCTION IS EXACT EQUALITY ON THE WHOLE STATE, at the encode boundary,
@@ -59,7 +59,7 @@ import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import type { Config } from "../../src/domain/config.ts";
-import type { Decision } from "../../src/domain/core.ts";
+import type { Decision } from "../../src/domain/ticketGraph.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
 import {
   decodeTrace,
@@ -77,9 +77,9 @@ import {
   type ItfVariant,
 } from "../itf/decode.ts";
 import {
-  decodeCore,
+  decodeTicketGraph,
   decodeStepRecord,
-  encodeCore,
+  encodeTicketGraph,
   encodeStepRecord,
 } from "../itf/vocabulary.ts";
 import { CONFIGS } from "../domain/configs.ts";
@@ -226,7 +226,6 @@ function picksOf(state: ItfState): Picks {
     taskId: some("tid"),
     verdict: some("v"),
     outcome: some("out"),
-    reason: some("why"),
   };
 }
 
@@ -343,7 +342,7 @@ function fieldDiff(
 }
 
 /** Only the tickets that differ, so a divergence points at a ticket rather than at a state. */
-function coreDiff(got: unknown, want: unknown): string[] {
+function graphDiff(got: unknown, want: unknown): string[] {
   const mine = ticketsOf(got);
   const theirs = ticketsOf(want);
   const ids = [...new Set([...mine.keys(), ...theirs.keys()])].sort();
@@ -360,7 +359,7 @@ function coreDiff(got: unknown, want: unknown): string[] {
 }
 
 /** One line per ticket, which is how a whole state stays readable in a report. */
-function coreLines(label: string, encoded: unknown): string[] {
+function graphLines(label: string, encoded: unknown): string[] {
   return [...ticketsOf(encoded)].map(
     ([id, ticket]) => `  ${label} ticket ${id}: ${terseValue(ticket)}`,
   );
@@ -390,13 +389,13 @@ function recordFinding(
   ];
 }
 
-function coreFinding(
+function graphFinding(
   golden: Golden,
   index: number,
   action: string,
   decision: Decision,
 ): readonly Finding[] {
-  const got = encodeValue(encodeCore(decision.post));
+  const got = encodeValue(encodeTicketGraph(decision.post));
   const want = rawAt(golden, index, golden.ticketsVar);
   if (isDeepStrictEqual(got, want)) return [];
   return [
@@ -404,7 +403,7 @@ function coreFinding(
       kind: "post-state",
       where: siteOf(golden, index, action),
       what: "the post-state diverged",
-      detail: coreDiff(got, want),
+      detail: graphDiff(got, want),
     },
   ];
 }
@@ -442,7 +441,7 @@ function bundleFinding(
       what: bundleWhat(verdict),
       detail: [
         `  record: ${terse(encodeValue(encodeStepRecord(view.rec)))}`,
-        ...coreLines("post", encodeValue(encodeCore(view.post))),
+        ...graphLines("post", encodeValue(encodeTicketGraph(view.post))),
         index === 0
           ? "  pre is this same state, which is what an initial state means"
           : `  pre is state ${String(index - 1)} of ${where}`,
@@ -453,7 +452,9 @@ function bundleFinding(
 
 /** The initial state: no decider produced it, so the bundle is all there is to ask. */
 function checkInit(golden: Golden, config: Config, run: Run): void {
-  const post = decodeCore(stateValue(stateAt(golden, 0), golden.ticketsVar));
+  const post = decodeTicketGraph(
+    stateValue(stateAt(golden, 0), golden.ticketsVar),
+  );
   const rec = decodeStepRecord(stateValue(stateAt(golden, 0), golden.stepVar));
   run.evaluated++;
   run.findings.push(
@@ -469,7 +470,7 @@ function checkStep(
 ): void {
   const after = stateAt(golden, index);
   const action = actionOf(after);
-  const pre = decodeCore(
+  const pre = decodeTicketGraph(
     stateValue(stateAt(golden, index - 1), golden.ticketsVar),
   );
   const decision = replayStep(pre, action, picksOf(after));
@@ -477,7 +478,7 @@ function checkStep(
   run.decided.add(decision.rec.label);
   run.findings.push(
     ...recordFinding(golden, index, action, decision),
-    ...coreFinding(golden, index, action, decision),
+    ...graphFinding(golden, index, action, decision),
   );
   run.evaluated++;
   const view: StepView = { pre, rec: decision.rec, post: decision.post };
@@ -605,12 +606,12 @@ test("the deciders produced every label the corpus carries", () => {
   assert.deepEqual([...corpusRun().decided].sort(), [...carried].sort());
 });
 
-test("every golden's initial state is the one a fresh core starts from", () => {
+test("every golden's initial state is the one a fresh graph starts from", () => {
   for (const row of rows()) {
     const golden = loadGolden(row);
     assert.equal(
-      decodeCore(stateValue(stateAt(golden, 0), golden.ticketsVar)).tickets
-        .size,
+      decodeTicketGraph(stateValue(stateAt(golden, 0), golden.ticketsVar))
+        .tickets.size,
       0,
       `${row.name}: a run starts with no tickets, because authoring is the only source`,
     );

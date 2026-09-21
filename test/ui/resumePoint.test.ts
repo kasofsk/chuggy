@@ -21,7 +21,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ticketAt } from "../../src/domain/core.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import {
   decideExecutionBlocked,
   decideEvalStageReduce,
@@ -30,16 +30,21 @@ import {
 } from "../../src/domain/deciders.ts";
 import { executionBlockedReasons } from "../../src/domain/enablement.ts";
 import type {
-  Core,
+  Reason,
+  Resume,
   Task,
   TaskKind,
   TaskOutcome,
   Ticket,
+  TicketGraph,
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { combine } from "../../src/domain/program.ts";
 import { resumePoints } from "../../src/contract/rosters.ts";
-import type { ResumePoint } from "../../src/contract/rosters.ts";
+import type {
+  EscalationReason,
+  ResumePoint,
+} from "../../src/contract/rosters.ts";
 import type { ResumeSituation } from "../../ui/chuggy-ui/app/core/resumePoint.ts";
 import {
   resumeReenters,
@@ -50,9 +55,23 @@ import type { ClosedSet } from "../../ui/chuggy-ui/app/core/ticketLedger.ts";
 const id = asTicketId(7);
 const stage = { fanout: 1 } as const;
 
+/**
+ * The machine's absent reason, which the wire omits rather than names. The two
+ * rosters are otherwise the same words — `test/contract/rosters.test.ts` holds
+ * them so — which is why nothing here maps between them.
+ */
+function statedReason(reason: Reason): EscalationReason | undefined {
+  return reason === "NoReason" ? undefined : reason;
+}
+
+/** The same for the absent resume. */
+function statedPoint(resume: Resume): ResumePoint | undefined {
+  return resume === "NoResume" ? undefined : resume;
+}
+
 function ticketIn(over: Partial<Ticket> = {}): Ticket {
   return {
-    phase: "Working",
+    phase: "Work",
     deps: new Set<number>(),
     artifact: "NoArtifact",
     workFanout: 1,
@@ -67,7 +86,7 @@ function ticketIn(over: Partial<Ticket> = {}): Ticket {
   };
 }
 
-function coreWith(ticket: Ticket): Core {
+function graphWith(ticket: Ticket): TicketGraph {
   return { tickets: new Map([[id, ticket]]) };
 }
 
@@ -106,31 +125,31 @@ function lastSetOf(ticket: Ticket): ClosedSet | undefined {
   if (last === undefined) return undefined;
   const tail = held.filter((task) => sameKind(task.kind, last.kind));
   return {
-    taskKind: last.kind === "Work" ? "Work" : "Evaluation",
-    stage: last.kind === "Work" ? undefined : last.kind.value,
+    taskKind: last.kind === "WorkTask" ? "Work" : "Evaluation",
+    stage: last.kind === "WorkTask" ? undefined : last.kind.value,
     verdict: closedVerdict(tail),
   };
 }
 
 function sameKind(left: TaskKind, right: TaskKind): boolean {
-  if (left === "Work") return right === "Work";
-  return right !== "Work" && right.value === left.value;
+  if (left === "WorkTask") return right === "WorkTask";
+  return right !== "WorkTask" && right.value === left.value;
 }
 
 /** The console's whole view of a ticket a decision has just parked. */
 function situationOf(before: Ticket, after: Ticket): ResumeSituation {
   return {
     phase: "Escalated",
-    reason: after.reason === "NoReason" ? undefined : after.reason,
+    reason: statedReason(after.reason),
     lastSet: lastSetOf(before),
     stageCount: before.program.length,
     resumeAt: undefined,
   };
 }
 
-/** What the decider stamped, in the console's own vocabulary for it. */
+/** What the decider stamped, where it stamped anything. */
 function stampedPoint(after: Ticket): ResumePoint | undefined {
-  return after.resumeAt === "NoResume" ? undefined : after.resumeAt;
+  return statedPoint(after.resumeAt);
 }
 
 function agrees(before: Ticket, after: Ticket, what: string): void {
@@ -143,10 +162,10 @@ function agrees(before: Ticket, after: Ticket, what: string): void {
 
 test("a failed work set parks where the machine says it parks", () => {
   const before = ticketIn({
-    tasks: new Set(taskSet("Work", [1], "Failed")),
+    tasks: new Set(taskSet("WorkTask", [1], "Failed")),
   });
-  const after = ticketAt(decideWorkReduce(coreWith(before), id).post, id);
-  assert.equal(after.reason, "WorkFailed");
+  const after = ticketAt(decideWorkReduce(graphWith(before), id).post, id);
+  assert.equal(after.reason, "WorkFailureEscalated");
   agrees(before, after, "a failed work set");
 });
 
@@ -157,38 +176,43 @@ test("a failed work set parks where the machine says it parks", () => {
  */
 test("an evaluation failure reworks or parks by the disposition it is given", () => {
   const before = ticketIn({
-    phase: "Evaluating",
-    record: taskSet("Work", [1], "Passed"),
-    tasks: new Set(taskSet({ type: "Evaluation", value: 0 }, [2], "Failed")),
+    phase: "Evaluation",
+    record: taskSet("WorkTask", [1], "Passed"),
+    tasks: new Set(
+      taskSet({ type: "EvaluationTask", value: 0 }, [2], "Failed"),
+    ),
   });
   const reworked = ticketAt(
-    decideEvalStageReduce(coreWith(before), id, "ReworkEvaluationFailure").post,
-    id,
-  );
-  assert.equal(reworked.phase, "Working");
-  assert.equal(reworked.reason, "NoReason");
-
-  const escalated = ticketAt(
-    decideEvalStageReduce(coreWith(before), id, "EscalateEvaluationFailure")
+    decideEvalStageReduce(graphWith(before), id, "ReworkEvaluationFailure")
       .post,
     id,
   );
-  assert.equal(escalated.reason, "ReworkBudgetExhausted");
+  assert.equal(reworked.phase, "Work");
+  assert.equal(reworked.reason, "NoReason");
+
+  const escalated = ticketAt(
+    decideEvalStageReduce(graphWith(before), id, "EscalateEvaluationFailure")
+      .post,
+    id,
+  );
+  assert.equal(escalated.reason, "EvaluationFailureEscalated");
   agrees(before, escalated, "an evaluation wall taken by disposition");
 });
 
 test("a program of one stage parks where the machine says it parks", () => {
   const evaluating = ticketIn({
-    phase: "Evaluating",
+    phase: "Evaluation",
     program: [stage],
-    record: taskSet("Work", [1], "Passed"),
-    tasks: new Set(taskSet({ type: "Evaluation", value: 0 }, [2], "Failed")),
+    record: taskSet("WorkTask", [1], "Passed"),
+    tasks: new Set(
+      taskSet({ type: "EvaluationTask", value: 0 }, [2], "Failed"),
+    ),
   });
   agrees(
     evaluating,
     ticketAt(
       decideEvalStageReduce(
-        coreWith(evaluating),
+        graphWith(evaluating),
         id,
         "EscalateEvaluationFailure",
       ).post,
@@ -202,20 +226,20 @@ test("a blocked execution parks where the machine says it parks, in both phases"
   for (const reason of executionBlockedReasons) {
     for (const held of [
       {
-        phase: "Working" as const,
-        tasks: new Set(taskSet("Work", [1], "Cancelled")),
+        phase: "Work" as const,
+        tasks: new Set(taskSet("WorkTask", [1], "Cancelled")),
       },
       {
-        phase: "Evaluating" as const,
-        record: taskSet("Work", [1], "Passed"),
+        phase: "Evaluation" as const,
+        record: taskSet("WorkTask", [1], "Passed"),
         tasks: new Set(
-          taskSet({ type: "Evaluation", value: 0 }, [2], "Cancelled"),
+          taskSet({ type: "EvaluationTask", value: 0 }, [2], "Cancelled"),
         ),
       },
     ]) {
       const before = ticketIn(held);
       const after = ticketAt(
-        decideExecutionBlocked(coreWith(before), id, reason).post,
+        decideExecutionBlocked(graphWith(before), id, reason).post,
         id,
       );
       agrees(before, after, `${reason} in ${held.phase}`);
@@ -228,9 +252,9 @@ test("each point re-enters the phase the console names", () => {
     const before = ticketIn({
       phase: "Escalated",
       resumeAt: point,
-      record: taskSet("Work", [1], "Passed"),
+      record: taskSet("WorkTask", [1], "Passed"),
     });
-    const after = ticketAt(decideResumeTicket(coreWith(before), id).post, id);
+    const after = ticketAt(decideResumeTicket(graphWith(before), id).post, id);
     assert.equal(after.phase, resumeReenters(point), `phase at ${point}`);
   }
 });

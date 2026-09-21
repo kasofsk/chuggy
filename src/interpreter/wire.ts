@@ -22,6 +22,11 @@
  * it, so the decoded event says what the row was decided under. Only a row
  * declaring semantics below 3 is lifted: a semantics-3 row whose event is a
  * bare integer is not an old row, it is a corrupt one, and it is refused.
+ *
+ * A ROW WRITTEN BEFORE SEMANTICS 5 SPELLS THE VOCABULARY THE OLD WAY, and no
+ * generated schema describes those words, so the rename is undone here too —
+ * by the actor's own map, applied to every row, since no old spelling is also
+ * a new one and a current row passes through it unchanged.
  */
 
 import {
@@ -33,6 +38,8 @@ import {
 } from "../generated/model-api.ts";
 import {
   dispositionInRecord,
+  rowAtCurrentVocabulary,
+  wordAtCurrentVocabulary,
   type DecisionSemanticsVersion,
 } from "../actor/decisionSemantics.ts";
 import {
@@ -116,9 +123,12 @@ export function parseStoredEntry(
   semantics: DecisionSemanticsVersion,
 ): Parsed<Entry> {
   try {
+    const named = rowAtCurrentVocabulary(raw);
     return {
       parsed: "Ok",
-      value: decodeEntry(semantics < 3 ? entryAtRecordedDisposition(raw) : raw),
+      value: decodeEntry(
+        semantics < 3 ? entryAtRecordedDisposition(named) : named,
+      ),
     };
   } catch (error: unknown) {
     return { parsed: "Refused", why: parseRefusal(error) };
@@ -220,7 +230,7 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
       if (
         event.type === "WorkReduce" ||
         event.type === "EvalReduce" ||
-        event.type === "ReleaseTicket" ||
+        event.type === "CreateTicket" ||
         event.type === "FinalizationResult" ||
         isCompletionDecisionEvent(event)
       ) {
@@ -265,12 +275,17 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
   }
 }
 
-/** Reads the fields of the finalizer's envelope, refusing one whose fences are not whole. */
+/**
+ * Reads the fields of the finalizer's envelope, refusing one whose fences are
+ * not whole. Its outcome is lifted first: a submission the finalizer wrote
+ * before the rename and the writer reaches after it spells `FinalizationFailed`,
+ * which 006 admits and this image no longer has a tag for.
+ */
 function checkedFinalizationSubmission(
   record: Record<string, unknown>,
 ): FinalizationSubmission {
   const generation = record["requestGeneration"];
-  const outcome = record["outcome"];
+  const outcome = wordAtCurrentVocabulary(record["outcome"]);
   if (
     record["version"] !== 1 ||
     typeof record["request"] !== "string" ||
@@ -287,7 +302,7 @@ function checkedFinalizationSubmission(
   ) {
     throw new TypeError("finalization submission fields are invalid");
   }
-  return record as unknown as FinalizationSubmission;
+  return { ...record, outcome } as unknown as FinalizationSubmission;
 }
 
 /**
@@ -305,13 +320,21 @@ function claimsCompletion(
   return completionEventTypes.some((known) => known === type);
 }
 
-/** The scheduler boundary's stored envelope, refused by the ingress parser by design. */
+/**
+ * The scheduler boundary's stored envelope, refused by the ingress parser by
+ * design and lifted here not because it may be old but because
+ * `submit_task_completion` builds its `ExecutionBlocked` out of
+ * `execution.blocked_reason`, which keeps the five wall names for good. So
+ * every block the boundary writes names a wall the model does not describe,
+ * and the actor's own map is what undoes it.
+ */
 function storedSchedulerCompletion(
   record: Record<string, unknown>,
 ): SchedulerCompletion {
   if (record["version"] !== 1)
     throw new TypeError("stored completion version is not 1");
-  const event = decodeDecisionEvent(record["event"]);
+  const lifted = rowAtCurrentVocabulary(record) as Record<string, unknown>;
+  const event = decodeDecisionEvent(lifted["event"]);
   if (!isCompletionDecisionEvent(event))
     throw new TypeError("stored completion carries no completion event");
   return { version: 1, command: "Decide", event };

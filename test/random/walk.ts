@@ -30,10 +30,10 @@
  */
 
 import type { Config } from "../../src/domain/config.ts";
-import type { Decision } from "../../src/domain/core.ts";
-import { liveTickets, ticketAt } from "../../src/domain/core.ts";
+import type { Decision } from "../../src/domain/ticketGraph.ts";
+import { liveTickets, ticketAt } from "../../src/domain/ticketGraph.ts";
 import type {
-  Core,
+  TicketGraph,
   StepRecord,
 } from "../../src/domain/generated/modelTypes.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
@@ -49,14 +49,14 @@ export const walkStepsMax = 40;
 /** How a step becomes a decision; the seam a suite injects a broken decider through. */
 export type Decide = (
   config: Config,
-  core: Core,
+  graph: TicketGraph,
   action: string,
   picks: Picks,
 ) => Decision;
 
 /** The default: the conformance dispatch table, exactly as a replayed golden routes. */
-export const decideViaTable: Decide = (_config, core, action, picks) =>
-  replayStep(core, action, picks);
+export const decideViaTable: Decide = (_config, graph, action, picks) =>
+  replayStep(graph, action, picks);
 
 /** One step as the walk took it: the action's name and its draws. */
 export interface WalkStep {
@@ -91,7 +91,7 @@ export interface WalkOutcome {
  * admits no task set, no ticket or no well-formed program has no initial state
  * rather than a degenerate one.
  */
-export function walkInit(config: Config): Core {
+export function walkInit(config: Config): TicketGraph {
   const refusals: string[] = [];
   if (config.nTasks < 1) refusals.push("a phase carries a real task set");
   if (config.nTickets < 1) {
@@ -134,12 +134,12 @@ export function creditCompletions(
 /** The accumulator's verdict: the model's ghost conjunction, per live ticket, over the counted stream. */
 export function completionFindings(
   counts: CompletionCounts,
-  core: Core,
+  graph: TicketGraph,
 ): readonly string[] {
-  return liveTickets(core).flatMap((id) => {
+  return liveTickets(graph).flatMap((id) => {
     const emitted = counts.get(id) ?? 0;
-    const phase = ticketAt(core, id).phase;
-    const stored = ticketAt(core, id).completions;
+    const phase = ticketAt(graph, id).phase;
+    const stored = ticketAt(graph, id).completions;
     return emitted === stored && (stored === 1) === (phase === "Done")
       ? []
       : [
@@ -168,16 +168,16 @@ type StepOutcome =
  */
 function walkStepOutcome(
   config: Config,
-  core: Core,
+  graph: TicketGraph,
   counts: CompletionCounts,
   step: WalkStep,
   decide: Decide,
 ): StepOutcome {
   const acted = walkActionOf(step.action);
-  if (!acted.enabledIn(config, core)) {
+  if (!acted.enabledIn(config, graph)) {
     return { kind: "refused", why: `${step.action} is not enabled here` };
   }
-  if (!acted.permitsIn(config, core, step.drawn)) {
+  if (!acted.permitsIn(config, graph, step.drawn)) {
     return {
       kind: "refused",
       why: `${step.action} does not permit this draw here`,
@@ -185,7 +185,7 @@ function walkStepOutcome(
   }
   let decision: Decision;
   try {
-    decision = decide(config, core, step.action, drawnPicks(step.drawn));
+    decision = decide(config, graph, step.action, drawnPicks(step.drawn));
   } catch (error: unknown) {
     const why = error instanceof Error ? error.message : String(error);
     return { kind: "threw", why };
@@ -195,7 +195,7 @@ function walkStepOutcome(
     ...completionFindings(counts, decision.post),
   ];
   const verdict = evaluateBundle(config, {
-    pre: core,
+    pre: graph,
     rec: decision.rec,
     post: decision.post,
   });
@@ -223,8 +223,8 @@ export function walkRun(
   decide: Decide = decideViaTable,
 ): WalkOutcome {
   const random = randomOf(seed);
-  let core = walkInit(config);
-  const opening = evaluateBundle(config, initialView(core));
+  let graph = walkInit(config);
+  const opening = evaluateBundle(config, initialView(graph));
   if (!bundleHolds(opening)) {
     const failure = {
       failed: opening.failed,
@@ -238,7 +238,7 @@ export function walkRun(
   const steps: WalkStep[] = [];
   for (let index = 1; index <= stepsMax; index++) {
     const enabled = walkActions.filter((entry) =>
-      entry.enabledIn(config, core),
+      entry.enabledIn(config, graph),
     );
     if (enabled.length === 0) {
       const why =
@@ -251,10 +251,10 @@ export function walkRun(
     const acted = pickFrom(random, enabled);
     const step: WalkStep = {
       action: acted.action,
-      drawn: acted.drawIn(config, core, random),
+      drawn: acted.drawIn(config, graph, random),
     };
     steps.push(step);
-    const outcome = walkStepOutcome(config, core, counts, step, decide);
+    const outcome = walkStepOutcome(config, graph, counts, step, decide);
     if (outcome.kind !== "stepped") {
       const why =
         outcome.kind === "refused"
@@ -273,7 +273,7 @@ export function walkRun(
         finding: { step: index, action: step.action, failure: outcome.failure },
       };
     }
-    core = outcome.decision.post;
+    graph = outcome.decision.post;
   }
   return { steps, finding: undefined };
 }
@@ -297,7 +297,7 @@ export function walkReplay(
   steps: readonly WalkStep[],
   decide: Decide = decideViaTable,
 ): ReplayOutcome {
-  let core = walkInit(config);
+  let graph = walkInit(config);
   const counts: CompletionCounts = new Map();
   for (let index = 0; index < steps.length; index++) {
     const step = steps[index];
@@ -305,7 +305,7 @@ export function walkReplay(
       throw new Error(`walk: no step ${String(index)} to replay`);
     }
     const at = index + 1;
-    const outcome = walkStepOutcome(config, core, counts, step, decide);
+    const outcome = walkStepOutcome(config, graph, counts, step, decide);
     if (outcome.kind === "refused") {
       return { kind: "invalid", at, why: outcome.why };
     }
@@ -325,7 +325,7 @@ export function walkReplay(
       };
       return { kind: "finding", at, finding };
     }
-    core = outcome.decision.post;
+    graph = outcome.decision.post;
   }
   return { kind: "clean" };
 }
@@ -345,18 +345,18 @@ export function walkRecord(
   steps: readonly WalkStep[],
   decide: Decide = decideViaTable,
 ): readonly RecordedStep[] {
-  let core = walkInit(config);
+  let graph = walkInit(config);
   const counts: CompletionCounts = new Map();
   const recorded: RecordedStep[] = [];
   for (const step of steps) {
-    const outcome = walkStepOutcome(config, core, counts, step, decide);
+    const outcome = walkStepOutcome(config, graph, counts, step, decide);
     if (outcome.kind !== "stepped") {
       throw new Error(
         `walk: ${step.action} cannot be recorded here: ${outcome.why}`,
       );
     }
     recorded.push({ step, decision: outcome.decision });
-    core = outcome.decision.post;
+    graph = outcome.decision.post;
   }
   return recorded;
 }

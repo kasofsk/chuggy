@@ -1,6 +1,6 @@
 /**
  * The finalizer service: what one bounded pass does between holding a claim on a
- * finalization request and holding the one conclusion `Core` is ever told.
+ * finalization request and holding the one conclusion `TicketGraph` is ever told.
  *
  * JOURNAL, THEN EFFECT, AND THE PERMIT IS WHAT MAKES THAT ORDER SURVIVABLE.
  * `model/refinement.qnt` carries the other order as a proved counterexample, so
@@ -96,7 +96,7 @@
  * next pass comparing the attempt's pinned target with a fresh observation, and
  * that restarts preparation under `preparationRestartsMax` rather than chasing.
  * Exhausting the ceiling is an operational hold, so a finalizer's own
- * re-preparations spend nothing and stay invisible to `Core`.
+ * re-preparations spend nothing and stay invisible to `TicketGraph`.
  *
  * ONLY CONCLUSIVE EVIDENCE IS WRITTEN DOWN. A storage outage, an unreadable
  * remote and a git call that could not answer leave no attempt at all and are

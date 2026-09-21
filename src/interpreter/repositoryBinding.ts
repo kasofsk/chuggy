@@ -4,7 +4,7 @@
  * This is installation administration, not journalled project state. It adds a
  * binding without changing any binding or work that already exists, and without
  * privileging the repository it names, so it belongs beside project membership
- * rather than in Core.
+ * rather than in the `TicketGraph`.
  */
 
 import {

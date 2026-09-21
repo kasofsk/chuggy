@@ -1793,7 +1793,7 @@ test("a merge the forge refused for a conflict fails this finalization as a prep
 
   assert.equal(concluded.conclusions, 1);
   assert.deepEqual(settling.concluded, [
-    { outcome: "FinalizationFailed", kind: "MergeConflict" },
+    { outcome: "FinalizationNeedsWork", kind: "MergeConflict" },
   ]);
 });
 

@@ -32,7 +32,7 @@
  * assembled where that cap is held rather than here.
  *
  * A COMMAND NAMING NO DOMAIN EVENT CARRIES NO `resolvedEvent`. The two answers
- * a finalization approval admits change no `Core` state, so the source assembled
+ * a finalization approval admits change no `TicketGraph` state, so the source assembled
  * for one carries the answer alone and there is nothing for a decider to be
  * offered.
  *

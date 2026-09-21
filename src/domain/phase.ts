@@ -18,9 +18,9 @@ export function isSettled(phase: Phase): boolean {
     case "Revoked":
       return true;
     case "Pending":
-    case "Working":
-    case "Evaluating":
-    case "Finalizing":
+    case "Work":
+    case "Evaluation":
+    case "Finalization":
       return false;
     default:
       return assertNever(phase);

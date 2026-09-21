@@ -192,7 +192,8 @@ is refused.
 
 `FinalizationResult` IS NOT A COMMAND THE MAILBOX TAKES FROM A CALLER. The
 public grammar keeps the event out of a `Decide` the way it has always kept
-`ReleaseTicket` out, and `submit_finalization_result` writes its own envelope
+the release out, at `ReleaseTicket` and at the `CreateTicket` the rename gave
+it, and `submit_finalization_result` writes its own envelope
 naming the request, its generation and the epoch instead — so the event a
 writer journals is one it derives from durable rows rather than one anybody
 supplied. `public_ticket_command_is_valid` carries that public grammar under

@@ -133,7 +133,7 @@ test("a project read omits the page fields it was not asked for", async () => {
 test("each resource hangs from its partition under its own segment", async () => {
   const held = recording(() => ({
     ticket: 1,
-    phase: "Working",
+    phase: "Work",
     sequence: 1,
     ...ticketInstants,
   }));

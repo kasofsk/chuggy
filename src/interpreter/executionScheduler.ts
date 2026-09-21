@@ -21,7 +21,7 @@
  * PHYSICAL ATTEMPTS LIVE BELOW THE LOGICAL GRAIN. An execution is one logical
  * task, keyed by `(tenant, project, ticket, task)`; its attempts are
  * sequential, never reuse an identity, and only the current unfenced one may
- * report authoritatively. `Core` never sees an attempt, and no attempt
+ * report authoritatively. `TicketGraph` never sees an attempt, and no attempt
  * allocates a second slot.
  *
  * EVERY REFUSAL IS A VALUE, as elsewhere in this layer. A superseded spawn, a
@@ -84,7 +84,7 @@
  * dispatch for work no dispatch relieves.
  *
  * A BLOCK RETIRES ONE EXECUTION AND NOT ITS SIBLINGS. `ExecutionBlocked`
- * escalates the whole ticket in `Core`, but the decider emits only
+ * escalates the whole ticket in `TicketGraph`, but the decider emits only
  * `OpenHumanTask`, so no cancellation obligation reaches this scheduler for the
  * work that was still outstanding. Those siblings therefore drain: each
  * terminalizes normally, releasing its own slot exactly once, and its
@@ -93,7 +93,6 @@
  * ticket-wide fact it is not the authority for.
  */
 
-import type { Reason } from "../domain/generated/modelTypes.ts";
 import type { Config as DomainConfig } from "../domain/config.ts";
 import type { TaskId, TicketId } from "../domain/ids.ts";
 import type { TaskPurpose } from "./briefingTemplate.ts";
@@ -155,7 +154,7 @@ export const allExecutionStatuses: readonly ExecutionStatus[] = [
   "Cancelled",
 ];
 
-/** What one logical task settled as, which is the only thing `Core` is told. */
+/** What one logical task settled as, which is the only thing `TicketGraph` is told. */
 export type ExecutionOutcome = "Passed" | "Failed" | "Blocked";
 
 /** Every terminal outcome, so a suite and a database CHECK iterate rather than restate. */
@@ -440,7 +439,7 @@ export interface PhysicalAttempt extends FencedAttempt {
   readonly capability: AttemptCapability;
 }
 
-/** What an attempt is doing, which is below the logical grain and never reaches `Core`. */
+/** What an attempt is doing, which is below the logical grain and never reaches `TicketGraph`. */
 export type AttemptState =
   "Placing" | "Running" | "Reported" | "Lost" | "Withdrawn" | "Superseded";
 
@@ -601,17 +600,20 @@ export type Blocked =
   | { readonly blocked: "NotAdmitted" }
   | { readonly blocked: "Conflicting"; readonly incident: string };
 
-/** A definitive inability to run the immutable contract, which the model bounds. */
-export type BlockedReason = Extract<
-  Reason,
+/**
+ * A definitive inability to run the immutable contract. The domain has one
+ * reason for all five, because no decider ever read which it was; which
+ * refusal it was is evidence this layer records beside the execution, so the
+ * roster is its own rather than a slice of the model's.
+ */
+export type BlockedReason =
   | "ExecutionPolicyDenied"
   | "TicketConfigIncompatible"
   | "ExecutionProfileUnavailable"
   | "RuntimeVersionUnsupported"
-  | "RequiredCapabilityUnavailable"
->;
+  | "RequiredCapabilityUnavailable";
 
-/** Every blocking reason, in the order `src/domain/enablement.ts` declares them. */
+/** Every blocking reason, in the order `execution_blocked_reason_is_known` declares them. */
 export const allBlockedReasons: readonly BlockedReason[] = [
   "ExecutionPolicyDenied",
   "TicketConfigIncompatible",

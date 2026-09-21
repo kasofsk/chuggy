@@ -161,7 +161,7 @@ test("a request whose brief lands nothing concludes on no attempt at all", async
     [project.partition.tenant, project.partition.project, project.ticket],
   );
   assert.equal(
-    await submit(project, null, "FinalizationFailed", "MergeConflict"),
+    await submit(project, null, "FinalizationNeedsWork", "MergeConflict"),
     "BindingMismatch",
     "a landing that lands nothing has no failure to report",
   );
@@ -181,12 +181,17 @@ test("a failed result is submitted only against the attempt and kind that failed
   });
   const before = await mailbox(project);
   assert.equal(
-    await submit(project, attempt, "FinalizationFailed", "PreparationFailed"),
+    await submit(
+      project,
+      attempt,
+      "FinalizationNeedsWork",
+      "PreparationFailed",
+    ),
     "BindingMismatch",
   );
   assert.deepEqual(await mailbox(project), before);
   assert.equal(
-    await submit(project, attempt, "FinalizationFailed", "MergeConflict"),
+    await submit(project, attempt, "FinalizationNeedsWork", "MergeConflict"),
     "Submitted",
   );
 });
@@ -229,7 +234,7 @@ test("every stale, mismatched or absent binding is refused and writes nothing", 
     ],
     [
       "BindingMismatch",
-      submit(project, attempt, "FinalizationFailed", "MergeConflict"),
+      submit(project, attempt, "FinalizationNeedsWork", "MergeConflict"),
     ],
     [
       "BindingMismatch",
@@ -435,7 +440,7 @@ test("an approval nothing durable supports is refused and opens no action", asyn
     assert.equal((await running)["result"], expected);
   }
   await rig.harness.query(
-    `UPDATE ticket_projection SET phase='Working'
+    `UPDATE ticket_projection SET phase='Work'
       WHERE tenant=$1 AND project=$2 AND ticket=$3`,
     [project.partition.tenant, project.partition.project, project.ticket],
   );
@@ -445,7 +450,7 @@ test("an approval nothing durable supports is refused and opens no action", asyn
     "the ticket left the phase",
   );
   await rig.harness.query(
-    `UPDATE ticket_projection SET phase='Finalizing'
+    `UPDATE ticket_projection SET phase='Finalization'
       WHERE tenant=$1 AND project=$2 AND ticket=$3`,
     [project.partition.tenant, project.partition.project, project.ticket],
   );
@@ -480,7 +485,7 @@ test("an escalation holding the ticket's one open slot is reported, not overwrit
     `INSERT INTO native_action
        (tenant, project, action, authorizing_seq, effect_position, ticket,
         action_version, kind, reason, required_capability)
-     VALUES ($1,$2,$3,$4,7,$5,$4,'TicketEscalation','WorkFailed','ResolveTicket')`,
+     VALUES ($1,$2,$3,$4,7,$5,$4,'TicketEscalation','WorkFailureEscalated','ResolveTicket')`,
     [
       project.partition.tenant,
       project.partition.project,

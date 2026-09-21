@@ -57,7 +57,7 @@ import { parseTicketCommand } from "../../interpreter/wire.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
 import { sessionRowText } from "./sessionRows.ts";
-import { stageSchema } from "../../generated/model-api.ts";
+import { stageDefinitionSchema } from "../../generated/model-api.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import type { SelectorProposalReviewStore } from "../../interpreter/selectorReview.ts";
 
@@ -154,7 +154,7 @@ const dispatchCandidateSchema = z
     ticketVersion: z.number().int().safe().positive(),
     dependencies: z.array(z.number().int().safe().positive()).readonly(),
     workFanout: z.number().int().safe().positive(),
-    program: z.array(stageSchema).readonly(),
+    program: z.array(stageDefinitionSchema).readonly(),
     configurationRevision: z.string(),
     configurationDigest: z.string(),
     configurationCanonical: z.string(),

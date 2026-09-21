@@ -13,17 +13,17 @@ import {
   execDecisionEvent,
   releaseTicketEvent,
 } from "../../src/actor/decisionEvent.ts";
-import { coreEquals } from "../../src/actor/equality.ts";
-import { genesis, replayCore } from "../../src/actor/journal.ts";
+import { graphEquals } from "../../src/actor/equality.ts";
+import { genesis, replayGraph } from "../../src/actor/journal.ts";
 import {
   actorInit,
   crashRecoverTo,
   effectCrash,
   emitNext,
   journalStep,
-  memoryCore,
+  memoryGraph,
 } from "../../src/actor/state.ts";
-import { initRecord } from "../../src/domain/core.ts";
+import { initRecord } from "../../src/domain/ticketGraph.ts";
 import { id } from "../domain/fixtures.ts";
 import { plainAuthoring, refinementInstance } from "./harness.ts";
 
@@ -33,9 +33,9 @@ const dispatch = dispatchEvent(id(1));
 
 test("the initial state is genesis under the init record, with nothing journaled or emitted", () => {
   const state = actorInit();
-  assert.ok(coreEquals(memoryCore(state), genesis));
+  assert.ok(graphEquals(memoryGraph(state), genesis));
   assert.deepEqual(state.view.rec, initRecord);
-  assert.ok(coreEquals(state.view.pre, genesis));
+  assert.ok(graphEquals(state.view.pre, genesis));
   assert.deepEqual(
     [state.journal, state.applied, [...state.worldEffects], state.orphans],
     [[], 0, [], []],
@@ -45,10 +45,10 @@ test("the initial state is genesis under the init record, with nothing journaled
 test("journalStep advances the carried view and appends the next dense seq", () => {
   const before = actorInit();
   const after = journalStep(config, before, release);
-  const decision = execDecisionEvent(memoryCore(before), release);
-  assert.equal(after.view.pre, memoryCore(before));
+  const decision = execDecisionEvent(memoryGraph(before), release);
+  assert.equal(after.view.pre, memoryGraph(before));
   assert.deepEqual(after.view.rec, decision.rec);
-  assert.ok(coreEquals(after.view.post, decision.post));
+  assert.ok(graphEquals(after.view.post, decision.post));
   assert.equal(after.journal.length, 1);
   assert.deepEqual(after.journal[0]?.seq, 1);
   assert.deepEqual(after.journal[0]?.event, release);
@@ -76,7 +76,7 @@ test("crashRecoverTo installs the genuine replay, carries (pre, rec), and regres
   const recovered = crashRecoverTo(emitted, 0);
   assert.equal(recovered.view.pre, emitted.view.pre);
   assert.equal(recovered.view.rec, emitted.view.rec);
-  assert.ok(coreEquals(recovered.view.post, replayCore(emitted.journal)));
+  assert.ok(graphEquals(recovered.view.post, replayGraph(emitted.journal)));
   assert.equal(recovered.applied, 0);
   assert.deepEqual([...recovered.worldEffects], [1]);
   assert.throws(() => crashRecoverTo(emitted, 2), /not a checkpoint/);
@@ -86,10 +86,10 @@ test("crashRecoverTo installs the genuine replay, carries (pre, rec), and regres
 test("effectCrash orphans the decision, reverts memory to the replay, and carries (pre, rec)", () => {
   const emitted = emitNext(journalStep(config, actorInit(), release));
   const crashed = effectCrash(config, emitted, dispatch);
-  const lost = execDecisionEvent(memoryCore(emitted), dispatch);
+  const lost = execDecisionEvent(memoryGraph(emitted), dispatch);
   assert.equal(crashed.view.pre, emitted.view.pre);
   assert.equal(crashed.view.rec, emitted.view.rec);
-  assert.ok(coreEquals(crashed.view.post, replayCore(emitted.journal)));
+  assert.ok(graphEquals(crashed.view.post, replayGraph(emitted.journal)));
   assert.equal(crashed.journal, emitted.journal);
   assert.deepEqual(crashed.orphans, [lost.rec]);
   assert.throws(

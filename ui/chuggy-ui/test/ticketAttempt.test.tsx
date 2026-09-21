@@ -97,8 +97,8 @@ function parkedAt(ticket: number): unknown {
     ticket,
     phase: "Escalated",
     sequence: 7,
-    reason: "WorkFailed",
-    resumeAt: "ResumeWorking",
+    reason: "WorkFailureEscalated",
+    resumeAt: "ResumeWork",
     ...ticketInstants,
   };
 }

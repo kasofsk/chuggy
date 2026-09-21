@@ -56,7 +56,7 @@ function pendingPage(from: number, nextCursor: string): ProjectResponse {
 
 const firstPage = page(
   [
-    { ticket: 1, phase: "Working", sequence: 4, ...ticketInstants },
+    { ticket: 1, phase: "Work", sequence: 4, ...ticketInstants },
     { ticket: 2, phase: "Pending", sequence: 3, ...ticketInstants },
   ],
   "after-one",
@@ -151,7 +151,7 @@ test("a ticket frame moves a row into another section without disturbing the res
       ticket: 1,
       phase: "Escalated",
       sequence: 7,
-      reason: "WorkFailed",
+      reason: "WorkFailureEscalated",
       ...ticketInstants,
     },
     undefined,
@@ -168,7 +168,7 @@ test("a ticket the list has not got arrives at the top", () => {
   const folded = projectTicketRowsFold(
     rows,
     "9",
-    { ticket: 9, phase: "Working", sequence: 8, ...ticketInstants },
+    { ticket: 9, phase: "Work", sequence: 8, ...ticketInstants },
     undefined,
   );
   expect(folded?.tickets.map((ticket) => ticket.ticket)).toStrictEqual([
@@ -205,7 +205,7 @@ test("a list with no page read yet is not invented by a frame", () => {
     projectTicketRowsFold(
       undefined,
       "1",
-      { ticket: 1, phase: "Working", sequence: 1, ...ticketInstants },
+      { ticket: 1, phase: "Work", sequence: 1, ...ticketInstants },
       undefined,
     ),
   ).toBeUndefined();

@@ -15,6 +15,15 @@
  * on each disposition edge: the bytes name neither, and the record is what
  * says which was taken.
  *
+ * A THIRD FILE IS THE VOCABULARY'S OWN. `journalAtSemanticsFour.json` was
+ * written by the deciders at 55de9de6, the last image every word of which is
+ * the one semantics 5 renamed, and it walks two tickets through every
+ * superseded spelling a row can hold: each phase, each of the five walls, the
+ * failed finalization and the four step labels. Two spellings are absent
+ * because no row carries them — a `Reason` reaches a journal only as an
+ * `ExecutionBlocked` event's, and the two that are not walls are a ticket's
+ * own reason column — so the case below pins those against the map itself.
+ *
  * A PRE-3 ROW'S EVALREDUCE NAMED ONLY ITS TICKET, a shape the wire union this
  * image generates does not describe, so the bytes are lifted before they are
  * an event at all. That lift belongs to the seam a store's load reads a row
@@ -54,7 +63,7 @@ import {
   genesis,
   journalLegalOn,
   storedJournalLegalOn,
-  storedReplayCore,
+  storedReplayGraph,
   type Entry,
   type StoredEntry,
 } from "../../src/actor/journal.ts";
@@ -62,6 +71,8 @@ import {
   decisionSemanticsVersionCurrent,
   isDecisionSemanticsVersion,
   replayableDecision,
+  supersededSpellings,
+  wordAtCurrentVocabulary,
   type DecisionSemanticsVersion,
 } from "../../src/actor/decisionSemantics.ts";
 import { parseStoredEntry } from "../../src/interpreter/wire.ts";
@@ -69,7 +80,7 @@ import type {
   StepRecord,
   Transition,
 } from "../../src/domain/generated/modelTypes.ts";
-import { ticketAt } from "../../src/domain/core.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import { modelInstance } from "../domain/configs.ts";
 import { id } from "../domain/fixtures.ts";
 import { plainAuthoring, refinementInstance } from "./harness.ts";
@@ -77,13 +88,16 @@ import { plainAuthoring, refinementInstance } from "./harness.ts";
 const config = refinementInstance;
 
 /** One pinned history, read exactly as a store's load reads a row of that vintage. */
-function pinned(file: string): readonly Entry[] {
+function pinned(
+  file: string,
+  semantics: DecisionSemanticsVersion,
+): readonly Entry[] {
   const raw: unknown = JSON.parse(
     readFileSync(join(import.meta.dirname, file), "utf8"),
   );
   assert.ok(Array.isArray(raw), `${file} is not a journal`);
   return raw.map((row: unknown, at: number) => {
-    const parsed = parseStoredEntry(row, 1);
+    const parsed = parseStoredEntry(row, semantics);
     if (parsed.parsed === "Refused")
       throw new Error(`${file} row ${String(at)} is unreadable: ${parsed.why}`);
     return parsed.value;
@@ -98,8 +112,9 @@ function storedAt(
   return entries.map((entry) => ({ entry, semantics }));
 }
 
-const reworkedWall = pinned("journalAtSemanticsOne.json");
-const walls = pinned("journalAtSemanticsOneWalls.json");
+const reworkedWall = pinned("journalAtSemanticsOne.json", 1);
+const walls = pinned("journalAtSemanticsOneWalls.json", 1);
+const beforeTheRename = pinned("journalAtSemanticsFour.json", 4);
 
 /** The record a release writes, which moves nothing that was already in the fleet. */
 const released: StepRecord = {
@@ -151,7 +166,8 @@ const cascade: readonly Entry[] = [
 
 test("the reworked history walks the rework wall and resumes past it", () => {
   const walled = reworkedWall.filter(
-    (entry) => entry.rec.label === "ticket-escalated rework_budget_exhausted",
+    (entry) =>
+      entry.rec.label === "ticket-escalated evaluation_failure_escalated",
   );
   const resumes = reworkedWall.filter(
     (entry) => entry.event.type === "ResumeTicket",
@@ -171,8 +187,8 @@ test("the same history read as this image's own decisions is not legal", () => {
 });
 
 test("replay under the first semantics resumes the walled ticket into evaluation", () => {
-  const replayed = storedReplayCore(storedAt(reworkedWall, 1));
-  assert.equal(ticketAt(replayed, id(1)).phase, "Evaluating");
+  const replayed = storedReplayGraph(storedAt(reworkedWall, 1));
+  assert.equal(ticketAt(replayed, id(1)).phase, "Evaluation");
   assert.equal(ticketAt(replayed, id(1)).resumeAt, "NoResume");
 });
 
@@ -189,9 +205,9 @@ test("the two-wall history holds an EvalReduce row on each disposition edge", ()
   assert.deepEqual(
     reduces.map((entry) => entry.rec.label),
     [
-      "ticket-escalated rework_budget_exhausted",
+      "ticket-escalated evaluation_failure_escalated",
       "rework-started eval_failure",
-      "ticket-escalated rework_budget_exhausted",
+      "ticket-escalated evaluation_failure_escalated",
     ],
   );
   assert.ok(storedJournalLegalOn(config, storedAt(walls, 1)));
@@ -200,24 +216,24 @@ test("the two-wall history holds an EvalReduce row on each disposition edge", ()
 
 test("a second-semantics EvalReduce takes the edge its record records", () => {
   const toTheWall = storedAt(walls.slice(0, 6), 2);
-  const walled = ticketAt(storedReplayCore(toTheWall), id(1));
+  const walled = ticketAt(storedReplayGraph(toTheWall), id(1));
   assert.equal(walled.phase, "Escalated");
-  assert.equal(walled.reason, "ReworkBudgetExhausted");
+  assert.equal(walled.reason, "EvaluationFailureEscalated");
 
   const toTheRework = storedAt(walls.slice(0, 13), 2);
-  const reworked = ticketAt(storedReplayCore(toTheRework), id(2));
-  assert.equal(reworked.phase, "Working");
+  const reworked = ticketAt(storedReplayGraph(toTheRework), id(2));
+  assert.equal(reworked.phase, "Work");
 });
 
 test("the first semantics parks the wall at the eval resume, the second where this machine does", () => {
   const toTheWall = walls.slice(0, 6);
   assert.equal(
-    ticketAt(storedReplayCore(storedAt(toTheWall, 1)), id(1)).resumeAt,
-    "ResumeEvaluating",
+    ticketAt(storedReplayGraph(storedAt(toTheWall, 1)), id(1)).resumeAt,
+    "ResumeEvaluation",
   );
   assert.equal(
-    ticketAt(storedReplayCore(storedAt(toTheWall, 2)), id(1)).resumeAt,
-    "ResumeReworking",
+    ticketAt(storedReplayGraph(storedAt(toTheWall, 2)), id(1)).resumeAt,
+    "ResumeRework",
   );
 });
 
@@ -225,7 +241,7 @@ test("a parked ticket is resumable whichever semantics walled it", () => {
   const resume = resumeTicketEvent(id(1));
   const toTheWall = walls.slice(0, 6);
   for (const semantics of [1, 2] as const) {
-    const at = storedReplayCore(storedAt(toTheWall, semantics));
+    const at = storedReplayGraph(storedAt(toTheWall, semantics));
     assert.ok(decisionEventEnabled(config, at, resume));
   }
 });
@@ -254,12 +270,80 @@ test("a row parked on a wall this machine no longer has cannot be replayed", () 
 });
 
 test("the current semantics is the one whose refusals this module states", () => {
-  assert.equal(decisionSemanticsVersionCurrent, 4);
-  assert.ok(isDecisionSemanticsVersion(4));
+  assert.equal(decisionSemanticsVersionCurrent, 5);
+  assert.ok(isDecisionSemanticsVersion(5));
   assert.ok(
-    !isDecisionSemanticsVersion(5),
+    !isDecisionSemanticsVersion(6),
     "a row from an image this one does not know is not replayable by guessing",
   );
+});
+
+/**
+ * The rename is the whole of semantics 5, so what has to be shown is that the
+ * bytes did not move with it: the pinned rows still say the words the machine
+ * that wrote them said, and every history above is read off them.
+ */
+test("a pinned row says the old words and is read as the new ones", () => {
+  const bytes = readFileSync(
+    join(import.meta.dirname, "journalAtSemanticsOne.json"),
+    "utf8",
+  );
+  for (const said of [
+    "ReleaseTicket",
+    "Working",
+    "Evaluating",
+    "ticket-escalated rework_budget_exhausted",
+  ])
+    assert.ok(bytes.includes(said), `the pinned bytes no longer say ${said}`);
+
+  assert.ok(reworkedWall[0]?.event.type === "CreateTicket");
+  assert.ok(
+    reworkedWall.some(
+      (entry) =>
+        entry.rec.label === "ticket-escalated evaluation_failure_escalated",
+    ),
+  );
+  const moves = reworkedWall.flatMap((entry) => entry.rec.transitions);
+  assert.ok(moves.some((move) => move.to === "Work"));
+  assert.ok(moves.some((move) => move.to === "Evaluation"));
+});
+
+/**
+ * The two spellings no journal row holds: a ticket's reason reaches a row only
+ * as the one an `ExecutionBlocked` event names, and these two are the reason
+ * column 006 rewrites. What pins them is the map's own answer below.
+ */
+const reasonsNoRowCarries: readonly string[] = [
+  "WorkFailed",
+  "ReworkBudgetExhausted",
+];
+
+test("every superseded spelling a row can hold is in the pinned bytes", () => {
+  const bytes = readFileSync(
+    join(import.meta.dirname, "journalAtSemanticsFour.json"),
+    "utf8",
+  );
+  for (const said of supersededSpellings) {
+    if (reasonsNoRowCarries.includes(said)) continue;
+    assert.ok(bytes.includes(said), `no pinned row says ${said}`);
+  }
+  assert.deepEqual(reasonsNoRowCarries.map(wordAtCurrentVocabulary), [
+    "WorkFailureEscalated",
+    "EvaluationFailureEscalated",
+  ]);
+});
+
+test("the vocabulary history is legal under the semantics its rows declare", () => {
+  assert.ok(storedJournalLegalOn(config, storedAt(beforeTheRename, 4)));
+});
+
+test("replaying the old words leaves the fleet holding the new ones", () => {
+  const replayed = storedReplayGraph(storedAt(beforeTheRename, 4));
+  assert.equal(ticketAt(replayed, id(1)).phase, "Work");
+  const walled = ticketAt(replayed, id(2));
+  assert.equal(walled.phase, "Escalated");
+  assert.equal(walled.reason, "WorkExecutionUnavailableEscalated");
+  assert.equal(walled.resumeAt, "ResumeWork");
 });
 
 test("a pre-4 row's dropped keys are accepted and decode to the meaning that survived", () => {
@@ -277,7 +361,7 @@ test("a pre-4 row's dropped keys are accepted and decode to the meaning that sur
   ]);
 
   const entry = reworkedWall[0];
-  assert.ok(entry?.event.type === "ReleaseTicket");
+  assert.ok(entry?.event.type === "CreateTicket");
   assert.ok(
     !("finalizer" in entry.event.value),
     "the finish kind reached the actor",
@@ -293,7 +377,7 @@ test("a row that completed a ticket without running a finalizer cannot be replay
     ...done,
     rec: {
       label: "ticket-done",
-      transitions: [{ ticket: id(1), from: "Evaluating", to: "Done" } as const],
+      transitions: [{ ticket: id(1), from: "Evaluation", to: "Done" } as const],
       effects: [],
     },
   };
@@ -304,11 +388,11 @@ test("a row that completed a ticket without running a finalizer cannot be replay
       rec: {
         ...finisherFree.rec,
         transitions: [
-          { ticket: id(1), from: "Finalizing", to: "Done" } as const,
+          { ticket: id(1), from: "Finalization", to: "Done" } as const,
         ],
       },
     }),
-    "the completion this machine takes is the one out of Finalizing",
+    "the completion this machine takes is the one out of Finalization",
   );
   assert.ok(
     !storedJournalLegalOn(config, [{ entry: finisherFree, semantics: 1 }]),
@@ -324,18 +408,19 @@ test("a revoke that parked the tickets behind it is replayed, not refused", () =
       storedJournalLegalOn(modelInstance, storedAt(cascade, semantics)),
       `the cascade is a history the machine at ${String(semantics)} took`,
     );
-  assert.ok(
-    !storedJournalLegalOn(modelInstance, storedAt(cascade, 4)),
-    "the revoke this machine takes transitions its own ticket alone",
-  );
+  for (const semantics of [4, 5] as const)
+    assert.ok(
+      !storedJournalLegalOn(modelInstance, storedAt(cascade, semantics)),
+      "the revoke this machine takes transitions its own ticket alone",
+    );
 });
 
 /** A history the current deciders wrote, which is every row of a forgery but its last. */
 function decided(events: readonly DecisionEvent[]): readonly Entry[] {
-  let core = genesis;
+  let graph = genesis;
   return events.map((event, at) => {
-    const decision = execDecisionEvent(core, event);
-    core = decision.post;
+    const decision = execDecisionEvent(graph, event);
+    graph = decision.post;
     return { seq: at + 1, event, rec: decision.rec };
   });
 }
@@ -379,7 +464,7 @@ const forgedParks: readonly (readonly [
       releaseTicketEvent(id(2), plainAuthoring),
       dispatchEvent(id(2)),
     ],
-    [{ ticket: id(2), from: "Working", to: "Escalated" }],
+    [{ ticket: id(2), from: "Work", to: "Escalated" }],
   ],
   [
     "the same dependent twice",
@@ -410,7 +495,7 @@ test("a cascade parking anything but a Pending dependent is refused, not thrown 
 });
 
 test("the cascade parks its dependents where nothing but a revoke reaches them", () => {
-  const parked = storedReplayCore(storedAt(cascade.slice(0, 4), 2));
+  const parked = storedReplayGraph(storedAt(cascade.slice(0, 4), 2));
   assert.equal(ticketAt(parked, id(1)).phase, "Revoked");
   for (const dependent of [id(2), id(3)]) {
     const ticket = ticketAt(parked, dependent);
@@ -423,7 +508,7 @@ test("the cascade parks its dependents where nothing but a revoke reaches them",
       decisionEventEnabled(modelInstance, parked, revokeEvent(dependent)),
     );
   }
-  const settled = storedReplayCore(storedAt(cascade, 2));
+  const settled = storedReplayGraph(storedAt(cascade, 2));
   for (const dependent of [id(2), id(3)])
     assert.equal(ticketAt(settled, dependent).phase, "Revoked");
 });

@@ -50,7 +50,7 @@ test("a reference with nothing held draws the number and no link", () => {
 test("a reference draws the ticket's title and phase, and links to its screen", () => {
   render(
     underShell(
-      heldOf({ 15: { title: "Fix the thing", phase: "Working" } }),
+      heldOf({ 15: { title: "Fix the thing", phase: "Work" } }),
       report,
     ),
   );

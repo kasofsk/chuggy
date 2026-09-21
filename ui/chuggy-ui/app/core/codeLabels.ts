@@ -17,6 +17,7 @@
 
 import {
   operationRefusalCodes,
+  type BlockedReason,
   type BriefFinalizationMode,
   type EscalationReason,
   type OperationRefusalCode,
@@ -39,10 +40,24 @@ import type { TicketActionName } from "./ticketActions.ts";
 /** Which wall the ticket hit, as the noun the reader scans for. */
 export function escalationReasonLabel(reason: EscalationReason): string {
   switch (reason) {
-    case "WorkFailed":
+    case "WorkFailureEscalated":
       return "Work failed";
-    case "ReworkBudgetExhausted":
+    case "EvaluationFailureEscalated":
       return "Rework budget exhausted";
+    case "WorkExecutionUnavailableEscalated":
+      return "Execution unavailable";
+  }
+}
+
+/**
+ * Which wall the fabric hit, off the ticket's `executionBlockedBy`: the
+ * evidence beside the escalation, present only while `reason` is
+ * `WorkExecutionUnavailableEscalated`, and the noun the reader scans for where
+ * `escalationReasonLabel`'s arm for that reason names only that a wall
+ * happened and not which one.
+ */
+export function blockedReasonLabel(reason: BlockedReason): string {
+  switch (reason) {
     case "ExecutionPolicyDenied":
       return "Execution denied by policy";
     case "TicketConfigIncompatible":
@@ -54,6 +69,22 @@ export function escalationReasonLabel(reason: EscalationReason): string {
     case "RequiredCapabilityUnavailable":
       return "Required capability unavailable";
   }
+}
+
+/**
+ * The one line beside the escalation: the wall the fabric hit where the read
+ * carries one, the reason's own generic word otherwise. `executionBlockedBy`
+ * is present only while `reason` is `WorkExecutionUnavailableEscalated`, so a
+ * page short of it — the continuation path with no execution row to read it
+ * off — still has the reason's own word to draw.
+ */
+export function escalationDetail(
+  reason: EscalationReason,
+  blockedBy: BlockedReason | undefined,
+): string {
+  return blockedBy === undefined
+    ? escalationReasonLabel(reason)
+    : blockedReasonLabel(blockedBy);
 }
 
 /** What the page knows about the wall, which is what the second line can name. */
@@ -96,26 +127,30 @@ export function escalationDetailLine(
   facts: WallFacts,
 ): string | undefined {
   switch (reason) {
-    case "WorkFailed":
+    case "WorkFailureEscalated":
       return "Failed work is not reworked";
-    case "ReworkBudgetExhausted":
+    case "EvaluationFailureEscalated":
       return walledStageFailed(facts);
-    case "ExecutionPolicyDenied":
-    case "TicketConfigIncompatible":
-    case "ExecutionProfileUnavailable":
-    case "RuntimeVersionUnsupported":
-    case "RequiredCapabilityUnavailable":
+    case "WorkExecutionUnavailableEscalated":
       return interruptedLabel(facts);
   }
 }
 
-/** Where the ticket is, in the machine's own word for the phase. */
+/**
+ * Where the ticket is, in the machine's own word for the phase — except the
+ * three the phase constructors themselves used to be spelled and no longer
+ * are. `Working`/`Evaluating`/`Finalizing` are the product's own words for
+ * `Work`/`Evaluation`/`Finalization`.
+ */
 export function phaseLabel(phase: TicketPhase): string {
   switch (phase) {
+    case "Work":
+      return "Working";
+    case "Evaluation":
+      return "Evaluating";
+    case "Finalization":
+      return "Finalizing";
     case "Pending":
-    case "Working":
-    case "Evaluating":
-    case "Finalizing":
     case "Done":
     case "Escalated":
     case "Revoked":
@@ -245,13 +280,13 @@ export type WallExits = readonly TicketActionName[];
 
 function resumeEffect(point: ResumePoint): string {
   switch (point) {
-    case "ResumeWorking":
+    case "ResumeWork":
       return "Re-runs the work · new artifact";
-    case "ResumeReworking":
+    case "ResumeRework":
       return "Reworks · new artifact";
-    case "ResumeEvaluating":
+    case "ResumeEvaluation":
       return "Re-runs evaluation from stage 1";
-    case "ResumeFinalizing":
+    case "ResumeFinalization":
       return "Re-runs finalization";
   }
 }

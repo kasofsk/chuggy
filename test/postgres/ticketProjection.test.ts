@@ -3,14 +3,14 @@
  * off the durable projection, the public read and the change row the same
  * decision appended.
  *
- * THE JOURNAL IS THE ORACLE. Every step compares the stored row with the core
+ * THE JOURNAL IS THE ORACLE. Every step compares the stored row with the graph
  * the same decision left behind, because the projection's whole claim is that
  * it is a read of one post-state — a column right at the end and wrong in the
  * middle is a column a reader believes.
  *
  * THE WALL AND THE RESUME ARE THE TWO STATES WORTH DRIVING TO. `resume_at` is
  * the machine's absent value everywhere else, so a fixture that stopped at
- * `Working` would assert the projection carries a column rather than that it
+ * `Work` would assert the projection carries a column rather than that it
  * carries the machine.
  */
 
@@ -21,7 +21,7 @@ import { after, before, test } from "node:test";
 import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
-import { ticketAt } from "../../src/domain/core.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type { Verdict } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import type { TicketResource } from "../../src/interpreter/nativeWeb.ts";
@@ -76,9 +76,9 @@ async function projected(partition: Partition): Promise<ProjectedRow> {
   return row as unknown as ProjectedRow;
 }
 
-/** The same facts read off the replayed core, which is what the row must equal. */
+/** The same facts read off the replayed graph, which is what the row must equal. */
 function carried(memory: ProjectMemory): ProjectedRow {
-  const ticket = ticketAt(memory.core, subject);
+  const ticket = ticketAt(memory.graph, subject);
   return {
     phase: ticket.phase,
     reason: ticket.reason,
@@ -175,8 +175,8 @@ test("the projection carries the wall's resume point", async () => {
   const memory = await walled(partition, "projection-wall");
   assert.deepEqual(await projected(partition), {
     phase: "Escalated",
-    reason: "ReworkBudgetExhausted",
-    resume_at: "ResumeReworking",
+    reason: "EvaluationFailureEscalated",
+    resume_at: "ResumeRework",
   });
   assert.deepEqual(await projected(partition), carried(memory));
 });
@@ -222,9 +222,9 @@ test("the public read serves the resume point the row holds", async () => {
   const reads = postgresNativeReads(pool);
   const parked = await reads.ticket(partition, subject);
   assert.equal(parked?.phase, "Escalated");
-  assert.equal(parked?.resumeAt, "ResumeReworking");
+  assert.equal(parked?.resumeAt, "ResumeRework");
   for (const order of ["Identity", "RecentActivity"] as const) {
-    assert.equal((await listed(partition, order)).resumeAt, "ResumeReworking");
+    assert.equal((await listed(partition, order)).resumeAt, "ResumeRework");
   }
 });
 
@@ -249,7 +249,7 @@ test("a resume clears the point it re-entered at", async () => {
   const drained = await postgresHarnessDrain(harness, partition, memory);
   assert.deepEqual(drained.decided, ["Committed"]);
   assert.deepEqual(await projected(partition), {
-    phase: "Working",
+    phase: "Work",
     reason: "NoReason",
     resume_at: "NoResume",
   });

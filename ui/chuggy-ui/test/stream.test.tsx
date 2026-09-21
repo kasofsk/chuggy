@@ -35,7 +35,7 @@ import { ticketInstants } from "./ticketInstants.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 const beta: PartitionIdentity = { tenant: "acme", project: "beta" };
-const ticket = { ticket: 3, phase: "Working", sequence: 9, ...ticketInstants };
+const ticket = { ticket: 3, phase: "Work", sequence: 9, ...ticketInstants };
 
 function holderDouble(): SessionHolder & { renew: () => void } {
   let generation = 1;

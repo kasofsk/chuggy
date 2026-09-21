@@ -419,7 +419,7 @@ test("a decision that names one ticket twice is refused at the door", () => {
 /**
  * The arm that was unreachable while the bound was one. Two dispatches of one
  * ticket would be two `Dispatch` events at their own prefixes, the second
- * refused by enablement because the first left the ticket Working — a refusal
+ * refused by enablement because the first left the ticket in `Work` — a refusal
  * the lead did not earn.
  */
 test("a decision that dispatches one ticket twice is refused", () => {

@@ -1,5 +1,5 @@
 /**
- * What the machine will accept, as pure predicates over an observed `Core`.
+ * What the machine will accept, as pure predicates over an observed `TicketGraph`.
  *
  * EVERY GUARD IS STATED ONCE AND REFERENCED. The model hoisted these out of
  * its actions for a reason worth repeating here: a guard copied into a second
@@ -7,7 +7,7 @@
  * step the machine now refuses. So the replay checker, the deciders' callers
  * and the suites all read these, and none restates one.
  *
- * They are parameterised by a `Core` rather than reading ambient state,
+ * They are parameterised by a `TicketGraph` rather than reading ambient state,
  * because the journaled actor must re-check enablement at a REPLAYED prefix
  * state — a value, not a live variable.
  */
@@ -18,35 +18,35 @@ import {
   workFanoutChoices,
   type Config,
 } from "./config.ts";
-import { ticketAt, ticketIds } from "./core.ts";
+import { ticketAt, ticketIds } from "./ticketGraph.ts";
 import type {
   ArtifactMark,
-  Core,
+  TicketGraph,
   FinalizationOutcome,
   Reason,
-  Stage,
+  StageDefinition,
 } from "./generated/modelTypes.ts";
 import type { TicketId } from "./ids.ts";
 import { outstandingCount } from "./task.ts";
 
 /** Anything not settled and not past the point of no return. */
-export function revocableIn(core: Core, id: TicketId): boolean {
-  const phase = ticketAt(core, id).phase;
-  return !["Done", "Revoked", "Finalizing"].includes(phase);
+export function revocableIn(graph: TicketGraph, id: TicketId): boolean {
+  const phase = ticketAt(graph, id).phase;
+  return !["Done", "Revoked", "Finalization"].includes(phase);
 }
 
 /**
  * A parked ticket with a stamped resume. Every wall stamps one, so the second
  * conjunct holds this to the stamp rather than to the phase alone.
  */
-export function retryableIn(core: Core, id: TicketId): boolean {
-  const ticket = ticketAt(core, id);
+export function retryableIn(graph: TicketGraph, id: TicketId): boolean {
+  const ticket = ticketAt(graph, id);
   return ticket.phase === "Escalated" && ticket.resumeAt !== "NoResume";
 }
 
 /** What this ticket waits on before it may run — the single definition every reader shares. */
-export function waitsOn(core: Core, id: TicketId): ReadonlySet<number> {
-  return ticketAt(core, id).deps;
+export function waitsOn(graph: TicketGraph, id: TicketId): ReadonlySet<number> {
+  return ticketAt(graph, id).deps;
 }
 
 /**
@@ -55,17 +55,17 @@ export function waitsOn(core: Core, id: TicketId): ReadonlySet<number> {
  * nothing here can change under a reader.
  */
 export function depArtifacts(
-  core: Core,
+  graph: TicketGraph,
   id: TicketId,
 ): readonly ArtifactMark[] {
-  return [...waitsOn(core, id)]
+  return [...waitsOn(graph, id)]
     .sort((a, b) => a - b)
-    .map((d) => ticketAt(core, d as TicketId).artifact);
+    .map((d) => ticketAt(graph, d as TicketId).artifact);
 }
 
-export function depsDoneIn(core: Core, id: TicketId): boolean {
-  return [...waitsOn(core, id)].every(
-    (k) => ticketAt(core, k as TicketId).phase === "Done",
+export function depsDoneIn(graph: TicketGraph, id: TicketId): boolean {
+  return [...waitsOn(graph, id)].every(
+    (k) => ticketAt(graph, k as TicketId).phase === "Done",
   );
 }
 
@@ -76,13 +76,13 @@ export function depsDoneIn(core: Core, id: TicketId): boolean {
  */
 export function canReleaseIn(
   config: Config,
-  core: Core,
+  graph: TicketGraph,
   id: TicketId,
 ): boolean {
   return (
-    core.tickets.size < config.nTickets &&
+    graph.tickets.size < config.nTickets &&
     ticketIdUniverse(config).includes(id) &&
-    !core.tickets.has(id)
+    !graph.tickets.has(id)
   );
 }
 
@@ -90,103 +90,100 @@ export function canReleaseIn(
  * What a release may depend on: anything not revoked. A revoked ticket never
  * reaches Done, so depending on one is authoring a ticket that can never run.
  */
-export function dependableIn(core: Core): readonly TicketId[] {
-  return ticketIds(core).filter((k) => ticketAt(core, k).phase !== "Revoked");
+export function dependableIn(graph: TicketGraph): readonly TicketId[] {
+  return ticketIds(graph).filter((k) => ticketAt(graph, k).phase !== "Revoked");
 }
 
-export function revocablesIn(core: Core): readonly TicketId[] {
-  return ticketIds(core).filter((j) => revocableIn(core, j));
+export function revocablesIn(graph: TicketGraph): readonly TicketId[] {
+  return ticketIds(graph).filter((j) => revocableIn(graph, j));
 }
 
-export function readiesIn(core: Core): readonly TicketId[] {
-  return ticketIds(core).filter((j) => isReadyIn(core, j));
+export function readiesIn(graph: TicketGraph): readonly TicketId[] {
+  return ticketIds(graph).filter((j) => isReadyIn(graph, j));
 }
 
 /** The two phases that hold a live task set, and so may take a completion. */
-export function taskPhaseIn(core: Core): readonly TicketId[] {
-  return ticketIds(core).filter((j) => {
-    const phase = ticketAt(core, j).phase;
-    return phase === "Working" || phase === "Evaluating";
+export function taskPhaseIn(graph: TicketGraph): readonly TicketId[] {
+  return ticketIds(graph).filter((j) => {
+    const phase = ticketAt(graph, j).phase;
+    return phase === "Work" || phase === "Evaluation";
   });
 }
 
-export function reducibleWorkIn(core: Core): readonly TicketId[] {
-  return ticketIds(core).filter((j) => {
-    const ticket = ticketAt(core, j);
-    return ticket.phase === "Working" && outstandingCount(ticket.tasks) === 0;
+export function reducibleWorkIn(graph: TicketGraph): readonly TicketId[] {
+  return ticketIds(graph).filter((j) => {
+    const ticket = ticketAt(graph, j);
+    return ticket.phase === "Work" && outstandingCount(ticket.tasks) === 0;
   });
 }
 
-export function reducibleEvalIn(core: Core): readonly TicketId[] {
-  return ticketIds(core).filter((j) => {
-    const ticket = ticketAt(core, j);
+export function reducibleEvalIn(graph: TicketGraph): readonly TicketId[] {
+  return ticketIds(graph).filter((j) => {
+    const ticket = ticketAt(graph, j);
     return (
-      ticket.phase === "Evaluating" && outstandingCount(ticket.tasks) === 0
+      ticket.phase === "Evaluation" && outstandingCount(ticket.tasks) === 0
     );
   });
 }
 
-export function doneIn(core: Core): readonly TicketId[] {
-  return ticketIds(core).filter((j) => ticketAt(core, j).phase === "Done");
+export function doneIn(graph: TicketGraph): readonly TicketId[] {
+  return ticketIds(graph).filter((j) => ticketAt(graph, j).phase === "Done");
 }
 
-export function retryablesIn(core: Core): readonly TicketId[] {
-  return ticketIds(core).filter((j) => retryableIn(core, j));
+export function retryablesIn(graph: TicketGraph): readonly TicketId[] {
+  return ticketIds(graph).filter((j) => retryableIn(graph, j));
 }
 
 /** The derived waiting room: released, with every dependency Done. */
-export function isReadyIn(core: Core, id: TicketId): boolean {
-  return ticketAt(core, id).phase === "Pending" && depsDoneIn(core, id);
+export function isReadyIn(graph: TicketGraph, id: TicketId): boolean {
+  return ticketAt(graph, id).phase === "Pending" && depsDoneIn(graph, id);
 }
 
-export function isBlockedIn(core: Core, id: TicketId): boolean {
-  return ticketAt(core, id).phase === "Pending" && !depsDoneIn(core, id);
+export function isBlockedIn(graph: TicketGraph, id: TicketId): boolean {
+  return ticketAt(graph, id).phase === "Pending" && !depsDoneIn(graph, id);
 }
 
 /** The phase that holds the finalizer obligation, and so may take its result. */
-export function finalizableIn(core: Core, id: TicketId): boolean {
-  return core.tickets.has(id) && ticketAt(core, id).phase === "Finalizing";
+export function finalizableIn(graph: TicketGraph, id: TicketId): boolean {
+  return graph.tickets.has(id) && ticketAt(graph, id).phase === "Finalization";
 }
 
 export function finalizationOutcomeEnabled(
-  core: Core,
+  graph: TicketGraph,
   id: TicketId,
   outcome: FinalizationOutcome,
 ): boolean {
-  const phase = ticketAt(core, id).phase;
+  const phase = ticketAt(graph, id).phase;
   switch (outcome) {
     case "FinalizationSucceeded":
-    case "FinalizationFailed":
-      return phase === "Finalizing";
+    case "FinalizationNeedsWork":
+      return phase === "Finalization";
   }
 }
 
 /** Both results the finalizer service may report. */
 export const finalizationOutcomes: readonly FinalizationOutcome[] = [
   "FinalizationSucceeded",
-  "FinalizationFailed",
+  "FinalizationNeedsWork",
 ];
 
 /**
- * The reasons infrastructure may refuse to run an intact contract. They are a
- * closed set because a blocked execution is not failed work: anything that
- * could arrive here has to be something the desk can act on.
+ * The one reason infrastructure may refuse to run an intact contract with,
+ * closed because a blocked execution is not failed work: anything arriving
+ * here has to be something the desk can act on. WHICH refusal it was is
+ * evidence the adapter records beside the execution, and no decider reads it.
  */
 export const executionBlockedReasons: readonly Reason[] = [
-  "ExecutionPolicyDenied",
-  "TicketConfigIncompatible",
-  "ExecutionProfileUnavailable",
-  "RuntimeVersionUnsupported",
-  "RequiredCapabilityUnavailable",
+  "WorkExecutionUnavailableEscalated",
 ];
 
 /** Whether a live task of this ticket is still outstanding under the named id. */
 export function outstandingTaskIn(
-  core: Core,
+  graph: TicketGraph,
   id: TicketId,
   taskId: number,
 ): boolean {
-  return [...ticketAt(core, id).tasks].some(
+  return [...ticketAt(graph, id).tasks].some(
     (t) => t.id === taskId && t.state === "Outstanding",
   );
 }
@@ -195,7 +192,7 @@ export function outstandingTaskIn(
 export function releasableAuthoring(
   config: Config,
   authoring: {
-    readonly prog: readonly Stage[];
+    readonly prog: readonly StageDefinition[];
     readonly workFanout: number;
   },
 ): boolean {
@@ -208,16 +205,16 @@ export function releasableAuthoring(
 /** The ids a release may still claim, which is what makes a fleet quiet or not. */
 export function releasableIdsIn(
   config: Config,
-  core: Core,
+  graph: TicketGraph,
 ): readonly TicketId[] {
-  if (core.tickets.size >= config.nTickets) return [];
-  return ticketIdUniverse(config).filter((j) => !core.tickets.has(j));
+  if (graph.tickets.size >= config.nTickets) return [];
+  return ticketIdUniverse(config).filter((j) => !graph.tickets.has(j));
 }
 
 /** Tickets running their finalizer, which is the phase a result may be reported for. */
-export function finalizingIn(core: Core): readonly TicketId[] {
-  return ticketIds(core).filter(
-    (j) => ticketAt(core, j).phase === "Finalizing",
+export function finalizingIn(graph: TicketGraph): readonly TicketId[] {
+  return ticketIds(graph).filter(
+    (j) => ticketAt(graph, j).phase === "Finalization",
   );
 }
 
@@ -226,11 +223,11 @@ export function finalizingIn(core: Core): readonly TicketId[] {
  * a terminal. It is the stutter's guard, so a run that reaches it records that
  * it did rather than deadlocking.
  */
-export function quietIn(config: Config, core: Core): boolean {
+export function quietIn(config: Config, graph: TicketGraph): boolean {
   return (
-    releasableIdsIn(config, core).length === 0 &&
-    ticketIds(core).every((j) => {
-      const phase = ticketAt(core, j).phase;
+    releasableIdsIn(config, graph).length === 0 &&
+    ticketIds(graph).every((j) => {
+      const phase = ticketAt(graph, j).phase;
       return phase === "Done" || phase === "Revoked";
     })
   );
@@ -238,10 +235,10 @@ export function quietIn(config: Config, core: Core): boolean {
 
 /** The task ids of this ticket the fabric could still report on. */
 export function outstandingTaskIdsIn(
-  core: Core,
+  graph: TicketGraph,
   id: TicketId,
 ): readonly number[] {
-  return [...ticketAt(core, id).tasks]
+  return [...ticketAt(graph, id).tasks]
     .filter((t) => t.state === "Outstanding")
     .map((t) => t.id)
     .sort((a, b) => a - b);

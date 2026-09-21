@@ -27,31 +27,34 @@ import type { StepView } from "../../src/domain/invariants.ts";
 import { stageAdvanceNever, witnesses } from "../../src/domain/witnesses.ts";
 import { modelInstance } from "./configs.ts";
 import {
-  coreOf,
+  graphOf,
   depsOf,
   evalTask,
   id,
   ticketOn,
   workTask,
 } from "./fixtures.ts";
-import type { Core, Stage } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  TicketGraph,
+  StageDefinition,
+} from "../../src/domain/generated/modelTypes.ts";
 
 const config = modelInstance;
 
 /** The view a decision produces, which is the shape a witness is read at. */
 function stepped(
-  pre: Core,
-  decided: { rec: StepView["rec"]; post: Core },
+  pre: TicketGraph,
+  decided: { rec: StepView["rec"]; post: TicketGraph },
 ): StepView {
   return { pre, rec: decided.rec, post: decided.post };
 }
 
-const twoStage: readonly Stage[] = [{ fanout: 1 }, { fanout: 1 }];
+const twoStage: readonly StageDefinition[] = [{ fanout: 1 }, { fanout: 1 }];
 
 /** A ticket whose lowest eval stage has just passed with a later stage still to run. */
-const midProgram = coreOf([
+const midProgram = graphOf([
   ticketOn(config, {
-    phase: "Evaluating",
+    phase: "Evaluation",
     program: twoStage,
     record: [workTask(1, "Passed"), workTask(2, "Passed")],
     tasks: new Set([evalTask(3, 0, "Passed")]),
@@ -60,7 +63,7 @@ const midProgram = coreOf([
 ]);
 
 const revoked = ((): StepView => {
-  const pre = coreOf([
+  const pre = graphOf([
     ticketOn(config, { phase: "Pending" }),
     ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
   ]);

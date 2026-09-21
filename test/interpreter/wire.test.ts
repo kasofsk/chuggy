@@ -48,6 +48,7 @@ import {
   parseTicketCommand,
   type Parsed,
 } from "../../src/interpreter/wire.ts";
+import { allBlockedReasons } from "../../src/interpreter/executionScheduler.ts";
 import { asOperationDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
 import {
   plainAuthoring,
@@ -62,13 +63,13 @@ const config = refinementInstance;
 /** A well-formed record, so a case about a decision event is not also a case about a record. */
 const plainRecord: StepRecord = {
   label: "dispatch",
-  transitions: [{ ticket: id(1), from: "Pending", to: "Working" }],
+  transitions: [{ ticket: id(1), from: "Pending", to: "Work" }],
   effects: ["SpawnWorkTasks"],
 };
 
 /** One decision event per constructor, keyed by its own tag so the roster can be checked against the vocabulary. */
 const oneOfEach: Readonly<Record<DecisionEvent["type"], DecisionEvent>> = {
-  ReleaseTicket: releaseTicketEvent(id(1), {
+  CreateTicket: releaseTicketEvent(id(1), {
     ...plainAuthoring,
     deps: new Set([2]),
   }),
@@ -77,8 +78,11 @@ const oneOfEach: Readonly<Record<DecisionEvent["type"], DecisionEvent>> = {
   TaskDone: taskDoneEvent(id(1), asTaskId(2), "Fail", plainResult),
   WorkReduce: workReduceEvent(id(1)),
   EvalReduce: evalReduceEvent(id(1), "ReworkEvaluationFailure"),
-  FinalizationResult: finalizationResultEvent(id(1), "FinalizationFailed"),
-  ExecutionBlocked: executionBlockedEvent(id(1), "ExecutionPolicyDenied"),
+  FinalizationResult: finalizationResultEvent(id(1), "FinalizationNeedsWork"),
+  ExecutionBlocked: executionBlockedEvent(
+    id(1),
+    "WorkExecutionUnavailableEscalated",
+  ),
   ResumeTicket: resumeTicketEvent(id(1)),
 };
 
@@ -131,7 +135,7 @@ test("every decision event this machine declares has a schema arm, and the roste
 
 test("a release naming a ticket twice is refused, which is the gap between an array and the model's set", () => {
   const written = JSON.parse(
-    encodeEntry({ seq: 1, event: oneOfEach.ReleaseTicket, rec: plainRecord }),
+    encodeEntry({ seq: 1, event: oneOfEach.CreateTicket, rec: plainRecord }),
   ) as { event: { value: { deps: number[] } } };
   written.event.value.deps = [1, 1];
   const refused = parseEntry(written);
@@ -142,11 +146,11 @@ test("a release naming a ticket twice is refused, which is the gap between an ar
 
 test("the same release with distinct deps is accepted, so the refusal is about the repeat", () => {
   const written = JSON.parse(
-    encodeEntry({ seq: 1, event: oneOfEach.ReleaseTicket, rec: plainRecord }),
+    encodeEntry({ seq: 1, event: oneOfEach.CreateTicket, rec: plainRecord }),
   ) as { event: { value: { deps: number[] } } };
   written.event.value.deps = [1, 2];
   const read = accepted(parseEntry(written));
-  assert.ok(read.event.type === "ReleaseTicket");
+  assert.ok(read.event.type === "CreateTicket");
   assert.deepEqual(read.event.value.deps, new Set([1, 2]));
 });
 
@@ -243,7 +247,7 @@ test("a decide carrying a finalization result is refused, as a reduction and a r
     oneOfEach.FinalizationResult,
     oneOfEach.WorkReduce,
     oneOfEach.EvalReduce,
-    oneOfEach.ReleaseTicket,
+    oneOfEach.CreateTicket,
   ]) {
     const refused = parseTicketCommand(
       JSON.stringify({
@@ -296,6 +300,68 @@ test("the finalizer's own envelope is read only by the parse a writer reads its 
 });
 
 /**
+ * A finalization submission sits in the inbox until a writer reaches it, so one
+ * written before the rename is decided after it. 006 admits both spellings of
+ * `outcome`; the writer would otherwise refuse what the database let through.
+ */
+test("a submission stored at the superseded outcome is read as the outcome this image has", () => {
+  const stored = {
+    version: 1,
+    command: "SubmitFinalizationResult",
+    request: "6:0:RunFinalizer",
+    requestGeneration: 6,
+    recoveryEpoch: "epoch-1",
+    outcome: "FinalizationFailed",
+  };
+  assert.deepEqual(parseStoredTicketCommand(JSON.stringify(stored)), {
+    parsed: "Ok",
+    value: { ...stored, outcome: "FinalizationNeedsWork" },
+  });
+  const refused = parseStoredTicketCommand(
+    JSON.stringify({ ...stored, outcome: "FinalizationAbandoned" }),
+  );
+  assert.equal(refused.parsed, "Refused");
+  assert.ok(refused.parsed === "Refused");
+  assert.match(refused.why, /finalization submission fields are invalid/);
+});
+
+/**
+ * The scheduler's own envelope, whose event the database builds out of
+ * `execution.blocked_reason`. That column keeps the five wall names as the
+ * evidence the collapsed reason stops carrying, so every block the boundary
+ * writes names one and the model describes none of them.
+ */
+test("a stored block names the wall it hit and is read as the reason the machine has", () => {
+  for (const wall of allBlockedReasons) {
+    const parsed = parseStoredTicketCommand(
+      JSON.stringify({
+        version: 1,
+        command: "Decide",
+        event: { type: "ExecutionBlocked", value: { ticket: 1, reason: wall } },
+      }),
+    );
+    assert.deepEqual(
+      parsed,
+      {
+        parsed: "Ok",
+        value: {
+          version: 1,
+          command: "Decide",
+          event: {
+            type: "ExecutionBlocked",
+            value: {
+              ticket: 1,
+              reason: "WorkExecutionUnavailableEscalated",
+            },
+          },
+        },
+      },
+      wall,
+    );
+  }
+});
+
+/**
  * A stored row as a pre-3 writer left it: the reduction named only its ticket,
  * and which edge it took is in the record rather than in the event.
  */
@@ -306,14 +372,14 @@ function bareEvalReduceRow(rec: StepRecord): unknown {
 /** The record an evaluation failure wrote when it walled the ticket. */
 const escalatedRecord: StepRecord = {
   label: "ticket-escalated rework_budget_exhausted",
-  transitions: [{ ticket: id(1), from: "Evaluating", to: "Escalated" }],
+  transitions: [{ ticket: id(1), from: "Evaluation", to: "Escalated" }],
   effects: ["OpenHumanTask"],
 };
 
 /** The record the same event wrote when it sent the ticket back to work. */
 const reworkedRecord: StepRecord = {
   label: "rework-started eval_failure",
-  transitions: [{ ticket: id(1), from: "Evaluating", to: "Working" }],
+  transitions: [{ ticket: id(1), from: "Evaluation", to: "Work" }],
   effects: ["SpawnWorkTasks"],
 };
 

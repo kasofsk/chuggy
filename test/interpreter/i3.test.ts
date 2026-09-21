@@ -18,7 +18,7 @@ import {
   reasonTags,
   resumeTags,
 } from "../../src/domain/generated/modelTypes.ts";
-import { actorInit, journalStep, memoryCore } from "../../src/actor/state.ts";
+import { actorInit, journalStep, memoryGraph } from "../../src/actor/state.ts";
 import { materializationOf } from "../../src/interpreter/decisionPlan.ts";
 import { inputBundleReferencesOf } from "../../src/interpreter/decisionPlan.ts";
 import {
@@ -54,7 +54,7 @@ import {
   plainResult,
   refinementInstance,
 } from "../actor/harness.ts";
-import { coreOf, id, ticketOn } from "../domain/fixtures.ts";
+import { graphOf, id, ticketOn } from "../domain/fixtures.ts";
 import { populated } from "./roster.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
@@ -114,7 +114,7 @@ test("trusted classification reserves safety traffic", () => {
 test("a completion is no command a principal may offer, and a writer still reads one", () => {
   for (const event of [
     taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
-    executionBlockedEvent(id(1), "ExecutionProfileUnavailable"),
+    executionBlockedEvent(id(1), "WorkExecutionUnavailableEscalated"),
   ]) {
     assert.throws(
       () => asOperationDecisionEvent(event),
@@ -199,8 +199,8 @@ test("dispatch materializes exact logical work tasks from the pure state delta",
   assert.ok(entry !== undefined);
   const planned = materializationOf(
     input(asOperationDecisionEvent(entry.event)),
-    memoryCore(released),
-    memoryCore(dispatched),
+    memoryGraph(released),
+    memoryGraph(dispatched),
     entry,
   );
   assert.equal(planned.execution.length, 1);
@@ -242,7 +242,7 @@ test("a decision leaving escalation withdraws its open native action", () => {
   const escalated = journalStep(
     refinementInstance,
     working,
-    executionBlockedEvent(id(1), "TicketConfigIncompatible"),
+    executionBlockedEvent(id(1), "WorkExecutionUnavailableEscalated"),
   );
   const revoked = journalStep(
     refinementInstance,
@@ -253,8 +253,8 @@ test("a decision leaving escalation withdraws its open native action", () => {
   assert.ok(entry !== undefined);
   const planned = materializationOf(
     input(asOperationDecisionEvent(entry.event)),
-    memoryCore(escalated),
-    memoryCore(revoked),
+    memoryGraph(escalated),
+    memoryGraph(revoked),
     entry,
   );
   assert.deepEqual(planned.withdrawActionsFor, [id(1)]);
@@ -285,7 +285,7 @@ function finalizationInput(event: DecisionEvent): DecisionInput {
     attempt: "attempt",
     requestGeneration: 1,
     recoveryEpoch: "epoch",
-    outcome: "FinalizationFailed",
+    outcome: "FinalizationNeedsWork",
   } as const;
   return {
     partition,
@@ -307,14 +307,14 @@ function finalizationInput(event: DecisionEvent): DecisionInput {
 
 test("a decision leaving finalization withdraws the approval it left unanswered", () => {
   const before = finalizing();
-  const result = finalizationResultEvent(id(1), "FinalizationFailed");
+  const result = finalizationResultEvent(id(1), "FinalizationNeedsWork");
   const after = journalStep(refinementInstance, before, result);
   const entry = after.journal.at(-1);
   assert.ok(entry !== undefined);
   const planned = materializationOf(
     finalizationInput(result),
-    memoryCore(before),
-    memoryCore(after),
+    memoryGraph(before),
+    memoryGraph(after),
     entry,
   );
   assert.deepEqual(planned.withdrawActionsFor, [id(1)]);
@@ -327,7 +327,7 @@ function parkEntry(): Entry {
     event: evalReduceEvent(id(1), "EscalateEvaluationFailure"),
     rec: {
       label: "ticket-escalated",
-      transitions: [{ ticket: 1, from: "Evaluating", to: "Escalated" }],
+      transitions: [{ ticket: 1, from: "Evaluation", to: "Escalated" }],
       effects: ["OpenHumanTask"],
     },
   };
@@ -344,7 +344,7 @@ function continuationInput(): DecisionInput {
       continuation: "continuation",
       reduction: { reduce: "Evaluation", ticket: id(1) },
       expectedTicketVersion: 1,
-      expectedPhase: "Evaluating",
+      expectedPhase: "Evaluation",
       taskSetGeneration: 1,
     },
   };
@@ -354,7 +354,7 @@ test("an open action admits exactly the answers the actor's enablement accepts",
   const offered = new Set<string>();
   for (const reason of reasonTags) {
     for (const resumeAt of resumeTags) {
-      const post = coreOf([
+      const post = graphOf([
         ticketOn(refinementInstance, {
           phase: "Escalated",
           reason,
@@ -363,7 +363,7 @@ test("an open action admits exactly the answers the actor's enablement accepts",
       ]);
       const planned = materializationOf(
         continuationInput(),
-        coreOf([]),
+        graphOf([]),
         post,
         parkEntry(),
       );
@@ -393,8 +393,8 @@ test("a decision that leaves a ticket where it found it withdraws nothing", () =
   assert.deepEqual(
     materializationOf(
       input(asOperationDecisionEvent(entry.event)),
-      memoryCore(before),
-      memoryCore(after),
+      memoryGraph(before),
+      memoryGraph(after),
       entry,
     ).withdrawActionsFor,
     [],

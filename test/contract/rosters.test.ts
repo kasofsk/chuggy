@@ -16,6 +16,7 @@ import {
   artifactRoles,
   attemptEvidences,
   attemptStates,
+  blockedReasons,
   configurationProvenanceSources,
   configurationReadinesses,
   draftStates,
@@ -109,6 +110,7 @@ import {
 import {
   allAttemptEvidence,
   allAttemptStates,
+  allBlockedReasons,
   allExecutionOutcomes,
   allExecutionStatuses,
 } from "../../src/interpreter/executionScheduler.ts";
@@ -171,6 +173,16 @@ test("the escalation reasons are the model's, less the absent one", () => {
     [...escalationReasons],
     reasonTags.filter((tag) => tag !== "NoReason"),
   );
+});
+
+/**
+ * The walls are the scheduler's and not the model's: the machine has one reason
+ * for all five, and the wire carries the wall beside it as the evidence that
+ * reason stops carrying. So this is held against the interpreter, and the order
+ * is the one `execution_blocked_reason_is_known` declares.
+ */
+test("the blocked reasons are the interpreter's", () => {
+  assert.deepEqual([...blockedReasons], [...allBlockedReasons]);
 });
 
 test("the resume points are the model's, less the absent one", () => {

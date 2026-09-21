@@ -398,7 +398,7 @@ test("a summary answers what its revision decides about finishing and evaluating
   );
 });
 
-test("a raw ReleaseTicket is not a public Decide command", () => {
+test("a raw CreateTicket is not a public Decide command", () => {
   const raw = `{"version":1,"command":"Decide","event":${encodeDraftAuthoring(plainAuthoring)}}`;
   assert.equal(parseTicketCommand(raw).parsed, "Refused");
 });

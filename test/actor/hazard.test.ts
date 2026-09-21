@@ -31,7 +31,7 @@ import {
   effectCrash,
   emitNext,
   journalStep,
-  memoryCore,
+  memoryGraph,
   type ActorState,
 } from "../../src/actor/state.ts";
 import {
@@ -40,7 +40,7 @@ import {
   worldCompletions,
   worldSpawns,
 } from "../../src/actor/world.ts";
-import { ticketAt } from "../../src/domain/core.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import { id } from "../domain/fixtures.ts";
 import {
@@ -68,7 +68,7 @@ function phaseDispatchDoubleSpend(): ActorState {
   );
   state = effectCrash(config, state, dispatchEvent(id(1)));
   assert.equal(state.orphans.length, 1);
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Pending");
+  assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Pending");
   assert.equal(worldSpawns(state, id(1)), 1);
   assert.equal(journalSpawns(state, id(1)), 0);
   assertStep(config, state, "a work set the journal never decided", spentWorld);
@@ -124,14 +124,14 @@ function phaseDuplicateCycle(state: ActorState): void {
     "eval-passed",
     spentWorld,
   );
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Finalizing");
+  assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Finalization");
   const succeeded = finalizationResultEvent(id(1), "FinalizationSucceeded");
   state = effectCrash(config, state, succeeded);
   assert.equal(state.orphans.length, 2);
   assert.equal(worldCompletions(state, id(1)), 1);
   assert.equal(journalCompletions(state, id(1)), 0);
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Finalizing");
-  assert.equal(ticketAt(memoryCore(state), id(1)).completions, 0);
+  assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Finalization");
+  assert.equal(ticketAt(memoryGraph(state), id(1)).completions, 0);
   assertStep(
     config,
     state,
@@ -141,10 +141,10 @@ function phaseDuplicateCycle(state: ActorState): void {
   assert.ok(obligationsHold(config, state, refinementCore));
   state = journalStep(config, state, succeeded);
   state = emitNext(state);
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
+  assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Done");
   assert.equal(worldCompletions(state, id(1)), 2);
   assert.equal(journalCompletions(state, id(1)), 1);
-  assert.equal(ticketAt(memoryCore(state), id(1)).completions, 1);
+  assert.equal(ticketAt(memoryGraph(state), id(1)).completions, 1);
   assertStep(config, state, "one ticket landed twice on one clean completion", [
     ...spentWorld,
     "noDuplicateCycle",
@@ -169,8 +169,8 @@ test("the rework crash: the fan-out launches and the step dies with the crash", 
     evalReduceEvent(id(1), "ReworkEvaluationFailure"),
   );
   assert.equal(state.orphans.length, 1);
-  const recovered = ticketAt(memoryCore(state), id(1));
-  assert.equal(recovered.phase, "Evaluating");
+  const recovered = ticketAt(memoryGraph(state), id(1));
+  assert.equal(recovered.phase, "Evaluation");
   assert.equal(worldSpawns(state, id(1)), 2);
   assert.equal(journalSpawns(state, id(1)), 1);
   assertStep(

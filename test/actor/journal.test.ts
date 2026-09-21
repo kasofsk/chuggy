@@ -34,11 +34,11 @@ import {
   workReduceEvent,
   type DecisionEvent,
 } from "../../src/actor/decisionEvent.ts";
-import { coreEquals } from "../../src/actor/equality.ts";
+import { graphEquals } from "../../src/actor/equality.ts";
 import {
   genesis,
   journalLegalOn,
-  replayCore,
+  replayGraph,
   type Entry,
 } from "../../src/actor/journal.ts";
 import {
@@ -46,7 +46,7 @@ import {
   journalSpawnsOn,
   worldSpawnsOn,
 } from "../../src/actor/world.ts";
-import { ticketAt, type Decision } from "../../src/domain/core.ts";
+import { ticketAt, type Decision } from "../../src/domain/ticketGraph.ts";
 import {
   decideExecutionBlocked,
   decideFinalizationResult,
@@ -61,7 +61,7 @@ import {
   plainResult,
   refinementInstance,
 } from "./harness.ts";
-import type { Core } from "../../src/domain/generated/modelTypes.ts";
+import type { TicketGraph } from "../../src/domain/generated/modelTypes.ts";
 
 const config = refinementInstance;
 
@@ -75,25 +75,25 @@ const goodJournal: readonly Entry[] = [e1, e2];
 
 test("the empty journal is legal and replays to genesis", () => {
   assert.ok(journalLegalOn(config, []));
-  assert.ok(coreEquals(replayCore([]), genesis));
+  assert.ok(graphEquals(replayGraph([]), genesis));
 });
 
 test("an honest history is legal, and replay reconstructs what the deciders built", () => {
   assert.ok(journalLegalOn(config, goodJournal));
-  const replayed = replayCore(goodJournal);
-  assert.ok(coreEquals(replayed, d2.post));
+  const replayed = replayGraph(goodJournal);
+  assert.ok(graphEquals(replayed, d2.post));
   assert.deepEqual([...replayed.tickets.keys()], [1]);
-  assert.equal(ticketAt(replayed, id(1)).phase, "Working");
+  assert.equal(ticketAt(replayed, id(1)).phase, "Work");
 });
 
 test("replaying one more entry equals stepping the shorter replay once", () => {
   assert.ok(
-    coreEquals(
-      replayCore(goodJournal),
-      execDecisionEvent(replayCore([e1]), event2).post,
+    graphEquals(
+      replayGraph(goodJournal),
+      execDecisionEvent(replayGraph([e1]), event2).post,
     ),
   );
-  assert.ok(coreEquals(replayCore([e1]), d1.post));
+  assert.ok(graphEquals(replayGraph([e1]), d1.post));
 });
 
 test("a sequence gap or a duplicate seq is refused", () => {
@@ -116,7 +116,7 @@ test("a decision that was never enabled is refused, cleanly, at any tampered pay
     !decisionEventEnabled(
       config,
       genesis,
-      executionBlockedEvent(id(1), "TicketConfigIncompatible"),
+      executionBlockedEvent(id(1), "WorkExecutionUnavailableEscalated"),
     ),
   );
   assert.ok(
@@ -177,7 +177,7 @@ test("the task result reference is journal data: it names no part of the decisio
   assert.notDeepEqual(real, other);
   const taken = execDecisionEvent(d2.post, real);
   assert.deepEqual(taken.rec, execDecisionEvent(d2.post, other).rec);
-  assert.ok(coreEquals(taken.post, execDecisionEvent(d2.post, other).post));
+  assert.ok(graphEquals(taken.post, execDecisionEvent(d2.post, other).post));
   assert.equal(taken.rec.label, "task-done");
 });
 
@@ -197,19 +197,19 @@ test("a task already resolved is no longer outstanding, so a second report never
 /** The journal an honest actor writes for this run of decisions, each record taken from the decider. */
 function journalOf(events: readonly DecisionEvent[]): readonly Entry[] {
   const entries: Entry[] = [];
-  let core = genesis;
+  let graph = genesis;
   for (const event of events) {
-    const decision = execDecisionEvent(core, event);
+    const decision = execDecisionEvent(graph, event);
     entries.push({ seq: entries.length + 1, event, rec: decision.rec });
-    core = decision.post;
+    graph = decision.post;
   }
   return entries;
 }
 
 /** The state that run reaches. */
-function coreAfter(events: readonly DecisionEvent[]): Core {
+function graphAfter(events: readonly DecisionEvent[]): TicketGraph {
   return events.reduce(
-    (core, event) => execDecisionEvent(core, event).post,
+    (graph, event) => execDecisionEvent(graph, event).post,
     genesis,
   );
 }
@@ -232,39 +232,39 @@ const toDone: readonly DecisionEvent[] = [
 ];
 const toEscalated: readonly DecisionEvent[] = [
   ...toWorking,
-  executionBlockedEvent(id(1), "TicketConfigIncompatible"),
+  executionBlockedEvent(id(1), "WorkExecutionUnavailableEscalated"),
 ];
 const toDependent: readonly DecisionEvent[] = [
   ...toPending,
   releaseTicketEvent(id(2), { ...plainAuthoring, deps: new Set([1]) }),
 ];
 
-const pending = coreAfter(toPending);
-const working = coreAfter(toWorking);
-const evaluating = coreAfter(toEvaluating);
-const finalizing = coreAfter(toFinalizing);
-const done = coreAfter(toDone);
-const escalated = coreAfter(toEscalated);
-const dependent = coreAfter(toDependent);
-const full = coreAfter([
+const pending = graphAfter(toPending);
+const working = graphAfter(toWorking);
+const evaluating = graphAfter(toEvaluating);
+const finalizing = graphAfter(toFinalizing);
+const done = graphAfter(toDone);
+const escalated = graphAfter(toEscalated);
+const dependent = graphAfter(toDependent);
+const full = graphAfter([
   ...toPending,
   releaseTicketEvent(id(2), plainAuthoring),
 ]);
 
 interface Refusal {
   readonly conjunct: string;
-  readonly at: Core;
+  readonly at: TicketGraph;
   readonly event: DecisionEvent;
 }
 
 const refusals: readonly Refusal[] = [
   {
-    conjunct: "ReleaseTicket/canReleaseIn",
+    conjunct: "CreateTicket/canReleaseIn",
     at: full,
     event: releaseTicketEvent(id(3), plainAuthoring),
   },
   {
-    conjunct: "ReleaseTicket/dependableIn",
+    conjunct: "CreateTicket/dependableIn",
     at: pending,
     event: releaseTicketEvent(id(2), {
       ...plainAuthoring,
@@ -272,7 +272,7 @@ const refusals: readonly Refusal[] = [
     }),
   },
   {
-    conjunct: "ReleaseTicket/isValidProgram",
+    conjunct: "CreateTicket/isValidProgram",
     at: genesis,
     event: releaseTicketEvent(id(1), {
       ...plainAuthoring,
@@ -280,7 +280,7 @@ const refusals: readonly Refusal[] = [
     }),
   },
   {
-    conjunct: "ReleaseTicket/workFanoutChoices",
+    conjunct: "CreateTicket/workFanoutChoices",
     at: genesis,
     event: releaseTicketEvent(id(1), { ...plainAuthoring, workFanout: 2 }),
   },
@@ -338,12 +338,12 @@ const refusals: readonly Refusal[] = [
   {
     conjunct: "ExecutionBlocked/taskPhaseIn",
     at: pending,
-    event: executionBlockedEvent(id(1), "TicketConfigIncompatible"),
+    event: executionBlockedEvent(id(1), "WorkExecutionUnavailableEscalated"),
   },
   {
     conjunct: "ExecutionBlocked/executionBlockedReasons",
     at: working,
-    event: executionBlockedEvent(id(1), "WorkFailed"),
+    event: executionBlockedEvent(id(1), "WorkFailureEscalated"),
   },
   {
     conjunct: "ResumeTicket/retryablesIn",
@@ -391,7 +391,7 @@ interface Drive {
   readonly arm: string;
   readonly before: readonly DecisionEvent[];
   readonly event: DecisionEvent;
-  readonly at: Core;
+  readonly at: TicketGraph;
   readonly decided: Decision;
 }
 
@@ -413,9 +413,13 @@ const drives: readonly Drive[] = [
   {
     arm: "ExecutionBlocked",
     before: toWorking,
-    event: executionBlockedEvent(id(1), "TicketConfigIncompatible"),
+    event: executionBlockedEvent(id(1), "WorkExecutionUnavailableEscalated"),
     at: working,
-    decided: decideExecutionBlocked(working, id(1), "TicketConfigIncompatible"),
+    decided: decideExecutionBlocked(
+      working,
+      id(1),
+      "WorkExecutionUnavailableEscalated",
+    ),
   },
   {
     arm: "ResumeTicket",
@@ -425,11 +429,15 @@ const drives: readonly Drive[] = [
     decided: decideResumeTicket(escalated, id(1)),
   },
   {
-    arm: "FinalizationResult/FinalizationFailed",
+    arm: "FinalizationResult/FinalizationNeedsWork",
     before: toFinalizing,
-    event: finalizationResultEvent(id(1), "FinalizationFailed"),
+    event: finalizationResultEvent(id(1), "FinalizationNeedsWork"),
     at: finalizing,
-    decided: decideFinalizationResult(finalizing, id(1), "FinalizationFailed"),
+    decided: decideFinalizationResult(
+      finalizing,
+      id(1),
+      "FinalizationNeedsWork",
+    ),
   },
 ];
 
@@ -442,7 +450,7 @@ test("each otherwise-undriven arm journals legally and decides what the domain d
     const taken = execDecisionEvent(at, event);
     assert.deepEqual(taken.rec, decided.rec, `${arm}: a different record`);
     assert.ok(
-      coreEquals(taken.post, decided.post),
+      graphEquals(taken.post, decided.post),
       `${arm}: a different post-state`,
     );
     const journal = journalOf([...before, event]);
@@ -452,7 +460,7 @@ test("each otherwise-undriven arm journals legally and decides what the domain d
       `${arm}: the journal is illegal`,
     );
     assert.ok(
-      coreEquals(replayCore(journal), decided.post),
+      graphEquals(replayGraph(journal), decided.post),
       `${arm}: replay does not reach the decided state`,
     );
   }

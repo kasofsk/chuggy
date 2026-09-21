@@ -84,7 +84,7 @@ function fakeTicket(calls: string[]): NativeWeb["ticket"] {
     calls.push(`ticket:${String(ticket)}`);
     return Promise.resolve({
       ticket,
-      phase: "Working",
+      phase: "Work",
       sequence: 4,
       releasedAt: asPublicInstant("2026-01-01T00:00:00Z"),
       changedAt: asPublicInstant("2026-01-01T00:00:04Z"),
@@ -974,7 +974,7 @@ test("ticket phase filters and detail are parsed before NativeWeb", async () => 
   assert.equal(detail.statusCode, 200);
   assert.deepEqual(detail.json(), {
     ticket: 3,
-    phase: "Working",
+    phase: "Work",
     sequence: 4,
     releasedAt: "2026-01-01T00:00:00Z",
     changedAt: "2026-01-01T00:00:04Z",

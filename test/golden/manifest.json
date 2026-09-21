@@ -18,7 +18,7 @@
       "purpose": "The unaimed walk. It is where the ordinary labels come from — released, dispatched, task-done, settled and the desk-only revoke — without any of them being asked for."
     },
     {
-      "name": "execution-blocked",
+      "name": "work-execution-unavailable",
       "instance": "mc_chuggy",
       "module": "mc_chuggy",
       "source": "model/mc/mc_chuggy.qnt",
@@ -26,7 +26,7 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 32,
-      "invariant": "lastStep.label != \"ticket-escalated execution_blocked\"",
+      "invariant": "lastStep.label != \"ticket-escalated work_execution_unavailable_escalated\"",
       "steps": 3,
       "quintVersion": "0.32.0",
       "purpose": "Infrastructure refuses to run an intact contract. It is not failed work: the set retires as cancelled and the wall names its own reason."
@@ -41,12 +41,12 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"eval-stage-passed\"",
-      "steps": 11,
+      "steps": 10,
       "quintVersion": "0.32.0",
-      "purpose": "The stage advance: a stage passes, the next one spawns, and the ticket stays in Evaluating. It is the only step whose transition is a phase to itself."
+      "purpose": "The stage advance: a stage passes, the next one spawns, and the ticket stays in Evaluation. It is the only step whose transition is a phase to itself."
     },
     {
-      "name": "rework-finalization-failed",
+      "name": "finalization-needs-work",
       "instance": "mc_chuggy",
       "module": "mc_chuggy",
       "source": "model/mc/mc_chuggy.qnt",
@@ -54,13 +54,13 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 32,
-      "invariant": "lastStep.label != \"rework-started finalization_failed\"",
-      "steps": 12,
+      "invariant": "lastStep.label != \"rework-started finalization_needs_work\"",
+      "steps": 13,
       "quintVersion": "0.32.0",
       "purpose": "A finalizer reports failure and the ticket re-enters work. There is no wall on this edge: the finalizer that keeps failing keeps buying cycles."
     },
     {
-      "name": "work-failed",
+      "name": "work-failure-escalated",
       "instance": "mc_chuggy",
       "module": "mc_chuggy",
       "source": "model/mc/mc_chuggy.qnt",
@@ -68,10 +68,10 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 32,
-      "invariant": "lastStep.label != \"ticket-escalated work_failed\"",
-      "steps": 10,
+      "invariant": "lastStep.label != \"ticket-escalated work_failure_escalated\"",
+      "steps": 11,
       "quintVersion": "0.32.0",
-      "purpose": "The work wall: the work set resolves Failed and the whole cycle escalates, parking the ticket at ResumeWorking with an open desk task."
+      "purpose": "The work wall: the work set resolves Failed and the whole cycle escalates, parking the ticket at ResumeWork with an open desk task."
     },
     {
       "name": "rework-started-eval-failure",
@@ -83,12 +83,12 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"rework-started eval_failure\"",
-      "steps": 12,
+      "steps": 15,
       "quintVersion": "0.32.0",
-      "purpose": "The Rework disposition on a failing evaluation: the stage retires and the ticket re-enters Working with a fresh work set. Its pair is rework-budget-exhausted, which is the same failure taken the other way."
+      "purpose": "The Rework disposition on a failing evaluation: the stage retires and the ticket re-enters Work with a fresh work set. Its pair is evaluation-failure-escalated, which is the same failure taken the other way."
     },
     {
-      "name": "rework-budget-exhausted",
+      "name": "evaluation-failure-escalated",
       "instance": "mc_chuggy",
       "module": "mc_chuggy_directed",
       "source": "model/mc/mc_chuggy_directed.qnt",
@@ -96,7 +96,7 @@
       "seed": "0x1",
       "maxSamples": 20000,
       "maxSteps": 60,
-      "invariant": "lastStep.label != \"ticket-escalated rework_budget_exhausted\"",
+      "invariant": "lastStep.label != \"ticket-escalated evaluation_failure_escalated\"",
       "steps": 39,
       "quintVersion": "0.32.0",
       "purpose": "The Escalate disposition on a failing evaluation: the same state as rework-started-eval-failure, parked at the desk instead of reworked."
@@ -110,10 +110,10 @@
       "seed": "0x1",
       "maxSamples": 20000,
       "maxSteps": 60,
-      "invariant": "not(lastStep.label == \"ticket-resumed\" and lastStep.transitions.foldl(false, (b, t) => b or (t.to == Working and tickets.get(t.ticket).record.length() > 0 and tickets.get(t.ticket).record[tickets.get(t.ticket).record.length() - 1].kind != Work)))",
+      "invariant": "not(lastStep.label == \"ticket-resumed\" and lastStep.transitions.foldl(false, (b, t) => b or (t.to == Work and tickets.get(t.ticket).record.length() > 0 and tickets.get(t.ticket).record[tickets.get(t.ticket).record.length() - 1].kind != WorkTask)))",
       "steps": 40,
       "quintVersion": "0.32.0",
-      "purpose": "The desk sends an escalated ticket back: the last thing in its record is the evaluation stage that failed, so this is the evaluation wall's exit, and it re-enters Working with a fresh work set rather than a second opinion on the old artifact."
+      "purpose": "The desk sends an escalated ticket back: the last thing in its record is the evaluation stage that failed, so this is the evaluation wall's exit, and it re-enters Work with a fresh work set rather than a second opinion on the old artifact."
     },
     {
       "name": "finalization-succeeded",
@@ -124,10 +124,10 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 60,
-      "invariant": "not(lastStep.label == \"ticket-done\" and lastStep.transitions.foldl(false, (b, t) => b or t.from == Finalizing))",
+      "invariant": "not(lastStep.label == \"ticket-done\" and lastStep.transitions.foldl(false, (b, t) => b or t.from == Finalization))",
       "steps": 23,
       "quintVersion": "0.32.0",
-      "purpose": "The finalizer draws FinalizationSucceeded and the ticket completes Finalizing -> Done. It is the only completion route this machine has: a passing final stage always runs a finalizer first."
+      "purpose": "The finalizer draws FinalizationSucceeded and the ticket completes Finalization -> Done. It is the only completion route this machine has: a passing final stage always runs a finalizer first."
     }
   ]
 }

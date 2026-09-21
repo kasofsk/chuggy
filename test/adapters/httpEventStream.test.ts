@@ -117,7 +117,7 @@ function servedWeb(
     ticket: (_principal, _partition, ticket) =>
       Promise.resolve({
         ticket,
-        phase: "Working",
+        phase: "Work",
         sequence: 4,
         releasedAt: asPublicInstant("2026-01-01T00:00:00Z"),
         changedAt: asPublicInstant("2026-01-01T00:00:04Z"),
@@ -358,7 +358,7 @@ test("a live change arrives as the kind's own GET representation", async () => {
     projectChangeRepresentationSchemas.Ticket.parse(changeData(opened)),
     {
       ticket: 3,
-      phase: "Working",
+      phase: "Work",
       sequence: 4,
       releasedAt: "2026-01-01T00:00:00Z",
       changedAt: "2026-01-01T00:00:04Z",

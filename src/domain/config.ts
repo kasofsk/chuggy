@@ -12,7 +12,7 @@
  * against one mid-flight.
  */
 
-import type { Stage } from "./generated/modelTypes.ts";
+import type { StageDefinition } from "./generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "./ids.ts";
 
 /** One deployment's constants. */
@@ -41,15 +41,15 @@ export function workFanoutChoices(config: Config): readonly number[] {
 }
 
 /** The stage vocabulary an author may draw from: any fan-out in range. */
-export function stageChoices(config: Config): readonly Stage[] {
-  const choices: Stage[] = [];
+export function stageChoices(config: Config): readonly StageDefinition[] {
+  const choices: StageDefinition[] = [];
   for (let fanout = 1; fanout <= config.nTasks; fanout++)
     choices.push({ fanout });
   return choices;
 }
 
 /** The default program: one stage at full fan-out, which is what a ticket whose evaluators all share stage 0 runs as. */
-export function defaultProgram(config: Config): readonly Stage[] {
+export function defaultProgram(config: Config): readonly StageDefinition[] {
   return [{ fanout: config.nTasks }];
 }
 
@@ -59,7 +59,7 @@ export function defaultProgram(config: Config): readonly Stage[] {
  */
 export function isValidProgram(
   config: Config,
-  program: readonly Stage[],
+  program: readonly StageDefinition[],
 ): boolean {
   return (
     program.length >= 1 &&

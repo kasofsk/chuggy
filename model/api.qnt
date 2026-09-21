@@ -16,7 +16,7 @@ module chuggy_api {
   type ApiTaskState = TaskState
   type ApiTask = Task
   type ApiVerdict = Verdict
-  type ApiStage = Stage
+  type ApiStageDefinition = StageDefinition
   type ApiEvaluationFailureDisposition = EvaluationFailureDisposition
   type ApiResume = Resume
   type ApiReason = Reason
@@ -25,10 +25,10 @@ module chuggy_api {
   type ApiTicket = Ticket
   type ApiInstallationId = InstallationId
   type ApiTicketRef = TicketRef
-  // `Core` is exposed only to model-facing tooling. Product code should use
-  // projections; its map codec is retained so the generator's mapping remains
-  // explicit and tested.
-  type ApiCore = Core
+  // `TicketGraph` is exposed only to model-facing tooling. Product code
+  // should use projections; its map codec is retained so the generator's
+  // mapping remains explicit and tested.
+  type ApiTicketGraph = TicketGraph
   type ApiTransition = Transition
   type ApiStepRecord = StepRecord
 

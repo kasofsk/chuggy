@@ -21,9 +21,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Config } from "../../src/domain/config.ts";
-import { initRecord } from "../../src/domain/core.ts";
+import { initRecord } from "../../src/domain/ticketGraph.ts";
 import {
-  encodeCore,
+  encodeTicketGraph,
   encodeOption,
   encodeStepRecord,
 } from "../itf/vocabulary.ts";
@@ -73,7 +73,7 @@ export function counterexampleDocument(
       "mbt::actionTaken": "init",
       "mbt::nondetPicks": nondetPicksOf({}),
       [lastStepVar]: encodeValue(encodeStepRecord(initRecord)),
-      [ticketsVar]: encodeValue(encodeCore(walkInit(config))),
+      [ticketsVar]: encodeValue(encodeTicketGraph(walkInit(config))),
     },
   ];
   for (const { step, decision } of walkRecord(config, steps, decide)) {
@@ -82,7 +82,7 @@ export function counterexampleDocument(
       "mbt::actionTaken": step.action,
       "mbt::nondetPicks": nondetPicksOf(step.drawn),
       [lastStepVar]: encodeValue(encodeStepRecord(decision.rec)),
-      [ticketsVar]: encodeValue(encodeCore(decision.post)),
+      [ticketsVar]: encodeValue(encodeTicketGraph(decision.post)),
     });
   }
   return {
