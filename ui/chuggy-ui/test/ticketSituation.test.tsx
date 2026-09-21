@@ -1,12 +1,8 @@
 /**
  * The situation notice, on the one case that is not a phase or a wall: a
- * Pending ticket blocked by a dependency its own author revoked.
- *
- * The gate is read twice on purpose — the contract answers
- * `revokedDependencies` only for a Pending ticket, but this suite pins that
- * the console does not simply trust that: a read naming both a settled phase
- * and a revoked dependency (the shape a stale or inconsistent read could take)
- * must still draw the phase, not the banner.
+ * Pending ticket blocked by a dependency its own author revoked. The read
+ * answers `revokedDependencies` for a Pending ticket alone, and the notice
+ * draws what the read says.
  */
 
 import { cleanup, render, screen } from "@testing-library/react";
@@ -70,17 +66,4 @@ test("a Pending ticket waiting on nothing revoked draws its phase, not a banner"
   );
   expect(screen.queryByText(/Blocked by revoked/u)).toBeNull();
   expect(screen.getByText("Pending")).toBeDefined();
-});
-
-test("a read naming a settled phase alongside a revoked dependency draws the phase, not the banner", () => {
-  render(
-    <SituationNotice
-      ticket={ticket({ phase: "Done", revokedDependencies: [3] })}
-      facts={facts}
-      stageCount={1}
-      nowMs={0}
-    />,
-  );
-  expect(screen.queryByText(/Blocked by revoked/u)).toBeNull();
-  expect(screen.getByText("Done")).toBeDefined();
 });

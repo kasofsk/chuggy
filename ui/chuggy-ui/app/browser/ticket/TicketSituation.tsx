@@ -48,15 +48,7 @@ export function SituationNotice(props: {
   readonly stageCount: number;
   readonly nowMs: number;
 }): ReactNode {
-  /**
-   * The contract answers `revokedDependencies` only for a Pending ticket, but
-   * the phase is checked here too rather than trusted: a settled ticket must
-   * never show a banner for a dependency that can no longer be waited on.
-   */
-  const blocked =
-    props.ticket.phase === "Pending"
-      ? revokedDependencyLine(props.ticket.revokedDependencies)
-      : undefined;
+  const blocked = revokedDependencyLine(props.ticket.revokedDependencies);
   if (blocked !== undefined) {
     const at = instantFigure(props.ticket.changedAt, props.nowMs);
     return (
