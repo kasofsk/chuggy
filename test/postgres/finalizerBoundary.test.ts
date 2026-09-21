@@ -367,7 +367,7 @@ test("an approval is opened against the attempt it names and against no other", 
   });
   assert.deepEqual(
     await rig.as(
-      `SELECT kind, state, required_capability, reason, attempt,
+      `SELECT kind, state, required_capability, escalation, attempt,
               authorizing_seq::text AS seq, action_version::text AS version
          FROM native_action WHERE tenant=$1 AND project=$2 AND action=$3`,
       [project.partition.tenant, project.partition.project, action],
@@ -377,7 +377,7 @@ test("an approval is opened against the attempt it names and against no other", 
         kind: "FinalizationApproval",
         state: "Open",
         required_capability: "ApproveFinalization",
-        reason: "NoReason",
+        escalation: "NoEscalation",
         attempt,
         seq: String(project.authorizingSeq),
         version: String(project.authorizingSeq),
@@ -484,7 +484,7 @@ test("an escalation holding the ticket's one open slot is reported, not overwrit
   await rig.harness.query(
     `INSERT INTO native_action
        (tenant, project, action, authorizing_seq, effect_position, ticket,
-        action_version, kind, reason, required_capability)
+        action_version, kind, escalation, required_capability)
      VALUES ($1,$2,$3,$4,7,$5,$4,'TicketEscalation','WorkFailureEscalated','ResolveTicket')`,
     [
       project.partition.tenant,

@@ -680,8 +680,8 @@ test("a native action names an attempt exactly when it asks for an approval", as
       await rig.ownerRefusal(
         `INSERT INTO native_action
            (tenant, project, action, authorizing_seq, effect_position, ticket,
-            action_version, kind, reason, required_capability, attempt)
-         VALUES ($1,$2,$3,$4,$5,$6,$4,$7,'NoReason',$8,$9)`,
+            action_version, kind, escalation, required_capability, attempt)
+         VALUES ($1,$2,$3,$4,$5,$6,$4,$7,'NoEscalation',$8,$9)`,
         keys(
           finalizerIdentity("action"),
           project.authorizingSeq,

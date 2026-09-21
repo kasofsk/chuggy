@@ -112,17 +112,26 @@ async function seedFilterProjection(partition: Partition) {
     "UPDATE project SET head=4 WHERE tenant=$1 AND project=$2",
     [partition.tenant, partition.project],
   );
-  for (const [ticket, phase, reason] of [
-    [1, "Done", "NoReason"],
-    [2, "Pending", "NoReason"],
-    [3, "Revoked", "NoReason"],
-    [4, "Escalated", "EvaluationFailureEscalated"],
+  for (const [ticket, phase, escalation, evidence] of [
+    [1, "Done", "NoEscalation", null],
+    [2, "Pending", "NoEscalation", null],
+    [3, "Revoked", "NoEscalation", null],
+    [4, "Escalated", "EvaluationFailureEscalated", null],
+    [5, "Escalated", "WorkExecutionUnavailableEscalated", "RefUnreadable"],
   ] as const) {
     await seedEntry(partition, `native-filter-${String(ticket)}`, ticket);
     await subject.harness.query(
-      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,reason)
-       VALUES ($1,$2,$3,$4,$3,$5)`,
-      [partition.tenant, partition.project, ticket, phase, reason],
+      `INSERT INTO ticket_projection
+         (tenant,project,ticket,phase,seq,escalation,escalation_evidence)
+       VALUES ($1,$2,$3,$4,$3,$5,$6)`,
+      [
+        partition.tenant,
+        partition.project,
+        ticket,
+        phase,
+        escalation,
+        evidence,
+      ],
     );
   }
 }
@@ -397,7 +406,10 @@ test("project reads filter before paging", async () => {
       ticket: 4,
       phase: "Escalated",
       sequence: 4,
-      reason: "EvaluationFailureEscalated",
+      escalation: {
+        kind: "EvaluationFailureEscalated",
+        resumeAt: "ResumeRework",
+      },
       changedAt: seededEntryAt(4),
       revokedDependencies: [],
     },
@@ -436,7 +448,10 @@ test("a ticket read carries the detail its project page carries", async () => {
     ticket: 4,
     phase: "Escalated",
     sequence: 4,
-    reason: "EvaluationFailureEscalated",
+    escalation: {
+      kind: "EvaluationFailureEscalated",
+      resumeAt: "ResumeRework",
+    },
     changedAt: seededEntryAt(4),
     revokedDependencies: [],
   });
@@ -455,7 +470,7 @@ test("a ticket's open action carries its kind, its fence, and what it offered", 
     {
       ticket: 1,
       sequence: 1,
-      reason: "WorkFailureEscalated",
+      escalation: "WorkFailureEscalated",
       offers: ["Resume", "Revoke"],
     },
   );
@@ -482,7 +497,7 @@ test("an escalation offers what it recorded, not what its kind may ask for", asy
     {
       ticket: 1,
       sequence: 1,
-      reason: "EvaluationFailureEscalated",
+      escalation: "EvaluationFailureEscalated",
       offers: ["Revoke"],
     },
   );
@@ -514,7 +529,7 @@ test("a resolved action stops listing, and an unknown ticket is not found", asyn
     {
       ticket: 1,
       sequence: 1,
-      reason: "WorkFailureEscalated",
+      escalation: "WorkFailureEscalated",
       offers: ["Resume", "Revoke"],
     },
   );
@@ -547,7 +562,7 @@ test("a project's open actions list newest first and page behind their bound", a
       {
         ticket,
         sequence: ticket,
-        reason: "WorkFailureEscalated",
+        escalation: "WorkFailureEscalated",
         offers: ["Resume", "Revoke"],
       },
     );
@@ -603,7 +618,7 @@ test("a project's open actions are its own, and an empty project lists none", as
   await seedOpenAction(subject.harness, mine, "native-actions-mine-one", {
     ticket: 1,
     sequence: 1,
-    reason: "WorkFailureEscalated",
+    escalation: "WorkFailureEscalated",
     offers: ["Resume", "Revoke"],
   });
   const reads = postgresNativeReads(subject.pool);
@@ -630,7 +645,7 @@ test("a stored answer the kind cannot ask for stops both reads", async () => {
     {
       ticket: 1,
       sequence: 1,
-      reason: "WorkFailureEscalated",
+      escalation: "WorkFailureEscalated",
       offers: ["Resume", "Revoke"],
     },
   );
@@ -669,7 +684,7 @@ test("the fence the read publishes is the one acceptance admits", async () => {
   await seedOpenAction(subject.harness, partition, "native-actions-fenced", {
     ticket: 1,
     sequence: 1,
-    reason: "WorkFailureEscalated",
+    escalation: "WorkFailureEscalated",
     offers: ["Resume", "Revoke"],
   });
   const listed = (

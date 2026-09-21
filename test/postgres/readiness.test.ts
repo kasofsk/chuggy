@@ -11,7 +11,6 @@ import {
 import {
   decisionEventTags,
   type TicketGraph,
-  type Resume,
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import {
@@ -132,17 +131,15 @@ test("ready resumes strictly after the cursor it is given", async () => {
 });
 
 /**
- * The park a seeded escalation stands on, as a `TicketGraph`, at the resume point a
- * case hands it. The wall is the seed's own; the resume point is this suite's,
- * because the projection carries none, and it is what the resume answer below
- * turns on.
+ * The park a seeded escalation stands on, as a `TicketGraph`. The wall is the
+ * seed's own and the resume follows from it, so a park this suite could offer
+ * an answer no point re-enters is not a state the machine has.
  */
-function parkedGraph(action: SeededAction, resumeAt: Resume): TicketGraph {
+function parkedGraph(action: SeededAction): TicketGraph {
   return graphOf([
     ticketOn(refinementInstance, {
       phase: "Escalated",
-      reason: action.reason,
-      resumeAt,
+      escalation: action.escalation,
     }),
   ]);
 }
@@ -162,34 +159,19 @@ function answerNames(
 /**
  * What the mapping may not get wrong. The expectation is read off the answer
  * rather than off the event under test, so a settle answer degraded into a
- * resume is compared against the command it should have named; the two
- * enablement questions stand behind it, refusing a command the park does not
- * offer and a resume the park has no point to re-enter at.
+ * resume is compared against the command it should have named, and enablement
+ * stands behind it refusing a command the park does not offer.
  */
 function assertAnswerNames(
   resolution: Exclude<NativeActionResolution, ApprovalResolution>,
   action: SeededAction,
   event: DecisionEvent,
 ): void {
-  const named = answerNames(resolution);
   assert.equal(decisionEventSubject(event), action.ticket, resolution);
-  assert.equal(event.type, named, resolution);
+  assert.equal(event.type, answerNames(resolution), resolution);
   assert.ok(
-    decisionEventEnabled(
-      refinementInstance,
-      parkedGraph(action, "ResumeWork"),
-      event,
-    ),
+    decisionEventEnabled(refinementInstance, parkedGraph(action), event),
     `${resolution} named ${event.type}, which its park does not enable`,
-  );
-  assert.equal(
-    decisionEventEnabled(
-      refinementInstance,
-      parkedGraph(action, "NoResume"),
-      event,
-    ),
-    named !== "ResumeTicket",
-    `${resolution} answered a park with no modeled resume with ${event.type}`,
   );
 }
 
@@ -217,7 +199,7 @@ test("every answer a desk task admits becomes the domain command it names", asyn
     const seeded: SeededAction = {
       ticket: 1,
       sequence: 1,
-      reason: "WorkFailureEscalated",
+      escalation: "WorkFailureEscalated",
       offers: [resolution],
     };
     await seedOpenAction(harness, partition, actionId, seeded);
