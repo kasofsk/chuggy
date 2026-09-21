@@ -234,10 +234,6 @@ module chuggy_ticket {
     // The artifact this ticket has produced, if it has passed work (design
     // 002). Set at work-passed and superseded by each rework's product.
     artifact: ArtifactMark,
-    // The work phase's task-set width. Release-time semantic policy: later
-    // decisions read this immutable field, never the importing module's
-    // ambient configuration.
-    workFanout: int,
     // THE EVAL PROGRAM — an ordered list of stages, AUTHORED: it
     // is released with the Pending and is immutable after release, like
     // deps. This is "eval is data, not machinery" made
@@ -364,6 +360,13 @@ module chuggy_ticket {
   /// reduces spawn on the retireLive'd ticket.
   pure def spawnOn(ticket: Ticket, k: TaskKind, n: int): Ticket =
     { ...ticket, tasks: spawnTasks(k, nextTaskId(ticket), n), spawned: ticket.spawned + n }
+
+  /// THE WORK SPAWN: a work cycle is one task, always — work is not staged
+  /// and carries no authored width, so the only fan-out in this machine is
+  /// an evaluation stage's. Named once here because every work spawn site
+  /// (dispatch, both reworks, the work resume) is this call.
+  pure def spawnWork(ticket: Ticket): Ticket =
+    spawnOn(ticket, WorkTask, 1)
 
   /// Retire the live task set into the retained record, in id order
   /// (tasksWellFormed keeps live ids contiguous above the record, so the

@@ -8,7 +8,7 @@ module chuggy_witness_resume_test {
   pure val p = [{ fanout: 1 }]
   action release(j: int, deps: Set[int]): bool = all {
     releasableIds.contains(j), deps.subseteq(dependableTickets), validPrograms.contains(p),
-    apply(decideReleaseTicket(graph, j, deps, p, 1)) }
+    apply(decideReleaseTicket(graph, j, deps, p)) }
   action doDispatch(j: int): bool = all { readyTickets.contains(j), apply(decideDispatch(graph,j)) }
   action done(j: int, tid: int): bool = all {
     deliverableTaskIds(graph,j).contains(tid), apply(decideTaskDone(graph,j,tid,Pass)) }
@@ -60,7 +60,7 @@ module chuggy_witness_rework_test {
   pure val p = [{ fanout: 1 }]
   action release(j: int): bool = all {
     releasableIds.contains(j), validPrograms.contains(p),
-    apply(decideReleaseTicket(graph, j, Set(), p, 1)) }
+    apply(decideReleaseTicket(graph, j, Set(), p)) }
   action doDispatch(j: int): bool = all { readyTickets.contains(j), apply(decideDispatch(graph,j)) }
   action done(j: int, tid: int, v: Verdict): bool = all {
     deliverableTaskIds(graph,j).contains(tid), apply(decideTaskDone(graph,j,tid,v)) }
@@ -103,7 +103,7 @@ module chuggy_witness_stage_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=1, N_TASKS=2, MAX_STAGES=2).* from "../domain"
   pure val p = [{ fanout: 1 }, { fanout: 1 }]
-  action release: bool = apply(decideReleaseTicket(graph,2,Set(),p,1))
+  action release: bool = apply(decideReleaseTicket(graph,2,Set(),p))
   action doDispatch: bool = all { readyTickets.contains(2), apply(decideDispatch(graph,2)) }
   action done(tid:int): bool = all { deliverableTaskIds(graph,2).contains(tid), apply(decideTaskDone(graph,2,tid,Pass)) }
   action wr: bool = all { reducibleWork.contains(2), apply(decideWorkReduce(graph,2)) }
@@ -115,18 +115,19 @@ module chuggy_witness_stage_test {
 }
 
 /// Authored data is ticket-local and immutable: two tickets released into
-/// one fleet keep the fan-out each was authored with.
+/// one fleet keep the evaluation program each was authored with.
 module chuggy_witness_sparse_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2, N_TASKS=2, MAX_STAGES=1).* from "../domain"
-  pure val p = [{ fanout: 1 }]
-  action release(j:int, wf:int): bool = all {
-    releasableIds.contains(j), workFanoutChoices.contains(wf),
-    apply(decideReleaseTicket(graph,j,Set(),p,wf)) }
+  pure val pNarrow = [{ fanout: 1 }]
+  pure val pWide = [{ fanout: 2 }]
+  action release(j:int, prog: List[StageDefinition]): bool = all {
+    releasableIds.contains(j), validPrograms.contains(prog),
+    apply(decideReleaseTicket(graph,j,Set(),prog)) }
   run ticketLocalPolicyWitness = init
-    .then(release(1,1))
-    .then(release(4,2))
-    .expect(and { tickets.get(1).workFanout == 1, tickets.get(4).workFanout == 2,
+    .then(release(1,pNarrow))
+    .then(release(4,pWide))
+    .expect(and { tickets.get(1).program == pNarrow, tickets.get(4).program == pWide,
       allInvariants })
 }
 
@@ -134,7 +135,7 @@ module chuggy_witness_gate_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2, N_TASKS=1, MAX_STAGES=1).* from "../domain"
   pure val p=[{fanout:1}]
-  action release(j:int):bool=apply(decideReleaseTicket(graph,j,Set(),p,1))
+  action release(j:int):bool=apply(decideReleaseTicket(graph,j,Set(),p))
   action doDispatch(j:int):bool=all{readyTickets.contains(j),apply(decideDispatch(graph,j))}
   action td(j:int,tid:int):bool=all{deliverableTaskIds(graph,j).contains(tid),apply(decideTaskDone(graph,j,tid,Pass))}
   action wr(j:int):bool=all{reducibleWork.contains(j),apply(decideWorkReduce(graph,j))}
@@ -180,7 +181,7 @@ module chuggy_witness_dependency_test {
   import chuggy_domain(N_TICKETS=2,N_TASKS=1,MAX_STAGES=1).* from "../domain"
   pure val p=[{fanout:1}]
   run existingDependencyWitness=init
-    .then(apply(decideReleaseTicket(graph,4,Set(),p,1)))
-    .then(apply(decideReleaseTicket(graph,1,Set(4),p,1)))
+    .then(apply(decideReleaseTicket(graph,4,Set(),p)))
+    .then(apply(decideReleaseTicket(graph,1,Set(4),p)))
     .expect(and{tickets.keys()==Set(1,4),tickets.get(1).deps==Set(4),isBlocked(1),allInvariants})
 }

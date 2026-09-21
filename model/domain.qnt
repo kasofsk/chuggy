@@ -68,10 +68,10 @@ module chuggy_domain {
   /// Maximum number of released tickets. Ticket identities come from the
   /// wider finite universe below and may be sparse or numerically reversed.
   const N_TICKETS: int
-  /// Task fan-out ceiling: the Work phase's single task-set width, AND the
-  /// per-stage fan-out cap an authored eval program may declare, since a
-  /// ticket carries a SET of possibly-parallel tasks. Stage widths are
-  /// per-stage data, so this const is their bound.
+  /// Task fan-out ceiling: the per-stage fan-out cap an authored eval
+  /// program may declare, since an evaluation stage carries a SET of
+  /// possibly-parallel tasks. Stage widths are per-stage data, so this
+  /// const is their bound. Work is not fanned out (ticket.qnt spawnWork).
   const N_TASKS: int
   /// Authored-program length cap — release's validity ceiling. Real programs
   /// are short by construction (stages are declared per evaluator), so the
@@ -81,8 +81,6 @@ module chuggy_domain {
   /// than the ticket-count bound so traces can contain gaps and reverse
   /// numeric dependency edges. Production ids are opaque and unbounded.
   pure val ticketIdUniverse: Set[int] = 1.to(N_TICKETS * 2)
-
-  pure val workFanoutChoices: Set[int] = 1.to(N_TASKS)
 
   /// What an evaluation failure may do. Both edges are always available: the
   /// machine holds no policy over the choice (ticket.qnt
@@ -119,12 +117,11 @@ module chuggy_domain {
   /// The TARGET PROJECT is released the same way — authored data
   /// riding the release, immutable after, like deps and the program.
   pure def freshTicket(
-      deps_: Set[int], prog: List[StageDefinition], workFanout_: int): Ticket = {
+      deps_: Set[int], prog: List[StageDefinition]): Ticket = {
     phase: Pending,
     deps: deps_,
     program: prog,
     artifact: NoArtifact,
-    workFanout: workFanout_,
     tasks: Set(),
     record: [],
     spawned: 0,
@@ -185,11 +182,10 @@ module chuggy_domain {
   /// release candidate authoring, may be sparse, and is never minted or
   /// ordered by TicketGraph.
   pure def decideReleaseTicket(
-      c: TicketGraph, j: int, deps_: Set[int], prog: List[StageDefinition],
-      workFanout_: int): Decision =
+      c: TicketGraph, j: int, deps_: Set[int],
+      prog: List[StageDefinition]): Decision =
     { rec: { label: "ticket-released", transitions: [], effects: []},
-      post: { ...c, tickets: c.tickets.put(j,
-        freshTicket(deps_, prog, workFanout_)) } }
+      post: { ...c, tickets: c.tickets.put(j, freshTicket(deps_, prog)) } }
 
   /// REVOKE — the author settles one ticket. Table provenance for the
   /// edge: lines 47-48 `(_, Revoked) => true` — every non-terminal phase
@@ -344,8 +340,8 @@ module chuggy_domain {
       j, Escalated, label, ["OpenHumanTask"])
 
   /// Ready -> Work: launch a cycle for the ticket THE SELECTOR PROPOSED.
-  /// Work is ONE task-set phase (one work task per cycle; Work is not staged), width
-  /// N_TASKS, ids sequential within the ticket.
+  /// Work is ONE task-set phase (one work task per cycle; Work is not
+  /// staged), ids sequential within the ticket.
   ///
   /// THE AGENTIC SELECTOR: this decider makes the accepted dispatch
   /// proposal first-class — j
@@ -364,7 +360,7 @@ module chuggy_domain {
   pure def decideDispatch(c: TicketGraph, j: int): Decision =
     val jb = c.tickets.get(j)
     move(
-      withTicket(c, j, spawnOn(jb, WorkTask, jb.workFanout)),
+      withTicket(c, j, spawnWork(jb)),
       j, Work, "dispatch", ["SpawnWorkTasks"])
 
   /// A task-completion event for task `tid` of ticket j (Work or
@@ -465,7 +461,7 @@ module chuggy_domain {
       match onFailure {
         | ReworkEvaluationFailure =>
           move(
-            withTicket(c, j, spawnOn(retired, WorkTask, retired.workFanout)),
+            withTicket(c, j, spawnWork(retired)),
             j, Work, "rework-started eval_failure", ["SpawnWorkTasks"])
         | EscalateEvaluationFailure =>
           escalate(c, j, EvaluationFailureEscalated,
@@ -495,7 +491,7 @@ module chuggy_domain {
   /// report failure is the finalizer's own business, below this grain.
   pure def finalizerFailure(c: TicketGraph, j: int): Decision =
     val jb = c.tickets.get(j)
-    move(withTicket(c, j, spawnOn(jb, WorkTask, jb.workFanout)),
+    move(withTicket(c, j, spawnWork(jb)),
       j, Work, "rework-started finalization_needs_work", ["SpawnWorkTasks"])
 
   /// THE COMPLETION: the ticket reaches Done. Native desk state is updated
@@ -571,7 +567,7 @@ module chuggy_domain {
     val jb = c.tickets.get(j)
     val resumed = { ...jb, escalation: NoEscalation }
     val workResume =
-      move(withTicket(c, j, spawnOn(resumed, WorkTask, resumed.workFanout)),
+      move(withTicket(c, j, spawnWork(resumed)),
         j, Work, "ticket-resumed", ["SpawnWorkTasks"])
     match resumeOf(jb.escalation) {
       | ResumeWork => workResume
@@ -717,16 +713,15 @@ module chuggy_domain {
   // --- actions --------------------------------------------------------------
 
   /// A new ticket is released as Pending with a nondeterministic subset of
-  /// dependable existing tickets, a well-formed evaluation program and an
-  /// immutable ticket-local fan-out. At most N_TICKETS releases ever
-  /// happen, which is the only bound on how many tickets a run holds.
+  /// dependable existing tickets and a well-formed evaluation program. At
+  /// most N_TICKETS releases ever happen, which is the only bound on how
+  /// many tickets a run holds.
   action releaseTicket = all {
     releasableIds.size() > 0,
     nondet j = releasableIds.oneOf()
     nondet deps_ = dependableTickets.powerset().oneOf()
     nondet prog = validPrograms.oneOf()
-    nondet workFanout_ = workFanoutChoices.oneOf()
-    apply(decideReleaseTicket(graph, j, deps_, prog, workFanout_))
+    apply(decideReleaseTicket(graph, j, deps_, prog))
   }
 
   /// Author revokes any non-terminal ticket, and that ticket alone
@@ -921,7 +916,7 @@ module chuggy_domain {
 
   /// The LIVE task set is exactly the current phase's anatomy (this is
   /// also the STAGE-INDEX SANITY invariant):
-  ///   - Work: the single work set — width N_TASKS, all WorkTask;
+  ///   - Work: the single work set — one WorkTask;
   ///   - Evaluation: ONE stage's fan-out — uniformly EvaluationTask(s) for a
   ///     single s that indexes INTO the program (0 <= s < |program|), with
   ///     exactly that stage's declared width (the interpreter is running
@@ -938,8 +933,8 @@ module chuggy_domain {
     val jb = tickets.get(j)
     val start = jb.record.length() + firstTaskId
     if (jb.phase == Work) and {
-      jb.tasks.size() == jb.workFanout,
-      jb.tasks.map(t => t.id) == start.to(start + jb.workFanout - 1),
+      jb.tasks.size() == 1,
+      jb.tasks.map(t => t.id) == Set(start),
       jb.tasks.forall(t => t.kind == WorkTask and t.state != Resolved(Cancelled))
     } else if (jb.phase == Evaluation)
       val s = evalStage(jb.tasks)
