@@ -55,8 +55,8 @@ export type Decide = (
 ) => Decision;
 
 /** The default: the conformance dispatch table, exactly as a replayed golden routes. */
-export const decideViaTable: Decide = (config, core, action, picks) =>
-  replayStep(config, core, action, picks);
+export const decideViaTable: Decide = (_config, core, action, picks) =>
+  replayStep(core, action, picks);
 
 /** One step as the walk took it: the action's name and its draws. */
 export interface WalkStep {

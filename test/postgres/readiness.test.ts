@@ -139,7 +139,7 @@ test("ready resumes strictly after the cursor it is given", async () => {
  */
 function parkedCore(action: SeededAction, resumeAt: Resume): Core {
   return coreOf([
-    ticketOn(refinementInstance, "ManagedFinalizer", {
+    ticketOn(refinementInstance, {
       phase: "Escalated",
       reason: action.reason,
       resumeAt,
@@ -236,4 +236,37 @@ test("every answer a desk task admits becomes the domain command it names", asyn
     assert.ok(event !== undefined, resolution);
     assertAnswerNames(resolution, seeded, event);
   }
+});
+
+/**
+ * A command whose event this machine no longer has. The wall that parked a
+ * ticket behind a revoked dependency left with the cascade, and an undecided
+ * operation can outlive the upgrade still carrying it, so discovery is where it
+ * is caught — refused at decode, under a message naming the operation.
+ */
+test("an operation carrying a wall this machine lost is refused by name", async () => {
+  const partition = await postgresHarnessProject(harness.store, "parked-wall");
+  const submission = postgresHarnessSubmission(partition, "parked-wall");
+  assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
+  await harness.query(
+    `UPDATE operation SET command=$4
+      WHERE tenant=$1 AND project=$2 AND operation=$3`,
+    [
+      partition.tenant,
+      partition.project,
+      submission.operation,
+      JSON.stringify({
+        version: 1,
+        command: "Decide",
+        event: {
+          type: "ExecutionBlocked",
+          value: { ticket: 1, reason: "DependencyRevoked" },
+        },
+      }),
+    ],
+  );
+  await assert.rejects(
+    () => harness.discovery.next(partition, 300),
+    new RegExp(`stored operation ${submission.operation} is unreadable`, "u"),
+  );
 });

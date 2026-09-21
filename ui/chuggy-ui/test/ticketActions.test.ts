@@ -107,7 +107,6 @@ test("manual dispatch echoes only the candidate version the view supplied", () =
         dependencies: [],
         workFanout: 1,
         program: [],
-        finalizer: "NoFinalizer",
         configurationRevision: "r1",
         configurationDigest: "b".repeat(64),
         configurationCanonical: "{}",

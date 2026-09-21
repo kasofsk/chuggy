@@ -276,7 +276,6 @@ function releaseAuthoring(value: ReleaseAuthoringBody): ReleaseAuthoring {
     deps: new Set(value.dependencies),
     prog: value.program,
     workFanout: value.workFanout,
-    finalizer: value.finalizer,
   };
 }
 
@@ -286,7 +285,9 @@ function releaseBriefFinalization(
 ): { readonly mode: string; readonly target?: string } {
   return {
     mode: value.mode,
-    ...(value.target === undefined ? {} : { target: value.target }),
+    ...(!("target" in value) || value.target === undefined
+      ? {}
+      : { target: value.target }),
   };
 }
 

@@ -1,25 +1,14 @@
 /**
  * The eval program's verdict rule, interpreted over a resolved stage.
  *
- * Eval is data, and the data — `Stage` and `Combinator` — is the model's. What
- * is here is what the model does with it.
+ * Eval is data, and the data — the `Stage` a ticket's program carries — is
+ * the model's. What is here is what the model does with it.
  */
 
-import { assertNever } from "./assertNever.ts";
-import type { Combinator, Task } from "./generated/modelTypes.ts";
+import type { Task } from "./generated/modelTypes.ts";
 import { taskPassed } from "./task.ts";
 
-/** The combinator interpreted over a resolved set. Callers guarantee every task is resolved. */
-export function combine(
-  combinator: Combinator,
-  tasks: ReadonlySet<Task>,
-): boolean {
-  switch (combinator) {
-    case "UnanimousPass":
-      return [...tasks].every(taskPassed);
-    case "AnyPass":
-      return [...tasks].some(taskPassed);
-    default:
-      return assertNever(combinator);
-  }
+/** A stage passes when every evaluator in it passed. Callers guarantee every task is resolved. */
+export function combine(tasks: ReadonlySet<Task>): boolean {
+  return [...tasks].every(taskPassed);
 }

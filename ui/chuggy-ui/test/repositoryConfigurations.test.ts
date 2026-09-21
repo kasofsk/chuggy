@@ -17,7 +17,6 @@ import {
   readProjectConfigurations,
   repositoryConfigurationRow,
   repositoryConfigurations,
-  repositoryReadyConfiguration,
 } from "../app/core/repositoryConfigurations.ts";
 import { creationPartition, creationSummary } from "./ticketCreationFixture.ts";
 
@@ -63,18 +62,6 @@ test("a page holds one row per name this repository declares, newest first", () 
   expect(repositoryConfigurations(listing, "https://forge.test/none")).toEqual(
     [],
   );
-});
-
-/** The initialization behind the Finalizer row is one revision's, and it must
- * be one this repository declares rather than the project's newest ready. */
-test("the ready revision is this repository's own newest", () => {
-  const held = [
-    creationSummary("r9", "Ready"),
-    declared("r6", chuggy, "chuggy", "Incomplete"),
-    declared("r4", chuggy, "nightly"),
-  ];
-  expect(repositoryReadyConfiguration(held, chuggy)?.revision).toBe("r4");
-  expect(repositoryReadyConfiguration(held, scratch)).toBe(undefined);
 });
 
 test("a ready row states three facts, and an incomplete one states none", () => {

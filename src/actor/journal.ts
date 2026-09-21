@@ -68,20 +68,16 @@ export function storedAtCurrentSemantics(
 }
 
 /** Recovery: replay a stored history into a fresh state, each row under its own semantics. */
-export function storedReplayCore(
-  config: Config,
-  stored: readonly StoredEntry[],
-): Core {
+export function storedReplayCore(stored: readonly StoredEntry[]): Core {
   return stored.reduce(
-    (core, row) =>
-      execDecisionEventAt(row.semantics, config, core, row.entry).post,
+    (core, row) => execDecisionEventAt(row.semantics, core, row.entry).post,
     genesis,
   );
 }
 
 /** Recovery: replay the journal into a fresh state, one decision at a time from `genesis`. */
-export function replayCore(config: Config, journal: readonly Entry[]): Core {
-  return storedReplayCore(config, storedAtCurrentSemantics(journal));
+export function replayCore(journal: readonly Entry[]): Core {
+  return storedReplayCore(storedAtCurrentSemantics(journal));
 }
 
 /**
@@ -110,12 +106,7 @@ export function storedJournalLegalOn(
     ) {
       return false;
     }
-    const decision = execDecisionEventAt(
-      row.semantics,
-      config,
-      replayed,
-      row.entry,
-    );
+    const decision = execDecisionEventAt(row.semantics, replayed, row.entry);
     if (!recordEquals(decision.rec, row.entry.rec)) return false;
     replayed = decision.post;
     semantics = row.semantics;

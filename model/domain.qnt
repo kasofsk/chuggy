@@ -16,11 +16,9 @@
 /// selector's own agency, not scheduler noise, so any policy refines
 /// unrestricted choice. Work runs one task set per cycle. Evaluation runs the
 /// ticket's authored program, stage by stage, short-circuiting on a failure.
-/// Then the ticket finishes according to its authored wrap-up kind: a
-/// NoFinalizer ticket's effect already happened during work, so passing
-/// evaluation completes it outright; a ManagedFinalizer ticket queues for a
-/// lease on its named resource, holds it while its step runs, and releases it
-/// by leaving the phase.
+/// Then the ticket finalizes: a passing final stage moves it into Finalizing,
+/// where a platform-owned finalizer runs and reports one conclusive outcome,
+/// and the ticket leaves the phase by that report.
 ///
 /// THE EVALUATION-FAILURE DISPOSITION. A failing stage has two continuations
 /// and this machine chooses neither of them: it CONSULTS an
@@ -83,7 +81,6 @@ module chuggy_domain {
   /// numeric dependency edges. Production ids are opaque and unbounded.
   pure val ticketIdUniverse: Set[int] = 1.to(N_TICKETS * 2)
 
-  pure val finalizerChoices: Set[Finalizer] = Set(NoFinalizer, ManagedFinalizer)
   pure val workFanoutChoices: Set[int] = 1.to(N_TASKS)
 
   /// What an evaluation failure may do. Both edges are always available: the
@@ -93,11 +90,8 @@ module chuggy_domain {
   pure val dispositionChoices: Set[EvaluationFailureDisposition] =
     Set(ReworkEvaluationFailure, EscalateEvaluationFailure)
 
-  /// The stage vocabulary an author may draw from: any fan-out 1..N_TASKS,
-  /// either combinator (both branches stay exercisable — the model).
-  pure val stageChoices: Set[Stage] =
-    tuples(1.to(N_TASKS), Set(UnanimousPass, AnyPass))
-      .map(t => { fanout: t._1, combinator: t._2 })
+  /// The stage vocabulary an author may draw from: any fan-out 1..N_TASKS.
+  pure val stageChoices: Set[Stage] = 1.to(N_TASKS).map(n => { fanout: n })
 
   /// Every WELL-FORMED authorable program: non-empty, at most MAX_STAGES
   /// stages, each stage from stageChoices. This set IS the release-refusal
@@ -110,14 +104,10 @@ module chuggy_domain {
       acc.union(acc.map(p => stageChoices.map(s => p.append(s))).flatten()))
       .filter(p => p.length() >= 1)
 
-  /// THE DEFAULT PROGRAM: ONE stage, full fan-out, unanimous pass. Every
-  /// evaluator defaults to stage 0, so a ticket whose evaluators all share
-  /// one stage behaves exactly like a single fan-out — pinned in
-  /// tests/chuggy_test.qnt. There is deliberately no machine-wide
-  /// combinator const: the combinator is data on the ticket record, and a
-  /// const would be exactly the machinery that eval-is-data rules out.
-  pure val defaultProgram: List[Stage] =
-    [{ fanout: N_TASKS, combinator: UnanimousPass }]
+  /// THE DEFAULT PROGRAM: ONE stage, full fan-out. Every evaluator defaults
+  /// to stage 0, so a ticket whose evaluators all share one stage behaves
+  /// exactly like a single fan-out — pinned in tests/chuggy_test.qnt.
+  pure val defaultProgram: List[Stage] = [{ fanout: N_TASKS }]
 
   /// The ticket-source seam, now CLOSED:
   /// every ticket the machine ever holds is built here, and the only caller is
@@ -127,12 +117,10 @@ module chuggy_domain {
   /// The TARGET PROJECT is released the same way — authored data
   /// riding the release, immutable after, like deps and the program.
   pure def freshTicket(
-      deps_: Set[int], prog: List[Stage], workFanout_: int,
-      finalizer_: Finalizer): Ticket = {
+      deps_: Set[int], prog: List[Stage], workFanout_: int): Ticket = {
     phase: Pending,
     deps: deps_,
     program: prog,
-    finalizer: finalizer_,
     artifact: NoArtifact,
     workFanout: workFanout_,
     tasks: Set(),
@@ -169,14 +157,11 @@ module chuggy_domain {
   /// A ticket IS RELEASED as a Pending — the environment (an author) creates it.
   /// A ticket does not exist in Core before this decision. Its externally
   /// allocated id may be sparse. Dependencies may point only at already
-  /// released tickets, but never at a tombstone: not a Revoked ticket, and
-  /// not a ticket the cascade already parked behind one (Escalated with
-  /// dependency_revoked — by cascadeSafety those two cases are EXACTLY the
-  /// transitively-doomed tickets). The author cannot depend on either
-  /// (authoring-time validation; admitting one would create a ticket doomed
-  /// at birth, which cascadeSafety forbids anyone to hold un-parked — the
-  /// first random invariant run caught precisely this). Callers guarantee
-  /// deps_ ⊆ dependable ids (see `dependableTickets`).
+  /// released tickets, and never at a tombstone: a Revoked ticket never
+  /// becomes Done, so an edge to one is an edge that blocks its dependent
+  /// for good, and refusing it at authoring time is what keeps an author
+  /// from writing that ticket rather than discovering it afterwards.
+  /// Callers guarantee deps_ ⊆ dependable ids (see `dependableTickets`).
   ///
   /// The release also carries the ticket's EVAL PROGRAM, validated the
   /// same structural way — callers guarantee prog ∈ validPrograms, so an
@@ -193,95 +178,46 @@ module chuggy_domain {
   /// sources, not the at-least-once fabric — only fabric events get
   /// idempotent stutter deciders.
   ///
-  /// The release carries the ticket's WRAP-UP CHOICE last — whether
-  /// completion needs a lease, and on which resource. Callers guarantee
-  /// finalizer_ ∈ finalizerChoices (the `release` action draws from exactly that
-  /// set), so a lease on a resource outside the universe is refused at
-  /// authoring time like an out-of-universe target (finalizerWellFormed makes
-  /// the refusal durable). It is the draw that decides whether the ticket
-  /// ever reaches a wrap-up phase at all: NoFinalizer completes on its passing
-  /// evaluation and takes no lease (noLeaseWithoutAKind). Immutable after
-  /// release, like deps and the program.
   /// The first domain decision for a ticket. The id is allocated by native
   /// release candidate authoring, may be sparse, and is never minted or ordered by Core.
   pure def decideReleaseTicket(
-      c: Core, j: int, deps_: Set[int], prog: List[Stage], workFanout_: int,
-      finalizer_: Finalizer): Decision =
+      c: Core, j: int, deps_: Set[int], prog: List[Stage],
+      workFanout_: int): Decision =
     { rec: { label: "ticket-released", transitions: [], effects: []},
       post: { ...c, tickets: c.tickets.put(j,
-        freshTicket(deps_, prog, workFanout_, finalizer_)) } }
+        freshTicket(deps_, prog, workFanout_)) } }
 
-  /// Revoke + THE CASCADE. Table provenance for the revoke
-  /// edge itself: lines 47-48 `(_, Revoked) => true` — every non-terminal
-  /// phase may be revoked (the caller's guard, revocableIn) — and lines
-  /// 45-46 `(Done | Revoked, Revoked) => false` — the terminals are
-  /// absorbing, so no decider ever moves a ticket OUT of Revoked (invariant
-  /// terminalsAbsorbing). The revoked ticket settles: rank -> 0, live task set
-  /// RETIRED into the record (still-outstanding tasks force-closed as
-  /// Cancelled; the
-  /// record itself is KEPT: provenance survives the author's settlement,
-  /// "Revoked runs nothing" ≠ "Revoked remembers nothing") — and
-  /// reason/resumeAt cleared: Revoked opens NO human task
+  /// REVOKE — the author settles one ticket. Table provenance for the
+  /// edge: lines 47-48 `(_, Revoked) => true` — every non-terminal phase
+  /// may be revoked (the caller's guard, revocableIn) — and lines 45-46
+  /// `(Done | Revoked, Revoked) => false` — the terminals are absorbing, so
+  /// no decider ever moves a ticket OUT of Revoked (invariant
+  /// terminalsAbsorbing). The revoked ticket settles: live task set RETIRED
+  /// into the record (still-outstanding tasks force-closed as Cancelled;
+  /// the record itself is KEPT: provenance survives the author's
+  /// settlement, "Revoked runs nothing" ≠ "Revoked remembers nothing") —
+  /// and reason/resumeAt cleared: Revoked opens NO human task
   /// (hasOpenHumanTask excludes it; revocation is the author's settled
   /// choice, like Done).
   ///
-  /// THE CASCADE: a ticket whose dep chain
-  /// contains a revoked ticket can never unblock (a dep that is not Done
-  /// blocks, and Revoked never becomes Done). Of the two candidate
-  /// semantics —
-  ///   (a) transitive cascade-REVOKE: dependents are revoked too;
-  ///   (b) PARK: dependents wait on the desk behind a named wall —
-  /// chuggy picks (b), ATOMICALLY in this decision, for two reasons.
-  /// First, revocation is a per-ticket authorial choice: (a) would
-  /// let one author's revocation silently destroy OTHER tickets with no human
-  /// decision and no desk trace (a cascade-revoked ticket opens no task — the
-  /// exact invisibility the §2 visibility row forbids). Second, parking
-  /// preserves desk coverage structurally: every doomed dependent gets its
-  /// OWN open task (DependencyRevoked) telling a human "your dependency
-  /// was revoked; settle me" — and the human settles it by revoking it. The park is
-  /// atomic with the revoke — same decision, one StepRecord — so
-  /// cascadeSafety holds in EVERY reachable state, never just eventually.
-  ///
-  /// Why parking only Pending/Pending dependents is exhaustive: a
-  /// transitive dependent of a revocable (hence non-Done) ticket can never
-  /// have dispatched — dispatch needs all deps Done, Done is absorbing, and
-  /// the revoked ancestor is not Done — so every dependent is still
-  /// pre-flight: Pending, Pending, or already settled by an earlier cascade
-  /// (Escalated DependencyRevoked) or by its own author (Revoked). The
-  /// filter parks exactly the first two and leaves the already-settled
-  /// alone (no duplicate transitions). Pre-flight tickets hold
-  /// no live tasks, so the cascade retires nothing on the parked side.
-  /// The parked wall stamps NO resume point (resumeAt stays NoResume): deps
-  /// are immutable, so no modeled resume exists — the wall's only exit is
-  /// revoke (retryableIn; the deliberate table-line-44 deviation).
+  /// ONE TICKET TRANSITIONS, the one the author named. A dependent behind
+  /// it is left where it is: it stays Pending, depsDoneIn never admits it
+  /// (a dep that is not Done blocks, and Revoked never becomes Done), and
+  /// revoke stays offered on it (revocablesIn admits Pending), so its own
+  /// author settles it the same way this one was settled. Revoking it here
+  /// would destroy another author's ticket with no human deciding it, and
+  /// parking it here would open a desk task for a decision only its author
+  /// can take.
   pure def decideRevoke(c: Core, j: int): Decision =
-    val doomedByJ = range(1, N_TICKETS + 1).foldl(Set(j), (dset, _) =>
-      dset.union(c.tickets.keys().filter(k =>
-        c.tickets.get(k).deps.exists(d => dset.contains(d)))))
-      .filter(k => k != j)
-    val parked = doomedByJ.filter(k =>
-      val p = c.tickets.get(k).phase
-      p == Pending)
-    // Ascending, deterministic order for the golden-trace record.
-    val parkedList = range(1, N_TICKETS * 2 + 1).foldl([], (l, k) =>
-      if (parked.contains(k)) l.append(k) else l)
     { rec: {
         label: "ticket-revoked",
-        transitions:
-          [{ ticket: j, from: c.tickets.get(j).phase, to: Revoked }]
-            .concat(parkedList.foldl([], (l, k) =>
-              l.append({ ticket: k, from: c.tickets.get(k).phase, to: Escalated }))),
-        // "CancelTicketWork" for the revoked ticket; one OpenHumanTask per parked
-        // dependent — and NONE for the revoked ticket itself.
-        effects: ["CancelTicketWork"]
-          .concat(parkedList.foldl([], (l, k) => l.append("OpenHumanTask")))},
-      post: { ...c, tickets: c.tickets.keys().mapBy(k =>
-        if (k == j)
-          { ...retireLive(c.tickets.get(k)), phase: Revoked,
-            resumeAt: NoResume, reason: NoReason }
-        else if (parked.contains(k))
-          { ...c.tickets.get(k), phase: Escalated, reason: DependencyRevoked }
-        else c.tickets.get(k)) } }
+        transitions: [{ ticket: j, from: c.tickets.get(j).phase, to: Revoked }],
+        // "CancelTicketWork" for the revoked ticket, and nothing else: no
+        // dependent moved, so no desk task opens.
+        effects: ["CancelTicketWork"]},
+      post: withTicket(c, j,
+        { ...retireLive(c.tickets.get(j)), phase: Revoked,
+          resumeAt: NoResume, reason: NoReason }) }
 
   // --- Pure guard predicates ------
 
@@ -291,29 +227,19 @@ module chuggy_domain {
       c.tickets.get(j).phase != Revoked and
       c.tickets.get(j).phase != Finalizing
 
-  /// Does this parked ticket have a modeled resume at all? Read by
-  /// deskConsistent, which cannot ask the deciders. ONE wall has none:
-  /// dependency_revoked (below).
-  pure def modeledResumeExists(jb: Ticket): bool =
-    jb.reason != DependencyRevoked
-
   /// May the operator retry this ticket's open human action? The ticket is
   /// parked and its wall stamped a resume — every resume is free, so
-  /// nothing else is asked. The one resumeless wall is dependency_revoked
-  /// (resumeAt NoResume) — a DELIBERATE RESTRICTION: deps are immutable in
-  /// this model (no re-authoring machinery yet), so a retry
-  /// could only re-enter Pending still doomed behind the same revoked dep
-  /// — a lie to the desk and an immediate cascadeSafety hole. That wall's
-  /// only modeled exit is revoke; dep re-authoring is future work (README,
-  /// deliberately-absent table).
+  /// nothing else is asked. Every wall this machine parks on stamps one
+  /// (deskConsistent), so the second conjunct holds the guard to the stamp
+  /// rather than to the phase alone.
   pure def retryableIn(c: Core, j: int): bool = and {
     c.tickets.get(j).phase == Escalated,
     c.tickets.get(j).resumeAt != NoResume
   }
 
   /// WHAT A TICKET WAITS ON before it may run — the single definition, read
-  /// by the readiness check (depsDoneIn), the structural-deadlock check
-  /// (canFinishSet) and the cross-ticket artifact read alike. Named for
+  /// by the readiness check (depsDoneIn) and the cross-ticket artifact
+  /// read alike. Named for
   /// what it is rather than for the dispatch gate it feeds, because the
   /// merge gate that shared that word is gone.
   ///
@@ -351,11 +277,10 @@ module chuggy_domain {
     not(c.tickets.keys().contains(j))
   }
 
-  /// doc has the cascadeSafety argument).
-  pure def dependableIn(c: Core): Set[int] = c.tickets.keys().filter(k => and {
-    c.tickets.get(k).phase != Revoked,
-    not(c.tickets.get(k).phase == Escalated and c.tickets.get(k).reason == DependencyRevoked)
-  })
+  /// Tickets a release may depend on: anything but a tombstone, because a
+  /// Revoked ticket never becomes Done (decideReleaseTicket).
+  pure def dependableIn(c: Core): Set[int] =
+    c.tickets.keys().filter(k => c.tickets.get(k).phase != Revoked)
 
   /// The only authoring phase, hence the only releasable set.
   /// Every non-terminal may be revoked.
@@ -459,11 +384,10 @@ module chuggy_domain {
           match v { | Pass => Passed | Fail => Failed }) }) }
 
   /// The Working task set fully resolved: reduce the phase, at CYCLE level
-  /// only. Work's phase-outcome combinator is UNANIMOUS PASS — not a
-  /// placeholder: Work runs ONE task per cycle whose success is the
-  /// phase's success — unanimous over a singleton; under the
-  /// parallel task-set generalization, the
-  /// faithful reading stays "every work task passed"). A pass RETIRES the
+  /// only. A work set passes UNANIMOUSLY — not a placeholder: Work runs ONE
+  /// task per cycle whose success is the phase's success — unanimous over a
+  /// singleton; under the parallel task-set generalization, the faithful
+  /// reading stays "every work task passed". A pass RETIRES the
   /// work set into the record and spawns the eval program's LOWEST stage
   /// — one task per evaluator in the lowest stage, fanned out in
   /// parallel. Every entry spawns the stage in
@@ -490,8 +414,7 @@ module chuggy_domain {
   /// THE EVAL-PROGRAM INTERPRETER (the machinery; the program is
   /// data on the ticket). Fires when the CURRENT stage's task set is fully
   /// resolved — a stage completes when all its tasks reach a terminal
-  /// state — reads the stage's own combinator off
-  /// the program, and takes exactly one of three edges:
+  /// state — and takes exactly one of three edges:
   ///
   ///   - stage PASSES, later stage remains -> ADVANCE: retire the stage
   ///     into the record, spawn the next stage's fan-out. The
@@ -520,29 +443,20 @@ module chuggy_domain {
     val jb = c.tickets.get(j)
     val s = evalStage(jb.tasks)
     val retired = retireLive(jb)
-    if (combine(jb.program[s].combinator, jb.tasks))
+    if (combine(jb.tasks))
       if (s + 1 < jb.program.length())
         val fan = retired.program[s + 1].fanout
         move(
           withTicket(c, j, spawnOn(retired, Evaluation(s + 1), fan)),
           j, Evaluating, "eval-stage-passed", ["SpawnEvalTasks"])
       else
-        // THE WRAP-UP ROUTE (design 002). A NoFinalizer ticket's effect already
-        // happened during work, so evaluation passing IS its completion and
-        // it enters neither wrap-up phase — it never queues for a lease it
-        // does not need, and never records a wrap-up it did not perform.
-        match jb.finalizer {
-          // On the RETIRED ticket, not the live one: completeTicket does not
-          // retire a task set, because on the lease path the set was already
-          // retired when the ticket enqueued. Skipping the wrap-up phases
-          // skips that retirement too, and a Done ticket holding live eval
-          // tasks breaks tasksWellFormed. Caught by the random layer.
-          | NoFinalizer => completeTicket(withTicket(c, j, retired), j)
-          | ManagedFinalizer =>
-            move(
-              withTicket(c, j, retired),
-              j, Finalizing, "eval-passed", ["RunFinalizer"])
-        }
+        // THE PROGRAM PASSED, so the ticket finalizes. Every ticket takes
+        // this edge: WHAT its finalizer commits, and whether that is
+        // anything at all, is the finalizer's own configuration below this
+        // grain, and a ticket with nothing to commit is one whose finalizer
+        // reports success at once.
+        move(withTicket(c, j, retired), j, Finalizing, "eval-passed",
+          ["RunFinalizer"])
     else
       match onFailure {
         | ReworkEvaluationFailure =>
@@ -642,8 +556,8 @@ module chuggy_domain {
       | ResumeFinalizing =>
         move(withTicket(c, j, resumed), j, Finalizing, "ticket-resumed", ["RunFinalizer"])
       | NoResume =>
-        // Unreachable: retryableIn refuses a ticket with no modeled resume
-        // (the dependency_revoked wall, whose only exit is revoke).
+        // Unreachable: retryableIn refuses a ticket with no stamped resume,
+        // and deskConsistent holds that an unparked ticket has none.
         { rec: { label: "ticket-resume-refused", transitions: [], effects: []}, post: c }
     }
 
@@ -725,8 +639,7 @@ module chuggy_domain {
 
   /// Room for one more release (the N_TICKETS release bound keeps the state
   val releasableIds: Set[int] = ticketIdUniverse.filter(j => canReleaseIn(core, j))
-  /// Tickets a new release may depend on: no tombstones — neither Revoked nor
-  /// cascade-parked (which, by cascadeSafety, is exactly the
+  /// Tickets a new release may depend on: no tombstones (dependableIn).
   val dependableTickets: Set[int] = dependableIn(core)
   /// The only authoring phase, hence the only
   /// releasable set: a ticket is released from Pending and nowhere else.
@@ -740,15 +653,13 @@ module chuggy_domain {
   val finalizerTickets: Set[int] = liveTickets.filter(j =>
     tickets.get(j).phase == Finalizing)
   val doneTickets: Set[int] = doneIn(core)
-  /// Parked tickets the operator may Retry (retryableIn: a modeled resume
-  /// exists). The dependency_revoked wall never is retryable (resumeAt
-  /// NoResume — its only exit is revoke).
+  /// Parked tickets the operator may Retry (retryableIn).
   val retryableEscalated: Set[int] = retryablesIn(core)
 
-  /// No machine, operator, or author action can move anything.  shrank
-  /// this dramatically: revoke is enabled on EVERY non-terminal (table
-  /// lines 47-48), so unretryable parks and doomed Pending chains are
-  /// all still actionable — the only true dead end is a
+  /// No machine, operator, or author action can move anything. Revoke is
+  /// enabled on EVERY non-terminal (table lines 47-48), so a Pending chain
+  /// stranded behind a revoked dep is still actionable by its author — the
+  /// only true dead end is a
   /// fully-released fleet in which every ticket is settled in a terminal
   /// (Done or Revoked). The `settled` stutter covers exactly that state so
   /// runs never deadlock.
@@ -780,24 +691,19 @@ module chuggy_domain {
 
   /// A new ticket is released as Pending with a nondeterministic subset of
   /// dependable existing tickets, a well-formed evaluation program and an
-  /// immutable ticket-local policy. The final draw is the wrap-up choice,
-  /// which decides whether this
-  /// ticket ever reaches a wrap-up phase — a NoFinalizer release completes on
-  /// its passing evaluation and takes no lease. At most N_TICKETS releases
-  /// ever happen, which is the only bound on how many tickets a run holds.
+  /// immutable ticket-local fan-out. At most N_TICKETS releases ever
+  /// happen, which is the only bound on how many tickets a run holds.
   action releaseTicket = all {
     releasableIds.size() > 0,
     nondet j = releasableIds.oneOf()
     nondet deps_ = dependableTickets.powerset().oneOf()
     nondet prog = validPrograms.oneOf()
     nondet workFanout_ = workFanoutChoices.oneOf()
-    nondet finalizer_ = finalizerChoices.oneOf()
-    apply(decideReleaseTicket(core, j, deps_, prog, workFanout_, finalizer_))
+    apply(decideReleaseTicket(core, j, deps_, prog, workFanout_))
   }
 
-  /// Author revokes any non-terminal ticket; the atomic
-  /// cascade parks every pre-flight transitive dependent with its own desk
-  /// task (decideRevoke — the model).
+  /// Author revokes any non-terminal ticket, and that ticket alone
+  /// (decideRevoke).
   action revoke = all {
     revocableTickets.size() > 0,
     nondet j = revocableTickets.oneOf()
@@ -961,11 +867,6 @@ module chuggy_domain {
   val revokedNeverCompletes: bool = liveTickets.forall(j =>
     (tickets.get(j).phase == Revoked) implies (tickets.get(j).completions == 0))
 
-  /// A NoFinalizer ticket never enters Finalizing.
-  val noFinalizationWithoutAKind: bool = liveTickets.forall(j =>
-    (tickets.get(j).finalizer == NoFinalizer) implies
-      (tickets.get(j).phase != Finalizing))
-
   /// A COMPLETED TICKET PRODUCED SOMETHING (design 002). Deliberately the
   /// weak form: an artifact exists by the time a ticket is Done. The
   /// tempting stronger claim — that what was committed is what was
@@ -976,31 +877,24 @@ module chuggy_domain {
   val artifactWellFormed: bool = liveTickets.forall(j =>
     (tickets.get(j).phase == Done) implies (tickets.get(j).artifact != NoArtifact))
 
-  /// Every released ticket carries one supported wrap-up kind.
-  val finalizerWellFormed: bool = liveTickets.forall(j =>
-    finalizerChoices.contains(tickets.get(j).finalizer))
-
   /// The absorbing terminals never transition OUT.
   /// Both carry it here, because Revoked is reachable.
   val terminalsAbsorbing: bool =
     lastStep.transitions.foldl(true, (b, t) =>
       b and t.from != Done and t.from != Revoked)
 
-  /// The human desk is consistent. The reason-iff-parked half is a named
-  /// wall iff parked — and parked just IS Escalated. The resumeAt half is
-  /// the sharper one: a resume point iff a MODELED RESUME
-  /// EXISTS — every retryable wall stamps one, and modeledResumeExists is
-  /// the single definition of which do (DependencyRevoked stays NoResume
-  /// because revoke is its only modeled exit). (The open-task flag needs no
-  /// conjunct — it is DERIVED from the phase, standing rule 3.)
-  /// note: Revoked passes both iffs with NoReason/NoResume — "Revoked runs
-  /// nothing" is this invariant plus tasksWellFormed doing their existing
-  /// tickets over the phase.
+  /// The human desk is consistent: a named wall iff parked, and a resume
+  /// point iff parked. Parked just IS Escalated, and every wall this
+  /// machine parks on stamps a resume the desk can offer, so a desk task
+  /// never promises a continuation the deciders would refuse. (The
+  /// open-task flag needs no conjunct — it is DERIVED from the phase,
+  /// standing rule 3.) note: Revoked passes both iffs with
+  /// NoReason/NoResume — "Revoked runs nothing" is this invariant plus
+  /// tasksWellFormed doing their existing tickets over the phase.
   val deskConsistent: bool = liveTickets.forall(j => and {
     (tickets.get(j).phase == Escalated) iff (tickets.get(j).reason != NoReason),
     (tickets.get(j).resumeAt != NoResume) iff
-      (tickets.get(j).phase == Escalated and
-        modeledResumeExists(tickets.get(j)))
+      (tickets.get(j).phase == Escalated)
   })
 
   /// The LIVE task set is exactly the current phase's anatomy (this is
@@ -1139,13 +1033,11 @@ module chuggy_domain {
   /// edges: the ticket's own desk task (derived — hasOpenHumanTask), or a
   /// desk task somewhere in its dependency chain.
   ///
-  ///  note: Revoked contributes NOTHING here (hasOpenHumanTask
-  /// excludes it), so a dependent of a revoked ticket can only be covered by
-  /// its OWN task — which is exactly what the atomic cascade guarantees
-  /// (cascadeSafety below): parked dependents are Escalated, hence in
-  /// stuckSet AND covered by themselves; the folds needed no change for
-  /// the authoring phase (a Pending is neither stuck — its progress is
-  /// the author's, the named AUTHORING conditionality — nor covering).
+  ///  note: Revoked contributes NOTHING here (hasOpenHumanTask excludes
+  /// it), and neither does a Pending — its progress is its author's, the
+  /// named AUTHORING conditionality. So a ticket left Pending behind a
+  /// revoked dep is neither walked here nor walked by stuckSet, and what
+  /// moves it is the author who released it.
   /// Coverage propagates through EVERY phase (no phase guard — as before),
   /// over the same edge superset stuckSet walks: stuck ⊆ covered stays a
   /// structural corollary, per sweep.
@@ -1181,99 +1073,11 @@ module chuggy_domain {
   /// group edges were, and why that PR had to add them to both. It guards
   /// the definitions; it does not guard the machine.
   ///
-  /// The machine-checked half is `noStructuralDeadlock` below. The half no
-  /// state predicate can carry — unbounded WAITING — is accepted by name
-  /// under bounds-work-not-waiting.
+  /// The half no state predicate can carry — unbounded WAITING — is
+  /// accepted by name under bounds-work-not-waiting.
   val stuckSubsetCovered: bool = stuckSet.subseteq(coveredSet)
 
-  // --- Cascade safety (THE  gate) ---------------------------------------
-
-  /// Tickets transitively doomed by a revocation: a Revoked ticket somewhere in
-  /// the dependency closure means this ticket can never unblock (a dep that
-  /// is not Done blocks, and Revoked never becomes Done). The bounded
-  /// fixpoint is independent of numeric identity order.
-  val revokeDoomed: Set[int] =
-    range(1, N_TICKETS + 1).foldl(
-      liveTickets.filter(j => tickets.get(j).phase == Revoked), (dset, _) =>
-        dset.union(liveTickets.filter(j =>
-          tickets.get(j).deps.exists(d => dset.contains(d)))))
-      .filter(j => tickets.get(j).phase != Revoked)
-
-  /// Tickets with a REACHABLE route to Done — a least fixpoint UPWARD from
-  /// the terminal, deliberately the opposite direction from stuckSet: Done
-  /// has finished, and a non-Revoked ticket every one of whose gate deps
-  /// can finish can finish too. It recurses over waitsOn, the same
-  /// relation the dispatch gate reads.
-  ///
-  /// WHY UPWARD (the grouping lesson): stuckSet grows outward from a base
-  /// case (Escalated), and a dependency CYCLE has no base case — which is
-  /// structurally why no phase added to that base could ever have seen the
-  /// deadlock absorption could build. A cycle's members each wait on the
-  /// other, so neither's forall is ever satisfied and both simply never
-  /// enter this fixpoint. Membership is over-approximate on purpose (a
-  /// parked ticket is "able" here and covered by the desk disjunct below):
-  /// this is a deadlock net, not a liveness oracle.
-  val canFinishSet: Set[int] =
-    range(1, liveTickets.size() + 1).foldl(Set(), (cf, _) =>
-      liveTickets.filter(j => or {
-        tickets.get(j).phase == Done,
-        and {
-          tickets.get(j).phase != Revoked,
-          waitsOn(core, j).forall(d => cf.contains(d))
-        }
-      }))
-
-  /// NO STRUCTURAL DEADLOCK: every live ticket can still reach Done, or was
-  /// settled by its author (Revoked), or holds an open desk task a human
-  /// can act on. This is the half of the visibility question that IS a
-  /// state theorem — a ticket with no continuation at all is a defect in
-  /// every reading, whatever anyone accepts about WAITING (a Pending its
-  /// author never releases, an unpicked dispatch, an unwon dequeue all still
-  /// have continuations, so none of them is flagged here — see
-  /// bounds-work-not-waiting).
-  ///
-  /// Unlike stuckSubsetCovered this is NOT definitional: canFinishSet
-  /// recurses on gate deps and Done-ness, coverage recurses on
-  /// escalations, so the containment is a claim about the machine. Its
-  /// teeth are demonstrated against a real defect rather than argued.
-  val noStructuralDeadlock: bool = liveTickets.forall(j => or {
-    canFinishSet.contains(j),
-    tickets.get(j).phase == Revoked,
-    hasOpenHumanTask(tickets.get(j))
-  })
-
-  /// CASCADE SAFETY (stuckSubsetCovered's style, revoke's content): every ticket
-  /// transitively stuck behind a Revoked dep is parked with its own open
-  /// human task (Escalated, wall dependency_revoked — hasOpenHumanTask
-  /// derives the task) or is itself revoked (its author settled it too).
-  /// "Eventually parked" strengthens to ALWAYS-parked
-  /// because the cascade is atomic with the revoke (decideRevoke): there
-  /// is no reachable in-between state where a doomed ticket waits invisibly.
-  /// No ticket may wait invisibly forever behind a revoked dep — and since
-  /// Revoked opens no task (the author's settled choice), this invariant
-  /// is the coverage the walks cannot provide through the dep itself.
-  /// NON-VACUITY: the model gate pins a machine trace where the
-  /// cascade actually parks dependents (cascadeParkNever — deterministic
-  ///, tests/chuggy_witness_test.qnt), and
-  /// tests/chuggy_test.qnt walks a 3-ticket chain end-to-end.
-  val cascadeSafety: bool = revokeDoomed.forall(j => or {
-    tickets.get(j).phase == Revoked,
-    tickets.get(j).phase == Escalated and tickets.get(j).reason == DependencyRevoked
-  })
-
-  /// ANTI-VACUITY WITNESS, not an invariant of the machine: "no
-  /// revoke ever parks a dependent". EXPECTED TO BE VIOLATED (check.sh
-  /// Stage 9b: deterministically by the cascade machine trace in
-  /// tests/chuggy_witness_test.qnt, plus the demoted pinned-seed probe)
-  /// — the
-  /// violation trace is the machine-level proof that the cascade really
-  /// fires on reachable states, so cascadeSafety's green runs are checked
-  /// against traces that exercise it (a cascade that never parks would
-  /// make cascadeSafety vacuously true wherever revokeDoomed stays empty).
-  val cascadeParkNever: bool =
-    not(lastStep.label == "ticket-revoked" and lastStep.transitions.length() > 1)
-
-  /// ANTI-VACUITY WITNESS #2, not an invariant of the machine: "no
+  /// THE ANTI-VACUITY WITNESS, not an invariant of the machine: "no
   /// eval stage ever advances". EXPECTED TO BE VIOLATED (the model gate
   /// shows it deterministically by the stage-advance machine trace in
   /// tests/chuggy_witness_test.qnt, plus the demoted pinned-seed probe)
@@ -1292,9 +1096,7 @@ module chuggy_domain {
   val allInvariants: bool = and {
     completionExclusive,
     revokedNeverCompletes,
-    noFinalizationWithoutAKind,
     artifactWellFormed,
-    finalizerWellFormed,
     terminalsAbsorbing,
     deskConsistent,
     tasksWellFormed,
@@ -1304,8 +1106,6 @@ module chuggy_domain {
     programsWellFormed,
     depsAcyclic,
     ticketIdsWellFormed,
-    stuckSubsetCovered,
-    cascadeSafety,
-    noStructuralDeadlock
+    stuckSubsetCovered
   }
 }

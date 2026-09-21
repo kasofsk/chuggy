@@ -12,19 +12,16 @@
  * would no longer be a function.
  */
 
-import { type Config } from "./config.ts";
-import { ticketAt, ticketIds, withTicket, type Decision } from "./core.ts";
+import { ticketAt, withTicket, type Decision } from "./core.ts";
 import type {
   Core,
   EvaluationFailureDisposition,
   FinalizationOutcome,
-  Finalizer,
   Phase,
   Reason,
   Resume,
   Stage,
   Ticket,
-  Transition,
   Verdict,
 } from "./generated/modelTypes.ts";
 import type { TaskId, TicketId } from "./ids.ts";
@@ -62,13 +59,11 @@ export function freshTicket(authoring: {
   readonly deps: ReadonlySet<number>;
   readonly program: readonly Stage[];
   readonly workFanout: number;
-  readonly finalizer: Finalizer;
 }): Ticket {
   return {
     phase: "Pending",
     deps: authoring.deps,
     program: authoring.program,
-    finalizer: authoring.finalizer,
     artifact: "NoArtifact",
     workFanout: authoring.workFanout,
     tasks: new Set(),
@@ -92,7 +87,6 @@ export function decideReleaseTicket(
     readonly deps: ReadonlySet<number>;
     readonly program: readonly Stage[];
     readonly workFanout: number;
-    readonly finalizer: Finalizer;
   },
 ): Decision {
   const tickets = new Map(core.tickets);
@@ -124,58 +118,25 @@ function escalate(
 }
 
 /**
- * Revoke, and in the same decision park every dependent it dooms, each with its
- * own desk task: a cascade that revoked instead would destroy another author's
- * ticket with no human deciding it. Parking only Pending dependents is
- * exhaustive, because dispatch needs every dependency Done and Done absorbs.
+ * Revoke settles the ticket its author named and moves nothing else. A
+ * dependent behind it stays Pending, where a dependency that is not Done
+ * blocks it, and its own author settles it the same way.
  */
-export function decideRevoke(
-  config: Config,
-  core: Core,
-  id: TicketId,
-): Decision {
-  const doomed = new Set<TicketId>([id]);
-  for (let round = 0; round < config.nTickets; round++) {
-    for (const k of ticketIds(core)) {
-      if ([...ticketAt(core, k).deps].some((d) => doomed.has(d as TicketId)))
-        doomed.add(k);
-    }
-  }
-  const parked = ticketIds(core).filter(
-    (k) => k !== id && doomed.has(k) && ticketAt(core, k).phase === "Pending",
-  );
-
-  const transitions: Transition[] = [
-    { ticket: id, from: ticketAt(core, id).phase, to: "Revoked" },
-    ...parked.map((k) => ({
-      ticket: k,
-      from: ticketAt(core, k).phase,
-      to: "Escalated" as const,
-    })),
-  ];
-
-  const tickets = new Map(core.tickets);
-  tickets.set(id, {
-    ...retireLive(ticketAt(core, id)),
-    phase: "Revoked",
-    resumeAt: "NoResume",
-    reason: "NoReason",
-  });
-  for (const k of parked) {
-    tickets.set(k, {
-      ...ticketAt(core, k),
-      phase: "Escalated",
-      reason: "DependencyRevoked",
-    });
-  }
-
+export function decideRevoke(core: Core, id: TicketId): Decision {
   return {
     rec: {
       label: "ticket-revoked",
-      transitions,
-      effects: ["CancelTicketWork", ...parked.map(() => "OpenHumanTask")],
+      transitions: [
+        { ticket: id, from: ticketAt(core, id).phase, to: "Revoked" },
+      ],
+      effects: ["CancelTicketWork"],
     },
-    post: { tickets },
+    post: withTicket(core, id, {
+      ...retireLive(ticketAt(core, id)),
+      phase: "Revoked",
+      resumeAt: "NoResume",
+      reason: "NoReason",
+    }),
   };
 }
 
@@ -274,7 +235,7 @@ export function decideEvalStageReduce(
   if (stage === undefined)
     throw new Error("eval-reduce: the live stage indexes outside the program");
 
-  if (combine(stage.combinator, ticket.tasks)) {
+  if (combine(ticket.tasks)) {
     const next = retired.program[stageIndex + 1];
     if (next !== undefined) {
       return move(
@@ -289,18 +250,13 @@ export function decideEvalStageReduce(
         ["SpawnEvalTasks"],
       );
     }
-    switch (ticket.finalizer) {
-      case "NoFinalizer":
-        return completeTicket(withTicket(core, id, retired), id);
-      case "ManagedFinalizer":
-        return move(
-          withTicket(core, id, retired),
-          id,
-          "Finalizing",
-          "eval-passed",
-          ["RunFinalizer"],
-        );
-    }
+    return move(
+      withTicket(core, id, retired),
+      id,
+      "Finalizing",
+      "eval-passed",
+      ["RunFinalizer"],
+    );
   }
 
   switch (onFailure) {
@@ -394,8 +350,8 @@ export function decideExecutionBlocked(
 }
 
 /**
- * A parked ticket rejoins the pipeline where its wall said it would, and a
- * park with no modeled resume refuses and records that it did.
+ * A parked ticket rejoins the pipeline where its wall said it would, and an
+ * unparked one refuses and records that it did.
  *
  * The walls that stamp a work resume take the same exit: an evaluation wall
  * was reached by a verdict, which has no re-judge to offer, so it buys a new

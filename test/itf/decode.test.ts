@@ -85,7 +85,7 @@ test("a map keeps its key order and its pairing", () => {
 test("a record keeps every field", () => {
   const raw = {
     fanout: { "#bigint": "2" },
-    combinator: { tag: "AnyPass", value: { "#tup": [] } },
+    state: { tag: "Outstanding", value: { "#tup": [] } },
   };
   roundTrips(raw);
   assert.equal(field(decodeValue(raw), "fanout"), 2n);

@@ -40,6 +40,11 @@
  * lapsed is not self-healing and nothing claimable can be drawn until those rows
  * say so again.
  *
+ * A LANDING THAT LANDS NOTHING IS READ BEFORE THE BINDING IS, BECAUSE IT NEEDS
+ * NEITHER. Such a ticket reaches the pure pass with its mode and nothing else,
+ * no repository asked for, no remote read and no proposal base observed for a
+ * finalization that concludes the moment it is looked at.
+ *
  * THE TICKET'S OWN BRIEF IS THE LAST WORD ON WHERE ITS WORK LANDS, AND SAYS IT
  * APART FROM WHERE THE WORK HAPPENED. The target is the project's binding
  * narrowed by the brief: by the reference its finalization targets, or by the
@@ -238,7 +243,11 @@ import {
 } from "./finalizerTelemetry.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
-import type { DraftBrief, TicketBriefPort } from "./ticketBrief.ts";
+import {
+  briefFinalizationTarget,
+  type DraftBrief,
+  type TicketBriefPort,
+} from "./ticketBrief.ts";
 
 /** Everything a finalizer pass calls out through, and the bounds it works within. */
 export interface FinalizerService {
@@ -459,21 +468,15 @@ interface FinalizerBranches {
  * such a brief is refused where briefs are written and the binding's default is
  * not a stand-in for the head a proposal opens from.
  */
-async function finalizerGatherBranches(
-  service: FinalizerService,
-  view: FinalizationView,
-): Promise<FinalizerBranches | undefined> {
-  const brief = await service.ticketBriefs.brief(
-    view.claim.partition,
-    view.claim.ticket,
-  );
+function finalizerBranchesOf(
+  brief: DraftBrief | undefined,
+): FinalizerBranches | undefined {
   if (brief === undefined) return {};
-  const finalization = brief.finalization;
   const proposing = briefFinalizationProposes(brief.finalization?.mode);
   if (proposing && brief.branch === undefined) return undefined;
   const target = proposing
     ? brief.branch
-    : (finalization?.target ?? brief.branch);
+    : (briefFinalizationTarget(brief.finalization) ?? brief.branch);
   return {
     brief,
     ...(brief.branch === undefined ? {} : { work: brief.branch }),
@@ -517,7 +520,7 @@ async function finalizerGatherProposalBase(
 ): Promise<TargetObserved | undefined> {
   if (
     !briefFinalizationProposes(branches.brief?.finalization?.mode) ||
-    branches.brief?.finalization?.target !== undefined
+    briefFinalizationTarget(branches.brief?.finalization) !== undefined
   )
     return undefined;
   return service.git.observeTarget(repositoryBindingWidened(binding));
@@ -542,9 +545,15 @@ async function finalizerGather(
 ): Promise<FinalizerGathered | undefined> {
   const durable = await service.store.durableView(claim);
   if (durable === undefined) return undefined;
+  const brief = await service.ticketBriefs.brief(claim.partition, claim.ticket);
+  if (brief?.finalization?.mode === "None")
+    return {
+      gathered: "View",
+      view: { ...durable, finalizationMode: "None" },
+    };
   if (durable.repository === undefined)
     return { gathered: "View", view: durable };
-  const branches = await finalizerGatherBranches(service, durable);
+  const branches = finalizerBranchesOf(brief);
   if (branches === undefined)
     return { gathered: "Held", hold: "ProposalUnbranched" };
   const base = await finalizerGatherProposalBase(
@@ -1199,15 +1208,11 @@ async function finalizerOpeningProposal(
       "finalizer proposal: a proposal was authorized by no brief that opens one",
     );
   }
-  const carried =
-    finalization.target === undefined ? view.proposalBase : undefined;
+  const named = briefFinalizationTarget(finalization);
+  const carried = named === undefined ? view.proposalBase : undefined;
   const observed =
     (carried?.observed === "Target" ? carried.target : undefined) ??
-    (await finalizerProposalBase(
-      service,
-      pinned.repository,
-      finalization.target,
-    ));
+    (await finalizerProposalBase(service, pinned.repository, named));
   if (observed === undefined) return { gathered: "BaseUnreadable" };
   if (observed.ref === pinned.target.ref) return { gathered: "BaseIsHead" };
   const identity = asChangeProposalRequestIdentity(
@@ -1641,14 +1646,14 @@ async function finalizerConclude(
   tally: FinalizerTally,
 ): Promise<void> {
   const attempt = view.attempt;
-  if (attempt === undefined) {
+  if (attempt === undefined && view.finalizationMode !== "None") {
     throw new Error(
       "finalizer pass: a conclusion named no attempt to carry it",
     );
   }
   const submitted = await service.store.submitResult({
     claim: view.claim,
-    attempt: attempt.attempt,
+    ...(attempt === undefined ? {} : { attempt: attempt.attempt }),
     conclusion,
   });
   recordFinalizer(service.metrics, (metrics) => {

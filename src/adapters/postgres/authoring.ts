@@ -26,6 +26,7 @@ import {
   type ConfigurationRevisionProvenance,
 } from "../../interpreter/authoring.ts";
 import { asGitObjectId, asRepositoryId } from "../../interpreter/finalizer.ts";
+import { briefFinalizationTarget } from "../../interpreter/ticketBrief.ts";
 import { draftBriefOf } from "./ticketBrief.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
@@ -556,7 +557,7 @@ async function createDraft(
     result: string | null;
     ticket: string | null;
   }>(
-    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${input.brief.finalization?.target ?? null},${input.brief.repository ?? null},${input.authority.kind},${input.authority.subject})`,
+    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${input.authority.kind},${input.authority.subject})`,
   );
   const row = found.rows[0];
   if (row?.result === "ConfigurationNotFound")
@@ -583,7 +584,7 @@ async function reviseDraft(
     authoring_version: string | null;
     state: string | null;
   }>(
-    sql`SELECT * FROM revise_draft(${input.partition.tenant},${input.partition.project},${input.ticket},${input.expectedVersion},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${input.brief.finalization?.target ?? null},${input.brief.repository ?? null},${input.authority.kind},${input.authority.subject})`,
+    sql`SELECT * FROM revise_draft(${input.partition.tenant},${input.partition.project},${input.ticket},${input.expectedVersion},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${input.authority.kind},${input.authority.subject})`,
   );
   const row = found.rows[0];
   if (row === undefined || row.result === "NotFound")

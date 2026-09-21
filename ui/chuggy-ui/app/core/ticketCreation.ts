@@ -251,6 +251,8 @@ function creationTargetBranchUnnamed(mode: BriefFinalizationMode): string {
     case "PullRequest":
     case "PullRequestMerge":
       return "the repository's default branch";
+    case "None":
+      return "nowhere; a landing that lands nothing names no reference";
   }
 }
 
@@ -289,7 +291,7 @@ export function creationFaultSentence(field: CreationField): string {
     case "target":
       return `a branch is named here without its ${briefBranchPrefix} prefix, and the whole reference is at most ${String(briefBranchCharsMax)} characters`;
     case "landing":
-      return "a ticket with no finalizer lands nothing";
+      return "this landing is not one the API will accept";
     case "repository":
       return "this project binds a repository, so a ticket in it names which one";
     case "authoring":
@@ -383,10 +385,10 @@ function creationLandingFault(
 /**
  * The faults this form decides for itself, the wire's parser deciding the rest.
  *
- * A FORM STATES NO FAULT IN A BOX IT DOES NOT DRAW: a ticket running no
- * finalizer is asked for neither a landing nor a target and sends neither, so a
- * value left in the target box from before that choice would stop a submission
- * with no field on screen to read the reason beside.
+ * A FORM STATES NO FAULT IN A BOX IT DOES NOT DRAW: a ticket landing nothing
+ * is asked for no target and sends none, so a value left in the target box
+ * from before that choice would stop a submission with no field on screen to
+ * read the reason beside.
  */
 function creationStatedFaults(
   form: TicketCreationForm,
@@ -403,7 +405,7 @@ function creationStatedFaults(
     });
   if (branches.branch.named === "Prefixed")
     stated.push({ field: "branch", reason: creationBranchPrefixedSentence });
-  if (form.finalizer !== "ManagedFinalizer") return stated;
+  if (form.landingMode === "None") return stated;
   if (branches.target.named === "Prefixed")
     stated.push({ field: "target", reason: creationBranchPrefixedSentence });
   const landing = creationLandingFault(form, branches);
@@ -412,19 +414,21 @@ function creationStatedFaults(
 }
 
 /**
- * How this brief lands, which is the finalizer's parameter and so is sent
- * whenever one runs — explicitly, even where it is the repository's own
- * default, so the ticket records the landing it was released with. A ticket
- * authored to run no finalizer lands nothing and names nothing.
+ * How this brief lands, sent explicitly on every submission — even where the
+ * mode is the repository's own default — so the ticket records the landing it
+ * was released with. `None` names no reference at all; every other mode names
+ * one only where a target was typed, and a value left in the box `None` draws
+ * none for is never sent.
  */
 function creationFinalizationOf(
   form: TicketCreationForm,
   branches: CreationBranches,
 ): Record<string, unknown> {
-  if (form.finalizer !== "ManagedFinalizer") return {};
+  const mode = form.landingMode;
+  if (mode === "None") return { finalization: { mode } };
   return {
     finalization: {
-      mode: form.landingMode,
+      mode,
       ...(branches.target.named === "Ref"
         ? { target: branches.target.ref }
         : {}),
@@ -475,7 +479,6 @@ export function creationBodyFrom(
       dependencies: [...form.dependencies],
       program: [...form.program],
       workFanout: form.workFanout,
-      finalizer: form.finalizer,
     },
     brief: creationBriefOf(form, branches),
   };
@@ -534,7 +537,7 @@ export function creationStepSentence(step: OperationStep): string {
 }
 
 export function creationStageLabel(stage: CreationStage): string {
-  return `${String(stage.fanout)} × ${stage.combinator}`;
+  return creationFanoutLabel(stage.fanout);
 }
 
 export function creationFanoutLabel(fanout: number): string {

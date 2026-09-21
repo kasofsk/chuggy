@@ -16,7 +16,6 @@ import { apiConfigurations, configurationPagesMax } from "./apiRoutes.ts";
 import { approvalLabel } from "./codeLabels.ts";
 import { configurationLabel, workerLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
-import { latestReadyConfiguration } from "./ticketCreation.ts";
 
 /** What a ready revision decides, which is the whole of what the row says. */
 export interface RepositoryConfigurationFacts {
@@ -65,17 +64,6 @@ export function repositoryConfigurationRow(
             approval: approvalLabel(summary.finalization.approvalRequired),
           },
   };
-}
-
-/** The newest ready revision this repository declares, whose initialization
- * says what a ticket in it is authored with. */
-export function repositoryReadyConfiguration(
-  configurations: readonly ConfigurationSummary[],
-  repository: string,
-): ConfigurationSummary | undefined {
-  return latestReadyConfiguration(
-    repositoryConfigurations(configurations, repository),
-  );
 }
 
 /** What a walk of the listing read, and whether the budget cut it short. */

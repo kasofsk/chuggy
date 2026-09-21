@@ -535,11 +535,8 @@ export const artifactDigestChars = 64;
 /** The most digits any counter one candidate carries is written with. */
 const candidateCounterDigitsMax = 20;
 
-/** What one stage of a candidate's program weighs: its fanout and its combinator. */
+/** What one stage of a candidate's program weighs, which is its fanout. */
 export const leadObservedStageCharsMax = 128;
-
-/** What the label a candidate's finalizer names weighs. */
-const candidateLabelCharsMax = 64;
 
 /** The configuration name one candidate's version label names. */
 export const repositoryConfigurationNameCharsMax = 128;
@@ -560,7 +557,6 @@ const candidateOwnMembers: readonly (readonly [string, number])[] = [
     "program",
     stringifiedArrayChars(nativeHttpDraftStagesMax, leadObservedStageCharsMax),
   ],
-  ["finalizer", jsonStringChars(candidateLabelCharsMax)],
   [
     "configurationVersion",
     stringifiedObjectChars([
@@ -574,8 +570,8 @@ const candidateOwnMembers: readonly (readonly [string, number])[] = [
 
 /**
  * What one dispatch candidate weighs beyond the configuration it pins: the
- * counters, the two pages authoring bounds, the label its finalizer is drawn
- * from, and the identities naming the revision it was pinned under.
+ * counters, the two pages authoring bounds, and the identities naming the
+ * revision it was pinned under.
  */
 export const leadObservedCandidateFixedCharsMax =
   stringifiedObjectChars(candidateOwnMembers);

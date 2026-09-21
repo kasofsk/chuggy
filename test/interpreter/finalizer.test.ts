@@ -647,11 +647,17 @@ test("a promoted candidate whose brief proposes is not concluded by the promotio
   );
 });
 
+/**
+ * Every mode but the one that lands nothing, which is decided before anything
+ * else is read and so has nothing in common with the rest.
+ */
+const landingModes = populated(
+  briefFinalizationModes,
+  "briefFinalizationModes",
+).filter((mode) => mode !== "None");
+
 test("nothing before the promotion is decided by the mode a brief names", () => {
-  for (const mode of populated(
-    briefFinalizationModes,
-    "briefFinalizationModes",
-  )) {
+  for (const mode of landingModes) {
     for (const varied of [
       {},
       { attempt: prepared, attemptsMade: 1 },
@@ -668,6 +674,29 @@ test("nothing before the promotion is decided by the mode a brief names", () => 
       );
     }
   }
+});
+
+/**
+ * A landing that lands nothing is concluded where it is read, so no forge
+ * fact reaches the decider: whatever an attempt, a permit or a reconciliation
+ * says, the answer is the one conclusion.
+ */
+test("a brief that lands nothing succeeds before anything is prepared", () => {
+  for (const varied of [
+    {},
+    { attempt: prepared, attemptsMade: 1 },
+    { attempt: prepared, attemptsMade: 1, permit: permitIn("Granted") },
+    { attempt: attemptFailed("MergeConflict"), attemptsMade: 1 },
+    { repository: undefined },
+  ])
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({ ...varied, finalizationMode: "None" }),
+      ),
+      { decide: "Conclude", conclusion: { outcome: "FinalizationSucceeded" } },
+      JSON.stringify(Object.keys(varied)),
+    );
 });
 
 test("an ambiguous promotion has no path to a conclusive outcome", () => {

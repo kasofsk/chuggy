@@ -29,14 +29,8 @@ import {
   checkedReworkCap,
   reworkDisposition,
 } from "../../src/interpreter/reworkCap.ts";
-import {
-  plainAuthoring,
-  plainResult,
-  refinementInstance,
-} from "../actor/harness.ts";
+import { plainAuthoring, plainResult } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
-
-const config = refinementInstance;
 
 /** The one outstanding task of a single-width ticket, which is what a completion names. */
 function outstanding(core: Core): number {
@@ -50,9 +44,9 @@ function outstanding(core: Core): number {
 
 /**
  * The dispositions the cap picks, one per failing evaluation, until it parks
- * the ticket — after `finalizationFailures` rounds its `ManagedFinalizer`
- * failed instead. Every step is the decider's, and the failure it feeds the cap
- * is the one the cap's own previous answer produced.
+ * the ticket — after `finalizationFailures` rounds its finalization failed
+ * instead. Every step is the decider's, and the failure it feeds the cap is the
+ * one the cap's own previous answer produced.
  */
 function dispositionsUnder(
   cyclesMax: number,
@@ -60,7 +54,7 @@ function dispositionsUnder(
 ): readonly string[] {
   let core: Core = genesis;
   const step = (event: DecisionEvent) => {
-    core = execDecisionEvent(config, core, event).post;
+    core = execDecisionEvent(core, event).post;
   };
   const evaluated = (verdict: "Pass" | "Fail") => {
     step(

@@ -43,9 +43,10 @@ precondition.
   does the transition that follows it; separately, a dispatched ticket's
   execution appears with its status. The second needs a selector at more than no
   replicas and says so.
-- `escalation.spec.ts` — revoking a ticket another depends on escalates the
-  second; the shell's badge and the inbox row both move without a reload, and
-  answering the row clears both the same way.
+- `stranding.spec.ts` — revoking a ticket another depends on strands the
+  second; its page says what it is waiting on without a reload, it stays in the
+  project's up-next rows, the desk is left alone, and revoking it too is what
+  clears the row.
 - `listener.spec.ts` — two drills. The API's `LISTEN` backend is terminated
   repeatedly across a window; the console says the change log behind its stream
   is degraded and converges once the listener returns. Separately, a console

@@ -291,6 +291,11 @@ test("a brief lands where its work happened unless its finalization says otherwi
     undefined,
     "a brief naming no finalization carries none",
   );
+  assert.deepEqual(
+    landing({ mode: "None" }).data?.finalization,
+    { mode: "None" },
+    "a brief may land nothing at all",
+  );
   for (const mode of proposingModes) {
     assert.deepEqual(
       landing({
@@ -314,6 +319,7 @@ test("a brief lands where its work happened unless its finalization says otherwi
       target: `${briefBranchPrefix}${"a".repeat(briefBranchCharsMax)}`,
     },
     { mode: "Push", unnamed: true },
+    { mode: "None", target: `${briefBranchPrefix}rt/landing` },
     ...proposingModes.map((mode) => ({
       mode,
       target: `${briefBranchPrefix}rt/x`,

@@ -66,21 +66,21 @@ import type { Core } from "../../src/domain/generated/modelTypes.ts";
 const config = refinementInstance;
 
 const event1 = releaseTicketEvent(id(1), plainAuthoring);
-const d1 = execDecisionEvent(config, genesis, event1);
+const d1 = execDecisionEvent(genesis, event1);
 const e1: Entry = { seq: 1, event: event1, rec: d1.rec };
 const event2 = dispatchEvent(id(1));
-const d2 = execDecisionEvent(config, d1.post, event2);
+const d2 = execDecisionEvent(d1.post, event2);
 const e2: Entry = { seq: 2, event: event2, rec: d2.rec };
 const goodJournal: readonly Entry[] = [e1, e2];
 
 test("the empty journal is legal and replays to genesis", () => {
   assert.ok(journalLegalOn(config, []));
-  assert.ok(coreEquals(replayCore(config, []), genesis));
+  assert.ok(coreEquals(replayCore([]), genesis));
 });
 
 test("an honest history is legal, and replay reconstructs what the deciders built", () => {
   assert.ok(journalLegalOn(config, goodJournal));
-  const replayed = replayCore(config, goodJournal);
+  const replayed = replayCore(goodJournal);
   assert.ok(coreEquals(replayed, d2.post));
   assert.deepEqual([...replayed.tickets.keys()], [1]);
   assert.equal(ticketAt(replayed, id(1)).phase, "Working");
@@ -89,11 +89,11 @@ test("an honest history is legal, and replay reconstructs what the deciders buil
 test("replaying one more entry equals stepping the shorter replay once", () => {
   assert.ok(
     coreEquals(
-      replayCore(config, goodJournal),
-      execDecisionEvent(config, replayCore(config, [e1]), event2).post,
+      replayCore(goodJournal),
+      execDecisionEvent(replayCore([e1]), event2).post,
     ),
   );
-  assert.ok(coreEquals(replayCore(config, [e1]), d1.post));
+  assert.ok(coreEquals(replayCore([e1]), d1.post));
 });
 
 test("a sequence gap or a duplicate seq is refused", () => {
@@ -149,7 +149,7 @@ test("an out-of-universe payload is refused by draw-set membership", () => {
   const phantomEntry: Entry = {
     seq: 1,
     event: phantom,
-    rec: execDecisionEvent(config, genesis, phantom).rec,
+    rec: execDecisionEvent(genesis, phantom).rec,
   };
   assert.ok(!decisionEventEnabled(config, genesis, phantom));
   assert.ok(!journalLegalOn(config, [phantomEntry]));
@@ -175,18 +175,16 @@ test("the task result reference is journal data: it names no part of the decisio
     schema: 1,
   });
   assert.notDeepEqual(real, other);
-  const taken = execDecisionEvent(config, d2.post, real);
-  assert.deepEqual(taken.rec, execDecisionEvent(config, d2.post, other).rec);
-  assert.ok(
-    coreEquals(taken.post, execDecisionEvent(config, d2.post, other).post),
-  );
+  const taken = execDecisionEvent(d2.post, real);
+  assert.deepEqual(taken.rec, execDecisionEvent(d2.post, other).rec);
+  assert.ok(coreEquals(taken.post, execDecisionEvent(d2.post, other).post));
   assert.equal(taken.rec.label, "task-done");
 });
 
 test("a task already resolved is no longer outstanding, so a second report never journals", () => {
   const first = taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult);
   assert.ok(decisionEventEnabled(config, d2.post, first));
-  const resolved = execDecisionEvent(config, d2.post, first).post;
+  const resolved = execDecisionEvent(d2.post, first).post;
   assert.ok(
     !decisionEventEnabled(
       config,
@@ -201,7 +199,7 @@ function journalOf(events: readonly DecisionEvent[]): readonly Entry[] {
   const entries: Entry[] = [];
   let core = genesis;
   for (const event of events) {
-    const decision = execDecisionEvent(config, core, event);
+    const decision = execDecisionEvent(core, event);
     entries.push({ seq: entries.length + 1, event, rec: decision.rec });
     core = decision.post;
   }
@@ -211,7 +209,7 @@ function journalOf(events: readonly DecisionEvent[]): readonly Entry[] {
 /** The state that run reaches. */
 function coreAfter(events: readonly DecisionEvent[]): Core {
   return events.reduce(
-    (core, event) => execDecisionEvent(config, core, event).post,
+    (core, event) => execDecisionEvent(core, event).post,
     genesis,
   );
 }
@@ -403,14 +401,14 @@ const drives: readonly Drive[] = [
     before: toPending,
     event: revokeEvent(id(1)),
     at: pending,
-    decided: decideRevoke(config, pending, id(1)),
+    decided: decideRevoke(pending, id(1)),
   },
   {
-    arm: "Revoke/cascade",
+    arm: "Revoke/with a dependent",
     before: toDependent,
     event: revokeEvent(id(1)),
     at: dependent,
-    decided: decideRevoke(config, dependent, id(1)),
+    decided: decideRevoke(dependent, id(1)),
   },
   {
     arm: "ExecutionBlocked",
@@ -441,7 +439,7 @@ test("each otherwise-undriven arm journals legally and decides what the domain d
       decisionEventEnabled(config, at, event),
       `${arm}: refused at its own state`,
     );
-    const taken = execDecisionEvent(config, at, event);
+    const taken = execDecisionEvent(at, event);
     assert.deepEqual(taken.rec, decided.rec, `${arm}: a different record`);
     assert.ok(
       coreEquals(taken.post, decided.post),
@@ -454,7 +452,7 @@ test("each otherwise-undriven arm journals legally and decides what the domain d
       `${arm}: the journal is illegal`,
     );
     assert.ok(
-      coreEquals(replayCore(config, journal), decided.post),
+      coreEquals(replayCore(journal), decided.post),
       `${arm}: replay does not reach the decided state`,
     );
   }

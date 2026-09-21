@@ -16,13 +16,11 @@ module chuggy_api {
   type ApiTaskState = TaskState
   type ApiTask = Task
   type ApiVerdict = Verdict
-  type ApiCombinator = Combinator
   type ApiStage = Stage
   type ApiEvaluationFailureDisposition = EvaluationFailureDisposition
   type ApiResume = Resume
   type ApiReason = Reason
   type ApiFinalizationOutcome = FinalizationOutcome
-  type ApiFinalizer = Finalizer
   type ApiArtifactMark = ArtifactMark
   type ApiTicket = Ticket
   type ApiInstallationId = InstallationId

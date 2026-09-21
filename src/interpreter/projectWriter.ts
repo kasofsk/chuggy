@@ -209,12 +209,7 @@ export async function projectWriterLoad(
   const ticketVersions = new Map<number, number>();
   let core: Core = genesis;
   for (const row of journal) {
-    const post = execDecisionEventAt(
-      row.semantics,
-      writer.config,
-      core,
-      row.entry,
-    ).post;
+    const post = execDecisionEventAt(row.semantics, core, row.entry).post;
     for (const projection of projectionChanges(core, post))
       ticketVersions.set(projection.ticket, row.entry.seq);
     core = post;
@@ -310,7 +305,7 @@ function journaledPlan(
   command: DecisionEvent,
   executionSource: ExecutionSourceObservation | undefined,
 ): ProjectPlan {
-  const decision = execDecisionEvent(writer.config, memory.core, command);
+  const decision = execDecisionEvent(memory.core, command);
   const entry: Entry = {
     seq: memory.lease.head + 1,
     event: command,
@@ -487,7 +482,7 @@ async function projectWriterExecutionSource(
     item.source.finalizationRequest?.evidence !== undefined
   )
     return { observed: "Source" };
-  const rec = execDecisionEvent(writer.config, memory.core, command).rec;
+  const rec = execDecisionEvent(memory.core, command).rec;
   const spawn = rec.effects.find((label) => {
     const effect = effectFromLabel(label);
     return effect === "SpawnWorkTasks" || effect === "SpawnEvalTasks";

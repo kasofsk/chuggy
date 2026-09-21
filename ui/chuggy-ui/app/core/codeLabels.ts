@@ -19,7 +19,6 @@ import {
   operationRefusalCodes,
   type BriefFinalizationMode,
   type EscalationReason,
-  type FinalizerChoice,
   type OperationRefusalCode,
   type OperationState,
   type ResumePoint,
@@ -44,8 +43,6 @@ export function escalationReasonLabel(reason: EscalationReason): string {
       return "Work failed";
     case "ReworkBudgetExhausted":
       return "Rework budget exhausted";
-    case "DependencyRevoked":
-      return "Dependency revoked";
     case "ExecutionPolicyDenied":
       return "Execution denied by policy";
     case "TicketConfigIncompatible":
@@ -103,8 +100,6 @@ export function escalationDetailLine(
       return "Failed work is not reworked";
     case "ReworkBudgetExhausted":
       return walledStageFailed(facts);
-    case "DependencyRevoked":
-      return "Only Revoke exits this wall";
     case "ExecutionPolicyDenied":
     case "TicketConfigIncompatible":
     case "ExecutionProfileUnavailable":
@@ -128,6 +123,20 @@ export function phaseLabel(phase: TicketPhase): string {
   }
 }
 
+/**
+ * The one line a Pending ticket names when a dependency it waits on was
+ * revoked: nothing will ever complete that dependency, so the wait is over and
+ * the only exit is revoking this ticket too. Absent for every ticket the read
+ * lists none for.
+ */
+export function revokedDependencyLine(
+  revokedDependencies: readonly number[],
+): string | undefined {
+  if (revokedDependencies.length === 0) return undefined;
+  const noun = revokedDependencies.length === 1 ? "dependency" : "dependencies";
+  return `Blocked by revoked ${noun} ${revokedDependencies.join(", ")}`;
+}
+
 /** How a finished ticket lands, in the word the choice is made by. */
 export function landingLabel(mode: BriefFinalizationMode): string {
   switch (mode) {
@@ -137,10 +146,13 @@ export function landingLabel(mode: BriefFinalizationMode): string {
       return "Pull request";
     case "PullRequestMerge":
       return "Pull request, then merge";
+    case "None":
+      return "None";
   }
 }
 
-/** What choosing that landing does to the branch the work lands on. */
+/** What choosing that landing does to the branch the work lands on, `None`
+ * touching no remote at all. */
 export function landingEffect(mode: BriefFinalizationMode): string {
   switch (mode) {
     case "Push":
@@ -149,11 +161,16 @@ export function landingEffect(mode: BriefFinalizationMode): string {
       return "Opens a pull request into the target branch";
     case "PullRequestMerge":
       return "Opens a pull request into the target branch and merges it";
+    case "None":
+      return "Lands nothing";
   }
 }
 
+/** A mode that reaches a reference at all, which `None` never does. */
+type LandingWithTarget = Exclude<BriefFinalizationMode, "None">;
+
 /** How a landing reaches the reference it names, the preposition each mode reads before it. */
-function landingTargetName(mode: BriefFinalizationMode): string {
+function landingTargetName(mode: LandingWithTarget): string {
   switch (mode) {
     case "Push":
       return "lands on";
@@ -164,7 +181,7 @@ function landingTargetName(mode: BriefFinalizationMode): string {
 }
 
 /** Where a landing that names no reference goes, which a push says by naming its branch. */
-function landingDefaultTarget(mode: BriefFinalizationMode): string | undefined {
+function landingDefaultTarget(mode: LandingWithTarget): string | undefined {
   switch (mode) {
     case "Push":
       return undefined;
@@ -174,26 +191,20 @@ function landingDefaultTarget(mode: BriefFinalizationMode): string | undefined {
   }
 }
 
-/** A brief's landing read back: the mode, and the reference it reaches. */
+/**
+ * A brief's landing read back: the mode, and the reference it reaches. `None`
+ * names no reference at all, having nothing to advance onto.
+ */
 export function briefLandingLine(finalization: {
   readonly mode: BriefFinalizationMode;
   readonly target?: string | undefined;
 }): string {
   const mode = finalization.mode;
+  if (mode === "None") return landingLabel(mode);
   const target = finalization.target ?? landingDefaultTarget(mode);
   return target === undefined
     ? landingLabel(mode)
     : `${landingLabel(mode)} · ${landingTargetName(mode)} ${target}`;
-}
-
-/** What runs a ticket's finalization, `None` being a ticket that lands nothing. */
-export function finalizerLabel(finalizer: FinalizerChoice): string {
-  switch (finalizer) {
-    case "ManagedFinalizer":
-      return "Managed";
-    case "NoFinalizer":
-      return "None";
-  }
 }
 
 /** Whether finalization waits for a person before it runs. */

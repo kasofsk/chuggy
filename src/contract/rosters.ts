@@ -32,7 +32,6 @@ export type TicketPhase = (typeof phaseRoster)[number];
 export const escalationReasons = [
   "WorkFailed",
   "ReworkBudgetExhausted",
-  "DependencyRevoked",
   "ExecutionPolicyDenied",
   "TicketConfigIncompatible",
   "ExecutionProfileUnavailable",
@@ -45,8 +44,8 @@ export type EscalationReason = (typeof escalationReasons)[number];
  * Where an operator resume re-enters a parked ticket, in the order the model
  * declares them. The model's `NoResume` is not among them: it is that union's
  * absent value, so the wire omits the field rather than naming a value that
- * would read as "not resumable" — a stronger claim than the machine makes,
- * because one wall has no modeled resume and the rest do.
+ * would read as "not resumable" — a claim the machine never makes, every wall
+ * it parks a ticket at having a resume.
  */
 export const resumePoints = [
   "ResumeWorking",
@@ -256,21 +255,18 @@ export type SchedulerFreshness = (typeof schedulerFreshnesses)[number];
 export const draftStates = ["Draft", "Released", "Deleted"] as const;
 export type DraftState = (typeof draftStates)[number];
 
-export const evaluationCombinators = ["UnanimousPass", "AnyPass"] as const;
-export type EvaluationCombinator = (typeof evaluationCombinators)[number];
-
-export const finalizers = ["NoFinalizer", "ManagedFinalizer"] as const;
-export type FinalizerChoice = (typeof finalizers)[number];
-
 /**
  * How a finalization lands one ticket's work on the reference its brief names:
- * by advancing that reference, or by opening a change proposal into it.
+ * by advancing that reference, by opening a change proposal into it, or by
+ * landing nothing at all — `None` being a landing like any other rather than a
+ * finalizer that does not run, one that reports at once and touches no remote.
  * `src/interpreter/ticketBrief.ts` takes `BriefFinalizationMode` from here.
  */
 export const briefFinalizationModes = [
   "Push",
   "PullRequest",
   "PullRequestMerge",
+  "None",
 ] as const;
 export type BriefFinalizationMode = (typeof briefFinalizationModes)[number];
 

@@ -56,10 +56,6 @@ import {
   projectChangeDataSchemas,
   sessionChangeResourceSchema,
 } from "../../src/contract/events.ts";
-import {
-  evaluationCombinators,
-  finalizers,
-} from "../../src/contract/rosters.ts";
 import { postgresProjectChangeLog } from "../../src/adapters/postgres/projectChangeLog.ts";
 import type { ProjectChangeLog } from "../../src/interpreter/projectStream.ts";
 import {
@@ -1266,11 +1262,6 @@ test("a model name past what the measure column holds is refused", async () => {
   );
 });
 
-/** The member of a roster that weighs the most, which is what a ceiling is for. */
-function widestOf(roster: readonly string[]): string {
-  return [...roster].sort((one, other) => other.length - one.length)[0] ?? "";
-}
-
 /**
  * One candidate at its ceiling: every field at the bound its own constant
  * gives it — the two authored pages full, the identities at the identity bound
@@ -1288,9 +1279,7 @@ function maximalCandidate(ticket: number): Record<string, unknown> {
     ),
     program: Array.from({ length: nativeHttpDraftStagesMax }, () => ({
       fanout: Number.MAX_SAFE_INTEGER,
-      combinator: widestOf(evaluationCombinators),
     })),
-    finalizer: widestOf(finalizers),
     configurationVersion: {
       name: escapedText(repositoryConfigurationNameCharsMax),
       number: Number.MAX_SAFE_INTEGER,

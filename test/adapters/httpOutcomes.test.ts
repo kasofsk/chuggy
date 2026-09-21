@@ -207,6 +207,7 @@ test("recent ticket pages expose only an opaque continuation cursor", () => {
           sequence: 7,
           releasedAt: asPublicInstant("2026-01-01T00:00:00Z"),
           changedAt: asPublicInstant("2026-01-01T00:00:07Z"),
+          revokedDependencies: [],
         },
       ],
       nextRecentActivityAfter: { sequence: 7, ticket: id(2) },
@@ -380,9 +381,8 @@ test("revising a draft with exactly the brief it was read back with keeps its re
     configurationRevision: draft.configurationRevision,
     authoring: {
       dependencies: [],
-      program: [{ fanout: 1, combinator: "UnanimousPass" }],
+      program: [{ fanout: 1 }],
       workFanout: 1,
-      finalizer: "ManagedFinalizer",
     },
     brief: readBack,
   });
@@ -445,7 +445,6 @@ test("draft initialization outcomes remain discriminated at HTTP", () => {
           stages: plainAuthoring.prog,
           programStagesMax: 1,
           workFanouts: [1],
-          finalizers: [plainAuthoring.finalizer],
         },
         dependencyCandidates: [id(1)],
         dependencyCandidatesTruncated: false,

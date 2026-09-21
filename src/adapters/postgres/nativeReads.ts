@@ -71,6 +71,15 @@ interface TicketProjectionRow {
   readonly released_at: string | null;
   readonly changed_at: string | null;
   readonly resume_at: string | null;
+  /**
+   * The dependencies a Pending ticket's release event named that are
+   * themselves Revoked, ascending; a ticket in any other phase waits on
+   * nothing and names none. The release entry is the only place the edges are
+   * written down — no relation holds them — so it is read back through the
+   * same join the release instant comes from, and a release nobody can parse
+   * names none.
+   */
+  readonly revoked_dependencies: string[] | null;
 }
 
 /** One open action, or a ticket that has none: every column is then null. */
@@ -255,6 +264,9 @@ function ticketResource(row: TicketProjectionRow): TicketResource {
       : { releasedAt: nativeReadInstant(row.released_at) }),
     ...(reason === undefined ? {} : { reason }),
     ...(resumeAt === undefined ? {} : { resumeAt }),
+    revokedDependencies: (row.revoked_dependencies ?? []).map((dependency) =>
+      asTicketId(projectRowCounter(dependency, "revoked dependency")),
+    ),
   };
 }
 
@@ -376,21 +388,40 @@ async function readProjectTickets(
   partition: Partition,
   query: ProjectReadQuery,
 ): Promise<readonly TicketProjectionRow[]> {
-  if (query.order === "RecentActivity") {
-    const found = await client.query<TicketProjectionRow>(
-      sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,
+  return query.order === "RecentActivity"
+    ? readTicketsByActivity(client, partition, query)
+    : readTicketsByIdentity(client, partition, query);
+}
+
+/** The same page ordered by when each ticket last moved, newest first. */
+async function readTicketsByActivity(
+  client: pg.PoolClient,
+  partition: Partition,
+  query: ProjectReadQuery,
+): Promise<readonly TicketProjectionRow[]> {
+  const found = await client.query<TicketProjectionRow>(
+    sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,
                  coalesce(b.title,left(substring(b.intent from
                    '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                    AS ticket_title,
                  r.committed_at::text AS released_at,
-                 c.committed_at::text AS changed_at
+                 c.committed_at::text AS changed_at,
+                 (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
+                    FROM ticket_projection d
+                   WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
+                     AND d.phase='Revoked'
+                     AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
+                   AS revoked_dependencies
           FROM ticket_projection t
           LEFT JOIN draft_brief b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
           LEFT JOIN LATERAL (
-            SELECT j.committed_at FROM journal_entry j
+            SELECT j.committed_at,
+                   (CASE WHEN j.entry IS JSON OBJECT
+                         THEN j.entry::jsonb->'event'->'value'->'deps' END) AS deps
+              FROM journal_entry j
              WHERE j.tenant=t.tenant AND j.project=t.project
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->>'type' END)='ReleaseTicket'
@@ -402,23 +433,39 @@ async function readProjectTickets(
             OR (t.seq,t.ticket) < (${query.recentActivityAfter?.sequence ?? null},${query.recentActivityAfter?.ticket ?? null}))
           AND t.phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
         ORDER BY t.seq DESC,t.ticket DESC LIMIT ${query.limit + 1}`,
-    );
-    return found.rows;
-  }
+  );
+  return found.rows;
+}
+
+/** The page ordered by ticket identity, which is what a cursor pages through. */
+async function readTicketsByIdentity(
+  client: pg.PoolClient,
+  partition: Partition,
+  query: ProjectReadQuery,
+): Promise<readonly TicketProjectionRow[]> {
   const found = await client.query<TicketProjectionRow>(
     sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,
                coalesce(b.title,left(substring(b.intent from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
                r.committed_at::text AS released_at,
-               c.committed_at::text AS changed_at
+               c.committed_at::text AS changed_at,
+               (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
+                  FROM ticket_projection d
+                 WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
+                   AND d.phase='Revoked'
+                   AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
+                 AS revoked_dependencies
           FROM ticket_projection t
           LEFT JOIN draft_brief b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
           LEFT JOIN LATERAL (
-            SELECT j.committed_at FROM journal_entry j
+            SELECT j.committed_at,
+                   (CASE WHEN j.entry IS JSON OBJECT
+                         THEN j.entry::jsonb->'event'->'value'->'deps' END) AS deps
+              FROM journal_entry j
              WHERE j.tenant=t.tenant AND j.project=t.project
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->>'type' END)='ReleaseTicket'
@@ -463,6 +510,12 @@ function nativeReadsResources(
                    b.finalization_mode,b.finalization_target,
                    r.committed_at::text AS released_at,
                    c.committed_at::text AS changed_at,
+                   (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
+                      FROM ticket_projection d
+                     WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
+                       AND d.phase='Revoked'
+                       AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
+                     AS revoked_dependencies,
                    (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
                      WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS links,
                    (SELECT array_agg(k.command ORDER BY k.ordinal) FROM draft_brief_check k
@@ -471,7 +524,10 @@ function nativeReadsResources(
               LEFT JOIN journal_entry c
                 ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
               LEFT JOIN LATERAL (
-                SELECT j.committed_at FROM journal_entry j
+                SELECT j.committed_at,
+                       (CASE WHEN j.entry IS JSON OBJECT
+                             THEN j.entry::jsonb->'event'->'value'->'deps' END) AS deps
+                  FROM journal_entry j
                  WHERE j.tenant=t.tenant AND j.project=t.project
                    AND (CASE WHEN j.entry IS JSON OBJECT
                              THEN j.entry::jsonb->'event'->>'type' END)='ReleaseTicket'

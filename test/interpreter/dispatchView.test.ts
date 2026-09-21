@@ -114,22 +114,16 @@ test("facts outside the strict view cannot invalidate its digest", () => {
 test("dispatch JSON codecs refuse malformed stored structures", () => {
   assert.throws(() => decodeDispatchProgram({}), /not an array/);
   assert.throws(
-    () => decodeDispatchProgram([{ fanout: 1.5, combinator: "AnyPass" }]),
+    () => decodeDispatchProgram([{ fanout: 1.5 }]),
     /expected int/i,
   );
-  assert.throws(
-    () => decodeDispatchProgram([{ fanout: 1, combinator: "Unknown" }]),
-    /invalid input/i,
-  );
+  assert.throws(() => decodeDispatchProgram([{}]), /invalid input/i);
 });
 
 test("dispatch JSON codecs accept every stored model variant", () => {
-  assert.deepEqual(
-    decodeDispatchProgram([{ fanout: 2, combinator: "UnanimousPass" }]),
-    [{ fanout: 2, combinator: "UnanimousPass" }],
-  );
-  assert.deepEqual(
-    decodeDispatchProgram([{ fanout: 1, combinator: "AnyPass" }]),
-    [{ fanout: 1, combinator: "AnyPass" }],
-  );
+  assert.deepEqual(decodeDispatchProgram([{ fanout: 2 }]), [{ fanout: 2 }]);
+  assert.deepEqual(decodeDispatchProgram([{ fanout: 1 }, { fanout: 3 }]), [
+    { fanout: 1 },
+    { fanout: 3 },
+  ]);
 });

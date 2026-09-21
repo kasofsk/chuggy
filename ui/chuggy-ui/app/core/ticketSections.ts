@@ -70,8 +70,6 @@ export function escalationBadgeLabel(reason: EscalationReason): string {
       return "work failed";
     case "ReworkBudgetExhausted":
       return "rework budget spent";
-    case "DependencyRevoked":
-      return "a dependency was revoked";
     case "ExecutionPolicyDenied":
       return "execution policy denied it";
     case "TicketConfigIncompatible":

@@ -11,7 +11,6 @@
 import type { ReactNode } from "react";
 
 import type { DraftInitializationResponse } from "../../../../src/contract/responses.ts";
-import { finalizerLabel } from "../core/codeLabels.ts";
 import {
   creationFanoutLabel,
   creationOffered,
@@ -161,33 +160,22 @@ function Program(
   );
 }
 
-function WorkAndFinalizer(
+function WorkFanout(
   props: FormEdit & {
     readonly choices: DraftInitializationResponse["choices"];
   },
 ): ReactNode {
   const { choices, form, onChange } = props;
   return (
-    <>
-      <ChoiceRow
-        label="work fanout"
-        offered={choices.workFanouts}
-        chosen={form.workFanout}
-        render={creationFanoutLabel}
-        onChoose={(workFanout) => {
-          onChange({ ...form, workFanout });
-        }}
-      />
-      <ChoiceRow
-        label="finalizer"
-        offered={choices.finalizers}
-        chosen={form.finalizer}
-        render={finalizerLabel}
-        onChoose={(finalizer) => {
-          onChange({ ...form, finalizer });
-        }}
-      />
-    </>
+    <ChoiceRow
+      label="work fanout"
+      offered={choices.workFanouts}
+      chosen={form.workFanout}
+      render={creationFanoutLabel}
+      onChoose={(workFanout) => {
+        onChange({ ...form, workFanout });
+      }}
+    />
   );
 }
 
@@ -212,7 +200,7 @@ export function TicketCreationAdvanced(
           offered={initialization.choices.stages}
           stagesMax={initialization.choices.programStagesMax}
         />
-        <WorkAndFinalizer
+        <WorkFanout
           form={form}
           onChange={onChange}
           choices={initialization.choices}

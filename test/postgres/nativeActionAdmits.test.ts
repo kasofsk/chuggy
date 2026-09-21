@@ -7,12 +7,12 @@
  * rows those decisions wrote — so a set that no longer matches the enablement
  * is two live paths disagreeing rather than a fixture disagreeing with a rule.
  *
- * ONE PARK THAT OFFERS THE RESUME AND ONE THAT DOES NOT, because a case that
- * only ever saw one of them would pass just as well against a plan that offers
- * the same pair to everything. The first is the rework wall, which the writer's
- * configured cap reaches on the third failed evaluation; the second is the
- * dependent the answer to the first dooms, parked by a revoked dependency —
- * the one wall the machine stamps no resume point on.
+ * ONE PARK THAT PUTS A QUESTION TO THE DESK AND ONE TICKET THAT IS ASKED
+ * NOTHING, because a case that only ever saw the first would pass just as well
+ * against a plan that opened an action for every ticket. The first is the
+ * rework wall, which the writer's configured cap reaches on the third failed
+ * evaluation; the second is the dependent of the ticket that answer revokes,
+ * which simply stays Pending and waits on a dependency nothing will complete.
  */
 
 import assert from "node:assert/strict";
@@ -130,7 +130,7 @@ async function admitsResolve(
   return admitsDrain(partition, memory);
 }
 
-/** Releases a second ticket waiting on the first, which the first's revoke dooms. */
+/** Releases a second ticket waiting on the first, which the first's revoke strands. */
 async function admitsDependent(
   partition: Partition,
   memory: ProjectMemory,
@@ -147,7 +147,7 @@ async function admitsDependent(
   return admitsDrain(partition, memory);
 }
 
-test("a park offers the resume only where the machine models one", async () => {
+test("a park offers the desk its answers and a waiting ticket is asked none", async () => {
   const label = "admits-resumability";
   const partition = await postgresHarnessProject(subject.harness.store, label);
   let memory = await postgresHarnessHistory(
@@ -184,9 +184,9 @@ test("a park offers the resume only where the machine models one", async () => {
   memory = await admitsDependent(partition, memory, `${label}-dependent`);
   memory = await admitsResolve(partition, memory, `${label}-revoke`, "Revoke");
 
-  const doomed = ticketAt(memory.core, id(2));
-  assert.equal(doomed.phase, "Escalated");
-  assert.equal(doomed.reason, "DependencyRevoked");
-  assert.equal(doomed.resumeAt, "NoResume");
-  assert.deepEqual(await admitsOffered(partition, id(2)), [["Revoke"]]);
+  const stranded = ticketAt(memory.core, id(2));
+  assert.equal(stranded.phase, "Pending");
+  assert.equal(stranded.reason, "NoReason");
+  assert.equal(stranded.resumeAt, "NoResume");
+  assert.deepEqual(await admitsOffered(partition, id(2)), []);
 });

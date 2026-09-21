@@ -33,11 +33,7 @@ import {
 import { genesis, replayCore, type Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 import { ticketAt } from "../../src/domain/core.ts";
-import type {
-  Core,
-  Reason,
-  Ticket,
-} from "../../src/domain/generated/modelTypes.ts";
+import type { Core, Ticket } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import {
   projectionChanges,
@@ -71,7 +67,7 @@ function folded(): ReadonlyMap<number, TicketProjection> {
   const table = new Map<number, TicketProjection>();
   let core: Core = genesis;
   for (const event of history) {
-    const post = execDecisionEvent(refinementInstance, core, event).post;
+    const post = execDecisionEvent(core, event).post;
     for (const row of projectionChanges(core, post)) {
       table.set(row.ticket, row);
     }
@@ -82,10 +78,7 @@ function folded(): ReadonlyMap<number, TicketProjection> {
 
 test("folding what each decision changed reaches the table a rebuild reads", () => {
   const rebuilt = new Map(
-    projectionOf(replayCore(refinementInstance, journalOf())).map((row) => [
-      row.ticket,
-      row,
-    ]),
+    projectionOf(replayCore(journalOf())).map((row) => [row.ticket, row]),
   );
   assert.deepEqual(folded(), rebuilt);
   assert.equal(rebuilt.get(id(1))?.phase, "Working");
@@ -155,29 +148,6 @@ test("a release is a change although it transitions nothing", () => {
   ]);
 });
 
-test("dependency eligibility distinguishes the escalated reasons", () => {
-  const released = execDecisionEvent(
-    refinementInstance,
-    genesis,
-    releaseTicketEvent(id(1), plainAuthoring),
-  ).post;
-  const ticket = released.tickets.get(id(1));
-  assert.ok(ticket !== undefined);
-  const escalated = (reason: Reason): Core => ({
-    tickets: new Map([
-      [id(1), { ...ticket, phase: "Escalated" as const, reason }],
-    ]),
-  });
-  assert.equal(
-    projectionOf(escalated("DependencyRevoked"))[0]?.dependable,
-    false,
-  );
-  assert.equal(
-    projectionOf(escalated("ReworkBudgetExhausted"))[0]?.dependable,
-    true,
-  );
-});
-
 /** The one outstanding task of a single-width ticket, which is what a completion names. */
 function outstandingTask(core: Core): number {
   const task = [...ticketAt(core, id(1)).tasks].find(
@@ -199,12 +169,12 @@ function walledHistory(): readonly DecisionEvent[] {
     dispatchEvent(id(1)),
   ];
   let core = events.reduce(
-    (state, event) => execDecisionEvent(refinementInstance, state, event).post,
+    (state, event) => execDecisionEvent(state, event).post,
     genesis,
   );
   const step = (event: DecisionEvent) => {
     events.push(event);
-    core = execDecisionEvent(refinementInstance, core, event).post;
+    core = execDecisionEvent(core, event).post;
   };
   for (const cycle of [0, 1]) {
     step(
@@ -248,7 +218,7 @@ test("every projected row is the core the step it names left behind", () => {
   let core: Core = genesis;
   const seen: string[] = [];
   for (const event of walledHistory()) {
-    core = execDecisionEvent(refinementInstance, core, event).post;
+    core = execDecisionEvent(core, event).post;
     const row = projectionOf(core).find((each) => each.ticket === id(1));
     assert.ok(row !== undefined);
     assert.deepEqual(ticketFacts(ticketAt(core, id(1))), {

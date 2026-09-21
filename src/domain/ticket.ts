@@ -22,15 +22,6 @@ export function hasOpenHumanTask(ticket: Ticket): boolean {
 }
 
 /**
- * Which parked tickets have a modeled resume at all. One wall has none: a
- * revoked dependency is settled by revoking the dependent, because deps are
- * immutable and nothing the desk can do makes the predecessor live again.
- */
-export function modeledResumeExists(ticket: Ticket): boolean {
-  return ticket.reason !== "DependencyRevoked";
-}
-
-/**
  * Install a fresh fan-out and bump the spawn ghost by the same count. Callers
  * guarantee the previous set is already retired, which every spawn site does.
  */

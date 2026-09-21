@@ -14,7 +14,6 @@ import assert from "node:assert/strict";
 
 import {
   defaultProgram,
-  finalizerChoices,
   isValidProgram,
   stageChoices,
   ticketIdUniverse,
@@ -25,10 +24,8 @@ import { modelInstance } from "./configs.ts";
 
 const config = modelInstance;
 
-test("the default program is one unanimous stage at full fan-out, and it is authorable", () => {
-  assert.deepEqual(defaultProgram(config), [
-    { fanout: config.nTasks, combinator: "UnanimousPass" },
-  ]);
+test("the default program is one stage at full fan-out, and it is authorable", () => {
+  assert.deepEqual(defaultProgram(config), [{ fanout: config.nTasks }]);
   assert.ok(isValidProgram(config, defaultProgram(config)));
 });
 
@@ -37,47 +34,30 @@ test("the program rule refuses exactly what a release may not carry", () => {
     !isValidProgram(config, []),
     "an empty program authors a ticket that can never pass evaluation",
   );
-  assert.ok(!isValidProgram(config, [{ fanout: 0, combinator: "AnyPass" }]));
-  assert.ok(
-    !isValidProgram(config, [
-      { fanout: config.nTasks + 1, combinator: "UnanimousPass" },
-    ]),
-  );
+  assert.ok(!isValidProgram(config, [{ fanout: 0 }]));
+  assert.ok(!isValidProgram(config, [{ fanout: config.nTasks + 1 }]));
   const overlong = Array.from({ length: config.maxStages + 1 }, () => ({
     fanout: 1,
-    combinator: "UnanimousPass" as const,
   }));
   assert.ok(!isValidProgram(config, overlong));
 });
 
 test("a program of stages the vocabulary offers is authorable at any length within the bound", () => {
-  const staged = [
-    { fanout: 1, combinator: "UnanimousPass" as const },
-    { fanout: config.nTasks, combinator: "AnyPass" as const },
-  ];
+  const staged = [{ fanout: 1 }, { fanout: config.nTasks }];
   assert.equal(staged.length, config.maxStages);
   assert.ok(isValidProgram(config, staged));
   assert.ok(
     staged.every((stage) =>
-      stageChoices(config).some(
-        (choice) =>
-          choice.fanout === stage.fanout &&
-          choice.combinator === stage.combinator,
-      ),
+      stageChoices(config).some((choice) => choice.fanout === stage.fanout),
     ),
     "an authorable program is built from the vocabulary the release draws from",
   );
 });
 
-test("the stage vocabulary is every fan-out in range against both combinators", () => {
+test("the stage vocabulary is every fan-out in range", () => {
   const choices = stageChoices(config);
-  assert.equal(choices.length, config.nTasks * 2);
-  assert.deepEqual(choices, [
-    { fanout: 1, combinator: "UnanimousPass" },
-    { fanout: 1, combinator: "AnyPass" },
-    { fanout: 2, combinator: "UnanimousPass" },
-    { fanout: 2, combinator: "AnyPass" },
-  ]);
+  assert.equal(choices.length, config.nTasks);
+  assert.deepEqual(choices, [{ fanout: 1 }, { fanout: 2 }]);
 });
 
 test("the id universe is deliberately wider than the fleet bound, which is what makes ids sparse", () => {
@@ -95,8 +75,4 @@ test("the work-set widths a release may author run from one to the task ceiling"
     !workFanoutChoices(config).includes(0),
     "a zero-width work set is a cycle that resolves without doing anything",
   );
-});
-
-test("both finish kinds are always drawable", () => {
-  assert.deepEqual(finalizerChoices, ["NoFinalizer", "ManagedFinalizer"]);
 });

@@ -49,18 +49,15 @@ export const refinementInstance: Config = {
 /** What a release freezes when a suite does not care which values it froze. */
 export const plainAuthoring = {
   deps: new Set<number>(),
-  prog: [{ fanout: 1, combinator: "UnanimousPass" }] as readonly Stage[],
+  prog: [{ fanout: 1 }] as readonly Stage[],
   workFanout: 1,
-  finalizer: "ManagedFinalizer",
 } as const;
 
 /** The manifest a task reports when a suite does not care what it reported. */
 export const plainResult = { manifest: 1, digest: 1, schema: 1 } as const;
 
-/** The single-stage unanimous program every refinement-model run authors. */
-export const flatProgram: readonly Stage[] = [
-  { fanout: 1, combinator: "UnanimousPass" },
-];
+/** The single-stage program every refinement-model run authors. */
+export const flatProgram: readonly Stage[] = [{ fanout: 1 }];
 
 /**
  * The per-step gate: the domain bundle green on the carried view, and the

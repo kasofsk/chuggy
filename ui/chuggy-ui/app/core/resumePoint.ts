@@ -18,13 +18,11 @@
  * whole of what this module or a reader of it has to settle.
  *
  * IT IS TOTAL OVER EVERY PHASE AND REASON THE ROSTERS ADMIT, and answers with
- * nothing for three different reasons. A phase that is not parked has nothing
- * to resume at all; the rework wall's own resume needs no further check, and a
- * revoked dependency is the one wall the model gives no exit but revoke; and
- * where the model does stamp one but the read is short of what it stamped — a
- * reason the ticket read omits, a set this page does not hold — the console
- * declines rather than guesses, and a read carrying the stamped point is what
- * settles it.
+ * nothing for two different reasons. A phase that is not parked has nothing to
+ * resume at all; and where the model does stamp one but the read is short of
+ * what it stamped — a reason the ticket read omits, a set this page does not
+ * hold — the console declines rather than guesses, and a read carrying the
+ * stamped point is what settles it.
  */
 
 import type {
@@ -72,8 +70,6 @@ function walledPoint(
       return "ResumeWorking";
     case "ReworkBudgetExhausted":
       return "ResumeReworking";
-    case "DependencyRevoked":
-      return undefined;
     case "ExecutionPolicyDenied":
     case "TicketConfigIncompatible":
     case "ExecutionProfileUnavailable":

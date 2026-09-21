@@ -5,10 +5,9 @@
  * IT. Every shape the corpus does reach is already pinned by exact equality on
  * the whole record and the whole post-state, so restating one here would be a
  * weaker assertion about the same step. What is left over is the arms no
- * committed trace fires — the finish that needs no finalizer, the duplicate and
- * stale completions, an execution blocked from the phase with no resume, the
- * guarded unreachable resume, and a cascade deeper than the corpus happens to
- * build.
+ * committed trace fires — the duplicate and stale completions, an execution
+ * blocked from the phase with no resume, the guarded unreachable resume, and a
+ * revoke inside a dependency chain the corpus never builds.
  */
 
 import type { Core, Stage } from "../../src/domain/generated/modelTypes.ts";
@@ -61,7 +60,6 @@ const authoring = {
   deps: depsOf(),
   program: defaultProgram(config),
   workFanout: config.nTasks,
-  finalizer: "ManagedFinalizer" as const,
 };
 
 test("a release arrives already Pending, having spawned nothing", () => {
@@ -90,9 +88,7 @@ test("the release records no transition, and takes the sparse id it was handed",
 });
 
 test("a dispatch spawns the ticket's own authored width", () => {
-  const ready = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending", workFanout: 1 }),
-  ]);
+  const ready = coreOf([ticketOn(config, { phase: "Pending", workFanout: 1 })]);
   const decision = decideDispatch(ready, id(1));
   assert.equal(decision.rec.label, "dispatch");
   assert.deepEqual(decision.rec.transitions, [
@@ -108,7 +104,7 @@ test("a dispatch spawns the ticket's own authored width", () => {
 
 test("first write wins, and an id already retired matches nothing live", () => {
   const running = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Evaluating",
       record: [workTask(1, "Passed"), workTask(2, "Passed")],
       tasks: new Set([evalOutstanding(3, 0), evalOutstanding(4, 0)]),
@@ -136,7 +132,7 @@ test("first write wins, and an id already retired matches nothing live", () => {
 
 test("a passing work set stamps the artifact its own accounting names", () => {
   const settledWork = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Working",
       tasks: new Set([workTask(1, "Passed"), workTask(2, "Passed")]),
       spawned: 2,
@@ -167,7 +163,7 @@ test("a passing work set stamps the artifact its own accounting names", () => {
 
 test("a failed work set parks resumable at Working, retiring what failed", () => {
   const failedWork = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Working",
       tasks: new Set([workTask(1, "Passed"), workTask(2, "Failed")]),
       spawned: 2,
@@ -185,15 +181,15 @@ test("a failed work set parks resumable at Working, retiring what failed", () =>
   assert.equal(parked.artifact, "NoArtifact");
 });
 
-test("the stage's own combinator decides, so a program is not always-pass", () => {
-  const anyPass: readonly Stage[] = [{ fanout: 2, combinator: "AnyPass" }];
+test("a stage passes only when every task in it did, so one failure sinks it", () => {
+  const wide: readonly Stage[] = [{ fanout: 2 }];
   const evaluating = (
     outcomes: readonly ["Passed" | "Failed", "Passed" | "Failed"],
   ) =>
     coreOf([
-      ticketOn(config, "ManagedFinalizer", {
+      ticketOn(config, {
         phase: "Evaluating",
-        program: anyPass,
+        program: wide,
         tasks: new Set([
           evalTask(1, 0, outcomes[0]),
           evalTask(2, 0, outcomes[1]),
@@ -203,7 +199,7 @@ test("the stage's own combinator decides, so a program is not always-pass", () =
     ]);
   assert.equal(
     decideEvalStageReduce(
-      evaluating(["Passed", "Failed"]),
+      evaluating(["Passed", "Passed"]),
       id(1),
       "ReworkEvaluationFailure",
     ).rec.label,
@@ -211,7 +207,7 @@ test("the stage's own combinator decides, so a program is not always-pass", () =
   );
   assert.equal(
     decideEvalStageReduce(
-      evaluating(["Failed", "Failed"]),
+      evaluating(["Passed", "Failed"]),
       id(1),
       "ReworkEvaluationFailure",
     ).rec.label,
@@ -219,43 +215,9 @@ test("the stage's own combinator decides, so a program is not always-pass", () =
   );
 });
 
-test("a ticket authored without a finalizer completes out of evaluation, holding no live set", () => {
-  const passing = coreOf([
-    ticketOn(config, "NoFinalizer", {
-      phase: "Evaluating",
-      record: [workTask(1, "Passed"), workTask(2, "Passed")],
-      tasks: new Set([evalTask(3, 0, "Passed"), evalTask(4, 0, "Passed")]),
-      spawned: 4,
-      artifact: { type: "ProducedArtifact", value: 2 },
-    }),
-  ]);
-  const decision = decideEvalStageReduce(
-    passing,
-    id(1),
-    "ReworkEvaluationFailure",
-  );
-  assert.equal(decision.rec.label, "ticket-done");
-  assert.deepEqual(decision.rec.transitions, [
-    { ticket: id(1), from: "Evaluating", to: "Done" },
-  ]);
-  assert.deepEqual(
-    decision.rec.effects,
-    [],
-    "entering Done is transactional with the journal, so nothing is left for the world to do",
-  );
-  const done = ticketAt(decision.post, id(1));
-  assert.equal(done.completions, 1);
-  assert.equal(
-    done.tasks.size,
-    0,
-    "the passing stage is retired on the way out, not carried into the terminal",
-  );
-  assert.equal(done.record.length, 4);
-});
-
 test("one failing stage, two edges, and the disposition is the whole difference", () => {
   const failing = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Evaluating",
       record: [workTask(1, "Passed"), workTask(2, "Passed")],
       tasks: new Set([evalTask(3, 0, "Failed"), evalTask(4, 0, "Failed")]),
@@ -289,12 +251,25 @@ test("one failing stage, two edges, and the disposition is the whole difference"
   assert.equal(parked.resumeAt, "ResumeReworking");
   assert.equal(parked.tasks.size, 0);
   assert.ok(retryableIn(escalated.post, id(1)));
+
+  const revoked = decideRevoke(escalated.post, id(1));
+  assert.deepEqual(revoked.rec.transitions, [
+    { ticket: id(1), from: "Escalated", to: "Revoked" },
+  ]);
+  const settled = ticketAt(revoked.post, id(1));
+  assert.equal(settled.reason, "NoReason");
+  assert.equal(settled.resumeAt, "NoResume");
+  assert.equal(
+    retryableIn(revoked.post, id(1)),
+    false,
+    "revoking a parked ticket clears its wall along with its desk task",
+  );
 });
 
 /** A ticket running its finalizer, nothing outstanding, its artifact stamped. */
 const finalizing = (): Core =>
   coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Finalizing",
       record: [workTask(1, "Passed"), workTask(2, "Passed")],
       spawned: 2,
@@ -333,7 +308,7 @@ test("a failed finalization re-enters work, and does so every time", () => {
 
   const again = decideFinalizationResult(
     coreOf([
-      ticketOn(config, "ManagedFinalizer", {
+      ticketOn(config, {
         phase: "Finalizing",
         record: [
           workTask(1, "Passed"),
@@ -358,7 +333,7 @@ test("a failed finalization re-enters work, and does so every time", () => {
 
 test("a blocked execution resumes where the work was, and spends nothing", () => {
   const running = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Working",
       tasks: new Set([workOutstanding(1), workOutstanding(2)]),
       spawned: 2,
@@ -386,7 +361,7 @@ test("a blocked execution resumes where the work was, and spends nothing", () =>
 
 test("a block from the phase that holds no task set stamps no resume", () => {
   const evaluating = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Evaluating",
       record: [workTask(1, "Passed"), workTask(2, "Passed")],
       tasks: new Set([evalOutstanding(3, 0), evalOutstanding(4, 0)]),
@@ -419,7 +394,7 @@ test("every resume re-enters where its wall said it would", () => {
     at: "ResumeWorking" | "ResumeEvaluating" | "ResumeFinalizing",
   ): Core =>
     coreOf([
-      ticketOn(config, "ManagedFinalizer", {
+      ticketOn(config, {
         phase: "Escalated",
         resumeAt: at,
         reason: "TicketConfigIncompatible",
@@ -451,7 +426,7 @@ test("every resume re-enters where its wall said it would", () => {
 
 test("the evaluation wall's resume buys a work cycle above an intact record", () => {
   const walled = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Escalated",
       resumeAt: "ResumeReworking",
       reason: "ReworkBudgetExhausted",
@@ -474,13 +449,8 @@ test("the evaluation wall's resume buys a work cycle above an intact record", ()
   assert.deepEqual(post.record, ticketAt(walled, id(1)).record);
 });
 
-test("a park with no modeled resume is the guarded no-op its enablement refuses", () => {
-  const walled = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
-      phase: "Escalated",
-      reason: "DependencyRevoked",
-    }),
-  ]);
+test("a resume of a ticket that was never parked is the guarded no-op its enablement refuses", () => {
+  const walled = coreOf([ticketOn(config, { phase: "Pending" })]);
   const decision = decideResumeTicket(walled, id(1));
   assert.equal(decision.rec.label, "ticket-resume-refused");
   assert.deepEqual(decision.rec.transitions, []);
@@ -490,13 +460,13 @@ test("a park with no modeled resume is the guarded no-op its enablement refuses"
 
 test("a revoke retires what was running and settles without completing", () => {
   const running = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Working",
       tasks: new Set([workOutstanding(1), workOutstanding(2)]),
       spawned: 2,
     }),
   ]);
-  const revoked = decideRevoke(config, running, id(1));
+  const revoked = decideRevoke(running, id(1));
   assert.deepEqual(revoked.rec.transitions, [
     { ticket: id(1), from: "Working", to: "Revoked" },
   ]);
@@ -512,53 +482,35 @@ test("a revoke retires what was running and settles without completing", () => {
 /** A chain 1 <- 2 <- 3 under sparse, numerically reversed ids, which the corpus never builds. */
 const chain: Core = {
   tickets: new Map([
-    [id(6), ticketOn(config, "ManagedFinalizer", { phase: "Pending" })],
-    [
-      id(4),
-      ticketOn(config, "ManagedFinalizer", {
-        phase: "Pending",
-        deps: depsOf(6),
-      }),
-    ],
-    [
-      id(1),
-      ticketOn(config, "ManagedFinalizer", {
-        phase: "Pending",
-        deps: depsOf(4),
-      }),
-    ],
+    [id(6), ticketOn(config, { phase: "Pending" })],
+    [id(4), ticketOn(config, { phase: "Pending", deps: depsOf(6) })],
+    [id(1), ticketOn(config, { phase: "Pending", deps: depsOf(4) })],
   ]),
 };
-const cascaded = decideRevoke(config, chain, id(6)).post;
+const stranded = decideRevoke(chain, id(6)).post;
 
-test("the cascade parks every transitive dependent in the one decision", () => {
-  const decision = decideRevoke(config, chain, id(6));
+test("a revoke deep in a chain transitions its own ticket and nobody else", () => {
+  const decision = decideRevoke(chain, id(6));
   assert.equal(decision.rec.label, "ticket-revoked");
   assert.deepEqual(decision.rec.transitions, [
     { ticket: id(6), from: "Pending", to: "Revoked" },
-    { ticket: id(1), from: "Pending", to: "Escalated" },
-    { ticket: id(4), from: "Pending", to: "Escalated" },
   ]);
-  assert.deepEqual(decision.rec.effects, [
-    "CancelTicketWork",
-    "OpenHumanTask",
-    "OpenHumanTask",
-  ]);
-  for (const parked of [id(1), id(4)]) {
-    assert.equal(ticketAt(cascaded, parked).reason, "DependencyRevoked");
-    assert.equal(ticketAt(cascaded, parked).resumeAt, "NoResume");
+  assert.deepEqual(decision.rec.effects, ["CancelTicketWork"]);
+  for (const waiting of [id(1), id(4)]) {
+    assert.equal(ticketAt(stranded, waiting).phase, "Pending");
+    assert.equal(ticketAt(stranded, waiting).reason, "NoReason");
+    assert.equal(ticketAt(stranded, waiting).resumeAt, "NoResume");
   }
-  assert.equal(ticketAt(cascaded, id(6)).reason, "NoReason");
+  assert.equal(ticketAt(stranded, id(6)).reason, "NoReason");
 });
 
-test("a desk revoke settles one ticket and re-parks nobody", () => {
-  const settled = decideRevoke(config, cascaded, id(4));
+test("a revoke of the ticket in the middle leaves the one behind it waiting", () => {
+  const settled = decideRevoke(stranded, id(4));
   assert.deepEqual(settled.rec.transitions, [
-    { ticket: id(4), from: "Escalated", to: "Revoked" },
+    { ticket: id(4), from: "Pending", to: "Revoked" },
   ]);
   assert.deepEqual(settled.rec.effects, ["CancelTicketWork"]);
-  assert.equal(ticketAt(settled.post, id(1)).phase, "Escalated");
-  assert.equal(ticketAt(settled.post, id(1)).reason, "DependencyRevoked");
+  assert.equal(ticketAt(settled.post, id(1)).phase, "Pending");
 });
 
 test("the quiet fleet's stutter records that nothing moved", () => {
@@ -571,14 +523,14 @@ test("the quiet fleet's stutter records that nothing moved", () => {
 
 test("every fixture this suite builds is a shape the machine could have reached", () => {
   const live = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
+    ticketOn(config, {
       phase: "Working",
       tasks: new Set([workOutstanding(1)]),
       workFanout: 1,
       spawned: 1,
     }),
   ]);
-  for (const core of [chain, cascaded, live, finalizing()]) {
+  for (const core of [chain, stranded, live, finalizing()]) {
     assert.ok(
       accountsForAll(core),
       "a fixture accounts for all of its ids or none",

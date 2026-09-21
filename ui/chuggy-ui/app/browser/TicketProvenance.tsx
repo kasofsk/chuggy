@@ -15,7 +15,7 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketBriefBody } from "../../../../src/contract/brief.ts";
 import type { DraftResponse } from "../../../../src/contract/responses.ts";
 import { apiConfiguration } from "../core/apiRoutes.ts";
-import { briefLandingLine, finalizerLabel } from "../core/codeLabels.ts";
+import { briefLandingLine } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { configurationLabel } from "../core/labels.ts";
 import { usePanelResource } from "./api.ts";
@@ -130,11 +130,10 @@ function Authoring(props: { readonly draft: DraftResponse }): ReactNode {
         {authoring.program.length === 0
           ? "none"
           : authoring.program
-              .map((stage) => `${String(stage.fanout)}× ${stage.combinator}`)
+              .map((stage) => `${String(stage.fanout)}×`)
               .join(" then ")}
       </Field>
       <Field name="work fanout">{authoring.workFanout}</Field>
-      <Field name="finalizer">{finalizerLabel(authoring.finalizer)}</Field>
     </dl>
   );
 }

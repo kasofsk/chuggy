@@ -155,7 +155,6 @@ const dispatchCandidateSchema = z
     dependencies: z.array(z.number().int().safe().positive()).readonly(),
     workFanout: z.number().int().safe().positive(),
     program: z.array(stageSchema).readonly(),
-    finalizer: z.enum(["NoFinalizer", "ManagedFinalizer"]),
     configurationRevision: z.string(),
     configurationDigest: z.string(),
     configurationCanonical: z.string(),

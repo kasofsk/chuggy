@@ -271,7 +271,7 @@ module chuggy_refinement {
 
   type DecisionEvent =
       ReleaseTicket({ ticket: int, deps: Set[int], prog: List[Stage],
-        workFanout: int, finalizer: Finalizer })
+        workFanout: int })
     | Revoke(int)
     | Dispatch(int)
     | TaskDone({ ticket: int, tid: int, verdict: Verdict, result: TaskResultRef })
@@ -305,7 +305,7 @@ module chuggy_refinement {
   /// function, so they cannot drift.
   pure def execDecisionEvent(c: Core, event: DecisionEvent): Decision = match event {
     | ReleaseTicket(a) => decideReleaseTicket(c, a.ticket, a.deps, a.prog,
-        a.workFanout, a.finalizer)
+        a.workFanout)
     | Revoke(j) => decideRevoke(c, j)
     | Dispatch(j) => decideDispatch(c, j)
     | TaskDone(a) => decideTaskDone(c, a.ticket, a.tid, a.verdict)
@@ -328,8 +328,7 @@ module chuggy_refinement {
         canReleaseIn(c, a.ticket),
         a.deps.subseteq(dependableIn(c)),
         validPrograms.contains(a.prog),
-        workFanoutChoices.contains(a.workFanout),
-        finalizerChoices.contains(a.finalizer)
+        workFanoutChoices.contains(a.workFanout)
       }
     | Revoke(j) => revocablesIn(c).contains(j)
     | Dispatch(j) => readiesIn(c).contains(j)
@@ -555,9 +554,8 @@ module chuggy_refinement {
     nondet deps_ = dependableTickets.powerset().oneOf()
     nondet prog = validPrograms.oneOf()
     nondet workFanout_ = workFanoutChoices.oneOf()
-    nondet finalizer_ = finalizerChoices.oneOf()
     journalStep(ReleaseTicket({ ticket: j, deps: deps_, prog: prog,
-      workFanout: workFanout_, finalizer: finalizer_ }))
+      workFanout: workFanout_ }))
   }
   action actorRevoke = all {
     revocableTickets.size() > 0,

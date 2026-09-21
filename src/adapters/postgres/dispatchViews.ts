@@ -39,15 +39,9 @@ interface CandidateRow extends ConfigurationVersionRow {
   readonly ticket_version: string;
   readonly work_fanout: string;
   readonly program: string;
-  readonly finalizer: string;
   readonly configuration_revision: string;
   readonly configuration_digest: string;
   readonly configuration_canonical: string;
-}
-
-function decodeFinalizer(value: string): DispatchCandidate["finalizer"] {
-  if (value === "NoFinalizer" || value === "ManagedFinalizer") return value;
-  throw new TypeError("dispatch finalizer is malformed");
 }
 
 function candidateOf(
@@ -70,7 +64,6 @@ function candidateOf(
       .map((edge) => projectRowCounter(edge.dependency, "dispatch dependency")),
     workFanout: projectRowCounter(row.work_fanout, "dispatch work fanout"),
     program: decodeDispatchProgram(JSON.parse(row.program) as unknown),
-    finalizer: decodeFinalizer(row.finalizer),
     configurationRevision: row.configuration_revision,
     configurationDigest: row.configuration_digest,
     configurationCanonical: row.configuration_canonical,
@@ -117,7 +110,6 @@ async function readDispatchView(
       return { result: "Reset" };
     const found = await client.query<CandidateRow>(
       sql`SELECT d.ticket::text,d.ticket_version::text,d.work_fanout::text,d.program,
-              d.finalizer,
             d.configuration_revision,d.configuration_digest,d.configuration_canonical,
             v.name AS version_name,v.number::text AS version_number
          FROM dispatch_candidate d

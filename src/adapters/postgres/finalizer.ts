@@ -648,7 +648,7 @@ async function finalizerSubmitResult(
   const submitted = await client.query<SubmissionRow>(
     sql`SELECT result, operation FROM submit_finalization_result(
       ${claim.partition.tenant},${claim.partition.project},${claim.request},
-      ${offer.attempt},${conclusion.outcome},${failure},
+      ${offer.attempt ?? null},${conclusion.outcome},${failure},
       ${claim.requestGeneration},${claim.recoveryEpoch},${operation},
       ${finalizerRole})`,
   );

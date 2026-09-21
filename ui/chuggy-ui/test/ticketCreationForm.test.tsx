@@ -469,17 +469,6 @@ test("two bindings ask, and a submission naming none sends nothing", () => {
   expect(drafts(held.sent).length).toBe(0);
 });
 
-/** The landing is the managed finalizer's parameter, so a form running none
- * asks for neither it nor the target the finalizer would land on. */
-const unfinalized = {
-  ...creationInitialization,
-  defaults: { ...creationInitialization.defaults, finalizer: "NoFinalizer" },
-  choices: {
-    ...creationInitialization.choices,
-    finalizers: ["NoFinalizer", "ManagedFinalizer"],
-  },
-} as typeof creationInitialization;
-
 function landing(): HTMLElement | null {
   return screen.queryByRole("radiogroup", { name: "landing" });
 }
@@ -487,7 +476,7 @@ function landing(): HTMLElement | null {
 /** What the group draws as chosen, read by name because the label sits beside
  * the control rather than inside it. */
 function landingChosen(): string | undefined {
-  return ["Push", "Pull request"].find(
+  return ["Push", "Pull request", "Pull request, then merge", "None"].find(
     (name) =>
       screen.getByRole("radio", { name }).getAttribute("aria-checked") ===
       "true",
@@ -508,10 +497,13 @@ async function chooseRepository(name: string): Promise<void> {
   });
 }
 
-test("a form running no finalizer asks for neither a landing nor a target", () => {
+test("a form landing on None still asks for a landing, and asks for no target", () => {
   const held = api({ state: "Succeeded" });
-  draw(held.ports, [], unfinalized);
-  expect(landing()).toBeNull();
+  draw(held.ports, [], creationInitialization, [
+    creationBinding(chuggy, "None"),
+  ]);
+  expect(landing()).toBeTruthy();
+  expect(landingChosen()).toBe("None");
   expect(screen.queryByPlaceholderText("the branch to land on")).toBeNull();
 });
 
@@ -587,45 +579,24 @@ test("a pull request without a target reaches the wire, into the default branch"
 });
 
 /**
- * The finalizer is chosen in the wire's own vocabulary nowhere on this screen,
- * and it is what decides whether a landing is asked for at all.
+ * The target is typed under a landing that draws it and the landing then
+ * changed to None, which leaves a value in a box the form no longer draws.
+ * The submission must still go out — a form stopped by a fault nobody can see
+ * is a form nobody can fix.
  */
-test("the advanced finalizer reads as a noun, and Managed is what asks for a landing", () => {
+test("changing the landing to None releases a ticket the target box would have refused", async () => {
   const held = api({ state: "Succeeded" });
-  draw(held.ports, [], unfinalized);
-  fireEvent.click(screen.getByRole("button", { name: /^Advanced/u }));
-  const chooser = screen.getByLabelText<HTMLSelectElement>("finalizer");
-  expect([...chooser.options].map((option) => option.text)).toStrictEqual([
-    "None",
-    "Managed",
+  draw(held.ports, [], creationInitialization, [
+    creationBinding(chuggy, "Push"),
   ]);
-  expect(landing()).toBeNull();
-  fireEvent.change(chooser, { target: { value: "Managed" } });
-  expect(landing()).toBeTruthy();
-});
-
-/**
- * The target is typed under a managed finalizer and the finalizer then changed,
- * which leaves a value in a box the form no longer draws. The submission must
- * still go out — a form stopped by a fault nobody can see is a form nobody can
- * fix.
- */
-test("changing the finalizer to None releases a ticket the target box would have refused", async () => {
-  const held = api({ state: "Succeeded" });
-  draw(held.ports, [], unfinalized);
-  fireEvent.click(screen.getByRole("button", { name: /^Advanced/u }));
-  const chooser = screen.getByLabelText<HTMLSelectElement>("finalizer");
-  fireEvent.change(chooser, { target: { value: "Managed" } });
   fireEvent.change(screen.getByPlaceholderText("the branch to land on"), {
     target: { value: "refs/heads/release/next" },
   });
   typeIntent("ship it");
-  submit();
-  expect(drafts(held.sent).length).toBe(0);
-  fireEvent.change(chooser, { target: { value: "None" } });
+  fireEvent.click(screen.getByRole("radio", { name: "None" }));
   submit();
   await waitFor(() => {
     expect(drafts(held.sent).length).toBe(1);
   });
-  expect(briefOf(held.sent)).not.toHaveProperty("finalization");
+  expect(briefOf(held.sent)?.["finalization"]).toStrictEqual({ mode: "None" });
 });

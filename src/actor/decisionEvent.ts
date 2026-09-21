@@ -56,7 +56,6 @@ import type {
   DecisionEvent,
   EvaluationFailureDisposition,
   FinalizationOutcome,
-  Finalizer,
   Reason,
   Stage,
   TaskResultRef,
@@ -72,7 +71,6 @@ export interface ReleaseAuthoring {
   readonly deps: ReadonlySet<number>;
   readonly prog: readonly Stage[];
   readonly workFanout: number;
-  readonly finalizer: Finalizer;
 }
 
 export function releaseTicketEvent(
@@ -90,7 +88,6 @@ export function releaseAuthoringOf(event: DecisionEvent): ReleaseAuthoring {
     deps: event.value.deps,
     prog: event.value.prog,
     workFanout: event.value.workFanout,
-    finalizer: event.value.finalizer,
   };
 }
 
@@ -146,11 +143,7 @@ export function resumeTicketEvent(ticket: TicketId): DecisionEvent {
 }
 
 /** Total dispatch onto the pure deciders — THE actor's decide step, and nothing else's. */
-export function execDecisionEvent(
-  config: Config,
-  core: Core,
-  event: DecisionEvent,
-): Decision {
+export function execDecisionEvent(core: Core, event: DecisionEvent): Decision {
   switch (event.type) {
     case "ReleaseTicket": {
       const { ticket, ...authoring } = event.value;
@@ -158,11 +151,10 @@ export function execDecisionEvent(
         deps: authoring.deps,
         program: authoring.prog,
         workFanout: authoring.workFanout,
-        finalizer: authoring.finalizer,
       });
     }
     case "Revoke":
-      return decideRevoke(config, core, asTicketId(event.value));
+      return decideRevoke(core, asTicketId(event.value));
     case "Dispatch":
       return decideDispatch(core, asTicketId(event.value));
     case "TaskDone":

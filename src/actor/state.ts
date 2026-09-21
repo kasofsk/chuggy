@@ -75,7 +75,7 @@ function decideEnabled(
       `${step}: ${event.type} is refused at this state; the actor journals no decision the machine would not take`,
     );
   }
-  return execDecisionEvent(config, memoryCore(state), event);
+  return execDecisionEvent(memoryCore(state), event);
 }
 
 /**
@@ -128,11 +128,7 @@ export function emitNext(state: ActorState): ActorState {
  * genuine replay of the journal, and the lost cursor suffix will re-emit. The
  * carried `(pre, rec)` does not move — recovery is not a domain decision.
  */
-export function crashRecoverTo(
-  config: Config,
-  state: ActorState,
-  cursor: number,
-): ActorState {
+export function crashRecoverTo(state: ActorState, cursor: number): ActorState {
   if (!Number.isInteger(cursor) || cursor < 0 || cursor > state.applied) {
     throw new Error(
       `crashRecoverTo: ${String(cursor)} is not a checkpoint this run could have written`,
@@ -140,7 +136,7 @@ export function crashRecoverTo(
   }
   return {
     ...state,
-    view: { ...state.view, post: replayCore(config, state.journal) },
+    view: { ...state.view, post: replayCore(state.journal) },
     applied: cursor,
   };
 }
@@ -159,7 +155,7 @@ export function effectCrash(
   const decision = decideEnabled(config, state, event, "effectCrash");
   return {
     ...state,
-    view: { ...state.view, post: replayCore(config, state.journal) },
+    view: { ...state.view, post: replayCore(state.journal) },
     orphans: [...state.orphans, decision.rec],
   };
 }

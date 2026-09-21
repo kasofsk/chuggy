@@ -45,7 +45,7 @@ test("the initial state is genesis under the init record, with nothing journaled
 test("journalStep advances the carried view and appends the next dense seq", () => {
   const before = actorInit();
   const after = journalStep(config, before, release);
-  const decision = execDecisionEvent(config, memoryCore(before), release);
+  const decision = execDecisionEvent(memoryCore(before), release);
   assert.equal(after.view.pre, memoryCore(before));
   assert.deepEqual(after.view.rec, decision.rec);
   assert.ok(coreEquals(after.view.post, decision.post));
@@ -73,25 +73,23 @@ test("emitNext carries (pre, rec) untouched and refuses an exhausted journal", (
 
 test("crashRecoverTo installs the genuine replay, carries (pre, rec), and regresses only inside the run", () => {
   const emitted = emitNext(journalStep(config, actorInit(), release));
-  const recovered = crashRecoverTo(config, emitted, 0);
+  const recovered = crashRecoverTo(emitted, 0);
   assert.equal(recovered.view.pre, emitted.view.pre);
   assert.equal(recovered.view.rec, emitted.view.rec);
-  assert.ok(
-    coreEquals(recovered.view.post, replayCore(config, emitted.journal)),
-  );
+  assert.ok(coreEquals(recovered.view.post, replayCore(emitted.journal)));
   assert.equal(recovered.applied, 0);
   assert.deepEqual([...recovered.worldEffects], [1]);
-  assert.throws(() => crashRecoverTo(config, emitted, 2), /not a checkpoint/);
-  assert.throws(() => crashRecoverTo(config, emitted, -1), /not a checkpoint/);
+  assert.throws(() => crashRecoverTo(emitted, 2), /not a checkpoint/);
+  assert.throws(() => crashRecoverTo(emitted, -1), /not a checkpoint/);
 });
 
 test("effectCrash orphans the decision, reverts memory to the replay, and carries (pre, rec)", () => {
   const emitted = emitNext(journalStep(config, actorInit(), release));
   const crashed = effectCrash(config, emitted, dispatch);
-  const lost = execDecisionEvent(config, memoryCore(emitted), dispatch);
+  const lost = execDecisionEvent(memoryCore(emitted), dispatch);
   assert.equal(crashed.view.pre, emitted.view.pre);
   assert.equal(crashed.view.rec, emitted.view.rec);
-  assert.ok(coreEquals(crashed.view.post, replayCore(config, emitted.journal)));
+  assert.ok(coreEquals(crashed.view.post, replayCore(emitted.journal)));
   assert.equal(crashed.journal, emitted.journal);
   assert.deepEqual(crashed.orphans, [lost.rec]);
   assert.throws(

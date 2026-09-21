@@ -32,7 +32,6 @@ function ticketIn(phase: TicketPhase, over: Partial<Ticket> = {}): Ticket {
   return {
     phase,
     deps: new Set<number>(),
-    finalizer: "NoFinalizer",
     artifact: "NoArtifact",
     workFanout: 1,
     program: [],
@@ -78,6 +77,7 @@ test("what the console offers is what the two predicates enable", () => {
         sequence: 1,
         releasedAt: "2026-08-26T00:00:00Z",
         changedAt: "2026-08-27T00:00:00Z",
+        revokedDependencies: [],
       }).map((one) => one.action),
     );
     assert.equal(offered.has("Revoke"), revocableIn(core, id), phase);

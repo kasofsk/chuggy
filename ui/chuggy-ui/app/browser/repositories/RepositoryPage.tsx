@@ -12,18 +12,13 @@ import { useParams } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import {
-  apiDraftInitialization,
-  apiProjectRepositories,
-} from "../../core/apiRoutes.ts";
-import { finalizerLabel } from "../../core/codeLabels.ts";
+import { apiProjectRepositories } from "../../core/apiRoutes.ts";
 import { repositoryLabel } from "../../core/projectRepositories.ts";
 import { projectRepositoryBound } from "../../core/repositoryLanding.ts";
 import {
   readProjectConfigurations,
   repositoryConfigurationRow,
   repositoryConfigurations,
-  repositoryReadyConfiguration,
 } from "../../core/repositoryConfigurations.ts";
 import { navRoutes } from "../../core/shellNav.ts";
 import { usePanelResource } from "../api.ts";
@@ -31,7 +26,6 @@ import { PanelUnready } from "../DataPanel.tsx";
 import { TopBarSlot } from "../shell/slots.tsx";
 import { Breadcrumb, BreadcrumbLink } from "../ui/Breadcrumb.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
-import { Field, Fields } from "../ui/Fields.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { projectRepositoriesResource } from "./AddRepository.tsx";
 import { RepositoryConfigurationTable } from "./RepositoryConfigurations.tsx";
@@ -44,53 +38,7 @@ export const repositoryRoutePath = "/$tenant/$project/repositories/$repository";
  * them; the revisions are the project's, so every repository's page shares one. */
 export const repositoryConfigurationsResource = "repository-configurations";
 
-function repositoryInitializationResource(revision: string): string {
-  return `draft-initialization:${revision}`;
-}
-
-/** What a new ticket here is authored to run once it is evaluated, which the
- * initialization of this repository's newest ready revision defaults. */
-function RepositoryFinalizerSection(props: {
-  readonly partition: PartitionIdentity;
-  readonly revision: string;
-}): ReactNode {
-  const partition = props.partition;
-  const revision = props.revision;
-  const state = usePanelResource(
-    partition,
-    "Configuration",
-    repositoryInitializationResource(revision),
-    (ports) => apiDraftInitialization(ports, partition, revision),
-  );
-  const finalizer =
-    state.state === "Ready" ? state.value.defaults.finalizer : undefined;
-  return (
-    <Panel
-      variant="section"
-      title="Finalizer"
-      about="What a new ticket is authored to run. A ticket may choose otherwise."
-    >
-      <PanelUnready state={state} />
-      {finalizer === undefined ? null : (
-        <Fields variant="inline">
-          <Field name="Finalizer">
-            <span className="flex items-center gap-3">
-              {finalizerLabel(finalizer)}
-              {finalizer === "ManagedFinalizer" ? (
-                <span className="text-ink-3 text-sm">
-                  Runs after evaluation passes
-                </span>
-              ) : null}
-            </span>
-          </Field>
-        </Fields>
-      )}
-    </Panel>
-  );
-}
-
-/** What this repository declares, and what the newest ready revision of it
- * finalizes with. */
+/** What this repository declares under `.chug/configurations`. */
 function RepositoryDeclared(props: {
   readonly partition: PartitionIdentity;
   readonly repository: string;
@@ -104,15 +52,8 @@ function RepositoryDeclared(props: {
   );
   const read = state.state === "Ready" ? state.value : undefined;
   const held = read?.configurations ?? [];
-  const ready = repositoryReadyConfiguration(held, props.repository);
   return (
     <>
-      {ready === undefined ? null : (
-        <RepositoryFinalizerSection
-          partition={partition}
-          revision={ready.revision}
-        />
-      )}
       <Panel
         variant="section"
         title="Configurations"

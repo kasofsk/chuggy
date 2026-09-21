@@ -20,6 +20,12 @@
  * an event at all. That lift belongs to the seam a store's load reads a row
  * with, so these files are read through `parseStoredEntry` rather than through
  * a second copy of it here.
+ *
+ * THE SAME FILES CARRY THE KEYS SEMANTICS 4 DROPPED, so the acceptances below
+ * are read off them rather than off bytes written to be accepted. The refusals
+ * have no such fixture — no history in this tree was decided by the machine
+ * that completed without a finalizer or cascaded a revoke — so each is a
+ * pinned row under the record that machine would have written.
  */
 
 import assert from "node:assert/strict";
@@ -40,6 +46,7 @@ import {
 } from "../../src/actor/journal.ts";
 import {
   decisionSemanticsVersionCurrent,
+  isDecisionSemanticsVersion,
   replayableDecision,
 } from "../../src/actor/decisionSemantics.ts";
 import { parseStoredEntry } from "../../src/interpreter/wire.ts";
@@ -96,7 +103,7 @@ test("the same history read as this image's own decisions is not legal", () => {
 });
 
 test("replay under the first semantics resumes the walled ticket into evaluation", () => {
-  const replayed = storedReplayCore(config, storedAt(reworkedWall, 1));
+  const replayed = storedReplayCore(storedAt(reworkedWall, 1));
   assert.equal(ticketAt(replayed, id(1)).phase, "Evaluating");
   assert.equal(ticketAt(replayed, id(1)).resumeAt, "NoResume");
 });
@@ -125,23 +132,23 @@ test("the two-wall history holds an EvalReduce row on each disposition edge", ()
 
 test("a second-semantics EvalReduce takes the edge its record records", () => {
   const toTheWall = storedAt(walls.slice(0, 6), 2);
-  const walled = ticketAt(storedReplayCore(config, toTheWall), id(1));
+  const walled = ticketAt(storedReplayCore(toTheWall), id(1));
   assert.equal(walled.phase, "Escalated");
   assert.equal(walled.reason, "ReworkBudgetExhausted");
 
   const toTheRework = storedAt(walls.slice(0, 13), 2);
-  const reworked = ticketAt(storedReplayCore(config, toTheRework), id(2));
+  const reworked = ticketAt(storedReplayCore(toTheRework), id(2));
   assert.equal(reworked.phase, "Working");
 });
 
 test("the first semantics parks the wall at the eval resume, the second where this machine does", () => {
   const toTheWall = walls.slice(0, 6);
   assert.equal(
-    ticketAt(storedReplayCore(config, storedAt(toTheWall, 1)), id(1)).resumeAt,
+    ticketAt(storedReplayCore(storedAt(toTheWall, 1)), id(1)).resumeAt,
     "ResumeEvaluating",
   );
   assert.equal(
-    ticketAt(storedReplayCore(config, storedAt(toTheWall, 2)), id(1)).resumeAt,
+    ticketAt(storedReplayCore(storedAt(toTheWall, 2)), id(1)).resumeAt,
     "ResumeReworking",
   );
 });
@@ -150,7 +157,7 @@ test("a parked ticket is resumable whichever semantics walled it", () => {
   const resume = resumeTicketEvent(id(1));
   const toTheWall = walls.slice(0, 6);
   for (const semantics of [1, 2] as const) {
-    const at = storedReplayCore(config, storedAt(toTheWall, semantics));
+    const at = storedReplayCore(storedAt(toTheWall, semantics));
     assert.ok(decisionEventEnabled(config, at, resume));
   }
 });
@@ -176,4 +183,92 @@ test("a row parked on a wall this machine no longer has cannot be replayed", () 
       },
     ]),
   );
+});
+
+test("the current semantics is the one whose refusals this module states", () => {
+  assert.equal(decisionSemanticsVersionCurrent, 4);
+  assert.ok(isDecisionSemanticsVersion(4));
+  assert.ok(
+    !isDecisionSemanticsVersion(5),
+    "a row from an image this one does not know is not replayable by guessing",
+  );
+});
+
+test("a pre-4 row's dropped keys are accepted and decode to the meaning that survived", () => {
+  const raw: unknown = JSON.parse(
+    readFileSync(
+      join(import.meta.dirname, "journalAtSemanticsOne.json"),
+      "utf8",
+    ),
+  );
+  assert.ok(Array.isArray(raw));
+  const release = raw[0] as { event: { value: Record<string, unknown> } };
+  assert.equal(release.event.value["finalizer"], "ManagedFinalizer");
+  assert.deepEqual(release.event.value["prog"], [
+    { fanout: 1, combinator: "UnanimousPass" },
+  ]);
+
+  const entry = reworkedWall[0];
+  assert.ok(entry?.event.type === "ReleaseTicket");
+  assert.ok(
+    !("finalizer" in entry.event.value),
+    "the finish kind reached the actor",
+  );
+  assert.deepEqual(entry.event.value.prog, [{ fanout: 1 }]);
+  assert.ok(storedJournalLegalOn(config, storedAt(reworkedWall, 1)));
+});
+
+test("a row that completed a ticket without running a finalizer cannot be replayed", () => {
+  const done = walls[5];
+  assert.ok(done !== undefined);
+  const finisherFree = {
+    ...done,
+    rec: {
+      label: "ticket-done",
+      transitions: [{ ticket: id(1), from: "Evaluating", to: "Done" } as const],
+      effects: [],
+    },
+  };
+  assert.ok(!replayableDecision(finisherFree));
+  assert.ok(
+    replayableDecision({
+      ...finisherFree,
+      rec: {
+        ...finisherFree.rec,
+        transitions: [
+          { ticket: id(1), from: "Finalizing", to: "Done" } as const,
+        ],
+      },
+    }),
+    "the completion this machine takes is the one out of Finalizing",
+  );
+  assert.ok(
+    !storedJournalLegalOn(config, [{ entry: finisherFree, semantics: 1 }]),
+  );
+});
+
+test("a revoke that transitioned more than its own ticket cannot be replayed", () => {
+  const row = walls[5];
+  assert.ok(row !== undefined);
+  const settles = { ticket: id(1), from: "Pending", to: "Revoked" } as const;
+  const cascaded = {
+    ...row,
+    rec: {
+      label: "ticket-revoked",
+      transitions: [
+        settles,
+        { ticket: id(2), from: "Pending", to: "Escalated" } as const,
+      ],
+      effects: ["CancelTicketWork", "OpenHumanTask"],
+    },
+  };
+  assert.ok(!replayableDecision(cascaded));
+  assert.ok(
+    replayableDecision({
+      ...cascaded,
+      rec: { ...cascaded.rec, transitions: [settles] },
+    }),
+    "the revoke this machine takes transitions its own ticket alone",
+  );
+  assert.ok(!storedJournalLegalOn(config, [{ entry: cascaded, semantics: 1 }]));
 });

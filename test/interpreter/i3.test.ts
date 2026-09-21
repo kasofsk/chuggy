@@ -355,7 +355,7 @@ test("an open action admits exactly the answers the actor's enablement accepts",
   for (const reason of reasonTags) {
     for (const resumeAt of resumeTags) {
       const post = coreOf([
-        ticketOn(refinementInstance, "ManagedFinalizer", {
+        ticketOn(refinementInstance, {
           phase: "Escalated",
           reason,
           resumeAt,

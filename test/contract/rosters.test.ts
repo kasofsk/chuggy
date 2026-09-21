@@ -21,12 +21,10 @@ import {
   draftStates,
   dispatchViewResults,
   escalationReasons,
-  evaluationCombinators,
   executionCapabilities,
   executionOutcomes,
   executionStatuses,
   executionTaskKinds,
-  finalizers,
   nativeActionKindResolutions,
   nativeActionKinds,
   nativeActionResolutions,
@@ -107,10 +105,6 @@ import {
   phaseTags,
   reasonTags,
   resumeTags,
-} from "../../src/domain/generated/modelTypes.ts";
-import type {
-  Combinator,
-  Finalizer,
 } from "../../src/domain/generated/modelTypes.ts";
 import {
   allAttemptEvidence,
@@ -387,14 +381,6 @@ test("the authoring rosters are exhaustive over the model unions", () => {
     Released: true,
     Deleted: true,
   };
-  const combinators: Record<Combinator, true> = {
-    UnanimousPass: true,
-    AnyPass: true,
-  };
-  const finalizer: Record<Finalizer, true> = {
-    NoFinalizer: true,
-    ManagedFinalizer: true,
-  };
   const provenance: Record<ConfigurationRevisionProvenance["source"], true> = {
     Authored: true,
     Repository: true,
@@ -416,8 +402,6 @@ test("the authoring rosters are exhaustive over the model unions", () => {
     DuplicatePath: true,
   };
   assert.deepEqual(sorted(draftStates), keysOf(states));
-  assert.deepEqual(sorted(evaluationCombinators), keysOf(combinators));
-  assert.deepEqual(sorted(finalizers), keysOf(finalizer));
   assert.deepEqual(sorted(configurationProvenanceSources), keysOf(provenance));
   assert.deepEqual(sorted(configurationReadinesses), keysOf(readiness));
   assert.deepEqual(sorted(repositoryConfigurationFaults), keysOf(faults));

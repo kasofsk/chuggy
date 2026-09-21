@@ -5,7 +5,6 @@ import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
   canonicalConfigurationOf,
-  checkedDraftLanding,
   checkedDraftPageQuery,
   configurationRevisionSummary,
   draftPageLimitDefault,
@@ -15,10 +14,7 @@ import {
   parseDraftAuthoring,
   releaseConfigurationReadiness,
 } from "../../src/interpreter/authoring.ts";
-import {
-  asBriefCheckLine,
-  asBriefIntent,
-} from "../../src/interpreter/ticketBrief.ts";
+import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { approvalRequiredField } from "../../src/interpreter/finalizerPreparation.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
@@ -45,12 +41,10 @@ test("draft initialization exposes deployment choices with server defaults", () 
   const policy = draftInitializationPolicy(refinementInstance);
   assert.deepEqual(policy.defaults, {
     deps: new Set(),
-    prog: [{ fanout: refinementInstance.nTasks, combinator: "UnanimousPass" }],
+    prog: [{ fanout: refinementInstance.nTasks }],
     workFanout: 1,
-    finalizer: "ManagedFinalizer",
   });
   assert.ok(policy.choices.workFanouts.includes(1));
-  assert.ok(policy.choices.finalizers.includes("ManagedFinalizer"));
 });
 
 test("stage-specific configuration bounds the authored evaluation program", () => {
@@ -78,10 +72,7 @@ test("stage-specific configuration bounds the authored evaluation program", () =
       { ...refinementInstance, maxStages: 4 },
       readiness.configuration,
     ).defaults.prog,
-    [
-      { fanout: 1, combinator: "UnanimousPass" },
-      { fanout: 1, combinator: "UnanimousPass" },
-    ],
+    [{ fanout: 1 }, { fanout: 1 }],
   );
 });
 
@@ -405,31 +396,6 @@ test("a summary answers what its revision decides about finishing and evaluating
       evaluationStagesCount: 2,
     },
   );
-});
-
-/**
- * A ticket authored to run no finalizer has nowhere to land, so a landing on
- * its brief is a pair the store must never hold — whichever door the caller
- * reached it by.
- */
-test("a ticket that runs no finalizer is refused a brief that lands somewhere", () => {
-  const landing = {
-    intent: asBriefIntent("Land it."),
-    links: [],
-    checks: [],
-    finalization: { mode: "Push" },
-  } as const;
-  assert.throws(() => {
-    checkedDraftLanding({
-      authoring: { ...plainAuthoring, finalizer: "NoFinalizer" },
-      brief: landing,
-    });
-  }, /lands nothing/u);
-  checkedDraftLanding({
-    authoring: { ...plainAuthoring, finalizer: "NoFinalizer" },
-    brief: { intent: asBriefIntent("Land it."), links: [], checks: [] },
-  });
-  checkedDraftLanding({ authoring: plainAuthoring, brief: landing });
 });
 
 test("a raw ReleaseTicket is not a public Decide command", () => {
