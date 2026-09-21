@@ -323,6 +323,26 @@ test("a revoke that parked the tickets behind it is replayed, not refused", () =
   );
 });
 
+test("a cascade naming a ticket the fleet never held is refused, not thrown on", () => {
+  const cascaded = cascade[3];
+  assert.ok(cascaded !== undefined);
+  const stranger = cascade.map((entry) =>
+    entry === cascaded
+      ? {
+          ...entry,
+          rec: {
+            ...entry.rec,
+            transitions: [
+              ...entry.rec.transitions,
+              { ticket: id(4), from: "Pending", to: "Escalated" } as const,
+            ],
+          },
+        }
+      : entry,
+  );
+  assert.ok(!storedJournalLegalOn(modelInstance, storedAt(stranger, 2)));
+});
+
 test("the cascade parks its dependents where nothing but a revoke reaches them", () => {
   const parked = storedReplayCore(storedAt(cascade.slice(0, 4), 2));
   assert.equal(ticketAt(parked, id(1)).phase, "Revoked");
