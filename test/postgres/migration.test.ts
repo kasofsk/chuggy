@@ -2030,3 +2030,98 @@ test("an authoring that still names the deleted finalizer no longer decides the 
     );
   });
 });
+
+/** The landing each roster has to take, and one neither may. */
+const landingRosterRows: readonly (readonly [string, string, string])[] = [
+  [
+    "draft_brief_finalization_mode_is_known",
+    "None",
+    `UPDATE draft_brief SET finalization_mode='None'`,
+  ],
+  [
+    "draft_brief_finalization_mode_is_known",
+    "Nowhere",
+    `UPDATE draft_brief SET finalization_mode='Nowhere'`,
+  ],
+  [
+    "project_repository_landing_mode_is_known",
+    "None",
+    `UPDATE project_repository SET landing_mode='None'`,
+  ],
+  [
+    "project_repository_landing_mode_is_known",
+    "Nowhere",
+    `UPDATE project_repository SET landing_mode='Nowhere'`,
+  ],
+];
+
+test("both landing rosters take the mode that lands nothing and no other new one", async () => {
+  await migrationDatabase("threedeletions_none", async (subject) => {
+    await postgresMigrate(subject);
+    await seedProposingBinding(subject);
+    assert.deepEqual(
+      await createdProposingDraft(subject, "refs/heads/rt/work"),
+      [{ result: "Created", ticket: "1" }],
+    );
+    for (const [constraint, mode, written] of landingRosterRows)
+      if (mode === "None")
+        assert.equal(
+          (await subject.query(written)).rowCount,
+          1,
+          `${constraint} takes ${mode}`,
+        );
+      else
+        await assert.rejects(
+          subject.query(written),
+          new RegExp(constraint, "u"),
+          `${constraint} refuses ${mode}`,
+        );
+  });
+});
+
+/** The two briefs a pre-005 image wrote: one that landed nothing, one that landed. */
+async function briefsBeforeTheLandingRoster(subject: pg.Pool): Promise<void> {
+  await undeletedInstallation(subject);
+  await seedProposingBinding(subject);
+  for (const authoring of [
+    deletionFinalizerAuthoring(),
+    encodeDraftAuthoring(plainAuthoring),
+  ])
+    await subject.query(
+      `SELECT result FROM ${draftCreateFunction}(
+         'tenant-91','project-91','revision-91','digest-91',0,$1,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'refs/heads/rt/work',
+         NULL,NULL,'bound-91','User','author')`,
+      [authoring],
+    );
+}
+
+test("a brief that recorded no landing is migrated to the one that lands nothing", async () => {
+  await migrationDatabase("threedeletions_landing", async (subject) => {
+    await briefsBeforeTheLandingRoster(subject);
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT ticket::text AS ticket,finalization_mode FROM draft_brief ORDER BY ticket",
+        )
+      ).rows,
+      [
+        { ticket: "1", finalization_mode: null },
+        { ticket: "2", finalization_mode: "PullRequest" },
+      ],
+      "the image before this one recorded no landing for the draft that landed nothing",
+    );
+    assert.ok((await postgresMigrate(subject)).includes(migration005.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT ticket::text AS ticket,finalization_mode FROM draft_brief ORDER BY ticket",
+        )
+      ).rows,
+      [
+        { ticket: "1", finalization_mode: "None" },
+        { ticket: "2", finalization_mode: "PullRequest" },
+      ],
+    );
+  });
+});

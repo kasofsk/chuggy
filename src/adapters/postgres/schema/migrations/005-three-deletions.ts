@@ -44,6 +44,18 @@ import type { Migration } from "../shared.ts";
  * FINALIZER. A draft that lands nothing is a landing choice rather than a
  * finalizer choice, so the authoring no longer answers the question and the
  * landing is resolved for every draft the way it was resolved for the rest.
+ *
+ * `None` JOINS THE TWO LANDING ROSTERS BY WIDENING, WHICH IS WHY IT NEEDS NO
+ * ARM IN THE GUARD. A widened check revalidates the same rows and admits
+ * strictly more of them, so there is no stored row it can refuse and nothing
+ * for the guard to look for.
+ *
+ * A BRIEF THAT RECORDED NO LANDING RECORDED THE ONE THAT LANDS NOTHING, AND IS
+ * REWRITTEN TO SAY SO. The two functions above are the only writers of
+ * `draft_brief`, and every branch but the removed arm resolved a landing:
+ * `coalesce` of the brief's mode, the repository's, and `Push` is never null.
+ * So a null `finalization_mode` is exactly a draft whose authoring named the
+ * finalizer that lands nothing, which is what `None` is the name for now.
  */
 
 export const migration005: Migration = {
@@ -233,6 +245,12 @@ export const migration005: Migration = {
     `ALTER TABLE public.native_action
        DROP CONSTRAINT native_action_reason_check,
        ADD CONSTRAINT native_action_reason_check CHECK (((reason = ANY (ARRAY['NoReason'::text, 'WorkFailed'::text, 'ReworkBudgetExhausted'::text, 'ExecutionPolicyDenied'::text, 'TicketConfigIncompatible'::text, 'ExecutionProfileUnavailable'::text, 'RuntimeVersionUnsupported'::text, 'RequiredCapabilityUnavailable'::text])) OR ((state <> 'Open'::text) AND (reason = 'DependencyRevoked'::text))))`,
+    `ALTER TABLE public.draft_brief
+       DROP CONSTRAINT draft_brief_finalization_mode_is_known,
+       ADD CONSTRAINT draft_brief_finalization_mode_is_known CHECK ((finalization_mode = ANY (ARRAY['Push'::text, 'PullRequest'::text, 'PullRequestMerge'::text, 'None'::text])))`,
+    `ALTER TABLE public.project_repository
+       DROP CONSTRAINT project_repository_landing_mode_is_known,
+       ADD CONSTRAINT project_repository_landing_mode_is_known CHECK ((landing_mode = ANY (ARRAY['Push'::text, 'PullRequest'::text, 'PullRequestMerge'::text, 'None'::text])))`,
     `ALTER TABLE public.dispatch_candidate
        DROP COLUMN finalizer`,
     `UPDATE public.dispatch_candidate
@@ -240,5 +258,8 @@ export const migration005: Migration = {
               SELECT string_agg(format('{"fanout":%s}', stage->>'fanout'), ',' ORDER BY position)
                 FROM jsonb_array_elements(program::jsonb)
                   WITH ORDINALITY AS stages(stage, position)), '') || ']'`,
+    `UPDATE public.draft_brief
+        SET finalization_mode = 'None'
+      WHERE finalization_mode IS NULL`,
   ],
 };
