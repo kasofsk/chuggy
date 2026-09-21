@@ -123,7 +123,7 @@ run_suite "model/tests/execution_requirement_test.qnt" model/tests/execution_req
 # They name their runs for what they are, so the selection is named here too:
 # quint's default takes `Test` and would take none of them.
 echo "--- witnesses"
-for w in free rework cascade stage sparse gate gate_deadline dependency wrapup_none; do
+for w in resume rework cascade stage sparse gate dependency wrapup_none; do
 	run_suite "witness $w" --match 'Witness$' \
 		--main="chuggy_witness_${w}_test" \
 		model/tests/chuggy_witness_test.qnt
@@ -136,17 +136,15 @@ for r in unit witness hazard; do
 done
 
 echo "--- invariants (randomized)"
-for i in budgeted deadline_only retryfree; do
-	if out="$("$QUINT" run model/mc/mc_chuggy.qnt --main="mc_chuggy_${i}" \
+if out="$("$QUINT" run model/mc/mc_chuggy.qnt --main=mc_chuggy \
 		--invariant=allInvariants --max-samples=2000 --max-steps=40 2>&1)"; then
-		continue
-	else
-		rc=$?
-	fi
+	:
+else
+	rc=$?
 	# A refuted invariant announces itself and carries the seed to reproduce it.
-	verdict "instance $i" "$rc" "$out" '\[violation\]' \
-		"instance $i violated an invariant"
-done
+	verdict "ticket instance" "$rc" "$out" '\[violation\]' \
+		"the ticket instance violated an invariant"
+fi
 
 if out="$("$QUINT" run model/mc/mc_runner.qnt --main=mc_registered_runner \
 		--invariant=allInvariants --max-samples=2000 --max-steps=30 2>&1)"; then

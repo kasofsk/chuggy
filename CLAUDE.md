@@ -8,7 +8,7 @@ A job orchestrator: tickets form a DAG, a single journaled actor drives each thr
 
 **`model/` is the specification.** The written standards that used to sit beside it were removed rather than maintained alongside it, and they have not come back. So the tree states what is true of itself in two places, and both are checkable:
 
-- **`model/`** — the machine, its measure, its refinement and its suites. What it proves, it proves; nothing restates a proved property in prose.
+- **`model/`** — the machine, its refinement and its suites. What it proves, it proves; nothing restates a proved property in prose.
 - **each gate's own header** — every script in `.chug/tasks/` opens by stating the rule it enforces. The rule and its enforcement cannot drift apart, because they are the same file, and the argument for either is in the commit that made it. `.chug/tasks/review-change.md` is the same arrangement for the rules no script can decide: a reviewer is what enforces them, so they are written in the reviewer's own brief.
 
 This file is the entry point: it routes to those two and holds the conventions neither can.

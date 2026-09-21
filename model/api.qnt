@@ -6,7 +6,7 @@
 /// generator fails closed when an alias reaches a Quint construct it cannot
 /// represent faithfully in TypeScript and Zod.
 module chuggy_api {
-  import chuggy_measure.* from "./measure"
+  import chuggy_ticket.* from "./ticket"
   import chuggy_refinement.* from "./refinement"
   import chuggy_identity.* from "./identity"
 
@@ -18,9 +18,7 @@ module chuggy_api {
   type ApiVerdict = Verdict
   type ApiCombinator = Combinator
   type ApiStage = Stage
-  type ApiFinalizationPricing = FinalizationPricing
-  type ApiReworkPolicy = ReworkPolicy
-  type ApiRetryPricing = RetryPricing
+  type ApiEvaluationFailureDisposition = EvaluationFailureDisposition
   type ApiResume = Resume
   type ApiReason = Reason
   type ApiFinalizationOutcome = FinalizationOutcome

@@ -18,7 +18,7 @@
 /// (effect-then-journal, which double-spends).
 ///
 /// PLATFORM CAPTURE, the formal guard made concrete: the domain machine
-/// (domain.qnt/measure.qnt) contains NO vocabulary from this file — no
+/// (domain.qnt/ticket.qnt) contains NO vocabulary from this file — no
 /// journal, no cursor, no crash, and no fabric. Every runtime shape must
 /// refine the SAME machine: a controller/CRD shape, or a second fabric,
 /// writes a SIBLING of this module — its own state, its own seams — and
@@ -29,7 +29,7 @@
 /// deployment choice rather than a core one.
 ///
 /// SEVERABILITY: this file is layered ON the domain — nothing in
-/// model/{measure,domain}.qnt or the mc instances reads it, and no
+/// model/{ticket,domain}.qnt or the mc instances reads it, and no
 /// earlier stage of the model gate does. Deleting refinement.qnt and its
 /// tests leaves the rest of the model standing, except that domain.qnt
 /// keeps its pure exports (the Core-parameterized enablement forms and
@@ -109,15 +109,14 @@
 ///     journal write. Memory is lost; recovery replays a journal that
 ///     never saw the decision — the book says it never happened, the
 ///     world already acted on it (orphans). The actor then legitimately
-///     re-decides, re-charges, re-emits: two Jobs for one journaled
-///     charge (noDoubleSpentBudget violated), or the same candidate
+///     re-decides, re-emits: two task fan-outs for one journaled
+///     decision (noDoubleSpentWork violated), or the same candidate
 ///     merged twice (noDuplicateCycle violated) — while the domain
 ///     machine, which sees only the journaled history, stays green on
 ///     every invariant. The hazard is kept reproducible by
-///     CONFIGURATION of the step relation (the house pattern: the
-///     livelock is a RetryFree instance; the double-spend is the
-///     rstepHazard relation), with the deterministic expected-violation
-///     runs in tests/chuggy_refinement_test.qnt as the gate.
+///     CONFIGURATION of the step relation (rstepHazard), with the
+///     deterministic expected-violation runs in
+///     tests/chuggy_refinement_test.qnt as the gate.
 ///
 /// THE ACTOR'S DECIDE STEP IS THE DOMAIN DECIDER — structurally. Every
 /// actor action draws its picks from the domain's OWN enablement sets
@@ -146,11 +145,11 @@
 ///      untouched, the domain-visible trace of any disciplined run IS
 ///      the journal's record sequence — the projection is the identity
 ///      on decisions.
-///   2. NO DOUBLE-SPENT BUDGET / NO DUPLICATE CYCLE ACROSS CRASHES
-///      (noDoubleSpentBudget, noDuplicateCycle, journalCoversWorld;
+///   2. NO DOUBLE-SPENT WORK / NO DUPLICATE CYCLE ACROSS CRASHES
+///      (noDoubleSpentWork, noDuplicateCycle, journalCoversWorld;
 ///      journalCompletionsMatchLedger is the journal-side half): under
 ///      journal-then-effect, crash/recover at ANY seam never runs more
-///      paid work in the world than the journal charged (per ticket:
+///      work in the world than the journal recorded (per ticket:
 ///      distinct-decision spawn emissions <= journaled spawn decisions)
 ///      and never lands one ticket's diff twice (distinct-decision
 ///      completion emissions <= 1). Effects between the journal position
@@ -174,10 +173,10 @@
 ///      chuggy_refinement_hazard_test): under effect-first, a crash
 ///      between effect and journal double-spends on recovery —
 ///      deterministic machine traces pin the dispatch double-spend (two
-///      world task fan-outs, one journaled gas charge), the REWORK
-///      double-spend (the rework fan-out launches, the
-///      charge is lost with the crash, the re-decided rework charges
-///      once for two Jobs), and the duplicate cycle (the same candidate
+///      world task fan-outs, one journaled decision), the REWORK
+///      double-spend (the rework fan-out launches, the decision is lost
+///      with the crash, and the re-decided rework launches it again),
+///      and the duplicate cycle (the same candidate
 ///      squash-merged twice, the journal showing one clean completion) —
 ///      each expected-violation step asserted alongside allInvariants,
 ///      because the domain machine CANNOT see the hazard: that blindness
@@ -207,30 +206,20 @@
 /// This module embeds the domain machine, so its state space is the
 /// domain's TIMES the journal — the instance is fixed TINY, at the
 /// smallest consts that exercise a REWORK (a rework is where the
-/// double-spend bites: it is the re-entry that charges): N_TICKETS = 2
-/// (deps/grouping stay expressible), N_TASKS = 1 (singleton task sets),
-/// BudgetedRework(1) + GAS = 3 (dispatch + one eval rework + one gate rework
-/// all affordable, walls reachable), Budgeted(1), RetryCharged (the
-/// (staging and partition provisioning are orthogonal to the seam —
-/// each collapses to its documented degeneration; the wrap-up's
-/// invalidated draw still exercises both paths). Unlike the mc
-/// instances there is no per-pricing spread: the seam model reads no
-/// account, so one pricing suffices — the domain instances keep that
-/// coverage.
+/// double-spend bites: it is the re-entry that launches work again):
+/// N_TICKETS = 2 (deps stay expressible), N_TASKS = 1 (singleton task
+/// sets), MAX_STAGES = 1 (one stage is enough to fail; the stage advance
+/// is the domain instance's coverage, not the seam's). The wrap-up's
+/// invalidated draw still exercises both paths.
 ///
 /// THE JOURNAL BOUND, honestly: the journal grows by one entry per
-/// decision, forever retained — the measure NEVER reads it (like
-/// Ticket.record: append-only provenance, it could only climb). Its
-/// length is finite under EXACTLY the conditions the per-ticket liveness
-/// sketch is stated under (measure.qnt header): non-exempt decisions are
-/// bounded by descent of the finite measure; AUTHORING rows by
-/// the release cap; STUTTER rows (journaled duplicate-absorptions) by
-/// the fabric's finitely-many-duplicates assumption; CHURN rows are
-/// bounded under RetryCharged (this instance's metering) and unbounded
-/// under RetryFree — the same conditionality, inherited, not new. An
-/// implementation compacts by snapshot; snapshots are an implementation
-/// concern (a snapshot is a replay prefix, sound by recoveryComplete)
-/// and are not modeled.
+/// decision, forever retained, and nothing reads it but replay (like
+/// Ticket.record: append-only provenance). Its length is bounded by
+/// nothing in this model: a run's decisions are bounded by the authors
+/// who release and the operators who resume, which is where this machine
+/// deliberately stops. An implementation compacts by snapshot; snapshots
+/// are an implementation concern (a snapshot is a replay prefix, sound by
+/// recoveryComplete) and are not modeled.
 ///
 /// ==========================================================================
 /// Quint 0.32 notes (hard-won; do not "simplify" these away)
@@ -250,23 +239,19 @@
 ///   - Imports are not re-exported: downstream modules (the tests) see
 ///     this module's OWN defs only, so the handful of domain-instance
 ///     names the tests assert on are re-exposed as wrapper vals at the
-///     bottom (allDomainInvariants, memCore, obs, measureNow,
-///     measurePrev).
+///     bottom (allDomainInvariants, memCore, obs).
 ///   - Invariants live with the vars they read: the domain's inside
 ///     chuggy_domain, this layer's here (they read journal/applied/
 ///     worldEffects/orphans, declared here).
 module chuggy_refinement {
-  import chuggy_measure.* from "./measure"
+  import chuggy_ticket.* from "./ticket"
 
   /// The embedded domain machine — the actor's in-memory state IS this
   /// instance's vars. Consts per the scale-discipline note above.
   import chuggy_domain(
     N_TICKETS = 2,
     N_TASKS = 1,
-    REWORK_POLICY = BudgetedRework(1),
-    GAS = 3,
-    FINALIZATION_PRICING = Budgeted(1),
-     MAX_STAGES = 1
+    MAX_STAGES = 1
   ).* from "./domain"
 
   // ==========================================================================
@@ -286,14 +271,12 @@ module chuggy_refinement {
 
   type DecisionEvent =
       ReleaseTicket({ ticket: int, deps: Set[int], prog: List[Stage],
-        workFanout: int, reworkPolicy: ReworkPolicy,
-        finalizationPricing: FinalizationPricing, resumePricing: RetryPricing,
-        finalizer: Finalizer })
+        workFanout: int, finalizer: Finalizer })
     | Revoke(int)
     | Dispatch(int)
     | TaskDone({ ticket: int, tid: int, verdict: Verdict, result: TaskResultRef })
     | WorkReduce(int)
-    | EvalReduce(int)
+    | EvalReduce({ ticket: int, onFailure: EvaluationFailureDisposition })
     | FinalizationResult({ ticket: int, out: FinalizationOutcome })
     | ExecutionBlocked({ ticket: int, reason: Reason })
     | ResumeTicket(int)
@@ -322,12 +305,12 @@ module chuggy_refinement {
   /// function, so they cannot drift.
   pure def execDecisionEvent(c: Core, event: DecisionEvent): Decision = match event {
     | ReleaseTicket(a) => decideReleaseTicket(c, a.ticket, a.deps, a.prog,
-        a.workFanout, a.reworkPolicy, a.finalizationPricing, a.resumePricing, a.finalizer)
+        a.workFanout, a.finalizer)
     | Revoke(j) => decideRevoke(c, j)
     | Dispatch(j) => decideDispatch(c, j)
     | TaskDone(a) => decideTaskDone(c, a.ticket, a.tid, a.verdict)
     | WorkReduce(j) => decideWorkReduce(c, j)
-    | EvalReduce(j) => decideEvalStageReduce(c, j)
+    | EvalReduce(a) => decideEvalStageReduce(c, a.ticket, a.onFailure)
     | FinalizationResult(a) => decideFinalizationResult(c, a.ticket, a.out)
     | ExecutionBlocked(a) => decideExecutionBlocked(c, a.ticket, a.reason)
     | ResumeTicket(j) => decideResumeTicket(c, j)
@@ -346,13 +329,10 @@ module chuggy_refinement {
         a.deps.subseteq(dependableIn(c)),
         validPrograms.contains(a.prog),
         workFanoutChoices.contains(a.workFanout),
-        reworkPolicyChoices.contains(a.reworkPolicy),
-        finalizationPricingChoices.contains(a.finalizationPricing),
-        resumePricingChoices.contains(a.resumePricing),
         finalizerChoices.contains(a.finalizer)
       }
     | Revoke(j) => revocablesIn(c).contains(j)
-    | Dispatch(j) => and { readiesIn(c).contains(j), dispatchableIn(c, j) }
+    | Dispatch(j) => readiesIn(c).contains(j)
     | TaskDone(a) => and {
         taskPhaseIn(c).contains(a.ticket),
         a.result.manifest >= 1,
@@ -362,7 +342,10 @@ module chuggy_refinement {
           t.id == a.tid and t.state == Outstanding)
       }
     | WorkReduce(j) => reducibleWorkIn(c).contains(j)
-    | EvalReduce(j) => reducibleEvalIn(c).contains(j)
+    | EvalReduce(a) => and {
+        reducibleEvalIn(c).contains(a.ticket),
+        dispositionChoices.contains(a.onFailure)
+      }
     | FinalizationResult(a) => c.tickets.keys().contains(a.ticket) and
         finalizationOutcomes.contains(a.out) and
         finalizationOutcomeEnabled(c, a.ticket, a.out)
@@ -404,9 +387,8 @@ module chuggy_refinement {
   // ==========================================================================
   // What the world DOES with an emission is trusted fabric; what the
   // theorems need is arithmetic over which DECISIONS reached it. A
-  // "spawn" emission runs a paid task fan-out (the SpawnWorkTasks
-  // effect — dispatch, both rework arms, the Working resumes: every one
-  // rides a charged account per the domain's descent table); a "completion"
+  // "spawn" emission runs a task fan-out (the SpawnWorkTasks effect —
+  // dispatch, both rework arms, the Working resumes); a "completion"
   // emission merges the ticket's diff (the ticket-done success step).
   // Attribution is transitions[0].ticket: every effect-bearing record's
   // head transition is the stepped ticket (domain.qnt move/completeTicket).
@@ -573,14 +555,9 @@ module chuggy_refinement {
     nondet deps_ = dependableTickets.powerset().oneOf()
     nondet prog = validPrograms.oneOf()
     nondet workFanout_ = workFanoutChoices.oneOf()
-    nondet reworkPolicy_ = reworkPolicyChoices.oneOf()
-    nondet finalizationPricing_ = finalizationPricingChoices.oneOf()
-    nondet resumePricing_ = resumePricingChoices.oneOf()
     nondet finalizer_ = finalizerChoices.oneOf()
     journalStep(ReleaseTicket({ ticket: j, deps: deps_, prog: prog,
-      workFanout: workFanout_, reworkPolicy: reworkPolicy_,
-      finalizationPricing: finalizationPricing_, resumePricing: resumePricing_,
-      finalizer: finalizer_ }))
+      workFanout: workFanout_, finalizer: finalizer_ }))
   }
   action actorRevoke = all {
     revocableTickets.size() > 0,
@@ -608,7 +585,8 @@ module chuggy_refinement {
   action actorEvalReduce = all {
     reducibleEval.size() > 0,
     nondet j = reducibleEval.oneOf()
-    journalStep(EvalReduce(j))
+    nondet onFailure = dispositionChoices.oneOf()
+    journalStep(EvalReduce({ ticket: j, onFailure: onFailure }))
   }
   action actorFinalizationResult = all {
     finalizerTickets.size() > 0,
@@ -626,9 +604,9 @@ module chuggy_refinement {
   // --- The hazard roster (rstepHazard only): the effect-first seam on ------
   // the world-effect-bearing decisions. The seam exists at EVERY
   // decision; these are the ones whose orphaned effects the
-  // theorems price — the paid spawns (dispatch, the eval-rework, the
-  // gate eviction's respawn) and the wrap-up resolutions (the dequeue's
-  // fast-path squash, the gated promotion). An orphaned bookkeeping
+  // theorems count — the spawns (dispatch, the eval-rework, the
+  // finalization failure's respawn) and the wrap-up resolutions (the
+  // dequeue's fast-path squash, the gated promotion). An orphaned bookkeeping
   // effect (OpenHumanTask, OpenHumanTask, ...) is the same shape with
   // nothing priced riding it — journalCoversWorld still flags it; the
   // demonstration keeps to the shapes the theorems name.
@@ -641,7 +619,8 @@ module chuggy_refinement {
   action hazardEvalReduce = all {
     reducibleEval.size() > 0,
     nondet j = reducibleEval.oneOf()
-    effectCrash(EvalReduce(j))
+    nondet onFailure = dispositionChoices.oneOf()
+    effectCrash(EvalReduce({ ticket: j, onFailure: onFailure }))
   }
   action hazardFinalizationResult = all {
     finalizerTickets.size() > 0,
@@ -701,13 +680,12 @@ module chuggy_refinement {
   /// under the hazard, on the very crash step.
   val journalCoversWorld: bool = orphans.length() == 0
 
-  /// THEOREM 2, budget half — NO DOUBLE-SPENT BUDGET across crashes: the
-  /// world never runs more paid work for a ticket than the journal
-  /// charged (every journaled spawn decision rides a charged account —
-  /// domain descent table; re-emissions are the same decision, absorbed
-  /// by seq). Under the hazard, an orphaned spawn is a Job the book
-  /// never charged — the flows-analysis double-spend.
-  val noDoubleSpentBudget: bool = liveTickets.forall(j =>
+  /// THEOREM 2, work half — NO DOUBLE-SPENT WORK across crashes: the
+  /// world never runs more work for a ticket than the journal recorded
+  /// (re-emissions are the same decision, absorbed by seq). Under the
+  /// hazard, an orphaned spawn is a task fan-out the book never recorded
+  /// — the flows-analysis double-spend.
+  val noDoubleSpentWork: bool = liveTickets.forall(j =>
     worldSpawns(j) <= journalSpawns(j))
 
   /// THEOREM 2, cycle half — NO DUPLICATE CYCLE: the world lands a
@@ -743,7 +721,7 @@ module chuggy_refinement {
   val refinementInvariants: bool = and {
     refinementCore,
     journalCoversWorld,
-    noDoubleSpentBudget,
+    noDoubleSpentWork,
     noDuplicateCycle
   }
 
@@ -759,6 +737,4 @@ module chuggy_refinement {
   /// The last DOMAIN step's record (stale across emit/crash steps —
   /// those are not domain steps; rlabel carries this layer's trace).
   val obs: StepRecord = lastStep
-  val measureNow: int = currentMeasure
-  val measurePrev: int = prevMeasure
 }

@@ -1,11 +1,10 @@
 /**
- * The corpus fires every step label and every `stepDescends` exemption arm the
- * model declares, and it does so per instance rather than only in aggregate.
+ * The corpus fires every step label the model declares, and each row contains
+ * what its manifest row says it was aimed at.
  *
- * This fails the corpus rather than reporting on it. An exemption arm nothing
- * exercises is either dead code or an unreviewed weakening of the descent
- * theorem, and `model/domain.qnt` says so in its own header: no arm without a
- * run that fires it. A corpus is the run.
+ * This fails the corpus rather than reporting on it. A label no golden fires is
+ * an edge of the machine nothing replays, which is the same as an edge the
+ * implementation is free to get wrong.
  */
 
 import { test } from "node:test";
@@ -13,36 +12,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import {
-  decodeTrace,
-  field,
-  stateValue,
-  type ItfValue,
-} from "../itf/decode.ts";
-import {
-  declaredArms,
-  declaredLabels,
-  loadCorpus,
-  UNREACHABLE_LABEL,
-  type Fired,
-} from "./corpus.ts";
+import { decodeTrace, field, stateValue } from "../itf/decode.ts";
+import { declaredLabels, loadCorpus, UNREACHABLE_LABEL } from "./corpus.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
-
-/**
- * What only each instance can contribute, from this plan's per-instance table.
- * This is the hand-maintained half and the part of the check to distrust
- * first: which labels an instance can reach is not a declaration a grep can
- * read, unlike the two rosters above it.
- */
-const INSTANCE_OWES: Record<string, readonly string[]> = {
-  mc_chuggy_budgeted: [
-    "ticket-escalated finalization_budget_exhausted",
-    "ticket-escalated rework_budget_exhausted",
-  ],
-  mc_chuggy_deadline_only: ["ticket-escalated gas_exhausted"],
-  mc_chuggy_retryfree: ["arm:ticket-resumed, RetryFree pipeline flavor"],
-};
 
 const corpus = loadCorpus();
 
@@ -79,18 +52,12 @@ test("every manifest row records what reproduces it", () => {
   }
 });
 
-test("the declared rosters are read from the model, not from this file", () => {
+test("the declared roster is read from the model, not from this file", () => {
   const labels = declaredLabels(ROOT);
-  const arms = declaredArms(ROOT);
   assert.ok(labels.has("init"), "the label roster did not parse");
   assert.ok(
     labels.has(UNREACHABLE_LABEL),
     "the guarded label is not in the roster",
-  );
-  assert.ok(arms.length > 0, "the exemption-arm roster did not parse");
-  assert.ok(
-    arms.includes("init"),
-    "the arm roster did not parse; it should name the first step of every run",
   );
 });
 
@@ -98,7 +65,7 @@ test("every reachable label the model declares is fired somewhere in the corpus"
   const declared = declaredLabels(ROOT);
   const fired = corpus.firedAcross();
   const missing = [...declared].filter(
-    (l) => l !== UNREACHABLE_LABEL && !fired.labels.has(l),
+    (l) => l !== UNREACHABLE_LABEL && !fired.has(l),
   );
   assert.deepEqual(
     missing,
@@ -110,39 +77,9 @@ test("every reachable label the model declares is fired somewhere in the corpus"
 test("the guarded label is not fired, because the model asserts it unreachable", () => {
   const fired = corpus.firedAcross();
   assert.ok(
-    !fired.labels.has(UNREACHABLE_LABEL),
+    !fired.has(UNREACHABLE_LABEL),
     `${UNREACHABLE_LABEL} appears in the corpus; the model says its guard refuses it`,
   );
-});
-
-test("every exemption arm the model declares is fired somewhere in the corpus", () => {
-  const arms = declaredArms(ROOT);
-  const fired = corpus.firedAcross();
-  const missing = arms.filter((a) => !fired.arms.has(a));
-  assert.deepEqual(
-    missing,
-    [],
-    `these stepDescends arms are exercised by no golden, so each is dead code or an unreviewed weakening: ${missing.join(", ")}`,
-  );
-});
-
-test("each instance contributes what only it can", () => {
-  for (const [instance, owed] of Object.entries(INSTANCE_OWES)) {
-    const fired = corpus.firedFor(instance);
-    assert.ok(
-      corpus.rows.some((r) => r.instance === instance),
-      `${instance} has no golden at all, so it contributes nothing`,
-    );
-    for (const item of owed) {
-      const isArm = item.startsWith("arm:");
-      const name = isArm ? item.slice(4) : item;
-      const has = isArm ? fired.arms.has(name) : fired.labels.has(name);
-      assert.ok(
-        has,
-        `${instance} owes ${item} and no golden of that instance fires it; a corpus-wide check would have passed here`,
-      );
-    }
-  }
 });
 
 test("every golden's first state is the init step", () => {
@@ -185,9 +122,9 @@ test("an aimed golden actually contains what it was aimed at", () => {
       aimed?.[1],
       `${row.name} is aimed by an invariant this test cannot read: ${row.invariant}`,
     );
-    const fired: Fired = corpus.firedForRow(row);
+    const fired = corpus.firedForRow(row);
     assert.ok(
-      fired.labels.has(aimed[1]),
+      fired.has(aimed[1]),
       `${row.name} is aimed at ${aimed[1]} and does not contain it; the row's aim and its file have drifted`,
     );
   }
@@ -206,20 +143,19 @@ test("the corpus is small enough that a reviewer can read a regeneration diff", 
   );
 });
 
-test("a decoded state carries the ghosts the descent argument reads", () => {
+test("a decoded state carries the ghosts the replayer reads", () => {
   const row = corpus.rows[0];
   assert.ok(row, "the corpus is empty");
   const trace = decodeTrace(row.trace);
   const first = trace.states[0];
   assert.ok(first, `${row.name}: no states`);
-  for (const suffix of ["::prevMeasure", "::prevRecords", "::tickets"]) {
+  for (const suffix of ["::prevRecords", "::tickets"]) {
     const name = trace.vars.find((v) => v.endsWith(suffix));
     assert.ok(
       name,
       `no ${suffix} variable; the replayer would have nothing to compare`,
     );
-    const value: ItfValue = stateValue(first, name);
-    assert.ok(value !== undefined);
+    assert.ok(stateValue(first, name) !== undefined);
   }
 });
 
@@ -245,7 +181,7 @@ test("the corpus spans every instance the model declares", () => {
     "utf8",
   )
     .split("\n")
-    .flatMap((line) => /^module (mc_chuggy_\w+)/.exec(line)?.[1] ?? []);
+    .flatMap((line) => /^module (mc_chuggy\w*)/.exec(line)?.[1] ?? []);
   assert.ok(declared.length > 0, "no instances parsed out of the model");
   for (const instance of declared) {
     assert.ok(
