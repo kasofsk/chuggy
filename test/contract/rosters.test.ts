@@ -21,12 +21,13 @@ import {
   configurationReadinesses,
   draftStates,
   dispatchViewResults,
-  escalationReasons,
+  escalationKinds,
   executionCapabilities,
   executionOutcomes,
   executionStatuses,
   executionTaskKinds,
   finalizationUnavailableKinds,
+  gitEvidences,
   nativeActionKindResolutions,
   nativeActionKinds,
   nativeActionResolutions,
@@ -104,8 +105,8 @@ import {
   leadRefusalsObservedMax,
 } from "../../src/interpreter/selector.ts";
 import {
+  escalationTags,
   phaseTags,
-  reasonTags,
   resumeTags,
 } from "../../src/domain/generated/modelTypes.ts";
 import {
@@ -118,6 +119,7 @@ import {
 import type { ExecutionTaskKind } from "../../src/interpreter/executionScheduler.ts";
 import {
   allFinalizationHoldKinds,
+  allGitEvidence,
   type FinalizationHoldKind,
 } from "../../src/interpreter/finalizer.ts";
 import type {
@@ -173,21 +175,30 @@ function keysOf(record: Readonly<Record<string, true>>): readonly string[] {
 
 const sorted = (values: readonly string[]) => [...values].sort();
 
-test("the escalation reasons are the model's, less the absent one", () => {
+test("the escalation kinds are the model's, less the absent one", () => {
   assert.deepEqual(
-    [...escalationReasons],
-    reasonTags.filter((tag) => tag !== "NoReason"),
+    [...escalationKinds],
+    escalationTags.filter((tag) => tag !== "NoEscalation"),
   );
 });
 
 /**
- * The walls are the scheduler's and not the model's: the machine has one reason
- * for all five, and the wire carries the wall beside it as the evidence that
- * reason stops carrying. So this is held against the interpreter, and the order
- * is the one `execution_blocked_reason_is_known` declares.
+ * The walls are the scheduler's and not the model's: the machine has one
+ * escalation for all five, and the wire carries the wall beside it as the
+ * evidence that escalation stops carrying. So this is held against the
+ * interpreter, in the order `execution_blocked_reason_is_known` declares.
  */
 test("the blocked reasons are the interpreter's", () => {
   assert.deepEqual([...blockedReasons], [...allBlockedReasons]);
+});
+
+/**
+ * The git labels are the third evidence roster and the one no relation bounds,
+ * a source nobody could read leaving no row behind, so this restatement is the
+ * only place the wire's copy is held against the interpreter's.
+ */
+test("the git evidences are the interpreter's", () => {
+  assert.deepEqual([...gitEvidences], [...allGitEvidence]);
 });
 
 /**

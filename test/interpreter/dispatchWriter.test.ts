@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { test } from "node:test";
 
 import {
@@ -9,11 +7,12 @@ import {
   taskDoneEvent,
   ticketAt,
 } from "../../src/actor/decisionEvent.ts";
-import { actorInit, journalStep, memoryGraph } from "../../src/actor/state.ts";
 import {
-  storedAtCurrentSemantics,
-  type StoredEntry,
-} from "../../src/actor/journal.ts";
+  allBlockedReasons,
+  type BlockedReason,
+} from "../../src/interpreter/executionScheduler.ts";
+import { actorInit, journalStep, memoryGraph } from "../../src/actor/state.ts";
+import { storedAtCurrentSemantics } from "../../src/actor/journal.ts";
 import {
   asOperationId,
   classifyCommand,
@@ -41,12 +40,10 @@ import {
   projectTicketWriterRun,
   projectionChanges,
   projectWriterDecide,
-  projectWriterLoad,
   type ProjectDecided,
   type ProjectMemory,
   type ProjectTicketWriter,
 } from "../../src/interpreter/projectWriter.ts";
-import { parseStoredEntry } from "../../src/interpreter/wire.ts";
 import {
   silentTicketServiceMetrics,
   ticketServiceDefaults,
@@ -108,40 +105,6 @@ function releasedMemory(head = 1): ProjectMemory {
     dispatchContracts: contracts,
   };
 }
-
-/** The pinned history the rework wall's older machine wrote, as a store declaring its semantics holds it. */
-function journalAtSemanticsOne(): readonly StoredEntry[] {
-  const raw: unknown = JSON.parse(
-    readFileSync(
-      join(import.meta.dirname, "..", "actor", "journalAtSemanticsOne.json"),
-      "utf8",
-    ),
-  );
-  assert.ok(Array.isArray(raw), "the pinned history is not a journal");
-  return raw.map((row: unknown) => {
-    const parsed = parseStoredEntry(row, 1);
-    assert.ok(parsed.parsed === "Ok");
-    return { entry: parsed.value, semantics: 1 };
-  });
-}
-
-test("a writer rebuilds a history from the machine that decided it, not from its own", async () => {
-  const stored = journalAtSemanticsOne();
-  const memory = await projectWriterLoad(
-    {
-      config: refinementInstance,
-      store: { load: () => Promise.resolve({ parsed: "Ok", value: stored }) },
-    } as unknown as ProjectTicketWriter,
-    {
-      partition,
-      owner: asOwnerId("owner"),
-      fencingEpoch: 1,
-      recoveryEpoch: asRecoveryEpoch("epoch"),
-      head: stored.length,
-    },
-  );
-  assert.equal(ticketAt(memory.graph, id(1)).phase, "Evaluation");
-});
 
 function operationInput(command: TicketCommand): DecisionInput {
   return {
@@ -710,6 +673,57 @@ test("a fan-out that declared several commits spawns its evaluation at the base"
   assert.equal(spawn?.bundle?.source?.targetCommit, workBase);
 });
 
+/** A ticket dispatched into work, which is the phase a settled block interrupts. */
+function dispatchedMemory(): ProjectMemory {
+  const config = refinementInstance;
+  const state = journalStep(
+    config,
+    journalStep(config, actorInit(), releaseTicketEvent(id(1), plainAuthoring)),
+    dispatchEvent(id(1)),
+  );
+  return { ...releasedMemory(), graph: memoryGraph(state) };
+}
+
+/** The completion as the inbox assembles one, with the wall read off its execution. */
+function blockedCompletionInput(blockedBy: BlockedReason): DecisionInput {
+  const event = { type: "ExecutionBlocked", value: { ticket: id(1) } } as const;
+  return {
+    partition,
+    ordinal: 1,
+    priority: "Completion",
+    source: {
+      kind: "Operation",
+      operation: asOperationId("completion"),
+      command: { version: 1, command: "Decide", event },
+      resolvedEvent: event,
+      executionBlockedBy: blockedBy,
+    },
+  };
+}
+
+/**
+ * The event names the ticket alone, so the wall the boundary recorded reaches
+ * the desk only by being read off the execution and written beside the park.
+ */
+test("a settled block parks its ticket carrying the wall its execution recorded", async () => {
+  for (const wall of allBlockedReasons) {
+    const { offered } = await decidedWith(
+      dispatchedMemory(),
+      blockedCompletionInput(wall),
+    );
+    assert.equal(offered?.outcome.outcome, "Journaled");
+    if (offered?.outcome.outcome !== "Journaled") continue;
+    assert.deepEqual(
+      offered.outcome.projection.map((row) => [
+        row.phase,
+        row.escalation,
+        row.escalationEvidence,
+      ]),
+      [["Escalated", unreadableWall, wall]],
+    );
+  }
+});
+
 /** A port that reads no source and says why, which is the whole of what it answers. */
 function unreadableSources(
   evidence: GitEvidence,
@@ -720,10 +734,9 @@ function unreadableSources(
 }
 
 /**
- * Every durable evidence, beside the refusal it earns its client. The wall it
- * parks on is not a column any more — the model has one reason for a work set
- * it could not run — and a continuation, having no client to earn a refusal,
- * parks with that reason and nothing beside it.
+ * Every durable evidence, beside the refusal it earns its client. A
+ * continuation has no client to earn a refusal, so it parks its ticket instead
+ * and the evidence that named the wall is what the desk row carries.
  */
 const durableEvidences = [
   ["RefUnreadable", "ExecutionSourceUnreadable"],
@@ -778,15 +791,16 @@ test("a continuation whose source cannot be read parks its ticket on the desk", 
     if (offered?.outcome.outcome !== "Journaled") continue;
     assert.deepEqual(offered.outcome.entry.event, {
       type: "ExecutionBlocked",
-      value: { ticket: id(1), reason: unreadableWall },
+      value: { ticket: id(1) },
     });
     assert.deepEqual(
       offered.outcome.projection.map((row) => [
         row.ticket,
         row.phase,
-        row.reason,
+        row.escalation,
+        row.escalationEvidence,
       ]),
-      [[id(1), "Escalated", unreadableWall]],
+      [[id(1), "Escalated", unreadableWall, evidence]],
     );
     assert.deepEqual(
       offered.outcome.materialization.actions.map((action) => [

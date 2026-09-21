@@ -14,10 +14,7 @@ import {
 import type { Entry } from "../../src/actor/journal.ts";
 import { retryableIn } from "../../src/domain/enablement.ts";
 import type { DecisionEvent } from "../../src/domain/generated/modelTypes.ts";
-import {
-  reasonTags,
-  resumeTags,
-} from "../../src/domain/generated/modelTypes.ts";
+import { escalationTags } from "../../src/domain/generated/modelTypes.ts";
 import { actorInit, journalStep, memoryGraph } from "../../src/actor/state.ts";
 import { materializationOf } from "../../src/interpreter/decisionPlan.ts";
 import { inputBundleReferencesOf } from "../../src/interpreter/decisionPlan.ts";
@@ -114,7 +111,7 @@ test("trusted classification reserves safety traffic", () => {
 test("a completion is no command a principal may offer, and a writer still reads one", () => {
   for (const event of [
     taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
-    executionBlockedEvent(id(1), "WorkExecutionUnavailableEscalated"),
+    executionBlockedEvent(id(1)),
   ]) {
     assert.throws(
       () => asOperationDecisionEvent(event),
@@ -242,7 +239,7 @@ test("a decision leaving escalation withdraws its open native action", () => {
   const escalated = journalStep(
     refinementInstance,
     working,
-    executionBlockedEvent(id(1), "WorkExecutionUnavailableEscalated"),
+    executionBlockedEvent(id(1)),
   );
   const revoked = journalStep(
     refinementInstance,
@@ -350,35 +347,30 @@ function continuationInput(): DecisionInput {
   };
 }
 
+/**
+ * Every wall derives a resume, so enablement accepts both answers at every one
+ * of them and an action offering fewer would be short of what the actor takes.
+ */
 test("an open action admits exactly the answers the actor's enablement accepts", () => {
-  const offered = new Set<string>();
-  for (const reason of reasonTags) {
-    for (const resumeAt of resumeTags) {
-      const post = graphOf([
-        ticketOn(refinementInstance, {
-          phase: "Escalated",
-          reason,
-          resumeAt,
-        }),
-      ]);
-      const planned = materializationOf(
-        continuationInput(),
-        graphOf([]),
-        post,
-        parkEntry(),
-      );
-      const expected = retryableIn(post, id(1))
-        ? ["Resume", "Revoke"]
-        : ["Revoke"];
-      assert.deepEqual(
-        planned.actions[0]?.resolutions,
-        expected,
-        [reason, resumeAt].join("/"),
-      );
-      offered.add(expected.join(","));
-    }
+  for (const escalation of escalationTags) {
+    if (escalation === "NoEscalation") continue;
+    const post = graphOf([
+      ticketOn(refinementInstance, { phase: "Escalated", escalation }),
+    ]);
+    const planned = materializationOf(
+      continuationInput(),
+      graphOf([]),
+      post,
+      parkEntry(),
+    );
+    assert.ok(retryableIn(post, id(1)), escalation);
+    assert.equal(planned.actions[0]?.escalation, escalation);
+    assert.deepEqual(
+      planned.actions[0]?.resolutions,
+      ["Resume", "Revoke"],
+      escalation,
+    );
   }
-  assert.deepEqual([...offered].sort(), ["Resume,Revoke", "Revoke"]);
 });
 
 test("a decision that leaves a ticket where it found it withdraws nothing", () => {

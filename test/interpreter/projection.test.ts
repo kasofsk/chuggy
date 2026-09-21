@@ -38,7 +38,9 @@ import type {
   Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
+import { resumeOf } from "../../src/domain/ticket.ts";
 import {
+  IntegrityContradiction,
   projectionChanges,
   projectionOf,
 } from "../../src/interpreter/projectWriter.ts";
@@ -105,8 +107,7 @@ test("a decision reports exactly the tickets whose complete state changed", () =
         ticket: id(1),
         phase: "Work",
         dependable: true,
-        reason: "NoReason",
-        resumeAt: "NoResume",
+        escalation: "NoEscalation",
       },
     ],
   );
@@ -126,8 +127,7 @@ test("a decision reports exactly the tickets whose complete state changed", () =
         ticket: id(1),
         phase: "Work",
         dependable: true,
-        reason: "NoReason",
-        resumeAt: "NoResume",
+        escalation: "NoEscalation",
       },
     ],
   );
@@ -145,8 +145,7 @@ test("a release is a change although it transitions nothing", () => {
       ticket: id(1),
       phase: "Pending",
       dependable: true,
-      reason: "NoReason",
-      resumeAt: "NoResume",
+      escalation: "NoEscalation",
     },
   ]);
 });
@@ -163,8 +162,8 @@ function outstandingTask(graph: TicketGraph): number {
 
 /**
  * A ticket reworked once, walled by the next evaluation failure and resumed off
- * that wall: the states whose resume point the projection exists to carry, and
- * the only ones where `resumeAt` is anything but the absent value.
+ * that wall: the states whose escalation the projection exists to carry, and
+ * the only ones where it is anything but the absent value.
  */
 function walledHistory(): readonly DecisionEvent[] {
   const events: DecisionEvent[] = [
@@ -210,11 +209,7 @@ function walledHistory(): readonly DecisionEvent[] {
 
 /** What the row claims about the ticket, read off the ticket itself. */
 function ticketFacts(ticket: Ticket) {
-  return {
-    phase: ticket.phase,
-    reason: ticket.reason,
-    resumeAt: ticket.resumeAt,
-  };
+  return { phase: ticket.phase, escalation: ticket.escalation };
 }
 
 test("every projected row is the graph the step it names left behind", () => {
@@ -226,11 +221,38 @@ test("every projected row is the graph the step it names left behind", () => {
     assert.ok(row !== undefined);
     assert.deepEqual(ticketFacts(ticketAt(graph, id(1))), {
       phase: row.phase,
-      reason: row.reason,
-      resumeAt: row.resumeAt,
+      escalation: row.escalation,
     });
-    seen.push(`${row.phase}/${row.resumeAt}`);
+    seen.push(`${row.phase}/${resumeOf(row.escalation)}`);
   }
   assert.ok(seen.includes("Escalated/ResumeRework"));
   assert.equal(seen.at(-1), "Work/NoResume");
+});
+
+/**
+ * The evidence is the fabric's account of the wall and no ticket holds it, so
+ * the row carries what the decision was told and only on the row it is about.
+ */
+test("a decision's evidence lands on the ticket it escalated and no other", () => {
+  const graph = walledHistory()
+    .slice(0, -1)
+    .reduce((state, event) => execDecisionEvent(state, event).post, genesis);
+  assert.equal(ticketAt(graph, id(1)).escalation, "EvaluationFailureEscalated");
+  assert.deepEqual(
+    projectionOf(graph, { ticket: id(1), evidence: "RefUnreadable" }),
+    [
+      {
+        ticket: id(1),
+        phase: "Escalated",
+        dependable: true,
+        escalation: "EvaluationFailureEscalated",
+        escalationEvidence: "RefUnreadable",
+      },
+    ],
+  );
+  const resumed = execDecisionEvent(graph, resumeTicketEvent(id(1))).post;
+  assert.throws(
+    () => projectionOf(resumed, { ticket: id(1), evidence: "RefUnreadable" }),
+    IntegrityContradiction,
+  );
 });
