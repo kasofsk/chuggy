@@ -66,7 +66,7 @@ import {
 } from "./ticketAttemptHeld.ts";
 import { DataPanel, PanelUnready } from "./DataPanel.tsx";
 import { drawBytes } from "./ports.ts";
-import { ActionWithCost } from "./ui/ActionWithCost.tsx";
+import { OfferedAction } from "./ui/OfferedAction.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
@@ -251,11 +251,10 @@ function ActionButtons(props: {
           props.actions.map((offered) => offered.action),
         );
         return (
-          <ActionWithCost
+          <OfferedAction
             key={action.action}
             action={action.action}
             effect={effect.effect}
-            {...(effect.cost === undefined ? {} : { cost: effect.cost })}
             {...(effect.more === undefined ? {} : { more: effect.more })}
             {...(effect.refusedBecause === undefined
               ? {}

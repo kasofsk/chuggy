@@ -288,11 +288,12 @@ test("a superseded cycle says which cycle replaced its artifact", async () => {
   expect(superseded.textContent).toContain("Superseded");
 });
 
-test("the resume states what it re-runs, and that it is free", async () => {
+test("the resume states what it re-runs", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
   expect(screen.getByRole("button", { name: "Resume" })).toBeDefined();
-  const resumeAct = screen.getByText(/Reworks · new artifact/u).closest(".act");
-  expect(resumeAct?.textContent).toContain("free");
+  expect(
+    screen.getByText(/Reworks · new artifact/u).closest(".act"),
+  ).not.toBeNull();
 });
 
 test("every section of the main body has an anchor pointing at it", async () => {
@@ -534,8 +535,9 @@ test("a resume the wire stamped is offered before the draft arrives", async () =
     withDraft: false,
   });
   expect(screen.getByRole("button", { name: "Resume" })).toBeDefined();
-  const resumeAct = screen.getByText(/Reworks · new artifact/u).closest(".act");
-  expect(resumeAct?.textContent).toContain("free");
+  expect(
+    screen.getByText(/Reworks · new artifact/u).closest(".act"),
+  ).not.toBeNull();
   expect(screen.queryByText(/only Revoke exits this wall/u)).toBeNull();
 });
 
@@ -660,7 +662,6 @@ test("a resume this page has not read draws no price at all", async () => {
   });
   const act = screen.getByText("Not read yet").closest(".act");
   expect(act?.textContent).toContain("Not read yet");
-  expect(act?.textContent).not.toContain("free");
 });
 
 /**

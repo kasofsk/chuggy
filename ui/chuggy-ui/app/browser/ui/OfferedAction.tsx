@@ -1,6 +1,6 @@
 /**
- * A mutation and what answering it does: the button, one fragment of effect
- * with its cost, and at most one more.
+ * A mutation and what answering it does: the button, one fragment of effect,
+ * and at most one more.
  *
  * Total over `actionStates` — ready, busy, refused, and offered-not-at-all —
  * each in the full form the ticket page draws and the compact form a table row
@@ -20,7 +20,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "./Button.tsx";
 
-import "./ActionWithCost.css";
+import "./OfferedAction.css";
 
 export const actionStates = ["ready", "busy", "refused", "absent"] as const;
 
@@ -30,10 +30,9 @@ export const actionForms = ["full", "compact"] as const;
 
 export type ActionForm = (typeof actionForms)[number];
 
-export interface ActionWithCostProps {
+export interface OfferedActionProps {
   readonly action: string;
   readonly effect: string;
-  readonly cost?: string;
   readonly more?: string;
   readonly busy?: boolean;
   readonly refusedBecause?: string;
@@ -43,7 +42,7 @@ export interface ActionWithCostProps {
   readonly onChoose: () => void;
 }
 
-export function actionStateOf(props: ActionWithCostProps): ActionState {
+export function actionStateOf(props: OfferedActionProps): ActionState {
   if (props.offered === false) return "absent";
   if (props.refusedBecause !== undefined) return "refused";
   return props.busy === true ? "busy" : "ready";
@@ -51,7 +50,6 @@ export function actionStateOf(props: ActionWithCostProps): ActionState {
 
 function ActionLines(props: {
   readonly effect: string;
-  readonly cost: string | undefined;
   readonly more: string | undefined;
   readonly refusedBecause: string | undefined;
   readonly describedBy: string;
@@ -64,9 +62,6 @@ function ActionLines(props: {
         id={props.describedBy}
       >
         {props.effect}
-        {props.cost === undefined ? null : (
-          <span className="act-cost"> · {props.cost}</span>
-        )}
       </p>
       {props.more === undefined || props.hidden ? null : (
         <p className="act-more">{props.more}</p>
@@ -95,7 +90,7 @@ function ActionAbsent(props: {
   );
 }
 
-export function ActionWithCost(props: ActionWithCostProps): ReactNode {
+export function OfferedAction(props: OfferedActionProps): ReactNode {
   const describedBy = useId();
   const state = actionStateOf(props);
   const compact = props.variant === "compact";
@@ -119,7 +114,6 @@ export function ActionWithCost(props: ActionWithCostProps): ReactNode {
       </div>
       <ActionLines
         effect={props.effect}
-        cost={props.cost}
         more={props.more}
         refusedBecause={props.refusedBecause}
         describedBy={describedBy}

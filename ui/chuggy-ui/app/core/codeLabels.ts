@@ -202,16 +202,13 @@ export function approvalLabel(required: boolean): string {
 }
 
 /**
- * What a mutation does, what it costs, and at most one consequence that
- * matters. `cost` is absent where the page has not read what the machine would
- * charge, because a price is a figure like any other and a wrong one is worse
- * than none; `offered` is false only where the machine admits no such answer at
- * all, and `refusedBecause` is the other shape, an answer that exists beside a
- * screen that cannot offer it yet.
+ * What a mutation does and at most one consequence that matters. `offered` is
+ * false only where the machine admits no such answer at all, and
+ * `refusedBecause` is the other shape, an answer that exists beside a screen
+ * that cannot offer it yet.
  */
 export interface ActionEffect {
   readonly effect: string;
-  readonly cost?: string;
   readonly more?: string;
   readonly offered: boolean;
   readonly refusedBecause?: string;
@@ -249,8 +246,8 @@ function resumeEffect(point: ResumePoint): string {
 }
 
 /** An answer the machine admits, which is every one but a resume with no point. */
-function offered(effect: string, cost: string): ActionEffect {
-  return { effect, cost, offered: true };
+function offered(effect: string): ActionEffect {
+  return { effect, offered: true };
 }
 
 /**
@@ -292,14 +289,14 @@ export function resumeActionEffect(
         refusedBecause: resumeNotReadReason,
       };
     case "Offered":
-      return offered(resumeEffect(offer.point), "free");
+      return offered(resumeEffect(offer.point));
   }
 }
 
 /**
  * What answering the action does to the ticket. A resume is named by the point
  * the machine stamped, which is why it takes the offer rather than the word
- * alone; every action is free, dispatch and resume included.
+ * alone.
  */
 export function ticketActionEffect(
   action: TicketActionName,
@@ -308,15 +305,15 @@ export function ticketActionEffect(
 ): ActionEffect {
   switch (action) {
     case "Dispatch":
-      return offered("Dispatches the observed version", "free");
+      return offered("Dispatches the observed version");
     case "Resume":
       return resumeActionEffect(resume, exits);
     case "Revoke":
-      return offered("Parks every dependent ticket", "free");
+      return offered("Parks every dependent ticket");
     case "Approve":
-      return offered("Lets finalization proceed", "free");
+      return offered("Lets finalization proceed");
     case "Decline":
-      return offered("Holds finalization back", "free");
+      return offered("Holds finalization back");
   }
 }
 

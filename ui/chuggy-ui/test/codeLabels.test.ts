@@ -91,13 +91,12 @@ test("a detail line names only the facts the page holds", () => {
   );
 });
 
-test("a resume states what it re-runs, what it costs, and what it keeps", () => {
+test("a resume states what it re-runs", () => {
   const effect = ticketActionEffect("Resume", {
     kind: "Offered",
     point: "ResumeEvaluating",
   });
   expect(effect.effect).toBe("Re-runs evaluation from stage 1");
-  expect(effect.cost).toBe("free");
 });
 
 test("a rework-wall resume says it reworks", () => {
@@ -106,7 +105,6 @@ test("a rework-wall resume says it reworks", () => {
     point: "ResumeReworking",
   });
   expect(effect.effect).toBe("Reworks · new artifact");
-  expect(effect.cost).toBe("free");
 });
 
 test("a wall with no resume point offers nothing and says which exit is left", () => {
@@ -117,8 +115,6 @@ test("a wall with no resume point offers nothing and says which exit is left", (
   expect(effect.effect).toBe("Nothing to resume");
   expect(effect.more).toBe("only Revoke exits this wall");
   expect(effect.offered).toBe(false);
-  expect(effect.cost).toBe(undefined);
-  expect(ticketActionEffect("Revoke", { kind: "NoPoint" }).cost).toBe("free");
 });
 
 /**
@@ -156,24 +152,22 @@ test("a resume this page has not read enough for is refused, not denied", () => 
   expect(effect.refusedBecause).toBe(resumeNotReadReason);
   expect(effect.more).toBe(undefined);
   expect(effect.effect).not.toContain("Revoke");
-  expect(effect.cost).toBe(undefined);
 });
 
 /**
  * Every point the machine can stamp draws the effect its own decider gives it
- * (`model/domain.qnt`): both work resumes respawn the work set, and every
- * resume is free — resume carries no account to draw from.
+ * (`model/domain.qnt`): both work resumes respawn the work set.
  */
-test("every resume point draws the effect the machine gives it, and is free", () => {
+test("every resume point draws the effect the machine gives it", () => {
   const drawn = resumePoints.map((point) => {
     const effect = resumeActionEffect({ kind: "Offered", point }, []);
-    return [point, effect.effect, effect.cost];
+    return [point, effect.effect];
   });
   expect(drawn).toEqual([
-    ["ResumeWorking", "Re-runs the work · new artifact", "free"],
-    ["ResumeReworking", "Reworks · new artifact", "free"],
-    ["ResumeEvaluating", "Re-runs evaluation from stage 1", "free"],
-    ["ResumeFinalizing", "Re-runs finalization", "free"],
+    ["ResumeWorking", "Re-runs the work · new artifact"],
+    ["ResumeReworking", "Reworks · new artifact"],
+    ["ResumeEvaluating", "Re-runs evaluation from stage 1"],
+    ["ResumeFinalizing", "Re-runs finalization"],
   ]);
 });
 
