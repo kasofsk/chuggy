@@ -345,7 +345,9 @@ module chuggy_domain {
 
   /// Ready -> Work: launch a cycle for the ticket THE SELECTOR PROPOSED.
   /// Work is ONE task-set phase (one work task per cycle; Work is not
-  /// staged), ids sequential within the ticket.
+  /// staged), and the cycle counter — with `stageGeneration` for an
+  /// evaluation — is what makes each identity a ticket names one no earlier
+  /// task of it ever carried.
   ///
   /// THE AGENTIC SELECTOR: this decider makes the accepted dispatch
   /// proposal first-class — j
