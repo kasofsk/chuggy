@@ -59,6 +59,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import { assertNever } from "../../domain/assertNever.ts";
 import { asTicketId, type TicketId } from "../../domain/ids.ts";
 import {
   allCommitPermitStates,
@@ -79,6 +80,9 @@ import {
   type CommitPermitId,
   type FinalizationAttempt,
   type FinalizationClaim,
+  type FinalizationConclusion,
+  type FinalizationHeld,
+  type FinalizationHoldRecord,
   type FinalizationOffer,
   type FinalizationSubmitted,
   type FinalizationView,
@@ -219,6 +223,12 @@ function finalizerViewOf(
 interface SubmissionRow {
   readonly result: string | null;
   readonly operation: string | null;
+}
+
+/** What the hold door returned about one recorded hold, the count absent from a refusal. */
+interface HoldRow {
+  readonly result: string | null;
+  readonly hold_passes: number | null;
 }
 
 /** What one claimed row grants its holder. */
@@ -612,6 +622,36 @@ async function finalizerInvalidate(
   );
 }
 
+/**
+ * Records what one pass left a request held at, through the one function that
+ * may write those columns. The claim goes with it because the count is written
+ * every pass where a conclusion is written once: a second finalizer holding a
+ * lapsed lease would otherwise count the same hold a second time and halve the
+ * dwell before the desk hears about it.
+ */
+async function finalizerRecordHold(
+  client: pg.PoolClient,
+  record: FinalizationHoldRecord,
+): Promise<FinalizationHeld> {
+  const { claim } = record;
+  const held = await client.query<HoldRow>(
+    sql`SELECT result, hold_passes FROM record_finalization_hold(
+      ${claim.partition.tenant},${claim.partition.project},${claim.request},
+      ${record.kind ?? null},${claim.owner},${claim.claimGeneration},
+      ${claim.requestGeneration},${claim.recoveryEpoch})`,
+  );
+  const row = held.rows[0];
+  if (row === undefined)
+    throw new Error("postgres finalizer: the hold door returned no verdict");
+  if (row.result === "UnknownRequest") return { held: "UnknownRequest" };
+  if (row.result === "BindingMismatch") return { held: "BindingMismatch" };
+  if (row.result === "Recorded" && row.hold_passes !== null)
+    return { held: "Recorded", passes: row.hold_passes };
+  throw new Error(
+    `postgres finalizer: ${String(row.result)} is not a verdict this door returns`,
+  );
+}
+
 /** Narrows the door's verdict to the closed set the port declares. */
 function finalizerSubmissionOf(row: SubmissionRow): FinalizationSubmitted {
   if (row.result === "Submitted" || row.result === "AlreadySubmitted") {
@@ -633,6 +673,28 @@ function finalizerSubmissionOf(row: SubmissionRow): FinalizationSubmitted {
 }
 
 /**
+ * The one evidence slot the door takes, which each outcome fills with what it
+ * concluded on: the failure a preparation priced, the kind the request is
+ * recorded as held at, and nothing at all for a success. An outcome added to
+ * the roster is a compile error here rather than a submission that silently
+ * carries no evidence.
+ */
+function finalizerFailureKindOf(
+  conclusion: FinalizationConclusion,
+): string | null {
+  switch (conclusion.outcome) {
+    case "FinalizationSucceeded":
+      return null;
+    case "FinalizationNeedsWork":
+      return conclusion.kind;
+    case "FinalizationResultUnavailable":
+      return conclusion.kind;
+    default:
+      return assertNever(conclusion);
+  }
+}
+
+/**
  * Offers one conclusion to the one authenticated door. What the envelope says is
  * the function's own work; what this passes is the binding it claims to hold,
  * and a project that will admit no result at all retires the request.
@@ -642,8 +704,7 @@ async function finalizerSubmitResult(
   offer: FinalizationOffer,
 ): Promise<FinalizationSubmitted> {
   const { claim, conclusion } = offer;
-  const failure =
-    conclusion.outcome === "FinalizationNeedsWork" ? conclusion.kind : null;
+  const failure = finalizerFailureKindOf(conclusion);
   const operation = `finalization-${randomUUID()}`;
   const submitted = await client.query<SubmissionRow>(
     sql`SELECT result, operation FROM submit_finalization_result(
@@ -759,6 +820,10 @@ export function postgresFinalizer(
         finalizerPermitHolds(client, epoch, permitsMax),
       );
     },
+    recordHold: (record) =>
+      postgresTransaction(pool, (client) =>
+        finalizerRecordHold(client, record),
+      ),
     submitResult: (offer) =>
       postgresTransaction(pool, (client) =>
         finalizerSubmitResult(client, offer),

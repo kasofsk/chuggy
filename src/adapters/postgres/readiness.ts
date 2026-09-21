@@ -194,9 +194,11 @@ interface FinalizationAttemptRow {
 
 /**
  * The immutable evidence a failed result concluded on, read from the attempt
- * the submission pinned rather than from the request's latest one. A succeeded
- * result spawns no work, so nothing is gathered for one — which is also the
- * only submission that names no attempt, a failure always having prepared one.
+ * the submission pinned rather than from the request's latest one. The other
+ * two gather none and name no attempt, a failure always having prepared one: a
+ * success spawns no work for evidence to be about, and an unavailable result
+ * reached no attempt to read — what held it is recorded on the request, which
+ * is where the desk reads it and not something a decision has to carry.
  */
 async function finalizationEvidenceOf(
   pool: pg.Pool,
