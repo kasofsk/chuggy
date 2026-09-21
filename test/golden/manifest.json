@@ -15,7 +15,7 @@
       "invariant": "",
       "steps": 30,
       "quintVersion": "0.32.0",
-      "purpose": "The unaimed walk. It is where the ordinary labels come from — released, dispatched, task-done, settled and the desk-only revoke — without any of them being asked for."
+      "purpose": "The unaimed walk. It is where the ordinary labels come from \u2014 released, dispatched, task-done, settled and the desk-only revoke \u2014 without any of them being asked for."
     },
     {
       "name": "execution-blocked",
@@ -27,7 +27,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"ticket-escalated execution_blocked\"",
-      "steps": 8,
+      "steps": 3,
       "quintVersion": "0.32.0",
       "purpose": "Infrastructure refuses to run an intact contract. It is not failed work: the set retires as cancelled and the wall names its own reason."
     },
@@ -55,7 +55,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"rework-started finalization_failed\"",
-      "steps": 14,
+      "steps": 12,
       "quintVersion": "0.32.0",
       "purpose": "A finalizer reports failure and the ticket re-enters work. There is no wall on this edge: the finalizer that keeps failing keeps buying cycles."
     },
@@ -69,7 +69,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"ticket-escalated work_failed\"",
-      "steps": 9,
+      "steps": 10,
       "quintVersion": "0.32.0",
       "purpose": "The work wall: the work set resolves Failed and the whole cycle escalates, parking the ticket at ResumeWorking with an open desk task."
     },
@@ -83,7 +83,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"rework-started eval_failure\"",
-      "steps": 13,
+      "steps": 12,
       "quintVersion": "0.32.0",
       "purpose": "The Rework disposition on a failing evaluation: the stage retires and the ticket re-enters Working with a fresh work set. Its pair is rework-budget-exhausted, which is the same failure taken the other way."
     },
@@ -97,7 +97,7 @@
       "maxSamples": 20000,
       "maxSteps": 60,
       "invariant": "lastStep.label != \"ticket-escalated rework_budget_exhausted\"",
-      "steps": 31,
+      "steps": 39,
       "quintVersion": "0.32.0",
       "purpose": "The Escalate disposition on a failing evaluation: the same state as rework-started-eval-failure, parked at the desk instead of reworked."
     },
@@ -111,7 +111,7 @@
       "maxSamples": 20000,
       "maxSteps": 60,
       "invariant": "not(lastStep.label == \"ticket-resumed\" and lastStep.transitions.foldl(false, (b, t) => b or (t.to == Working and tickets.get(t.ticket).record.length() > 0 and tickets.get(t.ticket).record[tickets.get(t.ticket).record.length() - 1].kind != Work)))",
-      "steps": 32,
+      "steps": 40,
       "quintVersion": "0.32.0",
       "purpose": "The desk sends an escalated ticket back: the last thing in its record is the evaluation stage that failed, so this is the evaluation wall's exit, and it re-enters Working with a fresh work set rather than a second opinion on the old artifact."
     },
@@ -125,23 +125,9 @@
       "maxSamples": 60000,
       "maxSteps": 60,
       "invariant": "not(lastStep.label == \"ticket-done\" and lastStep.transitions.foldl(false, (b, t) => b or t.from == Finalizing))",
-      "steps": 44,
+      "steps": 23,
       "quintVersion": "0.32.0",
-      "purpose": "A managed finalizer draws FinalizationSucceeded and the ticket completes Finalizing -> Done — the completion route that runs a finalizer at all. nofinalizer-completion is the other one."
-    },
-    {
-      "name": "nofinalizer-completion",
-      "instance": "mc_chuggy",
-      "module": "mc_chuggy_directed",
-      "source": "model/mc/mc_chuggy_directed.qnt",
-      "step": "gateLoopStep",
-      "seed": "0x1",
-      "maxSamples": 60000,
-      "maxSteps": 60,
-      "invariant": "not(lastStep.label == \"ticket-done\" and lastStep.transitions.foldl(false, (b, t) => b or t.from == Evaluating))",
-      "steps": 14,
-      "quintVersion": "0.32.0",
-      "purpose": "A ticket authored NoFinalizer completes Evaluating -> Done: its passing final stage IS its completion, so it never enters Finalizing and no finalizer runs."
+      "purpose": "The finalizer draws FinalizationSucceeded and the ticket completes Finalizing -> Done. It is the only completion route this machine has: a passing final stage always runs a finalizer first."
     }
   ]
 }
