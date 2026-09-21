@@ -783,7 +783,7 @@
               "#bigint": "1"
             },
             "to": {
-              "tag": "Working",
+              "tag": "Work",
               "value": {
                 "#tup": []
               }
@@ -833,7 +833,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Working",
+                "tag": "Work",
                 "value": {
                   "#tup": []
                 }
@@ -873,7 +873,7 @@
                       "#bigint": "1"
                     },
                     "kind": {
-                      "tag": "Work",
+                      "tag": "WorkTask",
                       "value": {
                         "#tup": []
                       }
@@ -1129,7 +1129,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Working",
+                "tag": "Work",
                 "value": {
                   "#tup": []
                 }
@@ -1169,7 +1169,7 @@
                       "#bigint": "1"
                     },
                     "kind": {
-                      "tag": "Work",
+                      "tag": "WorkTask",
                       "value": {
                         "#tup": []
                       }
@@ -1380,11 +1380,11 @@
       },
       "mc_chuggy_directed::chuggy_domain::lastStep": {
         "effects": ["OpenHumanTask"],
-        "label": "ticket-escalated work_failed",
+        "label": "ticket-escalated work_failure_escalated",
         "transitions": [
           {
             "from": {
-              "tag": "Working",
+              "tag": "Work",
               "value": {
                 "#tup": []
               }
@@ -1461,7 +1461,7 @@
                 }
               ],
               "reason": {
-                "tag": "WorkFailed",
+                "tag": "WorkFailureEscalated",
                 "value": {
                   "#tup": []
                 }
@@ -1472,7 +1472,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -1489,7 +1489,7 @@
                 }
               ],
               "resumeAt": {
-                "tag": "ResumeWorking",
+                "tag": "ResumeWork",
                 "value": {
                   "#tup": []
                 }
@@ -1707,7 +1707,7 @@
               "#bigint": "1"
             },
             "to": {
-              "tag": "Working",
+              "tag": "Work",
               "value": {
                 "#tup": []
               }
@@ -1727,7 +1727,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -1778,7 +1778,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Working",
+                "tag": "Work",
                 "value": {
                   "#tup": []
                 }
@@ -1807,7 +1807,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -1839,7 +1839,7 @@
                       "#bigint": "2"
                     },
                     "kind": {
-                      "tag": "Work",
+                      "tag": "WorkTask",
                       "value": {
                         "#tup": []
                       }
@@ -2065,7 +2065,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -2116,7 +2116,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Working",
+                "tag": "Work",
                 "value": {
                   "#tup": []
                 }
@@ -2145,7 +2145,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -2177,7 +2177,7 @@
                       "#bigint": "2"
                     },
                     "kind": {
-                      "tag": "Work",
+                      "tag": "WorkTask",
                       "value": {
                         "#tup": []
                       }
@@ -2392,7 +2392,7 @@
         "transitions": [
           {
             "from": {
-              "tag": "Working",
+              "tag": "Work",
               "value": {
                 "#tup": []
               }
@@ -2401,7 +2401,7 @@
               "#bigint": "1"
             },
             "to": {
-              "tag": "Evaluating",
+              "tag": "Evaluation",
               "value": {
                 "#tup": []
               }
@@ -2421,7 +2421,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -2472,7 +2472,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Evaluating",
+                "tag": "Evaluation",
                 "value": {
                   "#tup": []
                 }
@@ -2501,7 +2501,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -2521,7 +2521,7 @@
                     "#bigint": "2"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -2553,7 +2553,7 @@
                       "#bigint": "3"
                     },
                     "kind": {
-                      "tag": "Evaluation",
+                      "tag": "EvaluationTask",
                       "value": {
                         "#bigint": "0"
                       }
@@ -2779,7 +2779,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -2799,7 +2799,7 @@
                   "#bigint": "2"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -2850,7 +2850,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Evaluating",
+                "tag": "Evaluation",
                 "value": {
                   "#tup": []
                 }
@@ -2879,7 +2879,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -2899,7 +2899,7 @@
                     "#bigint": "2"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -2931,7 +2931,7 @@
                       "#bigint": "3"
                     },
                     "kind": {
-                      "tag": "Evaluation",
+                      "tag": "EvaluationTask",
                       "value": {
                         "#bigint": "0"
                       }
@@ -3149,7 +3149,7 @@
         "transitions": [
           {
             "from": {
-              "tag": "Evaluating",
+              "tag": "Evaluation",
               "value": {
                 "#tup": []
               }
@@ -3158,7 +3158,7 @@
               "#bigint": "1"
             },
             "to": {
-              "tag": "Evaluating",
+              "tag": "Evaluation",
               "value": {
                 "#tup": []
               }
@@ -3178,7 +3178,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -3198,7 +3198,7 @@
                   "#bigint": "2"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -3249,7 +3249,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Evaluating",
+                "tag": "Evaluation",
                 "value": {
                   "#tup": []
                 }
@@ -3278,7 +3278,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -3298,7 +3298,7 @@
                     "#bigint": "2"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -3318,7 +3318,7 @@
                     "#bigint": "3"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -3350,7 +3350,7 @@
                       "#bigint": "4"
                     },
                     "kind": {
-                      "tag": "Evaluation",
+                      "tag": "EvaluationTask",
                       "value": {
                         "#bigint": "1"
                       }
@@ -3576,7 +3576,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -3596,7 +3596,7 @@
                   "#bigint": "2"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -3616,7 +3616,7 @@
                   "#bigint": "3"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "0"
                   }
@@ -3667,7 +3667,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Evaluating",
+                "tag": "Evaluation",
                 "value": {
                   "#tup": []
                 }
@@ -3696,7 +3696,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -3716,7 +3716,7 @@
                     "#bigint": "2"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -3736,7 +3736,7 @@
                     "#bigint": "3"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -3768,7 +3768,7 @@
                       "#bigint": "4"
                     },
                     "kind": {
-                      "tag": "Evaluation",
+                      "tag": "EvaluationTask",
                       "value": {
                         "#bigint": "1"
                       }
@@ -3986,7 +3986,7 @@
         "transitions": [
           {
             "from": {
-              "tag": "Evaluating",
+              "tag": "Evaluation",
               "value": {
                 "#tup": []
               }
@@ -3995,7 +3995,7 @@
               "#bigint": "1"
             },
             "to": {
-              "tag": "Working",
+              "tag": "Work",
               "value": {
                 "#tup": []
               }
@@ -4015,7 +4015,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -4035,7 +4035,7 @@
                   "#bigint": "2"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -4055,7 +4055,7 @@
                   "#bigint": "3"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "0"
                   }
@@ -4106,7 +4106,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Working",
+                "tag": "Work",
                 "value": {
                   "#tup": []
                 }
@@ -4135,7 +4135,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -4155,7 +4155,7 @@
                     "#bigint": "2"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -4175,7 +4175,7 @@
                     "#bigint": "3"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -4195,7 +4195,7 @@
                     "#bigint": "4"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "1"
                     }
@@ -4227,7 +4227,7 @@
                       "#bigint": "5"
                     },
                     "kind": {
-                      "tag": "Work",
+                      "tag": "WorkTask",
                       "value": {
                         "#tup": []
                       }
@@ -4453,7 +4453,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -4473,7 +4473,7 @@
                   "#bigint": "2"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -4493,7 +4493,7 @@
                   "#bigint": "3"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "0"
                   }
@@ -4513,7 +4513,7 @@
                   "#bigint": "4"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "1"
                   }
@@ -4564,7 +4564,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Working",
+                "tag": "Work",
                 "value": {
                   "#tup": []
                 }
@@ -4593,7 +4593,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -4613,7 +4613,7 @@
                     "#bigint": "2"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -4633,7 +4633,7 @@
                     "#bigint": "3"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -4653,7 +4653,7 @@
                     "#bigint": "4"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "1"
                     }
@@ -4685,7 +4685,7 @@
                       "#bigint": "5"
                     },
                     "kind": {
-                      "tag": "Work",
+                      "tag": "WorkTask",
                       "value": {
                         "#tup": []
                       }
@@ -4896,11 +4896,11 @@
       },
       "mc_chuggy_directed::chuggy_domain::lastStep": {
         "effects": ["OpenHumanTask"],
-        "label": "ticket-escalated work_failed",
+        "label": "ticket-escalated work_failure_escalated",
         "transitions": [
           {
             "from": {
-              "tag": "Working",
+              "tag": "Work",
               "value": {
                 "#tup": []
               }
@@ -4929,7 +4929,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -4949,7 +4949,7 @@
                   "#bigint": "2"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -4969,7 +4969,7 @@
                   "#bigint": "3"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "0"
                   }
@@ -4989,7 +4989,7 @@
                   "#bigint": "4"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "1"
                   }
@@ -5058,7 +5058,7 @@
                 }
               ],
               "reason": {
-                "tag": "WorkFailed",
+                "tag": "WorkFailureEscalated",
                 "value": {
                   "#tup": []
                 }
@@ -5069,7 +5069,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -5089,7 +5089,7 @@
                     "#bigint": "2"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -5109,7 +5109,7 @@
                     "#bigint": "3"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -5129,7 +5129,7 @@
                     "#bigint": "4"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "1"
                     }
@@ -5149,7 +5149,7 @@
                     "#bigint": "5"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -5166,7 +5166,7 @@
                 }
               ],
               "resumeAt": {
-                "tag": "ResumeWorking",
+                "tag": "ResumeWork",
                 "value": {
                   "#tup": []
                 }
@@ -5384,7 +5384,7 @@
               "#bigint": "1"
             },
             "to": {
-              "tag": "Working",
+              "tag": "Work",
               "value": {
                 "#tup": []
               }
@@ -5404,7 +5404,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -5424,7 +5424,7 @@
                   "#bigint": "2"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -5444,7 +5444,7 @@
                   "#bigint": "3"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "0"
                   }
@@ -5464,7 +5464,7 @@
                   "#bigint": "4"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "1"
                   }
@@ -5484,7 +5484,7 @@
                   "#bigint": "5"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -5535,7 +5535,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Working",
+                "tag": "Work",
                 "value": {
                   "#tup": []
                 }
@@ -5564,7 +5564,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -5584,7 +5584,7 @@
                     "#bigint": "2"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -5604,7 +5604,7 @@
                     "#bigint": "3"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -5624,7 +5624,7 @@
                     "#bigint": "4"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "1"
                     }
@@ -5644,7 +5644,7 @@
                     "#bigint": "5"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -5676,7 +5676,7 @@
                       "#bigint": "6"
                     },
                     "kind": {
-                      "tag": "Work",
+                      "tag": "WorkTask",
                       "value": {
                         "#tup": []
                       }
@@ -5902,7 +5902,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -5922,7 +5922,7 @@
                   "#bigint": "2"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -5942,7 +5942,7 @@
                   "#bigint": "3"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "0"
                   }
@@ -5962,7 +5962,7 @@
                   "#bigint": "4"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "1"
                   }
@@ -5982,7 +5982,7 @@
                   "#bigint": "5"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -6033,7 +6033,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Working",
+                "tag": "Work",
                 "value": {
                   "#tup": []
                 }
@@ -6062,7 +6062,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -6082,7 +6082,7 @@
                     "#bigint": "2"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -6102,7 +6102,7 @@
                     "#bigint": "3"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -6122,7 +6122,7 @@
                     "#bigint": "4"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "1"
                     }
@@ -6142,7 +6142,7 @@
                     "#bigint": "5"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -6174,7 +6174,7 @@
                       "#bigint": "6"
                     },
                     "kind": {
-                      "tag": "Work",
+                      "tag": "WorkTask",
                       "value": {
                         "#tup": []
                       }
@@ -6389,7 +6389,7 @@
         "transitions": [
           {
             "from": {
-              "tag": "Working",
+              "tag": "Work",
               "value": {
                 "#tup": []
               }
@@ -6398,7 +6398,7 @@
               "#bigint": "1"
             },
             "to": {
-              "tag": "Evaluating",
+              "tag": "Evaluation",
               "value": {
                 "#tup": []
               }
@@ -6418,7 +6418,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -6438,7 +6438,7 @@
                   "#bigint": "2"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -6458,7 +6458,7 @@
                   "#bigint": "3"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "0"
                   }
@@ -6478,7 +6478,7 @@
                   "#bigint": "4"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "1"
                   }
@@ -6498,7 +6498,7 @@
                   "#bigint": "5"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -6549,7 +6549,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Evaluating",
+                "tag": "Evaluation",
                 "value": {
                   "#tup": []
                 }
@@ -6578,7 +6578,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -6598,7 +6598,7 @@
                     "#bigint": "2"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -6618,7 +6618,7 @@
                     "#bigint": "3"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -6638,7 +6638,7 @@
                     "#bigint": "4"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "1"
                     }
@@ -6658,7 +6658,7 @@
                     "#bigint": "5"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -6678,7 +6678,7 @@
                     "#bigint": "6"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -6710,7 +6710,7 @@
                       "#bigint": "7"
                     },
                     "kind": {
-                      "tag": "Evaluation",
+                      "tag": "EvaluationTask",
                       "value": {
                         "#bigint": "0"
                       }
@@ -6936,7 +6936,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -6956,7 +6956,7 @@
                   "#bigint": "2"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -6976,7 +6976,7 @@
                   "#bigint": "3"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "0"
                   }
@@ -6996,7 +6996,7 @@
                   "#bigint": "4"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "1"
                   }
@@ -7016,7 +7016,7 @@
                   "#bigint": "5"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -7036,7 +7036,7 @@
                   "#bigint": "6"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -7087,7 +7087,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Evaluating",
+                "tag": "Evaluation",
                 "value": {
                   "#tup": []
                 }
@@ -7116,7 +7116,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -7136,7 +7136,7 @@
                     "#bigint": "2"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -7156,7 +7156,7 @@
                     "#bigint": "3"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -7176,7 +7176,7 @@
                     "#bigint": "4"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "1"
                     }
@@ -7196,7 +7196,7 @@
                     "#bigint": "5"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -7216,7 +7216,7 @@
                     "#bigint": "6"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -7248,7 +7248,7 @@
                       "#bigint": "7"
                     },
                     "kind": {
-                      "tag": "Evaluation",
+                      "tag": "EvaluationTask",
                       "value": {
                         "#bigint": "0"
                       }
@@ -7466,7 +7466,7 @@
         "transitions": [
           {
             "from": {
-              "tag": "Evaluating",
+              "tag": "Evaluation",
               "value": {
                 "#tup": []
               }
@@ -7475,7 +7475,7 @@
               "#bigint": "1"
             },
             "to": {
-              "tag": "Evaluating",
+              "tag": "Evaluation",
               "value": {
                 "#tup": []
               }
@@ -7495,7 +7495,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -7515,7 +7515,7 @@
                   "#bigint": "2"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -7535,7 +7535,7 @@
                   "#bigint": "3"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "0"
                   }
@@ -7555,7 +7555,7 @@
                   "#bigint": "4"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "1"
                   }
@@ -7575,7 +7575,7 @@
                   "#bigint": "5"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -7595,7 +7595,7 @@
                   "#bigint": "6"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -7646,7 +7646,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Evaluating",
+                "tag": "Evaluation",
                 "value": {
                   "#tup": []
                 }
@@ -7675,7 +7675,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -7695,7 +7695,7 @@
                     "#bigint": "2"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -7715,7 +7715,7 @@
                     "#bigint": "3"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -7735,7 +7735,7 @@
                     "#bigint": "4"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "1"
                     }
@@ -7755,7 +7755,7 @@
                     "#bigint": "5"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -7775,7 +7775,7 @@
                     "#bigint": "6"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -7795,7 +7795,7 @@
                     "#bigint": "7"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -7827,7 +7827,7 @@
                       "#bigint": "8"
                     },
                     "kind": {
-                      "tag": "Evaluation",
+                      "tag": "EvaluationTask",
                       "value": {
                         "#bigint": "1"
                       }
@@ -8053,7 +8053,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -8073,7 +8073,7 @@
                   "#bigint": "2"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -8093,7 +8093,7 @@
                   "#bigint": "3"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "0"
                   }
@@ -8113,7 +8113,7 @@
                   "#bigint": "4"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "1"
                   }
@@ -8133,7 +8133,7 @@
                   "#bigint": "5"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -8153,7 +8153,7 @@
                   "#bigint": "6"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -8173,7 +8173,7 @@
                   "#bigint": "7"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "0"
                   }
@@ -8224,7 +8224,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Evaluating",
+                "tag": "Evaluation",
                 "value": {
                   "#tup": []
                 }
@@ -8253,7 +8253,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -8273,7 +8273,7 @@
                     "#bigint": "2"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -8293,7 +8293,7 @@
                     "#bigint": "3"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -8313,7 +8313,7 @@
                     "#bigint": "4"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "1"
                     }
@@ -8333,7 +8333,7 @@
                     "#bigint": "5"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -8353,7 +8353,7 @@
                     "#bigint": "6"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -8373,7 +8373,7 @@
                     "#bigint": "7"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -8405,7 +8405,7 @@
                       "#bigint": "8"
                     },
                     "kind": {
-                      "tag": "Evaluation",
+                      "tag": "EvaluationTask",
                       "value": {
                         "#bigint": "1"
                       }
@@ -8623,7 +8623,7 @@
         "transitions": [
           {
             "from": {
-              "tag": "Evaluating",
+              "tag": "Evaluation",
               "value": {
                 "#tup": []
               }
@@ -8632,7 +8632,7 @@
               "#bigint": "1"
             },
             "to": {
-              "tag": "Finalizing",
+              "tag": "Finalization",
               "value": {
                 "#tup": []
               }
@@ -8652,7 +8652,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -8672,7 +8672,7 @@
                   "#bigint": "2"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -8692,7 +8692,7 @@
                   "#bigint": "3"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "0"
                   }
@@ -8712,7 +8712,7 @@
                   "#bigint": "4"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "1"
                   }
@@ -8732,7 +8732,7 @@
                   "#bigint": "5"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -8752,7 +8752,7 @@
                   "#bigint": "6"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -8772,7 +8772,7 @@
                   "#bigint": "7"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "0"
                   }
@@ -8823,7 +8823,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Finalizing",
+                "tag": "Finalization",
                 "value": {
                   "#tup": []
                 }
@@ -8852,7 +8852,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -8872,7 +8872,7 @@
                     "#bigint": "2"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -8892,7 +8892,7 @@
                     "#bigint": "3"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -8912,7 +8912,7 @@
                     "#bigint": "4"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "1"
                     }
@@ -8932,7 +8932,7 @@
                     "#bigint": "5"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -8952,7 +8952,7 @@
                     "#bigint": "6"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -8972,7 +8972,7 @@
                     "#bigint": "7"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -8992,7 +8992,7 @@
                     "#bigint": "8"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "1"
                     }
@@ -9221,7 +9221,7 @@
         "transitions": [
           {
             "from": {
-              "tag": "Finalizing",
+              "tag": "Finalization",
               "value": {
                 "#tup": []
               }
@@ -9250,7 +9250,7 @@
                   "#bigint": "1"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -9270,7 +9270,7 @@
                   "#bigint": "2"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -9290,7 +9290,7 @@
                   "#bigint": "3"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "0"
                   }
@@ -9310,7 +9310,7 @@
                   "#bigint": "4"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "1"
                   }
@@ -9330,7 +9330,7 @@
                   "#bigint": "5"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -9350,7 +9350,7 @@
                   "#bigint": "6"
                 },
                 "kind": {
-                  "tag": "Work",
+                  "tag": "WorkTask",
                   "value": {
                     "#tup": []
                   }
@@ -9370,7 +9370,7 @@
                   "#bigint": "7"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "0"
                   }
@@ -9390,7 +9390,7 @@
                   "#bigint": "8"
                 },
                 "kind": {
-                  "tag": "Evaluation",
+                  "tag": "EvaluationTask",
                   "value": {
                     "#bigint": "1"
                   }
@@ -9470,7 +9470,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -9490,7 +9490,7 @@
                     "#bigint": "2"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -9510,7 +9510,7 @@
                     "#bigint": "3"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -9530,7 +9530,7 @@
                     "#bigint": "4"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "1"
                     }
@@ -9550,7 +9550,7 @@
                     "#bigint": "5"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -9570,7 +9570,7 @@
                     "#bigint": "6"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -9590,7 +9590,7 @@
                     "#bigint": "7"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "0"
                     }
@@ -9610,7 +9610,7 @@
                     "#bigint": "8"
                   },
                   "kind": {
-                    "tag": "Evaluation",
+                    "tag": "EvaluationTask",
                     "value": {
                       "#bigint": "1"
                     }

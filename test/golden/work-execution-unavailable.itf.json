@@ -63,12 +63,6 @@
             "#tup": []
           }
         },
-        "why": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
         "workFanout_": {
           "tag": "None",
           "value": {
@@ -140,12 +134,6 @@
           }
         },
         "v": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "why": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -278,12 +266,6 @@
             "#tup": []
           }
         },
-        "why": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
         "workFanout_": {
           "tag": "None",
           "value": {
@@ -306,7 +288,7 @@
               "#bigint": "5"
             },
             "to": {
-              "tag": "Working",
+              "tag": "Work",
               "value": {
                 "#tup": []
               }
@@ -344,7 +326,7 @@
                 "#set": []
               },
               "phase": {
-                "tag": "Working",
+                "tag": "Work",
                 "value": {
                   "#tup": []
                 }
@@ -384,7 +366,7 @@
                       "#bigint": "1"
                     },
                     "kind": {
-                      "tag": "Work",
+                      "tag": "WorkTask",
                       "value": {
                         "#tup": []
                       }
@@ -401,7 +383,7 @@
                       "#bigint": "2"
                     },
                     "kind": {
-                      "tag": "Work",
+                      "tag": "WorkTask",
                       "value": {
                         "#tup": []
                       }
@@ -471,15 +453,6 @@
             "#tup": []
           }
         },
-        "why": {
-          "tag": "Some",
-          "value": {
-            "tag": "RequiredCapabilityUnavailable",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
         "workFanout_": {
           "tag": "None",
           "value": {
@@ -489,11 +462,11 @@
       },
       "mc_chuggy::chuggy_domain::lastStep": {
         "effects": ["OpenHumanTask"],
-        "label": "ticket-escalated execution_blocked",
+        "label": "ticket-escalated work_execution_unavailable_escalated",
         "transitions": [
           {
             "from": {
-              "tag": "Working",
+              "tag": "Work",
               "value": {
                 "#tup": []
               }
@@ -558,7 +531,7 @@
                 }
               ],
               "reason": {
-                "tag": "RequiredCapabilityUnavailable",
+                "tag": "WorkExecutionUnavailableEscalated",
                 "value": {
                   "#tup": []
                 }
@@ -569,7 +542,7 @@
                     "#bigint": "1"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -589,7 +562,7 @@
                     "#bigint": "2"
                   },
                   "kind": {
-                    "tag": "Work",
+                    "tag": "WorkTask",
                     "value": {
                       "#tup": []
                     }
@@ -606,7 +579,7 @@
                 }
               ],
               "resumeAt": {
-                "tag": "ResumeWorking",
+                "tag": "ResumeWork",
                 "value": {
                   "#tup": []
                 }
