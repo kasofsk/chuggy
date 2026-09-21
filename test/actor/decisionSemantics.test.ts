@@ -53,10 +53,14 @@ import { test } from "node:test";
 import {
   decisionEventEnabled,
   dispatchEvent,
+  evalReduceEvent,
   execDecisionEvent,
+  finalizationResultEvent,
   releaseTicketEvent,
   resumeTicketEvent,
   revokeEvent,
+  taskDoneEvent,
+  workReduceEvent,
   type DecisionEvent,
 } from "../../src/actor/decisionEvent.ts";
 import {
@@ -80,10 +84,11 @@ import type {
   StepRecord,
   Transition,
 } from "../../src/domain/generated/modelTypes.ts";
+import { asTaskId } from "../../src/domain/ids.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import { modelInstance } from "../domain/configs.ts";
 import { id } from "../domain/fixtures.ts";
-import { plainAuthoring, refinementInstance } from "./harness.ts";
+import { plainAuthoring, plainResult, refinementInstance } from "./harness.ts";
 
 const config = refinementInstance;
 
@@ -511,4 +516,59 @@ test("the cascade parks its dependents where nothing but a revoke reaches them",
   const settled = storedReplayGraph(storedAt(cascade, 2));
   for (const dependent of [id(2), id(3)])
     assert.equal(ticketAt(settled, dependent).phase, "Revoked");
+});
+
+/**
+ * A history holding the finalization wall, decided by this tree at the current
+ * semantics. The wall's outcome and the reason it stamps are both values no
+ * earlier image ever wrote, so no correction and no vocabulary lift has
+ * anything to say about them: a row carrying either is legal at 5 exactly
+ * because 5 is what decided it.
+ */
+const finalizationWall = decided([
+  releaseTicketEvent(id(1), plainAuthoring),
+  dispatchEvent(id(1)),
+  taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+  workReduceEvent(id(1)),
+  taskDoneEvent(id(1), asTaskId(2), "Pass", plainResult),
+  evalReduceEvent(id(1), "ReworkEvaluationFailure"),
+  finalizationResultEvent(id(1), "FinalizationResultUnavailable"),
+  resumeTicketEvent(id(1)),
+]);
+
+test("the finalization wall and its resume replay legal at the current semantics", () => {
+  assert.equal(decisionSemanticsVersionCurrent, 5);
+  assert.ok(
+    storedJournalLegalOn(
+      config,
+      storedAt(finalizationWall, decisionSemanticsVersionCurrent),
+    ),
+  );
+  const parked = ticketAt(
+    storedReplayGraph(
+      storedAt(finalizationWall.slice(0, 7), decisionSemanticsVersionCurrent),
+    ),
+    id(1),
+  );
+  assert.equal(parked.phase, "Escalated");
+  assert.equal(parked.reason, "FinalizationUnavailableEscalated");
+  assert.equal(parked.resumeAt, "ResumeFinalization");
+  const resumed = ticketAt(
+    storedReplayGraph(
+      storedAt(finalizationWall, decisionSemanticsVersionCurrent),
+    ),
+    id(1),
+  );
+  assert.equal(resumed.phase, "Finalization");
+});
+
+test("neither new word is a spelling the vocabulary lifts", () => {
+  for (const word of [
+    "FinalizationResultUnavailable",
+    "FinalizationUnavailableEscalated",
+    "ticket-escalated finalization_unavailable_escalated",
+  ]) {
+    assert.ok(!supersededSpellings.includes(word));
+    assert.equal(wordAtCurrentVocabulary(word), word);
+  }
 });
