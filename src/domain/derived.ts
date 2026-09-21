@@ -1,7 +1,6 @@
 /**
- * The derived sets the safety invariants are stated over — the visibility
- * edges and the two walks that guard each other — and the derived read the
- * desk is shown: which of a ticket's dependencies were revoked.
+ * The derived sets the safety invariants are stated over: the visibility edges
+ * and the two walks that guard each other.
  *
  * THE BOUNDED SWEEP IS THE TERMINATION ARGUMENT, NOT AN IMPLEMENTATION
  * DETAIL. Each of these is a fixpoint computed by repeating a monotone step
@@ -79,20 +78,6 @@ export function coveredSet(core: Core): ReadonlySet<TicketId> {
     (c, id, covered) =>
       hasOpenHumanTask(ticketAt(c, id)) ||
       visEdges(c, id).some((d) => covered.has(d)),
-  );
-}
-
-/**
- * The dependencies of this ticket that their own authors revoked, in id order.
- * Direct edges only: a ticket further up the chain blocks this one through the
- * dependency between them, and it is that one's author who holds the decision.
- */
-export function revokedDependencies(
-  core: Core,
-  id: TicketId,
-): readonly TicketId[] {
-  return visEdges(core, id).filter(
-    (d) => ticketAt(core, d).phase === "Revoked",
   );
 }
 

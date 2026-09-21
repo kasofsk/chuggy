@@ -72,8 +72,9 @@ interface TicketProjectionRow {
   readonly changed_at: string | null;
   readonly resume_at: string | null;
   /**
-   * The dependencies this ticket's release event named that are themselves
-   * Revoked, ascending. The release entry is the only place the edges are
+   * The dependencies a Pending ticket's release event named that are
+   * themselves Revoked, ascending; a ticket in any other phase waits on
+   * nothing and names none. The release entry is the only place the edges are
    * written down — no relation holds them — so it is read back through the
    * same join the release instant comes from, and a release nobody can parse
    * names none.
@@ -407,7 +408,7 @@ async function readTicketsByActivity(
                  c.committed_at::text AS changed_at,
                  (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
                     FROM ticket_projection d
-                   WHERE d.tenant=t.tenant AND d.project=t.project
+                   WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                      AND d.phase='Revoked'
                      AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
                    AS revoked_dependencies
@@ -451,7 +452,7 @@ async function readTicketsByIdentity(
                c.committed_at::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
                   FROM ticket_projection d
-                 WHERE d.tenant=t.tenant AND d.project=t.project
+                 WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                    AND d.phase='Revoked'
                    AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
                  AS revoked_dependencies
@@ -511,7 +512,7 @@ function nativeReadsResources(
                    c.committed_at::text AS changed_at,
                    (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
                       FROM ticket_projection d
-                     WHERE d.tenant=t.tenant AND d.project=t.project
+                     WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                        AND d.phase='Revoked'
                        AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
                      AS revoked_dependencies,
