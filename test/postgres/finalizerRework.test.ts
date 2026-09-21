@@ -3,10 +3,12 @@
  * was clean, and the input bundle the deciding transaction materializes for the
  * work set it spawns where it was not.
  *
- * THE PRICING IS READ AND NOT INFERRED FROM THE PHASE. A clean integration that
- * had quietly spent the finalization account, and a conflict that had not, would
- * both leave the phase every weaker assertion looks at, so the cases replay the
- * journal and read the ticket's own accounts either side of the decision.
+ * WHAT THE DECISION DID IS READ OFF THE TICKET, NOT OFF THE PHASE ALONE. A
+ * clean integration completes the ticket and spawns nothing further; a conflict
+ * completes nothing and spawns a fresh work set. Both are read from the
+ * replayed ticket either side of the decision and from the spawn registrations
+ * the transaction wrote, so a decision that reached the right phase by the
+ * wrong route is still a failure.
  *
  * THE WHOLE PATH IS REAL. A real bare repository produces the conflict, the
  * real finalizer submits through the real door, and the real project writer
@@ -146,7 +148,7 @@ async function reworked(label: string): Promise<{
   remote: FinalizerRemote;
   attempt: ReworkAttempt;
   bundle: ReworkBundle;
-  priced: Ticket;
+  decided: Ticket;
 }> {
   const { project, remote } = await finalizerSubject(rig, label, [
     { path: "base.txt", content: "candidate\n" },
@@ -175,30 +177,13 @@ async function reworked(label: string): Promise<{
     remote,
     attempt: await reworkAttemptOf(project),
     bundle: await reworkBundleOf(project),
-    priced: ticketAt(drained.memory.core, asTicketId(project.ticket)),
+    decided: ticketAt(drained.memory.core, asTicketId(project.ticket)),
   };
 }
 
-/** What the ticket the project's history released was priced at before any finalization. */
-function reworkPricedBefore(project: FinalizerProject): Ticket {
+/** The ticket the project's history released, as it stood before any finalization. */
+function reworkTicketBefore(project: FinalizerProject): Ticket {
   return ticketAt(project.memory.core, asTicketId(project.ticket));
-}
-
-/**
- * The accounts the projection holds for the ticket, as text. Only a
- * finalization failure moves the finalization account, so this is where that
- * column's update path is written rather than its insert.
- */
-async function reworkAccountsOf(
-  project: FinalizerProject,
-): Promise<Record<string, unknown> | undefined> {
-  const rows = await rig.harness.query(
-    `SELECT gas_left::text AS gas_left, rework_left::text AS rework_left,
-            finalization_left::text AS finalization_left
-       FROM ticket_projection WHERE tenant=$1 AND project=$2 AND ticket=$3`,
-    [project.partition.tenant, project.partition.project, project.ticket],
-  );
-  return rows[0];
 }
 
 /** The spawn registrations this project holds, which is what a rework adds one to. */
@@ -225,11 +210,11 @@ function reworkReference(
   return named[0];
 }
 
-test("a clean automatic integration concludes without pricing a rework or leaving the phase", async () => {
+test("a clean automatic integration concludes without spawning a rework", async () => {
   const { project, remote } = await finalizerSubject(rig, "clean", [
     { path: "one.txt", content: "one\n" },
   ]);
-  const before = reworkPricedBefore(project);
+  const before = reworkTicketBefore(project);
   const spawns = await reworkSpawnsOf(project);
   const moving = finalizerMovingPort(finalizerRemotePort(rig), () => {
     finalizerRemoteCommit(remote, "other.txt", "other\n", "other");
@@ -263,12 +248,10 @@ test("a clean automatic integration concludes without pricing a rework or leavin
     project.memory,
   );
   assert.deepEqual(drained.decided, ["Committed"]);
-  const priced = ticketAt(drained.memory.core, asTicketId(project.ticket));
-  assert.equal(priced.phase, "Done");
-  assert.equal(priced.completions, before.completions + 1);
-  assert.equal(priced.finalizationLeft, before.finalizationLeft, "priced");
-  assert.equal(priced.gasLeft, before.gasLeft, "metered");
-  assert.equal(priced.reworkLeft, before.reworkLeft, "reworked");
+  const decided = ticketAt(drained.memory.core, asTicketId(project.ticket));
+  assert.equal(decided.phase, "Done");
+  assert.equal(decided.completions, before.completions + 1);
+  assert.equal(decided.spawned, before.spawned, "nothing further was spawned");
   assert.deepEqual(await reworkSpawnsOf(project), spawns);
   assert.deepEqual(
     await rig.harness.query(
@@ -282,17 +265,11 @@ test("a clean automatic integration concludes without pricing a rework or leavin
 });
 
 test("a concluded merge conflict returns the ticket to work with a bundle naming its evidence", async () => {
-  const { project, attempt, bundle, priced } = await reworked("rework");
-  const before = reworkPricedBefore(project);
-  assert.equal(priced.finalizationLeft, before.finalizationLeft - 1, "priced");
-  assert.equal(priced.gasLeft, before.gasLeft - 1, "metered");
-  assert.equal(priced.reworkLeft, before.reworkLeft, "the eval account paid");
+  const { project, attempt, bundle, decided } = await reworked("rework");
+  const before = reworkTicketBefore(project);
+  assert.equal(decided.completions, before.completions, "nothing completed");
+  assert.ok(decided.spawned > before.spawned, "a fresh work set was spawned");
   assert.equal(await reworkPhaseOf(project), "Working");
-  assert.deepEqual(await reworkAccountsOf(project), {
-    gas_left: String(priced.gasLeft),
-    rework_left: String(priced.reworkLeft),
-    finalization_left: String(priced.finalizationLeft),
-  });
   assert.deepEqual(reworkReference(bundle, "FinalizationAttempt"), {
     reference_kind: "FinalizationAttempt",
     reference_id: attempt.attempt,

@@ -16,6 +16,7 @@ import {
   spawnTasks,
   tasksInIdOrder,
   taskPassed,
+  workCyclesStarted,
   tkEval,
   tkWork,
   tsResolved,
@@ -43,6 +44,7 @@ import {
   phaseTags,
   type Phase,
   type Task,
+  type TaskKind,
   type Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
 
@@ -216,4 +218,38 @@ test("an identifier outside the exactly representable range is refused, not trun
   );
   assert.throws(() => asTicketId(0), /below the first id/);
   assert.throws(() => asTaskId(0), /below the first id/);
+});
+
+/** A ticket's history as the cycle count reads it: the record, then what is still live. */
+function cyclesOver(kinds: readonly TaskKind[], live: number): number {
+  const tasks = kinds.map((kind, at) => ({
+    id: asTaskId(at + 1),
+    kind,
+    state: tsOutstanding,
+  }));
+  return workCyclesStarted(
+    tasks.slice(0, tasks.length - live),
+    new Set(tasks.slice(tasks.length - live)),
+  );
+}
+
+test("a work cycle is a run of work tasks, and a rework starts another", () => {
+  const work = tkWork;
+  const evaluation = tkEval(0);
+  assert.equal(cyclesOver([], 0), 0, "nothing dispatched has started none");
+  assert.equal(cyclesOver([work], 1), 1, "the first fan-out is one cycle");
+  assert.equal(cyclesOver([work, work], 2), 1, "a fan-out is not two cycles");
+  assert.equal(cyclesOver([work, evaluation], 1), 1, "evaluating is not one");
+  assert.equal(
+    cyclesOver([work, evaluation, work], 1),
+    2,
+    "the rework is the second",
+  );
+  assert.equal(cyclesOver([work, evaluation, work, evaluation, work], 1), 3);
+});
+
+test("the count folds the record and the live set as one history", () => {
+  const history = [tkWork, tkEval(0), tkWork];
+  for (const live of [0, 1, 3])
+    assert.equal(cyclesOver(history, live), 2, `with ${String(live)} live`);
 });

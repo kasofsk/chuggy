@@ -53,8 +53,10 @@ import { execDecisionEventAt } from "../actor/decisionSemantics.ts";
 import { ticketEquals } from "../actor/equality.ts";
 import {
   decisionEventEnabled,
+  evalReduceEvent,
   execDecisionEvent,
   executionBlockedEvent,
+  workReduceEvent,
 } from "../actor/decisionEvent.ts";
 import type { DecisionEvent } from "../actor/decisionEvent.ts";
 import type { Config } from "../domain/config.ts";
@@ -63,7 +65,10 @@ import type { Core, Reason } from "../domain/generated/modelTypes.ts";
 import { dependableIn } from "../domain/enablement.ts";
 import { effectFromLabel } from "../domain/effect.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
-import type { DecisionInput } from "./projectDiscovery.ts";
+import type {
+  ContinuationReduction,
+  DecisionInput,
+} from "./projectDiscovery.ts";
 import type {
   ExecutionSourceObservation,
   ExecutionSourceObservationPort,
@@ -78,6 +83,7 @@ import type {
   TicketProjection,
 } from "./projectDecision.ts";
 import type { Lease, ProjectStore } from "./projectStore.ts";
+import { reworkDisposition, type ReworkCap } from "./reworkCap.ts";
 import { materializationOf } from "./decisionPlan.ts";
 import {
   deriveDispatchCandidates,
@@ -98,6 +104,8 @@ import {
 /** Everything a writer calls out through: the authority it replays from, and the one it commits to. */
 export interface ProjectTicketWriter {
   readonly config: Config;
+  /** The deployment's rework cap, which is what makes an evaluation failure's pick. */
+  readonly rework: ReworkCap;
   readonly store: ProjectStore;
   readonly decisions: ProjectDecision;
   readonly executionSources: ExecutionSourceObservationPort;
@@ -143,11 +151,6 @@ export function projectionOf(core: Core): readonly TicketProjection[] {
       dependable: dependable.has(ticket),
       reason: value.reason,
       resumeAt: value.resumeAt,
-      gasLeft: value.gasLeft,
-      reworkLeft: value.reworkLeft,
-      ...(value.finalizationPricing === "DeadlineOnly"
-        ? {}
-        : { finalizationLeft: value.finalizationLeft }),
     };
   });
 }
@@ -210,7 +213,7 @@ export async function projectWriterLoad(
       row.semantics,
       writer.config,
       core,
-      row.entry.event,
+      row.entry,
     ).post;
     for (const projection of projectionChanges(core, post))
       ticketVersions.set(projection.ticket, row.entry.seq);
@@ -251,10 +254,7 @@ function continuationFenceOutcome(
   memory: ProjectMemory,
   source: Extract<DecisionInput["source"], { kind: "Continuation" }>,
 ): DecisionOutcome | undefined {
-  const command = source.command;
-  if (command.type !== "WorkReduce" && command.type !== "EvalReduce")
-    throw new IntegrityContradiction("a continuation does not carry a reducer");
-  const ticketId = asTicketId(command.value);
+  const ticketId = source.reduction.ticket;
   if (memory.ticketVersions.get(ticketId) !== source.expectedTicketVersion)
     return { outcome: "Stale" };
   const ticket = ticketAt(memory.core, ticketId);
@@ -367,6 +367,27 @@ function journaledPlan(
 }
 
 /**
+ * The event a settled task set reduces by. An evaluation's carries the
+ * disposition a failure is to be taken as, which is the deployment's rework cap
+ * over the ticket the writer holds: a pick, journaled where it is made, because
+ * nothing downstream of the journal may make it again.
+ */
+function continuationReductionEvent(
+  writer: ProjectTicketWriter,
+  memory: ProjectMemory,
+  reduction: ContinuationReduction,
+): DecisionEvent {
+  if (reduction.reduce === "Work") return workReduceEvent(reduction.ticket);
+  return evalReduceEvent(
+    reduction.ticket,
+    reworkDisposition(
+      ticketAt(memory.core, reduction.ticket),
+      writer.rework.cyclesMax,
+    ),
+  );
+}
+
+/**
  * What one inbox item asks of the state in hand: a decision the machine would
  * take, or the refusal it earns. Nothing here reaches the world.
  */
@@ -375,10 +396,6 @@ function projectWriterPreflight(
   memory: ProjectMemory,
   item: DecisionInput,
 ): ProjectPlan | { readonly command: DecisionEvent } {
-  const command =
-    item.source.kind === "Operation"
-      ? item.source.resolvedEvent
-      : item.source.command;
   if (item.source.kind === "Operation") {
     const fence = operationDispatchFence(writer, memory, item.source);
     if (fence !== undefined) return { outcome: fence, post: memory.core };
@@ -388,6 +405,10 @@ function projectWriterPreflight(
     if (fenceOutcome !== undefined)
       return { outcome: fenceOutcome, post: memory.core };
   }
+  const command =
+    item.source.kind === "Operation"
+      ? item.source.resolvedEvent
+      : continuationReductionEvent(writer, memory, item.source.reduction);
   if (
     item.source.kind === "Operation" &&
     (item.source.nativeAction?.open === false ||

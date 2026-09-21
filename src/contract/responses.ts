@@ -52,14 +52,9 @@ import {
 } from "./http.ts";
 import {
   authoringResponseSchema,
-  finalizationPricingResponseSchema,
-  finalizationPricingSchema,
   finalizerSchema,
   programStageResponseSchema,
   programStageSchema,
-  resumePricingSchema,
-  reworkPolicySchema,
-  reworkPolicyResponseSchema,
 } from "./authoring.ts";
 import { briefResponseSchema, briefTitleCharsMax } from "./brief.ts";
 import {
@@ -197,20 +192,6 @@ export const executionRunSchema = z.object({
 export type ExecutionRun = z.infer<typeof executionRunSchema>;
 
 /**
- * What a ticket has left to spend, optional as a whole because a projection row
- * written before the machine's accounts reached it carries none of them.
- * `finalizationLeft` is present exactly when the ticket's pricing budgets a
- * finalization account at all — under `DeadlineOnly` a finalizer failure prices
- * from gas alone, so a zero would say "exhausted" of an account that never was.
- */
-const ticketAccountsSchema = z.object({
-  gasLeft: countSchema,
-  gasMax: countSchema,
-  reworkLeft: countSchema,
-  finalizationLeft: countSchema.optional(),
-});
-
-/**
  * A ticket as the project table and its own read both carry it. The title is
  * the one field of the brief the table carries, because a table of documents
  * needs a heading; the rest of the brief is the ticket's own read alone, an
@@ -240,7 +221,6 @@ export const ticketResponseSchema = z.object({
   releasedAt: instantSchema.optional(),
   reason: z.enum(escalationReasons).optional(),
   resumeAt: z.enum(resumePoints).optional(),
-  accounts: ticketAccountsSchema.optional(),
   brief: briefResponseSchema.optional(),
   runTotals: runTotalsSchema.optional(),
 });
@@ -682,9 +662,6 @@ const dispatchCandidateSchema = z.strictObject({
   dependencies: page(ticketNumberSchema),
   workFanout: ticketNumberSchema,
   program: page(programStageSchema),
-  reworkPolicy: reworkPolicySchema,
-  finalizationPricing: finalizationPricingSchema,
-  resumePricing: resumePricingSchema,
   finalizer: finalizerSchema,
   configurationRevision: identitySchema,
   configurationVersion: configurationVersionSchema.optional(),
@@ -815,9 +792,6 @@ export const draftInitializationResponseSchema = z.object({
     stages: page(programStageResponseSchema),
     programStagesMax: countSchema,
     workFanouts: page(ticketNumberSchema),
-    reworkPolicies: page(reworkPolicyResponseSchema),
-    finalizationPricings: page(finalizationPricingResponseSchema),
-    resumePricings: page(resumePricingSchema),
     finalizers: page(finalizerSchema),
   }),
   dependencyCandidates: page(ticketNumberSchema),

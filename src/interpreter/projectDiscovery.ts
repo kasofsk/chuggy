@@ -26,6 +26,11 @@
  * its serialized position must refuse a submission whose authority moved
  * between acceptance and decision.
  *
+ * A CONTINUATION NAMES A REDUCTION, NOT AN EVENT. The durable row says which
+ * task set reduced and whose; what a failing evaluation is then taken as is the
+ * writer's rework cap read over the ticket's own history, so the event is
+ * assembled where that cap is held rather than here.
+ *
  * A COMMAND NAMING NO DOMAIN EVENT CARRIES NO `resolvedEvent`. The two answers
  * a finalization approval admits change no `Core` state, so the source assembled
  * for one carries the answer alone and there is nothing for a decider to be
@@ -46,11 +51,18 @@ import type { FinalizationEvidence } from "./finalizerPreparation.ts";
 import type { NativeActionAnswer } from "./projectDecision.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ReleaseBrief } from "./ticketBrief.ts";
+import type { TicketId } from "../domain/ids.ts";
 
 /** One project's discovery record: the partition with work waiting, and the generation that wake-up carries. */
 export interface Readiness {
   readonly partition: Partition;
   readonly generation: number;
+}
+
+/** Which task set a continuation reports settled, and whose. */
+export interface ContinuationReduction {
+  readonly reduce: "Work" | "Evaluation";
+  readonly ticket: TicketId;
 }
 
 /**
@@ -88,7 +100,7 @@ export interface DecisionInput {
     | {
         readonly kind: "Continuation";
         readonly continuation: string;
-        readonly command: DecisionEvent;
+        readonly reduction: ContinuationReduction;
         readonly expectedTicketVersion: number;
         readonly expectedPhase: string;
         readonly taskSetGeneration: number;

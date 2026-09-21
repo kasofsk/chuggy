@@ -43,11 +43,9 @@ const validConfiguration = {
   domain: {
     nTickets: 3,
     nTasks: 2,
-    reworkPolicy: { type: "BudgetedRework", value: 1 },
-    gas: 3,
-    finalizationPricing: { type: "Budgeted", value: 1 },
     maxStages: 2,
   },
+  rework: { cyclesMax: 2 },
   owner: "ticket-service-1",
   source: {
     scratchDirectory: "/tmp/chuggy-ticket-source",
@@ -212,21 +210,15 @@ test("a pool bound the schema does not publish is refused", async () => {
   );
 });
 
-test("the command rejects a fractional finalization budget", async () => {
-  const invalid = {
-    ...validConfiguration,
-    domain: {
-      ...validConfiguration.domain,
-      finalizationPricing: { type: "Budgeted", value: 0.5 },
-    },
-  };
+test("the command rejects a rework cap that is not a whole count of cycles", async () => {
+  const invalid = { ...validConfiguration, rework: { cyclesMax: 0.5 } };
   const found = await executeFailure({
     CHUG_TICKET_SERVICE_CONFIG: JSON.stringify(invalid),
   });
   assert.equal(found.code, 2);
   assert.equal(
     found.stderr,
-    "ticket service configuration: CHUG_TICKET_SERVICE_CONFIG.domain.finalizationPricing is invalid\n",
+    "ticket service configuration: CHUG_TICKET_SERVICE_CONFIG.rework.cyclesMax is invalid\n",
   );
 });
 

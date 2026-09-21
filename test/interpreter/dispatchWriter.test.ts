@@ -8,7 +8,6 @@ import {
   releaseTicketEvent,
   taskDoneEvent,
   ticketAt,
-  workReduceEvent,
 } from "../../src/actor/decisionEvent.ts";
 import { actorInit, journalStep, memoryCore } from "../../src/actor/state.ts";
 import {
@@ -47,7 +46,7 @@ import {
   type ProjectMemory,
   type ProjectTicketWriter,
 } from "../../src/interpreter/projectWriter.ts";
-import { parseJournal } from "../../src/interpreter/wire.ts";
+import { parseStoredEntry } from "../../src/interpreter/wire.ts";
 import {
   silentTicketServiceMetrics,
   ticketServiceDefaults,
@@ -76,6 +75,9 @@ const partition = {
   tenant: asTenantId("tenant"),
   project: asProjectId("project"),
 };
+
+/** The rework cap these writers hold, which no case here turns on. */
+const testReworkCap = { cyclesMax: 2 };
 const contracts = new Map([
   [
     id(1),
@@ -115,9 +117,12 @@ function journalAtSemanticsOne(): readonly StoredEntry[] {
       "utf8",
     ),
   );
-  const parsed = parseJournal(raw);
-  assert.ok(parsed.parsed === "Ok");
-  return parsed.value.map((entry) => ({ entry, semantics: 1 }));
+  assert.ok(Array.isArray(raw), "the pinned history is not a journal");
+  return raw.map((row: unknown) => {
+    const parsed = parseStoredEntry(row, 1);
+    assert.ok(parsed.parsed === "Ok");
+    return { entry: parsed.value, semantics: 1 };
+  });
 }
 
 test("a writer rebuilds a history from the machine that decided it, not from its own", async () => {
@@ -190,6 +195,7 @@ async function decidedWith(
   const result = await projectWriterDecide(
     {
       config: refinementInstance,
+      rework: testReworkCap,
       store: {} as ProjectStore,
       decisions,
       ticketBriefs,
@@ -509,6 +515,7 @@ function proposalInput(
 /** A durable authority that commits what it is offered, so a second proposal meets the first's state. */
 const committingWriter: ProjectTicketWriter = {
   config: refinementInstance,
+  rework: testReworkCap,
   store: {} as ProjectStore,
   decisions: {
     decide: (decision) =>
@@ -641,7 +648,7 @@ function workReduceInput(memory: ProjectMemory): DecisionInput {
     source: {
       kind: "Continuation",
       continuation: "continuation",
-      command: workReduceEvent(id(1)),
+      reduction: { reduce: "Work", ticket: id(1) },
       expectedTicketVersion: 1,
       expectedPhase: ticket.phase,
       taskSetGeneration: ticket.spawned,
@@ -813,6 +820,7 @@ test("a deferred input ends the run it arrived in without clearing readiness", a
   const memory = await projectTicketWriterRun(
     {
       config: refinementInstance,
+      rework: testReworkCap,
       store: {
         load: () =>
           Promise.resolve({

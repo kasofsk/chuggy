@@ -24,7 +24,6 @@ import {
   dispatchEvent,
   evalReduceEvent,
   execDecisionEvent,
-  finalizationResultEvent,
   releaseTicketEvent,
   resumeTicketEvent,
   taskDoneEvent,
@@ -34,7 +33,11 @@ import {
 import { genesis, replayCore, type Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 import { ticketAt } from "../../src/domain/core.ts";
-import type { Core, Ticket } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  Core,
+  Reason,
+  Ticket,
+} from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import {
   projectionChanges,
@@ -108,9 +111,6 @@ test("a decision reports exactly the tickets whose complete state changed", () =
         dependable: true,
         reason: "NoReason",
         resumeAt: "NoResume",
-        gasLeft: refinementInstance.gas - 1,
-        reworkLeft: 1,
-        finalizationLeft: 1,
       },
     ],
   );
@@ -132,9 +132,6 @@ test("a decision reports exactly the tickets whose complete state changed", () =
         dependable: true,
         reason: "NoReason",
         resumeAt: "NoResume",
-        gasLeft: refinementInstance.gas - 1,
-        reworkLeft: 1,
-        finalizationLeft: 1,
       },
     ],
   );
@@ -154,14 +151,11 @@ test("a release is a change although it transitions nothing", () => {
       dependable: true,
       reason: "NoReason",
       resumeAt: "NoResume",
-      gasLeft: refinementInstance.gas,
-      reworkLeft: 1,
-      finalizationLeft: 1,
     },
   ]);
 });
 
-test("dependency eligibility distinguishes the two escalated reasons", () => {
+test("dependency eligibility distinguishes the escalated reasons", () => {
   const released = execDecisionEvent(
     refinementInstance,
     genesis,
@@ -169,7 +163,7 @@ test("dependency eligibility distinguishes the two escalated reasons", () => {
   ).post;
   const ticket = released.tickets.get(id(1));
   assert.ok(ticket !== undefined);
-  const escalated = (reason: "DependencyRevoked" | "GasExhausted"): Core => ({
+  const escalated = (reason: Reason): Core => ({
     tickets: new Map([
       [id(1), { ...ticket, phase: "Escalated" as const, reason }],
     ]),
@@ -178,7 +172,10 @@ test("dependency eligibility distinguishes the two escalated reasons", () => {
     projectionOf(escalated("DependencyRevoked"))[0]?.dependable,
     false,
   );
-  assert.equal(projectionOf(escalated("GasExhausted"))[0]?.dependable, true);
+  assert.equal(
+    projectionOf(escalated("ReworkBudgetExhausted"))[0]?.dependable,
+    true,
+  );
 });
 
 /** The one outstanding task of a single-width ticket, which is what a completion names. */
@@ -192,9 +189,9 @@ function outstandingTask(core: Core): number {
 }
 
 /**
- * A ticket driven to the rework wall and resumed off it: the two states whose
- * resume point and accounts the projection exists to carry, and the only ones
- * where `resumeAt` is anything but the absent value.
+ * A ticket reworked once, walled by the next evaluation failure and resumed off
+ * that wall: the states whose resume point the projection exists to carry, and
+ * the only ones where `resumeAt` is anything but the absent value.
  */
 function walledHistory(): readonly DecisionEvent[] {
   const events: DecisionEvent[] = [
@@ -227,21 +224,23 @@ function walledHistory(): readonly DecisionEvent[] {
         plainResult,
       ),
     );
-    step(evalReduceEvent(id(1)));
+    step(
+      evalReduceEvent(
+        id(1),
+        cycle === 1 ? "EscalateEvaluationFailure" : "ReworkEvaluationFailure",
+      ),
+    );
     if (cycle === 1) step(resumeTicketEvent(id(1)));
   }
   return events;
 }
 
-/** Every account and the resume point, read off the ticket the row claims to project. */
+/** What the row claims about the ticket, read off the ticket itself. */
 function ticketFacts(ticket: Ticket) {
   return {
     phase: ticket.phase,
     reason: ticket.reason,
     resumeAt: ticket.resumeAt,
-    gasLeft: ticket.gasLeft,
-    reworkLeft: ticket.reworkLeft,
-    finalizationLeft: ticket.finalizationLeft,
   };
 }
 
@@ -256,58 +255,9 @@ test("every projected row is the core the step it names left behind", () => {
       phase: row.phase,
       reason: row.reason,
       resumeAt: row.resumeAt,
-      gasLeft: row.gasLeft,
-      reworkLeft: row.reworkLeft,
-      finalizationLeft: row.finalizationLeft,
     });
     seen.push(`${row.phase}/${row.resumeAt}`);
   }
   assert.ok(seen.includes("Escalated/ResumeReworking"));
   assert.equal(seen.at(-1), "Working/NoResume");
-});
-
-/**
- * The account the `finalizationLeft` rule turns on: a budgeted one spent to
- * nothing. The figure is what says the budget ran out, so it stays on the row,
- * and only the pricing decides whether a row carries one at all.
- */
-test("a budgeted finalization account spent to zero is still projected", () => {
-  let core: Core = genesis;
-  const step = (event: DecisionEvent) => {
-    core = execDecisionEvent(refinementInstance, core, event).post;
-  };
-  step(releaseTicketEvent(id(1), plainAuthoring));
-  step(dispatchEvent(id(1)));
-  step(
-    taskDoneEvent(id(1), asTaskId(outstandingTask(core)), "Pass", plainResult),
-  );
-  step(workReduceEvent(id(1)));
-  step(
-    taskDoneEvent(id(1), asTaskId(outstandingTask(core)), "Pass", plainResult),
-  );
-  step(evalReduceEvent(id(1)));
-  assert.equal(ticketAt(core, id(1)).phase, "Finalizing");
-  step(finalizationResultEvent(id(1), "FinalizationFailed"));
-  const spent = ticketAt(core, id(1));
-  assert.equal(spent.finalizationLeft, 0);
-  assert.notEqual(spent.finalizationPricing, "DeadlineOnly");
-  assert.equal(
-    projectionOf(core).find((row) => row.ticket === id(1))?.finalizationLeft,
-    0,
-  );
-});
-
-/** A pricing that budgets no finalization account projects no figure for one. */
-test("a deadline-priced ticket projects no finalization account", () => {
-  const priced = execDecisionEvent(
-    refinementInstance,
-    genesis,
-    releaseTicketEvent(id(1), {
-      ...plainAuthoring,
-      finalizationPricing: "DeadlineOnly",
-    }),
-  ).post;
-  const row = projectionOf(priced)[0];
-  assert.equal(row?.finalizationLeft, undefined);
-  assert.equal(ticketAt(priced, id(1)).finalizationLeft, 0);
 });

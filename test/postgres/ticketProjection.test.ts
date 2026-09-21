@@ -1,7 +1,7 @@
 /**
- * The resume point and the accounts, driven onto a real ticket by real
- * decisions and read back off the durable projection, the public read and the
- * change row the same decision appended.
+ * The resume point, driven onto a real ticket by real decisions and read back
+ * off the durable projection, the public read and the change row the same
+ * decision appended.
  *
  * THE JOURNAL IS THE ORACLE. Every step compares the stored row with the core
  * the same decision left behind, because the projection's whole claim is that
@@ -9,9 +9,8 @@
  * middle is a column a reader believes.
  *
  * THE WALL AND THE RESUME ARE THE TWO STATES WORTH DRIVING TO. `resume_at` is
- * the machine's absent value everywhere else, and the accounts only become
- * interesting once a rework has spent from them, so a fixture that stopped at
- * `Working` would assert the projection carries columns rather than that it
+ * the machine's absent value everywhere else, so a fixture that stopped at
+ * `Working` would assert the projection carries a column rather than that it
  * carries the machine.
  */
 
@@ -23,17 +22,12 @@ import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { ticketAt } from "../../src/domain/core.ts";
-import { budgeted, reworkBudget } from "../../src/domain/pricing.ts";
 import type { Verdict } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import type { TicketResource } from "../../src/interpreter/nativeWeb.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
-import {
-  plainAuthoring,
-  plainResult,
-  refinementInstance,
-} from "../actor/harness.ts";
+import { plainResult } from "../actor/harness.ts";
 import { resumePoints } from "../../src/contract/rosters.ts";
 import { id } from "../domain/fixtures.ts";
 import {
@@ -62,21 +56,16 @@ after(async () => {
 /** The ticket every case here drives, which is the only one its project mints. */
 const subject = id(1);
 
-/** One projection row as the columns this suite is about, every counter as text. */
+/** One projection row as the columns this suite is about. */
 interface ProjectedRow {
   readonly phase: string;
   readonly reason: string;
   readonly resume_at: string | null;
-  readonly gas_left: string | null;
-  readonly rework_left: string | null;
-  readonly finalization_left: string | null;
 }
 
 async function projected(partition: Partition): Promise<ProjectedRow> {
   const found = await harness.query(
-    `SELECT phase, reason, resume_at, gas_left::text AS gas_left,
-            rework_left::text AS rework_left,
-            finalization_left::text AS finalization_left
+    `SELECT phase, reason, resume_at
        FROM ticket_projection
       WHERE tenant=$1 AND project=$2 AND ticket=$3`,
     [partition.tenant, partition.project, subject],
@@ -94,12 +83,6 @@ function carried(memory: ProjectMemory): ProjectedRow {
     phase: ticket.phase,
     reason: ticket.reason,
     resume_at: ticket.resumeAt,
-    gas_left: String(ticket.gasLeft),
-    rework_left: String(ticket.reworkLeft),
-    finalization_left:
-      ticket.finalizationPricing === "DeadlineOnly"
-        ? null
-        : String(ticket.finalizationLeft),
   };
 }
 
@@ -162,9 +145,8 @@ async function openAction(
 }
 
 /**
- * A ticket driven to the rework wall: two cycles, the second of which finds no
- * rework left. The budget wall is checked before the gas wall, so this parks
- * with gas still on the ticket — which is what makes the resume affordable.
+ * A ticket driven to the rework wall: the writer's configured cap allows two
+ * reworks, so the third failed evaluation is the one that parks it.
  */
 async function walled(
   partition: Partition,
@@ -180,10 +162,12 @@ async function walled(
   memory = await reported(partition, memory, 1, "Pass");
   memory = await reported(partition, memory, 2, "Fail");
   memory = await reported(partition, memory, 3, "Pass");
-  return reported(partition, memory, 4, "Fail");
+  memory = await reported(partition, memory, 4, "Fail");
+  memory = await reported(partition, memory, 5, "Pass");
+  return reported(partition, memory, 6, "Fail");
 }
 
-test("the projection carries the wall's resume point and the accounts behind it", async () => {
+test("the projection carries the wall's resume point", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "projection-wall",
@@ -193,9 +177,6 @@ test("the projection carries the wall's resume point and the accounts behind it"
     phase: "Escalated",
     reason: "ReworkBudgetExhausted",
     resume_at: "ResumeReworking",
-    gas_left: "1",
-    rework_left: "0",
-    finalization_left: "1",
   });
   assert.deepEqual(await projected(partition), carried(memory));
 });
@@ -232,7 +213,7 @@ test("the change row a decision appends records the phase that decision produced
   );
 });
 
-test("the public read serves the resume point and the accounts the row holds", async () => {
+test("the public read serves the resume point the row holds", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "projection-read",
@@ -242,21 +223,12 @@ test("the public read serves the resume point and the accounts the row holds", a
   const parked = await reads.ticket(partition, subject);
   assert.equal(parked?.phase, "Escalated");
   assert.equal(parked?.resumeAt, "ResumeReworking");
-  const accounts = {
-    gasLeft: 1,
-    gasMax: refinementInstance.gas,
-    reworkLeft: 0,
-    finalizationLeft: 1,
-  };
-  assert.deepEqual(parked?.accounts, accounts);
   for (const order of ["Identity", "RecentActivity"] as const) {
-    const row = await listed(partition, order);
-    assert.equal(row.resumeAt, "ResumeReworking");
-    assert.deepEqual(row.accounts, accounts);
+    assert.equal((await listed(partition, order)).resumeAt, "ResumeReworking");
   }
 });
 
-test("a resume clears the point it re-entered at, pays for itself and refills", async () => {
+test("a resume clears the point it re-entered at", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "projection-resume",
@@ -280,20 +252,10 @@ test("a resume clears the point it re-entered at, pays for itself and refills", 
     phase: "Working",
     reason: "NoReason",
     resume_at: "NoResume",
-    gas_left: "0",
-    rework_left: String(reworkBudget(plainAuthoring.reworkPolicy)),
-    finalization_left: "1",
   });
   assert.deepEqual(await projected(partition), carried(drained.memory));
   const reads = postgresNativeReads(pool);
-  const resumed = await reads.ticket(partition, subject);
-  assert.equal(resumed?.resumeAt, undefined);
-  assert.equal(resumed?.accounts?.gasLeft, 0);
-  assert.equal(
-    resumed?.accounts?.reworkLeft,
-    reworkBudget(plainAuthoring.reworkPolicy),
-    "the account the wall emptied is served refilled to what the release authored",
-  );
+  assert.equal((await reads.ticket(partition, subject))?.resumeAt, undefined);
 });
 
 /**
@@ -337,11 +299,11 @@ async function seedEntryAt(partition: Partition, seq: number): Promise<void> {
 }
 
 /**
- * A row no decision has moved since the projection grew these columns. It reads
- * as a ticket whose accounts are not known rather than as one whose accounts
- * are empty, which is the whole reason none of them is defaulted.
+ * A row no decision has moved since the projection grew the column. It reads as
+ * a ticket whose resume point is not known rather than as one parked at the
+ * machine's absent value, which is why the column is not defaulted.
  */
-test("a row written before the accounts existed serves none of them", async () => {
+test("a row written before the resume point existed serves none", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "projection-older",
@@ -356,111 +318,32 @@ test("a row written before the accounts existed serves none of them", async () =
   const older = await reads.ticket(partition, subject);
   assert.equal(older?.phase, "Escalated");
   assert.equal(older?.resumeAt, undefined);
-  assert.equal(older?.accounts, undefined);
 });
 
 /**
- * The two things a null `finalization_left` could mean, driven apart. A
- * `Budgeted` account standing at zero is a figure the wire owes its reader, and
- * only the pricing says whether an account was ever budgeted at all.
- */
-test("a budgeted account at zero is served, and an unbudgeted one is absent", async () => {
-  const reads = postgresNativeReads(pool);
-  const spent = await postgresHarnessProject(
-    harness.store,
-    "projection-budgeted",
-  );
-  const spentMemory = await postgresHarnessHistory(
-    harness,
-    spent,
-    "projection-budgeted",
-    1,
-    { ...plainAuthoring, finalizationPricing: budgeted(0) },
-  );
-  assert.equal((await projected(spent)).finalization_left, "0");
-  assert.deepEqual(await projected(spent), carried(spentMemory));
-  assert.equal(
-    (await reads.ticket(spent, subject))?.accounts?.finalizationLeft,
-    0,
-  );
-
-  const unpriced = await postgresHarnessProject(
-    harness.store,
-    "projection-deadline",
-  );
-  const unpricedMemory = await postgresHarnessHistory(
-    harness,
-    unpriced,
-    "projection-deadline",
-    1,
-    { ...plainAuthoring, finalizationPricing: "DeadlineOnly" },
-  );
-  assert.equal((await projected(unpriced)).finalization_left, null);
-  assert.deepEqual(await projected(unpriced), carried(unpricedMemory));
-  assert.deepEqual((await reads.ticket(unpriced, subject))?.accounts, {
-    gasLeft: refinementInstance.gas,
-    gasMax: refinementInstance.gas,
-    reworkLeft: 1,
-  });
-});
-
-/**
- * Each constraint migration 054 adds, against a row carrying the defect it
- * names. The header claims the wholeness CHECK is what keeps `gas_left` able to
- * tell the two `finalization_left` absences apart, and a claim about a
+ * The resume constraint migration 054 added, against a row carrying the defect
+ * it names and against every point the machine stamps — a claim about a
  * constraint is worth what the constraint is worth.
  */
-test("the projection refuses a resume, a negative account and a half-written pair", async () => {
+test("the projection refuses a resume point the machine never stamps", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "projection-constraints",
   );
   const columns = (rest: string) =>
     `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,${rest}`;
-  const refused: readonly [string, readonly unknown[], RegExp][] = [
-    [
+  await assert.rejects(
+    harness.query(
       columns("resume_at) VALUES ($1,$2,$3,'Escalated',1,'ResumeNowhere')"),
       [partition.tenant, partition.project, 1],
-      /ticket_projection_resume_is_known/u,
-    ],
-    [
-      columns("gas_left,rework_left) VALUES ($1,$2,$3,'Working',1,-1,0)"),
-      [partition.tenant, partition.project, 2],
-      /ticket_projection_accounts_are_not_negative/u,
-    ],
-    [
-      columns("rework_left) VALUES ($1,$2,$3,'Working',1,0)"),
-      [partition.tenant, partition.project, 3],
-      /ticket_projection_accounts_are_whole/u,
-    ],
-    [
-      columns("finalization_left) VALUES ($1,$2,$3,'Working',1,0)"),
-      [partition.tenant, partition.project, 4],
-      /ticket_projection_accounts_are_whole/u,
-    ],
-  ];
-  for (const [statement, values, refusal] of refused)
-    await assert.rejects(harness.query(statement, values), refusal);
-  await assert.doesNotReject(
-    harness.query(
-      columns(
-        "resume_at,gas_left,rework_left,finalization_left) VALUES ($1,$2,$3,'Escalated',1,'NoResume',0,0,NULL)",
-      ),
-      [partition.tenant, partition.project, 5],
     ),
-    "the shape a deadline-priced ticket is projected in",
+    /ticket_projection_resume_is_known/u,
   );
   for (const point of resumePoints)
     await assert.doesNotReject(
       harness.query(
-        columns(
-          `resume_at,gas_left,rework_left) VALUES ($1,$2,$3,'Escalated',1,'${point}',0,0)`,
-        ),
-        [
-          partition.tenant,
-          partition.project,
-          5 + resumePoints.indexOf(point) + 1,
-        ],
+        columns(`resume_at) VALUES ($1,$2,$3,'Escalated',1,'${point}')`),
+        [partition.tenant, partition.project, resumePoints.indexOf(point) + 2],
       ),
       `the check admits ${point}, which is a point the machine stamps`,
     );

@@ -538,7 +538,7 @@ const candidateCounterDigitsMax = 20;
 /** What one stage of a candidate's program weighs: its fanout and its combinator. */
 export const leadObservedStageCharsMax = 128;
 
-/** What one label a candidate's pricing or finalizer names weighs. */
+/** What the label a candidate's finalizer names weighs. */
 const candidateLabelCharsMax = 64;
 
 /** The configuration name one candidate's version label names. */
@@ -560,9 +560,6 @@ const candidateOwnMembers: readonly (readonly [string, number])[] = [
     "program",
     stringifiedArrayChars(nativeHttpDraftStagesMax, leadObservedStageCharsMax),
   ],
-  ["reworkPolicy", jsonStringChars(candidateLabelCharsMax)],
-  ["finalizationPricing", jsonStringChars(candidateLabelCharsMax)],
-  ["resumePricing", jsonStringChars(candidateLabelCharsMax)],
   ["finalizer", jsonStringChars(candidateLabelCharsMax)],
   [
     "configurationVersion",
@@ -577,7 +574,7 @@ const candidateOwnMembers: readonly (readonly [string, number])[] = [
 
 /**
  * What one dispatch candidate weighs beyond the configuration it pins: the
- * counters, the two pages authoring bounds, the labels its pricing is drawn
+ * counters, the two pages authoring bounds, the label its finalizer is drawn
  * from, and the identities naming the revision it was pinned under.
  */
 export const leadObservedCandidateFixedCharsMax =

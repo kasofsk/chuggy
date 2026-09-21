@@ -276,9 +276,6 @@ function releaseAuthoring(value: ReleaseAuthoringBody): ReleaseAuthoring {
     deps: new Set(value.dependencies),
     prog: value.program,
     workFanout: value.workFanout,
-    reworkPolicy: value.reworkPolicy,
-    finalizationPricing: value.finalizationPricing,
-    resumePricing: value.resumePricing,
     finalizer: value.finalizer,
   };
 }

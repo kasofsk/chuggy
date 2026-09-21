@@ -101,6 +101,7 @@ import {
 } from "../interpreter/serviceRuntime.ts";
 import { postgresJournalLegality } from "../adapters/postgres/journal.ts";
 import type { Config } from "../domain/config.ts";
+import { checkedReworkCap, type ReworkCap } from "../interpreter/reworkCap.ts";
 import { asOwnerId } from "../interpreter/projectStore.ts";
 import type {
   SelectorIdentityFactory,
@@ -426,6 +427,8 @@ export interface TicketServiceProcessRootConfig {
   readonly runtime: ServiceRuntimeConfig;
   readonly pass: TicketServiceRuntimeConfig;
   readonly domain: Config;
+  /** How many rework cycles this deployment gives a ticket before parking it. */
+  readonly rework: ReworkCap;
   readonly owner: string;
   readonly ticket?: TicketServiceConfig;
   readonly source: Omit<GitPromotionOptions, "credentials"> &
@@ -450,6 +453,7 @@ export function ticketServiceProcessRoot(
   const git = gitPromotion({ ...config.source, credentials });
   const service: TicketServiceRuntimeService = {
     domain: config.domain,
+    rework: checkedReworkCap(config.rework),
     discovery: postgresProjectDiscovery(pool),
     decisions: postgresProjectDecision(pool),
     projects: postgresProjectStore(pool),

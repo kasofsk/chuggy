@@ -59,7 +59,6 @@ import {
 import {
   evaluationCombinators,
   finalizers,
-  resumePricings,
 } from "../../src/contract/rosters.ts";
 import { postgresProjectChangeLog } from "../../src/adapters/postgres/projectChangeLog.ts";
 import type { ProjectChangeLog } from "../../src/interpreter/projectStream.ts";
@@ -1291,9 +1290,6 @@ function maximalCandidate(ticket: number): Record<string, unknown> {
       fanout: Number.MAX_SAFE_INTEGER,
       combinator: widestOf(evaluationCombinators),
     })),
-    reworkPolicy: { type: "BudgetedRework", value: Number.MAX_SAFE_INTEGER },
-    finalizationPricing: { type: "Budgeted", value: Number.MAX_SAFE_INTEGER },
-    resumePricing: widestOf(resumePricings),
     finalizer: widestOf(finalizers),
     configurationVersion: {
       name: escapedText(repositoryConfigurationNameCharsMax),

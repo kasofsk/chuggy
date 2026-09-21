@@ -66,6 +66,7 @@ function passService(
 ): TicketServiceRuntimeService {
   return {
     domain: modelInstance,
+    rework: { cyclesMax: 2 },
     discovery,
     decisions: { decide: () => unreachablePromise() },
     projects,

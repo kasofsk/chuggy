@@ -39,9 +39,29 @@ export function tsResolved(outcome: TaskOutcome): TaskState {
   return { type: "Resolved", value: outcome };
 }
 
-/** The set as a list, ascending by id — the one ordering anything here folds in. */
-export function tasksInIdOrder(tasks: ReadonlySet<Task>): readonly Task[] {
+/** The tasks as a list, ascending by id — the one ordering anything here folds in. */
+export function tasksInIdOrder(tasks: Iterable<Task>): readonly Task[] {
   return [...tasks].sort((a, b) => a.id - b.id);
+}
+
+/**
+ * How many work cycles a ticket has started, read off its retired record and
+ * its live set together: a cycle is a maximal run of Work-kind tasks in id
+ * order, so the first fan-out is one and every rework adds another. Derived
+ * rather than carried on the ticket, which would be a stored duplicate of it.
+ */
+export function workCyclesStarted(
+  record: readonly Task[],
+  live: ReadonlySet<Task>,
+): number {
+  let cycles = 0;
+  let previousWasWork = false;
+  for (const task of tasksInIdOrder([...record, ...live])) {
+    const isWork = task.kind === "Work";
+    if (isWork && !previousWasWork) cycles += 1;
+    previousWasWork = isWork;
+  }
+  return cycles;
 }
 
 /** How many of these tasks are still outstanding to the fabric. */

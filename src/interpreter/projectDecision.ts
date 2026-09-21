@@ -118,11 +118,8 @@ export type DecisionCause =
   | { readonly kind: "Continuation"; readonly id: string };
 
 /**
- * One row of the primary projection: where a ticket currently stands, where a
- * resume would re-enter it, and what it has left to spend. `finalizationLeft`
- * is absent under a pricing that budgets no finalization account, whose
- * standing zero a reader would take for an exhausted budget rather than for the
- * gas-priced finalizer failure the model prices.
+ * One row of the primary projection: where a ticket currently stands, whether
+ * anything may depend on it, and where a resume would re-enter it.
  */
 export interface TicketProjection {
   readonly ticket: TicketId;
@@ -130,9 +127,6 @@ export interface TicketProjection {
   readonly dependable: boolean;
   readonly reason: Reason;
   readonly resumeAt: Resume;
-  readonly gasLeft: number;
-  readonly reworkLeft: number;
-  readonly finalizationLeft?: number;
 }
 
 /**

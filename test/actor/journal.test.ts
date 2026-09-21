@@ -355,10 +355,9 @@ const refusals: readonly Refusal[] = [
 ];
 
 /**
- * Three conjuncts have no row, because nothing outside their draw set can be
- * constructed: a release's `resumePricing` and `finalizer` and a finalization
- * result's outcome are each a closed type whose every value the configuration
- * offers. The release repeating a dep has no row and no conjunct either — the
+ * Two conjuncts have no row, because nothing outside their draw set can be
+ * constructed: a release's `finalizer` and a finalization result's outcome are
+ * each a closed type whose every value the configuration offers. The release repeating a dep has no row and no conjunct either — the
  * payload is the model's set — so that refusal lives in
  * `test/interpreter/wire.test.ts`, on the array a stored journal carries.
  */

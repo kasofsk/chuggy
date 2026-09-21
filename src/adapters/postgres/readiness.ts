@@ -421,10 +421,10 @@ function continuationSource(row: InboxRow): DecisionInput["source"] {
   return {
     kind: "Continuation",
     continuation: row.input_id,
-    command:
-      row.continuation_kind === "ReduceWork"
-        ? { type: "WorkReduce", value: ticket }
-        : { type: "EvalReduce", value: ticket },
+    reduction: {
+      reduce: row.continuation_kind === "ReduceWork" ? "Work" : "Evaluation",
+      ticket: asTicketId(ticket),
+    },
     expectedTicketVersion: projectRowCounter(
       row.expected_ticket_version,
       "expected ticket version",

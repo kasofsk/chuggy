@@ -104,7 +104,7 @@ async function seedFilterProjection(partition: Partition) {
     [1, "Done", "NoReason"],
     [2, "Pending", "NoReason"],
     [3, "Revoked", "NoReason"],
-    [4, "Escalated", "GasExhausted"],
+    [4, "Escalated", "ReworkBudgetExhausted"],
   ] as const) {
     await seedEntry(partition, `native-filter-${String(ticket)}`, ticket);
     await subject.harness.query(
@@ -345,7 +345,7 @@ test("project reads filter before paging and expose one ticket detail", async ()
       ticket: 4,
       phase: "Escalated",
       sequence: 4,
-      reason: "GasExhausted",
+      reason: "ReworkBudgetExhausted",
       changedAt: seededEntryAt(4),
     },
   ]);
@@ -365,7 +365,7 @@ test("project reads filter before paging and expose one ticket detail", async ()
     ticket: 4,
     phase: "Escalated",
     sequence: 4,
-    reason: "GasExhausted",
+    reason: "ReworkBudgetExhausted",
     changedAt: seededEntryAt(4),
   });
   assert.equal(await reads.ticket(partition, id(9)), undefined);

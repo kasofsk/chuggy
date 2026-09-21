@@ -368,64 +368,12 @@
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             },
-            "reworkPolicy": {
-              "type": "object",
-              "properties": {
-                "type": {
-                  "type": "string",
-                  "const": "BudgetedRework"
-                },
-                "value": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                }
-              },
-              "required": ["type", "value"],
-              "additionalProperties": false
-            },
-            "finalizationPricing": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "const": "DeadlineOnly"
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "const": "Budgeted"
-                    },
-                    "value": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 9007199254740991
-                    }
-                  },
-                  "required": ["type", "value"],
-                  "additionalProperties": false
-                }
-              ]
-            },
-            "resumePricing": {
-              "type": "string",
-              "enum": ["RetryCharged", "RetryFree"]
-            },
             "finalizer": {
               "type": "string",
               "enum": ["NoFinalizer", "ManagedFinalizer"]
             }
           },
-          "required": [
-            "dependencies",
-            "program",
-            "workFanout",
-            "reworkPolicy",
-            "finalizationPricing",
-            "resumePricing",
-            "finalizer"
-          ],
+          "required": ["dependencies", "program", "workFanout", "finalizer"],
           "additionalProperties": false
         },
         "brief": {
@@ -585,64 +533,12 @@
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             },
-            "reworkPolicy": {
-              "type": "object",
-              "properties": {
-                "type": {
-                  "type": "string",
-                  "const": "BudgetedRework"
-                },
-                "value": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                }
-              },
-              "required": ["type", "value"],
-              "additionalProperties": false
-            },
-            "finalizationPricing": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "const": "DeadlineOnly"
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "const": "Budgeted"
-                    },
-                    "value": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 9007199254740991
-                    }
-                  },
-                  "required": ["type", "value"],
-                  "additionalProperties": false
-                }
-              ]
-            },
-            "resumePricing": {
-              "type": "string",
-              "enum": ["RetryCharged", "RetryFree"]
-            },
             "finalizer": {
               "type": "string",
               "enum": ["NoFinalizer", "ManagedFinalizer"]
             }
           },
-          "required": [
-            "dependencies",
-            "program",
-            "workFanout",
-            "reworkPolicy",
-            "finalizationPricing",
-            "resumePricing",
-            "finalizer"
-          ],
+          "required": ["dependencies", "program", "workFanout", "finalizer"],
           "additionalProperties": false
         },
         "brief": {

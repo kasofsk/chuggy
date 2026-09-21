@@ -2636,7 +2636,7 @@ test("the preparation an abort spends is one the sink hears about", async () => 
   assert.deepEqual(spent, [0]);
 });
 
-test("a closing project whose passed work is gone holds rather than pricing a failure", async () => {
+test("a closing project whose passed work is gone holds rather than submitting a failure", async () => {
   const store = recordingStore([
     { ...promotableView("request-one"), lifecycle: "Deleting" },
   ]);

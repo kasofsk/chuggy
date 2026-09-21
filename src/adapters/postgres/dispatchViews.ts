@@ -9,9 +9,7 @@ import type {
 } from "../../interpreter/dispatchView.ts";
 import {
   checkedDispatchViewQuery,
-  decodeDispatchFinalizationPricing,
   decodeDispatchProgram,
-  decodeDispatchReworkPolicy,
   dispatchViewDigest,
 } from "../../interpreter/dispatchView.ts";
 import { asTicketId } from "../../domain/ids.ts";
@@ -41,20 +39,10 @@ interface CandidateRow extends ConfigurationVersionRow {
   readonly ticket_version: string;
   readonly work_fanout: string;
   readonly program: string;
-  readonly rework_policy: string;
-  readonly finalization_pricing: string;
-  readonly resume_pricing: string;
   readonly finalizer: string;
   readonly configuration_revision: string;
   readonly configuration_digest: string;
   readonly configuration_canonical: string;
-}
-
-function decodeResumePricing(
-  value: string,
-): DispatchCandidate["resumePricing"] {
-  if (value === "RetryCharged" || value === "RetryFree") return value;
-  throw new TypeError("dispatch resume pricing is malformed");
 }
 
 function decodeFinalizer(value: string): DispatchCandidate["finalizer"] {
@@ -82,13 +70,6 @@ function candidateOf(
       .map((edge) => projectRowCounter(edge.dependency, "dispatch dependency")),
     workFanout: projectRowCounter(row.work_fanout, "dispatch work fanout"),
     program: decodeDispatchProgram(JSON.parse(row.program) as unknown),
-    reworkPolicy: decodeDispatchReworkPolicy(
-      JSON.parse(row.rework_policy) as unknown,
-    ),
-    finalizationPricing: decodeDispatchFinalizationPricing(
-      JSON.parse(row.finalization_pricing) as unknown,
-    ),
-    resumePricing: decodeResumePricing(row.resume_pricing),
     finalizer: decodeFinalizer(row.finalizer),
     configurationRevision: row.configuration_revision,
     configurationDigest: row.configuration_digest,
@@ -136,7 +117,7 @@ async function readDispatchView(
       return { result: "Reset" };
     const found = await client.query<CandidateRow>(
       sql`SELECT d.ticket::text,d.ticket_version::text,d.work_fanout::text,d.program,
-              d.rework_policy,d.finalization_pricing,d.resume_pricing,d.finalizer,
+              d.finalizer,
             d.configuration_revision,d.configuration_digest,d.configuration_canonical,
             v.name AS version_name,v.number::text AS version_number
          FROM dispatch_candidate d

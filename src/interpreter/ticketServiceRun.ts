@@ -8,6 +8,7 @@ import {
 } from "./projectWriter.ts";
 import type { ExecutionSourceObservationPort } from "./executionSource.ts";
 import type { TicketBriefPort } from "./ticketBrief.ts";
+import type { ReworkCap } from "./reworkCap.ts";
 import {
   observe,
   silentTicketServiceMetrics,
@@ -24,6 +25,7 @@ export interface TicketServiceRuntimeConfig {
 
 export interface TicketServiceRuntimeService {
   readonly domain: Config;
+  readonly rework: ReworkCap;
   readonly discovery: ProjectDiscovery;
   readonly decisions: ProjectDecision;
   readonly projects: ProjectStore;
@@ -168,6 +170,7 @@ export async function ticketServiceRunOnce(
   const metrics = service.metrics ?? silentTicketServiceMetrics;
   const writer: ProjectTicketWriter = {
     config: service.domain,
+    rework: service.rework,
     store: service.projects,
     decisions: service.decisions,
     executionSources: service.executionSources,

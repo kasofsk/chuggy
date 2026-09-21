@@ -13,11 +13,7 @@ import type { Core, Stage } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type { ConfigurationVersion } from "./repositoryConfigurationIdentity.ts";
 import {
-  decodeFinalizationPricing,
-  decodeReworkPolicy,
   decodeStage,
-  encodeFinalizationPricing,
-  encodeReworkPolicy,
   encodeStage,
   type ModelJson,
 } from "../generated/model-api.ts";
@@ -32,13 +28,6 @@ export interface DispatchCandidate {
   readonly dependencies: readonly number[];
   readonly workFanout: number;
   readonly program: readonly Stage[];
-  readonly reworkPolicy: {
-    readonly type: "BudgetedRework";
-    readonly value: number;
-  };
-  readonly finalizationPricing:
-    { readonly type: "Budgeted"; readonly value: number } | "DeadlineOnly";
-  readonly resumePricing: "RetryCharged" | "RetryFree";
   readonly finalizer: "NoFinalizer" | "ManagedFinalizer";
   readonly configurationRevision: string;
   readonly configurationDigest: string;
@@ -103,30 +92,6 @@ export function encodeDispatchProgram(
   return value.map(encodeStage);
 }
 
-export function decodeDispatchReworkPolicy(
-  value: unknown,
-): DispatchCandidate["reworkPolicy"] {
-  return decodeReworkPolicy(value);
-}
-
-export function encodeDispatchReworkPolicy(
-  value: DispatchCandidate["reworkPolicy"],
-): ModelJson {
-  return encodeReworkPolicy(value);
-}
-
-export function decodeDispatchFinalizationPricing(
-  value: unknown,
-): DispatchCandidate["finalizationPricing"] {
-  return decodeFinalizationPricing(value);
-}
-
-export function encodeDispatchFinalizationPricing(
-  value: DispatchCandidate["finalizationPricing"],
-): ModelJson {
-  return encodeFinalizationPricing(value);
-}
-
 function canonicalCandidate(candidate: DispatchCandidate): unknown {
   return {
     ticket: candidate.ticket,
@@ -137,9 +102,6 @@ function canonicalCandidate(candidate: DispatchCandidate): unknown {
       fanout: stage.fanout,
       combinator: stage.combinator,
     })),
-    reworkPolicy: candidate.reworkPolicy,
-    finalizationPricing: candidate.finalizationPricing,
-    resumePricing: candidate.resumePricing,
     finalizer: candidate.finalizer,
     configurationRevision: candidate.configurationRevision,
     configurationDigest: candidate.configurationDigest,
@@ -191,9 +153,6 @@ export function deriveDispatchCandidates(
         dependencies: [...value.deps].sort((left, right) => left - right),
         workFanout: value.workFanout,
         program: value.program.map((stage) => ({ ...stage })),
-        reworkPolicy: value.reworkPolicy,
-        finalizationPricing: value.finalizationPricing,
-        resumePricing: value.resumePricing,
         finalizer: value.finalizer,
         ...contract,
       },

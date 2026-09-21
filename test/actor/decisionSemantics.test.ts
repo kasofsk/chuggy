@@ -16,10 +16,10 @@
  * says which was taken.
  *
  * A PRE-3 ROW'S EVALREDUCE NAMED ONLY ITS TICKET, a shape the wire union this
- * image generates does not describe, so a store's load has to lift those bytes
- * before they are an event at all. `liftedPreThree` below is that lift over
- * the pinned files, asking `dispositionInRecord` for the disposition exactly
- * as the correction does.
+ * image generates does not describe, so the bytes are lifted before they are
+ * an event at all. That lift belongs to the seam a store's load reads a row
+ * with, so these files are read through `parseStoredEntry` rather than through
+ * a second copy of it here.
  */
 
 import assert from "node:assert/strict";
@@ -40,45 +40,27 @@ import {
 } from "../../src/actor/journal.ts";
 import {
   decisionSemanticsVersionCurrent,
-  dispositionInRecord,
   replayableDecision,
 } from "../../src/actor/decisionSemantics.ts";
-import {
-  decodeEntry,
-  decodeStepRecord,
-} from "../../src/generated/model-api.ts";
+import { parseStoredEntry } from "../../src/interpreter/wire.ts";
 import { ticketAt } from "../../src/domain/core.ts";
 import { id } from "../domain/fixtures.ts";
 import { refinementInstance } from "./harness.ts";
 
 const config = refinementInstance;
 
-/** One pinned row's bytes with its EvalReduce carrying the disposition its record reports. */
-function liftedPreThree(raw: unknown): unknown {
-  const row = raw as { readonly event: { type: string; value: unknown } };
-  if (row.event.type !== "EvalReduce" || typeof row.event.value !== "number")
-    return raw;
-  return {
-    ...row,
-    event: {
-      type: "EvalReduce",
-      value: {
-        ticket: row.event.value,
-        onFailure: dispositionInRecord(
-          decodeStepRecord((raw as { readonly rec: unknown }).rec),
-        ),
-      },
-    },
-  };
-}
-
-/** One pinned history, read through the wire schema a store's load reads it with. */
+/** One pinned history, read exactly as a store's load reads a row of that vintage. */
 function pinned(file: string): readonly Entry[] {
   const raw: unknown = JSON.parse(
     readFileSync(join(import.meta.dirname, file), "utf8"),
   );
   assert.ok(Array.isArray(raw), `${file} is not a journal`);
-  return raw.map((row: unknown) => decodeEntry(liftedPreThree(row)));
+  return raw.map((row: unknown, at: number) => {
+    const parsed = parseStoredEntry(row, 1);
+    if (parsed.parsed === "Refused")
+      throw new Error(`${file} row ${String(at)} is unreadable: ${parsed.why}`);
+    return parsed.value;
+  });
 }
 
 /** A pinned history as a store holding it would present it, every row at one semantics. */

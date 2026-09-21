@@ -9,15 +9,13 @@
  * been told the ticket is resumable. The revoke beside it is admitted
  * unconditionally, because it is enabled on the phase alone (`revocableIn`).
  *
- * THE SET IS DECIDED AT THE RAISE, AND THAT IS ENOUGH BECAUSE A PARKED
- * TICKET'S ACCOUNTS CANNOT MOVE. `model/domain.qnt` charges gas at the
- * dispatch, at a rework, at a finalizer's retry and at a resume, and every one
- * of those steps out of a live phase — none of them is reachable from
- * `Escalated`. The resume is the exception that proves it: it is the one charge
- * a parked ticket can take, and taking it both leaves the phase and answers
- * this action. So a set that is right when the action opens stays right for as
- * long as there is anyone to serve it to, which is why `nativeActionAdmits`
- * reading the stored row back is sound.
+ * THE SET IS DECIDED AT THE RAISE, AND THAT IS ENOUGH BECAUSE NOTHING A
+ * PARKED TICKET ADMITS CAN MOVE WHILE IT IS PARKED. `retryableIn` reads the
+ * phase and the resume point the wall stamped, and the only step that rewrites
+ * either is the resume itself, which leaves `Escalated` and answers this
+ * action. So a set that is right when the action opens stays right for as long
+ * as there is anyone to serve it to, which is why `nativeActionAdmits` reading
+ * the stored row back is sound.
  */
 
 import type { Entry } from "../actor/journal.ts";

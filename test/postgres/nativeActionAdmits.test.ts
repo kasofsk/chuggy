@@ -2,17 +2,17 @@
  * What a park offers the desk, driven through the real writer and read back
  * through the public read.
  *
- * NOTHING IS SEEDED HERE. The park this case asserts about is one a real
- * decision raised at the gas a real trace left it, and the answers come off the
- * `native_action_resolution` rows that decision wrote — so a set that no longer
- * matches the enablement is two live paths disagreeing rather than a fixture
- * disagreeing with a rule.
+ * NOTHING IS SEEDED HERE. The parks these cases assert about are ones real
+ * decisions raised, and the answers come off the `native_action_resolution`
+ * rows those decisions wrote — so a set that no longer matches the enablement
+ * is two live paths disagreeing rather than a fixture disagreeing with a rule.
  *
- * THE TICKET IS DRIVEN PAST AN AFFORDABLE PARK INTO AN UNAFFORDABLE ONE,
- * because a case that only ever saw the second would pass just as well against
- * a plan that offers the revoke and nothing else. The resume answered in
- * between is also the charge that empties the account, and the rework it
- * re-enters is what walls the ticket a second time with nothing left to spend.
+ * ONE PARK THAT OFFERS THE RESUME AND ONE THAT DOES NOT, because a case that
+ * only ever saw one of them would pass just as well against a plan that offers
+ * the same pair to everything. The first is the rework wall, which the writer's
+ * configured cap reaches on the third failed evaluation; the second is the
+ * dependent the answer to the first dooms, parked by a revoked dependency —
+ * the one wall the machine stamps no resume point on.
  */
 
 import assert from "node:assert/strict";
@@ -23,20 +23,21 @@ import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { ticketAt } from "../../src/domain/core.ts";
 import type { Verdict } from "../../src/domain/generated/modelTypes.ts";
-import { asTaskId } from "../../src/domain/ids.ts";
+import { asTaskId, type TicketId } from "../../src/domain/ids.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   projectWriterDecide,
   type ProjectMemory,
 } from "../../src/interpreter/projectWriter.ts";
 import type { NativeActionResolution } from "../../src/interpreter/ticketCommand.ts";
-import { plainResult } from "../actor/harness.ts";
+import { plainAuthoring, plainResult } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   postgresHarnessCompletion,
   postgresHarnessHistory,
   postgresHarnessJournal,
   postgresHarnessProject,
+  postgresHarnessReleaseSubmission,
   postgresHarnessSubmission,
   postgresHarnessWriter,
 } from "./harness.ts";
@@ -85,13 +86,14 @@ async function admitsReport(
   return admitsDrain(partition, memory);
 }
 
-/** The answers the public read says the ticket's open actions admit, in listed order. */
+/** The answers the public read says a ticket's open actions admit, in listed order. */
 async function admitsOffered(
   partition: Partition,
+  ticket: TicketId,
 ): Promise<readonly (readonly NativeActionResolution[])[]> {
   const open = await postgresNativeReads(subject.pool).ticketNativeActions(
     partition,
-    id(1),
+    ticket,
   );
   if (open === undefined)
     throw new Error("native admits case: the ticket has no projection");
@@ -128,8 +130,25 @@ async function admitsResolve(
   return admitsDrain(partition, memory);
 }
 
-test("a park offers the resume only while the ticket can pay for it", async () => {
-  const label = "admits-affordability";
+/** Releases a second ticket waiting on the first, which the first's revoke dooms. */
+async function admitsDependent(
+  partition: Partition,
+  memory: ProjectMemory,
+  label: string,
+): Promise<ProjectMemory> {
+  const accepted = await subject.harness.inbox.accept(
+    await postgresHarnessReleaseSubmission(subject.harness, partition, label, {
+      ...plainAuthoring,
+      deps: new Set<number>([1]),
+    }),
+  );
+  if (accepted.accepted !== "Accepted")
+    throw new Error(`native admits case: the release was ${accepted.accepted}`);
+  return admitsDrain(partition, memory);
+}
+
+test("a park offers the resume only where the machine models one", async () => {
+  const label = "admits-resumability";
   const partition = await postgresHarnessProject(subject.harness.store, label);
   let memory = await postgresHarnessHistory(
     subject.harness,
@@ -137,25 +156,37 @@ test("a park offers the resume only while the ticket can pay for it", async () =
     label,
     postgresHarnessJournal().length,
   );
-  memory = await admitsReport(partition, memory, `${label}-work`, 1, "Pass");
-  memory = await admitsReport(partition, memory, `${label}-eval`, 2, "Fail");
-  memory = await admitsReport(partition, memory, `${label}-rework`, 3, "Pass");
-  memory = await admitsReport(partition, memory, `${label}-park`, 4, "Fail");
+  for (const [task, verdict] of [
+    [1, "Pass"],
+    [2, "Fail"],
+    [3, "Pass"],
+    [4, "Fail"],
+    [5, "Pass"],
+    [6, "Fail"],
+  ] as const) {
+    memory = await admitsReport(
+      partition,
+      memory,
+      `${label}-${String(task)}`,
+      task,
+      verdict,
+    );
+  }
 
-  const parked = ticketAt(memory.core, id(1));
-  assert.equal(parked.phase, "Escalated");
-  assert.equal(parked.reason, "ReworkBudgetExhausted");
-  assert.equal(parked.resumeAt, "ResumeReworking");
-  assert.ok(parked.gasLeft > 0);
-  assert.deepEqual(await admitsOffered(partition), [["Resume", "Revoke"]]);
+  const walled = ticketAt(memory.core, id(1));
+  assert.equal(walled.phase, "Escalated");
+  assert.equal(walled.reason, "ReworkBudgetExhausted");
+  assert.equal(walled.resumeAt, "ResumeReworking");
+  assert.deepEqual(await admitsOffered(partition, id(1)), [
+    ["Resume", "Revoke"],
+  ]);
 
-  memory = await admitsResolve(partition, memory, `${label}-resume`, "Resume");
-  memory = await admitsReport(partition, memory, `${label}-again`, 5, "Fail");
+  memory = await admitsDependent(partition, memory, `${label}-dependent`);
+  memory = await admitsResolve(partition, memory, `${label}-revoke`, "Revoke");
 
-  const spent = ticketAt(memory.core, id(1));
-  assert.equal(spent.phase, "Escalated");
-  assert.equal(spent.reason, "WorkFailed");
-  assert.equal(spent.resumeAt, "ResumeWorking");
-  assert.equal(spent.gasLeft, 0);
-  assert.deepEqual(await admitsOffered(partition), [["Revoke"]]);
+  const doomed = ticketAt(memory.core, id(2));
+  assert.equal(doomed.phase, "Escalated");
+  assert.equal(doomed.reason, "DependencyRevoked");
+  assert.equal(doomed.resumeAt, "NoResume");
+  assert.deepEqual(await admitsOffered(partition, id(2)), [["Revoke"]]);
 });

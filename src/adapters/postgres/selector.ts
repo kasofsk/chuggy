@@ -57,11 +57,7 @@ import { parseTicketCommand } from "../../interpreter/wire.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
 import { sessionRowText } from "./sessionRows.ts";
-import {
-  finalizationPricingSchema,
-  reworkPolicySchema,
-  stageSchema,
-} from "../../generated/model-api.ts";
+import { stageSchema } from "../../generated/model-api.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import type { SelectorProposalReviewStore } from "../../interpreter/selectorReview.ts";
 
@@ -159,9 +155,6 @@ const dispatchCandidateSchema = z
     dependencies: z.array(z.number().int().safe().positive()).readonly(),
     workFanout: z.number().int().safe().positive(),
     program: z.array(stageSchema).readonly(),
-    reworkPolicy: reworkPolicySchema,
-    finalizationPricing: finalizationPricingSchema,
-    resumePricing: z.enum(["RetryCharged", "RetryFree"]),
     finalizer: z.enum(["NoFinalizer", "ManagedFinalizer"]),
     configurationRevision: z.string(),
     configurationDigest: z.string(),
