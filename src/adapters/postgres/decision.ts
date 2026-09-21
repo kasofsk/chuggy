@@ -76,9 +76,7 @@ import {
 } from "../../interpreter/projectDecision.ts";
 import type { Lease, Partition } from "../../interpreter/projectStore.ts";
 import {
-  encodeDispatchFinalizationPricing,
   encodeDispatchProgram,
-  encodeDispatchReworkPolicy,
   type DispatchCandidate,
 } from "../../interpreter/dispatchView.ts";
 import {
@@ -201,17 +199,13 @@ async function decisionProject(
     await client.query(
       sql`INSERT INTO ticket_projection
        (tenant, project, ticket, phase, seq, dependable, reason, resume_at,
-        gas_left, rework_left, finalization_left,
         configuration_revision, configuration_digest)
        VALUES (${partition.tenant}, ${partition.project}, ${row.ticket}, ${row.phase}, ${seq}, ${row.dependable},
-               ${row.reason}, ${row.resumeAt}, ${row.gasLeft}, ${row.reworkLeft},
-               ${row.finalizationLeft ?? null},
+               ${row.reason}, ${row.resumeAt},
                ${configuration.configurationRevision}, ${configuration.configurationDigest})
        ON CONFLICT (tenant, project, ticket)
        DO UPDATE SET phase = EXCLUDED.phase, seq = EXCLUDED.seq, dependable = EXCLUDED.dependable,
-                     reason = EXCLUDED.reason, resume_at = EXCLUDED.resume_at,
-                     gas_left = EXCLUDED.gas_left, rework_left = EXCLUDED.rework_left,
-                     finalization_left = EXCLUDED.finalization_left`,
+                     reason = EXCLUDED.reason, resume_at = EXCLUDED.resume_at`,
     );
   }
 }
@@ -239,15 +233,12 @@ async function replaceDispatchView(
   for (const candidate of view.candidates) {
     await client.query(
       sql`INSERT INTO dispatch_candidate
-       (tenant,project,ticket,ticket_version,work_fanout,program,rework_policy,
-        finalization_pricing,resume_pricing,finalizer,configuration_revision,
+       (tenant,project,ticket,ticket_version,work_fanout,program,
+        finalizer,configuration_revision,
         configuration_digest,configuration_canonical)
        VALUES (${lease.partition.tenant},${lease.partition.project},${candidate.ticket},
                ${candidate.ticketVersion},${candidate.workFanout},
                ${JSON.stringify(encodeDispatchProgram(candidate.program))},
-               ${JSON.stringify(encodeDispatchReworkPolicy(candidate.reworkPolicy))},
-               ${JSON.stringify(encodeDispatchFinalizationPricing(candidate.finalizationPricing))},
-               ${candidate.resumePricing},
                ${candidate.finalizer},${candidate.configurationRevision},
                ${candidate.configurationDigest},${candidate.configurationCanonical})`,
     );

@@ -26,7 +26,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { budgetedInstance } from "../domain/configs.ts";
+import { modelInstance } from "../domain/configs.ts";
 import { declaredActions } from "../domain/declared.ts";
 import {
   replayActions,
@@ -36,7 +36,7 @@ import {
 } from "./dispatch.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
-const config = budgetedInstance;
+const config = modelInstance;
 const emptyCore: Core = { tickets: new Map() };
 
 /** A state that records no draw at all, so an arm that needs one refuses by naming it. */
@@ -45,10 +45,8 @@ const noPicks: Picks = {
   deps: undefined,
   program: undefined,
   workFanout: undefined,
-  reworkPolicy: undefined,
-  finalizationPricing: undefined,
-  resumePricing: undefined,
   finalizer: undefined,
+  onFailure: undefined,
   taskId: undefined,
   verdict: undefined,
   outcome: undefined,

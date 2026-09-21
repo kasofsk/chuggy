@@ -30,9 +30,9 @@ trap 'rm -rf "$WORK"' EXIT
 
 R="$WORK/repo"
 
-# The seed is pinned to a budgeted run that draws a duplicate completion;
-# test/random/shrink.test.ts pins the same one and says how to re-find it.
-SEED=0x7
+# The seed is pinned to a run that draws a duplicate completion; a mutant that
+# no seed here draws is a case that passes by never reaching the defect.
+SEED=0x3
 
 run_gate() { # <dir> [env=value...]
 	OUT="$WORK/.out"
@@ -86,7 +86,7 @@ RC=$?
 set -e
 check "a clean walk exits 0" 0 "$RC" "walked clean"
 check "the clean line counts the runs and steps the sweep consumed" 0 "$RC" \
-	"3 instance(s), 6 run(s), 240 step(s) walked clean"
+	"1 instance(s), 2 run(s), 80 step(s) walked clean"
 
 # --- The gate bites: a phantom completion in a scratch copy ------------------
 #
@@ -111,11 +111,11 @@ fs.writeFileSync(path, broken)
 
 run_gate "$R" \
 	CHUG_WALK_SEED="$SEED" \
-	CHUG_WALK_INSTANCE=mc_chuggy_budgeted \
+	CHUG_WALK_INSTANCE=mc_chuggy \
 	CHUG_WALK_DIR="$R/found"
 check "a phantom completion is a finding" 1 "$RC" "completion(s) counted"
 check "the finding names the seed that reproduces it" 1 "$RC" "$SEED"
-check "the finding points at the written counterexample" 1 "$RC" "walk-mc_chuggy_budgeted-$SEED"
+check "the finding points at the written counterexample" 1 "$RC" "walk-mc_chuggy-$SEED"
 
 # --- The counterexample is a corpus the replayer consumes --------------------
 

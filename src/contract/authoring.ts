@@ -13,16 +13,11 @@
 import { z } from "zod";
 
 import {
-  countSchema,
   nativeHttpDraftDependenciesMax,
   nativeHttpDraftStagesMax,
   ticketNumberSchema,
 } from "./http.ts";
-import {
-  evaluationCombinators,
-  finalizers,
-  resumePricings,
-} from "./rosters.ts";
+import { evaluationCombinators, finalizers } from "./rosters.ts";
 
 /** The two page bounds an authored draft is held to, surfaced where it is parsed. */
 export { nativeHttpDraftDependenciesMax, nativeHttpDraftStagesMax };
@@ -32,22 +27,6 @@ export const programStageSchema = z.strictObject({
   combinator: z.enum(evaluationCombinators),
 });
 
-export const reworkPolicySchema = z.strictObject({
-  type: z.literal("BudgetedRework"),
-  value: countSchema,
-});
-
-const budgetedFinalizationSchema = z.strictObject({
-  type: z.literal("Budgeted"),
-  value: countSchema,
-});
-
-export const finalizationPricingSchema = z.union([
-  z.literal("DeadlineOnly"),
-  budgetedFinalizationSchema,
-]);
-
-export const resumePricingSchema = z.enum(resumePricings);
 export const finalizerSchema = z.enum(finalizers);
 
 export const authoringSchema = z.strictObject({
@@ -57,25 +36,14 @@ export const authoringSchema = z.strictObject({
     .refine((values) => new Set(values).size === values.length),
   program: z.array(programStageSchema).max(nativeHttpDraftStagesMax),
   workFanout: ticketNumberSchema,
-  reworkPolicy: reworkPolicySchema,
-  finalizationPricing: finalizationPricingSchema,
-  resumePricing: resumePricingSchema,
   finalizer: finalizerSchema,
 });
 
 export type ReleaseAuthoringBody = z.infer<typeof authoringSchema>;
 
 export const programStageResponseSchema = programStageSchema.strip();
-export const reworkPolicyResponseSchema = reworkPolicySchema.strip();
-
-export const finalizationPricingResponseSchema = z.union([
-  z.literal("DeadlineOnly"),
-  budgetedFinalizationSchema.strip(),
-]);
 
 /** The same authoring read back, dropping a field the reader does not know. */
 export const authoringResponseSchema = authoringSchema.strip().extend({
   program: z.array(programStageResponseSchema).max(nativeHttpDraftStagesMax),
-  reworkPolicy: reworkPolicyResponseSchema,
-  finalizationPricing: finalizationPricingResponseSchema,
 });

@@ -26,7 +26,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
-import { budgetedInstance } from "../domain/configs.ts";
+import { modelInstance } from "../domain/configs.ts";
 import { decodeTrace, encodeValue } from "../itf/decode.ts";
 import { encodeCore, encodeStepRecord } from "../itf/vocabulary.ts";
 import { seedLabel, writeCounterexample } from "./counterexample.ts";
@@ -42,8 +42,8 @@ import {
   type WalkStep,
 } from "./walk.ts";
 
-const config = budgetedInstance;
-const instance = "mc_chuggy_budgeted";
+const config = modelInstance;
+const instance = "mc_chuggy";
 
 /** The phantom completion: a revoke recording its ticket as having reached Done, state untouched. */
 const phantomCompletion: Decide = (walkConfig, core, action, picks) => {
@@ -71,9 +71,9 @@ interface Found {
 let cached: Found | undefined;
 
 /**
- * A seed whose budgeted run draws a revoke: the pinned one, then a bounded
- * fallback sweep. A miss on both means the draw stream changed shape under the
- * pin, and the fix is a wider offline sweep and a fresh pin.
+ * A seed whose run draws a revoke: the pinned one, then a bounded fallback
+ * sweep. A miss on both means the draw stream changed shape under the pin,
+ * and the fix is a wider offline sweep and a fresh pin.
  */
 function found(): Found {
   if (cached !== undefined) return cached;

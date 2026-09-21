@@ -17,13 +17,13 @@ afterEach(cleanup);
 
 test("the region is labelled by its own heading, and the meta sits beside it", () => {
   const view = render(
-    <Panel title="Budgets" meta="12s ago">
-      <p>Rework 2/2 used</p>
+    <Panel title="Ledger" meta="12s ago">
+      <p>Stage 2 of 2 passed</p>
     </Panel>,
   );
-  const region = screen.getByRole("region", { name: "Budgets" });
+  const region = screen.getByRole("region", { name: "Ledger" });
   expect(region.querySelector(".panel-meta")?.textContent).toBe("12s ago");
-  expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Budgets");
+  expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Ledger");
   expect(region.classList.contains("rounded-3")).toBe(true);
   expect(view.container.querySelector("[style]")).toBeNull();
   styleless();

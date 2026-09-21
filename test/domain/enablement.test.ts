@@ -17,7 +17,6 @@ import {
   dependableIn,
   depArtifacts,
   depsDoneIn,
-  dispatchableIn,
   doneIn,
   executionBlockedReasons,
   finalizableIn,
@@ -33,7 +32,6 @@ import {
   releasableIdsIn,
   reducibleEvalIn,
   reducibleWorkIn,
-  resumeCharge,
   retryableIn,
   retryablesIn,
   revocableIn,
@@ -43,9 +41,8 @@ import {
 } from "../../src/domain/enablement.ts";
 import { defaultProgram } from "../../src/domain/config.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import { budgeted, reworkBudgetOf } from "../../src/domain/pricing.ts";
 import type { Core, Ticket } from "../../src/domain/generated/modelTypes.ts";
-import { budgetedInstance } from "./configs.ts";
+import { modelInstance } from "./configs.ts";
 import {
   coreOf,
   depsOf,
@@ -57,7 +54,7 @@ import {
   workTask,
 } from "./fixtures.ts";
 
-const config = budgetedInstance;
+const config = modelInstance;
 
 /** An artifact mark, as a ticket that ran carries one. */
 const produced = (value: number) =>
@@ -197,17 +194,6 @@ test("what a ticket waits on is what its dependencies produced, read in id order
   );
 });
 
-test("the ticket writer needs a ready ticket with gas to charge", () => {
-  const ready = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
-  ]);
-  const broke = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending", gasLeft: 0 }),
-  ]);
-  assert.ok(dispatchableIn(ready, id(1)));
-  assert.ok(!dispatchableIn(broke, id(1)));
-});
-
 test("only the two task phases can receive a completion, and only a resolved set reduces", () => {
   const core = coreOf([
     ticketOn(config, "ManagedFinalizer", {
@@ -280,80 +266,35 @@ test("the fabric may still report on exactly the tasks a ticket has outstanding"
   assert.deepEqual(outstandingTaskIdsIn(core, id(2)), []);
 });
 
-test("entry to Working always meters, and every other resume is priced by the ticket", () => {
-  const charged = ticketOn(config, "ManagedFinalizer", {
-    resumePricing: "RetryCharged",
-  });
-  const free = ticketOn(config, "ManagedFinalizer", {
-    resumePricing: "RetryFree",
-  });
-  assert.equal(resumeCharge(charged, "ResumeWorking"), 1);
-  assert.equal(
-    resumeCharge(free, "ResumeWorking"),
-    1,
-    "the account that makes the graph valid is charged under both pricings",
-  );
-  assert.equal(resumeCharge(charged, "ResumeReworking"), 1);
-  assert.equal(
-    resumeCharge(free, "ResumeReworking"),
-    1,
-    "the rework wall's resume enters Working, so it meters under both too",
-  );
-  assert.equal(resumeCharge(charged, "ResumeEvaluating"), 1);
-  assert.equal(resumeCharge(free, "ResumeEvaluating"), 0);
-  assert.equal(resumeCharge(charged, "ResumeFinalizing"), 1);
-  assert.equal(resumeCharge(free, "ResumeFinalizing"), 0);
-});
-
-test("a park is retryable when its resume exists and the ticket can afford it", () => {
+test("a park is retryable exactly when its wall stamped a resume", () => {
   const parked = coreOf([
     ticketOn(config, "ManagedFinalizer", {
       phase: "Escalated",
       resumeAt: "ResumeFinalizing",
-      reason: "GasExhausted",
-      resumePricing: "RetryCharged",
-      gasLeft: 0,
-    }),
-    ticketOn(config, "ManagedFinalizer", {
-      phase: "Escalated",
-      resumeAt: "ResumeFinalizing",
-      reason: "GasExhausted",
-      resumePricing: "RetryFree",
-      gasLeft: 0,
+      reason: "ExecutionProfileUnavailable",
     }),
     ticketOn(config, "ManagedFinalizer", {
       phase: "Escalated",
       reason: "DependencyRevoked",
-      gasLeft: config.gas,
     }),
     ticketOn(config, "ManagedFinalizer", {
       phase: "Escalated",
       resumeAt: "ResumeWorking",
       reason: "WorkFailed",
-      gasLeft: 1,
     }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Working" }),
   ]);
+  assert.ok(retryableIn(parked, id(1)));
   assert.ok(
-    !retryableIn(parked, id(1)),
-    "a charging resume at zero gas is the permanently-parked corner",
-  );
-  assert.ok(retryableIn(parked, id(2)));
-  assert.ok(
-    !retryableIn(parked, id(3)),
+    !retryableIn(parked, id(2)),
     "the cascade wall has no modeled resume, so its only exit is a revoke",
   );
-  assert.ok(retryableIn(parked, id(4)));
-  assert.deepEqual(retryablesIn(parked), [id(2), id(4)]);
-});
-
-test("a running ticket is not parked, so nothing about it is retryable", () => {
-  const running = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
-      phase: "Working",
-      resumeAt: "ResumeWorking",
-    }),
-  ]);
-  assert.ok(!retryableIn(running, id(1)));
+  assert.ok(retryableIn(parked, id(3)));
+  assert.ok(
+    !retryableIn(parked, id(4)),
+    "a ticket that is not parked has nothing to resume from",
+  );
+  assert.deepEqual(retryablesIn(parked), [id(1), id(3)]);
 });
 
 test("the finalizer reports every lifecycle result, and a block names an execution reason", () => {
@@ -377,22 +318,16 @@ test("a release draws every authored value from a universe, and is refused outsi
   const authoring = {
     prog: defaultProgram(config),
     workFanout: config.nTasks,
-    reworkPolicy: config.reworkPolicy,
-    finalizationPricing: config.finalizationPricing,
-    resumePricing: "RetryCharged" as const,
     finalizer: "ManagedFinalizer" as const,
   };
   assert.ok(releasableAuthoring(config, authoring));
   assert.ok(
     releasableAuthoring(config, {
       ...authoring,
-      reworkPolicy: reworkBudgetOf(0),
-      finalizationPricing: "DeadlineOnly",
       workFanout: 1,
-      resumePricing: "RetryFree",
       finalizer: "NoFinalizer",
     }),
-    "a ticket may be authored poorer than its fleet",
+    "a ticket may be authored narrower than its fleet",
   );
   assert.ok(!releasableAuthoring(config, { ...authoring, prog: [] }));
   assert.ok(!releasableAuthoring(config, { ...authoring, workFanout: 0 }));
@@ -400,19 +335,6 @@ test("a release draws every authored value from a universe, and is refused outsi
     !releasableAuthoring(config, {
       ...authoring,
       workFanout: config.nTasks + 1,
-    }),
-  );
-  assert.ok(
-    !releasableAuthoring(config, {
-      ...authoring,
-      reworkPolicy: reworkBudgetOf(99),
-    }),
-    "no ticket is authored richer than its fleet grants",
-  );
-  assert.ok(
-    !releasableAuthoring(config, {
-      ...authoring,
-      finalizationPricing: budgeted(99),
     }),
   );
 });

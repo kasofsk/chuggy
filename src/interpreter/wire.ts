@@ -12,14 +12,29 @@
  * text a store keeps, and the refusal a bad row earns. A refusal is returned
  * rather than thrown, because a caller that must handle it is a caller the
  * compiler can insist on.
+ *
+ * BYTES OLDER THAN THE CURRENT MODEL ARE LIFTED HERE, AT THE SEAM, AND NOWHERE
+ * ELSE. A row written before decision semantics 3 recorded an `EvalReduce` as
+ * the bare ticket, because the evaluation failure's disposition was not yet a
+ * pick the journal carried; the model's union now describes only the pair, so
+ * those bytes decode into nothing unless the missing half is supplied. It is
+ * supplied from the row's own record, by the actor's rule rather than a copy of
+ * it, so the decoded event says what the row was decided under. Only a row
+ * declaring semantics below 3 is lifted: a semantics-3 row whose event is a
+ * bare integer is not an old row, it is a corrupt one, and it is refused.
  */
 
 import {
   decodeDecisionEvent,
   decodeEntry,
+  decodeStepRecord,
   encodeDecisionEvent,
   encodeEntry as encodeEntryValue,
 } from "../generated/model-api.ts";
+import {
+  dispositionInRecord,
+  type DecisionSemanticsVersion,
+} from "../actor/decisionSemantics.ts";
 import {
   finalizationOutcomeTags,
   type DecisionEvent,
@@ -58,6 +73,53 @@ function parseRefusal(error: unknown): string {
 export function parseEntry(raw: unknown): Parsed<Entry> {
   try {
     return { parsed: "Ok", value: decodeEntry(raw) };
+  } catch (error: unknown) {
+    return { parsed: "Refused", why: parseRefusal(error) };
+  }
+}
+
+/** The fields of a wire row this module reads before the codec has seen it. */
+function rowFields(raw: unknown): Record<string, unknown> | undefined {
+  return typeof raw === "object" && raw !== null
+    ? (raw as Record<string, unknown>)
+    : undefined;
+}
+
+/**
+ * The row with the disposition its record reports written onto its `EvalReduce`,
+ * where the bytes predate the field. Anything else is passed through for the
+ * codec to accept or refuse on its own terms.
+ */
+function entryAtRecordedDisposition(raw: unknown): unknown {
+  const row = rowFields(raw);
+  const event = rowFields(row?.["event"]);
+  if (event?.["type"] !== "EvalReduce" || typeof event["value"] !== "number")
+    return raw;
+  return {
+    ...row,
+    event: {
+      type: "EvalReduce",
+      value: {
+        ticket: event["value"],
+        onFailure: dispositionInRecord(decodeStepRecord(row?.["rec"])),
+      },
+    },
+  };
+}
+
+/**
+ * Reads one row as a store holds it: the semantics its own envelope declares,
+ * and the bytes lifted to the shape this image's model describes.
+ */
+export function parseStoredEntry(
+  raw: unknown,
+  semantics: DecisionSemanticsVersion,
+): Parsed<Entry> {
+  try {
+    return {
+      parsed: "Ok",
+      value: decodeEntry(semantics < 3 ? entryAtRecordedDisposition(raw) : raw),
+    };
   } catch (error: unknown) {
     return { parsed: "Refused", why: parseRefusal(error) };
   }

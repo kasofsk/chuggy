@@ -1,6 +1,6 @@
 /**
- * One ticket: where it is, what may be done to it, what it is metered by, what
- * has run for it and what all of that cost.
+ * One ticket: where it is, what may be done to it, what has run for it and
+ * what all of that cost.
  *
  * The draft is read once here and handed to everything that needs it, so the
  * brief, the authoring the ledger groups by and the provenance are one
@@ -94,8 +94,7 @@ function TicketAside(props: {
 }): ReactNode {
   const ticket = props.ticket;
   const ledger = props.facts.ledger;
-  const accounts = props.facts.accounts;
-  if (ticket === undefined || ledger === undefined || accounts === undefined)
+  if (ticket === undefined || ledger === undefined)
     return (
       <aside
         className={`grid min-w-0 gap-4 ${props.sticky ? "sticky top-4" : ""}`}
@@ -107,7 +106,6 @@ function TicketAside(props: {
     <TicketSituation
       ticket={ticket}
       facts={ledger}
-      accounts={accounts}
       stageCount={props.facts.stageCount}
       actions={props.actions}
       nowMs={props.nowMs}
@@ -155,7 +153,6 @@ function TicketBody(props: {
   const draft = readValue(props.reads.draftState);
   const page = readValue(props.reads.pageState);
   const facts = ticketPageFacts(ticket, draft, page);
-  const rework = facts.accounts?.rework;
   const twoColumn = useViewportAtLeastEm(viewportTwoColumnEm);
   const actions = (
     <TicketActions
@@ -165,9 +162,6 @@ function TicketBody(props: {
       openState={props.reads.openState}
       dispatchState={props.reads.dispatchState}
       resume={facts.resume}
-      {...(rework?.max === undefined
-        ? {}
-        : { rework: { left: rework.left ?? 0, max: rework.max } })}
     />
   );
   return (

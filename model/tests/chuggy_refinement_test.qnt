@@ -4,14 +4,13 @@
 /// ticket policy carried by ReleaseTicket.
 
 module chuggy_refinement_unit_test {
-  import chuggy_measure.* from "../measure"
+  import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
 
   pure val progFlat: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
   pure val release10: DecisionEvent = ReleaseTicket({
     ticket: 2, deps: Set(), prog: progFlat, workFanout: 1,
-    reworkPolicy: BudgetedRework(1), finalizationPricing: Budgeted(1),
-    resumePricing: RetryCharged, finalizer: ManagedFinalizer
+    finalizer: ManagedFinalizer
   })
   pure val d1 = execDecisionEvent(genesis, release10)
   pure val e1: Entry = { seq: 1, event: release10, rec: d1.rec }
@@ -30,7 +29,8 @@ module chuggy_refinement_unit_test {
     replayCore(goodJ) == d2.post,
     replayCore(goodJ).tickets.keys() == Set(2),
     replayCore(goodJ).tickets.get(2).phase == Working,
-    replayCore(goodJ).tickets.get(2).gasLeft == 2
+    replayCore(goodJ).tickets.get(2).tasks ==
+      Set({ id: 1, kind: Work, state: Outstanding })
   })
 
   run replayAppendAgreesTest = assert(and {
@@ -62,13 +62,11 @@ module chuggy_refinement_unit_test {
   run journalRefusesInvalidReleasePayloadTest =
     val badDeps: DecisionEvent = ReleaseTicket({
       ticket: 2, deps: Set(99), prog: progFlat, workFanout: 1,
-      reworkPolicy: BudgetedRework(1), finalizationPricing: Budgeted(1),
-      resumePricing: RetryCharged, finalizer: ManagedFinalizer
+      finalizer: ManagedFinalizer
     })
     val badProgram: DecisionEvent = ReleaseTicket({
       ticket: 2, deps: Set(), prog: [], workFanout: 1,
-      reworkPolicy: BudgetedRework(1), finalizationPricing: Budgeted(1),
-      resumePricing: RetryCharged, finalizer: ManagedFinalizer
+      finalizer: ManagedFinalizer
     })
     assert(and {
       not(decisionEventEnabled(genesis, badDeps)),
@@ -98,15 +96,19 @@ module chuggy_refinement_unit_test {
 }
 
 module chuggy_refinement_witness_test {
-  import chuggy_measure.* from "../measure"
+  import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
 
   pure val progFlat: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
   pure def release(ticket: int, finalizer: Finalizer): DecisionEvent = ReleaseTicket({
     ticket: ticket, deps: Set(), prog: progFlat, workFanout: 1,
-    reworkPolicy: BudgetedRework(1), finalizationPricing: Budgeted(1),
-    resumePricing: RetryCharged, finalizer: finalizer
+    finalizer: finalizer
   })
+
+  /// Every eval reduce below walks a PASSING stage, where the disposition is
+  /// not consulted; it is named once here so the walks stay about recovery.
+  pure def evalReduce(ticket: int): DecisionEvent =
+    EvalReduce({ ticket: ticket, onFailure: ReworkEvaluationFailure })
 
   action stepEmit(event: DecisionEvent, lbl: str): bool =
     journalStep(event)
@@ -154,7 +156,7 @@ module chuggy_refinement_witness_test {
       .then(stepEmit(TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(WorkReduce(2), "work-passed"))
       .then(stepEmit(TaskDone({ ticket: 2, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
-      .then(stepEmit(EvalReduce(2), "eval-passed"))
+      .then(stepEmit(evalReduce(2), "eval-passed"))
       .then(journalStep(FinalizationResult({ ticket: 2, out: FinalizationSucceeded })))
       .expect(and {
         memCore.tickets.get(2).phase == Done,
@@ -185,12 +187,12 @@ module chuggy_refinement_witness_test {
       .then(stepEmit(TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(WorkReduce(2), "work-passed"))
       .then(stepEmit(TaskDone({ ticket: 2, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
-      .then(stepEmit(EvalReduce(2), "eval-passed"))
+      .then(stepEmit(evalReduce(2), "eval-passed"))
       .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationFailed }),
         "rework-started finalization_failed"))
       .expect(and {
         memCore.tickets.get(2).phase == Working,
-        memCore.tickets.get(2).finalizationLeft == 0,
+        memCore.tickets.get(2).tasks.size() == 1,
         memCore.tickets.get(2).completions == 0,
         allDomainInvariants, refinementInvariants
       })
@@ -202,7 +204,7 @@ module chuggy_refinement_witness_test {
       .then(stepEmit(TaskDone({ ticket: 4, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(WorkReduce(4), "work-passed"))
       .then(stepEmit(TaskDone({ ticket: 4, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
-      .then(journalStep(EvalReduce(4)))
+      .then(journalStep(evalReduce(4)))
       .expect(and {
         obs.label == "ticket-done",
         memCore.tickets.get(4).phase == Done,
@@ -218,15 +220,20 @@ module chuggy_refinement_witness_test {
 }
 
 module chuggy_refinement_hazard_test {
-  import chuggy_measure.* from "../measure"
+  import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
 
   pure val progFlat: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
   pure val release10: DecisionEvent = ReleaseTicket({
     ticket: 2, deps: Set(), prog: progFlat, workFanout: 1,
-    reworkPolicy: BudgetedRework(1), finalizationPricing: Budgeted(1),
-    resumePricing: RetryCharged, finalizer: ManagedFinalizer
+    finalizer: ManagedFinalizer
   })
+
+  /// The hazard walks below reach the eval reduce on a PASSED stage once and
+  /// on a FAILED one once; the failing walk asks for rework, which is the
+  /// disposition that spawns — and a spawn is what a double spend is made of.
+  pure def evalReduce(ticket: int): DecisionEvent =
+    EvalReduce({ ticket: ticket, onFailure: ReworkEvaluationFailure })
 
   run dispatchEffectFirstDoubleSpendTest =
     rinit
@@ -235,13 +242,13 @@ module chuggy_refinement_hazard_test {
       .expect(and {
         memCore.tickets.get(2).phase == Pending,
         worldSpawns(2) == 1, journalSpawns(2) == 0,
-        not(journalCoversWorld), not(noDoubleSpentBudget),
+        not(journalCoversWorld), not(noDoubleSpentWork),
         journalLegal, recoveryComplete, allDomainInvariants
       })
       .then(journalStep(Dispatch(2))).then(emitNext)
       .expect(and {
         worldSpawns(2) == 2, journalSpawns(2) == 1,
-        not(noDoubleSpentBudget), refinementCore, allDomainInvariants
+        not(noDoubleSpentWork), refinementCore, allDomainInvariants
       })
 
   /// Losing the finalization decision after its effect makes the recovered
@@ -255,7 +262,7 @@ module chuggy_refinement_hazard_test {
       .then(journalStep(TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
       .then(journalStep(WorkReduce(2))).then(emitNext)
       .then(journalStep(TaskDone({ ticket: 2, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
-      .then(journalStep(EvalReduce(2))).then(emitNext)
+      .then(journalStep(evalReduce(2))).then(emitNext)
       .then(effectCrash(FinalizationResult({ ticket: 2, out: FinalizationSucceeded })))
       .expect(and {
         memCore.tickets.get(2).phase == Finalizing,
@@ -277,16 +284,16 @@ module chuggy_refinement_hazard_test {
       .then(journalStep(TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
       .then(journalStep(WorkReduce(2))).then(emitNext)
       .then(journalStep(TaskDone({ ticket: 2, tid: 2, verdict: Fail, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
-      .then(effectCrash(EvalReduce(2)))
+      .then(effectCrash(evalReduce(2)))
       .expect(and {
         memCore.tickets.get(2).phase == Evaluating,
         worldSpawns(2) == 2, journalSpawns(2) == 1,
-        not(noDoubleSpentBudget), journalLegal, recoveryComplete,
+        not(noDoubleSpentWork), journalLegal, recoveryComplete,
         allDomainInvariants
       })
-      .then(journalStep(EvalReduce(2))).then(emitNext)
+      .then(journalStep(evalReduce(2))).then(emitNext)
       .expect(and {
         worldSpawns(2) == 3, journalSpawns(2) == 2,
-        not(noDoubleSpentBudget), refinementCore, allDomainInvariants
+        not(noDoubleSpentWork), refinementCore, allDomainInvariants
       })
 }

@@ -1,6 +1,6 @@
 /**
- * What a ticket does with its own fields: what a park implies, how far through
- * its program it is, and the two sites that move its task set.
+ * What a ticket does with its own fields: what a park implies, and the two
+ * sites that move its task set.
  *
  * The record is the model's, so `completions` is a stored ghost here as it is
  * there rather than reconstructed from the phase — a stored duplicate of a
@@ -8,16 +8,9 @@
  * carried so a golden state compares field for field.
  */
 
-import type {
-  Resume,
-  ReworkPolicy,
-  Task,
-  TaskKind,
-  Ticket,
-} from "./generated/modelTypes.ts";
+import type { Task, TaskKind, Ticket } from "./generated/modelTypes.ts";
 import { isSettled } from "./phase.ts";
-import { reworkBudget } from "./pricing.ts";
-import { evalStage, nextTaskId, retiredInIdOrder, spawnTasks } from "./task.ts";
+import { nextTaskId, retiredInIdOrder, spawnTasks } from "./task.ts";
 
 /**
  * A desk task is open exactly while the ticket is parked, and parked is one
@@ -29,35 +22,12 @@ export function hasOpenHumanTask(ticket: Ticket): boolean {
 }
 
 /**
- * The rework wall's resume exists only where the author bought one: a ticket
- * authored no rework budget declined the economy, so its park is revoke-only.
- */
-export function reworkWallResume(policy: ReworkPolicy): Resume {
-  return reworkBudget(policy) > 0 ? "ResumeReworking" : "NoResume";
-}
-
-/**
- * Which parked tickets have a modeled resume at all. Two walls have none: a
- * revoked dependency always, and an exhausted rework budget never granted.
+ * Which parked tickets have a modeled resume at all. One wall has none: a
+ * revoked dependency is settled by revoking the dependent, because deps are
+ * immutable and nothing the desk can do makes the predecessor live again.
  */
 export function modeledResumeExists(ticket: Ticket): boolean {
-  return (
-    ticket.reason !== "DependencyRevoked" &&
-    !(
-      ticket.reason === "ReworkBudgetExhausted" &&
-      reworkBudget(ticket.reworkPolicy) === 0
-    )
-  );
-}
-
-/**
- * How many stages of the authored program have not yet passed: the digit
- * appears while evaluating and vanishes on every exit.
- */
-export function stagesLeft(ticket: Ticket): number {
-  return ticket.phase === "Evaluating"
-    ? ticket.program.length - evalStage(ticket.tasks)
-    : 0;
+  return ticket.reason !== "DependencyRevoked";
 }
 
 /**
@@ -90,7 +60,7 @@ export function retireLive(ticket: Ticket): Ticket {
   };
 }
 
-/** Whether this ticket has reached the measure's settled floor. */
+/** Whether this ticket has reached one of the absorbing terminals. */
 export function ticketIsSettled(ticket: Ticket): boolean {
   return isSettled(ticket.phase);
 }

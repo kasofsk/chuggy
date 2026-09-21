@@ -1,6 +1,5 @@
 /**
- * The decider arms the golden corpus does not reach, and the measure
- * classifications a per-step record cannot carry.
+ * The decider arms the golden corpus does not reach.
  *
  * THE REPLAY IS THE STRONGER EVIDENCE AND THIS SUITE IS NOT A SECOND COPY OF
  * IT. Every shape the corpus does reach is already pinned by exact equality on
@@ -8,20 +7,15 @@
  * weaker assertion about the same step. What is left over is the arms no
  * committed trace fires — the finish that needs no finalizer, the duplicate and
  * stale completions, an execution blocked from the phase with no resume, the
- * guarded unreachable resume, a cascade deeper than the corpus happens to
- * build — and the descent-set classification, which lives in the measure rather
- * than in the record a golden compares.
+ * guarded unreachable resume, and a cascade deeper than the corpus happens to
+ * build.
  */
 
-import type {
-  Core,
-  Stage,
-  Ticket,
-} from "../../src/domain/generated/modelTypes.ts";
+import type { Core, Stage } from "../../src/domain/generated/modelTypes.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { boundsOf, defaultProgram } from "../../src/domain/config.ts";
+import { defaultProgram } from "../../src/domain/config.ts";
 import { ticketAt } from "../../src/domain/core.ts";
 import {
   decideDispatch,
@@ -38,18 +32,8 @@ import {
 } from "../../src/domain/deciders.ts";
 import { retryableIn } from "../../src/domain/enablement.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
-import { sysMeasure } from "../../src/domain/measure.ts";
-import {
-  budgeted,
-  reworkBudget,
-  reworkBudgetOf,
-} from "../../src/domain/pricing.ts";
 import { tasksInIdOrder } from "../../src/domain/task.ts";
-import {
-  budgetedInstance,
-  deadlineOnlyInstance,
-  retryFreeInstance,
-} from "./configs.ts";
+import { modelInstance } from "./configs.ts";
 import {
   accountsForAll,
   coreOf,
@@ -62,10 +46,7 @@ import {
   workTask,
 } from "./fixtures.ts";
 
-const config = budgetedInstance;
-
-/** The fleet's measure at the reference instance's bounds. */
-const measure = (core: Core): number => sysMeasure(boundsOf(config), core);
+const config = modelInstance;
 
 /** The live set as a trace reads it: ids and states, in id order. */
 const liveShape = (core: Core, at: ReturnType<typeof id>) =>
@@ -80,18 +61,12 @@ const authoring = {
   deps: depsOf(),
   program: defaultProgram(config),
   workFanout: config.nTasks,
-  reworkPolicy: config.reworkPolicy,
-  finalizationPricing: config.finalizationPricing,
-  resumePricing: "RetryCharged" as const,
   finalizer: "ManagedFinalizer" as const,
 };
 
-test("a release arrives already Pending, with every account at its grant", () => {
-  const born = freshTicket({ ...authoring, gas: config.gas });
+test("a release arrives already Pending, having spawned nothing", () => {
+  const born = freshTicket(authoring);
   assert.equal(born.phase, "Pending");
-  assert.equal(born.gasLeft, config.gas);
-  assert.equal(born.reworkLeft, 1);
-  assert.equal(born.finalizationLeft, 1);
   assert.equal(born.spawned, 0);
   assert.equal(born.completions, 0);
   assert.equal(born.artifact, "NoArtifact");
@@ -103,7 +78,7 @@ test("a release arrives already Pending, with every account at its grant", () =>
 
 test("the release records no transition, and takes the sparse id it was handed", () => {
   const empty = coreOf([]);
-  const released = decideReleaseTicket(config, empty, asTicketId(5), authoring);
+  const released = decideReleaseTicket(empty, asTicketId(5), authoring);
   assert.equal(released.rec.label, "ticket-released");
   assert.deepEqual(released.rec.transitions, []);
   assert.deepEqual(
@@ -112,13 +87,9 @@ test("the release records no transition, and takes the sparse id it was handed",
     "the ticket exists because the journal says so; nothing is asked of the world",
   );
   assert.deepEqual([...released.post.tickets.keys()], [asTicketId(5)]);
-  assert.ok(
-    measure(released.post) > measure(empty),
-    "a fresh Pending's whole measure arrives with it, which is the arm the descent argument exempts",
-  );
 });
 
-test("a dispatch charges gas and spawns the ticket's own authored width", () => {
+test("a dispatch spawns the ticket's own authored width", () => {
   const ready = coreOf([
     ticketOn(config, "ManagedFinalizer", { phase: "Pending", workFanout: 1 }),
   ]);
@@ -129,12 +100,10 @@ test("a dispatch charges gas and spawns the ticket's own authored width", () => 
   ]);
   assert.deepEqual(decision.rec.effects, ["SpawnWorkTasks"]);
   const dispatched = ticketAt(decision.post, id(1));
-  assert.equal(dispatched.gasLeft, config.gas - 1);
   assert.equal(dispatched.spawned, 1);
   assert.deepEqual(liveShape(decision.post, id(1)), [
     { id: asTaskId(1), kind: "Work", state: "Outstanding" },
   ]);
-  assert.ok(measure(decision.post) < measure(ready));
 });
 
 test("first write wins, and an id already retired matches nothing live", () => {
@@ -171,7 +140,6 @@ test("a passing work set stamps the artifact its own accounting names", () => {
       phase: "Working",
       tasks: new Set([workTask(1, "Passed"), workTask(2, "Passed")]),
       spawned: 2,
-      gasLeft: 2,
     }),
   ]);
   const decision = decideWorkReduce(settledWork, id(1));
@@ -195,11 +163,6 @@ test("a passing work set stamps the artifact its own accounting names", () => {
       state: "Outstanding",
     },
   ]);
-  assert.equal(
-    evaluating.gasLeft,
-    2,
-    "the reduce spends nothing; gas meters entries to Working",
-  );
 });
 
 test("a failed work set parks resumable at Working, retiring what failed", () => {
@@ -208,7 +171,6 @@ test("a failed work set parks resumable at Working, retiring what failed", () =>
       phase: "Working",
       tasks: new Set([workTask(1, "Passed"), workTask(2, "Failed")]),
       spawned: 2,
-      gasLeft: 2,
     }),
   ]);
   const decision = decideWorkReduce(failedWork, id(1));
@@ -237,15 +199,22 @@ test("the stage's own combinator decides, so a program is not always-pass", () =
           evalTask(2, 0, outcomes[1]),
         ]),
         spawned: 2,
-        gasLeft: 2,
       }),
     ]);
   assert.equal(
-    decideEvalStageReduce(evaluating(["Passed", "Failed"]), id(1)).rec.label,
+    decideEvalStageReduce(
+      evaluating(["Passed", "Failed"]),
+      id(1),
+      "ReworkEvaluationFailure",
+    ).rec.label,
     "eval-passed",
   );
   assert.equal(
-    decideEvalStageReduce(evaluating(["Failed", "Failed"]), id(1)).rec.label,
+    decideEvalStageReduce(
+      evaluating(["Failed", "Failed"]),
+      id(1),
+      "ReworkEvaluationFailure",
+    ).rec.label,
     "rework-started eval_failure",
   );
 });
@@ -258,10 +227,13 @@ test("a ticket authored without a finalizer completes out of evaluation, holding
       tasks: new Set([evalTask(3, 0, "Passed"), evalTask(4, 0, "Passed")]),
       spawned: 4,
       artifact: { type: "ProducedArtifact", value: 2 },
-      gasLeft: 2,
     }),
   ]);
-  const decision = decideEvalStageReduce(passing, id(1));
+  const decision = decideEvalStageReduce(
+    passing,
+    id(1),
+    "ReworkEvaluationFailure",
+  );
   assert.equal(decision.rec.label, "ticket-done");
   assert.deepEqual(decision.rec.transitions, [
     { ticket: id(1), from: "Evaluating", to: "Done" },
@@ -279,85 +251,60 @@ test("a ticket authored without a finalizer completes out of evaluation, holding
     "the passing stage is retired on the way out, not carried into the terminal",
   );
   assert.equal(done.record.length, 4);
-  assert.ok(measure(decision.post) < measure(passing));
 });
 
-test("a rework cycle spends both the rework account and gas, and each wall names itself", () => {
-  const failing = (overrides: Partial<Ticket>) =>
-    coreOf([
-      ticketOn(config, "ManagedFinalizer", {
-        phase: "Evaluating",
-        record: [workTask(1, "Passed"), workTask(2, "Passed")],
-        tasks: new Set([evalTask(3, 0, "Failed"), evalTask(4, 0, "Failed")]),
-        spawned: 4,
-        artifact: { type: "ProducedArtifact", value: 2 },
-        ...overrides,
-      }),
-    ]);
-  const rich = failing({ reworkLeft: 1, gasLeft: 2 });
-  const reworked = decideEvalStageReduce(rich, id(1));
+test("one failing stage, two edges, and the disposition is the whole difference", () => {
+  const failing = coreOf([
+    ticketOn(config, "ManagedFinalizer", {
+      phase: "Evaluating",
+      record: [workTask(1, "Passed"), workTask(2, "Passed")],
+      tasks: new Set([evalTask(3, 0, "Failed"), evalTask(4, 0, "Failed")]),
+      spawned: 4,
+      artifact: { type: "ProducedArtifact", value: 2 },
+    }),
+  ]);
+  const reworked = decideEvalStageReduce(
+    failing,
+    id(1),
+    "ReworkEvaluationFailure",
+  );
   assert.equal(reworked.rec.label, "rework-started eval_failure");
   assert.deepEqual(reworked.rec.effects, ["SpawnWorkTasks"]);
-  assert.equal(ticketAt(reworked.post, id(1)).reworkLeft, 0);
-  assert.equal(ticketAt(reworked.post, id(1)).gasLeft, 1);
   assert.equal(ticketAt(reworked.post, id(1)).phase, "Working");
-  assert.ok(measure(reworked.post) < measure(rich));
+  assert.deepEqual(
+    liveShape(reworked.post, id(1)).map((t) => t.id),
+    [asTaskId(5), asTaskId(6)],
+    "the rework cycle's work set spawns above the retired stage",
+  );
 
-  const spent = failing({ reworkLeft: 0, gasLeft: 2 });
-  const budgetWall = decideEvalStageReduce(spent, id(1));
-  assert.equal(
-    budgetWall.rec.label,
-    "ticket-escalated rework_budget_exhausted",
+  const escalated = decideEvalStageReduce(
+    failing,
+    id(1),
+    "EscalateEvaluationFailure",
   );
-  assert.equal(
-    ticketAt(budgetWall.post, id(1)).reason,
-    "ReworkBudgetExhausted",
-  );
-  assert.equal(ticketAt(budgetWall.post, id(1)).resumeAt, "ResumeReworking");
-
-  const declined = failing({
-    reworkLeft: 0,
-    gasLeft: 2,
-    reworkPolicy: reworkBudgetOf(0),
-  });
-  const declinedWall = decideEvalStageReduce(declined, id(1));
-  assert.equal(
-    ticketAt(declinedWall.post, id(1)).resumeAt,
-    "NoResume",
-    "an author who bought no rework budget gets a revoke-only park",
-  );
-  assert.equal(retryableIn(declinedWall.post, id(1)), false);
-
-  const dry = failing({ reworkLeft: 1, gasLeft: 0 });
-  const gasWall = decideEvalStageReduce(dry, id(1));
-  assert.equal(gasWall.rec.label, "ticket-escalated gas_exhausted");
-  assert.equal(ticketAt(gasWall.post, id(1)).reason, "GasExhausted");
-  assert.equal(
-    ticketAt(gasWall.post, id(1)).reworkLeft,
-    1,
-    "the gas wall spends no rework, which is what makes the two walls distinguishable",
-  );
+  assert.equal(escalated.rec.label, "ticket-escalated rework_budget_exhausted");
+  assert.deepEqual(escalated.rec.effects, ["OpenHumanTask"]);
+  const parked = ticketAt(escalated.post, id(1));
+  assert.equal(parked.reason, "ReworkBudgetExhausted");
+  assert.equal(parked.resumeAt, "ResumeReworking");
+  assert.equal(parked.tasks.size, 0);
+  assert.ok(retryableIn(escalated.post, id(1)));
 });
 
-/** A ticket running its finalizer, with both accounts at the caller's sizes. */
-const finalizing = (
-  instance: typeof config,
-  overrides: { finalizationLeft?: number; gasLeft: number },
-): Core =>
+/** A ticket running its finalizer, nothing outstanding, its artifact stamped. */
+const finalizing = (): Core =>
   coreOf([
-    ticketOn(instance, "ManagedFinalizer", {
+    ticketOn(config, "ManagedFinalizer", {
       phase: "Finalizing",
       record: [workTask(1, "Passed"), workTask(2, "Passed")],
       spawned: 2,
       artifact: { type: "ProducedArtifact", value: 2 },
-      ...overrides,
     }),
   ]);
 
 test("a successful finalization is the ticket's one completion", () => {
-  const pre = finalizing(config, { gasLeft: 2 });
   const decision = decideFinalizationResult(
-    pre,
+    finalizing(),
     id(1),
     "FinalizationSucceeded",
   );
@@ -367,75 +314,46 @@ test("a successful finalization is the ticket's one completion", () => {
   ]);
   assert.deepEqual(decision.rec.effects, []);
   assert.equal(ticketAt(decision.post, id(1)).completions, 1);
-  assert.ok(measure(decision.post) < measure(pre));
 });
 
-test("a failed finalization spends the account its ticket was authored with", () => {
-  const budgetedTicket = finalizing(config, {
-    finalizationLeft: 1,
-    gasLeft: 2,
-  });
-  const reworked = decideFinalizationResult(
-    budgetedTicket,
+test("a failed finalization re-enters work, and does so every time", () => {
+  const first = decideFinalizationResult(
+    finalizing(),
     id(1),
     "FinalizationFailed",
   );
-  assert.equal(reworked.rec.label, "rework-started finalization_failed");
-  assert.deepEqual(reworked.rec.effects, ["SpawnWorkTasks"]);
-  assert.equal(ticketAt(reworked.post, id(1)).finalizationLeft, 0);
-  assert.equal(ticketAt(reworked.post, id(1)).gasLeft, 1);
-  assert.equal(ticketAt(reworked.post, id(1)).phase, "Working");
-
-  const deadline = deadlineOnlyInstance;
-  const unbudgeted = decideFinalizationResult(
-    finalizing(deadline, { gasLeft: 2 }),
-    id(1),
-    "FinalizationFailed",
+  assert.equal(first.rec.label, "rework-started finalization_failed");
+  assert.deepEqual(first.rec.effects, ["SpawnWorkTasks"]);
+  assert.equal(ticketAt(first.post, id(1)).phase, "Working");
+  assert.deepEqual(
+    liveShape(first.post, id(1)).map((t) => t.id),
+    [asTaskId(3), asTaskId(4)],
+    "the wrap-up rework is a fresh incarnation at fresh ids",
   );
-  assert.equal(unbudgeted.rec.label, "rework-started finalization_failed");
-  assert.equal(ticketAt(unbudgeted.post, id(1)).gasLeft, 1);
-  assert.equal(
-    ticketAt(unbudgeted.post, id(1)).finalizationLeft,
-    0,
-    "this pricing grants no finalization account, so there is none to spend",
-  );
-});
 
-test("each finalization wall carries its own name, and the pricing decides which exists", () => {
-  const budgetWall = decideFinalizationResult(
-    finalizing(config, { finalizationLeft: 0, gasLeft: 2 }),
+  const again = decideFinalizationResult(
+    coreOf([
+      ticketOn(config, "ManagedFinalizer", {
+        phase: "Finalizing",
+        record: [
+          workTask(1, "Passed"),
+          workTask(2, "Passed"),
+          evalTask(3, 0, "Passed"),
+          evalTask(4, 0, "Passed"),
+        ],
+        spawned: 4,
+        artifact: { type: "ProducedArtifact", value: 4 },
+      }),
+    ]),
     id(1),
     "FinalizationFailed",
   );
   assert.equal(
-    budgetWall.rec.label,
-    "ticket-escalated finalization_budget_exhausted",
+    again.rec.label,
+    "rework-started finalization_failed",
+    "there is no wall on this edge: a finalizer that keeps failing keeps buying cycles",
   );
-  assert.equal(
-    ticketAt(budgetWall.post, id(1)).reason,
-    "FinalizationBudgetExhausted",
-  );
-  assert.equal(ticketAt(budgetWall.post, id(1)).resumeAt, "ResumeFinalizing");
-
-  const gasWall = decideFinalizationResult(
-    finalizing(config, { finalizationLeft: 1, gasLeft: 0 }),
-    id(1),
-    "FinalizationFailed",
-  );
-  assert.equal(gasWall.rec.label, "ticket-escalated gas_exhausted");
-  assert.equal(ticketAt(gasWall.post, id(1)).reason, "GasExhausted");
-
-  const deadlineWall = decideFinalizationResult(
-    finalizing(deadlineOnlyInstance, { gasLeft: 0 }),
-    id(1),
-    "FinalizationFailed",
-  );
-  assert.equal(deadlineWall.rec.label, "ticket-escalated gas_exhausted");
-  assert.equal(
-    ticketAt(deadlineWall.post, id(1)).reason,
-    "GasExhausted",
-    "gas alone meters this loop, so gas is the only wall it can reach",
-  );
+  assert.equal(ticketAt(again.post, id(1)).phase, "Working");
 });
 
 test("a blocked execution resumes where the work was, and spends nothing", () => {
@@ -444,7 +362,6 @@ test("a blocked execution resumes where the work was, and spends nothing", () =>
       phase: "Working",
       tasks: new Set([workOutstanding(1), workOutstanding(2)]),
       spawned: 2,
-      gasLeft: 2,
     }),
   ]);
   const blocked = decideExecutionBlocked(
@@ -457,9 +374,6 @@ test("a blocked execution resumes where the work was, and spends nothing", () =>
   const parked = ticketAt(blocked.post, id(1));
   assert.equal(parked.reason, "ExecutionProfileUnavailable");
   assert.equal(parked.resumeAt, "ResumeWorking");
-  assert.equal(parked.gasLeft, 2);
-  assert.equal(parked.reworkLeft, 1);
-  assert.equal(parked.finalizationLeft, 1);
   assert.deepEqual(
     parked.record.map((t) => t.state),
     [
@@ -487,11 +401,10 @@ test("a block from the phase that holds no task set stamps no resume", () => {
     ).resumeAt,
     "ResumeEvaluating",
   );
-  const finalizingCore = finalizing(config, { gasLeft: 2 });
   assert.equal(
     ticketAt(
       decideExecutionBlocked(
-        finalizingCore,
+        finalizing(),
         id(1),
         "RequiredCapabilityUnavailable",
       ).post,
@@ -501,101 +414,64 @@ test("a block from the phase that holds no task set stamps no resume", () => {
   );
 });
 
-test("every resume re-enters where its wall said, priced by the ticket's own policy", () => {
+test("every resume re-enters where its wall said it would", () => {
   const parkedAt = (
     at: "ResumeWorking" | "ResumeEvaluating" | "ResumeFinalizing",
-    resumePricing: "RetryCharged" | "RetryFree",
   ): Core =>
     coreOf([
       ticketOn(config, "ManagedFinalizer", {
         phase: "Escalated",
         resumeAt: at,
-        reason: "GasExhausted",
-        resumePricing,
+        reason: "TicketConfigIncompatible",
         record: [workTask(1, "Passed"), workTask(2, "Passed")],
         spawned: 2,
-        gasLeft: 2,
       }),
     ]);
-  const work = decideResumeTicket(
-    parkedAt("ResumeWorking", "RetryFree"),
-    id(1),
-  );
+  const work = decideResumeTicket(parkedAt("ResumeWorking"), id(1));
   assert.equal(work.rec.label, "ticket-resumed");
   assert.deepEqual(work.rec.transitions, [
     { ticket: id(1), from: "Escalated", to: "Working" },
   ]);
   assert.deepEqual(work.rec.effects, ["SpawnWorkTasks"]);
-  assert.equal(
-    ticketAt(work.post, id(1)).gasLeft,
-    1,
-    "entry to Working meters even where retries are free",
-  );
   assert.equal(ticketAt(work.post, id(1)).reason, "NoReason");
   assert.equal(ticketAt(work.post, id(1)).resumeAt, "NoResume");
 
-  const evaluate = decideResumeTicket(
-    parkedAt("ResumeEvaluating", "RetryCharged"),
-    id(1),
-  );
+  const evaluate = decideResumeTicket(parkedAt("ResumeEvaluating"), id(1));
   assert.deepEqual(evaluate.rec.effects, ["SpawnEvalTasks"]);
-  assert.equal(ticketAt(evaluate.post, id(1)).gasLeft, 1);
   assert.deepEqual(
     liveShape(evaluate.post, id(1)).map((t) => t.id),
     [asTaskId(3), asTaskId(4)],
     "the retried tasks are new records; the failed ones stay retired in the log",
   );
 
-  const freePipeline = parkedAt("ResumeFinalizing", "RetryFree");
-  const finalize = decideResumeTicket(freePipeline, id(1));
+  const finalize = decideResumeTicket(parkedAt("ResumeFinalizing"), id(1));
   assert.deepEqual(finalize.rec.effects, ["RunFinalizer"]);
-  assert.equal(ticketAt(finalize.post, id(1)).gasLeft, 2);
-  assert.ok(
-    measure(finalize.post) > measure(freePipeline),
-    "a free pipeline resume is the churn arm the descent argument exempts",
-  );
+  assert.equal(ticketAt(finalize.post, id(1)).phase, "Finalizing");
 });
 
-test("the rework wall's resume refills the account and buys a work cycle", () => {
-  const walled = (resumePricing: "RetryCharged" | "RetryFree"): Core =>
-    coreOf([
-      ticketOn(config, "ManagedFinalizer", {
-        phase: "Escalated",
-        resumeAt: "ResumeReworking",
-        reason: "ReworkBudgetExhausted",
-        resumePricing,
-        record: [workTask(1, "Passed"), evalTask(2, 0, "Failed")],
-        spawned: 2,
-        reworkLeft: 0,
-        gasLeft: 2,
-      }),
-    ]);
-  for (const pricing of ["RetryCharged", "RetryFree"] as const) {
-    const pre = walled(pricing);
-    const resumed = decideResumeTicket(pre, id(1));
-    assert.equal(resumed.rec.label, "ticket-resumed");
-    assert.deepEqual(resumed.rec.transitions, [
-      { ticket: id(1), from: "Escalated", to: "Working" },
-    ]);
-    assert.deepEqual(resumed.rec.effects, ["SpawnWorkTasks"]);
-    const post = ticketAt(resumed.post, id(1));
-    assert.equal(post.reworkLeft, reworkBudget(post.reworkPolicy));
-    assert.equal(
-      post.gasLeft,
-      1,
-      "entry to Working meters even where retries are free",
-    );
-    assert.deepEqual(
-      tasksInIdOrder(post.tasks).map((t) => t.id),
-      [asTaskId(3), asTaskId(4)],
-      "fresh work ids above an intact record",
-    );
-    assert.deepEqual(post.record, ticketAt(pre, id(1)).record);
-    assert.ok(
-      measure(resumed.post) < measure(pre),
-      "a refill bought with gas descends; it is in no churn set",
-    );
-  }
+test("the evaluation wall's resume buys a work cycle above an intact record", () => {
+  const walled = coreOf([
+    ticketOn(config, "ManagedFinalizer", {
+      phase: "Escalated",
+      resumeAt: "ResumeReworking",
+      reason: "ReworkBudgetExhausted",
+      record: [workTask(1, "Passed"), evalTask(2, 0, "Failed")],
+      spawned: 2,
+    }),
+  ]);
+  const resumed = decideResumeTicket(walled, id(1));
+  assert.equal(resumed.rec.label, "ticket-resumed");
+  assert.deepEqual(resumed.rec.transitions, [
+    { ticket: id(1), from: "Escalated", to: "Working" },
+  ]);
+  assert.deepEqual(resumed.rec.effects, ["SpawnWorkTasks"]);
+  const post = ticketAt(resumed.post, id(1));
+  assert.deepEqual(
+    tasksInIdOrder(post.tasks).map((t) => t.id),
+    [asTaskId(3), asTaskId(4)],
+    "fresh work ids above an intact record",
+  );
+  assert.deepEqual(post.record, ticketAt(walled, id(1)).record);
 });
 
 test("a park with no modeled resume is the guarded no-op its enablement refuses", () => {
@@ -618,7 +494,6 @@ test("a revoke retires what was running and settles without completing", () => {
       phase: "Working",
       tasks: new Set([workOutstanding(1), workOutstanding(2)]),
       spawned: 2,
-      gasLeft: 2,
     }),
   ]);
   const revoked = decideRevoke(config, running, id(1));
@@ -628,31 +503,21 @@ test("a revoke retires what was running and settles without completing", () => {
   assert.deepEqual(revoked.rec.effects, ["CancelTicketWork"]);
   const settled = ticketAt(revoked.post, id(1));
   assert.equal(settled.completions, 0);
-  assert.equal(
-    settled.gasLeft,
-    2,
-    "a revoke charges nothing in either direction",
-  );
   assert.equal(settled.reason, "NoReason");
   assert.equal(settled.resumeAt, "NoResume");
   assert.equal(settled.record.length, 2);
   assert.equal(settled.tasks.size, 0);
-  assert.ok(measure(revoked.post) < measure(running));
 });
 
 /** A chain 1 <- 2 <- 3 under sparse, numerically reversed ids, which the corpus never builds. */
 const chain: Core = {
   tickets: new Map([
-    [
-      id(6),
-      ticketOn(config, "ManagedFinalizer", { phase: "Pending", gasLeft: 2 }),
-    ],
+    [id(6), ticketOn(config, "ManagedFinalizer", { phase: "Pending" })],
     [
       id(4),
       ticketOn(config, "ManagedFinalizer", {
         phase: "Pending",
         deps: depsOf(6),
-        gasLeft: 2,
       }),
     ],
     [
@@ -660,14 +525,13 @@ const chain: Core = {
       ticketOn(config, "ManagedFinalizer", {
         phase: "Pending",
         deps: depsOf(4),
-        gasLeft: 2,
       }),
     ],
   ]),
 };
 const cascaded = decideRevoke(config, chain, id(6)).post;
 
-test("the cascade parks every transitive dependent in the one decision, spending nothing", () => {
+test("the cascade parks every transitive dependent in the one decision", () => {
   const decision = decideRevoke(config, chain, id(6));
   assert.equal(decision.rec.label, "ticket-revoked");
   assert.deepEqual(decision.rec.transitions, [
@@ -683,23 +547,16 @@ test("the cascade parks every transitive dependent in the one decision, spending
   for (const parked of [id(1), id(4)]) {
     assert.equal(ticketAt(cascaded, parked).reason, "DependencyRevoked");
     assert.equal(ticketAt(cascaded, parked).resumeAt, "NoResume");
-    assert.equal(ticketAt(cascaded, parked).gasLeft, 2);
   }
   assert.equal(ticketAt(cascaded, id(6)).reason, "NoReason");
-  assert.ok(measure(cascaded) < measure(chain));
 });
 
-test("a desk revoke is flat, and it re-parks nobody", () => {
+test("a desk revoke settles one ticket and re-parks nobody", () => {
   const settled = decideRevoke(config, cascaded, id(4));
   assert.deepEqual(settled.rec.transitions, [
     { ticket: id(4), from: "Escalated", to: "Revoked" },
   ]);
   assert.deepEqual(settled.rec.effects, ["CancelTicketWork"]);
-  assert.equal(
-    measure(settled.post),
-    measure(cascaded),
-    "settling a parked ticket from the desk is the flat arm the descent argument exempts",
-  );
   assert.equal(ticketAt(settled.post, id(1)).phase, "Escalated");
   assert.equal(ticketAt(settled.post, id(1)).reason, "DependencyRevoked");
 });
@@ -712,28 +569,6 @@ test("the quiet fleet's stutter records that nothing moved", () => {
   });
 });
 
-test("a ticket authored poorer than its fleet is metered by what it carries", () => {
-  const poor = coreOf([
-    ticketOn(retryFreeInstance, "ManagedFinalizer", {
-      phase: "Evaluating",
-      reworkPolicy: reworkBudgetOf(0),
-      reworkLeft: 0,
-      finalizationPricing: budgeted(0),
-      finalizationLeft: 0,
-      record: [workTask(1, "Passed"), workTask(2, "Passed")],
-      tasks: new Set([evalTask(3, 0, "Failed"), evalTask(4, 0, "Failed")]),
-      spawned: 4,
-      artifact: { type: "ProducedArtifact", value: 2 },
-      gasLeft: 2,
-    }),
-  ]);
-  assert.equal(
-    decideEvalStageReduce(poor, id(1)).rec.label,
-    "ticket-escalated rework_budget_exhausted",
-    "a ticket with no rework grant walls on its first eval failure, however rich the fleet is",
-  );
-});
-
 test("every fixture this suite builds is a shape the machine could have reached", () => {
   const live = coreOf([
     ticketOn(config, "ManagedFinalizer", {
@@ -743,12 +578,7 @@ test("every fixture this suite builds is a shape the machine could have reached"
       spawned: 1,
     }),
   ]);
-  for (const core of [
-    chain,
-    cascaded,
-    live,
-    finalizing(config, { gasLeft: 2 }),
-  ]) {
+  for (const core of [chain, cascaded, live, finalizing()]) {
     assert.ok(
       accountsForAll(core),
       "a fixture accounts for all of its ids or none",

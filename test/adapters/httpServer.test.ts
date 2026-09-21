@@ -1174,9 +1174,6 @@ const publicAuthoring = {
   dependencies: [],
   program: [{ fanout: 1, combinator: "UnanimousPass" }],
   workFanout: 1,
-  reworkPolicy: { type: "BudgetedRework", value: 1 },
-  finalizationPricing: { type: "Budgeted", value: 1 },
-  resumePricing: "RetryCharged",
   finalizer: "ManagedFinalizer",
 };
 

@@ -13,22 +13,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  boundsOf,
   defaultProgram,
-  finalizationPricingChoices,
   finalizerChoices,
   isValidProgram,
-  resumePricingChoices,
-  reworkPolicyChoices,
   stageChoices,
   ticketIdUniverse,
   workFanoutChoices,
 } from "../../src/domain/config.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import { budgeted, reworkBudgetOf } from "../../src/domain/pricing.ts";
-import { budgetedInstance, deadlineOnlyInstance } from "./configs.ts";
+import { modelInstance } from "./configs.ts";
 
-const config = budgetedInstance;
+const config = modelInstance;
 
 test("the default program is one unanimous stage at full fan-out, and it is authorable", () => {
   assert.deepEqual(defaultProgram(config), [
@@ -102,33 +97,6 @@ test("the work-set widths a release may author run from one to the task ceiling"
   );
 });
 
-test("a ticket may be authored poorer than its fleet but never richer", () => {
-  assert.deepEqual(reworkPolicyChoices(config), [
-    reworkBudgetOf(0),
-    reworkBudgetOf(1),
-  ]);
-  assert.deepEqual(finalizationPricingChoices(config), [
-    "DeadlineOnly",
-    budgeted(0),
-    budgeted(1),
-  ]);
-  assert.deepEqual(
-    finalizationPricingChoices(deadlineOnlyInstance),
-    ["DeadlineOnly", budgeted(0)],
-    "the unbudgeted instance still offers the budgeted branch at the only size it grants",
-  );
-});
-
-test("both finish kinds and both resume pricings are always drawable", () => {
+test("both finish kinds are always drawable", () => {
   assert.deepEqual(finalizerChoices, ["NoFinalizer", "ManagedFinalizer"]);
-  assert.deepEqual(resumePricingChoices, ["RetryCharged", "RetryFree"]);
-});
-
-test("the bounds carry what the measure reads and nothing else", () => {
-  assert.deepEqual(boundsOf(config), {
-    reworkPolicy: config.reworkPolicy,
-    nTasks: config.nTasks,
-    maxStages: config.maxStages,
-    finalizationPricing: config.finalizationPricing,
-  });
 });

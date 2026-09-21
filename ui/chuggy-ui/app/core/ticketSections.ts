@@ -4,7 +4,7 @@
  *
  * The sections are the reader's questions in order: what needs a human, what is
  * moving, what is next, what finished, what stopped. `NeedsYou` is the model's
- * own `hasOpenHumanTask`, which is Escalated alone (`model/measure.qnt`), and
+ * own `hasOpenHumanTask`, which is Escalated alone (`model/ticket.qnt`), and
  * `Revoked` sits in `Stopped` rather than beside Done because a reader
  * scanning for what went wrong is looking for it there.
  *
@@ -70,10 +70,6 @@ export function escalationBadgeLabel(reason: EscalationReason): string {
       return "work failed";
     case "ReworkBudgetExhausted":
       return "rework budget spent";
-    case "FinalizationBudgetExhausted":
-      return "finalization budget spent";
-    case "GasExhausted":
-      return "gas spent";
     case "DependencyRevoked":
       return "a dependency was revoked";
     case "ExecutionPolicyDenied":

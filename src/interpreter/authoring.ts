@@ -12,10 +12,7 @@ import {
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import {
   defaultProgram,
-  finalizationPricingChoices,
   finalizerChoices,
-  reworkPolicyChoices,
-  resumePricingChoices,
   stageChoices,
   workFanoutChoices,
   type Config,
@@ -482,9 +479,6 @@ export interface DraftInitialization {
     }[];
     readonly programStagesMax: number;
     readonly workFanouts: readonly number[];
-    readonly reworkPolicies: readonly ReleaseAuthoring["reworkPolicy"][];
-    readonly finalizationPricings: readonly ReleaseAuthoring["finalizationPricing"][];
-    readonly resumePricings: readonly ReleaseAuthoring["resumePricing"][];
     readonly finalizers: readonly ReleaseAuthoring["finalizer"][];
   };
   readonly dependencyCandidates: readonly TicketId[];
@@ -530,18 +524,12 @@ export function draftInitializationPolicy(
               combinator: "UnanimousPass" as const,
             })),
       workFanout: 1,
-      reworkPolicy: config.reworkPolicy,
-      finalizationPricing: "DeadlineOnly",
-      resumePricing: "RetryCharged",
       finalizer: "ManagedFinalizer",
     },
     choices: {
       stages: stageChoices(config),
       programStagesMax,
       workFanouts: workFanoutChoices(config),
-      reworkPolicies: reworkPolicyChoices(config),
-      finalizationPricings: finalizationPricingChoices(config),
-      resumePricings: resumePricingChoices,
       finalizers: finalizerChoices,
     },
   };

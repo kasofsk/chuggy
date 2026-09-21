@@ -17,7 +17,6 @@ import type { DecisionEvent } from "../../src/domain/generated/modelTypes.ts";
 import {
   reasonTags,
   resumeTags,
-  retryPricingTags,
 } from "../../src/domain/generated/modelTypes.ts";
 import { actorInit, journalStep, memoryCore } from "../../src/actor/state.ts";
 import { materializationOf } from "../../src/interpreter/decisionPlan.ts";
@@ -269,7 +268,7 @@ function finalizing(): ReturnType<typeof journalStep> {
     taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
     workReduceEvent(id(1)),
     taskDoneEvent(id(1), asTaskId(2), "Pass", plainResult),
-    evalReduceEvent(id(1)),
+    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
   ];
   return steps.reduce(
     (state, event) => journalStep(refinementInstance, state, event),
@@ -325,7 +324,7 @@ test("a decision leaving finalization withdraws the approval it left unanswered"
 function parkEntry(): Entry {
   return {
     seq: 4,
-    event: evalReduceEvent(id(1)),
+    event: evalReduceEvent(id(1), "EscalateEvaluationFailure"),
     rec: {
       label: "ticket-escalated",
       transitions: [{ ticket: 1, from: "Evaluating", to: "Escalated" }],
@@ -335,7 +334,7 @@ function parkEntry(): Entry {
 }
 
 /** The item a reduce reaches the writer as, which carries no principal's command. */
-function continuationInput(event: DecisionEvent): DecisionInput {
+function continuationInput(): DecisionInput {
   return {
     partition,
     ordinal: 1,
@@ -343,7 +342,7 @@ function continuationInput(event: DecisionEvent): DecisionInput {
     source: {
       kind: "Continuation",
       continuation: "continuation",
-      command: event,
+      reduction: { reduce: "Evaluation", ticket: id(1) },
       expectedTicketVersion: 1,
       expectedPhase: "Evaluating",
       taskSetGeneration: 1,
@@ -355,35 +354,28 @@ test("an open action admits exactly the answers the actor's enablement accepts",
   const offered = new Set<string>();
   for (const reason of reasonTags) {
     for (const resumeAt of resumeTags) {
-      for (const resumePricing of retryPricingTags) {
-        for (const gasLeft of [0, 1]) {
-          const post = coreOf([
-            ticketOn(refinementInstance, "ManagedFinalizer", {
-              phase: "Escalated",
-              reason,
-              resumeAt,
-              resumePricing,
-              gasLeft,
-            }),
-          ]);
-          const entry = parkEntry();
-          const planned = materializationOf(
-            continuationInput(entry.event),
-            coreOf([]),
-            post,
-            entry,
-          );
-          const expected = retryableIn(post, id(1))
-            ? ["Resume", "Revoke"]
-            : ["Revoke"];
-          assert.deepEqual(
-            planned.actions[0]?.resolutions,
-            expected,
-            [reason, resumeAt, resumePricing, gasLeft].join("/"),
-          );
-          offered.add(expected.join(","));
-        }
-      }
+      const post = coreOf([
+        ticketOn(refinementInstance, "ManagedFinalizer", {
+          phase: "Escalated",
+          reason,
+          resumeAt,
+        }),
+      ]);
+      const planned = materializationOf(
+        continuationInput(),
+        coreOf([]),
+        post,
+        parkEntry(),
+      );
+      const expected = retryableIn(post, id(1))
+        ? ["Resume", "Revoke"]
+        : ["Revoke"];
+      assert.deepEqual(
+        planned.actions[0]?.resolutions,
+        expected,
+        [reason, resumeAt].join("/"),
+      );
+      offered.add(expected.join(","));
     }
   }
   assert.deepEqual([...offered].sort(), ["Resume,Revoke", "Revoke"]);

@@ -40,7 +40,6 @@ import {
   ticketActionEffect,
 } from "../app/core/codeLabels.ts";
 import { mutationRefusalCodes } from "../app/core/codeSentences.ts";
-import { resumeGasCharge } from "../app/core/resumePoint.ts";
 import type { TicketActionName } from "../app/core/ticketActions.ts";
 
 const ticketActionNames: readonly TicketActionName[] = [
@@ -77,23 +76,13 @@ test("the wall a reader met on ticket 21 reads as a noun and a fragment", () => 
     escalationDetailLine("ReworkBudgetExhausted", {
       lastSet: { taskKind: "Evaluation", stage: 0, verdict: "Failed" },
       stageCount: 2,
-      reworkMax: 2,
-      finalizationMax: undefined,
     }),
-  ).toBe("Stage 1 of 2 failed · Rework 2/2 used");
+  ).toBe("Stage 1 of 2 failed");
 });
 
 test("a detail line names only the facts the page holds", () => {
-  const bare = {
-    lastSet: undefined,
-    stageCount: 2,
-    reworkMax: undefined,
-    finalizationMax: undefined,
-  };
+  const bare = { lastSet: undefined, stageCount: 2 };
   expect(escalationDetailLine("ReworkBudgetExhausted", bare)).toBe(undefined);
-  expect(escalationDetailLine("GasExhausted", bare)).toBe(
-    "Finalization failed",
-  );
   expect(escalationDetailLine("DependencyRevoked", bare)).toBe(
     "Only Revoke exits this wall",
   );
@@ -102,76 +91,30 @@ test("a detail line names only the facts the page holds", () => {
   );
 });
 
-test("a resume states what it re-runs, what it costs, and what it keeps", () => {
-  const effect = ticketActionEffect(
-    "Resume",
-    {
-      kind: "Offered",
-      drawn: {
-        point: "ResumeEvaluating",
-        refillsReworkTo: undefined,
-        charge: 1,
-      },
-    },
-    { left: 0, max: 2 },
-  );
+test("a resume states what it re-runs", () => {
+  const effect = ticketActionEffect("Resume", {
+    kind: "Offered",
+    point: "ResumeEvaluating",
+  });
   expect(effect.effect).toBe("Re-runs evaluation from stage 1");
-  expect(effect.cost).toBe("costs 1 gas");
-  expect(effect.more).toBe("Keeps the current artifact · rework stays 0/2");
 });
 
-/**
- * The rework wall buys a work cycle with the account refilled, and entry to
- * Working always meters — one gas under either pricing (`model/domain.qnt`,
- * `resumeCharge`).
- */
-test("a rework-wall resume says it reworks, refills and charges", () => {
-  const effect = ticketActionEffect(
-    "Resume",
-    {
-      kind: "Offered",
-      drawn: {
-        point: "ResumeReworking",
-        refillsReworkTo: 2,
-        charge: resumeGasCharge("ResumeReworking", "RetryFree"),
-      },
-    },
-    undefined,
-  );
-  expect(effect.effect).toBe("Reworks · new artifact, rework refilled");
-  expect(effect.cost).toBe("costs 1 gas");
-  expect(effect.more).toBe("Rework returns to 0/2");
+test("a rework-wall resume says it reworks", () => {
+  const effect = ticketActionEffect("Resume", {
+    kind: "Offered",
+    point: "ResumeReworking",
+  });
+  expect(effect.effect).toBe("Reworks · new artifact");
 });
 
 test("a wall with no resume point offers nothing and says which exit is left", () => {
-  const effect = ticketActionEffect("Resume", { kind: "NoPoint" }, undefined, [
+  const effect = ticketActionEffect("Resume", { kind: "NoPoint" }, [
     "Resume",
     "Revoke",
   ]);
   expect(effect.effect).toBe("Nothing to resume");
   expect(effect.more).toBe("only Revoke exits this wall");
   expect(effect.offered).toBe(false);
-  expect(effect.cost).toBe(undefined);
-  expect(
-    ticketActionEffect("Revoke", { kind: "NoPoint" }, undefined).cost,
-  ).toBe("free");
-});
-
-/**
- * `retryableIn` wants affordable gas as well as a stamped point, and the rework
- * wall's own decider says a ticket out of gas there is parked for good under
- * both pricings. A wall with no gas is as revoke-only as one with no point.
- */
-test("a wall the ticket cannot pay for offers nothing, and says why", () => {
-  const effect = ticketActionEffect("Resume", { kind: "NoGas" }, undefined, [
-    "Resume",
-    "Revoke",
-  ]);
-  expect(effect.effect).toBe("No gas left");
-  expect(effect.more).toBe("only Revoke exits this wall");
-  expect(effect.offered).toBe(false);
-  expect(effect.refusedBecause).toBe(undefined);
-  expect(effect.cost).toBe(undefined);
 });
 
 /**
@@ -188,13 +131,11 @@ test("a wall names the exits the page draws, and none where it draws none", () =
   expect(wallExitLine(["Resume"])).toBe(undefined);
   expect(wallExitLine([])).toBe(undefined);
   expect(
-    ticketActionEffect("Resume", { kind: "NoGas" }, undefined, ["Resume"]).more,
+    ticketActionEffect("Resume", { kind: "NoPoint" }, ["Resume"]).more,
   ).toBe(undefined);
   expect(
-    ticketActionEffect("Resume", { kind: "NoGas" }, undefined, [
-      "Resume",
-      "Revoke",
-    ]).more,
+    ticketActionEffect("Resume", { kind: "NoPoint" }, ["Resume", "Revoke"])
+      .more,
   ).toBe("only Revoke exits this wall");
 });
 
@@ -203,7 +144,7 @@ test("a wall names the exits the page draws, and none where it draws none", () =
  * control with its reason rather than claiming anything about the wall.
  */
 test("a resume this page has not read enough for is refused, not denied", () => {
-  const effect = ticketActionEffect("Resume", { kind: "NotRead" }, undefined, [
+  const effect = ticketActionEffect("Resume", { kind: "NotRead" }, [
     "Resume",
     "Revoke",
   ]);
@@ -211,94 +152,23 @@ test("a resume this page has not read enough for is refused, not denied", () => 
   expect(effect.refusedBecause).toBe(resumeNotReadReason);
   expect(effect.more).toBe(undefined);
   expect(effect.effect).not.toContain("Revoke");
-  expect(effect.cost).toBe(undefined);
 });
 
 /**
- * A charge is a figure like any other: the two work resumes meter under either
- * pricing and are priced without the draft, and the rest wait for the authoring
- * that decides them rather than being drawn at the default.
+ * Every point the machine can stamp draws the effect its own decider gives it
+ * (`model/domain.qnt`): both work resumes respawn the work set.
  */
-test("a resume the page cannot price draws no price at all", () => {
-  const unpriced = resumeActionEffect(
-    {
-      kind: "Offered",
-      drawn: {
-        point: "ResumeEvaluating",
-        refillsReworkTo: undefined,
-        charge: undefined,
-      },
-    },
-    undefined,
-    [],
-  );
-  expect(unpriced.effect).toBe("Re-runs evaluation from stage 1");
-  expect(unpriced.cost).toBe(undefined);
-  const priced = resumeActionEffect(
-    {
-      kind: "Offered",
-      drawn: { point: "ResumeWorking", refillsReworkTo: undefined, charge: 1 },
-    },
-    undefined,
-    [],
-  );
-  expect(priced.cost).toBe("costs 1 gas");
-});
-
-/**
- * Every point the machine can stamp, against what its own decider does with it
- * (`model/domain.qnt`): both work resumes respawn the work set, only the rework
- * one refills the account, and only the evaluating one keeps the artifact.
- */
-test("every resume point draws the effect and the consequence the machine gives it", () => {
+test("every resume point draws the effect the machine gives it", () => {
   const drawn = resumePoints.map((point) => {
-    const effect = resumeActionEffect(
-      {
-        kind: "Offered",
-        drawn: {
-          point,
-          refillsReworkTo: point === "ResumeReworking" ? 2 : undefined,
-          charge: resumeGasCharge(point, "RetryCharged"),
-        },
-      },
-      { left: 0, max: 2 },
-      [],
-    );
-    return [point, effect.effect, effect.more ?? ""];
+    const effect = resumeActionEffect({ kind: "Offered", point }, []);
+    return [point, effect.effect];
   });
   expect(drawn).toEqual([
-    ["ResumeWorking", "Re-runs the work · new artifact", ""],
-    [
-      "ResumeReworking",
-      "Reworks · new artifact, rework refilled",
-      "Rework returns to 0/2",
-    ],
-    [
-      "ResumeEvaluating",
-      "Re-runs evaluation from stage 1",
-      "Keeps the current artifact · rework stays 0/2",
-    ],
-    ["ResumeFinalizing", "Re-runs finalization", ""],
+    ["ResumeWorking", "Re-runs the work · new artifact"],
+    ["ResumeReworking", "Reworks · new artifact"],
+    ["ResumeEvaluating", "Re-runs evaluation from stage 1"],
+    ["ResumeFinalizing", "Re-runs finalization"],
   ]);
-});
-
-test("a free answer says free and a charged one names its gas", () => {
-  const free = resumeActionEffect(
-    {
-      kind: "Offered",
-      drawn: {
-        point: "ResumeEvaluating",
-        refillsReworkTo: undefined,
-        charge: 0,
-      },
-    },
-    undefined,
-    [],
-  );
-  expect(free.cost).toBe("free");
-  expect(
-    ticketActionEffect("Revoke", { kind: "NoPoint" }, undefined).cost,
-  ).toBe("free");
 });
 
 /**
@@ -306,20 +176,13 @@ test("a free answer says free and a charged one names its gas", () => {
  * resume is the one answer that must not be offered into it.
  */
 test("every action the phase enables is offered, except a resume with no point", () => {
-  const resume = {
-    point: "ResumeEvaluating",
-    refillsReworkTo: undefined,
-    charge: 1,
-  } as const;
+  const resume = { kind: "Offered", point: "ResumeEvaluating" } as const;
   for (const action of ticketActionNames)
-    expect(
-      ticketActionEffect(action, { kind: "Offered", drawn: resume }, undefined)
-        .offered,
-    ).toBe(true);
+    expect(ticketActionEffect(action, resume).offered).toBe(true);
   for (const action of ticketActionNames)
-    expect(
-      ticketActionEffect(action, { kind: "NoPoint" }, undefined).offered,
-    ).toBe(action !== "Resume");
+    expect(ticketActionEffect(action, { kind: "NoPoint" }).offered).toBe(
+      action !== "Resume",
+    );
 });
 
 test("a deferral and a failure this console does not know name themselves", () => {

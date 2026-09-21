@@ -1,13 +1,20 @@
 /**
- * The per-project digest chain, computed from the canonical wire encoding of
- * the complete entry rather than from anything the database renders.
+ * The per-project digest chain, computed from the entry text the row stores
+ * rather than from anything the database renders.
+ *
+ * WHY THE STORED TEXT AND NOT A RE-ENCODING OF THE PARSED ENTRY. What the
+ * chain attests is that these bytes are the bytes that were written, and
+ * `encodeEntry` is the model's encoder: a model whose event shape changes — a
+ * field dropped, a payload widened — re-encodes an old row into bytes nobody
+ * ever stored, so every row written before the change would read as tampered.
+ * Digesting the column also covers a tampering the encoder would normalise
+ * away, such as a key the current schema strips.
  *
  * WHY NOT `row_to_json` OR A COLUMN HASH. PostgreSQL is free to change how it
  * spaces, orders and numbers its JSON output, and a digest that moved with a
- * server upgrade would report tampering on an untouched journal.
- * `encodeEntry` is the versioned encoder that fixes object, set, numeric and
- * string representation, and it is already what every stored row is written
- * from, so the digest covers exactly the bytes the load parses back.
+ * server upgrade would report tampering on an untouched journal. `entry` is a
+ * text column written from the versioned encoder, so its bytes are fixed at
+ * the write and the server renders nothing.
  *
  * WHY THE CHAIN AND NOT A PER-ROW DIGEST. A per-row digest catches an edited
  * payload and nothing else; chaining each digest onto its predecessor also
@@ -34,11 +41,9 @@
 
 import { createHash } from "node:crypto";
 
-import type { Entry } from "../../actor/journal.ts";
 import type { DecisionCause } from "../../interpreter/projectDecision.ts";
 import type { ConfigurationPin } from "../../interpreter/projectDecision.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
-import { encodeEntry } from "../../interpreter/wire.ts";
 
 /** The content address of one canonical authored configuration revision. */
 export function configurationRevisionDigest(canonical: string): string {
@@ -50,7 +55,8 @@ const journalChainFormat = "chuggy:journal:v1";
 const journalEnvelopeFormat = "chuggy:journal-envelope:v2";
 
 export interface JournalIntegrityEnvelope {
-  readonly entry: Entry;
+  /** The entry as the row stores it, which is what the encoder wrote. */
+  readonly entryText: string;
   readonly cause: DecisionCause;
   readonly configuration: ConfigurationPin;
   readonly eventSchemaVersion: number;
@@ -84,7 +90,7 @@ export function journalChainGenesis(partition: Partition): string {
 export function journalChainDigest(
   partition: Partition,
   previous: string,
-  entry: Entry,
+  entryText: string,
 ): string {
   return createHash("sha256")
     .update(
@@ -93,7 +99,7 @@ export function journalChainDigest(
         partition.tenant,
         partition.project,
         previous,
-        encodeEntry(entry),
+        entryText,
       ]),
     )
     .digest("hex");
@@ -113,7 +119,7 @@ export function journalEnvelopeDigest(
         partition.tenant,
         partition.project,
         previous,
-        encodeEntry(envelope.entry),
+        envelope.entryText,
         envelope.cause.kind,
         envelope.cause.id,
         String(envelope.eventSchemaVersion),

@@ -32,8 +32,6 @@ export type TicketPhase = (typeof phaseRoster)[number];
 export const escalationReasons = [
   "WorkFailed",
   "ReworkBudgetExhausted",
-  "FinalizationBudgetExhausted",
-  "GasExhausted",
   "DependencyRevoked",
   "ExecutionPolicyDenied",
   "TicketConfigIncompatible",
@@ -48,7 +46,7 @@ export type EscalationReason = (typeof escalationReasons)[number];
  * declares them. The model's `NoResume` is not among them: it is that union's
  * absent value, so the wire omits the field rather than naming a value that
  * would read as "not resumable" — a stronger claim than the machine makes,
- * because `retryableIn` wants affordable gas as well as a resume point.
+ * because one wall has no modeled resume and the rest do.
  */
 export const resumePoints = [
   "ResumeWorking",
@@ -260,9 +258,6 @@ export type DraftState = (typeof draftStates)[number];
 
 export const evaluationCombinators = ["UnanimousPass", "AnyPass"] as const;
 export type EvaluationCombinator = (typeof evaluationCombinators)[number];
-
-export const resumePricings = ["RetryCharged", "RetryFree"] as const;
-export type ResumePricing = (typeof resumePricings)[number];
 
 export const finalizers = ["NoFinalizer", "ManagedFinalizer"] as const;
 export type FinalizerChoice = (typeof finalizers)[number];

@@ -9,8 +9,8 @@
  * work reduce reads that counter to stamp the artifact it produced, so a short
  * one answers a question the machine would answer differently.
  *
- * The builders go through `freshTicket` rather than writing a record literal,
- * which is what keeps a fixture's accounts the ones its configuration grants.
+ * The builders go through `freshTicket` rather than writing a ticket literal,
+ * so a field added to the record reaches every fixture at once.
  */
 
 import type { Config } from "../../src/domain/config.ts";
@@ -71,10 +71,7 @@ export const evalOutstanding = (value: number, stage: number): Task => ({
   state: tsOutstanding,
 });
 
-/**
- * A ticket as a release leaves it, carrying its configuration's full accounts
- * and whatever the caller overrides.
- */
+/** A ticket as a release leaves it, with whatever the caller overrides. */
 export function ticketOn(
   config: Config,
   finalizer: Ticket["finalizer"] = "ManagedFinalizer",
@@ -84,11 +81,7 @@ export function ticketOn(
     deps: new Set<number>(),
     program: defaultProgram(config),
     workFanout: config.nTasks,
-    reworkPolicy: config.reworkPolicy,
-    finalizationPricing: config.finalizationPricing,
-    resumePricing: "RetryCharged",
     finalizer,
-    gas: config.gas,
   });
   return { ...born, ...overrides };
 }
@@ -126,7 +119,6 @@ export function healthyFleet(config: Config): readonly Ticket[] {
     record,
     spawned: record.length,
     artifact: { type: "ProducedArtifact", value: width } as const,
-    gasLeft: config.gas - 1,
   };
   return [
     ticketOn(config, "ManagedFinalizer", {
@@ -139,7 +131,6 @@ export function healthyFleet(config: Config): readonly Ticket[] {
       deps: new Set([1]),
       tasks: live,
       spawned: width,
-      gasLeft: config.gas - 1,
     }),
     ticketOn(config, "ManagedFinalizer", {
       ...finished,

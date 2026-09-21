@@ -196,17 +196,6 @@ function encodeTicket(ticket: Ticket): ItfValue {
     ["finalizer", encodeNullary(ticket.finalizer)],
     ["artifact", encodeSum(ticket.artifact, (mark: number) => encodeInt(mark))],
     ["workFanout", encodeInt(ticket.workFanout)],
-    [
-      "reworkPolicy",
-      encodeVariant("BudgetedRework", encodeInt(ticket.reworkPolicy.value)),
-    ],
-    [
-      "finalizationPricing",
-      encodeSum(ticket.finalizationPricing, (budget: number) =>
-        encodeInt(budget),
-      ),
-    ],
-    ["resumePricing", encodeNullary(ticket.resumePricing)],
     ["program", encodeProgram(ticket.program)],
     [
       "tasks",
@@ -217,9 +206,6 @@ function encodeTicket(ticket: Ticket): ItfValue {
     ],
     ["record", ticket.record.map(encodeTask)],
     ["spawned", encodeInt(ticket.spawned)],
-    ["reworkLeft", encodeInt(ticket.reworkLeft)],
-    ["finalizationLeft", encodeInt(ticket.finalizationLeft)],
-    ["gasLeft", encodeInt(ticket.gasLeft)],
     ["resumeAt", encodeNullary(ticket.resumeAt)],
     ["reason", encodeNullary(ticket.reason)],
     ["completions", encodeInt(ticket.completions)],

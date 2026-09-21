@@ -135,6 +135,33 @@ test("the ticket service refuses policy drift from the installed authority", asy
 });
 
 /**
+ * The row is compared as a configuration and not as text, so an installation
+ * whose row says the same thing in another rendering starts rather than
+ * refusing over key order.
+ */
+test("a policy row rendered another way is still the one this image carries", async () => {
+  await harness.query("DELETE FROM deployment_authoring_policy");
+  await harness.query(
+    `INSERT INTO deployment_authoring_policy(singleton,domain_configuration)
+     VALUES(true,$1)`,
+    [
+      JSON.stringify(
+        Object.fromEntries(Object.entries(refinementInstance).reverse()),
+      ),
+    ],
+  );
+  assert.equal(
+    (
+      await postgresDomainConfigurationPrecondition(
+        pool,
+        refinementInstance,
+      ).check(new AbortController().signal)
+    ).met,
+    "Met",
+  );
+});
+
+/**
  * Two writers starting against an installation the policy is not installed in
  * yet, staged rather than hoped for: the winner holds its insert open, and the
  * loser is proved queued behind that row before the winner commits. The row is

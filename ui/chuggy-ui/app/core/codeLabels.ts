@@ -44,10 +44,6 @@ export function escalationReasonLabel(reason: EscalationReason): string {
       return "Work failed";
     case "ReworkBudgetExhausted":
       return "Rework budget exhausted";
-    case "FinalizationBudgetExhausted":
-      return "Finalization budget exhausted";
-    case "GasExhausted":
-      return "Out of gas";
     case "DependencyRevoked":
       return "Dependency revoked";
     case "ExecutionPolicyDenied":
@@ -67,8 +63,6 @@ export function escalationReasonLabel(reason: EscalationReason): string {
 export interface WallFacts {
   readonly lastSet: ClosedSet | undefined;
   readonly stageCount: number;
-  readonly reworkMax: number | undefined;
-  readonly finalizationMax: number | undefined;
 }
 
 function walledStageLabel(facts: WallFacts): string | undefined {
@@ -76,23 +70,6 @@ function walledStageLabel(facts: WallFacts): string | undefined {
   if (set === undefined || set.taskKind !== "Evaluation") return undefined;
   if (set.stage === undefined) return undefined;
   return stageLabel(set.stage, facts.stageCount);
-}
-
-function budgetSpentLabel(
-  name: string,
-  max: number | undefined,
-): string | undefined {
-  return max === undefined
-    ? undefined
-    : `${name} ${String(max)}/${String(max)} used`;
-}
-
-/** The fragments the wall's second line is joined from, dropping what is absent. */
-function detailJoined(
-  parts: readonly (string | undefined)[],
-): string | undefined {
-  const held = parts.filter((part) => part !== undefined);
-  return held.length === 0 ? undefined : held.join(" · ");
 }
 
 /** The stage the wall interrupted, said as the thing that happened to it. */
@@ -125,14 +102,7 @@ export function escalationDetailLine(
     case "WorkFailed":
       return "Failed work is not reworked";
     case "ReworkBudgetExhausted":
-      return detailJoined([
-        walledStageFailed(facts),
-        budgetSpentLabel("Rework", facts.reworkMax),
-      ]);
-    case "GasExhausted":
-      return walledStageFailed(facts) ?? "Finalization failed";
-    case "FinalizationBudgetExhausted":
-      return budgetSpentLabel("Finalization", facts.finalizationMax);
+      return walledStageFailed(facts);
     case "DependencyRevoked":
       return "Only Revoke exits this wall";
     case "ExecutionPolicyDenied":
@@ -232,46 +202,28 @@ export function approvalLabel(required: boolean): string {
 }
 
 /**
- * What a mutation does, what it costs, and at most one consequence that
- * matters. `cost` is absent where the page has not read what the machine would
- * charge, because a price is a figure like any other and a wrong one is worse
- * than none; `offered` is false only where the machine admits no such answer at
- * all, and `refusedBecause` is the other shape, an answer that exists beside a
- * screen that cannot offer it yet.
+ * What a mutation does and at most one consequence that matters. `offered` is
+ * false only where the machine admits no such answer at all, and
+ * `refusedBecause` is the other shape, an answer that exists beside a screen
+ * that cannot offer it yet.
  */
 export interface ActionEffect {
   readonly effect: string;
-  readonly cost?: string;
   readonly more?: string;
   readonly offered: boolean;
   readonly refusedBecause?: string;
 }
 
 /**
- * A resume as the page draws it: where it would put the ticket back, what the
- * machine would refill, and what it would charge where the page has read enough
- * to know. `charge` is absent rather than assumed, because the two evaluation
- * resumes are free under `RetryFree` and priced under `RetryCharged` and only
- * the ticket's own authoring says which.
- */
-export interface ResumeDrawn {
-  readonly point: ResumePoint;
-  readonly refillsReworkTo: number | undefined;
-  readonly charge: number | undefined;
-}
-
-/**
  * What a resume would do, as much of it as the page has read: `retryableIn`
- * (`model/domain.qnt`) wants a parked phase, a stamped point and gas enough to
- * pay the point's charge, and the last two of those are these arms. `NoGas` is
- * a park with no answer left just as `NoPoint` is, so both draw no button,
- * while `NotRead` draws a disabled one because a screen that has not finished
- * reading knows neither.
+ * (`model/domain.qnt`) wants a parked phase and a stamped point, which is the
+ * one arm here that offers a button. `NoPoint` is a park with no answer left,
+ * and `NotRead` draws a disabled button instead, because a screen that has not
+ * finished reading does not yet know which of the two it is.
  */
 export type ResumeOffer =
-  | { readonly kind: "Offered"; readonly drawn: ResumeDrawn }
+  | { readonly kind: "Offered"; readonly point: ResumePoint }
   | { readonly kind: "NoPoint" }
-  | { readonly kind: "NoGas" }
   | { readonly kind: "NotRead" };
 
 /** What the console says about a resume it cannot yet offer. */
@@ -280,12 +232,12 @@ export const resumeNotReadReason = "Not read yet";
 /** The answers a wall leaves when the resume is not one of them. */
 export type WallExits = readonly TicketActionName[];
 
-function resumeEffect(resume: ResumeDrawn): string {
-  switch (resume.point) {
+function resumeEffect(point: ResumePoint): string {
+  switch (point) {
     case "ResumeWorking":
       return "Re-runs the work · new artifact";
     case "ResumeReworking":
-      return "Reworks · new artifact, rework refilled";
+      return "Reworks · new artifact";
     case "ResumeEvaluating":
       return "Re-runs evaluation from stage 1";
     case "ResumeFinalizing":
@@ -293,30 +245,9 @@ function resumeEffect(resume: ResumeDrawn): string {
   }
 }
 
-/** What a rework account left over a resume looks like, which is unchanged. */
-export interface ReworkStanding {
-  readonly left: number;
-  readonly max: number;
-}
-
-function resumeMore(
-  resume: ResumeDrawn,
-  rework: ReworkStanding | undefined,
-): string | undefined {
-  const refill = resume.refillsReworkTo;
-  if (refill !== undefined) return `Rework returns to 0/${String(refill)}`;
-  if (resume.point !== "ResumeEvaluating" || rework === undefined)
-    return undefined;
-  return `Keeps the current artifact · rework stays ${String(rework.left)}/${String(rework.max)}`;
-}
-
-function actionCost(charge: number): string {
-  return charge > 0 ? `costs ${String(charge)} gas` : "free";
-}
-
 /** An answer the machine admits, which is every one but a resume with no point. */
-function offered(effect: string, cost: string): ActionEffect {
-  return { effect, cost, offered: true };
+function offered(effect: string): ActionEffect {
+  return { effect, offered: true };
 }
 
 /**
@@ -346,55 +277,43 @@ function resumeRefused(effect: string, exits: WallExits): ActionEffect {
 /** What a resume would do, as far as the page has read enough to say. */
 export function resumeActionEffect(
   offer: ResumeOffer,
-  rework: ReworkStanding | undefined,
   exits: WallExits,
 ): ActionEffect {
   switch (offer.kind) {
     case "NoPoint":
       return resumeRefused("Nothing to resume", exits);
-    case "NoGas":
-      return resumeRefused("No gas left", exits);
     case "NotRead":
       return {
         effect: "Rejoins where the ticket parked",
         offered: true,
         refusedBecause: resumeNotReadReason,
       };
-    case "Offered": {
-      const more = resumeMore(offer.drawn, rework);
-      const charge = offer.drawn.charge;
-      return {
-        effect: resumeEffect(offer.drawn),
-        ...(charge === undefined ? {} : { cost: actionCost(charge) }),
-        ...(more === undefined ? {} : { more }),
-        offered: true,
-      };
-    }
+    case "Offered":
+      return offered(resumeEffect(offer.point));
   }
 }
 
 /**
- * What answering the action does to the ticket. A resume is priced and named by
- * the point the machine stamped, which is why it takes the offer rather than
- * the word alone.
+ * What answering the action does to the ticket. A resume is named by the point
+ * the machine stamped, which is why it takes the offer rather than the word
+ * alone.
  */
 export function ticketActionEffect(
   action: TicketActionName,
   resume: ResumeOffer,
-  rework: ReworkStanding | undefined,
   exits: WallExits = [],
 ): ActionEffect {
   switch (action) {
     case "Dispatch":
-      return offered("Dispatches the observed version", "free");
+      return offered("Dispatches the observed version");
     case "Resume":
-      return resumeActionEffect(resume, rework, exits);
+      return resumeActionEffect(resume, exits);
     case "Revoke":
-      return offered("Parks every dependent ticket", "free");
+      return offered("Parks every dependent ticket");
     case "Approve":
-      return offered("Lets finalization proceed", "free");
+      return offered("Lets finalization proceed");
     case "Decline":
-      return offered("Holds finalization back", "free");
+      return offered("Holds finalization back");
   }
 }
 

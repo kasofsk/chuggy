@@ -43,6 +43,7 @@ import {
   encodeEntry,
   parseEntry,
   parseJournal,
+  parseStoredEntry,
   parseStoredTicketCommand,
   parseTicketCommand,
   type Parsed,
@@ -75,7 +76,7 @@ const oneOfEach: Readonly<Record<DecisionEvent["type"], DecisionEvent>> = {
   Dispatch: dispatchEvent(id(1)),
   TaskDone: taskDoneEvent(id(1), asTaskId(2), "Fail", plainResult),
   WorkReduce: workReduceEvent(id(1)),
-  EvalReduce: evalReduceEvent(id(1)),
+  EvalReduce: evalReduceEvent(id(1), "ReworkEvaluationFailure"),
   FinalizationResult: finalizationResultEvent(id(1), "FinalizationFailed"),
   ExecutionBlocked: executionBlockedEvent(id(1), "ExecutionPolicyDenied"),
   ResumeTicket: resumeTicketEvent(id(1)),
@@ -291,5 +292,55 @@ test("the finalizer's own envelope is read only by the parse a writer reads its 
     assert.equal(refused.parsed, "Refused", JSON.stringify(broken));
     assert.ok(refused.parsed === "Refused");
     assert.match(refused.why, /finalization submission fields are invalid/);
+  }
+});
+
+/**
+ * A stored row as a pre-3 writer left it: the reduction named only its ticket,
+ * and which edge it took is in the record rather than in the event.
+ */
+function bareEvalReduceRow(rec: StepRecord): unknown {
+  return { seq: 4, event: { type: "EvalReduce", value: 1 }, rec };
+}
+
+/** The record an evaluation failure wrote when it walled the ticket. */
+const escalatedRecord: StepRecord = {
+  label: "ticket-escalated rework_budget_exhausted",
+  transitions: [{ ticket: id(1), from: "Evaluating", to: "Escalated" }],
+  effects: ["OpenHumanTask"],
+};
+
+/** The record the same event wrote when it sent the ticket back to work. */
+const reworkedRecord: StepRecord = {
+  label: "rework-started eval_failure",
+  transitions: [{ ticket: id(1), from: "Evaluating", to: "Working" }],
+  effects: ["SpawnWorkTasks"],
+};
+
+test("a pre-3 reduction is read at the disposition its own record reports", () => {
+  for (const [rec, onFailure] of [
+    [escalatedRecord, "EscalateEvaluationFailure"],
+    [reworkedRecord, "ReworkEvaluationFailure"],
+  ] as const) {
+    const read = accepted(parseStoredEntry(bareEvalReduceRow(rec), 2));
+    assert.deepEqual(read.event, evalReduceEvent(id(1), onFailure));
+  }
+});
+
+test("a bare reduction stored at the current semantics is refused, not lifted", () => {
+  const refused = parseStoredEntry(bareEvalReduceRow(escalatedRecord), 3);
+  assert.equal(refused.parsed, "Refused");
+});
+
+test("a reduction that names its disposition is read as it stands", () => {
+  const event = evalReduceEvent(id(1), "EscalateEvaluationFailure");
+  const stored = JSON.parse(
+    encodeEntry({ seq: 4, event, rec: escalatedRecord }),
+  ) as unknown;
+  for (const semantics of [1, 2, 3] as const) {
+    assert.deepEqual(
+      accepted(parseStoredEntry(stored, semantics)).event,
+      event,
+    );
   }
 });

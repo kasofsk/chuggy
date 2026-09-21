@@ -1,31 +1,22 @@
 /**
- * Reads the committed corpus and its manifest, and says which step labels and
- * which `stepDescends` exemption arms each trace fires.
+ * Reads the committed corpus and its manifest, and says which step labels each
+ * trace fires.
  *
- * Both rosters are derived from `model/domain.qnt` at run time rather than
- * listed here, so a label or an arm added to the model turns up as a coverage
- * failure instead of as silence. What is not derivable that way — which
- * instance can reach which label — is the caller's, and is stated there.
+ * The label roster is derived from `model/domain.qnt` at run time rather than
+ * listed here, so a label added to the model turns up as a coverage failure
+ * instead of as silence.
  */
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import {
-  decodeTrace,
-  field,
-  stateValue,
-  type ItfValue,
-} from "../itf/decode.ts";
+import { decodeTrace, field, stateValue } from "../itf/decode.ts";
 
 const GOLDEN_DIR = join(import.meta.dirname);
 const MANIFEST = join(GOLDEN_DIR, "manifest.json");
 
 /** The one label the model asserts unreachable: a guarded arm `retryableIn` refuses. */
 export const UNREACHABLE_LABEL = "ticket-resume-refused";
-
-/** The phases `phaseRank` names; everything else ranks as settled. */
-const LIVE_PHASES = new Set(["Pending", "Working", "Evaluating", "Finalizing"]);
 
 export interface ManifestRow {
   readonly name: string;
@@ -38,11 +29,6 @@ export interface ManifestRow {
   readonly quintVersion: string;
   readonly purpose: string;
   readonly trace: unknown;
-}
-
-export interface Fired {
-  readonly labels: ReadonlySet<string>;
-  readonly arms: ReadonlySet<string>;
 }
 
 /**
@@ -62,114 +48,33 @@ export function declaredLabels(root: string): ReadonlySet<string> {
   return labels;
 }
 
-/**
- * The exemption arms `stepDescends` names in its own header roster, in order.
- * The model requires a run per arm and keeps the list beside the rule, so this
- * reads that list rather than restating it.
- */
-export function declaredArms(root: string): readonly string[] {
-  const source = readFileSync(join(root, "model", "domain.qnt"), "utf8");
-  const start = source.indexOf("Current roster:");
-  const end = source.indexOf("val stepDescends", start);
-  if (start < 0 || end < 0) {
-    throw new Error(
-      "corpus: stepDescends' arm roster is not where this reader expects it",
-    );
-  }
-  const arms: string[] = [];
-  for (const line of source.slice(start, end).split("\n")) {
-    const match = /^ {2}\/\/\/ {3}([a-z].*)$/.exec(line);
-    if (!match?.[1]) continue;
-    arms.push(match[1].replace(/\s*—.*$/, "").trim());
-  }
-  return arms;
-}
-
-/** A resume into the pipeline, which is the flavor the model's roster names. */
-function isPipelineResume(tos: readonly string[]): boolean {
-  return tos.some((t) => t === "Evaluating" || t === "Finalizing");
-}
-
-function tagOf(value: ItfValue): string {
-  if (
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    value.kind === "variant"
-  ) {
-    return value.tag;
-  }
-  throw new Error("corpus: expected a variant where a phase belongs");
-}
-
-/**
- * Which arms this one step matches, named as the model's roster names them.
- * It mirrors `stepDescends`' exemption disjunction for classification only —
- * the invariant itself is `src/domain/`'s and is not duplicated here.
- */
-function armsFor(
-  label: string,
-  transitions: ItfValue,
-  retryFree: boolean,
-): string[] {
-  const hit: string[] = [];
-  if (label === "init") hit.push("init");
-  if (label === "settled") hit.push("settled");
-  if (label === "ticket-released") hit.push("ticket-released");
-
-  if (!Array.isArray(transitions)) return hit;
-
-  if (label === "ticket-resumed") {
-    const tos = transitions.map((t) => tagOf(field(t, "to")));
-    if (retryFree && isPipelineResume(tos)) {
-      hit.push("ticket-resumed, RetryFree pipeline flavor");
-    }
-  }
-  if (label === "ticket-revoked" && transitions.length > 0) {
-    const allSettled = transitions.every(
-      (t) => !LIVE_PHASES.has(tagOf(field(t, "from"))),
-    );
-    if (allSettled) hit.push("ticket-revoked, desk-only flat");
-  }
-  return hit;
-}
-
-function firedIn(row: ManifestRow): Fired {
+function firedIn(row: ManifestRow): ReadonlySet<string> {
   const trace = decodeTrace(row.trace);
   const lastStepVar = trace.vars.find((v) => v.endsWith("::lastStep"));
   if (lastStepVar === undefined) {
     throw new Error(`corpus: ${row.name} has no lastStep variable`);
   }
-  const retryFree = row.instance.endsWith("retryfree");
   const labels = new Set<string>();
-  const arms = new Set<string>();
   for (const state of trace.states) {
-    const record = stateValue(state, lastStepVar);
-    const label = field(record, "label");
+    const label = field(stateValue(state, lastStepVar), "label");
     if (typeof label !== "string")
       throw new Error(`corpus: ${row.name}: label is not a string`);
     labels.add(label);
-    for (const arm of armsFor(label, field(record, "transitions"), retryFree))
-      arms.add(arm);
   }
-  return { labels, arms };
+  return labels;
 }
 
 export interface Corpus {
   readonly rows: readonly ManifestRow[];
   readonly filesOnDisk: readonly string[];
-  firedForRow(row: ManifestRow): Fired;
-  firedFor(instance: string): Fired;
-  firedAcross(): Fired;
+  firedForRow(row: ManifestRow): ReadonlySet<string>;
+  firedAcross(): ReadonlySet<string>;
 }
 
-function union(parts: readonly Fired[]): Fired {
+function union(parts: readonly ReadonlySet<string>[]): ReadonlySet<string> {
   const labels = new Set<string>();
-  const arms = new Set<string>();
-  for (const part of parts) {
-    for (const l of part.labels) labels.add(l);
-    for (const a of part.arms) arms.add(a);
-  }
-  return { labels, arms };
+  for (const part of parts) for (const l of part) labels.add(l);
+  return labels;
 }
 
 /** Loads every manifest row with the trace it names, and the files beside it. */
@@ -208,8 +113,8 @@ export function loadCorpus(): Corpus {
     .filter((f) => f.endsWith(".itf.json"))
     .map((f) => f.slice(0, -".itf.json".length));
 
-  const cache = new Map<string, Fired>();
-  const firedForRow = (row: ManifestRow): Fired => {
+  const cache = new Map<string, ReadonlySet<string>>();
+  const firedForRow = (row: ManifestRow): ReadonlySet<string> => {
     const hit = cache.get(row.name);
     if (hit) return hit;
     const computed = firedIn(row);
@@ -221,10 +126,6 @@ export function loadCorpus(): Corpus {
     rows,
     filesOnDisk,
     firedForRow,
-    firedFor: (instance) =>
-      union(
-        rows.filter((r) => r.instance === instance && r.trace).map(firedForRow),
-      ),
     firedAcross: () => union(rows.filter((r) => r.trace).map(firedForRow)),
   };
 }

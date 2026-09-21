@@ -22,7 +22,7 @@ import {
   ticketServiceRunOnce,
   type TicketServiceRuntimeService,
 } from "../../src/interpreter/ticketServiceRun.ts";
-import { budgetedInstance } from "../domain/configs.ts";
+import { modelInstance } from "../domain/configs.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -65,7 +65,8 @@ function passService(
   metrics?: TicketServiceMetrics,
 ): TicketServiceRuntimeService {
   return {
-    domain: budgetedInstance,
+    domain: modelInstance,
+    rework: { cyclesMax: 2 },
     discovery,
     decisions: { decide: () => unreachablePromise() },
     projects,

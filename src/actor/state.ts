@@ -9,9 +9,10 @@
  * evaluated against. Only `journalStep` advances the pair — the executor and
  * crash steps are not domain steps, so they carry `(pre, rec)` unchanged, the
  * same stale-ghost arrangement `installCore` states in `model/domain.qnt` and
- * `src/domain/invariants.ts` explains: re-snapshotting on an emit would
- * compare the measure against itself and falsely report `stepDescends` broken
- * on a step the model proves harmless.
+ * `src/domain/invariants.ts` explains: re-snapshotting `pre` on an emit would
+ * present a step that decided nothing as the domain step `recordMonotone` and
+ * the rest of the bundle are meant to check — a step the model proves
+ * harmless only because it is never checked as one.
  *
  * THE DISCIPLINE IS THE DELTA BETWEEN TWO STEP RELATIONS. The disciplined
  * machine is `journalStep`, `emitNext` and `crashRecoverTo`; the hazard

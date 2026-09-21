@@ -49,17 +49,15 @@ import {
   retryablesIn,
   revocablesIn,
   taskPhaseIn,
-  dispatchableIn,
 } from "../domain/enablement.ts";
+import { dispositionChoices } from "../domain/deciders.ts";
 import type {
   Core,
   DecisionEvent,
+  EvaluationFailureDisposition,
   FinalizationOutcome,
   Finalizer,
-  FinalizationPricing,
   Reason,
-  RetryPricing,
-  ReworkPolicy,
   Stage,
   TaskResultRef,
   Verdict,
@@ -74,9 +72,6 @@ export interface ReleaseAuthoring {
   readonly deps: ReadonlySet<number>;
   readonly prog: readonly Stage[];
   readonly workFanout: number;
-  readonly reworkPolicy: ReworkPolicy;
-  readonly finalizationPricing: FinalizationPricing;
-  readonly resumePricing: RetryPricing;
   readonly finalizer: Finalizer;
 }
 
@@ -95,9 +90,6 @@ export function releaseAuthoringOf(event: DecisionEvent): ReleaseAuthoring {
     deps: event.value.deps,
     prog: event.value.prog,
     workFanout: event.value.workFanout,
-    reworkPolicy: event.value.reworkPolicy,
-    finalizationPricing: event.value.finalizationPricing,
-    resumePricing: event.value.resumePricing,
     finalizer: event.value.finalizer,
   };
 }
@@ -123,8 +115,16 @@ export function workReduceEvent(ticket: TicketId): DecisionEvent {
   return { type: "WorkReduce", value: ticket };
 }
 
-export function evalReduceEvent(ticket: TicketId): DecisionEvent {
-  return { type: "EvalReduce", value: ticket };
+/**
+ * The eval reduce carries the disposition the evaluation reported, because the
+ * journal records the picks the actor made: a replay that re-drew it would
+ * re-decide the step rather than re-perform it.
+ */
+export function evalReduceEvent(
+  ticket: TicketId,
+  onFailure: EvaluationFailureDisposition,
+): DecisionEvent {
+  return { type: "EvalReduce", value: { ticket, onFailure } };
 }
 
 export function finalizationResultEvent(
@@ -154,13 +154,10 @@ export function execDecisionEvent(
   switch (event.type) {
     case "ReleaseTicket": {
       const { ticket, ...authoring } = event.value;
-      return decideReleaseTicket(config, core, asTicketId(ticket), {
+      return decideReleaseTicket(core, asTicketId(ticket), {
         deps: authoring.deps,
         program: authoring.prog,
         workFanout: authoring.workFanout,
-        reworkPolicy: authoring.reworkPolicy,
-        finalizationPricing: authoring.finalizationPricing,
-        resumePricing: authoring.resumePricing,
         finalizer: authoring.finalizer,
       });
     }
@@ -178,7 +175,11 @@ export function execDecisionEvent(
     case "WorkReduce":
       return decideWorkReduce(core, asTicketId(event.value));
     case "EvalReduce":
-      return decideEvalStageReduce(core, asTicketId(event.value));
+      return decideEvalStageReduce(
+        core,
+        asTicketId(event.value.ticket),
+        event.value.onFailure,
+      );
     case "FinalizationResult":
       return decideFinalizationResult(
         core,
@@ -215,10 +216,8 @@ export function decisionEventEnabled(
     }
     case "Revoke":
       return revocablesIn(core).includes(asTicketId(event.value));
-    case "Dispatch": {
-      const id = asTicketId(event.value);
-      return readiesIn(core).includes(id) && dispatchableIn(core, id);
-    }
+    case "Dispatch":
+      return readiesIn(core).includes(asTicketId(event.value));
     case "TaskDone": {
       const id = asTicketId(event.value.ticket);
       return (
@@ -232,7 +231,10 @@ export function decisionEventEnabled(
     case "WorkReduce":
       return reducibleWorkIn(core).includes(asTicketId(event.value));
     case "EvalReduce":
-      return reducibleEvalIn(core).includes(asTicketId(event.value));
+      return (
+        reducibleEvalIn(core).includes(asTicketId(event.value.ticket)) &&
+        dispositionChoices.includes(event.value.onFailure)
+      );
     case "FinalizationResult": {
       const id = asTicketId(event.value.ticket);
       return (
@@ -260,11 +262,11 @@ export function decisionEventSubject(event: DecisionEvent): TicketId {
     case "TaskDone":
     case "FinalizationResult":
     case "ExecutionBlocked":
+    case "EvalReduce":
       return asTicketId(event.value.ticket);
     case "Revoke":
     case "Dispatch":
     case "WorkReduce":
-    case "EvalReduce":
     case "ResumeTicket":
       return asTicketId(event.value);
   }

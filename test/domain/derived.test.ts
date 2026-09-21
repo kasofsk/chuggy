@@ -30,11 +30,11 @@ import {
 } from "../../src/domain/derived.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 
-import { budgetedInstance } from "./configs.ts";
+import { modelInstance } from "./configs.ts";
 import { coreOf, depsOf, id, ticketOn } from "./fixtures.ts";
 import type { Core, Ticket } from "../../src/domain/generated/modelTypes.ts";
 
-const config = budgetedInstance;
+const config = modelInstance;
 
 /** The same fleet under descending insertion order, which is what an id-ordered fold must not inherit. */
 function builtBackwards(tickets: readonly Ticket[]): Core {
@@ -165,9 +165,8 @@ test("finishability grows upward from the terminal and a cycle never enters it",
   const parked = coreOf([
     ticketOn(config, "ManagedFinalizer", {
       phase: "Escalated",
-      reason: "GasExhausted",
+      reason: "ExecutionProfileUnavailable",
       resumeAt: "ResumeEvaluating",
-      gasLeft: 0,
     }),
   ]);
   assert.deepEqual(

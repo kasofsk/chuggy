@@ -59,9 +59,9 @@ export function sweep(core: Core, step: SweepStep): ReadonlySet<TicketId> {
 }
 
 /**
- * Tickets whose own measure cannot descend without a human: parked, or Pending
- * behind a chain containing one. A healthy-Blocked ticket is deliberately not
- * stuck, because it progresses vicariously while its deps run.
+ * Tickets that cannot move without a human: parked, or Pending behind a chain
+ * containing one. A healthy-Blocked ticket is deliberately not stuck — it
+ * sits flat while its deps run, and progresses vicariously.
  */
 export function stuckSet(core: Core): ReadonlySet<TicketId> {
   return sweep(core, (c, id, stuck) => {

@@ -107,8 +107,8 @@ test("a section panel draws its about line and its foot", () => {
 
 test("a panel given no about line and no foot draws neither", () => {
   const { container } = render(
-    <Panel title="Budgets">
-      <p>Rework</p>
+    <Panel title="Provenance">
+      <p>Stage 1</p>
     </Panel>,
   );
   expect(container.querySelector(".panel-about")).toBeNull();

@@ -71,9 +71,6 @@ export const authoring = {
   deps: new Set([asTicketId(1)]),
   prog: [{ fanout: 1, combinator: "UnanimousPass" }],
   workFanout: 1,
-  reworkPolicy: { type: "BudgetedRework", value: 0 },
-  finalizationPricing: "DeadlineOnly",
-  resumePricing: "RetryCharged",
   finalizer: "ManagedFinalizer",
 } as const;
 
@@ -82,9 +79,6 @@ export const authoringWireBody = {
   dependencies: [1],
   program: [{ fanout: 1, combinator: "UnanimousPass" }],
   workFanout: 1,
-  reworkPolicy: { type: "BudgetedRework", value: 0 },
-  finalizationPricing: "DeadlineOnly",
-  resumePricing: "RetryCharged",
   finalizer: "ManagedFinalizer",
 };
 
@@ -197,9 +191,6 @@ export const versionedDispatchViewPage: DispatchViewPage = {
       dependencies: [],
       workFanout: 1,
       program: [{ fanout: 1, combinator: "UnanimousPass" }],
-      reworkPolicy: { type: "BudgetedRework", value: 0 },
-      finalizationPricing: "DeadlineOnly",
-      resumePricing: "RetryCharged",
       finalizer: "ManagedFinalizer",
       configurationRevision: revision,
       configurationDigest: digest,

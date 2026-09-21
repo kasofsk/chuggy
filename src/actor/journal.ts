@@ -36,6 +36,7 @@ import { decisionEventEnabled, type DecisionEvent } from "./decisionEvent.ts";
 import {
   decisionSemanticsVersionCurrent,
   execDecisionEventAt,
+  replayableDecision,
   type DecisionSemanticsVersion,
 } from "./decisionSemantics.ts";
 import { recordEquals } from "./equality.ts";
@@ -73,7 +74,7 @@ export function storedReplayCore(
 ): Core {
   return stored.reduce(
     (core, row) =>
-      execDecisionEventAt(row.semantics, config, core, row.entry.event).post,
+      execDecisionEventAt(row.semantics, config, core, row.entry).post,
     genesis,
   );
 }
@@ -84,12 +85,14 @@ export function replayCore(config: Config, journal: readonly Entry[]): Core {
 }
 
 /**
- * Whether a stored history is a legal domain trace: non-descending semantics,
- * dense seqs, every decision enabled at its replayed prefix, every record
- * reproduced by the decider that wrote it.
+ * Whether a stored history is a legal domain trace: every row re-derivable at
+ * all, non-descending semantics, dense seqs, every decision enabled at its
+ * replayed prefix, every record reproduced by the decider that wrote it.
  *
- * Enablement is checked before the decider runs, because deciders assume their
- * guards — a tampered journal is refused, never crashed on.
+ * Enablement and re-derivability are checked before the decider runs, because
+ * deciders assume their guards: a tampered journal and a row naming a wall
+ * this machine no longer has are refused rather than crashed on or answered
+ * with a different decision.
  */
 export function storedJournalLegalOn(
   config: Config,
@@ -100,6 +103,7 @@ export function storedJournalLegalOn(
   let semantics: DecisionSemanticsVersion = 1;
   for (const row of stored) {
     if (
+      !replayableDecision(row.entry) ||
       row.semantics < semantics ||
       row.entry.seq !== next ||
       !decisionEventEnabled(config, replayed, row.entry.event)
@@ -110,7 +114,7 @@ export function storedJournalLegalOn(
       row.semantics,
       config,
       replayed,
-      row.entry.event,
+      row.entry,
     );
     if (!recordEquals(decision.rec, row.entry.rec)) return false;
     replayed = decision.post;

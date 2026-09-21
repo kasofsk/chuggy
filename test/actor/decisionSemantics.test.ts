@@ -8,12 +8,18 @@
  * deciders at 919c7b6 and are the only record of what that machine decided.
  *
  * THEY COVER THE TWO SHAPES THE WALL CHANGED IN. `journalAtSemanticsOne.json`
- * is one budgeted ticket, walled and resumed, where the first semantics resumed
- * into evaluation and the current one resumes into work — a record divergence.
- * `journalAtSemanticsOneWalls.json` carries a ticket that bought no rework at
- * all, whose wall the current machine leaves with no resume so the journaled
- * resume is not even enabled, and a ticket that bought a free resume, which the
- * first semantics charged nothing for and the current one charges a gas.
+ * is one ticket reworked once, walled and resumed, where the first semantics
+ * resumed into evaluation and the current one resumes into work — a record
+ * divergence. `journalAtSemanticsOneWalls.json` carries two walled tickets,
+ * the second reworked before it walled, so one history holds an EvalReduce row
+ * on each disposition edge: the bytes name neither, and the record is what
+ * says which was taken.
+ *
+ * A PRE-3 ROW'S EVALREDUCE NAMED ONLY ITS TICKET, a shape the wire union this
+ * image generates does not describe, so the bytes are lifted before they are
+ * an event at all. That lift belongs to the seam a store's load reads a row
+ * with, so these files are read through `parseStoredEntry` rather than through
+ * a second copy of it here.
  */
 
 import assert from "node:assert/strict";
@@ -32,23 +38,29 @@ import {
   type Entry,
   type StoredEntry,
 } from "../../src/actor/journal.ts";
-import { decisionSemanticsVersionCurrent } from "../../src/actor/decisionSemantics.ts";
+import {
+  decisionSemanticsVersionCurrent,
+  replayableDecision,
+} from "../../src/actor/decisionSemantics.ts";
+import { parseStoredEntry } from "../../src/interpreter/wire.ts";
 import { ticketAt } from "../../src/domain/core.ts";
-import { modeledResumeExists } from "../../src/domain/ticket.ts";
 import { id } from "../domain/fixtures.ts";
-import { parseJournal } from "../../src/interpreter/wire.ts";
 import { refinementInstance } from "./harness.ts";
 
 const config = refinementInstance;
 
-/** One pinned history, parsed by the same wire schema a store's load parses it with. */
+/** One pinned history, read exactly as a store's load reads a row of that vintage. */
 function pinned(file: string): readonly Entry[] {
   const raw: unknown = JSON.parse(
     readFileSync(join(import.meta.dirname, file), "utf8"),
   );
-  const parsed = parseJournal(raw);
-  assert.ok(parsed.parsed === "Ok", `${file} no longer parses`);
-  return parsed.value;
+  assert.ok(Array.isArray(raw), `${file} is not a journal`);
+  return raw.map((row: unknown, at: number) => {
+    const parsed = parseStoredEntry(row, 1);
+    if (parsed.parsed === "Refused")
+      throw new Error(`${file} row ${String(at)} is unreadable: ${parsed.why}`);
+    return parsed.value;
+  });
 }
 
 /** A pinned history as a store holding it would present it, every row at one semantics. */
@@ -59,14 +71,14 @@ function storedAt(
   return entries.map((entry) => ({ entry, semantics }));
 }
 
-const budgetedWall = pinned("journalAtSemanticsOne.json");
+const reworkedWall = pinned("journalAtSemanticsOne.json");
 const walls = pinned("journalAtSemanticsOneWalls.json");
 
-test("the budgeted history walks the rework wall and resumes past it", () => {
-  const walled = budgetedWall.filter(
+test("the reworked history walks the rework wall and resumes past it", () => {
+  const walled = reworkedWall.filter(
     (entry) => entry.rec.label === "ticket-escalated rework_budget_exhausted",
   );
-  const resumes = budgetedWall.filter(
+  const resumes = reworkedWall.filter(
     (entry) => entry.event.type === "ResumeTicket",
   );
   assert.equal(walled.length, 1);
@@ -74,81 +86,94 @@ test("the budgeted history walks the rework wall and resumes past it", () => {
   assert.deepEqual(resumes[0]?.rec.effects, ["SpawnEvalTasks"]);
 });
 
-test("the budgeted history is legal under the semantics its rows declare", () => {
-  assert.ok(storedJournalLegalOn(config, storedAt(budgetedWall, 1)));
+test("the reworked history is legal under the semantics its rows declare", () => {
+  assert.ok(storedJournalLegalOn(config, storedAt(reworkedWall, 1)));
 });
 
 test("the same history read as this image's own decisions is not legal", () => {
-  assert.ok(!storedJournalLegalOn(config, storedAt(budgetedWall, 2)));
-  assert.ok(!journalLegalOn(config, budgetedWall));
+  assert.ok(!storedJournalLegalOn(config, storedAt(reworkedWall, 2)));
+  assert.ok(!journalLegalOn(config, reworkedWall));
 });
 
 test("replay under the first semantics resumes the walled ticket into evaluation", () => {
-  const replayed = storedReplayCore(config, storedAt(budgetedWall, 1));
+  const replayed = storedReplayCore(config, storedAt(reworkedWall, 1));
   assert.equal(ticketAt(replayed, id(1)).phase, "Evaluating");
   assert.equal(ticketAt(replayed, id(1)).resumeAt, "NoResume");
 });
 
 test("a row decided under an older machine than the row before it is refused", () => {
-  const descending = budgetedWall.map((entry, at) => ({
+  const descending = reworkedWall.map((entry, at) => ({
     entry,
     semantics: at === 0 ? decisionSemanticsVersionCurrent : 1,
   }));
   assert.ok(!storedJournalLegalOn(config, descending));
 });
 
-test("the two-wall history authors a ticket with no rework and a ticket resuming free", () => {
-  const released = walls.filter(
-    (entry) => entry.event.type === "ReleaseTicket",
-  );
+test("the two-wall history holds an EvalReduce row on each disposition edge", () => {
+  const reduces = walls.filter((entry) => entry.event.type === "EvalReduce");
   assert.deepEqual(
-    released.map((entry) =>
-      entry.event.type === "ReleaseTicket"
-        ? [
-            entry.event.value.reworkPolicy.value,
-            entry.event.value.resumePricing,
-          ]
-        : undefined,
-    ),
+    reduces.map((entry) => entry.rec.label),
     [
-      [0, "RetryCharged"],
-      [1, "RetryFree"],
+      "ticket-escalated rework_budget_exhausted",
+      "rework-started eval_failure",
+      "ticket-escalated rework_budget_exhausted",
     ],
   );
-});
-
-test("both walls are legal under the semantics their rows declare, and neither under this image's", () => {
   assert.ok(storedJournalLegalOn(config, storedAt(walls, 1)));
   assert.ok(!storedJournalLegalOn(config, storedAt(walls, 2)));
 });
 
-test("the wall of a ticket that bought no rework leaves this image no resume to enable", () => {
+test("a second-semantics EvalReduce takes the edge its record records", () => {
+  const toTheWall = storedAt(walls.slice(0, 6), 2);
+  const walled = ticketAt(storedReplayCore(config, toTheWall), id(1));
+  assert.equal(walled.phase, "Escalated");
+  assert.equal(walled.reason, "ReworkBudgetExhausted");
+
+  const toTheRework = storedAt(walls.slice(0, 13), 2);
+  const reworked = ticketAt(storedReplayCore(config, toTheRework), id(2));
+  assert.equal(reworked.phase, "Working");
+});
+
+test("the first semantics parks the wall at the eval resume, the second where this machine does", () => {
+  const toTheWall = walls.slice(0, 6);
+  assert.equal(
+    ticketAt(storedReplayCore(config, storedAt(toTheWall, 1)), id(1)).resumeAt,
+    "ResumeEvaluating",
+  );
+  assert.equal(
+    ticketAt(storedReplayCore(config, storedAt(toTheWall, 2)), id(1)).resumeAt,
+    "ResumeReworking",
+  );
+});
+
+test("a parked ticket is resumable whichever semantics walled it", () => {
   const resume = resumeTicketEvent(id(1));
   const toTheWall = walls.slice(0, 6);
-  assert.equal(toTheWall.at(-1)?.event.type, "EvalReduce");
-
-  const atOne = storedReplayCore(config, storedAt(toTheWall, 1));
-  assert.equal(ticketAt(atOne, id(1)).resumeAt, "ResumeEvaluating");
-  assert.ok(decisionEventEnabled(config, atOne, resume));
-
-  const atCurrent = storedReplayCore(config, storedAt(toTheWall, 2));
-  assert.equal(ticketAt(atCurrent, id(1)).resumeAt, "NoResume");
-  assert.ok(!decisionEventEnabled(config, atCurrent, resume));
+  for (const semantics of [1, 2] as const) {
+    const at = storedReplayCore(config, storedAt(toTheWall, semantics));
+    assert.ok(decisionEventEnabled(config, at, resume));
+  }
 });
 
-test("a free resume the first semantics charged nothing for stays uncharged on replay", () => {
-  const replayed = storedReplayCore(config, storedAt(walls, 1));
-  const two = ticketAt(replayed, id(2));
-  assert.equal(two.phase, "Evaluating");
-  assert.equal(two.gasLeft, 1);
-  assert.equal(two.resumePricing, "RetryFree");
-});
-
-test("the resume the older machine granted is one this machine's desk would not model", () => {
-  const one = ticketAt(
-    storedReplayCore(config, storedAt(walls.slice(0, 6), 1)),
-    id(1),
+test("a row parked on a wall this machine no longer has cannot be replayed", () => {
+  const wall = walls[5];
+  assert.ok(wall !== undefined);
+  assert.ok(replayableDecision(wall));
+  assert.ok(
+    !replayableDecision({
+      event: wall.event,
+      rec: { ...wall.rec, label: "ticket-escalated gas_exhausted" },
+    }),
   );
-  assert.equal(one.resumeAt, "ResumeEvaluating");
-  assert.equal(modeledResumeExists(one), false);
+  assert.ok(
+    !storedJournalLegalOn(config, [
+      {
+        entry: {
+          ...wall,
+          rec: { ...wall.rec, label: "ticket-escalated gas_exhausted" },
+        },
+        semantics: 1,
+      },
+    ]),
+  );
 });

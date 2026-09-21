@@ -117,14 +117,6 @@ export function TicketBrief(props: {
   );
 }
 
-function pricingLabel(
-  pricing: DraftResponse["authoring"]["finalizationPricing"],
-): string {
-  return pricing === "DeadlineOnly"
-    ? "deadline only"
-    : `budgeted ${String(pricing.value)}`;
-}
-
 function Authoring(props: { readonly draft: DraftResponse }): ReactNode {
   const authoring = props.draft.authoring;
   return (
@@ -142,11 +134,6 @@ function Authoring(props: { readonly draft: DraftResponse }): ReactNode {
               .join(" then ")}
       </Field>
       <Field name="work fanout">{authoring.workFanout}</Field>
-      <Field name="rework">{authoring.reworkPolicy.value}</Field>
-      <Field name="finalization">
-        {pricingLabel(authoring.finalizationPricing)}
-      </Field>
-      <Field name="resume pricing">{authoring.resumePricing}</Field>
       <Field name="finalizer">{finalizerLabel(authoring.finalizer)}</Field>
     </dl>
   );

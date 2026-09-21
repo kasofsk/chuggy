@@ -137,7 +137,7 @@ export function ledgerPage(
     : { executions, nextCursor: cursor };
 }
 
-/** Two evaluation stages, one work task each, two reworks, a charged retry. */
+/** Two evaluation stages, one work task each, two reworks. */
 export const ticket21Authoring: TicketAuthoring = {
   dependencies: [],
   program: [
@@ -145,9 +145,6 @@ export const ticket21Authoring: TicketAuthoring = {
     { fanout: 1, combinator: "UnanimousPass" },
   ],
   workFanout: 1,
-  reworkPolicy: { type: "BudgetedRework", value: 2 },
-  finalizationPricing: "DeadlineOnly",
-  resumePricing: "RetryCharged",
   finalizer: "ManagedFinalizer",
 };
 

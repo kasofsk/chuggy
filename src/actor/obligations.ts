@@ -78,8 +78,8 @@ export const journalCompletionsMatchLedger: Obligation = (_config, state) =>
 export const journalCoversWorld: Obligation = (_config, state) =>
   state.orphans.length === 0;
 
-/** No double-spent budget: the world never runs more paid work for a ticket than the journal charged. */
-export const noDoubleSpentBudget: Obligation = (_config, state) =>
+/** No double-spent work: the world never runs more work for a ticket than the journal decided. */
+export const noDoubleSpentWork: Obligation = (_config, state) =>
   liveTickets(memoryCore(state)).every(
     (ticket) => worldSpawns(state, ticket) <= journalSpawns(state, ticket),
   );
@@ -108,7 +108,7 @@ export const refinementCore: readonly NamedObligation[] = [
 export const refinementInvariants: readonly NamedObligation[] = [
   ...refinementCore,
   { obligation: "journalCoversWorld", holds: journalCoversWorld },
-  { obligation: "noDoubleSpentBudget", holds: noDoubleSpentBudget },
+  { obligation: "noDoubleSpentWork", holds: noDoubleSpentWork },
   { obligation: "noDuplicateCycle", holds: noDuplicateCycle },
 ];
 

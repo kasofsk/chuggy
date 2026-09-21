@@ -23,7 +23,6 @@ import {
   type ProjectRead,
   type ProjectReadQuery,
   type ProjectResource,
-  type TicketAccounts,
   type TicketNativeAction,
   type TicketPhaseFilter,
   type TicketResource,
@@ -55,11 +54,8 @@ interface PublicOperationRow {
 }
 
 /**
- * One projection row, joined to the deployment gas every ticket is released
- * with and to the two journal entries that date it. The account columns are null
- * together on a row no decision has moved since the projection began carrying
- * them, the joined gas is null only where no domain configuration is installed,
- * and the two entries are outer joins so a page keeps a row neither is found for.
+ * One projection row, joined to the two journal entries that date it. Both are
+ * outer joins, so a page keeps a row neither is found for.
  */
 interface TicketProjectionRow {
   readonly ticket: string;
@@ -75,10 +71,6 @@ interface TicketProjectionRow {
   readonly released_at: string | null;
   readonly changed_at: string | null;
   readonly resume_at: string | null;
-  readonly gas_left: string | null;
-  readonly rework_left: string | null;
-  readonly finalization_left: string | null;
-  readonly gas_max: string | null;
 }
 
 /** One open action, or a ticket that has none: every column is then null. */
@@ -249,39 +241,9 @@ function projectionResume(value: string | null): ResumePoint | undefined {
   return point;
 }
 
-/**
- * What a ticket has left to spend, or nothing when the row predates the
- * projection carrying it. A null finalization account is the `DeadlineOnly`
- * pricing that budgets none, which a non-null `gas_left` tells apart from a row
- * holding no accounts at all.
- */
-function projectionAccounts(
-  row: TicketProjectionRow,
-): TicketAccounts | undefined {
-  if (row.gas_left === null || row.rework_left === null) return undefined;
-  if (row.gas_max === null)
-    throw new Error(
-      "native read: a ticket holds accounts but the deployment declares no gas",
-    );
-  return {
-    gasLeft: projectRowCounter(row.gas_left, "ticket gas left"),
-    gasMax: projectRowCounter(row.gas_max, "deployment gas"),
-    reworkLeft: projectRowCounter(row.rework_left, "ticket rework left"),
-    ...(row.finalization_left === null
-      ? {}
-      : {
-          finalizationLeft: projectRowCounter(
-            row.finalization_left,
-            "ticket finalization left",
-          ),
-        }),
-  };
-}
-
 function ticketResource(row: TicketProjectionRow): TicketResource {
   const reason = projectionReason(row.reason);
   const resumeAt = projectionResume(row.resume_at);
-  const accounts = projectionAccounts(row);
   return {
     ticket: asTicketId(projectRowCounter(row.ticket, "ticket identity")),
     ...(row.ticket_title === "" ? {} : { title: row.ticket_title }),
@@ -293,7 +255,6 @@ function ticketResource(row: TicketProjectionRow): TicketResource {
       : { releasedAt: nativeReadInstant(row.released_at) }),
     ...(reason === undefined ? {} : { reason }),
     ...(resumeAt === undefined ? {} : { resumeAt }),
-    ...(accounts === undefined ? {} : { accounts }),
   };
 }
 
@@ -417,16 +378,13 @@ async function readProjectTickets(
 ): Promise<readonly TicketProjectionRow[]> {
   if (query.order === "RecentActivity") {
     const found = await client.query<TicketProjectionRow>(
-      sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,t.gas_left,
-                 t.rework_left,t.finalization_left,
+      sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,
                  coalesce(b.title,left(substring(b.intent from
                    '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                    AS ticket_title,
-                 d.domain_configuration::jsonb->>'gas' AS gas_max,
                  r.committed_at::text AS released_at,
                  c.committed_at::text AS changed_at
           FROM ticket_projection t
-          LEFT JOIN deployment_authoring_policy d ON d.singleton=true
           LEFT JOIN draft_brief b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
           LEFT JOIN journal_entry c
@@ -448,16 +406,13 @@ async function readProjectTickets(
     return found.rows;
   }
   const found = await client.query<TicketProjectionRow>(
-    sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,t.gas_left,
-               t.rework_left,t.finalization_left,
+    sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,
                coalesce(b.title,left(substring(b.intent from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
-               d.domain_configuration::jsonb->>'gas' AS gas_max,
                r.committed_at::text AS released_at,
                c.committed_at::text AS changed_at
           FROM ticket_projection t
-          LEFT JOIN deployment_authoring_policy d ON d.singleton=true
           LEFT JOIN draft_brief b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
           LEFT JOIN journal_entry c
@@ -500,12 +455,10 @@ function nativeReadsResources(
     project: (partition, query) => readProject(pool, partition, query),
     ticket: async (partition, ticket) => {
       const found = await pool.query<TicketProjectionRow & DraftBriefRow>(
-        sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,t.gas_left,
-                   t.rework_left,t.finalization_left,
+        sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,
                    coalesce(b.title,left(substring(b.intent from
                      '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                      AS ticket_title,
-                   d.domain_configuration::jsonb->>'gas' AS gas_max,
                    b.title,b.intent,b.branch,b.repository,
                    b.finalization_mode,b.finalization_target,
                    r.committed_at::text AS released_at,
@@ -515,7 +468,6 @@ function nativeReadsResources(
                    (SELECT array_agg(k.command ORDER BY k.ordinal) FROM draft_brief_check k
                      WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS checks
               FROM ticket_projection t
-              LEFT JOIN deployment_authoring_policy d ON d.singleton=true
               LEFT JOIN journal_entry c
                 ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
               LEFT JOIN LATERAL (

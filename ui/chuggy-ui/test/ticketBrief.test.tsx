@@ -26,9 +26,6 @@ const authoring: DraftResponse["authoring"] = {
   dependencies: [],
   program: [],
   workFanout: 1,
-  reworkPolicy: { type: "BudgetedRework", value: 1 },
-  finalizationPricing: "DeadlineOnly",
-  resumePricing: "RetryFree",
   finalizer: "NoFinalizer",
 };
 

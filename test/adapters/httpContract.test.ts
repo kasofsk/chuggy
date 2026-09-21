@@ -108,9 +108,6 @@ const authoring = {
   dependencies: [1, 2],
   program: [{ fanout: 1, combinator: "UnanimousPass" }],
   workFanout: 1,
-  reworkPolicy: { type: "BudgetedRework", value: 1 },
-  finalizationPricing: { type: "Budgeted", value: 1 },
-  resumePricing: "RetryCharged",
   finalizer: "ManagedFinalizer",
 } as const;
 
@@ -171,9 +168,6 @@ test("authoring DTOs translate into existing application types", () => {
         deps: new Set([1, 2]),
         prog: authoring.program,
         workFanout: 1,
-        reworkPolicy: authoring.reworkPolicy,
-        finalizationPricing: authoring.finalizationPricing,
-        resumePricing: "RetryCharged",
         finalizer: "ManagedFinalizer",
       },
       brief: {

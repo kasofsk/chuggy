@@ -4,9 +4,7 @@ import { test } from "node:test";
 import { releaseTicketEvent } from "../../src/actor/decisionEvent.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 import {
-  decodeDispatchFinalizationPricing,
   decodeDispatchProgram,
-  decodeDispatchReworkPolicy,
   deriveDispatchCandidates,
   dispatchViewDigest,
 } from "../../src/interpreter/dispatchView.ts";
@@ -120,12 +118,8 @@ test("dispatch JSON codecs refuse malformed stored structures", () => {
     /expected int/i,
   );
   assert.throws(
-    () => decodeDispatchReworkPolicy({ type: "Unknown", value: 1 }),
+    () => decodeDispatchProgram([{ fanout: 1, combinator: "Unknown" }]),
     /invalid input/i,
-  );
-  assert.throws(
-    () => decodeDispatchFinalizationPricing({ type: "Budgeted", value: 1.5 }),
-    /expected int/i,
   );
 });
 
@@ -135,15 +129,7 @@ test("dispatch JSON codecs accept every stored model variant", () => {
     [{ fanout: 2, combinator: "UnanimousPass" }],
   );
   assert.deepEqual(
-    decodeDispatchReworkPolicy({ type: "BudgetedRework", value: 3 }),
-    { type: "BudgetedRework", value: 3 },
-  );
-  assert.equal(
-    decodeDispatchFinalizationPricing("DeadlineOnly"),
-    "DeadlineOnly",
-  );
-  assert.deepEqual(
-    decodeDispatchFinalizationPricing({ type: "Budgeted", value: 4 }),
-    { type: "Budgeted", value: 4 },
+    decodeDispatchProgram([{ fanout: 1, combinator: "AnyPass" }]),
+    [{ fanout: 1, combinator: "AnyPass" }],
   );
 });

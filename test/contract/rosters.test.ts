@@ -42,7 +42,6 @@ import {
   requirementSources,
   resultVerdicts,
   resumePoints,
-  resumePricings,
   runCostBases,
   schedulerFreshnesses,
   selectorAttentions,
@@ -112,7 +111,6 @@ import {
 import type {
   Combinator,
   Finalizer,
-  RetryPricing,
 } from "../../src/domain/generated/modelTypes.ts";
 import {
   allAttemptEvidence,
@@ -393,10 +391,6 @@ test("the authoring rosters are exhaustive over the model unions", () => {
     UnanimousPass: true,
     AnyPass: true,
   };
-  const pricing: Record<RetryPricing, true> = {
-    RetryCharged: true,
-    RetryFree: true,
-  };
   const finalizer: Record<Finalizer, true> = {
     NoFinalizer: true,
     ManagedFinalizer: true,
@@ -423,7 +417,6 @@ test("the authoring rosters are exhaustive over the model unions", () => {
   };
   assert.deepEqual(sorted(draftStates), keysOf(states));
   assert.deepEqual(sorted(evaluationCombinators), keysOf(combinators));
-  assert.deepEqual(sorted(resumePricings), keysOf(pricing));
   assert.deepEqual(sorted(finalizers), keysOf(finalizer));
   assert.deepEqual(sorted(configurationProvenanceSources), keysOf(provenance));
   assert.deepEqual(sorted(configurationReadinesses), keysOf(readiness));

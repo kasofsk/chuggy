@@ -6,7 +6,7 @@
  * whole, the way `test/domain/configs.ts` transcribes the corpus instances: a
  * reader checks it against the model by reading down it. It is fixed tiny at
  * the smallest constants that exercise a rework, because the rework is the
- * re-entry that charges — where a double-spend bites.
+ * re-entry a crash can double.
  *
  * `assertStep` is the model tests' per-step gate: the whole domain bundle on
  * the carried view, and the named refinement obligations against an exact
@@ -35,7 +35,6 @@ import {
 } from "../../src/actor/state.ts";
 import type { Config } from "../../src/domain/config.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
-import { budgeted, reworkBudgetOf } from "../../src/domain/pricing.ts";
 import type { Stage, Verdict } from "../../src/domain/generated/modelTypes.ts";
 import { bundleHolds, evaluateBundle } from "../conformance/evaluate.ts";
 import { id } from "../domain/fixtures.ts";
@@ -44,9 +43,6 @@ import { id } from "../domain/fixtures.ts";
 export const refinementInstance: Config = {
   nTickets: 2,
   nTasks: 1,
-  reworkPolicy: reworkBudgetOf(1),
-  gas: 3,
-  finalizationPricing: budgeted(1),
   maxStages: 1,
 };
 
@@ -55,9 +51,6 @@ export const plainAuthoring = {
   deps: new Set<number>(),
   prog: [{ fanout: 1, combinator: "UnanimousPass" }] as readonly Stage[],
   workFanout: 1,
-  reworkPolicy: reworkBudgetOf(1),
-  finalizationPricing: budgeted(1),
-  resumePricing: "RetryCharged",
   finalizer: "ManagedFinalizer",
 } as const;
 

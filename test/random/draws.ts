@@ -20,18 +20,14 @@
  */
 
 import {
-  finalizationPricingChoices,
   finalizerChoices,
   isValidProgram,
-  resumePricingChoices,
-  reworkPolicyChoices,
   stageChoices,
   workFanoutChoices,
   type Config,
 } from "../../src/domain/config.ts";
 import {
   dependableIn,
-  dispatchableIn,
   executionBlockedReasons,
   finalizationOutcomes,
   finalizationOutcomeEnabled,
@@ -46,19 +42,17 @@ import {
   revocablesIn,
   taskPhaseIn,
 } from "../../src/domain/enablement.ts";
-import type {
-  Core,
-  FinalizationOutcome,
-  FinalizationPricing,
-  Finalizer,
-  Reason,
-  RetryPricing,
-  ReworkPolicy,
-  Stage,
-  Verdict,
+import {
+  evaluationFailureDispositionTags,
+  type Core,
+  type EvaluationFailureDisposition,
+  type FinalizationOutcome,
+  type Finalizer,
+  type Reason,
+  type Stage,
+  type Verdict,
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId, type TaskId, type TicketId } from "../../src/domain/ids.ts";
-import { reworkBudget } from "../../src/domain/pricing.ts";
 import type { Picks } from "../conformance/dispatch.ts";
 import { decodeValue, encodeValue, type ItfValue } from "../itf/decode.ts";
 import {
@@ -66,7 +60,6 @@ import {
   encodeInt,
   encodeNullaryTag,
   encodeProgram,
-  encodeSumValue,
 } from "../itf/vocabulary.ts";
 import { pickFrom, subsetFrom, type Random } from "./random.ts";
 
@@ -76,10 +69,8 @@ export interface Drawn {
   readonly deps?: readonly TicketId[];
   readonly program?: readonly Stage[];
   readonly workFanout?: number;
-  readonly reworkPolicy?: ReworkPolicy;
-  readonly finalizationPricing?: FinalizationPricing;
-  readonly resumePricing?: RetryPricing;
   readonly finalizer?: Finalizer;
+  readonly onFailure?: EvaluationFailureDisposition;
   readonly taskId?: TaskId;
   readonly verdict?: Verdict;
   readonly outcome?: FinalizationOutcome;
@@ -141,30 +132,15 @@ const releaseTicket: WalkAction = {
     deps: subsetFrom(random, dependableIn(core)),
     program: pickFrom(random, validProgramsIn(config)),
     workFanout: pickFrom(random, workFanoutChoices(config)),
-    reworkPolicy: pickFrom(random, reworkPolicyChoices(config)),
-    finalizationPricing: pickFrom(random, finalizationPricingChoices(config)),
-    resumePricing: pickFrom(random, resumePricingChoices),
     finalizer: pickFrom(random, finalizerChoices),
   }),
   permitsIn: (config, core, drawn) => {
-    const {
-      ticket,
-      deps,
-      program,
-      workFanout,
-      reworkPolicy,
-      finalizationPricing,
-      resumePricing,
-      finalizer,
-    } = drawn;
+    const { ticket, deps, program, workFanout, finalizer } = drawn;
     if (
       ticket === undefined ||
       deps === undefined ||
       program === undefined ||
       workFanout === undefined ||
-      reworkPolicy === undefined ||
-      finalizationPricing === undefined ||
-      resumePricing === undefined ||
       finalizer === undefined
     ) {
       return false;
@@ -175,14 +151,6 @@ const releaseTicket: WalkAction = {
       new Set(deps).size === deps.length &&
       isValidProgram(config, program) &&
       workFanoutChoices(config).includes(workFanout) &&
-      reworkBudget(reworkPolicy) <= reworkBudget(config.reworkPolicy) &&
-      finalizationPricingChoices(config).some((choice) =>
-        choice === "DeadlineOnly"
-          ? finalizationPricing === "DeadlineOnly"
-          : finalizationPricing !== "DeadlineOnly" &&
-            finalizationPricing.value === choice.value,
-      ) &&
-      resumePricingChoices.includes(resumePricing) &&
       finalizerChoices.includes(finalizer)
     );
   },
@@ -195,9 +163,7 @@ const dispatch: WalkAction = {
     ticket: pickFrom(random, readiesIn(core)),
   }),
   permitsIn: (_config, core, drawn) =>
-    drawn.ticket !== undefined &&
-    readiesIn(core).includes(drawn.ticket) &&
-    dispatchableIn(core, drawn.ticket),
+    drawn.ticket !== undefined && readiesIn(core).includes(drawn.ticket),
 };
 
 /** Tickets with a task the fabric could still report on — the set `tid` is drawn from. */
@@ -263,6 +229,24 @@ const executionBlocked: WalkAction = {
     executionBlockedReasons.includes(drawn.reason),
 };
 
+/**
+ * An evaluation failure's continuation is an input to the machine, so the walk
+ * draws it beside the ticket rather than reading it off one.
+ */
+const evalReduce: WalkAction = {
+  action: "evalReduce",
+  enabledIn: (_config, core) => reducibleEvalIn(core).length > 0,
+  drawIn: (_config, core, random) => ({
+    ticket: pickFrom(random, reducibleEvalIn(core)),
+    onFailure: pickFrom(random, evaluationFailureDispositionTags),
+  }),
+  permitsIn: (_config, core, drawn) =>
+    drawn.ticket !== undefined &&
+    drawn.onFailure !== undefined &&
+    reducibleEvalIn(core).includes(drawn.ticket) &&
+    evaluationFailureDispositionTags.includes(drawn.onFailure),
+};
+
 const settle: WalkAction = {
   action: "settle",
   enabledIn: (config, core) => quietIn(config, core),
@@ -277,7 +261,7 @@ export const walkActions: readonly WalkAction[] = [
   dispatch,
   taskDone,
   overTicketSet("workReduce", (_config, core) => reducibleWorkIn(core)),
-  overTicketSet("evalReduce", (_config, core) => reducibleEvalIn(core)),
+  evalReduce,
   finalizationResult,
   executionBlocked,
   overTicketSet("resumeTicket", (_config, core) => retryablesIn(core)),
@@ -304,17 +288,11 @@ export function drawnWire(drawn: Drawn): Readonly<Record<string, unknown>> {
   ): unknown => (value === undefined ? undefined : encode(value));
   return {
     deps_: opt(drawn.deps, (deps) => encodeDeps(new Set(deps))),
-    finalizationPricing_: opt(drawn.finalizationPricing, (pricing) =>
-      encodeSumValue(pricing, encodeInt),
-    ),
     finalizer_: opt(drawn.finalizer, encodeNullaryTag),
     j: opt(drawn.ticket, encodeInt),
+    onFailure: opt(drawn.onFailure, encodeNullaryTag),
     out: opt(drawn.outcome, encodeNullaryTag),
     prog: opt(drawn.program, encodeProgram),
-    resumePricing_: opt(drawn.resumePricing, encodeNullaryTag),
-    reworkPolicy_: opt(drawn.reworkPolicy, (policy) =>
-      encodeSumValue(policy, encodeInt),
-    ),
     tid: opt(drawn.taskId, encodeInt),
     v: opt(drawn.verdict, encodeNullaryTag),
     why: opt(drawn.reason, encodeNullaryTag),
@@ -334,10 +312,8 @@ export function drawnPicks(drawn: Drawn): Picks {
     deps: itf(wire["deps_"]),
     program: itf(wire["prog"]),
     workFanout: itf(wire["workFanout_"]),
-    reworkPolicy: itf(wire["reworkPolicy_"]),
-    finalizationPricing: itf(wire["finalizationPricing_"]),
-    resumePricing: itf(wire["resumePricing_"]),
     finalizer: itf(wire["finalizer_"]),
+    onFailure: itf(wire["onFailure"]),
     taskId: itf(wire["tid"]),
     verdict: itf(wire["v"]),
     outcome: itf(wire["out"]),

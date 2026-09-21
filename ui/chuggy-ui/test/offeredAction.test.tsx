@@ -13,11 +13,11 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import {
-  ActionWithCost,
+  OfferedAction,
   actionForms,
   actionStateOf,
   actionStates,
-} from "../app/browser/ui/ActionWithCost.tsx";
+} from "../app/browser/ui/OfferedAction.tsx";
 import { styleless } from "./styleless.ts";
 
 vi.mock("@tanstack/react-router", () => ({
@@ -35,7 +35,6 @@ afterEach(() => {
 const base = {
   action: "Resume",
   effect: "Re-runs evaluation from stage 1",
-  cost: "costs 1 gas",
   onChoose: () => undefined,
 };
 
@@ -59,7 +58,7 @@ test("an answer the machine does not admit draws no button at all", () => {
   for (const variant of actionForms) {
     const chosen = vi.fn();
     render(
-      <ActionWithCost
+      <OfferedAction
         action="Resume"
         effect="Nothing to resume"
         more="only Revoke exits this wall"
@@ -79,7 +78,7 @@ test("an answer the machine does not admit draws no button at all", () => {
 
 test("an absent action outranks busy and refused, which name a button there is", () => {
   render(
-    <ActionWithCost
+    <OfferedAction
       action="Resume"
       effect="Nothing to resume"
       offered={false}
@@ -92,13 +91,12 @@ test("an absent action outranks busy and refused, which name a button there is",
   expect(screen.queryByText("Not allowed in this phase")).toBeNull();
 });
 
-test("a ready action draws its effect and its cost and fires once", () => {
+test("a ready action draws its effect and fires once", () => {
   const chosen = vi.fn();
   const { container } = render(
-    <ActionWithCost {...base} onChoose={chosen} more="Keeps the artifact" />,
+    <OfferedAction {...base} onChoose={chosen} more="Keeps the artifact" />,
   );
   expect(screen.getByText(/Re-runs evaluation from stage 1/u)).toBeDefined();
-  expect(screen.getByText(/costs 1 gas/u)).toBeDefined();
   expect(screen.getByText("Keeps the artifact")).toBeDefined();
   expect(container.querySelector("[style]")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Resume" }));
@@ -108,17 +106,17 @@ test("a ready action draws its effect and its cost and fires once", () => {
 test("a refused action shows the reason as text, disabled, and does not fire", () => {
   const chosen = vi.fn();
   render(
-    <ActionWithCost
-      action="Add rework"
-      effect="Adds one rework cycle"
-      refusedBecause="Not available in this release"
+    <OfferedAction
+      action="Open desk"
+      effect="Opens a desk task"
+      refusedBecause="Not offered here"
       onChoose={chosen}
     />,
   );
-  const button = screen.getByRole("button", { name: "Add rework" });
+  const button = screen.getByRole("button", { name: "Open desk" });
   expect(button.hasAttribute("disabled")).toBe(true);
   expect(button.getAttribute("title")).toBeNull();
-  const reason = screen.getByText("Not available in this release");
+  const reason = screen.getByText("Not offered here");
   expect(reason.classList.contains("act-refused")).toBe(true);
   fireEvent.click(button);
   expect(chosen).not.toHaveBeenCalled();
@@ -126,7 +124,7 @@ test("a refused action shows the reason as text, disabled, and does not fire", (
 
 test("a busy action is busy, disabled and silent", () => {
   const chosen = vi.fn();
-  render(<ActionWithCost {...base} busy onChoose={chosen} />);
+  render(<OfferedAction {...base} busy onChoose={chosen} />);
   const button = screen.getByRole("button", { name: "Resume" });
   expect(button.getAttribute("aria-busy")).toBe("true");
   expect(button.hasAttribute("disabled")).toBe(true);
@@ -136,7 +134,7 @@ test("a busy action is busy, disabled and silent", () => {
 
 test("a destructive action is drawn as one", () => {
   render(
-    <ActionWithCost
+    <OfferedAction
       action="Revoke"
       effect="Parks every dependent ticket"
       danger
@@ -155,11 +153,11 @@ test("a destructive action is drawn as one", () => {
  * space would split into two references naming nothing.
  */
 test("the effect's reference resolves however the action is spelled", () => {
-  for (const action of ["Resume", "Add rework"]) {
+  for (const action of ["Resume", "Open desk"]) {
     const { container } = render(
-      <ActionWithCost
+      <OfferedAction
         action={action}
-        effect="Adds one rework cycle"
+        effect="Opens a desk task"
         variant="compact"
         onChoose={() => undefined}
       />,
@@ -171,7 +169,7 @@ test("the effect's reference resolves however the action is spelled", () => {
     expect(described ?? "").not.toContain(" ");
     expect(
       container.querySelector(`[id="${String(described)}"]`)?.textContent,
-    ).toContain("Adds one rework cycle");
+    ).toContain("Opens a desk task");
     cleanup();
   }
 });
@@ -179,8 +177,8 @@ test("the effect's reference resolves however the action is spelled", () => {
 test("two actions on one page describe themselves by different ids", () => {
   const { container } = render(
     <>
-      <ActionWithCost {...base} variant="compact" />
-      <ActionWithCost {...base} action="Revoke" variant="compact" />
+      <OfferedAction {...base} variant="compact" />
+      <OfferedAction {...base} action="Revoke" variant="compact" />
     </>,
   );
   const ids = [...container.querySelectorAll("button")].map((button) =>
@@ -192,7 +190,7 @@ test("two actions on one page describe themselves by different ids", () => {
 
 test("the compact form keeps the effect for a reader who cannot see it", () => {
   const { container } = render(
-    <ActionWithCost {...base} variant="compact" more="Not drawn here" />,
+    <OfferedAction {...base} variant="compact" more="Not drawn here" />,
   );
   const button = screen.getByRole("button", { name: "Resume" });
   const described = button.getAttribute("aria-describedby");

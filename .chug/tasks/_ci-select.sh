@@ -83,8 +83,8 @@ ci_gate_selected() { # <gate id>
 	source-static) ci_changed '*.ts' '*.tsx' '*.js' '*.json' '*.cjs' '*.mjs' '*.yaml' '*.yml' .chug/tasks/check-source.sh || ci_toolchain_changed ;;
 	source-unit) ci_changed 'src/**' 'test/**' 'ui/**' 'images/**' 'scripts/**' .chug/tasks/check-source.sh || ci_toolchain_changed ;;
 	check-console) ci_changed 'ui/**' 'src/contract/**' 'scripts/console-policy.ts' 'scripts/check-console-policy.ts' .chug/tasks/check-console.sh ;;
-	check-conformance) ci_changed 'src/domain/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'test/golden/**' 'model/domain.qnt' 'model/measure.qnt' .chug/tasks/check-conformance.sh ;;
-	check-random) ci_changed 'src/domain/**' 'test/random/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'model/domain.qnt' 'model/measure.qnt' 'model/mc/mc_chuggy.qnt' .chug/tasks/check-random.sh ;;
+	check-conformance) ci_changed 'src/domain/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'test/golden/**' 'model/domain.qnt' 'model/ticket.qnt' .chug/tasks/check-conformance.sh ;;
+	check-random) ci_changed 'src/domain/**' 'test/random/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'model/domain.qnt' 'model/ticket.qnt' 'model/mc/mc_chuggy.qnt' .chug/tasks/check-random.sh ;;
 	check-postgres) ci_changed 'src/**' 'test/postgres/**' .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh || ci_toolchain_changed ;;
 	check-queries) ci_changed 'src/adapters/postgres/**' 'src/domain/**' 'src/interpreter/**' eslint.config.js .chug/tasks/_postgres.sh .chug/tasks/check-queries.sh || ci_toolchain_changed ;;
 	check-keto) ci_changed 'src/**' 'test/keto/**' 'test/postgres/**' '.chug/tasks/keto/**' .chug/tasks/_keto.sh .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-keto.sh || ci_toolchain_changed ;;

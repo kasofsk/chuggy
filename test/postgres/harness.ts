@@ -91,6 +91,7 @@ import {
   type ProjectMemory,
   type ProjectTicketWriter,
 } from "../../src/interpreter/projectWriter.ts";
+import type { ReworkCap } from "../../src/interpreter/reworkCap.ts";
 import {
   asOwnerId,
   asProjectId,
@@ -625,7 +626,7 @@ export function postgresHarnessDecisionSubmission(
 /**
  * Creates native authoring state and returns its only valid public release
  * command. The authoring may be named, for a case about a ticket the fixture's
- * own pricing does not produce.
+ * own default does not produce.
  */
 export async function postgresHarnessReleaseSubmission(
   harness: PostgresHarness,
@@ -740,12 +741,19 @@ export function postgresHarnessAccepted(
   })();
 }
 
+/**
+ * The rework cap every harness writer holds: two cycles beyond the first,
+ * which is the cap the deployment configuration ships.
+ */
+export const harnessReworkCap: ReworkCap = { cyclesMax: 2 };
+
 /** The writer over a harness's ports, which is what turns a loaded state and an item into a commit. */
 export function postgresHarnessWriter(
   harness: PostgresHarness,
 ): ProjectTicketWriter {
   return {
     config: refinementInstance,
+    rework: harnessReworkCap,
     store: harness.store,
     decisions: harness.decisions,
     executionSources: {

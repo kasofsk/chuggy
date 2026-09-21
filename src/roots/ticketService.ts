@@ -34,6 +34,7 @@ const configurationSchema = z
       })
       .strict(),
     domain: domainConfigurationSchema,
+    rework: z.object({ cyclesMax: z.number().int().nonnegative() }).strict(),
     owner: z.string().min(1),
     forge: z
       .object({
@@ -126,6 +127,7 @@ export function ticketServiceConfiguration(
     runtime: data.runtime,
     pass: data.pass,
     domain: data.domain,
+    rework: data.rework,
     owner: data.owner,
     source: {
       scratchDirectory: data.source.scratchDirectory,

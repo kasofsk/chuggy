@@ -51,8 +51,8 @@ import {
 
 const config = refinementInstance;
 
-/** The release is durable the instant it journals, and the dispatch charge survives its seam. */
-function phaseDispatchChargeSurvives(): ActorState {
+/** The release is durable the instant it journals, and the dispatch survives its seam. */
+function phaseDispatchSurvives(): ActorState {
   let state = journalStep(
     config,
     actorInit(),
@@ -69,12 +69,10 @@ function phaseDispatchChargeSurvives(): ActorState {
   assert.equal(state.applied, 1);
   assertStep(config, state, "release (emitted)");
   state = journalStep(config, state, dispatchEvent(id(1)));
-  assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 2);
   assert.equal(journalSpawns(state, id(1)), 1);
   assert.equal(worldSpawns(state, id(1)), 0);
   assertStep(config, state, "dispatch (journaled)");
   state = crashRecoverTo(config, state, 1);
-  assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 2);
   assert.equal(worldSpawns(state, id(1)), 0);
   assert.equal(state.applied, 1);
   assertStep(config, state, "crash at the dispatch seam");
@@ -85,7 +83,7 @@ function phaseDispatchChargeSurvives(): ActorState {
   return state;
 }
 
-/** The rework's charge survives total cursor loss, and the whole re-emitted prefix absorbs. */
+/** The rework survives total cursor loss, and the whole re-emitted prefix absorbs. */
 function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
   state = stepEmit(
     config,
@@ -111,17 +109,17 @@ function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
     taskDoneEvent(id(1), asTaskId(2), "Fail", plainResult),
     "task-done",
   );
-  state = journalStep(config, state, evalReduceEvent(id(1)));
+  state = journalStep(
+    config,
+    state,
+    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
+  );
   assert.equal(state.view.rec.label, "rework-started eval_failure");
-  assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 1);
-  assert.equal(ticketAt(memoryCore(state), id(1)).reworkLeft, 0);
   assert.equal(journalSpawns(state, id(1)), 2);
   assert.equal(worldSpawns(state, id(1)), 1);
   assertStep(config, state, "rework (journaled)");
   state = crashRecoverTo(config, state, 0);
   assert.equal(state.applied, 0);
-  assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 1);
-  assert.equal(ticketAt(memoryCore(state), id(1)).reworkLeft, 0);
   assert.equal(worldSpawns(state, id(1)), 1);
   assert.equal(state.worldEffects.size, 5);
   assertStep(config, state, "crash at the rework seam, cursor lost whole");
@@ -158,7 +156,12 @@ function phaseCompletionLandsOnce(state: ActorState): void {
     taskDoneEvent(id(1), asTaskId(4), "Pass", plainResult),
     "task-done",
   );
-  state = stepEmit(config, state, evalReduceEvent(id(1)), "eval-passed");
+  state = stepEmit(
+    config,
+    state,
+    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
+    "eval-passed",
+  );
   const succeeded = finalizationResultEvent(id(1), "FinalizationSucceeded");
   state = journalStep(config, state, succeeded);
   assert.equal(state.view.rec.label, "ticket-done");
@@ -178,7 +181,6 @@ function phaseCompletionLandsOnce(state: ActorState): void {
   assertStep(config, state, "the completion reaches the world");
   state = crashRecoverTo(config, state, 0);
   assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
-  assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 1);
   assert.equal(state.journal.length, 11);
   while (state.applied < state.journal.length) state = emitNext(state);
   assert.equal(worldCompletions(state, id(1)), 1);
@@ -188,7 +190,7 @@ function phaseCompletionLandsOnce(state: ActorState): void {
 
 test("crash, recover, continue: the disciplined machine at every observable seam", () => {
   phaseCompletionLandsOnce(
-    phaseReworkSurvivesCursorLoss(phaseDispatchChargeSurvives()),
+    phaseReworkSurvivesCursorLoss(phaseDispatchSurvives()),
   );
 });
 
@@ -219,7 +221,11 @@ function walkFinalizerFreeToCompletion(): ActorState {
   assert.equal(ticketAt(memoryCore(state), id(1)).finalizer, "NoFinalizer");
   state = stepEmit(config, state, dispatchEvent(id(1)), "dispatch");
   state = passWorkAndEvaluationTasks(state);
-  state = journalStep(config, state, evalReduceEvent(id(1)));
+  state = journalStep(
+    config,
+    state,
+    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
+  );
   assert.equal(state.view.rec.label, "ticket-done");
   assert.deepEqual(state.view.rec.transitions, [
     { ticket: id(1), from: "Evaluating", to: "Done" },

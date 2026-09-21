@@ -39,9 +39,38 @@ export function tsResolved(outcome: TaskOutcome): TaskState {
   return { type: "Resolved", value: outcome };
 }
 
-/** The set as a list, ascending by id — the one ordering anything here folds in. */
-export function tasksInIdOrder(tasks: ReadonlySet<Task>): readonly Task[] {
+/** The tasks as a list, ascending by id — the one ordering anything here folds in. */
+export function tasksInIdOrder(tasks: Iterable<Task>): readonly Task[] {
   return [...tasks].sort((a, b) => a.id - b.id);
+}
+
+/**
+ * How many reworks a failing evaluation has cost a ticket, read off its retired
+ * record and its live set together: a maximal run of Work-kind tasks in id
+ * order counts when the evaluation run before it resolved some task `Failed`,
+ * so neither the first fan-out nor a rework after a run that passed outright
+ * is one. Derived rather than carried on the ticket, which would be a stored
+ * duplicate of it; what the tasks alone cannot separate is stated at the cap.
+ */
+export function evaluationFailureReworksStarted(
+  record: readonly Task[],
+  live: ReadonlySet<Task>,
+): number {
+  let reworks = 0;
+  let inWorkRun = false;
+  let evaluationFailed = false;
+  for (const task of tasksInIdOrder([...record, ...live])) {
+    if (task.kind === "Work") {
+      if (!inWorkRun && evaluationFailed) reworks += 1;
+      inWorkRun = true;
+      continue;
+    }
+    if (inWorkRun) evaluationFailed = false;
+    inWorkRun = false;
+    if (task.state !== "Outstanding" && task.state.value === "Failed")
+      evaluationFailed = true;
+  }
+  return reworks;
 }
 
 /** How many of these tasks are still outstanding to the fabric. */

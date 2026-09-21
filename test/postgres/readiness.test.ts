@@ -11,6 +11,7 @@ import {
 import {
   decisionEventTags,
   type Core,
+  type Resume,
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import {
@@ -131,19 +132,17 @@ test("ready resumes strictly after the cursor it is given", async () => {
 });
 
 /**
- * The park a seeded escalation stands on, as a `Core`, at the gas a case hands
- * it. The wall is the seed's own; the resume point and its pricing are this
- * suite's, because the projection carries neither, and they are what the resume
- * answer below turns on.
+ * The park a seeded escalation stands on, as a `Core`, at the resume point a
+ * case hands it. The wall is the seed's own; the resume point is this suite's,
+ * because the projection carries none, and it is what the resume answer below
+ * turns on.
  */
-function parkedCore(action: SeededAction, gasLeft: number): Core {
+function parkedCore(action: SeededAction, resumeAt: Resume): Core {
   return coreOf([
     ticketOn(refinementInstance, "ManagedFinalizer", {
       phase: "Escalated",
       reason: action.reason,
-      resumeAt: "ResumeWorking",
-      resumePricing: "RetryCharged",
-      gasLeft,
+      resumeAt,
     }),
   ]);
 }
@@ -165,7 +164,7 @@ function answerNames(
  * rather than off the event under test, so a settle answer degraded into a
  * resume is compared against the command it should have named; the two
  * enablement questions stand behind it, refusing a command the park does not
- * offer and a resume the gas does not gate.
+ * offer and a resume the park has no point to re-enter at.
  */
 function assertAnswerNames(
   resolution: Exclude<NativeActionResolution, ApprovalResolution>,
@@ -176,13 +175,21 @@ function assertAnswerNames(
   assert.equal(decisionEventSubject(event), action.ticket, resolution);
   assert.equal(event.type, named, resolution);
   assert.ok(
-    decisionEventEnabled(refinementInstance, parkedCore(action, 1), event),
+    decisionEventEnabled(
+      refinementInstance,
+      parkedCore(action, "ResumeWorking"),
+      event,
+    ),
     `${resolution} named ${event.type}, which its park does not enable`,
   );
   assert.equal(
-    decisionEventEnabled(refinementInstance, parkedCore(action, 0), event),
+    decisionEventEnabled(
+      refinementInstance,
+      parkedCore(action, "NoResume"),
+      event,
+    ),
     named !== "ResumeTicket",
-    `${resolution} answered a spent park with ${event.type}`,
+    `${resolution} answered a park with no modeled resume with ${event.type}`,
   );
 }
 

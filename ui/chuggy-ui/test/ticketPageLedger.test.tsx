@@ -182,7 +182,6 @@ const parkedTicket = {
   ...ticketInstants,
   reason: "ReworkBudgetExhausted",
   resumeAt: "ResumeReworking",
-  accounts: { gasLeft: 1, gasMax: 8, reworkLeft: 0 },
   runTotals: ticketTotals,
 };
 
@@ -191,7 +190,6 @@ const resumedTicket = {
   phase: "Evaluating",
   sequence: 169,
   ...ticketInstants,
-  accounts: { gasLeft: 0, gasMax: 8, reworkLeft: 0 },
   runTotals: ticketTotals,
 };
 
@@ -230,9 +228,7 @@ test("the wall notice says where it is, why, and which stage failed", async () =
   const notice = container.querySelector(".notice-parked");
   expect(notice?.textContent).toContain("Parked");
   expect(notice?.textContent).toContain("Rework budget exhausted");
-  expect(notice?.textContent).toContain(
-    "Stage 1 of 2 failed · Rework 2/2 used",
-  );
+  expect(notice?.textContent).toContain("Stage 1 of 2 failed");
 });
 
 test("the cycles are newest first, the current one open and the rest closed", async () => {
@@ -292,40 +288,12 @@ test("a superseded cycle says which cycle replaced its artifact", async () => {
   expect(superseded.textContent).toContain("Superseded");
 });
 
-test("the budgets draw the machine's own figures, and the rework top-up is refused", async () => {
-  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
-  expect(
-    screen.getByRole("group", { name: "Rework 2 of 2 used, exhausted" }),
-  ).toBeDefined();
-  expect(
-    screen.getByRole("group", { name: "Gas 7 of 8 used, 1 left" }),
-  ).toBeDefined();
-  expect(
-    screen.getByRole("group", { name: "Finalization not budgeted" }),
-  ).toBeDefined();
-  const topUp = screen.getByRole("button", { name: "Add rework" });
-  expect(topUp.hasAttribute("disabled")).toBe(true);
-  expect(screen.getByText("Not available in this release")).toBeDefined();
-});
-
-test("the gas limit on the wire replaces the console's own floor", async () => {
-  await drawTicket({
-    shapes: ticket21Parked,
-    ticket: { ...parkedTicket, accounts: undefined },
-  });
-  expect(
-    screen.getByRole("group", { name: "Gas 3 or more used, limit unknown" }),
-  ).toBeDefined();
-});
-
-test("the resume states what it re-runs, what it costs and what it keeps", async () => {
+test("the resume states what it re-runs", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
   expect(screen.getByRole("button", { name: "Resume" })).toBeDefined();
   expect(
-    screen.getByText(/Reworks · new artifact, rework refilled/u),
-  ).toBeDefined();
-  expect(screen.getByText(/costs 1 gas/u)).toBeDefined();
-  expect(screen.getByText("Rework returns to 0/2")).toBeDefined();
+    screen.getByText(/Reworks · new artifact/u).closest(".act"),
+  ).not.toBeNull();
 });
 
 test("every section of the main body has an anchor pointing at it", async () => {
@@ -443,7 +411,7 @@ test("after a resume the current cycle gains a run and a running stage", async (
   expect(current.querySelector(".fig-live")).not.toBeNull();
 });
 
-test("a resumed ticket says it was resumed and that a failure parks it again", async () => {
+test("a resumed ticket says it was resumed", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Resumed,
     ticket: resumedTicket,
@@ -451,7 +419,6 @@ test("a resumed ticket says it was resumed and that a failure parks it again", a
   const notice = container.querySelector(".notice-live");
   expect(notice?.textContent).toContain("Evaluating");
   expect(notice?.textContent).toContain("Resumed from stage 1 · cycle 3");
-  expect(notice?.textContent).toContain("Rework 2/2 used · a failure parks it");
 });
 
 test("a short page says so, and no cycle on it claims to be whole", async () => {
@@ -533,7 +500,6 @@ const revokedTicket = {
   sequence: 171,
   ...ticketInstants,
   reason: "DependencyRevoked",
-  accounts: { gasLeft: 4, gasMax: 8, reworkLeft: 0 },
   runTotals: ticketTotals,
 };
 
@@ -547,111 +513,14 @@ test("a wall whose only exit is revoke offers no resume to press", async () => {
 });
 
 /**
- * The rework wall's resume buys a work cycle with the account refilled, so the
- * page must not still offer it as a re-run of the evaluation.
+ * The rework wall's resume buys a fresh cycle, so the page must not still
+ * offer it as a re-run of the evaluation.
  */
 test("a rework-wall resume says it reworks rather than re-evaluates", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
   expect(screen.getByRole("button", { name: "Resume" })).toBeDefined();
-  expect(
-    screen.getByText(/Reworks · new artifact, rework refilled/u),
-  ).toBeDefined();
-  expect(screen.getByText("Rework returns to 0/2")).toBeDefined();
+  expect(screen.getByText(/Reworks · new artifact/u)).toBeDefined();
   expect(screen.queryByText(/Re-runs evaluation from stage 1/u)).toBeNull();
-});
-
-/**
- * A ticket that authored no rework budget declined the rework economy, so its
- * rework wall is revoke-only. The wire carries no resume point on this read, so
- * the page must reach that answer from the authoring it holds.
- */
-test("a rework wall on a ticket that bought no budget offers no resume", async () => {
-  const { resumeAt, ...withoutPoint } = parkedTicket;
-  expect(resumeAt).toBe("ResumeReworking");
-  await drawTicket({
-    shapes: ticket21Parked,
-    ticket: withoutPoint,
-    authoring: {
-      ...ticket21Authoring,
-      reworkPolicy: { type: "BudgetedRework", value: 0 },
-    },
-  });
-  expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
-  expect(
-    screen.getByText("Nothing to resume · only Revoke exits this wall"),
-  ).toBeDefined();
-});
-
-/**
- * `retryableIn` wants gas enough to pay the point's charge as well as a stamped
- * point. The gas wall escalates with `gasLeft` at zero by construction, so the
- * page must not draw a control that submits into it.
- */
-test("a gas wall offers no resume, and says it is the gas that is gone", async () => {
-  await drawTicket({
-    shapes: ticket21Parked,
-    ticket: {
-      ...parkedTicket,
-      reason: "GasExhausted",
-      resumeAt: "ResumeEvaluating",
-      accounts: { gasLeft: 0, gasMax: 8, reworkLeft: 1 },
-    },
-  });
-  expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
-  expect(
-    screen.getByText("No gas left · only Revoke exits this wall"),
-  ).toBeDefined();
-  expect(screen.queryByText(/costs 1 gas/u)).toBeNull();
-});
-
-/**
- * The rework wall's own decider: a ticket out of gas there is parked for good
- * under both pricings, and revoke is its only exit.
- */
-test("a rework wall with no gas is parked for good, whatever the pricing", async () => {
-  for (const resumePricing of ["RetryCharged", "RetryFree"] as const) {
-    await drawTicket({
-      shapes: ticket21Parked,
-      ticket: {
-        ...parkedTicket,
-        accounts: { gasLeft: 0, gasMax: 8, reworkLeft: 0 },
-      },
-      authoring: { ...ticket21Authoring, resumePricing },
-    });
-    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
-    expect(
-      screen.getByText("No gas left · only Revoke exits this wall"),
-    ).toBeDefined();
-    cleanup();
-    vi.unstubAllGlobals();
-    viewportAtEm(viewportDeskEm);
-  }
-});
-
-test("a wall the ticket can still pay for keeps its resume", async () => {
-  for (const gasLeft of [1, 2]) {
-    await drawTicket({
-      shapes: ticket21Parked,
-      ticket: {
-        ...parkedTicket,
-        accounts: { gasLeft, gasMax: 8, reworkLeft: 0 },
-      },
-    });
-    expect(screen.getByRole("button", { name: "Resume" })).toBeDefined();
-    expect(screen.queryByText(/No gas left/u)).toBeNull();
-    cleanup();
-    vi.unstubAllGlobals();
-    viewportAtEm(viewportDeskEm);
-  }
-});
-
-test("a ticket read carrying no accounts keeps its resume, absence being no claim", async () => {
-  await drawTicket({
-    shapes: ticket21Parked,
-    ticket: { ...parkedTicket, accounts: undefined },
-  });
-  expect(screen.getByRole("button", { name: "Resume" })).toBeDefined();
-  expect(screen.queryByText(/No gas left/u)).toBeNull();
 });
 
 /**
@@ -659,21 +528,6 @@ test("a ticket read carrying no accounts keeps its resume, absence being no clai
  * on the draft: a stamped point is the machine's, and "nothing to resume" is a
  * claim only a page that has read enough may make.
  */
-test("a work resume out of gas is refused before the draft arrives", async () => {
-  await drawTicket({
-    shapes: ticket21Parked,
-    ticket: {
-      ...parkedTicket,
-      accounts: { gasLeft: 0, gasMax: 8, reworkLeft: 0 },
-    },
-    withDraft: false,
-  });
-  expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
-  expect(
-    screen.getByText("No gas left · only Revoke exits this wall"),
-  ).toBeDefined();
-});
-
 test("a resume the wire stamped is offered before the draft arrives", async () => {
   await drawTicket({
     shapes: ticket21Parked,
@@ -682,11 +536,9 @@ test("a resume the wire stamped is offered before the draft arrives", async () =
   });
   expect(screen.getByRole("button", { name: "Resume" })).toBeDefined();
   expect(
-    screen.getByText(/Reworks · new artifact, rework refilled/u),
-  ).toBeDefined();
-  expect(screen.getByText(/costs 1 gas/u)).toBeDefined();
+    screen.getByText(/Reworks · new artifact/u).closest(".act"),
+  ).not.toBeNull();
   expect(screen.queryByText(/only Revoke exits this wall/u)).toBeNull();
-  expect(screen.queryByText(/Rework returns to/u)).toBeNull();
 });
 
 test("a page that has read nothing of the wall refuses the resume rather than denying it", async () => {
@@ -796,9 +648,8 @@ test("a row separates its wait from its run where the wire dates the start", asy
 });
 
 /**
- * A price is a figure like any other. The page that has read nothing of the
- * wall has read nothing of what a resume would cost either, and `free` is the
- * one answer the machine almost never gives.
+ * The page that has read nothing of the wall has not yet answered whether it
+ * offers a resume at all, so it draws neither a price nor a refusal.
  */
 test("a resume this page has not read draws no price at all", async () => {
   const { resumeAt, reason, ...unstamped } = parkedTicket;
@@ -811,40 +662,6 @@ test("a resume this page has not read draws no price at all", async () => {
   });
   const act = screen.getByText("Not read yet").closest(".act");
   expect(act?.textContent).toContain("Not read yet");
-  expect(act?.textContent).not.toContain("free");
-  expect(act?.textContent).not.toContain("gas");
-});
-
-/**
- * The two evaluation resumes are free under `RetryFree` and priced under
- * `RetryCharged`, and only the ticket's own authoring says which — so a cold
- * load prices neither rather than stating one and withdrawing it.
- */
-test("a resume the pricing decides is unpriced until the pricing is read", async () => {
-  await drawTicket({
-    shapes: ticket21Parked,
-    ticket: {
-      ...parkedTicket,
-      reason: "GasExhausted",
-      resumeAt: "ResumeEvaluating",
-      accounts: { gasLeft: 4, gasMax: 8, reworkLeft: 1 },
-    },
-    withDraft: false,
-  });
-  const act = screen.getByRole("button", { name: "Resume" }).closest(".act");
-  expect(act?.textContent).toContain("Re-runs evaluation from stage 1");
-  expect(act?.textContent).not.toContain("gas");
-  expect(act?.textContent).not.toContain("free");
-});
-
-test("a work resume is priced without the draft, its charge not depending on one", async () => {
-  await drawTicket({
-    shapes: ticket21Parked,
-    ticket: parkedTicket,
-    withDraft: false,
-  });
-  const act = screen.getByRole("button", { name: "Resume" }).closest(".act");
-  expect(act?.textContent).toContain("costs 1 gas");
 });
 
 /**
@@ -928,12 +745,6 @@ test("every action the page draws describes itself by an id that resolves", asyn
     expect(reference).not.toContain(" ");
     expect(container.querySelector(`[id="${reference}"]`)).not.toBeNull();
   }
-});
-
-test("the rework top-up draws its effect where a reader can see it", async () => {
-  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
-  const effect = screen.getByText(/Adds one rework cycle/u);
-  expect(effect.classList.contains("visually-hidden")).toBe(false);
 });
 
 test("the usage panel counts the runs, and says which are still going", async () => {

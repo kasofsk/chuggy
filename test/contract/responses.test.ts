@@ -230,11 +230,11 @@ test("an escalated ticket names its wall and an unparked one omits it", () => {
       ticket: asTicketId(3),
       phase: "Escalated",
       sequence: 9,
-      reason: "GasExhausted",
+      reason: "ExecutionPolicyDenied",
       ...ticketInstants,
     }).body,
   );
-  assert.equal(escalated.reason, "GasExhausted");
+  assert.equal(escalated.reason, "ExecutionPolicyDenied");
   assert.equal(
     ticketResponseSchema.parse(
       ticketResponse({
@@ -286,59 +286,6 @@ test("a parked ticket names where a resume re-enters it, and no other does", () 
       phase: "Escalated",
       sequence: 9,
       resumeAt: "NoResume",
-    }),
-  );
-});
-
-test("a ticket carries the accounts it has left, and an unbudgeted one no figure", () => {
-  const accounted = ticketResponseSchema.parse(
-    ticketResponse({
-      ticket: asTicketId(3),
-      phase: "Escalated",
-      sequence: 9,
-      accounts: {
-        gasLeft: 1,
-        gasMax: 3,
-        reworkLeft: 0,
-        finalizationLeft: 1,
-      },
-      ...ticketInstants,
-    }).body,
-  );
-  assert.deepEqual(accounted.accounts, {
-    gasLeft: 1,
-    gasMax: 3,
-    reworkLeft: 0,
-    finalizationLeft: 1,
-  });
-  const deadlinePriced = ticketResponseSchema.parse(
-    ticketResponse({
-      ticket: asTicketId(3),
-      phase: "Working",
-      sequence: 9,
-      accounts: { gasLeft: 2, gasMax: 3, reworkLeft: 1 },
-      ...ticketInstants,
-    }).body,
-  );
-  assert.equal(deadlinePriced.accounts?.finalizationLeft, undefined);
-  assert.equal(deadlinePriced.accounts?.gasMax, 3);
-  assert.equal(
-    ticketResponseSchema.parse(
-      ticketResponse({
-        ticket: asTicketId(3),
-        phase: "Working",
-        sequence: 9,
-        ...ticketInstants,
-      }).body,
-    ).accounts,
-    undefined,
-  );
-  assert.throws(() =>
-    ticketResponseSchema.parse({
-      ticket: 3,
-      phase: "Working",
-      sequence: 9,
-      accounts: { gasLeft: -1, gasMax: 3, reworkLeft: 1 },
     }),
   );
 });
@@ -961,9 +908,6 @@ function initializationBody(): Record<string, unknown> {
           stages: [{ fanout: 1, combinator: "UnanimousPass" }],
           programStagesMax: 4,
           workFanouts: [1, 2],
-          reworkPolicies: [authoring.reworkPolicy],
-          finalizationPricings: [authoring.finalizationPricing],
-          resumePricings: [authoring.resumePricing],
           finalizers: [authoring.finalizer],
         },
         dependencyCandidates: [asTicketId(1), asTicketId(2)],
@@ -992,7 +936,6 @@ test("a hand-assembled read drops an unknown field at every depth", () => {
     authoring: {
       ...inner,
       links: ["https://example.invalid/one"],
-      reworkPolicy: { type: "BudgetedRework", value: 0, ceiling: 4 },
       program: [{ fanout: 1, combinator: "UnanimousPass", label: "review" }],
     },
     brief: {

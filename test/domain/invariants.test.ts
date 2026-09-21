@@ -43,13 +43,9 @@ import type {
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { boundsOf, finalizerChoices } from "../../src/domain/config.ts";
+import { finalizerChoices } from "../../src/domain/config.ts";
 import { liveTickets, ticketAt } from "../../src/domain/core.ts";
-import {
-  decideReleaseTicket,
-  decideResumeTicket,
-  decideRevoke,
-} from "../../src/domain/deciders.ts";
+import { decideRevoke } from "../../src/domain/deciders.ts";
 import {
   coveredSet,
   stuckSet,
@@ -60,38 +56,27 @@ import {
 import { finalizerTags } from "../../src/domain/generated/modelTypes.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
-  accountsBounded,
   artifactWellFormed,
   cascadeSafety,
   completionExclusive,
   depsAcyclic,
   deskConsistent,
-  finalizerWallNamed,
   finalizerWellFormed,
   idsAccounted,
-  measureNonNegative,
   noFinalizationWithoutAKind,
   noStructuralDeadlock,
   programsWellFormed,
   recordMonotone,
   recordWellFormed,
   revokedNeverCompletes,
-  stepDescends,
   stuckSubsetCovered,
   tasksWellFormed,
   terminalsAbsorbing,
   ticketIdsWellFormed,
   type StepView,
 } from "../../src/domain/invariants.ts";
-import { sysMeasure } from "../../src/domain/measure.ts";
-import {
-  deadlineOnly,
-  reworkBudget,
-  reworkBudgetOf,
-} from "../../src/domain/pricing.ts";
-
 import { hasOpenHumanTask } from "../../src/domain/ticket.ts";
-import { budgetedInstance } from "./configs.ts";
+import { modelInstance } from "./configs.ts";
 import {
   coreOf,
   depsOf,
@@ -106,7 +91,7 @@ import {
   workTask,
 } from "./fixtures.ts";
 
-const config = budgetedInstance;
+const config = modelInstance;
 const fleet = healthyFleet(config);
 const healthy = initialView(coreOf(fleet));
 
@@ -298,102 +283,6 @@ test("deskConsistent rejects a wall without a park, a park without a wall and a 
       config,
       stateView(coreOf([ticketOn(config, "ManagedFinalizer", cascadeWall)])),
     ),
-  );
-});
-
-test("deskConsistent rejects a rework refill promised to a ticket that bought none", () => {
-  const declinedReworkWall = {
-    phase: "Escalated" as const,
-    reason: "ReworkBudgetExhausted" as const,
-    reworkPolicy: reworkBudgetOf(0),
-    reworkLeft: 0,
-  };
-  assert.ok(
-    !deskConsistent(
-      config,
-      stateView(
-        coreOf([
-          ticketOn(config, "ManagedFinalizer", {
-            ...declinedReworkWall,
-            resumeAt: "ResumeReworking",
-          }),
-        ]),
-      ),
-    ),
-    "the wall has no modeled resume where the author granted no budget",
-  );
-  assert.ok(
-    deskConsistent(
-      config,
-      stateView(
-        coreOf([ticketOn(config, "ManagedFinalizer", declinedReworkWall)]),
-      ),
-    ),
-  );
-  assert.ok(
-    deskConsistent(
-      config,
-      stateView(
-        coreOf([
-          ticketOn(config, "ManagedFinalizer", {
-            ...declinedReworkWall,
-            reworkPolicy: reworkBudgetOf(1),
-            resumeAt: "ResumeReworking",
-          }),
-        ]),
-      ),
-    ),
-    "with a budget the same wall must stamp the refill it will grant",
-  );
-});
-
-test("finalizerWallNamed rejects the finalization-budget wall on a ticket granted no such account", () => {
-  const wall = {
-    phase: "Escalated" as const,
-    reason: "FinalizationBudgetExhausted" as const,
-    resumeAt: "ResumeFinalizing" as const,
-  };
-  const unbudgeted = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
-      ...wall,
-      finalizationPricing: deadlineOnly,
-      finalizationLeft: 0,
-    }),
-  ]);
-  assert.ok(!finalizerWallNamed(config, stateView(unbudgeted)));
-  const budgetedTicket = coreOf([ticketOn(config, "ManagedFinalizer", wall)]);
-  assert.ok(
-    finalizerWallNamed(config, stateView(budgetedTicket)),
-    "under budgeted pricing the wall exists and the vocabulary is carried",
-  );
-  assert.ok(finalizerWallNamed(config, healthy));
-});
-
-test("accountsBounded rejects an overdraw and a refund", () => {
-  for (const overrides of [
-    { gasLeft: -1 },
-    { gasLeft: config.gas + 1 },
-    { reworkLeft: -1 },
-    { reworkLeft: reworkBudget(config.reworkPolicy) + 1 },
-    { finalizationLeft: -1 },
-    { finalizationLeft: 2 },
-  ]) {
-    assert.ok(
-      !accountsBounded(config, stateView(fleetBut(fleet, 1, overrides))),
-      `${JSON.stringify(overrides)} is outside the grant`,
-    );
-  }
-  assert.ok(accountsBounded(config, healthy));
-});
-
-test("accountsBounded reads the ticket's own grant, not the fleet's", () => {
-  const poor = fleetBut(fleet, 1, {
-    finalizationPricing: deadlineOnly,
-    finalizationLeft: 1,
-  });
-  assert.ok(
-    !accountsBounded(config, stateView(poor)),
-    "an account the ticket's own pricing never granted is a refund",
   );
 });
 
@@ -809,140 +698,4 @@ test("noStructuralDeadlock rejects a ticket with no continuation at all", () => 
     ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
   ]);
   assert.ok(!noStructuralDeadlock(config, stateView(behindRevoked)));
-});
-
-test("measureNonNegative rejects an overdrawn account", () => {
-  const overdrawn = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
-      phase: "Working",
-      tasks: new Set([workOutstanding(1), workOutstanding(2)]),
-      spawned: 2,
-      gasLeft: -1,
-    }),
-  ]);
-  assert.ok(sysMeasure(boundsOf(config), overdrawn) < 0);
-  assert.ok(!measureNonNegative(config, stateView(overdrawn)));
-  assert.ok(
-    !accountsBounded(config, stateView(overdrawn)),
-    "it follows from the accounts and is checked directly for the descent argument's own integrity",
-  );
-  assert.ok(measureNonNegative(config, healthy));
-});
-
-test("stepDescends rejects a progress step that did not spend anything", () => {
-  const flat: StepView = {
-    pre: healthy.post,
-    rec: recordOf({
-      label: "dispatch",
-      transitions: [{ ticket: id(2), from: "Pending", to: "Working" }],
-    }),
-    post: healthy.post,
-  };
-  assert.ok(!stepDescends(config, flat));
-});
-
-test("stepDescends exempts exactly the stutter, churn and authoring steps the model names", () => {
-  const flatly = (label: string): StepView => ({
-    pre: healthy.post,
-    rec: recordOf({ label }),
-    post: healthy.post,
-  });
-  for (const label of ["init", "settled", "ticket-released"]) {
-    assert.ok(stepDescends(config, flatly(label)), label);
-  }
-  for (const label of [
-    "dispatch",
-    "task-done",
-    "work-passed",
-    "eval-stage-passed",
-    "ticket-done",
-    "ticket-escalated work_failed",
-  ]) {
-    assert.ok(!stepDescends(config, flatly(label)), label);
-  }
-});
-
-test("stepDescends exempts the release, which arrives carrying a whole ticket's measure", () => {
-  const empty = coreOf([]);
-  const released = decideReleaseTicket(config, empty, asTicketId(4), {
-    deps: depsOf(),
-    program: [{ fanout: config.nTasks, combinator: "UnanimousPass" }],
-    workFanout: config.nTasks,
-    reworkPolicy: config.reworkPolicy,
-    finalizationPricing: config.finalizationPricing,
-    resumePricing: "RetryCharged",
-    finalizer: "ManagedFinalizer",
-  });
-  const view: StepView = {
-    pre: empty,
-    rec: released.rec,
-    post: released.post,
-  };
-  assert.ok(
-    sysMeasure(boundsOf(config), released.post) >
-      sysMeasure(boundsOf(config), empty),
-    "the climb is real: without the arm this step is red",
-  );
-  assert.ok(stepDescends(config, view));
-});
-
-test("stepDescends exempts the free pipeline resume only where the ticket's retries are free", () => {
-  const parked = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
-      phase: "Escalated",
-      reason: "GasExhausted",
-      resumeAt: "ResumeFinalizing",
-      resumePricing: "RetryFree",
-      gasLeft: 0,
-    }),
-  ]);
-  const resumed = decideResumeTicket(parked, id(1));
-  const view: StepView = { pre: parked, rec: resumed.rec, post: resumed.post };
-  assert.ok(
-    sysMeasure(boundsOf(config), resumed.post) >
-      sysMeasure(boundsOf(config), parked),
-    "the climb is real: without the arm this step is red",
-  );
-  assert.ok(stepDescends(config, view));
-  const charged: StepView = {
-    ...view,
-    post: fleetBut([ticketAt(resumed.post, id(1))], 0, {
-      resumePricing: "RetryCharged",
-    }),
-  };
-  assert.equal(
-    sysMeasure(boundsOf(config), charged.post),
-    sysMeasure(boundsOf(config), view.post),
-    "the pricing is not a digit, so the same climb is being judged either way",
-  );
-  assert.ok(
-    !stepDescends(config, charged),
-    "the arm is what exempts it, and under charged retries there is no arm to reach",
-  );
-});
-
-test("stepDescends exempts the desk-only flat revoke and no other", () => {
-  const parked = coreOf([
-    ticketOn(config, "ManagedFinalizer", {
-      phase: "Escalated",
-      reason: "WorkFailed",
-      resumeAt: "ResumeWorking",
-    }),
-  ]);
-  const settled = decideRevoke(config, parked, id(1));
-  const view: StepView = { pre: parked, rec: settled.rec, post: settled.post };
-  assert.equal(
-    sysMeasure(boundsOf(config), settled.post),
-    sysMeasure(boundsOf(config), parked),
-    "settled rank to settled rank is flat, so without the arm this step is red",
-  );
-  assert.ok(stepDescends(config, view));
-  const live = coreOf([
-    ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
-  ]);
-  const dropped = decideRevoke(config, live, id(1));
-  assert.ok(
-    stepDescends(config, { pre: live, rec: dropped.rec, post: dropped.post }),
-    "a live-rank revoke gets no exemption and descends on its own",
-  );
 });

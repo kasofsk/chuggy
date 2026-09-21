@@ -118,17 +118,14 @@ a preset reads exactly like a rule that is working.
     (kasofsk/chuggy#58). The reviewer checks a change's additions against its
     stated scope.
 
-## The standing rules — the model's, numbered 1 to 4
+## The standing rules — the model's
 
 **This is an index, not a copy.** The model states these in its own headers, at
 the definitions they govern, and cites them by number throughout. Read them
-there; where this list and a model header disagree, the model is right.
+there; where this list and a model header disagree, the model is right. The
+number is the citation's, so the list is numbered by what the model says rather
+than by its own length.
 
-1. **The measure comes first** — `model/measure.qnt` opens on it. When the
-   machine changes, the measure is reworked before anything else: not
-   afterwards, and not in the same breath.
-2. **No free re-entry** — no step returns to a prior state without spending
-   measure. `model/domain.qnt` cites it at every metering site.
 3. **Derive, don't store** — a stored duplicate of a derivable fact is a
    finding. The most-cited of them.
 4. **Golden traces from day one, direction reversed** — the model emits them and

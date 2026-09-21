@@ -10,37 +10,37 @@
  * Everything a decision needs is already in the `Core` it is handed. A decider
  * that acquired a read would acquire an await, and then a mock, and then it
  * would no longer be a function.
- *
- * The metering lives here rather than in a caller: every entry to Working
- * charges gas, every eval failure charges the rework account, every
- * finalization failure charges the finalization account, and nothing refunds.
- * Those charges are what make the termination measure descend, so a change to
- * any of them is a change to `model/measure.qnt` first.
  */
 
-import { boundsOf, type Config } from "./config.ts";
+import { type Config } from "./config.ts";
 import { ticketAt, ticketIds, withTicket, type Decision } from "./core.ts";
 import type {
   Core,
+  EvaluationFailureDisposition,
   FinalizationOutcome,
-  FinalizationPricing,
   Finalizer,
   Phase,
   Reason,
   Resume,
-  RetryPricing,
-  ReworkPolicy,
   Stage,
   Ticket,
   Transition,
   Verdict,
 } from "./generated/modelTypes.ts";
 import type { TaskId, TicketId } from "./ids.ts";
-import { finalizationBudget, reworkBudget } from "./pricing.ts";
 import { combine } from "./program.ts";
-import { resumeCharge } from "./enablement.ts";
 import { evalStage, resolveTask, tkEval, tkWork } from "./task.ts";
-import { retireLive, reworkWallResume, spawnOn } from "./ticket.ts";
+import { retireLive, spawnOn } from "./ticket.ts";
+
+/**
+ * Both ways a failing evaluation can be taken. The choice is an input to the
+ * reduce rather than a field on the ticket: what a failed evaluation means is
+ * the evaluation's own report, not something the release settled in advance.
+ */
+export const dispositionChoices: readonly EvaluationFailureDisposition[] = [
+  "ReworkEvaluationFailure",
+  "EscalateEvaluationFailure",
+];
 
 /** One phase change and the record that reports it — the shape most deciders return. */
 function move(
@@ -57,16 +57,12 @@ function move(
   };
 }
 
-/** A ticket as a release leaves it: Pending, with every account at its grant. */
+/** A ticket as a release leaves it: Pending, with nothing yet spawned. */
 export function freshTicket(authoring: {
   readonly deps: ReadonlySet<number>;
   readonly program: readonly Stage[];
   readonly workFanout: number;
-  readonly reworkPolicy: ReworkPolicy;
-  readonly finalizationPricing: FinalizationPricing;
-  readonly resumePricing: RetryPricing;
   readonly finalizer: Finalizer;
-  readonly gas: number;
 }): Ticket {
   return {
     phase: "Pending",
@@ -75,15 +71,9 @@ export function freshTicket(authoring: {
     finalizer: authoring.finalizer,
     artifact: "NoArtifact",
     workFanout: authoring.workFanout,
-    reworkPolicy: authoring.reworkPolicy,
-    finalizationPricing: authoring.finalizationPricing,
-    resumePricing: authoring.resumePricing,
     tasks: new Set(),
     record: [],
     spawned: 0,
-    reworkLeft: reworkBudget(authoring.reworkPolicy),
-    finalizationLeft: finalizationBudget(authoring.finalizationPricing),
-    gasLeft: authoring.gas,
     resumeAt: "NoResume",
     reason: "NoReason",
     completions: 0,
@@ -96,21 +86,17 @@ export function freshTicket(authoring: {
  * authoring happens outside this machine, and what arrives is frozen.
  */
 export function decideReleaseTicket(
-  config: Config,
   core: Core,
   id: TicketId,
   authoring: {
     readonly deps: ReadonlySet<number>;
     readonly program: readonly Stage[];
     readonly workFanout: number;
-    readonly reworkPolicy: ReworkPolicy;
-    readonly finalizationPricing: FinalizationPricing;
-    readonly resumePricing: RetryPricing;
     readonly finalizer: Finalizer;
   },
 ): Decision {
   const tickets = new Map(core.tickets);
-  tickets.set(id, freshTicket({ ...authoring, gas: config.gas }));
+  tickets.set(id, freshTicket(authoring));
   return {
     rec: { label: "ticket-released", transitions: [], effects: [] },
     post: { tickets },
@@ -194,17 +180,14 @@ export function decideRevoke(
 }
 
 /**
- * Ready to Working, charging one gas as every entry to Working does. Which
- * Ready ticket runs next is an agentic pick rather than a queue position, so it
- * arrives as an argument and the recorded step IS the ticket writer's decision.
+ * Ready to Working. Which Ready ticket runs next is an agentic pick rather than
+ * a queue position, so it arrives as an argument and the recorded step IS the
+ * ticket writer's decision.
  */
 export function decideDispatch(core: Core, id: TicketId): Decision {
   const ticket = ticketAt(core, id);
   return move(
-    withTicket(core, id, {
-      ...spawnOn(ticket, tkWork, ticket.workFanout),
-      gasLeft: ticket.gasLeft - 1,
-    }),
+    withTicket(core, id, spawnOn(ticket, tkWork, ticket.workFanout)),
     id,
     "Working",
     "dispatch",
@@ -275,10 +258,15 @@ export function decideWorkReduce(core: Core, id: TicketId): Decision {
 
 /**
  * One eval stage has settled. A passing stage advances, or finishes the
- * program; a failing one short-circuits into the rework economy, which charges
- * both the rework account and gas, and walls when either is spent.
+ * program; a failing one short-circuits — the later stages are never created —
+ * and is taken the way `onFailure` says, which is the only place that choice is
+ * read.
  */
-export function decideEvalStageReduce(core: Core, id: TicketId): Decision {
+export function decideEvalStageReduce(
+  core: Core,
+  id: TicketId,
+  onFailure: EvaluationFailureDisposition,
+): Decision {
   const ticket = ticketAt(core, id);
   const stageIndex = evalStage(ticket.tasks);
   const retired = retireLive(ticket);
@@ -315,35 +303,24 @@ export function decideEvalStageReduce(core: Core, id: TicketId): Decision {
     }
   }
 
-  if (ticket.reworkLeft > 0 && ticket.gasLeft > 0) {
-    return move(
-      withTicket(core, id, {
-        ...spawnOn(retired, tkWork, retired.workFanout),
-        reworkLeft: ticket.reworkLeft - 1,
-        gasLeft: ticket.gasLeft - 1,
-      }),
-      id,
-      "Working",
-      "rework-started eval_failure",
-      ["SpawnWorkTasks"],
-    );
+  switch (onFailure) {
+    case "ReworkEvaluationFailure":
+      return move(
+        withTicket(core, id, spawnOn(retired, tkWork, retired.workFanout)),
+        id,
+        "Working",
+        "rework-started eval_failure",
+        ["SpawnWorkTasks"],
+      );
+    case "EscalateEvaluationFailure":
+      return escalate(
+        core,
+        id,
+        "ResumeReworking",
+        "ReworkBudgetExhausted",
+        "ticket-escalated rework_budget_exhausted",
+      );
   }
-  if (ticket.reworkLeft === 0) {
-    return escalate(
-      core,
-      id,
-      reworkWallResume(ticket.reworkPolicy),
-      "ReworkBudgetExhausted",
-      "ticket-escalated rework_budget_exhausted",
-    );
-  }
-  return escalate(
-    core,
-    id,
-    "ResumeEvaluating",
-    "GasExhausted",
-    "ticket-escalated gas_exhausted",
-  );
 }
 
 /**
@@ -368,47 +345,19 @@ function completeTicket(core: Core, id: TicketId): Decision {
 }
 
 /**
- * A failed finalization re-enters work under whichever account the ticket was
- * authored with: a budgeted ticket spends its finalization account and its
- * gas, an unbudgeted one is metered by gas alone. Both wall when spent.
+ * A failed finalization re-enters work with a fresh work set. There is no wall
+ * on this edge: a finalizer that keeps reporting failure keeps buying cycles,
+ * which is the finalizer's problem rather than the machine's.
  */
-function finalizerFailure(core: Core, id: TicketId, label: string): Decision {
+function finalizerFailure(core: Core, id: TicketId): Decision {
   const ticket = ticketAt(core, id);
-  const gasWall = (): Decision =>
-    escalate(
-      core,
-      id,
-      "ResumeFinalizing",
-      "GasExhausted",
-      "ticket-escalated gas_exhausted",
-    );
-  const rework = (spend: number): Decision =>
-    move(
-      withTicket(core, id, {
-        ...spawnOn(ticket, tkWork, ticket.workFanout),
-        finalizationLeft: ticket.finalizationLeft - spend,
-        gasLeft: ticket.gasLeft - 1,
-      }),
-      id,
-      "Working",
-      label,
-      ["SpawnWorkTasks"],
-    );
-
-  if (ticket.finalizationPricing === "DeadlineOnly") {
-    return ticket.gasLeft > 0 ? rework(0) : gasWall();
-  }
-  if (ticket.finalizationLeft > 0 && ticket.gasLeft > 0) return rework(1);
-  if (ticket.finalizationLeft === 0) {
-    return escalate(
-      core,
-      id,
-      "ResumeFinalizing",
-      "FinalizationBudgetExhausted",
-      "ticket-escalated finalization_budget_exhausted",
-    );
-  }
-  return gasWall();
+  return move(
+    withTicket(core, id, spawnOn(ticket, tkWork, ticket.workFanout)),
+    id,
+    "Working",
+    "rework-started finalization_failed",
+    ["SpawnWorkTasks"],
+  );
 }
 
 /** The finalizer service's one report. Success completes the ticket; failure reworks it. */
@@ -421,14 +370,13 @@ export function decideFinalizationResult(
     case "FinalizationSucceeded":
       return completeTicket(core, id);
     case "FinalizationFailed":
-      return finalizerFailure(core, id, "rework-started finalization_failed");
+      return finalizerFailure(core, id);
   }
 }
 
 /**
  * Infrastructure cannot run an intact contract, which is not failed work: it
- * spends no rework and no finalization budget, names its own reason, and
- * resumes back at whichever phase held the work.
+ * names its own reason and resumes back at whichever phase held the work.
  */
 export function decideExecutionBlocked(
   core: Core,
@@ -446,9 +394,12 @@ export function decideExecutionBlocked(
 }
 
 /**
- * A parked ticket rejoins the pipeline where its wall said it would, paying
- * whatever its authored pricing charges. A park with no modeled resume refuses
- * and records that it did.
+ * A parked ticket rejoins the pipeline where its wall said it would, and a
+ * park with no modeled resume refuses and records that it did.
+ *
+ * The walls that stamp a work resume take the same exit: an evaluation wall
+ * was reached by a verdict, which has no re-judge to offer, so it buys a new
+ * artifact rather than a second opinion on the old one.
  */
 export function decideResumeTicket(core: Core, id: TicketId): Decision {
   const ticket = ticketAt(core, id);
@@ -456,28 +407,12 @@ export function decideResumeTicket(core: Core, id: TicketId): Decision {
     ...ticket,
     reason: "NoReason",
     resumeAt: "NoResume",
-    gasLeft: ticket.gasLeft - resumeCharge(ticket, ticket.resumeAt),
   };
   switch (ticket.resumeAt) {
     case "ResumeWorking":
-      return move(
-        withTicket(core, id, spawnOn(resumed, tkWork, resumed.workFanout)),
-        id,
-        "Working",
-        "ticket-resumed",
-        ["SpawnWorkTasks"],
-      );
     case "ResumeReworking":
       return move(
-        withTicket(
-          core,
-          id,
-          spawnOn(
-            { ...resumed, reworkLeft: reworkBudget(ticket.reworkPolicy) },
-            tkWork,
-            resumed.workFanout,
-          ),
-        ),
+        withTicket(core, id, spawnOn(resumed, tkWork, resumed.workFanout)),
         id,
         "Working",
         "ticket-resumed",
@@ -515,6 +450,3 @@ export function decideResumeTicket(core: Core, id: TicketId): Decision {
 export function settledRecord(): Decision["rec"] {
   return { label: "settled", transitions: [], effects: [] };
 }
-
-/** The measure's bounds, read off the configuration a decision was made under. */
-export { boundsOf };

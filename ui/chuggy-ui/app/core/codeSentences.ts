@@ -29,11 +29,7 @@ export function escalationReasonSentence(reason: EscalationReason): string {
     case "WorkFailed":
       return "the work did not pass its evaluation";
     case "ReworkBudgetExhausted":
-      return "the rework this ticket was authored to pay for ran out";
-    case "FinalizationBudgetExhausted":
-      return "the finalization this ticket was authored to pay for ran out";
-    case "GasExhausted":
-      return "the ticket has no gas left to re-enter a phase with";
+      return "this ticket has failed evaluation more times than rework allows";
     case "DependencyRevoked":
       return "a ticket this one depends on was revoked, so it can never run";
     case "ExecutionPolicyDenied":
