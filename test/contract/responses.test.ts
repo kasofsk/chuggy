@@ -558,6 +558,53 @@ test("an execution page and an execution detail parse with their results", () =>
 });
 
 /**
+ * The wire carries what a task IS beside the number that names it, so a reader
+ * draws the cycle, the stage, the generation and the evaluator rather than
+ * inferring them from the order the page happens to be in.
+ */
+test("an execution names its task's identity, and half a one is no identity", () => {
+  const evaluation = {
+    ...executionSummary,
+    taskKind: "Evaluation" as const,
+    identity: {
+      type: "EvaluationTask" as const,
+      value: {
+        ticket: 3,
+        workCycle: 2,
+        stage: 1,
+        generation: 1,
+        evaluator: 2,
+      },
+    },
+  };
+  const page = executionsResponseSchema.parse(
+    executionsResponse(partition, {
+      result: "Authorized",
+      value: { executions: [executionSummary, evaluation] },
+    }).body,
+  );
+  assert.deepEqual(page.executions[0]?.identity, {
+    type: "WorkTask",
+    value: { ticket: 3, cycle: 1 },
+  });
+  assert.deepEqual(page.executions[1]?.identity, evaluation.identity);
+  const body = structuredClone(
+    executionsResponse(partition, {
+      result: "Authorized",
+      value: { executions: [evaluation] },
+    }).body,
+  ) as {
+    readonly executions: readonly {
+      identity: { value: Record<string, unknown> };
+    }[];
+  };
+  const summary = body.executions[0];
+  assert.ok(summary !== undefined);
+  delete summary.identity.value["generation"];
+  assert.throws(() => executionsResponseSchema.parse(body));
+});
+
+/**
  * Both halves of the field's optionality: the row is `NOT NULL` and the
  * interpreter type carries it, so every summary this tree encodes names one,
  * and a bundle reaching a server not yet sending it still reads the page.
