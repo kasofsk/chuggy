@@ -33,7 +33,7 @@ export type ExecutionRequirement =
   | NativeExecutionRequirement;
 
 export type RequirementSource =
-  "ExplicitTask" | "TaskKindDefault" | "TicketDefault" | "PlatformDefault";
+  "TaskKindDefault" | "TicketDefault" | "PlatformDefault";
 
 export interface MaterializedExecutionRequirement {
   readonly value: ExecutionRequirement;
@@ -43,7 +43,6 @@ export interface MaterializedExecutionRequirement {
 
 export function asRequirementSource(value: unknown): RequirementSource {
   if (
-    value !== "ExplicitTask" &&
     value !== "TaskKindDefault" &&
     value !== "TicketDefault" &&
     value !== "PlatformDefault"
