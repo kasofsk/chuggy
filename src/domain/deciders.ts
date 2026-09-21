@@ -27,12 +27,7 @@ import type {
 import type { TicketId } from "./ids.ts";
 import { combine } from "./program.ts";
 import { evalStage, resolveTask } from "./task.ts";
-import {
-  resumeOf,
-  retireLive,
-  spawnEvalStage,
-  spawnWork,
-} from "./ticket.ts";
+import { resumeOf, retireLive, spawnEvalStage, spawnWork } from "./ticket.ts";
 
 /**
  * Both ways a failing evaluation can be taken. The choice is an input to the

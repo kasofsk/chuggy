@@ -94,4 +94,3 @@ export function asStageIndex(value: number): StageIndex {
     throw new RangeError(`stage index: ${String(value)} is negative`);
   return value as StageIndex;
 }
-

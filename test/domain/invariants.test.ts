@@ -262,17 +262,19 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
   );
 });
 
+/** A ticket whose one work cycle has passed and whose stage is now running `tasks`. */
+const evaluating = (tasks: ReadonlySet<Task>): TicketGraph =>
+  graphOf([
+    ticketOn(config, {
+      phase: "Evaluation",
+      record: [workTask(1, 1, "Passed")],
+      tasks,
+      workCyclesStarted: 1,
+      spawned: 3,
+    }),
+  ]);
+
 test("tasksWellFormed rejects an eval stage the program is not running", () => {
-  const evaluating = (tasks: ReadonlySet<Task>): TicketGraph =>
-    graphOf([
-      ticketOn(config, {
-        phase: "Evaluation",
-        record: [workTask(1, 1, "Passed")],
-        tasks,
-        workCyclesStarted: 1,
-        spawned: 3,
-      }),
-    ]);
   assert.ok(
     tasksWellFormed(
       config,
