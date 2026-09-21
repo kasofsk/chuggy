@@ -71,9 +71,9 @@ interface Found {
 let cached: Found | undefined;
 
 /**
- * A seed whose budgeted run draws a revoke: the pinned one, then a bounded
- * fallback sweep. A miss on both means the draw stream changed shape under the
- * pin, and the fix is a wider offline sweep and a fresh pin.
+ * A seed whose run draws a revoke: the pinned one, then a bounded fallback
+ * sweep. A miss on both means the draw stream changed shape under the pin,
+ * and the fix is a wider offline sweep and a fresh pin.
  */
 function found(): Found {
   if (cached !== undefined) return cached;

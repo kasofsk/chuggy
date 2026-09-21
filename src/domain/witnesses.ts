@@ -7,8 +7,8 @@
  * the cascade parks dependents on reachable states, without which
  * `cascadeSafety` is vacuously true wherever nothing is doomed.
  * `stageAdvanceNever` failing is the proof that multi-stage programs run stage
- * by stage, without which the stage digit and the interpreter's advance edge
- * are never exercised.
+ * by stage, without which `eval-stage-passed` never fires and the
+ * interpreter's advance edge is untested.
  *
  * THEY LIVE IN THEIR OWN FILE AND UNDER THEIR OWN TYPE, so folding one into
  * the bundle takes an import, a type that does not fit, and a run-time

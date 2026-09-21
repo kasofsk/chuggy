@@ -10,8 +10,10 @@
  * than assumed: `asSafeInteger` refuses anything outside the range JavaScript
  * represents exactly, and every value entering the domain from a trace or a
  * boundary passes through it. The alternative — `bigint` throughout — buys
- * exactness nothing the machine counts needs, every one of those counts being
- * bounded by a declared constant, and pays for it at every arithmetic site.
+ * exactness this domain does not need: a ticket id and a stage index come
+ * from universes `Config` bounds (`nTickets`, `maxStages`), and a task id
+ * counts one ticket's tasks, which no deployment brings near the exact
+ * range — and pays for it at every arithmetic site.
  */
 
 declare const ticketIdBrand: unique symbol;

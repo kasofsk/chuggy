@@ -657,8 +657,7 @@ module chuggy_domain {
   var lastStep: StepRecord
   /// GHOST: the PREVIOUS state's retained task records, per ticket —
   /// written by every action, read only by recordMonotone (the
-  /// retained-record monotonicity invariant needs one step of history,
-  /// exactly like stepDescends needs prevMeasure).
+  /// retained-record monotonicity invariant needs one step of history).
   var prevRecords: int -> List[Task]
 
   val core: Core = { tickets: tickets }
@@ -1062,7 +1061,7 @@ module chuggy_domain {
   /// history — against the previous state (ghost prevRecords), every ticket's
   /// record still starts with exactly what it was: nothing shrinks,
   /// nothing settled is ever rewritten (outcome, kind, or id). Checked
-  /// step-wise like stepDescends; with it, "retained" is a theorem, not a
+  /// step-wise against the ghost; with it, "retained" is a theorem, not a
   /// convention. (Tickets are never deleted, so prevRecords' domain always
   /// survives into liveTickets.)
   val recordMonotone: bool = prevRecords.keys().forall(j => and {
@@ -1281,8 +1280,8 @@ module chuggy_domain {
   /// — a reachable
   /// eval-stage-passed step is the machine-level proof that multi-stage
   /// programs actually run stage-by-stage on machine traces, so the green
-  /// invariant runs above are checked against traces where the stage digit
-  /// and the interpreter's advance edge are exercised, not vacuous (a
+  /// invariant runs above are checked against traces where the stage
+  /// advance edge is exercised, not vacuous (a
   /// fleet that only ever drew single-stage programs would never take the
   /// edge). The unit tests walk the advance deterministically; this pins
   /// it as REACHABLE.

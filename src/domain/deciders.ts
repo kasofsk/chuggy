@@ -10,7 +10,7 @@
  * Everything a decision needs is already in the `Core` it is handed. A decider
  * that acquired a read would acquire an await, and then a mock, and then it
  * would no longer be a function.
- * */
+ */
 
 import { type Config } from "./config.ts";
 import { ticketAt, ticketIds, withTicket, type Decision } from "./core.ts";
