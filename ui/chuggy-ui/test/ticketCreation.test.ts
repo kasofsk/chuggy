@@ -229,11 +229,11 @@ test("a reference pasted where a name was asked for is refused, not prefixed twi
 });
 
 /**
- * A managed finalizer is given the landing it runs, so the finalization is on
- * every such brief; the target is what a brief naming none leaves off, and the
- * work then lands on the branch it was done on.
+ * The finalization is sent on every brief, whichever mode is chosen; the
+ * target is what a brief naming none leaves off, and the work then lands on
+ * the branch it was done on.
  */
-test("a landing is on the wire under a managed finalizer, with a target only where one is named", () => {
+test("a landing is on the wire, with a target only where one is named", () => {
   const landing = creationBodyFrom(
     creationInitialization,
     creationForm({ branchName: "topic/one", targetBranchName: "release/next" }),
@@ -561,21 +561,20 @@ test("changing repositories re-seeds an untouched landing and leaves a touched o
   });
 });
 
-/** A ticket authored to run no finalizer lands nothing, so no landing reaches
- * the wire and neither does the target box beside it. */
-test("a form with no finalizer sends no finalization at all", () => {
+/** A landing of None still names its mode on the wire; what it omits is the
+ * target, which a landing that lands nothing has no reference for. */
+test("a form landing on None sends its mode and no target", () => {
   const assembled = creationBodyFrom(
     creationInitialization,
     creationForm({
-      finalizer: "NoFinalizer",
-      landingMode: "PullRequest",
+      landingMode: "None",
       targetBranchName: "release/next",
     }),
     noBindings,
   );
   expect(assembled.assembled).toBe("Body");
   if (assembled.assembled !== "Body") return;
-  expect("finalization" in assembled.body.brief).toBe(false);
+  expect(assembled.body.brief.finalization).toStrictEqual({ mode: "None" });
 });
 
 test("a chosen landing is on the wire whatever the repository's default is", () => {
@@ -705,14 +704,14 @@ test("a push with no target is accepted, and so is a pull request with one", () 
 });
 
 /**
- * The target box is neither drawn nor sent under no finalizer, so a value left
- * in it from before that choice must not refuse the form: the reason would name
- * a field the reader cannot see, and the submission would stop with nothing on
- * screen saying why.
+ * The target box is neither drawn nor sent under a landing of None, so a value
+ * left in it from before that choice must not refuse the form: the reason
+ * would name a field the reader cannot see, and the submission would stop with
+ * nothing on screen saying why.
  */
-test("a form with no finalizer is not refused for a target it neither draws nor sends", () => {
+test("a form landing on None is not refused for a target it neither draws nor sends", () => {
   const parked = creationForm({
-    finalizer: "NoFinalizer",
+    landingMode: "None",
     branchName: "topic/one",
     targetBranchName: "refs/heads/release/next",
   });
@@ -724,7 +723,7 @@ test("a form with no finalizer is not refused for a target it neither draws nor 
   );
   expect(assembled.assembled).toBe("Body");
   if (assembled.assembled !== "Body") return;
-  expect("finalization" in assembled.body.brief).toBe(false);
+  expect(assembled.body.brief.finalization).toStrictEqual({ mode: "None" });
   expect(draftCreationSchema.parse(assembled.body)).toStrictEqual(
     assembled.body,
   );

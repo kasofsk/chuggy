@@ -54,18 +54,13 @@ export const creationInitialization: DraftInitializationResponse = {
   fence: { projectSequence: 41, configurationDigest: creationDigest },
   defaults: {
     dependencies: [],
-    program: [{ fanout: 1, combinator: "UnanimousPass" }],
+    program: [{ fanout: 1 }],
     workFanout: 1,
-    finalizer: "ManagedFinalizer",
   },
   choices: {
-    stages: [
-      { fanout: 1, combinator: "UnanimousPass" },
-      { fanout: 2, combinator: "AnyPass" },
-    ],
+    stages: [{ fanout: 1 }, { fanout: 2 }],
     programStagesMax: 2,
     workFanouts: [1, 2],
-    finalizers: ["ManagedFinalizer"],
   },
   dependencyCandidates: [7, 8],
   dependencyCandidatesTruncated: false,

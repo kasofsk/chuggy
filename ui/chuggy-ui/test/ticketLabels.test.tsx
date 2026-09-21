@@ -65,7 +65,6 @@ const authoring = {
   dependencies: [],
   program: [],
   workFanout: 1,
-  finalizer: "NoFinalizer",
 };
 
 const execution = {

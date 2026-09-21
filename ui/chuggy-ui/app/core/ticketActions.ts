@@ -162,7 +162,7 @@ export function ticketActionSentence(
     case "Resume":
       return resumeSentence(context);
     case "Revoke":
-      return "revoke this ticket, and park every ticket that depends on it";
+      return "revoke this ticket";
     case "Approve":
       return "let this ticket's finalization go ahead";
     case "Decline":

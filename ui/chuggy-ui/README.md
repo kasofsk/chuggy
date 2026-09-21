@@ -154,10 +154,11 @@ short-circuited is a row saying so, which is what tells "not reached" from "not
 on this page".
 
 Every row, cycle and ticket carries what it spent and how long it took, and
-every dollar carries the basis the wire gave it, so a list price is never read as
-a bill. The situation column holds exactly the wall, the actions and a list of
-anchors; the brief, the provenance and the configuration are in the main body
-under the ledger, reached by those anchors rather than by tabs.
+every dollar carries the basis the wire gave it, so a list price is never read
+as a bill. The situation column holds exactly the notice — a phase, a wall or
+a blocked dependency — the actions and a list of anchors; the brief, the
+provenance and the configuration are in the main body under the ledger,
+reached by those anchors rather than by tabs.
 
 `core/figures.ts` formats every measured number, `core/tones.ts` maps the wire's
 own words to the tones a pill draws, and `core/codeLabels.ts` turns a code into

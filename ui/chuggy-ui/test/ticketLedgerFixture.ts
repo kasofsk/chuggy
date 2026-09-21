@@ -140,12 +140,8 @@ export function ledgerPage(
 /** Two evaluation stages, one work task each, two reworks. */
 export const ticket21Authoring: TicketAuthoring = {
   dependencies: [],
-  program: [
-    { fanout: 1, combinator: "UnanimousPass" },
-    { fanout: 1, combinator: "UnanimousPass" },
-  ],
+  program: [{ fanout: 1 }, { fanout: 1 }],
   workFanout: 1,
-  finalizer: "ManagedFinalizer",
 };
 
 /** The seven executions the ticket held while it was parked. */

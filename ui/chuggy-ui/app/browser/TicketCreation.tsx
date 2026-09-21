@@ -383,14 +383,14 @@ function CreationFields(
         repositories={props.repositories}
       />
       <Fault field="repository" faults={faults} />
-      {form.finalizer === "ManagedFinalizer" ? (
+      <Landing form={form} onChange={onChange} />
+      <Fault field="landing" faults={faults} />
+      {form.landingMode === "None" ? null : (
         <>
-          <Landing form={form} onChange={onChange} />
           <TargetBranch form={form} onChange={onChange} />
           <Fault field="target" faults={faults} />
         </>
-      ) : null}
-      <Fault field="landing" faults={faults} />
+      )}
       <TicketCreationAdvanced
         form={form}
         onChange={onChange}

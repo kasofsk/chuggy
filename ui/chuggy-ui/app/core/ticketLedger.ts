@@ -50,10 +50,7 @@ import type {
   ExecutionSummary,
   ExecutionsResponse,
 } from "../../../../src/contract/responses.ts";
-import type {
-  EvaluationCombinator,
-  ExecutionTaskKind,
-} from "../../../../src/contract/rosters.ts";
+import type { ExecutionTaskKind } from "../../../../src/contract/rosters.ts";
 import { runSpanOf, runSpendOf } from "./runTotals.ts";
 import type { RunSpan, RunSpend } from "./runTotals.ts";
 
@@ -189,12 +186,9 @@ function spawnedSets(page: ExecutionsResponse): readonly SpawnedSet[] {
 
 /**
  * A set settles only once no task can still move, and a blocked task is a wall
- * of its own rather than a failure the combinator gets to weigh.
+ * of its own rather than a failure the unanimous rule gets to weigh.
  */
-function setVerdict(
-  executions: readonly ExecutionSummary[],
-  combinator: EvaluationCombinator,
-): SetVerdict {
+function setVerdict(executions: readonly ExecutionSummary[]): SetVerdict {
   if (
     executions.some(
       (row) => row.status !== "Terminal" && row.status !== "Cancelled",
@@ -203,16 +197,9 @@ function setVerdict(
     return "Running";
   if (executions.every((row) => row.status === "Cancelled")) return "Cancelled";
   if (executions.some((row) => row.outcome === "Blocked")) return "Blocked";
-  switch (combinator) {
-    case "UnanimousPass":
-      return executions.every((row) => row.outcome === "Passed")
-        ? "Passed"
-        : "Failed";
-    case "AnyPass":
-      return executions.some((row) => row.outcome === "Passed")
-        ? "Passed"
-        : "Failed";
-  }
+  return executions.every((row) => row.outcome === "Passed")
+    ? "Passed"
+    : "Failed";
 }
 
 /** The authored stage this set ran, absent where the set is outside the program. */
@@ -224,16 +211,9 @@ function stageOf(
   return authoring.program[set.stage];
 }
 
-/**
- * A work set combines as the model's work reduce does, and an evaluation set
- * as its stage's authored combinator says.
- */
+/** A work set and an evaluation set both combine unanimously. */
 function taskSetOf(set: SpawnedSet, authoring: TicketAuthoring): TaskSet {
   const stage = stageOf(set, authoring);
-  const combinator: EvaluationCombinator =
-    set.taskKind === "Work"
-      ? "UnanimousPass"
-      : (stage?.combinator ?? "UnanimousPass");
   const expected =
     set.taskKind === "Work"
       ? authoring.workFanout
@@ -241,7 +221,7 @@ function taskSetOf(set: SpawnedSet, authoring: TicketAuthoring): TaskSet {
   return {
     executions: set.executions,
     expected,
-    verdict: setVerdict(set.executions, combinator),
+    verdict: setVerdict(set.executions),
     span: runSpanOf(set.executions),
   };
 }

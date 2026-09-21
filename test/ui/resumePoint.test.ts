@@ -26,10 +26,8 @@ import {
   decideExecutionBlocked,
   decideEvalStageReduce,
   decideResumeTicket,
-  decideRevoke,
   decideWorkReduce,
 } from "../../src/domain/deciders.ts";
-import type { Config } from "../../src/domain/config.ts";
 import { executionBlockedReasons } from "../../src/domain/enablement.ts";
 import type {
   Core,
@@ -50,16 +48,12 @@ import {
 import type { ClosedSet } from "../../ui/chuggy-ui/app/core/ticketLedger.ts";
 
 const id = asTicketId(7);
-const stage = { fanout: 1, combinator: "UnanimousPass" } as const;
-
-/** The revoke walks the fleet a bounded number of rounds, and the bound is the fleet. */
-const fleetOfTwo: Config = { nTickets: 2, nTasks: 2, maxStages: 2 };
+const stage = { fanout: 1 } as const;
 
 function ticketIn(over: Partial<Ticket> = {}): Ticket {
   return {
     phase: "Working",
     deps: new Set<number>(),
-    finalizer: "ManagedFinalizer",
     artifact: "NoArtifact",
     workFanout: 1,
     program: [stage, stage],
@@ -90,11 +84,8 @@ function taskSet(
   }));
 }
 
-/** The verdict the console reads off a settled set, by the stage's own combinator. */
-function closedVerdict(
-  ticket: Ticket,
-  tasks: readonly Task[],
-): ClosedSet["verdict"] {
+/** The verdict the console reads off a settled set. */
+function closedVerdict(tasks: readonly Task[]): ClosedSet["verdict"] {
   if (
     tasks.every(
       (task) =>
@@ -102,12 +93,7 @@ function closedVerdict(
     )
   )
     return "Cancelled";
-  const kind = tasks[0]?.kind;
-  const combinator =
-    kind === undefined || kind === "Work"
-      ? "UnanimousPass"
-      : (ticket.program[kind.value]?.combinator ?? "UnanimousPass");
-  return combine(combinator, new Set(tasks)) ? "Passed" : "Failed";
+  return combine(new Set(tasks)) ? "Passed" : "Failed";
 }
 
 /**
@@ -122,7 +108,7 @@ function lastSetOf(ticket: Ticket): ClosedSet | undefined {
   return {
     taskKind: last.kind === "Work" ? "Work" : "Evaluation",
     stage: last.kind === "Work" ? undefined : last.kind.value,
-    verdict: closedVerdict(ticket, tail),
+    verdict: closedVerdict(tail),
   };
 }
 
@@ -235,26 +221,6 @@ test("a blocked execution parks where the machine says it parks, in both phases"
       agrees(before, after, `${reason} in ${held.phase}`);
     }
   }
-});
-
-test("a ticket parked by a revoked dependency is offered no resume", () => {
-  const dependent = asTicketId(8);
-  const core: Core = {
-    tickets: new Map([
-      [id, ticketIn({ phase: "Pending", tasks: new Set<Task>() })],
-      [
-        dependent,
-        ticketIn({
-          phase: "Pending",
-          deps: new Set([id]),
-          tasks: new Set<Task>(),
-        }),
-      ],
-    ]),
-  };
-  const after = ticketAt(decideRevoke(fleetOfTwo, core, id).post, dependent);
-  assert.equal(after.reason, "DependencyRevoked");
-  agrees(ticketAt(core, dependent), after, "a revoked dependency");
 });
 
 test("each point re-enters the phase the console names", () => {

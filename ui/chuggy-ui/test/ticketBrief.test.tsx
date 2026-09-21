@@ -26,7 +26,6 @@ const authoring: DraftResponse["authoring"] = {
   dependencies: [],
   program: [],
   workFanout: 1,
-  finalizer: "NoFinalizer",
 };
 
 function draft(brief?: DraftResponse["brief"]): PanelState<DraftResponse> {
@@ -177,8 +176,9 @@ test("a brief proposing its work into a reference does not say it lands there", 
   expect(landingLine()).toBe("Pull request · into refs/heads/main");
 });
 
-/** A ticket authored to run no finalizer lands nothing, so the field a landing
- * would be read in is absent rather than saying "none". */
+/** A brief released before a landing was recorded on the wire carries no
+ * `finalization` at all, so the field it would be read in is absent rather
+ * than saying "None". */
 test("a brief carrying no finalization draws no landing at all", () => {
   render(
     <TicketBrief

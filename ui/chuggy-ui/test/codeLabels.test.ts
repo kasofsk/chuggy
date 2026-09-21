@@ -13,7 +13,6 @@ import { expect, test } from "vitest";
 import {
   briefFinalizationModes,
   escalationReasons,
-  finalizers,
   operationRefusalCodes,
   operationStates,
   phaseRoster,
@@ -22,7 +21,6 @@ import {
 import {
   approvalLabel,
   briefLandingLine,
-  finalizerLabel,
   landingEffect,
   landingLabel,
   resumeActionEffect,
@@ -83,9 +81,6 @@ test("the wall a reader met on ticket 21 reads as a noun and a fragment", () => 
 test("a detail line names only the facts the page holds", () => {
   const bare = { lastSet: undefined, stageCount: 2 };
   expect(escalationDetailLine("ReworkBudgetExhausted", bare)).toBe(undefined);
-  expect(escalationDetailLine("DependencyRevoked", bare)).toBe(
-    "Only Revoke exits this wall",
-  );
   expect(escalationDetailLine("WorkFailed", bare)).toBe(
     "Failed work is not reworked",
   );
@@ -172,8 +167,9 @@ test("every resume point draws the effect the machine gives it", () => {
 });
 
 /**
- * `DependencyRevoked` is the wall the model stamps no resume point on, and a
- * resume is the one answer that must not be offered into it.
+ * A wall whose reason names no interrupted set is one the model stamps no
+ * resume point on, and a resume is the one answer that must not be offered
+ * into it.
  */
 test("every action the phase enables is offered, except a resume with no point", () => {
   const resume = { kind: "Offered", point: "ResumeEvaluating" } as const;
@@ -246,11 +242,10 @@ test("every step of a follow draws one line, and only a settled one stops", () =
   expect(refused.wrong).toBe(true);
 });
 
-test("every landing, finalizer and approval label is inside the budget", () => {
+test("every landing and approval label is inside the budget", () => {
   const drawn = [
     ...briefFinalizationModes.map(landingLabel),
     ...briefFinalizationModes.map(landingEffect),
-    ...finalizers.map(finalizerLabel),
     approvalLabel(true),
     approvalLabel(false),
   ];
@@ -271,16 +266,17 @@ test("a landing is named as a noun and explained as what it does", () => {
     "Push",
     "Pull request",
     "Pull request, then merge",
+    "None",
   ]);
   expect(briefFinalizationModes.map(landingEffect)).toStrictEqual([
     "Commits straight onto the target branch",
     "Opens a pull request into the target branch",
     "Opens a pull request into the target branch and merges it",
+    "Lands nothing",
   ]);
 });
 
-test("a finalizer and an approval each read as one noun", () => {
-  expect(finalizers.map(finalizerLabel)).toStrictEqual(["None", "Managed"]);
+test("an approval reads as one noun", () => {
   expect(approvalLabel(true)).toBe("Required");
   expect(approvalLabel(false)).toBe("Not required");
 });

@@ -493,25 +493,6 @@ test("no string the page composes but the brief runs past the copy budget", asyn
   expect(drawnStringsOver(container)).toEqual([]);
 });
 
-/** A wall the model stamps no resume point on, whose only modelled exit is revoke. */
-const revokedTicket = {
-  ticket: 21,
-  phase: "Escalated",
-  sequence: 171,
-  ...ticketInstants,
-  reason: "DependencyRevoked",
-  runTotals: ticketTotals,
-};
-
-test("a wall whose only exit is revoke offers no resume to press", async () => {
-  await drawTicket({ shapes: ticket21Parked, ticket: revokedTicket });
-  expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
-  expect(
-    screen.getByText("Nothing to resume · only Revoke exits this wall"),
-  ).toBeDefined();
-  expect(screen.getByRole("button", { name: "Revoke" })).toBeDefined();
-});
-
 /**
  * The rework wall's resume buys a fresh cycle, so the page must not still
  * offer it as a re-run of the evaluation.

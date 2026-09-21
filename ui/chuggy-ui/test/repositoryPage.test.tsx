@@ -1,6 +1,6 @@
 /**
- * One repository's page: the landing it defaults to, the finalizer that runs
- * after evaluation, and what it declares under `.chug/configurations`.
+ * One repository's page: the landing it defaults to, and what it declares
+ * under `.chug/configurations`.
  *
  * THE CONFLICT IS THE CASE WITH TEETH. Two administrators editing one binding
  * must not clobber each other, so what is asserted about a `409` is the second
@@ -80,15 +80,13 @@ const initialization = {
   fence: { projectSequence: 41, configurationDigest: "a".repeat(64) },
   defaults: {
     dependencies: [],
-    program: [{ fanout: 1, combinator: "UnanimousPass" }],
+    program: [{ fanout: 1 }],
     workFanout: 1,
-    finalizer: "ManagedFinalizer",
   },
   choices: {
-    stages: [{ fanout: 1, combinator: "UnanimousPass" }],
+    stages: [{ fanout: 1 }],
     programStagesMax: 2,
     workFanouts: [1],
-    finalizers: ["ManagedFinalizer"],
   },
   dependencyCandidates: [],
   dependencyCandidatesTruncated: false,
@@ -337,18 +335,6 @@ test("cancelling a choice leaves the landing the page read", async () => {
   });
   await press("Cancel");
   expect(chosenLanding()).toBe("Push");
-});
-
-test("the finalizer is the newest ready revision's, and says when it runs", async () => {
-  await drawPage();
-  const finalizer = sectionOf("Finalizer");
-  expect(
-    within(finalizer).getByText(
-      "What a new ticket is authored to run. A ticket may choose otherwise.",
-    ),
-  ).toBeTruthy();
-  expect(finalizer.textContent).toContain("Managed");
-  expect(finalizer.textContent).toContain("Runs after evaluation passes");
 });
 
 /**

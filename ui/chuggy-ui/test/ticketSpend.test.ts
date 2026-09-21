@@ -81,7 +81,7 @@ test("a fan-out one of whose tasks has ended has not ended", () => {
     ]),
     {
       ...ticket21Authoring,
-      program: [{ fanout: 2, combinator: "UnanimousPass" }],
+      program: [{ fanout: 2 }],
     },
   );
   const run = cycleAt(half, 0).programRuns[0]?.stages[0];
@@ -117,7 +117,7 @@ function spanOfPair(
     ]),
     {
       ...ticket21Authoring,
-      program: [{ fanout: 2, combinator: "UnanimousPass" }],
+      program: [{ fanout: 2 }],
     },
   );
   const row = cycleAt(paired, 0).programRuns[0]?.stages[0];
@@ -485,7 +485,7 @@ test("a set short of the fan-out its stage was authored with is not complete", (
     ]),
     {
       ...ticket21Authoring,
-      program: [{ fanout: 2, combinator: "UnanimousPass" }],
+      program: [{ fanout: 2 }],
     },
   );
   expect(cycleAt(fanned, 0).complete).toBe(false);

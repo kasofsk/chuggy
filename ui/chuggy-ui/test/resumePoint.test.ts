@@ -57,7 +57,6 @@ test("every wall the wire can name has a point or names none", () => {
   expect(named).toEqual([
     ["WorkFailed", "ResumeWorking"],
     ["ReworkBudgetExhausted", "ResumeReworking"],
-    ["DependencyRevoked", undefined],
     ["ExecutionPolicyDenied", "ResumeEvaluating"],
     ["TicketConfigIncompatible", "ResumeEvaluating"],
     ["ExecutionProfileUnavailable", "ResumeEvaluating"],
@@ -95,7 +94,7 @@ test("an escalation whose reason the read omits names no point", () => {
 test("the machine's own answer wins over every rule here", () => {
   expect(
     ticketResumePoint({
-      ...parked("DependencyRevoked"),
+      ...parked("WorkFailed"),
       resumeAt: "ResumeFinalizing",
     }),
   ).toBe("ResumeFinalizing");
@@ -130,8 +129,4 @@ test("each point is re-run in the ticket's own word for it", () => {
     ["ResumeEvaluating", "evaluation"],
     ["ResumeFinalizing", "finalization"],
   ]);
-});
-
-test("a wall with no resumption offers nothing at all", () => {
-  expect(ticketResume(parked("DependencyRevoked"))).toBeUndefined();
 });

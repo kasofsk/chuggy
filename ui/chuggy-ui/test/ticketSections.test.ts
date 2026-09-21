@@ -52,7 +52,6 @@ test("the sections partition the roster, leaving no phase in two and none in non
 const badgeOfReason: Readonly<Record<EscalationReason, string>> = {
   WorkFailed: "work failed",
   ReworkBudgetExhausted: "rework budget spent",
-  DependencyRevoked: "a dependency was revoked",
   ExecutionPolicyDenied: "execution policy denied it",
   TicketConfigIncompatible: "the configuration does not fit",
   ExecutionProfileUnavailable: "no execution profile fits",

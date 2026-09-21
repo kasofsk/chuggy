@@ -12,6 +12,7 @@ import {
   escalationDetailLine,
   escalationReasonLabel,
   phaseLabel,
+  revokedDependencyLine,
 } from "../../core/codeLabels.ts";
 import type { WallFacts } from "../../core/codeLabels.ts";
 import { costFigure, instantFigure } from "../../core/figures.ts";
@@ -47,6 +48,25 @@ export function SituationNotice(props: {
   readonly stageCount: number;
   readonly nowMs: number;
 }): ReactNode {
+  /**
+   * The contract answers `revokedDependencies` only for a Pending ticket, but
+   * the phase is checked here too rather than trusted: a settled ticket must
+   * never show a banner for a dependency that can no longer be waited on.
+   */
+  const blocked =
+    props.ticket.phase === "Pending"
+      ? revokedDependencyLine(props.ticket.revokedDependencies)
+      : undefined;
+  if (blocked !== undefined) {
+    const at = instantFigure(props.ticket.changedAt, props.nowMs);
+    return (
+      <Notice tone="parked" role="status" heading="Blocked" detail={blocked}>
+        <p className="pt-1">
+          <Figure figure={at} />
+        </p>
+      </Notice>
+    );
+  }
   const reason = props.ticket.reason;
   if (reason !== undefined) {
     const more = escalationDetailLine(

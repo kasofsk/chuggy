@@ -48,7 +48,7 @@ function cycleAt(shapes: readonly ExecutionShape[], at: number): Cycle {
 
 const singleStage: typeof ticket21Authoring = {
   ...ticket21Authoring,
-  program: [{ fanout: 1, combinator: "UnanimousPass" }],
+  program: [{ fanout: 1 }],
 };
 
 test("a ticket's page becomes one cycle per work run, newest last", () => {
@@ -178,36 +178,13 @@ test("one spawn of many tasks is one set, and two spawns of one stage are two ru
         outcome: "Passed",
       },
     ]),
-    { ...singleStage, program: [{ fanout: 2, combinator: "UnanimousPass" }] },
+    { ...singleStage, program: [{ fanout: 2 }] },
   );
   const runs = fanned.cycles[0]?.programRuns ?? [];
   expect(runs.map((run) => stagesOf(run))).toEqual([
     ["0 Failed 2,3"],
     ["0 Passed 4,5"],
   ]);
-});
-
-test("a stage's combinator decides its set, so any pass carries an AnyPass stage", () => {
-  const anyPass = ticketLedger(
-    ledgerPage([
-      {
-        execution: "execution-bb-1",
-        task: 1,
-        taskKind: "Evaluation",
-        stage: 0,
-        outcome: "Passed",
-      },
-      {
-        execution: "execution-bb-2",
-        task: 2,
-        taskKind: "Evaluation",
-        stage: 0,
-        outcome: "Failed",
-      },
-    ]),
-    { ...singleStage, program: [{ fanout: 2, combinator: "AnyPass" }] },
-  );
-  expect(stagesOf(anyPass.cycles[0]?.programRuns[0])).toEqual(["0 Passed 1,2"]);
 });
 
 test("a cancelled set and a blocked one are each their own verdict", () => {
@@ -336,7 +313,7 @@ test("a request the wire names groups a set over stems that disagree", () => {
         request: "one-spawn",
       },
     ]),
-    { ...singleStage, program: [{ fanout: 2, combinator: "UnanimousPass" }] },
+    { ...singleStage, program: [{ fanout: 2 }] },
   );
   expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual(["0 Failed 1,2"]);
 });
@@ -359,7 +336,7 @@ test("a spawn of two-digit task ordinals is one set, not one set per digit", () 
         outcome: "Failed",
       },
     ]),
-    { ...singleStage, program: [{ fanout: 2, combinator: "UnanimousPass" }] },
+    { ...singleStage, program: [{ fanout: 2 }] },
   );
   expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual([
     "0 Failed 10,11",
