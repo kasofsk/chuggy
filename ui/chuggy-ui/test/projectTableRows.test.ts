@@ -75,7 +75,7 @@ test("a running ticket's row carries its status and what it runs on", () => {
     text: "worker:1",
     title: "registry/worker:1",
   });
-  expect(row.activityAt).toBe("2026-08-26T10:00:00.000Z");
+  expect(row.activityAt).toBe(ticketInstants.changedAt);
   expect(row.section).toBe("InProgress");
 });
 
@@ -111,8 +111,7 @@ test("a ticket running nothing states no execution rather than a blank one", () 
   );
   expect(row.executionStatus).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
-  expect(row.activityAt).toBeUndefined();
-  expect(row.sequence).toBe(1);
+  expect(row.activityAt).toBe(ticketInstants.changedAt);
 });
 
 const failedOlder: ExecutionSummary = {
@@ -122,10 +121,42 @@ const failedOlder: ExecutionSummary = {
   terminalAt: "2026-08-26T12:00:00.000Z",
 };
 
-test("a terminal execution's instant is when it ended", () => {
+test("a terminal execution older than the ticket's own last move reads as the ticket's", () => {
   const row = projectTableRow(working, known(failedOlder), false);
-  expect(row.activityAt).toBe("2026-08-26T12:00:00.000Z");
+  expect(row.activityAt).toBe(ticketInstants.changedAt);
   expect(row.executionOutcome).toBe("Failed");
+});
+
+const failedNewer: ExecutionSummary = {
+  ...container,
+  status: "Terminal",
+  outcome: "Failed",
+  terminalAt: "2026-08-28T00:00:00.000Z",
+};
+
+test("a row takes the later of the ticket's own last move and its execution's", () => {
+  const row = projectTableRow(working, known(failedNewer), false);
+  expect(row.activityAt).toBe("2026-08-28T00:00:00.000Z");
+});
+
+/**
+ * `2026-08-27T01:00:00+02:00` is `2026-08-26T23:00:00Z`, earlier than the
+ * ticket's own `2026-08-27T00:30:00Z` — but it sorts later as a bare string, so
+ * a lexical compare would pick the execution where the chronological one must
+ * pick the ticket.
+ */
+test("the later instant is read chronologically, not lexically", () => {
+  const row = projectTableRow(
+    { ...working, changedAt: "2026-08-27T00:30:00Z" },
+    known({
+      ...container,
+      status: "Terminal",
+      outcome: "Failed",
+      terminalAt: "2026-08-27T01:00:00+02:00",
+    }),
+    false,
+  );
+  expect(row.activityAt).toBe("2026-08-27T00:30:00Z");
 });
 
 test("a row the index reached says so, and one it never ran says that", () => {
@@ -156,7 +187,7 @@ test("a row that is not joined draws none of the execution it holds", () => {
   expect(row.executionOutcome).toBeUndefined();
   expect(row.executionStatus).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
-  expect(row.activityAt).toBeUndefined();
+  expect(row.activityAt).toBe(ticketInstants.changedAt);
 });
 
 test("a row whose entry a walk finished is joined even where others were not", () => {

@@ -60,8 +60,7 @@ export interface ProjectTableRow {
   readonly executionStatus: ExecutionStatus | undefined;
   readonly executionOutcome: ExecutionOutcome | undefined;
   readonly runsOn: Label | undefined;
-  readonly sequence: number;
-  readonly activityAt: string | undefined;
+  readonly activityAt: string;
 }
 
 /** What the task was placed on, named where the catalog names it: a container
@@ -92,8 +91,23 @@ export function projectTableExecutionRead(
   return indexTruncated ? "IndexTruncated" : "NoneRegistered";
 }
 
-/** The ticket's own last activity is its sequence; an instant is the execution's,
- * because that is where the wire states one. */
+/** The later of two instants a row's activity might carry, compared as
+ * instants rather than as strings, because a lexical compare gets a
+ * timezone-shifted wire string wrong. */
+function laterActivityAt(
+  changedAt: string,
+  executionAt: string | undefined,
+): string {
+  if (executionAt === undefined) return changedAt;
+  return Date.parse(executionAt) > Date.parse(changedAt)
+    ? executionAt
+    : changedAt;
+}
+
+/** The ticket's own last activity is the later of its own last move and its
+ * joined execution's, so a run that outlasted the ticket's own journal entry
+ * still reads as the newer of the two. Every ticket carries `changedAt`, so
+ * the column has no empty arm. */
 export function projectTableRow(
   ticket: TicketResponse,
   known: ProjectExecutionKnown | undefined,
@@ -111,8 +125,10 @@ export function projectTableRow(
     executionStatus: execution?.status,
     executionOutcome: execution?.outcome,
     runsOn: execution === undefined ? undefined : projectTableRunsOn(execution),
-    sequence: ticket.sequence,
-    activityAt: execution?.terminalAt ?? execution?.registeredAt,
+    activityAt: laterActivityAt(
+      ticket.changedAt,
+      execution?.terminalAt ?? execution?.registeredAt,
+    ),
   };
 }
 
