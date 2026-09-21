@@ -151,8 +151,8 @@ module chuggy_witness_gate_test {
       lastStep.label=="rework-started finalization_needs_work",allInvariants})
 
   /// A finalizer that reaches NO result parks the ticket, and the desk's
-  /// resume runs the finalizer again — the only resume that re-enters the
-  /// phase it left, and the only exit a held finalization has: Finalization
+  /// resume runs the finalizer again — the only resume that re-runs the step
+  /// it interrupted, and the only exit a held finalization has: Finalization
   /// is neither revocable nor retryable, so before this wall the ticket sat
   /// there until the environment moved.
   action resume(j:int):bool=all{retryableEscalated.contains(j),apply(decideResumeTicket(graph,j))}
