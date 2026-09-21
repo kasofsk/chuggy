@@ -91,7 +91,7 @@ export function finalizationUnavailableKindLabel(
     case "ProposalBaseUnreadable":
       return "Proposal base unreadable";
     case "ProposalBaseIsHead":
-      return "Proposal base is already head";
+      return "Proposal base at head";
     case "ProposalDenied":
       return "Proposal denied";
     case "ReconciliationUnreadable":
