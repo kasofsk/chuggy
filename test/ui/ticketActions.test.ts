@@ -19,7 +19,6 @@ import { phaseRoster } from "../../src/contract/rosters.ts";
 import type { TicketPhase } from "../../src/contract/rosters.ts";
 import { retryableIn, revocableIn } from "../../src/domain/enablement.ts";
 import type {
-  Phase,
   Ticket,
   TicketGraph,
 } from "../../src/domain/generated/modelTypes.ts";
@@ -32,24 +31,9 @@ import {
 
 const id = asTicketId(7);
 
-/**
- * The console still says the contract's phase names and the model now says its
- * own, so a phase crossing from one roster to the other is mapped here — the
- * one place that has both in scope.
- */
-const modelPhase: Readonly<Record<TicketPhase, Phase>> = {
-  Pending: "Pending",
-  Working: "Work",
-  Evaluating: "Evaluation",
-  Finalizing: "Finalization",
-  Done: "Done",
-  Escalated: "Escalated",
-  Revoked: "Revoked",
-};
-
 function ticketIn(phase: TicketPhase, over: Partial<Ticket> = {}): Ticket {
   return {
-    phase: modelPhase[phase],
+    phase,
     deps: new Set<number>(),
     artifact: "NoArtifact",
     workFanout: 1,

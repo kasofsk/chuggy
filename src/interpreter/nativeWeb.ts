@@ -24,7 +24,11 @@ import {
 export type { AuthorizedResult } from "./authorizedProject.ts";
 
 import type { Principal } from "./principal.ts";
-import type { EscalationReason, ResumePoint } from "../contract/rosters.ts";
+import type {
+  BlockedReason,
+  EscalationReason,
+  ResumePoint,
+} from "../contract/rosters.ts";
 import { phaseTags, type Phase } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type {
@@ -264,6 +268,14 @@ export interface TicketResource {
   readonly changedAt: PublicInstant;
   readonly releasedAt?: PublicInstant;
   readonly reason?: EscalationReason;
+  /**
+   * Which wall the fabric hit, off this ticket's most recent blocked
+   * execution. The machine collapsed the five into one reason, so this is the
+   * evidence that survived; a ticket the read reports no
+   * `WorkExecutionUnavailableEscalated` for carries none, and neither does a
+   * ticket listed in a project's page, which is not read for it.
+   */
+  readonly executionBlockedBy?: BlockedReason;
   readonly resumeAt?: ResumePoint;
   /**
    * Which of this ticket's own dependencies their authors revoked, ascending.

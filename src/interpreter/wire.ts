@@ -314,13 +314,21 @@ function claimsCompletion(
   return completionEventTypes.some((known) => known === type);
 }
 
-/** The scheduler boundary's stored envelope, refused by the ingress parser by design. */
+/**
+ * The scheduler boundary's stored envelope, refused by the ingress parser by
+ * design and lifted here not because it may be old but because
+ * `submit_task_completion` builds its `ExecutionBlocked` out of
+ * `execution.blocked_reason`, which keeps the five wall names for good. So
+ * every block the boundary writes names a wall the model does not describe,
+ * and the actor's own map is what undoes it.
+ */
 function storedSchedulerCompletion(
   record: Record<string, unknown>,
 ): SchedulerCompletion {
   if (record["version"] !== 1)
     throw new TypeError("stored completion version is not 1");
-  const event = decodeDecisionEvent(record["event"]);
+  const lifted = rowAtCurrentVocabulary(record) as Record<string, unknown>;
+  const event = decodeDecisionEvent(lifted["event"]);
   if (!isCompletionDecisionEvent(event))
     throw new TypeError("stored completion carries no completion event");
   return { version: 1, command: "Decide", event };

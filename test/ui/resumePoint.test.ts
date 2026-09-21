@@ -30,7 +30,6 @@ import {
 } from "../../src/domain/deciders.ts";
 import { executionBlockedReasons } from "../../src/domain/enablement.ts";
 import type {
-  Phase,
   Reason,
   Resume,
   Task,
@@ -45,7 +44,6 @@ import { resumePoints } from "../../src/contract/rosters.ts";
 import type {
   EscalationReason,
   ResumePoint,
-  TicketPhase,
 } from "../../src/contract/rosters.ts";
 import type { ResumeSituation } from "../../ui/chuggy-ui/app/core/resumePoint.ts";
 import {
@@ -58,43 +56,18 @@ const id = asTicketId(7);
 const stage = { fanout: 1 } as const;
 
 /**
- * The seam between the two vocabularies: the deciders speak the model's names,
- * the console speaks the contract's, and every value crossing between them is
- * mapped here, the one place holding both rosters. The console's five walls
- * all reach the same resume, so any of them stands for the one reason the
- * model now has.
+ * The machine's absent reason, which the wire omits rather than names. The two
+ * rosters are otherwise the same words — `test/contract/rosters.test.ts` holds
+ * them so — which is why nothing here maps between them.
  */
-const contractReason: Readonly<Record<Reason, EscalationReason | undefined>> = {
-  NoReason: undefined,
-  WorkFailureEscalated: "WorkFailed",
-  EvaluationFailureEscalated: "ReworkBudgetExhausted",
-  WorkExecutionUnavailableEscalated: "ExecutionPolicyDenied",
-};
+function statedReason(reason: Reason): EscalationReason | undefined {
+  return reason === "NoReason" ? undefined : reason;
+}
 
-const contractPoint: Readonly<Record<Resume, ResumePoint | undefined>> = {
-  NoResume: undefined,
-  ResumeWork: "ResumeWorking",
-  ResumeRework: "ResumeReworking",
-  ResumeEvaluation: "ResumeEvaluating",
-  ResumeFinalization: "ResumeFinalizing",
-};
-
-const modelResume: Readonly<Record<ResumePoint, Resume>> = {
-  ResumeWorking: "ResumeWork",
-  ResumeReworking: "ResumeRework",
-  ResumeEvaluating: "ResumeEvaluation",
-  ResumeFinalizing: "ResumeFinalization",
-};
-
-const contractPhase: Readonly<Record<Phase, TicketPhase>> = {
-  Pending: "Pending",
-  Work: "Working",
-  Evaluation: "Evaluating",
-  Finalization: "Finalizing",
-  Done: "Done",
-  Escalated: "Escalated",
-  Revoked: "Revoked",
-};
+/** The same for the absent resume. */
+function statedPoint(resume: Resume): ResumePoint | undefined {
+  return resume === "NoResume" ? undefined : resume;
+}
 
 function ticketIn(over: Partial<Ticket> = {}): Ticket {
   return {
@@ -167,16 +140,16 @@ function sameKind(left: TaskKind, right: TaskKind): boolean {
 function situationOf(before: Ticket, after: Ticket): ResumeSituation {
   return {
     phase: "Escalated",
-    reason: contractReason[after.reason],
+    reason: statedReason(after.reason),
     lastSet: lastSetOf(before),
     stageCount: before.program.length,
     resumeAt: undefined,
   };
 }
 
-/** What the decider stamped, in the console's own vocabulary for it. */
+/** What the decider stamped, where it stamped anything. */
 function stampedPoint(after: Ticket): ResumePoint | undefined {
-  return contractPoint[after.resumeAt];
+  return statedPoint(after.resumeAt);
 }
 
 function agrees(before: Ticket, after: Ticket, what: string): void {
@@ -278,14 +251,10 @@ test("each point re-enters the phase the console names", () => {
   for (const point of resumePoints) {
     const before = ticketIn({
       phase: "Escalated",
-      resumeAt: modelResume[point],
+      resumeAt: point,
       record: taskSet("WorkTask", [1], "Passed"),
     });
     const after = ticketAt(decideResumeTicket(graphWith(before), id).post, id);
-    assert.equal(
-      contractPhase[after.phase],
-      resumeReenters(point),
-      `phase at ${point}`,
-    );
+    assert.equal(after.phase, resumeReenters(point), `phase at ${point}`);
   }
 });

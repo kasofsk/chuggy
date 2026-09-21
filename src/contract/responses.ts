@@ -65,6 +65,7 @@ import {
   artifactRoles,
   attemptEvidences,
   attemptStates,
+  blockedReasons,
   draftStates,
   escalationReasons,
   executionCapabilities,
@@ -219,6 +220,14 @@ export const ticketResponseSchema = z.object({
    */
   releasedAt: instantSchema.optional(),
   reason: z.enum(escalationReasons).optional(),
+  /**
+   * Which wall the fabric hit, off the ticket's most recent blocked execution.
+   * The machine has one reason for all five, so the wall itself is evidence
+   * rather than state and is present only on a ticket the read reports
+   * `WorkExecutionUnavailableEscalated` for; the project table carries none,
+   * a wall being a thing one ticket's page says and a table has no room for.
+   */
+  executionBlockedBy: z.enum(blockedReasons).optional(),
   resumeAt: z.enum(resumePoints).optional(),
   /**
    * Which of this ticket's dependencies their own authors revoked, ascending.

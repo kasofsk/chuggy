@@ -238,8 +238,9 @@ test("a ticket read emits exactly the keys the contract names", () => {
     title: "The ticket the contract names",
     phase: "Escalated",
     sequence: 9,
-    reason: "ExecutionPolicyDenied",
-    resumeAt: "ResumeWorking",
+    reason: "WorkExecutionUnavailableEscalated",
+    executionBlockedBy: "ExecutionPolicyDenied",
+    resumeAt: "ResumeWork",
     brief,
     runTotals,
     ...ticketCarried,
@@ -251,17 +252,19 @@ test("a ticket read emits exactly the keys the contract names", () => {
   assert.ok(ticketResponseSchema.safeParse(fullest).success);
 });
 
-test("an escalated ticket names its wall and an unparked one omits it", () => {
+test("an escalated ticket names its reason and an unparked one omits it", () => {
   const escalated = ticketResponseSchema.parse(
     ticketResponse({
       ticket: asTicketId(3),
       phase: "Escalated",
       sequence: 9,
-      reason: "ExecutionPolicyDenied",
+      reason: "WorkExecutionUnavailableEscalated",
+      executionBlockedBy: "TicketConfigIncompatible",
       ...ticketCarried,
     }).body,
   );
-  assert.equal(escalated.reason, "ExecutionPolicyDenied");
+  assert.equal(escalated.reason, "WorkExecutionUnavailableEscalated");
+  assert.equal(escalated.executionBlockedBy, "TicketConfigIncompatible");
   assert.equal(
     ticketResponseSchema.parse(
       ticketResponse({
@@ -290,12 +293,12 @@ test("a parked ticket names where a resume re-enters it, and no other does", () 
       ticket: asTicketId(3),
       phase: "Escalated",
       sequence: 9,
-      reason: "ReworkBudgetExhausted",
-      resumeAt: "ResumeEvaluating",
+      reason: "EvaluationFailureEscalated",
+      resumeAt: "ResumeEvaluation",
       ...ticketCarried,
     }).body,
   );
-  assert.equal(parked.resumeAt, "ResumeEvaluating");
+  assert.equal(parked.resumeAt, "ResumeEvaluation");
   assert.equal(
     ticketResponseSchema.parse(
       ticketResponse({

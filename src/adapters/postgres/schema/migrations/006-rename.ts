@@ -58,6 +58,13 @@ import type { Migration } from "../shared.ts";
  * rewritten above; admitting the old spelling there would be admitting a row
  * the column's own check now refuses to hold.
  *
+ * AND THE API ROLE IS GRANTED THE WALL COLUMN IT NOW HAS TO READ. The five
+ * walls stopped being a ticket's reason and became evidence beside its
+ * execution, so the ticket read answers them from `execution.blocked_reason` —
+ * a column that role reached none of, the reads having had no cause to. A
+ * column-level grant is refused as a whole query rather than a missing field,
+ * so the grant belongs in the migration that moves the evidence.
+ *
  * THE PARTIAL INDEX OVER THE RELEASE EVENT IS RECREATED OVER BOTH TAGS. It is
  * what every read of a ticket's release is answered from, and the journal
  * holds rows under the old tag and will hold rows under the new one; an index
@@ -398,6 +405,7 @@ export const migration006: Migration = {
               unnest(ARRAY['Approve', 'Decline']);
        RETURN QUERY SELECT 'Requested'::text, in_action;
      END $$;`,
+    `GRANT SELECT(blocked_reason) ON TABLE public.execution TO chuggy_api`,
     `DROP INDEX public.journal_entry_release_ticket`,
     `CREATE INDEX journal_entry_release_ticket ON public.journal_entry USING btree (tenant, project, (
 CASE

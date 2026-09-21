@@ -15,9 +15,9 @@
 
 export const phaseRoster = [
   "Pending",
-  "Working",
-  "Evaluating",
-  "Finalizing",
+  "Work",
+  "Evaluation",
+  "Finalization",
   "Done",
   "Escalated",
   "Revoked",
@@ -25,20 +25,30 @@ export const phaseRoster = [
 export type TicketPhase = (typeof phaseRoster)[number];
 
 /**
- * Which wall a parked ticket hit, in the order the model declares them.
+ * Why a parked ticket is escalated, in the order the model declares them.
  * The model's `NoReason` is not among them: the machine holds a reason exactly
  * when a ticket is escalated, so the wire omits the field instead of naming it.
  */
 export const escalationReasons = [
-  "WorkFailed",
-  "ReworkBudgetExhausted",
+  "WorkFailureEscalated",
+  "EvaluationFailureEscalated",
+  "WorkExecutionUnavailableEscalated",
+] as const;
+export type EscalationReason = (typeof escalationReasons)[number];
+
+/**
+ * Which wall the fabric hit, restating the interpreter's `allBlockedReasons`.
+ * It is evidence and not an escalation reason — the machine has one reason for
+ * all five, and a ticket carries a wall only while that reason is its own.
+ */
+export const blockedReasons = [
   "ExecutionPolicyDenied",
   "TicketConfigIncompatible",
   "ExecutionProfileUnavailable",
   "RuntimeVersionUnsupported",
   "RequiredCapabilityUnavailable",
 ] as const;
-export type EscalationReason = (typeof escalationReasons)[number];
+export type BlockedReason = (typeof blockedReasons)[number];
 
 /**
  * Where an operator resume re-enters a parked ticket, in the order the model
@@ -48,10 +58,10 @@ export type EscalationReason = (typeof escalationReasons)[number];
  * it parks a ticket at having a resume.
  */
 export const resumePoints = [
-  "ResumeWorking",
-  "ResumeReworking",
-  "ResumeEvaluating",
-  "ResumeFinalizing",
+  "ResumeWork",
+  "ResumeRework",
+  "ResumeEvaluation",
+  "ResumeFinalization",
 ] as const;
 export type ResumePoint = (typeof resumePoints)[number];
 

@@ -48,6 +48,7 @@ import {
   parseTicketCommand,
   type Parsed,
 } from "../../src/interpreter/wire.ts";
+import { allBlockedReasons } from "../../src/interpreter/executionScheduler.ts";
 import { asOperationDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
 import {
   plainAuthoring,
@@ -295,6 +296,42 @@ test("the finalizer's own envelope is read only by the parse a writer reads its 
     assert.equal(refused.parsed, "Refused", JSON.stringify(broken));
     assert.ok(refused.parsed === "Refused");
     assert.match(refused.why, /finalization submission fields are invalid/);
+  }
+});
+
+/**
+ * The scheduler's own envelope, whose event the database builds out of
+ * `execution.blocked_reason`. That column keeps the five wall names as the
+ * evidence the collapsed reason stops carrying, so every block the boundary
+ * writes names one and the model describes none of them.
+ */
+test("a stored block names the wall it hit and is read as the reason the machine has", () => {
+  for (const wall of allBlockedReasons) {
+    const parsed = parseStoredTicketCommand(
+      JSON.stringify({
+        version: 1,
+        command: "Decide",
+        event: { type: "ExecutionBlocked", value: { ticket: 1, reason: wall } },
+      }),
+    );
+    assert.deepEqual(
+      parsed,
+      {
+        parsed: "Ok",
+        value: {
+          version: 1,
+          command: "Decide",
+          event: {
+            type: "ExecutionBlocked",
+            value: {
+              ticket: 1,
+              reason: "WorkExecutionUnavailableEscalated",
+            },
+          },
+        },
+      },
+      wall,
+    );
   }
 });
 
