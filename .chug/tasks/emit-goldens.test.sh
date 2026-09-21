@@ -41,8 +41,8 @@ one_row_manifest() { # <dir> [<extra-json>]
 	  "goldens": [
 	    {
 	      "name": "probe",
-	      "instance": "mc_chuggy_budgeted",
-	      "module": "mc_chuggy_budgeted",
+	      "instance": "mc_chuggy",
+	      "module": "mc_chuggy",
 	      "source": "model/mc/mc_chuggy.qnt",
 	      "step": "step",
 	      "seed": "0x1",
@@ -154,8 +154,8 @@ cat > "$WORK/aimed/manifest.json" <<'JSON'
   "goldens": [
     {
       "name": "unhittable",
-      "instance": "mc_chuggy_budgeted",
-      "module": "mc_chuggy_budgeted",
+      "instance": "mc_chuggy",
+      "module": "mc_chuggy",
       "source": "model/mc/mc_chuggy.qnt",
       "step": "step",
       "seed": "0x1",
