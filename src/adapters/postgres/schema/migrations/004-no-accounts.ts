@@ -14,9 +14,12 @@ import type { Migration } from "../shared.ts";
  * THE GUARD IS THE FIRST STATEMENT BECAUSE A NARROWED CHECK IS NOT A NO-OP
  * OVER STORED ROWS. `ADD CONSTRAINT` revalidates what the relation already
  * holds, settled rows as much as live ones, so an installation that ever
- * parked a ticket at a removed wall would otherwise fail partway down this
- * list; it refuses at the top instead, naming the relations that hold the
- * rows, and the whole migration rolls back with its ledger row.
+ * parked a ticket at a removed wall, or that stored a turn wider than the
+ * re-rendered mailbox bound, would otherwise fail partway down this list; it
+ * refuses at the top instead, naming the relations that hold the rows, and the
+ * whole migration rolls back with its ledger row. Every narrowed check below
+ * has its arm up there, which is why the refusal speaks of rows this migration
+ * no longer admits rather than of accounts.
  *
  * `journal_entry` IS INSIDE THE GUARD, WHICH IS WHERE THIS DRAWS ITS LINE
  * DIFFERENTLY FROM THE HANDOFF REMOVAL. A journal entry is not a record that
@@ -69,9 +72,13 @@ export const migration004: Migration = {
                               OR (CASE WHEN entry IS JSON OBJECT
                                        THEN entry::jsonb END)->'event'->'value'->>'reason'
                                  IN ('GasExhausted', 'FinalizationBudgetExhausted'))
+           UNION ALL
+           SELECT 'session_turn'
+            WHERE EXISTS (SELECT FROM public.session_turn
+                           WHERE length(input) > 17403663)
          ) AS held;
          IF holders IS NOT NULL THEN
-           RAISE EXCEPTION 'account rows remain in %', holders
+           RAISE EXCEPTION 'rows this migration no longer admits remain in %', holders
              USING ERRCODE = 'integrity_constraint_violation';
          END IF;
        END $$`,
