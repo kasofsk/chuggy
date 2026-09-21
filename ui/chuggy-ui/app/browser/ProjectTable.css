@@ -1,0 +1,13 @@
+/* The card's own number, dim and mono like its table counterpart: that pairing
+   is `.tabular .ticket-row-number` in Table.css, scoped to a table this list
+   is not, so the same optical size is stated again here, scoped to the card
+   instead. */
+
+@layer page {
+  .overview-card-title .ticket-row-number {
+    margin-inline-start: var(--space-2);
+    color: var(--ink-3);
+    font-family: var(--font-mono);
+    font-size: var(--mono-optical);
+  }
+}

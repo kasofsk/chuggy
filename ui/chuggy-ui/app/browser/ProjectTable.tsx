@@ -59,14 +59,16 @@ import { useNowMs } from "./Freshness.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
 import {
   ticketRowExecutionCell,
-  TicketActivityCell,
+  TicketActivity,
   TicketRowExecutionCell,
-  TicketTitleCell,
+  TicketTitleNumber,
+  TicketTitleWords,
 } from "./TicketCells.tsx";
 import { Button, ButtonLink } from "./ui/Button.tsx";
 import { Pill } from "./ui/Pill.tsx";
-import { Table } from "./ui/Table.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
+
+import "./ProjectTable.css";
 
 interface TicketRowsHeld {
   readonly state: PanelState<ProjectTicketRows>;
@@ -131,30 +133,29 @@ function useTicketRows(
   };
 }
 
-function TicketRow(props: {
+function TicketCard(props: {
   readonly row: ProjectTableRow;
   readonly partition: PartitionIdentity;
   readonly nowMs: number;
 }): ReactNode {
   const row = props.row;
   return (
-    <tr>
-      <TicketTitleCell
-        partition={props.partition}
-        ticket={row.ticket}
-        title={row.title}
-      />
-      <td>
+    <li className="overview-card flex flex-col gap-2 rounded-3 border border-edge bg-surface-1 p-3">
+      <div className="overview-card-title text-lg text-ink-1">
+        <TicketTitleWords
+          partition={props.partition}
+          ticket={row.ticket}
+          title={row.title}
+        />
+        <TicketTitleNumber partition={props.partition} ticket={row.ticket} />
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
         <Tooltip text={row.badge}>
           <span>
             <Pill tone={phaseTone(row.phase)}>{phaseLabel(row.phase)}</Pill>
           </span>
         </Tooltip>
-      </td>
-      <td>
         <TicketRowExecutionCell row={row} />
-      </td>
-      <td>
         {row.runsOn === undefined ? (
           <span className="text-ink-3">
             {ticketRowExecutionCell(row, undefined)}
@@ -168,40 +169,30 @@ function TicketRow(props: {
             </Tooltip>
           </Pill>
         )}
-      </td>
-      <TicketActivityCell activityAt={row.activityAt} nowMs={props.nowMs} />
-    </tr>
+        <span className="text-ink-3">
+          <TicketActivity activityAt={row.activityAt} nowMs={props.nowMs} />
+        </span>
+      </div>
+    </li>
   );
 }
 
-function TicketTable(props: {
-  readonly caption: string;
+function TicketCards(props: {
   readonly rows: readonly ProjectTableRow[];
   readonly partition: PartitionIdentity;
   readonly nowMs: number;
 }): ReactNode {
   return (
-    <Table caption={props.caption}>
-      <thead>
-        <tr>
-          <th scope="col">title</th>
-          <th scope="col">phase</th>
-          <th scope="col">execution</th>
-          <th scope="col">runs on</th>
-          <th scope="col">last activity</th>
-        </tr>
-      </thead>
-      <tbody>
-        {props.rows.map((row) => (
-          <TicketRow
-            key={row.ticket}
-            row={row}
-            partition={props.partition}
-            nowMs={props.nowMs}
-          />
-        ))}
-      </tbody>
-    </Table>
+    <ul className="flex flex-col gap-2">
+      {props.rows.map((row) => (
+        <TicketCard
+          key={row.ticket}
+          row={row}
+          partition={props.partition}
+          nowMs={props.nowMs}
+        />
+      ))}
+    </ul>
   );
 }
 
@@ -223,8 +214,7 @@ function TicketSectionPanel(props: {
         return drawn.length === 0 ? (
           <p className="panel-note">no ticket is here</p>
         ) : (
-          <TicketTable
-            caption={title}
+          <TicketCards
             rows={drawn}
             partition={props.partition}
             nowMs={props.nowMs}
