@@ -49,7 +49,6 @@
 
 import type { Entry, StoredEntry } from "../actor/journal.ts";
 import { genesis, storedJournalLegalOn } from "../actor/journal.ts";
-import { execDecisionEventAt } from "../actor/decisionSemantics.ts";
 import { ticketEquals } from "../actor/equality.ts";
 import {
   decisionEventEnabled,
@@ -209,7 +208,7 @@ export async function projectWriterLoad(
   const ticketVersions = new Map<number, number>();
   let graph: TicketGraph = genesis;
   for (const row of journal) {
-    const post = execDecisionEventAt(row.semantics, graph, row.entry).post;
+    const post = execDecisionEvent(graph, row.entry.event).post;
     for (const projection of projectionChanges(graph, post))
       ticketVersions.set(projection.ticket, row.entry.seq);
     graph = post;
@@ -523,10 +522,7 @@ function projectWriterUnreadableLanding(
     };
   return {
     landing: "Blocked",
-    event: executionBlockedEvent(
-      unreadable.ticket,
-      "WorkExecutionUnavailableEscalated",
-    ),
+    event: executionBlockedEvent(unreadable.ticket),
   };
 }
 

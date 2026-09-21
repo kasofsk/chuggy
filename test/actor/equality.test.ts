@@ -70,8 +70,7 @@ const ticketMutants: FieldMutants<Ticket> = {
   tasks: (t) => ({ ...t, tasks: new Set([workOutstanding(1)]) }),
   record: (t) => ({ ...t, record: [workTask(1, "Passed")] }),
   spawned: (t) => ({ ...t, spawned: t.spawned + 1 }),
-  resumeAt: (t) => ({ ...t, resumeAt: "ResumeWork" }),
-  reason: (t) => ({ ...t, reason: "WorkFailureEscalated" }),
+  escalation: (t) => ({ ...t, escalation: "WorkFailureEscalated" }),
   completions: (t) => ({ ...t, completions: t.completions + 1 }),
 };
 

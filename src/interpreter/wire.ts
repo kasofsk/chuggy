@@ -13,36 +13,19 @@
  * rather than thrown, because a caller that must handle it is a caller the
  * compiler can insist on.
  *
- * BYTES OLDER THAN THE CURRENT MODEL ARE LIFTED HERE, AT THE SEAM, AND NOWHERE
- * ELSE. A row written before decision semantics 3 recorded an `EvalReduce` as
- * the bare ticket, because the evaluation failure's disposition was not yet a
- * pick the journal carried; the model's union now describes only the pair, so
- * those bytes decode into nothing unless the missing half is supplied. It is
- * supplied from the row's own record, by the actor's rule rather than a copy of
- * it, so the decoded event says what the row was decided under. Only a row
- * declaring semantics below 3 is lifted: a semantics-3 row whose event is a
- * bare integer is not an old row, it is a corrupt one, and it is refused.
- *
- * A ROW WRITTEN BEFORE SEMANTICS 5 SPELLS THE VOCABULARY THE OLD WAY, and no
- * generated schema describes those words, so the rename is undone here too —
- * by the actor's own map, applied to every row, since no old spelling is also
- * a new one and a current row passes through it unchanged.
+ * NOTHING IS LIFTED HERE. Every stored row this seam can reach was written by
+ * this image — the store's reader refuses a row declaring any other decision
+ * semantics, and the deployment that collapsed the desk walls wiped its
+ * journal rather than carry a lift for rows nobody wanted — so bytes that do
+ * not decode are corrupt rather than old, and they are refused.
  */
 
 import {
   decodeDecisionEvent,
   decodeEntry,
-  decodeStepRecord,
   encodeDecisionEvent,
   encodeEntry as encodeEntryValue,
 } from "../generated/model-api.ts";
-import {
-  dispositionInRecord,
-  eventAtCurrentVocabulary,
-  rowAtCurrentVocabulary,
-  wordAtCurrentVocabulary,
-  type DecisionSemanticsVersion,
-} from "../actor/decisionSemantics.ts";
 import {
   finalizationOutcomeTags,
   type DecisionEvent,
@@ -77,60 +60,14 @@ function parseRefusal(error: unknown): string {
   return String(error);
 }
 
-/** Reads one wire row into an `Entry`, refusing anything the model does not describe. */
+/**
+ * Reads one wire row into an `Entry`, refusing anything the model does not
+ * describe. A row a store holds is read the same way: every one this image can
+ * reach was written by it, so there is nothing to lift on the way in.
+ */
 export function parseEntry(raw: unknown): Parsed<Entry> {
   try {
     return { parsed: "Ok", value: decodeEntry(raw) };
-  } catch (error: unknown) {
-    return { parsed: "Refused", why: parseRefusal(error) };
-  }
-}
-
-/** The fields of a wire row this module reads before the codec has seen it. */
-function rowFields(raw: unknown): Record<string, unknown> | undefined {
-  return typeof raw === "object" && raw !== null
-    ? (raw as Record<string, unknown>)
-    : undefined;
-}
-
-/**
- * The row with the disposition its record reports written onto its `EvalReduce`,
- * where the bytes predate the field. Anything else is passed through for the
- * codec to accept or refuse on its own terms.
- */
-function entryAtRecordedDisposition(raw: unknown): unknown {
-  const row = rowFields(raw);
-  const event = rowFields(row?.["event"]);
-  if (event?.["type"] !== "EvalReduce" || typeof event["value"] !== "number")
-    return raw;
-  return {
-    ...row,
-    event: {
-      type: "EvalReduce",
-      value: {
-        ticket: event["value"],
-        onFailure: dispositionInRecord(decodeStepRecord(row?.["rec"])),
-      },
-    },
-  };
-}
-
-/**
- * Reads one row as a store holds it: the semantics its own envelope declares,
- * and the bytes lifted to the shape this image's model describes.
- */
-export function parseStoredEntry(
-  raw: unknown,
-  semantics: DecisionSemanticsVersion,
-): Parsed<Entry> {
-  try {
-    const named = rowAtCurrentVocabulary(raw);
-    return {
-      parsed: "Ok",
-      value: decodeEntry(
-        semantics < 3 ? entryAtRecordedDisposition(named) : named,
-      ),
-    };
   } catch (error: unknown) {
     return { parsed: "Refused", why: parseRefusal(error) };
   }
@@ -148,17 +85,6 @@ export function encodeDecisionEventText(event: DecisionEvent): string {
  */
 export function parseDecisionEventText(text: string): Parsed<DecisionEvent> {
   return parsedDecisionEvent(() => JSON.parse(text));
-}
-
-/**
- * The same read over an event this deployment stored rather than one a client
- * sent: the spelling is lifted first, as a journal row's is, because the bytes
- * of a retained draft are the vocabulary of the day it was authored.
- */
-export function parseStoredDecisionEventText(
-  text: string,
-): Parsed<DecisionEvent> {
-  return parsedDecisionEvent(() => eventAtCurrentVocabulary(JSON.parse(text)));
 }
 
 function parsedDecisionEvent(read: () => unknown): Parsed<DecisionEvent> {
@@ -293,15 +219,13 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
 
 /**
  * Reads the fields of the finalizer's envelope, refusing one whose fences are
- * not whole. Its outcome is lifted first: a submission the finalizer wrote
- * before the rename and the writer reaches after it spells `FinalizationFailed`,
- * which 006 admits and this image no longer has a tag for.
+ * not whole.
  */
 function checkedFinalizationSubmission(
   record: Record<string, unknown>,
 ): FinalizationSubmission {
   const generation = record["requestGeneration"];
-  const outcome = wordAtCurrentVocabulary(record["outcome"]);
+  const outcome = record["outcome"];
   if (
     record["version"] !== 1 ||
     typeof record["request"] !== "string" ||
@@ -338,19 +262,16 @@ function claimsCompletion(
 
 /**
  * The scheduler boundary's stored envelope, refused by the ingress parser by
- * design and lifted here not because it may be old but because
- * `submit_task_completion` builds its `ExecutionBlocked` out of
- * `execution.blocked_reason`, which keeps the five wall names for good. So
- * every block the boundary writes names a wall the model does not describe,
- * and the actor's own map is what undoes it.
+ * design and read here: `submit_task_completion` builds its `ExecutionBlocked`
+ * from the ticket alone, and the wall name it used to carry is now the phase's
+ * own, so the bytes are the model's vocabulary like any other command's.
  */
 function storedSchedulerCompletion(
   record: Record<string, unknown>,
 ): SchedulerCompletion {
   if (record["version"] !== 1)
     throw new TypeError("stored completion version is not 1");
-  const lifted = rowAtCurrentVocabulary(record) as Record<string, unknown>;
-  const event = decodeDecisionEvent(lifted["event"]);
+  const event = decodeDecisionEvent(record["event"]);
   if (!isCompletionDecisionEvent(event))
     throw new TypeError("stored completion carries no completion event");
   return { version: 1, command: "Decide", event };

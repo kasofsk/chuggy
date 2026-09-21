@@ -113,11 +113,7 @@ test("a decision that was never enabled is refused, cleanly, at any tampered pay
     ),
   );
   assert.ok(
-    !decisionEventEnabled(
-      config,
-      genesis,
-      executionBlockedEvent(id(1), "WorkExecutionUnavailableEscalated"),
-    ),
+    !decisionEventEnabled(config, genesis, executionBlockedEvent(id(1))),
   );
   assert.ok(
     !decisionEventEnabled(
@@ -232,7 +228,7 @@ const toDone: readonly DecisionEvent[] = [
 ];
 const toEscalated: readonly DecisionEvent[] = [
   ...toWorking,
-  executionBlockedEvent(id(1), "WorkExecutionUnavailableEscalated"),
+  executionBlockedEvent(id(1)),
 ];
 const toDependent: readonly DecisionEvent[] = [
   ...toPending,
@@ -338,12 +334,7 @@ const refusals: readonly Refusal[] = [
   {
     conjunct: "ExecutionBlocked/taskPhaseIn",
     at: pending,
-    event: executionBlockedEvent(id(1), "WorkExecutionUnavailableEscalated"),
-  },
-  {
-    conjunct: "ExecutionBlocked/executionBlockedReasons",
-    at: working,
-    event: executionBlockedEvent(id(1), "WorkFailureEscalated"),
+    event: executionBlockedEvent(id(1)),
   },
   {
     conjunct: "ResumeTicket/retryablesIn",
@@ -413,13 +404,9 @@ const drives: readonly Drive[] = [
   {
     arm: "ExecutionBlocked",
     before: toWorking,
-    event: executionBlockedEvent(id(1), "WorkExecutionUnavailableEscalated"),
+    event: executionBlockedEvent(id(1)),
     at: working,
-    decided: decideExecutionBlocked(
-      working,
-      id(1),
-      "WorkExecutionUnavailableEscalated",
-    ),
+    decided: decideExecutionBlocked(working, id(1)),
   },
   {
     arm: "ResumeTicket",

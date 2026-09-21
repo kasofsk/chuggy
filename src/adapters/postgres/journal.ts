@@ -75,7 +75,7 @@ import type { RuntimeStoredJournalSource } from "../../interpreter/serviceRuntim
 import type { DispatchContractPin } from "../../interpreter/dispatchView.ts";
 import {
   encodeEntry,
-  parseStoredEntry,
+  parseEntry,
   type Parsed,
 } from "../../interpreter/wire.ts";
 import {
@@ -201,10 +201,7 @@ export async function postgresJournalDispatchContracts(
         throw new Error(
           `postgres journal: a dispatch contract entry declares decision semantics ${String(semantics)}, which this image has no deciders for`,
         );
-      const parsed = parseStoredEntry(
-        JSON.parse(stored.entry) as unknown,
-        semantics,
-      );
+      const parsed = parseEntry(JSON.parse(stored.entry) as unknown);
       if (parsed.parsed === "Refused")
         throw new Error(
           `postgres journal: dispatch contract entry is unreadable — ${parsed.why}`,
@@ -323,7 +320,7 @@ function postgresJournalStored(
     }
     let parsed: Parsed<Entry>;
     try {
-      parsed = parseStoredEntry(JSON.parse(row.entry) as unknown, semantics);
+      parsed = parseEntry(JSON.parse(row.entry) as unknown);
     } catch {
       return {
         parsed: "Refused",
