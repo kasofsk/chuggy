@@ -22,6 +22,11 @@
 /// Sum-type constructors share one namespace per module, which is what the
 /// prefixed names below are avoiding.
 module chuggy_ticket {
+  /// The task contract, copied verbatim into this tree (model/AGENTS.md says
+  /// why). It brings the task identity and the predicates over it; the
+  /// obligation, the definition and the terminals it also declares have no
+  /// caller here yet.
+  import task_contract.* from "./task-contract/task"
 
   // === Vocabulary ==========================================================
 
@@ -50,22 +55,20 @@ module chuggy_ticket {
   type Phase =
     Pending | Work | Evaluation | Finalization | Done | Escalated | Revoked
 
-  /// What a task IS for (task records are first-class — they carry the
-  /// anatomy):
-  ///   WorkTask   — a task of the Work phase's single task set (Work stays
-  ///                ONE task-set phase per kasofsk's anatomy note; the
-  ///                extracted vocabulary agrees
-  ///                task creation: "Job enters Work (new cycle): one work
-  ///                task", i.e. Work is not staged).
-  ///   EvaluationTask(s)
-  ///              — a task of eval stage s (0-based index into the ticket's
-  ///                authored program
-  ///                `stage:`, "default 0; non-negative; evaluators run in
-  ///                ascending stage order; within a stage they fan out in
-  ///                parallel"). The kind mark is what makes the CURRENT
-  ///                stage derivable from the live task set (evalStage
-  ///                below) instead of stored — standing rule 3.
-  type TaskKind = WorkTask | EvaluationTask(int)
+  /// WHAT A TASK IS FOR is the contract's `TaskIdentity`:
+  ///   WorkTask{ticket, cycle}
+  ///              — the one task a work cycle runs (Work stays ONE task-set
+  ///                phase per kasofsk's anatomy note; the extracted
+  ///                vocabulary agrees task creation: "Job enters Work (new
+  ///                cycle): one work task", i.e. Work is not staged).
+  ///   EvaluationTask{ticket, workCycle, stage, generation, evaluator}
+  ///              — one evaluator of one run of one stage, judging one work
+  ///                cycle ("evaluators run in ascending stage order; within
+  ///                a stage they fan out in parallel").
+  /// The contract's `stage` is a POSITIVE key and chuggy indexes its authored
+  /// program from 0, so an identity carries `stageIndex + 1` and evalStage
+  /// takes it back — which is what keeps the CURRENT stage derivable from the
+  /// live task set instead of stored (standing rule 3).
 
   /// A settled task's outcome — RESOLVED verdicts only; an outstanding task
   /// cannot carry one (see TaskState). Failed
@@ -89,20 +92,18 @@ module chuggy_ticket {
 
   type TaskState = Outstanding | Resolved(TaskOutcome)
 
-  /// A first-class task record: identity + kind +
-  /// lifecycle state. `id` is SEQUENTIAL WITHIN THE TICKET, 1-indexed, across
-  /// the ticket's entire history
-  /// sequential within job, 1-indexed`) — never reused across stages,
-  /// cycles, or operator retries. That uniqueness is load-bearing: it is
-  /// what lets a stale completion from an earlier stage/incarnation be
-  /// absorbed BY IDENTITY (domain.qnt decideTaskDone).
+  /// A first-class task record: the contract's identity + lifecycle state.
+  /// An identity is UNIQUE WITHIN THE TICKET across its entire history —
+  /// never reused across stages, cycles, or operator retries, because a work
+  /// cycle is numbered and each run of a stage within a cycle carries its own
+  /// generation. That uniqueness is load-bearing: it is what lets a stale
+  /// completion from an earlier stage/incarnation be absorbed BY IDENTITY
+  /// (domain.qnt decideTaskDone).
   /// Deliberately absent: `attempt` and the
   /// per-task retry budgets (below-cycle machinery, a standing non-goal),
-  /// `cycle` (derivable from the record's kind sequence — work groups
-  /// delimit cycles), timestamps/results (implementation accounting, not
-  /// machine state).
+  /// timestamps/results (implementation accounting, not machine state).
 
-  type Task = { id: int, kind: TaskKind, state: TaskState }
+  type Task = { identity: TaskIdentity, state: TaskState }
 
   /// A task-completion event's verdict (the event, as distinct from the
   /// stored resolution — duplicates of the event must be tolerated).
@@ -243,8 +244,7 @@ module chuggy_ticket {
     // validity condition — domain.qnt programsWellFormed.
     program: List[StageDefinition],
     // The LIVE task set of the current Work phase or Evaluation stage;
-    // empty in every other phase. Task ids are sequential within the ticket
-    // across its whole history (nextTaskId below).
+    // empty in every other phase.
     tasks: Set[Task],
     // THE RETAINED TASK RECORD — the ticket's chronological task log
     // — tasks form a chronological log, never referencing each other, and
@@ -254,10 +254,17 @@ module chuggy_ticket {
     // (domain.qnt recordMonotone). This is "task records are first-class:
     // they carry the anatomy" — outcomes are retained history
     // the golden traces can carry as provenance, not overwritten scratch
-    // state. Entry i has id firstTaskId + i (ids sequential, retirement in
-    // id order). No decision reads it: it is provenance, and its length is
+    // state. A set retires in its own evaluator order (taskOrdinal below).
+    // No decision reads it: it is provenance, and its length is
     // whatever the authors and operators who drove the ticket made it.
     record: List[Task],
+    // How many work cycles this ticket has STARTED — the counter a work
+    // identity's `cycle` is drawn from, and the `workCycle` every evaluation
+    // identity of that cycle names. Held on the record rather than recounted
+    // at each spawn site, and pinned to what the record shows by the
+    // identity-accounting invariant (domain.qnt idsAccounted), which is the
+    // same treatment `spawned` gets one field below.
+    workCyclesStarted: int,
     // GHOST (accounting only): how many tasks this ticket has EVER
     // spawned. Every spawn site bumps it by its fan-out (spawnOn below),
     // so the machine invariant `spawned == record.length + tasks.size`
@@ -319,75 +326,110 @@ module chuggy_ticket {
 
   // === Vocabulary helpers (task plumbing shared by machine and tests) ======
 
-  /// Task ids are 1-INDEXED and sequential within the ticket — the base is
-  /// named once so the id arithmetic below carries the convention rather
-  /// than a magic numeral.
-  pure val firstTaskId: int = 1
-
   /// How much of the live set has yet to resolve. A set with none
   /// outstanding is what makes a phase reducible (domain.qnt
   /// reducibleWorkIn/reducibleEvalIn).
   pure def outstandingCount(tasks: Set[Task]): int =
     tasks.filter(t => t.state == Outstanding).size()
 
-  /// The CURRENT eval stage, DERIVED from the live task set's kind marks
-  /// (standing rule 3: no stored stage index) — meaningful only while the
-  /// set is a stage's fan-out (Evaluation; tasksWellFormed pins the set
-  /// uniformly EvaluationTask(s), so the fold's pick order is irrelevant).
-  /// 0 on an empty or work set (the fold's base: no eval mark, no stage).
+  /// The CURRENT eval stage as a 0-BASED INDEX into the authored program,
+  /// DERIVED from the live set's identities (standing rule 3: no stored stage
+  /// index) — meaningful only while the set is a stage's fan-out (Evaluation;
+  /// tasksWellFormed pins the set to a single stage, so the fold's pick order
+  /// is irrelevant). The contract's stage is a positive key, so the index is
+  /// one less. 0 on an empty or work set (the fold's base: no eval identity,
+  /// no stage).
   pure def evalStage(tasks: Set[Task]): int =
     tasks.fold(0, (acc, t) =>
-      match t.kind { | WorkTask => acc | EvaluationTask(s) => s })
+      match t.identity {
+        | WorkTask(_) => acc
+        | EvaluationTask(e) => e.stage - 1
+      })
 
-  /// A fresh parallel task set of kind k: n tasks, all outstanding to the
-  /// fabric in one step (see TaskState), ids start..start+n-1 — the
-  /// caller passes nextTaskId so identity stays sequential within the ticket
-  /// across the whole history.
-  pure def spawnTasks(k: TaskKind, start: int, n: int): Set[Task] =
-    start.to(start + n - 1).map(i =>
-      { id: i, kind: k, state: Outstanding })
+  /// THE TWO IDENTITY CONSTRUCTORS, named once so everything that must NAME
+  /// a task — a spawn site, a witness driver, a replayed journal row — builds
+  /// one the way the machine does. `stage` is chuggy's 0-BASED index into the
+  /// authored program; the contract's key is one more (evalStage takes it
+  /// back).
+  pure def workTaskOf(ticket: int, cycle: int): TaskIdentity =
+    WorkTask({ ticket: ticket, cycle: cycle })
 
-  /// The next task id this ticket would spawn: every id ever issued is either
-  pure def nextTaskId(ticket: Ticket): int =
-    firstTaskId + ticket.record.length() + ticket.tasks.size()
+  pure def evaluationTaskOf(ticket: int, workCycle: int, stage: int,
+      generation: int, evaluator: int): TaskIdentity =
+    EvaluationTask({ ticket: ticket, workCycle: workCycle, stage: stage + 1,
+      generation: generation, evaluator: evaluator })
 
-  /// THE spawn site: install a fresh fan-out of kind k on the ticket —
-  /// ids continue the ticket's sequential history — and bump the ghost
-  /// `spawned` counter by the same n, which is what keeps the idsAccounted
-  /// equality (domain.qnt) checkable. Callers guarantee the previous set
-  /// is already retired (tasks empty), which every spawn site satisfies:
-  /// dispatch/wrapup-rework/resumeTicket spawn from task-free phases, and the
-  /// reduces spawn on the retireLive'd ticket.
-  pure def spawnOn(ticket: Ticket, k: TaskKind, n: int): Ticket =
-    { ...ticket, tasks: spawnTasks(k, nextTaskId(ticket), n), spawned: ticket.spawned + n }
+  /// A task's place in its OWN set, and so the order the set retires in: an
+  /// evaluation stage runs evaluators 1..fanout and a work cycle is one task.
+  /// Named because the record is a list and a set carries no order to inherit.
+  pure def taskOrdinal(identity: TaskIdentity): int =
+    match identity {
+      | WorkTask(_) => 1
+      | EvaluationTask(e) => e.evaluator
+    }
+
+  /// THE spawn site: install a fresh fan-out under the identities the caller
+  /// names, all outstanding to the fabric in one step (see TaskState), and
+  /// bump the ghost `spawned` counter by the same count, which is what keeps
+  /// the idsAccounted equality (domain.qnt) checkable. Callers guarantee the
+  /// previous set is already retired (tasks empty), which every spawn site
+  /// satisfies: dispatch/wrapup-rework/resumeTicket spawn from task-free
+  /// phases, and the reduces spawn on the retireLive'd ticket.
+  pure def spawnOn(ticket: Ticket, identities: Set[TaskIdentity]): Ticket =
+    { ...ticket,
+      tasks: identities.map(i => { identity: i, state: Outstanding }),
+      spawned: ticket.spawned + identities.size() }
 
   /// THE WORK SPAWN: a work cycle is one task, always — work is not staged
   /// and carries no authored width, so the only fan-out in this machine is
   /// an evaluation stage's. Named once here because every work spawn site
-  /// (dispatch, both reworks, the work resume) is this call.
-  pure def spawnWork(ticket: Ticket): Ticket =
-    spawnOn(ticket, WorkTask, 1)
+  /// (dispatch, both reworks, the work resume) is this call, and starting the
+  /// cycle is the only thing that moves the counter its identity is drawn
+  /// from.
+  pure def spawnWork(j: int, ticket: Ticket): Ticket =
+    val cycle = ticket.workCyclesStarted + 1
+    { ...spawnOn(ticket, Set(workTaskOf(j, cycle))),
+      workCyclesStarted: cycle }
 
-  /// Retire the live task set into the retained record, in id order
-  /// (tasksWellFormed keeps live ids contiguous above the record, so the
-  /// appended run keeps record entry i at id firstTaskId + i). A task
+  /// WHICH RUN OF STAGE s THIS IS within the current work cycle. Every stage
+  /// runs once per cycle but one: an evaluation park resumes at the lowest
+  /// stage (domain.qnt decideResumeTicket), which re-enters a stage the cycle
+  /// may already have spawned, and the generation is what keeps the second
+  /// run's identities distinct from the first's. Derived from the record
+  /// rather than stored, counted at evaluator 1 because every run spawns
+  /// exactly one of those.
+  pure def stageGeneration(ticket: Ticket, s: int): int =
+    1 + ticket.record.foldl(0, (n, t) =>
+      match t.identity {
+        | WorkTask(_) => n
+        | EvaluationTask(e) =>
+          if (e.workCycle == ticket.workCyclesStarted and e.stage == s + 1
+              and e.evaluator == 1) n + 1 else n
+      })
+
+  /// THE EVALUATION SPAWN: one task per evaluator of stage s, fanned out in
+  /// parallel, every one of them naming the work cycle it judges.
+  pure def spawnEvalStage(j: int, ticket: Ticket, s: int, fan: int): Ticket =
+    val generation = stageGeneration(ticket, s)
+    spawnOn(ticket, 1.to(fan).map(e =>
+      evaluationTaskOf(j, ticket.workCyclesStarted, s, generation, e)))
+
+  /// Retire the live task set into the retained record, in the set's own
+  /// evaluator order (taskOrdinal). A task
   /// still OUTSTANDING at retirement is force-closed as Resolved(Cancelled)
   /// — only revoke retires mid-flight sets; every reduce/escalation
   /// retirement is of a
   /// fully-resolved set, so the Cancelled arm never fires there. A
   pure def retireLive(ticket: Ticket): Ticket =
-    val start = firstTaskId + ticket.record.length()
     { ...ticket,
       tasks: Set(),
-      record: range(start, start + ticket.tasks.size()).foldl(ticket.record, (r, i) =>
-        r.append(ticket.tasks.fold(
-          { id: i, kind: WorkTask, state: Resolved(Cancelled) },
-          (acc, t) =>
-          if (t.id == i)
-            { ...t, state: if (t.state == Outstanding) Resolved(Cancelled) else t.state }
-          else acc))) }
+      record: range(1, ticket.tasks.size() + 1).foldl(ticket.record, (r, k) =>
+        ticket.tasks.filter(t => taskOrdinal(t.identity) == k).fold(r, (acc, t) =>
+          acc.append({ ...t,
+            state: if (t.state == Outstanding) Resolved(Cancelled) else t.state }))) }
 
-  /// First write wins: resolve task `tid` if it is still outstanding; the
+  /// First write wins: resolve the task `task` names if it is still
+  /// outstanding; the
   /// caller (decideTaskDone) treats an already-resolved task as a duplicate
   /// delivery and changes nothing — the idempotence an at-least-once
   /// fabric demands. The explicit
@@ -397,9 +439,9 @@ module chuggy_ticket {
   /// the verdict, and first-write-wins covers BOTH — a duplicate delivery
   /// with a different citation changes nothing, and a carried task
   /// (born settled, no outstanding match) absorbs deliveries the same way.
-  pure def resolveTask(tasks: Set[Task], tid: int, out: TaskOutcome): Set[Task] =
+  pure def resolveTask(tasks: Set[Task], task: TaskIdentity, out: TaskOutcome): Set[Task] =
     tasks.map(t =>
-      if (t.id == tid and t.state == Outstanding) { ...t, state: Resolved(out) }
+      if (t.identity == task and t.state == Outstanding) { ...t, state: Resolved(out) }
       else t)
 
   /// What counts as a PASS to the stage verdict: a verdict earned this

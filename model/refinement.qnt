@@ -244,6 +244,7 @@
 ///     chuggy_domain, this layer's here (they read journal/applied/
 ///     worldEffects/orphans, declared here).
 module chuggy_refinement {
+  import task_contract.* from "./task-contract/task"
   import chuggy_ticket.* from "./ticket"
 
   /// The embedded domain machine — the actor's in-memory state IS this
@@ -273,7 +274,8 @@ module chuggy_refinement {
       CreateTicket({ ticket: int, deps: Set[int], prog: List[StageDefinition] })
     | Revoke(int)
     | Dispatch(int)
-    | TaskDone({ ticket: int, tid: int, verdict: Verdict, result: TaskResultRef })
+    | TaskDone({ ticket: int, task: TaskIdentity, verdict: Verdict,
+        result: TaskResultRef })
     | WorkReduce(int)
     | EvalReduce({ ticket: int, onFailure: EvaluationFailureDisposition })
     | FinalizationResult({ ticket: int, out: FinalizationOutcome })
@@ -307,7 +309,7 @@ module chuggy_refinement {
     | CreateTicket(a) => decideReleaseTicket(c, a.ticket, a.deps, a.prog)
     | Revoke(j) => decideRevoke(c, j)
     | Dispatch(j) => decideDispatch(c, j)
-    | TaskDone(a) => decideTaskDone(c, a.ticket, a.tid, a.verdict)
+    | TaskDone(a) => decideTaskDone(c, a.ticket, a.task, a.verdict)
     | WorkReduce(j) => decideWorkReduce(c, j)
     | EvalReduce(a) => decideEvalStageReduce(c, a.ticket, a.onFailure)
     | FinalizationResult(a) => decideFinalizationResult(c, a.ticket, a.out)
@@ -337,7 +339,7 @@ module chuggy_refinement {
         a.result.digest >= 1,
         a.result.schema >= 1,
         c.tickets.get(a.ticket).tasks.exists(t =>
-          t.id == a.tid and t.state == Outstanding)
+          t.identity == a.task and t.state == Outstanding)
       }
     | WorkReduce(j) => reducibleWorkIn(c).contains(j)
     | EvalReduce(a) => and {
@@ -562,10 +564,11 @@ module chuggy_refinement {
   action actorTaskDone = all {
     taskPhaseTickets.size() > 0,
     nondet j = taskPhaseTickets.oneOf()
-    nondet tid = graph.tickets.get(j).tasks.filter(t => t.state == Outstanding).map(t => t.id).oneOf()
+    nondet task = graph.tickets.get(j).tasks.filter(t => t.state == Outstanding).map(t => t.identity).oneOf()
     nondet v = Set(Pass, Fail).oneOf()
-    journalStep(TaskDone({ ticket: j, tid: tid, verdict: v,
-      result: { manifest: tid, digest: tid, schema: 1 } }))
+    journalStep(TaskDone({ ticket: j, task: task, verdict: v,
+      result: { manifest: taskOrdinal(task), digest: taskOrdinal(task),
+        schema: 1 } }))
   }
   action actorWorkReduce = all {
     reducibleWork.size() > 0,
