@@ -13,7 +13,7 @@
  * module exists to prevent.
  *
  * EVERY CORRECTION IS READ OFF THE ROW, which is why one takes the row and not
- * just its event. There are three:
+ * just its event. There are four:
  *   - at 1, a row whose record parks a ticket at the evaluation wall parked it
  *     at the eval resume, because that wall had no resume of its own yet;
  *   - at 1 and 2, a row's EvalReduce carried no disposition, and the one it was
@@ -21,15 +21,12 @@
  *     escalate edge and anything else is the rework edge;
  *   - at 1 and 2, a row whose record names a wall this machine no longer has
  *     cannot be re-derived at all, and `storedJournalLegalOn` refuses it rather
- *     than replaying it into a state the fleet was never in.
- *
- * A REPLAYED STATE IS NOT A STATE THE CURRENT DOMAIN INVARIANTS DESCRIBE. The
- * first semantics grants the rework wall an eval resume, while `deskConsistent`
- * in `src/domain/invariants.ts` holds that a wall's resume is the one its own
- * decider stamps — so a correct replay of such a history reaches a state the
- * current bundle rejects. The bundle describes the machine the model proves;
- * history is not required to satisfy it, and nothing in `src/` evaluates it
- * over a replayed core.
+ *     than replaying it into a state the fleet was never in;
+ *   - at 2, a rework wall's resume gets no correction of its own, so replay
+ *     hands it to the current decider — which stamps every rework wall
+ *     `ResumeReworking`, there being no budget left to consult. A row parked
+ *     with no rework budget, decided when that wall answered `NoResume`,
+ *     replays retryable though the machine that wrote it refused a retry.
  */
 
 import type { Config } from "../domain/config.ts";

@@ -5,8 +5,8 @@
  * both of these violated, and the violation is what makes the invariants beside
  * them mean something: that the cascade really parks dependents on reachable
  * states rather than leaving `cascadeSafety` vacuous, and that multi-stage
- * programs really run stage by stage rather than leaving the stage digit
- * unexercised.
+ * programs really run stage by stage rather than leaving `eval-stage-passed`
+ * unfired and the interpreter's advance edge untested.
  *
  * EVERY REFUTATION BELOW COMES OUT OF A DECIDER rather than out of a
  * hand-written record, because a record nobody's machine produced would refute
@@ -96,7 +96,7 @@ test("a revoke parks its pre-flight dependents, which is what keeps cascadeSafet
   );
 });
 
-test("an eval stage advances, which is what keeps the stage digit exercised", () => {
+test("an eval stage advances, which is what keeps eval-stage-passed exercised", () => {
   assert.equal(advance.rec.label, "eval-stage-passed");
   assert.ok(!stageAdvanceNever(config, advance));
   assert.ok(stageAdvanceNever(config, cascade));

@@ -10,8 +10,10 @@
  * than assumed: `asSafeInteger` refuses anything outside the range JavaScript
  * represents exactly, and every value entering the domain from a trace or a
  * boundary passes through it. The alternative — `bigint` throughout — buys
- * exactness the accounts do not need (`accountsBounded` bounds every digit by
- * a declared constant) and pays for it at every arithmetic site.
+ * exactness this domain does not need: every id is drawn from a universe a
+ * `Config` constant bounds (`nTickets`, `nTasks`, `maxStages` in
+ * `src/domain/config.ts`), small enough that `number` already represents it
+ * exactly — and pays for it at every arithmetic site.
  */
 
 declare const ticketIdBrand: unique symbol;
