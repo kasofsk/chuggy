@@ -48,8 +48,7 @@ module chuggy_refinement_unit_test {
   run journalRefusesDisabledEventsTest = assert(and {
     not(decisionEventEnabled(genesis, Dispatch(2))),
     not(decisionEventEnabled(genesis, TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }))),
-    not(decisionEventEnabled(genesis, ExecutionBlocked({
-      ticket: 2, reason: WorkExecutionUnavailableEscalated }))),
+    not(decisionEventEnabled(genesis, ExecutionBlocked({ ticket: 2 }))),
     not(decisionEventEnabled(genesis, FinalizationResult({ ticket: 2, out: FinalizationSucceeded }))),
     not(decisionEventEnabled(genesis, ResumeTicket(2)))
   })
@@ -118,11 +117,10 @@ module chuggy_refinement_witness_test {
     rinit
       .then(stepEmit(release(2), "ticket-released"))
       .then(stepEmit(Dispatch(2), "dispatch"))
-      .then(journalStep(ExecutionBlocked({
-        ticket: 2, reason: WorkExecutionUnavailableEscalated })))
+      .then(journalStep(ExecutionBlocked({ ticket: 2 })))
       .expect(and {
         memGraph.tickets.get(2).phase == Escalated,
-        memGraph.tickets.get(2).reason == WorkExecutionUnavailableEscalated,
+        memGraph.tickets.get(2).escalation == WorkExecutionUnavailableEscalated,
         memGraph.tickets.get(2).tasks.forall(t => t.state != Outstanding),
         allDomainInvariants, refinementInvariants
       })
@@ -136,7 +134,7 @@ module chuggy_refinement_witness_test {
       .then(stepEmit(ResumeTicket(2), "ticket-resumed"))
       .expect(and {
         memGraph.tickets.get(2).phase == Work,
-        memGraph.tickets.get(2).reason == NoReason,
+        memGraph.tickets.get(2).escalation == NoEscalation,
         journalSpawns(2) == 2,
         worldSpawns(2) == 2,
         allDomainInvariants, refinementInvariants

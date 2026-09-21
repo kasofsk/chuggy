@@ -278,7 +278,7 @@ module chuggy_refinement {
     | WorkReduce(int)
     | EvalReduce({ ticket: int, onFailure: EvaluationFailureDisposition })
     | FinalizationResult({ ticket: int, out: FinalizationOutcome })
-    | ExecutionBlocked({ ticket: int, reason: Reason })
+    | ExecutionBlocked({ ticket: int })
     | ResumeTicket(int)
 
   /// One journal row: monotone dense seq (entry i carries seq i+1 —
@@ -313,7 +313,7 @@ module chuggy_refinement {
     | WorkReduce(j) => decideWorkReduce(c, j)
     | EvalReduce(a) => decideEvalStageReduce(c, a.ticket, a.onFailure)
     | FinalizationResult(a) => decideFinalizationResult(c, a.ticket, a.out)
-    | ExecutionBlocked(a) => decideExecutionBlocked(c, a.ticket, a.reason)
+    | ExecutionBlocked(a) => decideExecutionBlocked(c, a.ticket)
     | ResumeTicket(j) => decideResumeTicket(c, j)
   }
 
@@ -350,10 +350,7 @@ module chuggy_refinement {
     | FinalizationResult(a) => c.tickets.keys().contains(a.ticket) and
         finalizationOutcomes.contains(a.out) and
         finalizationOutcomeEnabled(c, a.ticket, a.out)
-    | ExecutionBlocked(a) => and {
-        taskPhaseIn(c).contains(a.ticket),
-        a.reason == WorkExecutionUnavailableEscalated
-      }
+    | ExecutionBlocked(a) => taskPhaseIn(c).contains(a.ticket)
     | ResumeTicket(j) => retryablesIn(c).contains(j)
   }
 

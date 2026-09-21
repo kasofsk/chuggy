@@ -19,7 +19,7 @@ module chuggy_api {
   type ApiStageDefinition = StageDefinition
   type ApiEvaluationFailureDisposition = EvaluationFailureDisposition
   type ApiResume = Resume
-  type ApiReason = Reason
+  type ApiEscalation = Escalation
   type ApiFinalizationOutcome = FinalizationOutcome
   type ApiArtifactMark = ArtifactMark
   type ApiTicket = Ticket

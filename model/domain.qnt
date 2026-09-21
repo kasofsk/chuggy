@@ -128,8 +128,7 @@ module chuggy_domain {
     tasks: Set(),
     record: [],
     spawned: 0,
-    resumeAt: NoResume,
-    reason: NoReason,
+    escalation: NoEscalation,
     completions: 0
   }
 
@@ -201,7 +200,7 @@ module chuggy_domain {
   /// into the record (still-outstanding tasks force-closed as Cancelled;
   /// the record itself is KEPT: provenance survives the author's
   /// settlement, "Revoked runs nothing" ≠ "Revoked remembers nothing") —
-  /// and reason/resumeAt cleared: Revoked opens NO human task
+  /// and the escalation cleared: Revoked opens NO human task
   /// (hasOpenHumanTask excludes it; revocation is the author's settled
   /// choice, like Done).
   ///
@@ -222,7 +221,7 @@ module chuggy_domain {
         effects: ["CancelTicketWork"]},
       post: withTicket(c, j,
         { ...retireLive(c.tickets.get(j)), phase: Revoked,
-          resumeAt: NoResume, reason: NoReason }) }
+          escalation: NoEscalation }) }
 
   // --- Pure guard predicates ------
 
@@ -232,15 +231,12 @@ module chuggy_domain {
       c.tickets.get(j).phase != Revoked and
       c.tickets.get(j).phase != Finalization
 
-  /// May the operator retry this ticket's open human action? The ticket is
-  /// parked and its wall stamped a resume — every resume is free, so
-  /// nothing else is asked. Every wall this machine parks on stamps one
-  /// (deskConsistent), so the second conjunct holds the guard to the stamp
-  /// rather than to the phase alone.
-  pure def retryableIn(c: TicketGraph, j: int): bool = and {
-    c.tickets.get(j).phase == Escalated,
-    c.tickets.get(j).resumeAt != NoResume
-  }
+  /// May the operator retry this ticket's open human action? Exactly while
+  /// the desk holds a task for it — every resume is free, so nothing else is
+  /// asked, and every wall the sum can hold resumes somewhere (resumeOf is
+  /// total), so there is no stamp left to check against the phase.
+  pure def retryableIn(c: TicketGraph, j: int): bool =
+    hasOpenHumanTask(c.tickets.get(j))
 
   /// WHAT A TICKET WAITS ON before it may run — the single definition, read
   /// by the readiness check (depsDoneIn) and the cross-ticket artifact
@@ -334,17 +330,17 @@ module chuggy_domain {
     firstTaskId.to(nextTaskId(c.tickets.get(j)) - 1)
 
   /// Park a ticket on the human desk, naming the wall (the termination
-  /// requirement commits the terminal, not the names) and where Retry
-  /// resumes. The open desk task
+  /// requirement commits the terminal, not the names); where Retry resumes
+  /// is the wall's own (resumeOf). The open desk task
   /// is DERIVED from
   /// the phase (hasOpenHumanTask, standing rule 3); "OpenHumanTask" is its
   /// trace-visible effect. This is THE park. The live task set is retired
   /// into the retained record rather than dropped; execution-blocked tasks
   /// are recorded as Cancelled.
   pure def escalate(
-      c: TicketGraph, j: int, at: Resume, why: Reason, label: str): Decision =
+      c: TicketGraph, j: int, wall: Escalation, label: str): Decision =
     move(
-      withTicket(c, j, { ...retireLive(c.tickets.get(j)), resumeAt: at, reason: why }),
+      withTicket(c, j, { ...retireLive(c.tickets.get(j)), escalation: wall }),
       j, Escalated, label, ["OpenHumanTask"])
 
   /// Ready -> Work: launch a cycle for the ticket THE SELECTOR PROPOSED.
@@ -416,7 +412,7 @@ module chuggy_domain {
           { ...spawnOn(retired, EvaluationTask(0), fan), artifact: ProducedArtifact(retired.spawned) }),
         j, Evaluation, "work-passed", ["SpawnEvalTasks"])
     else
-      escalate(c, j, ResumeWork, WorkFailureEscalated,
+      escalate(c, j, WorkFailureEscalated,
         "ticket-escalated work_failure_escalated")
 
   /// THE EVAL-PROGRAM INTERPRETER (the machinery; the program is
@@ -472,7 +468,7 @@ module chuggy_domain {
             withTicket(c, j, spawnOn(retired, WorkTask, retired.workFanout)),
             j, Work, "rework-started eval_failure", ["SpawnWorkTasks"])
         | EscalateEvaluationFailure =>
-          escalate(c, j, ResumeRework, EvaluationFailureEscalated,
+          escalate(c, j, EvaluationFailureEscalated,
             "ticket-escalated evaluation_failure_escalated")
       }
 
@@ -532,26 +528,33 @@ module chuggy_domain {
       | FinalizationSucceeded => completeTicket(c, j)
       | FinalizationNeedsWork => finalizerFailure(c, j)
       | FinalizationResultUnavailable =>
-        escalate(c, j, ResumeFinalization, FinalizationUnavailableEscalated,
+        escalate(c, j, FinalizationUnavailableEscalated,
           "ticket-escalated finalization_unavailable_escalated")
     }
 
   /// Infrastructure cannot execute the current logical task set. Retire its
-  /// outstanding tasks as Cancelled, preserve the source phase as the resume
-  /// target, and open the native human action without claiming failed work.
-  /// The source phase is the honest target because an interruption is NOT a
-  /// verdict: unlike the rework wall, an Evaluation park here still has an
-  /// intact judgement to make, so it re-enters evaluation.
-  pure def decideExecutionBlocked(c: TicketGraph, j: int, why: Reason): Decision =
-    val at = match c.tickets.get(j).phase {
-      | Work => ResumeWork
-      | Evaluation => ResumeEvaluation
-      | _ => NoResume
+  /// outstanding tasks as Cancelled, name the wall of the phase it
+  /// interrupted, and open the native human action without claiming failed
+  /// work. WHICH refusal it was is evidence an adapter records beside the
+  /// execution; the phase is the only part of it a decider reads.
+  ///
+  /// The two phases get two walls because they resume differently, and an
+  /// interruption is NOT a verdict: unlike the rework wall, an Evaluation
+  /// park here still has an intact judgement to make, so it re-enters
+  /// evaluation. The caller draws from taskPhaseIn, so Work and Evaluation
+  /// are the whole of the domain here.
+  pure def decideExecutionBlocked(c: TicketGraph, j: int): Decision =
+    match c.tickets.get(j).phase {
+      | Evaluation =>
+        escalate(c, j, EvaluationBlockedEscalated,
+          "ticket-escalated evaluation_blocked_escalated")
+      | _ =>
+        escalate(c, j, WorkExecutionUnavailableEscalated,
+          "ticket-escalated work_execution_unavailable_escalated")
     }
-    escalate(c, j, at, why, "ticket-escalated work_execution_unavailable_escalated")
 
-  /// Operator Retry on a parked ticket: resume at the point the wall
-  /// stamped. Resuming is free — a resume is a human act, and this machine
+  /// Operator Retry on a parked ticket: resume at the point its wall implies
+  /// (resumeOf). Resuming is free — a resume is a human act, and this machine
   /// bounds no human. This is THE operator resume — one decider, a flavor
   /// per resume point, one trace label ("ticket-resumed"; the flavor is
   /// visible in the transition's target):
@@ -566,11 +569,11 @@ module chuggy_domain {
   ///   ResumeFinalization: request a fresh finalization attempt.
   pure def decideResumeTicket(c: TicketGraph, j: int): Decision =
     val jb = c.tickets.get(j)
-    val resumed = { ...jb, reason: NoReason, resumeAt: NoResume }
+    val resumed = { ...jb, escalation: NoEscalation }
     val workResume =
       move(withTicket(c, j, spawnOn(resumed, WorkTask, resumed.workFanout)),
         j, Work, "ticket-resumed", ["SpawnWorkTasks"])
-    match jb.resumeAt {
+    match resumeOf(jb.escalation) {
       | ResumeWork => workResume
       | ResumeRework => workResume
       | ResumeEvaluation =>
@@ -579,8 +582,9 @@ module chuggy_domain {
       | ResumeFinalization =>
         move(withTicket(c, j, resumed), j, Finalization, "ticket-resumed", ["RunFinalizer"])
       | NoResume =>
-        // Unreachable: retryableIn refuses a ticket with no stamped resume,
-        // and deskConsistent holds that an unparked ticket has none.
+        // Unreachable: retryableIn refuses an unparked ticket, and
+        // deskConsistent holds that an unparked ticket is at NoEscalation,
+        // which is the only escalation resumeOf answers NoResume for.
         { rec: { label: "ticket-resume-refused", transitions: [], effects: []}, post: c }
     }
 
@@ -818,7 +822,7 @@ module chuggy_domain {
   action executionBlocked = all {
     taskPhaseTickets.size() > 0,
     nondet j = taskPhaseTickets.oneOf()
-    apply(decideExecutionBlocked(graph, j, WorkExecutionUnavailableEscalated))
+    apply(decideExecutionBlocked(graph, j))
   }
 
   /// One resume action for every retryable park.
@@ -903,19 +907,17 @@ module chuggy_domain {
     lastStep.transitions.foldl(true, (b, t) =>
       b and t.from != Done and t.from != Revoked)
 
-  /// The human desk is consistent: a named wall iff parked, and a resume
-  /// point iff parked. Parked just IS Escalated, and every wall this
-  /// machine parks on stamps a resume the desk can offer, so a desk task
-  /// never promises a continuation the deciders would refuse. (The
-  /// open-task flag needs no conjunct — it is DERIVED from the phase,
-  /// standing rule 3.) note: Revoked passes both iffs with
-  /// NoReason/NoResume — "Revoked runs nothing" is this invariant plus
+  /// The human desk is consistent: a named wall iff parked. ONE
+  /// equivalence now, where there were two: the resume point is derived
+  /// (resumeOf, total on the sum), so a wall the desk can read is a
+  /// continuation the deciders will take, and there is no second field left
+  /// to disagree with the first. (The open-task flag needs no conjunct
+  /// either — it is DERIVED from the phase, standing rule 3.) note: Revoked
+  /// passes at NoEscalation — "Revoked runs nothing" is this invariant plus
   /// tasksWellFormed doing their existing tickets over the phase.
-  val deskConsistent: bool = liveTickets.forall(j => and {
-    (tickets.get(j).phase == Escalated) iff (tickets.get(j).reason != NoReason),
-    (tickets.get(j).resumeAt != NoResume) iff
-      (tickets.get(j).phase == Escalated)
-  })
+  val deskConsistent: bool = liveTickets.forall(j =>
+    (tickets.get(j).phase == Escalated) iff
+      (tickets.get(j).escalation != NoEscalation))
 
   /// The LIVE task set is exactly the current phase's anatomy (this is
   /// also the STAGE-INDEX SANITY invariant):
