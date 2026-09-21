@@ -16,7 +16,7 @@ import {
   spawnTasks,
   tasksInIdOrder,
   taskPassed,
-  workCyclesStarted,
+  evaluationFailureReworksStarted,
   tkEval,
   tkWork,
   tsResolved,
@@ -45,6 +45,8 @@ import {
   type Phase,
   type Task,
   type TaskKind,
+  type TaskOutcome,
+  type TaskState,
   type Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
 
@@ -220,36 +222,101 @@ test("an identifier outside the exactly representable range is refused, not trun
   assert.throws(() => asTaskId(0), /below the first id/);
 });
 
-/** A ticket's history as the cycle count reads it: the record, then what is still live. */
-function cyclesOver(kinds: readonly TaskKind[], live: number): number {
-  const tasks = kinds.map((kind, at) => ({
+/** A ticket's history as the rework count reads it: the record, then what is still live. */
+function reworksOver(
+  history: readonly (readonly [TaskKind, TaskState])[],
+  live: number,
+): number {
+  const tasks = history.map(([kind, state], at) => ({
     id: asTaskId(at + 1),
     kind,
-    state: tsOutstanding,
+    state,
   }));
-  return workCyclesStarted(
+  return evaluationFailureReworksStarted(
     tasks.slice(0, tasks.length - live),
     new Set(tasks.slice(tasks.length - live)),
   );
 }
 
-test("a work cycle is a run of work tasks, and a rework starts another", () => {
-  const work = tkWork;
-  const evaluation = tkEval(0);
-  assert.equal(cyclesOver([], 0), 0, "nothing dispatched has started none");
-  assert.equal(cyclesOver([work], 1), 1, "the first fan-out is one cycle");
-  assert.equal(cyclesOver([work, work], 2), 1, "a fan-out is not two cycles");
-  assert.equal(cyclesOver([work, evaluation], 1), 1, "evaluating is not one");
+const working: readonly [TaskKind, TaskState] = [tkWork, tsOutstanding];
+
+/** An evaluation task of stage zero carrying the outcome it resolved to. */
+function evaluated(outcome: TaskOutcome): readonly [TaskKind, TaskState] {
+  return [tkEval(0), tsResolved(outcome)];
+}
+
+test("a rework is a work run that follows an evaluation run some task failed", () => {
+  const failed = evaluated("Failed");
+  assert.equal(reworksOver([], 0), 0, "nothing dispatched has been reworked");
+  assert.equal(reworksOver([working], 1), 0, "the first fan-out is no rework");
   assert.equal(
-    cyclesOver([work, evaluation, work], 1),
-    2,
-    "the rework is the second",
+    reworksOver([working, working], 2),
+    0,
+    "a fan-out is one run, not two",
   );
-  assert.equal(cyclesOver([work, evaluation, work, evaluation, work], 1), 3);
+  assert.equal(reworksOver([working, failed], 0), 0, "evaluating is no rework");
+  assert.equal(
+    reworksOver([working, failed, working], 1),
+    1,
+    "the work after the failure is the first rework",
+  );
+  assert.equal(
+    reworksOver([working, failed, working, working], 2),
+    1,
+    "a fan-out of two is still one rework",
+  );
+  assert.equal(
+    reworksOver([working, failed, working, failed, working], 1),
+    2,
+    "and the work after the second failure is the second",
+  );
+});
+
+test("the work a passed evaluation is followed by is the finalizer's, and is uncapped", () => {
+  assert.equal(
+    reworksOver([working, evaluated("Passed"), working], 1),
+    0,
+    "a finalization failure re-enters Working without spending the cap",
+  );
+  assert.equal(
+    reworksOver(
+      [
+        working,
+        evaluated("Passed"),
+        working,
+        evaluated("Failed"),
+        working,
+        evaluated("Passed"),
+        working,
+      ],
+      1,
+    ),
+    1,
+    "and the evaluation failure between them still counts once",
+  );
+});
+
+test("an evaluation run counts once however many of its tasks resolved", () => {
+  assert.equal(
+    reworksOver(
+      [working, evaluated("Failed"), evaluated("Cancelled"), working],
+      1,
+    ),
+    1,
+    "one failure cancels the rest of the run, and the run is one rework",
+  );
+  assert.equal(
+    reworksOver(
+      [working, evaluated("Cancelled"), evaluated("Cancelled"), working],
+      1,
+    ),
+    0,
+    "a run nothing failed is no rework",
+  );
 });
 
 test("the count folds the record and the live set as one history", () => {
-  const history = [tkWork, tkEval(0), tkWork];
+  const history = [working, evaluated("Failed"), working];
   for (const live of [0, 1, 3])
-    assert.equal(cyclesOver(history, live), 2, `with ${String(live)} live`);
+    assert.equal(reworksOver(history, live), 1, `with ${String(live)} live`);
 });

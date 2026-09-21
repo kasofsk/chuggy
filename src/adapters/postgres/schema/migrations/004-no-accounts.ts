@@ -6,12 +6,20 @@ import type { Migration } from "../shared.ts";
  * candidate, the deployment policy those were configured from, and the two
  * escalation reasons only a spent account could reach.
  *
+ * A ticket and a dispatch candidate both got smaller when the accounts left, so
+ * the widest observation a lead turn can be handed did too, and the bound the
+ * mailbox row holds and the observation budget the selector is seeded with are
+ * re-rendered here rather than in the baseline that already installed them.
+ *
  * THE GUARD IS THE FIRST STATEMENT BECAUSE A NARROWED CHECK IS NOT A NO-OP
  * OVER STORED ROWS. `ADD CONSTRAINT` revalidates what the relation already
  * holds, settled rows as much as live ones, so an installation that ever
- * parked a ticket at a removed wall would otherwise fail partway down this
- * list; it refuses at the top instead, naming the relations that hold the
- * rows, and the whole migration rolls back with its ledger row.
+ * parked a ticket at a removed wall, or that stored a turn wider than the
+ * re-rendered mailbox bound, would otherwise fail partway down this list; it
+ * refuses at the top instead, naming the relations that hold the rows, and the
+ * whole migration rolls back with its ledger row. Every narrowed check below
+ * has its arm up there, which is why the refusal speaks of rows this migration
+ * no longer admits rather than of accounts.
  *
  * `journal_entry` IS INSIDE THE GUARD, WHICH IS WHERE THIS DRAWS ITS LINE
  * DIFFERENTLY FROM THE HANDOFF REMOVAL. A journal entry is not a record that
@@ -32,6 +40,13 @@ import type { Migration } from "../shared.ts";
  * produce, and a migrated installation holds the same text a fresh one
  * installs.
  */
+
+/**
+ * What this migration renders `sessionTurnInputCharsMax` as, in the mailbox
+ * bound it re-renders and in the observation budget it re-seeds.
+ */
+export const leadObservationTokensPerDecisionAt004 = 17_403_663;
+
 export const migration004: Migration = {
   version: 4,
   name: "the accounts leave the schema",
@@ -57,9 +72,13 @@ export const migration004: Migration = {
                               OR (CASE WHEN entry IS JSON OBJECT
                                        THEN entry::jsonb END)->'event'->'value'->>'reason'
                                  IN ('GasExhausted', 'FinalizationBudgetExhausted'))
+           UNION ALL
+           SELECT 'session_turn'
+            WHERE EXISTS (SELECT FROM public.session_turn
+                           WHERE length(input) > 17403663)
          ) AS held;
          IF holders IS NOT NULL THEN
-           RAISE EXCEPTION 'account rows remain in %', holders
+           RAISE EXCEPTION 'rows this migration no longer admits remain in %', holders
              USING ERRCODE = 'integrity_constraint_violation';
          END IF;
        END $$`,
@@ -142,5 +161,12 @@ export const migration004: Migration = {
               domain_configuration::jsonb->>'nTickets',
               domain_configuration::jsonb->>'nTasks',
               domain_configuration::jsonb->>'maxStages')`,
+    `ALTER TABLE public.session_turn
+       DROP CONSTRAINT session_turn_text_is_bounded,
+       ADD CONSTRAINT session_turn_text_is_bounded CHECK ((((length(input) >= 1) AND (length(input) <= 17403663)) AND (COALESCE(length(result), 0) <= 65536)))`,
+    `UPDATE public.selector_runtime_settings
+        SET controls = replace(controls, '"tokensPerDecision":17525063', '"tokensPerDecision":17403663')`,
+    `UPDATE public.selector_runtime_settings_history
+        SET controls = replace(controls, '"tokensPerDecision":17525063', '"tokensPerDecision":17403663')`,
   ],
 };

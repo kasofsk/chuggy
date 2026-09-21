@@ -11,15 +11,21 @@
  * much rework it has had, so a cap changed between one release and the next
  * applies to the ticket in flight instead of to whatever a release froze onto
  * it.
+ *
+ * THE CAP IS OVER EVALUATION FAILURES ALONE. A `FinalizationFailed` re-enters
+ * Working too, and the finalizer is what handles that loop; a cap consulted
+ * only on a failing evaluation could never park such a ticket anyway, so
+ * counting its reworks here would only shorten the evaluation allowance by an
+ * amount no reader of the configuration can predict.
  */
 
 import type {
   EvaluationFailureDisposition,
   Ticket,
 } from "../domain/generated/modelTypes.ts";
-import { workCyclesStarted } from "../domain/task.ts";
+import { evaluationFailureReworksStarted } from "../domain/task.ts";
 
-/** One deployment's cap: how many rework cycles a ticket may be given. */
+/** One deployment's cap: how many times a failing evaluation may rework a ticket rather than park it. */
 export interface ReworkCap {
   readonly cyclesMax: number;
 }
@@ -35,16 +41,18 @@ export function checkedReworkCap(cap: ReworkCap): ReworkCap {
 }
 
 /**
- * What a failing evaluation of this ticket is to be taken as. A ticket that has
- * already started `cyclesMax` work cycles beyond its first has been given every
- * rework the cap allows, so its next failure parks it at the rework wall —
- * `cyclesMax: 2` is two reworks and a park on the third failure.
+ * What a failing evaluation of this ticket is to be taken as. A ticket already
+ * reworked `cyclesMax` times after a failing evaluation has had every rework
+ * the cap allows, so this failure parks it at the rework wall — `cyclesMax: 2`
+ * is two reworks and a park on the third failure, and `cyclesMax: 0` parks on
+ * the first.
  */
 export function reworkDisposition(
   ticket: Ticket,
   cyclesMax: number,
 ): EvaluationFailureDisposition {
-  return workCyclesStarted(ticket.record, ticket.tasks) > cyclesMax
+  return evaluationFailureReworksStarted(ticket.record, ticket.tasks) >=
+    cyclesMax
     ? "EscalateEvaluationFailure"
     : "ReworkEvaluationFailure";
 }

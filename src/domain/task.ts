@@ -45,23 +45,32 @@ export function tasksInIdOrder(tasks: Iterable<Task>): readonly Task[] {
 }
 
 /**
- * How many work cycles a ticket has started, read off its retired record and
- * its live set together: a cycle is a maximal run of Work-kind tasks in id
- * order, so the first fan-out is one and every rework adds another. Derived
- * rather than carried on the ticket, which would be a stored duplicate of it.
+ * How many reworks a failing evaluation has cost a ticket, read off its retired
+ * record and its live set together: a maximal run of Work-kind tasks in id
+ * order counts when the evaluation run before it resolved some task `Failed`,
+ * so neither the first fan-out nor a rework after a passing evaluation is one.
+ * Derived rather than carried on the ticket, which would be a stored duplicate
+ * of it.
  */
-export function workCyclesStarted(
+export function evaluationFailureReworksStarted(
   record: readonly Task[],
   live: ReadonlySet<Task>,
 ): number {
-  let cycles = 0;
-  let previousWasWork = false;
+  let reworks = 0;
+  let inWorkRun = false;
+  let evaluationFailed = false;
   for (const task of tasksInIdOrder([...record, ...live])) {
-    const isWork = task.kind === "Work";
-    if (isWork && !previousWasWork) cycles += 1;
-    previousWasWork = isWork;
+    if (task.kind === "Work") {
+      if (!inWorkRun && evaluationFailed) reworks += 1;
+      inWorkRun = true;
+      continue;
+    }
+    if (inWorkRun) evaluationFailed = false;
+    inWorkRun = false;
+    if (task.state !== "Outstanding" && task.state.value === "Failed")
+      evaluationFailed = true;
   }
-  return cycles;
+  return reworks;
 }
 
 /** How many of these tasks are still outstanding to the fabric. */

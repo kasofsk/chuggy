@@ -1,10 +1,10 @@
 import { leadToolAllowlist } from "../../src/interpreter/leadTools.ts";
 import { migration003 } from "../../src/adapters/postgres/schema/migrations/003-no-handoff.ts";
-import { migration004 } from "../../src/adapters/postgres/schema/migrations/004-no-accounts.ts";
 import {
-  leadDispatchesPerDecision,
-  leadObservationTokensPerDecision,
-} from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
+  leadObservationTokensPerDecisionAt004,
+  migration004,
+} from "../../src/adapters/postgres/schema/migrations/004-no-accounts.ts";
+import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -1018,7 +1018,7 @@ test("fresh selector settings carry current controls and only their initial hist
     assert.deepEqual(controls.toolAllowlist, leadToolAllowlist);
     assert.equal(
       controls.limits.tokensPerDecision,
-      leadObservationTokensPerDecision,
+      leadObservationTokensPerDecisionAt004,
     );
     assert.equal(
       controls.limits.dispatchesPerDecision,
@@ -1423,7 +1423,7 @@ test("a ticket parked at an account wall refuses the migration untouched", async
       );
       await assert.rejects(
         postgresMigrate(subject),
-        new RegExp(`account rows remain in ${relation}`, "u"),
+        new RegExp(`no longer admits remain in ${relation}`, "u"),
         relation,
       );
       assert.deepEqual(
@@ -1457,7 +1457,7 @@ test("a journal that names an account wall refuses the migration untouched", asy
       );
       await assert.rejects(
         postgresMigrate(subject),
-        /account rows remain in journal_entry/u,
+        /no longer admits remain in journal_entry/u,
         what,
       );
       assert.deepEqual(
@@ -1470,6 +1470,55 @@ test("a journal that names an account wall refuses the migration untouched", asy
         what,
       );
     });
+});
+
+/** A lead session holding one queued turn of `chars`, on an installation the accounts are still in. */
+async function turnOfWidth(subject: pg.Pool, chars: number): Promise<void> {
+  await accountedInstallation(subject);
+  await subject.query(
+    `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-4','project-4','Active');
+     INSERT INTO execution_cluster(cluster,slots_max,policy_revision)
+     VALUES('cluster-4',1,1);
+     INSERT INTO capacity_account(account,cluster,reserved,maximum,policy_revision)
+     VALUES('account-4','cluster-4',0,1,1);
+     INSERT INTO agent_session
+       (tenant,project,session,kind,principal,capabilities,credential_slot,account,cluster)
+     VALUES('tenant-4','project-4','session-4','Lead','principal-4','{}',
+            'slot-4','account-4','cluster-4');
+     INSERT INTO session_turn(tenant,project,session,turn,ordinal,input_kind,input)
+     VALUES('tenant-4','project-4','session-4','turn-4',1,'Observation',
+            repeat('x',${String(chars)}))`,
+  );
+}
+
+/**
+ * The mailbox bound 004 narrows is a guarded check like the removed walls, so
+ * both sides of its arm are driven: an arm that never matches reads exactly
+ * like one that works.
+ */
+test("a session turn wider than the narrowed bound refuses the migration untouched", async () => {
+  await migrationDatabase("noaccounts_turn_wide", async (subject) => {
+    await turnOfWidth(subject, leadObservationTokensPerDecisionAt004 + 1);
+    await assert.rejects(
+      postgresMigrate(subject),
+      /no longer admits remain in session_turn/u,
+    );
+    assert.deepEqual(
+      await postgresRuntimeSchema(subject).applied(
+        new AbortController().signal,
+      ),
+      migrations
+        .slice(0, migration004.version - 1)
+        .map(({ version, name }) => ({ version, name })),
+    );
+  });
+});
+
+test("a session turn at the narrowed bound migrates", async () => {
+  await migrationDatabase("noaccounts_turn_fits", async (subject) => {
+    await turnOfWidth(subject, leadObservationTokensPerDecisionAt004);
+    assert.ok((await postgresMigrate(subject)).includes(migration004.version));
+  });
 });
 
 /**

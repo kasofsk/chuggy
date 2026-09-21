@@ -1,5 +1,5 @@
 export const leadDispatchesPerDecision = 3;
-export const leadObservationTokensPerDecision = 17_403_663;
+export const leadObservationTokensPerDecision = 17_525_063;
 
 const baselineControls = {
   limits: {
