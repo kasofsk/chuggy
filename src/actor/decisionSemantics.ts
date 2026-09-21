@@ -13,7 +13,8 @@
  * module exists to prevent.
  *
  * EVERY CORRECTION IS READ OFF THE ROW, which is why one takes the row and not
- * just its event. There are four:
+ * just its event. There are four, and the last is a divergence left standing
+ * rather than corrected:
  *   - at 1, a row whose record parks a ticket at the evaluation wall parked it
  *     at the eval resume, because that wall had no resume of its own yet;
  *   - at 1 and 2, a row's EvalReduce carried no disposition, and the one it was
