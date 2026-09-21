@@ -42,19 +42,22 @@ vi.mock("@tanstack/react-router", () => ({
 // jscpd:ignore-end
 
 /**
- * The two columns of the project table that draw a long value, on the two
- * things `projectTableRows.ts` cannot say about them: that the whole value is
- * on the cell, and that the cell still clips.
+ * The one annotation that still clips — runs on, whose digest reference is not
+ * the ticket's own words — on the two things `projectTableRows.ts` cannot say
+ * about it: that the whole value is on the chip, and that the chip still clips.
  *
- * Both are properties of the markup and of nothing else. A `title` dropped at
- * either call site loses the image or the ticket's own words with no way back
- * to them, and `max-w-aside` dropped lets a value the length of a full digest
- * reference take the column apart. Neither shows up in a row's own value, so
- * neither is provable above this tier.
+ * Both are properties of the markup and of nothing else. `title` dropped there
+ * loses the image with no way back to it, and `max-w-aside` dropped lets a
+ * value the length of a full digest reference take the card apart. Neither
+ * shows up in the row's own value, so neither is provable above this tier.
  *
- * The last activity column is the same tier for a different reason: that it
- * draws the relative reading and carries the absolute one on hover is a fact
- * about `Figure`'s tooltip, not about `activityAt` itself.
+ * The title is the opposite property, now that it fills the card: that it
+ * wraps whole rather than clipping is markup too, and is asserted the same
+ * way, on the same tier.
+ *
+ * The last activity annotation is the same tier for a different reason: that
+ * it draws the relative reading and carries the absolute one on hover is a
+ * fact about `Figure`'s tooltip, not about `activityAt` itself.
  */
 
 beforeEach(resizeObserverStubbed);
@@ -143,12 +146,13 @@ async function drawTable(): Promise<void> {
   return drawTableWith([ticket], [execution]);
 }
 
-test("the title cell keeps the whole title, keeps clipping it, links, and leads the ticket number", async () => {
+test("the title is on the card whole and unclipped, links, and leads the ticket number", async () => {
   await drawTable();
   const titleAnchor = screen.getByText(title);
-  const cell = titleAnchor.parentElement;
-  expect(cell?.className).toContain("max-w-aside");
   expect(titleAnchor.tagName).toBe("A");
+  expect(titleAnchor.className).not.toContain("truncate");
+  expect(titleAnchor.className).not.toContain("max-w-aside");
+  expect(titleAnchor.className).not.toContain("whitespace-nowrap");
 
   const numberLink = screen.getByRole("link", { name: "11" });
   expect(
@@ -156,8 +160,23 @@ test("the title cell keeps the whole title, keeps clipping it, links, and leads 
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 
-  fireEvent.focus(cell as Element);
-  expect((await screen.findByRole("tooltip")).textContent).toBe(title);
+  fireEvent.focus(titleAnchor);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
+test("a row's phase, execution, runs-on and activity annotations are all on the one card its title heads", async () => {
+  await drawTable();
+  expect(document.querySelectorAll("table").length).toBe(0);
+  expect(document.querySelectorAll("th").length).toBe(0);
+
+  const titleAnchor = screen.getByText(title);
+  const card = titleAnchor.closest("li");
+  if (card === null) throw new Error("no card around the title");
+
+  expect(card.contains(screen.getByText("Working"))).toBe(true);
+  expect(card.contains(screen.getByText("Running"))).toBe(true);
+  expect(card.contains(screen.getByText("chuggy-worker v3"))).toBe(true);
+  expect(card.contains(screen.getByText("3h ago"))).toBe(true);
 });
 
 test("a row draws its phase as a chip", async () => {
