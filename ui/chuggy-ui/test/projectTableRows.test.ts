@@ -39,7 +39,7 @@ const container: ExecutionSummary = {
   platformDefaultVersion: 1,
   status: "Running",
   retriesSpent: 0,
-  registeredAt: "2026-08-26T10:00:00.000Z",
+  registeredAt: "2026-08-27T10:00:00.000Z",
 };
 
 const working: TicketResponse = {
@@ -75,7 +75,7 @@ test("a running ticket's row carries its status and what it runs on", () => {
     text: "worker:1",
     title: "registry/worker:1",
   });
-  expect(row.activityAt).toBe("2026-08-26T10:00:00.000Z");
+  expect(row.activityAt).toBe("2026-08-27T10:00:00.000Z");
   expect(row.section).toBe("InProgress");
 });
 
@@ -111,21 +111,40 @@ test("a ticket running nothing states no execution rather than a blank one", () 
   );
   expect(row.executionStatus).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
-  expect(row.activityAt).toBeUndefined();
   expect(row.sequence).toBe(1);
+});
+
+test("a ticket nothing has run for still answers an activity instant, its own", () => {
+  const row = projectTableRow(
+    { ticket: 4, phase: "Pending", sequence: 1, ...ticketInstants },
+    undefined,
+    false,
+  );
+  expect(row.activityAt).toBe(ticketInstants.changedAt);
 });
 
 const failedOlder: ExecutionSummary = {
   ...container,
   status: "Terminal",
   outcome: "Failed",
-  terminalAt: "2026-08-26T12:00:00.000Z",
+  terminalAt: "2026-08-27T12:00:00.000Z",
 };
 
-test("a terminal execution's instant is when it ended", () => {
+test("a terminal execution's instant is when it ended, where that is later than the ticket's own", () => {
   const row = projectTableRow(working, known(failedOlder), false);
-  expect(row.activityAt).toBe("2026-08-26T12:00:00.000Z");
+  expect(row.activityAt).toBe("2026-08-27T12:00:00.000Z");
   expect(row.executionOutcome).toBe("Failed");
+});
+
+test("a row takes the later of the ticket's changedAt and its execution's instant", () => {
+  const changedLater = projectTableRow(
+    working,
+    known({ ...container, registeredAt: "2026-08-25T00:00:00.000Z" }),
+    false,
+  );
+  expect(changedLater.activityAt).toBe(working.changedAt);
+  const executionLater = projectTableRow(working, known(container), false);
+  expect(executionLater.activityAt).toBe(container.registeredAt);
 });
 
 test("a row the index reached says so, and one it never ran says that", () => {
@@ -156,7 +175,7 @@ test("a row that is not joined draws none of the execution it holds", () => {
   expect(row.executionOutcome).toBeUndefined();
   expect(row.executionStatus).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
-  expect(row.activityAt).toBeUndefined();
+  expect(row.activityAt).toBe(working.changedAt);
 });
 
 test("a row whose entry a walk finished is joined even where others were not", () => {

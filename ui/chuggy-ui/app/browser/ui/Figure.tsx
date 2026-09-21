@@ -69,6 +69,12 @@ export function Figure(props: { readonly figure: FigureValue }): ReactNode {
           <span className="fig">{figure.text}</span>
         </Tooltip>
       );
+    case "Ago":
+      return (
+        <Tooltip text={figure.full}>
+          <span className="fig">{figure.text}</span>
+        </Tooltip>
+      );
     case "Span":
       return <FigureSpan figure={figure} />;
     case "Absent":

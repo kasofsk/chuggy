@@ -61,7 +61,7 @@ export interface ProjectTableRow {
   readonly executionOutcome: ExecutionOutcome | undefined;
   readonly runsOn: Label | undefined;
   readonly sequence: number;
-  readonly activityAt: string | undefined;
+  readonly activityAt: string;
 }
 
 /** What the task was placed on, named where the catalog names it: a container
@@ -92,8 +92,20 @@ export function projectTableExecutionRead(
   return indexTruncated ? "IndexTruncated" : "NoneRegistered";
 }
 
-/** The ticket's own last activity is its sequence; an instant is the execution's,
- * because that is where the wire states one. */
+/** The later of the ticket's own last movement and its joined run's, compared
+ * as instants rather than as strings. Every ticket carries `changedAt`, so
+ * this always answers one, with or without a run to join. */
+function projectTableActivityAt(
+  ticket: TicketResponse,
+  execution: ExecutionSummary | undefined,
+): string {
+  const runAt = execution?.terminalAt ?? execution?.registeredAt;
+  if (runAt === undefined) return ticket.changedAt;
+  return Date.parse(runAt) > Date.parse(ticket.changedAt)
+    ? runAt
+    : ticket.changedAt;
+}
+
 export function projectTableRow(
   ticket: TicketResponse,
   known: ProjectExecutionKnown | undefined,
@@ -112,7 +124,7 @@ export function projectTableRow(
     executionOutcome: execution?.outcome,
     runsOn: execution === undefined ? undefined : projectTableRunsOn(execution),
     sequence: ticket.sequence,
-    activityAt: execution?.terminalAt ?? execution?.registeredAt,
+    activityAt: projectTableActivityAt(ticket, execution),
   };
 }
 

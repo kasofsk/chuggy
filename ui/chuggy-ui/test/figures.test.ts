@@ -12,6 +12,8 @@ import { expect, test } from "vitest";
 
 import type { Figure } from "../app/core/figures.ts";
 import {
+  agoFigure,
+  agoText,
   bytesSetFigure,
   costFigure,
   countFigure,
@@ -132,6 +134,41 @@ test("an instant is the clock today, the date within the year, and the year befo
   expect(instantText(new Date(2025, 10, 2, 9, 0), now)).toBe(
     "2025-11-02 09:00",
   );
+});
+
+test("an ago reading is whole units, largest first, at each scale's boundary", () => {
+  const nowMs = Date.parse("2026-08-27T11:07:00Z");
+  expect(agoText(nowMs, nowMs - 3_000)).toBe("3s ago");
+  expect(agoText(nowMs, nowMs - 59_000)).toBe("59s ago");
+  expect(agoText(nowMs, nowMs - 60_000)).toBe("1m ago");
+  expect(agoText(nowMs, nowMs - 3_599_000)).toBe("59m ago");
+  expect(agoText(nowMs, nowMs - 3_600_000)).toBe("1h ago");
+  expect(agoText(nowMs, nowMs - 86_399_000)).toBe("23h ago");
+  expect(agoText(nowMs, nowMs - 86_400_000)).toBe("1d ago");
+});
+
+test("an ago reading clamps a clock that ran backwards to none elapsed", () => {
+  const nowMs = Date.parse("2026-08-27T11:07:00Z");
+  expect(agoText(nowMs, nowMs + 10_000)).toBe("0s ago");
+});
+
+test("an ago figure is an absence where the clock cannot read the instant", () => {
+  const nowMs = Date.parse("2026-08-27T11:07:00Z");
+  expect(agoFigure("not an instant", nowMs).kind).toBe("Absent");
+});
+
+test("an ago figure carries the full date and clock for its hover, not a bare clock face", () => {
+  const nowMs = new Date(2026, 7, 27, 11, 7).getTime();
+  const today = agoFigure(new Date(2026, 7, 27, 10, 12).toISOString(), nowMs);
+  if (today.kind !== "Ago") throw new Error("not an ago figure");
+  expect(today.text).toBe("55m ago");
+  expect(today.full).toBe("2026-08-27 10:12");
+  const lastYear = agoFigure(
+    new Date(2025, 10, 2, 9, 0).toISOString(),
+    nowMs,
+  );
+  if (lastYear.kind !== "Ago") throw new Error("not an ago figure");
+  expect(lastYear.full).toBe("2025-11-02 09:00");
 });
 
 test("a closed span names both ends and an open one says it is still running", () => {

@@ -109,12 +109,14 @@ import { agenticRefusalStandingTone } from "../core/tones.ts";
 import { useApiPorts, usePanelList } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
+import { useNowMs } from "./Freshness.tsx";
 import { drawBytes } from "./ports.ts";
 import { TopBarSlot } from "./shell/slots.tsx";
 import {
   cellAbsent,
   cellExecutionUnread,
   ticketRowExecutionCell,
+  TicketActivityCell,
   TicketNumberCell,
   TicketTitleCell,
 } from "./TicketCells.tsx";
@@ -392,6 +394,7 @@ function InboxRow(props: {
   readonly truncated: boolean;
   readonly partition: PartitionIdentity;
   readonly step: OperationStep | undefined;
+  readonly nowMs: number;
   readonly onAnswer: (action: TicketAction) => void;
 }): ReactNode {
   const held = props.entry.held;
@@ -419,10 +422,7 @@ function InboxRow(props: {
           ? cellExecutionUnread
           : ticketRowExecutionCell(row, projectTableExecutionPhrase(row))}
       </td>
-      <td className="text-ink-3">
-        {row === undefined ? cellAbsent : row.sequence}
-        {row?.activityAt === undefined ? "" : ` · ${row.activityAt}`}
-      </td>
+      <TicketActivityCell activityAt={row?.activityAt} nowMs={props.nowMs} />
       <td>
         <div className="flex gap-2 items-baseline">
           <InboxActions
@@ -444,6 +444,7 @@ function InboxTable(props: {
   readonly index: ProjectExecutionIndex;
   readonly partition: PartitionIdentity;
   readonly steps: InboxAnswers;
+  readonly nowMs: number;
   readonly onAnswer: (ticket: number, action: TicketAction) => void;
 }): ReactNode {
   return (
@@ -468,6 +469,7 @@ function InboxTable(props: {
             truncated={props.index.truncated}
             partition={props.partition}
             step={props.steps[String(entry.ticket)]}
+            nowMs={props.nowMs}
             onAnswer={(action) => {
               props.onAnswer(entry.ticket, action);
             }}
@@ -579,6 +581,7 @@ export function InboxScreen(props: {
       : projectExecutionIndexUnread;
   const answers = useInboxAnswers(partition);
   const count = inboxCountLabel(inbox.union);
+  const nowMs = useNowMs();
   return (
     <>
       <TopBarSlot>
@@ -598,6 +601,7 @@ export function InboxScreen(props: {
               index={index}
               partition={partition}
               steps={answers.steps}
+              nowMs={nowMs}
               onAnswer={answers.answer}
             />
           )

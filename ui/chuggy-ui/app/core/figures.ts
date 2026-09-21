@@ -21,10 +21,13 @@
  * `costAmountFigure`'s bare amount is the one exception, legitimate because
  * the line it sits on already names the turn it belongs to.
  *
- * AN INSTANT IS ABSOLUTE AND A FRESHNESS IS RELATIVE. A ledger is compared row
- * to row and a relative time drifts while the page is open, so an instant is
- * the clock face with the full ISO on hover; how long ago a read happened is
- * `Freshness`'s and is not a figure.
+ * AN INSTANT IS ABSOLUTE AND AN AGO READING IS RELATIVE. A ledger is compared
+ * row to row, so its instants stay the clock face with the full ISO on hover.
+ * Where a reader is scanning for what moved last, `Ago` draws the rounded
+ * elapsed time instead, carries the same instant's full date and clock one
+ * hover away, and ages because the caller hands it a fresh `nowMs` rather than
+ * it holding a clock of its own. `Freshness`'s panel-header label rounds the
+ * same way, for the one case `Ago` does not answer: no observation at all.
  */
 
 import type { RunTotals } from "../../../../src/contract/responses.ts";
@@ -36,6 +39,7 @@ export const figureKinds = [
   "Duration",
   "Quantity",
   "Instant",
+  "Ago",
   "Span",
   "Absent",
 ] as const;
@@ -52,6 +56,7 @@ export type Figure =
       readonly unit: string;
     }
   | { readonly kind: "Instant"; readonly text: string; readonly iso: string }
+  | { readonly kind: "Ago"; readonly text: string; readonly full: string }
   | {
       readonly kind: "Span";
       readonly start: string;
@@ -295,6 +300,12 @@ function clockOf(at: Date): string {
   return `${padded(at.getHours())}:${padded(at.getMinutes())}`;
 }
 
+/** The year, date and clock, the form a reader needs to place a day outside
+ * the current one — always, regardless of how near `at` is to now. */
+function instantFullText(at: Date): string {
+  return `${String(at.getFullYear())}-${padded(at.getMonth() + 1)}-${padded(at.getDate())} ${clockOf(at)}`;
+}
+
 /**
  * The clock face for today, the date and the clock within the year, and the
  * whole date before it. Browser-local, because the reader's day is the one they
@@ -311,7 +322,7 @@ export function instantText(at: Date, now: Date): string {
   const month = monthNames[at.getMonth()] ?? "";
   if (at.getFullYear() === now.getFullYear())
     return `${month} ${String(at.getDate())} ${clock}`;
-  return `${String(at.getFullYear())}-${padded(at.getMonth() + 1)}-${padded(at.getDate())} ${clock}`;
+  return instantFullText(at);
 }
 
 /** An instant the clock could not read is an absence, never a printed string. */
@@ -322,6 +333,32 @@ export function instantFigure(stated: string, nowMs: number): Figure {
     kind: "Instant",
     text: instantText(new Date(at), new Date(nowMs)),
     iso: new Date(at).toISOString(),
+  };
+}
+
+/**
+ * Whole units, largest first, and a clock that ran backwards clamped to none
+ * elapsed. The one rounding every relative reading on the console shares,
+ * so an elapsed time is never rounded two ways on one page.
+ */
+export function agoText(nowMs: number, atMs: number): string {
+  const elapsedSeconds = Math.max(Math.floor((nowMs - atMs) / msPerSecond), 0);
+  if (elapsedSeconds < secondsPerMinute) return `${String(elapsedSeconds)}s ago`;
+  const minutes = Math.floor(elapsedSeconds / secondsPerMinute);
+  if (minutes < minutesPerHour) return `${String(minutes)}m ago`;
+  const hours = Math.floor(minutes / minutesPerHour);
+  if (hours < hoursPerDay) return `${String(hours)}h ago`;
+  return `${String(Math.floor(hours / hoursPerDay))}d ago`;
+}
+
+/** An instant the clock could not read is an absence, as `instantFigure`'s is. */
+export function agoFigure(stated: string, nowMs: number): Figure {
+  const atMs = Date.parse(stated);
+  if (!Number.isFinite(atMs)) return { kind: "Absent", why: "No instant" };
+  return {
+    kind: "Ago",
+    text: agoText(nowMs, atMs),
+    full: instantFullText(new Date(atMs)),
   };
 }
 

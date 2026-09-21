@@ -22,6 +22,7 @@ const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
+  nowMs: () => Date.parse("2026-08-27T00:05:00Z"),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -130,6 +131,19 @@ test("the runs-on cell keeps the image reference, and keeps clipping it", async 
   expect(cell.className).toContain("max-w-aside");
   fireEvent.focus(cell);
   expect((await screen.findByRole("tooltip")).textContent).toBe(image);
+});
+
+/** The column reads as how long ago the ticket last moved, not as the raw
+ * instant the wire sent or the sequence it moved into; both are properties of
+ * the markup this table draws and provable nowhere else. */
+test("the last-activity cell reads how long ago, and hovers the absolute reading", async () => {
+  await drawTable();
+  const cell = screen.getByText("5m ago");
+  expect(cell.parentElement?.textContent).toBe("5m ago");
+  fireEvent.focus(cell);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "2026-08-27 00:00",
+  );
 });
 
 /** The served policy refuses `style-src` but `'self'`, so nothing this table
