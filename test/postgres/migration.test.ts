@@ -1690,14 +1690,9 @@ const deletedRows: readonly (readonly [string, string, string])[] = [
     "an execution blocked on a revoked dependency",
     deletionJournalRow(1, deletionBlockedEntry("DependencyRevoked")),
   ],
-  [
-    "journal_entry",
-    "a revoke that transitioned a dependent too",
-    deletionJournalRow(1, deletionRevokeEntry([{ ticket: 1 }, { ticket: 2 }])),
-  ],
 ];
 
-/** The same arms' near misses, each a row the guard has to let through. */
+/** Rows the guard lets through: each arm's near miss, and the cascade no arm looks for. */
 const undeletedRows: readonly (readonly [string, string])[] = [
   [
     "a ticket parked on its own failed work",
@@ -1724,8 +1719,8 @@ const undeletedRows: readonly (readonly [string, string])[] = [
     deletionJournalRow(1, deletionBlockedEntry("WorkFailed")),
   ],
   [
-    "a revoke that transitioned the ticket it named",
-    deletionJournalRow(1, deletionRevokeEntry([{ ticket: 1 }])),
+    "a revoke that parked the dependents behind the ticket it named",
+    deletionJournalRow(1, deletionRevokeEntry([{ ticket: 1 }, { ticket: 2 }])),
   ],
   ["a journal row that is not a document", deletionJournalRow(1, "not json")],
 ];

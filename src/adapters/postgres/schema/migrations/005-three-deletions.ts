@@ -18,10 +18,14 @@ import type { Migration } from "../shared.ts";
  * THE GUARD READS FIELDS RATHER THAN TEXT, for the reason 004's header gives:
  * a row that mentions a removed value is not a row that reached it. The cast
  * stands behind `IS JSON OBJECT` as the `journal_entry_release_ticket` index
- * does, so a row that is not a document is not a cast failure. The cascade
- * leaves no literal to look for, so the guard reads its shape instead: a
- * revoke record that transitioned more than one ticket is a cascade, and a
- * decider that parks nothing can never produce that record again.
+ * does, so a row that is not a document is not a cast failure.
+ *
+ * THE CASCADE'S OWN ROWS ARE ADMITTED, AND THE GUARD LOOKS FOR NONE OF THEM. A
+ * revoke that transitioned the tickets behind it names no removed value: it is
+ * a plain `Revoke` whose record carries the dependents' transitions, and
+ * `src/actor/decisionSemantics.ts` re-derives it at the semantics that wrote
+ * it, parking each dependent at the reason that survived. Refusing those rows
+ * would turn a stored history this image replays into one it will not load.
  *
  * `native_action` KEEPS A SETTLED-ROW ARM AND `ticket_projection` DOES NOT. A
  * settled desk task is a human's recorded decision, and the wire never reads
@@ -122,10 +126,7 @@ export const migration005: Migration = {
                WHERE read.document->'event'->'value'->>'finalizer' = 'NoFinalizer'
                   OR read.document->'event'->'value'->'prog'
                      @> '[{"combinator":"AnyPass"}]'::jsonb
-                  OR read.document->'event'->'value'->>'reason' = 'DependencyRevoked'
-                  OR (read.document->'rec'->>'label' = 'ticket-revoked'
-                      AND CASE WHEN jsonb_typeof(read.document->'rec'->'transitions') = 'array'
-                               THEN jsonb_array_length(read.document->'rec'->'transitions') END > 1))
+                  OR read.document->'event'->'value'->>'reason' = 'DependencyRevoked')
          ) AS held;
          IF holders IS NOT NULL THEN
            RAISE EXCEPTION 'rows this migration no longer admits remain in %', holders
