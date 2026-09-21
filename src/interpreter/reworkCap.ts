@@ -12,11 +12,14 @@
  * applies to the ticket in flight instead of to whatever a release froze onto
  * it.
  *
- * THE CAP IS OVER EVALUATION FAILURES ALONE. A `FinalizationFailed` re-enters
- * Working too, and the finalizer is what handles that loop; a cap consulted
- * only on a failing evaluation could never park such a ticket anyway, so
- * counting its reworks here would only shorten the evaluation allowance by an
- * amount no reader of the configuration can predict.
+ * THE CAP IS OVER EVALUATION FAILURES, AS FAR AS THE HISTORY SHOWS THEM. A
+ * `FinalizationFailed` re-enters Working too, and the finalizer is what handles
+ * that loop; a cap consulted only on a failing evaluation could never park such
+ * a ticket anyway, so counting its reworks here would only shorten the
+ * evaluation allowance. The history cannot always tell the two apart: an
+ * evaluation set abandoned to `ExecutionBlocked` after one task failed retires
+ * beside the re-run that passed, and a finalizer rework after it reads as an
+ * evaluation rework. That errs toward parking early, which a desk can undo.
  */
 
 import type {

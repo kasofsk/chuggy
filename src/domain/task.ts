@@ -48,9 +48,9 @@ export function tasksInIdOrder(tasks: Iterable<Task>): readonly Task[] {
  * How many reworks a failing evaluation has cost a ticket, read off its retired
  * record and its live set together: a maximal run of Work-kind tasks in id
  * order counts when the evaluation run before it resolved some task `Failed`,
- * so neither the first fan-out nor a rework after a passing evaluation is one.
- * Derived rather than carried on the ticket, which would be a stored duplicate
- * of it.
+ * so neither the first fan-out nor a rework after a run that passed outright
+ * is one. Derived rather than carried on the ticket, which would be a stored
+ * duplicate of it; what the tasks alone cannot separate is stated at the cap.
  */
 export function evaluationFailureReworksStarted(
   record: readonly Task[],
