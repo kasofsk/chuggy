@@ -230,7 +230,9 @@ test("a ticket is always dated by its change and may be undated by its release",
  * What a ticket read puts on the wire, key for key. The body is the resource
  * itself, so comparing the fullest one against the schema's own shape is what
  * catches a field the interpreter added and the contract does not name, or one
- * the contract names that no read carries.
+ * the contract names that no read carries — and it carries both walls, which no
+ * one ticket ever does, the claim being over the keys and a resource omitting
+ * one leaving that key unasserted.
  */
 test("a ticket read emits exactly the keys the contract names", () => {
   const fullest = ticketResponse({
@@ -240,6 +242,7 @@ test("a ticket read emits exactly the keys the contract names", () => {
     sequence: 9,
     reason: "WorkExecutionUnavailableEscalated",
     executionBlockedBy: "ExecutionPolicyDenied",
+    finalizationBlockedBy: "RepositoryUnbound",
     resumeAt: "ResumeWork",
     brief,
     runTotals,
