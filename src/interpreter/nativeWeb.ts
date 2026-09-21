@@ -268,9 +268,9 @@ export interface TicketResource {
   /**
    * Which of this ticket's own dependencies their authors revoked, ascending.
    * Nothing ever completes one, so a Pending ticket listing any is waiting on
-   * a dependency that will never be Done; every other ticket lists none,
-   * because a dependency is Done before its dependent leaves Pending and a
-   * Done ticket is not revocable.
+   * a dependency that will never be Done; only a Pending ticket is read for
+   * them, because a ticket in any other phase — including one revoked out of
+   * the same wait — is waiting on nothing.
    */
   readonly revokedDependencies: readonly TicketId[];
   readonly brief?: DraftBrief;

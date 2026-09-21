@@ -44,9 +44,9 @@ function outstanding(core: Core): number {
 
 /**
  * The dispositions the cap picks, one per failing evaluation, until it parks
- * the ticket — after `finalizationFailures` rounds its `ManagedFinalizer`
- * failed instead. Every step is the decider's, and the failure it feeds the cap
- * is the one the cap's own previous answer produced.
+ * the ticket — after `finalizationFailures` rounds its finalization failed
+ * instead. Every step is the decider's, and the failure it feeds the cap is the
+ * one the cap's own previous answer produced.
  */
 function dispositionsUnder(
   cyclesMax: number,

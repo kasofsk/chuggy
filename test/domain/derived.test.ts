@@ -21,7 +21,6 @@ import assert from "node:assert/strict";
 import { liveTickets, ticketAt } from "../../src/domain/core.ts";
 import {
   coveredSet,
-  revokedDependencies,
   stuckSet,
   subsetOf,
   sweep,
@@ -141,28 +140,6 @@ test("stuckness grows from the desk and coverage grows from the same edges", () 
     ordered(stuckSet(healthyBlocked)),
     [],
     "a ticket waiting on a running dep progresses vicariously",
-  );
-});
-
-test("the revoked dependencies of a ticket are its own edges, in id order", () => {
-  const fleet = coreOf([
-    ticketOn(config, { phase: "Revoked" }),
-    ticketOn(config, { phase: "Done" }),
-    ticketOn(config, { phase: "Revoked" }),
-    ticketOn(config, { phase: "Pending", deps: new Set([3, 1, 2]) }),
-  ]);
-  assert.deepEqual(revokedDependencies(fleet, id(4)), [id(1), id(3)]);
-  assert.deepEqual(
-    revokedDependencies(fleet, id(2)),
-    [],
-    "a ticket with no dependencies is blocked by none of them",
-  );
-  const grandchild = coreOf(chain);
-  assert.deepEqual(revokedDependencies(grandchild, id(2)), [id(1)]);
-  assert.deepEqual(
-    revokedDependencies(grandchild, id(3)),
-    [],
-    "the read is over the direct edges: a transitive revoke is its own parent's answer",
   );
 });
 

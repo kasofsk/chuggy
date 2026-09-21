@@ -673,28 +673,27 @@ test("the fence the read publishes is the one acceptance admits", async () => {
 
 /**
  * What a revoke leaves behind: it transitions its own ticket and nothing else,
- * so a ticket waiting on one stays Pending and the read is what says why. Only
- * a Pending ticket names any, leaving Pending needing every dependency Done and
- * `revocableIn` never admitting a Done ticket.
+ * so ticket 4 stays Pending behind two revokes. Its release names them
+ * descending, beside a Working dependency and a Done one, so only the query's
+ * own order can answer them ascending.
  */
-test("a ticket behind a revoked dependency names it, and a Done one names none", async () => {
-  const partition = await postgresHarnessProject(
-    subject.harness.store,
-    "native-revoked-deps",
-  );
+async function seedRevokedDependencies(label: string): Promise<Partition> {
+  const partition = await postgresHarnessProject(subject.harness.store, label);
   await subject.harness.query(
-    "UPDATE project SET head=4 WHERE tenant=$1 AND project=$2",
+    "UPDATE project SET head=6 WHERE tenant=$1 AND project=$2",
     [partition.tenant, partition.project],
   );
   for (const [ticket, phase, deps] of [
     [1, "Revoked", []],
-    [2, "Pending", [1, 3]],
-    [3, "Done", []],
-    [4, "Done", [3]],
+    [2, "Revoked", []],
+    [3, "Working", []],
+    [4, "Pending", [5, 3, 2, 1]],
+    [5, "Done", []],
+    [6, "Done", [1]],
   ] as const) {
     await seedEntry(
       partition,
-      `native-revoked-deps-${String(ticket)}`,
+      `${label}-${String(ticket)}`,
       ticket,
       seededRelease(ticket, deps),
     );
@@ -704,31 +703,51 @@ test("a ticket behind a revoked dependency names it, and a Done one names none",
       [partition.tenant, partition.project, ticket, phase],
     );
   }
+  return partition;
+}
+
+test("only a Pending ticket names the dependencies of its own that are revoked", async () => {
+  const partition = await seedRevokedDependencies("native-revoked-phase");
   const reads = postgresNativeReads(subject.pool);
   assert.deepEqual(
-    (await reads.ticket(partition, id(2)))?.revokedDependencies,
-    [1],
-    "the revoked dependency is named, and the Done one beside it is not",
+    (await reads.ticket(partition, id(4)))?.revokedDependencies,
+    [1, 2],
+    "the stranded ticket names both, and neither the Working nor the Done one",
+  );
+  assert.deepEqual(
+    (await reads.ticket(partition, id(6)))?.revokedDependencies,
+    [],
+    "a Done ticket waits on nothing, whatever became of what it was released on",
+  );
+  await subject.harness.query(
+    `UPDATE ticket_projection SET phase='Revoked'
+      WHERE tenant=$1 AND project=$2 AND ticket=4`,
+    [partition.tenant, partition.project],
   );
   assert.deepEqual(
     (await reads.ticket(partition, id(4)))?.revokedDependencies,
     [],
+    "and once its own author revokes it out of the wait, it names none",
   );
-  const page = await reads.project(partition, { limit: 4 });
-  assert.equal(page.result, "Found");
+});
+
+test("revoked dependencies are ascending in the detail read and in both pages", async () => {
+  const partition = await seedRevokedDependencies("native-revoked-order");
+  const reads = postgresNativeReads(subject.pool);
   assert.deepEqual(
-    page.result === "Found"
-      ? page.project.tickets.map((each) => [
-          each.ticket,
-          each.revokedDependencies,
-        ])
-      : undefined,
-    [
-      [1, []],
-      [2, [1]],
-      [3, []],
-      [4, []],
-    ],
-    "the page answers what the detail read does, ticket for ticket",
+    (await reads.ticket(partition, id(4)))?.revokedDependencies,
+    [1, 2],
   );
+  for (const order of ["Identity", "RecentActivity"] as const) {
+    const page = await reads.project(partition, { limit: 6, order });
+    assert.deepEqual(
+      page.result === "Found"
+        ? page.project.tickets
+            .filter((each) => each.revokedDependencies.length > 0)
+            .map((each) => [each.ticket, each.revokedDependencies])
+        : undefined,
+      [[4, [1, 2]]],
+      `the ${order} page answers the pair ascending, and no other ticket any`,
+    );
+  }
 });
