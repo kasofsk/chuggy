@@ -10,7 +10,7 @@
  *
  * THE WALL AND THE RESUME ARE THE TWO STATES WORTH DRIVING TO. `resume_at` is
  * the machine's absent value everywhere else, so a fixture that stopped at
- * `Working` would assert the projection carries a column rather than that it
+ * `Work` would assert the projection carries a column rather than that it
  * carries the machine.
  */
 

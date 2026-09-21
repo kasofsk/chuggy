@@ -4,10 +4,10 @@
  * screen here came from the ticket's own open question.
  *
  * The answer settles without journalling anything — approval is operational
- * protocol rather than `Core` state — so no `Ticket` frame follows it and the
- * open questions are read again once the follow ends. Both halves are driven:
- * the re-read a reader with a degraded stream depends on, and the frame a live
- * one is served by.
+ * protocol rather than `TicketGraph` state — so no `Ticket` frame follows it
+ * and the open questions are read again once the follow ends. Both halves are
+ * driven: the re-read a reader with a degraded stream depends on, and the
+ * frame a live one is served by.
  */
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out

@@ -1,8 +1,8 @@
 /**
  * What every finalizer case in this directory needs of a real PostgreSQL: a
- * project whose ticket a real decision put into `Finalizing`, the durable rows
- * migration thirteen adds, and a connection as the role that will actually run
- * them.
+ * project whose ticket a real decision put into `Finalization`, the durable
+ * rows migration thirteen adds, and a connection as the role that will
+ * actually run them.
  *
  * THE ROWS RUN AS `chuggy_finalizer` AND NOT AS THE MIGRATION OWNER. Every
  * grant migration thirteen writes is a claim about what that role may do, and a
@@ -13,7 +13,7 @@
  *
  * THE REQUEST IS WRITTEN BY THE PART THAT OWNS IT. A finalization request is
  * I3's, materialized by the decision transaction that moved a ticket into
- * `Finalizing`, so this harness drives the real writer through release,
+ * `Finalization`, so this harness drives the real writer through release,
  * dispatch, work and evaluation rather than inserting the row it wants. An
  * attempt and a permit are each offered both ways: written by hand where a case
  * needs one to exist, and asked of the real transaction where the move is what
@@ -528,7 +528,7 @@ async function finalizerBind(
 }
 
 /**
- * A project whose ticket is one passed task short of `Finalizing`, which is
+ * A project whose ticket is one passed task short of `Finalization`, which is
  * where a case that races the entry has to start.
  */
 export async function finalizerEntering(
@@ -593,7 +593,7 @@ async function finalizerReworkCycle(
 }
 
 /**
- * A project whose ticket a real decision put into `Finalizing`, with the
+ * A project whose ticket a real decision put into `Finalization`, with the
  * repository binding a preparation needs. Everything up to the request is the
  * writer's own work, so the request under test is one a decision authorized.
  */

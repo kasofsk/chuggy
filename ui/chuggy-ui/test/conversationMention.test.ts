@@ -83,7 +83,7 @@ describe("what a query answers with", () => {
 
   test("a ticket with no title is still offered, and says its phase", () => {
     const untitled = conversationMentionItem(ticketOf(7, undefined));
-    expect(untitled.description).toBe("Work");
+    expect(untitled.description).toBe("Working");
     expect(conversationMentionFiltered([untitled], "7")).toHaveLength(1);
   });
 });

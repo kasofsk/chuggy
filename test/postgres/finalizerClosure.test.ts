@@ -1,10 +1,10 @@
 /**
  * The two lifecycle collisions a finalizing ticket can meet: a revocation
- * racing the entry into `Finalizing`, and a project closing while a
+ * racing the entry into `Finalization`, and a project closing while a
  * finalization is in flight.
  *
  * ENTRY IS THE POINT OF NO RETURN AND THE MAILBOX IS WHAT DECIDES THE RACE.
- * `revocableIn` excludes `Finalizing`, so the question is only ever which of
+ * `revocableIn` excludes `Finalization`, so the question is only ever which of
  * the two the writer journals first — and that is not the order they were
  * accepted in. A revocation is `Safety` and the completion that enters the
  * phase is `Completion`, so a revocation accepted second is still decided
