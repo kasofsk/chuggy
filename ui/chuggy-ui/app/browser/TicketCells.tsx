@@ -7,14 +7,19 @@
  * columns are the same arrangement for a different
  * reason: a dash meaning "not read" and a dash meaning "never ran" are the same
  * dash, and which one a row shows is a decision two screens must not answer
- * differently.
+ * differently. The activity cell is the same arrangement again: a ticket's
+ * last movement is one instant however it is joined, so it is read as how
+ * long ago it was in one place rather than drawn on two screens as two
+ * strings that happen to agree today.
  */
 
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import { agoFigure } from "../core/figures.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
+import { Figure } from "./ui/Figure.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
 export const cellAbsent = "—";
@@ -72,4 +77,23 @@ export function ticketRowExecutionCell(
 ): string {
   if (row.executionRead === "IndexTruncated") return cellExecutionUnread;
   return drawn ?? cellAbsent;
+}
+
+/** A ticket's last activity, wherever a table draws it: how long ago it was,
+ * carrying the full instant on hover. A row with no ticket body — an inbox
+ * entry a phase page never answered — has no instant of its own and keeps
+ * the dash. */
+export function TicketActivityCell(props: {
+  readonly activityAt: string | undefined;
+  readonly nowMs: number;
+}): ReactNode {
+  return (
+    <td className="text-ink-3">
+      {props.activityAt === undefined ? (
+        cellAbsent
+      ) : (
+        <Figure figure={agoFigure(props.activityAt, props.nowMs)} />
+      )}
+    </td>
+  );
 }

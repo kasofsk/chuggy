@@ -29,6 +29,7 @@ const everyKind: readonly FigureValue[] = [
   { kind: "Duration", text: "4m 12s" },
   { kind: "Quantity", text: "17,523,063", unit: "tokens" },
   { kind: "Instant", text: "10:12", iso: "2026-08-27T10:12:00.000Z" },
+  { kind: "Ago", text: "3h ago", full: "2026-08-27 07:12" },
   {
     kind: "Span",
     start: "10:19",
@@ -82,6 +83,14 @@ test("an instant hovers its full ISO and an absence hovers its reason", async ()
   fireEvent.focus(absent);
   expect((await screen.findByRole("tooltip")).textContent).toBe(
     "No run figures yet",
+  );
+});
+
+test("an ago figure hovers its full date and clock, like an instant hovers its ISO", async () => {
+  render(<Figure figure={{ kind: "Ago", text: "3h ago", full: "2026-08-27 07:12" }} />);
+  fireEvent.focus(screen.getByText("3h ago"));
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "2026-08-27 07:12",
   );
 });
 
