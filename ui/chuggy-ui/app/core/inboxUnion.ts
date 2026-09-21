@@ -5,7 +5,7 @@
  *
  * "Needs you" is the phase section plus any ticket carrying an open action,
  * which is what puts a ticket awaiting a finalization approval in front of the
- * person it waits on — `Finalizing` is not a phase the section holds, so the
+ * person it waits on — `Finalization` is not a phase the section holds, so the
  * actions are the only read that finds one.
  *
  * A REFUSED TICKET NEEDS A PERSON AND NO OTHER READ FINDS IT. The lead declines

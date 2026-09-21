@@ -140,8 +140,7 @@ export function escalationDetailLine(
  * Where the ticket is, in the machine's own word for the phase — except the
  * three the phase constructors themselves used to be spelled and no longer
  * are. `Working`/`Evaluating`/`Finalizing` are the product's own words for
- * `Work`/`Evaluation`/`Finalization`, decided before the phases were renamed
- * to fit the package's `TaskKind` constructors, and not reopened here.
+ * `Work`/`Evaluation`/`Finalization`.
  */
 export function phaseLabel(phase: TicketPhase): string {
   switch (phase) {

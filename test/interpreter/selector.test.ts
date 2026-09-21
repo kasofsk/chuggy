@@ -2720,7 +2720,7 @@ test("a decision dispatching past its project's budget is a control violation", 
 /**
  * A decision names each ticket once. Two entries for one ticket would be two
  * `Dispatch` events at their own prefixes, the second refused by enablement for
- * a ticket the first left Working — and they would carry one derived operation
+ * a ticket the first left in `Work` — and they would carry one derived operation
  * id between them, so the second could never be delivered under a relation
  * keyed by it.
  */
