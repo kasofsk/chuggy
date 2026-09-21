@@ -4,6 +4,9 @@ import {
   leadObservationTokensPerDecisionAt004,
   migration004,
 } from "../../src/adapters/postgres/schema/migrations/004-no-accounts.ts";
+import { migration005 } from "../../src/adapters/postgres/schema/migrations/005-three-deletions.ts";
+import { encodeDispatchProgram } from "../../src/interpreter/dispatchView.ts";
+import type { Stage } from "../../src/domain/generated/modelTypes.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -1322,12 +1325,12 @@ test("a fresh install records the accounts leaving and keeps none of their colum
               AND ((table_name = 'ticket_projection'
                     AND column_name IN ('gas_left','rework_left','finalization_left','reason'))
                 OR (table_name = 'dispatch_candidate'
-                    AND column_name IN ('rework_policy','finalization_pricing','resume_pricing','finalizer')))
+                    AND column_name IN ('rework_policy','finalization_pricing','resume_pricing','program')))
             ORDER BY present`,
         )
       ).rows,
       [
-        { present: "dispatch_candidate.finalizer" },
+        { present: "dispatch_candidate.program" },
         { present: "ticket_projection.reason" },
       ],
     );
@@ -1364,7 +1367,7 @@ test("the release the boundary admits carries no pricing, and no blocked reason 
           deps: [],
           prog: [{ fanout: 1, combinator: "UnanimousPass" }],
           workFanout: 1,
-          finalizer: "NoFinalizer",
+          finalizer: "ManagedFinalizer",
         },
       }),
       true,
@@ -1563,6 +1566,562 @@ test("the authoring policy loses the keys the accounts configured", async () => 
         )
       ).rows,
       [{ domain_configuration: unaccountedAuthoringPolicy }],
+    );
+  });
+});
+
+/** Brings the subject to the schema the three deleted values were still in. */
+async function undeletedInstallation(subject: pg.Pool): Promise<void> {
+  const before = migrations
+    .slice(0, migration005.version - 1)
+    .map(({ version, name }) => ({ version, name }));
+  const held = runtimeSchemaContract(before);
+  assert.deepEqual(
+    await postgresMigrateCompatible(subject, {
+      current: held,
+      retainedPrevious: held,
+    }),
+    { migrated: "Applied", versions: before.map(({ version }) => version) },
+  );
+}
+
+/** What every row below hangs from: a project and an epoch. */
+const deletionPartition = `
+  INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-5','project-5','Active');
+  INSERT INTO recovery_epoch(epoch) VALUES('epoch-5');`;
+
+function deletionJournalRow(seq: number, entry: string): string {
+  const ordinal = String(seq);
+  return `INSERT INTO decision_input
+       (tenant,project,ordinal,input_kind,input_id,base_priority,
+        lifecycle_generation,state,decided_seq,terminal_at)
+     VALUES('tenant-5','project-5',${ordinal},'Operation','operation-${ordinal}','Ordinary',
+            1,'Journaled',${ordinal},now());
+     INSERT INTO journal_entry
+       (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
+        recovery_epoch,cause_kind,cause_id)
+     VALUES('tenant-5','project-5',${ordinal},$entry$${entry}$entry$,
+            'digest-${ordinal}','genesis','owner',1,'epoch-5','Operation','operation-${ordinal}')`;
+}
+
+function deletionReleaseEntry(
+  finalizer: string,
+  combinator: string,
+  seq = 1,
+): string {
+  return JSON.stringify({
+    seq,
+    event: {
+      type: "ReleaseTicket",
+      value: {
+        ticket: 1,
+        deps: [],
+        prog: [{ fanout: 1, combinator }],
+        workFanout: 1,
+        finalizer,
+      },
+    },
+    rec: { label: "ticket-released", transitions: [], effects: [] },
+  });
+}
+
+function deletionRevokeEntry(
+  transitions: readonly { readonly ticket: number }[],
+  seq = 1,
+): string {
+  return JSON.stringify({
+    seq,
+    event: { type: "Revoke", value: 1 },
+    rec: {
+      label: "ticket-revoked",
+      transitions: transitions.map(({ ticket }) => ({
+        ticket,
+        from: "Pending",
+        to: ticket === 1 ? "Revoked" : "Escalated",
+      })),
+      effects: ["CancelTicketWork"],
+    },
+  });
+}
+
+function deletionBlockedEntry(reason: string, seq = 1): string {
+  return JSON.stringify({
+    seq,
+    event: { type: "ExecutionBlocked", value: { ticket: 1, reason } },
+    rec: {
+      label: "ticket-escalated execution_blocked",
+      transitions: [{ ticket: 1, from: "Working", to: "Escalated" }],
+      effects: [],
+    },
+  });
+}
+
+/** One row per guard arm, each the smallest thing that arm has to see. */
+const deletedRows: readonly (readonly [string, string, string])[] = [
+  [
+    "ticket_projection",
+    "a ticket parked on a revoked dependency",
+    `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,reason)
+     VALUES('tenant-5','project-5',1,'Escalated',1,'DependencyRevoked')`,
+  ],
+  [
+    "native_action",
+    "an open desk task at the parked reason",
+    `${deletionJournalRow(1, "{}")};
+     INSERT INTO native_action
+       (tenant,project,action,authorizing_seq,effect_position,
+        ticket,action_version,kind,reason,required_capability)
+     VALUES('tenant-5','project-5','action-5',1,0,1,1,'TicketEscalation','DependencyRevoked','ResolveTicket')`,
+  ],
+  [
+    "journal_entry",
+    "a release that chose no finalizer",
+    deletionJournalRow(1, deletionReleaseEntry("NoFinalizer", "UnanimousPass")),
+  ],
+  [
+    "journal_entry",
+    "a release whose stage passed on any",
+    deletionJournalRow(1, deletionReleaseEntry("ManagedFinalizer", "AnyPass")),
+  ],
+  [
+    "journal_entry",
+    "an execution blocked on a revoked dependency",
+    deletionJournalRow(1, deletionBlockedEntry("DependencyRevoked")),
+  ],
+  [
+    "journal_entry",
+    "a revoke that transitioned a dependent too",
+    deletionJournalRow(1, deletionRevokeEntry([{ ticket: 1 }, { ticket: 2 }])),
+  ],
+];
+
+/** The same arms' near misses, each a row the guard has to let through. */
+const undeletedRows: readonly (readonly [string, string])[] = [
+  [
+    "a ticket parked on its own failed work",
+    `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,reason)
+     VALUES('tenant-5','project-5',1,'Escalated',1,'WorkFailed')`,
+  ],
+  [
+    "a settled desk task at the parked reason",
+    `${deletionJournalRow(1, "{}")};
+     INSERT INTO native_action
+       (tenant,project,action,authorizing_seq,effect_position,
+        ticket,action_version,kind,reason,required_capability,state)
+     VALUES('tenant-5','project-5','action-5',1,0,1,1,'TicketEscalation','DependencyRevoked','ResolveTicket','Withdrawn')`,
+  ],
+  [
+    "a release this machine still admits",
+    deletionJournalRow(
+      1,
+      deletionReleaseEntry("ManagedFinalizer", "UnanimousPass"),
+    ),
+  ],
+  [
+    "an execution blocked on its own failed work",
+    deletionJournalRow(1, deletionBlockedEntry("WorkFailed")),
+  ],
+  [
+    "a revoke that transitioned the ticket it named",
+    deletionJournalRow(1, deletionRevokeEntry([{ ticket: 1 }])),
+  ],
+  ["a journal row that is not a document", deletionJournalRow(1, "not json")],
+];
+
+test("a row the three deletions leave unreplayable refuses the migration untouched", async () => {
+  for (const [relation, what, seeded] of deletedRows)
+    await migrationDatabase("threedeletions_guard", async (subject) => {
+      await undeletedInstallation(subject);
+      await subject.query(`${deletionPartition}\n${seeded}`);
+      await assert.rejects(
+        postgresMigrate(subject),
+        new RegExp(`no longer admits remain in ${relation}`, "u"),
+        what,
+      );
+      assert.deepEqual(
+        await postgresRuntimeSchema(subject).applied(
+          new AbortController().signal,
+        ),
+        migrations
+          .slice(0, migration005.version - 1)
+          .map(({ version, name }) => ({ version, name })),
+        what,
+      );
+    });
+});
+
+test("a row each arm must not match migrates", async () => {
+  for (const [what, seeded] of undeletedRows)
+    await migrationDatabase("threedeletions_admit", async (subject) => {
+      await undeletedInstallation(subject);
+      await subject.query(`${deletionPartition}\n${seeded}`);
+      assert.ok(
+        (await postgresMigrate(subject)).includes(migration005.version),
+        what,
+      );
+    });
+});
+
+test("a fresh install records the three leaving and keeps no finalizer column", async () => {
+  await migrationDatabase("threedeletions_install", async (subject) => {
+    assert.ok((await postgresMigrate(subject)).includes(migration005.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT version,name FROM schema_migration WHERE version=$1",
+          [migration005.version],
+        )
+      ).rows,
+      [
+        {
+          version: migration005.version,
+          name: "the finalizer choice, the revoke cascade and the combinator leave",
+        },
+      ],
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT column_name AS present
+             FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'dispatch_candidate'
+              AND column_name IN ('finalizer','program')
+            ORDER BY present`,
+        )
+      ).rows,
+      [{ present: "program" }],
+    );
+  });
+});
+
+/** A desk task the rig settled at the parked reason, and the resolution it was settled with. */
+const settledDeskTask = `${deletionJournalRow(1, "{}")};
+   INSERT INTO native_action
+     (tenant,project,action,authorizing_seq,effect_position,
+      ticket,action_version,kind,reason,required_capability,state)
+   VALUES('tenant-5','project-5','action-5',1,0,1,1,'TicketEscalation','DependencyRevoked','ResolveTicket','Withdrawn');
+   INSERT INTO native_action_resolution(tenant,project,action,resolution)
+   VALUES('tenant-5','project-5','action-5','Revoke');
+   UPDATE native_action SET state='Resolved', resolution='Revoke'
+    WHERE tenant='tenant-5' AND project='project-5' AND action='action-5'`;
+
+test("a desk task settled at the parked reason migrates and stays what it recorded", async () => {
+  await migrationDatabase("threedeletions_settled", async (subject) => {
+    await undeletedInstallation(subject);
+    await subject.query(`${deletionPartition}\n${settledDeskTask}`);
+    assert.ok((await postgresMigrate(subject)).includes(migration005.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT state,reason FROM native_action WHERE action='action-5'",
+        )
+      ).rows,
+      [{ state: "Resolved", reason: "DependencyRevoked" }],
+    );
+  });
+});
+
+/** Each narrowed reason check, with a row it has to refuse once the migration has run. */
+const parkedReasonRows: readonly (readonly [string, string])[] = [
+  [
+    "ticket_projection_reason_is_known",
+    `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,reason)
+     VALUES('tenant-5','project-5',1,'Escalated',1,'DependencyRevoked')`,
+  ],
+  [
+    "native_action_reason_check",
+    `${deletionJournalRow(1, "{}")};
+     INSERT INTO native_action
+       (tenant,project,action,authorizing_seq,effect_position,
+        ticket,action_version,kind,reason,required_capability)
+     VALUES('tenant-5','project-5','action-5',1,0,1,1,'TicketEscalation','DependencyRevoked','ResolveTicket')`,
+  ],
+];
+
+test("the narrowed reason checks refuse a live row at the parked reason", async () => {
+  await migrationDatabase("threedeletions_checks", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(deletionPartition);
+    for (const [constraint, refused] of parkedReasonRows)
+      await assert.rejects(
+        subject.query(refused),
+        new RegExp(constraint, "u"),
+        refused,
+      );
+  });
+});
+
+/** The stage keys the encoder writes, less the one the machine no longer has. */
+function programAfterTheCombinator(program: readonly Stage[]): string {
+  const stages = JSON.parse(
+    JSON.stringify(encodeDispatchProgram(program)),
+  ) as Record<string, unknown>[];
+  return JSON.stringify(
+    stages.map((stage) =>
+      Object.fromEntries(
+        Object.entries(stage).filter(([key]) => key !== "combinator"),
+      ),
+    ),
+  );
+}
+
+/** The programs the rewrite has to render: two stages, and none at all. */
+const rewrittenPrograms: readonly (readonly [number, readonly Stage[]])[] = [
+  [
+    1,
+    [
+      { fanout: 2, combinator: "UnanimousPass" },
+      { fanout: 1, combinator: "AnyPass" },
+    ],
+  ],
+  [2, []],
+];
+
+test("a stored dispatch program is rewritten as the encoder without the combinator writes it", async () => {
+  await migrationDatabase("threedeletions_program", async (subject) => {
+    await undeletedInstallation(subject);
+    await subject.query(`${deletionPartition}
+       INSERT INTO configuration_revision
+         (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+       VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
+       INSERT INTO dispatch_view(tenant,project,recovery_epoch,watermark,schema_version,digest)
+       VALUES('tenant-5','project-5','epoch-5',1,1,repeat('a',64));`);
+    for (const [ticket, program] of rewrittenPrograms)
+      await subject.query(
+        `INSERT INTO dispatch_candidate
+           (tenant,project,ticket,ticket_version,work_fanout,program,finalizer,
+            configuration_revision,configuration_digest,configuration_canonical)
+         VALUES('tenant-5','project-5',$1,1,1,$2,'ManagedFinalizer',
+                'revision-5','digest-5','{}')`,
+        [ticket, JSON.stringify(encodeDispatchProgram(program))],
+      );
+    assert.ok((await postgresMigrate(subject)).includes(migration005.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT ticket::text AS ticket,program FROM dispatch_candidate ORDER BY ticket",
+        )
+      ).rows,
+      rewrittenPrograms.map(([ticket, program]) => ({
+        ticket: String(ticket),
+        program: programAfterTheCombinator(program),
+      })),
+    );
+  });
+});
+
+test("the boundary admits the surviving spellings and the absent keys, and refuses the deleted ones", async () => {
+  await migrationDatabase("threedeletions_boundary", async (subject) => {
+    await postgresMigrate(subject);
+    const admits = async (event: unknown): Promise<boolean | null> =>
+      (
+        await subject.query<{ admitted: boolean | null }>(
+          "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+          [JSON.stringify(event)],
+        )
+      ).rows[0]?.admitted ?? null;
+    const release = (value: Record<string, unknown>): unknown => ({
+      type: "ReleaseTicket",
+      value: { ticket: 1, deps: [], workFanout: 1, ...value },
+    });
+    assert.equal(
+      await admits(
+        release({
+          prog: [{ fanout: 1, combinator: "UnanimousPass" }],
+          finalizer: "ManagedFinalizer",
+        }),
+      ),
+      true,
+      "the spellings a stored entry carries",
+    );
+    assert.equal(
+      await admits(release({ prog: [{ fanout: 1 }] })),
+      true,
+      "the keys this machine no longer writes",
+    );
+    assert.equal(
+      await admits(
+        release({
+          prog: [{ fanout: 1, combinator: "UnanimousPass" }],
+          finalizer: "NoFinalizer",
+        }),
+      ),
+      false,
+      "the finalizer this machine does not have",
+    );
+    assert.equal(
+      await admits(release({ prog: [{ fanout: 1, combinator: "AnyPass" }] })),
+      false,
+      "the combinator this machine does not have",
+    );
+    assert.equal(
+      await admits({
+        type: "ExecutionBlocked",
+        value: { ticket: 1, reason: "WorkFailed" },
+      }),
+      true,
+    );
+    assert.equal(
+      await admits({
+        type: "ExecutionBlocked",
+        value: { ticket: 1, reason: "DependencyRevoked" },
+      }),
+      false,
+    );
+  });
+});
+
+/** A draft authoring of the shape an image that still had the finalizer wrote. */
+function deletionFinalizerAuthoring(): string {
+  const authoring = JSON.parse(encodeDraftAuthoring(plainAuthoring)) as {
+    readonly value: Record<string, unknown>;
+  };
+  return JSON.stringify({
+    ...authoring,
+    value: { ...authoring.value, finalizer: "NoFinalizer" },
+  });
+}
+
+test("an authoring that still names the deleted finalizer no longer decides the landing", async () => {
+  await migrationDatabase("threedeletions_draft", async (subject) => {
+    await postgresMigrate(subject);
+    await seedProposingBinding(subject);
+    assert.deepEqual(
+      (
+        await subject.query<{ result: string }>(
+          `SELECT result FROM ${draftCreateFunction}(
+             'tenant-91','project-91','revision-91','digest-91',0,$1,
+             NULL,'Land it.','{}'::text[],'{}'::text[],'refs/heads/rt/work',
+             NULL,NULL,'bound-91','User','author')`,
+          [deletionFinalizerAuthoring()],
+        )
+      ).rows,
+      [{ result: "Created" }],
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ finalization_mode: string }>(
+          "SELECT finalization_mode FROM draft_brief",
+        )
+      ).rows,
+      [{ finalization_mode: "PullRequest" }],
+      "the draft lands where its repository lands",
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ result: string }>(
+          `SELECT result FROM ${draftReviseFunction}(
+             'tenant-91','project-91',1,1,'revision-91',$1,
+             NULL,'Land it.','{}'::text[],'{}'::text[],'refs/heads/rt/work',
+             'Push',NULL,'bound-91','User','author')`,
+          [deletionFinalizerAuthoring()],
+        )
+      ).rows,
+      [{ result: "Revised" }],
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ finalization_mode: string }>(
+          "SELECT finalization_mode FROM draft_brief",
+        )
+      ).rows,
+      [{ finalization_mode: "Push" }],
+      "the revision lands where it says",
+    );
+  });
+});
+
+/** The landing each roster has to take, and one neither may. */
+const landingRosterRows: readonly (readonly [string, string, string])[] = [
+  [
+    "draft_brief_finalization_mode_is_known",
+    "None",
+    `UPDATE draft_brief SET finalization_mode='None'`,
+  ],
+  [
+    "draft_brief_finalization_mode_is_known",
+    "Nowhere",
+    `UPDATE draft_brief SET finalization_mode='Nowhere'`,
+  ],
+  [
+    "project_repository_landing_mode_is_known",
+    "None",
+    `UPDATE project_repository SET landing_mode='None'`,
+  ],
+  [
+    "project_repository_landing_mode_is_known",
+    "Nowhere",
+    `UPDATE project_repository SET landing_mode='Nowhere'`,
+  ],
+];
+
+test("both landing rosters take the mode that lands nothing and no other new one", async () => {
+  await migrationDatabase("threedeletions_none", async (subject) => {
+    await postgresMigrate(subject);
+    await seedProposingBinding(subject);
+    assert.deepEqual(
+      await createdProposingDraft(subject, "refs/heads/rt/work"),
+      [{ result: "Created", ticket: "1" }],
+    );
+    for (const [constraint, mode, written] of landingRosterRows)
+      if (mode === "None")
+        assert.equal(
+          (await subject.query(written)).rowCount,
+          1,
+          `${constraint} takes ${mode}`,
+        );
+      else
+        await assert.rejects(
+          subject.query(written),
+          new RegExp(constraint, "u"),
+          `${constraint} refuses ${mode}`,
+        );
+  });
+});
+
+/** The two briefs a pre-005 image wrote: one that landed nothing, one that landed. */
+async function briefsBeforeTheLandingRoster(subject: pg.Pool): Promise<void> {
+  await undeletedInstallation(subject);
+  await seedProposingBinding(subject);
+  for (const authoring of [
+    deletionFinalizerAuthoring(),
+    encodeDraftAuthoring(plainAuthoring),
+  ])
+    await subject.query(
+      `SELECT result FROM ${draftCreateFunction}(
+         'tenant-91','project-91','revision-91','digest-91',0,$1,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'refs/heads/rt/work',
+         NULL,NULL,'bound-91','User','author')`,
+      [authoring],
+    );
+}
+
+test("a brief that recorded no landing is migrated to the one that lands nothing", async () => {
+  await migrationDatabase("threedeletions_landing", async (subject) => {
+    await briefsBeforeTheLandingRoster(subject);
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT ticket::text AS ticket,finalization_mode FROM draft_brief ORDER BY ticket",
+        )
+      ).rows,
+      [
+        { ticket: "1", finalization_mode: null },
+        { ticket: "2", finalization_mode: "PullRequest" },
+      ],
+      "the image before this one recorded no landing for the draft that landed nothing",
+    );
+    assert.ok((await postgresMigrate(subject)).includes(migration005.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT ticket::text AS ticket,finalization_mode FROM draft_brief ORDER BY ticket",
+        )
+      ).rows,
+      [
+        { ticket: "1", finalization_mode: "None" },
+        { ticket: "2", finalization_mode: "PullRequest" },
+      ],
     );
   });
 });
