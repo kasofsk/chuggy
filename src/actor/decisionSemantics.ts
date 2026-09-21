@@ -157,42 +157,52 @@ export function wordAtCurrentVocabulary(value: unknown): unknown {
 }
 
 /**
- * One stored row with every superseded spelling rewritten: the event's tag and
- * the two payload fields that name vocabulary, the record's label, and both
- * ends of each transition. Nothing else is walked — a blind walk would rewrite
- * a future field that happens to hold a renamed string — and a row that is not
- * the shape named passes through for the codec to refuse on its own terms.
+ * One stored event with every superseded spelling rewritten: its tag and the
+ * two payload fields that name vocabulary. A draft's retained authoring is one
+ * of these outside any row — the text `draft_revision` keeps is the event a
+ * release would journal — so the draft reader lifts it here too, and a draft
+ * authored before the rename still says `ReleaseTicket` in the bytes.
+ */
+export function eventAtCurrentVocabulary(raw: unknown): unknown {
+  const event = objectFields(raw);
+  if (event === undefined) return raw;
+  const value = objectFields(event["value"]);
+  return {
+    ...event,
+    type: wordAtCurrentVocabulary(event["type"]),
+    ...(value === undefined
+      ? {}
+      : {
+          value: {
+            ...value,
+            ...("reason" in value
+              ? { reason: wordAtCurrentVocabulary(value["reason"]) }
+              : {}),
+            ...("out" in value
+              ? { out: wordAtCurrentVocabulary(value["out"]) }
+              : {}),
+          },
+        }),
+  };
+}
+
+/**
+ * One stored row with every superseded spelling rewritten: the event as above,
+ * the record's label, and both ends of each transition. Nothing else is walked
+ * — a blind walk would rewrite a future field that happens to hold a renamed
+ * string — and a row that is not the shape named passes through for the codec
+ * to refuse on its own terms.
  */
 export function rowAtCurrentVocabulary(raw: unknown): unknown {
   const row = objectFields(raw);
   if (row === undefined) return raw;
-  const event = objectFields(row["event"]);
   const rec = objectFields(row["rec"]);
-  const value = objectFields(event?.["value"]);
   const transitions = rec?.["transitions"];
   return {
     ...row,
-    ...(event === undefined
-      ? {}
-      : {
-          event: {
-            ...event,
-            type: wordAtCurrentVocabulary(event["type"]),
-            ...(value === undefined
-              ? {}
-              : {
-                  value: {
-                    ...value,
-                    ...("reason" in value
-                      ? { reason: wordAtCurrentVocabulary(value["reason"]) }
-                      : {}),
-                    ...("out" in value
-                      ? { out: wordAtCurrentVocabulary(value["out"]) }
-                      : {}),
-                  },
-                }),
-          },
-        }),
+    ...("event" in row
+      ? { event: eventAtCurrentVocabulary(row["event"]) }
+      : {}),
     ...(rec === undefined
       ? {}
       : {

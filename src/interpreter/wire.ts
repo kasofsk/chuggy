@@ -38,6 +38,7 @@ import {
 } from "../generated/model-api.ts";
 import {
   dispositionInRecord,
+  eventAtCurrentVocabulary,
   rowAtCurrentVocabulary,
   wordAtCurrentVocabulary,
   type DecisionSemanticsVersion,
@@ -146,8 +147,23 @@ export function encodeDecisionEventText(event: DecisionEvent): string {
  * client's bytes, and unreadable bytes are an answer rather than a crash.
  */
 export function parseDecisionEventText(text: string): Parsed<DecisionEvent> {
+  return parsedDecisionEvent(() => JSON.parse(text));
+}
+
+/**
+ * The same read over an event this deployment stored rather than one a client
+ * sent: the spelling is lifted first, as a journal row's is, because the bytes
+ * of a retained draft are the vocabulary of the day it was authored.
+ */
+export function parseStoredDecisionEventText(
+  text: string,
+): Parsed<DecisionEvent> {
+  return parsedDecisionEvent(() => eventAtCurrentVocabulary(JSON.parse(text)));
+}
+
+function parsedDecisionEvent(read: () => unknown): Parsed<DecisionEvent> {
   try {
-    return { parsed: "Ok", value: decodeDecisionEvent(JSON.parse(text)) };
+    return { parsed: "Ok", value: decodeDecisionEvent(read()) };
   } catch (error: unknown) {
     return { parsed: "Refused", why: parseRefusal(error) };
   }
