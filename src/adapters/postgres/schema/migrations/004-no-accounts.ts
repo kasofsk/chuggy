@@ -25,12 +25,12 @@ import type { Migration } from "../shared.ts";
  * index does, so a row that is not a document is not a cast failure.
  *
  * THE AUTHORING POLICY IS REWRITTEN RATHER THAN EMPTIED, AND RENDERED THE WAY
- * ITS WRITER RENDERS IT. The singleton row is compared as text to the
- * configuration the running image encodes, so dropping the keys through
- * `jsonb` would leave a row that no image matches: `jsonb` orders keys its own
- * way and spaces them. The retained keys are written back in the order the
- * domain configuration declares them instead, which is the order the encoder
- * emits.
+ * ITS WRITER RENDERS IT. The row is what a starting image compares its own
+ * configuration against, so the retained keys are written back in the order
+ * the domain configuration declares them — the order the encoder emits —
+ * rather than left in whatever order dropping keys through `jsonb` would
+ * produce, and a migrated installation holds the same text a fresh one
+ * installs.
  */
 export const migration004: Migration = {
   version: 4,

@@ -63,7 +63,8 @@ import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.t
 import { asTicketId } from "../../src/domain/ids.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { encodeDraftAuthoring } from "../../src/interpreter/authoring.ts";
-import { plainAuthoring } from "../actor/harness.ts";
+import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
+import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
 import type { ProjectRead } from "../../src/interpreter/nativeWeb.ts";
 
 function databaseUrl(database: string): string {
@@ -1469,6 +1470,32 @@ test("a journal that names an account wall refuses the migration untouched", asy
         what,
       );
     });
+});
+
+/**
+ * The rewrite and the start-up check, held against each other. Migration 004
+ * renders the retained keys itself, so nothing but a case like this says the
+ * text it renders is text the image that installs it will start against.
+ */
+test("a policy row migration 004 rewrote is one this image starts against", async () => {
+  await migrationDatabase("noaccounts_precondition", async (subject) => {
+    await accountedInstallation(subject);
+    await subject.query(
+      `INSERT INTO deployment_authoring_policy(singleton,domain_configuration)
+       VALUES(true,$1)`,
+      [accountedAuthoringPolicy],
+    );
+    assert.ok((await postgresMigrate(subject)).includes(migration004.version));
+    assert.equal(
+      (
+        await postgresDomainConfigurationPrecondition(
+          subject,
+          refinementInstance,
+        ).check(new AbortController().signal)
+      ).met,
+      "Met",
+    );
+  });
 });
 
 test("the authoring policy loses the keys the accounts configured", async () => {
