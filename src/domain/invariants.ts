@@ -100,8 +100,8 @@ function idsAreTheRunFrom(
 }
 
 /**
- * The live task set is exactly the current phase's anatomy: the work set while
- * Work, one stage's fan-out while Evaluation, and empty everywhere else.
+ * The live task set is exactly the current phase's anatomy: one work task
+ * while Work, one stage's fan-out while Evaluation, and empty everywhere else.
  * Dead live-task state is never carried, and the live ids are the contiguous
  * run directly above the retired record — which is what the
  * at-least-once-by-identity argument needs.

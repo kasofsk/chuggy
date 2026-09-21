@@ -383,10 +383,8 @@ module chuggy_domain {
           match v { | Pass => Passed | Fail => Failed }) }) }
 
   /// The Work task set fully resolved: reduce the phase, at CYCLE level
-  /// only. A work set passes UNANIMOUSLY — not a placeholder: Work runs ONE
-  /// task per cycle whose success is the phase's success — unanimous over a
-  /// singleton; under the parallel task-set generalization, the faithful
-  /// reading stays "every work task passed". A pass RETIRES the
+  /// only. Work runs ONE task per cycle, so the phase's success is that
+  /// task's, and combine reads the singleton it is given. A pass RETIRES the
   /// work set into the record and spawns the eval program's LOWEST stage
   /// — one task per evaluator in the lowest stage, fanned out in
   /// parallel. Every entry spawns the stage in
@@ -555,7 +553,7 @@ module chuggy_domain {
   /// per resume point, one trace label ("ticket-resumed"; the flavor is
   /// visible in the transition's target):
   ///   ResumeWork and ResumeRework: THE SAME CONTINUATION — respawn
-  ///     the work set as a new cycle. The two walls they answer differ
+  ///     the work task as a new cycle. The two walls they answer differ
   ///     (failed work, a failed evaluation) but a verdict has no re-judge to
   ///     offer, so both are honest only as new work.
   ///   ResumeEvaluation: A FRESH FAN-OUT OF THE LOWEST STAGE — re-enter

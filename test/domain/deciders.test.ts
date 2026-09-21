@@ -64,7 +64,6 @@ const liveShape = (graph: TicketGraph, at: ReturnType<typeof id>) =>
 const authoring = {
   deps: depsOf(),
   program: defaultProgram(config),
-  workFanout: config.nTasks,
 };
 
 test("a release arrives already Pending, having spawned nothing", () => {
