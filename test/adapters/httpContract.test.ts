@@ -107,7 +107,6 @@ test("the frontend contract is generated from the checked request schemas", () =
 const authoring = {
   dependencies: [1, 2],
   program: [{ fanout: 1 }],
-  workFanout: 1,
 } as const;
 
 const brief = {
@@ -166,7 +165,6 @@ test("authoring DTOs translate into existing application types", () => {
       authoring: {
         deps: new Set([1, 2]),
         prog: authoring.program,
-        workFanout: 1,
       },
       brief: {
         intent: "Serve the brief on the ticket resource.",

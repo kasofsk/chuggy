@@ -382,7 +382,6 @@ test("revising a draft with exactly the brief it was read back with keeps its re
     authoring: {
       dependencies: [],
       program: [{ fanout: 1 }],
-      workFanout: 1,
     },
     brief: readBack,
   });
@@ -444,7 +443,6 @@ test("draft initialization outcomes remain discriminated at HTTP", () => {
         choices: {
           stages: plainAuthoring.prog,
           programStagesMax: 1,
-          workFanouts: [1],
         },
         dependencyCandidates: [id(1)],
         dependencyCandidatesTruncated: false,

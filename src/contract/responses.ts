@@ -690,7 +690,6 @@ const dispatchCandidateSchema = z.strictObject({
   ticket: ticketNumberSchema,
   ticketVersion: countSchema,
   dependencies: page(ticketNumberSchema),
-  workFanout: ticketNumberSchema,
   program: page(programStageSchema),
   configurationRevision: identitySchema,
   configurationVersion: configurationVersionSchema.optional(),
@@ -820,7 +819,6 @@ export const draftInitializationResponseSchema = z.object({
   choices: z.object({
     stages: page(programStageResponseSchema),
     programStagesMax: countSchema,
-    workFanouts: page(ticketNumberSchema),
   }),
   dependencyCandidates: page(ticketNumberSchema),
   dependencyCandidatesTruncated: z.boolean(),

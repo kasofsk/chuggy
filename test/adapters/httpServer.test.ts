@@ -1175,7 +1175,6 @@ test("operational routes parse bounded filters and artifact identities", async (
 const publicAuthoring = {
   dependencies: [],
   program: [{ fanout: 1 }],
-  workFanout: 1,
 };
 
 const publicBrief = {

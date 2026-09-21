@@ -358,14 +358,9 @@
                 "required": ["fanout"],
                 "additionalProperties": false
               }
-            },
-            "workFanout": {
-              "type": "integer",
-              "exclusiveMinimum": 0,
-              "maximum": 9007199254740991
             }
           },
-          "required": ["dependencies", "program", "workFanout"],
+          "required": ["dependencies", "program"],
           "additionalProperties": false
         },
         "brief": {
@@ -526,14 +521,9 @@
                 "required": ["fanout"],
                 "additionalProperties": false
               }
-            },
-            "workFanout": {
-              "type": "integer",
-              "exclusiveMinimum": 0,
-              "maximum": 9007199254740991
             }
           },
-          "required": ["dependencies", "program", "workFanout"],
+          "required": ["dependencies", "program"],
           "additionalProperties": false
         },
         "brief": {

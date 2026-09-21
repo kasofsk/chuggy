@@ -953,7 +953,6 @@ function initializationBody(): Record<string, unknown> {
         choices: {
           stages: [{ fanout: 1 }],
           programStagesMax: 4,
-          workFanouts: [1, 2],
         },
         dependencyCandidates: [asTicketId(1), asTicketId(2)],
         dependencyCandidatesTruncated: false,
@@ -968,7 +967,7 @@ test("a draft and its initialization parse with the authoring the wire carries",
   const initialization =
     draftInitializationResponseSchema.parse(initializationBody());
   assert.equal(initialization.fence.projectSequence, 9);
-  assert.deepEqual(initialization.choices.workFanouts, [1, 2]);
+  assert.equal(initialization.choices.programStagesMax, 4);
 });
 
 test("a hand-assembled read drops an unknown field at every depth", () => {
