@@ -19,9 +19,12 @@ import { resizeObserverStubbed } from "./resizeObserver.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
+const fixedNowMs = Date.parse("2026-08-27T03:00:00Z");
+
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
+  nowMs: () => fixedNowMs,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -43,6 +46,10 @@ vi.mock("@tanstack/react-router", () => ({
  * to them, and `max-w-aside` dropped lets a value the length of a full digest
  * reference take the column apart. Neither shows up in a row's own value, so
  * neither is provable above this tier.
+ *
+ * The last activity column is the same tier for a different reason: that it
+ * draws the relative reading and carries the absolute one on hover is a fact
+ * about `Figure`'s tooltip, not about `activityAt` itself.
  */
 
 beforeEach(resizeObserverStubbed);
@@ -122,6 +129,15 @@ test("the title cell keeps the whole title, keeps clipping it, and links", async
   expect(screen.getByText(title).tagName).toBe("A");
   fireEvent.focus(cell as Element);
   expect((await screen.findByRole("tooltip")).textContent).toBe(title);
+});
+
+test("the last activity column draws the relative reading and answers the absolute on hover", async () => {
+  await drawTable();
+  const cell = screen.getByText("3h ago");
+  fireEvent.focus(cell);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "2026-08-27 00:00",
+  );
 });
 
 test("the runs-on cell keeps the image reference, and keeps clipping it", async () => {
