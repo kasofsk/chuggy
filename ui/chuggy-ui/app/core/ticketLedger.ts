@@ -211,13 +211,11 @@ function stageOf(
   return authoring.program[set.stage];
 }
 
-/** A work set and an evaluation set both combine unanimously. */
+/** A work set is one task; an evaluation set combines unanimously over its stage's width. */
 function taskSetOf(set: SpawnedSet, authoring: TicketAuthoring): TaskSet {
   const stage = stageOf(set, authoring);
   const expected =
-    set.taskKind === "Work"
-      ? authoring.workFanout
-      : (stage?.fanout ?? set.executions.length);
+    set.taskKind === "Work" ? 1 : (stage?.fanout ?? set.executions.length);
   return {
     executions: set.executions,
     expected,

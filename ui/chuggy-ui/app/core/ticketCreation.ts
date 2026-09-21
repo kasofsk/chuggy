@@ -478,7 +478,6 @@ export function creationBodyFrom(
     authoring: {
       dependencies: [...form.dependencies],
       program: [...form.program],
-      workFanout: form.workFanout,
     },
     brief: creationBriefOf(form, branches),
   };

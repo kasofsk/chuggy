@@ -11,11 +11,7 @@
 import type { ReactNode } from "react";
 
 import type { DraftInitializationResponse } from "../../../../src/contract/responses.ts";
-import {
-  creationFanoutLabel,
-  creationOffered,
-  creationStageLabel,
-} from "../core/ticketCreation.ts";
+import { creationOffered, creationStageLabel } from "../core/ticketCreation.ts";
 import type {
   CreationStage,
   TicketCreationForm,
@@ -160,25 +156,6 @@ function Program(
   );
 }
 
-function WorkFanout(
-  props: FormEdit & {
-    readonly choices: DraftInitializationResponse["choices"];
-  },
-): ReactNode {
-  const { choices, form, onChange } = props;
-  return (
-    <ChoiceRow
-      label="work fanout"
-      offered={choices.workFanouts}
-      chosen={form.workFanout}
-      render={creationFanoutLabel}
-      onChoose={(workFanout) => {
-        onChange({ ...form, workFanout });
-      }}
-    />
-  );
-}
-
 export function TicketCreationAdvanced(
   props: FormEdit & {
     readonly initialization: DraftInitializationResponse;
@@ -199,11 +176,6 @@ export function TicketCreationAdvanced(
           onChange={onChange}
           offered={initialization.choices.stages}
           stagesMax={initialization.choices.programStagesMax}
-        />
-        <WorkFanout
-          form={form}
-          onChange={onChange}
-          choices={initialization.choices}
         />
       </div>
     </Panel>
