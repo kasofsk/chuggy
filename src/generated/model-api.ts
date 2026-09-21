@@ -314,7 +314,6 @@ export const ticketSchema: z.ZodType<Ticket> = z
     phase: phaseSchema,
     deps: z.set(z.number().int().safe()).readonly(),
     artifact: artifactMarkSchema,
-    workFanout: z.number().int().safe(),
     program: z.array(stageDefinitionSchema).readonly(),
     tasks: z.set(taskSchema).readonly(),
     record: z.array(taskSchema).readonly(),
@@ -331,7 +330,6 @@ const ticketSchemaWire: z.ZodType<Ticket> = z
       .refine(distinctJson, { message: "set contains a duplicate" })
       .transform((items) => new Set(items)),
     artifact: artifactMarkSchemaWire,
-    workFanout: z.number().int().safe(),
     program: z.array(stageDefinitionSchemaWire).readonly(),
     tasks: z
       .array(taskSchemaWire)
@@ -470,7 +468,6 @@ export const decisionEventSchema: z.ZodType<DecisionEvent> = z.union([
           ticket: z.number().int().safe(),
           deps: z.set(z.number().int().safe()).readonly(),
           prog: z.array(stageDefinitionSchema).readonly(),
-          workFanout: z.number().int().safe(),
         })
         .readonly(),
     })
@@ -541,7 +538,6 @@ const decisionEventSchemaWire: z.ZodType<DecisionEvent> = z.union([
             .refine(distinctJson, { message: "set contains a duplicate" })
             .transform((items) => new Set(items)),
           prog: z.array(stageDefinitionSchemaWire).readonly(),
-          workFanout: z.number().int().safe(),
         })
         .readonly(),
     })

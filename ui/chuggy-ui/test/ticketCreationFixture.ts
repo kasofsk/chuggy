@@ -55,12 +55,10 @@ export const creationInitialization: DraftInitializationResponse = {
   defaults: {
     dependencies: [],
     program: [{ fanout: 1 }],
-    workFanout: 1,
   },
   choices: {
     stages: [{ fanout: 1 }, { fanout: 2 }],
     programStagesMax: 2,
-    workFanouts: [1, 2],
   },
   dependencyCandidates: [7, 8],
   dependencyCandidatesTruncated: false,

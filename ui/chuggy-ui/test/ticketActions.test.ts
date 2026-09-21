@@ -103,7 +103,6 @@ test("manual dispatch echoes only the candidate version the view supplied", () =
         ticket: 7,
         ticketVersion: 12,
         dependencies: [],
-        workFanout: 1,
         program: [],
         configurationRevision: "r1",
         configurationDigest: "b".repeat(64),

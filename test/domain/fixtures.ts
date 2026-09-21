@@ -79,7 +79,6 @@ export function ticketOn(
   const born = freshTicket({
     deps: new Set<number>(),
     program: defaultProgram(config),
-    workFanout: config.nTasks,
   });
   return { ...born, ...overrides };
 }
@@ -106,17 +105,12 @@ export function initialView(post: TicketGraph): StepView {
  */
 export function healthyFleet(config: Config): readonly Ticket[] {
   const width = config.nTasks;
-  const record: Task[] = [];
-  for (let i = 0; i < width; i++) record.push(workTask(i + 1, "Passed"));
-  for (let i = 0; i < width; i++) {
-    record.push(evalTask(width + i + 1, 0, "Passed"));
-  }
-  const live = new Set<Task>();
-  for (let i = 0; i < width; i++) live.add(workOutstanding(i + 1));
+  const record: Task[] = [workTask(1, "Passed")];
+  for (let i = 0; i < width; i++) record.push(evalTask(i + 2, 0, "Passed"));
   const finished = {
     record,
     spawned: record.length,
-    artifact: { type: "ProducedArtifact", value: width } as const,
+    artifact: { type: "ProducedArtifact", value: 1 } as const,
   };
   return [
     ticketOn(config, {
@@ -127,8 +121,8 @@ export function healthyFleet(config: Config): readonly Ticket[] {
     ticketOn(config, {
       phase: "Work",
       deps: new Set([1]),
-      tasks: live,
-      spawned: width,
+      tasks: new Set<Task>([workOutstanding(1)]),
+      spawned: 1,
     }),
     ticketOn(config, {
       ...finished,

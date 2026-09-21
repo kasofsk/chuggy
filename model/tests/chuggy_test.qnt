@@ -47,10 +47,10 @@ module chuggy_test {
   // Test constructors mirror released ticket contracts while keeping
   // fixtures readable.
   pure def fresh(deps: Set[int], prog: List[StageDefinition]): Ticket =
-    D::freshTicket(deps, prog, 2)
+    D::freshTicket(deps, prog)
 
   pure def release(c: TicketGraph, j: int, deps: Set[int], prog: List[StageDefinition]): Decision =
-    D::decideReleaseTicket(c, j, deps, prog, 2)
+    D::decideReleaseTicket(c, j, deps, prog)
 
   /// The eval reduce at a named disposition — the failing edge's choice is
   /// an input, so every call site says which edge it is asking for.
@@ -83,8 +83,8 @@ module chuggy_test {
   // The path STARTS at authoring — the fleet is empty, ticket 1 is released
   // as a Pending (freshTicket seam); ticket 3 is released as a Pending
   // depending on 1 and stays unreleased throughout. ticket 1 carries
-  // the DEFAULT program, and its task ids run 1..4 across the whole
-  // history (work 1,2 then eval-stage-0 3,4 — sequential within the
+  // the DEFAULT program, and its task ids run 1..3 across the whole
+  // history (work 1 then eval-stage-0 2,3 — sequential within the
   // ticket).
 
   pure val cEmpty: TicketGraph = { tickets: Map() }
@@ -94,23 +94,21 @@ module chuggy_test {
   pure val cA2 = dReleaseDependent.post
 
   pure val c0: TicketGraph = cA2
-  pure val dDispatch = D::decideDispatch(c0, 1)   // spawns WorkTask ids 1,2
+  pure val dDispatch = D::decideDispatch(c0, 1)   // spawns WorkTask id 1
   pure val c1 = dDispatch.post
   pure val dWork1 = D::decideTaskDone(c1, 1, 1, Pass)
   pure val c2 = dWork1.post
-  pure val dWork2 = D::decideTaskDone(c2, 1, 2, Pass)
-  pure val c3 = dWork2.post
-  pure val dWorkReduce = D::decideWorkReduce(c3, 1)  // retires 1,2; spawns EvaluationTask(0) 3,4
-  pure val c4 = dWorkReduce.post
-  pure val dEval1 = D::decideTaskDone(c4, 1, 3, Pass)
-  pure val c5 = dEval1.post
-  pure val dEval2 = D::decideTaskDone(c5, 1, 4, Pass)
-  pure val c6 = dEval2.post
-  pure val dEvalReduce = reduceEval(c6, 1, ReworkEvaluationFailure)  // final (only) stage passes
-  pure val c7 = dEvalReduce.post
+  pure val dWorkReduce = D::decideWorkReduce(c2, 1)  // retires 1; spawns EvaluationTask(0) 2,3
+  pure val c3 = dWorkReduce.post
+  pure val dEval1 = D::decideTaskDone(c3, 1, 2, Pass)
+  pure val c4 = dEval1.post
+  pure val dEval2 = D::decideTaskDone(c4, 1, 3, Pass)
+  pure val c5 = dEval2.post
+  pure val dEvalReduce = reduceEval(c5, 1, ReworkEvaluationFailure)  // final (only) stage passes
+  pure val c6 = dEvalReduce.post
   /// The finalizer succeeds and the ticket completes from Finalization.
-  pure val dComplete = D::decideFinalizationResult(c7, 1, FinalizationSucceeded)
-  pure val c8 = dComplete.post
+  pure val dComplete = D::decideFinalizationResult(c6, 1, FinalizationSucceeded)
+  pure val c7 = dComplete.post
 
   /// The records are golden-trace shaped with the phase flips where — and
   /// only where — the anatomy says (task completions flip no phase).
@@ -137,20 +135,20 @@ module chuggy_test {
   /// A PASSING STAGE IGNORES THE DISPOSITION: it is consulted only on the
   /// failing edge, so the passing path is the same decision either way.
   run passingStageIgnoresDispositionTest = assert(
-    reduceEval(c6, 1, EscalateEvaluationFailure) == dEvalReduce)
+    reduceEval(c5, 1, EscalateEvaluationFailure) == dEvalReduce)
 
   /// RETAINED TASK RECORDS: at Done, ticket 1's chronological log holds
   /// its WHOLE anatomy — the work set then the eval stage, ids sequential,
   /// outcomes settled and never overwritten — tasks form a chronological
   /// log.
   run happyPathRetainedRecordTest = assert(and {
-    c8.tickets.get(1).record ==
-      [wt(1, Passed), wt(2, Passed), et(3, 0, Passed), et(4, 0, Passed)],
-    c8.tickets.get(1).tasks == Set(),
-    // Intermediate shape: after the work reduce the work set is already
+    c7.tickets.get(1).record ==
+      [wt(1, Passed), et(2, 0, Passed), et(3, 0, Passed)],
+    c7.tickets.get(1).tasks == Set(),
+    // Intermediate shape: after the work reduce the work task is already
     // retired and the eval stage is live above it.
-    c4.tickets.get(1).record == [wt(1, Passed), wt(2, Passed)],
-    c4.tickets.get(1).tasks == Set(er(3, 0), er(4, 0))
+    c3.tickets.get(1).record == [wt(1, Passed)],
+    c3.tickets.get(1).tasks == Set(er(2, 0), er(3, 0))
   })
 
   /// domain.qnt's idsAccounted, one ticket at a time — the same equality the
@@ -166,25 +164,25 @@ module chuggy_test {
 
   /// IDENTITY ACCOUNTING:
   /// along the fully decider-built happy path the ghost spawn counter
-  /// tracks every fan-out and always equals retired + live — the equality
+  /// tracks every spawn and always equals retired + live — the equality
   /// a retirement-dropping mutant would break. (The machine invariant
   /// checks it on every reachable state; this pins the counter's exact
   /// values.)
   run happyPathIdsAccountedTest = assert(and {
     cA1.tickets.get(1).spawned == 0,          // a Pending has spawned nothing
-    c1.tickets.get(1).spawned == 2,           // the work fan-out
+    c1.tickets.get(1).spawned == 1,           // the work task
     accounted(c1),
-    c4.tickets.get(1).spawned == 4,           // + eval stage 0's fan-out
-    accounted(c4),
-    c8.tickets.get(1).spawned == 4,           // Done: all retired, none lost
-    accounted(c8)
+    c3.tickets.get(1).spawned == 3,           // + eval stage 0's fan-out
+    accounted(c3),
+    c7.tickets.get(1).spawned == 3,           // Done: all retired, none lost
+    accounted(c7)
   })
 
   /// EFFECT EXCLUSIVITY, happy path (effect-only):
   /// exactly one completion effect, exactly at Done.
   run effectExclusivityHappyPathTest = assert(and {
-    c8.tickets.get(1).phase == Done,
-    c8.tickets.get(1).completions == 1,
+    c7.tickets.get(1).phase == Done,
+    c7.tickets.get(1).completions == 1,
     dComplete.rec.effects == []
   })
 
@@ -213,30 +211,30 @@ module chuggy_test {
   /// STALE-STAGE / STALE-INCARNATION completions no-op BY IDENTITY:
   /// ids are sequential within the ticket and never reused, so a completion
   /// for a task retired into the record — here work task 1 (an earlier
-  /// incarnation) and eval task 3 delivered AFTER the eval stage retired —
+  /// incarnation) and eval task 2 delivered AFTER the eval stage retired —
   /// finds no live outstanding match and absorbs as the duplicate stutter,
   /// whatever verdict it carries.
   run staleStageCompletionNoopsTest = assert(and {
-    // c4: eval stage 0 live (ids 3,4); work ids 1,2 retired.
-    D::decideTaskDone(c4, 1, 1, Fail).post == c4,
-    D::decideTaskDone(c4, 1, 1, Fail).rec.label == "task-done",
-    // c7: Finalization, everything retired; a stale eval completion no-ops.
-    D::decideTaskDone(c7, 1, 3, Fail).post == c7,
-    D::decideTaskDone(c7, 1, 3, Fail).rec.label == "task-done"
+    // c3: eval stage 0 live (ids 2,3); work id 1 retired.
+    D::decideTaskDone(c3, 1, 1, Fail).post == c3,
+    D::decideTaskDone(c3, 1, 1, Fail).rec.label == "task-done",
+    // c6: Finalization, everything retired; a stale eval completion no-ops.
+    D::decideTaskDone(c6, 1, 2, Fail).post == c6,
+    D::decideTaskDone(c6, 1, 2, Fail).rec.label == "task-done"
   })
 
   // === The work wall: cycle-level, no below-cycle retries ==================
 
-  pure def oneFailedW: Set[Task] = Set(wt(1, Failed), wt(2, Passed))
+  pure def failedW: Set[Task] = Set(wt(1, Failed))
 
   /// A failed Work task set escalates DIRECTLY at cycle level — there is
   /// no same-cycle retry branch to take: below-cycle retries are the
   /// fabric's trusted relaunch limit, and modeling them is a standing
   /// non-goal — no retry machinery below the cycle.
-  /// The failed set is RETIRED, outcomes intact — the record shows
-  /// WHICH task failed, provenance the desk can read.
+  /// The failed task is RETIRED, its outcome intact — the record shows the
+  /// failure, provenance the desk can read.
   pure val cWorkFail: TicketGraph = { tickets: Map(1 -> { ...fresh(Set(), progU2),
-    phase: Work, tasks: oneFailedW, spawned: 2 }) }
+    phase: Work, tasks: failedW, spawned: 1 }) }
   pure val dWorkFail = D::decideWorkReduce(cWorkFail, 1)
 
   run workFailedWallTest = assert(and {
@@ -245,7 +243,7 @@ module chuggy_test {
     dWorkFail.post.tickets.get(1).escalation == WorkFailureEscalated,
     hasOpenHumanTask(dWorkFail.post.tickets.get(1)),
     dWorkFail.rec.effects == ["OpenHumanTask"],
-    dWorkFail.post.tickets.get(1).record == [wt(1, Failed), wt(2, Passed)],
+    dWorkFail.post.tickets.get(1).record == [wt(1, Failed)],
     dWorkFail.post.tickets.get(1).tasks == Set()
   })
 
@@ -269,10 +267,10 @@ module chuggy_test {
     dEvalRework.rec.transitions == [{ ticket: 1, from: Evaluation, to: Work }],
     dEvalRework.rec.effects == ["SpawnWorkTasks"],
     dEvalRework.post.tickets.get(1).phase == Work,
-    // The failed stage is retired; the rework cycle's work set spawns at
-    // the NEXT ids (3,4) — new records, not overwrites.
+    // The failed stage is retired; the rework cycle's work task spawns at
+    // the NEXT id (3) — a new record, not an overwrite.
     dEvalRework.post.tickets.get(1).record == [et(1, 0, Failed), et(2, 0, Passed)],
-    dEvalRework.post.tickets.get(1).tasks == Set(wr(3), wr(4)),
+    dEvalRework.post.tickets.get(1).tasks == Set(wr(3)),
 
     dEvalEscalate.rec.label == "ticket-escalated evaluation_failure_escalated",
     dEvalEscalate.rec.effects == ["OpenHumanTask"],
@@ -290,22 +288,22 @@ module chuggy_test {
   // tests/conformance/conformance_staged_eval_short_circuit_test.qnt,
   // whose header gates the staged content on exactly this model).
 
-  pure def allPassedW: Set[Task] = Set(wt(1, Passed), wt(2, Passed))
+  pure def passedW: Set[Task] = Set(wt(1, Passed))
 
   pure val cStagedWork: TicketGraph = { tickets: Map(1 -> { ...fresh(Set(), progStaged),
-    phase: Work, tasks: allPassedW, spawned: 2 }) }
-  // Work passes -> spawn the LOWEST stage: fan-out 1, id 3.
+    phase: Work, tasks: passedW, spawned: 1 }) }
+  // Work passes -> spawn the LOWEST stage: fan-out 1, id 2.
   pure val dToEval = D::decideWorkReduce(cStagedWork, 1)
   pure val cS0 = dToEval.post
   // Stage 0's one task passes.
-  pure val dS0Done = D::decideTaskDone(cS0, 1, 3, Pass)
+  pure val dS0Done = D::decideTaskDone(cS0, 1, 2, Pass)
   // THE ADVANCE: stage 0 passed, stage 1 remains -> Evaluation ->
   // Evaluation, next fan-out spawns.
   pure val dAdvance = reduceEval(dS0Done.post, 1, ReworkEvaluationFailure)
   pure val cS1 = dAdvance.post
   // Stage 1 (fan-out 2): both pass -> the final stage passes.
-  pure val dS1a = D::decideTaskDone(cS1, 1, 4, Pass)
-  pure val dS1b = D::decideTaskDone(dS1a.post, 1, 5, Pass)
+  pure val dS1a = D::decideTaskDone(cS1, 1, 3, Pass)
+  pure val dS1b = D::decideTaskDone(dS1a.post, 1, 4, Pass)
   pure val dStagedFinal = reduceEval(dS1b.post, 1, ReworkEvaluationFailure)
 
   /// The advance edge, exactly: label eval-stage-passed, an Evaluation ->
@@ -316,8 +314,8 @@ module chuggy_test {
     dAdvance.rec.transitions == [{ ticket: 1, from: Evaluation, to: Evaluation }],
     dAdvance.rec.effects == ["SpawnEvalTasks"],
     cS1.tickets.get(1).phase == Evaluation,
-    cS1.tickets.get(1).tasks == Set(er(4, 1), er(5, 1)),
-    cS1.tickets.get(1).record == [wt(1, Passed), wt(2, Passed), et(3, 0, Passed)]
+    cS1.tickets.get(1).tasks == Set(er(3, 1), er(4, 1)),
+    cS1.tickets.get(1).record == [wt(1, Passed), et(2, 0, Passed)]
   })
 
   /// The FINAL stage passing lands the program: eval-passed, everything
@@ -328,13 +326,12 @@ module chuggy_test {
     dStagedFinal.rec.transitions == [{ ticket: 1, from: Evaluation, to: Finalization }],
     dStagedFinal.post.tickets.get(1).tasks == Set(),
     dStagedFinal.post.tickets.get(1).record ==
-      [wt(1, Passed), wt(2, Passed), et(3, 0, Passed),
-       et(4, 1, Passed), et(5, 1, Passed)]
+      [wt(1, Passed), et(2, 0, Passed), et(3, 1, Passed), et(4, 1, Passed)]
   })
 
   // --- The short-circuit: stage 0 fails, stage 1 is never created ----------
 
-  pure val dS0Fail = D::decideTaskDone(cS0, 1, 3, Fail)
+  pure val dS0Fail = D::decideTaskDone(cS0, 1, 2, Fail)
   pure val dShort = reduceEval(dS0Fail.post, 1, ReworkEvaluationFailure)
   pure val cAfterShort = dShort.post
 
@@ -346,27 +343,24 @@ module chuggy_test {
     dShort.rec.label == "rework-started eval_failure",
     dShort.rec.transitions == [{ ticket: 1, from: Evaluation, to: Work }],
     // "no task records exist for them": stage 1 never spawned.
-    cAfterShort.tickets.get(1).record ==
-      [wt(1, Passed), wt(2, Passed), et(3, 0, Failed)],
+    cAfterShort.tickets.get(1).record == [wt(1, Passed), et(2, 0, Failed)],
     cAfterShort.tickets.get(1).record.indices().forall(i =>
       cAfterShort.tickets.get(1).record[i].kind != EvaluationTask(1)),
-    cAfterShort.tickets.get(1).tasks == Set(wr(4), wr(5))
+    cAfterShort.tickets.get(1).tasks == Set(wr(3))
   })
 
   /// The rework cycle RESTARTS FROM THE LOWEST STAGE — stages are
   /// recomputed per cycle, never resumed mid-sequence. After
-  /// the rework's work set passes, the next Evaluation spawns stage 0
+  /// the rework's work task passes, the next Evaluation spawns stage 0
   /// again — never stage 1.
-  pure val dReworkW1 = D::decideTaskDone(cAfterShort, 1, 4, Pass)
-  pure val dReworkW2 = D::decideTaskDone(dReworkW1.post, 1, 5, Pass)
-  pure val dBackToEval = D::decideWorkReduce(dReworkW2.post, 1)
+  pure val dReworkW1 = D::decideTaskDone(cAfterShort, 1, 3, Pass)
+  pure val dBackToEval = D::decideWorkReduce(dReworkW1.post, 1)
 
   run reworkRestartsLowestStageTest = assert(and {
     dBackToEval.rec.label == "work-passed",
-    dBackToEval.post.tickets.get(1).tasks == Set(er(6, 0)),
+    dBackToEval.post.tickets.get(1).tasks == Set(er(4, 0)),
     dBackToEval.post.tickets.get(1).record ==
-      [wt(1, Passed), wt(2, Passed), et(3, 0, Failed),
-       wt(4, Passed), wt(5, Passed)]
+      [wt(1, Passed), et(2, 0, Failed), wt(3, Passed)]
   })
 
   /// The golden fixture's exact shape (staged_eval_short_circuit.yaml:
@@ -375,26 +369,25 @@ module chuggy_test {
   /// with stage 1 still unlaunched.
   pure val cStagedPark: TicketGraph = { tickets: Map(1 -> { ...fresh(Set(), progStaged),
     phase: Evaluation,
-    record: [wt(1, Passed), wt(2, Passed)],
-    tasks: Set(et(3, 0, Failed)), spawned: 3 }) }
+    record: [wt(1, Passed)],
+    tasks: Set(et(2, 0, Failed)), spawned: 2 }) }
   pure val dStagedWall = reduceEval(cStagedPark, 1, EscalateEvaluationFailure)
 
   run stagedShortCircuitEscalatesTest = assert(and {
     dStagedWall.rec.label == "ticket-escalated evaluation_failure_escalated",
     dStagedWall.post.tickets.get(1).phase == Escalated,
     dStagedWall.post.tickets.get(1).escalation == EvaluationFailureEscalated,
-    dStagedWall.post.tickets.get(1).record ==
-      [wt(1, Passed), wt(2, Passed), et(3, 0, Failed)],
+    dStagedWall.post.tickets.get(1).record == [wt(1, Passed), et(2, 0, Failed)],
     dStagedWall.post.tickets.get(1).record.indices().forall(i =>
       dStagedWall.post.tickets.get(1).record[i].kind != EvaluationTask(1))
   })
 
   /// Duplicate stale-stage completion, staged edition: while stage 1 is
-  /// live (ids 4,5), a re-delivered completion for RETIRED stage-0 task 3
+  /// live (ids 3,4), a re-delivered completion for RETIRED stage-0 task 2
   /// — even with a contradicting verdict — no-ops by identity.
   run staleStageDuplicateNoopsTest = assert(and {
-    D::decideTaskDone(cS1, 1, 3, Fail).post == cS1,
-    D::decideTaskDone(cS1, 1, 3, Fail).rec.label == "task-done"
+    D::decideTaskDone(cS1, 1, 2, Fail).post == cS1,
+    D::decideTaskDone(cS1, 1, 2, Fail).rec.label == "task-done"
   })
 
   // === PROGRAM-AS-DATA at machine level ====================================
@@ -405,18 +398,18 @@ module chuggy_test {
   pure val mixedE0: Set[Task] = Set(et(1, 0, Passed), et(2, 0, Failed))
   pure val allFailedE0: Set[Task] = Set(et(1, 0, Failed), et(2, 0, Failed))
 
-  /// Program STRUCTURE is the data: the same passed work set spawns a
+  /// Program STRUCTURE is the data: the same passed work task spawns a
   /// 2-wide flat fan-out under the default program but a 1-wide stage-0
   /// under the staged program — the machine's very next task anatomy is
   /// decided by the program on the record.
   pure val cFlatWork: TicketGraph = { tickets: Map(1 -> { ...fresh(Set(), progU2),
-    phase: Work, tasks: allPassedW, spawned: 2 }) }
+    phase: Work, tasks: passedW, spawned: 1 }) }
 
   run programAsDataStructureTest = assert(and {
     D::decideWorkReduce(cFlatWork, 1).post.tickets.get(1).tasks ==
-      Set(er(3, 0), er(4, 0)),
+      Set(er(2, 0), er(3, 0)),
     D::decideWorkReduce(cStagedWork, 1).post.tickets.get(1).tasks ==
-      Set(er(3, 0))
+      Set(er(2, 0))
   })
 
   /// THE STAGE VERDICT at the pure grain: a stage passes when every
@@ -430,7 +423,7 @@ module chuggy_test {
   // === The finalizer's failure edge ========================================
 
   /// A finalization failure re-enters Work as a new cycle, with a fresh
-  /// work set — and it does so EVERY time: there is no wall on this edge,
+  /// work task — and it does so EVERY time: there is no wall on this edge,
   /// so a finalizer that keeps reporting failure keeps buying cycles, which
   /// is the finalizer's problem and not the machine's.
   pure val cFinalizing: TicketGraph = { tickets: Map(1 -> { ...fresh(Set(), progU2),
@@ -439,8 +432,8 @@ module chuggy_test {
 
   pure val cFinalizingAgain: TicketGraph = { tickets: Map(1 -> { ...fresh(Set(), progU2),
     phase: Finalization,
-    record: [wt(1, Passed), wt(2, Passed), et(3, 0, Passed), et(4, 0, Passed)],
-    spawned: 4 }) }
+    record: [wt(1, Passed), et(2, 0, Passed), et(3, 0, Passed)],
+    spawned: 3 }) }
   pure val dFinalizationReworkAgain =
     D::decideFinalizationResult(cFinalizingAgain, 1, FinalizationNeedsWork)
 
@@ -449,12 +442,12 @@ module chuggy_test {
     dFinalizationRework.rec.transitions == [{ ticket: 1, from: Finalization, to: Work }],
     dFinalizationRework.rec.effects == ["SpawnWorkTasks"],
     dFinalizationRework.post.tickets.get(1).phase == Work,
-    // The wrap-up rework's work set is a fresh incarnation at fresh ids.
-    dFinalizationRework.post.tickets.get(1).tasks == Set(wr(1), wr(2)),
+    // The wrap-up rework's work task is a fresh incarnation at a fresh id.
+    dFinalizationRework.post.tickets.get(1).tasks == Set(wr(1)),
     // A ticket that has already been round the loop takes the same edge,
-    // with its ids continuing above the retained record.
+    // with its id continuing above the retained record.
     dFinalizationReworkAgain.post.tickets.get(1).phase == Work,
-    dFinalizationReworkAgain.post.tickets.get(1).tasks == Set(wr(5), wr(6))
+    dFinalizationReworkAgain.post.tickets.get(1).tasks == Set(wr(4))
   })
 
   /// A finalizer that reaches NO result parks the ticket instead, at the
@@ -488,11 +481,11 @@ module chuggy_test {
     dPark.rec.effects == ["OpenHumanTask"],
     dPark.post.tickets.get(1).phase == Escalated,
     dPark.post.tickets.get(1).escalation == WorkExecutionUnavailableEscalated,
-    dPark.post.tickets.get(1).record == [wt(1, Cancelled), wt(2, Cancelled)],
+    dPark.post.tickets.get(1).record == [wt(1, Cancelled)],
     dPark.post.tickets.get(1).tasks == Set(),
     dParkResume.post.tickets.get(1).phase == Work,
     dParkResume.post.tickets.get(1).escalation == NoEscalation,
-    dParkResume.post.tickets.get(1).tasks == Set(wr(3), wr(4))
+    dParkResume.post.tickets.get(1).tasks == Set(wr(2))
   })
 
   /// An infrastructure block during EVALUATION is its own wall, and that is
@@ -500,7 +493,7 @@ module chuggy_test {
   /// and creates a fresh lowest-stage fan-out, never silently restarting
   /// work. The same decider on the same ticket in Work names the other wall
   /// (above), which is the whole of what the phase decides here.
-  pure val dEvalPark = D::decideExecutionBlocked(c4, 1)
+  pure val dEvalPark = D::decideExecutionBlocked(c3, 1)
   pure val dEvalParkResume = D::decideResumeTicket(dEvalPark.post, 1)
 
   run executionBlockedEvaluationResumeFreshTest = assert(and {
@@ -508,12 +501,12 @@ module chuggy_test {
     dEvalPark.post.tickets.get(1).phase == Escalated,
     dEvalPark.post.tickets.get(1).escalation == EvaluationBlockedEscalated,
     dEvalPark.post.tickets.get(1).record ==
-      [wt(1, Passed), wt(2, Passed), et(3, 0, Cancelled), et(4, 0, Cancelled)],
+      [wt(1, Passed), et(2, 0, Cancelled), et(3, 0, Cancelled)],
     dEvalPark.post.tickets.get(1).tasks == Set(),
     dEvalParkResume.post.tickets.get(1).phase == Evaluation,
-    dEvalParkResume.post.tickets.get(1).tasks == Set(er(5, 0), er(6, 0)),
+    dEvalParkResume.post.tickets.get(1).tasks == Set(er(4, 0), er(5, 0)),
     dEvalParkResume.post.tickets.get(1).record ==
-      [wt(1, Passed), wt(2, Passed), et(3, 0, Cancelled), et(4, 0, Cancelled)]
+      [wt(1, Passed), et(2, 0, Cancelled), et(3, 0, Cancelled)]
   })
 
   /// THE RESUME IS THE WALL'S, and nothing else's: resumeOf is total on the
@@ -562,7 +555,7 @@ module chuggy_test {
   /// did the parking.
   pure val escRework: Ticket = { ...fresh(Set(), progStaged),
     phase: Escalated, escalation: EvaluationFailureEscalated,
-    record: [wt(1, Passed), wt(2, Passed), et(3, 0, Failed)], spawned: 3 }
+    record: [wt(1, Passed), et(2, 0, Failed)], spawned: 2 }
   pure val cEscRework: TicketGraph = { tickets: Map(1 -> escRework) }
   pure val dResumeRework = D::decideResumeTicket(cEscRework, 1)
 
@@ -571,10 +564,9 @@ module chuggy_test {
     dResumeRework.rec.effects == ["SpawnWorkTasks"],
     dResumeRework.rec.transitions == [{ ticket: 1, from: Escalated, to: Work }],
     dResumeRework.post.tickets.get(1).escalation == NoEscalation,
-    // Fresh work ids above an INTACT record: the failed stage stays retired.
-    dResumeRework.post.tickets.get(1).tasks == Set(wr(4), wr(5)),
-    dResumeRework.post.tickets.get(1).record ==
-      [wt(1, Passed), wt(2, Passed), et(3, 0, Failed)]
+    // A fresh work id above an INTACT record: the failed stage stays retired.
+    dResumeRework.post.tickets.get(1).tasks == Set(wr(3)),
+    dResumeRework.post.tickets.get(1).record == [wt(1, Passed), et(2, 0, Failed)]
   })
 
   // === Direct release, sparse identity, and ticket-local policy ============
@@ -591,12 +583,12 @@ module chuggy_test {
     not(D::canReleaseIn(sparseCore, 4))
   })
 
-  pure val localPolicy = D::decideReleaseTicket(cEmpty, 2, Set(), progStaged,
-    1).post.tickets.get(2)
+  pure val localPolicy = D::decideReleaseTicket(cEmpty, 2, Set(),
+    progStaged).post.tickets.get(2)
 
   run releaseMaterializesTicketPolicyTest = assert(and {
-    localPolicy.workFanout == 1,
-    localPolicy.program == progStaged
+    localPolicy.program == progStaged,
+    localPolicy.deps == Set()
   })
 
   // === Revoke, from every live phase =======================================
@@ -615,7 +607,7 @@ module chuggy_test {
   pure val jBase: Ticket = fresh(Set(), progU2)
   pure val jPend: Ticket = { ...jBase, phase: Pending }
   pure val jWork: Ticket = { ...jBase, phase: Work,
-    tasks: spawnTasks(WorkTask, 1, 2), spawned: 2 }
+    tasks: spawnTasks(WorkTask, 1, 1), spawned: 1 }
   pure val jEval: Ticket = { ...jBase, phase: Evaluation, tasks: mixedE0, spawned: 2 }
   pure val jFinalizer: Ticket = { ...jBase, phase: Finalization }
   pure val jEsc: Ticket = { ...jBase, phase: Escalated,
@@ -644,14 +636,13 @@ module chuggy_test {
 
   /// Revoke RETAINS the task record — "Revoked runs nothing" is
   /// about the live set, not the log. A mid-flight revoke force-closes the
-  /// still-outstanding work tasks as Cancelled — a synthetic resolution
+  /// still-outstanding work task as Cancelled — a synthetic resolution
   /// recording that the revoke, not a verdict, retired them;
   /// already-resolved outcomes are
   /// preserved unchanged (jEval's mixed stage). Provenance survives the
   /// author's settlement.
   run revokeRetainsRecordTest = assert(and {
-    revokeOne(jWork).post.tickets.get(1).record ==
-      [wt(1, Cancelled), wt(2, Cancelled)],
+    revokeOne(jWork).post.tickets.get(1).record == [wt(1, Cancelled)],
     revokeOne(jEval).post.tickets.get(1).record ==
       [et(1, 0, Passed), et(2, 0, Failed)],
     revokeOne(jBase).post.tickets.get(1).record == []   // never ran: no history
@@ -661,18 +652,18 @@ module chuggy_test {
   run revocableExactlyNonTerminalTest = assert(and {
     D::revocableIn({ tickets: Map(1 -> jBase) }, 1),
     D::revocableIn({ tickets: Map(1 -> jEsc) }, 1),
-    not(D::revocableIn(c8, 1)),                                  // Done
+    not(D::revocableIn(c7, 1)),                                  // Done
     not(D::revocableIn(revokeOne(jBase).post, 1))               // Revoked
   })
 
   /// REVOKED NEVER COMPLETES (the exclusivity extension): revoking a ticket
   /// parked IN the wrap-up queue emits no completion effect and leaves the
-  /// completion counter at zero — contrast with the completed ticket (c8),
+  /// completion counter at zero — contrast with the completed ticket (c7),
   /// whose counter is 1 and which is beyond revoke's reach (previous test).
   run revokedNeverCompletesTest = assert(and {
     revokeOne(jFinalizer).post.tickets.get(1).completions == 0,
     revokeOne(jFinalizer).rec.effects == ["CancelTicketWork"],
-    c8.tickets.get(1).completions == 1
+    c7.tickets.get(1).completions == 1
   })
 
   // === REVOKE TOUCHES ONE TICKET, on a 3-ticket chain ======================

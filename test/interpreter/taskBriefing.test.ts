@@ -1552,7 +1552,7 @@ test("a work report cannot forge a section and cannot arrive as one", () => {
     assert.equal(blockedFault(reportView([forged])), "TextUnreadable");
 });
 
-test("more reports than the work fanout admits is refused rather than truncated", () => {
+test("more prior work reports than the briefing admits is refused rather than truncated", () => {
   const reports = Array.from(
     { length: priorWorkReportsMax + 1 },
     (_unused, at) => `Report ${String(at)}.`,

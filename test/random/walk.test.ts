@@ -150,7 +150,6 @@ test("the release's permit refuses the dep named twice", () => {
     ticket: id(2),
     deps: [id(1), id(1)],
     program,
-    workFanout: 1,
   };
   const release = walkActionOf("releaseTicket");
   assert.equal(release.permitsIn(modelInstance, graph, drawn), false);

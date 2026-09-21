@@ -53,7 +53,6 @@ export const refinementInstance: Config = {
 export const plainAuthoring = {
   deps: new Set<number>(),
   prog: [{ fanout: 1 }] as readonly StageDefinition[],
-  workFanout: 1,
 } as const;
 
 /** The manifest a task reports when a suite does not care what it reported. */

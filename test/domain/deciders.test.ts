@@ -64,7 +64,6 @@ const liveShape = (graph: TicketGraph, at: ReturnType<typeof id>) =>
 const authoring = {
   deps: depsOf(),
   program: defaultProgram(config),
-  workFanout: config.nTasks,
 };
 
 test("a release arrives already Pending, having spawned nothing", () => {
@@ -91,10 +90,8 @@ test("the release records no transition, and takes the sparse id it was handed",
   assert.deepEqual([...released.post.tickets.keys()], [asTicketId(5)]);
 });
 
-test("a dispatch spawns the ticket's own authored width", () => {
-  const ready = graphOf([
-    ticketOn(config, { phase: "Pending", workFanout: 1 }),
-  ]);
+test("a dispatch spawns the cycle's one work task", () => {
+  const ready = graphOf([ticketOn(config, { phase: "Pending" })]);
   const decision = decideDispatch(ready, id(1));
   assert.equal(decision.rec.label, "dispatch");
   assert.deepEqual(decision.rec.transitions, [
@@ -136,12 +133,12 @@ test("first write wins, and an id already retired matches nothing live", () => {
   assert.deepEqual(liveShape(stale.post, id(1)), liveShape(first.post, id(1)));
 });
 
-test("a passing work set stamps the artifact its own accounting names", () => {
+test("a passing work task stamps the artifact its own accounting names", () => {
   const settledWork = graphOf([
     ticketOn(config, {
       phase: "Work",
-      tasks: new Set([workTask(1, "Passed"), workTask(2, "Passed")]),
-      spawned: 2,
+      tasks: new Set([workTask(1, "Passed")]),
+      spawned: 1,
     }),
   ]);
   const decision = decideWorkReduce(settledWork, id(1));
@@ -150,29 +147,29 @@ test("a passing work set stamps the artifact its own accounting names", () => {
   const evaluating = ticketAt(decision.post, id(1));
   assert.deepEqual(evaluating.artifact, {
     type: "ProducedArtifact",
-    value: 2,
+    value: 1,
   });
-  assert.equal(evaluating.record.length, 2);
+  assert.equal(evaluating.record.length, 1);
   assert.deepEqual(liveShape(decision.post, id(1)), [
     {
-      id: asTaskId(3),
+      id: asTaskId(2),
       kind: { type: "EvaluationTask", value: 0 },
       state: "Outstanding",
     },
     {
-      id: asTaskId(4),
+      id: asTaskId(3),
       kind: { type: "EvaluationTask", value: 0 },
       state: "Outstanding",
     },
   ]);
 });
 
-test("a failed work set parks resumable at Work, retiring what failed", () => {
+test("a failed work task parks resumable at Work, retiring what failed", () => {
   const failedWork = graphOf([
     ticketOn(config, {
       phase: "Work",
-      tasks: new Set([workTask(1, "Passed"), workTask(2, "Failed")]),
-      spawned: 2,
+      tasks: new Set([workTask(1, "Failed")]),
+      spawned: 1,
     }),
   ]);
   const decision = decideWorkReduce(failedWork, id(1));
@@ -181,8 +178,8 @@ test("a failed work set parks resumable at Work, retiring what failed", () => {
   const parked = ticketAt(decision.post, id(1));
   assert.equal(parked.escalation, "WorkFailureEscalated");
   assert.equal(parked.tasks.size, 0);
-  assert.equal(parked.record.length, 2);
-  assert.equal(parked.spawned, 2);
+  assert.equal(parked.record.length, 1);
+  assert.equal(parked.spawned, 1);
   assert.equal(parked.artifact, "NoArtifact");
 });
 
@@ -224,10 +221,10 @@ test("one failing stage, two edges, and the disposition is the whole difference"
   const failing = graphOf([
     ticketOn(config, {
       phase: "Evaluation",
-      record: [workTask(1, "Passed"), workTask(2, "Passed")],
-      tasks: new Set([evalTask(3, 0, "Failed"), evalTask(4, 0, "Failed")]),
-      spawned: 4,
-      artifact: { type: "ProducedArtifact", value: 2 },
+      record: [workTask(1, "Passed")],
+      tasks: new Set([evalTask(2, 0, "Failed"), evalTask(3, 0, "Failed")]),
+      spawned: 3,
+      artifact: { type: "ProducedArtifact", value: 1 },
     }),
   ]);
   const reworked = decideEvalStageReduce(
@@ -240,8 +237,8 @@ test("one failing stage, two edges, and the disposition is the whole difference"
   assert.equal(ticketAt(reworked.post, id(1)).phase, "Work");
   assert.deepEqual(
     liveShape(reworked.post, id(1)).map((t) => t.id),
-    [asTaskId(5), asTaskId(6)],
-    "the rework cycle's work set spawns above the retired stage",
+    [asTaskId(4)],
+    "the rework cycle's work task spawns above the retired stage",
   );
 
   const escalated = decideEvalStageReduce(
@@ -277,9 +274,9 @@ const finalizing = (): TicketGraph =>
   graphOf([
     ticketOn(config, {
       phase: "Finalization",
-      record: [workTask(1, "Passed"), workTask(2, "Passed")],
+      record: [workTask(1, "Passed"), evalTask(2, 0, "Passed")],
       spawned: 2,
-      artifact: { type: "ProducedArtifact", value: 2 },
+      artifact: { type: "ProducedArtifact", value: 1 },
     }),
   ]);
 
@@ -308,8 +305,8 @@ test("a failed finalization re-enters work, and does so every time", () => {
   assert.equal(ticketAt(first.post, id(1)).phase, "Work");
   assert.deepEqual(
     liveShape(first.post, id(1)).map((t) => t.id),
-    [asTaskId(3), asTaskId(4)],
-    "the wrap-up rework is a fresh incarnation at fresh ids",
+    [asTaskId(3)],
+    "the wrap-up rework is a fresh incarnation at a fresh id",
   );
 
   const again = decideFinalizationResult(
@@ -318,12 +315,11 @@ test("a failed finalization re-enters work, and does so every time", () => {
         phase: "Finalization",
         record: [
           workTask(1, "Passed"),
-          workTask(2, "Passed"),
+          evalTask(2, 0, "Passed"),
           evalTask(3, 0, "Passed"),
-          evalTask(4, 0, "Passed"),
         ],
-        spawned: 4,
-        artifact: { type: "ProducedArtifact", value: 4 },
+        spawned: 3,
+        artifact: { type: "ProducedArtifact", value: 1 },
       }),
     ]),
     id(1),
@@ -484,8 +480,8 @@ test("the evaluation wall's resume buys a work cycle above an intact record", ()
   const post = ticketAt(resumed.post, id(1));
   assert.deepEqual(
     tasksInIdOrder(post.tasks).map((t) => t.id),
-    [asTaskId(3), asTaskId(4)],
-    "fresh work ids above an intact record",
+    [asTaskId(3)],
+    "a fresh work id above an intact record",
   );
   assert.deepEqual(post.record, ticketAt(walled, id(1)).record);
 });
@@ -565,7 +561,6 @@ test("every fixture this suite builds is a shape the machine could have reached"
     ticketOn(config, {
       phase: "Work",
       tasks: new Set([workOutstanding(1)]),
-      workFanout: 1,
       spawned: 1,
     }),
   ]);

@@ -209,16 +209,20 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
   assert.ok(
     !tasksWellFormed(
       config,
-      stateView(fleetBut(fleet, 1, { tasks: new Set([workOutstanding(1)]) })),
+      stateView(
+        fleetBut(fleet, 1, {
+          tasks: new Set([workOutstanding(1), workOutstanding(2)]),
+        }),
+      ),
     ),
-    "the work set is one task-set phase at the ticket's authored width",
+    "a work cycle is one task, and the live set is exactly that task",
   );
   assert.ok(
     !tasksWellFormed(
       config,
       stateView(
         fleetBut(fleet, 1, {
-          tasks: new Set([workOutstanding(1), evalOutstanding(2, 0)]),
+          tasks: new Set([evalOutstanding(1, 0)]),
         }),
       ),
     ),
@@ -229,11 +233,24 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
       config,
       stateView(
         fleetBut(fleet, 1, {
-          tasks: new Set([workTask(1, "Cancelled"), workOutstanding(2)]),
+          tasks: new Set([workTask(1, "Cancelled")]),
         }),
       ),
     ),
     "cancelled is a retirement mark, not an outcome an event can deliver live",
+  );
+  assert.ok(
+    !tasksWellFormed(
+      config,
+      stateView(
+        fleetBut(fleet, 1, {
+          record: [workTask(1, "Passed")],
+          spawned: 1,
+          tasks: new Set([workOutstanding(1)]),
+        }),
+      ),
+    ),
+    "one live work task still sits directly above the retired record",
   );
   assert.ok(
     !tasksWellFormed(
@@ -249,16 +266,16 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
     graphOf([
       ticketOn(config, {
         phase: "Evaluation",
-        record: [workTask(1, "Passed"), workTask(2, "Passed")],
+        record: [workTask(1, "Passed")],
         tasks,
-        spawned: 4,
+        spawned: 3,
       }),
     ]);
   assert.ok(
     tasksWellFormed(
       config,
       stateView(
-        evaluating(new Set([evalOutstanding(3, 0), evalOutstanding(4, 0)])),
+        evaluating(new Set([evalOutstanding(2, 0), evalOutstanding(3, 0)])),
       ),
     ),
   );
@@ -275,7 +292,7 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
     !tasksWellFormed(
       config,
       stateView(
-        evaluating(new Set([evalOutstanding(3, 5), evalOutstanding(4, 5)])),
+        evaluating(new Set([evalOutstanding(2, 5), evalOutstanding(3, 5)])),
       ),
     ),
     "the stage index has to index into the ticket's own program",
@@ -283,7 +300,7 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
   assert.ok(
     !tasksWellFormed(
       config,
-      stateView(evaluating(new Set([evalOutstanding(3, 0)]))),
+      stateView(evaluating(new Set([evalOutstanding(2, 0)]))),
     ),
     "the set is exactly the stage's declared width",
   );
@@ -292,7 +309,7 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
       config,
       stateView(
         evaluating(
-          new Set([evalTask(3, 0, "Cancelled"), evalOutstanding(4, 0)]),
+          new Set([evalTask(2, 0, "Cancelled"), evalOutstanding(3, 0)]),
         ),
       ),
     ),

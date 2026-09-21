@@ -9,7 +9,7 @@ module chuggy_refinement_unit_test {
 
   pure val progFlat: List[StageDefinition] = [{ fanout: 1 }]
   pure val release10: DecisionEvent = CreateTicket({
-    ticket: 2, deps: Set(), prog: progFlat, workFanout: 1
+    ticket: 2, deps: Set(), prog: progFlat
   })
   pure val d1 = execDecisionEvent(genesis, release10)
   pure val e1: Entry = { seq: 1, event: release10, rec: d1.rec }
@@ -59,10 +59,10 @@ module chuggy_refinement_unit_test {
 
   run journalRefusesInvalidReleasePayloadTest =
     val badDeps: DecisionEvent = CreateTicket({
-      ticket: 2, deps: Set(99), prog: progFlat, workFanout: 1
+      ticket: 2, deps: Set(99), prog: progFlat
     })
     val badProgram: DecisionEvent = CreateTicket({
-      ticket: 2, deps: Set(), prog: [], workFanout: 1
+      ticket: 2, deps: Set(), prog: []
     })
     assert(and {
       not(decisionEventEnabled(genesis, badDeps)),
@@ -97,7 +97,7 @@ module chuggy_refinement_witness_test {
 
   pure val progFlat: List[StageDefinition] = [{ fanout: 1 }]
   pure def release(ticket: int): DecisionEvent = CreateTicket({
-    ticket: ticket, deps: Set(), prog: progFlat, workFanout: 1
+    ticket: ticket, deps: Set(), prog: progFlat
   })
 
   /// Every eval reduce below walks a PASSING stage, where the disposition is
@@ -198,7 +198,7 @@ module chuggy_refinement_hazard_test {
 
   pure val progFlat: List[StageDefinition] = [{ fanout: 1 }]
   pure val release10: DecisionEvent = CreateTicket({
-    ticket: 2, deps: Set(), prog: progFlat, workFanout: 1
+    ticket: 2, deps: Set(), prog: progFlat
   })
 
   /// The hazard walks below reach the eval reduce on a PASSED stage once and

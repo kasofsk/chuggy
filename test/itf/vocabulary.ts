@@ -191,7 +191,6 @@ function encodeTicket(ticket: Ticket): ItfValue {
     ["phase", encodeNullary(ticket.phase)],
     ["deps", encodeDeps(ticket.deps)],
     ["artifact", encodeSum(ticket.artifact, (mark: number) => encodeInt(mark))],
-    ["workFanout", encodeInt(ticket.workFanout)],
     ["program", encodeProgram(ticket.program)],
     [
       "tasks",

@@ -251,7 +251,7 @@ test("work that declared no commit leaves its evaluation the base it ran on", as
   );
 });
 
-test("a fan-out that declared several commits is evaluated at the base they shared", async () => {
+test("work that declared several commits is evaluated at the base they shared", async () => {
   const observed = await observingWork([
     workCommit,
     asGitObjectId("d".repeat(40)),

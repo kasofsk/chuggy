@@ -29,7 +29,6 @@ export interface DispatchCandidate {
   readonly ticket: TicketId;
   readonly ticketVersion: number;
   readonly dependencies: readonly number[];
-  readonly workFanout: number;
   readonly program: readonly StageDefinition[];
   readonly configurationRevision: string;
   readonly configurationDigest: string;
@@ -99,7 +98,6 @@ function canonicalCandidate(candidate: DispatchCandidate): unknown {
     ticket: candidate.ticket,
     ticketVersion: candidate.ticketVersion,
     dependencies: [...candidate.dependencies],
-    workFanout: candidate.workFanout,
     program: candidate.program.map((stage) => ({ fanout: stage.fanout })),
     configurationRevision: candidate.configurationRevision,
     configurationDigest: candidate.configurationDigest,
@@ -149,7 +147,6 @@ export function deriveDispatchCandidates(
         ticket,
         ticketVersion,
         dependencies: [...value.deps].sort((left, right) => left - right),
-        workFanout: value.workFanout,
         program: value.program.map((stage) => ({ ...stage })),
         ...contract,
       },

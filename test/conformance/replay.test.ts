@@ -221,7 +221,6 @@ function picksOf(state: ItfState): Picks {
     ticket: some("j"),
     deps: some("deps_"),
     program: some("prog"),
-    workFanout: some("workFanout_"),
     onFailure: some("onFailure"),
     taskId: some("tid"),
     verdict: some("v"),

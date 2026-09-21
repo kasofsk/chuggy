@@ -8,7 +8,10 @@
  * older row uses, and the deployment that took the change wiped its journal
  * first, so there is no row older than this semantics anywhere for a
  * correction to correct. A correction with no row is a second machine the
- * model does not check, drifting beside the one it does.
+ * model does not check, drifting beside the one it does. The same holds of
+ * every later change to a row's shape that ships behind a migration refusing
+ * a non-empty journal: the number stays, because the row it would correct
+ * cannot exist.
  *
  * THE MECHANISM STAYS, and that is not the same as keeping it empty out of
  * sentiment: the number is on every row this image writes, `storedJournalLegalOn`

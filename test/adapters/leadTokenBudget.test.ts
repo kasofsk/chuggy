@@ -25,17 +25,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { leadObservationTokensPerDecisionAt005 } from "../../src/adapters/postgres/schema/migrations/005-three-deletions.ts";
+import { leadObservationTokensPerDecisionAt009 } from "../../src/adapters/postgres/schema/migrations/009-work-fanout.ts";
 import { sessionTurnInputCharsMax } from "../../src/contract/http.ts";
 import { leadObservationBytesMax } from "../../src/interpreter/selector.ts";
 
 test("the floor is the widest observation the mailbox row holds", () => {
-  assert.equal(leadObservationTokensPerDecisionAt005, sessionTurnInputCharsMax);
+  assert.equal(leadObservationTokensPerDecisionAt009, sessionTurnInputCharsMax);
 });
 
 test("the floor is never under the input a project may widen to", () => {
   assert.ok(
-    leadObservationTokensPerDecisionAt005 >= leadObservationBytesMax,
-    `the floor is ${String(leadObservationTokensPerDecisionAt005)} against an input bound of ${String(leadObservationBytesMax)}`,
+    leadObservationTokensPerDecisionAt009 >= leadObservationBytesMax,
+    `the floor is ${String(leadObservationTokensPerDecisionAt009)} against an input bound of ${String(leadObservationBytesMax)}`,
   );
 });

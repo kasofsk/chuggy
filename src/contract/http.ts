@@ -545,7 +545,6 @@ export const repositoryConfigurationNameCharsMax = 128;
 const candidateOwnMembers: readonly (readonly [string, number])[] = [
   ["ticket", candidateCounterDigitsMax],
   ["ticketVersion", candidateCounterDigitsMax],
-  ["workFanout", candidateCounterDigitsMax],
   [
     "dependencies",
     stringifiedArrayChars(

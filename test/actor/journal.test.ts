@@ -275,11 +275,6 @@ const refusals: readonly Refusal[] = [
       prog: [...flatProgram, ...flatProgram],
     }),
   },
-  {
-    conjunct: "CreateTicket/workFanoutChoices",
-    at: genesis,
-    event: releaseTicketEvent(id(1), { ...plainAuthoring, workFanout: 2 }),
-  },
   { conjunct: "Revoke/revocablesIn", at: done, event: revokeEvent(id(1)) },
   { conjunct: "Dispatch/readiesIn", at: working, event: dispatchEvent(id(1)) },
   {

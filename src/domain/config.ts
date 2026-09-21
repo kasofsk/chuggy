@@ -33,13 +33,6 @@ export function ticketIdUniverse(config: Config): readonly TicketId[] {
   return universe;
 }
 
-/** The work-set widths a release may author. */
-export function workFanoutChoices(config: Config): readonly number[] {
-  const choices: number[] = [];
-  for (let n = 1; n <= config.nTasks; n++) choices.push(n);
-  return choices;
-}
-
 /** The stage vocabulary an author may draw from: any fan-out in range. */
 export function stageChoices(config: Config): readonly StageDefinition[] {
   const choices: StageDefinition[] = [];

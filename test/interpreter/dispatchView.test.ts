@@ -69,8 +69,8 @@ test("every strict candidate fact participates in the digest", () => {
   assert.ok(first !== undefined);
   const changed = [
     { ...first, ticketVersion: first.ticketVersion + 1 },
-    { ...first, workFanout: first.workFanout + 1 },
     { ...first, dependencies: [99] },
+    { ...first, program: [{ fanout: 2 }] },
     {
       ...first,
       configurationRevision: `${first.configurationRevision}-changed`,

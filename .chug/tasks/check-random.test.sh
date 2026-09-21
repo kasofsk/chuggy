@@ -32,7 +32,7 @@ R="$WORK/repo"
 
 # The seed is pinned to a run that draws a duplicate completion; a mutant that
 # no seed here draws is a case that passes by never reaching the defect.
-SEED=0x1
+SEED=0x3
 
 run_gate() { # <dir> [env=value...]
 	OUT="$WORK/.out"

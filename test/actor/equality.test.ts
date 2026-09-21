@@ -55,7 +55,6 @@ function assertDiscriminates<Shape>(
 const baseTicket: Ticket = freshTicket({
   deps: new Set<number>(),
   program: flatProgram,
-  workFanout: 1,
 });
 
 const ticketMutants: FieldMutants<Ticket> = {
@@ -65,7 +64,6 @@ const ticketMutants: FieldMutants<Ticket> = {
     ...t,
     artifact: { type: "ProducedArtifact", value: 1 },
   }),
-  workFanout: (t) => ({ ...t, workFanout: t.workFanout + 1 }),
   program: (t) => ({ ...t, program: [] }),
   tasks: (t) => ({ ...t, tasks: new Set([workOutstanding(1)]) }),
   record: (t) => ({ ...t, record: [workTask(1, "Passed")] }),

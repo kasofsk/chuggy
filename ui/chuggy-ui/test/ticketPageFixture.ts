@@ -30,7 +30,6 @@ export const ticketPageCandidate = {
   ticket: 11,
   ticketVersion: 4,
   dependencies: [],
-  workFanout: 1,
   program: [],
   configurationRevision: "r1",
   configurationDigest: "b".repeat(64),

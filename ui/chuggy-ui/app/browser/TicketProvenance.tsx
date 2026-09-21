@@ -133,7 +133,6 @@ function Authoring(props: { readonly draft: DraftResponse }): ReactNode {
               .map((stage) => `${String(stage.fanout)}×`)
               .join(" then ")}
       </Field>
-      <Field name="work fanout">{authoring.workFanout}</Field>
     </dl>
   );
 }

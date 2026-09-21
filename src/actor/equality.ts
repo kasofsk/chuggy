@@ -96,7 +96,6 @@ export function ticketEquals(left: Ticket, right: Ticket): boolean {
     left.phase === right.phase &&
     listEquals(depsInOrder(left.deps), depsInOrder(right.deps), sameValue) &&
     ticketEqualsArtifact(left.artifact, right.artifact) &&
-    left.workFanout === right.workFanout &&
     listEquals(left.program, right.program, ticketEqualsStage) &&
     listEquals(
       tasksInIdOrder(left.tasks),

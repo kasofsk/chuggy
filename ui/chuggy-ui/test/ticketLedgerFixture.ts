@@ -141,7 +141,6 @@ export function ledgerPage(
 export const ticket21Authoring: TicketAuthoring = {
   dependencies: [],
   program: [{ fanout: 1 }, { fanout: 1 }],
-  workFanout: 1,
 };
 
 /** The seven executions the ticket held while it was parked. */

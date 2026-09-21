@@ -64,7 +64,6 @@ const image =
 const authoring = {
   dependencies: [],
   program: [],
-  workFanout: 1,
 };
 
 const execution = {

@@ -16,7 +16,7 @@ import { ledgerPage } from "./ticketLedgerFixture.ts";
 
 afterEach(cleanup);
 
-const authoring = { dependencies: [], program: [], workFanout: 1 };
+const authoring = { dependencies: [], program: [] };
 const facts = ticketLedger(ledgerPage([]), authoring);
 
 function ticket(over: Partial<TicketResponse> = {}): TicketResponse {

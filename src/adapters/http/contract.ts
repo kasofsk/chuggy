@@ -275,7 +275,6 @@ function releaseAuthoring(value: ReleaseAuthoringBody): ReleaseAuthoring {
   return {
     deps: new Set(value.dependencies),
     prog: value.program,
-    workFanout: value.workFanout,
   };
 }
 

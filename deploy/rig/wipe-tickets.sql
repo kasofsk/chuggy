@@ -2,12 +2,13 @@
 -- empty journal.
 --
 -- WHAT THIS IS FOR. The rig is a rehearsal box and its tickets are disposable.
--- `src/adapters/postgres/schema/migrations/008-escalation-sum.ts` refuses to
+-- A migration that changes what a journal row means (the first was
+-- `src/adapters/postgres/schema/migrations/008-escalation-sum.ts`) refuses to
 -- apply while any `journal_entry` row exists, because the image that carries it
 -- replays no journal written before it: a row left behind would come up with a
 -- ticket the actor cannot replay, under a schema that looks migrated. This file
 -- is what makes that refusal answerable. It is a release step and not a repair
--- one, and the migration names it because nothing else can.
+-- one, and each such migration names it because nothing else can.
 --
 -- WHAT IT KEEPS is everything a project IS rather than everything it has DONE:
 -- the project rows and their lifecycles, configuration revisions and the

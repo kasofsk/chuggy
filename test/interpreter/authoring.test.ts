@@ -42,9 +42,10 @@ test("draft initialization exposes deployment choices with server defaults", () 
   assert.deepEqual(policy.defaults, {
     deps: new Set(),
     prog: [{ fanout: refinementInstance.nTasks }],
-    workFanout: 1,
   });
-  assert.ok(policy.choices.workFanouts.includes(1));
+  assert.deepEqual(policy.choices.stages.at(-1), {
+    fanout: refinementInstance.nTasks,
+  });
 });
 
 test("stage-specific configuration bounds the authored evaluation program", () => {

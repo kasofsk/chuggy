@@ -72,14 +72,12 @@ export const ticketCarried = {
 export const authoring = {
   deps: new Set([asTicketId(1)]),
   prog: [{ fanout: 1 }],
-  workFanout: 1,
 } as const;
 
 /** The same authoring as a request body writes it. */
 export const authoringWireBody = {
   dependencies: [1],
   program: [{ fanout: 1 }],
-  workFanout: 1,
 };
 
 /**
@@ -189,7 +187,6 @@ export const versionedDispatchViewPage: DispatchViewPage = {
       ticket: asTicketId(3),
       ticketVersion: 2,
       dependencies: [],
-      workFanout: 1,
       program: [{ fanout: 1 }],
       configurationRevision: revision,
       configurationDigest: digest,

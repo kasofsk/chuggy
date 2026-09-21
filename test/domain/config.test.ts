@@ -17,7 +17,6 @@ import {
   isValidProgram,
   stageChoices,
   ticketIdUniverse,
-  workFanoutChoices,
 } from "../../src/domain/config.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { modelInstance } from "./configs.ts";
@@ -66,13 +65,5 @@ test("the id universe is deliberately wider than the fleet bound, which is what 
   assert.ok(
     universe.length > config.nTickets,
     "a fleet at its bound still leaves ids unclaimed, so a release may draw a gap",
-  );
-});
-
-test("the work-set widths a release may author run from one to the task ceiling", () => {
-  assert.deepEqual(workFanoutChoices(config), [1, 2]);
-  assert.ok(
-    !workFanoutChoices(config).includes(0),
-    "a zero-width work set is a cycle that resolves without doing anything",
   );
 });

@@ -37,7 +37,6 @@ interface HeaderRow {
 interface CandidateRow extends ConfigurationVersionRow {
   readonly ticket: string;
   readonly ticket_version: string;
-  readonly work_fanout: string;
   readonly program: string;
   readonly configuration_revision: string;
   readonly configuration_digest: string;
@@ -62,7 +61,6 @@ function candidateOf(
     dependencies: dependencies
       .filter((edge) => Number(edge.ticket) === ticket)
       .map((edge) => projectRowCounter(edge.dependency, "dispatch dependency")),
-    workFanout: projectRowCounter(row.work_fanout, "dispatch work fanout"),
     program: decodeDispatchProgram(JSON.parse(row.program) as unknown),
     configurationRevision: row.configuration_revision,
     configurationDigest: row.configuration_digest,
@@ -109,7 +107,7 @@ async function readDispatchView(
     if (query.watermark !== undefined && query.watermark !== watermark)
       return { result: "Reset" };
     const found = await client.query<CandidateRow>(
-      sql`SELECT d.ticket::text,d.ticket_version::text,d.work_fanout::text,d.program,
+      sql`SELECT d.ticket::text,d.ticket_version::text,d.program,
             d.configuration_revision,d.configuration_digest,d.configuration_canonical,
             v.name AS version_name,v.number::text AS version_number
          FROM dispatch_candidate d

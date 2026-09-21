@@ -31,7 +31,6 @@ export const authoringSchema = z.strictObject({
     .max(nativeHttpDraftDependenciesMax)
     .refine((values) => new Set(values).size === values.length),
   program: z.array(programStageSchema).max(nativeHttpDraftStagesMax),
-  workFanout: ticketNumberSchema,
 });
 
 export type ReleaseAuthoringBody = z.infer<typeof authoringSchema>;
