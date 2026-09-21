@@ -93,9 +93,12 @@ test("a detail line names only the facts the page holds", () => {
   expect(escalationDetailLine("WorkFailureEscalated", bare)).toBe(
     "Failed work is not reworked",
   );
-  expect(escalationDetailLine("FinalizationUnavailableEscalated", bare)).toBe(
-    undefined,
-  );
+  expect(
+    escalationDetailLine("FinalizationUnavailableEscalated", {
+      lastSet: { taskKind: "Work", stage: undefined, verdict: undefined },
+      stageCount: 2,
+    }),
+  ).toBe(undefined);
 });
 
 /**

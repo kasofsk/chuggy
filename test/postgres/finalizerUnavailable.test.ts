@@ -163,6 +163,23 @@ test("the door admits the unavailable result at the recorded kind and at no othe
   assert.equal(submitted.submitted, "Submitted");
 });
 
+test("a hold still being counted is not yet what the desk reads", async () => {
+  const { project, claim } = await heldSubject("unavailable-counting");
+  const store = postgresFinalizer(rig.pool);
+  await store.recordHold({ claim, kind: "TargetUnreadable" });
+  const asApi = postgresHarnessRolePool(apiRole);
+  try {
+    const read = await postgresNativeReads(asApi).ticket(
+      project.partition,
+      asTicketId(project.ticket),
+    );
+    assert.equal(read?.phase, "Finalization");
+    assert.equal(read?.finalizationBlockedBy, undefined);
+  } finally {
+    await asApi.end();
+  }
+});
+
 test("the escalated ticket keeps the hold as the evidence the desk reads", async () => {
   const { project, claim } = await heldSubject("unavailable-desk");
   const store = postgresFinalizer(rig.pool);
@@ -197,7 +214,41 @@ test("the escalated ticket keeps the hold as the evidence the desk reads", async
     assert.equal(read?.reason, "FinalizationUnavailableEscalated");
     assert.equal(read?.finalizationBlockedBy, "RepositoryUnbound");
     assert.equal(read?.resumeAt, "ResumeFinalization");
+    await laterRequestHeldAt(project, "TargetUnreadable");
+    const again = await postgresNativeReads(asApi).ticket(
+      project.partition,
+      asTicketId(project.ticket),
+    );
+    assert.equal(again?.finalizationBlockedBy, "TargetUnreadable");
   } finally {
     await asApi.end();
   }
 });
+
+/**
+ * The request a resume would mint after the first escalation, already settled
+ * and holding its own kind: what the desk reads is the newest request's hold,
+ * not the first.
+ */
+async function laterRequestHeldAt(
+  project: FinalizerProject,
+  kind: string,
+): Promise<void> {
+  await rig.harness.query(
+    `INSERT INTO finalization_request
+       (tenant,project,request,authorizing_seq,effect_position,ticket,
+        ticket_version,request_generation,state,kind,
+        hold_kind,hold_passes,held_since)
+     SELECT tenant,project,$3,max(seq),0,$4,max(seq),2,'Fulfilled','RunFinalizer',
+            $5,1,now()
+       FROM journal_entry WHERE tenant=$1 AND project=$2
+      GROUP BY tenant,project`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      `${project.request}-resumed`,
+      project.ticket,
+      kind,
+    ],
+  );
+}
