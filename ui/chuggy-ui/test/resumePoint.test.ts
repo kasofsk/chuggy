@@ -30,12 +30,6 @@ const failedFinalStage: ClosedSet = {
   verdict: "Failed",
 };
 
-const passedFinalStage: ClosedSet = {
-  taskKind: "Evaluation",
-  stage: 1,
-  verdict: "Passed",
-};
-
 const cancelledWork: ClosedSet = {
   taskKind: "Work",
   stage: undefined,
@@ -51,8 +45,6 @@ function parked(
     reason,
     lastSet,
     stageCount: 2,
-    reworkBudget: 3,
-    resumePricing: "RetryCharged",
     resumeAt: undefined,
   };
 }
@@ -65,8 +57,6 @@ test("every wall the wire can name has a point or names none", () => {
   expect(named).toEqual([
     ["WorkFailed", "ResumeWorking"],
     ["ReworkBudgetExhausted", "ResumeReworking"],
-    ["FinalizationBudgetExhausted", "ResumeFinalizing"],
-    ["GasExhausted", "ResumeEvaluating"],
     ["DependencyRevoked", undefined],
     ["ExecutionPolicyDenied", "ResumeEvaluating"],
     ["TicketConfigIncompatible", "ResumeEvaluating"],
@@ -74,41 +64,6 @@ test("every wall the wire can name has a point or names none", () => {
     ["RuntimeVersionUnsupported", "ResumeEvaluating"],
     ["RequiredCapabilityUnavailable", "ResumeEvaluating"],
   ]);
-});
-
-test("the gas wall is the finalization's where the program had already passed", () => {
-  expect(ticketResumePoint(parked("GasExhausted", passedFinalStage))).toBe(
-    "ResumeFinalizing",
-  );
-  expect(ticketResumePoint(parked("GasExhausted", failedFinalStage))).toBe(
-    "ResumeEvaluating",
-  );
-});
-
-test("the gas wall reads the program's own last stage, not any stage past it", () => {
-  const beyond: ClosedSet = {
-    taskKind: "Evaluation",
-    stage: 5,
-    verdict: "Passed",
-  };
-  expect(ticketResumePoint(parked("GasExhausted", beyond))).toBe(
-    "ResumeEvaluating",
-  );
-});
-
-test("the gas wall is the finalization's only where the final stage passed", () => {
-  for (const verdict of [
-    "Running",
-    "Cancelled",
-    "Blocked",
-    "Failed",
-  ] as const) {
-    expect(
-      ticketResumePoint(
-        parked("GasExhausted", { ...passedFinalStage, verdict }),
-      ),
-    ).toBe("ResumeEvaluating");
-  }
 });
 
 test("a blocked execution resumes into the phase that held the set it stopped", () => {
@@ -147,57 +102,21 @@ test("the machine's own answer wins over every rule here", () => {
 });
 
 test("an evaluation resume re-runs the program from its lowest stage", () => {
-  expect(ticketResume(parked("GasExhausted"))).toEqual({
+  expect(ticketResume(parked("ExecutionPolicyDenied"))).toEqual({
     point: "ResumeEvaluating",
     reruns: "evaluation",
     fromStage: 0,
     ofStages: 2,
-    refillsReworkTo: undefined,
-    cost: 1,
   });
 });
 
-test("the rework wall's resume re-runs the work with the account refilled", () => {
+test("the rework wall's resume re-runs the work", () => {
   expect(ticketResume(parked("ReworkBudgetExhausted"))).toEqual({
     point: "ResumeReworking",
     reruns: "work",
     fromStage: undefined,
     ofStages: undefined,
-    refillsReworkTo: 3,
-    cost: 1,
   });
-});
-
-test("a ticket authored no rework budget is offered no refill to buy", () => {
-  expect(
-    ticketResumePoint({ ...parked("ReworkBudgetExhausted"), reworkBudget: 0 }),
-  ).toBeUndefined();
-  expect(
-    ticketResume({ ...parked("ReworkBudgetExhausted"), reworkBudget: 0 }),
-  ).toBeUndefined();
-});
-
-test("re-entering work always costs gas and a free retry costs none", () => {
-  expect(
-    ticketResume({ ...parked("WorkFailed"), resumePricing: "RetryFree" }),
-  ).toEqual({
-    point: "ResumeWorking",
-    reruns: "work",
-    fromStage: undefined,
-    ofStages: undefined,
-    refillsReworkTo: undefined,
-    cost: 1,
-  });
-  expect(
-    ticketResume({
-      ...parked("ReworkBudgetExhausted"),
-      resumePricing: "RetryFree",
-    })?.cost,
-  ).toBe(1);
-  expect(
-    ticketResume({ ...parked("GasExhausted"), resumePricing: "RetryFree" })
-      ?.cost,
-  ).toBe(0);
 });
 
 test("each point is re-run in the ticket's own word for it", () => {

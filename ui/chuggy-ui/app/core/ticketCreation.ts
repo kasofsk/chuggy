@@ -475,9 +475,6 @@ export function creationBodyFrom(
       dependencies: [...form.dependencies],
       program: [...form.program],
       workFanout: form.workFanout,
-      reworkPolicy: form.reworkPolicy,
-      finalizationPricing: form.finalizationPricing,
-      resumePricing: form.resumePricing,
       finalizer: form.finalizer,
     },
     brief: creationBriefOf(form, branches),
@@ -542,18 +539,4 @@ export function creationStageLabel(stage: CreationStage): string {
 
 export function creationFanoutLabel(fanout: number): string {
   return String(fanout);
-}
-
-export function creationReworkLabel(
-  policy: CreationAuthoring["reworkPolicy"],
-): string {
-  return `${policy.type} ${String(policy.value)}`;
-}
-
-export function creationFinalizationLabel(
-  pricing: CreationAuthoring["finalizationPricing"],
-): string {
-  return pricing === "DeadlineOnly"
-    ? pricing
-    : `${pricing.type} ${String(pricing.value)}`;
 }

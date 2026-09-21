@@ -52,8 +52,6 @@ test("the sections partition the roster, leaving no phase in two and none in non
 const badgeOfReason: Readonly<Record<EscalationReason, string>> = {
   WorkFailed: "work failed",
   ReworkBudgetExhausted: "rework budget spent",
-  FinalizationBudgetExhausted: "finalization budget spent",
-  GasExhausted: "gas spent",
   DependencyRevoked: "a dependency was revoked",
   ExecutionPolicyDenied: "execution policy denied it",
   TicketConfigIncompatible: "the configuration does not fit",
@@ -72,7 +70,9 @@ test("no two reasons are drawn with the same badge", () => {
 });
 
 test("an escalated row's badge is its reason", () => {
-  expect(ticketBadgeLabel("Escalated", "GasExhausted")).toBe("gas spent");
+  expect(ticketBadgeLabel("Escalated", "ReworkBudgetExhausted")).toBe(
+    "rework budget spent",
+  );
 });
 
 test("a row with nothing to answer for carries no badge", () => {

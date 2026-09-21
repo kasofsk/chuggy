@@ -23,7 +23,7 @@
     /* surfaces — levels, not shadows */
     --surface-0: light-dark(#edf0ea, #0e1210); /* the page */
     --surface-1: light-dark(#f7f8f5, #151a17); /* a panel */
-    --surface-2: light-dark(#e2e6de, #0a0d0b); /* inset: code, meters */
+    --surface-2: light-dark(#e2e6de, #0a0d0b); /* inset: code */
     --surface-inverse: light-dark(#151a17, #eef2ee); /* a filled control */
     --bubble: light-dark(#dfe5da, #1b221d); /* the member's own message */
 
@@ -50,7 +50,7 @@
     --tone-retired: var(--ink-3);
     --tone-on-danger: light-dark(#ffffff, #0e1210);
 
-    /* washes — a tone at background strength, for notices and meter cells */
+    /* washes — a tone at background strength, for notices */
     --wash: 10%;
     --wash-pass: color-mix(
       in srgb,
@@ -112,7 +112,7 @@
     --space-7: 3rem;
 
     /* shape and lines */
-    --radius-1: 2px; /* meter cells, the focus ring */
+    --radius-1: 2px; /* the focus ring */
     --radius-2: 4px; /* inputs, the identity block, quoted text */
     --radius-3: 1.125rem; /* bubbles, work cards, the composer */
     --radius-circle: 50%; /* a square drawn round: a dot, a mark, a monogram */
@@ -147,8 +147,6 @@
     --col-pill: 7rem; /* ledger: the verdict */
     --col-when: 10rem; /* ledger: the row's start and how long it took */
     --col-spent: 11rem; /* ledger: the row's cost and tokens */
-    --col-meter-name: 6.5rem; /* budgets: the account's name */
-    --width-meter: 14rem; /* budgets: the track a meter draws in */
   }
 
   :root[data-theme="light"] {

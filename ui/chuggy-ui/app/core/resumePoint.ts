@@ -1,6 +1,5 @@
 /**
- * Where a resume would put this ticket back, what it would re-run, and what it
- * would charge.
+ * Where a resume would put this ticket back, and what it would re-run.
  *
  * The machine stamps the point at the wall it escalated on and clears it on the
  * way out, so a parked ticket's wall and its last fan-out set name it between
@@ -14,20 +13,23 @@
  * returned as given; the rules below are what answer when a ticket read does
  * not carry one.
  *
+ * A RESUME NEEDS NOTHING BUT ITS POINT. Every parked ticket with a modeled
+ * resume is retryable and every resume is free, so naming the point is the
+ * whole of what this module or a reader of it has to settle.
+ *
  * IT IS TOTAL OVER EVERY PHASE AND REASON THE ROSTERS ADMIT, and answers with
  * nothing for three different reasons. A phase that is not parked has nothing
- * to resume at all; two walls carry no point the model would stamp — a revoked
- * dependency, and the rework wall on a ticket authored no rework budget, which
- * declined the economy a refill would sell it back; and where the model does
- * stamp one but the read is short of what it stamped — a reason the ticket read
- * omits, a set this page does not hold — the console declines rather than
- * guesses, and a read carrying the stamped point is what settles it.
+ * to resume at all; the rework wall's own resume needs no further check, and a
+ * revoked dependency is the one wall the model gives no exit but revoke; and
+ * where the model does stamp one but the read is short of what it stamped — a
+ * reason the ticket read omits, a set this page does not hold — the console
+ * declines rather than guesses, and a read carrying the stamped point is what
+ * settles it.
  */
 
 import type {
   EscalationReason,
   ResumePoint,
-  ResumePricing,
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
 import type { ClosedSet } from "./ticketLedger.ts";
@@ -40,8 +42,6 @@ export interface ResumeSituation {
   readonly reason: EscalationReason | undefined;
   readonly lastSet: ClosedSet | undefined;
   readonly stageCount: number;
-  readonly reworkBudget: number;
-  readonly resumePricing: ResumePricing;
   readonly resumeAt: ResumePoint | undefined;
 }
 
@@ -50,20 +50,6 @@ export interface ResumeConsequence {
   readonly reruns: ResumeRerun;
   readonly fromStage: number | undefined;
   readonly ofStages: number | undefined;
-  readonly refillsReworkTo: number | undefined;
-  readonly cost: number;
-}
-
-/** The gas wall stamps the finalization only when the program had already passed. */
-function finalizationWalled(situation: ResumeSituation): boolean {
-  const set = situation.lastSet;
-  return (
-    set !== undefined &&
-    set.taskKind === "Evaluation" &&
-    set.verdict === "Passed" &&
-    set.stage !== undefined &&
-    set.stage === situation.stageCount - 1
-  );
 }
 
 /** A blocked execution resumes into the phase that held the set it interrupted. */
@@ -85,13 +71,7 @@ function walledPoint(
     case "WorkFailed":
       return "ResumeWorking";
     case "ReworkBudgetExhausted":
-      return situation.reworkBudget > 0 ? "ResumeReworking" : undefined;
-    case "FinalizationBudgetExhausted":
-      return "ResumeFinalizing";
-    case "GasExhausted":
-      return finalizationWalled(situation)
-        ? "ResumeFinalizing"
-        : "ResumeEvaluating";
+      return "ResumeReworking";
     case "DependencyRevoked":
       return undefined;
     case "ExecutionPolicyDenied":
@@ -143,23 +123,9 @@ export function resumeRerun(point: ResumePoint): ResumeRerun {
 }
 
 /**
- * Every entry to work meters, because that is the account that makes the graph
- * terminate, so both work resumes charge under either pricing; the rest are
- * priced by the ticket's own authoring.
- */
-export function resumeGasCharge(
-  point: ResumePoint,
-  pricing: ResumePricing,
-): number {
-  if (point === "ResumeWorking" || point === "ResumeReworking") return 1;
-  return pricing === "RetryCharged" ? 1 : 0;
-}
-
-/**
  * What a resume would do, as the facts a page draws it from. An evaluation
  * resume is a fresh fan-out of the lowest stage and never a pick-up
- * mid-sequence; the rework wall's is a fresh cycle whose rework account the
- * machine refills to the value the ticket was authored with.
+ * mid-sequence; the rework wall's is a fresh cycle, same as a resumed work set.
  */
 export function ticketResume(
   situation: ResumeSituation,
@@ -172,8 +138,5 @@ export function ticketResume(
     reruns: resumeRerun(point),
     fromStage: evaluating ? 0 : undefined,
     ofStages: evaluating ? situation.stageCount : undefined,
-    refillsReworkTo:
-      point === "ResumeReworking" ? situation.reworkBudget : undefined,
-    cost: resumeGasCharge(point, situation.resumePricing),
   };
 }

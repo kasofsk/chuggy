@@ -14,9 +14,7 @@ import type { DraftInitializationResponse } from "../../../../src/contract/respo
 import { finalizerLabel } from "../core/codeLabels.ts";
 import {
   creationFanoutLabel,
-  creationFinalizationLabel,
   creationOffered,
-  creationReworkLabel,
   creationStageLabel,
 } from "../core/ticketCreation.ts";
 import type {
@@ -163,7 +161,7 @@ function Program(
   );
 }
 
-function Pricing(
+function WorkAndFinalizer(
   props: FormEdit & {
     readonly choices: DraftInitializationResponse["choices"];
   },
@@ -178,33 +176,6 @@ function Pricing(
         render={creationFanoutLabel}
         onChoose={(workFanout) => {
           onChange({ ...form, workFanout });
-        }}
-      />
-      <ChoiceRow
-        label="rework policy"
-        offered={choices.reworkPolicies}
-        chosen={form.reworkPolicy}
-        render={creationReworkLabel}
-        onChoose={(reworkPolicy) => {
-          onChange({ ...form, reworkPolicy });
-        }}
-      />
-      <ChoiceRow
-        label="finalization pricing"
-        offered={choices.finalizationPricings}
-        chosen={form.finalizationPricing}
-        render={creationFinalizationLabel}
-        onChoose={(finalizationPricing) => {
-          onChange({ ...form, finalizationPricing });
-        }}
-      />
-      <ChoiceRow
-        label="resume pricing"
-        offered={choices.resumePricings}
-        chosen={form.resumePricing}
-        render={(value) => value}
-        onChoose={(resumePricing) => {
-          onChange({ ...form, resumePricing });
         }}
       />
       <ChoiceRow
@@ -241,7 +212,7 @@ export function TicketCreationAdvanced(
           offered={initialization.choices.stages}
           stagesMax={initialization.choices.programStagesMax}
         />
-        <Pricing
+        <WorkAndFinalizer
           form={form}
           onChange={onChange}
           choices={initialization.choices}

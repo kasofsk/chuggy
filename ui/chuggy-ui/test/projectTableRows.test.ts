@@ -62,7 +62,7 @@ const tickets: readonly TicketResponse[] = [
     ticket: 2,
     phase: "Escalated",
     sequence: 4,
-    reason: "GasExhausted",
+    reason: "ReworkBudgetExhausted",
     ...ticketInstants,
   },
   { ticket: 3, phase: "Pending", sequence: 3, ...ticketInstants },
@@ -223,7 +223,7 @@ test("the rows of one section are that section's and in the order read", () => {
   ).toStrictEqual([1]);
   expect(
     projectTableRowsIn(rows, "NeedsYou").map((row) => row.badge),
-  ).toStrictEqual(["gas spent"]);
+  ).toStrictEqual(["rework budget spent"]);
   expect(
     projectTableRowsIn(rows, "UpNext").map((row) => row.ticket),
   ).toStrictEqual([3]);

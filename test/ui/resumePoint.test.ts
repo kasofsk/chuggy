@@ -11,6 +11,11 @@
  * phase, its reason and the last fan-out set the page holds, and each of those
  * is read off the same ticket the decider was handed, so a rule that only
  * happens to agree on hand-picked facts does not pass.
+ *
+ * NEITHER TREE HOLDS AN ACCOUNT. A failed evaluation is taken the way its
+ * caller's `onFailure` says, which is an argument to the decider rather than a
+ * budget the ticket carries, and a failed finalization always reworks — there
+ * is no finalization wall left to agree on.
  */
 
 import assert from "node:assert/strict";
@@ -20,7 +25,6 @@ import { ticketAt } from "../../src/domain/core.ts";
 import {
   decideExecutionBlocked,
   decideEvalStageReduce,
-  decideFinalizationResult,
   decideResumeTicket,
   decideRevoke,
   decideWorkReduce,
@@ -36,14 +40,11 @@ import type {
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { combine } from "../../src/domain/program.ts";
-import { reworkBudget } from "../../src/domain/pricing.ts";
 import { resumePoints } from "../../src/contract/rosters.ts";
 import type { ResumePoint } from "../../src/contract/rosters.ts";
 import type { ResumeSituation } from "../../ui/chuggy-ui/app/core/resumePoint.ts";
 import {
-  resumeGasCharge,
   resumeReenters,
-  ticketResume,
   ticketResumePoint,
 } from "../../ui/chuggy-ui/app/core/resumePoint.ts";
 import type { ClosedSet } from "../../ui/chuggy-ui/app/core/ticketLedger.ts";
@@ -52,14 +53,7 @@ const id = asTicketId(7);
 const stage = { fanout: 1, combinator: "UnanimousPass" } as const;
 
 /** The revoke walks the fleet a bounded number of rounds, and the bound is the fleet. */
-const fleetOfTwo: Config = {
-  nTickets: 2,
-  nTasks: 2,
-  reworkPolicy: { type: "BudgetedRework", value: 2 },
-  gas: 4,
-  finalizationPricing: "DeadlineOnly",
-  maxStages: 2,
-};
+const fleetOfTwo: Config = { nTickets: 2, nTasks: 2, maxStages: 2 };
 
 function ticketIn(over: Partial<Ticket> = {}): Ticket {
   return {
@@ -68,16 +62,10 @@ function ticketIn(over: Partial<Ticket> = {}): Ticket {
     finalizer: "ManagedFinalizer",
     artifact: "NoArtifact",
     workFanout: 1,
-    reworkPolicy: { type: "BudgetedRework", value: 2 },
-    finalizationPricing: "DeadlineOnly",
-    resumePricing: "RetryCharged",
     program: [stage, stage],
     tasks: new Set<Task>(),
     record: [],
     spawned: 0,
-    reworkLeft: 2,
-    finalizationLeft: 0,
-    gasLeft: 4,
     resumeAt: "NoResume",
     reason: "NoReason",
     completions: 0,
@@ -150,8 +138,6 @@ function situationOf(before: Ticket, after: Ticket): ResumeSituation {
     reason: after.reason === "NoReason" ? undefined : after.reason,
     lastSet: lastSetOf(before),
     stageCount: before.program.length,
-    reworkBudget: reworkBudget(before.reworkPolicy),
-    resumePricing: before.resumePricing,
     resumeAt: undefined,
   };
 }
@@ -178,100 +164,52 @@ test("a failed work set parks where the machine says it parks", () => {
   agrees(before, after, "a failed work set");
 });
 
-test("the two evaluation walls park where the machine says they park", () => {
-  for (const spent of [
-    { reworkLeft: 0, gasLeft: 4, reason: "ReworkBudgetExhausted" },
-    { reworkLeft: 1, gasLeft: 0, reason: "GasExhausted" },
-  ]) {
-    const before = ticketIn({
-      phase: "Evaluating",
-      reworkLeft: spent.reworkLeft,
-      gasLeft: spent.gasLeft,
-      record: taskSet("Work", [1], "Passed"),
-      tasks: new Set(taskSet({ type: "Evaluation", value: 0 }, [2], "Failed")),
-    });
-    const after = ticketAt(
-      decideEvalStageReduce(coreWith(before), id).post,
-      id,
-    );
-    assert.equal(after.reason, spent.reason);
-    agrees(before, after, `an evaluation wall at ${spent.reason}`);
-  }
-});
+/**
+ * A failed evaluation is taken the way its caller's `onFailure` says: reworked
+ * with no wall at all, or escalated at the rework wall — the choice is an
+ * argument to the decider, not a budget the ticket carries.
+ */
+test("an evaluation failure reworks or parks by the disposition it is given", () => {
+  const before = ticketIn({
+    phase: "Evaluating",
+    record: taskSet("Work", [1], "Passed"),
+    tasks: new Set(taskSet({ type: "Evaluation", value: 0 }, [2], "Failed")),
+  });
+  const reworked = ticketAt(
+    decideEvalStageReduce(coreWith(before), id, "ReworkEvaluationFailure").post,
+    id,
+  );
+  assert.equal(reworked.phase, "Working");
+  assert.equal(reworked.reason, "NoReason");
 
-test("the two finalization walls park where the machine says they park", () => {
-  for (const priced of [
-    {
-      finalizationPricing: "DeadlineOnly" as const,
-      finalizationLeft: 0,
-      gasLeft: 0,
-    },
-    {
-      finalizationPricing: { type: "Budgeted", value: 1 } as const,
-      finalizationLeft: 0,
-      gasLeft: 4,
-    },
-  ]) {
-    const before = ticketIn({
-      phase: "Finalizing",
-      ...priced,
-      record: [
-        ...taskSet("Work", [1], "Passed"),
-        ...taskSet({ type: "Evaluation", value: 0 }, [2], "Passed"),
-        ...taskSet({ type: "Evaluation", value: 1 }, [3], "Passed"),
-      ],
-    });
-    const after = ticketAt(
-      decideFinalizationResult(coreWith(before), id, "FinalizationFailed").post,
-      id,
-    );
-    assert.equal(after.phase, "Escalated");
-    agrees(before, after, `a finalization wall under ${String(after.reason)}`);
-  }
+  const escalated = ticketAt(
+    decideEvalStageReduce(coreWith(before), id, "EscalateEvaluationFailure")
+      .post,
+    id,
+  );
+  assert.equal(escalated.reason, "ReworkBudgetExhausted");
+  agrees(before, escalated, "an evaluation wall taken by disposition");
 });
 
 test("a program of one stage parks where the machine says it parks", () => {
   const evaluating = ticketIn({
     phase: "Evaluating",
     program: [stage],
-    reworkLeft: 1,
-    gasLeft: 0,
     record: taskSet("Work", [1], "Passed"),
     tasks: new Set(taskSet({ type: "Evaluation", value: 0 }, [2], "Failed")),
   });
   agrees(
     evaluating,
-    ticketAt(decideEvalStageReduce(coreWith(evaluating), id).post, id),
+    ticketAt(
+      decideEvalStageReduce(
+        coreWith(evaluating),
+        id,
+        "EscalateEvaluationFailure",
+      ).post,
+      id,
+    ),
     "a one-stage evaluation wall",
   );
-  for (const priced of [
-    { finalizationPricing: "DeadlineOnly" as const, gasLeft: 0 },
-    {
-      finalizationPricing: { type: "Budgeted", value: 1 } as const,
-      gasLeft: 4,
-    },
-  ]) {
-    const before = ticketIn({
-      phase: "Finalizing",
-      program: [stage],
-      finalizationLeft: 0,
-      ...priced,
-      record: [
-        ...taskSet("Work", [1], "Passed"),
-        ...taskSet({ type: "Evaluation", value: 0 }, [2], "Passed"),
-      ],
-    });
-    const after = ticketAt(
-      decideFinalizationResult(coreWith(before), id, "FinalizationFailed").post,
-      id,
-    );
-    assert.equal(after.phase, "Escalated");
-    agrees(
-      before,
-      after,
-      `a one-stage finalization wall at ${String(after.reason)}`,
-    );
-  }
 });
 
 test("a blocked execution parks where the machine says it parks, in both phases", () => {
@@ -319,57 +257,14 @@ test("a ticket parked by a revoked dependency is offered no resume", () => {
   agrees(ticketAt(core, dependent), after, "a revoked dependency");
 });
 
-test("each point re-enters the phase the console names, at the charge it names", () => {
+test("each point re-enters the phase the console names", () => {
   for (const point of resumePoints) {
-    for (const pricing of ["RetryCharged", "RetryFree"] as const) {
-      const before = ticketIn({
-        phase: "Escalated",
-        resumeAt: point,
-        resumePricing: pricing,
-        reason: "GasExhausted",
-        reworkLeft: 1,
-        record: taskSet("Work", [1], "Passed"),
-      });
-      const after = ticketAt(decideResumeTicket(coreWith(before), id).post, id);
-      assert.equal(after.phase, resumeReenters(point), `phase at ${point}`);
-      assert.equal(
-        before.gasLeft - after.gasLeft,
-        resumeGasCharge(point, pricing),
-        `charge at ${point} under ${pricing}`,
-      );
-      const refilled = ticketResume({
-        ...situationOf(before, before),
-        resumeAt: point,
-        resumePricing: pricing,
-      })?.refillsReworkTo;
-      assert.equal(
-        after.reworkLeft,
-        refilled ?? before.reworkLeft,
-        `rework account at ${point}`,
-      );
-    }
-  }
-});
-
-/**
- * A ticket authored no rework budget declined the rework economy, so the wall
- * that spends it has no resume to sell back — the model's own exception beside
- * the revoked dependency.
- */
-test("the rework wall of a ticket authored no budget parks for good", () => {
-  for (const budget of [2, 1, 0]) {
     const before = ticketIn({
-      phase: "Evaluating",
-      reworkPolicy: { type: "BudgetedRework", value: budget },
-      reworkLeft: 0,
+      phase: "Escalated",
+      resumeAt: point,
       record: taskSet("Work", [1], "Passed"),
-      tasks: new Set(taskSet({ type: "Evaluation", value: 0 }, [2], "Failed")),
     });
-    const after = ticketAt(
-      decideEvalStageReduce(coreWith(before), id).post,
-      id,
-    );
-    assert.equal(after.reason, "ReworkBudgetExhausted");
-    agrees(before, after, `a rework wall authored with ${String(budget)}`);
+    const after = ticketAt(decideResumeTicket(coreWith(before), id).post, id);
+    assert.equal(after.phase, resumeReenters(point), `phase at ${point}`);
   }
 });

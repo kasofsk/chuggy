@@ -7,8 +7,8 @@
  * against `src/domain/enablement.ts` by `test/ui/ticketActions.test.ts` — the
  * arrangement `no-console-sees-another` names for a value two trees both need.
  * A phase is less than the model checks: a resume also needs a modeled
- * resumption and the gas to pay for it, and the wire carries neither, so this
- * offers what the phase permits and the server refuses the rest by code.
+ * resumption, and the wire does not carry that, so this offers what the phase
+ * permits and the server refuses the rest by code.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -138,18 +138,14 @@ export function manualDispatchAction(
  */
 export interface TicketActionContext {
   readonly reason?: EscalationReason | undefined;
-  readonly reworkBudget?: number | undefined;
 }
 
-/** What the rework wall's Resume does, naming the refill where the page reads it. */
+/** What the rework wall's Resume does, which is a fresh cycle rather than a
+ * pick-up of the one that failed. */
 function resumeSentence(context: TicketActionContext): string {
-  if (context.reason !== "ReworkBudgetExhausted")
-    return "rejoin the pipeline at the point this ticket was parked at";
-  const budget =
-    context.reworkBudget === undefined
-      ? "a fresh rework budget"
-      : `a fresh rework budget of ${String(context.reworkBudget)}`;
-  return `rework this ticket with ${budget}, which costs one gas`;
+  return context.reason === "ReworkBudgetExhausted"
+    ? "rework this ticket with a fresh cycle"
+    : "rejoin the pipeline at the point this ticket was parked at";
 }
 
 /**

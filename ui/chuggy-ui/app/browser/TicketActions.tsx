@@ -36,7 +36,7 @@ import {
   operationStepLabel,
   ticketActionEffect,
 } from "../core/codeLabels.ts";
-import type { ResumeOffer, ReworkStanding } from "../core/codeLabels.ts";
+import type { ResumeOffer } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import {
   followOperation,
@@ -238,7 +238,6 @@ function ActionButtons(props: {
   readonly actions: readonly TicketAction[];
   readonly busy: boolean;
   readonly resume: ResumeOffer;
-  readonly rework: ReworkStanding | undefined;
   readonly onChoose: (action: TicketAction) => void;
 }): ReactNode {
   if (props.actions.length === 0)
@@ -249,7 +248,6 @@ function ActionButtons(props: {
         const effect = ticketActionEffect(
           action.action,
           props.resume,
-          props.rework,
           props.actions.map((offered) => offered.action),
         );
         return (
@@ -473,7 +471,6 @@ export interface TicketActionsProps {
   readonly openState: PanelState<TicketNativeActionsResponse>;
   readonly dispatchState: PanelState<DispatchViewResponse>;
   readonly resume: ResumeOffer;
-  readonly rework?: ReworkStanding;
 }
 
 function TicketActionsPanel(props: TicketActionsProps): ReactNode {
@@ -498,7 +495,6 @@ function TicketActionsPanel(props: TicketActionsProps): ReactNode {
                 actions={offers.actions}
                 busy={busy}
                 resume={props.resume}
-                rework={props.rework}
                 onChoose={submitting.submit}
               />
             )}

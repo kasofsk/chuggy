@@ -8,9 +8,8 @@
  * not part of the claim — the offers are compared as an enablement per phase.
  *
  * The console sees less than the model does, and the second half of this suite
- * pins exactly where: a resume also needs a modeled resumption and the gas to
- * pay for it, and the wire carries neither, so the console offers a resume the
- * actor may still refuse.
+ * pins exactly where: a resume also needs a modeled resumption, which the wire
+ * does not carry, so the console offers a resume the actor may still refuse.
  */
 
 import assert from "node:assert/strict";
@@ -36,16 +35,10 @@ function ticketIn(phase: TicketPhase, over: Partial<Ticket> = {}): Ticket {
     finalizer: "NoFinalizer",
     artifact: "NoArtifact",
     workFanout: 1,
-    reworkPolicy: { type: "BudgetedRework", value: 1 },
-    finalizationPricing: "DeadlineOnly",
-    resumePricing: "RetryFree",
     program: [],
     tasks: new Set(),
     record: [],
     spawned: 0,
-    reworkLeft: 1,
-    finalizationLeft: 1,
-    gasLeft: 4,
     resumeAt: "ResumeWorking",
     reason: "NoReason",
     completions: 0,
@@ -94,14 +87,6 @@ test("what the console offers is what the two predicates enable", () => {
 
 test("a park with no modeled resume is offered a resume the actor refuses", () => {
   const core = coreWith(ticketIn("Escalated", { resumeAt: "NoResume" }));
-  assert.equal(retryableIn(core, id), false);
-  assert.equal(ticketResumable("Escalated"), true);
-});
-
-test("a park with no gas for its resume is offered one the actor refuses", () => {
-  const core = coreWith(
-    ticketIn("Escalated", { resumeAt: "ResumeWorking", gasLeft: 0 }),
-  );
   assert.equal(retryableIn(core, id), false);
   assert.equal(ticketResumable("Escalated"), true);
 });

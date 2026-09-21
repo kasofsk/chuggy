@@ -90,8 +90,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** A ticket parked with a resume the machine stamped and the gas to pay it,
- * which is the one shape that offers a Resume the reader can press. */
+/** A ticket parked with a resume the machine stamped, which is the one shape
+ * that offers a Resume the reader can press. */
 function parkedAt(ticket: number): unknown {
   return {
     ticket,
@@ -99,7 +99,6 @@ function parkedAt(ticket: number): unknown {
     sequence: 7,
     reason: "WorkFailed",
     resumeAt: "ResumeWorking",
-    accounts: { gasLeft: 5, gasMax: 5, reworkLeft: 1 },
     ...ticketInstants,
   };
 }
