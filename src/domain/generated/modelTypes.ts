@@ -9,8 +9,8 @@ export type TaskState =
 export const taskStateTags = ["Outstanding", "Resolved"] as const;
 
 export type TaskKind =
-  "Work" | { readonly type: "Evaluation"; readonly value: number };
-export const taskKindTags = ["Work", "Evaluation"] as const;
+  "WorkTask" | { readonly type: "EvaluationTask"; readonly value: number };
+export const taskKindTags = ["WorkTask", "EvaluationTask"] as const;
 
 export type Task = {
   readonly id: number;
@@ -21,7 +21,7 @@ export type Task = {
 export type Verdict = "Pass" | "Fail";
 export const verdictTags = ["Pass", "Fail"] as const;
 
-export type Stage = { readonly fanout: number };
+export type StageDefinition = { readonly fanout: number };
 
 export type EvaluationFailureDisposition =
   "ReworkEvaluationFailure" | "EscalateEvaluationFailure";
@@ -32,43 +32,35 @@ export const evaluationFailureDispositionTags = [
 
 export type Resume =
   | "NoResume"
-  | "ResumeWorking"
-  | "ResumeReworking"
-  | "ResumeEvaluating"
-  | "ResumeFinalizing";
+  | "ResumeWork"
+  | "ResumeRework"
+  | "ResumeEvaluation"
+  | "ResumeFinalization";
 export const resumeTags = [
   "NoResume",
-  "ResumeWorking",
-  "ResumeReworking",
-  "ResumeEvaluating",
-  "ResumeFinalizing",
+  "ResumeWork",
+  "ResumeRework",
+  "ResumeEvaluation",
+  "ResumeFinalization",
 ] as const;
 
 export type Reason =
   | "NoReason"
-  | "WorkFailed"
-  | "ReworkBudgetExhausted"
-  | "ExecutionPolicyDenied"
-  | "TicketConfigIncompatible"
-  | "ExecutionProfileUnavailable"
-  | "RuntimeVersionUnsupported"
-  | "RequiredCapabilityUnavailable";
+  | "WorkFailureEscalated"
+  | "EvaluationFailureEscalated"
+  | "WorkExecutionUnavailableEscalated";
 export const reasonTags = [
   "NoReason",
-  "WorkFailed",
-  "ReworkBudgetExhausted",
-  "ExecutionPolicyDenied",
-  "TicketConfigIncompatible",
-  "ExecutionProfileUnavailable",
-  "RuntimeVersionUnsupported",
-  "RequiredCapabilityUnavailable",
+  "WorkFailureEscalated",
+  "EvaluationFailureEscalated",
+  "WorkExecutionUnavailableEscalated",
 ] as const;
 
 export type FinalizationOutcome =
-  "FinalizationSucceeded" | "FinalizationFailed";
+  "FinalizationSucceeded" | "FinalizationNeedsWork";
 export const finalizationOutcomeTags = [
   "FinalizationSucceeded",
-  "FinalizationFailed",
+  "FinalizationNeedsWork",
 ] as const;
 
 export type ArtifactMark =
@@ -77,17 +69,17 @@ export const artifactMarkTags = ["NoArtifact", "ProducedArtifact"] as const;
 
 export type Phase =
   | "Pending"
-  | "Working"
-  | "Evaluating"
-  | "Finalizing"
+  | "Work"
+  | "Evaluation"
+  | "Finalization"
   | "Done"
   | "Escalated"
   | "Revoked";
 export const phaseTags = [
   "Pending",
-  "Working",
-  "Evaluating",
-  "Finalizing",
+  "Work",
+  "Evaluation",
+  "Finalization",
   "Done",
   "Escalated",
   "Revoked",
@@ -98,7 +90,7 @@ export type Ticket = {
   readonly deps: ReadonlySet<number>;
   readonly artifact: ArtifactMark;
   readonly workFanout: number;
-  readonly program: readonly Stage[];
+  readonly program: readonly StageDefinition[];
   readonly tasks: ReadonlySet<Task>;
   readonly record: readonly Task[];
   readonly spawned: number;
@@ -114,7 +106,7 @@ export type TicketRef = {
   readonly ticket: number;
 };
 
-export type Core = { readonly tickets: ReadonlyMap<number, Ticket> };
+export type TicketGraph = { readonly tickets: ReadonlyMap<number, Ticket> };
 
 export type Transition = {
   readonly ticket: number;
@@ -136,11 +128,11 @@ export type TaskResultRef = {
 
 export type DecisionEvent =
   | {
-      readonly type: "ReleaseTicket";
+      readonly type: "CreateTicket";
       readonly value: {
         readonly ticket: number;
         readonly deps: ReadonlySet<number>;
-        readonly prog: readonly Stage[];
+        readonly prog: readonly StageDefinition[];
         readonly workFanout: number;
       };
     }
@@ -176,7 +168,7 @@ export type DecisionEvent =
     }
   | { readonly type: "ResumeTicket"; readonly value: number };
 export const decisionEventTags = [
-  "ReleaseTicket",
+  "CreateTicket",
   "Revoke",
   "Dispatch",
   "TaskDone",
