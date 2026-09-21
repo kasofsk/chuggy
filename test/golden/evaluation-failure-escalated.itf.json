@@ -173,6 +173,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -191,19 +197,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -325,6 +319,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -343,19 +343,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -490,6 +478,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -508,19 +502,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -571,6 +553,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -589,19 +577,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -720,6 +696,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -738,19 +720,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -801,6 +771,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -819,19 +795,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -860,6 +824,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -878,19 +848,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -1009,6 +967,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -1027,19 +991,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -1093,6 +1045,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -1111,19 +1069,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -1152,6 +1098,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -1170,19 +1122,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -1316,6 +1256,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -1334,12 +1280,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -1362,12 +1302,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -1400,6 +1334,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -1418,19 +1358,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -1459,6 +1387,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -1477,19 +1411,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -1644,6 +1566,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -1662,12 +1590,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -1690,12 +1612,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -1728,6 +1644,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -1746,19 +1668,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -1787,6 +1697,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -1805,19 +1721,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -1975,6 +1879,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -1993,12 +1903,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -2021,12 +1925,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -2059,6 +1957,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -2077,19 +1981,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -2118,6 +2010,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -2136,19 +2034,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -2324,6 +2210,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -2342,12 +2234,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -2370,12 +2256,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -2408,6 +2288,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -2426,19 +2312,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -2467,6 +2341,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -2485,12 +2365,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -2513,12 +2387,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -2694,6 +2562,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -2712,12 +2586,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -2740,12 +2608,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -2778,6 +2640,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -2796,19 +2664,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -2837,6 +2693,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -2855,12 +2717,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -2883,12 +2739,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -3067,6 +2917,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -3085,12 +2941,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -3113,12 +2963,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -3151,6 +2995,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -3169,19 +3019,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -3210,6 +3048,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -3228,12 +3072,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -3256,12 +3094,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -3458,6 +3290,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -3476,12 +3314,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -3504,12 +3336,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -3542,6 +3368,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -3560,19 +3392,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -3601,6 +3421,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -3619,12 +3445,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -3667,12 +3487,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -3868,6 +3682,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -3886,12 +3706,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -3914,12 +3728,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -3952,6 +3760,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -3970,19 +3784,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -4011,6 +3813,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -4029,12 +3837,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -4077,12 +3879,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "3"
               },
@@ -4281,6 +4077,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -4299,12 +4101,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -4327,12 +4123,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -4365,6 +4155,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -4383,19 +4179,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -4424,6 +4208,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -4442,12 +4232,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -4490,12 +4274,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "3"
               },
@@ -4712,6 +4490,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -4730,12 +4514,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -4758,12 +4536,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "1"
               },
@@ -4796,6 +4568,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -4814,19 +4592,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -4855,6 +4621,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -4873,12 +4645,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -4941,12 +4707,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "3"
               },
@@ -5162,6 +4922,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -5180,12 +4946,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -5208,12 +4968,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -5264,6 +5018,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -5282,19 +5042,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -5323,6 +5071,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -5341,12 +5095,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -5409,12 +5157,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "3"
               },
@@ -5630,6 +5372,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -5648,12 +5396,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -5676,12 +5418,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -5732,6 +5468,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -5750,19 +5492,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -5791,6 +5521,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -5809,12 +5545,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -5877,12 +5607,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -6101,6 +5825,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -6119,12 +5849,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -6147,12 +5871,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -6203,6 +5921,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -6221,19 +5945,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -6262,6 +5974,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -6280,12 +5998,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -6348,12 +6060,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -6590,6 +6296,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -6608,12 +6320,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -6636,12 +6342,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -6692,6 +6392,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -6710,19 +6416,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -6751,6 +6445,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -6769,12 +6469,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -6857,12 +6551,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -7098,6 +6786,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -7116,12 +6810,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -7144,12 +6832,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -7200,6 +6882,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -7218,19 +6906,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -7259,6 +6935,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -7277,12 +6959,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -7365,12 +7041,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "5"
               },
@@ -7609,6 +7279,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -7627,12 +7303,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -7655,12 +7325,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -7714,6 +7378,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -7732,19 +7402,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -7773,6 +7431,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -7791,12 +7455,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -7879,12 +7537,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "5"
               },
@@ -8138,6 +7790,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -8156,12 +7814,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -8204,12 +7856,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "3"
               },
@@ -8260,6 +7906,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -8278,19 +7930,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -8319,6 +7959,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -8337,12 +7983,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -8425,12 +8065,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "5"
               },
@@ -8689,6 +8323,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -8707,12 +8347,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -8755,12 +8389,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "3"
               },
@@ -8811,6 +8439,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -8829,19 +8463,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -8870,6 +8492,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -8888,12 +8516,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -8976,12 +8598,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "5"
               },
@@ -9258,6 +8874,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -9276,12 +8898,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -9324,12 +8940,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "3"
               },
@@ -9380,6 +8990,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -9398,19 +9014,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -9439,6 +9043,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -9457,12 +9067,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -9565,12 +9169,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "5"
               },
@@ -9831,6 +9429,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -9849,12 +9453,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -9897,12 +9495,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "3"
               },
@@ -9956,6 +9548,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -9974,19 +9572,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -10015,6 +9601,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -10033,12 +9625,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -10141,12 +9727,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "5"
               },
@@ -10425,6 +10005,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -10443,12 +10029,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -10511,12 +10091,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -10567,6 +10141,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -10585,19 +10165,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -10626,6 +10194,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -10644,12 +10218,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -10752,12 +10320,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "5"
               },
@@ -11053,6 +10615,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -11071,12 +10639,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -11139,12 +10701,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -11195,6 +10751,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -11213,19 +10775,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -11254,6 +10804,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -11272,12 +10828,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -11380,12 +10930,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "6"
               },
@@ -11684,6 +11228,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -11702,12 +11252,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -11770,12 +11314,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -11826,6 +11364,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -11844,19 +11388,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -11885,6 +11417,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -11903,12 +11441,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -12011,12 +11543,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "6"
               },
@@ -12318,6 +11844,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -12336,12 +11868,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -12404,12 +11930,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -12463,6 +11983,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -12481,19 +12007,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -12522,6 +12036,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -12540,12 +12060,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -12648,12 +12162,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "6"
               },
@@ -12970,6 +12478,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -12988,12 +12502,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -13056,12 +12564,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -13115,6 +12617,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -13133,19 +12641,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -13174,6 +12670,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -13192,12 +12694,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -13320,12 +12816,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "6"
               },
@@ -13641,6 +13131,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -13659,12 +13155,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -13727,12 +13217,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -13786,6 +13270,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -13804,19 +13294,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -13845,6 +13323,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -13863,12 +13347,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -13991,12 +13469,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "7"
               },
@@ -14315,6 +13787,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -14333,12 +13811,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -14401,12 +13873,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -14460,6 +13926,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -14478,19 +13950,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -14519,6 +13979,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -14537,12 +14003,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -14665,12 +14125,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "7"
               },
@@ -15007,6 +14461,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -15025,12 +14485,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -15093,12 +14547,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -15152,6 +14600,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -15170,19 +14624,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -15211,6 +14653,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -15229,12 +14677,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -15377,12 +14819,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "8"
               },
@@ -15739,6 +15175,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Finalization",
                 "value": {
@@ -15757,12 +15199,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -15845,12 +15281,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -15883,6 +15313,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -15901,19 +15337,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -15942,6 +15366,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -15960,12 +15390,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -16108,12 +15532,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "8"
               },
@@ -16490,6 +15908,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -16508,12 +15932,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -16596,12 +16014,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -16634,6 +16046,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -16652,19 +16070,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -16693,6 +16099,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -16711,12 +16123,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -16859,12 +16265,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "8"
               },
@@ -17238,6 +16638,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -17256,12 +16662,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -17344,12 +16744,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -17382,6 +16776,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -17400,19 +16800,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -17476,6 +16864,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -17494,12 +16888,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -17642,12 +17030,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "8"
               },
@@ -18006,6 +17388,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -18024,12 +17412,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -18112,12 +17494,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -18150,6 +17526,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -18168,19 +17550,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -18244,6 +17614,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -18262,12 +17638,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -18410,12 +17780,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "8"
               },
@@ -18795,6 +18159,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -18813,12 +18183,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -18901,12 +18265,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -18939,6 +18297,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -18957,19 +18321,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -19033,6 +18385,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -19051,12 +18409,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -19219,12 +18571,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "10"
               },
@@ -19620,6 +18966,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -19638,12 +18990,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -19726,12 +19072,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -19764,6 +19104,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -19782,19 +19128,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -19858,6 +19192,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -19876,12 +19216,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -20044,12 +19378,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "10"
               },
@@ -20448,6 +19776,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -20466,12 +19800,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -20554,12 +19882,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -20592,6 +19914,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -20610,19 +19938,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -20686,6 +20002,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -20704,12 +20026,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -20872,12 +20188,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "10"
               },
@@ -21279,6 +20589,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -21297,12 +20613,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -21385,12 +20695,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -21423,6 +20727,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -21441,19 +20751,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -21520,6 +20818,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -21538,12 +20842,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -21706,12 +21004,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "10"
               },
@@ -22113,6 +21405,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -22131,12 +21429,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -22219,12 +21511,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -22257,6 +21543,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -22275,19 +21567,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -22357,6 +21637,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -22375,12 +21661,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -22543,12 +21823,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "10"
               },
@@ -22965,6 +22239,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -22983,12 +22263,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -23071,12 +22345,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -23109,6 +22377,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -23127,12 +22401,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -23175,12 +22443,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -23209,6 +22471,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -23227,12 +22495,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -23395,12 +22657,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "10"
               },
@@ -23861,6 +23117,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -23879,12 +23141,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -23967,12 +23223,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -24005,6 +23255,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -24023,12 +23279,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -24071,12 +23321,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -24105,6 +23349,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -24123,12 +23373,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -24331,12 +23575,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "11"
               },
@@ -24811,6 +24049,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -24829,12 +24073,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -24917,12 +24155,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -24955,6 +24187,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -24973,12 +24211,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -25021,12 +24253,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -25090,6 +24316,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -25108,12 +24340,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -25316,12 +24542,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "11"
               },
@@ -25781,6 +25001,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -25799,12 +25025,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -25887,12 +25107,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -25925,6 +25139,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -25943,12 +25163,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -25991,12 +25205,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -26060,6 +25268,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -26078,12 +25292,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -26286,12 +25494,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "11"
               },
@@ -26769,6 +25971,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -26787,12 +25995,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -26875,12 +26077,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -26913,6 +26109,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -26931,12 +26133,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -26979,12 +26175,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -27048,6 +26238,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -27066,12 +26262,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -27294,12 +26484,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "12"
               },
@@ -27779,6 +26963,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -27797,12 +26987,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -27885,12 +27069,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -27923,6 +27101,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -27941,12 +27125,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -27989,12 +27167,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -28058,6 +27230,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -28076,12 +27254,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -28304,12 +27476,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "12"
               },
@@ -28792,6 +27958,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -28810,12 +27982,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -28898,12 +28064,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -28936,6 +28096,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -28954,12 +28120,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -29002,12 +28162,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -29074,6 +28228,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -29092,12 +28252,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -29320,12 +28474,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "12"
               },
@@ -29826,6 +28974,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -29844,12 +28998,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -29932,12 +29080,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -29970,6 +29112,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -29988,12 +29136,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -30036,12 +29178,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -30108,6 +29244,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -30126,12 +29268,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -30374,12 +29510,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "14"
               },
@@ -30896,6 +30026,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -30914,12 +30050,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -31002,12 +30132,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -31040,6 +30164,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -31058,12 +30188,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -31106,12 +30230,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -31181,6 +30299,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -31199,12 +30323,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -31447,12 +30565,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "14"
               },
@@ -31984,6 +31096,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -32002,12 +31120,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -32090,12 +31202,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -32128,6 +31234,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -32146,12 +31258,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -32234,12 +31340,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -32268,6 +31368,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -32286,12 +31392,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -32534,12 +31634,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "14"
               },
@@ -33096,6 +32190,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -33114,12 +32214,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -33202,12 +32296,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -33240,6 +32328,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "WorkFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -33258,12 +32352,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -33346,12 +32434,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -33380,6 +32462,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -33398,12 +32486,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -33646,12 +32728,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "14"
               },
@@ -34226,6 +33302,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -34244,12 +33326,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -34332,12 +33408,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -34370,6 +33440,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -34388,12 +33464,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -34476,12 +33546,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "6"
               },
@@ -34545,6 +33609,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -34563,12 +33633,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -34811,12 +33875,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "14"
               },
@@ -35376,6 +34434,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -35394,12 +34458,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -35482,12 +34540,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -35520,6 +34572,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -35538,12 +34596,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -35626,12 +34678,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "6"
               },
@@ -35695,6 +34741,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -35713,12 +34765,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -35961,12 +35007,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "14"
               },
@@ -36529,6 +35569,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -36547,12 +35593,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -36635,12 +35675,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -36673,6 +35707,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -36691,12 +35731,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -36779,12 +35813,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "6"
               },
@@ -36851,6 +35879,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -36869,12 +35903,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -37117,12 +36145,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "14"
               },
@@ -37685,6 +36707,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -37703,12 +36731,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -37791,12 +36813,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -37829,6 +36845,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -37847,12 +36869,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -37935,12 +36951,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "6"
               },
@@ -38010,6 +37020,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Evaluation",
                 "value": {
@@ -38028,12 +37044,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -38276,12 +37286,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "14"
               },
@@ -38862,6 +37866,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Done",
                 "value": {
@@ -38880,12 +37890,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -38968,12 +37972,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "4"
               },
@@ -39006,6 +38004,12 @@
                   }
                 ]
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -39024,12 +38028,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -39112,12 +38110,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "6"
               },
@@ -39187,6 +38179,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "EvaluationFailureEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -39205,12 +38203,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "EvaluationFailureEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -39493,12 +38485,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeRework",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "14"
               },

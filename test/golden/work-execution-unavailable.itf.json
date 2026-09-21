@@ -173,6 +173,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -191,19 +197,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "0"
               },
@@ -325,6 +319,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "NoEscalation",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -343,19 +343,7 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "NoReason",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [],
-              "resumeAt": {
-                "tag": "NoResume",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },
@@ -512,6 +500,12 @@
               "deps": {
                 "#set": []
               },
+              "escalation": {
+                "tag": "WorkExecutionUnavailableEscalated",
+                "value": {
+                  "#tup": []
+                }
+              },
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -530,12 +524,6 @@
                   }
                 }
               ],
-              "reason": {
-                "tag": "WorkExecutionUnavailableEscalated",
-                "value": {
-                  "#tup": []
-                }
-              },
               "record": [
                 {
                   "id": {
@@ -578,12 +566,6 @@
                   }
                 }
               ],
-              "resumeAt": {
-                "tag": "ResumeWork",
-                "value": {
-                  "#tup": []
-                }
-              },
               "spawned": {
                 "#bigint": "2"
               },

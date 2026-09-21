@@ -32,6 +32,20 @@
       "purpose": "Infrastructure refuses to run an intact contract. It is not failed work: the set retires as cancelled and the wall names its own reason."
     },
     {
+      "name": "evaluation-blocked",
+      "instance": "mc_chuggy",
+      "module": "mc_chuggy",
+      "source": "model/mc/mc_chuggy.qnt",
+      "step": "step",
+      "seed": "0x1",
+      "maxSamples": 60000,
+      "maxSteps": 32,
+      "invariant": "lastStep.label != \"ticket-escalated evaluation_blocked_escalated\"",
+      "steps": 9,
+      "quintVersion": "0.32.0",
+      "purpose": "The same infrastructure refusal against an evaluation set, which is its own wall: the judgement is intact and unmade, so this is the only park whose resume re-enters evaluation. Its pair is work-execution-unavailable, the same refusal one phase earlier."
+    },
+    {
       "name": "eval-stage-passed",
       "instance": "mc_chuggy",
       "module": "mc_chuggy",
