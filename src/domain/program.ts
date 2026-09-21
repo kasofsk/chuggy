@@ -1,7 +1,7 @@
 /**
  * The eval program's verdict rule, interpreted over a resolved stage.
  *
- * Eval is data, and the data — the `Stage` a ticket's program carries — is
+ * Eval is data, and the data — the `StageDefinition` a ticket's program carries — is
  * the model's. What is here is what the model does with it.
  */
 

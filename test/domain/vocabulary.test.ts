@@ -22,9 +22,9 @@ import {
   type ItfTrace,
 } from "../itf/decode.ts";
 import {
-  decodeCore,
+  decodeTicketGraph,
   decodeStepRecord,
-  encodeCore,
+  encodeTicketGraph,
   encodeStepRecord,
 } from "../itf/vocabulary.ts";
 import { asInstallationId } from "../../src/domain/ids.ts";
@@ -74,9 +74,9 @@ test("every golden ticket map decodes into Ticket and re-encodes identically", (
         states: Record<string, unknown>[];
       };
       const original = raw.states[state.index]?.[ticketsVar];
-      const core = decodeCore(stateValue(state, ticketsVar));
+      const graph = decodeTicketGraph(stateValue(state, ticketsVar));
       assert.deepEqual(
-        encodeValue(encodeCore(core)),
+        encodeValue(encodeTicketGraph(graph)),
         original,
         `${name} state ${String(state.index)}: the ticket map did not survive the round trip`,
       );
@@ -112,7 +112,9 @@ test("the completions ghost the record does not store matches what the trace sto
   for (const { trace } of goldens()) {
     const ticketsVar = varNamed(trace, "::tickets");
     for (const state of trace.states) {
-      assert.doesNotThrow(() => decodeCore(stateValue(state, ticketsVar)));
+      assert.doesNotThrow(() =>
+        decodeTicketGraph(stateValue(state, ticketsVar)),
+      );
     }
   }
 });

@@ -145,9 +145,9 @@ test("retiring then spawning continues the id sequence rather than restarting it
 test("a desk task is open exactly while the ticket is parked", () => {
   const phases: readonly Phase[] = [
     "Pending",
-    "Working",
-    "Evaluating",
-    "Finalizing",
+    "Work",
+    "Evaluation",
+    "Finalization",
     "Done",
     "Escalated",
     "Revoked",
@@ -268,7 +268,7 @@ test("the work a passed evaluation is followed by is the finalizer's, and is unc
   assert.equal(
     reworksOver([working, evaluated("Passed"), working], 1),
     0,
-    "a finalization failure re-enters Working without spending the cap",
+    "a finalization failure re-enters Work without spending the cap",
   );
   assert.equal(
     reworksOver(

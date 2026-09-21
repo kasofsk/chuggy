@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { phaseTags, type Core } from "../../src/domain/generated/modelTypes.ts";
 import {
-  decodeCore,
+  phaseTags,
+  type TicketGraph,
+} from "../../src/domain/generated/modelTypes.ts";
+import {
+  decodeTicketGraph,
   decodeDecisionEvent,
-  encodeCore,
+  encodeTicketGraph,
 } from "../../src/generated/model-api.ts";
 
-const core: Core = {
+const graph: TicketGraph = {
   tickets: new Map([
     [
       7,
@@ -30,7 +33,7 @@ const core: Core = {
 };
 
 test("generated JSON codec round-trips nested lists, sets, maps and records", () => {
-  const wire = encodeCore(core);
+  const wire = encodeTicketGraph(graph);
   assert.deepEqual(wire, {
     tickets: [
       [
@@ -51,18 +54,18 @@ test("generated JSON codec round-trips nested lists, sets, maps and records", ()
       ],
     ],
   });
-  assert.deepEqual(decodeCore(wire), core);
+  assert.deepEqual(decodeTicketGraph(wire), graph);
 });
 
 test("generated codecs reject an integer outside the JavaScript-safe mapping", () => {
   assert.throws(() =>
-    decodeCore({ tickets: [[Number.MAX_SAFE_INTEGER + 1, {}]] }),
+    decodeTicketGraph({ tickets: [[Number.MAX_SAFE_INTEGER + 1, {}]] }),
   );
 });
 
 test("generated codecs refuse duplicates that JSON could otherwise collapse", () => {
   assert.throws(() =>
-    decodeCore({
+    decodeTicketGraph({
       tickets: [
         [7, {}],
         [7, {}],
@@ -71,7 +74,7 @@ test("generated codecs refuse duplicates that JSON could otherwise collapse", ()
   );
   assert.throws(() =>
     decodeDecisionEvent({
-      type: "ReleaseTicket",
+      type: "CreateTicket",
       value: {
         ticket: 7,
         deps: [3, 3],
@@ -85,9 +88,9 @@ test("generated codecs refuse duplicates that JSON could otherwise collapse", ()
 test("generated constructor roster is the exhaustive model phase vocabulary", () => {
   assert.deepEqual(phaseTags, [
     "Pending",
-    "Working",
-    "Evaluating",
-    "Finalizing",
+    "Work",
+    "Evaluation",
+    "Finalization",
     "Done",
     "Escalated",
     "Revoked",

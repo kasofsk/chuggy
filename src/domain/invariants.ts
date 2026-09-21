@@ -14,17 +14,22 @@
  */
 
 import { type Config } from "./config.ts";
-import { liveTickets, ticketAt } from "./core.ts";
+import { liveTickets, ticketAt } from "./ticketGraph.ts";
 import { coveredSet, stuckSet, subsetOf } from "./derived.ts";
-import type { Core, StepRecord, Task, Ticket } from "./generated/modelTypes.ts";
+import type {
+  TicketGraph,
+  StepRecord,
+  Task,
+  Ticket,
+} from "./generated/modelTypes.ts";
 import { firstTaskId, type TicketId } from "./ids.ts";
 import { evalStage, tasksInIdOrder, taskEquals } from "./task.ts";
 
 /** What one invariant is evaluated against: the last decision, and the states either side of it. */
 export interface StepView {
-  readonly pre: Core;
+  readonly pre: TicketGraph;
   readonly rec: StepRecord;
-  readonly post: Core;
+  readonly post: TicketGraph;
 }
 
 /** The one signature all of them have, whatever each of them reads. */
@@ -38,10 +43,10 @@ export interface NamedInvariant {
 
 /** Every live ticket satisfies this, read in ascending id order. */
 function everyLiveTicket(
-  core: Core,
+  graph: TicketGraph,
   holds: (ticket: Ticket, id: TicketId) => boolean,
 ): boolean {
-  return liveTickets(core).every((id) => holds(ticketAt(core, id), id));
+  return liveTickets(graph).every((id) => holds(ticketAt(graph, id), id));
 }
 
 /**
@@ -97,7 +102,7 @@ function idsAreTheRunFrom(
 
 /**
  * The live task set is exactly the current phase's anatomy: the work set while
- * Working, one stage's fan-out while Evaluating, and empty everywhere else.
+ * Work, one stage's fan-out while Evaluation, and empty everywhere else.
  * Dead live-task state is never carried, and the live ids are the contiguous
  * run directly above the retired record — which is what the
  * at-least-once-by-identity argument needs.
@@ -106,18 +111,18 @@ export const tasksWellFormed: Invariant = (_config, view) =>
   everyLiveTicket(view.post, (t) => {
     const start = t.record.length + firstTaskId;
     const live = tasksInIdOrder(t.tasks);
-    if (t.phase === "Working") {
+    if (t.phase === "Work") {
       return (
         t.tasks.size === t.workFanout &&
         idsAreTheRunFrom(t.tasks, start, t.workFanout) &&
         live.every(
           (task) =>
-            task.kind === "Work" &&
+            task.kind === "WorkTask" &&
             !(task.state !== "Outstanding" && task.state.value === "Cancelled"),
         )
       );
     }
-    if (t.phase === "Evaluating") {
+    if (t.phase === "Evaluation") {
       const stage = evalStage(t.tasks);
       const declared = t.program[stage];
       return (
@@ -125,7 +130,7 @@ export const tasksWellFormed: Invariant = (_config, view) =>
         declared !== undefined &&
         live.every(
           (task) =>
-            task.kind !== "Work" &&
+            task.kind !== "WorkTask" &&
             task.kind.value === stage &&
             !(task.state !== "Outstanding" && task.state.value === "Cancelled"),
         ) &&
@@ -142,7 +147,7 @@ export const recordWellFormed: Invariant = (_config, view) =>
     t.record.every((task, index) => {
       if (task.id !== index + firstTaskId) return false;
       if (task.state === "Outstanding") return false;
-      if (task.kind === "Work") return true;
+      if (task.kind === "WorkTask") return true;
       return task.kind.value >= 0 && task.kind.value < t.program.length;
     }),
   );
@@ -184,12 +189,15 @@ export const programsWellFormed: Invariant = (config, view) =>
  * actual keys. A pass that changes anything adds at least one id, so the
  * fleet's own size is house rule 9's explicit bound.
  */
-function dependencyClosure(core: Core, id: TicketId): ReadonlySet<number> {
-  const seen = new Set<number>(ticketAt(core, id).deps);
-  for (let pass = 0; pass < liveTickets(core).length; pass++) {
+function dependencyClosure(
+  graph: TicketGraph,
+  id: TicketId,
+): ReadonlySet<number> {
+  const seen = new Set<number>(ticketAt(graph, id).deps);
+  for (let pass = 0; pass < liveTickets(graph).length; pass++) {
     for (const d of [...seen]) {
-      if (!core.tickets.has(d)) continue;
-      for (const further of ticketAt(core, d as TicketId).deps)
+      if (!graph.tickets.has(d)) continue;
+      for (const further of ticketAt(graph, d as TicketId).deps)
         seen.add(further);
     }
   }

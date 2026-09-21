@@ -1,26 +1,26 @@
 /**
  * The deciders: one pure function per decision the machine can make.
  *
- * A decider takes an observed `Core` and the decision's own arguments and
+ * A decider takes an observed `TicketGraph` and the decision's own arguments and
  * returns the transitions it performs, the effects it asks the world for, and
  * the state after it. IT NEVER PERFORMS ONE. That is what lets a golden trace
  * be replayed through these functions with no world to stub, and what lets the
  * same functions serve any runtime shape.
  *
- * Everything a decision needs is already in the `Core` it is handed. A decider
+ * Everything a decision needs is already in the `TicketGraph` it is handed. A decider
  * that acquired a read would acquire an await, and then a mock, and then it
  * would no longer be a function.
  */
 
-import { ticketAt, withTicket, type Decision } from "./core.ts";
+import { ticketAt, withTicket, type Decision } from "./ticketGraph.ts";
 import type {
-  Core,
+  TicketGraph,
   EvaluationFailureDisposition,
   FinalizationOutcome,
   Phase,
   Reason,
   Resume,
-  Stage,
+  StageDefinition,
   Ticket,
   Verdict,
 } from "./generated/modelTypes.ts";
@@ -41,23 +41,23 @@ export const dispositionChoices: readonly EvaluationFailureDisposition[] = [
 
 /** One phase change and the record that reports it — the shape most deciders return. */
 function move(
-  core: Core,
+  graph: TicketGraph,
   id: TicketId,
   to: Phase,
   label: string,
   effects: readonly string[],
 ): Decision {
-  const from = ticketAt(core, id).phase;
+  const from = ticketAt(graph, id).phase;
   return {
     rec: { label, transitions: [{ ticket: id, from, to }], effects },
-    post: withTicket(core, id, { ...ticketAt(core, id), phase: to }),
+    post: withTicket(graph, id, { ...ticketAt(graph, id), phase: to }),
   };
 }
 
 /** A ticket as a release leaves it: Pending, with nothing yet spawned. */
 export function freshTicket(authoring: {
   readonly deps: ReadonlySet<number>;
-  readonly program: readonly Stage[];
+  readonly program: readonly StageDefinition[];
   readonly workFanout: number;
 }): Ticket {
   return {
@@ -81,15 +81,15 @@ export function freshTicket(authoring: {
  * authoring happens outside this machine, and what arrives is frozen.
  */
 export function decideReleaseTicket(
-  core: Core,
+  graph: TicketGraph,
   id: TicketId,
   authoring: {
     readonly deps: ReadonlySet<number>;
-    readonly program: readonly Stage[];
+    readonly program: readonly StageDefinition[];
     readonly workFanout: number;
   },
 ): Decision {
-  const tickets = new Map(core.tickets);
+  const tickets = new Map(graph.tickets);
   tickets.set(id, freshTicket(authoring));
   return {
     rec: { label: "ticket-released", transitions: [], effects: [] },
@@ -103,14 +103,14 @@ export function decideReleaseTicket(
  * desk task is derived from the phase; `OpenHumanTask` is its visible effect.
  */
 function escalate(
-  core: Core,
+  graph: TicketGraph,
   id: TicketId,
   at: Resume,
   why: Reason,
   label: string,
 ): Decision {
-  const parked = withTicket(core, id, {
-    ...retireLive(ticketAt(core, id)),
+  const parked = withTicket(graph, id, {
+    ...retireLive(ticketAt(graph, id)),
     resumeAt: at,
     reason: why,
   });
@@ -122,17 +122,17 @@ function escalate(
  * dependent behind it stays Pending, where a dependency that is not Done
  * blocks it, and its own author settles it the same way.
  */
-export function decideRevoke(core: Core, id: TicketId): Decision {
+export function decideRevoke(graph: TicketGraph, id: TicketId): Decision {
   return {
     rec: {
       label: "ticket-revoked",
       transitions: [
-        { ticket: id, from: ticketAt(core, id).phase, to: "Revoked" },
+        { ticket: id, from: ticketAt(graph, id).phase, to: "Revoked" },
       ],
       effects: ["CancelTicketWork"],
     },
-    post: withTicket(core, id, {
-      ...retireLive(ticketAt(core, id)),
+    post: withTicket(graph, id, {
+      ...retireLive(ticketAt(graph, id)),
       phase: "Revoked",
       resumeAt: "NoResume",
       reason: "NoReason",
@@ -141,16 +141,16 @@ export function decideRevoke(core: Core, id: TicketId): Decision {
 }
 
 /**
- * Ready to Working. Which Ready ticket runs next is an agentic pick rather than
+ * Ready to Work. Which Ready ticket runs next is an agentic pick rather than
  * a queue position, so it arrives as an argument and the recorded step IS the
  * ticket writer's decision.
  */
-export function decideDispatch(core: Core, id: TicketId): Decision {
-  const ticket = ticketAt(core, id);
+export function decideDispatch(graph: TicketGraph, id: TicketId): Decision {
+  const ticket = ticketAt(graph, id);
   return move(
-    withTicket(core, id, spawnOn(ticket, tkWork, ticket.workFanout)),
+    withTicket(graph, id, spawnOn(ticket, tkWork, ticket.workFanout)),
     id,
-    "Working",
+    "Work",
     "dispatch",
     ["SpawnWorkTasks"],
   );
@@ -163,15 +163,15 @@ export function decideDispatch(core: Core, id: TicketId): Decision {
  * already retired and matches nothing live.
  */
 export function decideTaskDone(
-  core: Core,
+  graph: TicketGraph,
   id: TicketId,
   taskId: TaskId,
   verdict: Verdict,
 ): Decision {
-  const ticket = ticketAt(core, id);
+  const ticket = ticketAt(graph, id);
   return {
     rec: { label: "task-done", transitions: [], effects: [] },
-    post: withTicket(core, id, {
+    post: withTicket(graph, id, {
       ...ticket,
       tasks: resolveTask(
         ticket.tasks,
@@ -185,33 +185,33 @@ export function decideTaskDone(
 /**
  * The work set has settled. Unanimous pass moves into evaluation and stamps
  * the artifact the dependents will read; anything else parks, resumable at
- * Working.
+ * Work.
  */
-export function decideWorkReduce(core: Core, id: TicketId): Decision {
-  const ticket = ticketAt(core, id);
+export function decideWorkReduce(graph: TicketGraph, id: TicketId): Decision {
+  const ticket = ticketAt(graph, id);
   const retired = retireLive(ticket);
   const allPassed = [...ticket.tasks].every(
     (t) => t.state !== "Outstanding" && t.state.value === "Passed",
   );
   if (!allPassed) {
     return escalate(
-      core,
+      graph,
       id,
-      "ResumeWorking",
-      "WorkFailed",
-      "ticket-escalated work_failed",
+      "ResumeWork",
+      "WorkFailureEscalated",
+      "ticket-escalated work_failure_escalated",
     );
   }
   const stage = retired.program[0];
   if (stage === undefined)
     throw new Error("work-reduce: an empty program reached a reduce");
   return move(
-    withTicket(core, id, {
+    withTicket(graph, id, {
       ...spawnOn(retired, tkEval(0), stage.fanout),
       artifact: { type: "ProducedArtifact", value: retired.spawned },
     }),
     id,
-    "Evaluating",
+    "Evaluation",
     "work-passed",
     ["SpawnEvalTasks"],
   );
@@ -224,11 +224,11 @@ export function decideWorkReduce(core: Core, id: TicketId): Decision {
  * read.
  */
 export function decideEvalStageReduce(
-  core: Core,
+  graph: TicketGraph,
   id: TicketId,
   onFailure: EvaluationFailureDisposition,
 ): Decision {
-  const ticket = ticketAt(core, id);
+  const ticket = ticketAt(graph, id);
   const stageIndex = evalStage(ticket.tasks);
   const retired = retireLive(ticket);
   const stage = ticket.program[stageIndex];
@@ -240,20 +240,20 @@ export function decideEvalStageReduce(
     if (next !== undefined) {
       return move(
         withTicket(
-          core,
+          graph,
           id,
           spawnOn(retired, tkEval(stageIndex + 1), next.fanout),
         ),
         id,
-        "Evaluating",
+        "Evaluation",
         "eval-stage-passed",
         ["SpawnEvalTasks"],
       );
     }
     return move(
-      withTicket(core, id, retired),
+      withTicket(graph, id, retired),
       id,
-      "Finalizing",
+      "Finalization",
       "eval-passed",
       ["RunFinalizer"],
     );
@@ -262,19 +262,19 @@ export function decideEvalStageReduce(
   switch (onFailure) {
     case "ReworkEvaluationFailure":
       return move(
-        withTicket(core, id, spawnOn(retired, tkWork, retired.workFanout)),
+        withTicket(graph, id, spawnOn(retired, tkWork, retired.workFanout)),
         id,
-        "Working",
+        "Work",
         "rework-started eval_failure",
         ["SpawnWorkTasks"],
       );
     case "EscalateEvaluationFailure":
       return escalate(
-        core,
+        graph,
         id,
-        "ResumeReworking",
-        "ReworkBudgetExhausted",
-        "ticket-escalated rework_budget_exhausted",
+        "ResumeRework",
+        "EvaluationFailureEscalated",
+        "ticket-escalated evaluation_failure_escalated",
       );
   }
 }
@@ -284,15 +284,15 @@ export function decideEvalStageReduce(
  * same journal entry as the decision, so there is nothing left for the world
  * to be asked to do.
  */
-function completeTicket(core: Core, id: TicketId): Decision {
-  const ticket = ticketAt(core, id);
+function completeTicket(graph: TicketGraph, id: TicketId): Decision {
+  const ticket = ticketAt(graph, id);
   return {
     rec: {
       label: "ticket-done",
       transitions: [{ ticket: id, from: ticket.phase, to: "Done" }],
       effects: [],
     },
-    post: withTicket(core, id, {
+    post: withTicket(graph, id, {
       ...ticket,
       phase: "Done",
       completions: ticket.completions + 1,
@@ -305,28 +305,28 @@ function completeTicket(core: Core, id: TicketId): Decision {
  * on this edge: a finalizer that keeps reporting failure keeps buying cycles,
  * which is the finalizer's problem rather than the machine's.
  */
-function finalizerFailure(core: Core, id: TicketId): Decision {
-  const ticket = ticketAt(core, id);
+function finalizerFailure(graph: TicketGraph, id: TicketId): Decision {
+  const ticket = ticketAt(graph, id);
   return move(
-    withTicket(core, id, spawnOn(ticket, tkWork, ticket.workFanout)),
+    withTicket(graph, id, spawnOn(ticket, tkWork, ticket.workFanout)),
     id,
-    "Working",
-    "rework-started finalization_failed",
+    "Work",
+    "rework-started finalization_needs_work",
     ["SpawnWorkTasks"],
   );
 }
 
 /** The finalizer service's one report. Success completes the ticket; failure reworks it. */
 export function decideFinalizationResult(
-  core: Core,
+  graph: TicketGraph,
   id: TicketId,
   outcome: FinalizationOutcome,
 ): Decision {
   switch (outcome) {
     case "FinalizationSucceeded":
-      return completeTicket(core, id);
-    case "FinalizationFailed":
-      return finalizerFailure(core, id);
+      return completeTicket(graph, id);
+    case "FinalizationNeedsWork":
+      return finalizerFailure(graph, id);
   }
 }
 
@@ -335,18 +335,24 @@ export function decideFinalizationResult(
  * names its own reason and resumes back at whichever phase held the work.
  */
 export function decideExecutionBlocked(
-  core: Core,
+  graph: TicketGraph,
   id: TicketId,
   why: Reason,
 ): Decision {
-  const phase = ticketAt(core, id).phase;
+  const phase = ticketAt(graph, id).phase;
   const at: Resume =
-    phase === "Working"
-      ? "ResumeWorking"
-      : phase === "Evaluating"
-        ? "ResumeEvaluating"
+    phase === "Work"
+      ? "ResumeWork"
+      : phase === "Evaluation"
+        ? "ResumeEvaluation"
         : "NoResume";
-  return escalate(core, id, at, why, "ticket-escalated execution_blocked");
+  return escalate(
+    graph,
+    id,
+    at,
+    why,
+    "ticket-escalated work_execution_unavailable_escalated",
+  );
 }
 
 /**
@@ -357,47 +363,47 @@ export function decideExecutionBlocked(
  * was reached by a verdict, which has no re-judge to offer, so it buys a new
  * artifact rather than a second opinion on the old one.
  */
-export function decideResumeTicket(core: Core, id: TicketId): Decision {
-  const ticket = ticketAt(core, id);
+export function decideResumeTicket(graph: TicketGraph, id: TicketId): Decision {
+  const ticket = ticketAt(graph, id);
   const resumed: Ticket = {
     ...ticket,
     reason: "NoReason",
     resumeAt: "NoResume",
   };
   switch (ticket.resumeAt) {
-    case "ResumeWorking":
-    case "ResumeReworking":
+    case "ResumeWork":
+    case "ResumeRework":
       return move(
-        withTicket(core, id, spawnOn(resumed, tkWork, resumed.workFanout)),
+        withTicket(graph, id, spawnOn(resumed, tkWork, resumed.workFanout)),
         id,
-        "Working",
+        "Work",
         "ticket-resumed",
         ["SpawnWorkTasks"],
       );
-    case "ResumeEvaluating": {
+    case "ResumeEvaluation": {
       const stage = ticket.program[0];
       if (stage === undefined)
         throw new Error("resume: an empty program reached an eval resume");
       return move(
-        withTicket(core, id, spawnOn(resumed, tkEval(0), stage.fanout)),
+        withTicket(graph, id, spawnOn(resumed, tkEval(0), stage.fanout)),
         id,
-        "Evaluating",
+        "Evaluation",
         "ticket-resumed",
         ["SpawnEvalTasks"],
       );
     }
-    case "ResumeFinalizing":
+    case "ResumeFinalization":
       return move(
-        withTicket(core, id, resumed),
+        withTicket(graph, id, resumed),
         id,
-        "Finalizing",
+        "Finalization",
         "ticket-resumed",
         ["RunFinalizer"],
       );
     case "NoResume":
       return {
         rec: { label: "ticket-resume-refused", transitions: [], effects: [] },
-        post: core,
+        post: graph,
       };
   }
 }

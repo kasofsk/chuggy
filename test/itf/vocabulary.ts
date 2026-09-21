@@ -15,11 +15,11 @@
  */
 
 import {
-  decodeCore as decodeCoreValue,
+  decodeTicketGraph as decodeTicketGraphValue,
   decodeStepRecord as decodeStepRecordValue,
 } from "../../src/generated/model-api.ts";
 import type {
-  Core,
+  TicketGraph,
   StepRecord,
   Task,
   Ticket,
@@ -74,8 +74,8 @@ export function itfToWire(value: ItfValue): unknown {
 }
 
 /** One state's ticket map, read through the model's own decoder. */
-export function decodeCore(value: ItfValue): Core {
-  return decodeCoreValue({ tickets: itfToWire(value) });
+export function decodeTicketGraph(value: ItfValue): TicketGraph {
+  return decodeTicketGraphValue({ tickets: itfToWire(value) });
 }
 
 /** One observed decision, read through the model's own decoder. */
@@ -209,13 +209,13 @@ function encodeTicket(ticket: Ticket): ItfValue {
 }
 
 /** The ticket map, written back as ITF holds one. */
-export function encodeCore(core: Core): ItfValue {
+export function encodeTicketGraph(graph: TicketGraph): ItfValue {
   return {
     kind: "map",
-    entries: [...core.tickets.keys()]
+    entries: [...graph.tickets.keys()]
       .sort((a, b) => a - b)
       .map((id) => {
-        const ticket = core.tickets.get(id);
+        const ticket = graph.tickets.get(id);
         if (ticket === undefined)
           throw new Error(`vocabulary: no ticket ${String(id)} to encode`);
         return [encodeInt(id), encodeTicket(ticket)] as const;

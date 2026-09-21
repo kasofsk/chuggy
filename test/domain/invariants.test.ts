@@ -28,14 +28,14 @@
  */
 
 import type {
-  Core,
+  TicketGraph,
   StepRecord,
   Task,
 } from "../../src/domain/generated/modelTypes.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { liveTickets, ticketAt } from "../../src/domain/core.ts";
+import { liveTickets, ticketAt } from "../../src/domain/ticketGraph.ts";
 import { decideRevoke } from "../../src/domain/deciders.ts";
 import {
   coveredSet,
@@ -64,7 +64,7 @@ import {
 import { hasOpenHumanTask } from "../../src/domain/ticket.ts";
 import { modelInstance } from "./configs.ts";
 import {
-  coreOf,
+  graphOf,
   depsOf,
   evalOutstanding,
   evalTask,
@@ -79,14 +79,14 @@ import {
 
 const config = modelInstance;
 const fleet = healthyFleet(config);
-const healthy = initialView(coreOf(fleet));
+const healthy = initialView(graphOf(fleet));
 
 /** An artifact mark, as a ticket that ran carries one. */
 const produced = (value: number) =>
   ({ type: "ProducedArtifact", value }) as const;
 
 /** A view of one state, for the invariants that read only the state. */
-const stateView = (post: Core): StepView => initialView(post);
+const stateView = (post: TicketGraph): StepView => initialView(post);
 
 /** The mid-flight fleet under a record of the caller's, for the invariants that read one. */
 const stepView = (rec: StepRecord): StepView => ({ ...healthy, rec });
@@ -123,11 +123,11 @@ test("completionExclusive rejects a ledger that disagrees with the phase", () =>
 });
 
 test("revokedNeverCompletes rejects a revoked ticket that completed", () => {
-  const spent = coreOf([
+  const spent = graphOf([
     ticketOn(config, { phase: "Revoked", completions: 1 }),
   ]);
   assert.ok(!revokedNeverCompletes(config, stateView(spent)));
-  const revoked = coreOf([ticketOn(config, { phase: "Revoked" })]);
+  const revoked = graphOf([ticketOn(config, { phase: "Revoked" })]);
   assert.ok(
     revokedNeverCompletes(config, stateView(revoked)),
     "a revoke settles the ticket before any completion is recorded",
@@ -142,7 +142,7 @@ test("artifactWellFormed rejects a completed ticket that produced nothing", () =
       stateView(fleetBut(fleet, 0, { artifact: "NoArtifact" })),
     ),
   );
-  const revoked = coreOf([ticketOn(config, { phase: "Revoked" })]);
+  const revoked = graphOf([ticketOn(config, { phase: "Revoked" })]);
   assert.ok(
     artifactWellFormed(config, stateView(revoked)),
     "a revoked ticket may never have run",
@@ -170,7 +170,7 @@ test("terminalsAbsorbing rejects a transition out of a terminal", () => {
       stepView(
         recordOf({
           label: "ticket-done",
-          transitions: [{ ticket: id(3), from: "Finalizing", to: "Done" }],
+          transitions: [{ ticket: id(3), from: "Finalization", to: "Done" }],
         }),
       ),
     ),
@@ -181,11 +181,11 @@ test("deskConsistent rejects a wall without a park, a park without a wall and a 
   assert.ok(
     !deskConsistent(
       config,
-      stateView(fleetBut(fleet, 1, { reason: "WorkFailed" })),
+      stateView(fleetBut(fleet, 1, { reason: "WorkFailureEscalated" })),
     ),
     "a named wall on a ticket that is not parked",
   );
-  const nameless = coreOf([ticketOn(config, { phase: "Escalated" })]);
+  const nameless = graphOf([ticketOn(config, { phase: "Escalated" })]);
   assert.ok(
     !deskConsistent(config, stateView(nameless)),
     "a park with no wall",
@@ -194,10 +194,10 @@ test("deskConsistent rejects a wall without a park, a park without a wall and a 
     !deskConsistent(
       config,
       stateView(
-        coreOf([
+        graphOf([
           ticketOn(config, {
             phase: "Escalated",
-            reason: "WorkFailed",
+            reason: "WorkFailureEscalated",
           }),
         ]),
       ),
@@ -208,11 +208,11 @@ test("deskConsistent rejects a wall without a park, a park without a wall and a 
     deskConsistent(
       config,
       stateView(
-        coreOf([
+        graphOf([
           ticketOn(config, {
             phase: "Escalated",
-            reason: "WorkFailed",
-            resumeAt: "ResumeWorking",
+            reason: "WorkFailureEscalated",
+            resumeAt: "ResumeWork",
           }),
         ]),
       ),
@@ -260,10 +260,10 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
 });
 
 test("tasksWellFormed rejects an eval stage the program is not running", () => {
-  const evaluating = (tasks: ReadonlySet<Task>): Core =>
-    coreOf([
+  const evaluating = (tasks: ReadonlySet<Task>): TicketGraph =>
+    graphOf([
       ticketOn(config, {
-        phase: "Evaluating",
+        phase: "Evaluation",
         record: [workTask(1, "Passed"), workTask(2, "Passed")],
         tasks,
         spawned: 4,
@@ -316,10 +316,10 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
 });
 
 test("recordWellFormed rejects a log that is not the resolved history in identity order", () => {
-  const finalizing = (record: readonly Task[]): Core =>
-    coreOf([
+  const finalizing = (record: readonly Task[]): TicketGraph =>
+    graphOf([
       ticketOn(config, {
-        phase: "Finalizing",
+        phase: "Finalization",
         record,
         spawned: record.length,
       }),
@@ -358,7 +358,7 @@ test("recordMonotone rejects a record that shrank, was rewritten, or lost its ti
     !recordMonotone(config, { ...healthy, pre: healthy.post, post: rewritten }),
     "nothing settled is ever rewritten",
   );
-  const dropped = coreOf(fleet.slice(0, 2));
+  const dropped = graphOf(fleet.slice(0, 2));
   assert.ok(
     !recordMonotone(config, { ...healthy, pre: healthy.post, post: dropped }),
     "tickets are never deleted",
@@ -372,11 +372,11 @@ test("recordMonotone rejects a record that shrank, was rewritten, or lost its ti
 });
 
 test("idsAccounted rejects the task set a decider dropped instead of retiring", () => {
-  const dropped = coreOf([
+  const dropped = graphOf([
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailed",
-      resumeAt: "ResumeWorking",
+      reason: "WorkFailureEscalated",
+      resumeAt: "ResumeWork",
       spawned: config.nTasks,
     }),
   ]);
@@ -421,7 +421,7 @@ test("depsAcyclic rejects a dependency that points at nothing or back at itself"
     !depsAcyclic(config, stateView(fleetBut(fleet, 1, { deps: depsOf(2) }))),
     "no ticket waits on itself",
   );
-  const cyclic = coreOf([
+  const cyclic = graphOf([
     ticketOn(config, { phase: "Pending", deps: depsOf(2) }),
     ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
   ]);
@@ -438,19 +438,19 @@ test("depsAcyclic rejects a dependency that points at nothing or back at itself"
 
 test("ticketIdsWellFormed rejects an id off the universe and a fleet past its bound", () => {
   const first = ticketAt(healthy.post, id(1));
-  const offUniverse: Core = {
+  const offUniverse: TicketGraph = {
     tickets: new Map([[asTicketId(config.nTickets * 2 + 1), first]]),
   };
   assert.ok(
     !ticketIdsWellFormed(config, stateView(offUniverse)),
     "a release draws its id from a finite universe",
   );
-  const overfull = coreOf([...fleet, ticketOn(config, { phase: "Pending" })]);
+  const overfull = graphOf([...fleet, ticketOn(config, { phase: "Pending" })]);
   assert.ok(
     !ticketIdsWellFormed(config, stateView(overfull)),
     "releases are bounded by the fleet cap, which the id universe deliberately is not",
   );
-  const sparse: Core = {
+  const sparse: TicketGraph = {
     tickets: new Map([
       [id(2), first],
       [id(5), first],
@@ -465,36 +465,36 @@ test("ticketIdsWellFormed rejects an id off the universe and a fleet past its bo
 });
 
 test("stuckSubsetCovered goes red when one walk gets a base case the other lacks", () => {
-  const running = coreOf([
-    ticketOn(config, { phase: "Finalizing" }),
+  const running = graphOf([
+    ticketOn(config, { phase: "Finalization" }),
     ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
   ]);
   assert.ok(stuckSubsetCovered(config, stateView(running)));
-  const finalizingIsStuck = sweep(running, (core, each, stuck) => {
-    const phase = ticketAt(core, each).phase;
+  const finalizingIsStuck = sweep(running, (graph, each, stuck) => {
+    const phase = ticketAt(graph, each).phase;
     return (
-      phase === "Finalizing" ||
-      (phase === "Pending" && visEdges(core, each).some((d) => stuck.has(d)))
+      phase === "Finalization" ||
+      (phase === "Pending" && visEdges(graph, each).some((d) => stuck.has(d)))
     );
   });
   assert.ok(
     !subsetOf(finalizingIsStuck, coveredSet(running)),
     "a base case that is not a desk phase is stuck with nothing covering it",
   );
-  const parked = coreOf([
+  const parked = graphOf([
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailed",
-      resumeAt: "ResumeWorking",
+      reason: "WorkFailureEscalated",
+      resumeAt: "ResumeWork",
     }),
     ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
   ]);
   const guardedCoverage = sweep(
     parked,
-    (core, each, covered) =>
-      hasOpenHumanTask(ticketAt(core, each)) ||
-      (ticketAt(core, each).phase === "Working" &&
-        visEdges(core, each).some((d) => covered.has(d))),
+    (graph, each, covered) =>
+      hasOpenHumanTask(ticketAt(graph, each)) ||
+      (ticketAt(graph, each).phase === "Work" &&
+        visEdges(graph, each).some((d) => covered.has(d))),
   );
   assert.ok(stuckSubsetCovered(config, stateView(parked)));
   assert.ok(
@@ -504,34 +504,34 @@ test("stuckSubsetCovered goes red when one walk gets a base case the other lacks
 });
 
 test("stuckSubsetCovered goes red when one walk gets an edge kind the other lacks", () => {
-  const upstream = coreOf([
+  const upstream = graphOf([
     ticketOn(config, { phase: "Pending" }),
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailed",
-      resumeAt: "ResumeWorking",
+      reason: "WorkFailureEscalated",
+      resumeAt: "ResumeWork",
       deps: depsOf(1),
     }),
   ]);
   assert.ok(stuckSubsetCovered(config, stateView(upstream)));
-  const bothWays = sweep(upstream, (core, each, stuck) => {
-    const dependents = liveTickets(core).filter((other) =>
-      visEdges(core, other).includes(each),
+  const bothWays = sweep(upstream, (graph, each, stuck) => {
+    const dependents = liveTickets(graph).filter((other) =>
+      visEdges(graph, other).includes(each),
     );
     return (
-      ticketAt(core, each).phase === "Escalated" ||
-      [...visEdges(core, each), ...dependents].some((d) => stuck.has(d))
+      ticketAt(graph, each).phase === "Escalated" ||
+      [...visEdges(graph, each), ...dependents].some((d) => stuck.has(d))
     );
   });
   assert.ok(
     !subsetOf(bothWays, coveredSet(upstream)),
     "an edge kind added to one walk and not the other is exactly what this guards",
   );
-  const wider = coreOf([
+  const wider = graphOf([
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailed",
-      resumeAt: "ResumeWorking",
+      reason: "WorkFailureEscalated",
+      resumeAt: "ResumeWork",
     }),
     ticketOn(config, {
       phase: "Done",
@@ -548,7 +548,7 @@ test("stuckSubsetCovered goes red when one walk gets an edge kind the other lack
 });
 
 test("a revoke leaves its dependents where they were, and depsAcyclic is what refuses a cycle", () => {
-  const chain = coreOf([
+  const chain = graphOf([
     ticketOn(config, { phase: "Pending" }),
     ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
     ticketOn(config, { phase: "Pending", deps: depsOf(2) }),
@@ -558,7 +558,7 @@ test("a revoke leaves its dependents where they were, and depsAcyclic is what re
   for (const invariant of [deskConsistent, stuckSubsetCovered, depsAcyclic]) {
     assert.ok(invariant(config, stateView(revoked.post)));
   }
-  const cyclic = coreOf([
+  const cyclic = graphOf([
     ticketOn(config, { phase: "Pending", deps: depsOf(2) }),
     ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
   ]);

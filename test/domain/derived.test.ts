@@ -18,7 +18,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { liveTickets, ticketAt } from "../../src/domain/core.ts";
+import { liveTickets, ticketAt } from "../../src/domain/ticketGraph.ts";
 import {
   coveredSet,
   stuckSet,
@@ -29,13 +29,16 @@ import {
 import type { TicketId } from "../../src/domain/ids.ts";
 
 import { modelInstance } from "./configs.ts";
-import { coreOf, depsOf, id, ticketOn } from "./fixtures.ts";
-import type { Core, Ticket } from "../../src/domain/generated/modelTypes.ts";
+import { graphOf, depsOf, id, ticketOn } from "./fixtures.ts";
+import type {
+  TicketGraph,
+  Ticket,
+} from "../../src/domain/generated/modelTypes.ts";
 
 const config = modelInstance;
 
 /** The same fleet under descending insertion order, which is what an id-ordered fold must not inherit. */
-function builtBackwards(tickets: readonly Ticket[]): Core {
+function builtBackwards(tickets: readonly Ticket[]): TicketGraph {
   const map = new Map<TicketId, Ticket>();
   [...tickets]
     .reverse()
@@ -55,7 +58,7 @@ const chain: readonly Ticket[] = [
 ];
 
 test("a sweep repeats once per live ticket, which is the whole of the termination argument", () => {
-  const fleet = coreOf([ticketOn(config), ticketOn(config), ticketOn(config)]);
+  const fleet = graphOf([ticketOn(config), ticketOn(config), ticketOn(config)]);
   let calls = 0;
   const admitted = sweep(fleet, () => {
     calls += 1;
@@ -68,7 +71,7 @@ test("a sweep repeats once per live ticket, which is the whole of the terminatio
   );
   assert.equal(admitted.size, 0);
   let passes = 0;
-  sweep(coreOf([]), () => {
+  sweep(graphOf([]), () => {
     passes += 1;
     return true;
   });
@@ -76,25 +79,25 @@ test("a sweep repeats once per live ticket, which is the whole of the terminatio
 });
 
 test("a sweep reaches a closure an ascending fold would not, which is why the shape is kept", () => {
-  const fleet = coreOf([
+  const fleet = graphOf([
     ticketOn(config, { phase: "Pending" }),
     ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailed",
-      resumeAt: "ResumeWorking",
+      reason: "WorkFailureEscalated",
+      resumeAt: "ResumeWork",
       deps: depsOf(2),
     }),
   ]);
   /** An edge kind pointing upward: a ticket is admitted when one of its dependents is. */
   const upward = (
-    core: Core,
+    graph: TicketGraph,
     each: TicketId,
     admitted: ReadonlySet<TicketId>,
   ) =>
-    ticketAt(core, each).phase === "Escalated" ||
-    liveTickets(core).some(
-      (other) => visEdges(core, other).includes(each) && admitted.has(other),
+    ticketAt(graph, each).phase === "Escalated" ||
+    liveTickets(graph).some(
+      (other) => visEdges(graph, other).includes(each) && admitted.has(other),
     );
   assert.deepEqual(ordered(sweep(fleet, upward)), [1, 2, 3]);
   const onePass = new Set<TicketId>();
@@ -109,21 +112,21 @@ test("a sweep reaches a closure an ascending fold would not, which is why the sh
 });
 
 test("the walk's edges are the dependency edges and only those", () => {
-  const fleet = coreOf(chain);
+  const fleet = graphOf(chain);
   assert.deepEqual(visEdges(fleet, id(1)), []);
   assert.deepEqual(visEdges(fleet, id(3)), [id(2)]);
 });
 
 test("stuckness grows from the desk and coverage grows from the same edges", () => {
-  const fleet = coreOf([
+  const fleet = graphOf([
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailed",
-      resumeAt: "ResumeWorking",
+      reason: "WorkFailureEscalated",
+      resumeAt: "ResumeWork",
     }),
     ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
     ticketOn(config, { phase: "Pending", deps: depsOf(2) }),
-    ticketOn(config, { phase: "Working", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Work", deps: depsOf(1) }),
   ]);
   assert.deepEqual(ordered(stuckSet(fleet)), [1, 2, 3]);
   assert.deepEqual(
@@ -132,8 +135,8 @@ test("stuckness grows from the desk and coverage grows from the same edges", () 
     "coverage propagates through every phase, where stuckness needs the ticket released and waiting",
   );
   assert.ok(subsetOf(stuckSet(fleet), coveredSet(fleet)));
-  const healthyBlocked = coreOf([
-    ticketOn(config, { phase: "Working" }),
+  const healthyBlocked = graphOf([
+    ticketOn(config, { phase: "Work" }),
     ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
   ]);
   assert.deepEqual(
@@ -147,13 +150,13 @@ test("every sweep agrees with itself whatever order the map was built in", () =>
   const fleet: readonly Ticket[] = [
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailed",
-      resumeAt: "ResumeWorking",
+      reason: "WorkFailureEscalated",
+      resumeAt: "ResumeWork",
     }),
     ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
     ticketOn(config, { phase: "Done", deps: depsOf(1) }),
   ];
-  const ascending = coreOf(fleet);
+  const ascending = graphOf(fleet);
   const descending = builtBackwards(fleet);
   for (const walk of [stuckSet, coveredSet]) {
     assert.deepEqual(ordered(walk(ascending)), ordered(walk(descending)));

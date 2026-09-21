@@ -28,7 +28,7 @@ import { isDeepStrictEqual } from "node:util";
 
 import { modelInstance } from "../domain/configs.ts";
 import { decodeTrace, encodeValue } from "../itf/decode.ts";
-import { encodeCore, encodeStepRecord } from "../itf/vocabulary.ts";
+import { encodeTicketGraph, encodeStepRecord } from "../itf/vocabulary.ts";
 import { seedLabel, writeCounterexample } from "./counterexample.ts";
 import { shrinkSteps } from "./shrink.ts";
 import {
@@ -46,8 +46,8 @@ const config = modelInstance;
 const instance = "mc_chuggy";
 
 /** The phantom completion: a revoke recording its ticket as having reached Done, state untouched. */
-const phantomCompletion: Decide = (walkConfig, core, action, picks) => {
-  const decision = decideViaTable(walkConfig, core, action, picks);
+const phantomCompletion: Decide = (walkConfig, graph, action, picks) => {
+  const decision = decideViaTable(walkConfig, graph, action, picks);
   const moved = decision.rec.transitions[0];
   if (action !== "revoke" || moved === undefined) return decision;
   return {
@@ -161,7 +161,7 @@ test("the written counterexample is a corpus: its states are what its own steps 
     assert.ok(
       isDeepStrictEqual(
         state[ticketsVar],
-        encodeValue(encodeCore(decision.post)),
+        encodeValue(encodeTicketGraph(decision.post)),
       ),
     );
     assert.ok(

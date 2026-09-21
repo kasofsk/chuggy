@@ -29,7 +29,7 @@ import { isValidProgram } from "../../src/domain/config.ts";
 
 import { declaredActions } from "../domain/declared.ts";
 import { CONFIGS, modelInstance } from "../domain/configs.ts";
-import { coreOf, id, ticketOn } from "../domain/fixtures.ts";
+import { graphOf, id, ticketOn } from "../domain/fixtures.ts";
 import {
   validProgramsIn,
   walkActionOf,
@@ -143,7 +143,7 @@ test("the release's program draw ranges over exactly the well-formed set", () =>
 });
 
 test("the release's permit refuses the dep named twice", () => {
-  const core = coreOf([ticketOn(modelInstance)]);
+  const graph = graphOf([ticketOn(modelInstance)]);
   const program = validProgramsIn(modelInstance)[0];
   assert.ok(program);
   const drawn: Drawn = {
@@ -153,9 +153,9 @@ test("the release's permit refuses the dep named twice", () => {
     workFanout: 1,
   };
   const release = walkActionOf("releaseTicket");
-  assert.equal(release.permitsIn(modelInstance, core, drawn), false);
+  assert.equal(release.permitsIn(modelInstance, graph, drawn), false);
   assert.equal(
-    release.permitsIn(modelInstance, core, { ...drawn, deps: [id(1)] }),
+    release.permitsIn(modelInstance, graph, { ...drawn, deps: [id(1)] }),
     true,
   );
 });
@@ -168,7 +168,7 @@ test("a run is a pure function of its seed", () => {
 });
 
 test("the accumulator rebuilds the ghost and can go red in every direction", () => {
-  const done = coreOf([
+  const done = graphOf([
     ticketOn(modelInstance, {
       phase: "Done",
       artifact: { type: "ProducedArtifact", value: 1 },
@@ -177,7 +177,7 @@ test("the accumulator rebuilds the ghost and can go red in every direction", () 
   ]);
   const completeRec: StepRecord = {
     label: "ticket-done",
-    transitions: [{ ticket: id(1), from: "Finalizing", to: "Done" }],
+    transitions: [{ ticket: id(1), from: "Finalization", to: "Done" }],
     effects: [],
   };
   const counts: CompletionCounts = new Map();
@@ -198,7 +198,7 @@ test("the accumulator rebuilds the ghost and can go red in every direction", () 
     "a ticket Done with nothing counted is the other half of the iff",
   );
 
-  const working = coreOf([ticketOn(modelInstance)]);
+  const working = graphOf([ticketOn(modelInstance)]);
   const early: CompletionCounts = new Map();
   creditCompletions(early, id(1), completeRec);
   assert.match(completionFindings(early, working).join(" "), /phase Pending/);
