@@ -15,6 +15,7 @@ import { expect, test } from "vitest";
 import type { Cycle, ProgramRun, TaskSet } from "../app/core/ticketLedger.ts";
 import {
   cycleLabel,
+  cycleLastSet,
   retriesLabel,
   stageLabel,
   ticketLedger,
@@ -97,6 +98,50 @@ test("a resume starts a second program run against the same artifact", () => {
   expect(cycle.programRuns.map((run) => run.ordinal)).toEqual([1, 2]);
   expect(stagesOf(cycle.programRuns[0])).toEqual(["1 Failed 7", "2 Skipped"]);
   expect(stagesOf(cycle.programRuns[1])).toEqual(["1 Running 8", "2 Queued"]);
+});
+
+test("a stage first reached after a resume belongs to the run that resumed", () => {
+  const cycle = cycleAt(
+    [
+      {
+        execution: "execution-aa-1",
+        task: 1,
+        identity: workIdentity(1),
+        outcome: "Passed",
+      },
+      {
+        execution: "execution-bb-2",
+        task: 2,
+        identity: evalIdentity(1, 1, 1),
+        outcome: "Blocked",
+      },
+      {
+        execution: "execution-cc-3",
+        task: 3,
+        identity: evalIdentity(1, 1, 2),
+        outcome: "Passed",
+      },
+      {
+        execution: "execution-dd-4",
+        task: 4,
+        identity: evalIdentity(1, 2, 1),
+        outcome: "Passed",
+      },
+    ],
+    0,
+  );
+  expect(cycle.programRuns.map((run) => [run.ordinal, run.standing])).toEqual([
+    [1, "Superseded"],
+    [2, "Current"],
+  ]);
+  expect(stagesOf(cycle.programRuns[0])).toEqual(["1 Blocked 2", "2 Skipped"]);
+  expect(stagesOf(cycle.programRuns[1])).toEqual(["1 Passed 3", "2 Passed 4"]);
+  expect(cycleLastSet(cycle)).toEqual({
+    taskKind: "Evaluation",
+    stage: 2,
+    verdict: "Passed",
+  });
+  expect(cycle.complete).toBe(true);
 });
 
 test("only the last cycle and the last run of it stand as current", () => {

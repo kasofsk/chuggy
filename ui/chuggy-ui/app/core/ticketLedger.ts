@@ -13,10 +13,17 @@
  *
  * A SET IS EVERY ROW SHARING ONE IDENTITY OUTSIDE ITS EVALUATOR — a work
  * task's own cycle, or an evaluation task's cycle, generation and stage — so
- * nothing here counts a work run to number a cycle, watches a stage number
- * fail to advance to start a new program run, or trims a task ordinal off an
- * execution's own string identity to find its fan-out. The model hands out
+ * nothing here counts a work run to number a cycle or trims a task ordinal off
+ * an execution's own string identity to find its fan-out. The model hands out
  * the whole tuple; this reads it.
+ *
+ * A PROGRAM RUN IS CUT AT THE LOWEST STAGE the cycle holds, because that is
+ * where both spawn sites enter it — `decideEvaluateTicket` and the resume of
+ * an evaluation park, each at stage 0 in `model/domain.qnt`. The generation
+ * cannot group a run: `stageGeneration` in `model/ticket.qnt` counts per
+ * stage, so a stage first reached after a resume is still on generation 1
+ * while the stage below it the resume re-ran is on 2. What numbers a run is
+ * the generation of the set that opened it.
  *
  * IT IS TOTAL OVER THE PAGES THE ROSTERS ADMIT, not only over the pages the
  * machine produces or the route can page to. Ordering by `(ticket, task)` makes
@@ -163,13 +170,20 @@ function setVerdict(executions: readonly ExecutionSummary[]): SetVerdict {
     : "Failed";
 }
 
+/** One spawn of one evaluation stage: every row naming that stage and generation. */
+interface EvaluationSet {
+  readonly stage: number;
+  readonly generation: number;
+  executions: readonly ExecutionSummary[];
+}
+
 /**
  * A cycle's tasks, gathered by what they are: the work run, and every
- * evaluation stage keyed under the generation it was spawned in.
+ * evaluation set it holds, in the order the wire issued them.
  */
 interface CycleBucket {
   work: ExecutionSummary[] | undefined;
-  evaluations: Map<number, Map<number, ExecutionSummary[]>>;
+  evaluations: Map<string, EvaluationSet>;
 }
 
 function cycleBucket(
@@ -183,10 +197,14 @@ function cycleBucket(
   return fresh;
 }
 
+/** A set's key, which is the stage and generation its identity names and nothing else. */
+function evaluationSetKey(stage: number, generation: number): string {
+  return `${String(stage)}/${String(generation)}`;
+}
+
 /**
- * The page's rows sorted into the cycle, generation and stage their own
- * identity names. Nothing here counts a work run to number a cycle or watches
- * a stage regress to start a new run: every key is read off the row.
+ * The page's rows sorted into the cycle, stage and generation their own
+ * identity names, each cycle's sets held in task order.
  */
 function cycleBucketsOf(page: ExecutionsResponse): Map<number, CycleBucket> {
   const ordered = [...page.executions].sort(
@@ -201,11 +219,14 @@ function cycleBucketsOf(page: ExecutionsResponse): Map<number, CycleBucket> {
       continue;
     }
     const { stage, generation } = identity.value;
-    const byStage =
-      bucket.evaluations.get(generation) ??
-      new Map<number, ExecutionSummary[]>();
-    byStage.set(stage, [...(byStage.get(stage) ?? []), row]);
-    bucket.evaluations.set(generation, byStage);
+    const held = bucket.evaluations.get(evaluationSetKey(stage, generation));
+    if (held === undefined)
+      bucket.evaluations.set(evaluationSetKey(stage, generation), {
+        stage,
+        generation,
+        executions: [row],
+      });
+    else held.executions = [...held.executions, row];
   }
   return cycles;
 }
@@ -223,10 +244,17 @@ function stageExpected(
   return authoring.program[stage - 1]?.fanout ?? executions.length;
 }
 
+/** A run's sets by stage, merging any two of one stage the page put in one run. */
 function taskSetMapOf(
-  byStage: ReadonlyMap<number, readonly ExecutionSummary[]>,
+  run: readonly EvaluationSet[],
   authoring: TicketAuthoring,
 ): ReadonlyMap<number, TaskSet> {
+  const byStage = new Map<number, readonly ExecutionSummary[]>();
+  for (const set of run)
+    byStage.set(set.stage, [
+      ...(byStage.get(set.stage) ?? []),
+      ...set.executions,
+    ]);
   const sets = new Map<number, TaskSet>();
   for (const [stage, executions] of byStage)
     sets.set(
@@ -276,25 +304,39 @@ function stageRowsOf(
   return rows;
 }
 
+/** One pass of the program, and the generation of the set that opened it. */
+interface CutRun {
+  readonly ordinal: number;
+  readonly sets: EvaluationSet[];
+}
+
 /**
- * The cycle's program runs, one per generation an evaluation stage was
- * spawned under. The model counts a fresh generation each time a park
- * resumes the lowest stage, so grouping by it is grouping by the pass that
- * produced it — the same thing a stage number failing to advance once stood
- * in for.
+ * The cycle's sets cut at every set of the lowest stage it holds, which is the
+ * stage a spawn enters the program at. The first set opens a run whatever its
+ * stage, because a page is free to begin above that stage.
  */
+function runsCutOf(sets: readonly EvaluationSet[]): readonly CutRun[] {
+  const lowest = Math.min(...sets.map((set) => set.stage));
+  const runs: CutRun[] = [];
+  for (const set of sets) {
+    const open = runs.at(-1);
+    if (open === undefined || set.stage === lowest)
+      runs.push({ ordinal: set.generation, sets: [set] });
+    else open.sets.push(set);
+  }
+  return runs;
+}
+
+/** The cycle's program runs, each one a pass over the stages the artifact faced. */
 function programRunsOf(
-  evaluations: ReadonlyMap<
-    number,
-    ReadonlyMap<number, readonly ExecutionSummary[]>
-  >,
+  sets: readonly EvaluationSet[],
   authoring: TicketAuthoring,
 ): readonly ProgramRun[] {
-  const runs = [...evaluations].sort(([left], [right]) => left - right);
-  return runs.map(([generation, byStage], index) => ({
-    ordinal: generation,
+  const runs = runsCutOf(sets);
+  return runs.map((run, index) => ({
+    ordinal: run.ordinal,
     stages: stageRowsOf(
-      taskSetMapOf(byStage, authoring),
+      taskSetMapOf(run.sets, authoring),
       authoring.program.length,
     ),
     standing: index === runs.length - 1 ? "Current" : "Superseded",
@@ -344,7 +386,10 @@ function cycleFacts(
 ): Omit<Cycle, "ordinal"> {
   const work =
     bucket.work === undefined ? undefined : taskSetOf(bucket.work, 1);
-  const programRuns = programRunsOf(bucket.evaluations, authoring);
+  const programRuns = programRunsOf(
+    [...bucket.evaluations.values()],
+    authoring,
+  );
   const held = cycleSetsHeld(work, programRuns).flatMap(
     (set) => set.executions,
   );
