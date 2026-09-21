@@ -11,6 +11,7 @@
 import { expect, test } from "vitest";
 
 import {
+  blockedReasons,
   briefFinalizationModes,
   escalationReasons,
   operationRefusalCodes,
@@ -20,7 +21,9 @@ import {
 } from "../../../src/contract/rosters.ts";
 import {
   approvalLabel,
+  blockedReasonLabel,
   briefLandingLine,
+  escalationDetail,
   landingEffect,
   landingLabel,
   resumeActionEffect,
@@ -54,6 +57,7 @@ const copyBudgetChars = 60;
 test("every wall, phase, state and refusal has a label inside the copy budget", () => {
   const drawn = [
     ...escalationReasons.map(escalationReasonLabel),
+    ...blockedReasons.map(blockedReasonLabel),
     ...phaseRoster.map(phaseLabel),
     ...operationStates.map(operationStateLabel),
     ...operationRefusalCodes.map(operationRefusalLabel),
@@ -85,6 +89,23 @@ test("a detail line names only the facts the page holds", () => {
   );
   expect(escalationDetailLine("WorkFailureEscalated", bare)).toBe(
     "Failed work is not reworked",
+  );
+});
+
+/**
+ * The wall's own label where the read carries one, the reason's generic word
+ * where it does not — the continuation path with no execution row to read a
+ * wall off.
+ */
+test("the escalation's one line names the wall where the read carries one", () => {
+  expect(
+    escalationDetail(
+      "WorkExecutionUnavailableEscalated",
+      "ExecutionProfileUnavailable",
+    ),
+  ).toBe("No matching execution profile");
+  expect(escalationDetail("WorkExecutionUnavailableEscalated", undefined)).toBe(
+    "Execution unavailable",
   );
 });
 
