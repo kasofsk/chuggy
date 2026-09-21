@@ -19,10 +19,15 @@ import type {
   TicketGraph,
   FinalizationOutcome,
   StageDefinition,
+  TaskIdentity,
 } from "./generated/modelTypes.ts";
 import { hasOpenHumanTask } from "./ticket.ts";
 import type { TicketId } from "./ids.ts";
-import { outstandingCount } from "./task.ts";
+import {
+  outstandingCount,
+  taskIdentityEquals,
+  tasksInOrdinalOrder,
+} from "./task.ts";
 
 /** Anything not settled and not past the point of no return. */
 export function revocableIn(graph: TicketGraph, id: TicketId): boolean {
@@ -163,14 +168,14 @@ export const finalizationOutcomes: readonly FinalizationOutcome[] = [
   "FinalizationResultUnavailable",
 ];
 
-/** Whether a live task of this ticket is still outstanding under the named id. */
+/** Whether the task this identity names is still outstanding on this ticket. */
 export function outstandingTaskIn(
   graph: TicketGraph,
   id: TicketId,
-  taskId: number,
+  task: TaskIdentity,
 ): boolean {
   return [...ticketAt(graph, id).tasks].some(
-    (t) => t.id === taskId && t.state === "Outstanding",
+    (t) => taskIdentityEquals(t.identity, task) && t.state === "Outstanding",
   );
 }
 
@@ -213,13 +218,12 @@ export function quietIn(config: Config, graph: TicketGraph): boolean {
   );
 }
 
-/** The task ids of this ticket the fabric could still report on. */
-export function outstandingTaskIdsIn(
+/** The tasks of this ticket the fabric could still report on, in ordinal order. */
+export function outstandingTasksIn(
   graph: TicketGraph,
   id: TicketId,
-): readonly number[] {
-  return [...ticketAt(graph, id).tasks]
-    .filter((t) => t.state === "Outstanding")
-    .map((t) => t.id)
-    .sort((a, b) => a - b);
+): readonly TaskIdentity[] {
+  return tasksInOrdinalOrder(
+    [...ticketAt(graph, id).tasks].filter((t) => t.state === "Outstanding"),
+  ).map((t) => t.identity);
 }

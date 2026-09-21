@@ -1,9 +1,9 @@
 /**
  * The identifiers this machine counts with, each branded so the compiler can
  * tell them apart. In a structurally typed language two aliases of `number`
- * are the same type, so a ticket id and a task id would be silently
- * interchangeable — and the model uses both, in the same records, one line
- * apart.
+ * are the same type, so a ticket id and a task's wire number would be
+ * silently interchangeable — and the boundary uses both, in the same rows,
+ * one line apart.
  *
  * Every one of them is a `number` rather than a `bigint`, and the model's
  * `int` is unbounded, so that choice is an assumption and is checked rather
@@ -11,8 +11,8 @@
  * represents exactly, and every value entering the domain from a trace or a
  * boundary passes through it. The alternative — `bigint` throughout — buys
  * exactness this domain does not need: a ticket id and a stage index come
- * from universes `Config` bounds (`nTickets`, `maxStages`), and a task id
- * counts one ticket's tasks, which no deployment brings near the exact
+ * from universes `Config` bounds (`nTickets`, `maxStages`), and a task's wire
+ * number counts one ticket's tasks, which no deployment brings near the exact
  * range — and pays for it at every arithmetic site.
  */
 
@@ -24,7 +24,12 @@ declare const installationIdBrand: unique symbol;
 /** A ticket's identity: supplied at release from a bounded universe, sparse, never reused. */
 export type TicketId = number & { readonly [ticketIdBrand]: true };
 
-/** A task's identity: sequential within its ticket, across the ticket's whole history. */
+/**
+ * The number that names a task outside the machine: minted per ticket by the
+ * interpreter when it projects a decision's tasks onto executions, injective
+ * and monotone within its ticket. Inside, a task is named by the contract's
+ * `TaskIdentity`, which carries no number at all.
+ */
 export type TaskId = number & { readonly [taskIdBrand]: true };
 
 /** A zero-based index into a ticket's authored program. */
@@ -74,7 +79,7 @@ export function asTicketId(value: number): TicketId {
   return value as TicketId;
 }
 
-/** Brands a non-negative integer as a task id. */
+/** Brands a positive integer as a task's wire number. */
 export function asTaskId(value: number): TaskId {
   asSafeInteger(value, "task id");
   if (value < 1)
@@ -90,5 +95,3 @@ export function asStageIndex(value: number): StageIndex {
   return value as StageIndex;
 }
 
-/** Task ids are one-indexed; the base is named once so the arithmetic carries the convention. */
-export const firstTaskId: TaskId = 1 as TaskId;

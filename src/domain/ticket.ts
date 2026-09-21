@@ -12,11 +12,16 @@ import type {
   Escalation,
   Resume,
   Task,
-  TaskKind,
+  TaskIdentity,
   Ticket,
 } from "./generated/modelTypes.ts";
 import { isSettled } from "./phase.ts";
-import { nextTaskId, retiredInIdOrder, spawnTasks, tkWork } from "./task.ts";
+import {
+  evaluationTaskOf,
+  retiredInOrdinalOrder,
+  spawnTasks,
+  workTaskOf,
+} from "./task.ts";
 
 /**
  * A desk task is open exactly while the ticket is parked, and parked is one
@@ -51,10 +56,14 @@ export function resumeOf(escalation: Escalation): Resume {
 }
 
 /**
- * Install a fresh fan-out and bump the spawn ghost by the same count. Callers
- * guarantee the previous set is already retired, which every spawn site does.
+ * Install a fresh fan-out under the identities the caller names and bump the
+ * spawn ghost by the same count. Callers guarantee the previous set is already
+ * retired, which every spawn site does.
  */
-export function spawnOn(ticket: Ticket, kind: TaskKind, count: number): Ticket {
+export function spawnOn(
+  ticket: Ticket,
+  identities: readonly TaskIdentity[],
+): Ticket {
   if (ticket.tasks.size !== 0) {
     throw new Error(
       `spawnOn: ticket still holds ${String(ticket.tasks.size)} live task(s); the caller must retire first`,
@@ -62,30 +71,74 @@ export function spawnOn(ticket: Ticket, kind: TaskKind, count: number): Ticket {
   }
   return {
     ...ticket,
-    tasks: spawnTasks(
-      kind,
-      nextTaskId(ticket.record.length, ticket.tasks.size),
-      count,
-    ),
-    spawned: ticket.spawned + count,
+    tasks: spawnTasks(identities),
+    spawned: ticket.spawned + identities.length,
   };
 }
 
 /**
  * The work spawn: a work cycle is one task, always. Work is not staged and
  * carries no authored width, so the only fan-out left is an evaluation
- * stage's, and every work spawn site is this call.
+ * stage's, and every work spawn site is this call — which is also the only
+ * thing that moves the counter the identity is drawn from.
  */
-export function spawnWork(ticket: Ticket): Ticket {
-  return spawnOn(ticket, tkWork, 1);
+export function spawnWork(ticket: Ticket, id: number): Ticket {
+  const cycle = ticket.workCyclesStarted + 1;
+  return {
+    ...spawnOn(ticket, [workTaskOf(id, cycle)]),
+    workCyclesStarted: cycle,
+  };
 }
 
-/** Move the live set into the retained record, in id order, and leave it empty. */
+/**
+ * Which run of this stage the current cycle is on, counted at evaluator one
+ * because every run spawns exactly one of those. Every stage runs once per
+ * cycle but one: an evaluation park resumes at the lowest stage, re-entering a
+ * stage the cycle may already have spawned, and the generation is what keeps
+ * the second run's identities distinct from the first's.
+ */
+export function stageGeneration(ticket: Ticket, stage: number): number {
+  return (
+    1 +
+    ticket.record.filter(
+      (t) =>
+        t.identity.type === "EvaluationTask" &&
+        t.identity.value.workCycle === ticket.workCyclesStarted &&
+        t.identity.value.stage === stage + 1 &&
+        t.identity.value.evaluator === 1,
+    ).length
+  );
+}
+
+/**
+ * The evaluation spawn: one task per evaluator of the stage, every one of them
+ * naming the work cycle it judges.
+ */
+export function spawnEvalStage(
+  ticket: Ticket,
+  id: number,
+  stage: number,
+  fanout: number,
+): Ticket {
+  const generation = stageGeneration(ticket, stage);
+  const evaluators = Array.from({ length: fanout }, (_unused, index) =>
+    evaluationTaskOf(
+      id,
+      ticket.workCyclesStarted,
+      stage,
+      generation,
+      index + 1,
+    ),
+  );
+  return spawnOn(ticket, evaluators);
+}
+
+/** Move the live set into the retained record, in ordinal order, and leave it empty. */
 export function retireLive(ticket: Ticket): Ticket {
   return {
     ...ticket,
     tasks: new Set<Task>(),
-    record: [...ticket.record, ...retiredInIdOrder(ticket.tasks)],
+    record: [...ticket.record, ...retiredInOrdinalOrder(ticket.tasks)],
   };
 }
 

@@ -28,7 +28,7 @@ import type {
   Ticket,
   Transition,
 } from "../domain/generated/modelTypes.ts";
-import { tasksInIdOrder, taskEquals } from "../domain/task.ts";
+import { tasksInOrdinalOrder, taskEquals } from "../domain/task.ts";
 
 /** Same length, and equal member by member in order. */
 function listEquals<Value>(
@@ -98,11 +98,12 @@ export function ticketEquals(left: Ticket, right: Ticket): boolean {
     ticketEqualsArtifact(left.artifact, right.artifact) &&
     listEquals(left.program, right.program, ticketEqualsStage) &&
     listEquals(
-      tasksInIdOrder(left.tasks),
-      tasksInIdOrder(right.tasks),
+      tasksInOrdinalOrder(left.tasks),
+      tasksInOrdinalOrder(right.tasks),
       taskEquals,
     ) &&
     listEquals(left.record, right.record, taskEquals) &&
+    left.workCyclesStarted === right.workCyclesStarted &&
     left.spawned === right.spawned &&
     left.escalation === right.escalation &&
     left.completions === right.completions
