@@ -83,6 +83,7 @@ const ticket = {
   phase: "Working",
   sequence: 7,
   ...ticketInstants,
+  changedAt: changedAt.toISOString(),
 };
 
 const execution = {
@@ -214,10 +215,7 @@ test("a row whose index was truncated draws no chip for its execution", () => {
 });
 
 test("the last activity column draws the relative reading and answers the absolute on hover", async () => {
-  await drawTableWith(
-    [{ ...ticket, changedAt: changedAt.toISOString() }],
-    [execution],
-  );
+  await drawTable();
   const cell = screen.getByText("3h ago");
   fireEvent.focus(cell);
   expect((await screen.findByRole("tooltip")).textContent).toBe(
