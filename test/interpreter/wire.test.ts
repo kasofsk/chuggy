@@ -300,6 +300,32 @@ test("the finalizer's own envelope is read only by the parse a writer reads its 
 });
 
 /**
+ * A finalization submission sits in the inbox until a writer reaches it, so one
+ * written before the rename is decided after it. 006 admits both spellings of
+ * `outcome`; the writer would otherwise refuse what the database let through.
+ */
+test("a submission stored at the superseded outcome is read as the outcome this image has", () => {
+  const stored = {
+    version: 1,
+    command: "SubmitFinalizationResult",
+    request: "6:0:RunFinalizer",
+    requestGeneration: 6,
+    recoveryEpoch: "epoch-1",
+    outcome: "FinalizationFailed",
+  };
+  assert.deepEqual(parseStoredTicketCommand(JSON.stringify(stored)), {
+    parsed: "Ok",
+    value: { ...stored, outcome: "FinalizationNeedsWork" },
+  });
+  const refused = parseStoredTicketCommand(
+    JSON.stringify({ ...stored, outcome: "FinalizationAbandoned" }),
+  );
+  assert.equal(refused.parsed, "Refused");
+  assert.ok(refused.parsed === "Refused");
+  assert.match(refused.why, /finalization submission fields are invalid/);
+});
+
+/**
  * The scheduler's own envelope, whose event the database builds out of
  * `execution.blocked_reason`. That column keeps the five wall names as the
  * evidence the collapsed reason stops carrying, so every block the boundary

@@ -135,8 +135,13 @@ function objectFields(raw: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-/** A string field rewritten to its current spelling, or left exactly as it is. */
-function wordAtCurrentVocabulary(value: unknown): unknown {
+/**
+ * A string field rewritten to its current spelling, or left exactly as it is.
+ * The row lift below is one caller and the writer is the other: a finalization
+ * submission that waited in the inbox across the deploy names its outcome in
+ * the old word, and `checkedFinalizationSubmission` lifts that word alone.
+ */
+export function wordAtCurrentVocabulary(value: unknown): unknown {
   return typeof value === "string"
     ? (currentVocabulary.get(value) ?? value)
     : value;

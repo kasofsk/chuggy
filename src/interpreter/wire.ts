@@ -39,6 +39,7 @@ import {
 import {
   dispositionInRecord,
   rowAtCurrentVocabulary,
+  wordAtCurrentVocabulary,
   type DecisionSemanticsVersion,
 } from "../actor/decisionSemantics.ts";
 import {
@@ -274,12 +275,17 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
   }
 }
 
-/** Reads the fields of the finalizer's envelope, refusing one whose fences are not whole. */
+/**
+ * Reads the fields of the finalizer's envelope, refusing one whose fences are
+ * not whole. Its outcome is lifted first: a submission the finalizer wrote
+ * before the rename and the writer reaches after it spells `FinalizationFailed`,
+ * which 006 admits and this image no longer has a tag for.
+ */
 function checkedFinalizationSubmission(
   record: Record<string, unknown>,
 ): FinalizationSubmission {
   const generation = record["requestGeneration"];
-  const outcome = record["outcome"];
+  const outcome = wordAtCurrentVocabulary(record["outcome"]);
   if (
     record["version"] !== 1 ||
     typeof record["request"] !== "string" ||
@@ -296,7 +302,7 @@ function checkedFinalizationSubmission(
   ) {
     throw new TypeError("finalization submission fields are invalid");
   }
-  return record as unknown as FinalizationSubmission;
+  return { ...record, outcome } as unknown as FinalizationSubmission;
 }
 
 /**
