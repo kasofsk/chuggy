@@ -426,6 +426,12 @@ test("project reads filter before paging", async () => {
       revokedDependencies: [],
     },
   ]);
+});
+
+test("a selected-phase filter answers the terminal tickets alone", async () => {
+  const partition = await filterProject();
+  await seedFilterProjection(partition);
+  const reads = postgresNativeReads(subject.pool);
   const terminal = await reads.project(partition, {
     limit: 10,
     phaseFilter: { selection: "Selected", phases: ["Done", "Revoked"] },
