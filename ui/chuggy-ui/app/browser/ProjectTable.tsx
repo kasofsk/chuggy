@@ -25,6 +25,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ApiPorts, ApiResult } from "../core/apiRequest.ts";
 import { apiProject } from "../core/apiRoutes.ts";
+import { phaseLabel } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { projectExecutionIndexUnread } from "../core/projectExecutionIndex.ts";
 import type { ProjectExecutionIndex } from "../core/projectExecutionIndex.ts";
@@ -36,7 +37,6 @@ import {
 } from "../core/projectTableFilters.ts";
 import type { TicketFilter } from "../core/projectTableFilters.ts";
 import {
-  projectTableExecutionPhrase,
   projectTableRows,
   projectTableRowsIn,
 } from "../core/projectTableRows.ts";
@@ -51,14 +51,16 @@ import {
   ticketSectionTitles,
 } from "../core/ticketSections.ts";
 import type { TicketSection } from "../core/ticketSections.ts";
+import { phaseTone } from "../core/tones.ts";
 import { useApiPorts, usePanelList } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
+import { useNowMs } from "./Freshness.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
 import {
-  cellAbsent,
   ticketRowExecutionCell,
-  TicketNumberCell,
+  TicketActivityCell,
+  TicketRowExecutionCell,
   TicketTitleCell,
 } from "./TicketCells.tsx";
 import { Button, ButtonLink } from "./ui/Button.tsx";
@@ -132,37 +134,42 @@ function useTicketRows(
 function TicketRow(props: {
   readonly row: ProjectTableRow;
   readonly partition: PartitionIdentity;
+  readonly nowMs: number;
 }): ReactNode {
   const row = props.row;
-  const status = projectTableExecutionPhrase(row);
   return (
     <tr>
-      <TicketNumberCell partition={props.partition} ticket={row.ticket} />
       <TicketTitleCell
         partition={props.partition}
         ticket={row.ticket}
         title={row.title}
       />
-      <td>{row.phase}</td>
       <td>
-        {row.badge === undefined ? (
-          <span className="text-ink-3">{cellAbsent}</span>
-        ) : (
-          <Pill tone="parked">{row.badge}</Pill>
-        )}
-      </td>
-      <td>{ticketRowExecutionCell(row, status)}</td>
-      <td className="text-ink-3">
-        <Tooltip text={row.runsOn?.title}>
-          <span className="max-w-aside inline-block truncate align-bottom">
-            {ticketRowExecutionCell(row, row.runsOn?.text)}
+        <Tooltip text={row.badge}>
+          <span>
+            <Pill tone={phaseTone(row.phase)}>{phaseLabel(row.phase)}</Pill>
           </span>
         </Tooltip>
       </td>
-      <td className="text-ink-3">
-        {row.sequence}
-        {row.activityAt === undefined ? "" : ` · ${row.activityAt}`}
+      <td>
+        <TicketRowExecutionCell row={row} />
       </td>
+      <td>
+        {row.runsOn === undefined ? (
+          <span className="text-ink-3">
+            {ticketRowExecutionCell(row, undefined)}
+          </span>
+        ) : (
+          <Pill tone="neutral">
+            <Tooltip text={row.runsOn.title}>
+              <span className="max-w-aside inline-block truncate align-bottom">
+                {row.runsOn.text}
+              </span>
+            </Tooltip>
+          </Pill>
+        )}
+      </td>
+      <TicketActivityCell activityAt={row.activityAt} nowMs={props.nowMs} />
     </tr>
   );
 }
@@ -171,15 +178,14 @@ function TicketTable(props: {
   readonly caption: string;
   readonly rows: readonly ProjectTableRow[];
   readonly partition: PartitionIdentity;
+  readonly nowMs: number;
 }): ReactNode {
   return (
     <Table caption={props.caption}>
       <thead>
         <tr>
-          <th scope="col">ticket</th>
           <th scope="col">title</th>
           <th scope="col">phase</th>
-          <th scope="col">why</th>
           <th scope="col">execution</th>
           <th scope="col">runs on</th>
           <th scope="col">last activity</th>
@@ -187,7 +193,12 @@ function TicketTable(props: {
       </thead>
       <tbody>
         {props.rows.map((row) => (
-          <TicketRow key={row.ticket} row={row} partition={props.partition} />
+          <TicketRow
+            key={row.ticket}
+            row={row}
+            partition={props.partition}
+            nowMs={props.nowMs}
+          />
         ))}
       </tbody>
     </Table>
@@ -199,6 +210,7 @@ function TicketSectionPanel(props: {
   readonly state: PanelState<ProjectTicketRows>;
   readonly index: ProjectExecutionIndex;
   readonly partition: PartitionIdentity;
+  readonly nowMs: number;
 }): ReactNode {
   const title = ticketSectionTitles[props.section];
   return (
@@ -215,6 +227,7 @@ function TicketSectionPanel(props: {
             caption={title}
             rows={drawn}
             partition={props.partition}
+            nowMs={props.nowMs}
           />
         );
       }}
@@ -253,6 +266,7 @@ export function ProjectTable(): ReactNode {
   const [filter, setFilter] = useState<TicketFilter>(ticketFilterAll);
   const tickets = useTicketRows(partition, filter);
   const executions = useProjectExecutionIndex(partition);
+  const nowMs = useNowMs();
   const index =
     executions.state === "Ready"
       ? executions.value
@@ -295,6 +309,7 @@ export function ProjectTable(): ReactNode {
           state={tickets.state}
           index={index}
           partition={partition}
+          nowMs={nowMs}
         />
       ))}
       {tickets.readMore === undefined ? null : (

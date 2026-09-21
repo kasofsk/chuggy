@@ -1,6 +1,6 @@
 #!/bin/sh
-# A console that builds is typechecked, linted, tested and built from its own
-# manifest, and the gate's verdict is those runs.
+# A console that builds is format-checked, typechecked, linted, tested and
+# built from its own manifest, and the gate's verdict is those runs.
 #
 # WHICH CONSOLES. Every directory ONE SEGMENT under `ui/` carrying a tracked
 # `package.json`, which is the console `no-console-sees-another` holds to its
@@ -11,11 +11,14 @@
 # `check-boundaries.sh` is the whole of what can be said about. Until this tree
 # holds a console that builds, the gate has nothing to run and says so.
 #
-# THE SCRIPT NAMES ARE THE CONTRACT: `typecheck`, `lint`, `test` and `build`,
-# in that order, and a console that declares none of one of them is a finding
-# rather than a skip. A gate that passed over a missing script would report a
-# clean console having asked it nothing, and a build nothing typechecks is the
-# thing this gate exists to refuse.
+# THE SCRIPT NAMES ARE THE CONTRACT: `format`, `typecheck`, `lint`, `test` and
+# `build`, in that order. A console that declares none of `typecheck`, `lint`,
+# `test` or `build` is a finding rather than a skip — a gate that passed over
+# a missing script would report a clean console having asked it nothing, and
+# a build nothing typechecks is the thing this gate exists to refuse. `format`
+# alone is optional: it runs, and is failed by, only a console that declares
+# it, because a console does not have to format its own source through this
+# gate to be a console this gate can pass.
 #
 # WHY NOT `check-source.sh`. That gate holds this tree to one toolchain from
 # the manifest at the root. A console that builds pins its own, so what runs
@@ -94,10 +97,14 @@ done
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-# Every declared script runs; the order is cheapest first so that a typecheck
-# failure is on the reader's screen before the production build has been waited
-# for.
-required="typecheck lint test build"
+# Every declared script runs; the order is cheapest first so that a
+# read-only format check fails before the production build has been waited
+# for. `format` alone is optional: a console that declares one has it run and
+# is failed by it, and a console that declares none is asked nothing and
+# stays quiet about it, unlike the four below.
+optional="format"
+mandatory="typecheck lint test build"
+required="$optional $mandatory"
 
 # The declared subset in one call per console, because asking the manifest once
 # per script name is the same read repeated. An unparseable manifest answers
@@ -188,8 +195,12 @@ for manifest in "$@"; do
 	esac
 	for script in $required; do
 		if ! printf '%s\n' "$declared" | grep -qx "$script"; then
-			echo "ERROR $manifest: declares no \`$script\` script, so nothing runs one"
-			findings=$((findings + 1))
+			case " $mandatory " in
+			*" $script "*)
+				echo "ERROR $manifest: declares no \`$script\` script, so nothing runs one"
+				findings=$((findings + 1))
+				;;
+			esac
 			continue
 		fi
 		if (cd "$dir" && npm run --silent "$script") >"$work/out" 2>&1; then

@@ -12,6 +12,8 @@ import { expect, test } from "vitest";
 
 import type { Figure } from "../app/core/figures.ts";
 import {
+  agoFigure,
+  agoText,
   bytesSetFigure,
   costFigure,
   countFigure,
@@ -132,6 +134,34 @@ test("an instant is the clock today, the date within the year, and the year befo
   expect(instantText(new Date(2025, 10, 2, 9, 0), now)).toBe(
     "2025-11-02 09:00",
   );
+});
+
+const agoNowMs = Date.parse("2026-08-26T12:00:00Z");
+
+test("how long ago is the largest whole unit, at each boundary its scale changes", () => {
+  expect(agoText(agoNowMs, agoNowMs - 3_000)).toBe("3s");
+  expect(agoText(agoNowMs, agoNowMs - 59_000)).toBe("59s");
+  expect(agoText(agoNowMs, agoNowMs - 60_000)).toBe("1m");
+  expect(agoText(agoNowMs, agoNowMs - 3_600_000 + 1)).toBe("59m");
+  expect(agoText(agoNowMs, agoNowMs - 3_600_000)).toBe("1h");
+  expect(agoText(agoNowMs, agoNowMs - 3_600_000 * 24 + 1)).toBe("23h");
+  expect(agoText(agoNowMs, agoNowMs - 3_600_000 * 24)).toBe("1d");
+});
+
+test("a clock that ran backwards reads as no time elapsed, not a negative one", () => {
+  expect(agoText(agoNowMs, agoNowMs + 10_000)).toBe("0s");
+});
+
+test("an instant the clock cannot read is an absence, never a printed string", () => {
+  expect(agoFigure("not an instant", agoNowMs).kind).toBe("Absent");
+});
+
+test("an ago figure carries the relative reading and the full date and clock for its hover", () => {
+  const twoDaysAgo = new Date(agoNowMs - 3_600_000 * 24 * 2).toISOString();
+  const figure = agoFigure(twoDaysAgo, agoNowMs);
+  if (figure.kind !== "Ago") throw new Error("not an ago figure");
+  expect(figure.text).toBe("2d ago");
+  expect(figure.full).toBe("2026-08-24 12:00");
 });
 
 test("a closed span names both ends and an open one says it is still running", () => {

@@ -90,10 +90,7 @@ import {
   projectListFolded,
   projectListReread,
 } from "../core/projectQueryKeys.ts";
-import {
-  projectTableExecutionPhrase,
-  projectTableRow,
-} from "../core/projectTableRows.ts";
+import { projectTableRow } from "../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import {
   projectTicketRowsAfterPage,
@@ -109,13 +106,14 @@ import { agenticRefusalStandingTone } from "../core/tones.ts";
 import { useApiPorts, usePanelList } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
+import { useNowMs } from "./Freshness.tsx";
 import { drawBytes } from "./ports.ts";
 import { TopBarSlot } from "./shell/slots.tsx";
 import {
   cellAbsent,
   cellExecutionUnread,
-  ticketRowExecutionCell,
-  TicketNumberCell,
+  TicketActivityCell,
+  TicketRowExecutionCell,
   TicketTitleCell,
 } from "./TicketCells.tsx";
 import { Button } from "./ui/Button.tsx";
@@ -392,6 +390,7 @@ function InboxRow(props: {
   readonly truncated: boolean;
   readonly partition: PartitionIdentity;
   readonly step: OperationStep | undefined;
+  readonly nowMs: number;
   readonly onAnswer: (action: TicketAction) => void;
 }): ReactNode {
   const held = props.entry.held;
@@ -401,10 +400,6 @@ function InboxRow(props: {
       : projectTableRow(held, props.known, props.truncated);
   return (
     <tr>
-      <TicketNumberCell
-        partition={props.partition}
-        ticket={props.entry.ticket}
-      />
       <TicketTitleCell
         partition={props.partition}
         ticket={props.entry.ticket}
@@ -415,14 +410,13 @@ function InboxRow(props: {
         <InboxRefusal entry={props.entry} />
       </td>
       <td>
-        {row === undefined
-          ? cellExecutionUnread
-          : ticketRowExecutionCell(row, projectTableExecutionPhrase(row))}
+        {row === undefined ? (
+          cellExecutionUnread
+        ) : (
+          <TicketRowExecutionCell row={row} />
+        )}
       </td>
-      <td className="text-ink-3">
-        {row === undefined ? cellAbsent : row.sequence}
-        {row?.activityAt === undefined ? "" : ` · ${row.activityAt}`}
-      </td>
+      <TicketActivityCell activityAt={row?.activityAt} nowMs={props.nowMs} />
       <td>
         <div className="flex gap-2 items-baseline">
           <InboxActions
@@ -444,13 +438,13 @@ function InboxTable(props: {
   readonly index: ProjectExecutionIndex;
   readonly partition: PartitionIdentity;
   readonly steps: InboxAnswers;
+  readonly nowMs: number;
   readonly onAnswer: (ticket: number, action: TicketAction) => void;
 }): ReactNode {
   return (
     <Table caption={ticketSectionTitles[inboxSection]}>
       <thead>
         <tr>
-          <th scope="col">ticket</th>
           <th scope="col">title</th>
           <th scope="col">why</th>
           <th scope="col">last execution</th>
@@ -468,6 +462,7 @@ function InboxTable(props: {
             truncated={props.index.truncated}
             partition={props.partition}
             step={props.steps[String(entry.ticket)]}
+            nowMs={props.nowMs}
             onAnswer={(action) => {
               props.onAnswer(entry.ticket, action);
             }}
@@ -578,6 +573,7 @@ export function InboxScreen(props: {
       ? executions.value
       : projectExecutionIndexUnread;
   const answers = useInboxAnswers(partition);
+  const nowMs = useNowMs();
   const count = inboxCountLabel(inbox.union);
   return (
     <>
@@ -598,6 +594,7 @@ export function InboxScreen(props: {
               index={index}
               partition={partition}
               steps={answers.steps}
+              nowMs={nowMs}
               onAnswer={answers.answer}
             />
           )

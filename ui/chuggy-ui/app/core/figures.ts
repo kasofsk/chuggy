@@ -21,10 +21,15 @@
  * `costAmountFigure`'s bare amount is the one exception, legitimate because
  * the line it sits on already names the turn it belongs to.
  *
- * AN INSTANT IS ABSOLUTE AND A FRESHNESS IS RELATIVE. A ledger is compared row
- * to row and a relative time drifts while the page is open, so an instant is
- * the clock face with the full ISO on hover; how long ago a read happened is
- * `Freshness`'s and is not a figure.
+ * AN INSTANT IS ABSOLUTE AND AN AGO IS RELATIVE. A ledger is compared row to
+ * row, so its column stays the clock face with the full ISO on hover; where a
+ * reader is scanning for what moved last, `Ago` draws the relative reading
+ * instead, takes `nowMs` fresh from its caller rather than holding one so it
+ * ages on the page's own clock, and always carries the full local date and
+ * clock on hover — a bare clock face would not say which day. `Freshness`
+ * still answers "never observed" for a panel with no reading at all, taking
+ * the rounding that reads an elapsed time from here so it is done in one
+ * place.
  */
 
 import type { RunTotals } from "../../../../src/contract/responses.ts";
@@ -36,6 +41,7 @@ export const figureKinds = [
   "Duration",
   "Quantity",
   "Instant",
+  "Ago",
   "Span",
   "Absent",
 ] as const;
@@ -52,6 +58,7 @@ export type Figure =
       readonly unit: string;
     }
   | { readonly kind: "Instant"; readonly text: string; readonly iso: string }
+  | { readonly kind: "Ago"; readonly text: string; readonly full: string }
   | {
       readonly kind: "Span";
       readonly start: string;
@@ -295,6 +302,12 @@ function clockOf(at: Date): string {
   return `${padded(at.getHours())}:${padded(at.getMinutes())}`;
 }
 
+/** The whole local date and clock, the form a year-old instant is written in —
+ * always, so a reading that only ever shows this form still says which day. */
+function instantFullText(at: Date): string {
+  return `${String(at.getFullYear())}-${padded(at.getMonth() + 1)}-${padded(at.getDate())} ${clockOf(at)}`;
+}
+
 /**
  * The clock face for today, the date and the clock within the year, and the
  * whole date before it. Browser-local, because the reader's day is the one they
@@ -311,7 +324,7 @@ export function instantText(at: Date, now: Date): string {
   const month = monthNames[at.getMonth()] ?? "";
   if (at.getFullYear() === now.getFullYear())
     return `${month} ${String(at.getDate())} ${clock}`;
-  return `${String(at.getFullYear())}-${padded(at.getMonth() + 1)}-${padded(at.getDate())} ${clock}`;
+  return instantFullText(at);
 }
 
 /** An instant the clock could not read is an absence, never a printed string. */
@@ -322,6 +335,38 @@ export function instantFigure(stated: string, nowMs: number): Figure {
     kind: "Instant",
     text: instantText(new Date(at), new Date(nowMs)),
     iso: new Date(at).toISOString(),
+  };
+}
+
+/**
+ * How long ago, in the largest whole unit — seconds below a minute, then
+ * minutes, hours and days — with a clock that ran backwards clamped to no
+ * time elapsed rather than a negative one. The one rounding an elapsed time
+ * is read with, so `freshnessLabel` and `agoFigure` both take it from here.
+ */
+export function agoText(nowMs: number, sinceMs: number): string {
+  const elapsedSeconds = Math.max(
+    Math.floor((nowMs - sinceMs) / msPerSecond),
+    0,
+  );
+  if (elapsedSeconds < secondsPerMinute) return `${String(elapsedSeconds)}s`;
+  const minutes = Math.floor(elapsedSeconds / secondsPerMinute);
+  if (minutes < minutesPerHour) return `${String(minutes)}m`;
+  const hours = Math.floor(minutes / minutesPerHour);
+  if (hours < hoursPerDay) return `${String(hours)}h`;
+  return `${String(Math.floor(hours / hoursPerDay))}d`;
+}
+
+/** How long ago an instant was, the reading for a reader scanning what moved
+ * last. An instant the clock could not read is an absence, never a printed
+ * string; where it can, the hover always carries the full date and clock. */
+export function agoFigure(stated: string, nowMs: number): Figure {
+  const at = Date.parse(stated);
+  if (!Number.isFinite(at)) return { kind: "Absent", why: "No instant" };
+  return {
+    kind: "Ago",
+    text: `${agoText(nowMs, at)} ago`,
+    full: instantFullText(new Date(at)),
   };
 }
 

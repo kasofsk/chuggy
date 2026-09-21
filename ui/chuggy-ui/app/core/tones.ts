@@ -11,6 +11,8 @@
  */
 
 import type {
+  ExecutionOutcome,
+  ExecutionStatus,
   SelectorAttention,
   SelectorMode,
   SessionState,
@@ -64,6 +66,42 @@ export function verdictTone(verdict: SetVerdict): Tone {
       return "live";
     case "Cancelled":
     case "Blocked":
+      return "retired";
+  }
+}
+
+/**
+ * An execution's own hue, total over `executionStatuses` and
+ * `executionOutcomes`: the outcome's where the execution reached one, since
+ * that is the more final of the two facts, and the status' otherwise. The
+ * word this pairs with is `projectTableExecutionPhrase`'s; this answers only
+ * the hue, so a roster the wire grows stops compiling here rather than
+ * reaching a row as an untoned chip.
+ */
+export function executionTone(
+  status: ExecutionStatus,
+  outcome: ExecutionOutcome | undefined,
+): Tone {
+  if (outcome !== undefined) {
+    switch (outcome) {
+      case "Passed":
+        return "pass";
+      case "Failed":
+        return "fail";
+      case "Blocked":
+        return "retired";
+    }
+  }
+  switch (status) {
+    case "Queued":
+      return "queued";
+    case "Admitted":
+    case "Launching":
+    case "Running":
+      return "live";
+    case "Terminal":
+      return "neutral";
+    case "Cancelled":
       return "retired";
   }
 }
