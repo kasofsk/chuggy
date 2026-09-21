@@ -24,7 +24,9 @@ import { resizeObserverStubbed } from "./resizeObserver.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
-const fixedNowMs = Date.parse("2026-08-27T03:00:00Z");
+/** Local components, because the hover clock reads in the browser's own zone. */
+const changedAt = new Date(2026, 7, 27, 0, 0);
+const fixedNowMs = changedAt.getTime() + 3_600_000 * 3;
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -193,7 +195,10 @@ test("a row whose index was truncated draws no chip for its execution", () => {
 });
 
 test("the last activity column draws the relative reading and answers the absolute on hover", async () => {
-  await drawTable();
+  await drawTableWith(
+    [{ ...ticket, changedAt: changedAt.toISOString() }],
+    [execution],
+  );
   const cell = screen.getByText("3h ago");
   fireEvent.focus(cell);
   expect((await screen.findByRole("tooltip")).textContent).toBe(

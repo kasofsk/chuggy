@@ -157,8 +157,8 @@ test("an instant the clock cannot read is an absence, never a printed string", (
 });
 
 test("an ago figure carries the relative reading and the full date and clock for its hover", () => {
-  const twoDaysAgo = new Date(agoNowMs - 3_600_000 * 24 * 2).toISOString();
-  const figure = agoFigure(twoDaysAgo, agoNowMs);
+  const at = new Date(2026, 7, 24, 12, 0);
+  const figure = agoFigure(at.toISOString(), at.getTime() + 3_600_000 * 24 * 2);
   if (figure.kind !== "Ago") throw new Error("not an ago figure");
   expect(figure.text).toBe("2d ago");
   expect(figure.full).toBe("2026-08-24 12:00");
