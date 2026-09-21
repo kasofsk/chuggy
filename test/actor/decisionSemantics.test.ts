@@ -15,6 +15,15 @@
  * on each disposition edge: the bytes name neither, and the record is what
  * says which was taken.
  *
+ * A THIRD FILE IS THE VOCABULARY'S OWN. `journalAtSemanticsFour.json` was
+ * written by the deciders at 55de9de6, the last image every word of which is
+ * the one semantics 5 renamed, and it walks two tickets through every
+ * superseded spelling a row can hold: each phase, each of the five walls, the
+ * failed finalization and the four step labels. Two spellings are absent
+ * because no row carries them — a `Reason` reaches a journal only as an
+ * `ExecutionBlocked` event's, and the two that are not walls are a ticket's
+ * own reason column — so the case below pins those against the map itself.
+ *
  * A PRE-3 ROW'S EVALREDUCE NAMED ONLY ITS TICKET, a shape the wire union this
  * image generates does not describe, so the bytes are lifted before they are
  * an event at all. That lift belongs to the seam a store's load reads a row
@@ -62,6 +71,8 @@ import {
   decisionSemanticsVersionCurrent,
   isDecisionSemanticsVersion,
   replayableDecision,
+  supersededSpellings,
+  wordAtCurrentVocabulary,
   type DecisionSemanticsVersion,
 } from "../../src/actor/decisionSemantics.ts";
 import { parseStoredEntry } from "../../src/interpreter/wire.ts";
@@ -77,13 +88,16 @@ import { plainAuthoring, refinementInstance } from "./harness.ts";
 const config = refinementInstance;
 
 /** One pinned history, read exactly as a store's load reads a row of that vintage. */
-function pinned(file: string): readonly Entry[] {
+function pinned(
+  file: string,
+  semantics: DecisionSemanticsVersion,
+): readonly Entry[] {
   const raw: unknown = JSON.parse(
     readFileSync(join(import.meta.dirname, file), "utf8"),
   );
   assert.ok(Array.isArray(raw), `${file} is not a journal`);
   return raw.map((row: unknown, at: number) => {
-    const parsed = parseStoredEntry(row, 1);
+    const parsed = parseStoredEntry(row, semantics);
     if (parsed.parsed === "Refused")
       throw new Error(`${file} row ${String(at)} is unreadable: ${parsed.why}`);
     return parsed.value;
@@ -98,8 +112,9 @@ function storedAt(
   return entries.map((entry) => ({ entry, semantics }));
 }
 
-const reworkedWall = pinned("journalAtSemanticsOne.json");
-const walls = pinned("journalAtSemanticsOneWalls.json");
+const reworkedWall = pinned("journalAtSemanticsOne.json", 1);
+const walls = pinned("journalAtSemanticsOneWalls.json", 1);
+const beforeTheRename = pinned("journalAtSemanticsFour.json", 4);
 
 /** The record a release writes, which moves nothing that was already in the fleet. */
 const released: StepRecord = {
@@ -291,6 +306,44 @@ test("a pinned row says the old words and is read as the new ones", () => {
   const moves = reworkedWall.flatMap((entry) => entry.rec.transitions);
   assert.ok(moves.some((move) => move.to === "Work"));
   assert.ok(moves.some((move) => move.to === "Evaluation"));
+});
+
+/**
+ * The two spellings no journal row holds: a ticket's reason reaches a row only
+ * as the one an `ExecutionBlocked` event names, and these two are the reason
+ * column 006 rewrites. What pins them is the map's own answer below.
+ */
+const reasonsNoRowCarries: readonly string[] = [
+  "WorkFailed",
+  "ReworkBudgetExhausted",
+];
+
+test("every superseded spelling a row can hold is in the pinned bytes", () => {
+  const bytes = readFileSync(
+    join(import.meta.dirname, "journalAtSemanticsFour.json"),
+    "utf8",
+  );
+  for (const said of supersededSpellings) {
+    if (reasonsNoRowCarries.includes(said)) continue;
+    assert.ok(bytes.includes(said), `no pinned row says ${said}`);
+  }
+  assert.deepEqual(reasonsNoRowCarries.map(wordAtCurrentVocabulary), [
+    "WorkFailureEscalated",
+    "EvaluationFailureEscalated",
+  ]);
+});
+
+test("the vocabulary history is legal under the semantics its rows declare", () => {
+  assert.ok(storedJournalLegalOn(config, storedAt(beforeTheRename, 4)));
+});
+
+test("replaying the old words leaves the fleet holding the new ones", () => {
+  const replayed = storedReplayGraph(storedAt(beforeTheRename, 4));
+  assert.equal(ticketAt(replayed, id(1)).phase, "Work");
+  const walled = ticketAt(replayed, id(2));
+  assert.equal(walled.phase, "Escalated");
+  assert.equal(walled.reason, "WorkExecutionUnavailableEscalated");
+  assert.equal(walled.resumeAt, "ResumeWork");
 });
 
 test("a pre-4 row's dropped keys are accepted and decode to the meaning that survived", () => {

@@ -128,6 +128,15 @@ const currentVocabulary: ReadonlyMap<string, string> = new Map([
   ],
 ]);
 
+/**
+ * Every spelling that map lifts. A key it gains and no pinned row says is a
+ * lift nothing in this tree ever performs, so the fixtures are held to this
+ * roster rather than to a copy of it.
+ */
+export const supersededSpellings: readonly string[] = [
+  ...currentVocabulary.keys(),
+];
+
 /** The fields of a row this map may rewrite, read before the codec has seen it. */
 function objectFields(raw: unknown): Record<string, unknown> | undefined {
   return typeof raw === "object" && raw !== null && !Array.isArray(raw)
