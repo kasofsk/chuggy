@@ -10,7 +10,7 @@
   76c95a9, not a chuggy module: the package is not a dependency at this pin, so
   a copy is the only way to speak its vocabulary, and an exact copy is the only
   copy a `diff` can check for drift. Do not edit it — change chuggy around it.
-  `ticket.qnt` imports it for `TaskIdentity` and `taskIdentityValid`, and
-  `domain.qnt` for `taskOwner`; its `TaskDefinition`, `TaskObligation`,
+  `ticket.qnt` imports it for `TaskIdentity`, and `domain.qnt` calls
+  `taskIdentityValid` and `taskOwner`; its `TaskDefinition`, `TaskObligation`,
   `ValidatedTaskResult`, `TaskFailure` and `TaskTerminal` have no caller here
   yet and typecheck alone.

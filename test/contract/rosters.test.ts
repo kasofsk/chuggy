@@ -306,7 +306,6 @@ test("the requirement rosters are exhaustive over the interpreter's unions", () 
     IosSimulatorTesting: true,
   };
   const sources: Record<MaterializedRequirementSource, true> = {
-    ExplicitTask: true,
     TaskKindDefault: true,
     TicketDefault: true,
     PlatformDefault: true,

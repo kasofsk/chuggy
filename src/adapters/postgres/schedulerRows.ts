@@ -169,7 +169,6 @@ export function executionRowTaskKind(value: string): ExecutionTaskKind {
 
 function executionRowRequirementSource(value: string): RequirementSource {
   if (
-    value !== "ExplicitTask" &&
     value !== "TaskKindDefault" &&
     value !== "TicketDefault" &&
     value !== "PlatformDefault"
