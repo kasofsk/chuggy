@@ -20,6 +20,12 @@
  * an event at all. That lift belongs to the seam a store's load reads a row
  * with, so these files are read through `parseStoredEntry` rather than through
  * a second copy of it here.
+ *
+ * THE SAME FILES CARRY THE KEYS SEMANTICS 4 DROPPED, so the acceptances below
+ * are read off them rather than off bytes written to be accepted. The refusals
+ * have no such fixture — no history in this tree was decided by the machine
+ * that completed without a finalizer or cascaded a revoke — so each is a
+ * pinned row under the record that machine would have written.
  */
 
 import assert from "node:assert/strict";
@@ -40,6 +46,7 @@ import {
 } from "../../src/actor/journal.ts";
 import {
   decisionSemanticsVersionCurrent,
+  isDecisionSemanticsVersion,
   replayableDecision,
 } from "../../src/actor/decisionSemantics.ts";
 import { parseStoredEntry } from "../../src/interpreter/wire.ts";
@@ -176,4 +183,92 @@ test("a row parked on a wall this machine no longer has cannot be replayed", () 
       },
     ]),
   );
+});
+
+test("the current semantics is the one whose refusals this module states", () => {
+  assert.equal(decisionSemanticsVersionCurrent, 4);
+  assert.ok(isDecisionSemanticsVersion(4));
+  assert.ok(
+    !isDecisionSemanticsVersion(5),
+    "a row from an image this one does not know is not replayable by guessing",
+  );
+});
+
+test("a pre-4 row's dropped keys are accepted and decode to the meaning that survived", () => {
+  const raw: unknown = JSON.parse(
+    readFileSync(
+      join(import.meta.dirname, "journalAtSemanticsOne.json"),
+      "utf8",
+    ),
+  );
+  assert.ok(Array.isArray(raw));
+  const release = raw[0] as { event: { value: Record<string, unknown> } };
+  assert.equal(release.event.value["finalizer"], "ManagedFinalizer");
+  assert.deepEqual(release.event.value["prog"], [
+    { fanout: 1, combinator: "UnanimousPass" },
+  ]);
+
+  const entry = reworkedWall[0];
+  assert.ok(entry?.event.type === "ReleaseTicket");
+  assert.ok(
+    !("finalizer" in entry.event.value),
+    "the finish kind reached the actor",
+  );
+  assert.deepEqual(entry.event.value.prog, [{ fanout: 1 }]);
+  assert.ok(storedJournalLegalOn(config, storedAt(reworkedWall, 1)));
+});
+
+test("a row that completed a ticket without running a finalizer cannot be replayed", () => {
+  const done = walls[5];
+  assert.ok(done !== undefined);
+  const finisherFree = {
+    ...done,
+    rec: {
+      label: "ticket-done",
+      transitions: [{ ticket: id(1), from: "Evaluating", to: "Done" } as const],
+      effects: [],
+    },
+  };
+  assert.ok(!replayableDecision(finisherFree));
+  assert.ok(
+    replayableDecision({
+      ...finisherFree,
+      rec: {
+        ...finisherFree.rec,
+        transitions: [
+          { ticket: id(1), from: "Finalizing", to: "Done" } as const,
+        ],
+      },
+    }),
+    "the completion this machine takes is the one out of Finalizing",
+  );
+  assert.ok(
+    !storedJournalLegalOn(config, [{ entry: finisherFree, semantics: 1 }]),
+  );
+});
+
+test("a revoke that transitioned more than its own ticket cannot be replayed", () => {
+  const row = walls[5];
+  assert.ok(row !== undefined);
+  const settles = { ticket: id(1), from: "Pending", to: "Revoked" } as const;
+  const cascaded = {
+    ...row,
+    rec: {
+      label: "ticket-revoked",
+      transitions: [
+        settles,
+        { ticket: id(2), from: "Pending", to: "Escalated" } as const,
+      ],
+      effects: ["CancelTicketWork", "OpenHumanTask"],
+    },
+  };
+  assert.ok(!replayableDecision(cascaded));
+  assert.ok(
+    replayableDecision({
+      ...cascaded,
+      rec: { ...cascaded.rec, transitions: [settles] },
+    }),
+    "the revoke this machine takes transitions its own ticket alone",
+  );
+  assert.ok(!storedJournalLegalOn(config, [{ entry: cascaded, semantics: 1 }]));
 });

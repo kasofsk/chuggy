@@ -13,8 +13,8 @@
  * module exists to prevent.
  *
  * EVERY CORRECTION IS READ OFF THE ROW, which is why one takes the row and not
- * just its event. There are four, and the last is a divergence left standing
- * rather than corrected:
+ * just its event. The last entry below is a divergence left standing rather
+ * than corrected:
  *   - at 1, a row whose record parks a ticket at the evaluation wall parked it
  *     at the eval resume, because that wall had no resume of its own yet;
  *   - at 1 and 2, a row's EvalReduce carried no disposition, and the one it was
@@ -23,11 +23,26 @@
  *   - at 1 and 2, a row whose record names a wall this machine no longer has
  *     cannot be re-derived at all, and `storedJournalLegalOn` refuses it rather
  *     than replaying it into a state the fleet was never in;
+ *   - at 3 and below, a row completing a ticket out of any phase but Finalizing
+ *     was decided by a machine where a release could author no finalizer, and
+ *     is refused the same way;
+ *   - at 3 and below, a revoke whose record transitions more than one ticket is
+ *     the cascade that parked the revoked ticket's dependents, and is refused
+ *     the same way;
  *   - at 2, a rework wall's resume gets no correction of its own, so replay
  *     hands it to the current decider — which stamps every rework wall
  *     `ResumeReworking`, there being no budget left to consult. A row parked
  *     with no rework budget, decided when that wall answered `NoResume`,
  *     replays retryable though the machine that wrote it refused a retry.
+ *
+ * TWO OF THOSE REFUSALS ARE READ OFF THE RECORD BECAUSE THE EVENT NO LONGER
+ * SPELLS THEM. A pre-4 release row carries a `finalizer` and each of its stages
+ * a `combinator`; the model has neither field, so the codec drops both on the
+ * way in and `ManagedFinalizer` and `UnanimousPass`, the surviving meaning,
+ * replay unchanged. What the dropped keys decided is in the record either way:
+ * a finisher-free release completes out of Evaluating, an `AnyPass` stage that
+ * passed on a mixed set carries a label this machine's `combine` does not
+ * produce, and `storedJournalLegalOn` compares records.
  */
 
 import { ticketAt, withTicket, type Decision } from "../domain/core.ts";
@@ -43,16 +58,16 @@ import {
 } from "./decisionEvent.ts";
 
 /** Which deciders produced a row, as the row's own durable envelope declares it. */
-export type DecisionSemanticsVersion = 1 | 2 | 3;
+export type DecisionSemanticsVersion = 1 | 2 | 3 | 4;
 
 /** The semantics every new decision is taken under, and the one `model/` describes. */
-export const decisionSemanticsVersionCurrent: DecisionSemanticsVersion = 3;
+export const decisionSemanticsVersionCurrent: DecisionSemanticsVersion = 4;
 
 /** Whether a stored number names decision semantics this image knows how to replay. */
 export function isDecisionSemanticsVersion(
   value: number,
 ): value is DecisionSemanticsVersion {
-  return value === 1 || value === 2 || value === 3;
+  return value === 1 || value === 2 || value === 3 || value === 4;
 }
 
 /** A journaled decision as a correction reads it: the event, and the record it wrote. */
@@ -67,13 +82,31 @@ const removedWallLabels: readonly string[] = [
   "ticket-escalated finalization_budget_exhausted",
 ];
 
+/** Whether this record completes a ticket from somewhere the finalizer does not run. */
+function completedWithoutFinalizing(rec: StepRecord): boolean {
+  return (
+    rec.label === "ticket-done" &&
+    rec.transitions.some((t) => t.from !== "Finalizing")
+  );
+}
+
+/** Whether this record is the revoke that parked the revoked ticket's dependents. */
+function revokedMoreThanItsOwnTicket(rec: StepRecord): boolean {
+  return rec.label === "ticket-revoked" && rec.transitions.length > 1;
+}
+
 /**
  * Whether this row can be re-derived at all. A row that parked a ticket on an
- * account wall names a decision no current decider makes, so there is nothing
- * to correct it to.
+ * account wall, completed one without running a finalizer, or cascaded a revoke
+ * names a decision no current decider makes, so there is nothing to correct it
+ * to.
  */
 export function replayableDecision(row: JournaledDecision): boolean {
-  return !removedWallLabels.includes(row.rec.label);
+  return (
+    !removedWallLabels.includes(row.rec.label) &&
+    !completedWithoutFinalizing(row.rec) &&
+    !revokedMoreThanItsOwnTicket(row.rec)
+  );
 }
 
 /**
@@ -143,6 +176,7 @@ export function execDecisionEventAt(
     case 2:
       return execDecisionEvent(core, eventAtRecordedDisposition(row));
     case 3:
+    case 4:
       return execDecisionEvent(core, row.event);
   }
 }
