@@ -372,9 +372,9 @@ export function summaryVerdict(summary: ExecutionSummary): SetVerdict {
 }
 
 function ungroupedLabel(summary: ExecutionSummary): string {
-  return summary.taskKind === "Work" || summary.stage === undefined
+  return summary.identity.type === "WorkTask"
     ? "Work"
-    : `Stage ${String(summary.stage + 1)}`;
+    : `Stage ${String(summary.identity.value.stage)}`;
 }
 
 /**

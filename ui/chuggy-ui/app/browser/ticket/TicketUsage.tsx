@@ -39,17 +39,21 @@ export interface StageSpendRow {
   readonly spend: RunSpend;
 }
 
-/** Work comes before every stage, which is the order the program runs them in. */
-const stageOrdinalWork = -1;
+/**
+ * Work comes before every stage, which is the order the program runs them in;
+ * zero is never a real stage, since the identity's own numbering starts at
+ * one.
+ */
+const stageOrdinalWork = 0;
 
 function stageOrdinalOf(summary: ExecutionSummary): number {
-  return summary.taskKind === "Work" || summary.stage === undefined
+  return summary.identity.type === "WorkTask"
     ? stageOrdinalWork
-    : summary.stage;
+    : summary.identity.value.stage;
 }
 
 function stageRowLabel(stage: number): string {
-  return stage === stageOrdinalWork ? "Work" : `Stage ${String(stage + 1)}`;
+  return stage === stageOrdinalWork ? "Work" : `Stage ${String(stage)}`;
 }
 
 /**
