@@ -3806,19 +3806,21 @@ test("a request task carries a whole identity for its kind and no half of one", 
   });
 });
 
-/** Each source an execution may be registered under, now that no task names one. */
+/** Every source the relation admits an execution under, and the one no task names any more. */
 const identitySources: readonly (readonly [string, string, boolean])[] = [
   ["a requirement a task named for itself", "ExplicitTask", false],
   ["a requirement its kind named", "TaskKindDefault", true],
+  ["a requirement its ticket named", "TicketDefault", true],
+  ["the platform's requirement", "PlatformDefault", true],
 ];
 
-function identityRegistration(source: string): string {
+function identityRegistration(task: number, source: string): string {
   return `INSERT INTO execution
      (tenant,project,execution,ticket,task,source_request,account,cluster,
       configuration_revision,configuration_digest,requirement_identity,
       requirement_value,requirement_digest,requirement_source,
       platform_default_version,status)
-   SELECT 'tenant-5','project-5','execution-${source}',1,1,'request-5',
+   SELECT 'tenant-5','project-5','execution-${source}',1,${String(task)},'request-5',
           a.account,a.cluster,'revision-5','digest-5','requirement-${source}',
           '{"mode":"Container","operatingSystem":"Linux","architecture":"Amd64","image":"worker"}'::jsonb,
           repeat('e',64),'${source}',1,'Running'
@@ -3831,8 +3833,17 @@ test("an execution registered under a requirement a task named is refused", asyn
     await postgresMigrate(subject);
     await subject.query(`${deletionPartition}\n${identityRequest}`);
     await subject.query(identityTask(1, "kind,cycle", "'Work',1"));
-    for (const [what, source, admitted] of identitySources) {
-      const insert = identityRegistration(source);
+    for (const evaluator of [1, 2, 3]) {
+      await subject.query(
+        identityTask(
+          evaluator + 1,
+          "kind,cycle,stage,generation,evaluator",
+          `'Evaluation',1,1,1,${String(evaluator)}`,
+        ),
+      );
+    }
+    for (const [order, [what, source, admitted]] of identitySources.entries()) {
+      const insert = identityRegistration(order + 1, source);
       if (admitted) await subject.query(insert);
       else
         await assert.rejects(
