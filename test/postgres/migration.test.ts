@@ -1,5 +1,6 @@
 import { leadToolAllowlist } from "../../src/interpreter/leadTools.ts";
 import { migration003 } from "../../src/adapters/postgres/schema/migrations/003-no-handoff.ts";
+import { migration004 } from "../../src/adapters/postgres/schema/migrations/004-no-accounts.ts";
 import {
   leadDispatchesPerDecision,
   leadObservationTokensPerDecision,
@@ -1199,6 +1200,293 @@ test("a ticket still in a handoff phase refuses the migration untouched", async 
         new AbortController().signal,
       ),
       before,
+    );
+  });
+});
+
+/**
+ * The two ways a stored entry says a step reached an account wall: the step
+ * record's label, and the reason a blocked execution was reported under.
+ */
+const walledEntries: readonly (readonly [string, string])[] = [
+  [
+    "the record's label",
+    JSON.stringify({
+      seq: 1,
+      event: {
+        type: "TaskDone",
+        value: { ticket: 1, tid: 1, verdict: "Fail" },
+      },
+      rec: {
+        label: "ticket-escalated gas_exhausted",
+        transitions: [{ ticket: 1, from: "Evaluating", to: "Escalated" }],
+        effects: [],
+      },
+    }),
+  ],
+  [
+    "the blocked event's reason",
+    JSON.stringify({
+      seq: 1,
+      event: {
+        type: "ExecutionBlocked",
+        value: { ticket: 1, reason: "FinalizationBudgetExhausted" },
+      },
+      rec: {
+        label: "ticket-escalated execution_blocked",
+        transitions: [{ ticket: 1, from: "Finalizing", to: "Escalated" }],
+        effects: [],
+      },
+    }),
+  ],
+];
+
+/** What an image that still had the accounts wrote as its deployment policy. */
+const accountedAuthoringPolicy =
+  '{"nTickets":2,"nTasks":1,"reworkPolicy":{"type":"BudgetedRework","value":1},"gas":3,"finalizationPricing":{"type":"Budgeted","value":1},"maxStages":1}';
+
+/** The same policy as the image without them encodes it, key order included. */
+const unaccountedAuthoringPolicy = '{"nTickets":2,"nTasks":1,"maxStages":1}';
+
+/**
+ * One insert per narrowed reason check, each carrying a literal that check
+ * used to admit. Both literals are offered to both relations, so a narrowing
+ * that dropped only one of them is a red.
+ */
+const accountLiterals: readonly (readonly [string, string])[] = [
+  [
+    "ticket_projection_reason_is_known",
+    `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,reason)
+     VALUES('tenant-4','project-4',1,'Escalated',1,'GasExhausted')`,
+  ],
+  [
+    "ticket_projection_reason_is_known",
+    `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,reason)
+     VALUES('tenant-4','project-4',1,'Escalated',1,'FinalizationBudgetExhausted')`,
+  ],
+  [
+    "native_action_reason_check",
+    `INSERT INTO native_action
+       (tenant,project,action,authorizing_seq,effect_position,
+        ticket,action_version,kind,reason,required_capability)
+     VALUES('tenant-4','project-4','action-4',1,0,1,1,'TicketEscalation','GasExhausted','ResolveTicket')`,
+  ],
+  [
+    "native_action_reason_check",
+    `INSERT INTO native_action
+       (tenant,project,action,authorizing_seq,effect_position,
+        ticket,action_version,kind,reason,required_capability)
+     VALUES('tenant-4','project-4','action-4',1,0,1,1,'TicketEscalation','FinalizationBudgetExhausted','ResolveTicket')`,
+  ],
+];
+
+/** Brings the subject to the schema the accounts were still in. */
+async function accountedInstallation(subject: pg.Pool): Promise<void> {
+  const before = migrations
+    .slice(0, migration004.version - 1)
+    .map(({ version, name }) => ({ version, name }));
+  const held = runtimeSchemaContract(before);
+  assert.deepEqual(
+    await postgresMigrateCompatible(subject, {
+      current: held,
+      retainedPrevious: held,
+    }),
+    { migrated: "Applied", versions: before.map(({ version }) => version) },
+  );
+}
+
+test("a fresh install records the accounts leaving and keeps none of their columns", async () => {
+  await migrationDatabase("noaccounts_install", async (subject) => {
+    assert.ok((await postgresMigrate(subject)).includes(migration004.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT version,name FROM schema_migration WHERE version=$1",
+          [migration004.version],
+        )
+      ).rows,
+      [
+        {
+          version: migration004.version,
+          name: "the accounts leave the schema",
+        },
+      ],
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT table_name || '.' || column_name AS present
+             FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND ((table_name = 'ticket_projection'
+                    AND column_name IN ('gas_left','rework_left','finalization_left','reason'))
+                OR (table_name = 'dispatch_candidate'
+                    AND column_name IN ('rework_policy','finalization_pricing','resume_pricing','finalizer')))
+            ORDER BY present`,
+        )
+      ).rows,
+      [
+        { present: "dispatch_candidate.finalizer" },
+        { present: "ticket_projection.reason" },
+      ],
+    );
+  });
+});
+
+test("every narrowed reason check refuses the literals the accounts left it", async () => {
+  await migrationDatabase("noaccounts_checks", async (subject) => {
+    await postgresMigrate(subject);
+    for (const [constraint, refused] of accountLiterals)
+      await assert.rejects(
+        subject.query(refused),
+        new RegExp(constraint, "u"),
+        refused,
+      );
+  });
+});
+
+test("the release the boundary admits carries no pricing, and no blocked reason names an account", async () => {
+  await migrationDatabase("noaccounts_boundary", async (subject) => {
+    await postgresMigrate(subject);
+    const admits = async (event: unknown): Promise<boolean | null> =>
+      (
+        await subject.query<{ admitted: boolean | null }>(
+          "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+          [JSON.stringify(event)],
+        )
+      ).rows[0]?.admitted ?? null;
+    assert.equal(
+      await admits({
+        type: "ReleaseTicket",
+        value: {
+          ticket: 1,
+          deps: [],
+          prog: [{ fanout: 1, combinator: "UnanimousPass" }],
+          workFanout: 1,
+          finalizer: "NoFinalizer",
+        },
+      }),
+      true,
+    );
+    assert.equal(
+      await admits({
+        type: "ExecutionBlocked",
+        value: { ticket: 1, reason: "WorkFailed" },
+      }),
+      true,
+    );
+    for (const reason of ["GasExhausted", "FinalizationBudgetExhausted"])
+      assert.equal(
+        await admits({
+          type: "ExecutionBlocked",
+          value: { ticket: 1, reason },
+        }),
+        false,
+        reason,
+      );
+  });
+});
+
+/** Each relation the guard names, with a row it has to see there. */
+const walledRows: readonly (readonly [string, string])[] = [
+  [
+    "ticket_projection",
+    `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,reason)
+     VALUES('tenant-4','project-4',1,'Escalated',1,'GasExhausted')`,
+  ],
+  [
+    "native_action",
+    `INSERT INTO recovery_epoch(epoch) VALUES('epoch-4');
+     INSERT INTO decision_input
+       (tenant,project,ordinal,input_kind,input_id,base_priority,
+        lifecycle_generation,state,decided_seq,terminal_at)
+     VALUES('tenant-4','project-4',1,'Operation','operation-4','Ordinary',1,'Journaled',1,now());
+     INSERT INTO journal_entry
+       (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
+        recovery_epoch,cause_kind,cause_id)
+     VALUES('tenant-4','project-4',1,'{}','digest-4','genesis','owner',1,'epoch-4','Operation','operation-4');
+     INSERT INTO native_action
+       (tenant,project,action,authorizing_seq,effect_position,
+        ticket,action_version,kind,reason,required_capability)
+     VALUES('tenant-4','project-4','action-4',1,0,1,1,'TicketEscalation','FinalizationBudgetExhausted','ResolveTicket')`,
+  ],
+];
+
+test("a ticket parked at an account wall refuses the migration untouched", async () => {
+  for (const [relation, seeded] of walledRows)
+    await migrationDatabase("noaccounts_guard", async (subject) => {
+      await accountedInstallation(subject);
+      await subject.query(
+        `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-4','project-4','Active');
+         ${seeded}`,
+      );
+      await assert.rejects(
+        postgresMigrate(subject),
+        new RegExp(`account rows remain in ${relation}`, "u"),
+        relation,
+      );
+      assert.deepEqual(
+        await postgresRuntimeSchema(subject).applied(
+          new AbortController().signal,
+        ),
+        migrations
+          .slice(0, migration004.version - 1)
+          .map(({ version, name }) => ({ version, name })),
+        relation,
+      );
+    });
+});
+
+test("a journal that names an account wall refuses the migration untouched", async () => {
+  for (const [what, entry] of walledEntries)
+    await migrationDatabase("noaccounts_journal", async (subject) => {
+      await accountedInstallation(subject);
+      await subject.query(
+        `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-4','project-4','Active');
+         INSERT INTO recovery_epoch(epoch) VALUES('epoch-4');
+         INSERT INTO decision_input
+           (tenant,project,ordinal,input_kind,input_id,base_priority,
+            lifecycle_generation,state,decided_seq,terminal_at)
+         VALUES('tenant-4','project-4',1,'Operation','operation-4','Ordinary',1,'Journaled',1,now());
+         INSERT INTO journal_entry
+           (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
+            recovery_epoch,cause_kind,cause_id)
+         VALUES('tenant-4','project-4',1,$entry$${entry}$entry$,
+                'digest-4','genesis','owner',1,'epoch-4','Operation','operation-4')`,
+      );
+      await assert.rejects(
+        postgresMigrate(subject),
+        /account rows remain in journal_entry/u,
+        what,
+      );
+      assert.deepEqual(
+        await postgresRuntimeSchema(subject).applied(
+          new AbortController().signal,
+        ),
+        migrations
+          .slice(0, migration004.version - 1)
+          .map(({ version, name }) => ({ version, name })),
+        what,
+      );
+    });
+});
+
+test("the authoring policy loses the keys the accounts configured", async () => {
+  await migrationDatabase("noaccounts_policy", async (subject) => {
+    await accountedInstallation(subject);
+    await subject.query(
+      `INSERT INTO deployment_authoring_policy(singleton,domain_configuration)
+       VALUES(true,$1)`,
+      [accountedAuthoringPolicy],
+    );
+    assert.ok((await postgresMigrate(subject)).includes(migration004.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT domain_configuration FROM deployment_authoring_policy",
+        )
+      ).rows,
+      [{ domain_configuration: unaccountedAuthoringPolicy }],
     );
   });
 });
