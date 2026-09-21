@@ -202,8 +202,9 @@ that both rules live in.
 
 WHICH LOCKS THIS FILE'S BODIES TAKE. `submit_finalization_result` takes two —
 the finalization request it is answering, then the project whose mailbox it
-writes into — and `request_finalization_approval` takes the first of those
-alone, both in the global order `src/interpreter/finalizer.ts` declares.
+writes into — and `request_finalization_approval` and
+`record_finalization_hold` take the first of those alone, all in the global
+order `src/interpreter/finalizer.ts` declares.
 
 WHY AN APPROVAL SUPERSEDES RATHER THAN QUEUES. `native_action_one_open`
 admits one open action per ticket, and the revision fence prepares again when
