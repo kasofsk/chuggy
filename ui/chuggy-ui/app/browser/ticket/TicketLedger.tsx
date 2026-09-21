@@ -224,17 +224,21 @@ function ProgramRunBlock(props: {
   );
 }
 
-/** What the cycle's work left behind, which is the note its work row carries. */
-export function cycleArtifactNote(cycle: Cycle, cycles: number): string {
+/** What the cycle's work left behind, named by the cycle that superseded it. */
+export function cycleArtifactNote(
+  cycle: Cycle,
+  supersededBy: number | undefined,
+): string {
   switch (cycle.artifact) {
     case "Unknown":
       return "Work not on this page";
     case "None":
       return "No artifact";
     case "Produced":
-      return cycle.standing === "Current"
-        ? "Current artifact"
-        : `Superseded by ${cycleLabel(Math.min(cycle.ordinal + 1, cycles)).toLowerCase()}`;
+      if (cycle.standing === "Current") return "Current artifact";
+      return supersededBy === undefined
+        ? "Superseded"
+        : `Superseded by ${cycleLabel(supersededBy).toLowerCase()}`;
   }
 }
 
@@ -285,7 +289,7 @@ function CycleRollup(props: {
 function CycleGroup(props: {
   readonly chrome: RowChrome;
   readonly cycle: Cycle;
-  readonly cycles: number;
+  readonly supersededBy: number | undefined;
   readonly stageCount: number;
 }): ReactNode {
   const cycle = props.cycle;
@@ -310,7 +314,7 @@ function CycleGroup(props: {
             chrome={props.chrome}
             label="Work"
             set={cycle.work}
-            standing={cycleArtifactNote(cycle, props.cycles)}
+            standing={cycleArtifactNote(cycle, props.supersededBy)}
           />
         )}
       </LedgerBlock>
@@ -343,12 +347,12 @@ export function TicketCycles(props: {
           : undefined
       }
     >
-      {cycles.map((cycle) => (
+      {cycles.map((cycle, index) => (
         <CycleGroup
           key={cycle.ordinal}
           chrome={props.chrome}
           cycle={cycle}
-          cycles={props.facts.cycles.length}
+          supersededBy={cycles[index - 1]?.ordinal}
           stageCount={props.stageCount}
         />
       ))}

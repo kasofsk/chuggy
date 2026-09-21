@@ -298,6 +298,23 @@ test("a superseded cycle says which cycle replaced its artifact", async () => {
   expect(superseded.textContent).toContain("Superseded");
 });
 
+test("a page that does not start at cycle 1 names the cycle that superseded one", async () => {
+  const workedIn = (cycle: number): ExecutionShape => ({
+    execution: `execution-aa-${String(cycle)}`,
+    task: cycle,
+    identity: workIdentity(cycle),
+    outcome: "Passed",
+  });
+  const { container } = await drawTicket({
+    shapes: [workedIn(2), workedIn(3)],
+    ticket: parkedTicket,
+  });
+  const superseded = groups(container)[1];
+  if (superseded === undefined) throw new Error("no superseded cycle");
+  expect(superseded.querySelector("h3")?.textContent).toBe("Cycle 2");
+  expect(rowsOf(superseded)[0]).toContain("Superseded by cycle 3");
+});
+
 test("the resume states what it re-runs", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
   expect(screen.getByRole("button", { name: "Resume" })).toBeDefined();
