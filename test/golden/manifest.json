@@ -15,7 +15,7 @@
       "invariant": "",
       "steps": 30,
       "quintVersion": "0.32.0",
-      "purpose": "The unaimed walk. It is where the ordinary labels come from \u2014 released, dispatched, task-done, settled and the desk-only revoke \u2014 without any of them being asked for."
+      "purpose": "The unaimed walk. It is where the ordinary labels come from — released, dispatched, task-done, settled and the desk-only revoke — without any of them being asked for."
     },
     {
       "name": "execution-blocked",

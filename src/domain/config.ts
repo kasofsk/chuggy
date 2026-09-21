@@ -48,7 +48,7 @@ export function stageChoices(config: Config): readonly Stage[] {
   return choices;
 }
 
-/** The default program: one stage at full fan-out, which every evaluator sharing stage 0 behaves as. */
+/** The default program: one stage at full fan-out, which is what a ticket whose evaluators all share stage 0 runs as. */
 export function defaultProgram(config: Config): readonly Stage[] {
   return [{ fanout: config.nTasks }];
 }
