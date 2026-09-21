@@ -88,6 +88,7 @@ function fakeTicket(calls: string[]): NativeWeb["ticket"] {
       sequence: 4,
       releasedAt: asPublicInstant("2026-01-01T00:00:00Z"),
       changedAt: asPublicInstant("2026-01-01T00:00:04Z"),
+      revokedDependencies: [],
     });
   };
 }
@@ -977,6 +978,7 @@ test("ticket phase filters and detail are parsed before NativeWeb", async () => 
     sequence: 4,
     releasedAt: "2026-01-01T00:00:00Z",
     changedAt: "2026-01-01T00:00:04Z",
+    revokedDependencies: [],
   });
   assert.equal(
     (await app.inject({ url: `${root}?phase=Unknown`, headers })).statusCode,
@@ -1172,9 +1174,8 @@ test("operational routes parse bounded filters and artifact identities", async (
 
 const publicAuthoring = {
   dependencies: [],
-  program: [{ fanout: 1, combinator: "UnanimousPass" }],
+  program: [{ fanout: 1 }],
   workFanout: 1,
-  finalizer: "ManagedFinalizer",
 };
 
 const publicBrief = {

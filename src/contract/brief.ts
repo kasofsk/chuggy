@@ -139,8 +139,10 @@ export const briefIntentSchema = z
  * How and where a finalization lands the work, as one variant per mode: a push
  * names the reference it lands on only where that is not the branch the work
  * happened on, and a pull request — merged afterwards or left for a human —
- * only where that is not the branch its repository defaults to. The target
- * shares the branch's grammar, being the same kind of name.
+ * only where that is not the branch its repository defaults to, and `None` names
+ * no reference at all, a landing that advances nothing having nothing to
+ * advance onto. The target shares the branch's grammar, being the same kind of
+ * name.
  */
 const briefFinalizationShapes = {
   Push: { mode: z.literal("Push"), target: briefBranchSchema.optional() },
@@ -152,12 +154,14 @@ const briefFinalizationShapes = {
     mode: z.literal("PullRequestMerge"),
     target: briefBranchSchema.optional(),
   },
+  None: { mode: z.literal("None") },
 } as const;
 
 export const briefFinalizationSchema = z.discriminatedUnion("mode", [
   z.strictObject(briefFinalizationShapes.Push),
   z.strictObject(briefFinalizationShapes.PullRequest),
   z.strictObject(briefFinalizationShapes.PullRequestMerge),
+  z.strictObject(briefFinalizationShapes.None),
 ]);
 
 /**

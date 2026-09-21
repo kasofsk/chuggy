@@ -4,7 +4,10 @@ import {
   leadObservationTokensPerDecisionAt004,
   migration004,
 } from "../../src/adapters/postgres/schema/migrations/004-no-accounts.ts";
-import { migration005 } from "../../src/adapters/postgres/schema/migrations/005-three-deletions.ts";
+import {
+  leadObservationTokensPerDecisionAt005,
+  migration005,
+} from "../../src/adapters/postgres/schema/migrations/005-three-deletions.ts";
 import { encodeDispatchProgram } from "../../src/interpreter/dispatchView.ts";
 import type { Stage } from "../../src/domain/generated/modelTypes.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
@@ -716,13 +719,7 @@ async function createdProposingDraft(subject: pg.Pool, branch: string | null) {
       `SELECT result,ticket::text AS ticket FROM ${draftCreateFunction}(
          'tenant-91','project-91','revision-91','digest-91',0,$1,
          NULL,'Land it.','{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91','User','author')`,
-      [
-        encodeDraftAuthoring({
-          ...plainAuthoring,
-          finalizer: "ManagedFinalizer",
-        }),
-        branch,
-      ],
+      [encodeDraftAuthoring(plainAuthoring), branch],
     )
   ).rows;
 }
@@ -733,12 +730,7 @@ async function createdUnboundDraft(subject: pg.Pool) {
       `SELECT result FROM ${draftCreateFunction}(
          'tenant-91','project-91','revision-91','digest-91',0,$1,
          NULL,'Land it.','{}'::text[],'{}'::text[],NULL,NULL,NULL,NULL,'User','author')`,
-      [
-        encodeDraftAuthoring({
-          ...plainAuthoring,
-          finalizer: "ManagedFinalizer",
-        }),
-      ],
+      [encodeDraftAuthoring(plainAuthoring)],
     )
   ).rows;
 }
@@ -1021,7 +1013,7 @@ test("fresh selector settings carry current controls and only their initial hist
     assert.deepEqual(controls.toolAllowlist, leadToolAllowlist);
     assert.equal(
       controls.limits.tokensPerDecision,
-      leadObservationTokensPerDecisionAt004,
+      leadObservationTokensPerDecisionAt005,
     );
     assert.equal(
       controls.limits.dispatchesPerDecision,
@@ -1495,32 +1487,38 @@ async function turnOfWidth(subject: pg.Pool, chars: number): Promise<void> {
 }
 
 /**
- * The mailbox bound 004 narrows is a guarded check like the removed walls, so
- * both sides of its arm are driven: an arm that never matches reads exactly
- * like one that works.
+ * Each migration that narrows the mailbox bound guards it at its own figure,
+ * and an arm that never matches reads exactly like one that works, so each is
+ * driven at the width only it refuses. Every pending migration applies in one
+ * transaction, so either refusal leaves the ledger where the installation
+ * started.
  */
-test("a session turn wider than the narrowed bound refuses the migration untouched", async () => {
-  await migrationDatabase("noaccounts_turn_wide", async (subject) => {
-    await turnOfWidth(subject, leadObservationTokensPerDecisionAt004 + 1);
-    await assert.rejects(
-      postgresMigrate(subject),
-      /no longer admits remain in session_turn/u,
-    );
-    assert.deepEqual(
-      await postgresRuntimeSchema(subject).applied(
-        new AbortController().signal,
-      ),
-      migrations
-        .slice(0, migration004.version - 1)
-        .map(({ version, name }) => ({ version, name })),
-    );
+for (const [label, bound] of [
+  ["noaccounts", leadObservationTokensPerDecisionAt004],
+  ["threedeletions", leadObservationTokensPerDecisionAt005],
+] as const)
+  test(`a session turn wider than ${label}'s bound refuses the migration untouched`, async () => {
+    await migrationDatabase(`${label}_turn_wide`, async (subject) => {
+      await turnOfWidth(subject, bound + 1);
+      await assert.rejects(
+        postgresMigrate(subject),
+        /no longer admits remain in session_turn/u,
+      );
+      assert.deepEqual(
+        await postgresRuntimeSchema(subject).applied(
+          new AbortController().signal,
+        ),
+        migrations
+          .slice(0, migration004.version - 1)
+          .map(({ version, name }) => ({ version, name })),
+      );
+    });
   });
-});
 
 test("a session turn at the narrowed bound migrates", async () => {
-  await migrationDatabase("noaccounts_turn_fits", async (subject) => {
-    await turnOfWidth(subject, leadObservationTokensPerDecisionAt004);
-    assert.ok((await postgresMigrate(subject)).includes(migration004.version));
+  await migrationDatabase("threedeletions_turn_fits", async (subject) => {
+    await turnOfWidth(subject, leadObservationTokensPerDecisionAt005);
+    assert.ok((await postgresMigrate(subject)).includes(migration005.version));
   });
 });
 
@@ -1851,30 +1849,23 @@ test("the narrowed reason checks refuse a live row at the parked reason", async 
   });
 });
 
-/** The stage keys the encoder writes, less the one the machine no longer has. */
-function programAfterTheCombinator(program: readonly Stage[]): string {
-  const stages = JSON.parse(
-    JSON.stringify(encodeDispatchProgram(program)),
-  ) as Record<string, unknown>[];
-  return JSON.stringify(
-    stages.map((stage) =>
-      Object.fromEntries(
-        Object.entries(stage).filter(([key]) => key !== "combinator"),
-      ),
-    ),
-  );
-}
-
-/** The programs the rewrite has to render: two stages, and none at all. */
-const rewrittenPrograms: readonly (readonly [number, readonly Stage[]])[] = [
+/**
+ * The programs the rewrite has to render, each as the encoder that still wrote
+ * the combinator stored it and as the machine now holds it: two stages, and
+ * none at all. The stored side is a literal because no encoder in this tree
+ * can write the deleted key any more.
+ */
+const rewrittenPrograms: readonly (readonly [
+  number,
+  string,
+  readonly Stage[],
+])[] = [
   [
     1,
-    [
-      { fanout: 2, combinator: "UnanimousPass" },
-      { fanout: 1, combinator: "AnyPass" },
-    ],
+    '[{"fanout":2,"combinator":"UnanimousPass"},{"fanout":1,"combinator":"AnyPass"}]',
+    [{ fanout: 2 }, { fanout: 1 }],
   ],
-  [2, []],
+  [2, "[]", []],
 ];
 
 test("a stored dispatch program is rewritten as the encoder without the combinator writes it", async () => {
@@ -1886,14 +1877,14 @@ test("a stored dispatch program is rewritten as the encoder without the combinat
        VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
        INSERT INTO dispatch_view(tenant,project,recovery_epoch,watermark,schema_version,digest)
        VALUES('tenant-5','project-5','epoch-5',1,1,repeat('a',64));`);
-    for (const [ticket, program] of rewrittenPrograms)
+    for (const [ticket, stored] of rewrittenPrograms)
       await subject.query(
         `INSERT INTO dispatch_candidate
            (tenant,project,ticket,ticket_version,work_fanout,program,finalizer,
             configuration_revision,configuration_digest,configuration_canonical)
          VALUES('tenant-5','project-5',$1,1,1,$2,'ManagedFinalizer',
                 'revision-5','digest-5','{}')`,
-        [ticket, JSON.stringify(encodeDispatchProgram(program))],
+        [ticket, stored],
       );
     assert.ok((await postgresMigrate(subject)).includes(migration005.version));
     assert.deepEqual(
@@ -1902,9 +1893,9 @@ test("a stored dispatch program is rewritten as the encoder without the combinat
           "SELECT ticket::text AS ticket,program FROM dispatch_candidate ORDER BY ticket",
         )
       ).rows,
-      rewrittenPrograms.map(([ticket, program]) => ({
+      rewrittenPrograms.map(([ticket, , program]) => ({
         ticket: String(ticket),
-        program: programAfterTheCombinator(program),
+        program: JSON.stringify(encodeDispatchProgram(program)),
       })),
     );
   });

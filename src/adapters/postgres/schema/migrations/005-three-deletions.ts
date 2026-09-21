@@ -50,13 +50,49 @@ import type { Migration } from "../shared.ts";
  * strictly more of them, so there is no stored row it can refuse and nothing
  * for the guard to look for.
  *
+ * THE ONE DOOR A FINALIZATION CONCLUDES THROUGH ADMITS A SUCCESS THAT
+ * CONCLUDED ON NO ATTEMPT, AND ONLY FOR A BRIEF THAT LANDS NOTHING. Every
+ * other conclusion is evidence read off rows — a prepared attempt, a concluded
+ * permit, a promoted ref — and a landing that lands nothing prepares none of
+ * them, so the arm is the brief's own `finalization_mode` read through the
+ * request's ticket. It is the narrowest widening that admits the new
+ * conclusion: the attempt the submission names must be absent as well as the
+ * attempt row, `IS NOT DISTINCT FROM` keeps every comparison two-valued so an
+ * unknown landing refuses rather than falls through, and no other outcome, kind
+ * or landing reaches it. The command the door builds omits the key rather than
+ * carrying it null, and `ticket_command_is_valid` admits it absent for the same
+ * reason.
+ *
  * A BRIEF THAT RECORDED NO LANDING RECORDED THE ONE THAT LANDS NOTHING, AND IS
  * REWRITTEN TO SAY SO. The two functions above are the only writers of
  * `draft_brief`, and every branch but the removed arm resolved a landing:
  * `coalesce` of the brief's mode, the repository's, and `Push` is never null.
  * So a null `finalization_mode` is exactly a draft whose authoring named the
  * finalizer that lands nothing, which is what `None` is the name for now.
+ *
+ * THE MAILBOX BOUND IS NARROWED BECAUSE A CANDIDATE NOW WEIGHS LESS. The
+ * widest observation one lead turn may be given is a sum over the parts, and a
+ * dispatch candidate that no longer carries a finalizer or a stage combinator
+ * shrinks it; the row that must hold one is re-rendered at the new figure, and
+ * the budget seeded from it re-seeded, exactly as 004 did when it last moved.
+ * A narrowed length check revalidates stored rows, so the guard above holds a
+ * `session_turn` arm at the new figure for the same reason 004 held one at its.
+ *
+ * A LANDING THAT LANDS NOTHING NAMES NO REFERENCE, AND THE RELATION IS WHAT
+ * SAYS SO. The reader brands a stored landing through the variant its mode
+ * selects, and the `None` variant has no target, so a row holding both is a
+ * row the brief read throws on. That narrowing needs no arm in the guard
+ * either: the check it replaces admitted no `None` at all, so the only rows at
+ * that mode are the ones the rewrite above just made, and a row whose mode was
+ * null held no target for `draft_brief_finalization_target_needs_a_mode` to
+ * admit it.
  */
+
+/**
+ * What this migration renders `sessionTurnInputCharsMax` as, in the mailbox
+ * bound it re-renders and in the observation budget it re-seeds.
+ */
+export const leadObservationTokensPerDecisionAt005 = 17_363_763;
 
 export const migration005: Migration = {
   version: 5,
@@ -73,6 +109,10 @@ export const migration005: Migration = {
            SELECT 'native_action'
             WHERE EXISTS (SELECT FROM public.native_action
                            WHERE state = 'Open' AND reason = 'DependencyRevoked')
+           UNION ALL
+           SELECT 'session_turn'
+            WHERE EXISTS (SELECT FROM public.session_turn
+                           WHERE length(input) > 17363763)
            UNION ALL
            SELECT 'journal_entry'
             WHERE EXISTS (
@@ -150,6 +190,137 @@ export const migration005: Migration = {
          END IF;
        END LOOP;
        RETURN true;
+     END $$;`,
+    `CREATE OR REPLACE FUNCTION public.ticket_command_is_valid(command jsonb) RETURNS boolean
+    LANGUAGE plpgsql IMMUTABLE
+    AS $$
+       BEGIN
+         IF command IS NULL OR jsonb_typeof(command) <> 'object' THEN
+           RETURN false;
+         END IF;
+         IF command->>'command' = 'SubmitFinalizationResult' THEN
+           RETURN jsonb_typeof(command->'version') = 'number'
+             AND command->>'version' = '1'
+             AND jsonb_typeof(command->'request') = 'string'
+             AND length(command->>'request') BETWEEN 1 AND 256
+             AND (command->'attempt' IS NULL
+               OR (jsonb_typeof(command->'attempt') = 'string'
+                 AND length(command->>'attempt') BETWEEN 1 AND 256))
+             AND command_integer(command->'requestGeneration')
+             AND (command->>'requestGeneration')::numeric >= 1
+             AND jsonb_typeof(command->'recoveryEpoch') = 'string'
+             AND length(command->>'recoveryEpoch') BETWEEN 1 AND 256
+             AND command->>'outcome' IN ('FinalizationSucceeded', 'FinalizationFailed');
+         END IF;
+         RETURN public_ticket_command_is_valid(command)
+           AND (command->>'command' <> 'Decide'
+             OR command->'event'->>'type' NOT IN ('FinalizationResult'));
+       END $$;`,
+    `CREATE OR REPLACE FUNCTION public.submit_finalization_result(in_tenant text, in_project text, in_request text, in_attempt text, in_outcome text, in_failure_kind text, in_request_generation bigint, in_recovery_epoch text, in_operation text, in_authority_subject text) RETURNS TABLE(result text, operation text, ordinal bigint)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+     DECLARE bound record; project_lifecycle text; project_generation bigint;
+       next_ordinal bigint; command_value jsonb; current_epoch text;
+       scoped_digest text; settled text;
+     BEGIN
+       IF in_outcome NOT IN ('FinalizationSucceeded', 'FinalizationFailed') THEN
+         RAISE EXCEPTION 'finalization outcome % is not one this boundary submits', in_outcome
+           USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       scoped_digest := encode(sha256(convert_to('finalization:' || in_request, 'UTF8')), 'hex');
+       SELECT f.ticket, f.state, f.request_generation, f.recovery_epoch, f.kind,
+              a.attempt, a.outcome AS attempt_outcome, a.failure_kind,
+              p.state AS permit_state, r.verdict, w.finalization_mode AS landing
+         INTO bound
+         FROM finalization_request f
+         LEFT JOIN draft_brief w
+           ON w.tenant = f.tenant AND w.project = f.project AND w.ticket = f.ticket
+         LEFT JOIN finalization_attempt a
+           ON a.tenant = f.tenant AND a.project = f.project
+              AND a.request = f.request AND a.attempt = in_attempt
+         LEFT JOIN commit_permit p
+           ON p.tenant = a.tenant AND p.project = a.project AND p.attempt = a.attempt
+         LEFT JOIN finalization_reconciliation r
+           ON r.tenant = p.tenant AND r.project = p.project AND r.permit = p.permit
+        WHERE f.tenant = in_tenant AND f.project = in_project AND f.request = in_request
+        FOR UPDATE OF f;
+       IF NOT FOUND THEN
+         RETURN QUERY SELECT 'UnknownRequest'::text, NULL::text, NULL::bigint; RETURN;
+       END IF;
+       SELECT o.operation INTO settled FROM operation o
+        WHERE o.tenant = in_tenant AND o.project = in_project
+          AND o.authority_kind = 'Finalizer' AND o.key_digest = scoped_digest;
+       IF FOUND THEN
+         RETURN QUERY SELECT 'AlreadySubmitted'::text, settled,
+           (SELECT d.ordinal FROM decision_input d
+             WHERE d.tenant = in_tenant AND d.project = in_project
+               AND d.input_kind = 'Operation' AND d.input_id = settled);
+         RETURN;
+       END IF;
+       SELECT e.epoch INTO current_epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1;
+       IF bound.state NOT IN ('Open', 'Registered')
+          OR bound.request_generation <> in_request_generation
+          OR bound.recovery_epoch IS DISTINCT FROM in_recovery_epoch
+          OR current_epoch IS DISTINCT FROM in_recovery_epoch
+          OR (bound.attempt IS NULL
+            AND NOT (in_attempt IS NULL
+              AND bound.landing IS NOT DISTINCT FROM 'None'))
+          OR NOT (
+            (in_outcome = 'FinalizationFailed'
+              AND bound.kind = 'RunFinalizer'
+              AND bound.attempt_outcome = 'Failed'
+              AND bound.failure_kind IS NOT DISTINCT FROM in_failure_kind)
+            OR (in_outcome = 'FinalizationSucceeded'
+              AND bound.kind = 'RunFinalizer'
+              AND in_failure_kind IS NULL
+              AND bound.attempt_outcome = 'Prepared'
+              AND bound.permit_state IS NOT DISTINCT FROM 'Concluded'
+              AND bound.verdict IS NOT DISTINCT FROM 'Promoted')
+            OR (in_outcome = 'FinalizationSucceeded'
+              AND bound.kind = 'RunFinalizer'
+              AND in_failure_kind IS NULL
+              AND in_attempt IS NULL
+              AND bound.landing IS NOT DISTINCT FROM 'None'))
+       THEN
+         RETURN QUERY SELECT 'BindingMismatch'::text, NULL::text, NULL::bigint; RETURN;
+       END IF;
+       SELECT p.lifecycle, p.lifecycle_generation
+         INTO STRICT project_lifecycle, project_generation
+         FROM project p WHERE p.tenant = in_tenant AND p.project = in_project FOR UPDATE;
+       IF project_lifecycle = 'Retention' THEN
+         RETURN QUERY SELECT 'NotAdmitted'::text, NULL::text, NULL::bigint; RETURN;
+       END IF;
+       command_value := jsonb_build_object('version', 1,
+         'command', 'SubmitFinalizationResult', 'request', in_request,
+         'requestGeneration', in_request_generation,
+         'recoveryEpoch', in_recovery_epoch, 'outcome', in_outcome)
+         || CASE WHEN in_attempt IS NULL THEN '{}'::jsonb
+                 ELSE jsonb_build_object('attempt', in_attempt) END;
+       IF ticket_command_is_valid(command_value) IS NOT TRUE THEN
+         RAISE EXCEPTION 'the finalization result this boundary built is not one the mailbox admits'
+           USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       UPDATE project p SET ingress_next = p.ingress_next + 1
+        WHERE p.tenant = in_tenant AND p.project = in_project
+        RETURNING p.ingress_next - 1 INTO next_ordinal;
+       INSERT INTO operation
+         (tenant, project, operation, authority_kind, authority_subject, admission,
+          key_version, key_digest, payload_digest, command, command_tag)
+       VALUES (in_tenant, in_project, in_operation, 'Finalizer',
+          in_authority_subject, 'CorrectnessReducing', 'finalizer-v1',
+          scoped_digest,
+          encode(sha256(convert_to(command_value::text, 'UTF8')), 'hex'),
+          command_value::text, 'FinalizationResult');
+       INSERT INTO decision_input
+         (tenant, project, ordinal, input_kind, input_id, base_priority, lifecycle_generation)
+       VALUES (in_tenant, in_project, next_ordinal, 'Operation', in_operation,
+          'Completion', project_generation);
+       INSERT INTO project_readiness (tenant, project, ready, generation)
+       VALUES (in_tenant, in_project, true, 1)
+       ON CONFLICT (tenant, project) DO UPDATE
+         SET ready = true, generation = project_readiness.generation + 1;
+       RETURN QUERY SELECT 'Submitted'::text, in_operation, next_ordinal;
      END $$;`,
     `CREATE OR REPLACE FUNCTION public.create_draft(in_tenant text, in_project text, in_configuration text, in_configuration_digest text, in_expected_head bigint, in_authoring text, in_title text, in_intent text, in_links text[], in_checks text[], in_branch text, in_finalization_mode text, in_finalization_target text, in_repository text, in_kind text, in_subject text) RETURNS TABLE(result text, ticket bigint, authoring_version bigint, state text)
     LANGUAGE plpgsql SECURITY DEFINER
@@ -261,5 +432,14 @@ export const migration005: Migration = {
     `UPDATE public.draft_brief
         SET finalization_mode = 'None'
       WHERE finalization_mode IS NULL`,
+    `ALTER TABLE public.session_turn
+       DROP CONSTRAINT session_turn_text_is_bounded,
+       ADD CONSTRAINT session_turn_text_is_bounded CHECK ((((length(input) >= 1) AND (length(input) <= 17363763)) AND (COALESCE(length(result), 0) <= 65536)))`,
+    `UPDATE public.selector_runtime_settings
+        SET controls = replace(controls, '"tokensPerDecision":17403663', '"tokensPerDecision":17363763')`,
+    `UPDATE public.selector_runtime_settings_history
+        SET controls = replace(controls, '"tokensPerDecision":17403663', '"tokensPerDecision":17363763')`,
+    `ALTER TABLE public.draft_brief
+       ADD CONSTRAINT draft_brief_finalization_none_names_no_reference CHECK (((finalization_mode <> 'None'::text) OR (finalization_target IS NULL)))`,
   ],
 };

@@ -28,7 +28,6 @@ export interface DispatchCandidate {
   readonly dependencies: readonly number[];
   readonly workFanout: number;
   readonly program: readonly Stage[];
-  readonly finalizer: "NoFinalizer" | "ManagedFinalizer";
   readonly configurationRevision: string;
   readonly configurationDigest: string;
   readonly configurationCanonical: string;
@@ -98,11 +97,7 @@ function canonicalCandidate(candidate: DispatchCandidate): unknown {
     ticketVersion: candidate.ticketVersion,
     dependencies: [...candidate.dependencies],
     workFanout: candidate.workFanout,
-    program: candidate.program.map((stage) => ({
-      fanout: stage.fanout,
-      combinator: stage.combinator,
-    })),
-    finalizer: candidate.finalizer,
+    program: candidate.program.map((stage) => ({ fanout: stage.fanout })),
     configurationRevision: candidate.configurationRevision,
     configurationDigest: candidate.configurationDigest,
     configurationCanonical: candidate.configurationCanonical,
@@ -153,7 +148,6 @@ export function deriveDispatchCandidates(
         dependencies: [...value.deps].sort((left, right) => left - right),
         workFanout: value.workFanout,
         program: value.program.map((stage) => ({ ...stage })),
-        finalizer: value.finalizer,
         ...contract,
       },
     ];

@@ -94,6 +94,18 @@ function seededEvent(type: string, ticket: number): string {
   });
 }
 
+/**
+ * One release entry naming the dependencies it was released on, which is the
+ * only place in the store those edges are written down.
+ */
+function seededRelease(ticket: number, deps: readonly number[]): string {
+  return JSON.stringify({
+    seq: ticket,
+    event: { type: "ReleaseTicket", value: { ticket, deps } },
+    rec: {},
+  });
+}
+
 /** One ticket of each terminal shape, and one parked with the wall it hit. */
 async function seedFilterProjection(partition: Partition) {
   await subject.harness.query(
@@ -219,6 +231,7 @@ test("project reads page by ticket identity and enforce a minimum sequence", asy
       phase: "Pending",
       sequence: 3,
       changedAt: seededEntryAt(3),
+      revokedDependencies: [],
     },
   ]);
 });
@@ -318,7 +331,7 @@ test("an earlier entry naming the ticket is not mistaken for its release", async
   );
 });
 
-test("project reads filter before paging and expose one ticket detail", async () => {
+test("project reads filter before paging", async () => {
   const partition = await filterProject();
   await seedFilterProjection(partition);
   const reads = postgresNativeReads(subject.pool);
@@ -329,7 +342,13 @@ test("project reads filter before paging and expose one ticket detail", async ()
   assert.equal(nonTerminal.result, "Found");
   if (nonTerminal.result !== "Found") return;
   assert.deepEqual(nonTerminal.project.tickets.map(dated), [
-    { ticket: 2, phase: "Pending", sequence: 2, changedAt: seededEntryAt(2) },
+    {
+      ticket: 2,
+      phase: "Pending",
+      sequence: 2,
+      changedAt: seededEntryAt(2),
+      revokedDependencies: [],
+    },
   ]);
   assert.equal(nonTerminal.project.nextAfter, 2);
   const parked = await reads.project(partition, {
@@ -347,6 +366,7 @@ test("project reads filter before paging and expose one ticket detail", async ()
       sequence: 4,
       reason: "ReworkBudgetExhausted",
       changedAt: seededEntryAt(4),
+      revokedDependencies: [],
     },
   ]);
   const terminal = await reads.project(partition, {
@@ -356,9 +376,27 @@ test("project reads filter before paging and expose one ticket detail", async ()
   assert.equal(terminal.result, "Found");
   if (terminal.result !== "Found") return;
   assert.deepEqual(terminal.project.tickets.map(dated), [
-    { ticket: 1, phase: "Done", sequence: 1, changedAt: seededEntryAt(1) },
-    { ticket: 3, phase: "Revoked", sequence: 3, changedAt: seededEntryAt(3) },
+    {
+      ticket: 1,
+      phase: "Done",
+      sequence: 1,
+      changedAt: seededEntryAt(1),
+      revokedDependencies: [],
+    },
+    {
+      ticket: 3,
+      phase: "Revoked",
+      sequence: 3,
+      changedAt: seededEntryAt(3),
+      revokedDependencies: [],
+    },
   ]);
+});
+
+test("a ticket read carries the detail its project page carries", async () => {
+  const partition = await filterProject();
+  await seedFilterProjection(partition);
+  const reads = postgresNativeReads(subject.pool);
   const own = await reads.ticket(partition, id(4));
   assert.ok(own !== undefined);
   assert.deepEqual(dated(own), {
@@ -367,6 +405,7 @@ test("project reads filter before paging and expose one ticket detail", async ()
     sequence: 4,
     reason: "ReworkBudgetExhausted",
     changedAt: seededEntryAt(4),
+    revokedDependencies: [],
   });
   assert.equal(await reads.ticket(partition, id(9)), undefined);
 });
@@ -410,7 +449,7 @@ test("an escalation offers what it recorded, not what its kind may ask for", asy
     {
       ticket: 1,
       sequence: 1,
-      reason: "DependencyRevoked",
+      reason: "ReworkBudgetExhausted",
       offers: ["Revoke"],
     },
   );
@@ -629,5 +668,67 @@ test("the fence the read publishes is the one acceptance admits", async () => {
   assert.equal(
     await offer("fence-current", listed.authorizingSequence),
     "Accepted",
+  );
+});
+
+/**
+ * What a revoke leaves behind: it transitions its own ticket and nothing else,
+ * so a ticket waiting on one stays Pending and the read is what says why. Only
+ * a Pending ticket names any, leaving Pending needing every dependency Done and
+ * `revocableIn` never admitting a Done ticket.
+ */
+test("a ticket behind a revoked dependency names it, and a Done one names none", async () => {
+  const partition = await postgresHarnessProject(
+    subject.harness.store,
+    "native-revoked-deps",
+  );
+  await subject.harness.query(
+    "UPDATE project SET head=4 WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
+  for (const [ticket, phase, deps] of [
+    [1, "Revoked", []],
+    [2, "Pending", [1, 3]],
+    [3, "Done", []],
+    [4, "Done", [3]],
+  ] as const) {
+    await seedEntry(
+      partition,
+      `native-revoked-deps-${String(ticket)}`,
+      ticket,
+      seededRelease(ticket, deps),
+    );
+    await subject.harness.query(
+      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+       VALUES ($1,$2,$3,$4,$3)`,
+      [partition.tenant, partition.project, ticket, phase],
+    );
+  }
+  const reads = postgresNativeReads(subject.pool);
+  assert.deepEqual(
+    (await reads.ticket(partition, id(2)))?.revokedDependencies,
+    [1],
+    "the revoked dependency is named, and the Done one beside it is not",
+  );
+  assert.deepEqual(
+    (await reads.ticket(partition, id(4)))?.revokedDependencies,
+    [],
+  );
+  const page = await reads.project(partition, { limit: 4 });
+  assert.equal(page.result, "Found");
+  assert.deepEqual(
+    page.result === "Found"
+      ? page.project.tickets.map((each) => [
+          each.ticket,
+          each.revokedDependencies,
+        ])
+      : undefined,
+    [
+      [1, []],
+      [2, [1]],
+      [3, []],
+      [4, []],
+    ],
+    "the page answers what the detail read does, ticket for ticket",
   );
 });

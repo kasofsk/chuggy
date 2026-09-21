@@ -13,8 +13,13 @@
  *
  * NO REF, COMMIT OR OTHER GIT IDENTIFIER REACHES `Core`. The target branch, the
  * base it was observed at and the candidate commit are the service's, recorded
- * on the immutable attempt beside them; `ManagedFinalizer` is nullary precisely
- * so that a repository cannot become part of the frozen ticket contract.
+ * on the immutable attempt beside them, so that a repository cannot become part
+ * of the frozen ticket contract.
+ *
+ * A LANDING THAT LANDS NOTHING CONCLUDES BEFORE THE BINDING IS CONSULTED. Such
+ * a finalization writes to no remote, so there is nothing to bind, prepare or
+ * promote, and holding it for an unbound repository would park a ticket over a
+ * binding its work never needed.
  *
  * EVERY REFUSAL IS A VALUE, as elsewhere in this layer. A non-zero git exit is
  * an outcome `GitPromotionPort` returns and a caller must handle; the one thing
@@ -826,6 +831,12 @@ export function finalizationNext(
   if (view.claim.state === "Fulfilled" || view.claim.state === "Invalidated") {
     return { decide: "Settled" };
   }
+  if (view.finalizationMode === "None") {
+    return {
+      decide: "Conclude",
+      conclusion: { outcome: "FinalizationSucceeded" },
+    };
+  }
   if (view.repository === undefined) {
     return { decide: "Hold", hold: "RepositoryUnbound" };
   }
@@ -1111,10 +1122,14 @@ export interface HeldPermit {
   readonly candidate: GitObjectId;
 }
 
-/** One conclusion offered to the one authenticated door, naming the attempt that produced it. */
+/**
+ * One conclusion offered to the one authenticated door, naming the attempt that
+ * produced it. A landing that lands nothing names none, because it reaches its
+ * conclusion without preparing a candidate for anything to attempt.
+ */
 export interface FinalizationOffer {
   readonly claim: FinalizationClaim;
-  readonly attempt: FinalizationAttemptId;
+  readonly attempt?: FinalizationAttemptId;
   readonly conclusion: FinalizationConclusion;
 }
 

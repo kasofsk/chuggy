@@ -12,7 +12,6 @@ import {
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import {
   defaultProgram,
-  finalizerChoices,
   stageChoices,
   workFanoutChoices,
   type Config,
@@ -371,25 +370,6 @@ export function configurationRevisionSummary(input: {
       };
 }
 
-/**
- * The pairing neither half of a draft can state about the other: landing is a
- * parameter of the managed finalizer, so a ticket authored to run none names
- * none. The wire refuses it on the composed body; this is the same refusal for
- * a caller that reached the store by any other door.
- */
-export function checkedDraftLanding(input: {
-  readonly authoring: ReleaseAuthoring;
-  readonly brief: DraftBrief;
-}): void {
-  if (
-    input.authoring.finalizer === "NoFinalizer" &&
-    input.brief.finalization !== undefined
-  )
-    throw new RangeError(
-      "draft authoring: a ticket with no finalizer lands nothing",
-    );
-}
-
 export function checkedConfigurationPageQuery(
   query: ConfigurationPageQuery,
 ): ConfigurationPageQuery {
@@ -473,13 +453,9 @@ export interface DraftInitialization {
   readonly projectSequence: number;
   readonly defaults: ReleaseAuthoring;
   readonly choices: {
-    readonly stages: readonly {
-      readonly fanout: number;
-      readonly combinator: "UnanimousPass" | "AnyPass";
-    }[];
+    readonly stages: readonly { readonly fanout: number }[];
     readonly programStagesMax: number;
     readonly workFanouts: readonly number[];
-    readonly finalizers: readonly ReleaseAuthoring["finalizer"][];
   };
   readonly dependencyCandidates: readonly TicketId[];
   readonly dependencyCandidatesTruncated: boolean;
@@ -519,18 +495,13 @@ export function draftInitializationPolicy(
       prog:
         configuration?.evaluations === undefined
           ? defaultProgram(config)
-          : configuration.evaluations.map(() => ({
-              fanout: 1,
-              combinator: "UnanimousPass" as const,
-            })),
+          : configuration.evaluations.map(() => ({ fanout: 1 })),
       workFanout: 1,
-      finalizer: "ManagedFinalizer",
     },
     choices: {
       stages: stageChoices(config),
       programStagesMax,
       workFanouts: workFanoutChoices(config),
-      finalizers: finalizerChoices,
     },
   };
 }

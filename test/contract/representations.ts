@@ -59,27 +59,27 @@ export const digest = "a".repeat(64);
 export const instant = asPublicInstant("2026-08-26T00:00:00Z");
 
 /**
- * The journal instants every ticket resource carries, distinct from each other
- * so a body that swapped them would not still pass.
+ * What every ticket resource carries whatever phase it is in: its two journal
+ * instants, distinct from each other so a body that swapped them would not
+ * still pass, and the revoked dependencies only a blocked ticket has any of.
  */
-export const ticketInstants = {
+export const ticketCarried = {
   releasedAt: instant,
   changedAt: asPublicInstant("2026-08-27T00:00:00Z"),
+  revokedDependencies: [],
 };
 
 export const authoring = {
   deps: new Set([asTicketId(1)]),
-  prog: [{ fanout: 1, combinator: "UnanimousPass" }],
+  prog: [{ fanout: 1 }],
   workFanout: 1,
-  finalizer: "ManagedFinalizer",
 } as const;
 
 /** The same authoring as a request body writes it. */
 export const authoringWireBody = {
   dependencies: [1],
-  program: [{ fanout: 1, combinator: "UnanimousPass" }],
+  program: [{ fanout: 1 }],
   workFanout: 1,
-  finalizer: "ManagedFinalizer",
 };
 
 /**
@@ -190,8 +190,7 @@ export const versionedDispatchViewPage: DispatchViewPage = {
       ticketVersion: 2,
       dependencies: [],
       workFanout: 1,
-      program: [{ fanout: 1, combinator: "UnanimousPass" }],
-      finalizer: "ManagedFinalizer",
+      program: [{ fanout: 1 }],
       configurationRevision: revision,
       configurationDigest: digest,
       configurationCanonical: "{}",

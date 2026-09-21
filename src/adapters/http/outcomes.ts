@@ -700,7 +700,6 @@ function draftBody(draft: DraftResource): unknown {
       dependencies: [...draft.authoring.deps],
       program: draft.authoring.prog,
       workFanout: draft.authoring.workFanout,
-      finalizer: draft.authoring.finalizer,
     },
     ...(draft.brief === undefined ? {} : { brief: briefBody(draft.brief) }),
   };
@@ -1281,7 +1280,6 @@ export function draftInitializationResponse(
       dependencies: [...value.defaults.deps],
       program: value.defaults.prog,
       workFanout: value.defaults.workFanout,
-      finalizer: value.defaults.finalizer,
     },
     choices: value.choices,
     dependencyCandidates: value.dependencyCandidates,

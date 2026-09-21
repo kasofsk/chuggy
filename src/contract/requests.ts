@@ -152,45 +152,20 @@ export const projectRepositoryRetirementSchema = z.strictObject({
   repository: bodyIdentitySchema,
 });
 
-/**
- * Whether a ticket's authoring and its brief agree about landing. Landing is a
- * parameter of the managed finalizer, so a ticket authored to run none names
- * none: the pairing is stated here rather than on either schema, neither of
- * which can see the other.
- */
-function draftLandingIsAuthored(value: {
-  readonly authoring: { readonly finalizer: string };
-  readonly brief: { readonly finalization?: unknown };
-}): boolean {
-  return (
-    value.authoring.finalizer !== "NoFinalizer" ||
-    value.brief.finalization === undefined
-  );
-}
+export const draftCreationSchema = z.strictObject({
+  configurationRevision: bodyIdentitySchema,
+  configurationDigest: digestSchema,
+  expectedProjectSequence: countSchema,
+  authoring: authoringSchema,
+  brief: briefSchema,
+});
 
-const draftLandingIsAuthoredIssue = {
-  error: "a ticket with no finalizer lands nothing",
-  path: ["brief", "finalization"],
-};
-
-export const draftCreationSchema = z
-  .strictObject({
-    configurationRevision: bodyIdentitySchema,
-    configurationDigest: digestSchema,
-    expectedProjectSequence: countSchema,
-    authoring: authoringSchema,
-    brief: briefSchema,
-  })
-  .refine(draftLandingIsAuthored, draftLandingIsAuthoredIssue);
-
-export const draftRevisionSchema = z
-  .strictObject({
-    expectedVersion: countSchema,
-    configurationRevision: bodyIdentitySchema,
-    authoring: authoringSchema,
-    brief: briefSchema,
-  })
-  .refine(draftLandingIsAuthored, draftLandingIsAuthoredIssue);
+export const draftRevisionSchema = z.strictObject({
+  expectedVersion: countSchema,
+  configurationRevision: bodyIdentitySchema,
+  authoring: authoringSchema,
+  brief: briefSchema,
+});
 
 export const submissionSchema = z.strictObject({
   operation: bodyIdentitySchema,

@@ -17,17 +17,13 @@ import {
   nativeHttpDraftStagesMax,
   ticketNumberSchema,
 } from "./http.ts";
-import { evaluationCombinators, finalizers } from "./rosters.ts";
 
 /** The two page bounds an authored draft is held to, surfaced where it is parsed. */
 export { nativeHttpDraftDependenciesMax, nativeHttpDraftStagesMax };
 
 export const programStageSchema = z.strictObject({
   fanout: ticketNumberSchema,
-  combinator: z.enum(evaluationCombinators),
 });
-
-export const finalizerSchema = z.enum(finalizers);
 
 export const authoringSchema = z.strictObject({
   dependencies: z
@@ -36,7 +32,6 @@ export const authoringSchema = z.strictObject({
     .refine((values) => new Set(values).size === values.length),
   program: z.array(programStageSchema).max(nativeHttpDraftStagesMax),
   workFanout: ticketNumberSchema,
-  finalizer: finalizerSchema,
 });
 
 export type ReleaseAuthoringBody = z.infer<typeof authoringSchema>;

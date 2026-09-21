@@ -45,9 +45,11 @@ export interface DraftBriefRow extends DraftBriefFinalizationRow {
 }
 
 /**
- * The finalization a row states, which is none exactly where the mode column is
- * null: the door resolves what a brief left unsaid and stores what it resolved,
- * so the column is empty only for a ticket that lands nothing.
+ * The finalization a row states. The door resolves a landing for every draft
+ * and stores what it resolved, and the landing that lands nothing is one of
+ * them, so a null mode is a row no writer in this tree can produce — read as
+ * no finalization rather than defended against, because the reads below are
+ * total over what the column admits.
  */
 export function draftBriefFinalizationOf(
   row: DraftBriefFinalizationRow,
@@ -63,8 +65,8 @@ export function draftBriefFinalizationOf(
 
 /**
  * What release reads of one row's brief, or none where the row joined no brief
- * at all. The miss is read off `intent`, which every brief row carries: a null
- * mode is a ticket that lands nothing and is a brief like any other.
+ * at all. The miss is read off `intent`, which every brief row carries, rather
+ * than off the mode, which says how a brief lands and not whether there is one.
  */
 export function draftReleaseBriefOf(
   row: DraftBriefFinalizationRow & {

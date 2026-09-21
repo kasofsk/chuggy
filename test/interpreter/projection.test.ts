@@ -33,11 +33,7 @@ import {
 import { genesis, replayCore, type Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 import { ticketAt } from "../../src/domain/core.ts";
-import type {
-  Core,
-  Reason,
-  Ticket,
-} from "../../src/domain/generated/modelTypes.ts";
+import type { Core, Ticket } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import {
   projectionChanges,
@@ -150,28 +146,6 @@ test("a release is a change although it transitions nothing", () => {
       resumeAt: "NoResume",
     },
   ]);
-});
-
-test("dependency eligibility distinguishes the escalated reasons", () => {
-  const released = execDecisionEvent(
-    genesis,
-    releaseTicketEvent(id(1), plainAuthoring),
-  ).post;
-  const ticket = released.tickets.get(id(1));
-  assert.ok(ticket !== undefined);
-  const escalated = (reason: Reason): Core => ({
-    tickets: new Map([
-      [id(1), { ...ticket, phase: "Escalated" as const, reason }],
-    ]),
-  });
-  assert.equal(
-    projectionOf(escalated("DependencyRevoked"))[0]?.dependable,
-    false,
-  );
-  assert.equal(
-    projectionOf(escalated("ReworkBudgetExhausted"))[0]?.dependable,
-    true,
-  );
 });
 
 /** The one outstanding task of a single-width ticket, which is what a completion names. */

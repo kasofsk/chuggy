@@ -2743,3 +2743,33 @@ test("a sink that fails at every observation cannot fail the pass it observed", 
   assert.deepEqual(failing, silent);
   assert.ok(thrown.length > 0, "no observation was attempted");
 });
+
+/**
+ * A landing that lands nothing concludes where it is read: the pass asks the
+ * brief, sees the mode and submits the one result. The recorders are what say
+ * no port was reached, because a decision asserted alone would not show a
+ * gather that observed a target or read an artifact before deciding.
+ */
+test("a pass over a ticket that lands nothing concludes it and asks no remote", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = recordingGit();
+  const artifacts = recordingArtifacts();
+  const report = await passOver({
+    ...serviceOf(store, git, {}, artifacts),
+    ticketBriefs: briefsOf(undefined, undefined, "None"),
+  });
+  assert.deepEqual(store.submitted, ["request-one"]);
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+  assert.equal(report.conclusions, 1);
+  assert.equal(report.holds, 0);
+  assert.equal(report.preparations, 0);
+  assert.equal(report.promotions, 0);
+  assert.deepEqual(store.attempts, []);
+  assert.deepEqual(store.grants, []);
+  assert.deepEqual(store.opened, []);
+  assert.deepEqual(store.asks, []);
+  assert.deepEqual(git.observations, []);
+  assert.deepEqual(git.preparations, []);
+  assert.deepEqual(git.promotions, []);
+  assert.deepEqual(artifacts.requests, []);
+});

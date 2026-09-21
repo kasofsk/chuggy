@@ -42,9 +42,9 @@
  * finalization's `target` is the reference the finalizer promotes onto. A
  * brief naming no finalization takes the landing its repository is bound
  * under, and `briefFinalizationDefault` where it names no repository either,
- * so a ticket that named only a branch works and lands there. Landing is a
- * parameter of the managed finalizer, so a ticket authored to run none
- * resolves nothing and stores no landing.
+ * so a ticket that named only a branch works and lands there. A ticket whose
+ * work is not to be landed at all says so as a landing like any other, and
+ * every ticket therefore resolves one.
  *
  * A PULL REQUEST NAMES BOTH SIDES AND THEY ARE NOT THE SAME SIDE. The head is
  * the branch the work happened on; the base is the reference the finalization
@@ -114,14 +114,33 @@ export interface BriefPullRequestMergeFinalization {
   readonly target?: GitRefName;
 }
 
+/**
+ * Landing nothing: the finalization reports success the moment it is claimed,
+ * writes to no remote and opens no proposal. It names no reference, a landing
+ * that advances nothing having nothing to advance onto.
+ */
+export interface BriefNoFinalization {
+  readonly mode: Extract<BriefFinalizationMode, "None">;
+}
+
 /** How and where one ticket's work is landed, which is the finalizer's half of a brief. */
 export type BriefFinalization =
   | BriefPushFinalization
   | BriefPullRequestFinalization
-  | BriefPullRequestMergeFinalization;
+  | BriefPullRequestMergeFinalization
+  | BriefNoFinalization;
 
 /** What a brief naming neither a finalization nor a repository to take one from lands by. */
 export const briefFinalizationDefault: BriefFinalization = { mode: "Push" };
+
+/** The reference a landing names, which a landing that advances nothing does not have. */
+export function briefFinalizationTarget(
+  finalization: BriefFinalization | undefined,
+): GitRefName | undefined {
+  return finalization === undefined || finalization.mode === "None"
+    ? undefined
+    : finalization.target;
+}
 
 /** One ticket's brief, as everything but the wire holds it. */
 export interface DraftBrief {
@@ -243,6 +262,13 @@ export function asBriefFinalization(value: {
     throw new RangeError(
       "ticket finalization: the mode is not one this tree lands under",
     );
+  if (mode === "None") {
+    if (value.target !== undefined)
+      throw new RangeError(
+        "ticket finalization: a landing that lands nothing lands on no reference",
+      );
+    return { mode };
+  }
   const target =
     value.target === undefined ? undefined : asBriefBranch(value.target);
   return { mode, ...(target === undefined ? {} : { target }) };

@@ -145,7 +145,7 @@ import {
   selectorDefaults,
   selectorProjectSettings,
   revision,
-  ticketInstants,
+  ticketCarried,
   versionedConfiguration,
   versionedDispatchViewPage,
   versionedDraft,
@@ -163,7 +163,7 @@ test("a project read and a ticket read parse as the contract names them", () => 
           ticket: asTicketId(3),
           phase: "Working",
           sequence: 9,
-          ...ticketInstants,
+          ...ticketCarried,
         },
       ],
       nextAfter: asTicketId(4),
@@ -176,8 +176,9 @@ test("a project read and a ticket read parse as the contract names them", () => 
     ticket: 3,
     phase: "Working",
     sequence: 9,
-    releasedAt: ticketInstants.releasedAt,
-    changedAt: ticketInstants.changedAt,
+    releasedAt: ticketCarried.releasedAt,
+    changedAt: ticketCarried.changedAt,
+    revokedDependencies: [],
   });
   assert.equal(
     ticketResponseSchema.parse(
@@ -185,7 +186,7 @@ test("a project read and a ticket read parse as the contract names them", () => 
         ticket: asTicketId(3),
         phase: "Done",
         sequence: 4,
-        ...ticketInstants,
+        ...ticketCarried,
       }).body,
     ).phase,
     "Done",
@@ -198,18 +199,19 @@ test("a ticket is always dated by its change and may be undated by its release",
       ticket: asTicketId(3),
       phase: "Done",
       sequence: 4,
-      ...ticketInstants,
+      ...ticketCarried,
     }).body,
   );
-  assert.equal(parsed.releasedAt, ticketInstants.releasedAt);
-  assert.equal(parsed.changedAt, ticketInstants.changedAt);
+  assert.equal(parsed.releasedAt, ticketCarried.releasedAt);
+  assert.equal(parsed.changedAt, ticketCarried.changedAt);
   assert.equal(
     ticketResponseSchema.parse(
       ticketResponse({
         ticket: asTicketId(3),
         phase: "Done",
         sequence: 4,
-        changedAt: ticketInstants.changedAt,
+        changedAt: ticketCarried.changedAt,
+        revokedDependencies: [],
       }).body,
     ).releasedAt,
     undefined,
@@ -219,9 +221,34 @@ test("a ticket is always dated by its change and may be undated by its release",
       ticket: 3,
       phase: "Done",
       sequence: 4,
-      releasedAt: ticketInstants.releasedAt,
+      releasedAt: ticketCarried.releasedAt,
     }),
   );
+});
+
+/**
+ * What a ticket read puts on the wire, key for key. The body is the resource
+ * itself, so comparing the fullest one against the schema's own shape is what
+ * catches a field the interpreter added and the contract does not name, or one
+ * the contract names that no read carries.
+ */
+test("a ticket read emits exactly the keys the contract names", () => {
+  const fullest = ticketResponse({
+    ticket: asTicketId(3),
+    title: "The ticket the contract names",
+    phase: "Escalated",
+    sequence: 9,
+    reason: "ExecutionPolicyDenied",
+    resumeAt: "ResumeWorking",
+    brief,
+    runTotals,
+    ...ticketCarried,
+  }).body as Record<string, unknown>;
+  assert.deepEqual(
+    Object.keys(fullest).sort(),
+    Object.keys(ticketResponseSchema.shape).sort(),
+  );
+  assert.ok(ticketResponseSchema.safeParse(fullest).success);
 });
 
 test("an escalated ticket names its wall and an unparked one omits it", () => {
@@ -231,7 +258,7 @@ test("an escalated ticket names its wall and an unparked one omits it", () => {
       phase: "Escalated",
       sequence: 9,
       reason: "ExecutionPolicyDenied",
-      ...ticketInstants,
+      ...ticketCarried,
     }).body,
   );
   assert.equal(escalated.reason, "ExecutionPolicyDenied");
@@ -241,7 +268,7 @@ test("an escalated ticket names its wall and an unparked one omits it", () => {
         ticket: asTicketId(3),
         phase: "Working",
         sequence: 9,
-        ...ticketInstants,
+        ...ticketCarried,
       }).body,
     ).reason,
     undefined,
@@ -252,7 +279,7 @@ test("an escalated ticket names its wall and an unparked one omits it", () => {
       phase: "Escalated",
       sequence: 9,
       reason: "NoReason",
-      ...ticketInstants,
+      ...ticketCarried,
     }),
   );
 });
@@ -265,7 +292,7 @@ test("a parked ticket names where a resume re-enters it, and no other does", () 
       sequence: 9,
       reason: "ReworkBudgetExhausted",
       resumeAt: "ResumeEvaluating",
-      ...ticketInstants,
+      ...ticketCarried,
     }).body,
   );
   assert.equal(parked.resumeAt, "ResumeEvaluating");
@@ -275,7 +302,7 @@ test("a parked ticket names where a resume re-enters it, and no other does", () 
         ticket: asTicketId(3),
         phase: "Working",
         sequence: 9,
-        ...ticketInstants,
+        ...ticketCarried,
       }).body,
     ).resumeAt,
     undefined,
@@ -905,10 +932,9 @@ function initializationBody(): Record<string, unknown> {
         projectSequence: 9,
         defaults: authoring,
         choices: {
-          stages: [{ fanout: 1, combinator: "UnanimousPass" }],
+          stages: [{ fanout: 1 }],
           programStagesMax: 4,
           workFanouts: [1, 2],
-          finalizers: [authoring.finalizer],
         },
         dependencyCandidates: [asTicketId(1), asTicketId(2)],
         dependencyCandidatesTruncated: false,
@@ -947,9 +973,7 @@ test("a hand-assembled read drops an unknown field at every depth", () => {
   const parsed = draftResponseSchema.parse(later);
   assert.equal(parsed.state, "Draft");
   assert.deepEqual(parsed.brief?.finalization, { mode: "Push" });
-  assert.deepEqual(parsed.authoring.program, [
-    { fanout: 1, combinator: "UnanimousPass" },
-  ]);
+  assert.deepEqual(parsed.authoring.program, [{ fanout: 1 }]);
   assert.deepEqual(parsed.partition, { tenant: "acme", project: "atlas" });
   assert.equal(Object.hasOwn(parsed.authoring, "links"), false);
   assert.equal(Object.hasOwn(parsed, "intent"), false);
@@ -1037,7 +1061,7 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
       phase: "Working",
       sequence: 9,
       brief,
-      ...ticketInstants,
+      ...ticketCarried,
     }).body,
   );
   assert.deepEqual(ticket.brief?.links, ["https://example.test/issues/340"]);
@@ -1052,7 +1076,7 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
         ticket: asTicketId(3),
         phase: "Working",
         sequence: 9,
-        ...ticketInstants,
+        ...ticketCarried,
       }).body,
     ).brief,
     undefined,
@@ -1121,7 +1145,7 @@ test("a ticket read carries the rollup and an untouched ticket omits it", () => 
       phase: "Done",
       sequence: 4,
       runTotals,
-      ...ticketInstants,
+      ...ticketCarried,
     }).body,
   );
   assert.equal(rolled.runTotals?.turns, runTotals.turns);
@@ -1131,7 +1155,7 @@ test("a ticket read carries the rollup and an untouched ticket omits it", () => 
         ticket: asTicketId(3),
         phase: "Done",
         sequence: 4,
-        ...ticketInstants,
+        ...ticketCarried,
       }).body,
     ).runTotals,
     undefined,

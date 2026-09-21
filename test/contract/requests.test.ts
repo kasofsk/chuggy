@@ -60,14 +60,13 @@ test("a landing write names the repository, the landing read and the one wanted"
 });
 
 /**
- * The same authoring and brief as each door writes them, so a pairing is judged
+ * The same authoring and brief as each door writes them, so a landing is judged
  * on both bodies that carry one.
  */
 function draftBodiesBySchema(
-  finalizer: string,
   finalization: { readonly mode: string; readonly target?: string } | undefined,
 ): readonly (readonly [z.ZodType, Record<string, unknown>])[] {
-  const authoring = { ...authoringWireBody, finalizer };
+  const authoring = authoringWireBody;
   const brief = {
     intent: "Do it.",
     links: [],
@@ -97,30 +96,22 @@ function draftBodiesBySchema(
   ];
 }
 
-test("a ticket authored with no finalizer names no landing", () => {
-  for (const [schema, body] of draftBodiesBySchema("NoFinalizer", {
-    mode: "PullRequest",
-    target: "refs/heads/main",
-  })) {
-    const refused = schema.safeParse(body);
-    assert.equal(refused.success, false);
-    assert.deepEqual(
-      refused.error?.issues.map((issue) => [issue.path, issue.message]),
-      [[["brief", "finalization"], "a ticket with no finalizer lands nothing"]],
-    );
-  }
-});
-
-test("every other pairing of a finalizer and a landing is accepted", () => {
-  for (const [finalizer, finalization] of [
-    ["NoFinalizer", undefined],
-    ["ManagedFinalizer", { mode: "PullRequest", target: "refs/heads/main" }],
-    ["ManagedFinalizer", undefined],
-  ] as const)
-    for (const [schema, body] of draftBodiesBySchema(finalizer, finalization))
+/**
+ * Both doors take every landing the roster holds, because nothing in an
+ * authoring answers where its ticket lands any more.
+ */
+test("a draft body takes any landing its brief names, and none at all", () => {
+  for (const finalization of [
+    undefined,
+    { mode: "None" },
+    { mode: "Push" },
+    { mode: "PullRequest", target: "refs/heads/main" },
+    { mode: "PullRequestMerge", target: "refs/heads/main" },
+  ])
+    for (const [schema, body] of draftBodiesBySchema(finalization))
       assert.equal(
         schema.safeParse(body).success,
         true,
-        `${finalizer} with ${JSON.stringify(finalization)} is accepted`,
+        `a brief landing ${JSON.stringify(finalization)} is accepted`,
       );
 });

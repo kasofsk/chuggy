@@ -53,7 +53,7 @@ async function mailbox(
 /** Calls the submission door as the finalizer and answers the tag it returned. */
 async function submit(
   project: FinalizerProject,
-  attempt: string,
+  attempt: string | null,
   outcome: string,
   failureKind: string | null,
   generation = project.requestGeneration,
@@ -136,6 +136,40 @@ test("a succeeded result the durable rows support is submitted exactly once", as
     "AlreadySubmitted",
   );
   assert.deepEqual(await mailbox(project), after);
+});
+
+/**
+ * A landing that lands nothing prepares nothing, so the evidence every other
+ * success is read off — a prepared attempt, a spent permit, a promoted ref —
+ * does not exist for one. The door admits the conclusion on the brief's own
+ * mode and on nothing else: not before the brief says so, not for the failure
+ * a landing reaches, and not with an attempt named.
+ */
+test("a request whose brief lands nothing concludes on no attempt at all", async () => {
+  const project = await finalizerProject(rig, "submit-landless");
+  await finalizerClaim(rig, project, finalizerIdentity("owner-landless"));
+  const before = await mailbox(project);
+  assert.equal(
+    await submit(project, null, "FinalizationSucceeded", null),
+    "BindingMismatch",
+    "a brief that lands somewhere concludes on the attempt it landed",
+  );
+  assert.deepEqual(await mailbox(project), before);
+  await rig.harness.query(
+    `UPDATE draft_brief SET finalization_mode='None', finalization_target=NULL
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  );
+  assert.equal(
+    await submit(project, null, "FinalizationFailed", "MergeConflict"),
+    "BindingMismatch",
+    "a landing that lands nothing has no failure to report",
+  );
+  assert.deepEqual(await mailbox(project), before);
+  assert.equal(
+    await submit(project, null, "FinalizationSucceeded", null),
+    "Submitted",
+  );
 });
 
 test("a failed result is submitted only against the attempt and kind that failed", async () => {

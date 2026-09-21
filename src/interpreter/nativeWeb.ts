@@ -71,7 +71,6 @@ import type {
 } from "./authoring.ts";
 import {
   checkedConfigurationPageQuery,
-  checkedDraftLanding,
   checkedDraftPageQuery,
   draftInitializationPolicy,
   releaseConfigurationReadiness,
@@ -266,6 +265,14 @@ export interface TicketResource {
   readonly releasedAt?: PublicInstant;
   readonly reason?: EscalationReason;
   readonly resumeAt?: ResumePoint;
+  /**
+   * Which of this ticket's own dependencies their authors revoked, ascending.
+   * Nothing ever completes one, so a Pending ticket listing any is waiting on
+   * a dependency that will never be Done; every other ticket lists none,
+   * because a dependency is Done before its dependent leaves Pending and a
+   * Done ticket is not revocable.
+   */
+  readonly revokedDependencies: readonly TicketId[];
   readonly brief?: DraftBrief;
   readonly runTotals?: RunTotals;
 }
@@ -845,24 +852,20 @@ function nativeAuthoringMethods(
         input.partition,
         (authority) => authoring.createConfiguration({ ...input, authority }),
       ),
-    createDraft: async (principal, input) => {
-      checkedDraftLanding(input);
-      return authorizedProjectMutation(
+    createDraft: (principal, input) =>
+      authorizedProjectMutation(
         access,
         principal,
         input.partition,
         (authority) => authoring.createDraft({ ...input, authority }),
-      );
-    },
-    reviseDraft: async (principal, input) => {
-      checkedDraftLanding(input);
-      return authorizedProjectMutation(
+      ),
+    reviseDraft: (principal, input) =>
+      authorizedProjectMutation(
         access,
         principal,
         input.partition,
         (authority) => authoring.reviseDraft({ ...input, authority }),
-      );
-    },
+      ),
     deleteDraft: (principal, input) =>
       authorizedProjectMutation(
         access,

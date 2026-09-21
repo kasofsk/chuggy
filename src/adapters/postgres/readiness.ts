@@ -195,7 +195,8 @@ interface FinalizationAttemptRow {
 /**
  * The immutable evidence a failed result concluded on, read from the attempt
  * the submission pinned rather than from the request's latest one. A succeeded
- * result spawns no work, so nothing is gathered for one.
+ * result spawns no work, so nothing is gathered for one — which is also the
+ * only submission that names no attempt, a failure always having prepared one.
  */
 async function finalizationEvidenceOf(
   pool: pg.Pool,
@@ -203,17 +204,22 @@ async function finalizationEvidenceOf(
   command: FinalizationSubmission,
 ): Promise<FinalizationEvidence | undefined> {
   if (command.outcome !== "FinalizationFailed") return undefined;
+  const attempted = command.attempt;
+  if (attempted === undefined)
+    throw new Error(
+      `finalization request ${command.request} failed on no attempt`,
+    );
   const found = await pool.query<FinalizationAttemptRow>(
     sql`SELECT a.attempt_digest, a.target_commit, a.conflict_manifest,
             a.conflict_manifest_digest, a.input_bundle
        FROM finalization_attempt a
       WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
-        AND a.attempt=${command.attempt} AND a.request=${command.request}`,
+        AND a.attempt=${attempted} AND a.request=${command.request}`,
   );
   const attempt = found.rows[0];
   if (attempt === undefined)
     throw new Error(
-      `finalization attempt ${command.attempt} does not answer this request`,
+      `finalization attempt ${attempted} does not answer this request`,
     );
   const pinned = await pool.query<{
     reference_kind: string;
@@ -227,7 +233,7 @@ async function finalizationEvidenceOf(
       ORDER BY ordinal LIMIT ${inputBundleReferencesMax}`,
   );
   return {
-    attempt: asFinalizationAttemptId(command.attempt),
+    attempt: asFinalizationAttemptId(attempted),
     attemptDigest: attempt.attempt_digest,
     targetCommit: asGitObjectId(attempt.target_commit),
     ...(attempt.conflict_manifest === null
@@ -369,7 +375,9 @@ async function operationSource(
     throw new Error(`operation ${row.input_id} has no command`);
   const parsed = parseStoredTicketCommand(row.command);
   if (parsed.parsed === "Refused")
-    throw new Error(`stored operation is unreadable: ${parsed.why}`);
+    throw new Error(
+      `stored operation ${row.input_id} is unreadable: ${parsed.why}`,
+    );
   const command = parsed.value;
   if (command.command === "SubmitFinalizationResult") {
     return finalizationRequestSource(pool, partition, row.input_id, command);

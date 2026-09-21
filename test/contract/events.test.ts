@@ -37,7 +37,7 @@ import {
   draft as draftResource,
   operation,
   partition,
-  ticketInstants,
+  ticketCarried,
   versionedConfiguration,
 } from "./representations.ts";
 
@@ -45,7 +45,7 @@ const ticketRepresentation = ticketResponse({
   ticket: asTicketId(3),
   phase: "Working",
   sequence: 9,
-  ...ticketInstants,
+  ...ticketCarried,
 }).body;
 
 /** One ticket's refusal ledger with the standing the latest entry induces. */

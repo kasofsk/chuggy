@@ -121,6 +121,7 @@ function servedWeb(
         sequence: 4,
         releasedAt: asPublicInstant("2026-01-01T00:00:00Z"),
         changedAt: asPublicInstant("2026-01-01T00:00:04Z"),
+        revokedDependencies: [],
       }),
     execution: () => Promise.resolve(undefined),
     executions: notFound,
@@ -361,6 +362,7 @@ test("a live change arrives as the kind's own GET representation", async () => {
       sequence: 4,
       releasedAt: "2026-01-01T00:00:00Z",
       changedAt: "2026-01-01T00:00:04Z",
+      revokedDependencies: [],
     },
   );
 });

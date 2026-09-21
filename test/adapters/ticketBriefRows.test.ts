@@ -8,8 +8,10 @@
  * own default as the brief's silence, and the finalizer would then land by the
  * tree's default instead of the project's.
  *
- * A NULL MODE IS THE ONE LANDING THERE IS NONE OF, and it means one thing: a
- * ticket authored to run no finalizer, for which the door resolved nothing.
+ * A NULL MODE IS A ROW NO WRITER IN THIS TREE MAKES. The door resolves a
+ * landing for every draft, and the one that lands nothing is a landing like
+ * the rest, so the null is read back as no landing rather than defended
+ * against.
  */
 
 import assert from "node:assert/strict";
@@ -43,9 +45,16 @@ test("a stored landing reads back as itself, target and all", () => {
     }),
     { mode: "PullRequest", target: "refs/heads/main" },
   );
+  assert.deepEqual(
+    draftBriefFinalizationOf({
+      finalization_mode: "None",
+      finalization_target: null,
+    }),
+    { mode: "None" },
+  );
 });
 
-test("a ticket that lands nothing has no landing to read", () => {
+test("a null mode is a row that states no landing at all", () => {
   assert.equal(
     draftBriefFinalizationOf({
       finalization_mode: null,
@@ -68,10 +77,18 @@ test("a mode this tree does not land under is refused rather than read", () => {
     assert.equal(
       draftBriefFinalizationOf({
         finalization_mode: mode,
-        finalization_target: "refs/heads/main",
+        finalization_target: mode === "None" ? null : "refs/heads/main",
       })?.mode,
       mode,
     );
+  assert.throws(
+    () =>
+      draftBriefFinalizationOf({
+        finalization_mode: "None",
+        finalization_target: "refs/heads/main",
+      }),
+    /lands on no reference/u,
+  );
 });
 
 /**

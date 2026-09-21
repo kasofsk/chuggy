@@ -32,7 +32,7 @@ import {
   settled,
   otherStreamPrincipal,
   streamPrincipal,
-  streamTicketInstants,
+  streamTicketCarried,
   type FakeDoorbell,
   type FakeLog,
   type FakeReader,
@@ -116,7 +116,7 @@ test("a fresh stream is told it is ready and then hears live changes", async () 
       ticket: 7,
       phase: "Working",
       sequence: 1,
-      ...streamTicketInstants,
+      ...streamTicketCarried,
     },
   });
 });
@@ -434,7 +434,7 @@ test("one stream losing its access tombstones nothing for the others", async () 
       ticket: 7,
       phase: "Working",
       sequence: 1,
-      ...streamTicketInstants,
+      ...streamTicketCarried,
     },
   });
 });

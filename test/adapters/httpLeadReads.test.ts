@@ -238,6 +238,7 @@ function readStore(ticketVersion: number): NativeReadStore {
         phase: "Working",
         sequence: ticketVersion,
         changedAt: asPublicInstant("2026-09-02T00:00:00Z"),
+        revokedDependencies: [],
       }),
     ticketNativeActions: () => Promise.resolve([]),
     nativeActions: () => Promise.resolve({ actions: [] }),

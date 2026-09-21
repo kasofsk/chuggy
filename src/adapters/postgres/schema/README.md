@@ -195,9 +195,9 @@ public grammar keeps the event out of a `Decide` the way it has always kept
 `ReleaseTicket` out, and `submit_finalization_result` writes its own envelope
 naming the request, its generation and the epoch instead — so the event a
 writer journals is one it derives from durable rows rather than one anybody
-supplied. `public_ticket_command_is_valid` is the grammar migration 5
-wrote, unchanged and renamed, and the validator of that name is now the
-wrapper around it that both rules live in.
+supplied. `public_ticket_command_is_valid` carries that public grammar under
+its own name, and the validator of that name is now the wrapper around it
+that both rules live in.
 
 WHICH LOCKS THIS FILE'S BODIES TAKE. `submit_finalization_result` takes two —
 the finalization request it is answering, then the project whose mailbox it

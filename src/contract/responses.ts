@@ -52,7 +52,6 @@ import {
 } from "./http.ts";
 import {
   authoringResponseSchema,
-  finalizerSchema,
   programStageResponseSchema,
   programStageSchema,
 } from "./authoring.ts";
@@ -221,6 +220,13 @@ export const ticketResponseSchema = z.object({
   releasedAt: instantSchema.optional(),
   reason: z.enum(escalationReasons).optional(),
   resumeAt: z.enum(resumePoints).optional(),
+  /**
+   * Which of this ticket's dependencies their own authors revoked, ascending.
+   * It is empty for every ticket but a Pending one waiting on such a
+   * dependency: nothing ever completes that dependency, so the wait is over
+   * and the only exit is revoking this ticket too.
+   */
+  revokedDependencies: page(ticketNumberSchema),
   brief: briefResponseSchema.optional(),
   runTotals: runTotalsSchema.optional(),
 });
@@ -662,7 +668,6 @@ const dispatchCandidateSchema = z.strictObject({
   dependencies: page(ticketNumberSchema),
   workFanout: ticketNumberSchema,
   program: page(programStageSchema),
-  finalizer: finalizerSchema,
   configurationRevision: identitySchema,
   configurationVersion: configurationVersionSchema.optional(),
   configurationDigest: digestSchema,
@@ -792,7 +797,6 @@ export const draftInitializationResponseSchema = z.object({
     stages: page(programStageResponseSchema),
     programStagesMax: countSchema,
     workFanouts: page(ticketNumberSchema),
-    finalizers: page(finalizerSchema),
   }),
   dependencyCandidates: page(ticketNumberSchema),
   dependencyCandidatesTruncated: z.boolean(),
