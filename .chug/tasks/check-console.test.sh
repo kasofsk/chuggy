@@ -136,6 +136,31 @@ printf '%s\n' '{ "name": "shared", "version": "0.0.0", "private": true }' \
 seal
 check "a manifest nested inside a console is not a second console" 0 "$RC" "4 script(s) clean across 1 built console(s)"
 
+# --- `format`, the one optional script ---------------------------------------
+
+# A console that declares no `format` script is not asked for one: unlike the
+# four mandatory scripts, its absence is neither a finding nor part of the tally.
+fixture
+console built "$WHOLE"
+seal
+refute "a console without \`format\` is not asked for it" "declares no \`format\` script"
+
+WITH_FORMAT='{ "name": "c", "version": "0.0.0", "private": true, "scripts": {
+	"format": "true", "typecheck": "true", "lint": "true", "test": "true",
+	"build": "true" } }'
+
+fixture
+console built "$WITH_FORMAT"
+seal
+check "a console that declares \`format\` has it run" 0 "$RC" "5 script(s) clean across 1 built console(s)"
+
+fixture
+console built '{ "name": "c", "version": "0.0.0", "private": true, "scripts": {
+	"format": "echo boom; exit 1", "typecheck": "true", "lint": "true",
+	"test": "true", "build": "true" } }'
+seal
+check "a declared \`format\` that fails is a finding like any other" 1 "$RC" "npm run format\` failed"
+
 # --- A finding ---------------------------------------------------------------
 
 fixture
