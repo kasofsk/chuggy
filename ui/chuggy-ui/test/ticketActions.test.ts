@@ -9,10 +9,7 @@
 
 import { expect, test } from "vitest";
 
-import {
-  escalationReasons,
-  phaseRoster,
-} from "../../../src/contract/rosters.ts";
+import { escalationKinds, phaseRoster } from "../../../src/contract/rosters.ts";
 import type { TicketPhase } from "../../../src/contract/rosters.ts";
 import {
   actionsFor,
@@ -62,13 +59,13 @@ test("every mutation names the ticket it was built for", () => {
 });
 
 test("an escalation offers the same two answers whatever wall it hit", () => {
-  for (const reason of escalationReasons)
+  for (const kind of escalationKinds)
     expect(
       actionsFor({
         ticket: 7,
         phase: "Escalated",
         sequence: 3,
-        reason,
+        escalation: { kind, resumeAt: "ResumeWork" },
         ...ticketInstants,
       }).map((offer) => offer.action),
     ).toEqual(["Resume", "Revoke"]);
@@ -76,17 +73,15 @@ test("an escalation offers the same two answers whatever wall it hit", () => {
 
 test("resume says what its own wall does, and one wall reworks", () => {
   const said = new Set(
-    escalationReasons.map((reason) =>
-      ticketActionSentence("Resume", { reason }),
-    ),
+    escalationKinds.map((kind) => ticketActionSentence("Resume", { kind })),
   );
   expect(said.size).toBe(2);
   expect(
-    ticketActionSentence("Resume", { reason: "EvaluationFailureEscalated" }),
+    ticketActionSentence("Resume", { kind: "EvaluationFailureEscalated" }),
   ).toBe("rework this ticket with a fresh cycle");
-  expect(
-    ticketActionSentence("Resume", { reason: "WorkFailureEscalated" }),
-  ).toBe(ticketActionSentence("Resume"));
+  expect(ticketActionSentence("Resume", { kind: "WorkFailureEscalated" })).toBe(
+    ticketActionSentence("Resume"),
+  );
 });
 
 test("manual dispatch echoes only the candidate version the view supplied", () => {

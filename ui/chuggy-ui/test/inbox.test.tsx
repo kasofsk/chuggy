@@ -60,7 +60,7 @@ const escalated = {
   title: "Serve the reason",
   phase: "Escalated",
   sequence: 9,
-  reason: "WorkFailureEscalated",
+  escalation: { kind: "WorkFailureEscalated", resumeAt: "ResumeWork" },
   ...ticketInstants,
 };
 

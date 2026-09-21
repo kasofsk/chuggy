@@ -114,7 +114,7 @@ const escalated = {
   ticket: 12,
   title: "Escalated ticket",
   phase: "Escalated",
-  reason: "WorkFailureEscalated",
+  escalation: { kind: "WorkFailureEscalated", resumeAt: "ResumeWork" },
   sequence: 3,
   ...ticketInstants,
 };
@@ -188,7 +188,7 @@ test("a row draws its phase as a chip", async () => {
   expect(chip.className).toContain("pill-live");
 });
 
-test("an escalated row answers its reason on the phase chip's hover", async () => {
+test("an escalated row answers its kind on the phase chip's hover", async () => {
   await drawTableWith([escalated], []);
   const trigger = screen.getByText("Escalated").closest('[tabindex="0"]');
   if (trigger === null) throw new Error("no tooltip trigger around Escalated");

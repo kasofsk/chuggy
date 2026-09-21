@@ -151,7 +151,7 @@ test("a ticket frame moves a row into another section without disturbing the res
       ticket: 1,
       phase: "Escalated",
       sequence: 7,
-      reason: "WorkFailureEscalated",
+      escalation: { kind: "WorkFailureEscalated", resumeAt: "ResumeWork" },
       ...ticketInstants,
     },
     undefined,

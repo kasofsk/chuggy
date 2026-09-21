@@ -13,8 +13,9 @@ import { expect, test } from "vitest";
 import {
   blockedReasons,
   briefFinalizationModes,
-  escalationReasons,
+  escalationKinds,
   finalizationUnavailableKinds,
+  gitEvidences,
   operationRefusalCodes,
   operationStates,
   phaseRoster,
@@ -25,14 +26,15 @@ import {
   blockedReasonLabel,
   briefLandingLine,
   escalationDetail,
+  escalationEvidenceLabel,
+  escalationKindLabel,
   finalizationUnavailableKindLabel,
+  gitEvidenceLabel,
   landingEffect,
   landingLabel,
   resumeActionEffect,
-  resumeNotReadReason,
   wallExitLine,
   escalationDetailLine,
-  escalationReasonLabel,
   mutationDeferralLabel,
   mutationRefusalLabel,
   operationFailureLabel,
@@ -58,8 +60,9 @@ const copyBudgetChars = 60;
 
 test("every wall, phase, state and refusal has a label inside the copy budget", () => {
   const drawn = [
-    ...escalationReasons.map(escalationReasonLabel),
+    ...escalationKinds.map(escalationKindLabel),
     ...blockedReasons.map(blockedReasonLabel),
+    ...gitEvidences.map(gitEvidenceLabel),
     ...finalizationUnavailableKinds.map(finalizationUnavailableKindLabel),
     ...phaseRoster.map(phaseLabel),
     ...operationStates.map(operationStateLabel),
@@ -74,7 +77,7 @@ test("every wall, phase, state and refusal has a label inside the copy budget", 
 });
 
 test("the wall a reader met on ticket 21 reads as a noun and a fragment", () => {
-  expect(escalationReasonLabel("EvaluationFailureEscalated")).toBe(
+  expect(escalationKindLabel("EvaluationFailureEscalated")).toBe(
     "Rework budget exhausted",
   );
   expect(
@@ -93,47 +96,80 @@ test("a detail line names only the facts the page holds", () => {
   expect(escalationDetailLine("WorkFailureEscalated", bare)).toBe(
     "Failed work is not reworked",
   );
-  expect(
-    escalationDetailLine("FinalizationUnavailableEscalated", {
-      lastSet: { taskKind: "Work", stage: undefined, verdict: "Cancelled" },
-      stageCount: 2,
-    }),
-  ).toBe(undefined);
+  expect(escalationDetailLine("FinalizationUnavailableEscalated", bare)).toBe(
+    undefined,
+  );
 });
 
 /**
- * The wall's own label where the read carries one, the reason's generic word
- * where it does not — the continuation path with no execution row to read a
- * wall off.
+ * A blocked execution's cancelled-set line names the phase the kind itself
+ * interrupted — Work for the wall the ticket's own work hit, Evaluation for
+ * the one `EvaluationBlockedEscalated` names — with no fact from the page.
  */
-test("the escalation's one line names the wall where the read carries one", () => {
+test("a blocked execution's line names the phase its own kind interrupted", () => {
+  const bare = { lastSet: undefined, stageCount: 2 };
+  expect(escalationDetailLine("WorkExecutionUnavailableEscalated", bare)).toBe(
+    "Work cancelled",
+  );
+  expect(escalationDetailLine("EvaluationBlockedEscalated", bare)).toBe(
+    "Evaluation cancelled",
+  );
+});
+
+/**
+ * The wall's own label where the read carries evidence, the kind's generic
+ * word where it does not — the continuation path with no execution row to
+ * read a wall off.
+ */
+test("the escalation's one line names the wall where the read carries evidence", () => {
   expect(
-    escalationDetail(
-      "WorkExecutionUnavailableEscalated",
-      "ExecutionProfileUnavailable",
-      undefined,
-    ),
+    escalationDetail({
+      kind: "WorkExecutionUnavailableEscalated",
+      evidence: "ExecutionProfileUnavailable",
+      resumeAt: "ResumeWork",
+    }),
   ).toBe("No matching execution profile");
   expect(
-    escalationDetail("WorkExecutionUnavailableEscalated", undefined, undefined),
+    escalationDetail({
+      kind: "WorkExecutionUnavailableEscalated",
+      resumeAt: "ResumeWork",
+    }),
   ).toBe("Execution unavailable");
 });
 
-/**
- * Same rule for the finalizer's own wall: the hold's label where
- * `finalizationBlockedBy` carries one, the reason's generic word where the
- * ticket parked with no hold recorded to read it off.
- */
-test("the escalation's one line names the finalization wall where the read carries one", () => {
+/** The continuation path's evidence is drawn from the git roster, the third
+ * and disjoint one the same one line reads from. */
+test("the escalation's one line reads the continuation path's own evidence", () => {
   expect(
-    escalationDetail(
-      "FinalizationUnavailableEscalated",
-      undefined,
-      "ProposalDenied",
-    ),
+    escalationDetail({
+      kind: "WorkExecutionUnavailableEscalated",
+      evidence: "RefUnreadable",
+      resumeAt: "ResumeWork",
+    }),
+  ).toBe("Ref unreadable");
+  expect(escalationEvidenceLabel("PromotionTimedOut")).toBe(
+    "Promotion timed out",
+  );
+});
+
+/**
+ * Same rule for the finalizer's own wall: the hold's label where the
+ * evidence carries one, the kind's generic word where the ticket parked with
+ * no hold recorded to read it off.
+ */
+test("the escalation's one line names the finalization wall where the read carries evidence", () => {
+  expect(
+    escalationDetail({
+      kind: "FinalizationUnavailableEscalated",
+      evidence: "ProposalDenied",
+      resumeAt: "ResumeFinalization",
+    }),
   ).toBe("Proposal denied");
   expect(
-    escalationDetail("FinalizationUnavailableEscalated", undefined, undefined),
+    escalationDetail({
+      kind: "FinalizationUnavailableEscalated",
+      resumeAt: "ResumeFinalization",
+    }),
   ).toBe("Finalization unavailable");
 });
 
@@ -183,21 +219,6 @@ test("a wall names the exits the page draws, and none where it draws none", () =
     ticketActionEffect("Resume", { kind: "NoPoint" }, ["Resume", "Revoke"])
       .more,
   ).toBe("only Revoke exits this wall");
-});
-
-/**
- * A screen that has not finished reading knows neither term, so it disables the
- * control with its reason rather than claiming anything about the wall.
- */
-test("a resume this page has not read enough for is refused, not denied", () => {
-  const effect = ticketActionEffect("Resume", { kind: "NotRead" }, [
-    "Resume",
-    "Revoke",
-  ]);
-  expect(effect.offered).toBe(true);
-  expect(effect.refusedBecause).toBe(resumeNotReadReason);
-  expect(effect.more).toBe(undefined);
-  expect(effect.effect).not.toContain("Revoke");
 });
 
 /**
