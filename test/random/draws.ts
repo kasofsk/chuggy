@@ -27,7 +27,6 @@ import {
 } from "../../src/domain/config.ts";
 import {
   dependableIn,
-  executionBlockedReasons,
   finalizationOutcomes,
   finalizationOutcomeEnabled,
   finalizingIn,
@@ -46,7 +45,6 @@ import {
   type TicketGraph,
   type EvaluationFailureDisposition,
   type FinalizationOutcome,
-  type Reason,
   type StageDefinition,
   type Verdict,
 } from "../../src/domain/generated/modelTypes.ts";
@@ -71,7 +69,6 @@ export interface Drawn {
   readonly taskId?: TaskId;
   readonly verdict?: Verdict;
   readonly outcome?: FinalizationOutcome;
-  readonly reason?: Reason;
 }
 
 /** One action of the machine, as the walk takes it. */
@@ -224,13 +221,9 @@ const executionBlocked: WalkAction = {
   enabledIn: (_config, graph) => taskPhaseIn(graph).length > 0,
   drawIn: (_config, graph, random) => ({
     ticket: pickFrom(random, taskPhaseIn(graph)),
-    reason: pickFrom(random, executionBlockedReasons),
   }),
   permitsIn: (_config, graph, drawn) =>
-    drawn.ticket !== undefined &&
-    drawn.reason !== undefined &&
-    taskPhaseIn(graph).includes(drawn.ticket) &&
-    executionBlockedReasons.includes(drawn.reason),
+    drawn.ticket !== undefined && taskPhaseIn(graph).includes(drawn.ticket),
 };
 
 /**
@@ -298,7 +291,6 @@ export function drawnWire(drawn: Drawn): Readonly<Record<string, unknown>> {
     prog: opt(drawn.program, encodeProgram),
     tid: opt(drawn.taskId, encodeInt),
     v: opt(drawn.verdict, encodeNullaryTag),
-    why: opt(drawn.reason, encodeNullaryTag),
     workFanout_: opt(drawn.workFanout, encodeInt),
   };
 }
@@ -319,6 +311,5 @@ export function drawnPicks(drawn: Drawn): Picks {
     taskId: itf(wire["tid"]),
     verdict: itf(wire["v"]),
     outcome: itf(wire["out"]),
-    reason: itf(wire["why"]),
   };
 }
