@@ -3255,21 +3255,23 @@ test("the projection admits evidence only beside an escalation, and the desk rea
       ],
       "evidence is what an escalation may carry, not what it must",
     );
-    for (const [role, privilege, column] of [
-      [apiRole, "SELECT", "escalation"],
-      [apiRole, "SELECT", "escalation_evidence"],
-      [ticketServiceRole, "UPDATE", "escalation"],
-      [ticketServiceRole, "UPDATE", "escalation_evidence"],
+    for (const [role, privilege, table, column] of [
+      [apiRole, "SELECT", "ticket_projection", "escalation"],
+      [apiRole, "SELECT", "ticket_projection", "escalation_evidence"],
+      [ticketServiceRole, "UPDATE", "ticket_projection", "escalation"],
+      [ticketServiceRole, "UPDATE", "ticket_projection", "escalation_evidence"],
+      [ticketServiceRole, "SELECT", "execution", "completion_operation"],
+      [ticketServiceRole, "SELECT", "execution", "blocked_reason"],
     ] as const)
       assert.equal(
         (
           await subject.query<{ granted: boolean }>(
-            "SELECT has_column_privilege($1,'public.ticket_projection',$2,$3) AS granted",
+            `SELECT has_column_privilege($1,'public.${table}',$2,$3) AS granted`,
             [role, column, privilege],
           )
         ).rows[0]?.granted,
         true,
-        `${role} ${privilege} ${column}`,
+        `${role} ${privilege} ${table}.${column}`,
       );
   });
 });
