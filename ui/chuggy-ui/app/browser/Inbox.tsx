@@ -90,10 +90,7 @@ import {
   projectListFolded,
   projectListReread,
 } from "../core/projectQueryKeys.ts";
-import {
-  projectTableExecutionPhrase,
-  projectTableRow,
-} from "../core/projectTableRows.ts";
+import { projectTableRow } from "../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import {
   projectTicketRowsAfterPage,
@@ -115,9 +112,8 @@ import { TopBarSlot } from "./shell/slots.tsx";
 import {
   cellAbsent,
   cellExecutionUnread,
-  ticketRowExecutionCell,
   TicketActivityCell,
-  TicketNumberCell,
+  TicketRowExecutionCell,
   TicketTitleCell,
 } from "./TicketCells.tsx";
 import { Button } from "./ui/Button.tsx";
@@ -404,10 +400,6 @@ function InboxRow(props: {
       : projectTableRow(held, props.known, props.truncated);
   return (
     <tr>
-      <TicketNumberCell
-        partition={props.partition}
-        ticket={props.entry.ticket}
-      />
       <TicketTitleCell
         partition={props.partition}
         ticket={props.entry.ticket}
@@ -418,9 +410,11 @@ function InboxRow(props: {
         <InboxRefusal entry={props.entry} />
       </td>
       <td>
-        {row === undefined
-          ? cellExecutionUnread
-          : ticketRowExecutionCell(row, projectTableExecutionPhrase(row))}
+        {row === undefined ? (
+          cellExecutionUnread
+        ) : (
+          <TicketRowExecutionCell row={row} />
+        )}
       </td>
       <TicketActivityCell activityAt={row?.activityAt} nowMs={props.nowMs} />
       <td>
@@ -451,7 +445,6 @@ function InboxTable(props: {
     <Table caption={ticketSectionTitles[inboxSection]}>
       <thead>
         <tr>
-          <th scope="col">ticket</th>
           <th scope="col">title</th>
           <th scope="col">why</th>
           <th scope="col">last execution</th>

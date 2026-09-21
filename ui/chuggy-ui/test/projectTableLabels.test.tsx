@@ -7,6 +7,11 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { ProjectTable } from "../app/browser/ProjectTable.tsx";
 import {
+  cellExecutionUnread,
+  TicketRowExecutionCell,
+} from "../app/browser/TicketCells.tsx";
+import type { ProjectTableRow } from "../app/core/projectTableRows.ts";
+import {
   answer,
   apiDouble,
   openedStream,
@@ -99,14 +104,25 @@ const execution = {
   registeredAt: "2026-08-26T10:00:00.000Z",
 };
 
-/** The table with one running ticket, joined to the execution above. */
-async function drawTable(): Promise<void> {
+const escalated = {
+  ticket: 12,
+  title: "Escalated ticket",
+  phase: "Escalated",
+  reason: "WorkFailed",
+  sequence: 3,
+  ...ticketInstants,
+};
+
+/** The table drawn from whatever tickets and executions a case wants. */
+async function drawTableWith(
+  tickets: readonly unknown[],
+  executions: readonly unknown[],
+): Promise<void> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
-      if (url.includes("/executions"))
-        return answer({ executions: [execution] });
-      return answer({ partition: atlas, sequence: 8, tickets: [ticket] });
+      if (url.includes("/executions")) return answer({ executions });
+      return answer({ partition: atlas, sequence: 8, tickets });
     },
   });
   vi.stubGlobal("fetch", api.fetch);
@@ -122,13 +138,58 @@ async function drawTable(): Promise<void> {
   await settled();
 }
 
-test("the title cell keeps the whole title, keeps clipping it, and links", async () => {
+/** The table with one running ticket, joined to the execution above. */
+async function drawTable(): Promise<void> {
+  return drawTableWith([ticket], [execution]);
+}
+
+test("the title cell keeps the whole title, keeps clipping it, links, and leads the ticket number", async () => {
   await drawTable();
-  const cell = screen.getByText(title).parentElement;
+  const titleAnchor = screen.getByText(title);
+  const cell = titleAnchor.parentElement;
   expect(cell?.className).toContain("max-w-aside");
-  expect(screen.getByText(title).tagName).toBe("A");
+  expect(titleAnchor.tagName).toBe("A");
+
+  const numberLink = screen.getByRole("link", { name: "11" });
+  expect(
+    titleAnchor.compareDocumentPosition(numberLink) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+
   fireEvent.focus(cell as Element);
   expect((await screen.findByRole("tooltip")).textContent).toBe(title);
+});
+
+test("a row draws its phase as a chip", async () => {
+  await drawTable();
+  const chip = screen.getByText("Working");
+  expect(chip.className).toContain("pill-live");
+});
+
+test("an escalated row answers its reason on the phase chip's hover", async () => {
+  await drawTableWith([escalated], []);
+  const trigger = screen.getByText("Escalated").closest('[tabindex="0"]');
+  if (trigger === null) throw new Error("no tooltip trigger around Escalated");
+  fireEvent.focus(trigger);
+  expect((await screen.findByRole("tooltip")).textContent).toBe("work failed");
+});
+
+test("a row whose index was truncated draws no chip for its execution", () => {
+  const row: ProjectTableRow = {
+    ticket: 9,
+    title: undefined,
+    phase: "Working",
+    section: "InProgress",
+    badge: undefined,
+    executionRead: "IndexTruncated",
+    executionStatus: undefined,
+    executionOutcome: undefined,
+    runsOn: undefined,
+    activityAt: "2026-08-26T00:00:00Z",
+  };
+  render(<TicketRowExecutionCell row={row} />);
+  expect(screen.getByText(cellExecutionUnread)).toBeDefined();
+  expect(document.querySelector(".pill")).toBeNull();
 });
 
 test("the last activity column draws the relative reading and answers the absolute on hover", async () => {
