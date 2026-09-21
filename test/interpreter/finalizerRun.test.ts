@@ -2890,3 +2890,22 @@ test("a hold off the roster leaves the count another kind is keeping alone", asy
   assert.equal(store.heldKind, "TargetUnreadable");
   assert.equal(store.heldPasses, 1);
 });
+
+/**
+ * The kind a hold is recorded at is the pass's own, cleared before each
+ * request. A request moving behind a held one would otherwise be written at
+ * the kind the held one found, and counted toward a dwell it never entered.
+ */
+test("a request that moves behind a held one records no kind of its own", async () => {
+  const store = recordingStore([
+    unboundView("request-one"),
+    preparableView("request-two"),
+  ]);
+  const report = await passOver(
+    serviceOf(store, recordingGit(), { holdPassesMax: 3 }),
+  );
+  assert.equal(report.holds, 1);
+  assert.equal(report.preparations, 1);
+  assert.deepEqual(store.holds, ["RepositoryUnbound", undefined]);
+  assert.deepEqual(store.submitted, [], "neither request is the dwell");
+});
