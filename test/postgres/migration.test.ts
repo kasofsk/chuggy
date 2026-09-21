@@ -15,6 +15,7 @@ import {
   leadObservationTokensPerDecisionAt009,
   migration009,
 } from "../../src/adapters/postgres/schema/migrations/009-work-fanout.ts";
+import { migration010 } from "../../src/adapters/postgres/schema/migrations/010-task-identity.ts";
 import { encodeDispatchProgram } from "../../src/interpreter/dispatchView.ts";
 import type { StageDefinition } from "../../src/domain/generated/modelTypes.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
@@ -3402,8 +3403,8 @@ const escalationExecution = `${deletionJournalRow(1, "{}")};
          'revision-5','digest-5','bundle-5',repeat('b',64)
     FROM capacity_account a
    WHERE a.account=project_capacity_account('tenant-5','project-5');
-  INSERT INTO execution_request_task(tenant,project,request,task,kind)
-  VALUES('tenant-5','project-5','request-5',1,'Work');
+  INSERT INTO execution_request_task(tenant,project,request,task,kind,cycle)
+  VALUES('tenant-5','project-5','request-5',1,'Work',1);
   INSERT INTO execution
     (tenant,project,execution,ticket,task,source_request,account,cluster,
      configuration_revision,configuration_digest,status)
@@ -3649,6 +3650,463 @@ test("the validator replaced whole stays the boundary owner's and nobody's to ex
         await subject.query<{ owner: string }>(
           "SELECT pg_get_userbyid(proowner) AS owner FROM pg_proc WHERE oid = $1::regprocedure",
           [fanoutValidator],
+        )
+      ).rows[0]?.owner,
+      boundaryOwnerRole,
+    );
+  });
+});
+
+test("a fresh install records the task identity arriving in columns", async () => {
+  await migrationDatabase("identity_install", async (subject) => {
+    assert.ok((await postgresMigrate(subject)).includes(migration010.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT version,name FROM schema_migration WHERE version=$1",
+          [migration010.version],
+        )
+      ).rows,
+      [
+        {
+          version: migration010.version,
+          name: "a task is named by its cycle, its stage, its generation and its evaluator",
+        },
+      ],
+    );
+  });
+});
+
+test("a journal with an entry in it refuses the identity arriving and names the wipe", async () => {
+  await migrationDatabase("identity_guard", async (subject) => {
+    await installationBefore(subject, migration010.version);
+    await subject.query(`${deletionPartition}\n${journaledDecision}`);
+    await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT count(*)::int AS held FROM information_schema.columns
+           WHERE table_name='execution_request_task' AND column_name='cycle'`,
+        )
+      ).rows,
+      [{ held: 0 }],
+      "the column the guard refused over is a column it never added",
+    );
+    assert.deepEqual(
+      (
+        await postgresRuntimeSchema(subject).applied(
+          new AbortController().signal,
+        )
+      )
+        .map(({ version }) => version)
+        .at(-1),
+      migration010.version - 1,
+    );
+  });
+});
+
+/** What a request task hangs from: a journalled decision, a revision and the request it authorized. */
+const identityRequest = `${deletionJournalRow(1, "{}")};
+  INSERT INTO configuration_revision
+    (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+  VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
+  INSERT INTO input_bundle(tenant,project,bundle,digest)
+  VALUES('tenant-5','project-5','bundle-5',repeat('b',64));
+  INSERT INTO execution_request
+    (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
+     kind,capacity_account,configuration_revision,configuration_digest,
+     input_bundle,input_bundle_digest)
+  SELECT 'tenant-5','project-5','request-5',1,0,1,1,'SpawnWork',a.account,
+         'revision-5','digest-5','bundle-5',repeat('b',64)
+    FROM capacity_account a
+   WHERE a.account=project_capacity_account('tenant-5','project-5')`;
+
+function identityTask(task: number, columns: string, values: string): string {
+  return `INSERT INTO execution_request_task(tenant,project,request,task,${columns})
+     VALUES('tenant-5','project-5','request-5',${String(task)},${values})`;
+}
+
+/** Every shape an identity can arrive in, and what the relation answers it. */
+const identityShapes: readonly (readonly [
+  string,
+  string,
+  string,
+  RegExp | undefined,
+])[] = [
+  ["a work task naming its cycle", "kind,cycle", "'Work',1", undefined],
+  [
+    "an evaluation naming the whole of one",
+    "kind,cycle,stage,generation,evaluator",
+    "'Evaluation',1,1,1,1",
+    undefined,
+  ],
+  ["a task naming no cycle at all", "kind", "'Work'", /cycle/u],
+  [
+    "a work task at a cycle of none",
+    "kind,cycle",
+    "'Work',0",
+    /execution_request_task_check/u,
+  ],
+  [
+    "a work task that also names a stage",
+    "kind,cycle,stage",
+    "'Work',1,1",
+    /execution_request_task_check/u,
+  ],
+  [
+    "a work task that also names a generation",
+    "kind,cycle,generation",
+    "'Work',1,1",
+    /execution_request_task_check/u,
+  ],
+  [
+    "a work task that also names an evaluator",
+    "kind,cycle,evaluator",
+    "'Work',1,1",
+    /execution_request_task_check/u,
+  ],
+  [
+    "an evaluation at the stage index this column used to take",
+    "kind,cycle,stage,generation,evaluator",
+    "'Evaluation',1,0,1,1",
+    /execution_request_task_check/u,
+  ],
+  [
+    "an evaluation naming no stage",
+    "kind,cycle,generation,evaluator",
+    "'Evaluation',1,1,1",
+    /execution_request_task_check/u,
+  ],
+  [
+    "an evaluation naming no generation",
+    "kind,cycle,stage,evaluator",
+    "'Evaluation',1,1,1",
+    /execution_request_task_check/u,
+  ],
+  [
+    "an evaluation naming no evaluator",
+    "kind,cycle,stage,generation",
+    "'Evaluation',1,1,1",
+    /execution_request_task_check/u,
+  ],
+];
+
+test("a request task carries a whole identity for its kind and no half of one", async () => {
+  await migrationDatabase("identity_columns", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(`${deletionPartition}\n${identityRequest}`);
+    for (const [
+      order,
+      [what, columns, values, refused],
+    ] of identityShapes.entries()) {
+      const insert = identityTask(order + 1, columns, values);
+      if (refused === undefined) await subject.query(insert);
+      else await assert.rejects(subject.query(insert), refused, what);
+    }
+  });
+});
+
+/** The identity as the relation holds it, in the order the columns arrived. */
+const identityColumns = [
+  "tenant",
+  "project",
+  "request",
+  "task",
+  "kind",
+  "stage",
+  "cycle",
+  "generation",
+  "evaluator",
+];
+
+test("the api reads every column of the identity and writes none of them", async () => {
+  await migrationDatabase("identity_grants", async (subject) => {
+    await postgresMigrate(subject);
+    const columns = await subject.query<{ column: string; granted: boolean }>(
+      `SELECT a.attname AS column,
+              has_column_privilege($1,'execution_request_task',a.attname,'SELECT') AS granted
+         FROM pg_attribute a
+        WHERE a.attrelid='execution_request_task'::regclass
+          AND a.attnum > 0 AND NOT a.attisdropped
+        ORDER BY a.attnum`,
+      [apiRole],
+    );
+    assert.deepEqual(
+      columns.rows.map((each) => each.column),
+      identityColumns,
+      "the relation holds the identity and nothing beside it",
+    );
+    assert.deepEqual(
+      columns.rows.filter((each) => each.granted).map((each) => each.column),
+      identityColumns,
+      `what ${apiRole} may read of execution_request_task`,
+    );
+    for (const privilege of ["INSERT", "UPDATE", "DELETE"] as const)
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_table_privilege($1,'execution_request_task',$2) AS granted",
+            [apiRole, privilege],
+          )
+        ).rows[0]?.granted,
+        false,
+        `${apiRole} holds ${privilege} on execution_request_task`,
+      );
+  });
+});
+
+/** A completion at each identity, and each way of naming one this image refuses. */
+const identityEvents: readonly (readonly [string, unknown, boolean])[] = [
+  [
+    "a completion naming the work task it settled",
+    { type: "WorkTask", value: { ticket: 1, cycle: 1 } },
+    true,
+  ],
+  [
+    "a completion naming the evaluator it settled",
+    {
+      type: "EvaluationTask",
+      value: { ticket: 1, workCycle: 1, stage: 1, generation: 1, evaluator: 1 },
+    },
+    true,
+  ],
+  [
+    "a completion naming a work task at no cycle",
+    { type: "WorkTask", value: { ticket: 1 } },
+    false,
+  ],
+  [
+    "a completion naming an evaluator at no generation",
+    {
+      type: "EvaluationTask",
+      value: { ticket: 1, workCycle: 1, stage: 1, evaluator: 1 },
+    },
+    false,
+  ],
+  [
+    "a completion naming an evaluation the work arm's way",
+    { type: "EvaluationTask", value: { ticket: 1, cycle: 1 } },
+    false,
+  ],
+  [
+    "a completion naming a task this machine has no constructor for",
+    { type: "Task", value: { ticket: 1, cycle: 1 } },
+    false,
+  ],
+  ["a completion whose task is the number it used to be", 1, false],
+];
+
+function identityCompletion(task: unknown): unknown {
+  return {
+    type: "TaskDone",
+    value: {
+      ticket: 1,
+      task,
+      verdict: "Pass",
+      result: { manifest: 1, digest: 1, schema: 1 },
+    },
+  };
+}
+
+test("the boundary admits a completion that names its task and refuses one that numbers it", async () => {
+  await migrationDatabase("identity_events", async (subject) => {
+    await postgresMigrate(subject);
+    for (const [label, task, admitted] of identityEvents)
+      assert.deepEqual(
+        (
+          await subject.query<{ admitted: boolean }>(
+            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+            [JSON.stringify(identityCompletion(task))],
+          )
+        ).rows,
+        [{ admitted }],
+        label,
+      );
+    for (const [label, event] of [
+      [
+        "a completion naming the number and no identity",
+        {
+          type: "TaskDone",
+          value: {
+            ticket: 1,
+            tid: 1,
+            verdict: "Pass",
+            result: { manifest: 1, digest: 1, schema: 1 },
+          },
+        },
+      ],
+      [
+        "a completion naming both the identity and the number",
+        {
+          type: "TaskDone",
+          value: {
+            ticket: 1,
+            tid: 1,
+            task: { type: "WorkTask", value: { ticket: 1, cycle: 1 } },
+            verdict: "Pass",
+            result: { manifest: 1, digest: 1, schema: 1 },
+          },
+        },
+      ],
+    ] as const)
+      assert.deepEqual(
+        (
+          await subject.query<{ admitted: boolean }>(
+            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+            [JSON.stringify(event)],
+          )
+        ).rows,
+        [{ admitted: false }],
+        label,
+      );
+  });
+});
+
+/** A running execution at an identity its request authorized, ready for the scheduler's door. */
+function identityExecution(
+  ordinal: number,
+  requestKind: string,
+  columns: string,
+  values: string,
+): string {
+  const at = String(ordinal);
+  return `
+  INSERT INTO execution_request
+    (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
+     kind,capacity_account,configuration_revision,configuration_digest,
+     input_bundle,input_bundle_digest)
+  SELECT 'tenant-5','project-5','request-${at}',1,${at},1,1,'${requestKind}',a.account,
+         'revision-5','digest-5','bundle-5',repeat('b',64)
+    FROM capacity_account a
+   WHERE a.account=project_capacity_account('tenant-5','project-5');
+  INSERT INTO execution_request_task(tenant,project,request,task,${columns})
+  VALUES('tenant-5','project-5','request-${at}',${at},${values});
+  INSERT INTO execution
+    (tenant,project,execution,ticket,task,source_request,account,cluster,
+     configuration_revision,configuration_digest,status)
+  SELECT 'tenant-5','project-5','execution-${at}',1,${at},'request-${at}',a.account,a.cluster,
+         'revision-5','digest-5','Running'
+    FROM capacity_account a
+   WHERE a.account=project_capacity_account('tenant-5','project-5');
+  INSERT INTO execution_attempt
+    (tenant,project,execution,attempt,attempt_number,recovery_epoch,
+     capability,capability_secret_digest,manifest)
+  VALUES('tenant-5','project-5','execution-${at}','attempt-${at}',1,'epoch-5',
+         'capability-${at}',repeat('c',64),'manifest-${at}');
+  INSERT INTO execution_result
+    (tenant,project,manifest,execution,attempt,manifest_ordinal,schema_version,digest,verdict)
+  VALUES('tenant-5','project-5','manifest-${at}','execution-${at}','attempt-${at}',
+         ${at},1,repeat('d',64),'Pass')`;
+}
+
+/** Each kind of task the door settles, the identity its row carries and the identity it journals. */
+const identityCompletions: readonly (readonly [
+  string,
+  number,
+  string,
+  string,
+  string,
+  unknown,
+])[] = [
+  [
+    "the work task it settled, at the cycle its row carries",
+    1,
+    "SpawnWork",
+    "kind,cycle",
+    "'Work',3",
+    { type: "WorkTask", value: { ticket: 1, cycle: 3 } },
+  ],
+  [
+    "the evaluator it settled, at the stage and generation its row carries",
+    2,
+    "SpawnEvaluation",
+    "kind,cycle,stage,generation,evaluator",
+    "'Evaluation',2,4,5,6",
+    {
+      type: "EvaluationTask",
+      value: { ticket: 1, workCycle: 2, stage: 4, generation: 5, evaluator: 6 },
+    },
+  ],
+];
+
+test("the scheduler's door journals the identity it read off the task it settled", async () => {
+  await migrationDatabase("identity_completion", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(
+      `${deletionPartition}\n${deletionJournalRow(1, "{}")};
+       UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
+       INSERT INTO configuration_revision
+         (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+       VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
+       INSERT INTO input_bundle(tenant,project,bundle,digest)
+       VALUES('tenant-5','project-5','bundle-5',repeat('b',64))`,
+    );
+    for (const [
+      what,
+      ordinal,
+      requestKind,
+      columns,
+      values,
+      identity,
+    ] of identityCompletions) {
+      const at = String(ordinal);
+      await subject.query(
+        identityExecution(ordinal, requestKind, columns, values),
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT result,operation FROM submit_task_completion
+               ('tenant-5','project-5','execution-${at}',1,${at},${at},'Passed',
+                'manifest-${at}',repeat('d',64),NULL,'operation-done-${at}','subject-5')`,
+          )
+        ).rows,
+        [{ result: "Submitted", operation: `operation-done-${at}` }],
+        what,
+      );
+      assert.deepEqual(
+        (
+          await subject.query<{ task: unknown; numbered: boolean }>(
+            `SELECT (command::jsonb)#>'{event,value,task}' AS task,
+                    ((command::jsonb)#>'{event,value}') ? 'tid' AS numbered
+               FROM operation WHERE operation='operation-done-${at}'`,
+          )
+        ).rows,
+        [{ task: identity, numbered: false }],
+        what,
+      );
+    }
+  });
+});
+
+/** The door replaced whole, named as the grants that govern it name it. */
+const identityDoor =
+  "public.submit_task_completion(text,text,text,bigint,bigint,integer,text,text,text,text,text,text)";
+
+test("the door replaced whole keeps its owner and the one role that may open it", async () => {
+  await migrationDatabase("identity_door", async (subject) => {
+    await postgresMigrate(subject);
+    for (const [role, granted] of [
+      [schedulerRole, true],
+      [apiRole, false],
+      [ticketServiceRole, false],
+      ["public", false],
+    ] as const)
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+            [role, identityDoor],
+          )
+        ).rows[0]?.granted,
+        granted,
+        role,
+      );
+    assert.equal(
+      (
+        await subject.query<{ owner: string }>(
+          "SELECT pg_get_userbyid(proowner) AS owner FROM pg_proc WHERE oid = $1::regprocedure",
+          [identityDoor],
         )
       ).rows[0]?.owner,
       boundaryOwnerRole,
