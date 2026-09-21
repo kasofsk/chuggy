@@ -114,7 +114,7 @@ test("a fresh stream is told it is ready and then hears live changes", async () 
     resource: "7",
     representation: {
       ticket: 7,
-      phase: "Working",
+      phase: "Work",
       sequence: 1,
       ...streamTicketCarried,
     },
@@ -432,7 +432,7 @@ test("one stream losing its access tombstones nothing for the others", async () 
     resource: "7",
     representation: {
       ticket: 7,
-      phase: "Working",
+      phase: "Work",
       sequence: 1,
       ...streamTicketCarried,
     },

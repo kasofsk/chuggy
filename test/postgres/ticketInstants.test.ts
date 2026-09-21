@@ -127,7 +127,7 @@ test("a ticket is dated by its release and by the entry that last moved it", asy
     postgresHarnessJournal().length,
   );
   const dispatched = await ticketRead(partition);
-  assert.equal(dispatched.phase, "Working");
+  assert.equal(dispatched.phase, "Work");
   assert.ok(dispatched.releasedAt !== undefined);
   assert.equal(readAt(dispatched.releasedAt), await committedAt(partition, 1));
   assert.equal(readAt(dispatched.changedAt), await committedAt(partition, 2));
@@ -226,7 +226,7 @@ test("a release naming no number is a row the journal keeps and the read skips",
   );
   await rig.harness.query(
     `UPDATE journal_entry
-        SET entry='{"seq":1,"event":{"type":"ReleaseTicket","value":{"ticket":"one"}},"rec":{}}'
+        SET entry='{"seq":1,"event":{"type":"CreateTicket","value":{"ticket":"one"}},"rec":{}}'
       WHERE tenant=$1 AND project=$2 AND seq=1`,
     [partition.tenant, partition.project],
   );

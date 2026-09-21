@@ -195,7 +195,7 @@ test("a revocation offered after entry is refused and the finalizer's request st
   const drained = await finalizerDrain(rig.harness, partition, project.memory);
   assert.deepEqual(drained.decided, ["Refused"]);
   assert.equal(await finalizerEntries(rig, partition), entries);
-  assert.equal(await finalizerPhase(rig, partition), "Finalizing");
+  assert.equal(await finalizerPhase(rig, partition), "Finalization");
   assert.deepEqual(await requestsOf(partition), standing);
 });
 
@@ -281,9 +281,9 @@ test("a closing project aborts an unpermitted attempt without touching the remot
   assert.equal(concluded.conclusions, 1);
   assert.deepEqual(await submittedOf(project), {
     command_tag: "FinalizationResult",
-    outcome: "FinalizationFailed",
+    outcome: "FinalizationNeedsWork",
   });
-  assert.equal(await finalizerPhase(rig, project.partition), "Finalizing");
+  assert.equal(await finalizerPhase(rig, project.partition), "Finalization");
   assert.deepEqual(await permitsOf(project), []);
 });
 

@@ -29,11 +29,19 @@ import { asPlacementId } from "../../src/interpreter/executionScheduler.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
 import { asExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
+import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import {
   accountIdentityFunction,
+  apiRole,
   backlogFunction,
   schedulerRole,
 } from "../../src/adapters/postgres/schema.ts";
+import {
+  postgresHarnessDrain,
+  postgresHarnessRolePool,
+  postgresHarnessSubmission,
+} from "./harness.ts";
 import {
   schedulerArtifact,
   schedulerClaimFor,
@@ -65,6 +73,25 @@ const attemptBounds = {
   retriesMax: 3,
   placementBackoffSecs: 1,
 };
+
+/** The escalation a parked ticket opened, which is what a resume answers. */
+async function openEscalation(
+  project: SchedulerProject,
+): Promise<{ action: string; authorizingSeq: number }> {
+  const found = await rig.harness.query(
+    `SELECT action, authorizing_seq::text AS authorizing_seq
+       FROM native_action
+      WHERE tenant=$1 AND project=$2 AND ticket=$3 AND state='Open'`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  );
+  const row = found[0];
+  if (row === undefined)
+    throw new Error("scheduler store case: the block opened no action");
+  return {
+    action: String(row["action"]),
+    authorizingSeq: Number(row["authorizing_seq"]),
+  };
+}
 
 /** Registers every logical task one project's spawn request authorizes. */
 async function registerAll(project: SchedulerProject, label: string) {
@@ -681,6 +708,140 @@ test("a definitive inability blocks one execution and releases its slot", async 
       "ExecutionProfileUnavailable",
     ),
     { blocked: "AlreadyBlocked", operation: blocked.operation },
+  );
+});
+
+/**
+ * The wall a block recorded, from the boundary that wrote it to the page that
+ * shows it. The domain has one reason for all five, so the wall survives only
+ * on the execution row; the writer reading the completion is handed the wall
+ * name the database built the event out of, and the read answers it back.
+ */
+test("a blocked ticket escalates at the one reason and names the wall it hit", async () => {
+  const project = await schedulerProject(rig, "wall-read", { tasks: 1 });
+  await registerAll(project, "wall-read");
+  const attempt = await placedAttempt(project, "wall-read");
+  await rig.store.attemptEnded(attempt, "Withdrawn", "PlacementDenied");
+  const blocked = await rig.store.blockExecution(
+    project.partition,
+    attempt.execution,
+    "RuntimeVersionUnsupported",
+  );
+  assert.ok(blocked.blocked === "Blocked");
+  const drained = await postgresHarnessDrain(
+    rig.harness,
+    project.partition,
+    project.memory,
+  );
+  assert.deepEqual(drained.decided, ["Committed"]);
+  const asApi = postgresHarnessRolePool(apiRole);
+  try {
+    const read = await postgresNativeReads(asApi).ticket(
+      project.partition,
+      asTicketId(project.ticket),
+    );
+    assert.equal(read?.phase, "Escalated");
+    assert.equal(read?.reason, "WorkExecutionUnavailableEscalated");
+    assert.equal(read?.executionBlockedBy, "RuntimeVersionUnsupported");
+  } finally {
+    await asApi.end();
+  }
+});
+
+/**
+ * A fan-out is blocked one execution at a time, so a parked ticket can have
+ * several. The read names the wall of the last one to terminate, that being
+ * the one the ticket is parked at; an earlier wall is history of an execution
+ * rather than of the ticket.
+ */
+test("a ticket blocked twice names the wall its last blocked execution hit", async () => {
+  const project = await schedulerProject(rig, "wall-latest", { tasks: 2 });
+  await registerAll(project, "wall-latest");
+  for (const wall of [
+    "ExecutionProfileUnavailable",
+    "TicketConfigIncompatible",
+  ] as const) {
+    const attempt = await placedAttempt(project, `wall-latest-${wall}`);
+    await rig.store.attemptEnded(attempt, "Withdrawn", "PlacementDenied");
+    const blocked = await rig.store.blockExecution(
+      project.partition,
+      attempt.execution,
+      wall,
+    );
+    assert.ok(blocked.blocked === "Blocked", wall);
+  }
+  await postgresHarnessDrain(rig.harness, project.partition, project.memory);
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT count(DISTINCT terminal_at)::text AS moments FROM execution
+        WHERE tenant=$1 AND project=$2 AND outcome='Blocked'`,
+      [project.partition.tenant, project.partition.project],
+    ),
+    [{ moments: "2" }],
+    "the two blocks have to be orderable for the read to have a last one",
+  );
+  const read = await postgresNativeReads(rig.harness.pool).ticket(
+    project.partition,
+    asTicketId(project.ticket),
+  );
+  assert.equal(read?.executionBlockedBy, "TicketConfigIncompatible");
+});
+
+/**
+ * A resume puts the ticket back to work and leaves the blocked execution where
+ * it is, that row being the evidence of what happened rather than of where the
+ * ticket stands. So the wall is read off the reason and not off the execution,
+ * and a resumed ticket names none though one is still there to find.
+ */
+test("a resumed ticket names no wall, though its blocked execution is still there", async () => {
+  const project = await schedulerProject(rig, "wall-resumed", { tasks: 1 });
+  await registerAll(project, "wall-resumed");
+  const attempt = await placedAttempt(project, "wall-resumed");
+  await rig.store.attemptEnded(attempt, "Withdrawn", "PlacementDenied");
+  const blocked = await rig.store.blockExecution(
+    project.partition,
+    attempt.execution,
+    "ExecutionPolicyDenied",
+  );
+  assert.ok(blocked.blocked === "Blocked");
+  const parked = await postgresHarnessDrain(
+    rig.harness,
+    project.partition,
+    project.memory,
+  );
+  assert.deepEqual(parked.decided, ["Committed"]);
+  const action = await openEscalation(project);
+  const accepted = await rig.harness.inbox.accept({
+    ...postgresHarnessSubmission(project.partition, "wall-resumed-answer"),
+    command: {
+      version: 1,
+      command: "ResolveNativeAction",
+      action: action.action,
+      authorizingSeq: action.authorizingSeq,
+      resolution: "Resume",
+    },
+  });
+  assert.equal(accepted.accepted, "Accepted");
+  const resumed = await postgresHarnessDrain(
+    rig.harness,
+    project.partition,
+    parked.memory,
+  );
+  assert.deepEqual(resumed.decided, ["Committed"]);
+  const read = await postgresNativeReads(rig.harness.pool).ticket(
+    project.partition,
+    asTicketId(project.ticket),
+  );
+  assert.equal(read?.phase, "Work");
+  assert.equal(read?.reason, undefined);
+  assert.equal(read?.executionBlockedBy, undefined);
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT blocked_reason FROM execution
+        WHERE tenant=$1 AND project=$2 AND outcome='Blocked'`,
+      [project.partition.tenant, project.partition.project],
+    ),
+    [{ blocked_reason: "ExecutionPolicyDenied" }],
   );
 });
 

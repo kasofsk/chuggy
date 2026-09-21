@@ -173,10 +173,10 @@ test("a park offers the desk its answers and a waiting ticket is asked none", as
     );
   }
 
-  const walled = ticketAt(memory.core, id(1));
+  const walled = ticketAt(memory.graph, id(1));
   assert.equal(walled.phase, "Escalated");
-  assert.equal(walled.reason, "ReworkBudgetExhausted");
-  assert.equal(walled.resumeAt, "ResumeReworking");
+  assert.equal(walled.reason, "EvaluationFailureEscalated");
+  assert.equal(walled.resumeAt, "ResumeRework");
   assert.deepEqual(await admitsOffered(partition, id(1)), [
     ["Resume", "Revoke"],
   ]);
@@ -184,7 +184,7 @@ test("a park offers the desk its answers and a waiting ticket is asked none", as
   memory = await admitsDependent(partition, memory, `${label}-dependent`);
   memory = await admitsResolve(partition, memory, `${label}-revoke`, "Revoke");
 
-  const stranded = ticketAt(memory.core, id(2));
+  const stranded = ticketAt(memory.graph, id(2));
   assert.equal(stranded.phase, "Pending");
   assert.equal(stranded.reason, "NoReason");
   assert.equal(stranded.resumeAt, "NoResume");

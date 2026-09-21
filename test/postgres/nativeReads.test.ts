@@ -101,7 +101,7 @@ function seededEvent(type: string, ticket: number): string {
 function seededRelease(ticket: number, deps: readonly number[]): string {
   return JSON.stringify({
     seq: ticket,
-    event: { type: "ReleaseTicket", value: { ticket, deps } },
+    event: { type: "CreateTicket", value: { ticket, deps } },
     rec: {},
   });
 }
@@ -116,7 +116,7 @@ async function seedFilterProjection(partition: Partition) {
     [1, "Done", "NoReason"],
     [2, "Pending", "NoReason"],
     [3, "Revoked", "NoReason"],
-    [4, "Escalated", "ReworkBudgetExhausted"],
+    [4, "Escalated", "EvaluationFailureEscalated"],
   ] as const) {
     await seedEntry(partition, `native-filter-${String(ticket)}`, ticket);
     await subject.harness.query(
@@ -313,7 +313,7 @@ test("an earlier entry naming the ticket is not mistaken for its release", async
     partition,
     "native-release-kind-release",
     2,
-    seededEvent("ReleaseTicket", 5),
+    seededEvent("CreateTicket", 5),
   );
   await subject.harness.query(
     `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
@@ -329,6 +329,39 @@ test("an earlier entry naming the ticket is not mistaken for its release", async
     seededEntryAt(2),
     "the release instant is the release entry's, not the earlier entry's",
   );
+});
+
+/**
+ * A release a pre-006 writer stored, which the journal still holds under the
+ * tag it was written at. Its bytes are what its digest attests and are never
+ * rewritten, so the read that dates a release finds it under either tag or a
+ * ticket released before the rename reports no release at all.
+ */
+test("a release stored at the old tag is still the release the read dates", async () => {
+  const partition = await postgresHarnessProject(
+    subject.harness.store,
+    "native-release-old-tag",
+  );
+  await subject.harness.query(
+    "UPDATE project SET head=1 WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
+  await seedEntry(
+    partition,
+    "native-release-old-tag-entry",
+    1,
+    seededEvent("ReleaseTicket", 5),
+  );
+  await subject.harness.query(
+    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+     VALUES ($1,$2,5,'Pending',1)`,
+    [partition.tenant, partition.project],
+  );
+  const released = await postgresNativeReads(subject.pool).ticket(
+    partition,
+    id(5),
+  );
+  assert.equal(Date.parse(released?.releasedAt ?? ""), seededEntryAt(1));
 });
 
 test("project reads filter before paging", async () => {
@@ -364,7 +397,7 @@ test("project reads filter before paging", async () => {
       ticket: 4,
       phase: "Escalated",
       sequence: 4,
-      reason: "ReworkBudgetExhausted",
+      reason: "EvaluationFailureEscalated",
       changedAt: seededEntryAt(4),
       revokedDependencies: [],
     },
@@ -403,7 +436,7 @@ test("a ticket read carries the detail its project page carries", async () => {
     ticket: 4,
     phase: "Escalated",
     sequence: 4,
-    reason: "ReworkBudgetExhausted",
+    reason: "EvaluationFailureEscalated",
     changedAt: seededEntryAt(4),
     revokedDependencies: [],
   });
@@ -487,7 +520,7 @@ test("a resolved action stops listing, and an unknown ticket is not found", asyn
   );
   await subject.harness.query(
     `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
-     VALUES ($1,$2,2,'Working',1)`,
+     VALUES ($1,$2,2,'Work',1)`,
     [partition.tenant, partition.project],
   );
   const reads = postgresNativeReads(subject.pool);
@@ -674,7 +707,7 @@ test("the fence the read publishes is the one acceptance admits", async () => {
 /**
  * What a revoke leaves behind: it transitions its own ticket and nothing else,
  * so ticket 4 stays Pending behind two revokes. Its release names them
- * descending, beside a Working dependency and a Done one, so an answer in
+ * descending, beside a Work dependency and a Done one, so an answer in
  * release order is told apart from the ascending one the read promises.
  */
 async function seedRevokedDependencies(label: string): Promise<Partition> {
@@ -686,7 +719,7 @@ async function seedRevokedDependencies(label: string): Promise<Partition> {
   for (const [ticket, phase, deps] of [
     [1, "Revoked", []],
     [2, "Revoked", []],
-    [3, "Working", []],
+    [3, "Work", []],
     [4, "Pending", [5, 3, 2, 1]],
     [5, "Done", []],
     [6, "Done", [1]],
@@ -712,7 +745,7 @@ test("only a Pending ticket names the dependencies of its own that are revoked",
   assert.deepEqual(
     (await reads.ticket(partition, id(4)))?.revokedDependencies,
     [1, 2],
-    "the stranded ticket names both, and neither the Working nor the Done one",
+    "the stranded ticket names both, and neither the Work nor the Done one",
   );
   assert.deepEqual(
     (await reads.ticket(partition, id(6)))?.revokedDependencies,

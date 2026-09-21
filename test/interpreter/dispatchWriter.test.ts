@@ -103,7 +103,7 @@ function releasedMemory(head = 1): ProjectMemory {
       recoveryEpoch: asRecoveryEpoch("epoch"),
       head,
     },
-    core: memoryGraph(released),
+    graph: memoryGraph(released),
     ticketVersions: new Map([[id(1), 1]]),
     dispatchContracts: contracts,
   };
@@ -140,7 +140,7 @@ test("a writer rebuilds a history from the machine that decided it, not from its
       head: stored.length,
     },
   );
-  assert.equal(ticketAt(memory.core, id(1)).phase, "Evaluation");
+  assert.equal(ticketAt(memory.graph, id(1)).phase, "Evaluation");
 });
 
 function operationInput(command: TicketCommand): DecisionInput {
@@ -302,7 +302,7 @@ test("proposal validity ignores an unrelated journal-head advance", async () => 
   const memory = releasedMemory(40);
   const candidates = deriveDispatchCandidates(
     refinementInstance,
-    memory.core,
+    memory.graph,
     memory.ticketVersions,
     contracts,
   );
@@ -385,7 +385,7 @@ function currentDigestOf(memory: ProjectMemory): string {
   return dispatchViewDigest(
     deriveDispatchCandidates(
       refinementInstance,
-      memory.core,
+      memory.graph,
       memory.ticketVersions,
       memory.dispatchContracts ?? new Map(),
     ),
@@ -463,7 +463,7 @@ function twoReleasedMemory(): ProjectMemory {
       recoveryEpoch: asRecoveryEpoch("epoch"),
       head: tickets.length,
     },
-    core: memoryGraph(state),
+    graph: memoryGraph(state),
     ticketVersions,
     dispatchContracts: twoContracts,
   };
@@ -544,7 +544,7 @@ test("both dispatches of one decision land, though the first changed the view", 
   );
   assert.equal(second.decided.decided, "Committed");
   assert.deepEqual(
-    [id(1), id(2)].map((ticket) => ticketAt(second.memory.core, ticket).phase),
+    [id(1), id(2)].map((ticket) => ticketAt(second.memory.graph, ticket).phase),
     ["Work", "Work"],
   );
 });
@@ -635,12 +635,12 @@ function workPassedMemory(): ProjectMemory {
     state,
     taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
   );
-  return { ...releasedMemory(), core: memoryGraph(state) };
+  return { ...releasedMemory(), graph: memoryGraph(state) };
 }
 
 /** The reduce that turns passed work into the evaluation spawn under test. */
 function workReduceInput(memory: ProjectMemory): DecisionInput {
-  const ticket = ticketAt(memory.core, id(1));
+  const ticket = ticketAt(memory.graph, id(1));
   return {
     partition,
     ordinal: 1,

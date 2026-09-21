@@ -128,16 +128,16 @@ export function dispatchViewDigest(
 /** Derives selection-visible truth from authoritative state and immutable contract pins. */
 export function deriveDispatchCandidates(
   config: Config,
-  core: TicketGraph,
+  graph: TicketGraph,
   ticketVersions: ReadonlyMap<number, number>,
   contracts: ReadonlyMap<number, DispatchContractPin>,
 ): readonly DispatchCandidate[] {
-  return ticketIds(core).flatMap((ticket) => {
+  return ticketIds(graph).flatMap((ticket) => {
     if (
-      !decisionEventEnabled(config, core, { type: "Dispatch", value: ticket })
+      !decisionEventEnabled(config, graph, { type: "Dispatch", value: ticket })
     )
       return [];
-    const value = ticketAt(core, ticket);
+    const value = ticketAt(graph, ticket);
     const ticketVersion = ticketVersions.get(ticket);
     const contract = contracts.get(ticket);
     if (ticketVersion === undefined || contract === undefined)

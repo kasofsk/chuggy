@@ -68,13 +68,13 @@ function journalOf(): readonly Entry[] {
 /** The table the per-decision changes build, applied one decision at a time. */
 function folded(): ReadonlyMap<number, TicketProjection> {
   const table = new Map<number, TicketProjection>();
-  let core: TicketGraph = genesis;
+  let graph: TicketGraph = genesis;
   for (const event of history) {
-    const post = execDecisionEvent(core, event).post;
-    for (const row of projectionChanges(core, post)) {
+    const post = execDecisionEvent(graph, event).post;
+    for (const row of projectionChanges(graph, post)) {
       table.set(row.ticket, row);
     }
-    core = post;
+    graph = post;
   }
   return table;
 }
@@ -152,8 +152,8 @@ test("a release is a change although it transitions nothing", () => {
 });
 
 /** The one outstanding task of a single-width ticket, which is what a completion names. */
-function outstandingTask(core: TicketGraph): number {
-  const task = [...ticketAt(core, id(1)).tasks].find(
+function outstandingTask(graph: TicketGraph): number {
+  const task = [...ticketAt(graph, id(1)).tasks].find(
     (candidate) => candidate.state === "Outstanding",
   );
   if (task === undefined)
@@ -171,19 +171,19 @@ function walledHistory(): readonly DecisionEvent[] {
     releaseTicketEvent(id(1), plainAuthoring),
     dispatchEvent(id(1)),
   ];
-  let core = events.reduce(
+  let graph = events.reduce(
     (state, event) => execDecisionEvent(state, event).post,
     genesis,
   );
   const step = (event: DecisionEvent) => {
     events.push(event);
-    core = execDecisionEvent(core, event).post;
+    graph = execDecisionEvent(graph, event).post;
   };
   for (const cycle of [0, 1]) {
     step(
       taskDoneEvent(
         id(1),
-        asTaskId(outstandingTask(core)),
+        asTaskId(outstandingTask(graph)),
         "Pass",
         plainResult,
       ),
@@ -192,7 +192,7 @@ function walledHistory(): readonly DecisionEvent[] {
     step(
       taskDoneEvent(
         id(1),
-        asTaskId(outstandingTask(core)),
+        asTaskId(outstandingTask(graph)),
         "Fail",
         plainResult,
       ),
@@ -217,14 +217,14 @@ function ticketFacts(ticket: Ticket) {
   };
 }
 
-test("every projected row is the core the step it names left behind", () => {
-  let core: TicketGraph = genesis;
+test("every projected row is the graph the step it names left behind", () => {
+  let graph: TicketGraph = genesis;
   const seen: string[] = [];
   for (const event of walledHistory()) {
-    core = execDecisionEvent(core, event).post;
-    const row = projectionOf(core).find((each) => each.ticket === id(1));
+    graph = execDecisionEvent(graph, event).post;
+    const row = projectionOf(graph).find((each) => each.ticket === id(1));
     assert.ok(row !== undefined);
-    assert.deepEqual(ticketFacts(ticketAt(core, id(1))), {
+    assert.deepEqual(ticketFacts(ticketAt(graph, id(1))), {
       phase: row.phase,
       reason: row.reason,
       resumeAt: row.resumeAt,

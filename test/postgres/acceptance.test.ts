@@ -222,7 +222,7 @@ test("a decision carrying a dispatch event is refused and allocates nothing", as
   );
 });
 
-test("durable command validation rejects a raw ReleaseTicket", async () => {
+test("durable command validation rejects a raw CreateTicket", async () => {
   const release = postgresHarnessEntry(0).event;
   assert.deepEqual(
     await harness.query("SELECT ticket_command_is_valid($1::jsonb) AS valid", [

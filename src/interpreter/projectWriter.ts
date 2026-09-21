@@ -115,7 +115,7 @@ export interface ProjectTicketWriter {
 /** What a writer holds between decisions: the lease that authorizes it, and the state it replayed. */
 export interface ProjectMemory {
   readonly lease: Lease;
-  readonly core: TicketGraph;
+  readonly graph: TicketGraph;
   readonly ticketVersions: ReadonlyMap<number, number>;
   readonly dispatchContracts?: ReadonlyMap<number, DispatchContractPin>;
 }
@@ -141,10 +141,10 @@ export interface ProjectDecided {
  * rebuild of it. Every field is read off the same `TicketGraph` this decision left
  * behind, so no two of them can be at different journal positions.
  */
-export function projectionOf(core: TicketGraph): readonly TicketProjection[] {
-  const dependable = new Set(dependableIn(core));
-  return ticketIds(core).map((ticket) => {
-    const value = ticketAt(core, ticket);
+export function projectionOf(graph: TicketGraph): readonly TicketProjection[] {
+  const dependable = new Set(dependableIn(graph));
+  return ticketIds(graph).map((ticket) => {
+    const value = ticketAt(graph, ticket);
     return {
       ticket,
       phase: value.phase,
@@ -207,17 +207,17 @@ export async function projectWriterLoad(
 ): Promise<ProjectMemory> {
   const journal = await projectWriterJournal(writer, lease);
   const ticketVersions = new Map<number, number>();
-  let core: TicketGraph = genesis;
+  let graph: TicketGraph = genesis;
   for (const row of journal) {
-    const post = execDecisionEventAt(row.semantics, core, row.entry).post;
-    for (const projection of projectionChanges(core, post))
+    const post = execDecisionEventAt(row.semantics, graph, row.entry).post;
+    for (const projection of projectionChanges(graph, post))
       ticketVersions.set(projection.ticket, row.entry.seq);
-    core = post;
+    graph = post;
   }
   const dispatchContracts = await writer.store.loadDispatchContracts?.(lease);
   const memory = {
     lease,
-    core,
+    graph,
     ticketVersions,
     ...(dispatchContracts === undefined ? {} : { dispatchContracts }),
   };
@@ -227,7 +227,7 @@ export async function projectWriterLoad(
   ) {
     const candidates = deriveDispatchCandidates(
       writer.config,
-      core,
+      graph,
       ticketVersions,
       dispatchContracts,
     );
@@ -252,7 +252,7 @@ function continuationFenceOutcome(
   const ticketId = source.reduction.ticket;
   if (memory.ticketVersions.get(ticketId) !== source.expectedTicketVersion)
     return { outcome: "Stale" };
-  const ticket = ticketAt(memory.core, ticketId);
+  const ticket = ticketAt(memory.graph, ticketId);
   if (
     ticket.phase !== source.expectedPhase ||
     ticket.spawned !== source.taskSetGeneration
@@ -280,7 +280,7 @@ function operationDispatchFence(
     );
   const candidates = deriveDispatchCandidates(
     writer.config,
-    memory.core,
+    memory.graph,
     memory.ticketVersions,
     memory.dispatchContracts,
   );
@@ -305,13 +305,13 @@ function journaledPlan(
   command: DecisionEvent,
   executionSource: ExecutionSourceObservation | undefined,
 ): ProjectPlan {
-  const decision = execDecisionEvent(memory.core, command);
+  const decision = execDecisionEvent(memory.graph, command);
   const entry: Entry = {
     seq: memory.lease.head + 1,
     event: command,
     rec: decision.rec,
   };
-  const projection = projectionChanges(memory.core, decision.post);
+  const projection = projectionChanges(memory.graph, decision.post);
   const versions = new Map(memory.ticketVersions);
   for (const row of projection) versions.set(row.ticket, entry.seq);
   const contracts = new Map(memory.dispatchContracts ?? []);
@@ -343,7 +343,7 @@ function journaledPlan(
       projection,
       materialization: materializationOf(
         item,
-        memory.core,
+        memory.graph,
         decision.post,
         entry,
         executionSource,
@@ -376,7 +376,7 @@ function continuationReductionEvent(
   return evalReduceEvent(
     reduction.ticket,
     reworkDisposition(
-      ticketAt(memory.core, reduction.ticket),
+      ticketAt(memory.graph, reduction.ticket),
       writer.rework.cyclesMax,
     ),
   );
@@ -393,12 +393,12 @@ function projectWriterPreflight(
 ): ProjectPlan | { readonly command: DecisionEvent } {
   if (item.source.kind === "Operation") {
     const fence = operationDispatchFence(writer, memory, item.source);
-    if (fence !== undefined) return { outcome: fence, post: memory.core };
+    if (fence !== undefined) return { outcome: fence, post: memory.graph };
   }
   if (item.source.kind === "Continuation") {
     const fenceOutcome = continuationFenceOutcome(memory, item.source);
     if (fenceOutcome !== undefined)
-      return { outcome: fenceOutcome, post: memory.core };
+      return { outcome: fenceOutcome, post: memory.graph };
   }
   const command =
     item.source.kind === "Operation"
@@ -411,7 +411,7 @@ function projectWriterPreflight(
   ) {
     return {
       outcome: { outcome: "Refused", code: "NotEnabled" },
-      post: memory.core,
+      post: memory.graph,
     };
   }
   const answer =
@@ -421,12 +421,12 @@ function projectWriterPreflight(
       throw new Error(
         "project writer: an input names neither event nor answer",
       );
-    return { outcome: { outcome: "Answered", answer }, post: memory.core };
+    return { outcome: { outcome: "Answered", answer }, post: memory.graph };
   }
-  if (!decisionEventEnabled(writer.config, memory.core, command)) {
+  if (!decisionEventEnabled(writer.config, memory.graph, command)) {
     return {
       outcome: { outcome: "Refused", code: "NotEnabled" },
-      post: memory.core,
+      post: memory.graph,
     };
   }
   return { command };
@@ -475,7 +475,7 @@ async function projectWriterExecutionSource(
     item.source.finalizationRequest?.evidence !== undefined
   )
     return { observed: "Source" };
-  const rec = execDecisionEvent(memory.core, command).rec;
+  const rec = execDecisionEvent(memory.graph, command).rec;
   const spawn = rec.effects.find((label) => {
     const effect = effectFromLabel(label);
     return effect === "SpawnWorkTasks" || effect === "SpawnEvalTasks";
@@ -554,10 +554,10 @@ async function projectWriterPlan(
   if (landing.landing === "Refused") {
     return {
       outcome: { outcome: "Refused", code: landing.code },
-      post: memory.core,
+      post: memory.graph,
     };
   }
-  if (!decisionEventEnabled(writer.config, memory.core, landing.event))
+  if (!decisionEventEnabled(writer.config, memory.graph, landing.event))
     throw new IntegrityContradiction(
       "a ticket spawning work is not blockable from the phase it spawns in",
     );
@@ -614,7 +614,7 @@ export async function projectWriterDecide(
   return {
     memory: {
       lease: decided.lease,
-      core: plan.post,
+      graph: plan.post,
       ticketVersions,
       dispatchContracts,
     },
