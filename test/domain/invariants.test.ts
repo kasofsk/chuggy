@@ -177,11 +177,11 @@ test("terminalsAbsorbing rejects a transition out of a terminal", () => {
   );
 });
 
-test("deskConsistent rejects a wall without a park, a park without a wall and a resume that does not exist", () => {
+test("deskConsistent rejects a wall without a park and a park without a wall", () => {
   assert.ok(
     !deskConsistent(
       config,
-      stateView(fleetBut(fleet, 1, { reason: "WorkFailureEscalated" })),
+      stateView(fleetBut(fleet, 1, { escalation: "WorkFailureEscalated" })),
     ),
     "a named wall on a ticket that is not parked",
   );
@@ -191,28 +191,13 @@ test("deskConsistent rejects a wall without a park, a park without a wall and a 
     "a park with no wall",
   );
   assert.ok(
-    !deskConsistent(
-      config,
-      stateView(
-        graphOf([
-          ticketOn(config, {
-            phase: "Escalated",
-            reason: "WorkFailureEscalated",
-          }),
-        ]),
-      ),
-    ),
-    "every wall stamps the point its resume re-enters at",
-  );
-  assert.ok(
     deskConsistent(
       config,
       stateView(
         graphOf([
           ticketOn(config, {
             phase: "Escalated",
-            reason: "WorkFailureEscalated",
-            resumeAt: "ResumeWork",
+            escalation: "WorkFailureEscalated",
           }),
         ]),
       ),
@@ -375,8 +360,7 @@ test("idsAccounted rejects the task set a decider dropped instead of retiring", 
   const dropped = graphOf([
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailureEscalated",
-      resumeAt: "ResumeWork",
+      escalation: "WorkFailureEscalated",
       spawned: config.nTasks,
     }),
   ]);
@@ -484,8 +468,7 @@ test("stuckSubsetCovered goes red when one walk gets a base case the other lacks
   const parked = graphOf([
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailureEscalated",
-      resumeAt: "ResumeWork",
+      escalation: "WorkFailureEscalated",
     }),
     ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
   ]);
@@ -508,8 +491,7 @@ test("stuckSubsetCovered goes red when one walk gets an edge kind the other lack
     ticketOn(config, { phase: "Pending" }),
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailureEscalated",
-      resumeAt: "ResumeWork",
+      escalation: "WorkFailureEscalated",
       deps: depsOf(1),
     }),
   ]);
@@ -530,8 +512,7 @@ test("stuckSubsetCovered goes red when one walk gets an edge kind the other lack
   const wider = graphOf([
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailureEscalated",
-      resumeAt: "ResumeWork",
+      escalation: "WorkFailureEscalated",
     }),
     ticketOn(config, {
       phase: "Done",

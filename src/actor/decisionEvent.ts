@@ -37,7 +37,6 @@ import {
   canReleaseIn,
   dependableIn,
   doneIn,
-  executionBlockedReasons,
   finalizableIn,
   finalizationOutcomeEnabled,
   finalizationOutcomes,
@@ -56,7 +55,6 @@ import type {
   DecisionEvent,
   EvaluationFailureDisposition,
   FinalizationOutcome,
-  Reason,
   StageDefinition,
   TaskResultRef,
   Verdict,
@@ -131,11 +129,8 @@ export function finalizationResultEvent(
   return { type: "FinalizationResult", value: { ticket, out } };
 }
 
-export function executionBlockedEvent(
-  ticket: TicketId,
-  reason: Reason,
-): DecisionEvent {
-  return { type: "ExecutionBlocked", value: { ticket, reason } };
+export function executionBlockedEvent(ticket: TicketId): DecisionEvent {
+  return { type: "ExecutionBlocked", value: { ticket } };
 }
 
 export function resumeTicketEvent(ticket: TicketId): DecisionEvent {
@@ -182,11 +177,7 @@ export function execDecisionEvent(
         event.value.out,
       );
     case "ExecutionBlocked":
-      return decideExecutionBlocked(
-        graph,
-        asTicketId(event.value.ticket),
-        event.value.reason,
-      );
+      return decideExecutionBlocked(graph, asTicketId(event.value.ticket));
     case "ResumeTicket":
       return decideResumeTicket(graph, asTicketId(event.value));
   }
@@ -238,13 +229,8 @@ export function decisionEventEnabled(
         finalizationOutcomeEnabled(graph, id, event.value.out)
       );
     }
-    case "ExecutionBlocked": {
-      const id = asTicketId(event.value.ticket);
-      return (
-        taskPhaseIn(graph).includes(id) &&
-        executionBlockedReasons.includes(event.value.reason)
-      );
-    }
+    case "ExecutionBlocked":
+      return taskPhaseIn(graph).includes(asTicketId(event.value.ticket));
     case "ResumeTicket":
       return retryablesIn(graph).includes(asTicketId(event.value));
   }

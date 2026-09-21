@@ -44,17 +44,19 @@ export const resumeTags = [
   "ResumeFinalization",
 ] as const;
 
-export type Reason =
-  | "NoReason"
+export type Escalation =
+  | "NoEscalation"
   | "WorkFailureEscalated"
-  | "EvaluationFailureEscalated"
   | "WorkExecutionUnavailableEscalated"
+  | "EvaluationFailureEscalated"
+  | "EvaluationBlockedEscalated"
   | "FinalizationUnavailableEscalated";
-export const reasonTags = [
-  "NoReason",
+export const escalationTags = [
+  "NoEscalation",
   "WorkFailureEscalated",
-  "EvaluationFailureEscalated",
   "WorkExecutionUnavailableEscalated",
+  "EvaluationFailureEscalated",
+  "EvaluationBlockedEscalated",
   "FinalizationUnavailableEscalated",
 ] as const;
 
@@ -99,8 +101,7 @@ export type Ticket = {
   readonly tasks: ReadonlySet<Task>;
   readonly record: readonly Task[];
   readonly spawned: number;
-  readonly resumeAt: Resume;
-  readonly reason: Reason;
+  readonly escalation: Escalation;
   readonly completions: number;
 };
 
@@ -169,7 +170,7 @@ export type DecisionEvent =
     }
   | {
       readonly type: "ExecutionBlocked";
-      readonly value: { readonly ticket: number; readonly reason: Reason };
+      readonly value: { readonly ticket: number };
     }
   | { readonly type: "ResumeTicket"; readonly value: number };
 export const decisionEventTags = [

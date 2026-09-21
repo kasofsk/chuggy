@@ -12,7 +12,7 @@ import type {
   StageDefinition,
   EvaluationFailureDisposition,
   Resume,
-  Reason,
+  Escalation,
   FinalizationOutcome,
   ArtifactMark,
   Phase,
@@ -216,25 +216,27 @@ export function decodeResume(value: unknown): Resume {
   return resumeSchemaWire.parse(value);
 }
 
-export const reasonSchema: z.ZodType<Reason> = z.union([
-  z.literal("NoReason"),
+export const escalationSchema: z.ZodType<Escalation> = z.union([
+  z.literal("NoEscalation"),
   z.literal("WorkFailureEscalated"),
-  z.literal("EvaluationFailureEscalated"),
   z.literal("WorkExecutionUnavailableEscalated"),
+  z.literal("EvaluationFailureEscalated"),
+  z.literal("EvaluationBlockedEscalated"),
   z.literal("FinalizationUnavailableEscalated"),
 ]);
-const reasonSchemaWire: z.ZodType<Reason> = z.union([
-  z.literal("NoReason"),
+const escalationSchemaWire: z.ZodType<Escalation> = z.union([
+  z.literal("NoEscalation"),
   z.literal("WorkFailureEscalated"),
-  z.literal("EvaluationFailureEscalated"),
   z.literal("WorkExecutionUnavailableEscalated"),
+  z.literal("EvaluationFailureEscalated"),
+  z.literal("EvaluationBlockedEscalated"),
   z.literal("FinalizationUnavailableEscalated"),
 ]);
-export function encodeReason(value: Reason): ModelJson {
+export function encodeEscalation(value: Escalation): ModelJson {
   return encodeJson(value);
 }
-export function decodeReason(value: unknown): Reason {
-  return reasonSchemaWire.parse(value);
+export function decodeEscalation(value: unknown): Escalation {
+  return escalationSchemaWire.parse(value);
 }
 
 export const finalizationOutcomeSchema: z.ZodType<FinalizationOutcome> =
@@ -317,8 +319,7 @@ export const ticketSchema: z.ZodType<Ticket> = z
     tasks: z.set(taskSchema).readonly(),
     record: z.array(taskSchema).readonly(),
     spawned: z.number().int().safe(),
-    resumeAt: resumeSchema,
-    reason: reasonSchema,
+    escalation: escalationSchema,
     completions: z.number().int().safe(),
   })
   .readonly();
@@ -338,8 +339,7 @@ const ticketSchemaWire: z.ZodType<Ticket> = z
       .transform((items) => new Set(items)),
     record: z.array(taskSchemaWire).readonly(),
     spawned: z.number().int().safe(),
-    resumeAt: resumeSchemaWire,
-    reason: reasonSchemaWire,
+    escalation: escalationSchemaWire,
     completions: z.number().int().safe(),
   })
   .readonly();
@@ -522,9 +522,7 @@ export const decisionEventSchema: z.ZodType<DecisionEvent> = z.union([
   z
     .object({
       type: z.literal("ExecutionBlocked"),
-      value: z
-        .object({ ticket: z.number().int().safe(), reason: reasonSchema })
-        .readonly(),
+      value: z.object({ ticket: z.number().int().safe() }).readonly(),
     })
     .readonly(),
   z
@@ -595,9 +593,7 @@ const decisionEventSchemaWire: z.ZodType<DecisionEvent> = z.union([
   z
     .object({
       type: z.literal("ExecutionBlocked"),
-      value: z
-        .object({ ticket: z.number().int().safe(), reason: reasonSchemaWire })
-        .readonly(),
+      value: z.object({ ticket: z.number().int().safe() }).readonly(),
     })
     .readonly(),
   z

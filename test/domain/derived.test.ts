@@ -84,8 +84,7 @@ test("a sweep reaches a closure an ascending fold would not, which is why the sh
     ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailureEscalated",
-      resumeAt: "ResumeWork",
+      escalation: "WorkFailureEscalated",
       deps: depsOf(2),
     }),
   ]);
@@ -121,8 +120,7 @@ test("stuckness grows from the desk and coverage grows from the same edges", () 
   const fleet = graphOf([
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailureEscalated",
-      resumeAt: "ResumeWork",
+      escalation: "WorkFailureEscalated",
     }),
     ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
     ticketOn(config, { phase: "Pending", deps: depsOf(2) }),
@@ -150,8 +148,7 @@ test("every sweep agrees with itself whatever order the map was built in", () =>
   const fleet: readonly Ticket[] = [
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailureEscalated",
-      resumeAt: "ResumeWork",
+      escalation: "WorkFailureEscalated",
     }),
     ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
     ticketOn(config, { phase: "Done", deps: depsOf(1) }),

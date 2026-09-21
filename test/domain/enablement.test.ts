@@ -18,7 +18,6 @@ import {
   depArtifacts,
   depsDoneIn,
   doneIn,
-  executionBlockedReasons,
   finalizableIn,
   finalizationOutcomes,
   finalizingIn,
@@ -107,8 +106,7 @@ test("a release may depend on anything but a tombstone", () => {
     ticketOn(config, { phase: "Revoked" }),
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailureEscalated",
-      resumeAt: "ResumeWork",
+      escalation: "WorkFailureEscalated",
     }),
   ]);
   assert.deepEqual(dependableIn(graph), [id(1), id(3)]);
@@ -119,8 +117,7 @@ test("the absorbing terminals and the point of no return are the unrevocable pha
     ticketOn(config, { phase: "Pending" }),
     ticketOn(config, {
       phase: "Escalated",
-      reason: "WorkFailureEscalated",
-      resumeAt: "ResumeWork",
+      escalation: "WorkFailureEscalated",
     }),
     ticketOn(config, { phase: "Work" }),
     ticketOn(config, { phase: "Done" }),
@@ -265,17 +262,15 @@ test("the fabric may still report on exactly the tasks a ticket has outstanding"
   assert.deepEqual(outstandingTaskIdsIn(graph, id(2)), []);
 });
 
-test("a park is retryable exactly when its wall stamped a resume", () => {
+test("a park is retryable, and only a park is", () => {
   const parked = graphOf([
     ticketOn(config, {
       phase: "Escalated",
-      resumeAt: "ResumeFinalization",
-      reason: "WorkExecutionUnavailableEscalated",
+      escalation: "WorkExecutionUnavailableEscalated",
     }),
     ticketOn(config, {
       phase: "Escalated",
-      resumeAt: "ResumeWork",
-      reason: "WorkFailureEscalated",
+      escalation: "EvaluationBlockedEscalated",
     }),
     ticketOn(config, { phase: "Work" }),
   ]);
@@ -288,22 +283,12 @@ test("a park is retryable exactly when its wall stamped a resume", () => {
   assert.deepEqual(retryablesIn(parked), [id(1), id(2)]);
 });
 
-test("the finalizer reports every lifecycle result, and a block names an execution reason", () => {
+test("the finalizer reports every lifecycle result", () => {
   assert.deepEqual(finalizationOutcomes, [
     "FinalizationSucceeded",
     "FinalizationNeedsWork",
     "FinalizationResultUnavailable",
   ]);
-  assert.ok(
-    !executionBlockedReasons.includes("WorkFailureEscalated"),
-    "a blocked execution is not failed work, so no work wall is drawable here",
-  );
-  for (const reason of executionBlockedReasons) {
-    assert.ok(
-      reason !== "NoReason",
-      `${reason} is not something infrastructure reports`,
-    );
-  }
 });
 
 test("a release draws every authored value from a universe, and is refused outside one", () => {
@@ -359,8 +344,7 @@ test("the stutter is enabled exactly on a fully-released fleet of terminals", ()
         ...settled.slice(0, -1),
         ticketOn(config, {
           phase: "Escalated",
-          reason: "WorkFailureEscalated",
-          resumeAt: "ResumeWork",
+          escalation: "WorkFailureEscalated",
         }),
       ]),
     ),

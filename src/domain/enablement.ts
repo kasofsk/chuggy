@@ -23,9 +23,9 @@ import type {
   ArtifactMark,
   TicketGraph,
   FinalizationOutcome,
-  Reason,
   StageDefinition,
 } from "./generated/modelTypes.ts";
+import { hasOpenHumanTask } from "./ticket.ts";
 import type { TicketId } from "./ids.ts";
 import { outstandingCount } from "./task.ts";
 
@@ -36,12 +36,11 @@ export function revocableIn(graph: TicketGraph, id: TicketId): boolean {
 }
 
 /**
- * A parked ticket with a stamped resume. Every wall stamps one, so the second
- * conjunct holds this to the stamp rather than to the phase alone.
+ * A parked ticket. Every wall the sum can hold resumes somewhere (`resumeOf`
+ * is total), so there is no stamp left to hold this to beyond the desk task.
  */
 export function retryableIn(graph: TicketGraph, id: TicketId): boolean {
-  const ticket = ticketAt(graph, id);
-  return ticket.phase === "Escalated" && ticket.resumeAt !== "NoResume";
+  return hasOpenHumanTask(ticketAt(graph, id));
 }
 
 /** What this ticket waits on before it may run — the single definition every reader shares. */
@@ -167,16 +166,6 @@ export const finalizationOutcomes: readonly FinalizationOutcome[] = [
   "FinalizationSucceeded",
   "FinalizationNeedsWork",
   "FinalizationResultUnavailable",
-];
-
-/**
- * The one reason infrastructure may refuse to run an intact contract with,
- * closed because a blocked execution is not failed work: anything arriving
- * here has to be something the desk can act on. WHICH refusal it was is
- * evidence the adapter records beside the execution, and no decider reads it.
- */
-export const executionBlockedReasons: readonly Reason[] = [
-  "WorkExecutionUnavailableEscalated",
 ];
 
 /** Whether a live task of this ticket is still outstanding under the named id. */
