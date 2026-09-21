@@ -4,9 +4,11 @@
 import * as z from "zod";
 
 import type {
+  WorkTaskIdentity,
+  EvaluationTaskIdentity,
+  TaskIdentity,
   TaskOutcome,
   TaskState,
-  TaskKind,
   Task,
   Verdict,
   StageDefinition,
@@ -64,6 +66,77 @@ function distinctJson(values: readonly unknown[]): boolean {
   return true;
 }
 
+export const workTaskIdentitySchema: z.ZodType<WorkTaskIdentity> = z
+  .object({ ticket: z.number().int().safe(), cycle: z.number().int().safe() })
+  .readonly();
+const workTaskIdentitySchemaWire: z.ZodType<WorkTaskIdentity> = z
+  .object({ ticket: z.number().int().safe(), cycle: z.number().int().safe() })
+  .readonly();
+export function encodeWorkTaskIdentity(value: WorkTaskIdentity): ModelJson {
+  return encodeJson(value);
+}
+export function decodeWorkTaskIdentity(value: unknown): WorkTaskIdentity {
+  return workTaskIdentitySchemaWire.parse(value);
+}
+
+export const evaluationTaskIdentitySchema: z.ZodType<EvaluationTaskIdentity> = z
+  .object({
+    ticket: z.number().int().safe(),
+    workCycle: z.number().int().safe(),
+    stage: z.number().int().safe(),
+    generation: z.number().int().safe(),
+    evaluator: z.number().int().safe(),
+  })
+  .readonly();
+const evaluationTaskIdentitySchemaWire: z.ZodType<EvaluationTaskIdentity> = z
+  .object({
+    ticket: z.number().int().safe(),
+    workCycle: z.number().int().safe(),
+    stage: z.number().int().safe(),
+    generation: z.number().int().safe(),
+    evaluator: z.number().int().safe(),
+  })
+  .readonly();
+export function encodeEvaluationTaskIdentity(
+  value: EvaluationTaskIdentity,
+): ModelJson {
+  return encodeJson(value);
+}
+export function decodeEvaluationTaskIdentity(
+  value: unknown,
+): EvaluationTaskIdentity {
+  return evaluationTaskIdentitySchemaWire.parse(value);
+}
+
+export const taskIdentitySchema: z.ZodType<TaskIdentity> = z.union([
+  z
+    .object({ type: z.literal("WorkTask"), value: workTaskIdentitySchema })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("EvaluationTask"),
+      value: evaluationTaskIdentitySchema,
+    })
+    .readonly(),
+]);
+const taskIdentitySchemaWire: z.ZodType<TaskIdentity> = z.union([
+  z
+    .object({ type: z.literal("WorkTask"), value: workTaskIdentitySchemaWire })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("EvaluationTask"),
+      value: evaluationTaskIdentitySchemaWire,
+    })
+    .readonly(),
+]);
+export function encodeTaskIdentity(value: TaskIdentity): ModelJson {
+  return encodeJson(value);
+}
+export function decodeTaskIdentity(value: unknown): TaskIdentity {
+  return taskIdentitySchemaWire.parse(value);
+}
+
 export const taskOutcomeSchema: z.ZodType<TaskOutcome> = z.union([
   z.literal("Passed"),
   z.literal("Failed"),
@@ -100,44 +173,11 @@ export function decodeTaskState(value: unknown): TaskState {
   return taskStateSchemaWire.parse(value);
 }
 
-export const taskKindSchema: z.ZodType<TaskKind> = z.union([
-  z.literal("WorkTask"),
-  z
-    .object({
-      type: z.literal("EvaluationTask"),
-      value: z.number().int().safe(),
-    })
-    .readonly(),
-]);
-const taskKindSchemaWire: z.ZodType<TaskKind> = z.union([
-  z.literal("WorkTask"),
-  z
-    .object({
-      type: z.literal("EvaluationTask"),
-      value: z.number().int().safe(),
-    })
-    .readonly(),
-]);
-export function encodeTaskKind(value: TaskKind): ModelJson {
-  return encodeJson(value);
-}
-export function decodeTaskKind(value: unknown): TaskKind {
-  return taskKindSchemaWire.parse(value);
-}
-
 export const taskSchema: z.ZodType<Task> = z
-  .object({
-    id: z.number().int().safe(),
-    kind: taskKindSchema,
-    state: taskStateSchema,
-  })
+  .object({ identity: taskIdentitySchema, state: taskStateSchema })
   .readonly();
 const taskSchemaWire: z.ZodType<Task> = z
-  .object({
-    id: z.number().int().safe(),
-    kind: taskKindSchemaWire,
-    state: taskStateSchemaWire,
-  })
+  .object({ identity: taskIdentitySchemaWire, state: taskStateSchemaWire })
   .readonly();
 export function encodeTask(value: Task): ModelJson {
   return encodeJson(value);
@@ -317,6 +357,7 @@ export const ticketSchema: z.ZodType<Ticket> = z
     program: z.array(stageDefinitionSchema).readonly(),
     tasks: z.set(taskSchema).readonly(),
     record: z.array(taskSchema).readonly(),
+    workCyclesStarted: z.number().int().safe(),
     spawned: z.number().int().safe(),
     escalation: escalationSchema,
     completions: z.number().int().safe(),
@@ -336,6 +377,7 @@ const ticketSchemaWire: z.ZodType<Ticket> = z
       .refine(distinctJson, { message: "set contains a duplicate" })
       .transform((items) => new Set(items)),
     record: z.array(taskSchemaWire).readonly(),
+    workCyclesStarted: z.number().int().safe(),
     spawned: z.number().int().safe(),
     escalation: escalationSchemaWire,
     completions: z.number().int().safe(),
@@ -484,7 +526,7 @@ export const decisionEventSchema: z.ZodType<DecisionEvent> = z.union([
       value: z
         .object({
           ticket: z.number().int().safe(),
-          tid: z.number().int().safe(),
+          task: taskIdentitySchema,
           verdict: verdictSchema,
           result: taskResultRefSchema,
         })
@@ -554,7 +596,7 @@ const decisionEventSchemaWire: z.ZodType<DecisionEvent> = z.union([
       value: z
         .object({
           ticket: z.number().int().safe(),
-          tid: z.number().int().safe(),
+          task: taskIdentitySchemaWire,
           verdict: verdictSchemaWire,
           result: taskResultRefSchemaWire,
         })
