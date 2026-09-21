@@ -28,7 +28,10 @@
  *     is refused the same way;
  *   - at 3 and below, a revoke whose record transitions more than one ticket
  *     cascaded, parking every Pending dependent of the ticket it revoked. Which
- *     tickets it parked is read off that record, and each is parked at
+ *     of them it parked is read off that record, and only a ticket the replay
+ *     holds Pending is parked at all: a dependent leaves Pending only once its
+ *     dependencies are Done, and a Done ticket is not revocable, so a record
+ *     parking anything else is a record no cascade wrote. Each is parked at
  *     `NoReason` and `NoResume`: the reason the cascade stamped left the machine
  *     with the cascade, and a revoke — which `revocableIn` admits from
  *     Escalated — is all any stored continuation ever took on a parked
@@ -164,21 +167,26 @@ function decisionAtReworkWallParkedEvaluating(
 
 /**
  * The revoke that parked the revoked ticket's dependents, where this machine's
- * revoke settles the ticket it names alone. Which dependents it parked is the
- * one thing read off the record — the cascade drew them from a graph no
- * current decider walks — and every other field is re-derived from the state
- * the row replays at, so a record naming a ticket this fleet does not hold or a
- * phase it is not in still fails `storedJournalLegalOn`'s comparison.
+ * revoke settles the ticket it names alone. Which of them it parked is read off
+ * the record and nothing else is — a ticket the replay holds Pending is parked,
+ * once, and anything else the record names is re-derived without it, so a row
+ * parking a ticket this fleet never held, one already settled or running, or
+ * the same dependent twice fails `storedJournalLegalOn`'s comparison.
  */
 function decisionAtRevokeCascadedToDependents(
   row: JournaledDecision,
   decision: Decision,
 ): Decision {
   if (row.rec.label !== "ticket-revoked") return decision;
-  const held = new Set<number>(ticketIds(decision.post));
-  const parked = row.rec.transitions
-    .filter((t) => t.to === "Escalated" && held.has(t.ticket))
-    .map((t) => asTicketId(t.ticket));
+  const pending = new Set<number>(
+    ticketIds(decision.post).filter(
+      (held) => ticketAt(decision.post, held).phase === "Pending",
+    ),
+  );
+  const named = row.rec.transitions
+    .filter((t) => t.to === "Escalated" && pending.has(t.ticket))
+    .map((t) => t.ticket);
+  const parked = [...new Set(named)].map(asTicketId);
   if (parked.length === 0) return decision;
   return {
     rec: {

@@ -43,11 +43,15 @@ import { test } from "node:test";
 
 import {
   decisionEventEnabled,
+  dispatchEvent,
+  execDecisionEvent,
   releaseTicketEvent,
   resumeTicketEvent,
   revokeEvent,
+  type DecisionEvent,
 } from "../../src/actor/decisionEvent.ts";
 import {
+  genesis,
   journalLegalOn,
   storedJournalLegalOn,
   storedReplayCore,
@@ -61,7 +65,10 @@ import {
   type DecisionSemanticsVersion,
 } from "../../src/actor/decisionSemantics.ts";
 import { parseStoredEntry } from "../../src/interpreter/wire.ts";
-import type { StepRecord } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  StepRecord,
+  Transition,
+} from "../../src/domain/generated/modelTypes.ts";
 import { ticketAt } from "../../src/domain/core.ts";
 import { modelInstance } from "../domain/configs.ts";
 import { id } from "../domain/fixtures.ts";
@@ -323,24 +330,83 @@ test("a revoke that parked the tickets behind it is replayed, not refused", () =
   );
 });
 
-test("a cascade naming a ticket the fleet never held is refused, not thrown on", () => {
-  const cascaded = cascade[3];
-  assert.ok(cascaded !== undefined);
-  const stranger = cascade.map((entry) =>
-    entry === cascaded
-      ? {
-          ...entry,
-          rec: {
-            ...entry.rec,
-            transitions: [
-              ...entry.rec.transitions,
-              { ticket: id(4), from: "Pending", to: "Escalated" } as const,
-            ],
-          },
-        }
-      : entry,
-  );
-  assert.ok(!storedJournalLegalOn(modelInstance, storedAt(stranger, 2)));
+/** A history the current deciders wrote, which is every row of a forgery but its last. */
+function decided(events: readonly DecisionEvent[]): readonly Entry[] {
+  let core = genesis;
+  return events.map((event, at) => {
+    const decision = execDecisionEvent(core, event);
+    core = decision.post;
+    return { seq: at + 1, event, rec: decision.rec };
+  });
+}
+
+/** A cascade's record: the revoked ticket settled, and the parks its bytes claim. */
+function cascadeRecord(parked: readonly Transition[]): StepRecord {
+  return {
+    label: "ticket-revoked",
+    transitions: [{ ticket: id(1), from: "Pending", to: "Revoked" }, ...parked],
+    effects: ["CancelTicketWork", ...parked.map(() => "OpenHumanTask")],
+  };
+}
+
+/** The parks no cascade took: the prefix each is forged onto, and what it claims. */
+const forgedParks: readonly (readonly [
+  string,
+  readonly DecisionEvent[],
+  readonly Transition[],
+])[] = [
+  [
+    "a ticket the fleet never held",
+    [
+      releaseTicketEvent(id(1), plainAuthoring),
+      releaseTicketEvent(id(2), behindTheRevoked),
+    ],
+    [{ ticket: id(4), from: "Pending", to: "Escalated" }],
+  ],
+  [
+    "a dependent its own revoke had already settled",
+    [
+      releaseTicketEvent(id(1), plainAuthoring),
+      releaseTicketEvent(id(2), behindTheRevoked),
+      revokeEvent(id(2)),
+    ],
+    [{ ticket: id(2), from: "Revoked", to: "Escalated" }],
+  ],
+  [
+    "a ticket already working, which no dependent of a revocable ticket is",
+    [
+      releaseTicketEvent(id(1), plainAuthoring),
+      releaseTicketEvent(id(2), plainAuthoring),
+      dispatchEvent(id(2)),
+    ],
+    [{ ticket: id(2), from: "Working", to: "Escalated" }],
+  ],
+  [
+    "the same dependent twice",
+    [
+      releaseTicketEvent(id(1), plainAuthoring),
+      releaseTicketEvent(id(2), behindTheRevoked),
+    ],
+    [
+      { ticket: id(2), from: "Pending", to: "Escalated" },
+      { ticket: id(2), from: "Pending", to: "Escalated" },
+    ],
+  ],
+];
+
+test("a cascade parking anything but a Pending dependent is refused, not thrown on", () => {
+  for (const [what, prefix, parked] of forgedParks) {
+    const before = decided(prefix);
+    const forged = [
+      ...before,
+      {
+        seq: before.length + 1,
+        event: revokeEvent(id(1)),
+        rec: cascadeRecord(parked),
+      },
+    ];
+    assert.ok(!storedJournalLegalOn(modelInstance, storedAt(forged, 2)), what);
+  }
 });
 
 test("the cascade parks its dependents where nothing but a revoke reaches them", () => {
