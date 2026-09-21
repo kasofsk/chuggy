@@ -674,8 +674,8 @@ test("the fence the read publishes is the one acceptance admits", async () => {
 /**
  * What a revoke leaves behind: it transitions its own ticket and nothing else,
  * so ticket 4 stays Pending behind two revokes. Its release names them
- * descending, beside a Working dependency and a Done one, so only the query's
- * own order can answer them ascending.
+ * descending, beside a Working dependency and a Done one, so an answer in
+ * release order is told apart from the ascending one the read promises.
  */
 async function seedRevokedDependencies(label: string): Promise<Partition> {
   const partition = await postgresHarnessProject(subject.harness.store, label);

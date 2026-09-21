@@ -50,9 +50,15 @@ drill(
       description: `${String(dependent)} depends on ${String(dependency)}`,
     });
 
+    await openTicket(watcher, dependent);
     await openTicket(signedIn.page, dependency);
     await signedIn.page.getByRole("button", { name: "revoke" }).click();
 
+    const blocked = watcher.getByText(/blocked by revoked dependenc/iu);
+    await expect(blocked).toBeVisible({ timeout: frameTimeoutMs });
+    await evidence(watcher, "drill2-stranded-page-live");
+    await openProject(watcher);
+    expect(await inboxCount(watcher)).toBe(held);
     const stranded = panel(watcher, "up next")
       .getByRole("row")
       .filter({
@@ -61,11 +67,7 @@ drill(
           exact: true,
         }),
       });
-    await expect(
-      stranded.getByText(/blocked by revoked dependenc/iu),
-    ).toBeVisible({ timeout: frameTimeoutMs });
-    await evidence(watcher, "drill2-stranded-row-live");
-    expect(await inboxCount(watcher)).toBe(held);
+    await expect(stranded).toHaveCount(1);
 
     await openTicket(signedIn.page, dependent);
     await signedIn.page.getByRole("button", { name: "revoke" }).click();

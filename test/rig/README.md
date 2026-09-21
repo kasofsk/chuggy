@@ -44,8 +44,9 @@ precondition.
   execution appears with its status. The second needs a selector at more than no
   replicas and says so.
 - `stranding.spec.ts` — revoking a ticket another depends on strands the
-  second; its row says what it is waiting on without a reload, the desk is left
-  alone, and revoking it too is what clears the row.
+  second; its page says what it is waiting on without a reload, it stays in the
+  project's up-next rows, the desk is left alone, and revoking it too is what
+  clears the row.
 - `listener.spec.ts` — two drills. The API's `LISTEN` backend is terminated
   repeatedly across a window; the console says the change log behind its stream
   is degraded and converges once the listener returns. Separately, a console
