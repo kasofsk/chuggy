@@ -1144,7 +1144,7 @@ export const baselineRelations: readonly string[] = [
     CONSTRAINT session_turn_measure_is_bounded CHECK (((COALESCE(tokens, (0)::bigint) >= 0) AND (COALESCE(cost_micros, (0)::bigint) >= 0) AND (COALESCE(duration_ms, (0)::bigint) >= 0) AND ((COALESCE(length(model), 1) >= 1) AND (COALESCE(length(model), 1) <= 256)) AND (COALESCE(cardinality(tools), 0) <= 64) AND (COALESCE(length(array_to_string(tools, ','::text)), 0) <= 8256))),
     CONSTRAINT session_turn_measure_is_whole CHECK ((((model IS NULL) = (tokens IS NULL)) AND ((model IS NULL) = (cost_micros IS NULL)) AND ((model IS NULL) = (duration_ms IS NULL)) AND ((model IS NULL) = (tools IS NULL)))),
     CONSTRAINT session_turn_state_is_known CHECK ((state = ANY (ARRAY['Queued'::text, 'Claimed'::text, 'Answered'::text, 'Failed'::text, 'Abandoned'::text]))),
-    CONSTRAINT session_turn_text_is_bounded CHECK ((((length(input) >= 1) AND (length(input) <= 17525063)) AND (COALESCE(length(result), 0) <= 65536)))
+    CONSTRAINT session_turn_text_is_bounded CHECK ((((length(input) >= 1) AND (length(input) <= 17403663)) AND (COALESCE(length(result), 0) <= 65536)))
 );`,
   `CREATE TABLE public.thread_wake_cursor (
     singleton boolean DEFAULT true NOT NULL,
