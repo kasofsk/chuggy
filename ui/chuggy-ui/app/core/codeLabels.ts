@@ -16,16 +16,20 @@
  */
 
 import {
+  blockedReasons,
+  gitEvidences,
   operationRefusalCodes,
   type BlockedReason,
   type BriefFinalizationMode,
-  type EscalationReason,
+  type EscalationKind,
   type FinalizationUnavailableKind,
+  type GitEvidenceLabel,
   type OperationRefusalCode,
   type OperationState,
   type ResumePoint,
   type TicketPhase,
 } from "../../../../src/contract/rosters.ts";
+import type { TicketEscalation } from "../../../../src/contract/responses.ts";
 import type { ApiFailure } from "./apiRequest.ts";
 import {
   mutationDeferralCodes,
@@ -39,25 +43,26 @@ import { stageLabel } from "./ticketLedger.ts";
 import type { TicketActionName } from "./ticketActions.ts";
 
 /** Which wall the ticket hit, as the noun the reader scans for. */
-export function escalationReasonLabel(reason: EscalationReason): string {
-  switch (reason) {
+export function escalationKindLabel(kind: EscalationKind): string {
+  switch (kind) {
     case "WorkFailureEscalated":
       return "Work failed";
     case "EvaluationFailureEscalated":
       return "Rework budget exhausted";
     case "WorkExecutionUnavailableEscalated":
       return "Execution unavailable";
+    case "EvaluationBlockedEscalated":
+      return "Evaluation blocked";
     case "FinalizationUnavailableEscalated":
       return "Finalization unavailable";
   }
 }
 
 /**
- * Which wall the fabric hit, off the ticket's `executionBlockedBy`: the
- * evidence beside the escalation, present only while `reason` is
- * `WorkExecutionUnavailableEscalated`, and the noun the reader scans for where
- * `escalationReasonLabel`'s arm for that reason names only that a wall
- * happened and not which one.
+ * Which wall the fabric hit, off the escalation's evidence when it is a
+ * `BlockedReason`: the noun the reader scans for where `escalationKindLabel`'s
+ * arm for `WorkExecutionUnavailableEscalated` or `EvaluationBlockedEscalated`
+ * names only that a wall happened and not which one.
  */
 export function blockedReasonLabel(reason: BlockedReason): string {
   switch (reason) {
@@ -75,10 +80,32 @@ export function blockedReasonLabel(reason: BlockedReason): string {
 }
 
 /**
- * Which hold the finalizer is stuck on, off the ticket's
- * `finalizationBlockedBy`: the evidence beside the escalation, present only
- * while `reason` is `FinalizationUnavailableEscalated`, one short label per
- * member of `finalizationUnavailableKinds`.
+ * Which git act failed, off the escalation's evidence when it is a
+ * `GitEvidenceLabel`: the continuation path's own wall, where no execution row
+ * survives to carry a `BlockedReason`.
+ */
+export function gitEvidenceLabel(evidence: GitEvidenceLabel): string {
+  switch (evidence) {
+    case "RemoteUnreachable":
+      return "Remote unreachable";
+    case "RemoteDenied":
+      return "Remote denied";
+    case "RefUnreadable":
+      return "Ref unreadable";
+    case "ObjectMissing":
+      return "Object missing";
+    case "IntegrationFailed":
+      return "Integration failed";
+    case "PromotionTimedOut":
+      return "Promotion timed out";
+  }
+}
+
+/**
+ * Which hold the finalizer is stuck on, off the escalation's evidence when it
+ * is a `FinalizationUnavailableKind`: present only while the kind is
+ * `FinalizationUnavailableEscalated`, one short label per member of
+ * `finalizationUnavailableKinds`.
  */
 export function finalizationUnavailableKindLabel(
   kind: FinalizationUnavailableKind,
@@ -113,24 +140,36 @@ export function finalizationUnavailableKindLabel(
   }
 }
 
+function isBlockedReason(value: string): value is BlockedReason {
+  return (blockedReasons as readonly string[]).includes(value);
+}
+
+function isGitEvidence(value: string): value is GitEvidenceLabel {
+  return (gitEvidences as readonly string[]).includes(value);
+}
+
 /**
- * The one line beside the escalation: the wall the fabric or the finalizer
- * hit where the read carries one, the reason's own generic word otherwise.
- * `blockedBy` is present only while `reason` is
- * `WorkExecutionUnavailableEscalated`, `finalizationBlockedBy` only while it
- * is `FinalizationUnavailableEscalated`, so a page short of both — the
- * continuation path with no wall row to read it off — still has the reason's
- * own word to draw.
+ * The evidence's own label, off whichever of the three disjoint rosters it
+ * was drawn from: the wire names no roster beside the value itself, so this is
+ * where a reader finds out which one it is.
  */
-export function escalationDetail(
-  reason: EscalationReason,
-  blockedBy: BlockedReason | undefined,
-  finalizationBlockedBy: FinalizationUnavailableKind | undefined,
+export function escalationEvidenceLabel(
+  evidence: NonNullable<TicketEscalation["evidence"]>,
 ): string {
-  if (blockedBy !== undefined) return blockedReasonLabel(blockedBy);
-  if (finalizationBlockedBy !== undefined)
-    return finalizationUnavailableKindLabel(finalizationBlockedBy);
-  return escalationReasonLabel(reason);
+  if (isBlockedReason(evidence)) return blockedReasonLabel(evidence);
+  if (isGitEvidence(evidence)) return gitEvidenceLabel(evidence);
+  return finalizationUnavailableKindLabel(evidence);
+}
+
+/**
+ * The one line beside the escalation: the wall's own label where the
+ * escalation carries evidence, the kind's own generic word otherwise — a work
+ * failure and a rework wall explain themselves, so neither ever carries one.
+ */
+export function escalationDetail(escalation: TicketEscalation): string {
+  return escalation.evidence === undefined
+    ? escalationKindLabel(escalation.kind)
+    : escalationEvidenceLabel(escalation.evidence);
 }
 
 /** What the page knows about the wall, which is what the second line can name. */
@@ -152,33 +191,24 @@ function walledStageFailed(facts: WallFacts): string | undefined {
   return stage === undefined ? undefined : `${stage} failed`;
 }
 
-/** What the interrupted set was, for the walls the fabric rather than the ticket hit. */
-function interruptedLabel(facts: WallFacts): string | undefined {
-  const set = facts.lastSet;
-  if (set === undefined) return undefined;
-  switch (set.taskKind) {
-    case "Work":
-      return "Work cancelled";
-    case "Evaluation":
-      return "Evaluation cancelled";
-  }
-}
-
 /**
  * The one optional line under the wall, from the facts the page already holds.
- * It is absent where those facts are not on the page rather than guessed at.
+ * The cancelled-set line names the phase the kind itself interrupted, needing
+ * no fact from the page; the stage line still needs the last set to say which.
  */
 export function escalationDetailLine(
-  reason: EscalationReason,
+  kind: EscalationKind,
   facts: WallFacts,
 ): string | undefined {
-  switch (reason) {
+  switch (kind) {
     case "WorkFailureEscalated":
       return "Failed work is not reworked";
     case "EvaluationFailureEscalated":
       return walledStageFailed(facts);
     case "WorkExecutionUnavailableEscalated":
-      return interruptedLabel(facts);
+      return "Work cancelled";
+    case "EvaluationBlockedEscalated":
+      return "Evaluation cancelled";
     case "FinalizationUnavailableEscalated":
       return undefined;
   }
@@ -309,19 +339,14 @@ export interface ActionEffect {
 }
 
 /**
- * What a resume would do, as much of it as the page has read: `retryableIn`
- * (`model/domain.qnt`) wants a parked phase and a stamped point, which is the
- * one arm here that offers a button. `NoPoint` is a park with no answer left,
- * and `NotRead` draws a disabled button instead, because a screen that has not
- * finished reading does not yet know which of the two it is.
+ * What a resume would do: `retryableIn` (`model/domain.qnt`) wants a parked
+ * phase, which is `hasOpenHumanTask` and free on the sum's every variant, so
+ * a ticket read carries the point the moment it carries an escalation at all.
+ * `NoPoint` is a park with no answer left.
  */
 export type ResumeOffer =
   | { readonly kind: "Offered"; readonly point: ResumePoint }
-  | { readonly kind: "NoPoint" }
-  | { readonly kind: "NotRead" };
-
-/** What the console says about a resume it cannot yet offer. */
-export const resumeNotReadReason = "Not read yet";
+  | { readonly kind: "NoPoint" };
 
 /** The answers a wall leaves when the resume is not one of them. */
 export type WallExits = readonly TicketActionName[];
@@ -368,7 +393,7 @@ function resumeRefused(effect: string, exits: WallExits): ActionEffect {
   };
 }
 
-/** What a resume would do, as far as the page has read enough to say. */
+/** What a resume would do. */
 export function resumeActionEffect(
   offer: ResumeOffer,
   exits: WallExits,
@@ -376,12 +401,6 @@ export function resumeActionEffect(
   switch (offer.kind) {
     case "NoPoint":
       return resumeRefused("Nothing to resume", exits);
-    case "NotRead":
-      return {
-        effect: "Rejoins where the ticket parked",
-        offered: true,
-        refusedBecause: resumeNotReadReason,
-      };
     case "Offered":
       return offered(resumeEffect(offer.point));
   }

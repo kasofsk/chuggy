@@ -59,10 +59,10 @@ export function SituationNotice(props: {
       </Notice>
     );
   }
-  const reason = props.ticket.reason;
-  if (reason !== undefined) {
+  const escalation = props.ticket.escalation;
+  if (escalation !== undefined) {
     const more = escalationDetailLine(
-      reason,
+      escalation.kind,
       wallFacts(props.facts, props.stageCount),
     );
     const at = instantFigure(props.ticket.changedAt, props.nowMs);
@@ -71,11 +71,7 @@ export function SituationNotice(props: {
         tone="parked"
         role="status"
         heading="Parked"
-        detail={escalationDetail(
-          reason,
-          props.ticket.executionBlockedBy,
-          props.ticket.finalizationBlockedBy,
-        )}
+        detail={escalationDetail(escalation)}
         {...(more === undefined ? {} : { more })}
       >
         <p className="pt-1">

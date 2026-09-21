@@ -120,7 +120,7 @@ export function projectTableRow(
     title: ticket.title,
     phase: ticket.phase,
     section: ticketSectionOf(ticket.phase),
-    badge: ticketBadgeLabel(ticket.phase, ticket.reason),
+    badge: ticketBadgeLabel(ticket.phase, ticket.escalation?.kind),
     executionRead: read,
     executionStatus: execution?.status,
     executionOutcome: execution?.outcome,
