@@ -7,7 +7,7 @@
  * NOTHING HERE DECIDES A TICKET. The finalizer submits `FinalizationResult`
  * through one narrow authenticated boundary and cannot append a journal entry,
  * settle an operation or move a ticket projection. `model/domain.qnt` has a
- * finalizer report a conclusive domain outcome and nothing else, so queueing,
+ * finalizer report one domain outcome and nothing else, so queueing,
  * approval, permits and the irreversible act itself are operational protocol
  * rather than `TicketGraph` state.
  *
