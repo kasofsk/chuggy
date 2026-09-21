@@ -720,9 +720,10 @@ function unreadableSources(
 }
 
 /**
- * Every durable evidence, beside the refusal it earns. The wall it parks on is
- * not a column any more: the model has one reason for a work set it could not
- * run, and which refusal it was is evidence recorded beside the execution.
+ * Every durable evidence, beside the refusal it earns its client. The wall it
+ * parks on is not a column any more — the model has one reason for a work set
+ * it could not run — and a continuation, having no client to earn a refusal,
+ * parks with that reason and nothing beside it.
  */
 const durableEvidences = [
   ["RefUnreadable", "ExecutionSourceUnreadable"],
