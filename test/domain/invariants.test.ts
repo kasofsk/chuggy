@@ -242,6 +242,19 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
   assert.ok(
     !tasksWellFormed(
       config,
+      stateView(
+        fleetBut(fleet, 1, {
+          record: [workTask(1, "Passed")],
+          spawned: 1,
+          tasks: new Set([workOutstanding(1)]),
+        }),
+      ),
+    ),
+    "one live work task still sits directly above the retired record",
+  );
+  assert.ok(
+    !tasksWellFormed(
+      config,
       stateView(fleetBut(fleet, 0, { tasks: new Set([workOutstanding(5)]) })),
     ),
     "a settled ticket carries no live task state",
