@@ -77,9 +77,10 @@
  * A LOST ATTEMPT SPENDS THE BUDGET AND A WITHDRAWN ONE DOES NOT. An attempt
  * that ran and vanished is the bounded retry 006 permits; one the fabric never
  * took is not an attempt at the work at all. When the budget is spent the
- * execution terminalizes as one `TaskDone(Failed)` carrying the explicit empty
- * manifest, which is 006's exhausted-safe-retry outcome and not a fabricated
- * verdict.
+ * execution terminalizes as one completion reporting the process died, under
+ * the explicit empty manifest that says it produced nothing — 006's
+ * exhausted-safe-retry outcome, and not a verdict fabricated for an evaluator
+ * that never reached one.
  *
  * NOTHING HERE READS A CLOCK. Claim leases, placement backoff and attempt
  * leases are durations handed to the store, which asks the database what time

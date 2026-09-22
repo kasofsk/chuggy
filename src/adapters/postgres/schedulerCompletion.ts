@@ -42,6 +42,13 @@
  * verdict — and puts it through the same acceptance and the same digest every
  * reported one goes through. Writing the row directly would be a result that
  * skipped validation, which is the one thing the sealed type exists to prevent.
+ *
+ * AND IT IS SUBMITTED UNDER ITS OWN OUTCOME, because that manifest is this
+ * adapter's sentence and not a worker's. The failed verdict in it says the
+ * process died with the fabric's relaunches behind it, which for an evaluator
+ * is not the judgement `Failed` reports — so the boundary is told
+ * `ProcessFailed`, and the door has the one fact it could not otherwise
+ * recover from a manifest it only ever sees the identity of.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -213,11 +220,18 @@ export async function schedulerFulfilRequest(
   );
 }
 
+/**
+ * What the boundary is told a task settled as, which is the execution's own
+ * outcome on every path but one. An exhausted budget has no worker behind its
+ * failed manifest, and this is the value that says so.
+ */
+type CompletionOutcome = ExecutionOutcome | "ProcessFailed";
+
 /** Offers one completion to the boundary, which validates the binding and builds the envelope. */
 async function schedulerSubmit(
   client: pg.PoolClient,
   execution: LogicalExecution,
-  outcome: ExecutionOutcome,
+  outcome: CompletionOutcome,
   manifest: { readonly id: string; readonly digest: string } | undefined,
   reason: BlockedReason | undefined,
 ): Promise<CompletionRow> {
@@ -460,11 +474,16 @@ async function schedulerReporterReported(
   return reported.rowCount === 1;
 }
 
-/** Retains the manifest and submits the completion it settles, in the transaction already open. */
+/**
+ * Retains the manifest and submits the completion it settles, in the
+ * transaction already open. `reported` is what the boundary is told, which is
+ * the manifest's own outcome unless the caller authored that manifest itself.
+ */
 async function schedulerSettle(
   client: pg.PoolClient,
   execution: LogicalExecution,
   manifest: ResultManifest,
+  reported?: CompletionOutcome,
 ): Promise<Terminalized> {
   const ordinal = await schedulerManifestOrdinal(client, execution.partition);
   await schedulerWriteManifest(client, manifest, ordinal);
@@ -472,7 +491,7 @@ async function schedulerSettle(
   const submitted = await schedulerSubmit(
     client,
     execution,
-    outcome,
+    reported ?? outcome,
     { id: manifest.manifest, digest: manifest.digest },
     undefined,
   );
@@ -653,6 +672,7 @@ export async function schedulerRetriesExhausted(
     client,
     standing.execution,
     schedulerEmptyManifest(standing.execution, reporter),
+    "ProcessFailed",
   );
 }
 
