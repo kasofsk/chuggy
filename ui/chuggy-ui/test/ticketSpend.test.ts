@@ -56,8 +56,9 @@ test("a set runs from its first registration to its last end", () => {
 
 test("a set still holding an open execution has not ended", () => {
   const cycle = cycleAt(ledgerOf(ticket21Resumed), 2);
-  const run = cycle.programRuns[1]?.stages[0];
-  expect(run?.kind === "Ran" ? run.set.span : undefined).toEqual({
+  const row = cycle.stages[0];
+  const span = row?.kind === "Ran" ? row.evaluators[0]?.set.span : undefined;
+  expect(span).toEqual({
     from: "2026-08-26T01:20:00.000Z",
     to: undefined,
   });
@@ -84,8 +85,8 @@ test("a fan-out one of whose tasks has ended has not ended", () => {
       program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
     },
   );
-  const run = cycleAt(half, 0).programRuns[0]?.stages[0];
-  expect(run?.kind === "Ran" ? run.set.span : undefined).toEqual({
+  const row = cycleAt(half, 0).stages[0];
+  expect(row?.kind === "Ran" ? row.span : undefined).toEqual({
     from: "2026-08-26T00:10:00.000Z",
     to: undefined,
   });
@@ -118,8 +119,8 @@ function spanOfPair(
       program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
     },
   );
-  const row = cycleAt(paired, 0).programRuns[0]?.stages[0];
-  return row?.kind === "Ran" ? row.set.span : undefined;
+  const row = cycleAt(paired, 0).stages[0];
+  return row?.kind === "Ran" ? row.span : undefined;
 }
 
 test("an offset the text sorts after is still the earlier instant", () => {

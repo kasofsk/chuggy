@@ -1,7 +1,8 @@
 /**
  * The ticket's executions as the machine's own structure: cycles newest first,
- * each holding the work run that produced an artifact and the program runs that
- * judged it.
+ * each holding the work run that produced an artifact and the stages that
+ * judged it, an evaluator drawn once per stage at whichever generation is its
+ * own current one.
  *
  * The current cycle is railed and open and the superseded ones are dimmed and
  * closed, because the question a reader opens this page with is about the
@@ -10,7 +11,9 @@
  * and "not on this page" that a flat list cannot draw. Every figure is
  * `core/figures.ts`'s and every sum `runTotals.ts`'s, so nothing here counts;
  * the fabric's own relaunches are a note on the row and are not the cycle's
- * rework.
+ * rework. A generation past an evaluator's first is a note on its row too,
+ * never a row of its own: a resume re-asks only the evaluators a stage
+ * blocked, and the ones it did not re-ask keep their own, earlier row.
  */
 
 import { useCallback, useState } from "react";
@@ -27,12 +30,13 @@ import type { Spend } from "../../core/figures.ts";
 import { executionRequirementLabel } from "../../core/labels.ts";
 import { projectListFolded } from "../../core/projectQueryKeys.ts";
 import type { ProjectListChange } from "../../core/projectQueryKeys.ts";
-import { runSpendOf } from "../../core/runTotals.ts";
+import { generationLabel, runSpendOf } from "../../core/runTotals.ts";
 import { ticketExecutionsFolded } from "../../core/ticketExecutions.ts";
 import type {
   Cycle,
+  EvaluatorRow,
   Ledger as LedgerFacts,
-  ProgramRun,
+  RanStage,
   SetVerdict,
   StageRow,
   TaskSet,
@@ -45,7 +49,7 @@ import {
   stageLabel,
   ticketLedger,
 } from "../../core/ticketLedger.ts";
-import { stageArm, standingTone, verdictTone } from "../../core/tones.ts";
+import { stageArm, verdictTone } from "../../core/tones.ts";
 import { usePanelList } from "../api.ts";
 import { DataPanel } from "../DataPanel.tsx";
 import { ExecutionDetail } from "../TicketExecutions.tsx";
@@ -84,13 +88,24 @@ function setRelaunches(set: TaskSet): string | undefined {
 }
 
 /**
- * How much of a set this page holds, kept out of the note so that a row which
- * is superseded, relaunched and short at once still draws two strings a reader
- * can scan rather than one past the copy budget.
+ * How much of a work set this page holds, kept out of the note so that a row
+ * which is superseded, relaunched and short at once still draws two strings a
+ * reader can scan rather than one past the copy budget.
  */
 function setShortfall(set: TaskSet): string | undefined {
   return set.executions.length < set.expected
     ? `${String(set.executions.length)} of ${String(set.expected)} tasks on this page`
+    : undefined;
+}
+
+/**
+ * How much of a stage's roster this page holds, drawn on the row of its last
+ * evaluator so a stage which is short is still said once and not once per
+ * evaluator it did hold.
+ */
+function stageShortfall(stage: RanStage): string | undefined {
+  return stage.evaluators.length < stage.expected
+    ? `${String(stage.evaluators.length)} of ${String(stage.expected)} evaluators on this page`
     : undefined;
 }
 
@@ -104,8 +119,9 @@ function setNotes(set: TaskSet, standing: string | undefined): string {
 function SetRowNote(props: {
   readonly set: TaskSet;
   readonly standing: string | undefined;
+  readonly shortfall?: string | undefined;
 }): ReactNode {
-  const shortfall = setShortfall(props.set);
+  const shortfall = props.shortfall ?? setShortfall(props.set);
   return (
     <>
       {setNotes(props.set, props.standing)}
@@ -128,6 +144,7 @@ function SetRow(props: {
   readonly label: string;
   readonly set: TaskSet;
   readonly standing?: string;
+  readonly shortfall?: string;
 }): ReactNode {
   const first = props.set.executions[0];
   const pill = {
@@ -151,7 +168,13 @@ function SetRow(props: {
         props.chrome.nowMs,
       )}
       spent={setSpend(props.set)}
-      note={<SetRowNote set={props.set} standing={props.standing} />}
+      note={
+        <SetRowNote
+          set={props.set}
+          standing={props.standing}
+          shortfall={props.shortfall}
+        />
+      }
       expand={{
         open,
         onToggle: () => {
@@ -168,14 +191,54 @@ function SetRow(props: {
   );
 }
 
+/** An evaluator's own label: the stage, and its key where the stage names
+ * more than one — a stage of one evaluator needs no key to tell its row apart. */
+function evaluatorLabel(
+  stage: number,
+  stageCount: number,
+  key: number,
+  many: boolean,
+): string {
+  const label = stageLabel(stage, stageCount);
+  return many ? `${label} · ${String(key)}` : label;
+}
+
+/** An evaluator's own row: a generation past its first, and the roster's own
+ * shortfall on the last evaluator the page holds for the stage. */
+function EvaluatorLine(props: {
+  readonly chrome: RowChrome;
+  readonly stage: RanStage;
+  readonly row: EvaluatorRow;
+  readonly last: boolean;
+  readonly stageCount: number;
+}): ReactNode {
+  const many = props.stage.evaluators.length > 1;
+  const standing = generationLabel(props.row.generation);
+  const shortfall = props.last ? stageShortfall(props.stage) : undefined;
+  return (
+    <SetRow
+      chrome={props.chrome}
+      label={evaluatorLabel(
+        props.stage.stage,
+        props.stageCount,
+        props.row.key,
+        many,
+      )}
+      set={props.row.set}
+      {...(standing === undefined ? {} : { standing })}
+      {...(shortfall === undefined ? {} : { shortfall })}
+    />
+  );
+}
+
 function StageLine(props: {
   readonly chrome: RowChrome;
   readonly row: StageRow;
   readonly stageCount: number;
 }): ReactNode {
-  const label = stageLabel(props.row.stage, props.stageCount);
-  const arm = stageArm(props.row);
-  if (props.row.kind !== "Ran")
+  if (props.row.kind !== "Ran") {
+    const label = stageLabel(props.row.stage, props.stageCount);
+    const arm = stageArm(props.row);
     return (
       <LedgerRow
         label={label}
@@ -184,43 +247,21 @@ function StageLine(props: {
         note={props.row.kind === "Missing" ? "Not on this page" : undefined}
       />
     );
-  return <SetRow chrome={props.chrome} label={label} set={props.row.set} />;
-}
-
-/** A run after the first inside one cycle is what a charged resume started. */
-export function programRunEyebrow(run: ProgramRun, runs: number): string {
-  if (runs === 1) return "Evaluation";
-  const named = `Evaluation · run ${String(run.ordinal)}`;
-  return run.ordinal === 1 ? named : `${named} · after resume`;
-}
-
-function ProgramRunBlock(props: {
-  readonly chrome: RowChrome;
-  readonly run: ProgramRun;
-  readonly runs: number;
-  readonly stageCount: number;
-}): ReactNode {
+  }
+  const stage = props.row;
   return (
-    <LedgerBlock
-      eyebrow={programRunEyebrow(props.run, props.runs)}
-      pill={
-        props.runs === 1
-          ? undefined
-          : {
-              tone: standingTone(props.run.standing),
-              text: props.run.standing,
-            }
-      }
-    >
-      {props.run.stages.map((row) => (
-        <StageLine
-          key={`${String(props.run.ordinal)}/${String(row.stage)}`}
+    <>
+      {stage.evaluators.map((row, index) => (
+        <EvaluatorLine
+          key={`${String(stage.stage)}/${String(row.key)}`}
           chrome={props.chrome}
+          stage={stage}
           row={row}
+          last={index === stage.evaluators.length - 1}
           stageCount={props.stageCount}
         />
       ))}
-    </LedgerBlock>
+    </>
   );
 }
 
@@ -318,15 +359,18 @@ function CycleGroup(props: {
           />
         )}
       </LedgerBlock>
-      {cycle.programRuns.map((run) => (
-        <ProgramRunBlock
-          key={run.ordinal}
-          chrome={props.chrome}
-          run={run}
-          runs={cycle.programRuns.length}
-          stageCount={props.stageCount}
-        />
-      ))}
+      {cycle.stages.length === 0 ? null : (
+        <LedgerBlock eyebrow="Evaluation">
+          {cycle.stages.map((row) => (
+            <StageLine
+              key={row.stage}
+              chrome={props.chrome}
+              row={row}
+              stageCount={props.stageCount}
+            />
+          ))}
+        </LedgerBlock>
+      )}
     </LedgerGroup>
   );
 }
