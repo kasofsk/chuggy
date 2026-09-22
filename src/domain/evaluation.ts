@@ -70,7 +70,9 @@ export function initialStageRun(
   return {
     stageIndex,
     generation: 1,
-    evaluators: new Map(stage.evaluators.map((entry) => [entry.key, "Awaiting"])),
+    evaluators: new Map(
+      stage.evaluators.map((entry) => [entry.key, "Awaiting"]),
+    ),
   };
 }
 
@@ -128,7 +130,9 @@ export function stagePassed(run: StageRun): boolean {
 
 /** The run an instance is on, or nothing when it is not running one. */
 function runningRun(instance: EvaluationInstance): StageRun | undefined {
-  return instance.state.type === "Running" ? instance.state.value.stage : undefined;
+  return instance.state.type === "Running"
+    ? instance.state.value.stage
+    : undefined;
 }
 
 /** Whether this task is one the running stage is still waiting on. */
@@ -186,20 +190,31 @@ function withStatus(
  * stopped evaluator — a verdict is a judgement and a wall is not — and a
  * stage that has passed either finishes the plan or asks the next one.
  */
-export function concludeStage(instance: EvaluationInstance): EvaluationInstance {
+export function concludeStage(
+  instance: EvaluationInstance,
+): EvaluationInstance {
   if (instance.state.type !== "Running") return instance;
   const running = instance.state.value;
   const run = running.stage;
   const completed = [...running.completedStages, run];
   if (stageHasAwaiting(run)) return instance;
   if (stageHasFailed(run))
-    return { ...instance, state: { type: "EvaluationFailed", value: completed } };
+    return {
+      ...instance,
+      state: { type: "EvaluationFailed", value: completed },
+    };
   if (stageHasBlocked(run))
-    return { ...instance, state: { type: "EvaluationBlocked", value: running } };
+    return {
+      ...instance,
+      state: { type: "EvaluationBlocked", value: running },
+    };
   const nextIndex = run.stageIndex + 1;
   const next = instance.plan.stages[nextIndex];
   if (next === undefined)
-    return { ...instance, state: { type: "EvaluationPassed", value: completed } };
+    return {
+      ...instance,
+      state: { type: "EvaluationPassed", value: completed },
+    };
   return {
     ...instance,
     state: {
@@ -248,7 +263,8 @@ export function applyProduced(
     withStatus(instance, task, {
       type: "Produced",
       value: {
-        type: verdict === "EvaluatorPass" ? "EvaluatorPassed" : "EvaluatorFailed",
+        type:
+          verdict === "EvaluatorPass" ? "EvaluatorPassed" : "EvaluatorFailed",
         value: result,
       },
     }),
@@ -317,13 +333,12 @@ export function reworkEntries(
 ): readonly EvaluationReworkEntry[] {
   const completed = completedStages[completedStages.length - 1];
   if (completed === undefined) return [];
-  return stageOf(instance, completed)
-    .evaluators.flatMap((entry) => {
-      const status = completed.evaluators.get(entry.key);
-      if (status === undefined || !statusFailed(status)) return [];
-      if (status === "Awaiting" || status.type !== "Produced") return [];
-      return [{ evaluator: entry.key, resultRef: status.value.value }];
-    });
+  return stageOf(instance, completed).evaluators.flatMap((entry) => {
+    const status = completed.evaluators.get(entry.key);
+    if (status === undefined || !statusFailed(status)) return [];
+    if (status === "Awaiting" || status.type !== "Produced") return [];
+    return [{ evaluator: entry.key, resultRef: status.value.value }];
+  });
 }
 
 /** Judgement begins: the plan's lowest stage is asked over the artifact named. */
@@ -360,10 +375,7 @@ function statusValid(status: EvaluatorStatus): boolean {
   return status.value > 0;
 }
 
-function stageRunValid(
-  instance: EvaluationInstance,
-  run: StageRun,
-): boolean {
+function stageRunValid(instance: EvaluationInstance, run: StageRun): boolean {
   if (run.stageIndex < 0 || run.stageIndex >= instance.plan.stages.length)
     return false;
   const defined = evaluatorKeys(stageOf(instance, run));
@@ -531,8 +543,14 @@ function stageRunsEqual(
 }
 
 function progressEquals(
-  left: { readonly completedStages: readonly StageRun[]; readonly stage: StageRun },
-  right: { readonly completedStages: readonly StageRun[]; readonly stage: StageRun },
+  left: {
+    readonly completedStages: readonly StageRun[];
+    readonly stage: StageRun;
+  },
+  right: {
+    readonly completedStages: readonly StageRun[];
+    readonly stage: StageRun;
+  },
 ): boolean {
   return (
     stageRunsEqual(left.completedStages, right.completedStages) &&

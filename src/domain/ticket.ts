@@ -181,7 +181,9 @@ export function spawnEvalRun(ticket: Ticket): Ticket {
   const index = runningStageIndex(currentInstance(ticket));
   const stage = ticket.program[index];
   if (stage === undefined)
-    throw new Error("spawnEvalRun: the running stage indexes outside the program");
+    throw new Error(
+      "spawnEvalRun: the running stage indexes outside the program",
+    );
   return { ...ticket, spawned: ticket.spawned + stage.evaluators.length };
 }
 
@@ -249,9 +251,7 @@ export function owesTask(ticket: Ticket, task: TaskIdentity): boolean {
  * is that it exists and tells one evaluator's result from another's in a run.
  */
 export function taskRefOf(task: TaskIdentity): number {
-  return task.type === "WorkTask"
-    ? task.value.cycle
-    : task.value.evaluator;
+  return task.type === "WorkTask" ? task.value.cycle : task.value.evaluator;
 }
 
 export function taskResultRefOf(task: TaskIdentity): TaskResultRef {

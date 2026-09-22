@@ -25,10 +25,12 @@ import type {
   TicketGraph,
   EvaluationInstance,
   EvaluationVerdict,
+  FailureKind,
   StageDefinition,
   Task,
   TaskIdentity,
   TaskOutcome,
+  TaskTerminalReport,
   Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
 import { freshTicket } from "../../src/domain/deciders.ts";
@@ -40,7 +42,11 @@ import {
 } from "../../src/domain/evaluation.ts";
 import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
-import { evaluationSpawnTotal } from "../../src/domain/ticket.ts";
+import {
+  evaluationSpawnTotal,
+  taskRefOf,
+  taskResultRefOf,
+} from "../../src/domain/ticket.ts";
 import {
   evaluationTaskOf,
   tsResolved,
@@ -68,12 +74,32 @@ export function judgedInstance(
   verdictFor: (evaluator: number) => EvaluationVerdict = () => "EvaluatorPass",
 ): EvaluationInstance {
   let instance = begin(cycle, { ticket, workResult }, { stages: program });
-  for (let owed = currentTaskObligations(instance); owed.length > 0; ) {
+  for (let owed = currentTaskObligations(instance); owed.length > 0;) {
     const task = owed[0];
     if (task === undefined) break;
     const evaluator = evaluatorOf(task);
     instance = applyProduced(instance, task, evaluator, verdictFor(evaluator));
     owed = currentTaskObligations(instance);
+  }
+  return instance;
+}
+
+/**
+ * A judgement in flight: the named evaluators of the first stage have passed
+ * and the rest still owe, which is the state a completion is enabled at.
+ */
+export function runningInstance(
+  ticket: number,
+  cycle: number,
+  workResult: number,
+  program: readonly StageDefinition[],
+  answered: ReadonlySet<number>,
+): EvaluationInstance {
+  let instance = begin(cycle, { ticket, workResult }, { stages: program });
+  for (const task of currentTaskObligations(instance)) {
+    const evaluator = evaluatorOf(task);
+    if (answered.has(evaluator))
+      instance = applyProduced(instance, task, evaluator, "EvaluatorPass");
   }
   return instance;
 }
@@ -90,7 +116,7 @@ export function blockedInstance(
   stopped: ReadonlySet<number>,
 ): EvaluationInstance {
   let instance = begin(cycle, { ticket, workResult }, { stages: program });
-  for (let owed = currentTaskObligations(instance); owed.length > 0; ) {
+  for (let owed = currentTaskObligations(instance); owed.length > 0;) {
     const task = owed[0];
     if (task === undefined) break;
     const evaluator = evaluatorOf(task);
@@ -100,6 +126,11 @@ export function blockedInstance(
     owed = currentTaskObligations(instance);
   }
   return instance;
+}
+
+/** How many evaluators a program's first stage lists, which is what one run of it claims. */
+export function rosterOf(program: readonly StageDefinition[]): number {
+  return program[0]?.evaluators.length ?? 0;
 }
 
 /** A ticket id, so a fixture reads the way the model's numbering does. */
@@ -148,6 +179,30 @@ export const evalOutstanding = (
   state: tsOutstanding,
 });
 
+/** What a work task comes back with when it produced its artifact. */
+export const producedReport = (task: TaskIdentity): TaskTerminalReport => ({
+  type: "WorkResultReport",
+  value: { result: taskResultRefOf(task) },
+});
+
+/** What an evaluator comes back with, carrying the verdict it reached. */
+export const judgedReport = (
+  task: TaskIdentity,
+  verdict: EvaluationVerdict,
+): TaskTerminalReport => ({
+  type: "EvaluationResultReport",
+  value: { result: taskResultRefOf(task), verdict },
+});
+
+/** What a task comes back with when it stopped instead of answering. */
+export const stoppedReport = (
+  task: TaskIdentity,
+  kind: FailureKind,
+): TaskTerminalReport => ({
+  type: "TerminalFailureReport",
+  value: { evidence: taskRefOf(task), kind },
+});
+
 /** A ticket as a release leaves it, with whatever the caller overrides. */
 export function ticketOn(
   config: Config,
@@ -187,7 +242,7 @@ export function healthyFleet(config: Config): readonly Ticket[] {
     return {
       evaluations: [judged],
       workCyclesStarted: 1,
-      spawned: 1 + program[0]!.evaluators.length,
+      spawned: 1 + rosterOf(program),
       artifact: { type: "ProducedArtifact", value: 1 },
     };
   };

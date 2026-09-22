@@ -185,9 +185,7 @@ function encodeTaskResultRef(result: TaskResultRef): ItfValue {
 }
 
 /** What a task came back with, whichever arm it is. */
-export function encodeTaskTerminalReport(
-  report: TaskTerminalReport,
-): ItfValue {
+export function encodeTaskTerminalReport(report: TaskTerminalReport): ItfValue {
   switch (report.type) {
     case "WorkResultReport":
       return encodeVariant(
@@ -241,7 +239,10 @@ function encodeStageRun(run: StageRun): ItfValue {
               throw new Error(
                 `vocabulary: no status for evaluator ${String(evaluator)}`,
               );
-            return [encodeInt(evaluator), encodeEvaluatorStatus(status)] as const;
+            return [
+              encodeInt(evaluator),
+              encodeEvaluatorStatus(status),
+            ] as const;
           }),
       },
     ],

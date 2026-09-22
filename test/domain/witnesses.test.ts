@@ -18,10 +18,8 @@ import assert from "node:assert/strict";
 
 import type { Config } from "../../src/domain/config.ts";
 
-import {
-  decideEvalStageReduce,
-  decideRevoke,
-} from "../../src/domain/deciders.ts";
+import { decideRevoke, decideTaskDone } from "../../src/domain/deciders.ts";
+import { evaluationTaskOf } from "../../src/domain/task.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
 
 import { stageAdvanceNever, witnesses } from "../../src/domain/witnesses.ts";
@@ -29,10 +27,10 @@ import { modelInstance } from "./configs.ts";
 import {
   graphOf,
   depsOf,
-  evalTask,
   id,
+  judgedReport,
+  runningInstance,
   ticketOn,
-  workTask,
 } from "./fixtures.ts";
 import type {
   TicketGraph,
@@ -54,17 +52,19 @@ const twoStage: readonly StageDefinition[] = [
   { key: 2, evaluators: [{ key: 1 }] },
 ];
 
-/** A ticket whose lowest eval stage has just passed with a later stage still to run. */
+/** A ticket running the lowest of two stages, with its one evaluator still to answer. */
 const midProgram = graphOf([
   ticketOn(config, {
     phase: "Evaluation",
     program: twoStage,
-    record: [workTask(1, 1, "Passed")],
-    tasks: new Set([evalTask(1, 1, 1, 1, "Passed")]),
+    evaluations: [runningInstance(1, 1, 1, twoStage, new Set())],
     workCyclesStarted: 1,
     spawned: 2,
   }),
 ]);
+
+/** The answer that concludes that stage, which is the step the witness is read at. */
+const judged = evaluationTaskOf(1, 1, 1, 1, 1);
 
 const revoked = ((): StepView => {
   const pre = graphOf([
@@ -76,7 +76,13 @@ const revoked = ((): StepView => {
 
 const advance = stepped(
   midProgram,
-  decideEvalStageReduce(midProgram, id(1), "ReworkEvaluationFailure"),
+  decideTaskDone(
+    midProgram,
+    id(1),
+    judged,
+    judgedReport(judged, "EvaluatorPass"),
+    "ReworkEvaluationFailure",
+  ),
 );
 
 test("an eval stage advances, which is what keeps eval-stage-passed exercised", () => {

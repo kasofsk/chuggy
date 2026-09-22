@@ -65,7 +65,10 @@ export function reportChoices(
 ): readonly TaskTerminalReport[] {
   const evidence = taskRefOf(task);
   const failures: readonly TaskTerminalReport[] = [
-    { type: "TerminalFailureReport", value: { evidence, kind: "ProcessFailure" } },
+    {
+      type: "TerminalFailureReport",
+      value: { evidence, kind: "ProcessFailure" },
+    },
     {
       type: "TerminalFailureReport",
       value: { evidence, kind: "ExecutionUnavailableFailure" },
@@ -75,8 +78,14 @@ export function reportChoices(
   if (task.type === "WorkTask")
     return [{ type: "WorkResultReport", value: { result } }, ...failures];
   return [
-    { type: "EvaluationResultReport", value: { result, verdict: "EvaluatorPass" } },
-    { type: "EvaluationResultReport", value: { result, verdict: "EvaluatorFail" } },
+    {
+      type: "EvaluationResultReport",
+      value: { result, verdict: "EvaluatorPass" },
+    },
+    {
+      type: "EvaluationResultReport",
+      value: { result, verdict: "EvaluatorFail" },
+    },
     ...failures,
   ];
 }

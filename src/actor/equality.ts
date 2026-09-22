@@ -30,10 +30,7 @@ import type {
   Transition,
 } from "../domain/generated/modelTypes.ts";
 import { tasksInEvaluatorKeyOrder, taskEquals } from "../domain/task.ts";
-import {
-  instanceEquals,
-  stageDefinitionEquals,
-} from "../domain/evaluation.ts";
+import { instanceEquals, stageDefinitionEquals } from "../domain/evaluation.ts";
 
 /** Same length, and equal member by member in order. */
 function listEquals<Value>(

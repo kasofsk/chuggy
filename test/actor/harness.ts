@@ -36,11 +36,12 @@ import {
 import type { Config } from "../../src/domain/config.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import type {
+  EvaluationFailureDisposition,
+  EvaluationVerdict,
   StageDefinition,
-  Verdict,
 } from "../../src/domain/generated/modelTypes.ts";
 import { bundleHolds, evaluateBundle } from "../conformance/evaluate.ts";
-import { id } from "../domain/fixtures.ts";
+import { id, judgedReport, producedReport } from "../domain/fixtures.ts";
 
 /** The embedded domain instance of `model/refinement.qnt`, field for field. */
 export const refinementInstance: Config = {
@@ -55,8 +56,8 @@ export const plainAuthoring = {
   prog: [{ key: 1, evaluators: [{ key: 1 }] }] as readonly StageDefinition[],
 } as const;
 
-/** The manifest a task reports when a suite does not care what it reported. */
-export const plainResult = { manifest: 1, digest: 1, schema: 1 } as const;
+/** The disposition a completion rides when the suite is not steering a failure. */
+export const plainDisposition = "ReworkEvaluationFailure" as const;
 
 /** The single-stage program every refinement-model run authors. */
 export const flatProgram: readonly StageDefinition[] = [
@@ -108,14 +109,13 @@ export function stepEmit(
 }
 
 /**
- * The disciplined first cycle every witness run walks: release, dispatch, the
- * work set passing, and the eval task resolved with the caller's verdict — the
- * draw that routes the run toward its own seam.
+ * The disciplined walk to the state whose next decision is the first stage's
+ * one evaluator answering: release, dispatch, the work task producing, and the
+ * reduce that opens the judgement.
  */
-export function walkFirstCycle(
+export function walkToFirstJudgement(
   config: Config,
   state: ActorState,
-  evalVerdict: Verdict,
 ): ActorState {
   state = stepEmit(
     config,
@@ -124,22 +124,21 @@ export function walkFirstCycle(
     "ticket-released",
   );
   state = stepEmit(config, state, dispatchEvent(id(1)), "dispatch");
+  const work = workTaskOf(1, 1);
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
+    taskDoneEvent(id(1), work, producedReport(work), plainDisposition),
     "task-done",
   );
-  state = stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
-  return stepEmit(
-    config,
-    state,
-    taskDoneEvent(
-      id(1),
-      evaluationTaskOf(1, 1, 1, 1, 1),
-      evalVerdict,
-      plainResult,
-    ),
-    "task-done",
-  );
+  return stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
+}
+
+/** That stage's one evaluator answering with `verdict`, which is the step that concludes it. */
+export function firstJudgement(
+  verdict: EvaluationVerdict,
+  onFailure: EvaluationFailureDisposition = plainDisposition,
+): DecisionEvent {
+  const judge = evaluationTaskOf(1, 1, 1, 1, 1);
+  return taskDoneEvent(id(1), judge, judgedReport(judge, verdict), onFailure);
 }

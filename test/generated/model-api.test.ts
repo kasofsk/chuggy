@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   phaseTags,
+  type EvaluationInstance,
   type TicketGraph,
 } from "../../src/domain/generated/modelTypes.ts";
 import {
@@ -10,6 +11,52 @@ import {
   decodeDecisionEvent,
   encodeTicketGraph,
 } from "../../src/generated/model-api.ts";
+
+/** A judgement still running, which is the only shape carrying a map of evaluators. */
+const instance: EvaluationInstance = {
+  workCycle: 1,
+  input: { ticket: 7, workResult: 1 },
+  plan: { stages: [{ key: 1, evaluators: [{ key: 1 }] }] },
+  state: {
+    type: "Running",
+    value: {
+      completedStages: [],
+      stage: {
+        stageIndex: 0,
+        generation: 1,
+        evaluators: new Map([
+          [
+            1,
+            { type: "Produced", value: { type: "EvaluatorPassed", value: 1 } },
+          ],
+        ]),
+      },
+    },
+  },
+};
+
+/** The same, as the codec writes it: a map is a list of pairs and a sum is tag and value. */
+const wiredInstance = {
+  workCycle: 1,
+  input: { ticket: 7, workResult: 1 },
+  plan: { stages: [{ key: 1, evaluators: [{ key: 1 }] }] },
+  state: {
+    type: "Running",
+    value: {
+      completedStages: [],
+      stage: {
+        stageIndex: 0,
+        generation: 1,
+        evaluators: [
+          [
+            1,
+            { type: "Produced", value: { type: "EvaluatorPassed", value: 1 } },
+          ],
+        ],
+      },
+    },
+  },
+};
 
 const graph: TicketGraph = {
   tickets: new Map([
@@ -21,7 +68,7 @@ const graph: TicketGraph = {
         artifact: "NoArtifact",
         program: [{ key: 1, evaluators: [{ key: 1 }] }],
         tasks: new Set(),
-        record: [],
+        evaluations: [instance],
         workCyclesStarted: 0,
         spawned: 0,
         escalation: "NoEscalation",
@@ -43,7 +90,7 @@ test("generated JSON codec round-trips nested lists, sets, maps and records", ()
           artifact: "NoArtifact",
           program: [{ key: 1, evaluators: [{ key: 1 }] }],
           tasks: [],
-          record: [],
+          evaluations: [wiredInstance],
           workCyclesStarted: 0,
           spawned: 0,
           escalation: "NoEscalation",
