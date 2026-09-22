@@ -26,7 +26,7 @@ import type { TicketId } from "./ids.ts";
 import {
   outstandingCount,
   taskIdentityEquals,
-  tasksInOrdinalOrder,
+  tasksInEvaluatorKeyOrder,
 } from "./task.ts";
 
 /** Anything not settled and not past the point of no return. */
@@ -218,12 +218,12 @@ export function quietIn(config: Config, graph: TicketGraph): boolean {
   );
 }
 
-/** The tasks of this ticket the fabric could still report on, in ordinal order. */
+/** The tasks of this ticket the fabric could still report on, by evaluator key. */
 export function outstandingTasksIn(
   graph: TicketGraph,
   id: TicketId,
 ): readonly TaskIdentity[] {
-  return tasksInOrdinalOrder(
+  return tasksInEvaluatorKeyOrder(
     [...ticketAt(graph, id).tasks].filter((t) => t.state === "Outstanding"),
   ).map((t) => t.identity);
 }

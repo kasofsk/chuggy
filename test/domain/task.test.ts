@@ -11,13 +11,14 @@ import {
   evalStage,
   evaluationTaskOf,
   resolveTask,
-  retiredInOrdinalOrder,
+  retiredInEvaluatorKeyOrder,
   outstandingCount,
   spawnTasks,
   taskIdentityEquals,
   taskIdentityValid,
-  taskOrdinal,
-  tasksInOrdinalOrder,
+  taskPositionInSet,
+  taskRetirementKey,
+  tasksInEvaluatorKeyOrder,
   taskPassed,
   evaluationFailureReworksStarted,
   tsResolved,
@@ -61,11 +62,11 @@ const bare: Ticket = {
 
 test("a spawned set is outstanding under exactly the identities it was named", () => {
   const tasks = spawnTasks([
-    evaluationTaskOf(1, 1, 0, 1, 1),
-    evaluationTaskOf(1, 1, 0, 1, 2),
+    evaluationTaskOf(1, 1, 1, 1, 1),
+    evaluationTaskOf(1, 1, 1, 1, 2),
   ]);
   assert.deepEqual(
-    tasksInOrdinalOrder(tasks).map((t) => taskOrdinal(t.identity)),
+    tasksInEvaluatorKeyOrder(tasks).map((t) => taskRetirementKey(t.identity)),
     [1, 2],
   );
   assert.equal(outstandingCount(tasks), 2);
@@ -79,9 +80,9 @@ test("an identity is valid exactly while every counter it carries is positive", 
   assert.ok(taskIdentityValid(workTaskOf(1, 1)));
   assert.ok(!taskIdentityValid(workTaskOf(1, 0)));
   assert.ok(!taskIdentityValid(workTaskOf(0, 1)));
-  assert.ok(taskIdentityValid(evaluationTaskOf(1, 1, 0, 1, 1)));
-  assert.ok(!taskIdentityValid(evaluationTaskOf(0, 1, 0, 1, 1)));
-  assert.ok(!taskIdentityValid(evaluationTaskOf(1, 0, 0, 1, 1)));
+  assert.ok(taskIdentityValid(evaluationTaskOf(1, 1, 1, 1, 1)));
+  assert.ok(!taskIdentityValid(evaluationTaskOf(0, 1, 1, 1, 1)));
+  assert.ok(!taskIdentityValid(evaluationTaskOf(1, 0, 1, 1, 1)));
   assert.ok(
     !taskIdentityValid({
       type: "EvaluationTask",
@@ -89,30 +90,93 @@ test("an identity is valid exactly while every counter it carries is positive", 
     }),
     "the contract's stage is a positive key, not an index",
   );
-  assert.ok(!taskIdentityValid(evaluationTaskOf(1, 1, 0, 0, 1)));
-  assert.ok(!taskIdentityValid(evaluationTaskOf(1, 1, 0, 1, 0)));
+  assert.ok(!taskIdentityValid(evaluationTaskOf(1, 1, 1, 0, 1)));
+  assert.ok(!taskIdentityValid(evaluationTaskOf(1, 1, 1, 1, 0)));
 });
 
+/** A cycle-one ticket about to run the program it is handed, as the work reduce leaves it. */
+function judging(program: Ticket["program"]): Ticket {
+  return { ...bare, program, workCyclesStarted: 1 };
+}
+
+const paired: Ticket["program"] = [
+  { key: 1, evaluators: [{ key: 1 }, { key: 2 }] },
+];
+const sparse: Ticket["program"] = [{ key: 1, evaluators: [{ key: 2 }] }];
+
 test("a stage's generation counts its runs, not its evaluators", () => {
-  const first = spawnEvalStage({ ...bare, workCyclesStarted: 1 }, 1, 0, 2);
-  const second = spawnEvalStage(retireLive(first), 1, 0, 2);
+  const first = spawnEvalStage(judging(paired), 1, 0);
+  const second = spawnEvalStage(retireLive(first), 1, 0);
   assert.deepEqual(
-    [...second.tasks].map((t) => t.identity),
-    [evaluationTaskOf(1, 1, 0, 2, 1), evaluationTaskOf(1, 1, 0, 2, 2)],
+    tasksInEvaluatorKeyOrder(second.tasks).map((t) => t.identity),
+    [evaluationTaskOf(1, 1, 1, 2, 1), evaluationTaskOf(1, 1, 1, 2, 2)],
     "a fanned-out stage re-entered once is on its second run, not its third",
   );
 });
 
+test("a sparse stage spawns, resolves and retires under the one key it lists", () => {
+  const listed = evaluationTaskOf(1, 1, 1, 1, 2);
+  const spawned = spawnEvalStage(judging(sparse), 1, 0);
+  assert.deepEqual(
+    [...spawned.tasks].map((t) => t.identity),
+    [listed],
+    "the spawn names the listed key, not the count from one",
+  );
+  const resolved = {
+    ...spawned,
+    tasks: resolveTask(spawned.tasks, listed, "Passed"),
+  };
+  assert.equal(outstandingCount(resolved.tasks), 0);
+  const retired = retireLive(resolved);
+  assert.equal(retired.tasks.size, 0);
+  assert.deepEqual(retired.record, [
+    { identity: listed, state: tsResolved("Passed") },
+  ]);
+  assert.equal(retired.spawned, retired.record.length);
+  const again = spawnEvalStage(retired, 1, 0);
+  assert.deepEqual(
+    [...again.tasks].map((t) => t.identity),
+    [evaluationTaskOf(1, 1, 1, 2, 2)],
+    "the generation is counted at the key the stage lists first, so a re-entry is run two",
+  );
+});
+
+test("retiring a stage keyed one and three keeps both tasks", () => {
+  const both = spawnOn(
+    judging([{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }]),
+    [evaluationTaskOf(1, 1, 1, 1, 3), evaluationTaskOf(1, 1, 1, 1, 1)],
+  );
+  const retired = retireLive(both);
+  assert.deepEqual(
+    retired.record.map((t) => taskRetirementKey(t.identity)),
+    [1, 3],
+    "a walk from one to the set's size would have dropped key three",
+  );
+  assert.equal(retired.spawned, retired.record.length + retired.tasks.size);
+});
+
+test("a task's position in its set counts the set by evaluator key, not by the key itself", () => {
+  const tasks = spawnTasks([
+    evaluationTaskOf(1, 1, 1, 1, 3),
+    evaluationTaskOf(1, 1, 1, 1, 1),
+  ]);
+  assert.equal(taskPositionInSet(tasks, evaluationTaskOf(1, 1, 1, 1, 1)), 1);
+  assert.equal(taskPositionInSet(tasks, evaluationTaskOf(1, 1, 1, 1, 3)), 2);
+  assert.throws(
+    () => taskPositionInSet(tasks, evaluationTaskOf(1, 1, 1, 1, 2)),
+    /not in this set/,
+  );
+});
 test("two identities are the same only on the same arm and the same fields", () => {
   assert.ok(taskIdentityEquals(workTaskOf(2, 3), workTaskOf(2, 3)));
   assert.ok(!taskIdentityEquals(workTaskOf(2, 3), workTaskOf(2, 4)));
   assert.ok(
-    !taskIdentityEquals(workTaskOf(2, 3), evaluationTaskOf(2, 3, 0, 1, 1)),
+    !taskIdentityEquals(workTaskOf(2, 3), evaluationTaskOf(2, 3, 1, 1, 1)),
   );
   assert.ok(
     !taskIdentityEquals(
-      evaluationTaskOf(2, 1, 0, 1, 1),
-      evaluationTaskOf(2, 1, 0, 2, 1),
+      evaluationTaskOf(2, 1, 1, 1, 1),
+      evaluationTaskOf(2, 1, 1, 2, 1),
     ),
     "a second run of a stage is not the first",
   );
@@ -124,7 +188,7 @@ test("first write wins, so a duplicate delivery changes nothing", () => {
   const once = resolveTask(spawned, work, "Passed");
   const twice = resolveTask(once, work, "Failed");
   assert.deepEqual([...twice], [...once]);
-  const resolved = tasksInOrdinalOrder(twice)[0];
+  const resolved = tasksInEvaluatorKeyOrder(twice)[0];
   assert.ok(resolved, "the fixture spawned one task");
   assert.ok(taskPassed(resolved));
 });
@@ -140,16 +204,16 @@ test("resolving an identity that is not there changes nothing", () => {
 test("retirement force-closes an outstanding task as cancelled and leaves a resolved one alone", () => {
   const mixed: ReadonlySet<Task> = new Set([
     {
-      identity: evaluationTaskOf(1, 1, 0, 1, 2),
+      identity: evaluationTaskOf(1, 1, 1, 1, 2),
       state: tsResolved("Passed"),
     },
-    { identity: evaluationTaskOf(1, 1, 0, 1, 1), state: tsOutstanding },
+    { identity: evaluationTaskOf(1, 1, 1, 1, 1), state: tsOutstanding },
   ]);
-  const retired = retiredInOrdinalOrder(mixed);
+  const retired = retiredInEvaluatorKeyOrder(mixed);
   assert.deepEqual(
-    retired.map((t) => taskOrdinal(t.identity)),
+    retired.map((t) => taskRetirementKey(t.identity)),
     [1, 2],
-    "retirement is in ordinal order, not in the order the set happened to hold",
+    "retirement is by evaluator key, not in the order the set happened to hold",
   );
   assert.deepEqual(retired[0]?.state, tsResolved("Cancelled"));
   assert.deepEqual(retired[1]?.state, tsResolved("Passed"));
@@ -160,8 +224,8 @@ test("the eval stage is derived from the live identities and is zero on a work s
   assert.equal(
     evalStage(
       spawnTasks([
-        evaluationTaskOf(1, 1, 1, 1, 1),
-        evaluationTaskOf(1, 1, 1, 1, 2),
+        evaluationTaskOf(1, 1, 2, 1, 1),
+        evaluationTaskOf(1, 1, 2, 1, 2),
       ]),
     ),
     1,
@@ -178,8 +242,8 @@ test("spawnOn refuses a ticket that still holds live tasks", () => {
 test("retiring then spawning keeps the ghost counting rather than restarting it", () => {
   const first = spawnOn(bare, [workTaskOf(1, 1)]);
   const second = spawnOn(retireLive(first), [
-    evaluationTaskOf(1, 1, 0, 1, 1),
-    evaluationTaskOf(1, 1, 0, 1, 2),
+    evaluationTaskOf(1, 1, 1, 1, 1),
+    evaluationTaskOf(1, 1, 1, 1, 2),
   ]);
   assert.equal(second.spawned, 3, "the ghost counts every task ever spawned");
   assert.equal(
@@ -239,11 +303,11 @@ test("a string that is not one of this machine's effects is refused", () => {
 test("a stage passes only when every task in it passed", () => {
   const mixed: ReadonlySet<Task> = new Set([
     {
-      identity: evaluationTaskOf(1, 1, 0, 1, 1),
+      identity: evaluationTaskOf(1, 1, 1, 1, 1),
       state: tsResolved("Passed"),
     },
     {
-      identity: evaluationTaskOf(1, 1, 0, 1, 2),
+      identity: evaluationTaskOf(1, 1, 1, 1, 2),
       state: tsResolved("Failed"),
     },
   ]);
@@ -280,10 +344,10 @@ function working(cycle: number): Task {
   return { identity: workTaskOf(1, cycle), state: tsOutstanding };
 }
 
-/** One evaluator of stage zero judging `cycle`, carrying the outcome it resolved to. */
+/** One evaluator of the first stage judging `cycle`, carrying the outcome it resolved to. */
 function evaluated(cycle: number, outcome: TaskOutcome, evaluator = 1): Task {
   return {
-    identity: evaluationTaskOf(1, cycle, 0, 1, evaluator),
+    identity: evaluationTaskOf(1, cycle, 1, 1, evaluator),
     state: tsResolved(outcome),
   };
 }

@@ -14,15 +14,28 @@ import { z } from "zod";
 
 import {
   nativeHttpDraftDependenciesMax,
+  nativeHttpDraftEvaluatorsMax,
   nativeHttpDraftStagesMax,
   ticketNumberSchema,
 } from "./http.ts";
 
-/** The two page bounds an authored draft is held to, surfaced where it is parsed. */
-export { nativeHttpDraftDependenciesMax, nativeHttpDraftStagesMax };
+/** The three page bounds an authored draft is held to, surfaced where it is parsed. */
+export {
+  nativeHttpDraftDependenciesMax,
+  nativeHttpDraftEvaluatorsMax,
+  nativeHttpDraftStagesMax,
+};
 
+export const evaluatorDefinitionSchema = z.strictObject({
+  key: ticketNumberSchema,
+});
+
+/** A stage: its key, which is its position in the program, and the evaluators it runs by their keys. */
 export const programStageSchema = z.strictObject({
-  fanout: ticketNumberSchema,
+  key: ticketNumberSchema,
+  evaluators: z
+    .array(evaluatorDefinitionSchema)
+    .max(nativeHttpDraftEvaluatorsMax),
 });
 
 export const authoringSchema = z.strictObject({
@@ -35,7 +48,11 @@ export const authoringSchema = z.strictObject({
 
 export type ReleaseAuthoringBody = z.infer<typeof authoringSchema>;
 
-export const programStageResponseSchema = programStageSchema.strip();
+export const programStageResponseSchema = programStageSchema.strip().extend({
+  evaluators: z
+    .array(evaluatorDefinitionSchema.strip())
+    .max(nativeHttpDraftEvaluatorsMax),
+});
 
 /** The same authoring read back, dropping a field the reader does not know. */
 export const authoringResponseSchema = authoringSchema.strip().extend({

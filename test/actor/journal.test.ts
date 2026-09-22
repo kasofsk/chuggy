@@ -220,7 +220,7 @@ const toEvaluating: readonly DecisionEvent[] = [
 ];
 const toFinalizing: readonly DecisionEvent[] = [
   ...toEvaluating,
-  taskDoneEvent(id(1), evaluationTaskOf(1, 1, 0, 1, 1), "Pass", plainResult),
+  taskDoneEvent(id(1), evaluationTaskOf(1, 1, 1, 1, 1), "Pass", plainResult),
   evalReduceEvent(id(1), "ReworkEvaluationFailure"),
 ];
 const toDone: readonly DecisionEvent[] = [

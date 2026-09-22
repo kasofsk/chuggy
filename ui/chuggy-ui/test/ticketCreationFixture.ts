@@ -54,11 +54,11 @@ export const creationInitialization: DraftInitializationResponse = {
   fence: { projectSequence: 41, configurationDigest: creationDigest },
   defaults: {
     dependencies: [],
-    program: [{ fanout: 1 }],
+    program: [{ key: 1, evaluators: [{ key: 1 }] }],
   },
   choices: {
-    stages: [{ fanout: 1 }, { fanout: 2 }],
     programStagesMax: 2,
+    evaluatorsMax: 3,
   },
   dependencyCandidates: [7, 8],
   dependencyCandidatesTruncated: false,

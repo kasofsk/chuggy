@@ -130,7 +130,7 @@ function Authoring(props: { readonly draft: DraftResponse }): ReactNode {
         {authoring.program.length === 0
           ? "none"
           : authoring.program
-              .map((stage) => `${String(stage.fanout)}×`)
+              .map((stage) => `${String(stage.evaluators.length)}×`)
               .join(" then ")}
       </Field>
     </dl>

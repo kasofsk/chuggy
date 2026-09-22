@@ -82,7 +82,7 @@ const walls = decided([
   workReduceEvent(id(1)),
   executionBlockedEvent(id(1)),
   resumeTicketEvent(id(1)),
-  taskDoneEvent(id(1), evaluationTaskOf(1, 2, 0, 2, 1), "Pass", plainResult),
+  taskDoneEvent(id(1), evaluationTaskOf(1, 2, 1, 2, 1), "Pass", plainResult),
   evalReduceEvent(id(1), "ReworkEvaluationFailure"),
   finalizationResultEvent(id(1), "FinalizationResultUnavailable"),
   resumeTicketEvent(id(1)),

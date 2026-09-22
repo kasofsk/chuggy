@@ -12,7 +12,10 @@
  * against one mid-flight.
  */
 
-import type { StageDefinition } from "./generated/modelTypes.ts";
+import type {
+  EvaluatorDefinition,
+  StageDefinition,
+} from "./generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "./ids.ts";
 
 /** One deployment's constants. */
@@ -33,22 +36,36 @@ export function ticketIdUniverse(config: Config): readonly TicketId[] {
   return universe;
 }
 
-/** The stage vocabulary an author may draw from: any fan-out in range. */
-export function stageChoices(config: Config): readonly StageDefinition[] {
-  const choices: StageDefinition[] = [];
-  for (let fanout = 1; fanout <= config.nTasks; fanout++)
-    choices.push({ fanout });
-  return choices;
+/** Every evaluator key the bound allows, ascending: the default program's roster, and the longest a stage can list. */
+export function everyEvaluator(config: Config): readonly EvaluatorDefinition[] {
+  const roster: EvaluatorDefinition[] = [];
+  for (let key = 1; key <= config.nTasks; key++) roster.push({ key });
+  return roster;
 }
 
-/** The default program: one stage at full fan-out, which is what a ticket whose evaluators all share stage 0 runs as. */
+/**
+ * The stage rosters an author may draw from: every non-empty ascending list of
+ * distinct keys in range, grown one key at a time. Keys are authored names
+ * rather than positions, so a sparse roster is a choice like any other.
+ */
+export function stageChoices(
+  config: Config,
+): readonly (readonly EvaluatorDefinition[])[] {
+  let grown: (readonly EvaluatorDefinition[])[] = [[]];
+  for (const entry of everyEvaluator(config))
+    grown = [...grown, ...grown.map((roster) => [...roster, entry])];
+  return grown.filter((roster) => roster.length >= 1);
+}
+
+/** The default program: one stage listing every evaluator the bound allows, which is what a ticket whose evaluators all share stage 0 runs as. */
 export function defaultProgram(config: Config): readonly StageDefinition[] {
-  return [{ fanout: config.nTasks }];
+  return [{ key: 1, evaluators: everyEvaluator(config) }];
 }
 
 /**
  * Whether a program is one a release may carry: non-empty, within the stage
- * bound, every fan-out in range.
+ * bound, each stage keyed by its position and listing a non-empty roster of
+ * distinct keys in range.
  */
 export function isValidProgram(
   config: Config,
@@ -57,6 +74,14 @@ export function isValidProgram(
   return (
     program.length >= 1 &&
     program.length <= config.maxStages &&
-    program.every((s) => s.fanout >= 1 && s.fanout <= config.nTasks)
+    program.every((stage, index) => {
+      const keys = stage.evaluators.map((e) => e.key);
+      return (
+        stage.key === index + 1 &&
+        keys.length >= 1 &&
+        new Set(keys).size === keys.length &&
+        keys.every((key) => key >= 1 && key <= config.nTasks)
+      );
+    })
   );
 }

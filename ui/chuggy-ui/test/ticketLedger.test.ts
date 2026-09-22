@@ -52,7 +52,7 @@ function cycleAt(shapes: readonly ExecutionShape[], at: number): Cycle {
 
 const singleStage: typeof ticket21Authoring = {
   ...ticket21Authoring,
-  program: [{ fanout: 1 }],
+  program: [{ key: 1, evaluators: [{ key: 1 }] }],
 };
 
 test("a ticket's page becomes one cycle per work run, newest last", () => {
@@ -222,7 +222,10 @@ test("one spawn of many tasks is one set, and two generations of one stage are t
         outcome: "Passed",
       },
     ]),
-    { ...singleStage, program: [{ fanout: 2 }] },
+    {
+      ...singleStage,
+      program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
+    },
   );
   const runs = fanned.cycles[0]?.programRuns ?? [];
   expect(runs.map((run) => stagesOf(run))).toEqual([
@@ -358,6 +361,32 @@ test("a set is drawn against the fan-out its stage was authored with", () => {
   expect(cycle.work?.expected).toBe(1);
   const run = cycle.programRuns[0]?.stages[0];
   expect(run?.kind === "Ran" ? run.set.expected : undefined).toBe(1);
+});
+
+test("a sparse stage's expected width is its evaluator count, not its highest key", () => {
+  const sparse: typeof ticket21Authoring = {
+    ...ticket21Authoring,
+    program: [{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }],
+  };
+  const ledger = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-aa-1",
+        task: 1,
+        identity: workIdentity(1),
+        outcome: "Passed",
+      },
+      {
+        execution: "execution-bb-2",
+        task: 2,
+        identity: evalIdentity(1, 1, 1),
+        outcome: "Passed",
+      },
+    ]),
+    sparse,
+  );
+  const run = ledger.cycles[0]?.programRuns[0]?.stages[0];
+  expect(run?.kind === "Ran" ? run.set.expected : undefined).toBe(2);
 });
 
 test("a single-stage program draws one row per run and no stage after it", () => {

@@ -104,7 +104,7 @@ function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 0, 1, 1), "Fail", plainResult),
+    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 1, 1, 1), "Fail", plainResult),
     "task-done",
   );
   state = journalStep(
@@ -151,7 +151,7 @@ function phaseCompletionLandsOnce(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), evaluationTaskOf(1, 2, 0, 1, 1), "Pass", plainResult),
+    taskDoneEvent(id(1), evaluationTaskOf(1, 2, 1, 1, 1), "Pass", plainResult),
     "task-done",
   );
   state = stepEmit(

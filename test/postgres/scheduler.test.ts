@@ -77,8 +77,9 @@ const schedulerAccountMaximum = 16;
 
 /**
  * How many logical tasks a case's spawn request declares. The authoring
- * fixture's fanout is one, so the fixture widens the request the way a wider
- * fanout would have — a case about capacity needs several slots to fill.
+ * fixture's stage lists one evaluator, so the fixture widens the request the
+ * way a longer roster would have — a case about capacity needs several slots
+ * to fill.
  */
 const schedulerTasksPerRequest = 10;
 

@@ -226,7 +226,7 @@ test("a restated envelope at the versions this image writes still loads", async 
  * covers what was stored rather than what a replay would write today.
  */
 const createWithDroppedFields =
-  '{"seq":1,"event":{"type":"CreateTicket","value":{"ticket":1,"deps":[],"prog":[{"fanout":1,"combinator":"UnanimousPass"}],"workFanout":1,"reworkPolicy":{"type":"BudgetedRework","value":1},"finalizationPricing":{"type":"Budgeted","value":1},"resumePricing":"RetryCharged"}},"rec":{"label":"ticket-released","transitions":[],"effects":[]}}';
+  '{"seq":1,"event":{"type":"CreateTicket","value":{"ticket":1,"deps":[],"prog":[{"key":1,"evaluators":[{"key":1}],"combinator":"UnanimousPass"}],"workFanout":1,"reworkPolicy":{"type":"BudgetedRework","value":1},"finalizationPricing":{"type":"Budgeted","value":1},"resumePricing":"RetryCharged"}},"rec":{"label":"ticket-released","transitions":[],"effects":[]}}';
 
 test("a row this image would re-encode differently still verifies and replays", async () => {
   const partition = await postgresHarnessProject(harness.store, "older-bytes");

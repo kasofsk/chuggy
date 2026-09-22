@@ -41,11 +41,22 @@ test("draft initialization exposes deployment choices with server defaults", () 
   const policy = draftInitializationPolicy(refinementInstance);
   assert.deepEqual(policy.defaults, {
     deps: new Set(),
-    prog: [{ fanout: refinementInstance.nTasks }],
+    prog: [{ key: 1, evaluators: [{ key: refinementInstance.nTasks }] }],
   });
-  assert.deepEqual(policy.choices.stages.at(-1), {
-    fanout: refinementInstance.nTasks,
+  assert.deepEqual(policy.choices, {
+    programStagesMax: refinementInstance.maxStages,
+    evaluatorsMax: refinementInstance.nTasks,
   });
+});
+
+/** The two bounds coincide at the reference instance, so each is pinned where they differ. */
+test("the evaluator bound is the task bound, not the stage bound", () => {
+  const policy = draftInitializationPolicy({
+    ...refinementInstance,
+    nTasks: 3,
+    maxStages: 2,
+  });
+  assert.deepEqual(policy.choices, { programStagesMax: 2, evaluatorsMax: 3 });
 });
 
 test("stage-specific configuration bounds the authored evaluation program", () => {
@@ -73,7 +84,10 @@ test("stage-specific configuration bounds the authored evaluation program", () =
       { ...refinementInstance, maxStages: 4 },
       readiness.configuration,
     ).defaults.prog,
-    [{ fanout: 1 }, { fanout: 1 }],
+    [
+      { key: 1, evaluators: [{ key: 1 }] },
+      { key: 2, evaluators: [{ key: 1 }] },
+    ],
   );
 });
 

@@ -10,7 +10,7 @@ import {
   nativeHttpPageItemsMax,
 } from "../contract/http.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
-import { defaultProgram, stageChoices, type Config } from "../domain/config.ts";
+import { defaultProgram, type Config } from "../domain/config.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import type { PublicInstant } from "./publicResource.ts";
@@ -447,9 +447,10 @@ export interface DraftInitialization {
   readonly configuration: ConfigurationRevisionResource;
   readonly projectSequence: number;
   readonly defaults: ReleaseAuthoring;
+  /** The two bounds an author draws a program within: how many stages, and how far an evaluator key reaches. */
   readonly choices: {
-    readonly stages: readonly { readonly fanout: number }[];
     readonly programStagesMax: number;
+    readonly evaluatorsMax: number;
   };
   readonly dependencyCandidates: readonly TicketId[];
   readonly dependencyCandidatesTruncated: boolean;
@@ -489,11 +490,14 @@ export function draftInitializationPolicy(
       prog:
         configuration?.evaluations === undefined
           ? defaultProgram(config)
-          : configuration.evaluations.map(() => ({ fanout: 1 })),
+          : configuration.evaluations.map((_block, index) => ({
+              key: index + 1,
+              evaluators: [{ key: 1 }],
+            })),
     },
     choices: {
-      stages: stageChoices(config),
       programStagesMax,
+      evaluatorsMax: config.nTasks,
     },
   };
 }

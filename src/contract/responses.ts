@@ -50,11 +50,7 @@ import {
   threadsAnsweredMax,
   ticketNumberSchema,
 } from "./http.ts";
-import {
-  authoringResponseSchema,
-  programStageResponseSchema,
-  programStageSchema,
-} from "./authoring.ts";
+import { authoringResponseSchema, programStageSchema } from "./authoring.ts";
 import { briefResponseSchema, briefTitleCharsMax } from "./brief.ts";
 import {
   repositoryLandingSchema,
@@ -520,7 +516,7 @@ export const executionSummarySchema = z.object({
   requirementDigest: digestSchema,
   requirementSource: z.enum(requirementSources),
   /**
-   * The spawn request that made this execution, which is its fan-out set's
+   * The spawn request that made this execution, which is its spawn set's
    * identity. Optional for the deployment window and not because a summary can
    * lack one: the console is its own artifact, so a bundle that already reads
    * this field can reach a server not yet sending it, and a required field
@@ -847,8 +843,8 @@ export const draftInitializationResponseSchema = z.object({
   }),
   defaults: authoringResponseSchema,
   choices: z.object({
-    stages: page(programStageResponseSchema),
     programStagesMax: countSchema,
+    evaluatorsMax: countSchema,
   }),
   dependencyCandidates: page(ticketNumberSchema),
   dependencyCandidatesTruncated: z.boolean(),

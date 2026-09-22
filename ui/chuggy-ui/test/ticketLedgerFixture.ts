@@ -161,7 +161,10 @@ export function ledgerPage(
 /** Two evaluation stages, one work task each, two reworks. */
 export const ticket21Authoring: TicketAuthoring = {
   dependencies: [],
-  program: [{ fanout: 1 }, { fanout: 1 }],
+  program: [
+    { key: 1, evaluators: [{ key: 1 }] },
+    { key: 2, evaluators: [{ key: 1 }] },
+  ],
 };
 
 /** The seven executions the ticket held while it was parked. */

@@ -28,7 +28,7 @@ import type {
   Ticket,
   Transition,
 } from "../domain/generated/modelTypes.ts";
-import { tasksInOrdinalOrder, taskEquals } from "../domain/task.ts";
+import { tasksInEvaluatorKeyOrder, taskEquals } from "../domain/task.ts";
 
 /** Same length, and equal member by member in order. */
 function listEquals<Value>(
@@ -87,7 +87,13 @@ function ticketEqualsStage(
   left: StageDefinition,
   right: StageDefinition,
 ): boolean {
-  return left.fanout === right.fanout;
+  return (
+    left.key === right.key &&
+    left.evaluators.length === right.evaluators.length &&
+    left.evaluators.every(
+      (entry, index) => entry.key === right.evaluators[index]?.key,
+    )
+  );
 }
 
 /** Whether two tickets carry the same record, every declared field compared. */
@@ -98,8 +104,8 @@ export function ticketEquals(left: Ticket, right: Ticket): boolean {
     ticketEqualsArtifact(left.artifact, right.artifact) &&
     listEquals(left.program, right.program, ticketEqualsStage) &&
     listEquals(
-      tasksInOrdinalOrder(left.tasks),
-      tasksInOrdinalOrder(right.tasks),
+      tasksInEvaluatorKeyOrder(left.tasks),
+      tasksInEvaluatorKeyOrder(right.tasks),
       taskEquals,
     ) &&
     listEquals(left.record, right.record, taskEquals) &&

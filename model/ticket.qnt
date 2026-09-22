@@ -65,10 +65,12 @@ module chuggy_ticket {
   ///              — one evaluator of one run of one stage, judging one work
   ///                cycle ("evaluators run in ascending stage order; within
   ///                a stage they fan out in parallel").
-  /// The contract's `stage` is a POSITIVE key and chuggy indexes its authored
-  /// program from 0, so an identity carries `stageIndex + 1` and evalStage
-  /// takes it back — which is what keeps the CURRENT stage derivable from the
-  /// live task set instead of stored (standing rule 3).
+  /// Both of the identity's keys are AUTHORED: `stage` is the stage's own key
+  /// and `evaluator` is the evaluator's, copied out of the program rather than
+  /// counted at the spawn. evalStage reads the index back out of the stage key
+  /// under the positional rule stated at StageDefinition, which is what keeps
+  /// the CURRENT stage derivable from the live set instead of stored
+  /// (standing rule 3).
 
   /// A settled task's outcome — RESOLVED verdicts only; an outstanding task
   /// cannot carry one (see TaskState). Failed
@@ -109,13 +111,28 @@ module chuggy_ticket {
   /// stored resolution — duplicates of the event must be tolerated).
   type Verdict = Pass | Fail
 
-  /// One stage of a ticket's eval program: a task-set with its own fan-out
-  /// width — one task per evaluator in the stage, fanned out in parallel, so
-  /// a stage's width is its evaluator count. What the stage does with the
+  /// ONE EVALUATOR OF A STAGE, named by the key the author gave it. The key
+  /// is the whole of it here: what an evaluator is asked to do arrives with
+  /// the evaluation instance.
+  type EvaluatorDefinition = { key: int }
+
+  /// One stage of a ticket's eval program: its own key, and the evaluators it
+  /// lists — one task per listed evaluator, fanned out in parallel. A KEY IS
+  /// AN AUTHORED NAME, not a position, except that chuggy holds a stage's key
+  /// equal to its position (domain.qnt programsWellFormed) until an evaluation
+  /// instance stores the index itself; evaluator keys carry no such rule, so
+  /// a stage may list 1 and 3 and skip 2. What the stage does with the
   /// verdicts is not per-stage data: every evaluator in it must pass
   /// (combine below), and the required/advisory split is BELOW that grain —
   /// an advisory evaluator is one the stage does not carry.
-  type StageDefinition = { fanout: int }
+  type StageDefinition = { key: int, evaluators: List[EvaluatorDefinition] }
+
+  /// THE KEYS A STAGE LISTS, which is what its live task set must name one
+  /// for one (domain.qnt tasksWellFormed). The order is the list's; the set
+  /// is what an unordered live set compares against.
+  pure def evaluatorKeys(stage: StageDefinition): Set[int] =
+    stage.evaluators.foldl(Set(), (found, entry) =>
+      found.union(Set(entry.key)))
 
   /// WHAT AN EVALUATION FAILURE DOES. The machine consults this at every
   /// failing stage (domain.qnt decideEvalStageReduce) and takes exactly one
@@ -240,7 +257,8 @@ module chuggy_ticket {
     // deps. This is "eval is data, not machinery" made
     // literal: the program is data on the ticket record; domain.qnt's
     // decideEvalStageReduce is the interpreter. Well-formedness (non-empty,
-    // length <= MAX_STAGES, every fanout in 1..N_TASKS) is an RELEASE
+    // length <= MAX_STAGES, positional stage keys, and a non-empty roster
+    // of distinct evaluator keys within the bound) is an RELEASE
     // validity condition — domain.qnt programsWellFormed.
     program: List[StageDefinition],
     // The LIVE task set of the current Work phase or Evaluation stage;
@@ -254,7 +272,7 @@ module chuggy_ticket {
     // (domain.qnt recordMonotone). This is "task records are first-class:
     // they carry the anatomy" — outcomes are retained history
     // the golden traces can carry as provenance, not overwritten scratch
-    // state. A set retires in its own evaluator order (taskOrdinal below).
+    // state. A set retires by ascending evaluator key (retireLive below).
     // No decision reads it: it is provenance, and its length is
     // whatever the authors and operators who drove the ticket made it.
     record: List[Task],
@@ -336,9 +354,9 @@ module chuggy_ticket {
   /// DERIVED from the live set's identities (standing rule 3: no stored stage
   /// index) — meaningful only while the set is a stage's fan-out (Evaluation;
   /// tasksWellFormed pins the set to a single stage, so the fold's pick order
-  /// is irrelevant). The contract's stage is a positive key, so the index is
-  /// one less. 0 on an empty or work set (the fold's base: no eval identity,
-  /// no stage).
+  /// is irrelevant). A stage key is its position (StageDefinition), so the
+  /// index is one less. 0 on an empty or work set (the fold's base: no eval
+  /// identity, no stage).
   pure def evalStage(tasks: Set[Task]): int =
     tasks.fold(0, (acc, t) =>
       match t.identity {
@@ -348,21 +366,22 @@ module chuggy_ticket {
 
   /// THE TWO IDENTITY CONSTRUCTORS, named once so everything that must NAME
   /// a task — a spawn site, a witness driver, a replayed journal row — builds
-  /// one the way the machine does. `stage` is chuggy's 0-BASED index into the
-  /// authored program; the contract's key is one more (evalStage takes it
-  /// back).
+  /// one the way the machine does. Both keys are the authored ones and no
+  /// offset is applied here: a caller holding a stage INDEX passes
+  /// `program[s].key`, which the positional rule makes the same number.
   pure def workTaskOf(ticket: int, cycle: int): TaskIdentity =
     WorkTask({ ticket: ticket, cycle: cycle })
 
   pure def evaluationTaskOf(ticket: int, workCycle: int, stage: int,
       generation: int, evaluator: int): TaskIdentity =
-    EvaluationTask({ ticket: ticket, workCycle: workCycle, stage: stage + 1,
+    EvaluationTask({ ticket: ticket, workCycle: workCycle, stage: stage,
       generation: generation, evaluator: evaluator })
 
-  /// A task's place in its OWN set, and so the order the set retires in: an
-  /// evaluation stage runs evaluators 1..fanout and a work cycle is one task.
-  /// Named because the record is a list and a set carries no order to inherit.
-  pure def taskOrdinal(identity: TaskIdentity): int =
+  /// THE KEY A TASK RETIRES UNDER, and so the order its set enters the record
+  /// in: an evaluation task's is its evaluator key, and a work set is one
+  /// task. Named because the record is a list and a set carries no order to
+  /// inherit.
+  pure def taskRetirementKey(identity: TaskIdentity): int =
     match identity {
       | WorkTask(_) => 1
       | EvaluationTask(e) => e.evaluator
@@ -381,8 +400,8 @@ module chuggy_ticket {
       spawned: ticket.spawned + identities.size() }
 
   /// THE WORK SPAWN: a work cycle is one task, always — work is not staged
-  /// and carries no authored width, so the only fan-out in this machine is
-  /// an evaluation stage's. Named once here because every work spawn site
+  /// and lists no evaluators, so the only fan-out in this machine is an
+  /// evaluation stage's roster. Named once here because every work spawn site
   /// (dispatch, both reworks, the work resume) is this call, and starting the
   /// cycle is the only thing that moves the counter its identity is drawn
   /// from.
@@ -396,35 +415,45 @@ module chuggy_ticket {
   /// stage (domain.qnt decideResumeTicket), which re-enters a stage the cycle
   /// may already have spawned, and the generation is what keeps the second
   /// run's identities distinct from the first's. Derived from the record
-  /// rather than stored, counted at evaluator 1 because every run spawns
-  /// exactly one of those.
+  /// rather than stored, counted at the stage's FIRST LISTED evaluator key
+  /// because every run spawns exactly one of that key.
   pure def stageGeneration(ticket: Ticket, s: int): int =
+    val stage = ticket.program[s]
+    val first = stage.evaluators[0].key
     1 + ticket.record.foldl(0, (n, t) =>
       match t.identity {
         | WorkTask(_) => n
         | EvaluationTask(e) =>
-          if (e.workCycle == ticket.workCyclesStarted and e.stage == s + 1
-              and e.evaluator == 1) n + 1 else n
+          if (e.workCycle == ticket.workCyclesStarted and e.stage == stage.key
+              and e.evaluator == first) n + 1 else n
       })
 
-  /// THE EVALUATION SPAWN: one task per evaluator of stage s, fanned out in
-  /// parallel, every one of them naming the work cycle it judges.
-  pure def spawnEvalStage(j: int, ticket: Ticket, s: int, fan: int): Ticket =
+  /// THE EVALUATION SPAWN: one task per evaluator stage s LISTS, fanned out
+  /// in parallel, every one of them naming the work cycle it judges and the
+  /// key its evaluator was authored under. The roster is read off the
+  /// program here rather than passed in, so no caller can hand this a width.
+  pure def spawnEvalStage(j: int, ticket: Ticket, s: int): Ticket =
+    val stage = ticket.program[s]
     val generation = stageGeneration(ticket, s)
-    spawnOn(ticket, 1.to(fan).map(e =>
-      evaluationTaskOf(j, ticket.workCyclesStarted, s, generation, e)))
+    spawnOn(ticket, evaluatorKeys(stage).map(e =>
+      evaluationTaskOf(j, ticket.workCyclesStarted, stage.key, generation, e)))
 
-  /// Retire the live task set into the retained record, in the set's own
-  /// evaluator order (taskOrdinal). A task
+  /// Retire the live task set into the retained record, by ASCENDING
+  /// evaluator key (taskRetirementKey) — the walk is bounded by the largest
+  /// key the set holds, because the keys a stage lists need not be
+  /// contiguous. A task
   /// still OUTSTANDING at retirement is force-closed as Resolved(Cancelled)
   /// — only revoke retires mid-flight sets; every reduce/escalation
   /// retirement is of a
   /// fully-resolved set, so the Cancelled arm never fires there. A
   pure def retireLive(ticket: Ticket): Ticket =
+    val highest = ticket.tasks.fold(0, (m, t) =>
+      val k = taskRetirementKey(t.identity)
+      if (k > m) k else m)
     { ...ticket,
       tasks: Set(),
-      record: range(1, ticket.tasks.size() + 1).foldl(ticket.record, (r, k) =>
-        ticket.tasks.filter(t => taskOrdinal(t.identity) == k).fold(r, (acc, t) =>
+      record: range(1, highest + 1).foldl(ticket.record, (r, k) =>
+        ticket.tasks.filter(t => taskRetirementKey(t.identity) == k).fold(r, (acc, t) =>
           acc.append({ ...t,
             state: if (t.state == Outstanding) Resolved(Cancelled) else t.state }))) }
 

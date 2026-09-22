@@ -536,5 +536,5 @@ export function creationStepSentence(step: OperationStep): string {
 }
 
 export function creationStageLabel(stage: CreationStage): string {
-  return String(stage.fanout);
+  return String(stage.evaluators.length);
 }

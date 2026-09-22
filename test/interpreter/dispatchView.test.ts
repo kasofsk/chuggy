@@ -70,7 +70,14 @@ test("every strict candidate fact participates in the digest", () => {
   const changed = [
     { ...first, ticketVersion: first.ticketVersion + 1 },
     { ...first, dependencies: [99] },
-    { ...first, program: [{ fanout: 2 }] },
+    { ...first, program: [{ key: 1, evaluators: [{ key: 2 }] }] },
+    {
+      ...first,
+      program: [
+        { key: 1, evaluators: [{ key: 1 }] },
+        { key: 2, evaluators: [{ key: 1 }] },
+      ],
+    },
     {
       ...first,
       configurationRevision: `${first.configurationRevision}-changed`,
@@ -114,16 +121,30 @@ test("facts outside the strict view cannot invalidate its digest", () => {
 test("dispatch JSON codecs refuse malformed stored structures", () => {
   assert.throws(() => decodeDispatchProgram({}), /not an array/);
   assert.throws(
-    () => decodeDispatchProgram([{ fanout: 1.5 }]),
+    () => decodeDispatchProgram([{ key: 1.5, evaluators: [{ key: 1 }] }]),
+    /expected int/i,
+  );
+  assert.throws(
+    () => decodeDispatchProgram([{ key: 1, evaluators: [{ key: 1.5 }] }]),
     /expected int/i,
   );
   assert.throws(() => decodeDispatchProgram([{}]), /invalid input/i);
+  assert.throws(() => decodeDispatchProgram([{ fanout: 2 }]), /invalid input/i);
 });
 
 test("dispatch JSON codecs accept every stored model variant", () => {
-  assert.deepEqual(decodeDispatchProgram([{ fanout: 2 }]), [{ fanout: 2 }]);
-  assert.deepEqual(decodeDispatchProgram([{ fanout: 1 }, { fanout: 3 }]), [
-    { fanout: 1 },
-    { fanout: 3 },
-  ]);
+  assert.deepEqual(
+    decodeDispatchProgram([{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }]),
+    [{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }],
+  );
+  assert.deepEqual(
+    decodeDispatchProgram([
+      { key: 1, evaluators: [{ key: 1 }] },
+      { key: 2, evaluators: [{ key: 2 }] },
+    ]),
+    [
+      { key: 1, evaluators: [{ key: 1 }] },
+      { key: 2, evaluators: [{ key: 2 }] },
+    ],
+  );
 });

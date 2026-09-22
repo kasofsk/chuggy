@@ -202,7 +202,7 @@ test("only the two task phases can receive a completion, and only a resolved set
     ticketOn(config, {
       phase: "Evaluation",
       record: [workTask(2, 1, "Passed")],
-      tasks: new Set([evalTask(2, 1, 0, 1, "Failed")]),
+      tasks: new Set([evalTask(2, 1, 1, 1, "Failed")]),
       workCyclesStarted: 1,
       spawned: 2,
     }),
@@ -216,7 +216,7 @@ test("only the two task phases can receive a completion, and only a resolved set
     ticketOn(config, {
       phase: "Evaluation",
       record: [workTask(5, 1, "Passed")],
-      tasks: new Set([evalOutstanding(5, 1, 0, 1)]),
+      tasks: new Set([evalOutstanding(5, 1, 1, 1)]),
       workCyclesStarted: 1,
       spawned: 2,
     }),
@@ -252,8 +252,8 @@ test("the fabric may still report on exactly the tasks a ticket has outstanding"
       phase: "Evaluation",
       record: [workTask(1, 1, "Passed")],
       tasks: new Set([
-        evalOutstanding(1, 1, 0, 2),
-        evalTask(1, 1, 0, 1, "Passed"),
+        evalOutstanding(1, 1, 1, 2),
+        evalTask(1, 1, 1, 1, "Passed"),
       ]),
       workCyclesStarted: 1,
       spawned: 3,
@@ -261,11 +261,11 @@ test("the fabric may still report on exactly the tasks a ticket has outstanding"
     ticketOn(config, { phase: "Pending" }),
   ]);
   assert.deepEqual(outstandingTasksIn(graph, id(1)), [
-    evaluationTaskOf(1, 1, 0, 1, 2),
+    evaluationTaskOf(1, 1, 1, 1, 2),
   ]);
-  assert.ok(outstandingTaskIn(graph, id(1), evaluationTaskOf(1, 1, 0, 1, 2)));
+  assert.ok(outstandingTaskIn(graph, id(1), evaluationTaskOf(1, 1, 1, 1, 2)));
   assert.ok(
-    !outstandingTaskIn(graph, id(1), evaluationTaskOf(1, 1, 0, 1, 1)),
+    !outstandingTaskIn(graph, id(1), evaluationTaskOf(1, 1, 1, 1, 1)),
     "a duplicate for a resolved task matches nothing outstanding",
   );
   assert.ok(
@@ -310,9 +310,9 @@ test("a release draws every authored value from a universe, and is refused outsi
   assert.ok(!releasableAuthoring(config, { prog: [] }));
   assert.ok(
     !releasableAuthoring(config, {
-      prog: [{ fanout: config.nTasks + 1 }],
+      prog: [{ key: 1, evaluators: [{ key: config.nTasks + 1 }] }],
     }),
-    "a stage may not fan out past the task ceiling",
+    "an evaluator key may not pass the bound",
   );
 });
 

@@ -63,7 +63,7 @@ const candidate = {
   ticket: asTicketId(41),
   ticketVersion: 3,
   dependencies: [],
-  program: [{ fanout: 1 }],
+  program: [{ key: 1, evaluators: [{ key: 1 }] }],
   configurationRevision: "revision",
   configurationDigest: "d".repeat(64),
   configurationCanonical: "{}",
@@ -681,7 +681,7 @@ test("a session with no agent reference is seeded and one with a reference is no
 });
 
 test("a seeding block the mailbox could not hold sheds its oldest decisions", async () => {
-  const oversized = 500_000;
+  const oversized = Math.ceil(leadObservationBytesMax / 20);
   const double = mailboxDouble();
   const policy = leadSelectorPolicy(
     double.mailbox,

@@ -6,7 +6,11 @@ module chuggy_witness_resume_test {
   import task_contract.* from "../task-contract/task"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2, N_TASKS=2, MAX_STAGES=2).* from "../domain"
-  pure val p = [{ fanout: 1 }]
+  /// ONE stage listing evaluator 2 ALONE. A roster is a set of authored
+  /// keys rather than a width, so the spawn, the retirement and the
+  /// generation count all have to read the key the stage names instead of
+  /// counting from one — which this witness's second run is what exercises.
+  pure val p = [{ key: 1, evaluators: [{ key: 2 }] }]
   action release(j: int, deps: Set[int]): bool = all {
     releasableIds.contains(j), deps.subseteq(dependableTickets), validPrograms.contains(p),
     apply(decideReleaseTicket(graph, j, deps, p)) }
@@ -40,19 +44,19 @@ module chuggy_witness_resume_test {
     .then(reduceWork(4)).expect(and {
       tickets.get(4).phase == Evaluation,
       tickets.get(4).tasks.map(t => t.identity) ==
-        Set(evaluationTaskOf(4, 1, 0, 1, 1)), allInvariants })
+        Set(evaluationTaskOf(4, 1, 1, 1, 2)), allInvariants })
     .then(blocked(4)).expect(and {
       tickets.get(4).escalation == EvaluationBlockedEscalated,
       lastStep.label == "ticket-escalated evaluation_blocked_escalated",
       resumeOf(tickets.get(4).escalation) == ResumeEvaluation,
       tickets.get(4).record.length() == 2,
       tickets.get(4).record[0].identity == workTaskOf(4, 1),
-      tickets.get(4).record[1].identity == evaluationTaskOf(4, 1, 0, 1, 1),
+      tickets.get(4).record[1].identity == evaluationTaskOf(4, 1, 1, 1, 2),
       allInvariants })
     .then(resume(4)).expect(and {
       tickets.get(4).phase == Evaluation,
       tickets.get(4).tasks.map(t => t.identity) ==
-        Set(evaluationTaskOf(4, 1, 0, 2, 1)),
+        Set(evaluationTaskOf(4, 1, 1, 2, 2)),
       allInvariants })
 }
 
@@ -63,7 +67,7 @@ module chuggy_witness_rework_test {
   import task_contract.* from "../task-contract/task"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2, N_TASKS=1, MAX_STAGES=1).* from "../domain"
-  pure val p = [{ fanout: 1 }]
+  pure val p = [{ key: 1, evaluators: [{ key: 1 }] }]
   action release(j: int): bool = all {
     releasableIds.contains(j), validPrograms.contains(p),
     apply(decideReleaseTicket(graph, j, Set(), p)) }
@@ -83,7 +87,7 @@ module chuggy_witness_rework_test {
     .then(doDispatch(4)).expect(allInvariants)
     .then(done(4, workTaskOf(4, 1), Pass)).then(reduceWork(4)).expect(and {
       tickets.get(4).phase == Evaluation, allInvariants })
-    .then(done(4, evaluationTaskOf(4, 1, 0, 1, 1), Fail))
+    .then(done(4, evaluationTaskOf(4, 1, 1, 1, 1), Fail))
     .then(reduceEval(4, ReworkEvaluationFailure)).expect(and {
       tickets.get(4).phase == Work,
       lastStep.label == "rework-started eval_failure",
@@ -96,7 +100,7 @@ module chuggy_witness_rework_test {
     .then(release(4)).expect(allInvariants)
     .then(doDispatch(4)).expect(allInvariants)
     .then(done(4, workTaskOf(4, 1), Pass)).then(reduceWork(4)).expect(allInvariants)
-    .then(done(4, evaluationTaskOf(4, 1, 0, 1, 1), Fail))
+    .then(done(4, evaluationTaskOf(4, 1, 1, 1, 1), Fail))
     .then(reduceEval(4, EscalateEvaluationFailure)).expect(and {
       tickets.get(4).phase == Escalated,
       tickets.get(4).escalation == EvaluationFailureEscalated,
@@ -111,7 +115,8 @@ module chuggy_witness_stage_test {
   import task_contract.* from "../task-contract/task"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=1, N_TASKS=2, MAX_STAGES=2).* from "../domain"
-  pure val p = [{ fanout: 1 }, { fanout: 1 }]
+  pure val p = [{ key: 1, evaluators: [{ key: 1 }] },
+                { key: 2, evaluators: [{ key: 1 }] }]
   action release: bool = apply(decideReleaseTicket(graph,2,Set(),p))
   action doDispatch: bool = all { readyTickets.contains(2), apply(decideDispatch(graph,2)) }
   action done(task: TaskIdentity): bool = all { deliverableTasksIn(graph,2).contains(task), apply(decideTaskDone(graph,2,task,Pass)) }
@@ -119,10 +124,10 @@ module chuggy_witness_stage_test {
   action er: bool = all { reducibleEval.contains(2), apply(decideEvalStageReduce(graph,2,ReworkEvaluationFailure)) }
   run stagedProgramWitness = init.then(release).then(doDispatch)
     .then(done(workTaskOf(2, 1))).then(wr)
-    .then(done(evaluationTaskOf(2, 1, 0, 1, 1))).then(er)
+    .then(done(evaluationTaskOf(2, 1, 1, 1, 1))).then(er)
     .expect(and { tickets.get(2).phase == Evaluation,
       lastStep.transitions == [{ticket:2, from:Evaluation, to:Evaluation}], allInvariants })
-    .then(done(evaluationTaskOf(2, 1, 1, 1, 1))).then(er)
+    .then(done(evaluationTaskOf(2, 1, 2, 1, 1))).then(er)
     .expect(and { tickets.get(2).phase == Finalization, allInvariants })
 }
 
@@ -132,8 +137,8 @@ module chuggy_witness_sparse_test {
   import task_contract.* from "../task-contract/task"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2, N_TASKS=2, MAX_STAGES=1).* from "../domain"
-  pure val pNarrow = [{ fanout: 1 }]
-  pure val pWide = [{ fanout: 2 }]
+  pure val pNarrow = [{ key: 1, evaluators: [{ key: 1 }] }]
+  pure val pWide = [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }]
   action release(j:int, prog: List[StageDefinition]): bool = all {
     releasableIds.contains(j), validPrograms.contains(prog),
     apply(decideReleaseTicket(graph,j,Set(),prog)) }
@@ -148,24 +153,24 @@ module chuggy_witness_gate_test {
   import task_contract.* from "../task-contract/task"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2, N_TASKS=1, MAX_STAGES=1).* from "../domain"
-  pure val p=[{fanout:1}]
+  pure val p=[{key:1,evaluators:[{key:1}]}]
   action release(j:int):bool=apply(decideReleaseTicket(graph,j,Set(),p))
   action doDispatch(j:int):bool=all{readyTickets.contains(j),apply(decideDispatch(graph,j))}
   action td(j:int,task:TaskIdentity):bool=all{deliverableTasksIn(graph,j).contains(task),apply(decideTaskDone(graph,j,task,Pass))}
   action wr(j:int):bool=all{reducibleWork.contains(j),apply(decideWorkReduce(graph,j))}
   action er(j:int):bool=all{reducibleEval.contains(j),apply(decideEvalStageReduce(graph,j,ReworkEvaluationFailure))}
   action resolve(j:int,o:FinalizationOutcome):bool=all{tickets.get(j).phase==Finalization,apply(decideFinalizationResult(graph,j,o))}
-  run finalizationSuccessWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(wr(1)).then(td(1,evaluationTaskOf(1,1,0,1,1))).then(er(1))
+  run finalizationSuccessWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(wr(1)).then(td(1,evaluationTaskOf(1,1,1,1,1))).then(er(1))
     .expect(and{tickets.get(1).phase==Finalization,lastStep.effects==["RunFinalizer"],
       not(revocableTickets.contains(1)),allInvariants})
     .then(resolve(1,FinalizationSucceeded)).expect(and{tickets.get(1).phase==Done,allInvariants})
 
   /// A finalizer that reports failure sends the ticket back to work, every
   /// time: there is no wall on this edge.
-  run safeAbortReworkWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(wr(1)).then(td(1,evaluationTaskOf(1,1,0,1,1))).then(er(1))
+  run safeAbortReworkWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(wr(1)).then(td(1,evaluationTaskOf(1,1,1,1,1))).then(er(1))
     .then(resolve(1,FinalizationNeedsWork)).expect(and{tickets.get(1).phase==Work,
       lastStep.label=="rework-started finalization_needs_work",allInvariants})
-    .then(td(1,workTaskOf(1,2))).then(wr(1)).then(td(1,evaluationTaskOf(1,2,0,1,1))).then(er(1))
+    .then(td(1,workTaskOf(1,2))).then(wr(1)).then(td(1,evaluationTaskOf(1,2,1,1,1))).then(er(1))
     .then(resolve(1,FinalizationNeedsWork)).expect(and{tickets.get(1).phase==Work,
       lastStep.label=="rework-started finalization_needs_work",allInvariants})
 
@@ -175,7 +180,7 @@ module chuggy_witness_gate_test {
   /// is neither revocable nor retryable, so before this wall the ticket sat
   /// there until the environment moved.
   action resume(j:int):bool=all{retryableEscalated.contains(j),apply(decideResumeTicket(graph,j))}
-  run finalizationUnavailableWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(wr(1)).then(td(1,evaluationTaskOf(1,1,0,1,1))).then(er(1))
+  run finalizationUnavailableWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(wr(1)).then(td(1,evaluationTaskOf(1,1,1,1,1))).then(er(1))
     .then(resolve(1,FinalizationResultUnavailable)).expect(and{tickets.get(1).phase==Escalated,
       lastStep.label=="ticket-escalated finalization_unavailable_escalated",
       tickets.get(1).escalation==FinalizationUnavailableEscalated,
@@ -185,7 +190,7 @@ module chuggy_witness_gate_test {
       lastStep.effects==["RunFinalizer"],tickets.get(1).escalation==NoEscalation,allInvariants})
     .then(resolve(1,FinalizationSucceeded)).expect(and{tickets.get(1).phase==Done,allInvariants})
 
-  run revokeBoundaryWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(wr(1)).then(td(1,evaluationTaskOf(1,1,0,1,1))).then(er(1))
+  run revokeBoundaryWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(wr(1)).then(td(1,evaluationTaskOf(1,1,1,1,1))).then(er(1))
     .expect(and{not(revocableTickets.contains(1)),allInvariants})
 }
 
@@ -194,7 +199,7 @@ module chuggy_witness_dependency_test {
   import task_contract.* from "../task-contract/task"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2,N_TASKS=1,MAX_STAGES=1).* from "../domain"
-  pure val p=[{fanout:1}]
+  pure val p=[{key:1,evaluators:[{key:1}]}]
   run existingDependencyWitness=init
     .then(apply(decideReleaseTicket(graph,4,Set(),p)))
     .then(apply(decideReleaseTicket(graph,1,Set(4),p)))

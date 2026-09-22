@@ -97,10 +97,11 @@ const transitionMutants: FieldMutants<Transition> = {
   to: (t) => ({ ...t, to: "Done" }),
 };
 
-const baseStage: StageDefinition = { fanout: 1 };
+const baseStage: StageDefinition = { key: 1, evaluators: [{ key: 1 }] };
 
 const stageMutants: FieldMutants<StageDefinition> = {
-  fanout: (s) => ({ ...s, fanout: s.fanout + 1 }),
+  key: (s) => ({ ...s, key: s.key + 1 }),
+  evaluators: (s) => ({ ...s, evaluators: [{ key: 2 }] }),
 };
 
 test("ticketEquals reads every field Ticket declares", () => {
@@ -141,7 +142,7 @@ test("a list of equal length is compared member by member, not by length alone",
     program: [stage, stage],
   });
   assert.ok(
-    !ticketEquals(twice(baseStage), twice(stageMutants.fanout(baseStage))),
+    !ticketEquals(twice(baseStage), twice(stageMutants.evaluators(baseStage))),
   );
 });
 

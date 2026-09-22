@@ -113,7 +113,7 @@ function phaseDuplicateCycle(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 0, 1, 1), "Pass", plainResult),
+    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 1, 1, 1), "Pass", plainResult),
     "task-done",
     spentWorld,
   );

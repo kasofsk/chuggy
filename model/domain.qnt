@@ -69,10 +69,10 @@ module chuggy_domain {
   /// Maximum number of released tickets. Ticket identities come from the
   /// wider finite universe below and may be sparse or numerically reversed.
   const N_TICKETS: int
-  /// Task fan-out ceiling: the per-stage fan-out cap an authored eval
-  /// program may declare, since an evaluation stage carries a SET of
-  /// possibly-parallel tasks. Stage widths are per-stage data, so this
-  /// const is their bound. Work is not fanned out (ticket.qnt spawnWork).
+  /// THE EVALUATOR-KEY BOUND: the finite vocabulary a stage's roster is
+  /// drawn from, so an authored evaluator key runs 1..N_TASKS and a stage
+  /// carries at most that many possibly-parallel tasks. Work is not fanned
+  /// out (ticket.qnt spawnWork) and names no evaluator.
   const N_TASKS: int
   /// Authored-program length cap — release's validity ceiling. Real programs
   /// are short by construction (stages are declared per evaluator), so the
@@ -90,25 +90,40 @@ module chuggy_domain {
   pure val dispositionChoices: Set[EvaluationFailureDisposition] =
     Set(ReworkEvaluationFailure, EscalateEvaluationFailure)
 
-  /// The stage vocabulary an author may draw from: any fan-out 1..N_TASKS.
-  pure val stageChoices: Set[StageDefinition] =
-    1.to(N_TASKS).map(n => { fanout: n })
+  /// THE FULL ROSTER: every evaluator key the bound allows, ascending. The
+  /// default program's stage, and the longest roster a stage can list.
+  pure val everyEvaluator: List[EvaluatorDefinition] =
+    range(1, N_TASKS + 1).foldl([], (roster, k) => roster.append({ key: k }))
+
+  /// The stage rosters an author may draw from: every NON-EMPTY ascending
+  /// list of distinct keys from 1..N_TASKS, grown one key at a time. Keys
+  /// are authored names rather than positions (ticket.qnt StageDefinition),
+  /// so a sparse roster — 1 and 3, skipping 2 — is a choice like any other
+  /// and the walk draws it.
+  pure val stageChoices: Set[List[EvaluatorDefinition]] =
+    everyEvaluator.foldl(Set([]), (acc, entry) =>
+      acc.union(acc.map(roster => roster.append(entry))))
+      .filter(roster => roster.length() >= 1)
 
   /// Every WELL-FORMED authorable program: non-empty, at most MAX_STAGES
-  /// stages, each stage from stageChoices. This set IS the release-refusal
-  /// rule (programsWellFormed): the empty program, an oversized fan-out,
-  /// and an overlong program are not in it, so no release can carry one —
-  /// the same structural-refusal shape as dependableTickets for deps
+  /// stages, each stage a roster from stageChoices under its POSITIONAL key.
+  /// This set IS the release-refusal rule (programsWellFormed): the empty
+  /// program, the empty roster, a key past the bound and an overlong program
+  /// are not in it, so no release can carry one — the same
+  /// structural-refusal shape as dependableTickets for deps
   /// draws from exactly this set).
   pure val validPrograms: Set[List[StageDefinition]] =
     1.to(MAX_STAGES).fold(Set([]), (acc, _) =>
-      acc.union(acc.map(p => stageChoices.map(s => p.append(s))).flatten()))
+      acc.union(acc.map(p => stageChoices.map(roster =>
+        p.append({ key: p.length() + 1, evaluators: roster }))).flatten()))
       .filter(p => p.length() >= 1)
 
-  /// THE DEFAULT PROGRAM: ONE stage, full fan-out. Every evaluator defaults
-  /// to stage 0, so a ticket whose evaluators all share one stage behaves
-  /// exactly like a single fan-out — pinned in tests/chuggy_test.qnt.
-  pure val defaultProgram: List[StageDefinition] = [{ fanout: N_TASKS }]
+  /// THE DEFAULT PROGRAM: ONE stage listing every evaluator the bound
+  /// allows. Every evaluator defaults to stage 0, so a ticket whose
+  /// evaluators all share one stage behaves exactly like a single fan-out —
+  /// pinned in tests/chuggy_test.qnt.
+  pure val defaultProgram: List[StageDefinition] =
+    [{ key: 1, evaluators: everyEvaluator }]
 
   /// The ticket-source seam, now CLOSED:
   /// every ticket the machine ever holds is built here, and the only caller is
@@ -167,8 +182,9 @@ module chuggy_domain {
   ///
   /// The release also carries the ticket's EVAL PROGRAM, validated the
   /// same structural way — callers guarantee prog ∈ validPrograms, so an
-  /// empty program, a zero/oversized fan-out, or an overlong program is
-  /// REFUSED at authoring time: no reachable state holds one
+  /// empty program, an empty roster, a key past N_TASKS or named twice, an
+  /// off-position stage key, or an overlong program is REFUSED at authoring
+  /// time: no reachable state holds one
   /// (programsWellFormed), rather than the interpreter defending against
   /// one mid-flight. The program is immutable after release, like deps.
   ///
@@ -407,10 +423,9 @@ module chuggy_domain {
     val jb = c.tickets.get(j)
     val retired = retireLive(jb)
     if (jb.tasks.forall(t => t.state == Resolved(Passed)))
-      val fan = retired.program[0].fanout
       move(
         withTicket(c, j,
-          { ...spawnEvalStage(j, retired, 0, fan), artifact: ProducedArtifact(retired.spawned) }),
+          { ...spawnEvalStage(j, retired, 0), artifact: ProducedArtifact(retired.spawned) }),
         j, Evaluation, "work-passed", ["SpawnEvalTasks"])
     else
       escalate(c, j, WorkFailureEscalated,
@@ -450,9 +465,8 @@ module chuggy_domain {
     val retired = retireLive(jb)
     if (combine(jb.tasks))
       if (s + 1 < jb.program.length())
-        val fan = retired.program[s + 1].fanout
         move(
-          withTicket(c, j, spawnEvalStage(j, retired, s + 1, fan)),
+          withTicket(c, j, spawnEvalStage(j, retired, s + 1)),
           j, Evaluation, "eval-stage-passed", ["SpawnEvalTasks"])
       else
         // THE PROGRAM PASSED, so the ticket finalizes. Every ticket takes
@@ -578,7 +592,7 @@ module chuggy_domain {
       | ResumeWork => workResume
       | ResumeRework => workResume
       | ResumeEvaluation =>
-        move(withTicket(c, j, spawnEvalStage(j, resumed, 0, jb.program[0].fanout)),
+        move(withTicket(c, j, spawnEvalStage(j, resumed, 0)),
           j, Evaluation, "ticket-resumed", ["SpawnEvalTasks"])
       | ResumeFinalization =>
         move(withTicket(c, j, resumed), j, Finalization, "ticket-resumed", ["RunFinalizer"])
@@ -924,9 +938,9 @@ module chuggy_domain {
   ///   - Work: the single work set — one WorkTask of the cycle just started;
   ///   - Evaluation: ONE stage's fan-out — uniformly EvaluationTask at a
   ///     single stage that indexes INTO the program (0 <= s < |program|),
-  ///     judging the current work cycle, with exactly that stage's declared
-  ///     width and its evaluators numbered 1..width (the interpreter is
-  ///     running the program as written, not improvising);
+  ///     judging the current work cycle, naming exactly the evaluator keys
+  ///     that stage LISTS (the interpreter is running the program as
+  ///     written, not improvising);
   ///   - every other phase: empty — dead live-task state is never carried
   ///     (derive-don't-store spirit; a Pending has not spawned,
   ///     Revoked runs nothing).
@@ -945,18 +959,19 @@ module chuggy_domain {
       and {
         s >= 0,
         s < jb.program.length(),
-        jb.tasks.size() == jb.program[s].fanout,
         jb.tasks.forall(t =>
           match t.identity {
             | WorkTask(_) => false
             | EvaluationTask(e) => and {
                 e.ticket == j,
                 e.workCycle == jb.workCyclesStarted,
-                e.stage == s + 1,
+                e.stage == jb.program[s].key,
                 t.state != Resolved(Cancelled)
               }
           }),
-        jb.tasks.map(t => taskOrdinal(t.identity)) == 1.to(jb.tasks.size())
+        jb.tasks.size() == jb.program[s].evaluators.length(),
+        jb.tasks.map(t => taskRetirementKey(t.identity)) ==
+          evaluatorKeys(jb.program[s])
       }
     else jb.tasks == Set())
 
@@ -1033,16 +1048,28 @@ module chuggy_domain {
     tickets.get(j).tasks.forall(t => taskIdentityValid(t.identity)))
 
   /// PROGRAM WELL-FORMEDNESS: every live ticket carries a well-formed
-  /// eval program — non-empty, at most MAX_STAGES stages, every fan-out in
+  /// eval program — non-empty, at most MAX_STAGES stages, each stage keyed
+  /// by its own POSITION and listing a non-empty roster of distinct keys in
   /// 1..N_TASKS. Holding in EVERY reachable state is the release-refusal
   /// callers draw from validPrograms) and are never rewritten, so an
   /// ill-formed program is refused at authoring time or never exists.
+  ///
+  /// The positional stage key is CHUGGY'S rule, not the task contract's,
+  /// which asks only that stage keys be distinct: the identity carries the
+  /// stage's key and nothing on a ticket stores the index, so evalStage
+  /// reads the index back out of the key. It is lifted when an evaluation
+  /// instance stores the index itself. Evaluator keys are NOT positional.
   val programsWellFormed: bool = liveTickets.forall(j =>
     val p = tickets.get(j).program
     and {
       p.length() >= 1,
       p.length() <= MAX_STAGES,
-      p.indices().forall(i => p[i].fanout >= 1 and p[i].fanout <= N_TASKS)
+      p.indices().forall(i => and {
+        p[i].key == i + 1,
+        p[i].evaluators.length() >= 1,
+        evaluatorKeys(p[i]).size() == p[i].evaluators.length(),
+        evaluatorKeys(p[i]).forall(k => k >= 1 and k <= N_TASKS)
+      })
     })
 
   def dependencyClosure(j: int): Set[int] =

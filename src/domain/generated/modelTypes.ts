@@ -34,7 +34,12 @@ export type Task = {
 export type Verdict = "Pass" | "Fail";
 export const verdictTags = ["Pass", "Fail"] as const;
 
-export type StageDefinition = { readonly fanout: number };
+export type EvaluatorDefinition = { readonly key: number };
+
+export type StageDefinition = {
+  readonly key: number;
+  readonly evaluators: readonly EvaluatorDefinition[];
+};
 
 export type EvaluationFailureDisposition =
   "ReworkEvaluationFailure" | "EscalateEvaluationFailure";
@@ -83,10 +88,6 @@ export const finalizationOutcomeTags = [
   "FinalizationResultUnavailable",
 ] as const;
 
-export type ArtifactMark =
-  "NoArtifact" | { readonly type: "ProducedArtifact"; readonly value: number };
-export const artifactMarkTags = ["NoArtifact", "ProducedArtifact"] as const;
-
 export type Phase =
   | "Pending"
   | "Work"
@@ -104,6 +105,10 @@ export const phaseTags = [
   "Escalated",
   "Revoked",
 ] as const;
+
+export type ArtifactMark =
+  "NoArtifact" | { readonly type: "ProducedArtifact"; readonly value: number };
+export const artifactMarkTags = ["NoArtifact", "ProducedArtifact"] as const;
 
 export type Ticket = {
   readonly phase: Phase;

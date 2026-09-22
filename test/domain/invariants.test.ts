@@ -28,9 +28,11 @@
  */
 
 import type {
-  TicketGraph,
+  StageDefinition,
   StepRecord,
   Task,
+  Ticket,
+  TicketGraph,
 } from "../../src/domain/generated/modelTypes.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -223,7 +225,7 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
       config,
       stateView(
         fleetBut(fleet, 1, {
-          tasks: new Set([evalOutstanding(2, 1, 0, 1)]),
+          tasks: new Set([evalOutstanding(2, 1, 1, 1)]),
         }),
       ),
     ),
@@ -262,15 +264,19 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
   );
 });
 
-/** A ticket whose one work cycle has passed and whose stage is now running `tasks`. */
-const evaluating = (tasks: ReadonlySet<Task>): TicketGraph =>
+/** A ticket whose one work cycle has passed and whose stage is now running `tasks`, under the default program unless one is given. */
+const evaluating = (
+  tasks: ReadonlySet<Task>,
+  program?: Ticket["program"],
+): TicketGraph =>
   graphOf([
     ticketOn(config, {
       phase: "Evaluation",
+      ...(program === undefined ? {} : { program }),
       record: [workTask(1, 1, "Passed")],
       tasks,
       workCyclesStarted: 1,
-      spawned: 3,
+      spawned: 1 + tasks.size,
     }),
   ]);
 
@@ -280,7 +286,7 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
       config,
       stateView(
         evaluating(
-          new Set([evalOutstanding(1, 1, 0, 1), evalOutstanding(1, 1, 0, 2)]),
+          new Set([evalOutstanding(1, 1, 1, 1), evalOutstanding(1, 1, 1, 2)]),
         ),
       ),
     ),
@@ -290,7 +296,7 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
       config,
       stateView(
         evaluating(
-          new Set([evalOutstanding(1, 2, 0, 1), evalOutstanding(1, 2, 0, 2)]),
+          new Set([evalOutstanding(1, 2, 1, 1), evalOutstanding(1, 2, 1, 2)]),
         ),
       ),
     ),
@@ -301,7 +307,7 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
       config,
       stateView(
         evaluating(
-          new Set([evalOutstanding(1, 1, 5, 1), evalOutstanding(1, 1, 5, 2)]),
+          new Set([evalOutstanding(1, 1, 6, 1), evalOutstanding(1, 1, 6, 2)]),
         ),
       ),
     ),
@@ -310,20 +316,20 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
   assert.ok(
     !tasksWellFormed(
       config,
-      stateView(evaluating(new Set([evalOutstanding(1, 1, 0, 1)]))),
+      stateView(evaluating(new Set([evalOutstanding(1, 1, 1, 1)]))),
     ),
-    "the set is exactly the stage's declared width",
+    "the set names every evaluator the stage lists",
   );
   assert.ok(
     !tasksWellFormed(
       config,
       stateView(
         evaluating(
-          new Set([evalOutstanding(1, 1, 0, 1), evalOutstanding(1, 1, 0, 3)]),
+          new Set([evalOutstanding(1, 1, 1, 1), evalOutstanding(1, 1, 1, 3)]),
         ),
       ),
     ),
-    "the evaluators are one to the fan-out, so a gap in them is not a stage",
+    "and nothing the stage does not list",
   );
   assert.ok(
     !tasksWellFormed(
@@ -331,13 +337,28 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
       stateView(
         evaluating(
           new Set([
-            evalTask(1, 1, 0, 1, "Cancelled"),
-            evalOutstanding(1, 1, 0, 2),
+            evalTask(1, 1, 1, 1, "Cancelled"),
+            evalOutstanding(1, 1, 1, 2),
           ]),
         ),
       ),
     ),
     "cancelled is a retirement mark on the eval side too, and this branch has its own conjunct saying so",
+  );
+});
+
+/** A JS Set holds two task objects sharing a key where the model's value-Set holds one. */
+test("tasksWellFormed rejects two live tasks sharing a key, whatever their count", () => {
+  assert.ok(
+    !tasksWellFormed(
+      config,
+      stateView(
+        evaluating(
+          new Set([evalOutstanding(1, 1, 1, 1), evalOutstanding(1, 1, 1, 1)]),
+          [{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }],
+        ),
+      ),
+    ),
   );
 });
 
@@ -365,7 +386,7 @@ test("recordWellFormed rejects a log that is not this ticket's settled history",
   assert.ok(
     !recordWellFormed(
       config,
-      stateView(finalizing([evalTask(1, 1, 5, 1, "Passed")])),
+      stateView(finalizing([evalTask(1, 1, 6, 1, "Passed")])),
     ),
     "programs are immutable, so a retired stage index never dangles",
   );
@@ -442,9 +463,20 @@ test("taskIdentitiesValid rejects a live task whose identity counts from zero", 
 });
 
 test("programsWellFormed rejects a program no release could have carried", () => {
-  const stage = { fanout: 1 } as const;
-  const overlong = Array.from({ length: config.maxStages + 1 }, () => stage);
-  for (const program of [[], [{ ...stage, fanout: 0 }], overlong]) {
+  const stage = { key: 1, evaluators: [{ key: 1 }] } as const;
+  const overlong = Array.from({ length: config.maxStages + 1 }, (_u, i) => ({
+    ...stage,
+    key: i + 1,
+  }));
+  const illFormed: readonly (readonly StageDefinition[])[] = [
+    [],
+    [{ ...stage, evaluators: [] }],
+    [{ ...stage, evaluators: [{ key: 0 }] }],
+    [{ ...stage, evaluators: [{ key: 1 }, { key: 1 }] }],
+    [{ ...stage, key: 2 }],
+    overlong,
+  ];
+  for (const program of illFormed) {
     assert.ok(
       !programsWellFormed(config, stateView(fleetBut(fleet, 1, { program }))),
       `${JSON.stringify(program)} is not an authorable program`,
@@ -455,11 +487,11 @@ test("programsWellFormed rejects a program no release could have carried", () =>
       config,
       stateView(
         fleetBut(fleet, 1, {
-          program: [{ ...stage, fanout: config.nTasks + 1 }],
+          program: [{ ...stage, evaluators: [{ key: config.nTasks + 1 }] }],
         }),
       ),
     ),
-    "a stage may not fan out past the task ceiling",
+    "an evaluator key may not pass the bound",
   );
   assert.ok(programsWellFormed(config, healthy));
 });
@@ -618,5 +650,23 @@ test("a revoke leaves its dependents where they were, and depsAcyclic is what re
   assert.ok(
     stuckSubsetCovered(config, stateView(cyclic)),
     "the walks agree here as they do on every state, which is why this one is the machine-checked half",
+  );
+});
+
+test("tasksWellFormed holds a sparse stage to the keys it lists, not to a count from one", () => {
+  const sparse: Ticket["program"] = [{ key: 1, evaluators: [{ key: 2 }] }];
+  assert.ok(
+    tasksWellFormed(
+      config,
+      stateView(evaluating(new Set([evalOutstanding(1, 1, 1, 2)]), sparse)),
+    ),
+    "a sparse stage runs exactly the key it lists, and no key one",
+  );
+  assert.ok(
+    !tasksWellFormed(
+      config,
+      stateView(evaluating(new Set([evalOutstanding(1, 1, 1, 1)]), sparse)),
+    ),
+    "a stage listing key two alone is not running key one",
   );
 });

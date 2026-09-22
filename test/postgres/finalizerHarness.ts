@@ -457,7 +457,7 @@ export function finalizerTaskDone(
 
 /** The lone evaluator of the first stage of one work cycle, which is the fixture's only stage. */
 export function finalizerEvaluation(cycle: number): TaskIdentity {
-  return evaluationTaskOf(1, cycle, 0, 1, 1);
+  return evaluationTaskOf(1, cycle, 1, 1, 1);
 }
 
 /** Accepts one reported task and decides it along with everything it enqueues. */

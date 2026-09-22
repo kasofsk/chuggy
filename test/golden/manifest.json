@@ -55,7 +55,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"eval-stage-passed\"",
-      "steps": 19,
+      "steps": 13,
       "quintVersion": "0.32.0",
       "purpose": "The stage advance: a stage passes, the next one spawns, and the ticket stays in Evaluation. It is the only step whose transition is a phase to itself."
     },
@@ -69,7 +69,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"rework-started finalization_needs_work\"",
-      "steps": 13,
+      "steps": 15,
       "quintVersion": "0.32.0",
       "purpose": "A finalizer reports failure and the ticket re-enters work. There is no wall on this edge: the finalizer that keeps failing keeps buying cycles."
     },
@@ -97,7 +97,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"rework-started eval_failure\"",
-      "steps": 7,
+      "steps": 14,
       "quintVersion": "0.32.0",
       "purpose": "The Rework disposition on a failing evaluation: the stage retires and the ticket re-enters Work with a fresh work task. Its pair is evaluation-failure-escalated, which is the same failure taken the other way."
     },
@@ -139,7 +139,7 @@
       "maxSamples": 60000,
       "maxSteps": 60,
       "invariant": "not(lastStep.label == \"ticket-done\" and lastStep.transitions.foldl(false, (b, t) => b or t.from == Finalization))",
-      "steps": 52,
+      "steps": 20,
       "quintVersion": "0.32.0",
       "purpose": "The finalizer draws FinalizationSucceeded and the ticket completes Finalization -> Done. It is the only completion route this machine has: a passing final stage always runs a finalizer first."
     },
@@ -153,7 +153,7 @@
       "maxSamples": 60000,
       "maxSteps": 60,
       "invariant": "not(lastStep.label == \"ticket-resumed\" and lastStep.transitions.foldl(false, (b, t) => b or t.to == Finalization))",
-      "steps": 23,
+      "steps": 51,
       "quintVersion": "0.32.0",
       "purpose": "The finalizer reaches no result, the ticket parks at ResumeFinalization, and the desk's resume runs the finalizer again. It is aimed at the resume rather than at the wall so one row carries both halves: a resume into Finalization is the only one this machine has, and only this wall stamps it."
     }

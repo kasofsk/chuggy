@@ -1679,7 +1679,7 @@ test("an evaluation report is a document, bounded and printable like a work repo
     );
 });
 
-test("more evaluation reports than one stage's fanout admits is refused rather than truncated", () => {
+test("more evaluation reports than the briefing admits is refused rather than truncated", () => {
   const reports = Array.from(
     { length: priorEvaluationReportsMax + 1 },
     (_unused, at) => `Report ${String(at)}.`,

@@ -13,6 +13,7 @@ import {
 } from "../../src/actor/decisionEvent.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { retryableIn } from "../../src/domain/enablement.ts";
+import type { Config } from "../../src/domain/config.ts";
 import type {
   DecisionEvent,
   TaskIdentity,
@@ -253,16 +254,37 @@ test("a ticket's task numbers ascend over its whole history and never repeat", (
     dispatchEvent(id(1)),
     taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
     workReduceEvent(id(1)),
-    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 0, 1, 1), "Fail", plainResult),
+    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 1, 1, 1), "Fail", plainResult),
     evalReduceEvent(id(1), "ReworkEvaluationFailure"),
     taskDoneEvent(id(1), workTaskOf(1, 2), "Pass", plainResult),
     workReduceEvent(id(1)),
   ];
+  const minted = mintedUnder(history, refinementInstance);
+  assert.deepEqual(
+    minted.map((each) => each.task),
+    [1, 2, 3, 4],
+  );
+  assert.deepEqual(
+    minted.map((each) => each.identity.type),
+    ["WorkTask", "EvaluationTask", "WorkTask", "EvaluationTask"],
+  );
+  assert.deepEqual(minted[2]?.identity, workTaskOf(1, 2));
+  assert.deepEqual(minted[3]?.identity, evaluationTaskOf(1, 2, 1, 1, 1));
+});
+
+/**
+ * A history minted step by step under `config`: the identities each run
+ * spawns and the wire numbers the plan gave them.
+ */
+function mintedUnder(
+  history: readonly DecisionEvent[],
+  config: Config = { ...refinementInstance, nTasks: 3 },
+): readonly { task: number; identity: TaskIdentity }[] {
   const minted: { task: number; identity: TaskIdentity }[] = [];
   let state = actorInit();
   for (const event of history) {
     const before = memoryGraph(state);
-    state = journalStep(refinementInstance, state, event);
+    state = journalStep(config, state, event);
     const entry = state.journal.at(-1);
     assert.ok(entry !== undefined);
     const post = memoryGraph(state);
@@ -275,16 +297,64 @@ test("a ticket's task numbers ascend over its whole history and never repeat", (
     const planned = materializationOf(decided, before, post, entry);
     minted.push(...planned.execution.flatMap((request) => [...request.tasks]));
   }
+  return minted;
+}
+
+/** A program whose one stage lists evaluators 1 and 3 and no evaluator 2. */
+const sparseAuthoring = {
+  deps: new Set<number>(),
+  prog: [{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }],
+} as const;
+
+/**
+ * The count a spawn spends is the set's size, so a sparse stage takes the two
+ * numbers after the work task and the rework takes the one after those. Minted
+ * by evaluator key instead, the stage would skip a number and the rework would
+ * take the one the stage's second evaluator already holds.
+ */
+test("a sparse stage mints consecutive numbers and the set after it repeats none", () => {
+  const minted = mintedUnder([
+    releaseTicketEvent(id(1), sparseAuthoring),
+    dispatchEvent(id(1)),
+    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
+    workReduceEvent(id(1)),
+    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 1, 1, 1), "Fail", plainResult),
+    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 1, 1, 3), "Pass", plainResult),
+    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
+  ]);
   assert.deepEqual(
     minted.map((each) => each.task),
     [1, 2, 3, 4],
   );
   assert.deepEqual(
-    minted.map((each) => each.identity.type),
-    ["WorkTask", "EvaluationTask", "WorkTask", "EvaluationTask"],
+    minted.map((each) => each.identity),
+    [
+      workTaskOf(1, 1),
+      evaluationTaskOf(1, 1, 1, 1, 1),
+      evaluationTaskOf(1, 1, 1, 1, 3),
+      workTaskOf(1, 2),
+    ],
   );
-  assert.deepEqual(minted[2]?.identity, workTaskOf(1, 2));
-  assert.deepEqual(minted[3]?.identity, evaluationTaskOf(1, 2, 0, 1, 1));
+});
+
+/**
+ * A cancellation names only the tasks it retires, by the numbers their spawn
+ * minted: the retired evaluator's position is counted in the whole set, not
+ * among the tasks the cancellation lists.
+ */
+test("a cancellation names a retired task by the number its spawn minted", () => {
+  const minted = mintedUnder([
+    releaseTicketEvent(id(1), sparseAuthoring),
+    dispatchEvent(id(1)),
+    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
+    workReduceEvent(id(1)),
+    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 1, 1, 1), "Pass", plainResult),
+    revokeEvent(id(1)),
+  ]);
+  assert.deepEqual(minted.at(-1), {
+    task: 3,
+    identity: evaluationTaskOf(1, 1, 1, 1, 3),
+  });
 });
 
 test("a spawn bundle pins its exact source and prior result manifests", () => {
@@ -346,7 +416,7 @@ function finalizing(): ReturnType<typeof journalStep> {
     dispatchEvent(id(1)),
     taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
     workReduceEvent(id(1)),
-    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 0, 1, 1), "Pass", plainResult),
+    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 1, 1, 1), "Pass", plainResult),
     evalReduceEvent(id(1), "ReworkEvaluationFailure"),
   ];
   return steps.reduce(

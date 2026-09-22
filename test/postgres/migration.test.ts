@@ -16,8 +16,10 @@ import {
   migration009,
 } from "../../src/adapters/postgres/schema/migrations/009-work-fanout.ts";
 import { migration010 } from "../../src/adapters/postgres/schema/migrations/010-task-identity.ts";
-import { encodeDispatchProgram } from "../../src/interpreter/dispatchView.ts";
-import type { StageDefinition } from "../../src/domain/generated/modelTypes.ts";
+import {
+  leadObservationTokensPerDecisionAt011,
+  migration011,
+} from "../../src/adapters/postgres/schema/migrations/011-evaluator-keys.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -1025,7 +1027,7 @@ test("fresh selector settings carry current controls and only their initial hist
     assert.deepEqual(controls.toolAllowlist, leadToolAllowlist);
     assert.equal(
       controls.limits.tokensPerDecision,
-      leadObservationTokensPerDecisionAt009,
+      leadObservationTokensPerDecisionAt011,
     );
     assert.equal(
       controls.limits.dispatchesPerDecision,
@@ -1878,21 +1880,17 @@ test("the narrowed reason checks refuse a live row at the parked reason", async 
 
 /**
  * The programs the rewrite has to render, each as the encoder that still wrote
- * the combinator stored it and as the machine now holds it: two stages, and
- * none at all. The stored side is a literal because no encoder in this tree
- * can write the deleted key any more.
+ * the combinator stored it and as the rewrite leaves it: two stages, and none
+ * at all. Both sides are literals because no encoder in this tree can write
+ * the deleted key or the width any more.
  */
-const rewrittenPrograms: readonly (readonly [
-  number,
-  string,
-  readonly StageDefinition[],
-])[] = [
+const rewrittenPrograms: readonly (readonly [number, string, string])[] = [
   [
     1,
     '[{"fanout":2,"combinator":"UnanimousPass"},{"fanout":1,"combinator":"AnyPass"}]',
-    [{ fanout: 2 }, { fanout: 1 }],
+    '[{"fanout":2},{"fanout":1}]',
   ],
-  [2, "[]", []],
+  [2, "[]", "[]"],
 ];
 
 test("a stored dispatch program is rewritten as the encoder without the combinator writes it", async () => {
@@ -1922,7 +1920,7 @@ test("a stored dispatch program is rewritten as the encoder without the combinat
       ).rows,
       rewrittenPrograms.map(([ticket, , program]) => ({
         ticket: String(ticket),
-        program: JSON.stringify(encodeDispatchProgram(program)),
+        program,
       })),
     );
   });
@@ -4160,6 +4158,175 @@ test("the door replaced whole keeps its owner and the one role that may open it"
       ).rows[0]?.owner,
       boundaryOwnerRole,
     );
+  });
+});
+
+test("a fresh install records the stage becoming the roster it runs", async () => {
+  await migrationDatabase("evaluatorkeys_install", async (subject) => {
+    assert.ok((await postgresMigrate(subject)).includes(migration011.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT version,name FROM schema_migration WHERE version=$1",
+          [migration011.version],
+        )
+      ).rows,
+      [
+        {
+          version: migration011.version,
+          name: "a stage names the evaluators it runs, and its key is its place",
+        },
+      ],
+    );
+  });
+});
+
+/** A program at each shape, and every one this image refuses to be handed. */
+const evaluatorKeyPrograms: readonly (readonly [string, unknown, boolean])[] = [
+  [
+    "a stage naming the evaluators it runs, keyed as the author keyed them",
+    [{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }],
+    true,
+  ],
+  [
+    "a program whose stages are keyed by the places they hold",
+    [
+      { key: 1, evaluators: [{ key: 1 }] },
+      { key: 2, evaluators: [{ key: 2 }] },
+    ],
+    true,
+  ],
+  [
+    "a stage still naming the width it was authored at",
+    [{ key: 1, fanout: 1, evaluators: [{ key: 1 }] }],
+    false,
+  ],
+  [
+    "a stage keyed anywhere but the place it holds",
+    [{ key: 2, evaluators: [{ key: 1 }] }],
+    false,
+  ],
+  [
+    "a stage that runs no evaluator at all",
+    [{ key: 1, evaluators: [] }],
+    false,
+  ],
+  [
+    "a stage naming one evaluator twice",
+    [{ key: 1, evaluators: [{ key: 1 }, { key: 1 }] }],
+    false,
+  ],
+  [
+    "a stage naming an evaluator no ticket can spawn",
+    [{ key: 1, evaluators: [{ key: 0 }] }],
+    false,
+  ],
+  [
+    "a stage combined a way this machine has no name for",
+    [{ key: 1, evaluators: [{ key: 1 }], combinator: "AnyPass" }],
+    false,
+  ],
+  ["a stage with no key at all", [{ evaluators: [{ key: 1 }] }], false],
+  ["a stage keyed by text", [{ key: "1", evaluators: [{ key: 1 }] }], false],
+  [
+    "an evaluator keyed by text",
+    [{ key: 1, evaluators: [{ key: "1" }] }],
+    false,
+  ],
+  ["a stage whose evaluators are a number", [{ key: 1, evaluators: 3 }], false],
+];
+
+function evaluatorKeyRelease(prog: unknown): unknown {
+  return { type: "CreateTicket", value: { ticket: 1, deps: [], prog } };
+}
+
+test("a journal with an entry in it refuses the roster arriving and names the wipe", async () => {
+  await migrationDatabase("evaluatorkeys_guard", async (subject) => {
+    await installationBefore(subject, migration011.version);
+    await subject.query(`${deletionPartition}\n${journaledDecision}`);
+    await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
+    assert.deepEqual(
+      (
+        await subject.query<{ admitted: boolean }>(
+          "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+          [JSON.stringify(evaluatorKeyRelease([{ fanout: 1 }]))],
+        )
+      ).rows,
+      [{ admitted: true }],
+      "the shape the guard refused over is the shape it left admitted",
+    );
+    assert.deepEqual(
+      (
+        await postgresRuntimeSchema(subject).applied(
+          new AbortController().signal,
+        )
+      )
+        .map(({ version }) => version)
+        .at(-1),
+      migration011.version - 1,
+    );
+  });
+});
+
+test("the boundary admits a program that names its evaluators and refuses one that counts them", async () => {
+  await migrationDatabase("evaluatorkeys_events", async (subject) => {
+    await postgresMigrate(subject);
+    for (const [label, prog, admitted] of evaluatorKeyPrograms)
+      assert.deepEqual(
+        (
+          await subject.query<{ admitted: boolean }>(
+            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+            [JSON.stringify(evaluatorKeyRelease(prog))],
+          )
+        ).rows,
+        [{ admitted }],
+        label,
+      );
+  });
+});
+
+/**
+ * The mailbox bound and the seeded budget move together, as they did at 009:
+ * a stage weighs its roster, so the widest observation is wider and the
+ * floor argued from it follows.
+ */
+test("the roster arriving widens the mailbox bound and re-seeds the budget with it", async () => {
+  await migrationDatabase("evaluatorkeys_mailbox", async (subject) => {
+    await postgresMigrate(subject);
+    const bound = (
+      await subject.query<{ definition: string }>(
+        `SELECT pg_get_constraintdef(c.oid) AS definition
+           FROM pg_constraint c
+          WHERE c.conrelid = 'session_turn'::regclass
+            AND c.conname = 'session_turn_text_is_bounded'`,
+      )
+    ).rows[0]?.definition;
+    assert.ok(bound !== undefined, "the mailbox bound was not found");
+    assert.ok(bound.includes(String(leadObservationTokensPerDecisionAt011)));
+    assert.ok(!bound.includes(String(leadObservationTokensPerDecisionAt009)));
+    for (const relation of [
+      "selector_runtime_settings",
+      "selector_runtime_settings_history",
+    ]) {
+      const rows = (
+        await subject.query<{ controls: string }>(
+          `SELECT controls FROM ${relation}`,
+        )
+      ).rows;
+      assert.ok(rows.length >= 1, `${relation} is seeded`);
+      for (const { controls } of rows) {
+        assert.ok(
+          controls.includes(
+            `"tokensPerDecision":${String(leadObservationTokensPerDecisionAt011)}`,
+          ),
+          `${relation} carries the re-seeded budget`,
+        );
+        assert.ok(
+          !controls.includes(String(leadObservationTokensPerDecisionAt009)),
+          `${relation} no longer carries 009's`,
+        );
+      }
+    }
   });
 });
 

@@ -98,11 +98,16 @@ const verdictDraws: readonly Verdict[] = ["Pass", "Fail"];
 export function validProgramsIn(
   config: Config,
 ): readonly (readonly StageDefinition[])[] {
-  const stages = stageChoices(config);
+  const rosters = stageChoices(config);
   let grown: readonly (readonly StageDefinition[])[] = [[]];
   const programs: (readonly StageDefinition[])[] = [];
   for (let length = 1; length <= config.maxStages; length++) {
-    grown = grown.flatMap((program) => stages.map((s) => [...program, s]));
+    grown = grown.flatMap((program) =>
+      rosters.map((roster) => [
+        ...program,
+        { key: program.length + 1, evaluators: roster },
+      ]),
+    );
     programs.push(...grown);
   }
   return programs;
