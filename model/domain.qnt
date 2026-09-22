@@ -106,8 +106,17 @@ module chuggy_domain {
   /// source is an observation made outside the machine, and one derived from
   /// the ticket would make the stored field a duplicate of a derivable fact
   /// (standing rule 3) that nothing could ever disagree with.
-  pure val dispatchSources: Set[int] = Set(1, 2)
-  pure val acceptedSources: Set[int] = Set(3, 4)
+  ///
+  /// Their own BAND, clear of the evaluator definitions below and of the
+  /// release references, so a number read off a golden belongs to exactly
+  /// one of the three and the travel is legible. The named members are what
+  /// a hand-written fixture carries when which one it is is not its subject.
+  pure val aDispatchSource: int = 9
+  pure val anAcceptedSource: int = 11
+  pure val dispatchSources: Set[int] =
+    Set(aDispatchSource, aDispatchSource + 1)
+  pure val acceptedSources: Set[int] =
+    Set(anAcceptedSource, anAcceptedSource + 1)
 
   /// WHAT A TASK CAN COME BACK WITH, as the environment may produce it: a
   /// work task produced its artifact at a source the application accepted,
@@ -194,7 +203,7 @@ module chuggy_domain {
   /// space and no refutation. What is STORED is still the definition the
   /// release carried: it is authored input, and nothing in a reachable state
   /// recomputes it.
-  pure def releaseRef(j: int, slot: int): int = 10 * j + slot
+  pure def releaseRef(j: int, slot: int): int = 20 * j + slot
 
   /// THE DEFINITION A RELEASE OF TICKET j CARRIES, over the dependencies and
   /// the plan the author drew. The id is the definition's own: a release

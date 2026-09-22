@@ -28,8 +28,8 @@ module chuggy_refinement_fixture {
   /// environment observes is no suite's subject; that they come from
   /// disjoint sets is what makes a dispatch's source tell itself from an
   /// acceptance's in a journal.
-  pure val aDispatchSource: int = 1
-  pure val anAcceptedSource: int = 3
+  pure val aDispatchSource: int = 9
+  pure val anAcceptedSource: int = 11
 }
 
 module chuggy_refinement_unit_test {

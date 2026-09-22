@@ -34,11 +34,11 @@ module chuggy_test {
     { identity: workOf(cycle), state: Resolved(o) }
 
   // THE TWO SOURCES a fixture uses: one the dispatch observes, one a work
-  // result is accepted at. Disjoint by construction (domain.qnt), so a
-  // ticket carrying 3 has been told a work result's source and one carrying
-  // 1 has only ever been dispatched.
-  pure val srcDispatch: int = 1
-  pure val srcAccepted: int = 3
+  // result is accepted at. Their sets are disjoint by construction
+  // (domain.qnt), so which of the two a ticket carries says whether it has
+  // been told a work result's source or has only ever been dispatched.
+  pure val srcDispatch: int = D::aDispatchSource
+  pure val srcAccepted: int = D::anAcceptedSource
 
   // WHAT A COMPLETION CAN CARRY. A produced report carries the obligation
   // the ticket owes for the task (ticket.qnt producedResult) — the only one
