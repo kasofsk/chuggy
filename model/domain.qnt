@@ -968,6 +968,7 @@ module chuggy_domain {
                 t.state != Resolved(Cancelled)
               }
           }),
+        jb.tasks.size() == jb.program[s].evaluators.length(),
         jb.tasks.map(t => taskRetirementKey(t.identity)) ==
           evaluatorKeys(jb.program[s])
       }
