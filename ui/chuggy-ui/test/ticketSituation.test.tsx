@@ -12,7 +12,13 @@ import type { TicketResponse } from "../../../src/contract/responses.ts";
 import { SituationNotice } from "../app/browser/ticket/TicketSituation.tsx";
 import { ticketLedger } from "../app/core/ticketLedger.ts";
 import { ticketInstants } from "./ticketInstants.ts";
-import { ledgerPage } from "./ticketLedgerFixture.ts";
+import {
+  evalIdentity,
+  ledgerPage,
+  ticket21Authoring,
+  ticket21Parked,
+  workIdentity,
+} from "./ticketLedgerFixture.ts";
 
 afterEach(cleanup);
 
@@ -66,4 +72,79 @@ test("a Pending ticket waiting on nothing revoked draws its phase, not a banner"
   );
   expect(screen.queryByText(/Blocked by revoked/u)).toBeNull();
   expect(screen.getByText("Pending")).toBeDefined();
+});
+
+/**
+ * A cycle can hold two stages past their first generation at once: stage 1
+ * resumed and settled, stage 2 resumed and still running. The notice names
+ * the one resumed now, not the first one a resume ever touched.
+ */
+test("resumedFrom names the highest-numbered stage whose resume is still running", () => {
+  const authoring = {
+    dependencies: [],
+    program: [
+      { key: 1, evaluators: [{ key: 1 }] },
+      { key: 2, evaluators: [{ key: 1 }] },
+    ],
+  };
+  const twoStageFacts = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-aa-1",
+        task: 1,
+        identity: workIdentity(1),
+        outcome: "Passed",
+      },
+      {
+        execution: "execution-bb-2",
+        task: 2,
+        identity: evalIdentity(1, 1, 1),
+        outcome: "Blocked",
+      },
+      {
+        execution: "execution-cc-3",
+        task: 3,
+        identity: evalIdentity(1, 1, 2),
+        outcome: "Passed",
+      },
+      {
+        execution: "execution-dd-4",
+        task: 4,
+        identity: evalIdentity(1, 2, 1),
+        outcome: "Blocked",
+      },
+      {
+        execution: "execution-ee-5",
+        task: 5,
+        identity: evalIdentity(1, 2, 2),
+        status: "Running",
+      },
+    ]),
+    authoring,
+  );
+  render(
+    <SituationNotice
+      ticket={ticket({ phase: "Evaluation", revokedDependencies: [] })}
+      facts={twoStageFacts}
+      stageCount={2}
+      nowMs={0}
+    />,
+  );
+  expect(screen.getByText("Resumed at stage 2 · cycle 1")).toBeDefined();
+});
+
+test("a ticket never resumed draws no resume line", () => {
+  const neverResumed = ticketLedger(
+    ledgerPage(ticket21Parked),
+    ticket21Authoring,
+  );
+  render(
+    <SituationNotice
+      ticket={ticket({ phase: "Evaluation", revokedDependencies: [] })}
+      facts={neverResumed}
+      stageCount={2}
+      nowMs={0}
+    />,
+  );
+  expect(screen.queryByText(/Resumed at/u)).toBeNull();
 });

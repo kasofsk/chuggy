@@ -39,16 +39,21 @@ function wallFacts(facts: LedgerFacts, stageCount: number): WallFacts {
   return { lastSet: ledgerLastSet(facts), stageCount };
 }
 
-/** The stage a resume re-asked, which is the one whose highest generation is
- * past its first. */
+/**
+ * The stage a resume re-asked now, not the first one a resume ever touched: a
+ * cycle can hold more than one stage past its first generation at once, so
+ * this takes the highest-numbered one that is still running, and only falls
+ * back to the highest-numbered one at all where none is.
+ */
 function resumedStage(facts: LedgerFacts): number | undefined {
   const cycle = currentCycle(facts);
-  const resumed = cycle?.stages.find(
+  const resumed = (cycle?.stages ?? []).filter(
     (row): row is RanStage =>
       row.kind === "Ran" &&
       row.evaluators.some((evaluator) => evaluator.generation > 1),
   );
-  return resumed?.stage;
+  const running = resumed.filter((row) => row.verdict === "Running");
+  return (running.length > 0 ? running : resumed).at(-1)?.stage;
 }
 
 /** A resume shows in the ledger as the stage it re-asked sitting past its
