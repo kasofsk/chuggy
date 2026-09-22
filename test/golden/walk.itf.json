@@ -110,12 +110,26 @@
           "tag": "Some",
           "value": [
             {
-              "fanout": {
-                "#bigint": "2"
+              "evaluators": [
+                {
+                  "key": {
+                    "#bigint": "1"
+                  }
+                }
+              ],
+              "key": {
+                "#bigint": "1"
               }
             },
             {
-              "fanout": {
+              "evaluators": [
+                {
+                  "key": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "key": {
                 "#bigint": "2"
               }
             }
@@ -175,12 +189,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -315,12 +343,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -468,12 +510,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -631,12 +687,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -817,12 +887,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -899,13 +983,20 @@
           "tag": "Some",
           "value": [
             {
-              "fanout": {
-                "#bigint": "2"
-              }
-            },
-            {
-              "fanout": {
-                "#bigint": "2"
+              "evaluators": [
+                {
+                  "key": {
+                    "#bigint": "1"
+                  }
+                },
+                {
+                  "key": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "key": {
+                "#bigint": "1"
               }
             }
           ]
@@ -994,13 +1085,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -1047,12 +1145,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -1133,8 +1245,27 @@
           "tag": "Some",
           "value": [
             {
-              "fanout": {
+              "evaluators": [
+                {
+                  "key": {
+                    "#bigint": "1"
+                  }
+                }
+              ],
+              "key": {
                 "#bigint": "1"
+              }
+            },
+            {
+              "evaluators": [
+                {
+                  "key": {
+                    "#bigint": "1"
+                  }
+                }
+              ],
+              "key": {
+                "#bigint": "2"
               }
             }
           ]
@@ -1233,8 +1364,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -1281,13 +1431,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -1334,12 +1491,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -1536,8 +1707,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -1584,13 +1774,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -1657,12 +1854,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -1859,8 +2070,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -1907,13 +2137,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -1983,12 +2220,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -2208,8 +2459,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -2256,13 +2526,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -2352,12 +2629,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -2577,8 +2868,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -2625,13 +2935,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -2723,12 +3040,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -2970,8 +3301,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -3018,13 +3368,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -3136,12 +3493,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -3376,8 +3747,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -3424,13 +3814,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -3545,12 +3942,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -3792,8 +4203,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -3840,13 +4270,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -3960,12 +4397,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -4229,8 +4680,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -4277,13 +4747,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -4397,12 +4874,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -4666,8 +5157,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -4714,13 +5224,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -4834,12 +5351,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -5085,8 +5616,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -5133,13 +5683,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -5253,12 +5810,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -5504,8 +6075,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -5552,13 +6142,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -5672,12 +6269,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -5923,8 +6534,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -5971,13 +6601,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -6091,12 +6728,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -6342,8 +6993,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -6390,13 +7060,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -6510,12 +7187,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -6761,8 +7452,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -6809,13 +7519,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -6929,12 +7646,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -7180,8 +7911,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -7228,13 +7978,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -7348,12 +8105,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -7599,8 +8370,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -7647,13 +8437,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -7767,12 +8564,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -8018,8 +8829,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -8066,13 +8896,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -8186,12 +9023,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -8437,8 +9288,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -8485,13 +9355,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -8605,12 +9482,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -8856,8 +9747,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -8904,13 +9814,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -9024,12 +9941,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -9275,8 +10206,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -9323,13 +10273,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -9443,12 +10400,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -9694,8 +10665,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -9742,13 +10732,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -9862,12 +10859,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -10113,8 +11124,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -10161,13 +11191,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -10281,12 +11318,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }
@@ -10532,8 +11583,27 @@
               },
               "program": [
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "2"
                   }
                 }
               ],
@@ -10580,13 +11650,20 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
-                  }
-                },
-                {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 }
               ],
@@ -10700,12 +11777,26 @@
               },
               "program": [
                 {
-                  "fanout": {
-                    "#bigint": "2"
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
                   }
                 },
                 {
-                  "fanout": {
+                  "evaluators": [
+                    {
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ],
+                  "key": {
                     "#bigint": "2"
                   }
                 }

@@ -567,7 +567,7 @@ module chuggy_refinement {
     nondet task = graph.tickets.get(j).tasks.filter(t => t.state == Outstanding).map(t => t.identity).oneOf()
     nondet v = Set(Pass, Fail).oneOf()
     journalStep(TaskDone({ ticket: j, task: task, verdict: v,
-      result: { manifest: taskOrdinal(task), digest: taskOrdinal(task),
+      result: { manifest: taskRetirementKey(task), digest: taskRetirementKey(task),
         schema: 1 } }))
   }
   action actorWorkReduce = all {

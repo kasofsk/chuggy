@@ -19,6 +19,7 @@ module chuggy_api {
   type ApiTaskState = TaskState
   type ApiTask = Task
   type ApiVerdict = Verdict
+  type ApiEvaluatorDefinition = EvaluatorDefinition
   type ApiStageDefinition = StageDefinition
   type ApiEvaluationFailureDisposition = EvaluationFailureDisposition
   type ApiResume = Resume

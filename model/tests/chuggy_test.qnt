@@ -17,11 +17,12 @@ module chuggy_test {
   // Resolved carries the outcome), wr/er build OUTSTANDING ones (the live
   // set's). The split IS the explicit lifecycle showing up in the test
   // vocabulary. An eval literal names the work cycle it judges, the 0-based
-  // stage index and the evaluator; the pair taking a GENERATION is for the
+  // stage INDEX — the key the identity carries is its position — and the
+  // evaluator's authored key; the pair taking a GENERATION is for the
   // one edge that runs a stage twice in a cycle (the evaluation resume).
   pure def workOf(cycle: int): TaskIdentity = workTaskOf(1, cycle)
   pure def evalOfRun(cycle: int, s: int, generation: int, e: int): TaskIdentity =
-    evaluationTaskOf(1, cycle, s, generation, e)
+    evaluationTaskOf(1, cycle, s + 1, generation, e)
   pure def evalOf(cycle: int, s: int, e: int): TaskIdentity =
     evalOfRun(cycle, s, 1, e)
 
@@ -52,9 +53,18 @@ module chuggy_test {
   // Programs used throughout. progU2 is exactly D::defaultProgram — the
   // unanimous single-stage default, which is the compatibility shape: a
   // ticket whose evaluators all share one stage behaves byte-for-byte like
-  // a single fan-out.
-  pure val progU2: List[StageDefinition] = [{ fanout: 2 }]
-  pure val progStaged: List[StageDefinition] = [{ fanout: 1 }, { fanout: 2 }]
+  // a single undivided roster.
+  pure val progU2: List[StageDefinition] =
+    [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }]
+  pure val progStaged: List[StageDefinition] =
+    [{ key: 1, evaluators: [{ key: 1 }] },
+     { key: 2, evaluators: [{ key: 1 }, { key: 2 }] }]
+
+  // A SPARSE STAGE: one evaluator, authored under key 2, with no key 1 in
+  // the roster. Every site that once counted a width from one would drop
+  // this stage's only task.
+  pure val progSparse: List[StageDefinition] =
+    [{ key: 1, evaluators: [{ key: 2 }] }]
 
   // Test constructors mirror released ticket contracts while keeping
   // fixtures readable.
@@ -76,19 +86,52 @@ module chuggy_test {
 
   /// validPrograms IS the release-refusal rule (programs must be non-empty
   /// and valid or release refuses): the ill-formed shapes are simply not
-  /// authorable. A stage is its fan-out, so the reference instance offers
-  /// one stage choice per width and every program of at most MAX_STAGES of
-  /// them.
+  /// authorable. A stage is a ROSTER of keys, so the reference instance
+  /// offers one stage choice per non-empty roster and every program of at
+  /// most MAX_STAGES of them, each stage keyed by its position.
   run validProgramsRefusalTest = assert(and {
     D::validPrograms.contains(progU2),
     D::validPrograms.contains(progStaged),
+    D::validPrograms.contains(progSparse),
     not(D::validPrograms.contains([])),                          // empty program
-    not(D::validPrograms.contains([{ fanout: 0 }])),             // zero fan-out
-    not(D::validPrograms.contains([{ fanout: 3 }])),             // fan-out > N_TASKS
-    not(D::validPrograms.contains(                               // length > MAX_STAGES
-      [{ fanout: 1 }, { fanout: 1 }, { fanout: 1 }])),
+    not(D::validPrograms.contains(                               // empty roster
+      [{ key: 1, evaluators: [] }])),
+    not(D::validPrograms.contains(                               // key > N_TASKS
+      [{ key: 1, evaluators: [{ key: 3 }] }])),
+    not(D::validPrograms.contains(                               // repeated key
+      [{ key: 1, evaluators: [{ key: 1 }, { key: 1 }] }])),
+    not(D::validPrograms.contains(                               // stage key off its position
+      [{ key: 2, evaluators: [{ key: 1 }] }])),
+    not(D::validPrograms.contains([                              // length > MAX_STAGES
+      { key: 1, evaluators: [{ key: 1 }] },
+      { key: 2, evaluators: [{ key: 1 }] },
+      { key: 3, evaluators: [{ key: 1 }] }])),
     D::validPrograms.size() ==
       D::stageChoices.size() + D::stageChoices.size() * D::stageChoices.size()
+  })
+
+  /// A SPARSE STAGE SURVIVES ITS OWN LIFECYCLE. The stage lists key 2 alone:
+  /// the spawn names that key, the completion resolves it, and the retire
+  /// moves it onto the record — the three sites that once walked 1..width
+  /// and would have spawned key 1, matched nothing, and retired nothing.
+  pure val cSparse0: TicketGraph =
+    release(cEmpty, 1, Set(), progSparse).post
+  pure val cSparse1: TicketGraph = D::decideDispatch(cSparse0, 1).post
+  pure val cSparse2: TicketGraph =
+    D::decideTaskDone(cSparse1, 1, workOf(1), Pass).post
+  pure val cSparse3: TicketGraph = D::decideWorkReduce(cSparse2, 1).post
+  pure val cSparse4: TicketGraph =
+    D::decideTaskDone(cSparse3, 1, evalOf(1, 0, 2), Pass).post
+  pure val cSparse5: TicketGraph =
+    reduceEval(cSparse4, 1, ReworkEvaluationFailure).post
+
+  run sparseStageSpawnsResolvesAndRetiresTest = assert(and {
+    cSparse3.tickets.get(1).tasks == Set(er(1, 0, 2)),
+    cSparse4.tickets.get(1).tasks == Set(et(1, 0, 2, Passed)),
+    cSparse5.tickets.get(1).tasks == Set(),
+    cSparse5.tickets.get(1).record == [wt(1, Passed), et(1, 0, 2, Passed)],
+    cSparse5.tickets.get(1).phase == Finalization,
+    cSparse5.tickets.get(1).spawned == 2
   })
 
   // === The happy path, decision by decision ================================
@@ -96,7 +139,7 @@ module chuggy_test {
   // as a Pending (freshTicket seam); ticket 3 is released as a Pending
   // depending on 1 and stays unreleased throughout. ticket 1 carries
   // the DEFAULT program, so its history is one work cycle and that cycle's
-  // stage-0 fan-out of two evaluators.
+  // stage-0 roster of two evaluators.
 
   pure val cEmpty: TicketGraph = { tickets: Map() }
   pure val dRelease = release(cEmpty, 1, Set(), D::defaultProgram)
@@ -191,7 +234,7 @@ module chuggy_test {
     cA1.tickets.get(1).spawned == 0,          // a Pending has spawned nothing
     c1.tickets.get(1).spawned == 1,           // the work task
     accounted(c1),
-    c3.tickets.get(1).spawned == 3,           // + eval stage 0's fan-out
+    c3.tickets.get(1).spawned == 3,           // + eval stage 0's roster
     accounted(c3),
     c7.tickets.get(1).spawned == 3,           // Done: all retired, none lost
     accounted(c7)
@@ -304,7 +347,8 @@ module chuggy_test {
   })
 
   // === THE STAGED PROGRAM, walked stage by stage ===========================
-  // progStaged = [{fan-out 1}, {fan-out 2}] on the reference instance. The
+  // progStaged lists one evaluator at stage 0 and two at stage 1 on the
+  // reference instance. The
   // walk mirrors staged progression edge by edge; the short-circuit
   // mirrors the staged-eval short-circuit fixture (replayed by
   // tests/conformance/conformance_staged_eval_short_circuit_test.qnt,
@@ -314,7 +358,7 @@ module chuggy_test {
 
   pure val cStagedWork: TicketGraph = { tickets: Map(1 -> { ...fresh(Set(), progStaged),
     phase: Work, tasks: passedW, workCyclesStarted: 1, spawned: 1 }) }
-  // Work passes -> spawn the LOWEST stage: fan-out 1.
+  // Work passes -> spawn the LOWEST stage, which lists one evaluator.
   pure val dToEval = D::decideWorkReduce(cStagedWork, 1)
   pure val cS0 = dToEval.post
   // Stage 0's one task passes.
@@ -323,7 +367,7 @@ module chuggy_test {
   // Evaluation, next fan-out spawns.
   pure val dAdvance = reduceEval(dS0Done.post, 1, ReworkEvaluationFailure)
   pure val cS1 = dAdvance.post
-  // Stage 1 (fan-out 2): both pass -> the final stage passes.
+  // Stage 1 lists two evaluators: both pass -> the final stage passes.
   pure val dS1a = D::decideTaskDone(cS1, 1, evalOf(1, 1, 1), Pass)
   pure val dS1b = D::decideTaskDone(dS1a.post, 1, evalOf(1, 1, 2), Pass)
   pure val dStagedFinal = reduceEval(dS1b.post, 1, ReworkEvaluationFailure)
@@ -341,7 +385,7 @@ module chuggy_test {
   })
 
   /// The FINAL stage passing lands the program: eval-passed, everything
-  /// retired, the full anatomy in the log — both stages, at the widths the
+  /// retired, the full anatomy in the log — both stages, at the rosters the
   /// program declared for them.
   run stagedProgramPassesTest = assert(and {
     dStagedFinal.rec.label == "eval-passed",
@@ -428,9 +472,9 @@ module chuggy_test {
   pure val mixedE0: Set[Task] = Set(et(1, 0, 1, Passed), et(1, 0, 2, Failed))
   pure val allFailedE0: Set[Task] = Set(et(1, 0, 1, Failed), et(1, 0, 2, Failed))
 
-  /// Program STRUCTURE is the data: the same passed work task spawns a
-  /// 2-wide flat fan-out under the default program but a 1-wide stage-0
-  /// under the staged program — the machine's very next task anatomy is
+  /// Program STRUCTURE is the data: the same passed work task spawns both
+  /// of the default program's evaluators but only stage 0's one under the
+  /// staged program — the machine's very next task anatomy is
   /// decided by the program on the record.
   pure val cFlatWork: TicketGraph = { tickets: Map(1 -> { ...fresh(Set(), progU2),
     phase: Work, tasks: passedW, workCyclesStarted: 1, spawned: 1 }) }

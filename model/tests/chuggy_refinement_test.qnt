@@ -8,7 +8,8 @@ module chuggy_refinement_unit_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
 
-  pure val progFlat: List[StageDefinition] = [{ fanout: 1 }]
+  pure val progFlat: List[StageDefinition] =
+    [{ key: 1, evaluators: [{ key: 1 }] }]
   pure val release10: DecisionEvent = CreateTicket({
     ticket: 2, deps: Set(), prog: progFlat
   })
@@ -97,7 +98,8 @@ module chuggy_refinement_witness_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
 
-  pure val progFlat: List[StageDefinition] = [{ fanout: 1 }]
+  pure val progFlat: List[StageDefinition] =
+    [{ key: 1, evaluators: [{ key: 1 }] }]
   pure def release(ticket: int): DecisionEvent = CreateTicket({
     ticket: ticket, deps: Set(), prog: progFlat
   })
@@ -151,7 +153,7 @@ module chuggy_refinement_witness_test {
       .then(stepEmit(Dispatch(2), "dispatch"))
       .then(stepEmit(TaskDone({ ticket: 2, task: workTaskOf(2, 1), verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(WorkReduce(2), "work-passed"))
-      .then(stepEmit(TaskDone({ ticket: 2, task: evaluationTaskOf(2, 1, 0, 1, 1), verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
+      .then(stepEmit(TaskDone({ ticket: 2, task: evaluationTaskOf(2, 1, 1, 1, 1), verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(evalReduce(2), "eval-passed"))
       .then(journalStep(FinalizationResult({ ticket: 2, out: FinalizationSucceeded })))
       .expect(and {
@@ -182,7 +184,7 @@ module chuggy_refinement_witness_test {
       .then(stepEmit(Dispatch(2), "dispatch"))
       .then(stepEmit(TaskDone({ ticket: 2, task: workTaskOf(2, 1), verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(WorkReduce(2), "work-passed"))
-      .then(stepEmit(TaskDone({ ticket: 2, task: evaluationTaskOf(2, 1, 0, 1, 1), verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
+      .then(stepEmit(TaskDone({ ticket: 2, task: evaluationTaskOf(2, 1, 1, 1, 1), verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(evalReduce(2), "eval-passed"))
       .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationNeedsWork }),
         "rework-started finalization_needs_work"))
@@ -199,7 +201,8 @@ module chuggy_refinement_hazard_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
 
-  pure val progFlat: List[StageDefinition] = [{ fanout: 1 }]
+  pure val progFlat: List[StageDefinition] =
+    [{ key: 1, evaluators: [{ key: 1 }] }]
   pure val release10: DecisionEvent = CreateTicket({
     ticket: 2, deps: Set(), prog: progFlat
   })
@@ -236,7 +239,7 @@ module chuggy_refinement_hazard_test {
       .then(journalStep(Dispatch(2))).then(emitNext)
       .then(journalStep(TaskDone({ ticket: 2, task: workTaskOf(2, 1), verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
       .then(journalStep(WorkReduce(2))).then(emitNext)
-      .then(journalStep(TaskDone({ ticket: 2, task: evaluationTaskOf(2, 1, 0, 1, 1), verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
+      .then(journalStep(TaskDone({ ticket: 2, task: evaluationTaskOf(2, 1, 1, 1, 1), verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
       .then(journalStep(evalReduce(2))).then(emitNext)
       .then(effectCrash(FinalizationResult({ ticket: 2, out: FinalizationSucceeded })))
       .expect(and {
@@ -258,7 +261,7 @@ module chuggy_refinement_hazard_test {
       .then(journalStep(Dispatch(2))).then(emitNext)
       .then(journalStep(TaskDone({ ticket: 2, task: workTaskOf(2, 1), verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
       .then(journalStep(WorkReduce(2))).then(emitNext)
-      .then(journalStep(TaskDone({ ticket: 2, task: evaluationTaskOf(2, 1, 0, 1, 1), verdict: Fail, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
+      .then(journalStep(TaskDone({ ticket: 2, task: evaluationTaskOf(2, 1, 1, 1, 1), verdict: Fail, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
       .then(effectCrash(evalReduce(2)))
       .expect(and {
         memGraph.tickets.get(2).phase == Evaluation,
