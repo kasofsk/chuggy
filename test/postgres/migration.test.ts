@@ -16,6 +16,7 @@ import {
   migration009,
 } from "../../src/adapters/postgres/schema/migrations/009-work-fanout.ts";
 import { migration010 } from "../../src/adapters/postgres/schema/migrations/010-task-identity.ts";
+import { migration011 } from "../../src/adapters/postgres/schema/migrations/011-evaluator-keys.ts";
 import { encodeDispatchProgram } from "../../src/interpreter/dispatchView.ts";
 import type { StageDefinition } from "../../src/domain/generated/modelTypes.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
@@ -4160,6 +4161,122 @@ test("the door replaced whole keeps its owner and the one role that may open it"
       ).rows[0]?.owner,
       boundaryOwnerRole,
     );
+  });
+});
+
+test("a fresh install records the stage becoming the roster it runs", async () => {
+  await migrationDatabase("evaluatorkeys_install", async (subject) => {
+    assert.ok((await postgresMigrate(subject)).includes(migration011.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT version,name FROM schema_migration WHERE version=$1",
+          [migration011.version],
+        )
+      ).rows,
+      [
+        {
+          version: migration011.version,
+          name: "a stage names the evaluators it runs, and its key is its place",
+        },
+      ],
+    );
+  });
+});
+
+/** A program at each shape, and every one this image refuses to be handed. */
+const evaluatorKeyPrograms: readonly (readonly [string, unknown, boolean])[] = [
+  [
+    "a stage naming the evaluators it runs, keyed as the author keyed them",
+    [{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }],
+    true,
+  ],
+  [
+    "a program whose stages are keyed by the places they hold",
+    [
+      { key: 1, evaluators: [{ key: 1 }] },
+      { key: 2, evaluators: [{ key: 2 }] },
+    ],
+    true,
+  ],
+  [
+    "a stage still naming the width it was authored at",
+    [{ key: 1, fanout: 1, evaluators: [{ key: 1 }] }],
+    false,
+  ],
+  [
+    "a stage keyed anywhere but the place it holds",
+    [{ key: 2, evaluators: [{ key: 1 }] }],
+    false,
+  ],
+  [
+    "a stage that runs no evaluator at all",
+    [{ key: 1, evaluators: [] }],
+    false,
+  ],
+  [
+    "a stage naming one evaluator twice",
+    [{ key: 1, evaluators: [{ key: 1 }, { key: 1 }] }],
+    false,
+  ],
+  [
+    "a stage naming an evaluator no ticket can spawn",
+    [{ key: 1, evaluators: [{ key: 0 }] }],
+    false,
+  ],
+  [
+    "a stage combined a way this machine has no name for",
+    [{ key: 1, evaluators: [{ key: 1 }], combinator: "AnyPass" }],
+    false,
+  ],
+];
+
+function evaluatorKeyRelease(prog: unknown): unknown {
+  return { type: "CreateTicket", value: { ticket: 1, deps: [], prog } };
+}
+
+test("a journal with an entry in it refuses the roster arriving and names the wipe", async () => {
+  await migrationDatabase("evaluatorkeys_guard", async (subject) => {
+    await installationBefore(subject, migration011.version);
+    await subject.query(`${deletionPartition}\n${journaledDecision}`);
+    await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
+    assert.deepEqual(
+      (
+        await subject.query<{ admitted: boolean }>(
+          "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+          [JSON.stringify(evaluatorKeyRelease([{ fanout: 1 }]))],
+        )
+      ).rows,
+      [{ admitted: true }],
+      "the shape the guard refused over is the shape it left admitted",
+    );
+    assert.deepEqual(
+      (
+        await postgresRuntimeSchema(subject).applied(
+          new AbortController().signal,
+        )
+      )
+        .map(({ version }) => version)
+        .at(-1),
+      migration011.version - 1,
+    );
+  });
+});
+
+test("the boundary admits a program that names its evaluators and refuses one that counts them", async () => {
+  await migrationDatabase("evaluatorkeys_events", async (subject) => {
+    await postgresMigrate(subject);
+    for (const [label, prog, admitted] of evaluatorKeyPrograms)
+      assert.deepEqual(
+        (
+          await subject.query<{ admitted: boolean }>(
+            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+            [JSON.stringify(evaluatorKeyRelease(prog))],
+          )
+        ).rows,
+        [{ admitted }],
+        label,
+      );
   });
 });
 
