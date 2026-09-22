@@ -166,6 +166,33 @@ rather than enter the in-memory actor. It is explicitly not a second
 semantic authority: nothing decides from it, and a disagreement between it
 and a replay is the projection being wrong.
 
+`ticket_definition` — the material a released ticket's references name: the
+image, the requirement per kind and stage, the blocks a briefing composes and
+the finalization binding, resolved once in the release transaction so every
+cycle runs the revision the release pinned. Owned by the ticket-service role,
+which is granted INSERT and SELECT and not UPDATE, because a released ticket is
+not re-resolved; the boundary owner reads it. Its composite key is
+`(tenant, project)` and its identity is `(tenant, project, ticket)`. It is
+written by the release and by nothing else, in the transaction that journals
+that release, so unfinished work does not exist for it.
+
+WHY IT IS NOT A SECOND COPY OF THE REFERENCES. The references are in the entry
+the release journalled and are read back from there; this relation holds only
+what they name, which no row derives once the configuration revision behind it
+moves.
+
+`ticket_source` — one row per source a ticket has run at: the dispatch's
+observation and each accepted work result's commit, keyed by the reference the
+source folds to. Owned by the ticket-service role and the boundary owner, both
+granted INSERT and SELECT and neither UPDATE, because a source a ticket has run
+at is not edited; the scheduler reads it for the commit a pod is placed at, and
+the API reads its columns. Its composite key is `(tenant, project)` and its
+identity is `(tenant, project, ticket, source)`. It is changed by the dispatch
+and by `submit_task_completion`, each under the project lock in the transaction
+that journals the decision the source belongs to, so unfinished work does not
+exist for it either. A ticket whose brief names no repository has a source and
+no commit, which is what its wholeness CHECK admits.
+
 WHY THE TICKET WRITER READS `operation` AT ALL. It decides one, so it reads the
 command it carries and the state it is in; the read is table-wide because a
 column-level SELECT makes every query name its columns and the row it may
