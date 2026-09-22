@@ -5666,6 +5666,104 @@ test("the door reports the definition the evaluator's own key carries, under wha
   });
 });
 
+/** A definition a second stage carries, distinct from every one the first stage lists. */
+const releasedThirdDefinition = {
+  workload: 17,
+  inputs: 18,
+  executionRequirements: 19,
+  resultContract: 20,
+};
+
+/**
+ * A release of TWO stages listing the same evaluator key under different
+ * definitions, so a door that selects by evaluator key alone answers the
+ * first stage's definition for the second stage's task.
+ */
+const releasedTwoStageEntry = JSON.stringify({
+  seq: 1,
+  event: releasedEvent({
+    ...releasedWhole,
+    evaluationPlan: {
+      stages: [
+        { key: 1, evaluators: [{ key: 3, task: releasedSecondDefinition }] },
+        { key: 2, evaluators: [{ key: 3, task: releasedThirdDefinition }] },
+      ],
+    },
+  }),
+  rec: { label: "ticket-released", transitions: [], effects: [] },
+});
+
+test("the door reports the definition of the stage the evaluator runs in, not the first stage listing its key", async () => {
+  await migrationDatabase("released_second_stage", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(
+      `${deletionPartition}\n${deletionJournalRow(1, releasedTwoStageEntry)};
+       UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
+       INSERT INTO configuration_revision
+         (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+       VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
+       INSERT INTO input_bundle(tenant,project,bundle,digest)
+       VALUES('tenant-5','project-5','bundle-5',repeat('b',64))`,
+    );
+    const digest = await releasedFold(subject, "d".repeat(64));
+    const judged = await releasedFold(subject, releasedJudgedDigest);
+    await subject.query(
+      identityExecution(
+        1,
+        "SpawnEvaluation",
+        "kind,cycle,stage,generation,evaluator",
+        "'Evaluation',2,2,1,3",
+      ),
+    );
+    await subject.query(releasedJudgedWork);
+    assert.deepEqual(
+      (await subject.query(releasedSubmission(1))).rows,
+      [{ result: "Submitted", operation: "operation-released-1" }],
+      "the second stage's evaluator runs",
+    );
+    assert.deepEqual(
+      await releasedJournalled(subject, "operation-released-1"),
+      {
+        ticket: 1,
+        task: {
+          type: "EvaluationTask",
+          value: {
+            ticket: 1,
+            workCycle: 2,
+            stage: 2,
+            generation: 1,
+            evaluator: 3,
+          },
+        },
+        report: {
+          type: "EvaluationResultReport",
+          value: {
+            result: {
+              obligation: {
+                task: {
+                  type: "EvaluationTask",
+                  value: {
+                    ticket: 1,
+                    workCycle: 2,
+                    stage: 2,
+                    generation: 1,
+                    evaluator: 3,
+                  },
+                },
+                definition: releasedThirdDefinition,
+                contextRef: judged,
+              },
+              resultRef: digest,
+            },
+            verdict: "EvaluatorPass",
+          },
+        },
+      },
+      "the evaluator judges under its own stage's definition",
+    );
+  });
+});
+
 test("an evaluator whose cycle records no passed work result is refused by name", async () => {
   await migrationDatabase("released_unjudged", async (subject) => {
     await postgresMigrate(subject);
