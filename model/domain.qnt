@@ -112,8 +112,8 @@ module chuggy_domain {
   /// one of those families and the travel is legible. The evaluator
   /// definitions below are not held clear of it — a wide enough roster reaches
   /// these numbers — and a reader tells the two apart by where a number sits,
-  /// a definition only ever inside a plan. The named members are what a hand-written fixture carries when
-  /// which one it is is not its subject.
+  /// a definition only ever inside a plan. The named members are what a
+  /// hand-written fixture carries when which one it is is not its subject.
   pure val aDispatchSource: int = 9
   pure val anAcceptedSource: int = 11
   pure val dispatchSources: Set[int] =
@@ -1051,11 +1051,12 @@ module chuggy_domain {
   /// REVOKED NEVER COMPLETES: a revoked ticket
   /// has emitted no completion effect — and never will: Revoked is absorbing
   /// (terminalsAbsorbing), no decider touches a revoked
-  /// ticket's `completions`. Post-evaluation phases are deliberately not revocable. Stated as its own named
-  /// invariant because it is the model's exclusivity half, though
-  /// state-wise it is a corollary of completionExclusive (completions = 1 iff
-  /// Done, completions <= 1, Revoked != Done ⇒ completions = 0) — same
-  /// stated-corollary treatment as stuckSubsetCovered.
+  /// ticket's `completions`. Post-evaluation phases are deliberately not
+  /// revocable. Stated as its own named invariant because it is the model's
+  /// exclusivity half, though state-wise it is a corollary of
+  /// completionExclusive (completions = 1 iff Done, completions <= 1,
+  /// Revoked != Done ⇒ completions = 0) — same stated-corollary treatment as
+  /// stuckSubsetCovered.
   val revokedNeverCompletes: bool = liveTickets.forall(j =>
     (tickets.get(j).phase == Revoked) implies (tickets.get(j).completions == 0))
 

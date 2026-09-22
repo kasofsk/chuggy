@@ -18,7 +18,8 @@
   unchanged. `diff` against the package is empty, and the same rule applies:
   do not edit it — change chuggy around it. `ticket.qnt` imports it for the
   instance and drives it with `begin`, `applyProduced`, `applyFailure`,
-  `concludeStage`, `resumeBlocked` and `currentTaskObligations`; chuggy
-  re-states none of them. `Escalation.EvaluationBlockedEscalated` staying
-  nullary where the package's carries the instance is chuggy's own
-  divergence, argued at the sum in `ticket.qnt` and left to PR 9.
+  `concludeStage`, `resumeBlocked` and `currentTaskObligations`, and
+  `domain.qnt` calls `planValid` and `evaluatorKeys`; chuggy re-states none of
+  them. `Escalation.EvaluationBlockedEscalated` staying nullary where the
+  package's carries the instance is chuggy's own divergence, argued at the sum
+  in `ticket.qnt` and left to PR 9.

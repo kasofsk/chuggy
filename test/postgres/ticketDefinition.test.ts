@@ -9,10 +9,17 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
+import {
+  asCanonicalConfiguration,
+  canonicalConfigurationOf,
+  type CanonicalConfiguration,
+} from "../../src/interpreter/authoring.ts";
+import { digestFold } from "../../src/interpreter/resultManifest.ts";
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
+import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
 import {
+  postgresHarnessCommitted,
   postgresHarnessConfiguration,
   postgresHarnessHistory,
   postgresHarnessOpen,
@@ -59,25 +66,51 @@ async function definitionOf(
   return row;
 }
 
-/** Releases this project's one fixture ticket under the configuration named. */
+/** Releases this project's one fixture ticket under the configuration given. */
 async function released(
   label: string,
-  image: string,
-): Promise<{ partition: Partition; ticket: number }> {
+  canonical: CanonicalConfiguration,
+): Promise<{
+  partition: Partition;
+  ticket: number;
+  memory: ProjectMemory;
+}> {
   const partition = await postgresHarnessProject(harness.store, label);
-  await postgresHarnessHistory(
+  const memory = await postgresHarnessHistory(
     harness,
     partition,
     label,
     1,
     undefined,
-    imaged(image),
+    canonical,
   );
-  return { partition, ticket: 1 };
+  return { partition, ticket: 1, memory };
 }
 
+/**
+ * The two blocks this fixture's stages brief from, which differ: a release
+ * resolves one definition per stage key, and a stage given the work task's
+ * material or its neighbour's would read the same everywhere if every block
+ * were the fixture's one empty roster.
+ */
+const workBlock = { instructions: ["Do the work."] };
+const evaluationBlock = { instructions: ["Review it."], practices: [] };
+
+/** The harness configuration briefing its one evaluation stage from its own block. */
+const staged: CanonicalConfiguration = canonicalConfigurationOf({
+  ...(JSON.parse(String(postgresHarnessConfiguration)) as Record<
+    string,
+    unknown
+  >),
+  evaluations: [evaluationBlock],
+  work: workBlock,
+});
+
 test("a release stores the material its references were folded from", async () => {
-  const { partition, ticket } = await released("definition-one", "worker:v1");
+  const { partition, ticket } = await released(
+    "definition-one",
+    imaged("worker:v1"),
+  );
   const stored = await definitionOf(partition, ticket);
   assert.equal(stored.digest, materialDigest(stored.definition));
   const tasks = stored.definition["tasks"] as readonly Record<
@@ -104,8 +137,8 @@ test("a release stores the material its references were folded from", async () =
 });
 
 test("a release under another revision stores another definition", async () => {
-  const first = await released("definition-first", "worker:v1");
-  const second = await released("definition-second", "worker:v2");
+  const first = await released("definition-first", imaged("worker:v1"));
+  const second = await released("definition-second", imaged("worker:v2"));
   const one = await definitionOf(first.partition, first.ticket);
   const two = await definitionOf(second.partition, second.ticket);
   assert.notEqual(one.digest, two.digest);
@@ -114,5 +147,48 @@ test("a release under another revision stores another definition", async () => {
       "workload"
     ],
     { image: "worker:v2", digest: materialDigest("worker:v2") },
+  );
+});
+
+/**
+ * ONE DEFINITION PER STAGE KEY, EACH FROM ITS OWN BLOCK. The stored row is
+ * what a dispatch reads the material from and the journal's released record is
+ * what carries the references folded from it, so both are read back here: a
+ * stage resolved from the work task's block, or from the block beside it,
+ * stores a digest no reader could tell from the right one.
+ */
+test("a release resolves each task's material from the block its own key names", async () => {
+  const { partition, ticket, memory } = await released(
+    "definition-staged",
+    staged,
+  );
+  const stored = await definitionOf(partition, ticket);
+  const tasks = stored.definition["tasks"] as readonly Record<
+    string,
+    unknown
+  >[];
+  assert.deepEqual(
+    tasks.map((task) => task["key"]),
+    ["Work", "Evaluation:1"],
+  );
+  assert.deepEqual(tasks[0]?.["inputs"], {
+    digest: materialDigest(workBlock),
+  });
+  assert.deepEqual(tasks[1]?.["inputs"], {
+    digest: materialDigest(evaluationBlock),
+  });
+  const release = (await postgresHarnessCommitted(harness, memory))[0]?.event;
+  assert.equal(release?.type, "CreateTicket");
+  if (release?.type !== "CreateTicket") return;
+  assert.equal(
+    release.value.workConfiguration.inputs,
+    digestFold(materialDigest(workBlock)),
+  );
+  assert.deepEqual(
+    release.value.evaluationPlan.stages[0]?.evaluators.map(
+      (entry) => entry.task.inputs,
+    ),
+    [digestFold(materialDigest(evaluationBlock))],
+    "and every evaluator of the stage runs the definition that stage resolved",
   );
 });

@@ -46,11 +46,13 @@ import { modelInstance } from "./configs.ts";
 import {
   accountsForAll,
   blockedInstance,
+  carriedAt,
   graphOf,
   depsOf,
   id,
   judgedInstance,
   judgedReport,
+  obligationFor,
   producedReport,
   runningInstance,
   stoppedReport,
@@ -168,6 +170,22 @@ test("first write wins, and an identity nothing is waiting on matches nothing ow
     "an identity from an earlier phase is owed by nothing, so it no-ops",
   );
   assert.deepEqual(owed(stale.post, id(1)), owed(first.post, id(1)));
+  const owedJudge = obligationFor(judging);
+  const elsewhere = decideTaskDone(
+    running,
+    id(1),
+    judging,
+    carriedAt(judging, {
+      ...owedJudge,
+      contextRef: owedJudge.contextRef + 1,
+    }),
+    "ReworkEvaluationFailure",
+  );
+  assert.deepEqual(
+    ticketAt(elsewhere.post, id(1)).evaluations,
+    ticketAt(running, id(1)).evaluations,
+    "and an answer for a spawn this stage never made is not its to record",
+  );
 });
 
 test("a passing work completion pins the reference its report carried", () => {

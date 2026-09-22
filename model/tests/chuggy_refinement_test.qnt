@@ -132,15 +132,75 @@ module chuggy_refinement_unit_test {
     decisionEventEnabled(d2.post, workDone(d2.post, 2, workTaskOf(2, 1)))
   })
 
+  /// THE RELEASE-REFUSAL RULE, CONJUNCT BY CONJUNCT. The released record is
+  /// authored input and the enablement is the only place it is weighed, so
+  /// every conjunct of releasedTicketValid a payload can refute is refuted
+  /// here: one a case does not reach is one the journal would go on
+  /// admitting if it were deleted.
+  ///
+  /// TWO CONJUNCTS HAVE NO CASE, being dominated rather than unheld.
+  /// `definition.id > 0` is dominated by canReleaseIn (the conjunct above it
+  /// in decisionEventEnabled), whose ticketIdUniverse is 1.to(N_TICKETS * 2);
+  /// `definition.dependencies.forall(> 0)` by the dependability conjunct
+  /// beside it, whose dependableIn is a subset of the graph's keys and so of
+  /// that same universe. Both stay because releasedTicketValid is also what
+  /// definitionsWellFormed holds of every ticket in a reachable state, where
+  /// no guard stands in front of the record at all; the TypeScript twin,
+  /// which weighs the rule as a function, refutes them directly.
   run journalRefusesInvalidReleasePayloadTest =
-    val badDeps: DecisionEvent =
+    val badDeps: DecisionEvent =                        // not dependable
       CreateTicket({ ...released(2), dependencies: Set(99) })
-    val badPlan: DecisionEvent =
+    val badPlan: DecisionEvent =                        // empty plan
       CreateTicket({ ...released(2), evaluationPlan: { stages: [] } })
+    val badContent: DecisionEvent =                     // content ref
+      CreateTicket({ ...released(2), content: 0 })
+    val badFinalization: DecisionEvent =                // finalization ref
+      CreateTicket({ ...released(2), finalizationConfiguration: 0 })
+    val badWork: DecisionEvent =                        // work definition ref
+      CreateTicket({ ...released(2),
+        workConfiguration: { ...defOf(2), resultContract: 0 } })
+    val badEvaluatorTask: DecisionEvent =               // evaluator's own ref
+      CreateTicket({ ...released(2), evaluationPlan: { stages:
+        [{ key: 1,
+           evaluators: [{ key: 1, task: { ...defOf(1), workload: 0 } }] }] } })
+    val badEvaluatorTwice: DecisionEvent =              // repeated key
+      CreateTicket({ ...released(2), evaluationPlan: { stages:
+        [{ key: 1, evaluators: [{ key: 1, task: defOf(1) },
+                                { key: 1, task: defOf(1) }] }] } })
+    val badStageKey: DecisionEvent =                    // key off its position
+      CreateTicket({ ...released(2), evaluationPlan: { stages:
+        [{ key: 2, evaluators: [{ key: 1, task: defOf(1) }] }] } })
+    val badEvaluatorKey: DecisionEvent =                // key past N_TASKS = 1
+      CreateTicket({ ...released(2), evaluationPlan: { stages:
+        [{ key: 1, evaluators: [{ key: 2, task: defOf(1) }] }] } })
+    val badStageCount: DecisionEvent =                  // past MAX_STAGES = 1
+      CreateTicket({ ...released(2), evaluationPlan: { stages:
+        [{ key: 1, evaluators: [{ key: 1, task: defOf(1) }] },
+         { key: 2, evaluators: [{ key: 1, task: defOf(1) }] }] } })
     assert(and {
+      decisionEventEnabled(genesis, release10),
       not(decisionEventEnabled(genesis, badDeps)),
-      not(decisionEventEnabled(genesis, badPlan))
+      not(decisionEventEnabled(genesis, badPlan)),
+      not(decisionEventEnabled(genesis, badContent)),
+      not(decisionEventEnabled(genesis, badFinalization)),
+      not(decisionEventEnabled(genesis, badWork)),
+      not(decisionEventEnabled(genesis, badEvaluatorTask)),
+      not(decisionEventEnabled(genesis, badEvaluatorTwice)),
+      not(decisionEventEnabled(genesis, badStageKey)),
+      not(decisionEventEnabled(genesis, badEvaluatorKey)),
+      not(decisionEventEnabled(genesis, badStageCount))
     })
+
+  /// A DISPATCH NAMES A SOURCE SOMETHING OBSERVED. The ticket is ready and
+  /// the payload is otherwise the one goodJ carries, so the refusal is the
+  /// source conjunct's alone. Nothing playing by the rules offers a zero —
+  /// the writer mints the event from its own observation — which makes this
+  /// the guard's proof rather than its behaviour, and the guard is what
+  /// stands between a client's Dispatch and a source nobody read.
+  run journalRefusesUnobservedDispatchSourceTest = assert(and {
+    decisionEventEnabled(d1.post, dispatch10),
+    not(decisionEventEnabled(d1.post, Dispatch({ ticket: 2, source: 0 })))
+  })
 
   run worldArithmeticTest = assert(and {
     journalSpawnsOn(goodJ, 2) == 1,

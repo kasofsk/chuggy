@@ -35,6 +35,14 @@ test("draft authoring round-trips through the generated domain codec", () => {
     parseDraftAuthoring(encodeDraftAuthoring(plainAuthoring)),
     plainAuthoring,
   );
+  assert.throws(
+    () =>
+      parseDraftAuthoring(
+        '{"dependencies":[1],"program":[{"key":0,"evaluators":[]}]}',
+      ),
+    /unreadable/,
+    "stored text no author could have written is refused, not read",
+  );
 });
 
 test("draft initialization exposes deployment choices with server defaults", () => {

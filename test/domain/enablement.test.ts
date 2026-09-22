@@ -45,6 +45,8 @@ import {
 import { asTicketId } from "../../src/domain/ids.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import type {
+  ReleasedTicket,
+  StageDefinition,
   TicketGraph,
   Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
@@ -306,27 +308,106 @@ test("the finalizer reports every lifecycle result", () => {
   ]);
 });
 
+/** A release of ticket one under the default plan, which each case below varies. */
+const releaseOfOne = releasedTicketOf(1, depsOf(), defaultPlan(config));
+
+/** The same release, carrying the plan given. */
+const stagedAs = (stages: readonly StageDefinition[]): ReleasedTicket => ({
+  ...releaseOfOne,
+  evaluationPlan: { stages },
+});
+
+/** One evaluator of the default plan, which a plan case repeats or rewrites. */
+const anEvaluator = evaluatorOf(1);
+
 test("a release draws every value it froze from a universe, and is refused outside one", () => {
-  const released = releasedTicketOf(1, depsOf(), defaultPlan(config));
-  assert.ok(releasedTicketValid(config, released));
+  assert.ok(releasedTicketValid(config, releaseOfOne));
+  assert.ok(!releasedTicketValid(config, stagedAs([])));
   assert.ok(
-    !releasedTicketValid(config, {
-      ...released,
-      evaluationPlan: { stages: [] },
-    }),
-  );
-  assert.ok(
-    !releasedTicketValid(config, {
-      ...released,
-      evaluationPlan: {
-        stages: [{ key: 1, evaluators: [evaluatorOf(config.nTasks + 1)] }],
-      },
-    }),
+    !releasedTicketValid(
+      config,
+      stagedAs([{ key: 1, evaluators: [evaluatorOf(config.nTasks + 1)] }]),
+    ),
     "an evaluator key may not pass the bound",
   );
   assert.ok(
-    !releasedTicketValid(config, { ...released, content: 0 }),
+    !releasedTicketValid(config, { ...releaseOfOne, content: 0 }),
     "and the content it froze is a reference, which zero is not",
+  );
+});
+
+/**
+ * The rest of the rule, conjunct by conjunct, because it is weighed nowhere
+ * else: the released record is authored input, and a conjunct no case refutes
+ * is one that could be deleted with every suite still green. The model's twin
+ * refuses whole events, where the id and the dependency draw are dominated by
+ * the guards in front of them; here the rule is a function, so nothing stands
+ * in front of it.
+ */
+test("every remaining conjunct of the release rule refuses on its own", () => {
+  assert.ok(!releasedTicketValid(config, { ...releaseOfOne, id: 0 }));
+  assert.ok(
+    !releasedTicketValid(config, {
+      ...releaseOfOne,
+      dependencies: new Set([0]),
+    }),
+    "nor is a ticket it waits on",
+  );
+  assert.ok(
+    !releasedTicketValid(config, {
+      ...releaseOfOne,
+      workConfiguration: {
+        ...releaseOfOne.workConfiguration,
+        resultContract: 0,
+      },
+    }),
+    "the work definition is a reference in every slot",
+  );
+  assert.ok(
+    !releasedTicketValid(
+      config,
+      stagedAs([
+        {
+          key: 1,
+          evaluators: [
+            { ...anEvaluator, task: { ...anEvaluator.task, inputs: 0 } },
+          ],
+        },
+      ]),
+    ),
+    "and so is an evaluator's own",
+  );
+  assert.ok(
+    !releasedTicketValid(
+      config,
+      stagedAs([{ key: 1, evaluators: [anEvaluator, anEvaluator] }]),
+    ),
+    "a stage may not list one evaluator key twice",
+  );
+  assert.ok(
+    !releasedTicketValid(
+      config,
+      stagedAs([{ key: 2, evaluators: [anEvaluator] }]),
+    ),
+    "a stage is keyed by its own position",
+  );
+  assert.ok(
+    !releasedTicketValid(
+      config,
+      stagedAs(
+        Array.from({ length: config.maxStages + 1 }, (_unused, index) => ({
+          key: index + 1,
+          evaluators: [anEvaluator],
+        })),
+      ),
+    ),
+    "and a plan may not run past the stage bound",
+  );
+  assert.ok(
+    !releasedTicketValid(config, {
+      ...releaseOfOne,
+      finalizationConfiguration: 0,
+    }),
   );
 });
 

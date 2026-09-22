@@ -265,6 +265,32 @@ export const judgedReport = (
   value: { result: resultFor(task), verdict },
 });
 
+/**
+ * The same report a task would send, carried at the obligation named rather
+ * than the one it owes: what a fabric answering for a spawn that was never made
+ * puts on the wire, and the only thing that tells the two apart is the rule
+ * that weighs the whole obligation.
+ */
+export const carriedAt = (
+  task: TaskIdentity,
+  obligation: TaskObligation,
+): TaskTerminalReport =>
+  task.type === "WorkTask"
+    ? {
+        type: "WorkResultReport",
+        value: {
+          result: { obligation, resultRef: producedResultRef(task) },
+          acceptedSourceRef: anAcceptedSource,
+        },
+      }
+    : {
+        type: "EvaluationResultReport",
+        value: {
+          result: { obligation, resultRef: producedResultRef(task) },
+          verdict: "EvaluatorPass",
+        },
+      };
+
 /** What a task comes back with when it stopped instead of answering. */
 export const stoppedReport = (
   task: TaskIdentity,

@@ -341,6 +341,7 @@ const refusals: readonly Refusal[] = [
     at: working,
     event: dispatchEvent(id(1), aDispatchSource),
   },
+  { conjunct: "Dispatch/source", at: pending, event: dispatchEvent(id(1), 0) },
   {
     conjunct: "TaskDone/completableIn",
     at: pending,

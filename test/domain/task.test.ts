@@ -41,7 +41,14 @@ import {
   hasOpenHumanTask,
 } from "../../src/domain/ticket.ts";
 import { evaluatorOf, releasedTicketOf } from "../../src/domain/config.ts";
-import { judgedInstance, judgedReport, producedReport } from "./fixtures.ts";
+import {
+  carriedAt,
+  judgedInstance,
+  judgedReport,
+  obligationFor,
+  producedReport,
+  runningInstance,
+} from "./fixtures.ts";
 import {
   phaseTags,
   type EvaluationVerdict,
@@ -338,6 +345,55 @@ test("a report is matched to the obligation the ticket owes the task", () => {
       reportMatchesTask(working, judge, failed),
     "a failure is matched by identity alone, there being no result to hold",
   );
+});
+
+/**
+ * THE OBLIGATION AND NOT THE IDENTITY. A report naming an owed task under
+ * another definition or another context is a result for a spawn that was never
+ * made, and nothing else varies the halves that say so: every other case here
+ * moves the identity, which a comparison cut back to identities would still
+ * refuse.
+ */
+test("a report naming an owed task at another obligation is refused", () => {
+  const judging: Ticket = {
+    ...bare,
+    phase: "Evaluation",
+    evaluations: [runningInstance(1, 1, flat, new Set())],
+    workCyclesStarted: 1,
+  };
+  const pairs = [
+    [spawnWork({ ...bare, phase: "Work" }), workTaskOf(1, 1)],
+    [judging, evaluationTaskOf(1, 1, 1, 1, 1)],
+  ] as const;
+  for (const [ticket, task] of pairs) {
+    const owed = obligationFor(task);
+    assert.ok(
+      reportMatchesTask(ticket, task, carriedAt(task, owed)),
+      `${task.type} at the obligation it was spawned under`,
+    );
+    assert.ok(
+      !reportMatchesTask(
+        ticket,
+        task,
+        carriedAt(task, {
+          ...owed,
+          definition: {
+            ...owed.definition,
+            inputs: owed.definition.inputs + 1,
+          },
+        }),
+      ),
+      `${task.type} under another definition than that one`,
+    );
+    assert.ok(
+      !reportMatchesTask(
+        ticket,
+        task,
+        carriedAt(task, { ...owed, contextRef: owed.contextRef + 1 }),
+      ),
+      `${task.type} for another context than that one`,
+    );
+  }
 });
 
 test("a ticket owes exactly the tasks it holds live", () => {

@@ -171,7 +171,8 @@ image, the requirement per kind and stage, the blocks a briefing composes and
 the finalization binding, resolved once in the release transaction so every
 cycle runs the revision the release pinned. Owned by the ticket-service role,
 which is granted INSERT and SELECT and not UPDATE, because a released ticket is
-not re-resolved; the boundary owner reads it. Its composite key is
+not re-resolved; the boundary owner reads it, and the scheduler reads it for
+the requirement each execution is created at. Its composite key is
 `(tenant, project)` and its identity is `(tenant, project, ticket)`. It is
 written by the release and by nothing else, in the transaction that journals
 that release, so unfinished work does not exist for it.
