@@ -20,6 +20,7 @@ import {
   leadObservationTokensPerDecisionAt011,
   migration011,
 } from "../../src/adapters/postgres/schema/migrations/011-evaluator-keys.ts";
+import { migration012 } from "../../src/adapters/postgres/schema/migrations/012-task-report.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -3415,7 +3416,7 @@ const escalationWall = "ExecutionProfileUnavailable";
 
 test("the scheduler's door journals a block naming its ticket and leaves the wall on the execution", async () => {
   await migrationDatabase("escalation_block", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration011.version);
     await subject.query(`${deletionPartition}\n${escalationExecution}`);
     assert.deepEqual(
       (
@@ -3957,7 +3958,7 @@ function identityCompletion(task: unknown): unknown {
 
 test("the boundary admits a completion that names its task and refuses one that numbers it", async () => {
   await migrationDatabase("identity_events", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration010.version);
     for (const [label, task, admitted] of identityEvents)
       assert.deepEqual(
         (
@@ -4009,12 +4010,17 @@ test("the boundary admits a completion that names its task and refuses one that 
   });
 });
 
-/** A running execution at an identity its request authorized, ready for the scheduler's door. */
+/**
+ * A running execution at an identity its request authorized, ready for the
+ * scheduler's door, carrying the verdict a worker attested — or, at `null`, no
+ * result at all, which is every execution the door is asked to block.
+ */
 function identityExecution(
   ordinal: number,
   requestKind: string,
   columns: string,
   values: string,
+  verdict: "Pass" | "Fail" | null = "Pass",
 ): string {
   const at = String(ordinal);
   return `
@@ -4039,11 +4045,15 @@ function identityExecution(
     (tenant,project,execution,attempt,attempt_number,recovery_epoch,
      capability,capability_secret_digest,manifest)
   VALUES('tenant-5','project-5','execution-${at}','attempt-${at}',1,'epoch-5',
-         'capability-${at}',repeat('c',64),'manifest-${at}');
+         'capability-${at}',repeat('c',64),'manifest-${at}');${
+           verdict === null
+             ? ""
+             : `
   INSERT INTO execution_result
     (tenant,project,manifest,execution,attempt,manifest_ordinal,schema_version,digest,verdict)
   VALUES('tenant-5','project-5','manifest-${at}','execution-${at}','attempt-${at}',
-         ${at},1,repeat('d',64),'Pass')`;
+         ${at},1,repeat('d',64),'${verdict}')`
+         }`;
 }
 
 /** Each kind of task the door settles, the identity its row carries and the identity it journals. */
@@ -4326,6 +4336,391 @@ test("the roster arriving widens the mailbox bound and re-seeds the budget with 
           `${relation} no longer carries 009's`,
         );
       }
+    }
+  });
+});
+
+test("a fresh install records the completion carrying a report", async () => {
+  await migrationDatabase("taskreport_install", async (subject) => {
+    assert.ok((await postgresMigrate(subject)).includes(migration012.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT version,name FROM schema_migration WHERE version=$1",
+          [migration012.version],
+        )
+      ).rows,
+      [
+        {
+          version: migration012.version,
+          name: "a completion carries the report its task terminated under",
+        },
+      ],
+    );
+  });
+});
+
+/** The result a produced report carries, as the codec spells a reference to one. */
+const reportResultRef = { manifest: 1, digest: 1, schema: 1 };
+
+/** Each report a completion may carry, and each way of carrying one this image refuses. */
+const taskReports: readonly (readonly [string, unknown, boolean])[] = [
+  [
+    "a work task reporting the result it produced",
+    { type: "WorkResultReport", value: { ticket: 1, result: reportResultRef } },
+    true,
+  ],
+  [
+    "a work result whose manifest is named by text",
+    {
+      type: "WorkResultReport",
+      value: { ticket: 1, result: { ...reportResultRef, manifest: "1" } },
+    },
+    false,
+  ],
+  [
+    "a work result that produced nothing to reference",
+    { type: "WorkResultReport", value: { ticket: 1 } },
+    false,
+  ],
+  [
+    "an evaluator reporting the verdict it reached",
+    {
+      type: "EvaluationResultReport",
+      value: { ticket: 1, result: reportResultRef, verdict: "EvaluatorFail" },
+    },
+    true,
+  ],
+  [
+    "an evaluator reporting the verdict the manifest attested instead of its own",
+    {
+      type: "EvaluationResultReport",
+      value: { ticket: 1, result: reportResultRef, verdict: "Fail" },
+    },
+    false,
+  ],
+  [
+    "an evaluator reporting a result at no verdict at all",
+    {
+      type: "EvaluationResultReport",
+      value: { ticket: 1, result: reportResultRef },
+    },
+    false,
+  ],
+  [
+    "a task reporting the wall its execution hit",
+    {
+      type: "TerminalFailureReport",
+      value: { ticket: 1, kind: "ExecutionUnavailableFailure" },
+    },
+    true,
+  ],
+  [
+    "a failure at a kind this machine has no name for",
+    {
+      type: "TerminalFailureReport",
+      value: { ticket: 1, kind: "EvaluatorProcessFailed" },
+    },
+    false,
+  ],
+  [
+    "a failure at no kind at all",
+    { type: "TerminalFailureReport", value: { ticket: 1 } },
+    false,
+  ],
+  [
+    "a report at a constructor this machine has none of",
+    { type: "TaskTerminal", value: { ticket: 1, kind: "ProcessFailure" } },
+    false,
+  ],
+  ["a report that is the text of one", "TerminalFailureReport", false],
+  [
+    "a report naming no ticket",
+    { type: "TerminalFailureReport", value: { kind: "ProcessFailure" } },
+    false,
+  ],
+];
+
+function taskReportCompletion(report: unknown): unknown {
+  return {
+    type: "TaskDone",
+    value: {
+      ticket: 1,
+      task: { type: "WorkTask", value: { ticket: 1, cycle: 1 } },
+      report,
+    },
+  };
+}
+
+/** The completion the vintage before this one wrote, which is what the guard is for. */
+const attestedCompletion = {
+  type: "TaskDone",
+  value: {
+    ticket: 1,
+    task: { type: "WorkTask", value: { ticket: 1, cycle: 1 } },
+    verdict: "Pass",
+    result: reportResultRef,
+  },
+};
+
+/** The whole events this image refuses, each for something the report replaced. */
+const taskReportRefused: readonly (readonly [string, unknown])[] = [
+  [
+    "a completion attesting a verdict beside the report it carries",
+    {
+      type: "TaskDone",
+      value: {
+        ticket: 1,
+        task: { type: "WorkTask", value: { ticket: 1, cycle: 1 } },
+        verdict: "Pass",
+        report: {
+          type: "WorkResultReport",
+          value: { ticket: 1, result: reportResultRef },
+        },
+      },
+    },
+  ],
+  ["the completion the vintage before this one wrote", attestedCompletion],
+  [
+    "the reduce a failed stage used to be concluded by",
+    {
+      type: "EvalReduce",
+      value: { ticket: 1, onFailure: "ReworkEvaluationFailure" },
+    },
+  ],
+  [
+    "the block that named a ticket rather than the task whose wall it was",
+    { type: "ExecutionBlocked", value: { ticket: 1 } },
+  ],
+  [
+    "a release naming its dependencies and no program",
+    { type: "CreateTicket", value: { ticket: 1, deps: [] } },
+  ],
+  [
+    "a release naming its program and no dependencies",
+    {
+      type: "CreateTicket",
+      value: { ticket: 1, prog: [{ key: 1, evaluators: [{ key: 1 }] }] },
+    },
+  ],
+];
+
+test("a journal with an entry in it refuses the report arriving and names the wipe", async () => {
+  await migrationDatabase("taskreport_guard", async (subject) => {
+    await installationBefore(subject, migration012.version);
+    await subject.query(`${deletionPartition}\n${journaledDecision}`);
+    await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
+    assert.deepEqual(
+      (
+        await subject.query<{ admitted: boolean }>(
+          "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+          [JSON.stringify(attestedCompletion)],
+        )
+      ).rows,
+      [{ admitted: true }],
+      "the shape the guard refused over is the shape it left admitted",
+    );
+    assert.deepEqual(
+      (
+        await postgresRuntimeSchema(subject).applied(
+          new AbortController().signal,
+        )
+      )
+        .map(({ version }) => version)
+        .at(-1),
+      migration012.version - 1,
+    );
+  });
+});
+
+test("the boundary admits a completion that reports what its task produced and refuses one that attests a verdict", async () => {
+  await migrationDatabase("taskreport_events", async (subject) => {
+    await postgresMigrate(subject);
+    for (const [label, report, admitted] of taskReports)
+      assert.deepEqual(
+        (
+          await subject.query<{ admitted: boolean }>(
+            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+            [JSON.stringify(taskReportCompletion(report))],
+          )
+        ).rows,
+        [{ admitted }],
+        label,
+      );
+    for (const [label, event] of taskReportRefused)
+      assert.deepEqual(
+        (
+          await subject.query<{ admitted: boolean }>(
+            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+            [JSON.stringify(event)],
+          )
+        ).rows,
+        [{ admitted: false }],
+        label,
+      );
+  });
+});
+
+/**
+ * Each task the door settles, what its row carries, and the report it journals:
+ * a produced work result, an evaluator's own verdict, a work task that produced
+ * none, and an evaluator whose execution never ran.
+ */
+const taskReportCompletions: readonly (readonly [
+  string,
+  number,
+  string,
+  string,
+  string,
+  "Pass" | "Fail" | null,
+  string,
+  (digest: number) => unknown,
+])[] = [
+  [
+    "the work task that produced a result",
+    1,
+    "SpawnWork",
+    "kind,cycle",
+    "'Work',3",
+    "Pass",
+    "'Passed','manifest-1',repeat('d',64),NULL",
+    (digest) => ({
+      ticket: 1,
+      task: { type: "WorkTask", value: { ticket: 1, cycle: 3 } },
+      report: {
+        type: "WorkResultReport",
+        value: { ticket: 1, result: { manifest: 1, digest, schema: 1 } },
+      },
+    }),
+  ],
+  [
+    "the evaluator that reached a verdict of its own",
+    2,
+    "SpawnEvaluation",
+    "kind,cycle,stage,generation,evaluator",
+    "'Evaluation',2,4,5,6",
+    "Fail",
+    "'Failed','manifest-2',repeat('d',64),NULL",
+    (digest) => ({
+      ticket: 1,
+      task: {
+        type: "EvaluationTask",
+        value: {
+          ticket: 1,
+          workCycle: 2,
+          stage: 4,
+          generation: 5,
+          evaluator: 6,
+        },
+      },
+      report: {
+        type: "EvaluationResultReport",
+        value: {
+          ticket: 1,
+          result: { manifest: 2, digest, schema: 1 },
+          verdict: "EvaluatorFail",
+        },
+      },
+    }),
+  ],
+  [
+    "the work task whose exhausted budget settled under the empty manifest",
+    3,
+    "SpawnWork",
+    "kind,cycle",
+    "'Work',7",
+    "Fail",
+    "'Failed','manifest-3',repeat('d',64),NULL",
+    () => ({
+      ticket: 1,
+      task: { type: "WorkTask", value: { ticket: 1, cycle: 7 } },
+      report: {
+        type: "TerminalFailureReport",
+        value: { ticket: 1, kind: "ProcessFailure" },
+      },
+    }),
+  ],
+  [
+    "the evaluator whose execution hit a definitive wall",
+    4,
+    "SpawnEvaluation",
+    "kind,cycle,stage,generation,evaluator",
+    "'Evaluation',8,9,10,11",
+    null,
+    "'Blocked',NULL,NULL,'ExecutionProfileUnavailable'",
+    () => ({
+      ticket: 1,
+      task: {
+        type: "EvaluationTask",
+        value: {
+          ticket: 1,
+          workCycle: 8,
+          stage: 9,
+          generation: 10,
+          evaluator: 11,
+        },
+      },
+      report: {
+        type: "TerminalFailureReport",
+        value: { ticket: 1, kind: "ExecutionUnavailableFailure" },
+      },
+    }),
+  ],
+];
+
+test("the scheduler's door journals the report the task it settled terminated under", async () => {
+  await migrationDatabase("taskreport_completion", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(
+      `${deletionPartition}\n${deletionJournalRow(1, "{}")};
+       UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
+       INSERT INTO configuration_revision
+         (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+       VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
+       INSERT INTO input_bundle(tenant,project,bundle,digest)
+       VALUES('tenant-5','project-5','bundle-5',repeat('b',64))`,
+    );
+    const folded = (
+      await subject.query<{ digest: string }>(
+        "SELECT result_digest_fold(repeat('d',64)) AS digest",
+      )
+    ).rows[0]?.digest;
+    assert.ok(folded !== undefined, "the digest fold answered nothing");
+    for (const [
+      what,
+      ordinal,
+      requestKind,
+      columns,
+      values,
+      verdict,
+      submission,
+      expected,
+    ] of taskReportCompletions) {
+      const at = String(ordinal);
+      await subject.query(
+        identityExecution(ordinal, requestKind, columns, values, verdict),
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT result,operation FROM submit_task_completion
+               ('tenant-5','project-5','execution-${at}',1,${at},${at},${submission},
+                'operation-report-${at}','subject-5')`,
+          )
+        ).rows,
+        [{ result: "Submitted", operation: `operation-report-${at}` }],
+        what,
+      );
+      assert.deepEqual(
+        (
+          await subject.query<{ journalled: unknown }>(
+            `SELECT (command::jsonb)#>'{event,value}' AS journalled
+               FROM operation WHERE operation='operation-report-${at}'`,
+          )
+        ).rows,
+        [{ journalled: expected(Number(folded)) }],
+        what,
+      );
     }
   });
 });

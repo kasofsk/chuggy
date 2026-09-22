@@ -9,6 +9,7 @@ import { migration008 } from "./008-escalation-sum.ts";
 import { migration009 } from "./009-work-fanout.ts";
 import { migration010 } from "./010-task-identity.ts";
 import { migration011 } from "./011-evaluator-keys.ts";
+import { migration012 } from "./012-task-report.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -23,4 +24,5 @@ export const migrations: readonly Migration[] = [
   migration009,
   migration010,
   migration011,
+  migration012,
 ];
