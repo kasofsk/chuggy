@@ -2771,8 +2771,10 @@ test("the two reason rosters admit the escalation and refuse a name neither has"
         await projected;
         await desk;
       } else {
-        await assert.rejects(projected, /ticket_projection_reason_is_known/u);
-        await assert.rejects(desk, /native_action_reason_check/u);
+        await Promise.all([
+          assert.rejects(projected, /ticket_projection_reason_is_known/u),
+          assert.rejects(desk, /native_action_reason_check/u),
+        ]);
       }
     }
   });
