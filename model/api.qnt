@@ -6,12 +6,15 @@
 /// generator fails closed when an alias reaches a Quint construct it cannot
 /// represent faithfully in TypeScript and Zod.
 module chuggy_api {
+  import task_contract.* from "./task-contract/task"
   import chuggy_ticket.* from "./ticket"
   import chuggy_refinement.* from "./refinement"
   import chuggy_identity.* from "./identity"
 
   type ApiPhase = Phase
-  type ApiTaskKind = TaskKind
+  type ApiWorkTaskIdentity = WorkTaskIdentity
+  type ApiEvaluationTaskIdentity = EvaluationTaskIdentity
+  type ApiTaskIdentity = TaskIdentity
   type ApiTaskOutcome = TaskOutcome
   type ApiTaskState = TaskState
   type ApiTask = Task

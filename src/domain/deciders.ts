@@ -20,13 +20,14 @@ import type {
   FinalizationOutcome,
   Phase,
   StageDefinition,
+  TaskIdentity,
   Ticket,
   Verdict,
 } from "./generated/modelTypes.ts";
-import type { TaskId, TicketId } from "./ids.ts";
+import type { TicketId } from "./ids.ts";
 import { combine } from "./program.ts";
-import { evalStage, resolveTask, tkEval } from "./task.ts";
-import { resumeOf, retireLive, spawnOn, spawnWork } from "./ticket.ts";
+import { evalStage, resolveTask } from "./task.ts";
+import { resumeOf, retireLive, spawnEvalStage, spawnWork } from "./ticket.ts";
 
 /**
  * Both ways a failing evaluation can be taken. The choice is an input to the
@@ -65,6 +66,7 @@ export function freshTicket(authoring: {
     artifact: "NoArtifact",
     tasks: new Set(),
     record: [],
+    workCyclesStarted: 0,
     spawned: 0,
     escalation: "NoEscalation",
     completions: 0,
@@ -141,7 +143,7 @@ export function decideRevoke(graph: TicketGraph, id: TicketId): Decision {
 export function decideDispatch(graph: TicketGraph, id: TicketId): Decision {
   const ticket = ticketAt(graph, id);
   return move(
-    withTicket(graph, id, spawnWork(ticket)),
+    withTicket(graph, id, spawnWork(ticket, id)),
     id,
     "Work",
     "dispatch",
@@ -152,13 +154,13 @@ export function decideDispatch(graph: TicketGraph, id: TicketId): Decision {
 /**
  * A task completion, first write wins: resolving a task that is not outstanding
  * changes nothing, which is the idempotence an at-least-once fabric demands.
- * Ids are unique across the ticket's history, so a stale completion names one
- * already retired and matches nothing live.
+ * Identities are unique across the ticket's history, so a stale completion
+ * names one already retired and matches nothing live.
  */
 export function decideTaskDone(
   graph: TicketGraph,
   id: TicketId,
-  taskId: TaskId,
+  task: TaskIdentity,
   verdict: Verdict,
 ): Decision {
   const ticket = ticketAt(graph, id);
@@ -168,7 +170,7 @@ export function decideTaskDone(
       ...ticket,
       tasks: resolveTask(
         ticket.tasks,
-        taskId,
+        task,
         verdict === "Pass" ? "Passed" : "Failed",
       ),
     }),
@@ -199,7 +201,7 @@ export function decideWorkReduce(graph: TicketGraph, id: TicketId): Decision {
     throw new Error("work-reduce: an empty program reached a reduce");
   return move(
     withTicket(graph, id, {
-      ...spawnOn(retired, tkEval(0), stage.fanout),
+      ...spawnEvalStage(retired, id, 0, stage.fanout),
       artifact: { type: "ProducedArtifact", value: retired.spawned },
     }),
     id,
@@ -234,7 +236,7 @@ export function decideEvalStageReduce(
         withTicket(
           graph,
           id,
-          spawnOn(retired, tkEval(stageIndex + 1), next.fanout),
+          spawnEvalStage(retired, id, stageIndex + 1, next.fanout),
         ),
         id,
         "Evaluation",
@@ -254,7 +256,7 @@ export function decideEvalStageReduce(
   switch (onFailure) {
     case "ReworkEvaluationFailure":
       return move(
-        withTicket(graph, id, spawnWork(retired)),
+        withTicket(graph, id, spawnWork(retired, id)),
         id,
         "Work",
         "rework-started eval_failure",
@@ -299,7 +301,7 @@ function completeTicket(graph: TicketGraph, id: TicketId): Decision {
 function finalizerFailure(graph: TicketGraph, id: TicketId): Decision {
   const ticket = ticketAt(graph, id);
   return move(
-    withTicket(graph, id, spawnWork(ticket)),
+    withTicket(graph, id, spawnWork(ticket, id)),
     id,
     "Work",
     "rework-started finalization_needs_work",
@@ -376,7 +378,7 @@ export function decideResumeTicket(graph: TicketGraph, id: TicketId): Decision {
     case "ResumeWork":
     case "ResumeRework":
       return move(
-        withTicket(graph, id, spawnWork(resumed)),
+        withTicket(graph, id, spawnWork(resumed, id)),
         id,
         "Work",
         "ticket-resumed",
@@ -387,7 +389,7 @@ export function decideResumeTicket(graph: TicketGraph, id: TicketId): Decision {
       if (stage === undefined)
         throw new Error("resume: an empty program reached an eval resume");
       return move(
-        withTicket(graph, id, spawnOn(resumed, tkEval(0), stage.fanout)),
+        withTicket(graph, id, spawnEvalStage(resumed, id, 0, stage.fanout)),
         id,
         "Evaluation",
         "ticket-resumed",

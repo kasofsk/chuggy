@@ -163,7 +163,6 @@ export type ExecutionCapability = (typeof executionCapabilities)[number];
 
 /** Which default a materialized requirement came from, narrowest first. */
 export const requirementSources = [
-  "ExplicitTask",
   "TaskKindDefault",
   "TicketDefault",
   "PlatformDefault",

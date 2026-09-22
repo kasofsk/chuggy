@@ -51,7 +51,7 @@
             "#tup": []
           }
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -116,7 +116,7 @@
             }
           ]
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -181,6 +181,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ]
@@ -223,7 +226,7 @@
             "#tup": []
           }
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -314,13 +317,15 @@
               "tasks": {
                 "#set": [
                   {
-                    "id": {
-                      "#bigint": "1"
-                    },
-                    "kind": {
+                    "identity": {
                       "tag": "WorkTask",
                       "value": {
-                        "#tup": []
+                        "cycle": {
+                          "#bigint": "1"
+                        },
+                        "ticket": {
+                          "#bigint": "2"
+                        }
                       }
                     },
                     "state": {
@@ -331,6 +336,9 @@
                     }
                   }
                 ]
+              },
+              "workCyclesStarted": {
+                "#bigint": "1"
               }
             }
           ]
@@ -373,10 +381,18 @@
             "#tup": []
           }
         },
-        "tid": {
+        "task": {
           "tag": "Some",
           "value": {
-            "#bigint": "1"
+            "tag": "WorkTask",
+            "value": {
+              "cycle": {
+                "#bigint": "1"
+              },
+              "ticket": {
+                "#bigint": "2"
+              }
+            }
           }
         },
         "v": {
@@ -449,13 +465,15 @@
               "tasks": {
                 "#set": [
                   {
-                    "id": {
-                      "#bigint": "1"
-                    },
-                    "kind": {
+                    "identity": {
                       "tag": "WorkTask",
                       "value": {
-                        "#tup": []
+                        "cycle": {
+                          "#bigint": "1"
+                        },
+                        "ticket": {
+                          "#bigint": "2"
+                        }
                       }
                     },
                     "state": {
@@ -469,6 +487,9 @@
                     }
                   }
                 ]
+              },
+              "workCyclesStarted": {
+                "#bigint": "1"
               }
             }
           ]
@@ -511,7 +532,7 @@
             "#tup": []
           }
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -597,13 +618,15 @@
               ],
               "record": [
                 {
-                  "id": {
-                    "#bigint": "1"
-                  },
-                  "kind": {
+                  "identity": {
                     "tag": "WorkTask",
                     "value": {
-                      "#tup": []
+                      "cycle": {
+                        "#bigint": "1"
+                      },
+                      "ticket": {
+                        "#bigint": "2"
+                      }
                     }
                   },
                   "state": {
@@ -623,13 +646,24 @@
               "tasks": {
                 "#set": [
                   {
-                    "id": {
-                      "#bigint": "2"
-                    },
-                    "kind": {
+                    "identity": {
                       "tag": "EvaluationTask",
                       "value": {
-                        "#bigint": "0"
+                        "evaluator": {
+                          "#bigint": "1"
+                        },
+                        "generation": {
+                          "#bigint": "1"
+                        },
+                        "stage": {
+                          "#bigint": "1"
+                        },
+                        "ticket": {
+                          "#bigint": "2"
+                        },
+                        "workCycle": {
+                          "#bigint": "1"
+                        }
                       }
                     },
                     "state": {
@@ -640,6 +674,9 @@
                     }
                   }
                 ]
+              },
+              "workCyclesStarted": {
+                "#bigint": "1"
               }
             }
           ]
@@ -695,7 +732,7 @@
             }
           ]
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -721,13 +758,15 @@
             },
             [
               {
-                "id": {
-                  "#bigint": "1"
-                },
-                "kind": {
+                "identity": {
                   "tag": "WorkTask",
                   "value": {
-                    "#tup": []
+                    "cycle": {
+                      "#bigint": "1"
+                    },
+                    "ticket": {
+                      "#bigint": "2"
+                    }
                   }
                 },
                 "state": {
@@ -784,13 +823,15 @@
               ],
               "record": [
                 {
-                  "id": {
-                    "#bigint": "1"
-                  },
-                  "kind": {
+                  "identity": {
                     "tag": "WorkTask",
                     "value": {
-                      "#tup": []
+                      "cycle": {
+                        "#bigint": "1"
+                      },
+                      "ticket": {
+                        "#bigint": "2"
+                      }
                     }
                   },
                   "state": {
@@ -810,13 +851,24 @@
               "tasks": {
                 "#set": [
                   {
-                    "id": {
-                      "#bigint": "2"
-                    },
-                    "kind": {
+                    "identity": {
                       "tag": "EvaluationTask",
                       "value": {
-                        "#bigint": "0"
+                        "evaluator": {
+                          "#bigint": "1"
+                        },
+                        "generation": {
+                          "#bigint": "1"
+                        },
+                        "stage": {
+                          "#bigint": "1"
+                        },
+                        "ticket": {
+                          "#bigint": "2"
+                        },
+                        "workCycle": {
+                          "#bigint": "1"
+                        }
                       }
                     },
                     "state": {
@@ -827,6 +879,9 @@
                     }
                   }
                 ]
+              },
+              "workCyclesStarted": {
+                "#bigint": "1"
               }
             }
           ],
@@ -881,6 +936,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ]
@@ -936,7 +994,7 @@
             }
           ]
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -962,13 +1020,15 @@
             },
             [
               {
-                "id": {
-                  "#bigint": "1"
-                },
-                "kind": {
+                "identity": {
                   "tag": "WorkTask",
                   "value": {
-                    "#tup": []
+                    "cycle": {
+                      "#bigint": "1"
+                    },
+                    "ticket": {
+                      "#bigint": "2"
+                    }
                   }
                 },
                 "state": {
@@ -1031,13 +1091,15 @@
               ],
               "record": [
                 {
-                  "id": {
-                    "#bigint": "1"
-                  },
-                  "kind": {
+                  "identity": {
                     "tag": "WorkTask",
                     "value": {
-                      "#tup": []
+                      "cycle": {
+                        "#bigint": "1"
+                      },
+                      "ticket": {
+                        "#bigint": "2"
+                      }
                     }
                   },
                   "state": {
@@ -1057,13 +1119,24 @@
               "tasks": {
                 "#set": [
                   {
-                    "id": {
-                      "#bigint": "2"
-                    },
-                    "kind": {
+                    "identity": {
                       "tag": "EvaluationTask",
                       "value": {
-                        "#bigint": "0"
+                        "evaluator": {
+                          "#bigint": "1"
+                        },
+                        "generation": {
+                          "#bigint": "1"
+                        },
+                        "stage": {
+                          "#bigint": "1"
+                        },
+                        "ticket": {
+                          "#bigint": "2"
+                        },
+                        "workCycle": {
+                          "#bigint": "1"
+                        }
                       }
                     },
                     "state": {
@@ -1074,6 +1147,9 @@
                     }
                   }
                 ]
+              },
+              "workCyclesStarted": {
+                "#bigint": "1"
               }
             }
           ],
@@ -1128,6 +1204,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ],
@@ -1182,6 +1261,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ]
@@ -1224,7 +1306,7 @@
             "#tup": []
           }
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -1268,13 +1350,15 @@
             },
             [
               {
-                "id": {
-                  "#bigint": "1"
-                },
-                "kind": {
+                "identity": {
                   "tag": "WorkTask",
                   "value": {
-                    "#tup": []
+                    "cycle": {
+                      "#bigint": "1"
+                    },
+                    "ticket": {
+                      "#bigint": "2"
+                    }
                   }
                 },
                 "state": {
@@ -1343,13 +1427,15 @@
               ],
               "record": [
                 {
-                  "id": {
-                    "#bigint": "1"
-                  },
-                  "kind": {
+                  "identity": {
                     "tag": "WorkTask",
                     "value": {
-                      "#tup": []
+                      "cycle": {
+                        "#bigint": "1"
+                      },
+                      "ticket": {
+                        "#bigint": "2"
+                      }
                     }
                   },
                   "state": {
@@ -1369,13 +1455,24 @@
               "tasks": {
                 "#set": [
                   {
-                    "id": {
-                      "#bigint": "2"
-                    },
-                    "kind": {
+                    "identity": {
                       "tag": "EvaluationTask",
                       "value": {
-                        "#bigint": "0"
+                        "evaluator": {
+                          "#bigint": "1"
+                        },
+                        "generation": {
+                          "#bigint": "1"
+                        },
+                        "stage": {
+                          "#bigint": "1"
+                        },
+                        "ticket": {
+                          "#bigint": "2"
+                        },
+                        "workCycle": {
+                          "#bigint": "1"
+                        }
                       }
                     },
                     "state": {
@@ -1386,6 +1483,9 @@
                     }
                   }
                 ]
+              },
+              "workCyclesStarted": {
+                "#bigint": "1"
               }
             }
           ],
@@ -1440,6 +1540,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ],
@@ -1494,6 +1597,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ]
@@ -1536,10 +1642,27 @@
             "#tup": []
           }
         },
-        "tid": {
+        "task": {
           "tag": "Some",
           "value": {
-            "#bigint": "2"
+            "tag": "EvaluationTask",
+            "value": {
+              "evaluator": {
+                "#bigint": "1"
+              },
+              "generation": {
+                "#bigint": "1"
+              },
+              "stage": {
+                "#bigint": "1"
+              },
+              "ticket": {
+                "#bigint": "2"
+              },
+              "workCycle": {
+                "#bigint": "1"
+              }
+            }
           }
         },
         "v": {
@@ -1565,13 +1688,15 @@
             },
             [
               {
-                "id": {
-                  "#bigint": "1"
-                },
-                "kind": {
+                "identity": {
                   "tag": "WorkTask",
                   "value": {
-                    "#tup": []
+                    "cycle": {
+                      "#bigint": "1"
+                    },
+                    "ticket": {
+                      "#bigint": "2"
+                    }
                   }
                 },
                 "state": {
@@ -1640,13 +1765,15 @@
               ],
               "record": [
                 {
-                  "id": {
-                    "#bigint": "1"
-                  },
-                  "kind": {
+                  "identity": {
                     "tag": "WorkTask",
                     "value": {
-                      "#tup": []
+                      "cycle": {
+                        "#bigint": "1"
+                      },
+                      "ticket": {
+                        "#bigint": "2"
+                      }
                     }
                   },
                   "state": {
@@ -1666,13 +1793,24 @@
               "tasks": {
                 "#set": [
                   {
-                    "id": {
-                      "#bigint": "2"
-                    },
-                    "kind": {
+                    "identity": {
                       "tag": "EvaluationTask",
                       "value": {
-                        "#bigint": "0"
+                        "evaluator": {
+                          "#bigint": "1"
+                        },
+                        "generation": {
+                          "#bigint": "1"
+                        },
+                        "stage": {
+                          "#bigint": "1"
+                        },
+                        "ticket": {
+                          "#bigint": "2"
+                        },
+                        "workCycle": {
+                          "#bigint": "1"
+                        }
                       }
                     },
                     "state": {
@@ -1686,6 +1824,9 @@
                     }
                   }
                 ]
+              },
+              "workCyclesStarted": {
+                "#bigint": "1"
               }
             }
           ],
@@ -1740,6 +1881,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ],
@@ -1794,6 +1938,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ]
@@ -1839,7 +1986,7 @@
             "#tup": []
           }
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -1883,13 +2030,15 @@
             },
             [
               {
-                "id": {
-                  "#bigint": "1"
-                },
-                "kind": {
+                "identity": {
                   "tag": "WorkTask",
                   "value": {
-                    "#tup": []
+                    "cycle": {
+                      "#bigint": "1"
+                    },
+                    "ticket": {
+                      "#bigint": "2"
+                    }
                   }
                 },
                 "state": {
@@ -1958,13 +2107,15 @@
               ],
               "record": [
                 {
-                  "id": {
-                    "#bigint": "1"
-                  },
-                  "kind": {
+                  "identity": {
                     "tag": "WorkTask",
                     "value": {
-                      "#tup": []
+                      "cycle": {
+                        "#bigint": "1"
+                      },
+                      "ticket": {
+                        "#bigint": "2"
+                      }
                     }
                   },
                   "state": {
@@ -1978,13 +2129,24 @@
                   }
                 },
                 {
-                  "id": {
-                    "#bigint": "2"
-                  },
-                  "kind": {
+                  "identity": {
                     "tag": "EvaluationTask",
                     "value": {
-                      "#bigint": "0"
+                      "evaluator": {
+                        "#bigint": "1"
+                      },
+                      "generation": {
+                        "#bigint": "1"
+                      },
+                      "stage": {
+                        "#bigint": "1"
+                      },
+                      "ticket": {
+                        "#bigint": "2"
+                      },
+                      "workCycle": {
+                        "#bigint": "1"
+                      }
                     }
                   },
                   "state": {
@@ -2003,6 +2165,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "1"
               }
             }
           ],
@@ -2057,6 +2222,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ],
@@ -2111,6 +2279,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ]
@@ -2156,7 +2327,7 @@
             "#tup": []
           }
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -2200,13 +2371,15 @@
             },
             [
               {
-                "id": {
-                  "#bigint": "1"
-                },
-                "kind": {
+                "identity": {
                   "tag": "WorkTask",
                   "value": {
-                    "#tup": []
+                    "cycle": {
+                      "#bigint": "1"
+                    },
+                    "ticket": {
+                      "#bigint": "2"
+                    }
                   }
                 },
                 "state": {
@@ -2220,13 +2393,24 @@
                 }
               },
               {
-                "id": {
-                  "#bigint": "2"
-                },
-                "kind": {
+                "identity": {
                   "tag": "EvaluationTask",
                   "value": {
-                    "#bigint": "0"
+                    "evaluator": {
+                      "#bigint": "1"
+                    },
+                    "generation": {
+                      "#bigint": "1"
+                    },
+                    "stage": {
+                      "#bigint": "1"
+                    },
+                    "ticket": {
+                      "#bigint": "2"
+                    },
+                    "workCycle": {
+                      "#bigint": "1"
+                    }
                   }
                 },
                 "state": {
@@ -2295,13 +2479,15 @@
               ],
               "record": [
                 {
-                  "id": {
-                    "#bigint": "1"
-                  },
-                  "kind": {
+                  "identity": {
                     "tag": "WorkTask",
                     "value": {
-                      "#tup": []
+                      "cycle": {
+                        "#bigint": "1"
+                      },
+                      "ticket": {
+                        "#bigint": "2"
+                      }
                     }
                   },
                   "state": {
@@ -2315,13 +2501,24 @@
                   }
                 },
                 {
-                  "id": {
-                    "#bigint": "2"
-                  },
-                  "kind": {
+                  "identity": {
                     "tag": "EvaluationTask",
                     "value": {
-                      "#bigint": "0"
+                      "evaluator": {
+                        "#bigint": "1"
+                      },
+                      "generation": {
+                        "#bigint": "1"
+                      },
+                      "stage": {
+                        "#bigint": "1"
+                      },
+                      "ticket": {
+                        "#bigint": "2"
+                      },
+                      "workCycle": {
+                        "#bigint": "1"
+                      }
                     }
                   },
                   "state": {
@@ -2340,6 +2537,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "1"
               }
             }
           ],
@@ -2394,6 +2594,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ],
@@ -2448,6 +2651,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ]
@@ -2490,7 +2696,7 @@
             "#tup": []
           }
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -2534,13 +2740,15 @@
             },
             [
               {
-                "id": {
-                  "#bigint": "1"
-                },
-                "kind": {
+                "identity": {
                   "tag": "WorkTask",
                   "value": {
-                    "#tup": []
+                    "cycle": {
+                      "#bigint": "1"
+                    },
+                    "ticket": {
+                      "#bigint": "2"
+                    }
                   }
                 },
                 "state": {
@@ -2554,13 +2762,24 @@
                 }
               },
               {
-                "id": {
-                  "#bigint": "2"
-                },
-                "kind": {
+                "identity": {
                   "tag": "EvaluationTask",
                   "value": {
-                    "#bigint": "0"
+                    "evaluator": {
+                      "#bigint": "1"
+                    },
+                    "generation": {
+                      "#bigint": "1"
+                    },
+                    "stage": {
+                      "#bigint": "1"
+                    },
+                    "ticket": {
+                      "#bigint": "2"
+                    },
+                    "workCycle": {
+                      "#bigint": "1"
+                    }
                   }
                 },
                 "state": {
@@ -2629,13 +2848,15 @@
               ],
               "record": [
                 {
-                  "id": {
-                    "#bigint": "1"
-                  },
-                  "kind": {
+                  "identity": {
                     "tag": "WorkTask",
                     "value": {
-                      "#tup": []
+                      "cycle": {
+                        "#bigint": "1"
+                      },
+                      "ticket": {
+                        "#bigint": "2"
+                      }
                     }
                   },
                   "state": {
@@ -2649,13 +2870,24 @@
                   }
                 },
                 {
-                  "id": {
-                    "#bigint": "2"
-                  },
-                  "kind": {
+                  "identity": {
                     "tag": "EvaluationTask",
                     "value": {
-                      "#bigint": "0"
+                      "evaluator": {
+                        "#bigint": "1"
+                      },
+                      "generation": {
+                        "#bigint": "1"
+                      },
+                      "stage": {
+                        "#bigint": "1"
+                      },
+                      "ticket": {
+                        "#bigint": "2"
+                      },
+                      "workCycle": {
+                        "#bigint": "1"
+                      }
                     }
                   },
                   "state": {
@@ -2674,6 +2906,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "1"
               }
             }
           ],
@@ -2728,6 +2963,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ],
@@ -2782,6 +3020,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ]
@@ -2824,7 +3065,7 @@
             "#tup": []
           }
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -2868,13 +3109,15 @@
             },
             [
               {
-                "id": {
-                  "#bigint": "1"
-                },
-                "kind": {
+                "identity": {
                   "tag": "WorkTask",
                   "value": {
-                    "#tup": []
+                    "cycle": {
+                      "#bigint": "1"
+                    },
+                    "ticket": {
+                      "#bigint": "2"
+                    }
                   }
                 },
                 "state": {
@@ -2888,13 +3131,24 @@
                 }
               },
               {
-                "id": {
-                  "#bigint": "2"
-                },
-                "kind": {
+                "identity": {
                   "tag": "EvaluationTask",
                   "value": {
-                    "#bigint": "0"
+                    "evaluator": {
+                      "#bigint": "1"
+                    },
+                    "generation": {
+                      "#bigint": "1"
+                    },
+                    "stage": {
+                      "#bigint": "1"
+                    },
+                    "ticket": {
+                      "#bigint": "2"
+                    },
+                    "workCycle": {
+                      "#bigint": "1"
+                    }
                   }
                 },
                 "state": {
@@ -2963,13 +3217,15 @@
               ],
               "record": [
                 {
-                  "id": {
-                    "#bigint": "1"
-                  },
-                  "kind": {
+                  "identity": {
                     "tag": "WorkTask",
                     "value": {
-                      "#tup": []
+                      "cycle": {
+                        "#bigint": "1"
+                      },
+                      "ticket": {
+                        "#bigint": "2"
+                      }
                     }
                   },
                   "state": {
@@ -2983,13 +3239,24 @@
                   }
                 },
                 {
-                  "id": {
-                    "#bigint": "2"
-                  },
-                  "kind": {
+                  "identity": {
                     "tag": "EvaluationTask",
                     "value": {
-                      "#bigint": "0"
+                      "evaluator": {
+                        "#bigint": "1"
+                      },
+                      "generation": {
+                        "#bigint": "1"
+                      },
+                      "stage": {
+                        "#bigint": "1"
+                      },
+                      "ticket": {
+                        "#bigint": "2"
+                      },
+                      "workCycle": {
+                        "#bigint": "1"
+                      }
                     }
                   },
                   "state": {
@@ -3008,6 +3275,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "1"
               }
             }
           ],
@@ -3062,6 +3332,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ],
@@ -3116,6 +3389,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ]
@@ -3161,7 +3437,7 @@
             "#tup": []
           }
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -3205,13 +3481,15 @@
             },
             [
               {
-                "id": {
-                  "#bigint": "1"
-                },
-                "kind": {
+                "identity": {
                   "tag": "WorkTask",
                   "value": {
-                    "#tup": []
+                    "cycle": {
+                      "#bigint": "1"
+                    },
+                    "ticket": {
+                      "#bigint": "2"
+                    }
                   }
                 },
                 "state": {
@@ -3225,13 +3503,24 @@
                 }
               },
               {
-                "id": {
-                  "#bigint": "2"
-                },
-                "kind": {
+                "identity": {
                   "tag": "EvaluationTask",
                   "value": {
-                    "#bigint": "0"
+                    "evaluator": {
+                      "#bigint": "1"
+                    },
+                    "generation": {
+                      "#bigint": "1"
+                    },
+                    "stage": {
+                      "#bigint": "1"
+                    },
+                    "ticket": {
+                      "#bigint": "2"
+                    },
+                    "workCycle": {
+                      "#bigint": "1"
+                    }
                   }
                 },
                 "state": {
@@ -3300,13 +3589,15 @@
               ],
               "record": [
                 {
-                  "id": {
-                    "#bigint": "1"
-                  },
-                  "kind": {
+                  "identity": {
                     "tag": "WorkTask",
                     "value": {
-                      "#tup": []
+                      "cycle": {
+                        "#bigint": "1"
+                      },
+                      "ticket": {
+                        "#bigint": "2"
+                      }
                     }
                   },
                   "state": {
@@ -3320,13 +3611,24 @@
                   }
                 },
                 {
-                  "id": {
-                    "#bigint": "2"
-                  },
-                  "kind": {
+                  "identity": {
                     "tag": "EvaluationTask",
                     "value": {
-                      "#bigint": "0"
+                      "evaluator": {
+                        "#bigint": "1"
+                      },
+                      "generation": {
+                        "#bigint": "1"
+                      },
+                      "stage": {
+                        "#bigint": "1"
+                      },
+                      "ticket": {
+                        "#bigint": "2"
+                      },
+                      "workCycle": {
+                        "#bigint": "1"
+                      }
                     }
                   },
                   "state": {
@@ -3346,13 +3648,15 @@
               "tasks": {
                 "#set": [
                   {
-                    "id": {
-                      "#bigint": "3"
-                    },
-                    "kind": {
+                    "identity": {
                       "tag": "WorkTask",
                       "value": {
-                        "#tup": []
+                        "cycle": {
+                          "#bigint": "2"
+                        },
+                        "ticket": {
+                          "#bigint": "2"
+                        }
                       }
                     },
                     "state": {
@@ -3363,6 +3667,9 @@
                     }
                   }
                 ]
+              },
+              "workCyclesStarted": {
+                "#bigint": "2"
               }
             }
           ],
@@ -3417,6 +3724,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ],
@@ -3471,6 +3781,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ]

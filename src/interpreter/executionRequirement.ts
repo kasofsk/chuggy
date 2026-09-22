@@ -33,7 +33,7 @@ export type ExecutionRequirement =
   | NativeExecutionRequirement;
 
 export type RequirementSource =
-  "ExplicitTask" | "TaskKindDefault" | "TicketDefault" | "PlatformDefault";
+  "TaskKindDefault" | "TicketDefault" | "PlatformDefault";
 
 export interface MaterializedExecutionRequirement {
   readonly value: ExecutionRequirement;
@@ -43,7 +43,6 @@ export interface MaterializedExecutionRequirement {
 
 export function asRequirementSource(value: unknown): RequirementSource {
   if (
-    value !== "ExplicitTask" &&
     value !== "TaskKindDefault" &&
     value !== "TicketDefault" &&
     value !== "PlatformDefault"
@@ -59,7 +58,6 @@ interface RequirementConfiguration {
   readonly taskKindDefaults?: Readonly<
     Partial<Record<ExecutionTaskKindKey, ExecutionRequirement>>
   >;
-  readonly taskDefaults?: Readonly<Record<string, ExecutionRequirement>>;
   readonly stageQualifiedEvaluation: boolean;
 }
 
@@ -324,7 +322,6 @@ function configuredRequirements(
       "platformDefaultVersion",
       "ticketDefault",
       "taskKindDefaults",
-      "taskDefaults",
     ])
   )
     return undefined;
@@ -352,18 +349,10 @@ function configuredRequirements(
     (key) =>
       key === "Work" ||
       key === "Evaluation" ||
-      /^Evaluation:(0|[1-9][0-9]*)$/u.test(key),
+      /^Evaluation:[1-9][0-9]*$/u.test(key),
   ) as Partial<Record<ExecutionTaskKindKey, ExecutionRequirement>> | undefined;
-  const taskDefaults = requirementMap(configured?.["taskDefaults"], (key) =>
-    /^[1-9][0-9]*$/u.test(key),
-  );
-  if (taskKindDefaults === undefined || taskDefaults === undefined)
-    return undefined;
-  const candidates = [
-    ticketDefault,
-    ...Object.values(taskKindDefaults),
-    ...Object.values(taskDefaults),
-  ];
+  if (taskKindDefaults === undefined) return undefined;
+  const candidates = [ticketDefault, ...Object.values(taskKindDefaults)];
   if (
     candidates.some(
       (candidate) =>
@@ -376,7 +365,6 @@ function configuredRequirements(
     platformDefaultVersion: Number(platformDefaultVersion),
     ...(ticketDefault === undefined ? {} : { ticketDefault }),
     taskKindDefaults,
-    taskDefaults,
     stageQualifiedEvaluation,
   };
 }
@@ -421,7 +409,6 @@ export function executionRequirementConfigurationIsValid(
 
 export function materializeExecutionRequirement(
   configuration: unknown,
-  task: number,
   kind: ExecutionTaskKind,
   stage?: number,
 ): MaterializedExecutionRequirement {
@@ -433,17 +420,15 @@ export function materializeExecutionRequirement(
   if (
     (kind === "Work" && stage !== undefined) ||
     (kind === "Evaluation" &&
-      (stage === undefined || !Number.isSafeInteger(stage) || stage < 0))
+      (stage === undefined || !Number.isSafeInteger(stage) || stage < 1))
   )
     throw new TypeError("execution task kind and stage are inconsistent");
-  const explicit = parsed.taskDefaults?.[String(task)];
   const kindKey: ExecutionTaskKindKey =
     kind === "Work" || !parsed.stageQualifiedEvaluation
       ? kind
       : `Evaluation:${stage as number}`;
   const kindDefault = parsed.taskKindDefaults?.[kindKey];
-  const value =
-    explicit ?? kindDefault ?? parsed.ticketDefault ?? parsed.platformDefault;
+  const value = kindDefault ?? parsed.ticketDefault ?? parsed.platformDefault;
   const capability = executionAgentCapability(configuration);
   const selected = requirementForAgent(value, capability);
   if (selected === undefined)
@@ -451,13 +436,11 @@ export function materializeExecutionRequirement(
       "single-agent worker requires a container execution requirement",
     );
   const source: RequirementSource =
-    explicit !== undefined
-      ? "ExplicitTask"
-      : kindDefault !== undefined
-        ? "TaskKindDefault"
-        : parsed.ticketDefault !== undefined
-          ? "TicketDefault"
-          : "PlatformDefault";
+    kindDefault !== undefined
+      ? "TaskKindDefault"
+      : parsed.ticketDefault !== undefined
+        ? "TicketDefault"
+        : "PlatformDefault";
   return {
     value: selected,
     source,

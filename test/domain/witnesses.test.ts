@@ -56,9 +56,10 @@ const midProgram = graphOf([
   ticketOn(config, {
     phase: "Evaluation",
     program: twoStage,
-    record: [workTask(1, "Passed"), workTask(2, "Passed")],
-    tasks: new Set([evalTask(3, 0, "Passed")]),
-    spawned: 3,
+    record: [workTask(1, 1, "Passed")],
+    tasks: new Set([evalTask(1, 1, 0, 1, "Passed")]),
+    workCyclesStarted: 1,
+    spawned: 2,
   }),
 ]);
 

@@ -60,7 +60,8 @@ import {
 import type { TicketCommand } from "../../src/interpreter/ticketCommand.ts";
 import { executionSourceObservation } from "../../src/interpreter/executionSourceObservation.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
-import { asTaskId, type TicketId } from "../../src/domain/ids.ts";
+import type { TicketId } from "../../src/domain/ids.ts";
+import { workTaskOf } from "../../src/domain/task.ts";
 import {
   plainAuthoring,
   plainResult,
@@ -596,7 +597,7 @@ function workPassedMemory(): ProjectMemory {
   state = journalStep(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
   );
   return { ...releasedMemory(), graph: memoryGraph(state) };
 }

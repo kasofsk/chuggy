@@ -9,25 +9,22 @@ import assert from "node:assert/strict";
 
 import {
   evalStage,
-  nextTaskId,
+  evaluationTaskOf,
   resolveTask,
-  retiredInIdOrder,
+  retiredInOrdinalOrder,
   outstandingCount,
   spawnTasks,
-  tasksInIdOrder,
+  taskIdentityEquals,
+  taskIdentityValid,
+  taskOrdinal,
+  tasksInOrdinalOrder,
   taskPassed,
   evaluationFailureReworksStarted,
-  tkEval,
-  tkWork,
   tsResolved,
   tsOutstanding,
+  workTaskOf,
 } from "../../src/domain/task.ts";
-import {
-  asTaskId,
-  asTicketId,
-  asSafeInteger,
-  firstTaskId,
-} from "../../src/domain/ids.ts";
+import { asTaskId, asTicketId, asSafeInteger } from "../../src/domain/ids.ts";
 import {
   allEffects,
   effectFromLabel,
@@ -37,6 +34,7 @@ import { isSettled } from "../../src/domain/phase.ts";
 import { combine } from "../../src/domain/program.ts";
 import {
   spawnOn,
+  spawnEvalStage,
   retireLive,
   hasOpenHumanTask,
 } from "../../src/domain/ticket.ts";
@@ -44,9 +42,7 @@ import {
   phaseTags,
   type Phase,
   type Task,
-  type TaskKind,
   type TaskOutcome,
-  type TaskState,
   type Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
 
@@ -57,82 +53,135 @@ const bare: Ticket = {
   program: [],
   tasks: new Set(),
   record: [],
+  workCyclesStarted: 0,
   spawned: 0,
   escalation: "NoEscalation",
   completions: 0,
 };
 
-test("a spawned set is outstanding, contiguous and starts where it was told", () => {
-  const tasks = spawnTasks(tkWork, asTaskId(3), 2);
+test("a spawned set is outstanding under exactly the identities it was named", () => {
+  const tasks = spawnTasks([
+    evaluationTaskOf(1, 1, 0, 1, 1),
+    evaluationTaskOf(1, 1, 0, 1, 2),
+  ]);
   assert.deepEqual(
-    tasksInIdOrder(tasks).map((t) => t.id),
-    [3, 4],
+    tasksInOrdinalOrder(tasks).map((t) => taskOrdinal(t.identity)),
+    [1, 2],
   );
   assert.equal(outstandingCount(tasks), 2);
 });
 
-test("spawning zero tasks yields no tasks rather than a task", () => {
-  assert.equal(spawnTasks(tkWork, firstTaskId, 0).size, 0);
+test("spawning no identities yields no tasks rather than a task", () => {
+  assert.equal(spawnTasks([]).size, 0);
 });
 
-test("the next id counts every id ever issued, retired or live", () => {
-  assert.equal(nextTaskId(0, 0), firstTaskId);
-  assert.equal(nextTaskId(3, 2), 6);
+test("an identity is valid exactly while every counter it carries is positive", () => {
+  assert.ok(taskIdentityValid(workTaskOf(1, 1)));
+  assert.ok(!taskIdentityValid(workTaskOf(1, 0)));
+  assert.ok(!taskIdentityValid(workTaskOf(0, 1)));
+  assert.ok(taskIdentityValid(evaluationTaskOf(1, 1, 0, 1, 1)));
+  assert.ok(!taskIdentityValid(evaluationTaskOf(0, 1, 0, 1, 1)));
+  assert.ok(!taskIdentityValid(evaluationTaskOf(1, 0, 0, 1, 1)));
+  assert.ok(
+    !taskIdentityValid({
+      type: "EvaluationTask",
+      value: { ticket: 1, workCycle: 1, stage: 0, generation: 1, evaluator: 1 },
+    }),
+    "the contract's stage is a positive key, not an index",
+  );
+  assert.ok(!taskIdentityValid(evaluationTaskOf(1, 1, 0, 0, 1)));
+  assert.ok(!taskIdentityValid(evaluationTaskOf(1, 1, 0, 1, 0)));
+});
+
+test("a stage's generation counts its runs, not its evaluators", () => {
+  const first = spawnEvalStage({ ...bare, workCyclesStarted: 1 }, 1, 0, 2);
+  const second = spawnEvalStage(retireLive(first), 1, 0, 2);
+  assert.deepEqual(
+    [...second.tasks].map((t) => t.identity),
+    [evaluationTaskOf(1, 1, 0, 2, 1), evaluationTaskOf(1, 1, 0, 2, 2)],
+    "a fanned-out stage re-entered once is on its second run, not its third",
+  );
+});
+
+test("two identities are the same only on the same arm and the same fields", () => {
+  assert.ok(taskIdentityEquals(workTaskOf(2, 3), workTaskOf(2, 3)));
+  assert.ok(!taskIdentityEquals(workTaskOf(2, 3), workTaskOf(2, 4)));
+  assert.ok(
+    !taskIdentityEquals(workTaskOf(2, 3), evaluationTaskOf(2, 3, 0, 1, 1)),
+  );
+  assert.ok(
+    !taskIdentityEquals(
+      evaluationTaskOf(2, 1, 0, 1, 1),
+      evaluationTaskOf(2, 1, 0, 2, 1),
+    ),
+    "a second run of a stage is not the first",
+  );
 });
 
 test("first write wins, so a duplicate delivery changes nothing", () => {
-  const spawned = spawnTasks(tkWork, firstTaskId, 1);
-  const once = resolveTask(spawned, firstTaskId, "Passed");
-  const twice = resolveTask(once, firstTaskId, "Failed");
+  const work = workTaskOf(1, 1);
+  const spawned = spawnTasks([work]);
+  const once = resolveTask(spawned, work, "Passed");
+  const twice = resolveTask(once, work, "Failed");
   assert.deepEqual([...twice], [...once]);
-  const resolved = tasksInIdOrder(twice)[0];
+  const resolved = tasksInOrdinalOrder(twice)[0];
   assert.ok(resolved, "the fixture spawned one task");
   assert.ok(taskPassed(resolved));
 });
 
-test("resolving an id that is not there changes nothing", () => {
-  const spawned = spawnTasks(tkWork, firstTaskId, 1);
+test("resolving an identity that is not there changes nothing", () => {
+  const spawned = spawnTasks([workTaskOf(1, 1)]);
   assert.deepEqual(
-    [...resolveTask(spawned, asTaskId(99), "Passed")],
+    [...resolveTask(spawned, workTaskOf(1, 2), "Passed")],
     [...spawned],
   );
 });
 
 test("retirement force-closes an outstanding task as cancelled and leaves a resolved one alone", () => {
   const mixed: ReadonlySet<Task> = new Set([
-    { id: asTaskId(2), kind: tkWork, state: tsResolved("Passed") },
-    { id: asTaskId(1), kind: tkWork, state: tsOutstanding },
+    {
+      identity: evaluationTaskOf(1, 1, 0, 1, 2),
+      state: tsResolved("Passed"),
+    },
+    { identity: evaluationTaskOf(1, 1, 0, 1, 1), state: tsOutstanding },
   ]);
-  const retired = retiredInIdOrder(mixed);
+  const retired = retiredInOrdinalOrder(mixed);
   assert.deepEqual(
-    retired.map((t) => t.id),
+    retired.map((t) => taskOrdinal(t.identity)),
     [1, 2],
-    "retirement is in id order, not in the order the set happened to hold",
+    "retirement is in ordinal order, not in the order the set happened to hold",
   );
   assert.deepEqual(retired[0]?.state, tsResolved("Cancelled"));
   assert.deepEqual(retired[1]?.state, tsResolved("Passed"));
 });
 
-test("the eval stage is derived from the kind marks and is zero on a work set", () => {
-  assert.equal(evalStage(spawnTasks(tkWork, firstTaskId, 2)), 0);
-  assert.equal(evalStage(spawnTasks(tkEval(1), firstTaskId, 2)), 1);
+test("the eval stage is derived from the live identities and is zero on a work set", () => {
+  assert.equal(evalStage(spawnTasks([workTaskOf(1, 1)])), 0);
+  assert.equal(
+    evalStage(
+      spawnTasks([
+        evaluationTaskOf(1, 1, 1, 1, 1),
+        evaluationTaskOf(1, 1, 1, 1, 2),
+      ]),
+    ),
+    1,
+  );
   assert.equal(evalStage(new Set()), 0);
 });
 
 test("spawnOn refuses a ticket that still holds live tasks", () => {
-  const live = spawnOn(bare, tkWork, 2);
-  assert.equal(live.spawned, 2);
-  assert.throws(() => spawnOn(live, tkWork, 1), /must retire first/);
+  const live = spawnOn(bare, [workTaskOf(1, 1)]);
+  assert.equal(live.spawned, 1);
+  assert.throws(() => spawnOn(live, [workTaskOf(1, 2)]), /must retire first/);
 });
 
-test("retiring then spawning continues the id sequence rather than restarting it", () => {
-  const first = spawnOn(bare, tkWork, 2);
-  const second = spawnOn(retireLive(first), tkEval(0), 2);
-  assert.deepEqual(
-    tasksInIdOrder(second.tasks).map((t) => t.id),
-    [3, 4],
-  );
-  assert.equal(second.spawned, 4, "the ghost counts every task ever spawned");
+test("retiring then spawning keeps the ghost counting rather than restarting it", () => {
+  const first = spawnOn(bare, [workTaskOf(1, 1)]);
+  const second = spawnOn(retireLive(first), [
+    evaluationTaskOf(1, 1, 0, 1, 1),
+    evaluationTaskOf(1, 1, 0, 1, 2),
+  ]);
+  assert.equal(second.spawned, 3, "the ghost counts every task ever spawned");
   assert.equal(
     second.spawned,
     second.record.length + second.tasks.size,
@@ -189,8 +238,14 @@ test("a string that is not one of this machine's effects is refused", () => {
 
 test("a stage passes only when every task in it passed", () => {
   const mixed: ReadonlySet<Task> = new Set([
-    { id: asTaskId(1), kind: tkWork, state: tsResolved("Passed") },
-    { id: asTaskId(2), kind: tkWork, state: tsResolved("Failed") },
+    {
+      identity: evaluationTaskOf(1, 1, 0, 1, 1),
+      state: tsResolved("Passed"),
+    },
+    {
+      identity: evaluationTaskOf(1, 1, 0, 1, 2),
+      state: tsResolved("Failed"),
+    },
   ]);
   assert.equal(combine(mixed), false);
   assert.equal(combine(new Set()), true, "vacuously, as forall does");
@@ -198,7 +253,7 @@ test("a stage passes only when every task in it passed", () => {
 
 test("a cancelled task fails its stage, so a revoked set never passes", () => {
   const cancelled: ReadonlySet<Task> = new Set([
-    { id: asTaskId(1), kind: tkWork, state: tsResolved("Cancelled") },
+    { identity: workTaskOf(1, 1), state: tsResolved("Cancelled") },
   ]);
   assert.equal(combine(cancelled), false);
 });
@@ -213,50 +268,50 @@ test("an identifier outside the exactly representable range is refused, not trun
 });
 
 /** A ticket's history as the rework count reads it: the record, then what is still live. */
-function reworksOver(
-  history: readonly (readonly [TaskKind, TaskState])[],
-  live: number,
-): number {
-  const tasks = history.map(([kind, state], at) => ({
-    id: asTaskId(at + 1),
-    kind,
-    state,
-  }));
+function reworksOver(history: readonly Task[], live: number): number {
   return evaluationFailureReworksStarted(
-    tasks.slice(0, tasks.length - live),
-    new Set(tasks.slice(tasks.length - live)),
+    history.slice(0, history.length - live),
+    new Set(history.slice(history.length - live)),
   );
 }
 
-const working: readonly [TaskKind, TaskState] = [tkWork, tsOutstanding];
-
-/** An evaluation task of stage zero carrying the outcome it resolved to. */
-function evaluated(outcome: TaskOutcome): readonly [TaskKind, TaskState] {
-  return [tkEval(0), tsResolved(outcome)];
+/** The work task of one cycle of ticket one, as it looks while it runs. */
+function working(cycle: number): Task {
+  return { identity: workTaskOf(1, cycle), state: tsOutstanding };
 }
 
-test("a rework is a work run that follows an evaluation run some task failed", () => {
-  const failed = evaluated("Failed");
+/** One evaluator of stage zero judging `cycle`, carrying the outcome it resolved to. */
+function evaluated(cycle: number, outcome: TaskOutcome, evaluator = 1): Task {
+  return {
+    identity: evaluationTaskOf(1, cycle, 0, 1, evaluator),
+    state: tsResolved(outcome),
+  };
+}
+
+test("a rework is a work cycle that follows an evaluation run some task failed", () => {
   assert.equal(reworksOver([], 0), 0, "nothing dispatched has been reworked");
-  assert.equal(reworksOver([working], 1), 0, "the first fan-out is no rework");
+  assert.equal(reworksOver([working(1)], 1), 0, "the first cycle is no rework");
   assert.equal(
-    reworksOver([working, working], 2),
+    reworksOver([working(1), evaluated(1, "Failed")], 0),
     0,
-    "a fan-out is one run, not two",
+    "evaluating is no rework",
   );
-  assert.equal(reworksOver([working, failed], 0), 0, "evaluating is no rework");
   assert.equal(
-    reworksOver([working, failed, working], 1),
+    reworksOver([working(1), evaluated(1, "Failed"), working(2)], 1),
     1,
     "the work after the failure is the first rework",
   );
   assert.equal(
-    reworksOver([working, failed, working, working], 2),
-    1,
-    "a fan-out of two is still one rework",
-  );
-  assert.equal(
-    reworksOver([working, failed, working, failed, working], 1),
+    reworksOver(
+      [
+        working(1),
+        evaluated(1, "Failed"),
+        working(2),
+        evaluated(2, "Failed"),
+        working(3),
+      ],
+      1,
+    ),
     2,
     "and the work after the second failure is the second",
   );
@@ -264,20 +319,20 @@ test("a rework is a work run that follows an evaluation run some task failed", (
 
 test("the work a passed evaluation is followed by is the finalizer's, and is uncapped", () => {
   assert.equal(
-    reworksOver([working, evaluated("Passed"), working], 1),
+    reworksOver([working(1), evaluated(1, "Passed"), working(2)], 1),
     0,
     "a finalization failure re-enters Work without spending the cap",
   );
   assert.equal(
     reworksOver(
       [
-        working,
-        evaluated("Passed"),
-        working,
-        evaluated("Failed"),
-        working,
-        evaluated("Passed"),
-        working,
+        working(1),
+        evaluated(1, "Passed"),
+        working(2),
+        evaluated(2, "Failed"),
+        working(3),
+        evaluated(3, "Passed"),
+        working(4),
       ],
       1,
     ),
@@ -289,7 +344,12 @@ test("the work a passed evaluation is followed by is the finalizer's, and is unc
 test("an evaluation run counts once however many of its tasks resolved", () => {
   assert.equal(
     reworksOver(
-      [working, evaluated("Failed"), evaluated("Cancelled"), working],
+      [
+        working(1),
+        evaluated(1, "Failed"),
+        evaluated(1, "Cancelled", 2),
+        working(2),
+      ],
       1,
     ),
     1,
@@ -297,7 +357,12 @@ test("an evaluation run counts once however many of its tasks resolved", () => {
   );
   assert.equal(
     reworksOver(
-      [working, evaluated("Cancelled"), evaluated("Cancelled"), working],
+      [
+        working(1),
+        evaluated(1, "Cancelled"),
+        evaluated(1, "Cancelled", 2),
+        working(2),
+      ],
       1,
     ),
     0,
@@ -306,7 +371,7 @@ test("an evaluation run counts once however many of its tasks resolved", () => {
 });
 
 test("the count folds the record and the live set as one history", () => {
-  const history = [working, evaluated("Failed"), working];
+  const history = [working(1), evaluated(1, "Failed"), working(2)];
   for (const live of [0, 1, 3])
     assert.equal(reworksOver(history, live), 1, `with ${String(live)} live`);
 });

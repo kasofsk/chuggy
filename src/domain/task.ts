@@ -1,35 +1,159 @@
 /**
- * What the machine does with a task set: spawn one, resolve into it, read what
- * it is still waiting on, and retire it into the record.
+ * What the machine does with a task set: name a task, spawn a set, resolve
+ * into it, read what it is still waiting on, and retire it into the record.
  *
  * The model holds the live set as `Set[Task]` and this mirrors it, so the
  * folds below read the set the model reads. Where a fold's result depends on
  * order — retirement into the record, and every comparison a trace makes —
- * `tasksInIdOrder` is what supplies it: ids are unique within the set, so id
- * order is canonical rather than incidental, and nothing here inherits
- * whatever order a rebuild happened to produce.
+ * `tasksInOrdinalOrder` is what supplies it: a live set is one work task or
+ * one stage's evaluators, so the evaluator ordinal is canonical rather than
+ * incidental, and nothing here inherits whatever order a rebuild produced.
  */
 
 import { assertNever } from "./assertNever.ts";
 import type {
   Task,
-  TaskKind,
+  TaskIdentity,
   TaskOutcome,
   TaskState,
 } from "./generated/modelTypes.ts";
-import {
-  firstTaskId,
-  asTaskId,
-  asStageIndex,
-  type StageIndex,
-  type TaskId,
-} from "./ids.ts";
+import { asStageIndex, type StageIndex } from "./ids.ts";
 
-export const tkWork: TaskKind = "WorkTask";
+/** The work task of one cycle — the only task a work cycle runs. */
+export function workTaskOf(ticket: number, cycle: number): TaskIdentity {
+  return { type: "WorkTask", value: { ticket, cycle } };
+}
 
-/** An eval task of the given stage. */
-export function tkEval(stage: number): TaskKind {
-  return { type: "EvaluationTask", value: asStageIndex(stage) };
+/**
+ * One evaluator of one run of one stage. `stage` is the zero-based index into
+ * the ticket's authored program; the contract's key is one more, which is the
+ * only place that offset is applied.
+ */
+export function evaluationTaskOf(
+  ticket: number,
+  workCycle: number,
+  stage: number,
+  generation: number,
+  evaluator: number,
+): TaskIdentity {
+  return {
+    type: "EvaluationTask",
+    value: {
+      ticket,
+      workCycle,
+      stage: asStageIndex(stage) + 1,
+      generation,
+      evaluator,
+    },
+  };
+}
+
+/** Structural equality on an identity: same arm, same fields. */
+export function taskIdentityEquals(
+  left: TaskIdentity,
+  right: TaskIdentity,
+): boolean {
+  if (left.type === "WorkTask") {
+    return (
+      right.type === "WorkTask" &&
+      left.value.ticket === right.value.ticket &&
+      left.value.cycle === right.value.cycle
+    );
+  }
+  return (
+    right.type === "EvaluationTask" &&
+    left.value.ticket === right.value.ticket &&
+    left.value.workCycle === right.value.workCycle &&
+    left.value.stage === right.value.stage &&
+    left.value.generation === right.value.generation &&
+    left.value.evaluator === right.value.evaluator
+  );
+}
+
+/** The ticket an identity belongs to, whichever arm it is. */
+export function taskOwner(identity: TaskIdentity): number {
+  return identity.value.ticket;
+}
+
+/**
+ * A task's place in its own set, and so the order the set retires in: a stage
+ * runs evaluators one to its fanout, and a work cycle is one task.
+ */
+export function taskOrdinal(identity: TaskIdentity): number {
+  switch (identity.type) {
+    case "WorkTask":
+      return 1;
+    case "EvaluationTask":
+      return identity.value.evaluator;
+  }
+}
+
+/** The tasks as a list, ascending by ordinal — the one ordering anything here folds in. */
+export function tasksInOrdinalOrder(tasks: Iterable<Task>): readonly Task[] {
+  return [...tasks].sort(
+    (a, b) => taskOrdinal(a.identity) - taskOrdinal(b.identity),
+  );
+}
+
+/**
+ * How many reworks a failing evaluation has cost a ticket, read off its
+ * retired record and its live set together: a work cycle counts when the cycle
+ * before it had an evaluator resolve `Failed`, so neither the first cycle nor
+ * one bought by a failed finalization or a work wall is one. Derived rather
+ * than carried on the ticket, which would be a stored duplicate of it; what
+ * the tasks alone cannot separate is stated at the cap.
+ */
+export function evaluationFailureReworksStarted(
+  record: readonly Task[],
+  live: ReadonlySet<Task>,
+): number {
+  const all = [...record, ...live];
+  const failedCycles = new Set<number>();
+  for (const task of all) {
+    if (task.identity.type !== "EvaluationTask") continue;
+    if (task.state !== "Outstanding" && task.state.value === "Failed")
+      failedCycles.add(task.identity.value.workCycle);
+  }
+  return all.filter(
+    (task) =>
+      task.identity.type === "WorkTask" &&
+      failedCycles.has(task.identity.value.cycle - 1),
+  ).length;
+}
+
+/** How many of these tasks are still outstanding to the fabric. */
+export function outstandingCount(tasks: ReadonlySet<Task>): number {
+  return [...tasks].filter((t) => t.state === "Outstanding").length;
+}
+
+/**
+ * The current eval stage as a zero-based index into the authored program,
+ * derived from the set's identities rather than stored. Zero on an empty or
+ * work set, which is the fold's base.
+ */
+export function evalStage(tasks: ReadonlySet<Task>): StageIndex {
+  let stage = asStageIndex(0);
+  for (const task of tasksInOrdinalOrder(tasks)) {
+    switch (task.identity.type) {
+      case "WorkTask":
+        continue;
+      case "EvaluationTask":
+        stage = asStageIndex(task.identity.value.stage - 1);
+        break;
+      default:
+        assertNever(task.identity);
+    }
+  }
+  return stage;
+}
+
+/** A fresh outstanding set under the identities the caller names. */
+export function spawnTasks(
+  identities: readonly TaskIdentity[],
+): ReadonlySet<Task> {
+  return new Set(
+    identities.map((identity) => ({ identity, state: tsOutstanding })),
+  );
 }
 
 export const tsOutstanding: TaskState = "Outstanding";
@@ -39,89 +163,19 @@ export function tsResolved(outcome: TaskOutcome): TaskState {
   return { type: "Resolved", value: outcome };
 }
 
-/** The tasks as a list, ascending by id — the one ordering anything here folds in. */
-export function tasksInIdOrder(tasks: Iterable<Task>): readonly Task[] {
-  return [...tasks].sort((a, b) => a.id - b.id);
-}
-
 /**
- * How many reworks a failing evaluation has cost a ticket, read off its retired
- * record and its live set together: a maximal run of Work-kind tasks in id
- * order counts when the evaluation run before it resolved some task `Failed`,
- * so neither the first fan-out nor a rework after a run that passed outright
- * is one. Derived rather than carried on the ticket, which would be a stored
- * duplicate of it; what the tasks alone cannot separate is stated at the cap.
- */
-export function evaluationFailureReworksStarted(
-  record: readonly Task[],
-  live: ReadonlySet<Task>,
-): number {
-  let reworks = 0;
-  let inWorkRun = false;
-  let evaluationFailed = false;
-  for (const task of tasksInIdOrder([...record, ...live])) {
-    if (task.kind === "WorkTask") {
-      if (!inWorkRun && evaluationFailed) reworks += 1;
-      inWorkRun = true;
-      continue;
-    }
-    if (inWorkRun) evaluationFailed = false;
-    inWorkRun = false;
-    if (task.state !== "Outstanding" && task.state.value === "Failed")
-      evaluationFailed = true;
-  }
-  return reworks;
-}
-
-/** How many of these tasks are still outstanding to the fabric. */
-export function outstandingCount(tasks: ReadonlySet<Task>): number {
-  return [...tasks].filter((t) => t.state === "Outstanding").length;
-}
-
-/**
- * The current eval stage, derived from the set's kind marks rather than
- * stored. Zero on an empty or work set, which is the fold's base.
- */
-export function evalStage(tasks: ReadonlySet<Task>): StageIndex {
-  let stage = asStageIndex(0);
-  for (const task of tasksInIdOrder(tasks)) {
-    if (task.kind === "WorkTask") continue;
-    switch (task.kind.type) {
-      case "EvaluationTask":
-        stage = asStageIndex(task.kind.value);
-        break;
-      default:
-        assertNever(task.kind.type);
-    }
-  }
-  return stage;
-}
-
-/** A fresh parallel set of `count` outstanding tasks, with consecutive ids from `start`. */
-export function spawnTasks(
-  kind: TaskKind,
-  start: TaskId,
-  count: number,
-): ReadonlySet<Task> {
-  const spawned = new Set<Task>();
-  for (let i = 0; i < count; i++) {
-    spawned.add({ id: asTaskId(start + i), kind, state: tsOutstanding });
-  }
-  return spawned;
-}
-
-/**
- * First write wins: resolve `id` if it is still outstanding, and change nothing
- * otherwise. That is the idempotence an at-least-once fabric demands.
+ * First write wins: resolve the named task if it is still outstanding, and
+ * change nothing otherwise. That is the idempotence an at-least-once fabric
+ * demands.
  */
 export function resolveTask(
   tasks: ReadonlySet<Task>,
-  id: TaskId,
+  identity: TaskIdentity,
   outcome: TaskOutcome,
 ): ReadonlySet<Task> {
   return new Set(
     [...tasks].map((t) =>
-      t.id === id && t.state === "Outstanding"
+      taskIdentityEquals(t.identity, identity) && t.state === "Outstanding"
         ? { ...t, state: tsResolved(outcome) }
         : t,
     ),
@@ -133,24 +187,12 @@ export function taskPassed(task: Task): boolean {
   return task.state !== "Outstanding" && task.state.value === "Passed";
 }
 
-/** The next id this history would issue: every id ever issued is retired or live. */
-export function nextTaskId(recordLength: number, liveCount: number): TaskId {
-  return asTaskId(firstTaskId + recordLength + liveCount);
-}
-
-/** Structural equality on a task: its identity, what it was for, and how it settled. */
+/** Structural equality on a task: what it names, and how it settled. */
 export function taskEquals(left: Task, right: Task): boolean {
   return (
-    left.id === right.id &&
-    taskEqualsKind(left.kind, right.kind) &&
+    taskIdentityEquals(left.identity, right.identity) &&
     taskEqualsState(left.state, right.state)
   );
-}
-
-/** An eval task matches only at the same stage, which is what keeps history from re-labelling itself. */
-function taskEqualsKind(left: TaskKind, right: TaskKind): boolean {
-  if (left === "WorkTask") return right === "WorkTask";
-  return right !== "WorkTask" && right.value === left.value;
 }
 
 /** A resolved task matches only on the same outcome; outstanding matches outstanding. */
@@ -160,12 +202,30 @@ function taskEqualsState(left: TaskState, right: TaskState): boolean {
 }
 
 /**
- * Retire a live set into the retained record, in id order. A task still
+ * Retire a live set into the retained record, in ordinal order. A task still
  * outstanding at retirement is force-closed as cancelled, which only a revoke
  * ever reaches.
  */
-export function retiredInIdOrder(tasks: ReadonlySet<Task>): readonly Task[] {
-  return tasksInIdOrder(tasks).map((t) =>
+export function retiredInOrdinalOrder(
+  tasks: ReadonlySet<Task>,
+): readonly Task[] {
+  return tasksInOrdinalOrder(tasks).map((t) =>
     t.state === "Outstanding" ? { ...t, state: tsResolved("Cancelled") } : t,
+  );
+}
+
+/**
+ * The contract's own claim about an identity (`taskIdentityValid` in
+ * `model/task-contract/task.qnt`): every counter it carries is positive.
+ */
+export function taskIdentityValid(identity: TaskIdentity): boolean {
+  if (identity.type === "WorkTask")
+    return identity.value.ticket > 0 && identity.value.cycle > 0;
+  return (
+    identity.value.ticket > 0 &&
+    identity.value.workCycle > 0 &&
+    identity.value.stage > 0 &&
+    identity.value.generation > 0 &&
+    identity.value.evaluator > 0
   );
 }

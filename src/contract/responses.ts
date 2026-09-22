@@ -476,12 +476,42 @@ export const workerSchema = z.strictObject({
   version: identitySchema,
 });
 
+/**
+ * What a task IS, as the model's own codec spells it: the constructor under
+ * `type` and its record under `value`, with each arm's work cycle under the
+ * name that arm gives it. `src/contract/` reaches neither the model's mirror
+ * nor the layers that own it, so the sum is written again here and
+ * `test/contract/rosters.test.ts` holds this copy to that one.
+ */
+export const taskIdentitySchema = z.union([
+  z.object({
+    type: z.literal("WorkTask"),
+    value: z.object({ ticket: ticketNumberSchema, cycle: ticketNumberSchema }),
+  }),
+  z.object({
+    type: z.literal("EvaluationTask"),
+    value: z.object({
+      ticket: ticketNumberSchema,
+      workCycle: ticketNumberSchema,
+      stage: ticketNumberSchema,
+      generation: ticketNumberSchema,
+      evaluator: ticketNumberSchema,
+    }),
+  }),
+]);
+export type TaskIdentity = z.infer<typeof taskIdentitySchema>;
+
 export const executionSummarySchema = z.object({
   execution: identitySchema,
   ticket: ticketNumberSchema,
+  /**
+   * The wire's name for the task this execution runs, which is what the page
+   * orders by and what the cursor is a position in. `identity` beside it is
+   * what the task is; neither is derivable from the other.
+   */
   task: countSchema,
   taskKind: z.enum(executionTaskKinds),
-  stage: countSchema.optional(),
+  identity: taskIdentitySchema,
   cluster: identitySchema,
   configurationRevision: identitySchema,
   configurationVersion: configurationVersionSchema.optional(),

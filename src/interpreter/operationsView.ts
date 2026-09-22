@@ -1,4 +1,5 @@
 import type { TaskId, TicketId } from "../domain/ids.ts";
+import type { TaskIdentity } from "../domain/generated/modelTypes.ts";
 import type {
   CanonicalConfiguration,
   ConfigurationRevisionId,
@@ -93,9 +94,18 @@ export interface ExecutionListQuery {
 export interface ExecutionSummary {
   readonly execution: ExecutionId;
   readonly ticket: TicketId;
+  /**
+   * The wire's name for the task, which is what this page is ordered by and
+   * what its cursor is a position in.
+   */
   readonly task: TaskId;
   readonly taskKind: ExecutionTaskKind;
-  readonly stage?: number;
+  /**
+   * What the task is: its work cycle, and for an evaluation the stage, the
+   * generation and the evaluator. The stage here is the identity's positive
+   * key and not an index into the released program.
+   */
+  readonly identity: TaskIdentity;
   readonly cluster: ClusterId;
   readonly configurationRevision: ConfigurationRevisionId;
   readonly configurationVersion?: ConfigurationVersion;

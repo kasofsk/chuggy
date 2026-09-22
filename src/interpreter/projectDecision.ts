@@ -46,7 +46,11 @@
  */
 
 import type { Entry } from "../actor/journal.ts";
-import type { Escalation, Phase } from "../domain/generated/modelTypes.ts";
+import type {
+  Escalation,
+  Phase,
+  TaskIdentity,
+} from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import {
   asAuthorityKind,
@@ -164,14 +168,16 @@ export interface ExecutionRequestPlan {
   readonly ticketVersion: number;
   readonly kind: "SpawnWork" | "SpawnEvaluation" | "CancelTicketWork";
   readonly bundle?: ExecutionRequestBundle;
-  readonly tasks: readonly (
-    | { readonly task: number; readonly kind: "Work" }
-    | {
-        readonly task: number;
-        readonly kind: "Evaluation";
-        readonly stage: number;
-      }
-  )[];
+  readonly tasks: readonly {
+    /**
+     * The wire's name for this task: an integer, injective and ascending
+     * within its ticket, which the registration, its unique and the executions
+     * cursor are all stated over. It is not what the task IS — the identity
+     * beside it is that — and nothing derives one from the other.
+     */
+    readonly task: number;
+    readonly identity: TaskIdentity;
+  }[];
 }
 
 export interface NativeActionPlan {

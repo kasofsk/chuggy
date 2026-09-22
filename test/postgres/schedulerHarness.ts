@@ -177,8 +177,9 @@ async function schedulerWidenTasks(
   const already = Number(declared[0]?.declared ?? "0");
   for (let more = already; more < tasks; more++) {
     await rig.harness.query(
-      `INSERT INTO execution_request_task (tenant,project,request,task,kind)
-       VALUES ($1,$2,$3,$4,'Work')`,
+      `INSERT INTO execution_request_task
+         (tenant,project,request,task,kind,cycle)
+       VALUES ($1,$2,$3,$4,'Work',$4)`,
       [partition.tenant, partition.project, request, more + 1],
     );
   }
@@ -675,6 +676,63 @@ export function schedulerOutcome<Result>(
   );
 }
 
+/** The evaluation identity a request task row carries, as the columns spell it. */
+export interface EvaluationIdentityColumns {
+  readonly cycle: number;
+  readonly stage: number;
+  readonly generation: number;
+  readonly evaluator: number;
+}
+
+/**
+ * An evaluation spawn request for the ticket, declaring one logical task
+ * numbered after the work tasks so it conflicts with nothing, under the
+ * identity the caller names. It is how a read is shown the columns and not a
+ * fixture whose every counter is one.
+ */
+export async function schedulerEvaluationRequest(
+  rig: SchedulerRig,
+  project: SchedulerProject,
+  label: string,
+  identity: EvaluationIdentityColumns,
+): Promise<string> {
+  const request = `request-evaluation-${label}-${randomUUID()}`;
+  await rig.harness.query(
+    `INSERT INTO execution_request
+       (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
+        kind,capacity_account,configuration_revision,configuration_digest,
+        input_bundle,input_bundle_digest)
+     SELECT q.tenant,q.project,$4,q.authorizing_seq,q.effect_position+1,q.ticket,
+            q.ticket_version,'SpawnEvaluation',q.capacity_account,
+            q.configuration_revision,q.configuration_digest,
+            q.input_bundle,q.input_bundle_digest
+       FROM execution_request q
+      WHERE q.tenant=$1 AND q.project=$2 AND q.request=$3`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      project.request,
+      request,
+    ],
+  );
+  await rig.harness.query(
+    `INSERT INTO execution_request_task
+       (tenant,project,request,task,kind,cycle,stage,generation,evaluator)
+     VALUES ($1,$2,$3,$4,'Evaluation',$5,$6,$7,$8)`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      request,
+      project.tasks + 1,
+      identity.cycle,
+      identity.stage,
+      identity.generation,
+      identity.evaluator,
+    ],
+  );
+  return request;
+}
+
 /**
  * A second spawn request for the same ticket, declaring the same first logical
  * task. It is what makes a contradictory registration reachable: two requests
@@ -706,8 +764,9 @@ export async function schedulerRivalRequest(
     ],
   );
   await rig.harness.query(
-    `INSERT INTO execution_request_task (tenant,project,request,task,kind,stage)
-     VALUES ($1,$2,$3,1,'Evaluation',0)`,
+    `INSERT INTO execution_request_task
+       (tenant,project,request,task,kind,cycle,stage,generation,evaluator)
+     VALUES ($1,$2,$3,1,'Evaluation',1,1,1,1)`,
     [project.partition.tenant, project.partition.project, request],
   );
   return request;

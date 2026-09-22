@@ -43,7 +43,7 @@ import {
   isDecisionSemanticsVersion,
   type DecisionSemanticsVersion,
 } from "../../src/actor/decisionSemantics.ts";
-import { asTaskId } from "../../src/domain/ids.ts";
+import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import { id } from "../domain/fixtures.ts";
 import { plainAuthoring, plainResult, refinementInstance } from "./harness.ts";
@@ -78,11 +78,11 @@ const walls = decided([
   dispatchEvent(id(1)),
   executionBlockedEvent(id(1)),
   resumeTicketEvent(id(1)),
-  taskDoneEvent(id(1), asTaskId(2), "Pass", plainResult),
+  taskDoneEvent(id(1), workTaskOf(1, 2), "Pass", plainResult),
   workReduceEvent(id(1)),
   executionBlockedEvent(id(1)),
   resumeTicketEvent(id(1)),
-  taskDoneEvent(id(1), asTaskId(4), "Pass", plainResult),
+  taskDoneEvent(id(1), evaluationTaskOf(1, 2, 0, 2, 1), "Pass", plainResult),
   evalReduceEvent(id(1), "ReworkEvaluationFailure"),
   finalizationResultEvent(id(1), "FinalizationResultUnavailable"),
   resumeTicketEvent(id(1)),

@@ -402,7 +402,7 @@ test("a pinned non-default requirement reaches placement unchanged", async () =>
   const overridden = {
     ...execution,
     requirement: { ...execution.requirement, image: "worker:v2" },
-    requirementSource: "ExplicitTask" as const,
+    requirementSource: "TaskKindDefault" as const,
   };
   const store: ExecutionSchedulerStore = {
     ...service.store,

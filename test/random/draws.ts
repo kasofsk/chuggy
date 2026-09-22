@@ -29,7 +29,7 @@ import {
   finalizationOutcomes,
   finalizationOutcomeEnabled,
   finalizingIn,
-  outstandingTaskIdsIn,
+  outstandingTasksIn,
   quietIn,
   readiesIn,
   reducibleEvalIn,
@@ -45,9 +45,11 @@ import {
   type EvaluationFailureDisposition,
   type FinalizationOutcome,
   type StageDefinition,
+  type TaskIdentity,
   type Verdict,
 } from "../../src/domain/generated/modelTypes.ts";
-import { asTaskId, type TaskId, type TicketId } from "../../src/domain/ids.ts";
+import { taskIdentityEquals } from "../../src/domain/task.ts";
+import { type TicketId } from "../../src/domain/ids.ts";
 import type { Picks } from "../conformance/dispatch.ts";
 import { decodeValue, encodeValue, type ItfValue } from "../itf/decode.ts";
 import {
@@ -55,6 +57,7 @@ import {
   encodeInt,
   encodeNullaryTag,
   encodeProgram,
+  encodeTaskIdentity,
 } from "../itf/vocabulary.ts";
 import { pickFrom, subsetFrom, type Random } from "./random.ts";
 
@@ -64,7 +67,7 @@ export interface Drawn {
   readonly deps?: readonly TicketId[];
   readonly program?: readonly StageDefinition[];
   readonly onFailure?: EvaluationFailureDisposition;
-  readonly taskId?: TaskId;
+  readonly task?: TaskIdentity;
   readonly verdict?: Verdict;
   readonly outcome?: FinalizationOutcome;
 }
@@ -158,10 +161,10 @@ const dispatch: WalkAction = {
     drawn.ticket !== undefined && readiesIn(graph).includes(drawn.ticket),
 };
 
-/** Tickets with a task the fabric could still report on — the set `tid` is drawn from. */
+/** Tickets with a task the fabric could still report on — the set `task` is drawn from. */
 function reportableIn(graph: TicketGraph): readonly TicketId[] {
   return taskPhaseIn(graph).filter(
-    (j) => outstandingTaskIdsIn(graph, j).length > 0,
+    (j) => outstandingTasksIn(graph, j).length > 0,
   );
 }
 
@@ -172,16 +175,22 @@ const taskDone: WalkAction = {
     const ticket = pickFrom(random, reportableIn(graph));
     return {
       ticket,
-      taskId: asTaskId(pickFrom(random, outstandingTaskIdsIn(graph, ticket))),
+      task: pickFrom(random, outstandingTasksIn(graph, ticket)),
       verdict: pickFrom(random, verdictDraws),
     };
   },
-  permitsIn: (_config, graph, drawn) =>
-    drawn.ticket !== undefined &&
-    drawn.taskId !== undefined &&
-    drawn.verdict !== undefined &&
-    reportableIn(graph).includes(drawn.ticket) &&
-    outstandingTaskIdsIn(graph, drawn.ticket).includes(drawn.taskId),
+  permitsIn: (_config, graph, drawn) => {
+    const task = drawn.task;
+    return (
+      drawn.ticket !== undefined &&
+      task !== undefined &&
+      drawn.verdict !== undefined &&
+      reportableIn(graph).includes(drawn.ticket) &&
+      outstandingTasksIn(graph, drawn.ticket).some((live) =>
+        taskIdentityEquals(live, task),
+      )
+    );
+  },
 };
 
 const finalizationResult: WalkAction = {
@@ -280,7 +289,7 @@ export function drawnWire(drawn: Drawn): Readonly<Record<string, unknown>> {
     onFailure: opt(drawn.onFailure, encodeNullaryTag),
     out: opt(drawn.outcome, encodeNullaryTag),
     prog: opt(drawn.program, encodeProgram),
-    tid: opt(drawn.taskId, encodeInt),
+    task: opt(drawn.task, encodeTaskIdentity),
     v: opt(drawn.verdict, encodeNullaryTag),
   };
 }
@@ -297,7 +306,7 @@ export function drawnPicks(drawn: Drawn): Picks {
     deps: itf(wire["deps_"]),
     program: itf(wire["prog"]),
     onFailure: itf(wire["onFailure"]),
-    taskId: itf(wire["tid"]),
+    task: itf(wire["task"]),
     verdict: itf(wire["v"]),
     outcome: itf(wire["out"]),
   };

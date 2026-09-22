@@ -174,16 +174,20 @@ async function furtherSpawn(
     ],
   );
   for (const task of tasks) {
+    const evaluation = kind === "SpawnEvaluation";
     await rig.harness.query(
-      `INSERT INTO execution_request_task (tenant,project,request,task,kind,stage)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
+      `INSERT INTO execution_request_task
+         (tenant,project,request,task,kind,cycle,stage,generation,evaluator)
+       VALUES ($1,$2,$3,$4,$5,$4,$6,$7,$8)`,
       [
         project.partition.tenant,
         project.partition.project,
         request,
         task,
-        kind === "SpawnWork" ? "Work" : "Evaluation",
-        kind === "SpawnWork" ? null : 0,
+        evaluation ? "Evaluation" : "Work",
+        evaluation ? 1 : null,
+        evaluation ? 1 : null,
+        evaluation ? task : null,
       ],
     );
   }

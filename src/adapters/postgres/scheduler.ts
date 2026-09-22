@@ -103,7 +103,7 @@ import type {
   RecoveryEpoch,
 } from "../../interpreter/projectStore.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
-import { asStageIndex, asTicketId } from "../../domain/ids.ts";
+import { asTicketId } from "../../domain/ids.ts";
 import { postgresOwnershipEpoch } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
@@ -382,9 +382,10 @@ async function schedulerCreateExecutions(
     const task = projectRowCounter(input.task, "execution task");
     const materialized = materializeExecutionRequirement(
       JSON.parse(input.canonical) as unknown,
-      task,
       executionRowTaskKind(input.kind),
-      input.stage === null ? undefined : asStageIndex(Number(input.stage)),
+      input.stage === null
+        ? undefined
+        : projectRowCounter(input.stage, "task stage"),
     );
     const execution = `${executionStem}-${input.task}`;
     const requirementIdentity = execution;

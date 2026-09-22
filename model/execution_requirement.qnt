@@ -5,10 +5,9 @@
 module execution_requirement {
   import registered_runner.* from "./runner"
 
-  type RequirementSource = ExplicitTask | TaskKindDefault | TicketDefault | PlatformDefault
+  type RequirementSource = TaskKindDefault | TicketDefault | PlatformDefault
   type RequirementCandidate = NoRequirement | Requested(ExecutionRequirement)
   type RequirementDefaults = {
-    explicitTasks: int -> ExecutionRequirement,
     taskKinds: int -> ExecutionRequirement,
     tickets: int -> ExecutionRequirement,
     platformDefault: ExecutionRequirement,
@@ -75,17 +74,17 @@ module execution_requirement {
     | NativeRequirement(v) => and { v.xcodeVersionMin > 0, v.sdkVersionMin > 0 }
   }
 
+  /// A requirement is authored for a kind of task, for a ticket or for the
+  /// platform, and never for one task: a task is named by an identity its
+  /// ticket mints as it spawns, so nothing an author writes down can name one.
   pure def selectedRequirement(
-    task: int, taskKind: int, ticket: int, defaults: RequirementDefaults
+    taskKind: int, ticket: int, defaults: RequirementDefaults
   ): { value: ExecutionRequirement, source: RequirementSource } =
-    match candidate(defaults.explicitTasks, task) {
-      | Requested(value) => { value: value, source: ExplicitTask }
-      | NoRequirement => match candidate(defaults.taskKinds, taskKind) {
-          | Requested(value) => { value: value, source: TaskKindDefault }
-          | NoRequirement => match candidate(defaults.tickets, ticket) {
-              | Requested(value) => { value: value, source: TicketDefault }
-              | NoRequirement => { value: defaults.platformDefault, source: PlatformDefault }
-            }
+    match candidate(defaults.taskKinds, taskKind) {
+      | Requested(value) => { value: value, source: TaskKindDefault }
+      | NoRequirement => match candidate(defaults.tickets, ticket) {
+          | Requested(value) => { value: value, source: TicketDefault }
+          | NoRequirement => { value: defaults.platformDefault, source: PlatformDefault }
         }
     }
 
@@ -155,10 +154,10 @@ module execution_requirement {
   }
 
   pure def materialize(
-    execution: int, task: int, taskKind: int, ticket: int,
+    execution: int, taskKind: int, ticket: int,
     defaults: RequirementDefaults, workerMode: WorkerMode
   ): MaterializationResult =
-    val selected = selectedRequirement(task, taskKind, ticket, defaults)
+    val selected = selectedRequirement(taskKind, ticket, defaults)
     match requirementForWorker(selected.value, workerMode) {
       | NoRequirement => RequirementRefused
       | Requested(value) =>
@@ -189,7 +188,7 @@ module execution_requirement {
   /// the platform container default, so configurations without overrides keep
   /// exactly the Kubernetes requirement they had before materialization.
   pure def defaultsFromLegacyReleaseImage(image: int, version: int): RequirementDefaults = {
-    explicitTasks: Map(), taskKinds: Map(), tickets: Map(),
+    taskKinds: Map(), tickets: Map(),
     platformDefault: ContainerRequirement({
       operatingSystem: Linux, architecture: Amd64, image: image }),
     platformDefaultVersion: version

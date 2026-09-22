@@ -94,6 +94,7 @@ const containerExecution: ExecutionSummary = {
   ticket: 1,
   task: 1,
   taskKind: "Work",
+  identity: { type: "WorkTask", value: { ticket: 1, cycle: 1 } },
   cluster: "rig",
   configurationRevision: revision,
   requirementIdentity: "requirement-a",

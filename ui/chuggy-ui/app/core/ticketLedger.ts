@@ -6,29 +6,38 @@
  * NOTHING HERE TRUSTS ARRIVAL ORDER. The route answers in `(ticket, task)`
  * ascending, so a page usually arrives in the order this reads it in — but
  * `ExecutionsResponse` is a list with no ordering in its type, and a live frame
- * is folded into a page already read. `task` is the ticket-wide ordinal the
- * model issues in sequence, and sorting by it is what makes a cycle
- * recoverable from whatever order the page is in.
+ * is folded into a page already read. `task` is the wire's number for a
+ * task, ascending within a ticket, read only to keep a set's own rows in a
+ * stable order; which cycle, program run and stage a row belongs to comes off its
+ * `identity` and is never inferred from where the row sits on the page.
  *
- * A FAN-OUT SET IS WHAT ONE SPAWN PRODUCED, and it is named by the request the
- * row carries or by the identity stem every task of one request shares. A row
- * `executionSummarySchema` parsed before it declared the request has only the
- * stem, so the stem answers for one and is never the rule where a request is
- * there to read.
+ * A SET IS EVERY ROW SHARING ONE IDENTITY OUTSIDE ITS EVALUATOR — a work
+ * task's own cycle, or an evaluation task's cycle, generation and stage — so
+ * nothing here counts a work run to number a cycle or trims a task ordinal off
+ * an execution's own string identity to find its fan-out. The model hands out
+ * the whole tuple; this reads it.
+ *
+ * A PROGRAM RUN IS CUT AT THE LOWEST STAGE the cycle holds, because that is
+ * where both spawn sites enter it — `decideWorkReduce` and the resume of
+ * an evaluation park in `decideResumeTicket`, each at stage 0 in `model/domain.qnt`. The generation
+ * cannot group a run: `stageGeneration` in `model/ticket.qnt` counts per
+ * stage, so a stage first reached after a resume is still on generation 1
+ * while the stage below it the resume re-ran is on 2. What numbers a run is
+ * the generation of the set that opened it.
  *
  * IT IS TOTAL OVER THE PAGES THE ROSTERS ADMIT, not only over the pages the
  * machine produces or the route can page to. Ordering by `(ticket, task)` makes
  * a short page a prefix of the ticket's history, so pagination alone no longer
  * cuts a cycle in half; the shapes are inputs regardless, because the rosters
  * admit them — `executions` is a list whose type promises neither an order nor
- * a whole ticket, `stage` is an unbounded count, and the request naming a set
- * is optional. So a cycle whose work run is missing, a gap between two stages
- * and a stage the authored program does not declare each get a row of their own
- * rather than being merged into a neighbour.
+ * a whole ticket, and an evaluation task's `stage` and `generation` are each an
+ * unbounded count. So a cycle whose work run is missing, a gap between two
+ * stages and a stage the authored program does not declare each get a row of
+ * their own rather than being merged into a neighbour.
  *
  * EVERY LOOP IS BOUNDED BY SOMETHING DECLARED. A run draws one row per stage
  * the authoring declares and one per set the page holds beyond it, which are
- * bounded by `nativeHttpDraftStagesMax` and by the page; the wire's `stage` is
+ * bounded by `nativeHttpDraftStagesMax` and by the page; a task's `stage` is
  * an unbounded count and is never a loop bound, because one row naming a stage
  * in the millions would otherwise build that many rows.
  *
@@ -51,7 +60,7 @@ import type {
   ExecutionsResponse,
 } from "../../../../src/contract/responses.ts";
 import type { ExecutionTaskKind } from "../../../../src/contract/rosters.ts";
-import { runSpanOf, runSpendOf } from "./runTotals.ts";
+import { identityCycle, runSpanOf, runSpendOf } from "./runTotals.ts";
 import type { RunSpan, RunSpend } from "./runTotals.ts";
 
 /** The authoring the ledger reads, which is the draft read's own record. */
@@ -122,66 +131,25 @@ export interface ClosedSet {
   readonly verdict: SetVerdict;
 }
 
-interface SpawnedSet {
-  readonly taskKind: ExecutionTaskKind;
-  readonly stage: number | undefined;
-  readonly executions: readonly ExecutionSummary[];
-}
-
-interface CycleSets {
-  readonly work: SpawnedSet | undefined;
-  readonly evaluations: readonly SpawnedSet[];
-}
-
 /** Whether the route holds more of this ticket than the page it answered with. */
 function pageTruncated(page: ExecutionsResponse): boolean {
   return page.nextCursor !== undefined;
 }
 
-const executionTaskSuffix = /-\d+$/;
-
-/** The scheduler suffixes the task ordinal onto one stem per spawned request. */
-function executionStem(execution: string): string {
-  return execution.replace(executionTaskSuffix, "");
-}
-
 /**
- * Which spawn this execution belongs to, by the request identity where a row
- * carries one and by the identity stem otherwise. A row the wire wrote before
- * it named the request has only the stem to be grouped by.
+ * A settled set's figures, over whichever tasks named it and against the width
+ * it was expected to hold — one, always, for a work task.
  */
-function executionRequest(row: ExecutionSummary): string {
-  return row.request ?? executionStem(row.execution);
-}
-
-function executionSetKey(row: ExecutionSummary): string {
-  return `${executionRequest(row)} ${row.taskKind} ${String(row.stage)}`;
-}
-
-/** The page in task order, cut at every change of spawn, kind or stage. */
-function spawnedSets(page: ExecutionsResponse): readonly SpawnedSet[] {
-  const ordered: readonly ExecutionSummary[] = [...page.executions].sort(
-    (left, right) => left.task - right.task,
-  );
-  const sets: SpawnedSet[] = [];
-  let key: string | undefined;
-  for (const row of ordered) {
-    const open = sets.at(-1);
-    if (open !== undefined && executionSetKey(row) === key) {
-      sets[sets.length - 1] = {
-        ...open,
-        executions: [...open.executions, row],
-      };
-      continue;
-    }
-    sets.push({
-      taskKind: row.taskKind,
-      stage: row.stage,
-      executions: [row],
-    });
-    key = executionSetKey(row);
-  }
-  return sets;
+function taskSetOf(
+  executions: readonly ExecutionSummary[],
+  expected: number,
+): TaskSet {
+  return {
+    executions,
+    expected,
+    verdict: setVerdict(executions),
+    span: runSpanOf(executions),
+  };
 }
 
 /**
@@ -202,68 +170,98 @@ function setVerdict(executions: readonly ExecutionSummary[]): SetVerdict {
     : "Failed";
 }
 
-/** The authored stage this set ran, absent where the set is outside the program. */
-function stageOf(
-  set: SpawnedSet,
-  authoring: TicketAuthoring,
-): TicketAuthoring["program"][number] | undefined {
-  if (set.taskKind === "Work" || set.stage === undefined) return undefined;
-  return authoring.program[set.stage];
+/** One spawn of one evaluation stage: every row naming that stage and generation. */
+interface EvaluationSet {
+  readonly stage: number;
+  readonly generation: number;
+  executions: readonly ExecutionSummary[];
 }
 
-/** A work set is one task; an evaluation set combines unanimously over its stage's width. */
-function taskSetOf(set: SpawnedSet, authoring: TicketAuthoring): TaskSet {
-  const stage = stageOf(set, authoring);
-  const expected =
-    set.taskKind === "Work" ? 1 : (stage?.fanout ?? set.executions.length);
-  return {
-    executions: set.executions,
-    expected,
-    verdict: setVerdict(set.executions),
-    span: runSpanOf(set.executions),
-  };
+/**
+ * A cycle's tasks, gathered by what they are: the work run, and every
+ * evaluation set it holds, in the order the wire issued them.
+ */
+interface CycleBucket {
+  work: ExecutionSummary[] | undefined;
+  evaluations: Map<string, EvaluationSet>;
 }
 
-/** Every work set opens a cycle; a page that opens on an evaluation opens one without a work run. */
-function cycleSetsOf(sets: readonly SpawnedSet[]): readonly CycleSets[] {
-  const cycles: CycleSets[] = [];
-  for (const set of sets) {
-    if (set.taskKind === "Work") {
-      cycles.push({ work: set, evaluations: [] });
+function cycleBucket(
+  cycles: Map<number, CycleBucket>,
+  cycle: number,
+): CycleBucket {
+  const held = cycles.get(cycle);
+  if (held !== undefined) return held;
+  const fresh: CycleBucket = { work: undefined, evaluations: new Map() };
+  cycles.set(cycle, fresh);
+  return fresh;
+}
+
+/** A set's key, which is the stage and generation its identity names and nothing else. */
+function evaluationSetKey(stage: number, generation: number): string {
+  return `${String(stage)}/${String(generation)}`;
+}
+
+/**
+ * The page's rows sorted into the cycle, stage and generation their own
+ * identity names, each cycle's sets held in task order.
+ */
+function cycleBucketsOf(page: ExecutionsResponse): Map<number, CycleBucket> {
+  const ordered = [...page.executions].sort(
+    (left, right) => left.task - right.task,
+  );
+  const cycles = new Map<number, CycleBucket>();
+  for (const row of ordered) {
+    const identity = row.identity;
+    const bucket = cycleBucket(cycles, identityCycle(identity));
+    if (identity.type === "WorkTask") {
+      bucket.work = [...(bucket.work ?? []), row];
       continue;
     }
-    const open = cycles.at(-1);
-    if (open === undefined) {
-      cycles.push({ work: undefined, evaluations: [set] });
-      continue;
-    }
-    cycles[cycles.length - 1] = {
-      ...open,
-      evaluations: [...open.evaluations, set],
-    };
+    const { stage, generation } = identity.value;
+    const held = bucket.evaluations.get(evaluationSetKey(stage, generation));
+    if (held === undefined)
+      bucket.evaluations.set(evaluationSetKey(stage, generation), {
+        stage,
+        generation,
+        executions: [row],
+      });
+    else held.executions = [...held.executions, row];
   }
   return cycles;
 }
 
 /**
- * Stages are recomputed per cycle and never resumed mid-sequence, so a stage
- * that does not advance on its predecessor is a fresh run of the program.
+ * The width an evaluation stage was expected to hold: the authoring's own
+ * fan-out, or the page's own count where the stage is outside the program the
+ * ticket was authored with.
  */
-function runSetsOf(
-  evaluations: readonly SpawnedSet[],
-): readonly (readonly SpawnedSet[])[] {
-  const runs: SpawnedSet[][] = [];
-  for (const set of evaluations) {
-    const open = runs.at(-1);
-    const previous = open?.at(-1);
-    if (open === undefined || previous === undefined) {
-      runs.push([set]);
-      continue;
-    }
-    if ((set.stage ?? 0) <= (previous.stage ?? 0)) runs.push([set]);
-    else open.push(set);
-  }
-  return runs;
+function stageExpected(
+  stage: number,
+  executions: readonly ExecutionSummary[],
+  authoring: TicketAuthoring,
+): number {
+  return authoring.program[stage - 1]?.fanout ?? executions.length;
+}
+
+/** A run's sets by stage, merging any two of one stage the page put in one run. */
+function taskSetMapOf(
+  run: readonly EvaluationSet[],
+  authoring: TicketAuthoring,
+): ReadonlyMap<number, TaskSet> {
+  const byStage = new Map<number, readonly ExecutionSummary[]>();
+  for (const set of run)
+    byStage.set(set.stage, [
+      ...(byStage.get(set.stage) ?? []),
+      ...set.executions,
+    ]);
+  const sets = new Map<number, TaskSet>();
+  for (const [stage, executions] of byStage)
+    sets.set(
+      stage,
+      taskSetOf(executions, stageExpected(stage, executions, authoring)),
+    );
+  return sets;
 }
 
 /** A short-circuit stops the run; anything else leaves the later stages ahead of it. */
@@ -290,33 +288,57 @@ function programStageRow(
 
 /**
  * One row per stage the authoring declares and one per set this run holds
- * beyond it, so a stage outside the program is drawn without the wire's own
- * stage number ever becoming a count of rows.
+ * beyond it, so a stage outside the program is drawn without its own stage
+ * number ever becoming a count of rows.
  */
 function stageRowsOf(
-  run: readonly SpawnedSet[],
-  authoring: TicketAuthoring,
+  ran: ReadonlyMap<number, TaskSet>,
+  declared: number,
 ): readonly StageRow[] {
-  const ran = new Map<number, TaskSet>();
-  for (const set of run) ran.set(set.stage ?? 0, taskSetOf(set, authoring));
   const highest = Math.max(...ran.keys());
-  const declared = authoring.program.length;
   const rows: StageRow[] = [];
-  for (let stage = 0; stage < declared; stage++)
+  for (let stage = 1; stage <= declared; stage++)
     rows.push(programStageRow(stage, ran, highest));
   for (const [stage, set] of [...ran].sort((left, right) => left[0] - right[0]))
-    if (stage >= declared) rows.push({ kind: "Ran", stage, set });
+    if (stage > declared) rows.push({ kind: "Ran", stage, set });
   return rows;
 }
 
+/** One pass of the program, and the generation of the set that opened it. */
+interface CutRun {
+  readonly ordinal: number;
+  readonly sets: EvaluationSet[];
+}
+
+/**
+ * The cycle's sets cut at every set of the lowest stage it holds, which is the
+ * stage a spawn enters the program at. The first set opens a run whatever its
+ * stage, because a page is free to begin above that stage.
+ */
+function runsCutOf(sets: readonly EvaluationSet[]): readonly CutRun[] {
+  const lowest = Math.min(...sets.map((set) => set.stage));
+  const runs: CutRun[] = [];
+  for (const set of sets) {
+    const open = runs.at(-1);
+    if (open === undefined || set.stage === lowest)
+      runs.push({ ordinal: set.generation, sets: [set] });
+    else open.sets.push(set);
+  }
+  return runs;
+}
+
+/** The cycle's program runs, each one a pass over the stages the artifact faced. */
 function programRunsOf(
-  cycle: CycleSets,
+  sets: readonly EvaluationSet[],
   authoring: TicketAuthoring,
 ): readonly ProgramRun[] {
-  const runs = runSetsOf(cycle.evaluations);
+  const runs = runsCutOf(sets);
   return runs.map((run, index) => ({
-    ordinal: index + 1,
-    stages: stageRowsOf(run, authoring),
+    ordinal: run.ordinal,
+    stages: stageRowsOf(
+      taskSetMapOf(run.sets, authoring),
+      authoring.program.length,
+    ),
     standing: index === runs.length - 1 ? "Current" : "Superseded",
   }));
 }
@@ -356,15 +378,18 @@ function cycleComplete(
   );
 }
 
-function cycleOf(
-  cycle: CycleSets,
+function cycleFacts(
+  bucket: CycleBucket,
   authoring: TicketAuthoring,
   standing: CycleStanding,
   page: ExecutionsResponse,
 ): Omit<Cycle, "ordinal"> {
   const work =
-    cycle.work === undefined ? undefined : taskSetOf(cycle.work, authoring);
-  const programRuns = programRunsOf(cycle, authoring);
+    bucket.work === undefined ? undefined : taskSetOf(bucket.work, 1);
+  const programRuns = programRunsOf(
+    [...bucket.evaluations.values()],
+    authoring,
+  );
   const held = cycleSetsHeld(work, programRuns).flatMap(
     (set) => set.executions,
   );
@@ -381,21 +406,23 @@ function cycleOf(
 
 /**
  * The page's executions as the cycles that produced them, newest last. A page
- * cursor names more of is truncated, and the counts drawn from it are low
+ * cursor names more is truncated, and the counts drawn from it are low
  * rather than wrong.
  */
 export function ticketLedger(
   page: ExecutionsResponse,
   authoring: TicketAuthoring,
 ): Ledger {
-  const grouped = cycleSetsOf(spawnedSets(page));
+  const buckets = [...cycleBucketsOf(page).entries()].sort(
+    ([left], [right]) => left - right,
+  );
   const truncated = pageTruncated(page);
-  const cycles: readonly Cycle[] = grouped.map((cycle, index) => ({
-    ordinal: index + 1,
-    ...cycleOf(
-      cycle,
+  const cycles: readonly Cycle[] = buckets.map(([cycle, bucket], index) => ({
+    ordinal: cycle,
+    ...cycleFacts(
+      bucket,
       authoring,
-      index === grouped.length - 1 ? "Current" : "Superseded",
+      index === buckets.length - 1 ? "Current" : "Superseded",
       page,
     ),
   }));
@@ -435,10 +462,13 @@ export function ledgerLastSet(ledger: Ledger): ClosedSet | undefined {
   return cycle === undefined ? undefined : cycleLastSet(cycle);
 }
 
-/** Stages are numbered from one in a label, as the form a ticket is authored on numbers them. */
+/**
+ * Stages are numbered from one, as the form a ticket is authored on numbers
+ * them — the identity's own stage, with nothing added to it.
+ */
 export function stageLabel(stage: number, stageCount: number): string {
-  const named = String(stage + 1);
-  return stageCount > stage
+  const named = String(stage);
+  return stageCount >= stage
     ? `Stage ${named} of ${String(stageCount)}`
     : `Stage ${named}`;
 }

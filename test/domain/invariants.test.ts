@@ -56,6 +56,7 @@ import {
   recordWellFormed,
   revokedNeverCompletes,
   stuckSubsetCovered,
+  taskIdentitiesValid,
   tasksWellFormed,
   terminalsAbsorbing,
   ticketIdsWellFormed,
@@ -211,7 +212,7 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
       config,
       stateView(
         fleetBut(fleet, 1, {
-          tasks: new Set([workOutstanding(1), workOutstanding(2)]),
+          tasks: new Set([workOutstanding(2, 1), workOutstanding(2, 2)]),
         }),
       ),
     ),
@@ -222,7 +223,7 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
       config,
       stateView(
         fleetBut(fleet, 1, {
-          tasks: new Set([evalOutstanding(1, 0)]),
+          tasks: new Set([evalOutstanding(2, 1, 0, 1)]),
         }),
       ),
     ),
@@ -233,7 +234,7 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
       config,
       stateView(
         fleetBut(fleet, 1, {
-          tasks: new Set([workTask(1, "Cancelled")]),
+          tasks: new Set([workTask(2, 1, "Cancelled")]),
         }),
       ),
     ),
@@ -244,38 +245,43 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
       config,
       stateView(
         fleetBut(fleet, 1, {
-          record: [workTask(1, "Passed")],
-          spawned: 1,
-          tasks: new Set([workOutstanding(1)]),
+          tasks: new Set([workOutstanding(2, 2)]),
         }),
       ),
     ),
-    "one live work task still sits directly above the retired record",
+    "the live work task names the cycle the counter says is running",
   );
   assert.ok(
     !tasksWellFormed(
       config,
-      stateView(fleetBut(fleet, 0, { tasks: new Set([workOutstanding(5)]) })),
+      stateView(
+        fleetBut(fleet, 0, { tasks: new Set([workOutstanding(1, 2)]) }),
+      ),
     ),
     "a settled ticket carries no live task state",
   );
 });
 
+/** A ticket whose one work cycle has passed and whose stage is now running `tasks`. */
+const evaluating = (tasks: ReadonlySet<Task>): TicketGraph =>
+  graphOf([
+    ticketOn(config, {
+      phase: "Evaluation",
+      record: [workTask(1, 1, "Passed")],
+      tasks,
+      workCyclesStarted: 1,
+      spawned: 3,
+    }),
+  ]);
+
 test("tasksWellFormed rejects an eval stage the program is not running", () => {
-  const evaluating = (tasks: ReadonlySet<Task>): TicketGraph =>
-    graphOf([
-      ticketOn(config, {
-        phase: "Evaluation",
-        record: [workTask(1, "Passed")],
-        tasks,
-        spawned: 3,
-      }),
-    ]);
   assert.ok(
     tasksWellFormed(
       config,
       stateView(
-        evaluating(new Set([evalOutstanding(2, 0), evalOutstanding(3, 0)])),
+        evaluating(
+          new Set([evalOutstanding(1, 1, 0, 1), evalOutstanding(1, 1, 0, 2)]),
+        ),
       ),
     ),
   );
@@ -283,16 +289,20 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
     !tasksWellFormed(
       config,
       stateView(
-        evaluating(new Set([evalOutstanding(7, 0), evalOutstanding(8, 0)])),
+        evaluating(
+          new Set([evalOutstanding(1, 2, 0, 1), evalOutstanding(1, 2, 0, 2)]),
+        ),
       ),
     ),
-    "the live ids are the contiguous run directly above the retired record",
+    "the live evaluators judge the work cycle the counter says was run",
   );
   assert.ok(
     !tasksWellFormed(
       config,
       stateView(
-        evaluating(new Set([evalOutstanding(2, 5), evalOutstanding(3, 5)])),
+        evaluating(
+          new Set([evalOutstanding(1, 1, 5, 1), evalOutstanding(1, 1, 5, 2)]),
+        ),
       ),
     ),
     "the stage index has to index into the ticket's own program",
@@ -300,7 +310,7 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
   assert.ok(
     !tasksWellFormed(
       config,
-      stateView(evaluating(new Set([evalOutstanding(2, 0)]))),
+      stateView(evaluating(new Set([evalOutstanding(1, 1, 0, 1)]))),
     ),
     "the set is exactly the stage's declared width",
   );
@@ -309,7 +319,21 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
       config,
       stateView(
         evaluating(
-          new Set([evalTask(2, 0, "Cancelled"), evalOutstanding(3, 0)]),
+          new Set([evalOutstanding(1, 1, 0, 1), evalOutstanding(1, 1, 0, 3)]),
+        ),
+      ),
+    ),
+    "the evaluators are one to the fan-out, so a gap in them is not a stage",
+  );
+  assert.ok(
+    !tasksWellFormed(
+      config,
+      stateView(
+        evaluating(
+          new Set([
+            evalTask(1, 1, 0, 1, "Cancelled"),
+            evalOutstanding(1, 1, 0, 2),
+          ]),
         ),
       ),
     ),
@@ -317,30 +341,31 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
   );
 });
 
-test("recordWellFormed rejects a log that is not the resolved history in identity order", () => {
+test("recordWellFormed rejects a log that is not this ticket's settled history", () => {
   const finalizing = (record: readonly Task[]): TicketGraph =>
     graphOf([
       ticketOn(config, {
         phase: "Finalization",
         record,
+        workCyclesStarted: 1,
         spawned: record.length,
       }),
     ]);
   assert.ok(
     !recordWellFormed(
       config,
-      stateView(finalizing([workTask(2, "Passed"), workTask(1, "Passed")])),
+      stateView(finalizing([workTask(2, 1, "Passed")])),
     ),
-    "entry i carries id i plus one: the chronological log is the identity order",
+    "an identity names the ticket it belongs to, and the record holds no other's",
   );
   assert.ok(
-    !recordWellFormed(config, stateView(finalizing([workOutstanding(1)]))),
+    !recordWellFormed(config, stateView(finalizing([workOutstanding(1, 1)]))),
     "nothing retired is still outstanding",
   );
   assert.ok(
     !recordWellFormed(
       config,
-      stateView(finalizing([evalTask(1, 5, "Passed")])),
+      stateView(finalizing([evalTask(1, 1, 5, 1, "Passed")])),
     ),
     "programs are immutable, so a retired stage index never dangles",
   );
@@ -354,7 +379,7 @@ test("recordMonotone rejects a record that shrank, was rewritten, or lost its ti
     !recordMonotone(config, { ...healthy, pre: healthy.post, post: shorter }),
   );
   const rewritten = fleetBut(fleet, 2, {
-    record: [workTask(1, "Failed"), ...kept.slice(1)],
+    record: [workTask(3, 1, "Failed"), ...kept.slice(1)],
   });
   assert.ok(
     !recordMonotone(config, { ...healthy, pre: healthy.post, post: rewritten }),
@@ -366,7 +391,7 @@ test("recordMonotone rejects a record that shrank, was rewritten, or lost its ti
     "tickets are never deleted",
   );
   const grown = fleetBut(fleet, 2, {
-    record: [...kept, workTask(5, "Passed")],
+    record: [...kept, workTask(3, 2, "Passed")],
   });
   assert.ok(
     recordMonotone(config, { ...healthy, pre: healthy.post, post: grown }),
@@ -387,7 +412,33 @@ test("idsAccounted rejects the task set a decider dropped instead of retiring", 
     "the surviving state is well-formed, which is why this needs its own invariant",
   );
   assert.ok(recordWellFormed(config, stateView(dropped)));
+  const uncounted = graphOf([
+    ticketOn(config, {
+      phase: "Finalization",
+      record: [workTask(1, 1, "Passed")],
+      spawned: 1,
+    }),
+  ]);
+  assert.ok(
+    !idsAccounted(config, stateView(uncounted)),
+    "the work-cycle counter a spawn mints from is what the work tasks show",
+  );
   assert.ok(idsAccounted(config, healthy));
+});
+
+test("taskIdentitiesValid rejects a live task whose identity counts from zero", () => {
+  const zeroth = graphOf([
+    ticketOn(config, {
+      phase: "Work",
+      tasks: new Set([workOutstanding(1, 0)]),
+      spawned: 1,
+    }),
+  ]);
+  assert.ok(
+    !taskIdentitiesValid(config, stateView(zeroth)),
+    "the contract counts cycles, stages and evaluators from one",
+  );
+  assert.ok(taskIdentitiesValid(config, healthy));
 });
 
 test("programsWellFormed rejects a program no release could have carried", () => {

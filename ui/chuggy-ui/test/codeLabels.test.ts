@@ -84,7 +84,7 @@ test("the wall a reader met on ticket 21 reads as a noun and a fragment", () => 
   );
   expect(
     escalationDetailLine("EvaluationFailureEscalated", {
-      lastSet: { taskKind: "Evaluation", stage: 0, verdict: "Failed" },
+      lastSet: { taskKind: "Evaluation", stage: 1, verdict: "Failed" },
       stageCount: 2,
     }),
   ).toBe("Stage 1 of 2 failed");

@@ -21,9 +21,9 @@
  * supersedes the rest is the interpreter's to say, so each draw is ordered by
  * descending task number: the latest spawn's rows are the ones a ceiling can
  * never truncate, and the rows a truncation drops are the superseded ones the
- * decision was going to discard anyway. The task number is the ticket-local
- * task id the domain mints, and every spawn's ids continue the ticket's
- * sequential history, so descending task order is descending spawn order.
+ * decision was going to discard anyway. The task number is the wire's name
+ * for a task rather than what the machine calls it, and each spawn's numbers
+ * continue the ticket's, so descending task order is descending spawn order.
  *
  * EVERY ONE OF THOSE SORTS NAMES THE BIGINT AND NOT AN OUTPUT COLUMN. A bare
  * name in `ORDER BY` binds to the select list first, and the work draw renders

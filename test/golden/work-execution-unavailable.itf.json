@@ -51,7 +51,7 @@
             "#tup": []
           }
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -121,7 +121,7 @@
             }
           ]
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -191,6 +191,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ]
@@ -233,7 +236,7 @@
             "#tup": []
           }
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -328,6 +331,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ]
@@ -374,7 +380,7 @@
             }
           ]
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -446,6 +452,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ],
@@ -496,6 +505,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ]
@@ -538,7 +550,7 @@
             "#tup": []
           }
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -635,13 +647,15 @@
               "tasks": {
                 "#set": [
                   {
-                    "id": {
-                      "#bigint": "1"
-                    },
-                    "kind": {
+                    "identity": {
                       "tag": "WorkTask",
                       "value": {
-                        "#tup": []
+                        "cycle": {
+                          "#bigint": "1"
+                        },
+                        "ticket": {
+                          "#bigint": "3"
+                        }
                       }
                     },
                     "state": {
@@ -652,6 +666,9 @@
                     }
                   }
                 ]
+              },
+              "workCyclesStarted": {
+                "#bigint": "1"
               }
             }
           ],
@@ -702,6 +719,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ]
@@ -744,7 +764,7 @@
             "#tup": []
           }
         },
-        "tid": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -836,13 +856,15 @@
               ],
               "record": [
                 {
-                  "id": {
-                    "#bigint": "1"
-                  },
-                  "kind": {
+                  "identity": {
                     "tag": "WorkTask",
                     "value": {
-                      "#tup": []
+                      "cycle": {
+                        "#bigint": "1"
+                      },
+                      "ticket": {
+                        "#bigint": "3"
+                      }
                     }
                   },
                   "state": {
@@ -861,6 +883,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "1"
               }
             }
           ],
@@ -911,6 +936,9 @@
               },
               "tasks": {
                 "#set": []
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
               }
             }
           ]

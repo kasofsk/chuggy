@@ -22,16 +22,12 @@ import type {
   TicketGraph,
   StepRecord,
   Task,
+  TaskIdentity,
   Ticket,
   Verdict,
 } from "../../src/domain/generated/modelTypes.ts";
-import {
-  asTaskId,
-  asTicketId,
-  type TaskId,
-  type TicketId,
-} from "../../src/domain/ids.ts";
-import { tasksInIdOrder } from "../../src/domain/task.ts";
+import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
+import { tasksInOrdinalOrder } from "../../src/domain/task.ts";
 import { describe, encodeValue, type ItfValue } from "./decode.ts";
 
 /**
@@ -86,11 +82,6 @@ export function decodeStepRecord(value: ItfValue): StepRecord {
 /** A drawn ticket id, branded at the boundary it enters through. */
 export function decodeTicketId(value: ItfValue): TicketId {
   return asTicketId(Number(itfToWire(value)));
-}
-
-/** A drawn task id, branded at the boundary it enters through. */
-export function decodeTaskId(value: ItfValue): TaskId {
-  return asTaskId(Number(itfToWire(value)));
 }
 
 /** A drawn value of any model sum or record, read through its own decoder. */
@@ -175,10 +166,34 @@ export function encodeProgram(program: Ticket["program"]): ItfValue {
   );
 }
 
+/** The contract's identity, whichever arm it is, with its own record inside. */
+export function encodeTaskIdentity(identity: TaskIdentity): ItfValue {
+  switch (identity.type) {
+    case "WorkTask":
+      return encodeVariant(
+        "WorkTask",
+        encodeRecord([
+          ["ticket", encodeInt(identity.value.ticket)],
+          ["cycle", encodeInt(identity.value.cycle)],
+        ]),
+      );
+    case "EvaluationTask":
+      return encodeVariant(
+        "EvaluationTask",
+        encodeRecord([
+          ["ticket", encodeInt(identity.value.ticket)],
+          ["workCycle", encodeInt(identity.value.workCycle)],
+          ["stage", encodeInt(identity.value.stage)],
+          ["generation", encodeInt(identity.value.generation)],
+          ["evaluator", encodeInt(identity.value.evaluator)],
+        ]),
+      );
+  }
+}
+
 function encodeTask(task: Task): ItfValue {
   return encodeRecord([
-    ["id", encodeInt(task.id)],
-    ["kind", encodeSum(task.kind, (stage: number) => encodeInt(stage))],
+    ["identity", encodeTaskIdentity(task.identity)],
     [
       "state",
       encodeSum(task.state, (outcome: string) => encodeNullary(outcome)),
@@ -196,10 +211,11 @@ function encodeTicket(ticket: Ticket): ItfValue {
       "tasks",
       {
         kind: "set",
-        elements: tasksInIdOrder(ticket.tasks).map(encodeTask),
+        elements: tasksInOrdinalOrder(ticket.tasks).map(encodeTask),
       },
     ],
     ["record", ticket.record.map(encodeTask)],
+    ["workCyclesStarted", encodeInt(ticket.workCyclesStarted)],
     ["spawned", encodeInt(ticket.spawned)],
     ["escalation", encodeNullary(ticket.escalation)],
     ["completions", encodeInt(ticket.completions)],

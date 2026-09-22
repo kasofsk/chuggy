@@ -63,6 +63,7 @@
 /// This header describes the machine; it does not narrate how the machine
 /// came to be.
 module chuggy_domain {
+  import task_contract.* from "./task-contract/task"
   import chuggy_ticket.* from "./ticket"
 
   /// Maximum number of released tickets. Ticket identities come from the
@@ -124,6 +125,7 @@ module chuggy_domain {
     artifact: NoArtifact,
     tasks: Set(),
     record: [],
+    workCyclesStarted: 0,
     spawned: 0,
     escalation: NoEscalation,
     completions: 0
@@ -317,13 +319,15 @@ module chuggy_domain {
   pure def isBlockedIn(c: TicketGraph, j: int): bool =
     c.tickets.get(j).phase == Pending and not(depsDoneIn(c, j))
 
-  /// Every task id ticket j has EVER issued — the delivery range the
-  /// firstTaskId, so this is exactly firstTaskId..nextTaskId-1). Shared,
+  /// Every task identity ticket j has EVER issued — retired into the record
+  /// or live in the set, which is all of them (idsAccounted). Shared,
   /// like dispatchableIn, by the `taskDone` action's nondet draw and the
   /// witness drivers' guards (tests/chuggy_witness_test.qnt), so the
   /// range is referenced on both sides, never copied.
-  pure def deliverableTaskIds(c: TicketGraph, j: int): Set[int] =
-    firstTaskId.to(nextTaskId(c.tickets.get(j)) - 1)
+  pure def deliverableTasksIn(c: TicketGraph, j: int): Set[TaskIdentity] =
+    val jb = c.tickets.get(j)
+    jb.record.foldl(Set(), (acc, t) => acc.union(Set(t.identity)))
+      .union(jb.tasks.map(t => t.identity))
 
   /// Park a ticket on the human desk, naming the wall (the termination
   /// requirement commits the terminal, not the names); where Retry resumes
@@ -341,7 +345,9 @@ module chuggy_domain {
 
   /// Ready -> Work: launch a cycle for the ticket THE SELECTOR PROPOSED.
   /// Work is ONE task-set phase (one work task per cycle; Work is not
-  /// staged), ids sequential within the ticket.
+  /// staged), and the cycle counter — with `stageGeneration` for an
+  /// evaluation — is what makes each identity a ticket names one no earlier
+  /// task of it ever carried.
   ///
   /// THE AGENTIC SELECTOR: this decider makes the accepted dispatch
   /// proposal first-class — j
@@ -360,26 +366,27 @@ module chuggy_domain {
   pure def decideDispatch(c: TicketGraph, j: int): Decision =
     val jb = c.tickets.get(j)
     move(
-      withTicket(c, j, spawnWork(jb)),
+      withTicket(c, j, spawnWork(j, jb)),
       j, Work, "dispatch", ["SpawnWorkTasks"])
 
-  /// A task-completion event for task `tid` of ticket j (Work or
+  /// A task-completion event for the task `task` names of ticket j (Work or
   /// Evaluation — one decider for both phases' task sets). First write
   /// wins: if the task is not OUTSTANDING IN THE LIVE SET, this is a duplicate
   /// or stale delivery and the decision is a state-identical no-op — a
   /// duplicate an at-least-once fabric cannot be asked not to send. The
   /// stale arm is structural:
-  /// task ids are unique across the ticket's whole history, so a completion
-  /// for a task of an earlier stage or incarnation names an id that is
-  /// already RETIRED into the record — no live match, no-op BY IDENTITY
+  /// task identities are unique across the ticket's whole history, so a
+  /// completion for a task of an earlier stage or incarnation names one that
+  /// is already RETIRED into the record — no live match, no-op BY IDENTITY
   /// (had to absorb cross-incarnation staleness into the nondet
-  /// verdict of a respawned same-id task; that argument is now needed for
-  /// nothing). No phase transition either way — task records resolve
-  /// inside the phase.
-  pure def decideTaskDone(c: TicketGraph, j: int, tid: int, v: Verdict): Decision =
+  /// verdict of a respawned task at the same name; that argument is now
+  /// needed for nothing). No phase transition either way — task records
+  /// resolve inside the phase.
+  pure def decideTaskDone(
+      c: TicketGraph, j: int, task: TaskIdentity, v: Verdict): Decision =
     { rec: { label: "task-done", transitions: [], effects: []},
       post: withTicket(c, j, { ...c.tickets.get(j),
-        tasks: resolveTask(c.tickets.get(j).tasks, tid,
+        tasks: resolveTask(c.tickets.get(j).tasks, task,
           match v { | Pass => Passed | Fail => Failed }) }) }
 
   /// The Work task set fully resolved: reduce the phase, at CYCLE level
@@ -403,7 +410,7 @@ module chuggy_domain {
       val fan = retired.program[0].fanout
       move(
         withTicket(c, j,
-          { ...spawnOn(retired, EvaluationTask(0), fan), artifact: ProducedArtifact(retired.spawned) }),
+          { ...spawnEvalStage(j, retired, 0, fan), artifact: ProducedArtifact(retired.spawned) }),
         j, Evaluation, "work-passed", ["SpawnEvalTasks"])
     else
       escalate(c, j, WorkFailureEscalated,
@@ -445,7 +452,7 @@ module chuggy_domain {
       if (s + 1 < jb.program.length())
         val fan = retired.program[s + 1].fanout
         move(
-          withTicket(c, j, spawnOn(retired, EvaluationTask(s + 1), fan)),
+          withTicket(c, j, spawnEvalStage(j, retired, s + 1, fan)),
           j, Evaluation, "eval-stage-passed", ["SpawnEvalTasks"])
       else
         // THE PROGRAM PASSED, so the ticket finalizes. Every ticket takes
@@ -459,7 +466,7 @@ module chuggy_domain {
       match onFailure {
         | ReworkEvaluationFailure =>
           move(
-            withTicket(c, j, spawnWork(retired)),
+            withTicket(c, j, spawnWork(j, retired)),
             j, Work, "rework-started eval_failure", ["SpawnWorkTasks"])
         | EscalateEvaluationFailure =>
           escalate(c, j, EvaluationFailureEscalated,
@@ -489,7 +496,7 @@ module chuggy_domain {
   /// report failure is the finalizer's own business, below this grain.
   pure def finalizerFailure(c: TicketGraph, j: int): Decision =
     val jb = c.tickets.get(j)
-    move(withTicket(c, j, spawnWork(jb)),
+    move(withTicket(c, j, spawnWork(j, jb)),
       j, Work, "rework-started finalization_needs_work", ["SpawnWorkTasks"])
 
   /// THE COMPLETION: the ticket reaches Done. Native desk state is updated
@@ -565,13 +572,13 @@ module chuggy_domain {
     val jb = c.tickets.get(j)
     val resumed = { ...jb, escalation: NoEscalation }
     val workResume =
-      move(withTicket(c, j, spawnWork(resumed)),
+      move(withTicket(c, j, spawnWork(j, resumed)),
         j, Work, "ticket-resumed", ["SpawnWorkTasks"])
     match resumeOf(jb.escalation) {
       | ResumeWork => workResume
       | ResumeRework => workResume
       | ResumeEvaluation =>
-        move(withTicket(c, j, spawnOn(resumed, EvaluationTask(0), jb.program[0].fanout)),
+        move(withTicket(c, j, spawnEvalStage(j, resumed, 0, jb.program[0].fanout)),
           j, Evaluation, "ticket-resumed", ["SpawnEvalTasks"])
       | ResumeFinalization =>
         move(withTicket(c, j, resumed), j, Finalization, "ticket-resumed", ["RunFinalizer"])
@@ -641,7 +648,7 @@ module chuggy_domain {
   // unblock cascade disappears entirely — there is no Blocked->Ready edge
   // to model or to get wrong. (The open-human-task flag is derived too:
   // ticket.qnt hasOpenHumanTask; the eval-stage index is derived from
-  // the live set's kind marks: ticket.qnt evalStage.) The model extends them
+  // the live set's identities: ticket.qnt evalStage.) The model extends them
   // for free: a Pending dependency is simply not Done and blocks with no
   // new machinery; the pure bodies live with
   // the deciders (isReadyIn/isBlockedIn) so unit tests can pin exactly
@@ -750,15 +757,15 @@ module chuggy_domain {
   /// incarnation). One action models all of it because the fabric is
   /// at-least-once: the machine cannot choose to not receive duplicates.
   ///
-  /// Duplicate-adversary SCOPE: the tid
-  /// range below (deliverableTaskIds — the shared definition the witness
-  /// drivers reference too) is the ticket's ENTIRE task history — ids are sequential
-  /// within the ticket and never reused, so a
+  /// Duplicate-adversary SCOPE: the draw
+  /// below (deliverableTasksIn — the shared definition the witness
+  /// drivers reference too) is the ticket's ENTIRE task history — identities
+  /// are unique within the ticket and never reused, so a
   /// stale completion from an earlier STAGE or incarnation names a retired
-  /// id and no-ops BY IDENTITY (decideTaskDone finds no live outstanding
-  /// match). This RETIRES the weaker absorption argument (a stale
-  /// same-id completion was indistinguishable from a fresh nondet verdict
-  /// on the respawned set) — staleness is now absorbed structurally, and
+  /// identity and no-ops BY IDENTITY (decideTaskDone finds no live
+  /// outstanding match). This RETIRES the weaker absorption argument (a stale
+  /// completion at the same name was indistinguishable from a fresh nondet
+  /// verdict on the respawned set) — staleness is now absorbed structurally, and
   /// the only remaining first-write-wins case is a duplicate delivery for
   /// a LIVE resolved task. A stale TICKET COMPLETION still implies a success
   /// occurred, and Done is absorbing (completionRedelivery). The observed/actual
@@ -776,9 +783,9 @@ module chuggy_domain {
   action taskDone = all {
     taskPhaseTickets.size() > 0,
     nondet j = taskPhaseTickets.oneOf()
-    nondet tid = tickets.get(j).tasks.filter(t => t.state == Outstanding).map(t => t.id).oneOf()
+    nondet task = tickets.get(j).tasks.filter(t => t.state == Outstanding).map(t => t.identity).oneOf()
     nondet v = Set(Pass, Fail).oneOf()
-    apply(decideTaskDone(graph, j, tid, v))
+    apply(decideTaskDone(graph, j, task, v))
   }
 
   action workReduce = all {
@@ -914,39 +921,48 @@ module chuggy_domain {
 
   /// The LIVE task set is exactly the current phase's anatomy (this is
   /// also the STAGE-INDEX SANITY invariant):
-  ///   - Work: the single work set — one WorkTask;
-  ///   - Evaluation: ONE stage's fan-out — uniformly EvaluationTask(s) for a
-  ///     single s that indexes INTO the program (0 <= s < |program|), with
-  ///     exactly that stage's declared width (the interpreter is running
-  ///     the program as written, not improvising);
+  ///   - Work: the single work set — one WorkTask of the cycle just started;
+  ///   - Evaluation: ONE stage's fan-out — uniformly EvaluationTask at a
+  ///     single stage that indexes INTO the program (0 <= s < |program|),
+  ///     judging the current work cycle, with exactly that stage's declared
+  ///     width and its evaluators numbered 1..width (the interpreter is
+  ///     running the program as written, not improvising);
   ///   - every other phase: empty — dead live-task state is never carried
   ///     (derive-don't-store spirit; a Pending has not spawned,
   ///     Revoked runs nothing).
-  /// In the task phases the live ids are the contiguous run directly above
-  /// the retired record (identity is sequential within the ticket — the
-  /// at-least-once-by-identity argument needs exactly this), and Cancelled
-  /// never appears live (it is a retirement mark, not an outcome events
-  /// can deliver).
+  /// Cancelled never appears live (it is a retirement mark, not an outcome
+  /// events can deliver).
   val tasksWellFormed: bool = liveTickets.forall(j =>
     val jb = tickets.get(j)
-    val start = jb.record.length() + firstTaskId
     if (jb.phase == Work) and {
       jb.tasks.size() == 1,
-      jb.tasks.map(t => t.id) == Set(start),
-      jb.tasks.forall(t => t.kind == WorkTask and t.state != Resolved(Cancelled))
+      jb.tasks.forall(t => and {
+        t.identity == WorkTask({ ticket: j, cycle: jb.workCyclesStarted }),
+        t.state != Resolved(Cancelled)
+      })
     } else if (jb.phase == Evaluation)
       val s = evalStage(jb.tasks)
       and {
         s >= 0,
         s < jb.program.length(),
-        jb.tasks.forall(t => t.kind == EvaluationTask(s) and t.state != Resolved(Cancelled)),
         jb.tasks.size() == jb.program[s].fanout,
-        jb.tasks.map(t => t.id) == start.to(start + jb.tasks.size() - 1)
+        jb.tasks.forall(t =>
+          match t.identity {
+            | WorkTask(_) => false
+            | EvaluationTask(e) => and {
+                e.ticket == j,
+                e.workCycle == jb.workCyclesStarted,
+                e.stage == s + 1,
+                t.state != Resolved(Cancelled)
+              }
+          }),
+        jb.tasks.map(t => taskOrdinal(t.identity)) == 1.to(jb.tasks.size())
       }
     else jb.tasks == Set())
 
-  /// THE RETAINED RECORD is well-formed: entry i carries id i+1
-  /// (the chronological log IS the identity order, 1-indexed), nothing
+  /// THE RETAINED RECORD is well-formed: every entry belongs to the ticket
+  /// holding it (retirement moves a set onto its own record and nowhere
+  /// else), nothing
   /// retired is still
   /// outstanding — the record is the RESOLVED log, every entry Resolved
   /// (Passed/Failed by verdict, Cancelled by revoke; the
@@ -957,19 +973,20 @@ module chuggy_domain {
   val recordWellFormed: bool = liveTickets.forall(j =>
     val jb = tickets.get(j)
     and {
-      jb.record.indices().forall(i => jb.record[i].id == i + firstTaskId),
+      jb.record.indices().forall(i => taskOwner(jb.record[i].identity) == j),
       jb.record.indices().forall(i => jb.record[i].state != Outstanding),
       jb.record.indices().forall(i =>
-        match jb.record[i].kind {
-          | WorkTask => true
-          | EvaluationTask(s) => s >= 0 and s < jb.program.length()
+        match jb.record[i].identity {
+          | WorkTask(_) => true
+          | EvaluationTask(e) =>
+            e.stage - 1 >= 0 and e.stage - 1 < jb.program.length()
         })
     })
 
   /// RETAINED-RECORD MONOTONICITY: the task record is append-only
   /// history — against the previous state (ghost prevRecords), every ticket's
   /// record still starts with exactly what it was: nothing shrinks,
-  /// nothing settled is ever rewritten (outcome, kind, or id). Checked
+  /// nothing settled is ever rewritten (its identity or its outcome). Checked
   /// step-wise against the ghost; with it, "retained" is a theorem, not a
   /// convention. (Tickets are never deleted, so prevRecords' domain always
   /// survives into liveTickets.)
@@ -984,15 +1001,36 @@ module chuggy_domain {
   /// spawned is STILL somewhere — retired in the record or live in the
   /// set. The ghost spawn counter (ticket.qnt Ticket.spawned, bumped by
   /// every spawnOn) equals record + live exactly, which makes
-  /// history-unique sequential identity a machine-checked theorem: a
+  /// history-unique identity a machine-checked theorem: a
   /// mutant decider that DROPPED a task set instead of retiring it (e.g.
   /// escalate clearing tasks without the retireLive) would leave spawned
   /// strictly greater in the very next state — invisible to
   /// tasksWellFormed/recordWellFormed (both look at surviving state, not
   /// at what vanished), caught here.
+  ///
+  /// THE WORK-CYCLE COUNTER gets the same treatment: it is stored so a spawn
+  /// site can mint from it, and held here against the work tasks the ticket
+  /// has to show for it, so a cycle counted twice or not at all is caught in
+  /// the state that did it rather than in the identity it later mints.
   val idsAccounted: bool = liveTickets.forall(j =>
-    tickets.get(j).spawned ==
-      tickets.get(j).record.length() + tickets.get(j).tasks.size())
+    val jb = tickets.get(j)
+    and {
+      jb.spawned == jb.record.length() + jb.tasks.size(),
+      jb.workCyclesStarted ==
+        jb.record.foldl(Set(), (acc, t) => acc.union(Set(t.identity)))
+          .union(jb.tasks.map(t => t.identity))
+          .filter(i => match i { | WorkTask(_) => true | EvaluationTask(_) => false })
+          .size()
+    })
+
+  /// THE CONTRACT'S OWN PREDICATE over every task this machine is currently
+  /// waiting on (task-contract/task.qnt taskIdentityValid). It is the one
+  /// claim the contract makes about an identity, so the machine is held to
+  /// it where the identities are minted rather than where they are read: a
+  /// spawn that drew a cycle, stage, generation or evaluator from zero would
+  /// be caught in the state that spawned it.
+  val taskIdentitiesValid: bool = liveTickets.forall(j =>
+    tickets.get(j).tasks.forall(t => taskIdentityValid(t.identity)))
 
   /// PROGRAM WELL-FORMEDNESS: every live ticket carries a well-formed
   /// eval program — non-empty, at most MAX_STAGES stages, every fan-out in
@@ -1118,6 +1156,7 @@ module chuggy_domain {
     recordWellFormed,
     recordMonotone,
     idsAccounted,
+    taskIdentitiesValid,
     programsWellFormed,
     depsAcyclic,
     ticketIdsWellFormed,

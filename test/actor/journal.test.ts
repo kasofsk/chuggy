@@ -53,7 +53,8 @@ import {
   decideResumeTicket,
   decideRevoke,
 } from "../../src/domain/deciders.ts";
-import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
+import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   flatProgram,
@@ -109,7 +110,7 @@ test("a decision that was never enabled is refused, cleanly, at any tampered pay
     !decisionEventEnabled(
       config,
       genesis,
-      taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+      taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
     ),
   );
   assert.ok(
@@ -164,8 +165,8 @@ test("the world arithmetic: emission closes the gap to the book, an orphan pushe
 });
 
 test("the task result reference is journal data: it names no part of the decision", () => {
-  const real = taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult);
-  const other = taskDoneEvent(id(1), asTaskId(1), "Pass", {
+  const real = taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult);
+  const other = taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", {
     manifest: 2,
     digest: 2,
     schema: 1,
@@ -178,14 +179,14 @@ test("the task result reference is journal data: it names no part of the decisio
 });
 
 test("a task already resolved is no longer outstanding, so a second report never journals", () => {
-  const first = taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult);
+  const first = taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult);
   assert.ok(decisionEventEnabled(config, d2.post, first));
   const resolved = execDecisionEvent(d2.post, first).post;
   assert.ok(
     !decisionEventEnabled(
       config,
       resolved,
-      taskDoneEvent(id(1), asTaskId(1), "Fail", plainResult),
+      taskDoneEvent(id(1), workTaskOf(1, 1), "Fail", plainResult),
     ),
   );
 });
@@ -214,12 +215,12 @@ const toPending: readonly DecisionEvent[] = [event1];
 const toWorking: readonly DecisionEvent[] = [...toPending, event2];
 const toEvaluating: readonly DecisionEvent[] = [
   ...toWorking,
-  taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+  taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
   workReduceEvent(id(1)),
 ];
 const toFinalizing: readonly DecisionEvent[] = [
   ...toEvaluating,
-  taskDoneEvent(id(1), asTaskId(2), "Pass", plainResult),
+  taskDoneEvent(id(1), evaluationTaskOf(1, 1, 0, 1, 1), "Pass", plainResult),
   evalReduceEvent(id(1), "ReworkEvaluationFailure"),
 ];
 const toDone: readonly DecisionEvent[] = [
@@ -280,12 +281,12 @@ const refusals: readonly Refusal[] = [
   {
     conjunct: "TaskDone/taskPhaseIn",
     at: pending,
-    event: taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+    event: taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
   },
   {
     conjunct: "TaskDone/manifest",
     at: working,
-    event: taskDoneEvent(id(1), asTaskId(1), "Pass", {
+    event: taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", {
       ...plainResult,
       manifest: 0,
     }),
@@ -293,7 +294,7 @@ const refusals: readonly Refusal[] = [
   {
     conjunct: "TaskDone/digest",
     at: working,
-    event: taskDoneEvent(id(1), asTaskId(1), "Pass", {
+    event: taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", {
       ...plainResult,
       digest: 0,
     }),
@@ -301,7 +302,7 @@ const refusals: readonly Refusal[] = [
   {
     conjunct: "TaskDone/schema",
     at: working,
-    event: taskDoneEvent(id(1), asTaskId(1), "Pass", {
+    event: taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", {
       ...plainResult,
       schema: 0,
     }),
@@ -309,7 +310,7 @@ const refusals: readonly Refusal[] = [
   {
     conjunct: "TaskDone/outstandingTaskIn",
     at: working,
-    event: taskDoneEvent(id(1), asTaskId(9), "Pass", plainResult),
+    event: taskDoneEvent(id(1), workTaskOf(1, 9), "Pass", plainResult),
   },
   {
     conjunct: "WorkReduce/reducibleWorkIn",

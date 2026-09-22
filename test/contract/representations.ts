@@ -152,6 +152,7 @@ export const executionSummary: ExecutionSummary = {
   ticket: asTicketId(3),
   task: asTaskId(1),
   taskKind: "Work",
+  identity: { type: "WorkTask", value: { ticket: 3, cycle: 1 } },
   cluster: asClusterId("cluster-one"),
   configurationRevision: revision,
   requirementIdentity: "requirement-one",

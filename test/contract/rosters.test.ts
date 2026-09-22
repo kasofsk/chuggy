@@ -109,6 +109,11 @@ import {
   phaseTags,
   resumeTags,
 } from "../../src/domain/generated/modelTypes.ts";
+import type { TaskIdentity as ModelTaskIdentity } from "../../src/domain/generated/modelTypes.ts";
+import {
+  taskIdentitySchema,
+  type TaskIdentity as WireTaskIdentity,
+} from "../../src/contract/responses.ts";
 import {
   allAttemptEvidence,
   allAttemptStates,
@@ -247,6 +252,35 @@ test("the phase and scheduler rosters are the model's", () => {
   );
 });
 
+/**
+ * The contract's own spelling of a task identity, held to the model's codec:
+ * the two constructors, both cycle field names and every counter. A field the
+ * model renames or adds and the contract does not is a page the console reads
+ * and a value it never sees.
+ */
+test("the wire's task identity is the model's, arm for arm and field for field", () => {
+  const work: ModelTaskIdentity = {
+    type: "WorkTask",
+    value: { ticket: 3, cycle: 2 },
+  };
+  const evaluation: ModelTaskIdentity = {
+    type: "EvaluationTask",
+    value: { ticket: 3, workCycle: 2, stage: 1, generation: 1, evaluator: 4 },
+  };
+  for (const identity of [work, evaluation]) {
+    assert.deepEqual(taskIdentitySchema.parse(identity), identity);
+  }
+  const asTheModels = (identity: WireTaskIdentity): ModelTaskIdentity =>
+    identity;
+  const asTheWires = (identity: ModelTaskIdentity): WireTaskIdentity =>
+    identity;
+  assert.deepEqual(
+    asTheModels(taskIdentitySchema.parse(evaluation)),
+    evaluation,
+  );
+  assert.deepEqual(asTheWires(work), work);
+});
+
 test("the wire pairs each action kind with the answers the interpreter admits", () => {
   assert.deepEqual(sorted(nativeActionKinds), sorted(allNativeActionKinds));
   for (const kind of allNativeActionKinds) {
@@ -272,7 +306,6 @@ test("the requirement rosters are exhaustive over the interpreter's unions", () 
     IosSimulatorTesting: true,
   };
   const sources: Record<MaterializedRequirementSource, true> = {
-    ExplicitTask: true,
     TaskKindDefault: true,
     TicketDefault: true,
     PlatformDefault: true,

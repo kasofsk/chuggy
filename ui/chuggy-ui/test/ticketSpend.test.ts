@@ -14,11 +14,13 @@ import type { Cycle, Ledger } from "../app/core/ticketLedger.ts";
 import { ticketLedger } from "../app/core/ticketLedger.ts";
 import { runSpendOf } from "../app/core/runTotals.ts";
 import {
+  evalIdentity,
   ledgerExecution,
   ledgerPage,
   ticket21Authoring,
   ticket21Parked,
   ticket21Resumed,
+  workIdentity,
   type ExecutionShape,
 } from "./ticketLedgerFixture.ts";
 
@@ -67,15 +69,13 @@ test("a fan-out one of whose tasks has ended has not ended", () => {
       {
         execution: "execution-bb-1",
         task: 1,
-        taskKind: "Evaluation",
-        stage: 0,
+        identity: evalIdentity(1, 1, 1, 1),
         outcome: "Passed",
       },
       {
         execution: "execution-bb-2",
         task: 2,
-        taskKind: "Evaluation",
-        stage: 0,
+        identity: evalIdentity(1, 1, 1, 2),
         status: "Running",
       },
     ]),
@@ -101,16 +101,14 @@ function spanOfPair(
       {
         execution: "execution-bb-1",
         task: 1,
-        taskKind: "Evaluation",
-        stage: 0,
+        identity: evalIdentity(1, 1, 1, 1),
         outcome: "Passed",
         ...first,
       },
       {
         execution: "execution-bb-2",
         task: 2,
-        taskKind: "Evaluation",
-        stage: 0,
+        identity: evalIdentity(1, 1, 1, 2),
         outcome: "Passed",
         ...second,
       },
@@ -283,7 +281,7 @@ test("a set nothing measured has no totals rather than totals of zero", () => {
     {
       execution: "execution-aa-1",
       task: 1,
-      taskKind: "Work",
+      identity: workIdentity(1),
       outcome: "Passed",
     },
   ]);
@@ -297,7 +295,7 @@ test("per-model figures merge by the model that ran them", () => {
     ledgerExecution({
       execution: "execution-aa-1",
       task: 1,
-      taskKind: "Work",
+      identity: workIdentity(1),
       outcome: "Passed",
       totals: {
         turns: 3,
@@ -309,7 +307,7 @@ test("per-model figures merge by the model that ran them", () => {
     ledgerExecution({
       execution: "execution-bb-2",
       task: 2,
-      taskKind: "Work",
+      identity: workIdentity(2),
       outcome: "Passed",
       totals: {
         turns: 4,
@@ -321,7 +319,7 @@ test("per-model figures merge by the model that ran them", () => {
     ledgerExecution({
       execution: "execution-cc-3",
       task: 3,
-      taskKind: "Work",
+      identity: workIdentity(3),
       outcome: "Passed",
       totals: {
         turns: 5,
@@ -344,13 +342,13 @@ test("a rollup claims one basis only where every run priced on it", () => {
     ledgerExecution({
       execution: "execution-aa-1",
       task: 1,
-      taskKind: "Work",
+      identity: workIdentity(1),
       totals: { turns: 1, durationMs: 1, costUsdMicros: 1 },
     }),
     ledgerExecution({
       execution: "execution-bb-2",
       task: 2,
-      taskKind: "Work",
+      identity: workIdentity(2),
       totals: { turns: 1, durationMs: 1, costUsdMicros: 1 },
     }),
   ]);
@@ -359,13 +357,13 @@ test("a rollup claims one basis only where every run priced on it", () => {
     ledgerExecution({
       execution: "execution-aa-1",
       task: 1,
-      taskKind: "Work",
+      identity: workIdentity(1),
       totals: { turns: 1, durationMs: 1, costUsdMicros: 1 },
     }),
     ledgerExecution({
       execution: "execution-bb-2",
       task: 2,
-      taskKind: "Work",
+      identity: workIdentity(2),
       totals: {
         turns: 1,
         durationMs: 1,
@@ -402,28 +400,25 @@ test("one incomplete cycle is enough to make the page incomplete", () => {
     {
       execution: "execution-bb-1",
       task: 1,
-      taskKind: "Evaluation",
-      stage: 0,
+      identity: evalIdentity(1, 1, 1),
       outcome: "Failed",
     },
     {
       execution: "execution-cc-2",
       task: 2,
-      taskKind: "Work",
+      identity: workIdentity(2),
       outcome: "Passed",
     },
     {
       execution: "execution-dd-3",
       task: 3,
-      taskKind: "Evaluation",
-      stage: 0,
+      identity: evalIdentity(2, 1, 1),
       outcome: "Passed",
     },
     {
       execution: "execution-ee-4",
       task: 4,
-      taskKind: "Evaluation",
-      stage: 1,
+      identity: evalIdentity(2, 2, 1),
       outcome: "Passed",
     },
   ]);
@@ -437,8 +432,7 @@ test("a cycle whose work run the page does not hold is not complete", () => {
     {
       execution: "execution-bb-2",
       task: 2,
-      taskKind: "Evaluation",
-      stage: 0,
+      identity: evalIdentity(1, 1, 1),
       outcome: "Failed",
       totals: { turns: 1, durationMs: 1, costUsdMicros: 1 },
     },
@@ -452,14 +446,13 @@ test("a cycle with a stage row the page holds no set for is not complete", () =>
     {
       execution: "execution-aa-1",
       task: 1,
-      taskKind: "Work",
+      identity: workIdentity(1),
       outcome: "Passed",
     },
     {
       execution: "execution-cc-3",
       task: 3,
-      taskKind: "Evaluation",
-      stage: 1,
+      identity: evalIdentity(1, 2, 1),
       outcome: "Failed",
     },
   ]);
@@ -472,14 +465,13 @@ test("a set short of the fan-out its stage was authored with is not complete", (
       {
         execution: "execution-aa-1",
         task: 1,
-        taskKind: "Work",
+        identity: workIdentity(1),
         outcome: "Passed",
       },
       {
         execution: "execution-bb-2",
         task: 2,
-        taskKind: "Evaluation",
-        stage: 0,
+        identity: evalIdentity(1, 1, 1),
         outcome: "Passed",
       },
     ]),

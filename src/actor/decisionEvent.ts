@@ -56,10 +56,11 @@ import type {
   EvaluationFailureDisposition,
   FinalizationOutcome,
   StageDefinition,
+  TaskIdentity,
   TaskResultRef,
   Verdict,
 } from "../domain/generated/modelTypes.ts";
-import { asTicketId, type TaskId, type TicketId } from "../domain/ids.ts";
+import { asTicketId, type TicketId } from "../domain/ids.ts";
 
 export { decisionEventTags } from "../domain/generated/modelTypes.ts";
 export type { DecisionEvent };
@@ -94,11 +95,11 @@ export function dispatchEvent(ticket: TicketId): DecisionEvent {
 
 export function taskDoneEvent(
   ticket: TicketId,
-  tid: TaskId,
+  task: TaskIdentity,
   verdict: Verdict,
   result: TaskResultRef,
 ): DecisionEvent {
-  return { type: "TaskDone", value: { ticket, tid, verdict, result } };
+  return { type: "TaskDone", value: { ticket, task, verdict, result } };
 }
 
 export function workReduceEvent(ticket: TicketId): DecisionEvent {
@@ -153,7 +154,7 @@ export function execDecisionEvent(
       return decideTaskDone(
         graph,
         asTicketId(event.value.ticket),
-        event.value.tid as TaskId,
+        event.value.task,
         event.value.verdict,
       );
     case "WorkReduce":
@@ -205,7 +206,7 @@ export function decisionEventEnabled(
         event.value.result.manifest >= 1 &&
         event.value.result.digest >= 1 &&
         event.value.result.schema >= 1 &&
-        outstandingTaskIn(graph, id, event.value.tid)
+        outstandingTaskIn(graph, id, event.value.task)
       );
     }
     case "WorkReduce":

@@ -73,7 +73,7 @@ function summary(over: Record<string, unknown> = {}): Record<string, unknown> {
     ticket: 11,
     task: 1,
     taskKind: "Work",
-    stage: 1,
+    identity: { type: "WorkTask", value: { ticket: 11, cycle: 1 } },
     cluster: "rig",
     configurationRevision: "r1",
     requirementIdentity: "req-1",

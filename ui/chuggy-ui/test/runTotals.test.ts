@@ -11,6 +11,7 @@ import { expect, test } from "vitest";
 import type {
   ExecutionSummary,
   RunTotals,
+  TaskIdentity,
 } from "../../../src/contract/responses.ts";
 import {
   runCostLabel,
@@ -50,6 +51,20 @@ function totals(over: Partial<RunTotals> = {}): RunTotals {
   };
 }
 
+/** A work task's identity, in the cycle a case names. */
+function workIdentity(cycle: number): TaskIdentity {
+  return { type: "WorkTask", value: { ticket: 7, cycle } };
+}
+
+/** An evaluation task's identity, its stage and cycle a case names, its first
+ * generation and evaluator held constant since no case here reworks. */
+function evalIdentity(cycle: number, stage: number): TaskIdentity {
+  return {
+    type: "EvaluationTask",
+    value: { ticket: 7, workCycle: cycle, stage, generation: 1, evaluator: 1 },
+  };
+}
+
 function summary(
   execution: string,
   over: Partial<ExecutionSummary> = {},
@@ -59,6 +74,7 @@ function summary(
     ticket: 7,
     task: 1,
     taskKind: "Work",
+    identity: workIdentity(1),
     cluster: "rig",
     configurationRevision: "r1",
     requirementIdentity: "req-1",
@@ -162,15 +178,21 @@ test("a sum carries no run's own outcome labels", () => {
  * would be the one figure a reader is looking for. */
 test("a stage's total counts every execution's figures, whatever it ended as", () => {
   const rows = runStageRows([
-    summary("e1", { stage: 1, runTotals: totals({ costUsdMicros: 1_000 }) }),
+    summary("e1", {
+      taskKind: "Evaluation",
+      identity: evalIdentity(1, 1),
+      runTotals: totals({ costUsdMicros: 1_000 }),
+    }),
     summary("e2", {
-      stage: 1,
+      taskKind: "Evaluation",
+      identity: evalIdentity(1, 1),
       status: "Terminal",
       outcome: "Failed",
       runTotals: totals({ costUsdMicros: 2_000 }),
     }),
     summary("e3", {
-      stage: 1,
+      taskKind: "Evaluation",
+      identity: evalIdentity(1, 1),
       status: "Running",
       runTotals: totals({ costUsdMicros: 4_000 }),
     }),
@@ -181,23 +203,45 @@ test("a stage's total counts every execution's figures, whatever it ended as", (
   expect(rows[0]?.measured).toBe(3);
 });
 
-test("the rows are one per kind and stage, in the order the program runs them", () => {
+test("the rows are one per cycle, kind and stage, in the order the program runs them", () => {
   const rows = runStageRows([
-    summary("e1", { taskKind: "Evaluation", stage: 1 }),
-    summary("e2", { taskKind: "Work", stage: 2 }),
-    summary("e3", { taskKind: "Work", stage: 1 }),
-    summary("e4", { taskKind: "Work", stage: 1 }),
+    summary("e1", { taskKind: "Evaluation", identity: evalIdentity(1, 2) }),
+    summary("e2", { identity: workIdentity(1) }),
+    summary("e3", { taskKind: "Evaluation", identity: evalIdentity(1, 1) }),
+    summary("e4", { identity: workIdentity(1) }),
   ]);
   expect(rows.map(runStageLabel)).toEqual([
-    "work stage 1",
-    "evaluation stage 1",
-    "work stage 2",
+    "cycle 1 work",
+    "cycle 1 evaluation stage 1",
+    "cycle 1 evaluation stage 2",
   ]);
   expect(rows[0]?.executions).toBe(2);
 });
 
+test("two cycles sharing a stage number keep their totals apart", () => {
+  const rows = runStageRows([
+    summary("e1", {
+      taskKind: "Evaluation",
+      identity: evalIdentity(1, 1),
+      runTotals: totals({ costUsdMicros: 1_000 }),
+    }),
+    summary("e2", {
+      taskKind: "Evaluation",
+      identity: evalIdentity(2, 1),
+      runTotals: totals({ costUsdMicros: 5_000 }),
+    }),
+  ]);
+  expect(rows.map(runStageLabel)).toEqual([
+    "cycle 1 evaluation stage 1",
+    "cycle 2 evaluation stage 1",
+  ]);
+  expect(rows.map((row) => row.totals?.costUsdMicros)).toEqual([1_000, 5_000]);
+});
+
 test("an execution carrying no figures is counted and not measured", () => {
-  const rows = runStageRows([summary("e1", { stage: 1 })]);
+  const rows = runStageRows([
+    summary("e1", { taskKind: "Evaluation", identity: evalIdentity(1, 1) }),
+  ]);
   expect(rows[0]?.executions).toBe(1);
   expect(rows[0]?.measured).toBe(0);
   expect(rows[0]?.totals).toBeUndefined();
@@ -205,6 +249,7 @@ test("an execution carrying no figures is counted and not measured", () => {
 
 test("a row says how many executions it groups and how many were measured", () => {
   const row = {
+    cycle: 1,
     taskKind: "Work" as const,
     stage: 1,
     executions: 2,

@@ -37,7 +37,7 @@ import {
 import { recordEquals } from "../../src/actor/equality.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
-import { asTaskId } from "../../src/domain/ids.ts";
+import { evaluationTaskOf } from "../../src/domain/task.ts";
 import { encodeDecisionEvent } from "../../src/generated/model-api.ts";
 import {
   encodeEntry,
@@ -73,7 +73,12 @@ const oneOfEach: Readonly<Record<DecisionEvent["type"], DecisionEvent>> = {
   }),
   Revoke: revokeEvent(id(1)),
   Dispatch: dispatchEvent(id(1)),
-  TaskDone: taskDoneEvent(id(1), asTaskId(2), "Fail", plainResult),
+  TaskDone: taskDoneEvent(
+    id(1),
+    evaluationTaskOf(1, 1, 0, 1, 1),
+    "Fail",
+    plainResult,
+  ),
   WorkReduce: workReduceEvent(id(1)),
   EvalReduce: evalReduceEvent(id(1), "ReworkEvaluationFailure"),
   FinalizationResult: finalizationResultEvent(id(1), "FinalizationNeedsWork"),

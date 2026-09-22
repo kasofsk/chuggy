@@ -71,7 +71,9 @@ import {
   artifactAttemptFile,
   artifactProjectDirectory,
 } from "../../src/adapters/artifacts/artifactKey.ts";
-import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
+import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
 import type { ChangeProposalForges } from "../../src/interpreter/changeProposal.ts";
@@ -447,10 +449,15 @@ export async function finalizerAccept(
 
 /** The completion one task reports, defaulted to the pass an evaluation is driven by. */
 export function finalizerTaskDone(
-  task: number,
+  task: TaskIdentity,
   verdict: Verdict = "Pass",
 ): DecisionEvent {
-  return taskDoneEvent(id(1), asTaskId(task), verdict, plainResult);
+  return taskDoneEvent(id(1), task, verdict, plainResult);
+}
+
+/** The lone evaluator of the first stage of one work cycle, which is the fixture's only stage. */
+export function finalizerEvaluation(cycle: number): TaskIdentity {
+  return evaluationTaskOf(1, cycle, 0, 1, 1);
 }
 
 /** Accepts one reported task and decides it along with everything it enqueues. */
@@ -459,7 +466,7 @@ async function finalizerReport(
   partition: Partition,
   memory: ProjectMemory,
   label: string,
-  task: number,
+  task: TaskIdentity,
   verdict: Verdict = "Pass",
 ): Promise<ProjectMemory> {
   const accepted = await finalizerAccept(
@@ -556,7 +563,13 @@ export async function finalizerEntering(
   return {
     partition,
     repository: bound,
-    memory: await finalizerReport(rig.harness, partition, first, label, 1),
+    memory: await finalizerReport(
+      rig.harness,
+      partition,
+      first,
+      label,
+      workTaskOf(1, 1),
+    ),
   };
 }
 
@@ -564,31 +577,31 @@ export async function finalizerEntering(
 const finalizerReworksMax = 1;
 
 /**
- * Fails the ticket's current evaluation and passes the work its rework spawns,
- * which is how a fixture reaches finalization more than one spawn deep. It
- * answers the evaluation task the fresh work's own passing left open.
+ * Fails the evaluation of one work cycle and passes the work the rework
+ * spawns, which is how a fixture reaches finalization more than one cycle
+ * deep. It answers the evaluation task the fresh work's own passing left open.
  */
 async function finalizerReworkCycle(
   rig: FinalizerRig,
   partition: Partition,
   memory: ProjectMemory,
   label: string,
-  evaluation: number,
+  cycle: number,
 ): Promise<ProjectMemory> {
   const failed = await finalizerReport(
     rig.harness,
     partition,
     memory,
-    `${label}-rework-${String(evaluation)}`,
-    evaluation,
+    `${label}-rework-${String(cycle)}`,
+    finalizerEvaluation(cycle),
     "Fail",
   );
   return finalizerReport(
     rig.harness,
     partition,
     failed,
-    `${label}-rework-work-${String(evaluation)}`,
-    evaluation + 1,
+    `${label}-rework-work-${String(cycle)}`,
+    workTaskOf(1, cycle + 1),
   );
 }
 
@@ -611,23 +624,17 @@ export async function finalizerProject(
   const entering = await finalizerEntering(rig, label, repository);
   const partition = entering.partition;
   let carried = entering.memory;
-  let evaluation = 2;
-  for (let cycle = 0; cycle < reworks; cycle++) {
-    carried = await finalizerReworkCycle(
-      rig,
-      partition,
-      carried,
-      label,
-      evaluation,
-    );
-    evaluation += 2;
+  let cycle = 1;
+  for (let reworked = 0; reworked < reworks; reworked++) {
+    carried = await finalizerReworkCycle(rig, partition, carried, label, cycle);
+    cycle += 1;
   }
   const memory = await finalizerReport(
     rig.harness,
     partition,
     carried,
     label,
-    evaluation,
+    finalizerEvaluation(cycle),
   );
   const found = (await rig.harness.query(
     `SELECT request, ticket::text AS ticket, authorizing_seq::text AS seq,
@@ -1223,8 +1230,9 @@ export async function finalizerSpawnTasks(
   }
   for (const task of tasks) {
     await rig.harness.query(
-      `INSERT INTO execution_request_task (tenant, project, request, task, kind)
-       VALUES ($1,$2,$3,$4,'Work')`,
+      `INSERT INTO execution_request_task
+         (tenant, project, request, task, kind, cycle)
+       VALUES ($1,$2,$3,$4,'Work',$4)`,
       [
         project.partition.tenant,
         project.partition.project,

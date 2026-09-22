@@ -127,8 +127,9 @@ test("the worker role settles once and terminal authority is immediately fenced"
  */
 async function siblingTask(attempt: Awaited<ReturnType<typeof placedAttempt>>) {
   await rig.harness.query(
-    `INSERT INTO execution_request_task (tenant,project,request,task,kind,stage)
-     SELECT e.tenant,e.project,e.source_request,e.task+9,'Evaluation',0
+    `INSERT INTO execution_request_task
+       (tenant,project,request,task,kind,cycle,stage,generation,evaluator)
+     SELECT e.tenant,e.project,e.source_request,e.task+9,'Evaluation',1,1,1,1
        FROM execution e
       WHERE e.tenant=$1 AND e.project=$2 AND e.execution=$3`,
     [attempt.partition.tenant, attempt.partition.project, attempt.execution],
@@ -162,7 +163,8 @@ test("the authority carries the task kind the scheduler recorded for the attempt
   assert.deepEqual(await attemptRead(attempt), ["Work"]);
   const recorded = async (kind: string) =>
     rig.harness.query(
-      `UPDATE execution_request_task t SET kind=$4,stage=0
+      `UPDATE execution_request_task t
+          SET kind=$4,stage=1,generation=1,evaluator=1
          FROM execution e
         WHERE t.tenant=e.tenant AND t.project=e.project
           AND t.request=e.source_request AND t.task=e.task

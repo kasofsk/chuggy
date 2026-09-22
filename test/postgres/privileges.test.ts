@@ -317,7 +317,7 @@ test("the API acceptance boundary rejects malformed command bytes", async () => 
     ],
     [
       "missing-enum",
-      '{"version":1,"command":"Decide","event":{"type":"TaskDone","value":{"ticket":1,"tid":1,"result":{"manifest":1,"digest":1,"schema":1}}}}',
+      '{"version":1,"command":"Decide","event":{"type":"TaskDone","value":{"ticket":1,"task":{"type":"WorkTask","value":{"ticket":1,"cycle":1}},"result":{"manifest":1,"digest":1,"schema":1}}}}',
     ],
   ]) {
     const failure = await harness.attemptAs(
@@ -345,7 +345,7 @@ test("a well-formed completion is refused whatever authority it claims", async (
     "privilege-forged-completion",
   );
   const completions = [
-    `{"version":1,"command":"Decide","event":{"type":"TaskDone","value":{"ticket":1,"tid":1,"verdict":"Pass","result":{"manifest":1,"digest":1,"schema":1}}}}`,
+    `{"version":1,"command":"Decide","event":{"type":"TaskDone","value":{"ticket":1,"task":{"type":"WorkTask","value":{"ticket":1,"cycle":1}},"verdict":"Pass","result":{"manifest":1,"digest":1,"schema":1}}}}`,
     `{"version":1,"command":"Decide","event":{"type":"ExecutionBlocked","value":{"ticket":1}}}`,
   ];
   /**

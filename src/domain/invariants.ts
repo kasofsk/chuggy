@@ -22,8 +22,17 @@ import type {
   Task,
   Ticket,
 } from "./generated/modelTypes.ts";
-import { firstTaskId, type TicketId } from "./ids.ts";
-import { evalStage, tasksInIdOrder, taskEquals } from "./task.ts";
+import { type TicketId } from "./ids.ts";
+import {
+  evalStage,
+  taskEquals,
+  taskIdentityEquals,
+  taskIdentityValid,
+  taskOrdinal,
+  taskOwner,
+  tasksInOrdinalOrder,
+  workTaskOf,
+} from "./task.ts";
 
 /** What one invariant is evaluated against: the last decision, and the states either side of it. */
 export interface StepView {
@@ -89,35 +98,29 @@ export const deskConsistent: Invariant = (_config, view) =>
     (t) => (t.phase === "Escalated") === (t.escalation !== "NoEscalation"),
   );
 
-/** Whether these ids are exactly the contiguous run of `count` starting at `start`. */
-function idsAreTheRunFrom(
-  tasks: ReadonlySet<Task>,
-  start: number,
-  count: number,
-): boolean {
-  const ids = tasksInIdOrder(tasks).map((t) => t.id);
-  return ids.length === count && ids.every((id, index) => id === start + index);
+/** Never cancelled, which is a retirement mark rather than an outcome events deliver. */
+function liveTaskIsNotCancelled(task: Task): boolean {
+  return !(task.state !== "Outstanding" && task.state.value === "Cancelled");
 }
 
 /**
- * The live task set is exactly the current phase's anatomy: one work task
- * while Work, one stage's fan-out while Evaluation, and empty everywhere else.
- * Dead live-task state is never carried, and the live ids are the contiguous
- * run directly above the retired record — which is what the
- * at-least-once-by-identity argument needs.
+ * The live task set is exactly the current phase's anatomy: the work task of
+ * the cycle just started while Work, one run of one stage's fan-out judging
+ * that cycle while Evaluation, and empty everywhere else. Dead live-task state
+ * is never carried, and cancelled never appears live.
  */
 export const tasksWellFormed: Invariant = (_config, view) =>
-  everyLiveTicket(view.post, (t) => {
-    const start = t.record.length + firstTaskId;
-    const live = tasksInIdOrder(t.tasks);
+  everyLiveTicket(view.post, (t, id) => {
+    const live = tasksInOrdinalOrder(t.tasks);
     if (t.phase === "Work") {
       return (
         t.tasks.size === 1 &&
-        idsAreTheRunFrom(t.tasks, start, 1) &&
         live.every(
           (task) =>
-            task.kind === "WorkTask" &&
-            !(task.state !== "Outstanding" && task.state.value === "Cancelled"),
+            taskIdentityEquals(
+              task.identity,
+              workTaskOf(id, t.workCyclesStarted),
+            ) && liveTaskIsNotCancelled(task),
         )
       );
     }
@@ -127,27 +130,30 @@ export const tasksWellFormed: Invariant = (_config, view) =>
       return (
         stage >= 0 &&
         declared !== undefined &&
+        t.tasks.size === declared.fanout &&
         live.every(
           (task) =>
-            task.kind !== "WorkTask" &&
-            task.kind.value === stage &&
-            !(task.state !== "Outstanding" && task.state.value === "Cancelled"),
+            task.identity.type === "EvaluationTask" &&
+            task.identity.value.ticket === id &&
+            task.identity.value.workCycle === t.workCyclesStarted &&
+            task.identity.value.stage === stage + 1 &&
+            liveTaskIsNotCancelled(task),
         ) &&
-        t.tasks.size === declared.fanout &&
-        idsAreTheRunFrom(t.tasks, start, t.tasks.size)
+        live.every((task, index) => taskOrdinal(task.identity) === index + 1)
       );
     }
     return t.tasks.size === 0;
   });
 
-/** The retained record is dense from the first id, fully settled, and indexes into the program. */
+/** The retained record belongs to its ticket, is fully settled, and indexes into the program. */
 export const recordWellFormed: Invariant = (_config, view) =>
-  everyLiveTicket(view.post, (t) =>
-    t.record.every((task, index) => {
-      if (task.id !== index + firstTaskId) return false;
+  everyLiveTicket(view.post, (t, id) =>
+    t.record.every((task) => {
+      if (taskOwner(task.identity) !== id) return false;
       if (task.state === "Outstanding") return false;
-      if (task.kind === "WorkTask") return true;
-      return task.kind.value >= 0 && task.kind.value < t.program.length;
+      if (task.identity.type === "WorkTask") return true;
+      const stage = task.identity.value.stage - 1;
+      return stage >= 0 && stage < t.program.length;
     }),
   );
 
@@ -166,11 +172,26 @@ export const recordMonotone: Invariant = (_config, view) =>
     );
   });
 
-/** Every id ever issued is either retired into the record or live in the set. */
+/**
+ * Every task ever spawned is either retired into the record or live in the
+ * set, and the work-cycle counter is what the ticket's work tasks show — the
+ * counter being stored so a spawn site can mint from it.
+ */
 export const idsAccounted: Invariant = (_config, view) =>
   everyLiveTicket(
     view.post,
-    (t) => t.spawned === t.record.length + t.tasks.size,
+    (t) =>
+      t.spawned === t.record.length + t.tasks.size &&
+      t.workCyclesStarted ===
+        [...t.record, ...t.tasks].filter(
+          (task) => task.identity.type === "WorkTask",
+        ).length,
+  );
+
+/** The contract's own predicate over every task the machine is waiting on. */
+export const taskIdentitiesValid: Invariant = (_config, view) =>
+  everyLiveTicket(view.post, (t) =>
+    [...t.tasks].every((task) => taskIdentityValid(task.identity)),
   );
 
 /** Every authored program is one a release could have drawn. */
@@ -246,6 +267,7 @@ export const invariantBundle: readonly NamedInvariant[] = [
   { invariant: "recordWellFormed", holds: recordWellFormed },
   { invariant: "recordMonotone", holds: recordMonotone },
   { invariant: "idsAccounted", holds: idsAccounted },
+  { invariant: "taskIdentitiesValid", holds: taskIdentitiesValid },
   { invariant: "programsWellFormed", holds: programsWellFormed },
   { invariant: "depsAcyclic", holds: depsAcyclic },
   { invariant: "ticketIdsWellFormed", holds: ticketIdsWellFormed },
