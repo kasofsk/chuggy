@@ -4,10 +4,15 @@
  *
  * EVERY FIXTURE BUILT FROM THESE IS A SHAPE THE MACHINE COULD HAVE REACHED,
  * and `accountsFor` is what a suite asserts that with. `spawned` is bumped only
- * by a spawn, so a fixture that hands itself a task set or a record while
+ * by a spawn, so a fixture that hands itself a task set or an instance while
  * leaving the fresh ticket's zero in place is a state no trace holds — and the
  * work reduce reads that counter to stamp the artifact it produced, so a short
  * one answers a question the machine would answer differently.
+ *
+ * AN INSTANCE IS BUILT BY THE PROTOCOL, never written out. A judgement's shape
+ * is the protocol's own invariant, and a literal that satisfies it today is a
+ * literal nobody rechecks; driving `begin` and `applyProduced` cannot produce
+ * a state the machine could not.
  *
  * The builders go through `freshTicket` rather than writing a ticket literal,
  * so a field added to the record reaches every fixture at once.
@@ -18,19 +23,84 @@ import { defaultProgram } from "../../src/domain/config.ts";
 import { initRecord } from "../../src/domain/ticketGraph.ts";
 import type {
   TicketGraph,
+  EvaluationInstance,
+  EvaluationVerdict,
+  StageDefinition,
   Task,
+  TaskIdentity,
   TaskOutcome,
   Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
 import { freshTicket } from "../../src/domain/deciders.ts";
+import {
+  applyFailure,
+  applyProduced,
+  begin,
+  currentTaskObligations,
+} from "../../src/domain/evaluation.ts";
 import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
+import { evaluationSpawnTotal } from "../../src/domain/ticket.ts";
 import {
   evaluationTaskOf,
   tsResolved,
   tsOutstanding,
   workTaskOf,
 } from "../../src/domain/task.ts";
+
+/** The evaluator an obligation names, which is what a fixture answers by. */
+function evaluatorOf(task: TaskIdentity): number {
+  if (task.type !== "EvaluationTask")
+    throw new Error("fixtures: an obligation is an evaluation task");
+  return task.value.evaluator;
+}
+
+/**
+ * A judgement of one work cycle, driven through the protocol until it settles:
+ * every evaluator answers with what `verdictFor` says, so a fixture states
+ * which dissenter it wants and nothing about the shape that results.
+ */
+export function judgedInstance(
+  ticket: number,
+  cycle: number,
+  workResult: number,
+  program: readonly StageDefinition[],
+  verdictFor: (evaluator: number) => EvaluationVerdict = () => "EvaluatorPass",
+): EvaluationInstance {
+  let instance = begin(cycle, { ticket, workResult }, { stages: program });
+  for (let owed = currentTaskObligations(instance); owed.length > 0; ) {
+    const task = owed[0];
+    if (task === undefined) break;
+    const evaluator = evaluatorOf(task);
+    instance = applyProduced(instance, task, evaluator, verdictFor(evaluator));
+    owed = currentTaskObligations(instance);
+  }
+  return instance;
+}
+
+/**
+ * The same, with infrastructure stopping the named evaluators of the lowest
+ * stage: it settles blocked, which is the state the desk's own wall mirrors.
+ */
+export function blockedInstance(
+  ticket: number,
+  cycle: number,
+  workResult: number,
+  program: readonly StageDefinition[],
+  stopped: ReadonlySet<number>,
+): EvaluationInstance {
+  let instance = begin(cycle, { ticket, workResult }, { stages: program });
+  for (let owed = currentTaskObligations(instance); owed.length > 0; ) {
+    const task = owed[0];
+    if (task === undefined) break;
+    const evaluator = evaluatorOf(task);
+    instance = stopped.has(evaluator)
+      ? applyFailure(instance, task, "ExecutionUnavailableFailure", evaluator)
+      : applyProduced(instance, task, evaluator, "EvaluatorPass");
+    owed = currentTaskObligations(instance);
+  }
+  return instance;
+}
 
 /** A ticket id, so a fixture reads the way the model's numbering does. */
 export const id = (value: number): TicketId => asTicketId(value);
@@ -39,7 +109,7 @@ export const id = (value: number): TicketId => asTicketId(value);
 export const depsOf = (...values: number[]): ReadonlySet<TicketId> =>
   new Set(values.map(id));
 
-/** A resolved work task of `ticket`'s cycle, as the retained record holds one. */
+/** A resolved work task of `ticket`'s cycle. */
 export const workTask = (
   ticket: number,
   cycle: number,
@@ -111,14 +181,13 @@ export function initialView(post: TicketGraph): StepView {
  * below is one edit away from a state that passes.
  */
 export function healthyFleet(config: Config): readonly Ticket[] {
+  const program = defaultProgram(config);
   const finished = (ticket: number): Partial<Ticket> => {
-    const record: Task[] = [workTask(ticket, 1, "Passed")];
-    for (let i = 0; i < config.nTasks; i++)
-      record.push(evalTask(ticket, 1, 1, i + 1, "Passed"));
+    const judged = judgedInstance(ticket, 1, 1, program);
     return {
-      record,
+      evaluations: [judged],
       workCyclesStarted: 1,
-      spawned: record.length,
+      spawned: 1 + program[0]!.evaluators.length,
       artifact: { type: "ProducedArtifact", value: 1 },
     };
   };
@@ -156,16 +225,12 @@ export function fleetBut(
 }
 
 /**
- * The model's `idsAccounted` for one ticket: every task ever spawned is
- * retired or live, and the work-cycle counter is what its work tasks show.
+ * The model's `idsAccounted` for one ticket: the mint counter is one slot per
+ * work cycle started, plus what every run of every instance claimed.
  */
 export function accountsFor(ticket: Ticket): boolean {
   return (
-    ticket.spawned === ticket.record.length + ticket.tasks.size &&
-    ticket.workCyclesStarted ===
-      [...ticket.record, ...ticket.tasks].filter(
-        (task) => task.identity.type === "WorkTask",
-      ).length
+    ticket.spawned === ticket.workCyclesStarted + evaluationSpawnTotal(ticket)
   );
 }
 

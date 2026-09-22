@@ -30,15 +30,15 @@ import {
   finalizationOutcomeEnabled,
   finalizingIn,
   outstandingTasksIn,
+  completableIn,
   quietIn,
   readiesIn,
-  reducibleEvalIn,
   reducibleWorkIn,
   releasableIdsIn,
   retryablesIn,
   revocablesIn,
-  taskPhaseIn,
 } from "../../src/domain/enablement.ts";
+import { reportChoices } from "../../src/domain/deciders.ts";
 import {
   evaluationFailureDispositionTags,
   type TicketGraph,
@@ -46,7 +46,7 @@ import {
   type FinalizationOutcome,
   type StageDefinition,
   type TaskIdentity,
-  type Verdict,
+  type TaskTerminalReport,
 } from "../../src/domain/generated/modelTypes.ts";
 import { taskIdentityEquals } from "../../src/domain/task.ts";
 import { type TicketId } from "../../src/domain/ids.ts";
@@ -58,6 +58,7 @@ import {
   encodeNullaryTag,
   encodeProgram,
   encodeTaskIdentity,
+  encodeTaskTerminalReport,
 } from "../itf/vocabulary.ts";
 import { pickFrom, subsetFrom, type Random } from "./random.ts";
 
@@ -68,7 +69,7 @@ export interface Drawn {
   readonly program?: readonly StageDefinition[];
   readonly onFailure?: EvaluationFailureDisposition;
   readonly task?: TaskIdentity;
-  readonly verdict?: Verdict;
+  readonly report?: TaskTerminalReport;
   readonly outcome?: FinalizationOutcome;
 }
 
@@ -87,9 +88,6 @@ export interface WalkAction {
     drawn: Drawn,
   ) => boolean;
 }
-
-/** The verdict draw the completion event ranges over, as the model's `taskDone` writes it. */
-const verdictDraws: readonly Verdict[] = ["Pass", "Fail"];
 
 /**
  * Every well-formed authorable program, grown one stage at a time exactly as
@@ -166,22 +164,23 @@ const dispatch: WalkAction = {
     drawn.ticket !== undefined && readiesIn(graph).includes(drawn.ticket),
 };
 
-/** Tickets with a task the fabric could still report on — the set `task` is drawn from. */
-function reportableIn(graph: TicketGraph): readonly TicketId[] {
-  return taskPhaseIn(graph).filter(
-    (j) => outstandingTasksIn(graph, j).length > 0,
-  );
-}
-
+/**
+ * The completion draws what the task came back with, from the set that task's
+ * own kind admits, and the disposition a failing stage would be taken on —
+ * which it draws unconditionally, exactly as the model does, because whether
+ * this completion concludes a failing stage is not something the draw knows.
+ */
 const taskDone: WalkAction = {
   action: "taskDone",
-  enabledIn: (_config, graph) => reportableIn(graph).length > 0,
+  enabledIn: (_config, graph) => completableIn(graph).length > 0,
   drawIn: (_config, graph, random) => {
-    const ticket = pickFrom(random, reportableIn(graph));
+    const ticket = pickFrom(random, completableIn(graph));
+    const task = pickFrom(random, outstandingTasksIn(graph, ticket));
     return {
       ticket,
-      task: pickFrom(random, outstandingTasksIn(graph, ticket)),
-      verdict: pickFrom(random, verdictDraws),
+      task,
+      report: pickFrom(random, reportChoices(task)),
+      onFailure: pickFrom(random, evaluationFailureDispositionTags),
     };
   },
   permitsIn: (_config, graph, drawn) => {
@@ -189,11 +188,13 @@ const taskDone: WalkAction = {
     return (
       drawn.ticket !== undefined &&
       task !== undefined &&
-      drawn.verdict !== undefined &&
-      reportableIn(graph).includes(drawn.ticket) &&
+      drawn.report !== undefined &&
+      drawn.onFailure !== undefined &&
+      completableIn(graph).includes(drawn.ticket) &&
       outstandingTasksIn(graph, drawn.ticket).some((live) =>
         taskIdentityEquals(live, task),
-      )
+      ) &&
+      evaluationFailureDispositionTags.includes(drawn.onFailure)
     );
   },
 };
@@ -221,34 +222,6 @@ const finalizationResult: WalkAction = {
     finalizationOutcomeEnabled(graph, drawn.ticket, drawn.outcome),
 };
 
-const executionBlocked: WalkAction = {
-  action: "executionBlocked",
-  enabledIn: (_config, graph) => taskPhaseIn(graph).length > 0,
-  drawIn: (_config, graph, random) => ({
-    ticket: pickFrom(random, taskPhaseIn(graph)),
-  }),
-  permitsIn: (_config, graph, drawn) =>
-    drawn.ticket !== undefined && taskPhaseIn(graph).includes(drawn.ticket),
-};
-
-/**
- * An evaluation failure's continuation is an input to the machine, so the walk
- * draws it beside the ticket rather than reading it off one.
- */
-const evalReduce: WalkAction = {
-  action: "evalReduce",
-  enabledIn: (_config, graph) => reducibleEvalIn(graph).length > 0,
-  drawIn: (_config, graph, random) => ({
-    ticket: pickFrom(random, reducibleEvalIn(graph)),
-    onFailure: pickFrom(random, evaluationFailureDispositionTags),
-  }),
-  permitsIn: (_config, graph, drawn) =>
-    drawn.ticket !== undefined &&
-    drawn.onFailure !== undefined &&
-    reducibleEvalIn(graph).includes(drawn.ticket) &&
-    evaluationFailureDispositionTags.includes(drawn.onFailure),
-};
-
 const settle: WalkAction = {
   action: "settle",
   enabledIn: (config, graph) => quietIn(config, graph),
@@ -263,9 +236,7 @@ export const walkActions: readonly WalkAction[] = [
   dispatch,
   taskDone,
   overTicketSet("workReduce", (_config, graph) => reducibleWorkIn(graph)),
-  evalReduce,
   finalizationResult,
-  executionBlocked,
   overTicketSet("resumeTicket", (_config, graph) => retryablesIn(graph)),
   settle,
 ];
@@ -294,8 +265,8 @@ export function drawnWire(drawn: Drawn): Readonly<Record<string, unknown>> {
     onFailure: opt(drawn.onFailure, encodeNullaryTag),
     out: opt(drawn.outcome, encodeNullaryTag),
     prog: opt(drawn.program, encodeProgram),
+    report: opt(drawn.report, encodeTaskTerminalReport),
     task: opt(drawn.task, encodeTaskIdentity),
-    v: opt(drawn.verdict, encodeNullaryTag),
   };
 }
 
@@ -312,7 +283,7 @@ export function drawnPicks(drawn: Drawn): Picks {
     program: itf(wire["prog"]),
     onFailure: itf(wire["onFailure"]),
     task: itf(wire["task"]),
-    verdict: itf(wire["v"]),
+    report: itf(wire["report"]),
     outcome: itf(wire["out"]),
   };
 }

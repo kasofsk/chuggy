@@ -40,6 +40,7 @@
 /// so every golden reproduces from what is written beside it.
 
 module mc_chuggy_directed {
+  import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(
     N_TICKETS = 3,
@@ -50,6 +51,33 @@ module mc_chuggy_directed {
   /// The consts above are mc_chuggy's, unchanged. `finalizationResult`
   /// appears repeatedly so the sampler reaches the finalizer's own outcomes
   /// rather than spending its draws on the arrivals that precede them.
+  /// THE AIM for the partial-resume golden (test/golden/manifest.json). A
+  /// label is not enough to name that shape: "ticket-resumed" is every
+  /// wall's resume, and what distinguishes this one is the STATE it lands
+  /// in — a ticket back in evaluation at a later generation of the stage it
+  /// was already judging, still holding an answer an evaluator gave before
+  /// the wall, and owing the one that was stopped. Nothing else in the
+  /// machine produces that, so refuting "this never happens" is what finds
+  /// the trace. It is an observation and not an invariant: mc_chuggy keeps
+  /// the roster the invariants are checked over.
+  val partialEvaluationResumed: bool =
+    tickets.keys().exists(j =>
+      val jb = tickets.get(j)
+      jb.phase == Evaluation and jb.evaluations.length() > 0 and
+        match currentInstance(jb).state {
+          | Running(progress) => and {
+              progress.stage.generation > 1,
+              progress.stage.evaluators.keys().exists(e =>
+                match progress.stage.evaluators.get(e) {
+                  | Produced(_) => true
+                  | _ => false
+                }),
+              progress.stage.evaluators.keys().exists(e =>
+                statusAwaiting(progress.stage.evaluators.get(e)))
+            }
+          | _ => false
+        })
+
   action gateLoopStep = any {
     releaseTicket,
     dispatch,

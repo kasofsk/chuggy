@@ -9,7 +9,7 @@
     "mbt::actionTaken",
     "mbt::nondetPicks",
     "mc_chuggy::chuggy_domain::lastStep",
-    "mc_chuggy::chuggy_domain::prevRecords",
+    "mc_chuggy::chuggy_domain::prevEvaluations",
     "mc_chuggy::chuggy_domain::tickets",
     "mbt::actionTaken",
     "mbt::nondetPicks"
@@ -51,13 +51,13 @@
             "#tup": []
           }
         },
-        "task": {
+        "report": {
           "tag": "None",
           "value": {
             "#tup": []
           }
         },
-        "v": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -69,7 +69,7 @@
         "label": "init",
         "transitions": []
       },
-      "mc_chuggy::chuggy_domain::prevRecords": {
+      "mc_chuggy::chuggy_domain::prevEvaluations": {
         "#map": []
       },
       "mc_chuggy::chuggy_domain::tickets": {
@@ -91,7 +91,7 @@
         "j": {
           "tag": "Some",
           "value": {
-            "#bigint": "5"
+            "#bigint": "6"
           }
         },
         "onFailure": {
@@ -115,7 +115,14 @@
                   "key": {
                     "#bigint": "1"
                   }
-                },
+                }
+              ],
+              "key": {
+                "#bigint": "1"
+              }
+            },
+            {
+              "evaluators": [
                 {
                   "key": {
                     "#bigint": "2"
@@ -123,18 +130,18 @@
                 }
               ],
               "key": {
-                "#bigint": "1"
+                "#bigint": "2"
               }
             }
           ]
         },
-        "task": {
+        "report": {
           "tag": "None",
           "value": {
             "#tup": []
           }
         },
-        "v": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -146,14 +153,14 @@
         "label": "ticket-released",
         "transitions": []
       },
-      "mc_chuggy::chuggy_domain::prevRecords": {
+      "mc_chuggy::chuggy_domain::prevEvaluations": {
         "#map": []
       },
       "mc_chuggy::chuggy_domain::tickets": {
         "#map": [
           [
             {
-              "#bigint": "5"
+              "#bigint": "6"
             },
             {
               "artifact": {
@@ -174,6 +181,7 @@
                   "#tup": []
                 }
               },
+              "evaluations": [],
               "phase": {
                 "tag": "Pending",
                 "value": {
@@ -187,7 +195,14 @@
                       "key": {
                         "#bigint": "1"
                       }
-                    },
+                    }
+                  ],
+                  "key": {
+                    "#bigint": "1"
+                  }
+                },
+                {
+                  "evaluators": [
                     {
                       "key": {
                         "#bigint": "2"
@@ -195,11 +210,10 @@
                     }
                   ],
                   "key": {
-                    "#bigint": "1"
+                    "#bigint": "2"
                   }
                 }
               ],
-              "record": [],
               "spawned": {
                 "#bigint": "0"
               },
@@ -218,372 +232,6 @@
       "#meta": {
         "index": 2
       },
-      "mbt::actionTaken": "revoke",
-      "mbt::nondetPicks": {
-        "deps_": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "j": {
-          "tag": "Some",
-          "value": {
-            "#bigint": "5"
-          }
-        },
-        "onFailure": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "out": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "prog": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "task": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "v": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        }
-      },
-      "mc_chuggy::chuggy_domain::lastStep": {
-        "effects": ["CancelTicketWork"],
-        "label": "ticket-revoked",
-        "transitions": [
-          {
-            "from": {
-              "tag": "Pending",
-              "value": {
-                "#tup": []
-              }
-            },
-            "ticket": {
-              "#bigint": "5"
-            },
-            "to": {
-              "tag": "Revoked",
-              "value": {
-                "#tup": []
-              }
-            }
-          }
-        ]
-      },
-      "mc_chuggy::chuggy_domain::prevRecords": {
-        "#map": [
-          [
-            {
-              "#bigint": "5"
-            },
-            []
-          ]
-        ]
-      },
-      "mc_chuggy::chuggy_domain::tickets": {
-        "#map": [
-          [
-            {
-              "#bigint": "5"
-            },
-            {
-              "artifact": {
-                "tag": "NoArtifact",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "completions": {
-                "#bigint": "0"
-              },
-              "deps": {
-                "#set": []
-              },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "phase": {
-                "tag": "Revoked",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "program": [
-                {
-                  "evaluators": [
-                    {
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    },
-                    {
-                      "key": {
-                        "#bigint": "2"
-                      }
-                    }
-                  ],
-                  "key": {
-                    "#bigint": "1"
-                  }
-                }
-              ],
-              "record": [],
-              "spawned": {
-                "#bigint": "0"
-              },
-              "tasks": {
-                "#set": []
-              },
-              "workCyclesStarted": {
-                "#bigint": "0"
-              }
-            }
-          ]
-        ]
-      }
-    },
-    {
-      "#meta": {
-        "index": 3
-      },
-      "mbt::actionTaken": "releaseTicket",
-      "mbt::nondetPicks": {
-        "deps_": {
-          "tag": "Some",
-          "value": {
-            "#set": []
-          }
-        },
-        "j": {
-          "tag": "Some",
-          "value": {
-            "#bigint": "3"
-          }
-        },
-        "onFailure": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "out": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "prog": {
-          "tag": "Some",
-          "value": [
-            {
-              "evaluators": [
-                {
-                  "key": {
-                    "#bigint": "1"
-                  }
-                }
-              ],
-              "key": {
-                "#bigint": "1"
-              }
-            },
-            {
-              "evaluators": [
-                {
-                  "key": {
-                    "#bigint": "1"
-                  }
-                }
-              ],
-              "key": {
-                "#bigint": "2"
-              }
-            }
-          ]
-        },
-        "task": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "v": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        }
-      },
-      "mc_chuggy::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "ticket-released",
-        "transitions": []
-      },
-      "mc_chuggy::chuggy_domain::prevRecords": {
-        "#map": [
-          [
-            {
-              "#bigint": "5"
-            },
-            []
-          ]
-        ]
-      },
-      "mc_chuggy::chuggy_domain::tickets": {
-        "#map": [
-          [
-            {
-              "#bigint": "3"
-            },
-            {
-              "artifact": {
-                "tag": "NoArtifact",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "completions": {
-                "#bigint": "0"
-              },
-              "deps": {
-                "#set": []
-              },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "phase": {
-                "tag": "Pending",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "program": [
-                {
-                  "evaluators": [
-                    {
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    }
-                  ],
-                  "key": {
-                    "#bigint": "1"
-                  }
-                },
-                {
-                  "evaluators": [
-                    {
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    }
-                  ],
-                  "key": {
-                    "#bigint": "2"
-                  }
-                }
-              ],
-              "record": [],
-              "spawned": {
-                "#bigint": "0"
-              },
-              "tasks": {
-                "#set": []
-              },
-              "workCyclesStarted": {
-                "#bigint": "0"
-              }
-            }
-          ],
-          [
-            {
-              "#bigint": "5"
-            },
-            {
-              "artifact": {
-                "tag": "NoArtifact",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "completions": {
-                "#bigint": "0"
-              },
-              "deps": {
-                "#set": []
-              },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "phase": {
-                "tag": "Revoked",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "program": [
-                {
-                  "evaluators": [
-                    {
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    },
-                    {
-                      "key": {
-                        "#bigint": "2"
-                      }
-                    }
-                  ],
-                  "key": {
-                    "#bigint": "1"
-                  }
-                }
-              ],
-              "record": [],
-              "spawned": {
-                "#bigint": "0"
-              },
-              "tasks": {
-                "#set": []
-              },
-              "workCyclesStarted": {
-                "#bigint": "0"
-              }
-            }
-          ]
-        ]
-      }
-    },
-    {
-      "#meta": {
-        "index": 4
-      },
       "mbt::actionTaken": "dispatch",
       "mbt::nondetPicks": {
         "deps_": {
@@ -595,7 +243,7 @@
         "j": {
           "tag": "Some",
           "value": {
-            "#bigint": "3"
+            "#bigint": "6"
           }
         },
         "onFailure": {
@@ -616,13 +264,13 @@
             "#tup": []
           }
         },
-        "task": {
+        "report": {
           "tag": "None",
           "value": {
             "#tup": []
           }
         },
-        "v": {
+        "task": {
           "tag": "None",
           "value": {
             "#tup": []
@@ -641,7 +289,7 @@
               }
             },
             "ticket": {
-              "#bigint": "3"
+              "#bigint": "6"
             },
             "to": {
               "tag": "Work",
@@ -652,17 +300,11 @@
           }
         ]
       },
-      "mc_chuggy::chuggy_domain::prevRecords": {
+      "mc_chuggy::chuggy_domain::prevEvaluations": {
         "#map": [
           [
             {
-              "#bigint": "3"
-            },
-            []
-          ],
-          [
-            {
-              "#bigint": "5"
+              "#bigint": "6"
             },
             []
           ]
@@ -672,7 +314,7 @@
         "#map": [
           [
             {
-              "#bigint": "3"
+              "#bigint": "6"
             },
             {
               "artifact": {
@@ -693,6 +335,7 @@
                   "#tup": []
                 }
               },
+              "evaluations": [],
               "phase": {
                 "tag": "Work",
                 "value": {
@@ -716,7 +359,7 @@
                   "evaluators": [
                     {
                       "key": {
-                        "#bigint": "1"
+                        "#bigint": "2"
                       }
                     }
                   ],
@@ -725,7 +368,6 @@
                   }
                 }
               ],
-              "record": [],
               "spawned": {
                 "#bigint": "1"
               },
@@ -739,7 +381,7 @@
                           "#bigint": "1"
                         },
                         "ticket": {
-                          "#bigint": "3"
+                          "#bigint": "6"
                         }
                       }
                     },
@@ -756,75 +398,15 @@
                 "#bigint": "1"
               }
             }
-          ],
-          [
-            {
-              "#bigint": "5"
-            },
-            {
-              "artifact": {
-                "tag": "NoArtifact",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "completions": {
-                "#bigint": "0"
-              },
-              "deps": {
-                "#set": []
-              },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "phase": {
-                "tag": "Revoked",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "program": [
-                {
-                  "evaluators": [
-                    {
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    },
-                    {
-                      "key": {
-                        "#bigint": "2"
-                      }
-                    }
-                  ],
-                  "key": {
-                    "#bigint": "1"
-                  }
-                }
-              ],
-              "record": [],
-              "spawned": {
-                "#bigint": "0"
-              },
-              "tasks": {
-                "#set": []
-              },
-              "workCyclesStarted": {
-                "#bigint": "0"
-              }
-            }
           ]
         ]
       }
     },
     {
       "#meta": {
-        "index": 5
+        "index": 3
       },
-      "mbt::actionTaken": "executionBlocked",
+      "mbt::actionTaken": "taskDone",
       "mbt::nondetPicks": {
         "deps_": {
           "tag": "None",
@@ -835,13 +417,16 @@
         "j": {
           "tag": "Some",
           "value": {
-            "#bigint": "3"
+            "#bigint": "6"
           }
         },
         "onFailure": {
-          "tag": "None",
+          "tag": "Some",
           "value": {
-            "#tup": []
+            "tag": "ReworkEvaluationFailure",
+            "value": {
+              "#tup": []
+            }
           }
         },
         "out": {
@@ -856,16 +441,35 @@
             "#tup": []
           }
         },
-        "task": {
-          "tag": "None",
+        "report": {
+          "tag": "Some",
           "value": {
-            "#tup": []
+            "tag": "TerminalFailureReport",
+            "value": {
+              "evidence": {
+                "#bigint": "1"
+              },
+              "kind": {
+                "tag": "ExecutionUnavailableFailure",
+                "value": {
+                  "#tup": []
+                }
+              }
+            }
           }
         },
-        "v": {
-          "tag": "None",
+        "task": {
+          "tag": "Some",
           "value": {
-            "#tup": []
+            "tag": "WorkTask",
+            "value": {
+              "cycle": {
+                "#bigint": "1"
+              },
+              "ticket": {
+                "#bigint": "6"
+              }
+            }
           }
         }
       },
@@ -881,7 +485,7 @@
               }
             },
             "ticket": {
-              "#bigint": "3"
+              "#bigint": "6"
             },
             "to": {
               "tag": "Escalated",
@@ -892,17 +496,11 @@
           }
         ]
       },
-      "mc_chuggy::chuggy_domain::prevRecords": {
+      "mc_chuggy::chuggy_domain::prevEvaluations": {
         "#map": [
           [
             {
-              "#bigint": "3"
-            },
-            []
-          ],
-          [
-            {
-              "#bigint": "5"
+              "#bigint": "6"
             },
             []
           ]
@@ -912,7 +510,7 @@
         "#map": [
           [
             {
-              "#bigint": "3"
+              "#bigint": "6"
             },
             {
               "artifact": {
@@ -933,6 +531,7 @@
                   "#tup": []
                 }
               },
+              "evaluations": [],
               "phase": {
                 "tag": "Escalated",
                 "value": {
@@ -956,7 +555,7 @@
                   "evaluators": [
                     {
                       "key": {
-                        "#bigint": "1"
+                        "#bigint": "2"
                       }
                     }
                   ],
@@ -965,30 +564,6 @@
                   }
                 }
               ],
-              "record": [
-                {
-                  "identity": {
-                    "tag": "WorkTask",
-                    "value": {
-                      "cycle": {
-                        "#bigint": "1"
-                      },
-                      "ticket": {
-                        "#bigint": "3"
-                      }
-                    }
-                  },
-                  "state": {
-                    "tag": "Resolved",
-                    "value": {
-                      "tag": "Cancelled",
-                      "value": {
-                        "#tup": []
-                      }
-                    }
-                  }
-                }
-              ],
               "spawned": {
                 "#bigint": "1"
               },
@@ -997,66 +572,6 @@
               },
               "workCyclesStarted": {
                 "#bigint": "1"
-              }
-            }
-          ],
-          [
-            {
-              "#bigint": "5"
-            },
-            {
-              "artifact": {
-                "tag": "NoArtifact",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "completions": {
-                "#bigint": "0"
-              },
-              "deps": {
-                "#set": []
-              },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "phase": {
-                "tag": "Revoked",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "program": [
-                {
-                  "evaluators": [
-                    {
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    },
-                    {
-                      "key": {
-                        "#bigint": "2"
-                      }
-                    }
-                  ],
-                  "key": {
-                    "#bigint": "1"
-                  }
-                }
-              ],
-              "record": [],
-              "spawned": {
-                "#bigint": "0"
-              },
-              "tasks": {
-                "#set": []
-              },
-              "workCyclesStarted": {
-                "#bigint": "0"
               }
             }
           ]

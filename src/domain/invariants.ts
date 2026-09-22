@@ -19,20 +19,17 @@ import { coveredSet, stuckSet, subsetOf } from "./derived.ts";
 import type {
   TicketGraph,
   StepRecord,
-  Task,
   Ticket,
 } from "./generated/modelTypes.ts";
 import { type TicketId } from "./ids.ts";
+import { taskIdentityEquals, taskIdentityValid, workTaskOf } from "./task.ts";
+import { instanceEquals, instanceValid, stagesEqual } from "./evaluation.ts";
 import {
-  evalStage,
-  taskEquals,
-  taskIdentityEquals,
-  taskIdentityValid,
-  taskRetirementKey,
-  taskOwner,
-  tasksInEvaluatorKeyOrder,
-  workTaskOf,
-} from "./task.ts";
+  currentInstance,
+  evaluationSpawnTotal,
+  instanceBlocked,
+  runningStageIndex,
+} from "./ticket.ts";
 
 /** What one invariant is evaluated against: the last decision, and the states either side of it. */
 export interface StepView {
@@ -98,110 +95,100 @@ export const deskConsistent: Invariant = (_config, view) =>
     (t) => (t.phase === "Escalated") === (t.escalation !== "NoEscalation"),
   );
 
-/** Never cancelled, which is a retirement mark rather than an outcome events deliver. */
-function liveTaskIsNotCancelled(task: Task): boolean {
-  return !(task.state !== "Outstanding" && task.state.value === "Cancelled");
-}
-
 /**
- * Two key lists name the same set, which is all an unordered live set can be
- * held to. `left` is counted distinct first: two task objects sharing a key
- * are two members of a JS Set where the model's value-Set holds one.
- */
-function sameKeys(left: readonly number[], right: readonly number[]): boolean {
-  const named = new Set(right);
-  return (
-    new Set(left).size === left.length &&
-    left.length === named.size &&
-    left.every((key) => named.has(key))
-  );
-}
-
-/**
- * The live task set is exactly the current phase's anatomy: the work task of
- * the cycle just started while Work, one run of the stage's authored roster
- * judging that cycle while Evaluation, and empty everywhere else. Dead
- * live-task state is never carried, and cancelled never appears live.
+ * The live task set is the work cycle's one task while Work, and empty
+ * everywhere else. It CARRIES NOTHING for evaluation — the running stage owes
+ * those obligations and names them — so one stage, a real index and exactly
+ * the listed keys are now the instance's own, through the run invariant.
  */
 export const tasksWellFormed: Invariant = (_config, view) =>
   everyLiveTicket(view.post, (t, id) => {
-    const live = tasksInEvaluatorKeyOrder(t.tasks);
-    if (t.phase === "Work") {
-      return (
-        t.tasks.size === 1 &&
-        live.every(
-          (task) =>
-            taskIdentityEquals(
-              task.identity,
-              workTaskOf(id, t.workCyclesStarted),
-            ) && liveTaskIsNotCancelled(task),
-        )
-      );
-    }
-    if (t.phase === "Evaluation") {
-      const stage = evalStage(t.tasks);
-      const declared = t.program[stage];
-      if (stage < 0 || declared === undefined) return false;
-      const listed = declared.evaluators.map((e) => e.key);
-      return (
-        live.every(
-          (task) =>
-            task.identity.type === "EvaluationTask" &&
-            task.identity.value.ticket === id &&
-            task.identity.value.workCycle === t.workCyclesStarted &&
-            task.identity.value.stage === declared.key &&
-            liveTaskIsNotCancelled(task),
-        ) &&
-        sameKeys(
-          live.map((task) => taskRetirementKey(task.identity)),
-          listed,
-        )
-      );
-    }
-    return t.tasks.size === 0;
+    if (t.phase !== "Work") return t.tasks.size === 0;
+    return (
+      t.tasks.size === 1 &&
+      [...t.tasks].every((task) =>
+        taskIdentityEquals(task.identity, workTaskOf(id, t.workCyclesStarted)),
+      )
+    );
   });
 
-/** The retained record belongs to its ticket, is fully settled, and indexes into the program. */
-export const recordWellFormed: Invariant = (_config, view) =>
-  everyLiveTicket(view.post, (t, id) =>
-    t.record.every((task) => {
-      if (taskOwner(task.identity) !== id) return false;
-      if (task.state === "Outstanding") return false;
-      if (task.identity.type === "WorkTask") return true;
-      const stage = task.identity.value.stage - 1;
-      return stage >= 0 && stage < t.program.length;
-    }),
-  );
+/**
+ * Every instance is well-formed by the protocol's own invariant, which chuggy
+ * re-states none of; what chuggy adds is the AGREEMENT between an instance and
+ * the ticket carrying it — this ticket, this program, a cycle it has started,
+ * and the instances in the order those cycles ran.
+ *
+ * THE PHASE SAYS WHICH INSTANCE IS OPEN: a ticket in Evaluation is running the
+ * last one at the cycle it is on, and a ticket parked at the blocked wall has
+ * the last one blocked — which is what makes the desk's wall and the
+ * instance's state one fact instead of two that can disagree.
+ */
+export const evaluationsWellFormed: Invariant = (_config, view) =>
+  everyLiveTicket(view.post, (t, id) => {
+    const wellFormed = t.evaluations.every((instance, index) => {
+      const previous = t.evaluations[index - 1];
+      return (
+        instanceValid(instance) &&
+        instance.input.ticket === id &&
+        stagesEqual(instance.plan.stages, t.program) &&
+        instance.workCycle <= t.workCyclesStarted &&
+        (previous === undefined || previous.workCycle < instance.workCycle)
+      );
+    });
+    if (!wellFormed) return false;
+    if (t.phase === "Evaluation") {
+      if (t.evaluations.length === 0) return false;
+      const open = currentInstance(t);
+      if (runningStageIndex(open) < 0) return false;
+      if (open.workCycle !== t.workCyclesStarted) return false;
+    }
+    if (t.escalation === "EvaluationBlockedEscalated") {
+      if (t.evaluations.length === 0) return false;
+      if (!instanceBlocked(currentInstance(t))) return false;
+    }
+    return true;
+  });
 
-/** History is append-only: no decision rewrites or shortens a retained record. */
-export const recordMonotone: Invariant = (_config, view) =>
+/**
+ * History is append-only: every instance a ticket held is still there and
+ * still says what it said, with exactly one exception — the LAST instance,
+ * while it is still the last, is the open one and advances, and is frozen once
+ * a newer one sits behind it. So a rewritten judgement, a dropped instance and
+ * a reordered history are each caught in the step that did it.
+ */
+export const evaluationsMonotone: Invariant = (_config, view) =>
   liveTickets(view.pre).every((id) => {
     if (!view.post.tickets.has(id)) return false;
-    const before = ticketAt(view.pre, id).record;
-    const after = ticketAt(view.post, id).record;
+    const before = ticketAt(view.pre, id).evaluations;
+    const after = ticketAt(view.post, id).evaluations;
     return (
       after.length >= before.length &&
-      before.every((task, index) => {
+      before.every((instance, index) => {
         const kept = after[index];
-        return kept !== undefined && taskEquals(task, kept);
+        if (kept === undefined) return false;
+        if (instanceEquals(instance, kept)) return true;
+        return index + 1 === before.length && after.length === before.length;
       })
     );
   });
 
 /**
- * Every task ever spawned is either retired into the record or live in the
- * set, and the work-cycle counter is what the ticket's work tasks show — the
- * counter being stored so a spawn site can mint from it.
+ * Identity accounting: the mint counter is one slot per work cycle started,
+ * plus, for every run of every instance, its roster once per generation it
+ * reached — every spawn site bumping the counter from the AUTHORED program
+ * while this sum reads the INSTANCES, so the two sides come from different
+ * places.
+ *
+ * It is a SLOT count and not a task count: a resume re-asks only what it
+ * reopened and still claims the roster, which is what keeps the counter
+ * derivable — the subset a resume asked is unrecoverable once those
+ * evaluators have answered, and an unused slot costs a monotone mint
+ * nothing.
  */
 export const idsAccounted: Invariant = (_config, view) =>
   everyLiveTicket(
     view.post,
-    (t) =>
-      t.spawned === t.record.length + t.tasks.size &&
-      t.workCyclesStarted ===
-        [...t.record, ...t.tasks].filter(
-          (task) => task.identity.type === "WorkTask",
-        ).length,
+    (t) => t.spawned === t.workCyclesStarted + evaluationSpawnTotal(t),
   );
 
 /** The contract's own predicate over every task the machine is waiting on. */
@@ -288,8 +275,8 @@ export const invariantBundle: readonly NamedInvariant[] = [
   { invariant: "terminalsAbsorbing", holds: terminalsAbsorbing },
   { invariant: "deskConsistent", holds: deskConsistent },
   { invariant: "tasksWellFormed", holds: tasksWellFormed },
-  { invariant: "recordWellFormed", holds: recordWellFormed },
-  { invariant: "recordMonotone", holds: recordMonotone },
+  { invariant: "evaluationsWellFormed", holds: evaluationsWellFormed },
+  { invariant: "evaluationsMonotone", holds: evaluationsMonotone },
   { invariant: "idsAccounted", holds: idsAccounted },
   { invariant: "taskIdentitiesValid", holds: taskIdentitiesValid },
   { invariant: "programsWellFormed", holds: programsWellFormed },

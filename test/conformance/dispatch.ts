@@ -23,8 +23,6 @@
 import type { Decision } from "../../src/domain/ticketGraph.ts";
 import {
   decideDispatch,
-  decideEvalStageReduce,
-  decideExecutionBlocked,
   decideFinalizationResult,
   decideReleaseTicket,
   decideResumeTicket,
@@ -43,7 +41,7 @@ import {
   decodeFinalizationOutcome,
   decodeStageDefinition,
   decodeTaskIdentity,
-  decodeVerdict,
+  decodeTaskTerminalReport,
 } from "../../src/generated/model-api.ts";
 import type { ItfValue } from "../itf/decode.ts";
 import { decodeTicketId, itfToWire } from "../itf/vocabulary.ts";
@@ -58,9 +56,7 @@ export const replayActions: readonly string[] = [
   "dispatch",
   "taskDone",
   "workReduce",
-  "evalReduce",
   "finalizationResult",
-  "executionBlocked",
   "resumeTicket",
   "settle",
 ];
@@ -78,7 +74,7 @@ export interface Picks {
   readonly program: ItfValue | undefined;
   readonly onFailure: ItfValue | undefined;
   readonly task: ItfValue | undefined;
-  readonly verdict: ItfValue | undefined;
+  readonly report: ItfValue | undefined;
   readonly outcome: ItfValue | undefined;
 }
 
@@ -139,26 +135,19 @@ export function replayStep(
         pre,
         j(),
         decodeTaskIdentity(itfToWire(need(picks.task, "task"))),
-        decodeVerdict(itfToWire(need(picks.verdict, "v"))),
-      );
-    case "workReduce":
-      return decideWorkReduce(pre, j());
-    case "evalReduce":
-      return decideEvalStageReduce(
-        pre,
-        j(),
+        decodeTaskTerminalReport(itfToWire(need(picks.report, "report"))),
         decodeEvaluationFailureDisposition(
           itfToWire(need(picks.onFailure, "onFailure")),
         ),
       );
+    case "workReduce":
+      return decideWorkReduce(pre, j());
     case "finalizationResult":
       return decideFinalizationResult(
         pre,
         j(),
         decodeFinalizationOutcome(itfToWire(need(picks.outcome, "out"))),
       );
-    case "executionBlocked":
-      return decideExecutionBlocked(pre, j());
     case "resumeTicket":
       return decideResumeTicket(pre, j());
     case "settle":

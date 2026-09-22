@@ -1,14 +1,16 @@
 /**
- * The eval program's verdict rule, interpreted over a resolved stage.
+ * The verdict rule over a live task set, for a reader holding identities and
+ * no instance.
  *
- * Eval is data, and the data — the `StageDefinition` a ticket's program carries — is
- * the model's. What is here is what the model does with it.
+ * What a STAGE means is the protocol's (`stagePassed` in
+ * `src/domain/evaluation.ts`), read off the run the instance keeps. This is
+ * the same question asked of a task set, which is what the work cycle has.
  */
 
 import type { Task } from "./generated/modelTypes.ts";
 import { taskPassed } from "./task.ts";
 
-/** A stage passes when every evaluator in it passed. Callers guarantee every task is resolved. */
-export function combine(tasks: ReadonlySet<Task>): boolean {
+/** Every task in the set passed. Callers guarantee every one of them is resolved. */
+export function allPassed(tasks: ReadonlySet<Task>): boolean {
   return [...tasks].every(taskPassed);
 }
