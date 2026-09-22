@@ -59,7 +59,10 @@ import {
 import type { DecisionEvent } from "../actor/decisionEvent.ts";
 import type { Config } from "../domain/config.ts";
 import { ticketAt, ticketIds } from "../domain/ticketGraph.ts";
-import type { TicketGraph } from "../domain/generated/modelTypes.ts";
+import type {
+  Escalation,
+  TicketGraph,
+} from "../domain/generated/modelTypes.ts";
 import { dependableIn } from "../domain/enablement.ts";
 import { effectFromLabel } from "../domain/effect.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
@@ -561,6 +564,18 @@ function projectWriterUnreadableLanding(
 }
 
 /**
+ * The escalations a completion's own wall parks a ticket at, which are the
+ * only ones a blocked execution accounts for. A stage that FAILED while one of
+ * its evaluators was walled parks at the failure instead, and that park is the
+ * judgement's, so the wall the walled sibling carried explains nothing about
+ * it.
+ */
+const executionWallEscalations: readonly Escalation[] = [
+  "WorkExecutionUnavailableEscalated",
+  "EvaluationBlockedEscalated",
+];
+
+/**
  * What the fabric said about the wall a durable input parks its ticket at: the
  * blocked reason of the execution the scheduler settled, and the hold kind the
  * finalizer's pass could not get past. Every other escalation the machine
@@ -577,7 +592,7 @@ function projectWriterEscalationEvidence(
   if (command.type === "TaskDone") {
     const ticket = asTicketId(command.value.ticket);
     return source.executionBlockedBy === undefined ||
-      ticketAt(post, ticket).escalation === "NoEscalation"
+      !executionWallEscalations.includes(ticketAt(post, ticket).escalation)
       ? undefined
       : { ticket, evidence: source.executionBlockedBy };
   }

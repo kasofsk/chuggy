@@ -63,6 +63,10 @@ import { executionSourceObservation } from "../../src/interpreter/executionSourc
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import type {
+  StageDefinition,
+  TaskIdentity,
+} from "../../src/domain/generated/modelTypes.ts";
 import {
   plainAuthoring,
   plainDisposition,
@@ -151,6 +155,7 @@ async function decidedWith(
   input: DecisionInput,
   executionSources: ExecutionSourceObservationPort = readableSources,
   ticketBriefs: TicketBriefPort = unbriefedTickets,
+  policy: Partial<Pick<ProjectTicketWriter, "config" | "rework">> = {},
 ): Promise<{
   readonly offered: Decision | undefined;
   readonly result: ProjectDecided;
@@ -166,6 +171,7 @@ async function decidedWith(
     {
       config: refinementInstance,
       rework: testReworkCap,
+      ...policy,
       store: {} as ProjectStore,
       decisions,
       ticketBriefs,
@@ -701,14 +707,16 @@ function dispatchedMemory(): ProjectMemory {
 }
 
 /** The completion as the inbox assembles one, with the wall read off its execution. */
-function blockedCompletionInput(blockedBy: BlockedReason): DecisionInput {
-  const work = workTaskOf(1, 1);
+function blockedCompletionInput(
+  blockedBy: BlockedReason,
+  task: TaskIdentity = workTaskOf(1, 1),
+): DecisionInput {
   const event = {
     type: "TaskDone",
     value: {
       ticket: id(1),
-      task: work,
-      report: stoppedReport(work, "ExecutionUnavailableFailure"),
+      task,
+      report: stoppedReport(task, "ExecutionUnavailableFailure"),
     },
   } as const;
   return {
@@ -746,6 +754,69 @@ test("a settled block parks its ticket carrying the wall its execution recorded"
       [["Escalated", unreadableWall, wall]],
     );
   }
+});
+
+/** A stage of two evaluators, so one can fail while the other hits a wall. */
+const pairedConfig = { ...refinementInstance, nTasks: 2 };
+const pairedAuthoring = {
+  deps: new Set<number>(),
+  prog: [
+    { key: 1, evaluators: [{ key: 1 }, { key: 2 }] },
+  ] as readonly StageDefinition[],
+} as const;
+
+/**
+ * A judgement one evaluator has already failed and the other has yet to
+ * answer, which is the stage a walled sibling concludes.
+ */
+function failedStageState(): ReturnType<typeof journalStep> {
+  const work = workTaskOf(1, 1);
+  const failing = evaluationTaskOf(1, 1, 1, 1, 1);
+  return [
+    dispatchEvent(id(1)),
+    taskDoneEvent(id(1), work, producedReport(work), plainDisposition),
+    workReduceEvent(id(1)),
+    taskDoneEvent(
+      id(1),
+      failing,
+      judgedReport(failing, "EvaluatorFail"),
+      plainDisposition,
+    ),
+  ].reduce(
+    (state, event) => journalStep(pairedConfig, state, event),
+    journalStep(
+      pairedConfig,
+      actorInit(),
+      releaseTicketEvent(id(1), pairedAuthoring),
+    ),
+  );
+}
+
+/**
+ * The judgement is what parked this ticket, and a judgement is reached by
+ * counting answers rather than by meeting a wall — so the wall its last
+ * evaluator carried explains nothing the desk is being shown.
+ */
+test("a stage that failed beside a walled evaluator parks carrying no wall", async () => {
+  const { offered } = await decidedWith(
+    { ...releasedMemory(), graph: memoryGraph(failedStageState()) },
+    blockedCompletionInput(
+      "ExecutionProfileUnavailable",
+      evaluationTaskOf(1, 1, 1, 1, 2),
+    ),
+    readableSources,
+    unbriefedTickets,
+    { config: pairedConfig, rework: { cyclesMax: 0 } },
+  );
+  assert.equal(offered?.outcome.outcome, "Journaled");
+  if (offered?.outcome.outcome !== "Journaled") return;
+  assert.deepEqual(
+    offered.outcome.projection.map((row) => [
+      row.escalation,
+      row.escalationEvidence,
+    ]),
+    [["EvaluationFailureEscalated", undefined]],
+  );
 });
 
 /** A port that reads no source and says why, which is the whole of what it answers. */
