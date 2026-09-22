@@ -538,8 +538,17 @@ export const artifactDigestChars = 64;
 /** The most digits any counter one candidate carries is written with. */
 const candidateCounterDigitsMax = 20;
 
-/** What one stage of a candidate's program weighs, which is its fanout. */
-export const leadObservedStageCharsMax = 128;
+/** What one stage of a candidate's program weighs: its key and its full roster, every key at the counter's width. */
+export const leadObservedStageCharsMax = stringifiedObjectChars([
+  ["key", candidateCounterDigitsMax],
+  [
+    "evaluators",
+    stringifiedArrayChars(
+      nativeHttpDraftEvaluatorsMax,
+      stringifiedObjectChars([["key", candidateCounterDigitsMax]]),
+    ),
+  ],
+]);
 
 /** The configuration name one candidate's version label names. */
 export const repositoryConfigurationNameCharsMax = 128;

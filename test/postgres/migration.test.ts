@@ -16,7 +16,10 @@ import {
   migration009,
 } from "../../src/adapters/postgres/schema/migrations/009-work-fanout.ts";
 import { migration010 } from "../../src/adapters/postgres/schema/migrations/010-task-identity.ts";
-import { migration011 } from "../../src/adapters/postgres/schema/migrations/011-evaluator-keys.ts";
+import {
+  leadObservationTokensPerDecisionAt011,
+  migration011,
+} from "../../src/adapters/postgres/schema/migrations/011-evaluator-keys.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -1024,7 +1027,7 @@ test("fresh selector settings carry current controls and only their initial hist
     assert.deepEqual(controls.toolAllowlist, leadToolAllowlist);
     assert.equal(
       controls.limits.tokensPerDecision,
-      leadObservationTokensPerDecisionAt009,
+      leadObservationTokensPerDecisionAt011,
     );
     assert.equal(
       controls.limits.dispatchesPerDecision,
@@ -4271,6 +4274,51 @@ test("the boundary admits a program that names its evaluators and refuses one th
         [{ admitted }],
         label,
       );
+  });
+});
+
+/**
+ * The mailbox bound and the seeded budget move together, as they did at 009:
+ * a stage weighs its roster, so the widest observation is wider and the
+ * floor argued from it follows.
+ */
+test("the roster arriving widens the mailbox bound and re-seeds the budget with it", async () => {
+  await migrationDatabase("evaluatorkeys_mailbox", async (subject) => {
+    await postgresMigrate(subject);
+    const bound = (
+      await subject.query<{ definition: string }>(
+        `SELECT pg_get_constraintdef(c.oid) AS definition
+           FROM pg_constraint c
+          WHERE c.conrelid = 'session_turn'::regclass
+            AND c.conname = 'session_turn_text_is_bounded'`,
+      )
+    ).rows[0]?.definition;
+    assert.ok(bound !== undefined, "the mailbox bound was not found");
+    assert.ok(bound.includes(String(leadObservationTokensPerDecisionAt011)));
+    assert.ok(!bound.includes(String(leadObservationTokensPerDecisionAt009)));
+    for (const relation of [
+      "selector_runtime_settings",
+      "selector_runtime_settings_history",
+    ]) {
+      const rows = (
+        await subject.query<{ controls: string }>(
+          `SELECT controls FROM ${relation}`,
+        )
+      ).rows;
+      assert.ok(rows.length >= 1, `${relation} is seeded`);
+      for (const { controls } of rows) {
+        assert.ok(
+          controls.includes(
+            `"tokensPerDecision":${String(leadObservationTokensPerDecisionAt011)}`,
+          ),
+          `${relation} carries the re-seeded budget`,
+        );
+        assert.ok(
+          !controls.includes(String(leadObservationTokensPerDecisionAt009)),
+          `${relation} no longer carries 009's`,
+        );
+      }
+    }
   });
 });
 

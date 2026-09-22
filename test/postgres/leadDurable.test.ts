@@ -24,6 +24,7 @@ import {
   configurationCanonicalCharsMax,
   leadObservedCandidateFixedCharsMax,
   nativeHttpDraftDependenciesMax,
+  nativeHttpDraftEvaluatorsMax,
   nativeHttpDraftStagesMax,
   repositoryConfigurationNameCharsMax,
   leadSeededDecisionCharsMax,
@@ -1264,7 +1265,7 @@ test("a model name past what the measure column holds is refused", async () => {
 
 /**
  * One candidate at its ceiling: every field at the bound its own constant
- * gives it — the two authored pages full, the identities at the identity bound
+ * gives it — the three authored pages full, the identities at the identity bound
  * with every character escaped, and a canonical configuration of the length 007
  * bounds whose every character is a quote the embedding must escape.
  */
@@ -1277,7 +1278,10 @@ function maximalCandidate(ticket: number): Record<string, unknown> {
       (_unused, at) => Number.MAX_SAFE_INTEGER - at,
     ),
     program: Array.from({ length: nativeHttpDraftStagesMax }, () => ({
-      fanout: Number.MAX_SAFE_INTEGER,
+      key: Number.MAX_SAFE_INTEGER,
+      evaluators: Array.from({ length: nativeHttpDraftEvaluatorsMax }, () => ({
+        key: Number.MAX_SAFE_INTEGER,
+      })),
     })),
     configurationVersion: {
       name: escapedText(repositoryConfigurationNameCharsMax),

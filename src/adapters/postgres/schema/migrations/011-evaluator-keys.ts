@@ -56,12 +56,21 @@ import type { Migration } from "../shared.ts";
  * stage hold an array and an integer key is one statement, and reading them is
  * the next.
  *
- * NO DDL FOLLOWS, AND `execution_request_task.evaluator` IS WHY IT LOOKS LIKE
- * NONE IS NEEDED. That column carried an ordinal and now carries the authored
- * key, and both are positive, so the constraint holding it cannot tell the two
- * apart and has nothing to restate. `dispatch_candidate.program` is text the
- * wipe truncates, so the encoding of a stage in it travels with the
- * interpreter that writes it rather than with this schema.
+ * `execution_request_task.evaluator` NEEDS NO RESTATING. That column carried
+ * an ordinal and now carries the authored key, and both are positive, so the
+ * constraint holding it cannot tell the two apart. `dispatch_candidate.program`
+ * is text the wipe truncates, so the encoding of a stage in it travels with
+ * the interpreter that writes it rather than with this schema.
+ *
+ * THE ONE DDL IS THE MAILBOX BOUND, WHICH WIDENS BECAUSE A STAGE WEIGHS ITS
+ * ROSTER. A lead's observation carries every candidate's program, and a stage
+ * that lists evaluators weighs what its longest list does where a width
+ * weighed one counter, so `sessionTurnInputCharsMax` moves and the constraint
+ * that renders it is re-rendered at the figure below, as 004, 005 and 009
+ * each re-rendered it at theirs. A wider bound admits every row the narrower
+ * one did, so no guard precedes it: the guard those three carry is for a
+ * narrowing, where a stored row can be one the new bound refuses. The seeded
+ * budget moves with it, as it did in 009, because the floor is the bound.
  *
  * THE COMBINATOR IS CARRIED EXACTLY AS 010 CARRIES IT: absent or the one name
  * this machine has, because 005 deleted the choice and left the key readable
@@ -77,6 +86,12 @@ import type { Migration } from "../shared.ts";
 const stageKeyField = "key";
 const stageEvaluatorsField = "evaluators";
 const evaluatorKeyField = "key";
+
+/**
+ * What this migration renders `sessionTurnInputCharsMax` as, in the mailbox
+ * bound it re-renders and in the observation budget it re-seeds.
+ */
+export const leadObservationTokensPerDecisionAt011 = 45_510_363;
 
 export const migration011: Migration = {
   version: 11,
@@ -180,5 +195,12 @@ export const migration011: Migration = {
        END LOOP;
        RETURN true;
      END $$;`,
+    `ALTER TABLE public.session_turn
+       DROP CONSTRAINT session_turn_text_is_bounded,
+       ADD CONSTRAINT session_turn_text_is_bounded CHECK ((((length(input) >= 1) AND (length(input) <= 45510363)) AND (COALESCE(length(result), 0) <= 65536)))`,
+    `UPDATE public.selector_runtime_settings
+        SET controls = replace(controls, '"tokensPerDecision":17360363', '"tokensPerDecision":45510363')`,
+    `UPDATE public.selector_runtime_settings_history
+        SET controls = replace(controls, '"tokensPerDecision":17360363', '"tokensPerDecision":45510363')`,
   ],
 };
