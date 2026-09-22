@@ -829,9 +829,9 @@ function unreadableSources(
 }
 
 /**
- * Every durable evidence, beside the refusal it earns its client. A
- * continuation has no client to earn a refusal, so it parks its ticket instead
- * and the evidence that named the wall is what the desk row carries.
+ * Every durable evidence, beside the refusal it earns its client. An input no
+ * client is waiting on earns no refusal, so what it lands as is the subject of
+ * the cases below.
  */
 const durableEvidences = [
   ["RefUnreadable", "ExecutionSourceUnreadable"],
@@ -912,11 +912,33 @@ function reworkCompletionInput(): DecisionInput {
 }
 
 /**
- * A refusal here would settle at this boundary a task the journal never heard
- * settle, so the completion waits for a source a later quantum can read.
+ * A refusal would settle at this boundary a task the journal never heard
+ * settle, and a deferral would leave this ticket at the head of its class
+ * forever, so the writer takes its failing judgement on the other edge.
  */
-test("a completion whose spawn has no readable source is deferred, not refused", async () => {
+test("a rework no source can be read for parks the ticket in the one quantum", async () => {
   for (const [evidence] of durableEvidences) {
+    const { offered, result } = await decidedWith(
+      judgementMemory(),
+      reworkCompletionInput(),
+      unreadableSources(evidence),
+    );
+    assert.equal(offered?.outcome.outcome, "Journaled", evidence);
+    if (offered?.outcome.outcome !== "Journaled") return;
+    assert.deepEqual(
+      offered.outcome.projection.map((row) => [
+        row.escalation,
+        row.escalationEvidence,
+      ]),
+      [["EvaluationFailureEscalated", evidence]],
+    );
+    assert.notEqual(result.decided.decided, "Deferred", evidence);
+  }
+});
+
+/** A source that may read later is not a rework that cannot be run. */
+test("a rework meeting a source that may read later is deferred still", async () => {
+  for (const evidence of transientEvidences) {
     const memory = judgementMemory();
     const { offered, result } = await decidedWith(
       memory,

@@ -329,6 +329,7 @@ function journaledPlan(
   item: DecisionInput,
   command: DecisionEvent,
   executionSource: ExecutionSourceObservation | undefined,
+  walled?: TicketEscalationEvidence,
 ): ProjectPlan {
   const decision = execDecisionEvent(memory.graph, command);
   const entry: Entry = {
@@ -339,7 +340,7 @@ function journaledPlan(
   const projection = projectionChanges(
     memory.graph,
     decision.post,
-    projectWriterEscalationEvidence(item, command, decision.post),
+    walled ?? projectWriterEscalationEvidence(item, command, decision.post),
   );
   const versions = new Map(memory.ticketVersions);
   for (const row of projection) versions.set(row.ticket, entry.seq);
@@ -538,29 +539,49 @@ async function projectWriterExecutionSource(
 
 /**
  * What a source nobody could read lands as: a transient evidence defers the
- * input so a later quantum retries it, and a durable one answers a client's
- * operation with a code. AN INPUT NO CLIENT IS WAITING ON IS DEFERRED EITHER
- * WAY, because a wall is a task's now and no event parks a ticket whose spawn
- * could not be sourced at all — there is nothing to journal for a
- * continuation, and refusing a completion would settle at this boundary a task
- * the journal never heard settle.
+ * input so a later quantum retries it, a durable one answers a client's
+ * operation with a code, and a durable one under a task's own completion
+ * parks the ticket. A continuation is deferred whatever named the wall,
+ * because a wall is a task's and the tasks of a spawn that did not happen
+ * were never journalled for one to be reported against.
+ */
+type UnreadableLanding =
+  | { readonly landing: "Deferred" }
+  | { readonly landing: "Refused"; readonly code: RefusalCode }
+  | { readonly landing: "Parked"; readonly event: DecisionEvent };
+
+/**
+ * The only completion that spawns is a failing judgement taken to rework, and
+ * which edge that judgement is taken on is this writer's own pick — so a
+ * rework the fabric cannot be given a source for is taken on the other edge,
+ * where the desk row carries what the remote said and the resume re-enters
+ * work exactly where the rework would have. Deferring it left the input at
+ * the head of its class, whose aging term carries it above every other class
+ * while the project decides nothing else at all.
  */
 function projectWriterUnreadableLanding(
   item: DecisionInput,
   unreadable: Extract<SpawnSourceObserved, { observed: "Unreadable" }>,
-):
-  | { readonly landing: "Deferred" }
-  | { readonly landing: "Refused"; readonly code: RefusalCode } {
-  if (
-    transientGitEvidences.includes(unreadable.evidence) ||
-    item.source.kind !== "Operation" ||
-    item.source.completion !== undefined
-  )
+  command: DecisionEvent,
+): UnreadableLanding {
+  if (transientGitEvidences.includes(unreadable.evidence))
     return { landing: "Deferred" };
-  return {
-    landing: "Refused",
-    code: executionSourceRefusalCode(unreadable.evidence),
-  };
+  if (item.source.kind === "Operation" && item.source.completion === undefined)
+    return {
+      landing: "Refused",
+      code: executionSourceRefusalCode(unreadable.evidence),
+    };
+  return command.type === "TaskDone"
+    ? {
+        landing: "Parked",
+        event: taskDoneEvent(
+          asTicketId(command.value.ticket),
+          command.value.task,
+          command.value.report,
+          "EscalateEvaluationFailure",
+        ),
+      }
+    : { landing: "Deferred" };
 }
 
 /**
@@ -628,8 +649,13 @@ async function projectWriterPlan(
   );
   if (observed.observed === "Source")
     return journaledPlan(writer, memory, item, command, observed.source);
-  const landing = projectWriterUnreadableLanding(item, observed);
+  const landing = projectWriterUnreadableLanding(item, observed, command);
   if (landing.landing === "Deferred") return { deferred: observed.evidence };
+  if (landing.landing === "Parked")
+    return journaledPlan(writer, memory, item, landing.event, undefined, {
+      ticket: observed.ticket,
+      evidence: observed.evidence,
+    });
   return {
     outcome: { outcome: "Refused", code: landing.code },
     post: memory.graph,
