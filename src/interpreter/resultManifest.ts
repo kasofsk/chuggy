@@ -51,7 +51,7 @@
  */
 
 import { artifactDigestChars, textCodePointsCount } from "../contract/http.ts";
-import type { Verdict } from "../domain/generated/modelTypes.ts";
+import type { ResultVerdict } from "../contract/rosters.ts";
 import {
   asGitObjectId,
   asGitRefName,
@@ -195,7 +195,7 @@ export interface ResultManifest {
   readonly schemaVersion: ResultManifestSchemaVersion;
   readonly manifest: ResultManifestId;
   readonly binding: ManifestAttemptBinding;
-  readonly verdict: Verdict;
+  readonly verdict: ResultVerdict;
   readonly report?: string;
   readonly handoffs: readonly ArtifactRow[];
   readonly source?: SourceHandoff;
@@ -694,7 +694,7 @@ export function acceptResultManifest(
     schemaVersion: envelope.value["version"] as ResultManifestSchemaVersion,
     manifest,
     binding,
-    verdict: envelope.value["verdict"] as Verdict,
+    verdict: envelope.value["verdict"] as ResultVerdict,
     ...(typeof report === "string" ? { report } : {}),
     handoffs: lists.handoffs,
     ...(source === undefined ? {} : { source }),
