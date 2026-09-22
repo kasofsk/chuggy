@@ -57,6 +57,7 @@ import {
   rosterOf,
   ticketOn,
   workOutstanding,
+  workResultOf,
   workTask,
 } from "./fixtures.ts";
 
@@ -121,7 +122,7 @@ test("first write wins, and an identity nothing is waiting on matches nothing ow
   const running = graphOf([
     ticketOn(config, {
       phase: "Evaluation",
-      evaluations: [runningInstance(1, 1, 1, plan, new Set())],
+      evaluations: [runningInstance(1, 1, plan, new Set())],
       workCyclesStarted: 1,
       spawned: 1 + roster,
     }),
@@ -169,13 +170,46 @@ test("first write wins, and an identity nothing is waiting on matches nothing ow
   assert.deepEqual(owed(stale.post, id(1)), owed(first.post, id(1)));
 });
 
-test("a passing work task stamps the artifact its own accounting names", () => {
+test("a passing work completion pins the reference its report carried", () => {
+  const working = graphOf([
+    ticketOn(config, {
+      phase: "Work",
+      tasks: new Set([workOutstanding(1, 1)]),
+      workCyclesStarted: 1,
+      spawned: 1,
+      source: aDispatchSource,
+    }),
+  ]);
+  const report = producedReport(workTaskOf(1, 1));
+  assert.equal(report.type, "WorkResultReport");
+  const decision = decideTaskDone(
+    working,
+    id(1),
+    workTaskOf(1, 1),
+    report,
+    "ReworkEvaluationFailure",
+  );
+  const settled = ticketAt(decision.post, id(1));
+  assert.deepEqual(settled.artifact, {
+    type: "ProducedArtifact",
+    value: workResultOf(1, 1),
+  });
+  assert.notEqual(
+    workResultOf(1, 1),
+    1,
+    "the reported reference is not the cycle, so a derivation cannot pass for it",
+  );
+  assert.equal(settled.source, report.value.acceptedSourceRef);
+});
+
+test("the work reduce judges the artifact the completion pinned", () => {
   const settledWork = graphOf([
     ticketOn(config, {
       phase: "Work",
       tasks: new Set([workTask(1, 1, "Passed")]),
       workCyclesStarted: 1,
       spawned: 1,
+      artifact: { type: "ProducedArtifact", value: workResultOf(1, 1) },
     }),
   ]);
   const decision = decideWorkReduce(settledWork, id(1));
@@ -184,9 +218,14 @@ test("a passing work task stamps the artifact its own accounting names", () => {
   const evaluating = ticketAt(decision.post, id(1));
   assert.deepEqual(evaluating.artifact, {
     type: "ProducedArtifact",
-    value: 1,
+    value: workResultOf(1, 1),
   });
   assert.equal(evaluating.evaluations.length, 1);
+  assert.equal(
+    evaluating.evaluations[0]?.input.workResult,
+    workResultOf(1, 1),
+    "the judgement is opened over the artifact, not over the cycle",
+  );
   assert.equal(evaluating.tasks.size, 0, "the work task is retired, not kept");
   assert.deepEqual(owed(decision.post, id(1)), [
     evaluationTaskOf(1, 1, 1, 1, 1),
@@ -224,7 +263,7 @@ const halfJudged = (first: "EvaluatorPass" | "EvaluatorFail"): TicketGraph => {
   const running = graphOf([
     ticketOn(config, {
       phase: "Evaluation",
-      evaluations: [runningInstance(1, 1, 1, plan, new Set())],
+      evaluations: [runningInstance(1, 1, plan, new Set())],
       workCyclesStarted: 1,
       spawned: 1 + roster,
       artifact: { type: "ProducedArtifact", value: 1 },
@@ -326,7 +365,7 @@ const finalizing = (): TicketGraph =>
   graphOf([
     ticketOn(config, {
       phase: "Finalization",
-      evaluations: [judgedInstance(1, 1, 1, plan)],
+      evaluations: [judgedInstance(1, 1, plan)],
       workCyclesStarted: 1,
       spawned: 1 + roster,
       artifact: { type: "ProducedArtifact", value: 1 },
@@ -366,10 +405,7 @@ test("a failed finalization re-enters work, and does so every time", () => {
     graphOf([
       ticketOn(config, {
         phase: "Finalization",
-        evaluations: [
-          judgedInstance(1, 1, 1, plan),
-          judgedInstance(1, 2, 2, plan),
-        ],
+        evaluations: [judgedInstance(1, 1, plan), judgedInstance(1, 2, plan)],
         workCyclesStarted: 2,
         spawned: 2 * (1 + roster),
         artifact: { type: "ProducedArtifact", value: 1 },
@@ -447,7 +483,7 @@ test("a stopped evaluator leaves the stage running, and the stage parks once it 
   const running = graphOf([
     ticketOn(config, {
       phase: "Evaluation",
-      evaluations: [runningInstance(1, 1, 1, plan, new Set())],
+      evaluations: [runningInstance(1, 1, plan, new Set())],
       workCyclesStarted: 1,
       spawned: 1 + roster,
     }),
@@ -499,7 +535,7 @@ test("every resume re-enters where its wall implies", () => {
         escalation: wall,
         evaluations:
           wall === "EvaluationBlockedEscalated"
-            ? [blockedInstance(1, 1, 1, plan, new Set([1]))]
+            ? [blockedInstance(1, 1, plan, new Set([1]))]
             : [],
         workCyclesStarted: 1,
         spawned: wall === "EvaluationBlockedEscalated" ? 1 + roster : 1,
@@ -551,7 +587,7 @@ test("the evaluation wall's resume buys a work cycle above an intact history", (
     ticketOn(config, {
       phase: "Escalated",
       escalation: "EvaluationFailureEscalated",
-      evaluations: [judgedInstance(1, 1, 1, plan, () => "EvaluatorFail")],
+      evaluations: [judgedInstance(1, 1, plan, () => "EvaluatorFail")],
       workCyclesStarted: 1,
       spawned: 1 + roster,
     }),

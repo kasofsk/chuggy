@@ -216,13 +216,29 @@ test("the world arithmetic: emission closes the gap to the book, an orphan pushe
   assert.equal(journalCompletionsOn(goodJournal, id(1)), 0);
 });
 
-test("the task result reference is journal data: it names no part of the decision", () => {
+test("the task result reference is part of the decision: the completion pins it", () => {
   const real = completion(work, producedReport(work));
   const other = completion(work, workReport({ resultRef: 2 }));
   assert.notDeepEqual(real, other);
+  assert.ok(
+    decisionEventEnabled(config, d2.post, other),
+    "the admission weighs the obligation, so a shifted reference is admitted alike",
+  );
   const taken = execDecisionEvent(d2.post, real);
-  assert.deepEqual(taken.rec, execDecisionEvent(d2.post, other).rec);
-  assert.ok(graphEquals(taken.post, execDecisionEvent(d2.post, other).post));
+  const shifted = execDecisionEvent(d2.post, other);
+  assert.deepEqual(taken.rec, shifted.rec);
+  assert.ok(
+    !graphEquals(taken.post, shifted.post),
+    "a machine deriving the reference would replay both to the same state",
+  );
+  assert.deepEqual(ticketAt(taken.post, id(1)).artifact, {
+    type: "ProducedArtifact",
+    value: resultFor(work).resultRef,
+  });
+  assert.deepEqual(ticketAt(shifted.post, id(1)).artifact, {
+    type: "ProducedArtifact",
+    value: 2,
+  });
   assert.equal(taken.rec.label, "task-done");
 });
 

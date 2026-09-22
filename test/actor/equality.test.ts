@@ -62,7 +62,7 @@ function assertDiscriminates<Shape>(
 const baseTicket: Ticket = freshTicket(plainDefinition);
 
 /** A judgement of one cycle, which is the smallest instance a ticket can carry. */
-const judged: EvaluationInstance = judgedInstance(1, 1, 1, flatPlan);
+const judged: EvaluationInstance = judgedInstance(1, 1, flatPlan);
 
 /** A ticket carrying this definition, which is how a definition is compared at all. */
 const carrying = (definition: ReleasedTicket): Ticket => ({

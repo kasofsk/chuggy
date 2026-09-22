@@ -150,25 +150,29 @@ module chuggy_refinement_unit_test {
     journalCompletionsOn(goodJ, 2) == 0
   })
 
-  /// THE DECISION IS THE EVENT'S, NOT THE PAYLOAD'S — up to the payload the
-  /// machine actually reads. Two completions differing only in their result
-  /// reference are different events that replay to the same state, because
-  /// the reference is carried and never compared. That is what lets the
-  /// journal be the authority on what happened without the machine having
-  /// to model what a result IS. The obligation and the accepted source on
-  /// the same report are held equal here because those the machine does
-  /// read — one to admit the report, one to pin on the ticket.
-  run taskCompletionDecisionReplaysTest =
+  /// THE DECISION IS THE EVENT'S, AND THE RESULT REFERENCE IS PART OF IT.
+  /// Two completions differing only in their reference are admitted alike —
+  /// the admission weighs the whole obligation and never the reference — and
+  /// replay to DIFFERENT states, because the reference the report carried is
+  /// what the completion pins as the ticket's artifact and what the
+  /// judgement of that artifact is opened over. A machine deriving it from
+  /// the work identity would replay both to the same state, and the journal
+  /// would then not be the authority on what the cycle produced.
+  run taskCompletionPinsItsResultReferenceTest =
     val realEvent = workDone(d2.post, 2, workTaskOf(2, 1))
     val otherRef = TaskDone({ ticket: 2, task: workTaskOf(2, 1),
       report: WorkResultReport({ result: { ...owed2, resultRef: 99 },
         acceptedSourceRef: anAcceptedSource }),
       onFailure: ReworkEvaluationFailure })
     val real = execDecisionEvent(d2.post, realEvent)
+    val other = execDecisionEvent(d2.post, otherRef)
     assert(and {
       decisionEventEnabled(d2.post, realEvent),
+      decisionEventEnabled(d2.post, otherRef),
       realEvent != otherRef,
-      execDecisionEvent(d2.post, realEvent) == execDecisionEvent(d2.post, otherRef),
+      real != other,
+      real.post.tickets.get(2).artifact == ProducedArtifact(owed2.resultRef),
+      other.post.tickets.get(2).artifact == ProducedArtifact(99),
       real.rec.label == "task-done",
       real.post.tickets.get(2).tasks.forall(t => t.state == Resolved(Passed))
     })

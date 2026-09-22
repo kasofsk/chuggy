@@ -269,7 +269,7 @@ module chuggy_test {
     c6.tickets.get(1).evaluations.length() == 1,
     currentInstance(c6.tickets.get(1)).workCycle == 1,
     currentInstance(c6.tickets.get(1)).input ==
-      { ticket: 1, workResult: 1, acceptedSourceRef: srcAccepted },
+      { ticket: 1, workResult: 101, acceptedSourceRef: srcAccepted },
     currentInstance(c6.tickets.get(1)).plan == { stages: planU2 },
     currentInstance(c6.tickets.get(1)).state ==
       EvaluationPassed([{ stageIndex: 0, generation: 1,
@@ -949,15 +949,22 @@ module chuggy_test {
     D::finalizationOutcomes == Set(FinalizationSucceeded, FinalizationNeedsWork,
       FinalizationResultUnavailable))
 
-  /// WORK-PASSED STAMPS AN ARTIFACT, and a rework SUPERSEDES it. The second
-  /// half is what makes the mark an identity rather than a flag: two cycles
-  /// of the same ticket produced different things and the model can say so.
-  /// The instance judging each cycle names the same number as its input, so
-  /// a judgement can never be about the wrong artifact.
+  /// THE COMPLETION STAMPS AN ARTIFACT, and a rework SUPERSEDES it. The
+  /// second half is what makes the mark an identity rather than a flag: two
+  /// cycles of the same ticket produced different things and the model can
+  /// say so. The instance judging each cycle names the same number as its
+  /// input, so a judgement can never be about the wrong artifact.
+  ///
+  /// AND THE NUMBER IS THE REPORT'S. The report carried 101 and the cycle is
+  /// 1, so a stamp or an instance that derived the reference from the work
+  /// identity would read back as the cycle and fail here.
   run artifactStampedAndSupersededTest = assert(and {
     dDispatch.post.tickets.get(1).artifact == NoArtifact,
-    dWorkReduce.post.tickets.get(1).artifact == ProducedArtifact(1),
-    currentInstance(c3.tickets.get(1)).input.workResult == 1,
+    dWork1.post.tickets.get(1).artifact == ProducedArtifact(101),
+    dWorkReduce.post.tickets.get(1).artifact == ProducedArtifact(101),
+    currentInstance(c3.tickets.get(1)).input.workResult == 101,
+    currentInstance(c3.tickets.get(1)).input.workResult !=
+      currentInstance(c3.tickets.get(1)).workCycle,
     // The rework fixture walks a second cycle; its product differs from the
     // first, which a stamp-once mutant would fail.
     dBackToEval.post.tickets.get(1).artifact != NoArtifact,

@@ -337,7 +337,10 @@ module chuggy_ticket {
     // accepted.
     source: int,
     // The artifact this ticket has produced, if it has passed work (design
-    // 002). Set at work-passed and superseded by each rework's product.
+    // 002) — the reference the passing report carried. Pinned by the work
+    // completion that carried it (domain.qnt decideWorkTaskDone), read by
+    // the reduce that opens the judgement of it, and superseded by each
+    // rework's product.
     artifact: ArtifactMark,
     // The LIVE WORK task, alone: one task while the ticket is in Work and
     // nothing in any other phase. Evaluation carries no set here — its
@@ -364,9 +367,9 @@ module chuggy_ticket {
     // the run LISTS, whether this generation asks all of them or only the
     // ones a resume reopened (spawnEvalRun below). It is monotone and never
     // reused, which is what an implementation mints an external task number
-    // from, and the artifact number is drawn from it. Held against what the
-    // instances themselves say by the identity-accounting invariant
-    // (domain.qnt idsAccounted).
+    // from. It is an identity ledger and no result reference is drawn from
+    // it. Held against what the instances themselves say by the
+    // identity-accounting invariant (domain.qnt idsAccounted).
     spawned: int,
     // The wall this ticket is parked at (NoEscalation unless Escalated).
     // Deliberately FIRST-CLASS stored trace vocabulary, not derived from
@@ -447,13 +450,30 @@ module chuggy_ticket {
   }
 
   /// AN OPAQUE POSITIVE REFERENCE derived from a task's own identity, where
-  /// the real system has a stored row — a validated result, a piece of
-  /// failure evidence. The machine's only claim on such a reference is
-  /// that it exists and is distinct per evaluator within a run, which is the
-  /// discrimination a run's statuses need.
+  /// the real system has a stored row — a piece of failure evidence. The
+  /// machine's only claim on such a reference is that it exists and is
+  /// distinct per evaluator within a run, which is the discrimination a
+  /// run's statuses need.
   pure def taskRefOf(task: TaskIdentity): int =
     match task {
       | WorkTask(work) => work.cycle
+      | EvaluationTask(evaluation) => evaluation.evaluator
+    }
+
+  /// The band a work result's model-scope reference is drawn in.
+  pure val workResultBand: int = 100
+
+  /// WHAT A PRODUCED RESULT'S REFERENCE IS AT MODEL SCOPE (producedResult's
+  /// helper), where the real system folds the digest of the manifest the task
+  /// attested. A WORK result takes a band of its own, clear of the cycle that
+  /// produced it: the reference a report carries is a fact the completion is
+  /// TOLD, and one that read back as the cycle would let a reader — and a
+  /// golden — mistake a derivation for the number that travelled. An
+  /// evaluator's is its own key, which is what tells one evaluator's result
+  /// from another's within a run.
+  pure def producedResultRef(task: TaskIdentity): int =
+    match task {
+      | WorkTask(work) => workResultBand * work.ticket + work.cycle
       | EvaluationTask(evaluation) => evaluation.evaluator
     }
 
@@ -572,26 +592,24 @@ module chuggy_ticket {
         ticket.definition.evaluationPlan.stages[index].evaluators.length() }
 
   /// WORK PASSED, SO JUDGEMENT BEGINS: the instance is opened over the
-  /// ACCEPTED WORK RESULT — the reference the passing report carried, which
-  /// is the one the cycle's own task derives (producedResult) — with the
+  /// ACCEPTED WORK RESULT — `workResult`, the reference the passing report
+  /// carried and the completion pinned as this ticket's artifact — with the
   /// released plan and the source that result was accepted at, and its first
   /// stage is asked. One instance per work cycle that gets this far.
   ///
   /// The artifact the dependents read is that same reference, and so is every
   /// evaluator obligation's contextRef (evaluation.qnt currentTaskObligations
   /// builds it from input.workResult): a judgement is OF a result, so the
-  /// number the work produced is the number the judgement is asked under. The
-  /// mint counter is an identity ledger and never stands in for it. The
-  /// instance's acceptedSourceRef is the ticket's own — the completion that
-  /// carried it put it there, and nothing observes a second.
-  pure def beginEvaluation(ticket: Ticket): Ticket =
-    val artifactRef =
-      taskRefOf(workTaskOf(ticket.definition.id, ticket.workCyclesStarted))
+  /// number the work reported is the number the judgement is asked under. The
+  /// mint counter is an identity ledger and never stands in for it, and
+  /// neither does the cycle. The instance's acceptedSourceRef is the ticket's
+  /// own — the completion that carried it put it there, and nothing observes
+  /// a second.
+  pure def beginEvaluation(ticket: Ticket, workResult: int): Ticket =
     spawnEvalRun({ ...ticket,
-      artifact: ProducedArtifact(artifactRef),
       evaluations: ticket.evaluations.append(begin(
         ticket.workCyclesStarted,
-        { ticket: ticket.definition.id, workResult: artifactRef,
+        { ticket: ticket.definition.id, workResult: workResult,
           acceptedSourceRef: ticket.source },
         ticket.definition.evaluationPlan)) })
 
@@ -665,13 +683,14 @@ module chuggy_ticket {
     }
 
   /// WHAT A LIVE TASK'S RESULT LOOKS LIKE TO THE MACHINE: the obligation this
-  /// ticket owes for it, and a reference derived from the task's own
-  /// identity where the real system has a stored row. The machine's only
-  /// claim on the reference is that it exists and tells one evaluator's
-  /// result from another's within a run. Callers draw the task from
-  /// liveTasks, which is what makes the obligation there to find.
+  /// ticket owes for it, and the reference producedResultRef derives where
+  /// the real system folds a stored manifest's digest. Callers draw the task
+  /// from liveTasks, which is what makes the obligation there to find. This
+  /// is the CORPUS's constructor — the walk needs a report it can hold the
+  /// machine to — and the only place a result reference is derived at all:
+  /// every decider takes the one its report carried.
   pure def producedResult(
       ticket: Ticket, task: TaskIdentity): ValidatedTaskResult =
     { obligation: liveObligations(ticket).select(owed => owed.task == task)[0],
-      resultRef: taskRefOf(task) }
+      resultRef: producedResultRef(task) }
 }

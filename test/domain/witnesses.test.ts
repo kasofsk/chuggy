@@ -57,7 +57,7 @@ const midProgram = graphOf([
   ticketOn(config, {
     phase: "Evaluation",
     stages: twoStage,
-    evaluations: [runningInstance(1, 1, 1, twoStage, new Set())],
+    evaluations: [runningInstance(1, 1, twoStage, new Set())],
     workCyclesStarted: 1,
     spawned: 2,
   }),

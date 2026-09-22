@@ -249,9 +249,12 @@ function taskDoneStep(
 
 /**
  * A work completion: the cycle's one task settles — produced, or died with the
- * fabric's relaunches behind it — and the reduce that follows reads it.
- * Infrastructure that could not run it at all parks the ticket here instead,
- * there being no sibling to wait for and no judgement to preserve.
+ * fabric's relaunches behind it — and infrastructure that could not run it at
+ * all parks the ticket here instead, there being no sibling to wait for and no
+ * judgement to preserve. A pass pins both references the report carried,
+ * neither being derivable and this the only step told them: the result becomes
+ * the artifact the reduce opens the judgement over, and the source it was
+ * accepted at replaces the one the ticket ran at.
  */
 function decideWorkTaskDone(
   graph: TicketGraph,
@@ -265,6 +268,10 @@ function decideWorkTaskDone(
       return taskDoneStep(graph, id, {
         ...ticket,
         tasks: resolveTask(ticket.tasks, task, "Passed"),
+        artifact: {
+          type: "ProducedArtifact",
+          value: report.value.result.resultRef,
+        },
         source: report.value.acceptedSourceRef,
       });
     case "TerminalFailureReport":
@@ -352,14 +359,15 @@ function decideEvalTaskDone(
 }
 
 /**
- * The work task has settled: a pass retires it, stamps the artifact the
- * dependents will read and OPENS THE INSTANCE that judges it, whose first
- * stage is asked at once. A failed task is a failed CYCLE and parks, the
- * fabric having already retried it below the cycle grain.
+ * The work task has settled: a pass retires it and OPENS THE INSTANCE that
+ * judges the artifact its completion pinned, whose first stage is asked at
+ * once. A failed task is a failed CYCLE and parks, the fabric having already
+ * retried it below the cycle grain.
  */
 export function decideWorkReduce(graph: TicketGraph, id: TicketId): Decision {
   const ticket = ticketAt(graph, id);
-  if (!workProduced(ticket.tasks)) {
+  /** Unreachable: the completion that resolved the cycle Passed pinned it. */
+  if (!workProduced(ticket.tasks) || ticket.artifact === "NoArtifact") {
     return escalate(
       graph,
       id,
@@ -368,7 +376,11 @@ export function decideWorkReduce(graph: TicketGraph, id: TicketId): Decision {
     );
   }
   return move(
-    withTicket(graph, id, beginEvaluation(retireLive(ticket))),
+    withTicket(
+      graph,
+      id,
+      beginEvaluation(retireLive(ticket), ticket.artifact.value),
+    ),
     id,
     "Evaluation",
     "work-passed",

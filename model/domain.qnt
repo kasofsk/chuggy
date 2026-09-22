@@ -562,6 +562,12 @@ module chuggy_domain {
   /// reads the settled task (decideWorkReduce). Infrastructure that could
   /// not run it at all parks the ticket here instead: there is no sibling to
   /// wait for and no judgement to preserve.
+  ///
+  /// A PASS PINS BOTH REFERENCES THE REPORT CARRIED, because neither is
+  /// derivable and this is the only step that is told them: the result
+  /// becomes the ticket's artifact, and the source it was accepted at
+  /// replaces the one the ticket ran at. The reduce reads the artifact back
+  /// and opens the judgement over it.
   pure def decideWorkTaskDone(
       c: TicketGraph, j: int, task: TaskIdentity,
       report: TaskTerminalReport): Decision =
@@ -570,6 +576,7 @@ module chuggy_domain {
       | WorkResultReport(produced) =>
         taskDoneStep(c, j, { ...jb,
           tasks: resolveTask(jb.tasks, task, Passed),
+          artifact: ProducedArtifact(produced.result.resultRef),
           source: produced.acceptedSourceRef })
       | TerminalFailureReport(failure) =>
         match failure.kind {
@@ -638,8 +645,8 @@ module chuggy_domain {
 
   /// The Work task settled: reduce the phase, at CYCLE level only. Work runs
   /// ONE task per cycle, so the phase's success is that task's. A pass
-  /// retires the work task, marks the artifact it produced and OPENS THE
-  /// INSTANCE that judges it (ticket.qnt beginEvaluation), whose first stage
+  /// retires the work task and OPENS THE INSTANCE that judges the artifact
+  /// its completion pinned (ticket.qnt beginEvaluation), whose first stage
   /// is asked at once — one task per evaluator that stage lists, fanned out
   /// in parallel. Every entry spawns the stage in
   /// full — an evaluator is never skipped on the grounds that its subject
@@ -652,13 +659,20 @@ module chuggy_domain {
   /// non-goal.
   pure def decideWorkReduce(c: TicketGraph, j: int): Decision =
     val jb = c.tickets.get(j)
-    if (workProduced(jb.tasks))
-      move(
-        withTicket(c, j, beginEvaluation(retireLive(jb))),
-        j, Evaluation, "work-passed", ["SpawnEvalTasks"])
-    else
+    if (not(workProduced(jb.tasks)))
       escalate(c, j, WorkFailureEscalated,
         "ticket-escalated work_failure_escalated")
+    else match jb.artifact {
+      | ProducedArtifact(workResult) =>
+        move(
+          withTicket(c, j, beginEvaluation(retireLive(jb), workResult)),
+          j, Evaluation, "work-passed", ["SpawnEvalTasks"])
+      // Unreachable: the completion that resolved the cycle Passed is the
+      // one that pinned the mark (decideWorkTaskDone).
+      | NoArtifact =>
+        escalate(c, j, WorkFailureEscalated,
+          "ticket-escalated work_failure_escalated")
+    }
 
   /// A finalizer reports only a domain outcome. Queueing,
   /// preparation, approval, permits and reconciliation are focused durable

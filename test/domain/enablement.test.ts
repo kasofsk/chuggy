@@ -205,7 +205,7 @@ test("a completion lands on a ticket owing a task, and only a resolved work set 
     }),
     ticketOn(config, {
       phase: "Evaluation",
-      evaluations: [runningInstance(2, 1, 1, plan, new Set([1]))],
+      evaluations: [runningInstance(2, 1, plan, new Set([1]))],
       workCyclesStarted: 1,
       spawned: 3,
     }),
@@ -218,7 +218,7 @@ test("a completion lands on a ticket owing a task, and only a resolved work set 
     }),
     ticketOn(config, {
       phase: "Evaluation",
-      evaluations: [judgedInstance(5, 1, 1, plan)],
+      evaluations: [judgedInstance(5, 1, plan)],
       workCyclesStarted: 1,
       spawned: 3,
     }),
@@ -256,7 +256,7 @@ test("the fabric may still report on exactly the tasks a ticket has outstanding"
   const graph = graphOf([
     ticketOn(config, {
       phase: "Evaluation",
-      evaluations: [runningInstance(1, 1, 1, plan, new Set([1]))],
+      evaluations: [runningInstance(1, 1, plan, new Set([1]))],
       workCyclesStarted: 1,
       spawned: 3,
     }),

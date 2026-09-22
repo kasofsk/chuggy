@@ -197,26 +197,23 @@ export function spawnEvalRun(ticket: Ticket): Ticket {
 
 /**
  * Work passed, so judgement begins: the instance is opened over the ACCEPTED
- * WORK RESULT — the reference the passing report carried, which the cycle's
- * own task derives — with the released plan and the source it was accepted
- * at. That same reference is the artifact the dependents read and every
- * evaluator obligation's `contextRef`, a judgement being of a result; the
- * mint counter is an identity ledger and never stands in for it.
+ * WORK RESULT — `workResult`, the reference the passing report carried and the
+ * completion pinned as this ticket's artifact — with the released plan and the
+ * source it was accepted at. That same reference is the artifact the
+ * dependents read and every evaluator obligation's `contextRef`, a judgement
+ * being of a result; the mint counter is an identity ledger and never stands
+ * in for it, and neither does the cycle.
  */
-export function beginEvaluation(ticket: Ticket): Ticket {
-  const artifact = taskRefOf(
-    workTaskOf(ticket.definition.id, ticket.workCyclesStarted),
-  );
+export function beginEvaluation(ticket: Ticket, workResult: number): Ticket {
   return spawnEvalRun({
     ...ticket,
-    artifact: { type: "ProducedArtifact", value: artifact },
     evaluations: [
       ...ticket.evaluations,
       begin(
         ticket.workCyclesStarted,
         {
           ticket: ticket.definition.id,
-          workResult: artifact,
+          workResult,
           acceptedSourceRef: ticket.source,
         },
         ticket.definition.evaluationPlan,
@@ -304,9 +301,10 @@ export function obligationCurrent(
 
 /**
  * What a live task's result looks like to the machine: the obligation this
- * ticket owes for it, and a reference derived from the task's own identity.
- * Callers draw the task from `liveTasks`, which is what makes the obligation
- * there to find.
+ * ticket owes for it, drawn from `liveTasks`, and the reference
+ * `producedResultRef` derives. This is the CORPUS's constructor and the only
+ * place a result reference is derived at all: every decider takes the one its
+ * report carried.
  */
 export function producedResult(
   ticket: Ticket,
@@ -317,16 +315,34 @@ export function producedResult(
   );
   if (obligation === undefined)
     throw new Error("producedResult: the ticket owes this task nothing");
-  return { obligation, resultRef: taskRefOf(task) };
+  return { obligation, resultRef: producedResultRef(task) };
 }
 
 /**
  * An opaque positive reference derived from a task's own identity, where the
- * real system has a stored row. The machine's only claim on such a reference
- * is that it exists and tells one evaluator's result from another's in a run.
+ * real system has a stored row — a piece of failure evidence. The machine's
+ * only claim on such a reference is that it exists and tells one evaluator's
+ * result from another's in a run.
  */
 export function taskRefOf(task: TaskIdentity): number {
   return task.type === "WorkTask" ? task.value.cycle : task.value.evaluator;
+}
+
+/** The band a work result's model-scope reference is drawn in. */
+const workResultBand = 100;
+
+/**
+ * What a produced result's reference is at model scope, where the real system
+ * folds the digest of the manifest the task attested. A WORK result takes a
+ * band of its own, clear of the cycle that produced it: the reference a report
+ * carries is a fact the completion is TOLD, and one that read back as the
+ * cycle would let a reader — and a golden — mistake a derivation for the
+ * number that travelled.
+ */
+export function producedResultRef(task: TaskIdentity): number {
+  return task.type === "WorkTask"
+    ? workResultBand * task.value.ticket + task.value.cycle
+    : task.value.evaluator;
 }
 
 /** A report is well-formed when every reference it carries is a real one. */

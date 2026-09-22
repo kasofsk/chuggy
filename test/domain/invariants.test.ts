@@ -285,7 +285,7 @@ test("tasksWellFormed rejects a live task in a phase that runs none", () => {
     !tasksWellFormed(
       config,
       stateView(
-        judging([runningInstance(1, 1, 1, plan, new Set())], {
+        judging([runningInstance(1, 1, plan, new Set())], {
           tasks: new Set([evalOutstanding(1, 1, 1, 1)]),
         }),
       ),
@@ -295,7 +295,7 @@ test("tasksWellFormed rejects a live task in a phase that runs none", () => {
   assert.ok(
     tasksWellFormed(
       config,
-      stateView(judging([runningInstance(1, 1, 1, plan, new Set())])),
+      stateView(judging([runningInstance(1, 1, plan, new Set())])),
     ),
   );
 });
@@ -320,7 +320,7 @@ test("evaluationsWellFormed rejects a judgement that is not this ticket's", () =
   assert.ok(
     !evaluationsWellFormed(
       config,
-      stateView(judging([runningInstance(2, 1, 1, plan, new Set())])),
+      stateView(judging([runningInstance(2, 1, plan, new Set())])),
     ),
     "an instance names the ticket it judges, and a ticket carries no other's",
   );
@@ -330,7 +330,6 @@ test("evaluationsWellFormed rejects a judgement that is not this ticket's", () =
       stateView(
         judging([
           runningInstance(
-            1,
             1,
             1,
             [{ key: 1, evaluators: [evaluatorOf(1)] }],
@@ -345,7 +344,7 @@ test("evaluationsWellFormed rejects a judgement that is not this ticket's", () =
     !evaluationsWellFormed(
       config,
       stateView(
-        settledJudging([judgedInstance(1, 2, 1, plan)], {
+        settledJudging([judgedInstance(1, 2, plan)], {
           workCyclesStarted: 1,
         }),
       ),
@@ -357,8 +356,8 @@ test("evaluationsWellFormed rejects a judgement that is not this ticket's", () =
       config,
       stateView(
         settledJudging([
-          judgedInstance(1, 2, 1, plan),
-          judgedInstance(1, 1, 2, plan),
+          judgedInstance(1, 2, plan),
+          judgedInstance(1, 1, plan),
         ]),
       ),
     ),
@@ -369,8 +368,8 @@ test("evaluationsWellFormed rejects a judgement that is not this ticket's", () =
       config,
       stateView(
         settledJudging([
-          judgedInstance(1, 1, 1, plan),
-          judgedInstance(1, 2, 2, plan),
+          judgedInstance(1, 1, plan),
+          judgedInstance(1, 2, plan),
         ]),
       ),
     ),
@@ -382,7 +381,7 @@ test("evaluationsWellFormed rejects a phase that disagrees with the instance it 
   assert.ok(
     !evaluationsWellFormed(
       config,
-      stateView(judging([judgedInstance(1, 1, 1, plan)])),
+      stateView(judging([judgedInstance(1, 1, plan)])),
     ),
     "a ticket in Evaluation is running a stage, not holding a settled judgement",
   );
@@ -391,10 +390,7 @@ test("evaluationsWellFormed rejects a phase that disagrees with the instance it 
       config,
       stateView(
         judging(
-          [
-            judgedInstance(1, 1, 1, plan),
-            runningInstance(1, 2, 1, plan, new Set()),
-          ],
+          [judgedInstance(1, 1, plan), runningInstance(1, 2, plan, new Set())],
           { workCyclesStarted: 3 },
         ),
       ),
@@ -414,14 +410,14 @@ test("evaluationsWellFormed rejects a phase that disagrees with the instance it 
   assert.ok(
     !evaluationsWellFormed(
       config,
-      stateView(parked(judgedInstance(1, 1, 1, plan))),
+      stateView(parked(judgedInstance(1, 1, plan))),
     ),
     "the desk's blocked wall and the instance's blocked state are one fact",
   );
   assert.ok(
     evaluationsWellFormed(
       config,
-      stateView(parked(blockedInstance(1, 1, 1, plan, new Set([1])))),
+      stateView(parked(blockedInstance(1, 1, plan, new Set([1])))),
     ),
   );
 });
@@ -446,7 +442,7 @@ test("evaluationsMonotone rejects a history that shrank, was rewritten, or lost 
     "tickets are never deleted",
   );
   const advanced = fleetBut(fleet, 2, {
-    evaluations: [runningInstance(3, 1, 1, plan, new Set())],
+    evaluations: [runningInstance(3, 1, plan, new Set())],
   });
   assert.ok(
     evaluationsMonotone(config, {
@@ -457,7 +453,7 @@ test("evaluationsMonotone rejects a history that shrank, was rewritten, or lost 
     "the last instance is the open one and advances",
   );
   const grown = fleetBut(fleet, 2, {
-    evaluations: [...kept, judgedInstance(3, 2, 2, plan)],
+    evaluations: [...kept, judgedInstance(3, 2, plan)],
   });
   assert.ok(
     evaluationsMonotone(config, { ...healthy, pre: healthy.post, post: grown }),
@@ -468,8 +464,8 @@ test("evaluationsMonotone rejects a history that shrank, was rewritten, or lost 
       pre: { tickets: new Map(grown.tickets) },
       post: fleetBut(fleet, 2, {
         evaluations: [
-          runningInstance(3, 1, 1, plan, new Set()),
-          judgedInstance(3, 2, 2, plan),
+          runningInstance(3, 1, plan, new Set()),
+          judgedInstance(3, 2, plan),
         ],
       }),
     }),
@@ -496,7 +492,7 @@ test("idsAccounted rejects a mint counter the ticket's own history does not impl
   const unclaimed = graphOf([
     ticketOn(config, {
       phase: "Finalization",
-      evaluations: [judgedInstance(1, 1, 1, plan)],
+      evaluations: [judgedInstance(1, 1, plan)],
       workCyclesStarted: 1,
       spawned: 1,
     }),
@@ -509,7 +505,7 @@ test("idsAccounted rejects a mint counter the ticket's own history does not impl
     ticketOn(config, {
       phase: "Escalated",
       escalation: "EvaluationBlockedEscalated",
-      evaluations: [blockedInstance(1, 1, 1, plan, new Set([1]))],
+      evaluations: [blockedInstance(1, 1, plan, new Set([1]))],
       workCyclesStarted: 1,
       spawned: 1 + roster,
     }),
@@ -521,9 +517,7 @@ test("idsAccounted rejects a mint counter the ticket's own history does not impl
   const reasked = graphOf([
     ticketOn(config, {
       phase: "Evaluation",
-      evaluations: [
-        resumeBlocked(blockedInstance(1, 1, 1, plan, new Set([1]))),
-      ],
+      evaluations: [resumeBlocked(blockedInstance(1, 1, plan, new Set([1])))],
       workCyclesStarted: 1,
       spawned: 1 + 2 * roster,
     }),
@@ -795,7 +789,7 @@ test("evaluationsWellFormed holds a sparse stage to the keys it lists, not to a 
         spawned: 2,
       }),
     ]);
-  const listed = runningInstance(1, 1, 1, sparse, new Set());
+  const listed = runningInstance(1, 1, sparse, new Set());
   assert.ok(
     evaluationsWellFormed(config, stateView(judgingSparse(listed))),
     "a sparse stage runs exactly the key it lists, and no key one",

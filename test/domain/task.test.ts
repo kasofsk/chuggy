@@ -275,7 +275,7 @@ function judgedOver(
     ...bare,
     workCyclesStarted: cycles,
     evaluations: verdicts.map((verdict, at) =>
-      judgedInstance(1, at + 1, 1, flat, () => verdict),
+      judgedInstance(1, at + 1, flat, () => verdict),
     ),
   };
 }
