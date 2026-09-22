@@ -27,10 +27,12 @@ import { initRecord } from "../../src/domain/ticketGraph.ts";
 import { freshTicket } from "../../src/domain/deciders.ts";
 import { id, judgedInstance, workOutstanding } from "../domain/fixtures.ts";
 import { flatPlan, plainDefinition } from "./harness.ts";
-import { evaluatorOf } from "../../src/domain/config.ts";
+import { evaluatorOf, evaluatorTaskOf } from "../../src/domain/config.ts";
 import type {
+  EvaluationInput,
   EvaluationInstance,
   EvaluationProgress,
+  EvaluatorDefinition,
   ReleasedTicket,
   StageDefinition,
   StageRun,
@@ -132,6 +134,20 @@ const stageMutants: FieldMutants<StageDefinition> = {
   evaluators: (s) => ({ ...s, evaluators: [evaluatorOf(2)] }),
 };
 
+const evaluatorMutants: FieldMutants<EvaluatorDefinition> = {
+  key: (e) => ({ ...e, key: e.key + 1 }),
+  task: (e) => ({ ...e, task: evaluatorTaskOf(e.key + 1) }),
+};
+
+const inputMutants: FieldMutants<EvaluationInput> = {
+  ticket: (i) => ({ ...i, ticket: i.ticket + 1 }),
+  workResult: (i) => ({ ...i, workResult: i.workResult + 1 }),
+  acceptedSourceRef: (i) => ({
+    ...i,
+    acceptedSourceRef: i.acceptedSourceRef + 1,
+  }),
+};
+
 const instanceMutants: FieldMutants<EvaluationInstance> = {
   workCycle: (i) => ({ ...i, workCycle: i.workCycle + 1 }),
   input: (i) => ({ ...i, input: { ...i.input, workResult: 2 } }),
@@ -212,8 +228,33 @@ test("the stage comparison reads every field StageDefinition declares", () => {
   );
 });
 
+test("the evaluator comparison reads every field EvaluatorDefinition declares", () => {
+  const inTicket = (entry: EvaluatorDefinition): Ticket =>
+    carrying({
+      ...plainDefinition,
+      evaluationPlan: { stages: [{ key: 1, evaluators: [entry] }] },
+    });
+  assertDiscriminates(
+    evaluatorOf(1),
+    (left, right) => ticketEquals(inTicket(left), inTicket(right)),
+    evaluatorMutants,
+  );
+});
+
 test("instanceEquals reads every field EvaluationInstance declares", () => {
   assertDiscriminates(judged, instanceEquals, instanceMutants);
+});
+
+test("instanceEquals reads every field EvaluationInput declares", () => {
+  const withInput = (input: EvaluationInput): EvaluationInstance => ({
+    ...judged,
+    input,
+  });
+  assertDiscriminates(
+    judged.input,
+    (left, right) => instanceEquals(withInput(left), withInput(right)),
+    inputMutants,
+  );
 });
 
 test("the progress comparison reads every field EvaluationProgress declares", () => {

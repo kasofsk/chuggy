@@ -30,6 +30,7 @@ import type {
 } from "./generated/modelTypes.ts";
 import {
   evaluationTaskOf,
+  taskDefinitionEquals,
   taskDefinitionValid,
   taskIdentityEquals,
   taskObligationEquals,
@@ -502,9 +503,14 @@ export function stageDefinitionEquals(
   return (
     left.key === right.key &&
     left.evaluators.length === right.evaluators.length &&
-    left.evaluators.every(
-      (entry, index) => entry.key === right.evaluators[index]?.key,
-    )
+    left.evaluators.every((entry, index) => {
+      const other = right.evaluators[index];
+      return (
+        other !== undefined &&
+        entry.key === other.key &&
+        taskDefinitionEquals(entry.task, other.task)
+      );
+    })
   );
 }
 
@@ -607,6 +613,7 @@ export function instanceEquals(
     left.workCycle === right.workCycle &&
     left.input.ticket === right.input.ticket &&
     left.input.workResult === right.input.workResult &&
+    left.input.acceptedSourceRef === right.input.acceptedSourceRef &&
     stagesEqual(left.plan.stages, right.plan.stages) &&
     evaluationStateEquals(left.state, right.state)
   );

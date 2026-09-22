@@ -12,7 +12,7 @@
   copy a `diff` can check for drift. Do not edit it — change chuggy around it.
   `ticket.qnt` imports it for `TaskIdentity`, `TaskDefinition`,
   `TaskObligation`, `ValidatedTaskResult` and `TaskTerminal`, and `domain.qnt`
-  calls `taskIdentityValid`, `taskDefinitionValid` and `taskOwner`.
+  calls `taskIdentityValid` and `taskDefinitionValid`.
 - `ticket-domain/evaluation/evaluation.qnt` is the same VERBATIM copy at the
   package's own path, so its own import of the task contract resolves
   unchanged. `diff` against the package is empty, and the same rule applies:
