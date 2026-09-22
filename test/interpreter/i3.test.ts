@@ -69,9 +69,11 @@ import { populated } from "./roster.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import {
   aDispatchSource,
+  anAcceptedSource,
   evaluatorOf,
   releasedTicketOf,
 } from "../../src/domain/config.ts";
+import { liveObligations, taskRefOf } from "../../src/domain/ticket.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type { DecisionInput } from "../../src/interpreter/projectDiscovery.ts";
@@ -484,6 +486,38 @@ test("a spawn bundle pins its exact source and prior result manifests", () => {
     { kind: "TargetCommit", reference: "a".repeat(40) },
     { kind: "ResultManifest", reference: "manifest-one" },
   ]);
+});
+
+/**
+ * A passed work result moves the ticket onto the source it was accepted at and
+ * opens the judgement over the result it produced: the instance answers for
+ * that source, and every evaluator is asked under the work result as its
+ * context. An evaluator's obligation is what the door has to rebuild, so the
+ * two references are read here rather than trusted.
+ */
+test("a work pass carries its accepted source and its result into the judgement", () => {
+  const passed = [
+    releaseTicketEvent(plainDefinitionOf(1)),
+    dispatchEvent(id(1), aDispatchSource),
+    workDone(1),
+    workReduceEvent(id(1)),
+  ].reduce(
+    (state, event) => journalStep(refinementInstance, state, event),
+    actorInit(),
+  );
+  const ticket = ticketAt(memoryGraph(passed), id(1));
+  assert.equal(ticket.source, anAcceptedSource);
+  const instance = ticket.evaluations.at(-1);
+  assert.ok(instance !== undefined);
+  assert.deepEqual(instance.input, {
+    ticket: 1,
+    workResult: taskRefOf(workTaskOf(1, 1)),
+    acceptedSourceRef: anAcceptedSource,
+  });
+  assert.deepEqual(
+    liveObligations(ticket).map((owed) => owed.contextRef),
+    [instance.input.workResult],
+  );
 });
 
 test("a decision leaving escalation withdraws its open native action", () => {

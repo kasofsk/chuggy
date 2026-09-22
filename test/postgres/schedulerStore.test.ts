@@ -286,6 +286,79 @@ test("registering creates one execution per declared task, pinned to its request
   }
 });
 
+/**
+ * The revision rewritten behind a release: a platform default of another
+ * version, naming a capability the authored worker states, which is the shape
+ * a materializer accepts and a release that ran now would resolve instead.
+ */
+const rewrittenConfiguration = JSON.stringify({
+  brief: {
+    acceptanceCriteria: ["The ticket is complete."],
+    constraints: [],
+    motivation: ["The ticket should be completed."],
+  },
+  executionRequirements: {
+    platformDefault: {
+      architecture: "Amd64",
+      capabilities: ["Agent:Claude"],
+      mode: "ContainerCapability",
+      operatingSystem: "Linux",
+    },
+    platformDefaultVersion: 2,
+  },
+  image: "worker:v1",
+  practices: [],
+  review: { instructions: [] },
+  version: 1,
+  work: { instructions: [] },
+  worker: {
+    files: [],
+    mode: { agent: "Claude", arguments: [], type: "SingleAgent" },
+    setup: [],
+  },
+});
+
+/**
+ * A ticket runs at what its release resolved, which is why the material is
+ * stored rather than re-derived. This rewrites the pinned revision behind the
+ * release — a platform default of another version, which is how a requirement
+ * moves between images — and registers afterwards: a registration that
+ * materialized from the configuration would copy the rewrite.
+ */
+test("a registration runs the requirement the release resolved, not the one the revision now says", async () => {
+  const project = await schedulerProject(rig, "released-requirement");
+  const [stored] = (await rig.harness.query(
+    `SELECT definition->'tasks'->0->'executionRequirements'->>'digest' AS digest
+       FROM ticket_definition WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  )) as readonly { digest: string }[];
+  await rig.harness.query(
+    `UPDATE configuration_revision SET canonical=$3 WHERE tenant=$1 AND project=$2`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      rewrittenConfiguration,
+    ],
+  );
+  assert.equal(
+    (await registerAll(project, "released-requirement")).registered,
+    "Registered",
+  );
+  const requirements = (await rig.harness.query(
+    `SELECT requirement_digest,platform_default_version::text AS platform_default_version
+       FROM execution WHERE tenant=$1 AND project=$2`,
+    [project.partition.tenant, project.partition.project],
+  )) as readonly {
+    requirement_digest: string;
+    platform_default_version: string;
+  }[];
+  assert.equal(requirements.length, project.tasks);
+  for (const row of requirements) {
+    assert.equal(row.platform_default_version, "1");
+    assert.equal(row.requirement_digest, stored?.digest);
+  }
+});
+
 test("a registration retry creates only the tasks that are missing", async () => {
   const project = await schedulerProject(rig, "partial");
   const claim = await schedulerClaimFor(
