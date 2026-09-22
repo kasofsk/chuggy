@@ -28,9 +28,9 @@ import {
   taskEquals,
   taskIdentityEquals,
   taskIdentityValid,
-  taskOrdinal,
+  taskRetirementKey,
   taskOwner,
-  tasksInOrdinalOrder,
+  tasksInEvaluatorKeyOrder,
   workTaskOf,
 } from "./task.ts";
 
@@ -103,15 +103,21 @@ function liveTaskIsNotCancelled(task: Task): boolean {
   return !(task.state !== "Outstanding" && task.state.value === "Cancelled");
 }
 
+/** Two key lists name the same set, which is all an unordered live set can be held to. */
+function sameKeys(left: readonly number[], right: readonly number[]): boolean {
+  const named = new Set(right);
+  return left.length === named.size && left.every((key) => named.has(key));
+}
+
 /**
  * The live task set is exactly the current phase's anatomy: the work task of
- * the cycle just started while Work, one run of one stage's fan-out judging
- * that cycle while Evaluation, and empty everywhere else. Dead live-task state
- * is never carried, and cancelled never appears live.
+ * the cycle just started while Work, one run of the stage's authored roster
+ * judging that cycle while Evaluation, and empty everywhere else. Dead
+ * live-task state is never carried, and cancelled never appears live.
  */
 export const tasksWellFormed: Invariant = (_config, view) =>
   everyLiveTicket(view.post, (t, id) => {
-    const live = tasksInOrdinalOrder(t.tasks);
+    const live = tasksInEvaluatorKeyOrder(t.tasks);
     if (t.phase === "Work") {
       return (
         t.tasks.size === 1 &&
@@ -127,19 +133,21 @@ export const tasksWellFormed: Invariant = (_config, view) =>
     if (t.phase === "Evaluation") {
       const stage = evalStage(t.tasks);
       const declared = t.program[stage];
+      if (stage < 0 || declared === undefined) return false;
+      const listed = declared.evaluators.map((e) => e.key);
       return (
-        stage >= 0 &&
-        declared !== undefined &&
-        t.tasks.size === declared.fanout &&
         live.every(
           (task) =>
             task.identity.type === "EvaluationTask" &&
             task.identity.value.ticket === id &&
             task.identity.value.workCycle === t.workCyclesStarted &&
-            task.identity.value.stage === stage + 1 &&
+            task.identity.value.stage === declared.key &&
             liveTaskIsNotCancelled(task),
         ) &&
-        live.every((task, index) => taskOrdinal(task.identity) === index + 1)
+        sameKeys(
+          live.map((task) => taskRetirementKey(task.identity)),
+          listed,
+        )
       );
     }
     return t.tasks.size === 0;
@@ -201,7 +209,15 @@ export const programsWellFormed: Invariant = (config, view) =>
     (t) =>
       t.program.length >= 1 &&
       t.program.length <= config.maxStages &&
-      t.program.every((s) => s.fanout >= 1 && s.fanout <= config.nTasks),
+      t.program.every((stage, index) => {
+        const keys = stage.evaluators.map((e) => e.key);
+        return (
+          stage.key === index + 1 &&
+          keys.length >= 1 &&
+          new Set(keys).size === keys.length &&
+          keys.every((key) => key >= 1 && key <= config.nTasks)
+        );
+      }),
   );
 
 /**

@@ -5,9 +5,10 @@
  * The model holds the live set as `Set[Task]` and this mirrors it, so the
  * folds below read the set the model reads. Where a fold's result depends on
  * order — retirement into the record, and every comparison a trace makes —
- * `tasksInOrdinalOrder` is what supplies it: a live set is one work task or
- * one stage's evaluators, so the evaluator ordinal is canonical rather than
- * incidental, and nothing here inherits whatever order a rebuild produced.
+ * `tasksInEvaluatorKeyOrder` is what supplies it: a live set is one work task
+ * or one stage's roster, so the authored evaluator key is canonical rather
+ * than incidental, and nothing here inherits whatever order a rebuild
+ * produced.
  */
 
 import { assertNever } from "./assertNever.ts";
@@ -25,9 +26,9 @@ export function workTaskOf(ticket: number, cycle: number): TaskIdentity {
 }
 
 /**
- * One evaluator of one run of one stage. `stage` is the zero-based index into
- * the ticket's authored program; the contract's key is one more, which is the
- * only place that offset is applied.
+ * One evaluator of one run of one stage, under the two keys the program
+ * authored. No offset is applied: a caller holding a stage index passes that
+ * stage's key, which the positional rule makes the same number.
  */
 export function evaluationTaskOf(
   ticket: number,
@@ -38,13 +39,7 @@ export function evaluationTaskOf(
 ): TaskIdentity {
   return {
     type: "EvaluationTask",
-    value: {
-      ticket,
-      workCycle,
-      stage: asStageIndex(stage) + 1,
-      generation,
-      evaluator,
-    },
+    value: { ticket, workCycle, stage, generation, evaluator },
   };
 }
 
@@ -76,10 +71,11 @@ export function taskOwner(identity: TaskIdentity): number {
 }
 
 /**
- * A task's place in its own set, and so the order the set retires in: a stage
- * runs evaluators one to its fanout, and a work cycle is one task.
+ * The key a task retires under, and so the order its set enters the record in:
+ * an evaluation task's is its authored evaluator key, and a work cycle is one
+ * task.
  */
-export function taskOrdinal(identity: TaskIdentity): number {
+export function taskRetirementKey(identity: TaskIdentity): number {
   switch (identity.type) {
     case "WorkTask":
       return 1;
@@ -88,11 +84,30 @@ export function taskOrdinal(identity: TaskIdentity): number {
   }
 }
 
-/** The tasks as a list, ascending by ordinal — the one ordering anything here folds in. */
-export function tasksInOrdinalOrder(tasks: Iterable<Task>): readonly Task[] {
+/** The tasks as a list, ascending by evaluator key — the one ordering anything here folds in. */
+export function tasksInEvaluatorKeyOrder(
+  tasks: Iterable<Task>,
+): readonly Task[] {
   return [...tasks].sort(
-    (a, b) => taskOrdinal(a.identity) - taskOrdinal(b.identity),
+    (a, b) => taskRetirementKey(a.identity) - taskRetirementKey(b.identity),
   );
+}
+
+/**
+ * Where a task sits in its own set, one-based, with the set ordered by
+ * evaluator key. This is what a wire integer minted per set counts, now that
+ * the keys themselves need not run one to the set's size.
+ */
+export function taskPositionInSet(
+  tasks: Iterable<Task>,
+  identity: TaskIdentity,
+): number {
+  const position = tasksInEvaluatorKeyOrder(tasks).findIndex((t) =>
+    taskIdentityEquals(t.identity, identity),
+  );
+  if (position < 0)
+    throw new Error("taskPositionInSet: the identity is not in this set");
+  return position + 1;
 }
 
 /**
@@ -133,7 +148,7 @@ export function outstandingCount(tasks: ReadonlySet<Task>): number {
  */
 export function evalStage(tasks: ReadonlySet<Task>): StageIndex {
   let stage = asStageIndex(0);
-  for (const task of tasksInOrdinalOrder(tasks)) {
+  for (const task of tasksInEvaluatorKeyOrder(tasks)) {
     switch (task.identity.type) {
       case "WorkTask":
         continue;
@@ -202,14 +217,14 @@ function taskEqualsState(left: TaskState, right: TaskState): boolean {
 }
 
 /**
- * Retire a live set into the retained record, in ordinal order. A task still
- * outstanding at retirement is force-closed as cancelled, which only a revoke
- * ever reaches.
+ * Retire a live set into the retained record, by ascending evaluator key. A
+ * task still outstanding at retirement is force-closed as cancelled, which
+ * only a revoke ever reaches.
  */
-export function retiredInOrdinalOrder(
+export function retiredInEvaluatorKeyOrder(
   tasks: ReadonlySet<Task>,
 ): readonly Task[] {
-  return tasksInOrdinalOrder(tasks).map((t) =>
+  return tasksInEvaluatorKeyOrder(tasks).map((t) =>
     t.state === "Outstanding" ? { ...t, state: tsResolved("Cancelled") } : t,
   );
 }

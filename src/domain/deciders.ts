@@ -196,12 +196,9 @@ export function decideWorkReduce(graph: TicketGraph, id: TicketId): Decision {
       "ticket-escalated work_failure_escalated",
     );
   }
-  const stage = retired.program[0];
-  if (stage === undefined)
-    throw new Error("work-reduce: an empty program reached a reduce");
   return move(
     withTicket(graph, id, {
-      ...spawnEvalStage(retired, id, 0, stage.fanout),
+      ...spawnEvalStage(retired, id, 0),
       artifact: { type: "ProducedArtifact", value: retired.spawned },
     }),
     id,
@@ -230,14 +227,9 @@ export function decideEvalStageReduce(
     throw new Error("eval-reduce: the live stage indexes outside the program");
 
   if (combine(ticket.tasks)) {
-    const next = retired.program[stageIndex + 1];
-    if (next !== undefined) {
+    if (retired.program[stageIndex + 1] !== undefined) {
       return move(
-        withTicket(
-          graph,
-          id,
-          spawnEvalStage(retired, id, stageIndex + 1, next.fanout),
-        ),
+        withTicket(graph, id, spawnEvalStage(retired, id, stageIndex + 1)),
         id,
         "Evaluation",
         "eval-stage-passed",
@@ -385,11 +377,8 @@ export function decideResumeTicket(graph: TicketGraph, id: TicketId): Decision {
         ["SpawnWorkTasks"],
       );
     case "ResumeEvaluation": {
-      const stage = ticket.program[0];
-      if (stage === undefined)
-        throw new Error("resume: an empty program reached an eval resume");
       return move(
-        withTicket(graph, id, spawnEvalStage(resumed, id, 0, stage.fanout)),
+        withTicket(graph, id, spawnEvalStage(resumed, id, 0)),
         id,
         "Evaluation",
         "ticket-resumed",

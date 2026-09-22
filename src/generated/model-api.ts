@@ -11,13 +11,14 @@ import type {
   TaskState,
   Task,
   Verdict,
+  EvaluatorDefinition,
   StageDefinition,
   EvaluationFailureDisposition,
   Resume,
   Escalation,
   FinalizationOutcome,
-  ArtifactMark,
   Phase,
+  ArtifactMark,
   Ticket,
   InstallationId,
   TicketRef,
@@ -201,11 +202,32 @@ export function decodeVerdict(value: unknown): Verdict {
   return verdictSchemaWire.parse(value);
 }
 
+export const evaluatorDefinitionSchema: z.ZodType<EvaluatorDefinition> = z
+  .object({ key: z.number().int().safe() })
+  .readonly();
+const evaluatorDefinitionSchemaWire: z.ZodType<EvaluatorDefinition> = z
+  .object({ key: z.number().int().safe() })
+  .readonly();
+export function encodeEvaluatorDefinition(
+  value: EvaluatorDefinition,
+): ModelJson {
+  return encodeJson(value);
+}
+export function decodeEvaluatorDefinition(value: unknown): EvaluatorDefinition {
+  return evaluatorDefinitionSchemaWire.parse(value);
+}
+
 export const stageDefinitionSchema: z.ZodType<StageDefinition> = z
-  .object({ fanout: z.number().int().safe() })
+  .object({
+    key: z.number().int().safe(),
+    evaluators: z.array(evaluatorDefinitionSchema).readonly(),
+  })
   .readonly();
 const stageDefinitionSchemaWire: z.ZodType<StageDefinition> = z
-  .object({ fanout: z.number().int().safe() })
+  .object({
+    key: z.number().int().safe(),
+    evaluators: z.array(evaluatorDefinitionSchemaWire).readonly(),
+  })
   .readonly();
 export function encodeStageDefinition(value: StageDefinition): ModelJson {
   return encodeJson(value);
@@ -299,31 +321,6 @@ export function decodeFinalizationOutcome(value: unknown): FinalizationOutcome {
   return finalizationOutcomeSchemaWire.parse(value);
 }
 
-export const artifactMarkSchema: z.ZodType<ArtifactMark> = z.union([
-  z.literal("NoArtifact"),
-  z
-    .object({
-      type: z.literal("ProducedArtifact"),
-      value: z.number().int().safe(),
-    })
-    .readonly(),
-]);
-const artifactMarkSchemaWire: z.ZodType<ArtifactMark> = z.union([
-  z.literal("NoArtifact"),
-  z
-    .object({
-      type: z.literal("ProducedArtifact"),
-      value: z.number().int().safe(),
-    })
-    .readonly(),
-]);
-export function encodeArtifactMark(value: ArtifactMark): ModelJson {
-  return encodeJson(value);
-}
-export function decodeArtifactMark(value: unknown): ArtifactMark {
-  return artifactMarkSchemaWire.parse(value);
-}
-
 export const phaseSchema: z.ZodType<Phase> = z.union([
   z.literal("Pending"),
   z.literal("Work"),
@@ -347,6 +344,31 @@ export function encodePhase(value: Phase): ModelJson {
 }
 export function decodePhase(value: unknown): Phase {
   return phaseSchemaWire.parse(value);
+}
+
+export const artifactMarkSchema: z.ZodType<ArtifactMark> = z.union([
+  z.literal("NoArtifact"),
+  z
+    .object({
+      type: z.literal("ProducedArtifact"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+]);
+const artifactMarkSchemaWire: z.ZodType<ArtifactMark> = z.union([
+  z.literal("NoArtifact"),
+  z
+    .object({
+      type: z.literal("ProducedArtifact"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+]);
+export function encodeArtifactMark(value: ArtifactMark): ModelJson {
+  return encodeJson(value);
+}
+export function decodeArtifactMark(value: unknown): ArtifactMark {
+  return artifactMarkSchemaWire.parse(value);
 }
 
 export const ticketSchema: z.ZodType<Ticket> = z
