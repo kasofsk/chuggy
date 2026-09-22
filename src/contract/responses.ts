@@ -516,7 +516,7 @@ export const executionSummarySchema = z.object({
   requirementDigest: digestSchema,
   requirementSource: z.enum(requirementSources),
   /**
-   * The spawn request that made this execution, which is its fan-out set's
+   * The spawn request that made this execution, which is its spawn set's
    * identity. Optional for the deployment window and not because a summary can
    * lack one: the console is its own artifact, so a bundle that already reads
    * this field can reach a server not yet sending it, and a required field
