@@ -383,6 +383,23 @@ test("a two-stage pick sends positional stage keys and evaluators keyed 1..n", a
   });
 });
 
+/** A stage added and left alone is keyed to its place like any other. */
+test("adding a stage without touching its count sends it keyed to its position", async () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, []);
+  typeIntent("ship it");
+  fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+  fireEvent.click(screen.getByText("add stage"));
+  const authoring = await submittedAuthoring(held);
+  expect(authoring).toStrictEqual({
+    dependencies: [],
+    program: [
+      { key: 1, evaluators: [{ key: 1 }] },
+      { key: 2, evaluators: [{ key: 1 }] },
+    ],
+  });
+});
+
 /** Removing a stage moves the ones after it up, and their keys move with them. */
 test("removing the first stage sends the remaining stage keyed to its new position", async () => {
   const held = api({ state: "Succeeded" });

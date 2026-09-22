@@ -49,6 +49,16 @@ test("draft initialization exposes deployment choices with server defaults", () 
   });
 });
 
+/** The two bounds coincide at the reference instance, so each is pinned where they differ. */
+test("the evaluator bound is the task bound, not the stage bound", () => {
+  const policy = draftInitializationPolicy({
+    ...refinementInstance,
+    nTasks: 3,
+    maxStages: 2,
+  });
+  assert.deepEqual(policy.choices, { programStagesMax: 2, evaluatorsMax: 3 });
+});
+
 test("stage-specific configuration bounds the authored evaluation program", () => {
   const parsed = JSON.parse(readyConfiguration) as Record<string, unknown>;
   const readiness = releaseConfigurationReadiness(

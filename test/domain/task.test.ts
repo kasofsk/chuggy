@@ -344,10 +344,10 @@ function working(cycle: number): Task {
   return { identity: workTaskOf(1, cycle), state: tsOutstanding };
 }
 
-/** One evaluator of stage zero judging `cycle`, carrying the outcome it resolved to. */
+/** One evaluator of the first stage judging `cycle`, carrying the outcome it resolved to. */
 function evaluated(cycle: number, outcome: TaskOutcome, evaluator = 1): Task {
   return {
-    identity: evaluationTaskOf(1, cycle, 0, 1, evaluator),
+    identity: evaluationTaskOf(1, cycle, 1, 1, evaluator),
     state: tsResolved(outcome),
   };
 }

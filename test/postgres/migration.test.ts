@@ -4226,6 +4226,14 @@ const evaluatorKeyPrograms: readonly (readonly [string, unknown, boolean])[] = [
     [{ key: 1, evaluators: [{ key: 1 }], combinator: "AnyPass" }],
     false,
   ],
+  ["a stage with no key at all", [{ evaluators: [{ key: 1 }] }], false],
+  ["a stage keyed by text", [{ key: "1", evaluators: [{ key: 1 }] }], false],
+  [
+    "an evaluator keyed by text",
+    [{ key: 1, evaluators: [{ key: "1" }] }],
+    false,
+  ],
+  ["a stage whose evaluators are a number", [{ key: 1, evaluators: 3 }], false],
 ];
 
 function evaluatorKeyRelease(prog: unknown): unknown {
