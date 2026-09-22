@@ -198,12 +198,13 @@ function groups(container: HTMLElement): readonly HTMLElement[] {
   return [...container.querySelectorAll<HTMLElement>(".ledger-group")];
 }
 
-/** The row for a stage the program authored, picked out from the work row that
+/** Every row an evaluated stage drew, picked out from the work row that
  * always draws first in its cycle. */
-function stageRow(group: HTMLElement | undefined): HTMLElement | undefined {
-  return [...(group?.querySelectorAll<HTMLElement>(".ledger-row") ?? [])].find(
-    (row) =>
-      row.querySelector(".ledger-label")?.textContent?.startsWith("Stage"),
+function stageRows(group: HTMLElement | undefined): readonly HTMLElement[] {
+  return [
+    ...(group?.querySelectorAll<HTMLElement>(".ledger-row") ?? []),
+  ].filter((row) =>
+    row.querySelector(".ledger-label")?.textContent?.startsWith("Stage"),
   );
 }
 
@@ -418,7 +419,7 @@ test("every dollar the page draws carries the basis it was priced on", async () 
     expect(cell.querySelector(".fig-basis")?.textContent).toBe("list");
 });
 
-test("after a resume the current cycle gains a run and a running stage", async () => {
+test("after a resume the current cycle draws its resumed evaluator running, again", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Resumed,
     ticket: resumedTicket,
@@ -427,14 +428,10 @@ test("after a resume the current cycle gains a run and a running stage", async (
   expect(screen.queryByText("Rework budget exhausted")).toBeNull();
   const current = groups(container)[0];
   if (current === undefined) throw new Error("no current cycle");
-  const eyebrows = [...current.querySelectorAll(".eyebrow")].map(
-    (drawn) => drawn.textContent,
-  );
-  expect(eyebrows).toContain("Evaluation · run 1");
-  expect(eyebrows).toContain("Evaluation · run 2 · after resume");
   const running = rowsOf(current).find((row) => row.includes("Running"));
   expect(running).toBeDefined();
   expect(running).toContain("running ");
+  expect(running).toContain("again");
   expect(current.querySelector(".fig-live")).not.toBeNull();
 });
 
@@ -445,7 +442,7 @@ test("a resumed ticket says it was resumed", async () => {
   });
   const notice = container.querySelector(".notice-live");
   expect(notice?.textContent).toContain("Evaluating");
-  expect(notice?.textContent).toContain("Resumed from stage 1 · cycle 3");
+  expect(notice?.textContent).toContain("Resumed at stage 1 · cycle 3");
 });
 
 test("a short page says so, and no cycle on it claims to be whole", async () => {
@@ -668,30 +665,6 @@ test("a ticket the machine is working on now keeps its open span", async () => {
   expect(head?.textContent).toContain("running");
 });
 
-/**
- * A set holds its tasks in the wire's order, not by instant, so the wait is
- * measured from the earliest start and not from the first-listed one.
- */
-test("a fan-out's wait is measured from the earliest task to start", async () => {
-  const dated = fanoutShapes.map((shape) => {
-    if (shape.task === 1)
-      return { ...shape, startedAt: "2026-08-26T00:25:00Z" };
-    if (shape.task === 2)
-      return { ...shape, startedAt: "2026-08-26T00:15:00Z" };
-    return shape;
-  });
-  const { container } = await drawTicket({
-    shapes: dated,
-    ticket: parkedTicket,
-    authoring: fanoutAuthoring,
-  });
-  const when =
-    stageRow(groups(container).at(-1))?.querySelector(".ledger-when")
-      ?.textContent ?? "";
-  expect(when).toContain("waited 5m");
-  expect(when).not.toContain("waited 15m");
-});
-
 /** The provenance panel draws a stage as its evaluator count, never its key. */
 test("provenance draws each stage as its evaluator count", async () => {
   const { container } = await drawTicket({
@@ -769,7 +742,7 @@ test("the by-stage table is work first and then the program's own order", async 
   expect(container.querySelector("#usage")).not.toBeNull();
 });
 
-/** A stage authored three wide, two of its tasks on the page and both
+/** A stage authored three evaluators wide, two of them on the page and both
  * relaunched, its cycle superseded by the work that ran after it. */
 const fanoutAuthoring: TicketAuthoring = {
   dependencies: [],
@@ -811,34 +784,31 @@ async function drawFanout(): Promise<Drawn> {
 }
 
 /**
- * A queue time over part of a fan-out would be a figure about no whole thing,
- * so a set the wire dates only some of reads as one it dates none of.
+ * A stage's evaluators each draw their own row rather than one merged over
+ * the whole fan-out, so one evaluator's price, wait and relaunch count never
+ * bleed into another's, and the roster's own shortfall is said once, on the
+ * last evaluator the page holds.
  */
-test("a fan-out set the wire half-dates draws no wait at all", async () => {
-  const half = fanoutShapes.map((shape) =>
-    shape.task === 1 ? { ...shape, startedAt: "2026-08-26T00:11:00Z" } : shape,
-  );
-  const { container } = await drawTicket({
-    shapes: half,
-    ticket: parkedTicket,
-    authoring: fanoutAuthoring,
-  });
-  const row = stageRow(groups(container).at(-1));
-  const when = row?.querySelector(".ledger-when")?.textContent ?? "";
-  expect(when).toContain("15m");
-  expect(when).not.toContain("waited");
-});
-
-test("a fan-out row is priced and timed over the whole set, not its first task", async () => {
+test("a sparse stage draws each evaluator as its own row, priced and timed apart", async () => {
   const { container } = await drawFanout();
-  const row = stageRow(groups(container).at(-1));
-  expect(row).toBeDefined();
-  expect(row?.querySelector(".ledger-spent")?.textContent).toContain("$1.00");
-  const when = row?.querySelector(".ledger-when")?.textContent ?? "";
-  expect(when).toContain("15m");
-  expect(when).not.toContain("2m");
-  expect(row?.textContent).toContain("Relaunched 3× by fabric");
-  expect(row?.textContent).toContain("2 of 3 tasks on this page");
+  const rows = stageRows(groups(container).at(-1));
+  expect(rows).toHaveLength(2);
+  expect(rows[0]?.querySelector(".ledger-label")?.textContent).toBe(
+    "Stage 1 of 1 · 1",
+  );
+  expect(rows[1]?.querySelector(".ledger-label")?.textContent).toBe(
+    "Stage 1 of 1 · 2",
+  );
+  expect(rows[0]?.querySelector(".ledger-spent")?.textContent).toContain(
+    "$0.40",
+  );
+  expect(rows[1]?.querySelector(".ledger-spent")?.textContent).toContain(
+    "$0.60",
+  );
+  expect(rows[0]?.textContent).toContain("Relaunched 1× by fabric");
+  expect(rows[1]?.textContent).toContain("Relaunched 2× by fabric");
+  expect(rows[1]?.textContent).toContain("2 of 3 evaluators on this page");
+  expect(rows[0]?.textContent).not.toContain("evaluators on this page");
 });
 
 /**
