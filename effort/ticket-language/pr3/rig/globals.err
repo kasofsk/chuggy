@@ -1,0 +1,1 @@
+psql:/tmp/globals.sql:76: ERROR:  role "postgres" already exists

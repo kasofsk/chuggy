@@ -1,0 +1,13 @@
+# PR 6b review ledger
+- A 223a986c, S cfcc4f83, merge 405063aa. B running.
+- B 1fb1bc26. C running.
+- Tip for round 1 machine half: 1fb1bc26 (A+S+B; C's console commits follow and are outside that half). Base 1e986583.
+- Round 1 machine (1fb1bc26): CHANGES, three findings (AGENTS.md attribution; domain.qnt:348 'ids sequential'; execution_requirement.qnt keeps ExplicitTask while the interpreter deleted it) → task D on fix/identity-explicit-task. Machine verified clean: copy, spawn identities, resume edge at generation 2, mint 1..11 identical to the old ids, 010, goldens, gates all 0.
+- D 0ef1eba5 on fix/identity-explicit-task (finding 3: ExplicitTask leaves the model, the roster, the adapter; 010 restates execution_requirement_source_known; findings 1–2 docs). To merge after C.
+- C 56167f02; D merged → 71c13aae. Tip for round 1 surface half: 71c13aae. Tip for round 2 (machine, D's diff): 71c13aae. Full roster launched at 71c13aae.
+- Full roster at 71c13aae (origin/main 1e986583 in): all gates clean (ci-full-6b-71c13aae.log).
+- Round 1 surface (71c13aae): CHANGES — (1) behaviour defect: program runs grouped by generation, but generations are per stage, so a resumed stage 1 at gen 2 followed by a first stage 2 at gen 1 draws two false runs (regression against the deleted heuristic); (2) cycle clamp names itself on a page not opening at cycle 1 → task E.
+- Round 2 machine (71c13aae): CHANGES, one test finding (the sources case spelled only two of four) → 0b8e93e7 on fix/identity-roster-case (orchestrator; red-proved by a typo in the CHECK). Machine otherwise clean; reviewing of the machine half ends (two rounds, the second nit-only).
+- E 0e80a7df (runs cut at the lowest stage; superseding cycle named from the page; both red-proved). Roster case merged → f8691ffd.
+- Tip for sweep: f8691ffd. The sweep is also the fresh eyes on E's fix (surface round 2): its brief names the resume page.
+- Sweep (f8691ffd): APPROVE, 82 mutations, 61 red, 21 survived, 0 behaviour defects; E's fix read true on three resume pages. Findings 1, 2, 4 and 6's floors pinned by the orchestrator in d64941ca (each red-proved by the sweep's own mutation); finding 3's four doc lines fixed there. Finding 5 (two cut-rule clauses and the one-stage merge, reachable only through a page that lost its opening row) and 6's `.optional()`/`< 0` floors left. Reviewing ends.

@@ -1,0 +1,17 @@
+check-queries: reusing chuggy-check-postgres on port 55432
+
+/home/geoff/claude/chuggy-wt/no-accounts-schema/src/adapters/postgres/decision.ts
+  204:9   error  Invalid Query: column "gas_left" of relation "ticket_projection" does not exist        @ts-safeql/check-sql
+  242:66  error  Invalid Query: column "rework_policy" of relation "dispatch_candidate" does not exist  @ts-safeql/check-sql
+
+/home/geoff/claude/chuggy-wt/no-accounts-schema/src/adapters/postgres/dispatchViews.ts
+  139:15  error  Invalid Query: column d.rework_policy does not exist  @ts-safeql/check-sql
+
+/home/geoff/claude/chuggy-wt/no-accounts-schema/src/adapters/postgres/nativeReads.ts
+  420:62  error  Invalid Query: column t.gas_left does not exist  @ts-safeql/check-sql
+  451:60  error  Invalid Query: column t.gas_left does not exist  @ts-safeql/check-sql
+  503:64  error  Invalid Query: column t.gas_left does not exist  @ts-safeql/check-sql
+
+✖ 6 problems (6 errors, 0 warnings)
+
+check-queries: FAILED — a query or a row type disagrees with postgres:18-alpine

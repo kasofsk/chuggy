@@ -1,0 +1,22 @@
+# Review round 1, machine half — PR 7a "The program is a plan" (branch `model/evaluator-keys`)
+
+You did not write this change. Review it fresh in a detached worktree of your own at the tip named in `reviews/7a-ledger.md`:
+
+    git -C ~/claude/chuggy worktree add --detach ~/claude/chuggy-wt/evkeys-review-machine <tip>
+    ln -s ~/claude/chuggy/node_modules ~/claude/chuggy-wt/evkeys-review-machine/node_modules
+
+Never `npm ci` under `ui/`. Your half: `model/`, `test/golden`, `src/generated`, `src/domain`, `src/actor`, `src/interpreter`, `src/adapters`, `src/contract`, `src/adapters/postgres/schema/migrations/011-evaluator-keys.ts`, and their tests. The surface half (`ui/`, `test/ui`) is another reviewer's. Diff: `git diff e9a6136e..<tip> -- <your paths>`.
+
+Read first: `~/claude/chuggy-effort/ticket-language/pr7/GOAL.md` §"The split" and §"PR 7a — decisions" and the progress lines that correct them, `pr7/survey.md` §1, §2, §5 and surprises 2, 3, 4, 11, `pr7/tasks/7a/{A,S,B}-report.md`, the package's `~/claude/chuggy-effort/ticket-language/package/model/ticket-domain/evaluation/evaluation.qnt` lines 1–60 and `taskIdentityFor`, `evaluatorKeys`, `planValid`, `.chug/tasks/review-change.md`, `CLAUDE.md`.
+
+## What to check, each with a failure that actually happens
+
+1. The types: `EvaluatorDefinition` and `StageDefinition` in `model/ticket.qnt` spelled as the package's minus `task`, so 7b's copy replaces them without a rename; `programsWellFormed` is `planValid` minus `taskDefinitionValid` plus the two chuggy bounds and the positional stage key, and the positional rule is stated once and truthfully (it is chuggy's, not the package's).
+2. The model on a sparse stage: take a program `[{key: 1, evaluators: [{key: 1}, {key: 3}]}]` through dispatch, both evaluators resolving, the reduce, a rework, and a `ResumeEvaluation` into a second generation — every identity minted is new, `idsAccounted` holds after every retire, and a stale `TaskDone` naming a retired identity is not enabled. `retireLive`'s order against what the finalizer takes. `stageGeneration` counted at the first listed key: construct a stage whose first listed key is not its lowest and check both runs' identities stay distinct.
+3. Goldens re-emitted, not hand-edited (`emit-goldens.sh` reproduces them byte for byte); the walk's program draw in `test/random/draws.ts` reaches sparse stages; `check-conformance`, `check-random` at the tip.
+4. The mint (`decisionPlan.ts requestTasks`): with `taskPositionInSet`, injective and monotone per ticket across a sparse stage, a resume at generation 2 and a rework — the unique `(tenant,project,ticket,task)` and `ON CONFLICT DO NOTHING` in `scheduler.ts` turn a repeat into a silently dropped obligation, so build the case against the old arithmetic (survey 2) and confirm the new one passes it. `schedulerRows.ts`'s `stage - 1` is justified by the positional rule and says so; the `evaluator` column carries the key; the briefing selects the stage's block for every evaluator (decision 5) and says so in one sentence.
+5. The wire: `programStageSchema` strict; `choices.evaluatorsMax` is `N_TASKS` from the config; the interpreter's refusal calls the mirror's `isValidProgram` rather than restating it; `contractDocument.json` and representations follow; a `CreateTicket` released with a sparse stage round-trips the journal, the dispatch candidate's stored text and the projection.
+6. 011: guard byte-identical to 008's; the `prog` arm restates `planValid` minus `taskDefinitionValid` plus the positional key; re-prove three of S's red-proofs by mutation; render-diff 001–010 main vs branch empty; `check-postgres` red-proved through the arm by at least one suite that releases a program (S's green was vacuous, S-report says so). The latent absent-`prog` hole S found is out of scope here unless the branch made it worse.
+7. Comments and docs: true, in the tree's voice, no quantities, no stale path claims; nothing still says a stage is a width or numbers evaluators one to a count. Run `check-figures`, `check-comments`, `check-paths`, `check-boundaries`, `check-queries`, `check-postgres`, `check-source` at the tip.
+
+Verdict to `~/claude/chuggy-effort/ticket-language/pr7/reviews/7a-round1-machine.md`: APPROVE or CHANGES; each finding names file:line, the input and what goes wrong; under ~80 lines. Remove your worktree and drop any database you made. Write the verdict, reply with it, and stop.

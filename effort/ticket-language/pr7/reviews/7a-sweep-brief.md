@@ -1,0 +1,17 @@
+# Mutation sweep — PR 7a "The program is a plan" (branch `model/evaluator-keys`)
+
+You did not write this change. Fresh detached worktree of your own at the tip named in `reviews/7a-ledger.md` under "Tip for sweep":
+
+    git -C ~/claude/chuggy worktree add --detach ~/claude/chuggy-wt/evkeys-sweep <tip>
+    ln -s ~/claude/chuggy/node_modules ~/claude/chuggy-wt/evkeys-sweep/node_modules
+    ln -s ~/claude/chuggy/ui/chuggy-ui/node_modules ~/claude/chuggy-wt/evkeys-sweep/ui/chuggy-ui/node_modules
+
+Never `npm ci` under `ui/`. Read: `~/claude/chuggy-effort/ticket-language/pr7/GOAL.md`, `pr7/tasks/7a/{A,S,B,C}-report.md`, `pr7/reviews/7a-round1-{machine,surface}.md` and any fix reports the ledger names, `pr6/reviews/6b-sweep.md` (the shape and depth wanted, and the cwd trap it recorded), `~/.claude/projects/-home-geoff-claude-chuggy/memory/scoped-iteration-gates.md`, `.chug/tasks/review-change.md`.
+
+Whole-branch mutation sweep over `git diff e9a6136e..<tip>`: for every added or changed behaviour in the model, the domain, the actor, the interpreter, the adapters, 011, the contract and the console, apply one plausible mutation (a spawn by count instead of by roster, `retireLive` walking `1..size`, `stageGeneration` counted at evaluator 1, `programsWellFormed` dropping the positional key or the uniqueness, `stageChoices` dense only, the mint by key instead of position, the position counted over the retired set, the arm admitting `fanout` or a repeated key or a non-positional stage key, the mailbox bound not re-rendered, `evaluatorsMax` off the config, the picker minting from 0, the width read as the highest key) and run the narrowest gate or suite that should catch it; record RED or SURVIVED with the mutation, the file:line and the case. Goldens' step bodies are the model's output: mutate the manifest and the draws, not the traces. Survivors are findings only when they name a behaviour defect or a proof gap a cheap case closes. Docs pass: every comment the diff touches reads true against the code beside it; the types in `model/ticket.qnt` are spelled as the package's `evaluation.qnt` minus `task`. Fabric alignment: nothing under `.chug/`, `images/`, `deploy/` or in `~/claude/chuggy-fabric` names a fan-out, `fanout`, `choices.stages` or a stage width that this branch moved.
+
+Verdict to `~/claude/chuggy-effort/ticket-language/pr7/reviews/7a-sweep.md`: APPROVE or CHANGES; the mutation table; findings with file:line; under ~120 lines. Remove your worktree and drop any database you made. Write the verdict, reply with the verdict, the counts and the findings only, and stop.
+
+## Addendum (orchestrator)
+
+Round 1 machine found `sameKeys` in `src/domain/invariants.ts` fails open on two live task objects sharing a key (a JS Set holds both where the model's value-Set holds one); the orchestrator added the injectivity conjunct and a case (`test/domain/invariants.test.ts`, "two live tasks sharing a key"). You are the fresh eyes on that fix: mutate the conjunct away and confirm only that case reddens, and look for any other seam in the diff where reference-Set semantics let the mirror admit a state the model refuses. Round 1 surface's two coverage cases (provenance two-width, picker remove path) were the orchestrator's too; include them in the table. The machine reviewer also established that 011's `prog` arm is reached only by the `Decide` command arm, never by a release, so its coverage is the migration suite's literals alone — that is a fact for 7b's 012, not a finding here.

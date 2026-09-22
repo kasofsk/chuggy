@@ -1,0 +1,388 @@
+deploy-to-gtr: cloning gdoteof/chuggy-fabric
+deploy-to-gtr: releasing 1e986583 over 0f94fe6b
+deploy-to-gtr: gating 1e986583 with every gate
+ci: full run (CHUG_CI_FULL=1)
+
+--- doc-lint
+doc-lint: 0 error(s), 0 warning(s) across 21 file(s)
+
+--- check-figures
+check-figures: 0 finding(s) across 102 file(s)
+
+--- check-paths
+check-paths: 0 finding(s) across 1214 path claim(s) in 1160 file(s)
+
+--- check-shell-quoting
+check-shell-quoting: no quote-in-default expansions
+
+--- check-duplication
+check-duplication: no clones (1037 files)
+
+--- check-console-sheets
+check-console-sheets: 0 finding(s) across 31 sheet(s)
+
+--- check-gates
+check-gates: 0 gate(s) without a suite, across 23 gate(s)
+
+--- check-comments
+check-comments: 0 finding(s) across 908 file(s)
+
+--- check-knowledge
+check-knowledge: 0 finding(s) across 0 landed row(s) and 0 heading(s) in 0 design doc(s)
+
+--- check-roster
+check-roster: 8 declared practice(s) resolve
+
+--- shell suites
+ci: cap 60s per suite, 120s total
+  - .chug/tasks/check-boundaries.test.sh
+  - .chug/tasks/check-comments.test.sh
+  - .chug/tasks/check-conformance.test.sh
+  - .chug/tasks/check-console-sheets.test.sh
+  - .chug/tasks/check-console.test.sh
+  - .chug/tasks/check-duplication.test.sh
+  - .chug/tasks/check-figures.test.sh
+  - .chug/tasks/check-gates.test.sh
+  - .chug/tasks/check-keto.test.sh
+  - .chug/tasks/check-knowledge.test.sh
+  - .chug/tasks/check-model-api.test.sh
+  - .chug/tasks/check-model.test.sh
+  - .chug/tasks/check-paths.test.sh
+  - .chug/tasks/check-postgres.test.sh
+  - .chug/tasks/check-queries.test.sh
+  - .chug/tasks/check-random.test.sh
+  - .chug/tasks/check-roster.test.sh
+  - .chug/tasks/check-shell-quoting.test.sh
+  - .chug/tasks/check-source.test.sh
+  - .chug/tasks/ci.test.sh
+  - .chug/tasks/doc-lint.test.sh
+  - .chug/tasks/emit-goldens.test.sh
+  - .githooks/pre-commit.test.sh
+  - deploy/rig/deploy-to-gtr.test.sh
+  - deploy/rig/durability/rehearse.test.sh
+  - deploy/rig/git/pre-receive.test.sh
+  - deploy/rig/images/build-and-import.test.sh
+ci: suites finished in 106s
+
+--- check-boundaries
+check-boundaries: graph clean across 1057 module(s)
+
+--- check-source static
+  residue  : clean
+  typecheck: clean
+  browser  : clean
+  lint     : clean
+  format   : clean
+check-source: 0 stage(s) failed, 5 run
+
+--- check-source unit
+  unit     : clean
+check-source: unit ran 207 suite(s); 152 left to check-conformance, check-random, check-postgres, check-keto and check-console
+check-source: 0 stage(s) failed, 1 run
+
+--- check-console
+check-console: 5 script(s) clean across 1 built console(s)
+
+--- check-conformance
+check-conformance: 11 golden(s), 190 step(s) replayed clean, records, states and bundle
+
+--- check-random
+check-random: 1 instance(s), 2000 run(s), 80000 step(s) walked clean against the bundle and the completion accumulator
+
+--- check-postgres
+check-postgres: reusing chuggy-check-postgres on port 55432
+...............................
+................
+.
+............
+.............
+.................
+......
+...
+..
+....
+......
+...................
+........
+...........
+...
+....................
+...................
+.....
+...................
+.............
+..........................
+................
+..
+....
+...........
+.....
+.......
+..
+......
+........
+..............
+...............
+........................
+.
+..........
+...
+.............
+................
+.
+..........
+.
+..
+..............
+...............
+....
+...................
+........................
+..
+.
+....................
+.............
+.......
+...................
+..
+....................
+................
+..............
+...
+..........................................
+..
+......
+.....
+........
+..
+..........
+............
+..
+....
+.........................
+....................
+........
+..............
+........................
+.
+....
+......
+........
+..............
+....
+......
+.........
+......
+....................
+...................
+......
+....................
+..................
+....................
+.....
+....................
+.
+...
+....................
+.
+......
+..........
+.......
+check-postgres: 76 suite(s) clean against postgres:18-alpine with 4 worker(s)
+
+--- check-queries
+check-queries: reusing chuggy-check-postgres on port 55432
+check-queries: src/adapters/postgres agrees with postgres:18-alpine
+
+--- check-keto
+check-keto: reusing chuggy-check-keto on ports 54466 and 54467
+check-keto: reusing chuggy-check-postgres on port 55432
+....................
+.
+check-keto: 4 suite(s) clean against oryd/keto:v26.2.0 and postgres:18-alpine
+
+--- check-model
+--- typecheck
+--- unit suite
+--- witnesses
+--- refinement
+--- invariants (randomized)
+check-model: 0 failure(s), 114 test(s) run
+
+--- check-model-api
+check-model-api: generated API is current
+
+ci: all gates clean
+deploy-to-gtr: building api:1e986583
+--- registry.chuggy.internal/chuggy/api:1e986583
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 6.09kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/node:26.7.0-trixie-slim@sha256:4ebb5ace66f15a24c14c492e01a8beeed4fddf970a856109f5126e703e5fe503
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599cd76a7a6caad48b
+#3 DONE 0.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 266B done
+#4 DONE 0.0s
+
+#5 [certificates 1/1] FROM docker.io/library/node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599cd76a7a6caad48b
+#5 DONE 0.0s
+
+#6 [dependencies 1/4] FROM docker.io/library/node:26.7.0-trixie-slim@sha256:4ebb5ace66f15a24c14c492e01a8beeed4fddf970a856109f5126e703e5fe503
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 3.55MB 0.0s done
+#7 DONE 0.0s
+
+#8 [dependencies 3/4] COPY package.json package-lock.json ./
+#8 CACHED
+
+#9 [stage-2 3/7] RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' 		/etc/apt/sources.list.d/debian.sources 	&& apt-get -o Acquire::https::CAInfo=/tmp/seed-ca-certificates.crt update 	&& apt-get -o Acquire::https::CAInfo=/tmp/seed-ca-certificates.crt 		install -y --no-install-recommends git ca-certificates 	&& rm -rf /var/lib/apt/lists/* /tmp/seed-ca-certificates.crt
+#9 CACHED
+
+#10 [stage-2 2/7] COPY --from=certificates /etc/ssl/certs/ca-certificates.crt /tmp/seed-ca-certificates.crt
+#10 CACHED
+
+#11 [dependencies 2/4] WORKDIR /srv/chuggy
+#11 CACHED
+
+#12 [stage-2 5/7] COPY --from=dependencies /srv/chuggy/node_modules ./node_modules
+#12 CACHED
+
+#13 [stage-2 4/7] WORKDIR /srv/chuggy
+#13 CACHED
+
+#14 [dependencies 4/4] RUN npm ci --omit=dev --ignore-scripts
+#14 CACHED
+
+#15 [stage-2 6/7] COPY package.json ./
+#15 CACHED
+
+#16 [stage-2 7/7] COPY src ./src
+#16 DONE 0.0s
+
+#17 exporting to image
+#17 exporting layers 0.0s done
+#17 writing image sha256:b4654cdf361be120049e4d2c3df5cf0b38622fc0f96654a23284402e6d2b7ff9 done
+#17 naming to registry.chuggy.internal/chuggy/api:1e986583 done
+#17 DONE 0.0s
+registry.chuggy.internal/chuggy/api:1e98	saved	
+application/vnd.oci.image.manifest.v1+json sha256:be216eb05b9df68023e85971b036500688f5b41d409f505098a7c0a3bbab49aa
+Importing	elapsed: 33.3s	total:   0.0 B	(0.0 B/s)	
+build-and-import: the node holds registry.chuggy.internal/chuggy/api:1e986583
+build-and-import: every image named on this run is on the node at tag 1e986583
+deploy-to-gtr: building chuggy-ui:1e986583
+--- registry.chuggy.internal/chuggy/chuggy-ui:1e986583
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 DONE 0.0s
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 2.19kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/nginx:1.31.4-alpine3.24@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/node:26.7.0-trixie-slim@sha256:4ebb5ace66f15a24c14c492e01a8beeed4fddf970a856109f5126e703e5fe503
+#3 DONE 0.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 266B done
+#4 DONE 0.0s
+
+#5 [build 1/9] FROM docker.io/library/node:26.7.0-trixie-slim@sha256:4ebb5ace66f15a24c14c492e01a8beeed4fddf970a856109f5126e703e5fe503
+#5 DONE 0.0s
+
+#6 [stage-1 1/4] FROM docker.io/library/nginx:1.31.4-alpine3.24@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 3.22MB 0.0s done
+#7 DONE 0.0s
+
+#8 [build 4/9] COPY ui/chuggy-ui/package.json ui/chuggy-ui/package.json
+#8 CACHED
+
+#9 [build 2/9] WORKDIR /workspace
+#9 CACHED
+
+#10 [build 3/9] COPY package.json package-lock.json ./
+#10 CACHED
+
+#11 [build 5/9] RUN npm ci --ignore-scripts
+#11 CACHED
+
+#12 [build 6/9] COPY scripts/check-console-policy.ts scripts/console-policy.ts scripts/
+#12 CACHED
+
+#13 [build 7/9] COPY src/contract src/contract
+#13 DONE 0.0s
+
+#14 [build 8/9] COPY ui/chuggy-ui ui/chuggy-ui
+#14 DONE 0.0s
+
+#15 [build 9/9] RUN npm run build --workspace=chuggy-ui
+#15 0.198 
+#15 0.198 > build
+#15 0.198 > vite build && node ../../scripts/check-console-policy.ts dist
+#15 0.198 
+#15 0.328 vite v8.2.2 building client environment for production...
+#15 0.333 transforming...
+#15 0.445 ✓ 1131 modules transformed.
+#15 0.488 rendering chunks...
+#15 0.565 computing gzip size...
+#15 0.578 dist/index.html                     0.45 kB │ gzip:   0.28 kB
+#15 0.578 dist/assets/index-Cydcpyim.css     38.91 kB │ gzip:   8.33 kB
+#15 0.578 dist/assets/index-C0zkeu33.js   1,031.85 kB │ gzip: 309.08 kB
+#15 0.578 
+#15 0.579 ✓ built in 250ms
+#15 0.579 [plugin builtin:vite-reporter] 
+#15 0.579 (!) Some chunks are larger than 500 kB after minification. Consider:
+#15 0.579 - Using dynamic import() to code-split the application
+#15 0.579 - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+#15 0.579 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+#15 0.640 check-console-policy: /workspace/ui/chuggy-ui/dist/index.html loads only same-origin files, and /workspace/ui/chuggy-ui/dist/assets/index-Cydcpyim.css declares properties, tokens, base, ui, page, utilities in that order
+#15 0.643 npm notice
+#15 0.643 npm notice New major version of npm available! 11.19.0 -> 12.0.2
+#15 0.643 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2
+#15 0.643 npm notice To update run: npm install -g npm@12.0.2
+#15 0.643 npm notice
+#15 DONE 0.7s
+
+#16 [stage-1 2/4] COPY images/chuggy-ui/nginx.conf /etc/nginx/nginx.conf
+#16 CACHED
+
+#17 [stage-1 3/4] COPY --from=build /workspace/ui/chuggy-ui/dist/ /usr/share/nginx/html/
+#17 DONE 0.0s
+
+#18 [stage-1 4/4] RUN mkdir -p /etc/chuggy/web
+#18 DONE 0.1s
+
+#19 exporting to image
+#19 exporting layers done
+#19 writing image sha256:051d8690af6e0989c0516cc31f8bdef5295149c6bb1617c6e191f6e96a86a310 done
+#19 naming to registry.chuggy.internal/chuggy/chuggy-ui:1e986583 done
+#19 DONE 0.0s
+registry.chuggy.internal/chuggy/chuggy u	saved	
+application/vnd.oci.image.manifest.v1+json sha256:7540332047726f2d7b7c3e65f0a26ec27d686b14ae469da5f54074efc8272686
+Importing	elapsed: 5.7 s	total:   0.0 B	(0.0 B/s)	
+build-and-import: the node holds registry.chuggy.internal/chuggy/chuggy-ui:1e986583
+build-and-import: every image named on this run is on the node at tag 1e986583
+deploy-to-gtr: api:1e986583 is sha256:be216eb05b9df68023e85971b036500688f5b41d409f505098a7c0a3bbab49aa
+deploy-to-gtr: web:chuggy-ui-1e986583 is sha256:7540332047726f2d7b7c3e65f0a26ec27d686b14ae469da5f54074efc8272686
+remote: 
+remote: Create a pull request for 'release/chuggy-1e986583' on GitHub by visiting:        
+remote:      https://github.com/gdoteof/chuggy-fabric/pull/new/release/chuggy-1e986583        
+remote: 
+deploy-to-gtr: pull request https://github.com/gdoteof/chuggy-fabric/pull/289
+deploy-to-gtr: not merged. Review it, then land it and roll it out with:
+deploy-to-gtr:   CHUG_RIG_SSH=geoff@192.168.0.114 deploy/rig/deploy-to-gtr.sh --merge

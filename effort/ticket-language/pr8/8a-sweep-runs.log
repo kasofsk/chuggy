@@ -1,0 +1,1317 @@
+# PR 8a mutation sweep — raw runs at a7923309 (one mutation per line, in order)
+M1: rc=1 RED (64s) [check-model]
+M2: rc=1 RED (64s) [check-model]
+M3: rc=1 RED (64s) [check-model]
+M4: rc=0 SURVIVED (64s) [check-model]
+M5: rc=0 SURVIVED (64s) [check-model]
+M6: rc=1 RED (65s) [check-model]
+M7: rc=1 RED (55s) [check-model]
+M8: rc=0 SURVIVED (64s) [check-model]
+M9: rc=0 SURVIVED (65s) [check-model]
+M10: rc=0 SURVIVED (64s) [check-model]
+M11: rc=0 SURVIVED (64s) [check-model]
+M12: rc=0 SURVIVED (64s) [check-model]
+M13: rc=0 SURVIVED (64s) [check-model]
+M14: rc=0 SURVIVED (64s) [check-model]
+M15: rc=1 RED (64s) [check-model]
+M16: rc=0 SURVIVED (64s) [check-model]
+M17: rc=0 SURVIVED (64s) [check-model]
+M18: rc=0 SURVIVED (64s) [check-model]
+M19: rc=0 SURVIVED (64s) [check-model]
+M20: rc=0 SURVIVED (64s) [check-model]
+M21: rc=0 SURVIVED (64s) [check-model]
+M22: rc=1 RED (63s) [check-model]
+M8b: rc=1 RED (42s) [check-model]
+T1: rc=1 RED (13s) [unit]
+T2: rc=1 RED (13s) [unit]
+T3: rc=0 SURVIVED (13s) [unit]
+T4: rc=0 SURVIVED (13s) [unit]
+T5: rc=0 SURVIVED (13s) [unit]
+T6: rc=1 RED (13s) [unit]
+T7: rc=0 SURVIVED (13s) [unit]
+T8: rc=1 RED (13s) [unit]
+T9: rc=1 RED (13s) [unit]
+T10: rc=0 SURVIVED (13s) [unit]
+T11: rc=1 RED (13s) [unit]
+T12: rc=1 RED (13s) [unit]
+T13: rc=0 SURVIVED (13s) [unit]
+T14: rc=1 RED (13s) [unit]
+T15: rc=1 RED (13s) [unit]
+T16: rc=1 RED (13s) [unit]
+T17: rc=1 RED (13s) [unit]
+T18: rc=1 RED (13s) [unit]
+T19: rc=0 SURVIVED (13s) [unit]
+T20: rc=1 RED (13s) [unit]
+T21: rc=0 SURVIVED (0s) [conformance]
+T22: rc=1 RED (0s) [conformance]
+T23: rc=1 RED (13s) [unit]
+I1: rc=0 SURVIVED (74s) [check-postgres]
+I2: rc=0 SURVIVED (74s) [check-postgres]
+I3: rc=0 SURVIVED (90s) [check-postgres]
+I4: rc=0 SURVIVED (93s) [check-postgres]
+I5: rc=0 SURVIVED (95s) [check-postgres]
+I6: rc=0 SURVIVED (92s) [check-postgres]
+I7: rc=0 SURVIVED (91s) [check-postgres]
+I8: rc=1 RED (87s) [check-postgres]
+I9: rc=1 RED (91s) [check-postgres]
+I10: rc=0 SURVIVED (73s) [check-postgres]
+I11: rc=0 SURVIVED (74s) [check-postgres]
+I13: rc=1 RED (86s) [check-postgres]
+I14: rc=0 SURVIVED (85s) [check-postgres]
+I15: rc=0 SURVIVED (90s) [check-postgres]
+D1: rc=1 RED (52s) [migration]
+D2: rc=1 RED (53s) [migration]
+D3: anchor not unique (0) in src/adapters/postgres/schema/migrations/013-released-ticket.ts: '          IF NOT FOUND THEN\n            RETURN QUERY SELECT '
+D4: anchor not unique (0) in src/adapters/postgres/schema/migrations/013-released-ticket.ts: '          ELSIF EXISTS (SELECT FROM ticket_source t\n        '
+D5: rc=1 RED (51s) [migration]
+D6: rc=1 RED (50s) [migration]
+D7: rc=1 RED (53s) [migration]
+D8: rc=1 RED (49s) [migration]
+D9: rc=1 RED (51s) [migration]
+D10: anchor not unique (0) in src/adapters/postgres/schema/migrations/013-released-ticket.ts: '            INSERT INTO ticket_source\n              (tenant,'
+D11: rc=1 RED (51s) [migration]
+D12: rc=1 RED (84s) [check-postgres]
+D13: anchor not unique (0) in src/adapters/postgres/schema/migrations/013-released-ticket.ts: "           WHERE (stages.stage->>'${stageKeyField}')::bigint"
+D14: anchor not unique (0) in src/adapters/postgres/schema/migrations/013-released-ticket.ts: "           WHERE (stages.stage->>'${stageKeyField}')::bigint"
+D15: rc=1 RED (50s) [migration]
+D16: rc=1 RED (51s) [migration]
+D17: rc=1 RED (51s) [migration]
+D18: rc=1 RED (53s) [migration]
+D19: rc=1 RED (50s) [migration]
+D20: rc=1 RED (51s) [migration]
+D21: rc=1 RED (49s) [migration]
+D22: rc=1 RED (52s) [migration]
+D23: rc=1 RED (51s) [migration]
+G1: rc=1 RED (0s) [conformance]
+G2: rc=0 SURVIVED (1s) [check-random]
+G3: rc=1 RED (0s) [check-random]
+G4: rc=1 RED (0s) [conformance]
+G5: rc=1 RED (0s) [conformance]
+G6: rc=1 RED (13s) [unit]
+C1: rc=0 SURVIVED (13s) [unit]
+C2: rc=0 SURVIVED (70s) [check-postgres]
+C3: rc=0 SURVIVED (12s) [unit]
+C4: rc=1 RED (12s) [unit]
+I1u: rc=0 SURVIVED (13s) [unit]
+I2u: rc=0 SURVIVED (13s) [unit]
+I3u: rc=0 SURVIVED (13s) [unit]
+I4u: rc=0 SURVIVED (13s) [unit]
+I5u: rc=0 SURVIVED (13s) [unit]
+I6u: rc=1 RED (13s) [unit]
+I7u: rc=1 RED (13s) [unit]
+I10u: rc=0 SURVIVED (13s) [unit]
+I11u: rc=0 SURVIVED (13s) [unit]
+I14u: rc=1 RED (13s) [unit]
+I15u: rc=1 RED (13s) [unit]
+D3: rc=1 RED (49s) [migration]
+D4: rc=1 RED (48s) [migration]
+D10: rc=1 RED (48s) [migration]
+D13: rc=1 RED (47s) [migration]
+D14: rc=1 RED (56s) [migration]
+C1p: rc=0 SURVIVED (76s) [check-postgres]
+C3p: rc=0 SURVIVED (72s) [check-postgres]
+C2u: rc=0 SURVIVED (13s) [unit]
+
+# the mutations themselves
+## m1
+[
+ {"id":"M1","gate":"check-model","cmd":"timeout 540 .chug/tasks/check-model.sh",
+  "edits":{"model/domain.qnt":[["          source: produced.acceptedSourceRef })","          source: jb.source })"]]}},
+ {"id":"M2","gate":"check-model","cmd":"timeout 540 .chug/tasks/check-model.sh",
+  "edits":{"model/domain.qnt":[["beginEvaluation(retireLive(jb), workResult)","beginEvaluation(retireLive(jb), jb.workCyclesStarted)"]]}},
+ {"id":"M3","gate":"check-model","cmd":"timeout 540 .chug/tasks/check-model.sh",
+  "edits":{"model/ticket.qnt":[["    obligation.task == task and\n      liveObligations(ticket).select(owed => owed == obligation).length() > 0","    obligation.task == task and\n      liveObligations(ticket).select(owed => owed.task == obligation.task).length() > 0"]]}},
+ {"id":"M4","gate":"check-model","cmd":"timeout 540 .chug/tasks/check-model.sh",
+  "edits":{"model/domain.qnt":[["    releasedContentValid(definition.content),\n","    true,\n"]]}},
+ {"id":"M5","gate":"check-model","cmd":"timeout 540 .chug/tasks/check-model.sh",
+  "edits":{"model/domain.qnt":[["    taskDefinitionValid(definition.workConfiguration),\n","    true,\n"]]}},
+ {"id":"M6","gate":"check-model","cmd":"timeout 540 .chug/tasks/check-model.sh",
+  "edits":{"model/ticket.qnt":[["      | WorkTask(work) => workResultBand * work.ticket + work.cycle","      | WorkTask(work) => work.cycle"]]}},
+ {"id":"M7","gate":"check-model","cmd":"timeout 540 .chug/tasks/check-model.sh",
+  "edits":{"model/domain.qnt":[["      withTicket(c, j, { ...spawnWork(jb), source: source_ }),","      withTicket(c, j, spawnWork(jb)),"]]}},
+ {"id":"M8","gate":"check-model","cmd":"timeout 540 .chug/tasks/check-model.sh",
+  "edits":{"model/domain.qnt":[["    jb.definition.id == j and releasedTicketValid(jb.definition))","    releasedTicketValid(jb.definition))"]]}},
+ {"id":"M9","gate":"check-model","cmd":"timeout 540 .chug/tasks/check-model.sh",
+  "edits":{"model/ticket.qnt":[["    contextRef: cycleNumber\n  }","    contextRef: ticket.definition.id\n  }"]]}},
+ {"id":"M10","gate":"check-model","cmd":"timeout 540 .chug/tasks/check-model.sh",
+  "edits":{"model/ticket-domain/evaluation/evaluation.qnt":[["          contextRef: current.input.workResult,","          contextRef: current.workCycle,"]]}},
+ {"id":"M11","gate":"check-model","cmd":"timeout 540 .chug/tasks/check-model.sh",
+  "edits":{"model/ticket-domain/evaluation/evaluation.qnt":[["      obligation == result.obligation).length() > 0)","      obligation.task == task).length() > 0)"]]}},
+ {"id":"M12","gate":"check-model","cmd":"timeout 540 .chug/tasks/check-model.sh",
+  "edits":{"model/ticket-domain/evaluation/evaluation.qnt":[["    and current.input.acceptedSourceRef > 0\n","    and true\n"]]}},
+ {"id":"M13","gate":"check-model","cmd":"timeout 540 .chug/tasks/check-model.sh",
+  "edits":{"model/ticket-domain/evaluation/evaluation.qnt":[["        entry.key > 0 and taskDefinitionValid(entry.task)","        entry.key > 0"]]}},
+ {"id":"M14","gate":"check-model","cmd":"timeout 540 .chug/tasks/check-model.sh",
+  "edits":{"model/refinement.qnt":[["    | Dispatch(a) => readiesIn(c).contains(a.ticket) and\n        dispatchSources.contains(a.source)","    | Dispatch(a) => readiesIn(c).contains(a.ticket)"]]}},
+ {"id":"M15","gate":"check-model","cmd":"timeout 540 .chug/tasks/check-model.sh",
+  "edits":{"model/domain.qnt":[["          artifact: ProducedArtifact(produced.result.resultRef),\n","          artifact: ProducedArtifact(taskRefOf(task)),\n"]]}}
+]
+## m2
+[
+ {
+  "id": "M16",
+  "gate": "check-model",
+  "cmd": "timeout 540 .chug/tasks/check-model.sh",
+  "edits": {
+   "model/domain.qnt": [
+    [
+     "    definition.finalizationConfiguration > 0,\n",
+     "    true,\n"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M17",
+  "gate": "check-model",
+  "cmd": "timeout 540 .chug/tasks/check-model.sh",
+  "edits": {
+   "model/domain.qnt": [
+    [
+     "    definition.dependencies.forall(dependency => dependency > 0),\n",
+     "    true,\n"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M18",
+  "gate": "check-model",
+  "cmd": "timeout 540 .chug/tasks/check-model.sh",
+  "edits": {
+   "model/domain.qnt": [
+    [
+     "    definition.id > 0,\n",
+     "    true,\n"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M19",
+  "gate": "check-model",
+  "cmd": "timeout 540 .chug/tasks/check-model.sh",
+  "edits": {
+   "model/domain.qnt": [
+    [
+     "    definition.evaluationPlan.stages.length() <= MAX_STAGES,\n",
+     "    true,\n"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M20",
+  "gate": "check-model",
+  "cmd": "timeout 540 .chug/tasks/check-model.sh",
+  "edits": {
+   "model/domain.qnt": [
+    [
+     "        stage.key == i + 1,",
+     "        true,"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M21",
+  "gate": "check-model",
+  "cmd": "timeout 540 .chug/tasks/check-model.sh",
+  "edits": {
+   "model/domain.qnt": [
+    [
+     "        evaluatorKeys(stage).forall(k => k >= 1 and k <= N_TASKS)",
+     "        true"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M22",
+  "gate": "check-model",
+  "cmd": "timeout 540 .chug/tasks/check-model.sh",
+  "edits": {
+   "model/domain.qnt": [
+    [
+     "    planValid(definition.evaluationPlan),\n",
+     "    true,\n"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M8b",
+  "gate": "check-model",
+  "cmd": "timeout 540 .chug/tasks/check-model.sh",
+  "edits": {
+   "model/domain.qnt": [
+    [
+     "    id: j,\n    content: releaseRef(j, 1),",
+     "    id: j + 1,\n    content: releaseRef(j, 1),"
+    ]
+   ]
+  }
+ }
+]## t1
+[
+ {
+  "id": "T1",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/deciders.ts": [
+    [
+     "        source: report.value.acceptedSourceRef,\n",
+     "        source: ticket.source,\n"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T2",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/deciders.ts": [
+    [
+     "      beginEvaluation(retireLive(ticket), ticket.artifact.value),",
+     "      beginEvaluation(retireLive(ticket), ticket.workCyclesStarted),"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T3",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/ticket.ts": [
+    [
+     "    taskIdentityEquals(obligation.task, task) &&\n    liveObligations(ticket).some((owed) =>\n      taskObligationEquals(owed, obligation),\n    )",
+     "    taskIdentityEquals(obligation.task, task)"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T4",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/task.ts": [
+    [
+     "    taskDefinitionEquals(left.definition, right.definition) &&\n    left.contextRef === right.contextRef",
+     "    left.contextRef === right.contextRef"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T5",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/task.ts": [
+    [
+     "    taskDefinitionEquals(left.definition, right.definition) &&\n    left.contextRef === right.contextRef",
+     "    taskDefinitionEquals(left.definition, right.definition)"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T6",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/config.ts": [
+    [
+     "    definition.content > 0 &&\n",
+     "    true &&\n"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T7",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/config.ts": [
+    [
+     "    planValid(definition.evaluationPlan) &&\n",
+     "    true &&\n"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T8",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/evaluation.ts": [
+    [
+     "        taskDefinitionEquals(entry.task, other.task)",
+     "        true"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T9",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/evaluation.ts": [
+    [
+     "    left.input.acceptedSourceRef === right.input.acceptedSourceRef &&\n",
+     ""
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T10",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/invariants.ts": [
+    [
+     "      if (open.input.acceptedSourceRef !== t.source) return false;\n",
+     ""
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T11",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/invariants.ts": [
+    [
+     "  everyLiveTicket(view.post, (t) => t.source > 0 === t.workCyclesStarted > 0);",
+     "  everyLiveTicket(view.post, (t) => t.source >= 0 || t.workCyclesStarted > 0);"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T12",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/ticket.ts": [
+    [
+     "    ? workResultBand * task.value.ticket + task.value.cycle",
+     "    ? task.value.cycle"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T13",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/evaluation.ts": [
+    [
+     "    taskObligationEquals(obligation, result.obligation),",
+     "    taskIdentityEquals(obligation.task, task),"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T14",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/evaluation.ts": [
+    [
+     "      contextRef: instance.input.workResult,",
+     "      contextRef: instance.workCycle,"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T15",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/ticket.ts": [
+    [
+     "          acceptedSourceRef: ticket.source,",
+     "          acceptedSourceRef: ticket.definition.content,"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T16",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/actor/equality.ts": [
+    [
+     "    left.content === right.content &&\n",
+     ""
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T17",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/actor/equality.ts": [
+    [
+     "    left.finalizationConfiguration === right.finalizationConfiguration",
+     "    true"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T18",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/ticket.ts": [
+    [
+     "  if (ticket.phase === \"Work\")\n    return outstandingCount(ticket.tasks) > 0\n      ? [workTaskObligation(ticket, ticket.workCyclesStarted)]\n      : [];",
+     "  if (ticket.phase === \"Work\")\n    return [workTaskObligation(ticket, ticket.workCyclesStarted)];"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T19",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/actor/decisionEvent.ts": [
+    [
+     "        readiesIn(graph).includes(asTicketId(event.value.ticket)) &&\n        event.value.source > 0",
+     "        readiesIn(graph).includes(asTicketId(event.value.ticket))"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T20",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/ticket.ts": [
+    [
+     "  return {\n    ...ticket,\n    tasks: new Set<Task>([\n      {\n        identity: workTaskOf(ticket.definition.id, cycle),",
+     "  return {\n    ...ticket,\n    tasks: new Set<Task>([\n      {\n        identity: workTaskOf(ticket.definition.content, cycle),"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T21",
+  "gate": "conformance",
+  "cmd": "timeout 300 .chug/tasks/check-conformance.sh",
+  "edits": {
+   "src/domain/ticket.ts": [
+    [
+     "    ? workResultBand * task.value.ticket + task.value.cycle",
+     "    ? task.value.cycle"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T22",
+  "gate": "conformance",
+  "cmd": "timeout 300 .chug/tasks/check-conformance.sh",
+  "edits": {
+   "src/domain/deciders.ts": [
+    [
+     "        source: report.value.acceptedSourceRef,\n",
+     "        source: ticket.source,\n"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "T23",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/domain/ticket.ts": [
+    [
+     "    contextRef: cycleNumber,",
+     "    contextRef: ticket.definition.id,"
+    ]
+   ]
+  }
+ }
+]## i1
+[
+ {
+  "id": "I1",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/interpreter/ticketDefinition.ts": [
+    [
+     "  return configuration.evaluations[stage - 1];",
+     "  return configuration.evaluations[stage];"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I2",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/interpreter/ticketDefinition.ts": [
+    [
+     "        const task = taskDefinitionOf(\n          ticketTaskMaterialAt(material, evaluationTaskKey(stage.key)),\n        );",
+     "        const task = taskDefinitionOf(ticketTaskMaterialAt(material, \"Work\"));"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I3",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/interpreter/ticketDefinition.ts": [
+    [
+     "          evaluators: stage.evaluators.map((entry) => ({\n            key: entry.key,\n            task,\n          })),",
+     "          evaluators: stage.evaluators.map((entry) => ({\n            key: entry.key,\n            task: { ...task, inputs: task.inputs + entry.key },\n          })),"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I4",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/interpreter/ticketDefinition.ts": [
+    [
+     "    inputs: { digest: materialDigest(taskInputsBlock(configuration, key)) },",
+     "    inputs: { digest: materialDigest(configuration.work) },"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I5",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/adapters/postgres/scheduler.ts": [
+    [
+     "      ticketTaskKey(\n        executionRowTaskKind(input.kind),\n        input.stage === null\n          ? undefined\n          : projectRowCounter(input.stage, \"task stage\"),\n      ),",
+     "      ticketTaskKey(\"Work\", undefined),"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I6",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/interpreter/executionSourceObservation.ts": [
+    [
+     "      if (request.repository === undefined)\n        return {\n          observed: \"Source\",\n          source: { reference: unsourcedTicketReference },\n        };",
+     "      if (true)\n        return {\n          observed: \"Source\",\n          source: { reference: unsourcedTicketReference },\n        };"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I7",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/interpreter/executionSourceObservation.ts": [
+    [
+     "          reference: digestFold(observed.target.commit),",
+     "          reference: digestFold(bound.repository),"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I8",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/adapters/postgres/decision.ts": [
+    [
+     "  const pinned = outcome.materialization.ticketSource;\n  if (pinned === undefined) return;",
+     "  const pinned = outcome.materialization.ticketSource;\n  if (pinned !== undefined) return;\n  if (pinned === undefined) return;"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I9",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/adapters/postgres/decision.ts": [
+    [
+     "  const material = draftRelease?.definition;\n  if (draftRelease === undefined || material === undefined) return;",
+     "  const material = draftRelease?.definition;\n  if (true) return;\n  if (draftRelease === undefined || material === undefined) return;"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I10",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/adapters/postgres/schedulerCompletion.ts": [
+    [
+     "function schedulerRefusalEvidence(result: string | null): string {\n  if (result === sourceUnrecordedResult)\n    return schedulerEvidence.SourceUnrecorded;\n  if (result === workResultUnrecordedResult)\n    return schedulerEvidence.WorkResultUnrecorded;\n  return schedulerEvidence.RefusedBinding;",
+     "function schedulerRefusalEvidence(_result: string | null): string {\n  return schedulerEvidence.RefusedBinding;"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I11",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/interpreter/projectWriter.ts": [
+    [
+     "  const observed = await projectWriterDispatchSource(writer, memory, ticket);\n  if (observed.observed !== \"Source\") {",
+     "  if (!decisionEventEnabled(writer.config, memory.graph, dispatchEvent(ticket, 1)))\n    return {\n      outcome: { outcome: \"Refused\", code: \"NotEnabled\" },\n      post: memory.graph,\n    };\n  const observed = await projectWriterDispatchSource(writer, memory, ticket);\n  if (observed.observed !== \"Source\") {"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I13",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/interpreter/decisionPlan.ts": [
+    [
+     "    ...(source === undefined || evidence !== undefined",
+     "    ...(source === undefined"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I14",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/interpreter/ticketCommand.ts": [
+    [
+     "    event.type === \"Dispatch\" ||\n",
+     ""
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I15",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/interpreter/projectWriter.ts": [
+    [
+     "    source: ticketAt(decision.post, ticket).source,",
+     "    source: ticketAt(decision.post, ticket).workCyclesStarted,"
+    ]
+   ]
+  }
+ }
+]## i2
+[
+ {
+  "id": "I1u",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/interpreter/ticketDefinition.ts": [
+    [
+     "  return configuration.evaluations[stage - 1];",
+     "  return configuration.evaluations[stage];"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I2u",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/interpreter/ticketDefinition.ts": [
+    [
+     "        const task = taskDefinitionOf(\n          ticketTaskMaterialAt(material, evaluationTaskKey(stage.key)),\n        );",
+     "        const task = taskDefinitionOf(ticketTaskMaterialAt(material, \"Work\"));"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I3u",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/interpreter/ticketDefinition.ts": [
+    [
+     "          evaluators: stage.evaluators.map((entry) => ({\n            key: entry.key,\n            task,\n          })),",
+     "          evaluators: stage.evaluators.map((entry) => ({\n            key: entry.key,\n            task: { ...task, inputs: task.inputs + entry.key },\n          })),"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I4u",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/interpreter/ticketDefinition.ts": [
+    [
+     "    inputs: { digest: materialDigest(taskInputsBlock(configuration, key)) },",
+     "    inputs: { digest: materialDigest(configuration.work) },"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I5u",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/adapters/postgres/scheduler.ts": [
+    [
+     "      ticketTaskKey(\n        executionRowTaskKind(input.kind),\n        input.stage === null\n          ? undefined\n          : projectRowCounter(input.stage, \"task stage\"),\n      ),",
+     "      ticketTaskKey(\"Work\", undefined),"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I6u",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/interpreter/executionSourceObservation.ts": [
+    [
+     "      if (request.repository === undefined)\n        return {\n          observed: \"Source\",\n          source: { reference: unsourcedTicketReference },\n        };",
+     "      if (true)\n        return {\n          observed: \"Source\",\n          source: { reference: unsourcedTicketReference },\n        };"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I7u",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/interpreter/executionSourceObservation.ts": [
+    [
+     "          reference: digestFold(observed.target.commit),",
+     "          reference: digestFold(bound.repository),"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I10u",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/adapters/postgres/schedulerCompletion.ts": [
+    [
+     "function schedulerRefusalEvidence(result: string | null): string {\n  if (result === sourceUnrecordedResult)\n    return schedulerEvidence.SourceUnrecorded;\n  if (result === workResultUnrecordedResult)\n    return schedulerEvidence.WorkResultUnrecorded;\n  return schedulerEvidence.RefusedBinding;",
+     "function schedulerRefusalEvidence(_result: string | null): string {\n  return schedulerEvidence.RefusedBinding;"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I11u",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/interpreter/projectWriter.ts": [
+    [
+     "  const observed = await projectWriterDispatchSource(writer, memory, ticket);\n  if (observed.observed !== \"Source\") {",
+     "  if (!decisionEventEnabled(writer.config, memory.graph, dispatchEvent(ticket, 1)))\n    return {\n      outcome: { outcome: \"Refused\", code: \"NotEnabled\" },\n      post: memory.graph,\n    };\n  const observed = await projectWriterDispatchSource(writer, memory, ticket);\n  if (observed.observed !== \"Source\") {"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I14u",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/interpreter/ticketCommand.ts": [
+    [
+     "    event.type === \"Dispatch\" ||\n",
+     ""
+    ]
+   ]
+  }
+ },
+ {
+  "id": "I15u",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/interpreter/projectWriter.ts": [
+    [
+     "    source: ticketAt(decision.post, ticket).source,",
+     "    source: ticketAt(decision.post, ticket).workCyclesStarted,"
+    ]
+   ]
+  }
+ }
+]## d1
+[
+ {
+  "id": "D1",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "          SELECT result_digest_fold(w.digest) INTO context_reference",
+     "          SELECT bound.cycle INTO context_reference"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D2",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "             AND e2.ticket = bound.ticket\n",
+     "             AND e2.ticket >= 1\n"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D3",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "          IF NOT FOUND THEN\n            RETURN QUERY SELECT '${workResultUnrecordedResult}'::text, NULL::text, NULL::bigint;\n            RETURN;\n          END IF;",
+     "          IF NOT FOUND THEN\n            context_reference := bound.cycle;\n          END IF;"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D4",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "          ELSIF EXISTS (SELECT FROM ticket_source t\n                         WHERE t.tenant = in_tenant AND t.project = in_project\n                           AND t.ticket = bound.ticket AND t.repository IS NOT NULL) THEN\n            RETURN QUERY SELECT '${sourceUnrecordedResult}'::text, NULL::text, NULL::bigint;\n            RETURN;\n          ELSE",
+     "          ELSE"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D5",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "    WHEN (entry IS JSON OBJECT) THEN ((((entry)::jsonb -> 'event'::text) -> 'value'::text) -> '${releasedIdField}'::text)",
+     "    WHEN (entry IS JSON OBJECT) THEN ((((entry)::jsonb -> 'event'::text) -> 'value'::text) -> 'ticket'::text)"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D6",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "       SELECT command_integer(value) AND value > '0'::jsonb",
+     "       SELECT command_integer(value)"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D7",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "          AND ${referencePredicate}(definition->'${definitionContractField}')",
+     "          AND true"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D8",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "            OR obligation->'${obligationTaskField}' IS DISTINCT FROM task\n",
+     ""
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D9",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "           RETURN ${referencePredicate}(report->'value'->'${acceptedSourceField}');",
+     "           RETURN true;"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D10",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "            INSERT INTO ticket_source\n              (tenant, project, ticket, source, repository, commit, ref)\n            VALUES (in_tenant, in_project, bound.ticket, accepted,\n              observed.repository, observed.commit, observed.ref)\n            ON CONFLICT (tenant, project, ticket, source) DO NOTHING;\n",
+     ""
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D11",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "    CONSTRAINT ticket_source_names_a_commit_with_its_repository CHECK (((repository IS NULL) = (commit IS NULL))),\n",
+     ""
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D12",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "GRANT SELECT ON TABLE public.ticket_definition TO ${schedulerRole};",
+     ""
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D13",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "           WHERE (stages.stage->>'${stageKeyField}')::bigint = bound.stage\n             AND (evaluators.evaluator->>'${evaluatorKeyField}')::bigint = bound.evaluator;",
+     "           WHERE (evaluators.evaluator->>'${evaluatorKeyField}')::bigint = bound.evaluator;"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D14",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "           WHERE (stages.stage->>'${stageKeyField}')::bigint = bound.stage\n             AND (evaluators.evaluator->>'${evaluatorKeyField}')::bigint = bound.evaluator;",
+     "           WHERE (stages.stage->>'${stageKeyField}')::bigint = bound.stage;"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D15",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "             OR command->'event'->>'type' NOT IN ('FinalizationResult', 'Dispatch'));",
+     "             OR command->'event'->>'type' NOT IN ('FinalizationResult'));"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D16",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "          OR value ? 'deps' OR value ? 'prog'\n",
+     ""
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D17",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "             AND w.verdict = 'Pass'\n",
+     ""
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D18",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "deploy/rig/wipe-tickets.sql": [
+    [
+     "  public.ticket_source,\n",
+     ""
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D19",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "         IF EXISTS (SELECT FROM public.journal_entry) THEN",
+     "         IF false THEN"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D20",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "        IF (item->>'${stageKeyField}')::bigint <> place\n",
+     "        IF false\n"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D21",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "    CONSTRAINT ticket_definition_material_is_bounded CHECK (((jsonb_typeof(definition) = 'object'::text) AND (length((definition)::text) <= ${String(ticketDefinitionCharsMax)}))),\n",
+     ""
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D22",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "    CONSTRAINT ticket_source_commit_is_hex CHECK ((commit ~ '^([0-9a-f]{40}|[0-9a-f]{64})$'::text)),\n",
+     ""
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D23",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "           context_reference := bound.cycle;",
+     "           context_reference := bound.ticket;"
+    ]
+   ]
+  }
+ }
+]## d2
+[
+ {
+  "id": "D3",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "           IF NOT FOUND THEN\n             RETURN QUERY SELECT '${workResultUnrecordedResult}'::text, NULL::text, NULL::bigint;\n             RETURN;\n           END IF;\n",
+     "           IF NOT FOUND THEN\n             context_reference := bound.cycle;\n           END IF;\n"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D4",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "           ELSIF EXISTS (SELECT FROM ticket_source t\n                          WHERE t.tenant = in_tenant AND t.project = in_project\n                            AND t.ticket = bound.ticket AND t.repository IS NOT NULL) THEN\n             RETURN QUERY SELECT '${sourceUnrecordedResult}'::text, NULL::text, NULL::bigint;\n             RETURN;\n           ELSE\n",
+     "           ELSE\n"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D10",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "             INSERT INTO ticket_source\n               (tenant, project, ticket, source, repository, commit, ref)\n             VALUES (in_tenant, in_project, bound.ticket, accepted,\n               observed.repository, observed.commit, observed.ref)\n             ON CONFLICT (tenant, project, ticket, source) DO NOTHING;\n",
+     ""
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D13",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "            WHERE (stages.stage->>'${stageKeyField}')::bigint = bound.stage\n              AND (evaluators.evaluator->>'${evaluatorKeyField}')::bigint = bound.evaluator;\n",
+     "            WHERE (evaluators.evaluator->>'${evaluatorKeyField}')::bigint = bound.evaluator;\n"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "D14",
+  "gate": "migration",
+  "cmd": "timeout 600 node --test --test-concurrency=1 --test-reporter=dot test/postgres/migration.test.ts",
+  "edits": {
+   "src/adapters/postgres/schema/migrations/013-released-ticket.ts": [
+    [
+     "            WHERE (stages.stage->>'${stageKeyField}')::bigint = bound.stage\n              AND (evaluators.evaluator->>'${evaluatorKeyField}')::bigint = bound.evaluator;\n",
+     "            WHERE (stages.stage->>'${stageKeyField}')::bigint = bound.stage;\n"
+    ]
+   ]
+  }
+ }
+]## g1
+[
+ {"id":"G1","gate":"conformance","cmd":"timeout 300 .chug/tasks/check-conformance.sh",
+  "edits":{"test/golden/manifest.json":[["      \"invariant\": \"lastStep.label != \\\"eval-stage-passed\\\"\",\n      \"steps\": 9,","      \"invariant\": \"lastStep.label != \\\"eval-stage-passed\\\"\",\n      \"steps\": 8,"]]}},
+ {"id":"G2","gate":"check-random","cmd":"timeout 600 .chug/tasks/check-random.sh",
+  "edits":{"test/random/draws.ts":[["    source: pickFrom(random, dispatchSources),","    source: dispatchSources[0] ?? 9,"]]}},
+ {"id":"G3","gate":"check-random","cmd":"timeout 600 .chug/tasks/check-random.sh",
+  "edits":{"test/random/draws.ts":[["    source: opt(drawn.source, encodeInt),\n",""]]}},
+ {"id":"G4","gate":"conformance","cmd":"timeout 300 .chug/tasks/check-conformance.sh",
+  "edits":{"test/itf/vocabulary.ts":[["            [\"key\", encodeInt(entry.key)],\n            [\"task\", encodeTaskDefinition(entry.task)],","            [\"key\", encodeInt(entry.key)],\n            [\"task\", encodeTaskDefinition({ ...entry.task, inputs: 1 })],"]]}},
+ {"id":"G5","gate":"conformance","cmd":"timeout 300 .chug/tasks/check-conformance.sh",
+  "edits":{"test/itf/vocabulary.ts":[["        [\"acceptedSourceRef\", encodeInt(instance.input.acceptedSourceRef)],","        [\"acceptedSourceRef\", encodeInt(1)],"]]}},
+ {"id":"G6","gate":"unit","cmd":"bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits":{"test/domain/fixtures.ts":[["    contextRef: workResultOf(task.value.ticket, task.value.workCycle),","    contextRef: task.value.workCycle,"]]}},
+ {"id":"C1","gate":"unit","cmd":"bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits":{"src/interpreter/authoring.ts":[["  const parsed = authoringSchema.safeParse(JSON.parse(value));\n  if (!parsed.success)\n    throw new TypeError(\n      `draft authoring is unreadable: ${parsed.error.issues[0]?.message ?? \"malformed\"}`,\n    );\n  return { deps: new Set(parsed.data.dependencies), prog: parsed.data.program };","  const parsed = JSON.parse(value) as ReleaseAuthoringBody;\n  return { deps: new Set(parsed.dependencies), prog: parsed.program };"]]}},
+ {"id":"C2","gate":"check-postgres","cmd":"timeout 900 .chug/tasks/check-postgres.sh",
+  "edits":{"src/interpreter/executionSource.ts":[["export const unsourcedTicketReference = 2 ** 52 + 1;","export const unsourcedTicketReference = 1;"]]}},
+ {"id":"C3","gate":"unit","cmd":"bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits":{"src/interpreter/dispatchView.ts":[["  return dispatchProgramSchema.parse(\n    value.map((stage) => ({\n      key: stage.key,\n      evaluators: stage.evaluators.map((entry) => ({ key: entry.key })),\n    })),\n  );","  return value.map((stage) => ({\n    key: stage.key,\n    evaluators: stage.evaluators.map((entry) => ({ ...entry, key: entry.key })),\n  }));"]]}},
+ {"id":"C4","gate":"unit","cmd":"bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits":{"src/interpreter/resultManifest.ts":[["  return Number.parseInt(digest.slice(0, digestFoldHexChars), 16) + 1;","  return Number.parseInt(digest.slice(0, digestFoldHexChars), 16);"]]}}
+]
+## c1
+[
+ {
+  "id": "C1p",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/interpreter/authoring.ts": [
+    [
+     "  const parsed = authoringSchema.safeParse(JSON.parse(value));\n  if (!parsed.success)\n    throw new TypeError(\n      `draft authoring is unreadable: ${parsed.error.issues[0]?.message ?? \"malformed\"}`,\n    );\n  return { deps: new Set(parsed.data.dependencies), prog: parsed.data.program };",
+     "  const parsed = JSON.parse(value) as ReleaseAuthoringBody;\n  return { deps: new Set(parsed.dependencies), prog: parsed.program };"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "C3p",
+  "gate": "check-postgres",
+  "cmd": "timeout 900 .chug/tasks/check-postgres.sh",
+  "edits": {
+   "src/interpreter/dispatchView.ts": [
+    [
+     "  return dispatchProgramSchema.parse(\n    value.map((stage) => ({\n      key: stage.key,\n      evaluators: stage.evaluators.map((entry) => ({ key: entry.key })),\n    })),\n  );",
+     "  return value.map((stage) => ({\n    key: stage.key,\n    evaluators: stage.evaluators.map((entry) => ({ ...entry, key: entry.key })),\n  }));"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "C2u",
+  "gate": "unit",
+  "cmd": "bash /tmp/claude-1000/-home-geoff-claude-chuggy/6988229d-0563-475a-9255-7ce0b2467e85/scratchpad/sweep/unit.sh",
+  "edits": {
+   "src/interpreter/executionSource.ts": [
+    [
+     "export const unsourcedTicketReference = 2 ** 52 + 1;",
+     "export const unsourcedTicketReference = 1;"
+    ]
+   ]
+  }
+ }
+]

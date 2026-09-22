@@ -1,0 +1,118 @@
+src/adapters/http/contract.ts(279,5): error TS2353: Object literal may only specify known properties, and 'reworkPolicy' does not exist in type 'ReleaseAuthoring'.
+src/adapters/http/outcomes.ts(703,37): error TS2339: Property 'reworkPolicy' does not exist on type 'ReleaseAuthoring'.
+src/adapters/http/outcomes.ts(704,44): error TS2339: Property 'finalizationPricing' does not exist on type 'ReleaseAuthoring'.
+src/adapters/http/outcomes.ts(705,38): error TS2339: Property 'resumePricing' does not exist on type 'ReleaseAuthoring'.
+src/adapters/http/outcomes.ts(1287,36): error TS2339: Property 'reworkPolicy' does not exist on type 'ReleaseAuthoring'.
+src/adapters/http/outcomes.ts(1288,43): error TS2339: Property 'finalizationPricing' does not exist on type 'ReleaseAuthoring'.
+src/adapters/http/outcomes.ts(1289,37): error TS2339: Property 'resumePricing' does not exist on type 'ReleaseAuthoring'.
+src/adapters/postgres/readiness.ts(424,5): error TS2322: Type '{ type: "EvalReduce"; value: number; }' is not assignable to type 'DecisionEvent | StoredTicketCommand'.
+  Types of property 'value' are incompatible.
+    Type 'number' is not assignable to type '{ readonly ticket: number; readonly onFailure: EvaluationFailureDisposition; }'.
+src/adapters/postgres/selector.ts(61,3): error TS2305: Module '"../../generated/model-api.ts"' has no exported member 'finalizationPricingSchema'.
+src/adapters/postgres/selector.ts(62,3): error TS2305: Module '"../../generated/model-api.ts"' has no exported member 'reworkPolicySchema'.
+src/adapters/postgres/selector.ts(1798,5): error TS2322: Type 'readonly Readonly<{ [x: string]: any; ticket: TicketId; ticketVersion: number; dependencies: readonly number[]; workFanout: number; program: readonly Stage[]; resumePricing: "RetryCharged" | "RetryFree"; finalizer: "NoFinalizer" | "ManagedFinalizer"; configurationRevision: string; configurationDigest: string; config...' is not assignable to type 'readonly DispatchCandidate[]'.
+  Type 'Readonly<{ [x: string]: any; ticket: TicketId; ticketVersion: number; dependencies: readonly number[]; workFanout: number; program: readonly Stage[]; resumePricing: "RetryCharged" | "RetryFree"; finalizer: "NoFinalizer" | "ManagedFinalizer"; configurationRevision: string; configurationDigest: string; configurationCa...' is missing the following properties from type 'DispatchCandidate': reworkPolicy, finalizationPricing
+src/interpreter/authoring.ts(15,3): error TS2305: Module '"../domain/config.ts"' has no exported member 'finalizationPricingChoices'.
+src/interpreter/authoring.ts(17,3): error TS2305: Module '"../domain/config.ts"' has no exported member 'reworkPolicyChoices'.
+src/interpreter/authoring.ts(18,3): error TS2305: Module '"../domain/config.ts"' has no exported member 'resumePricingChoices'.
+src/interpreter/authoring.ts(485,56): error TS2339: Property 'reworkPolicy' does not exist on type 'ReleaseAuthoring'.
+src/interpreter/authoring.ts(486,62): error TS2339: Property 'finalizationPricing' does not exist on type 'ReleaseAuthoring'.
+src/interpreter/authoring.ts(487,56): error TS2339: Property 'resumePricing' does not exist on type 'ReleaseAuthoring'.
+src/interpreter/authoring.ts(533,7): error TS2353: Object literal may only specify known properties, and 'reworkPolicy' does not exist in type 'ReleaseAuthoring'.
+src/interpreter/authoring.ts(533,28): error TS2339: Property 'reworkPolicy' does not exist on type 'Config'.
+src/interpreter/dispatchView.ts(16,3): error TS2305: Module '"../generated/model-api.ts"' has no exported member 'decodeFinalizationPricing'.
+src/interpreter/dispatchView.ts(17,3): error TS2305: Module '"../generated/model-api.ts"' has no exported member 'decodeReworkPolicy'.
+src/interpreter/dispatchView.ts(19,3): error TS2305: Module '"../generated/model-api.ts"' has no exported member 'encodeFinalizationPricing'.
+src/interpreter/dispatchView.ts(20,3): error TS2305: Module '"../generated/model-api.ts"' has no exported member 'encodeReworkPolicy'.
+src/interpreter/dispatchView.ts(194,29): error TS2339: Property 'reworkPolicy' does not exist on type 'Ticket'.
+src/interpreter/dispatchView.ts(195,36): error TS2339: Property 'finalizationPricing' does not exist on type 'Ticket'.
+src/interpreter/dispatchView.ts(196,30): error TS2339: Property 'resumePricing' does not exist on type 'Ticket'.
+src/interpreter/projectWriter.ts(146,22): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+src/interpreter/projectWriter.ts(147,25): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+src/interpreter/projectWriter.ts(148,17): error TS2339: Property 'finalizationPricing' does not exist on type 'Ticket'.
+src/interpreter/projectWriter.ts(150,37): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+src/interpreter/projectWriter.ts(213,7): error TS2345: Argument of type 'DecisionEvent' is not assignable to parameter of type 'JournaledDecision'.
+  Type '{ readonly type: "ReleaseTicket"; readonly value: { readonly ticket: number; readonly deps: ReadonlySet<number>; readonly prog: readonly Stage[]; readonly workFanout: number; readonly finalizer: Finalizer; }; }' is missing the following properties from type 'JournaledDecision': event, rec
+src/interpreter/projectWriter.ts(257,31): error TS2345: Argument of type 'number | { readonly ticket: number; readonly onFailure: EvaluationFailureDisposition; }' is not assignable to parameter of type 'number'.
+  Type '{ readonly ticket: number; readonly onFailure: EvaluationFailureDisposition; }' is not assignable to type 'number'.
+test/adapters/httpOutcomes.test.ts(451,43): error TS2339: Property 'reworkPolicy' does not exist on type '{ readonly deps: Set<number>; readonly prog: readonly Stage[]; readonly workFanout: 1; readonly finalizer: "ManagedFinalizer"; }'.
+test/adapters/httpOutcomes.test.ts(452,49): error TS2339: Property 'finalizationPricing' does not exist on type '{ readonly deps: Set<number>; readonly prog: readonly Stage[]; readonly workFanout: 1; readonly finalizer: "ManagedFinalizer"; }'.
+test/adapters/httpOutcomes.test.ts(453,43): error TS2339: Property 'resumePricing' does not exist on type '{ readonly deps: Set<number>; readonly prog: readonly Stage[]; readonly workFanout: 1; readonly finalizer: "ManagedFinalizer"; }'.
+test/contract/rosters.test.ts(115,3): error TS2305: Module '"../../src/domain/generated/modelTypes.ts"' has no exported member 'RetryPricing'.
+test/interpreter/authoring.test.ts(50,38): error TS2339: Property 'reworkPolicy' does not exist on type 'Config'.
+test/interpreter/i3.test.ts(20,3): error TS2305: Module '"../../src/domain/generated/modelTypes.ts"' has no exported member 'retryPricingTags'.
+test/interpreter/i3.test.ts(272,5): error TS2554: Expected 2 arguments, but got 1.
+test/interpreter/i3.test.ts(328,12): error TS2554: Expected 2 arguments, but got 1.
+test/interpreter/i3.test.ts(365,15): error TS2353: Object literal may only specify known properties, and 'resumePricing' does not exist in type 'Partial<Ticket>'.
+test/interpreter/projection.test.ts(111,37): error TS2339: Property 'gas' does not exist on type 'Config'.
+test/interpreter/projection.test.ts(135,37): error TS2339: Property 'gas' does not exist on type 'Config'.
+test/interpreter/projection.test.ts(157,35): error TS2339: Property 'gas' does not exist on type 'Config'.
+test/interpreter/projection.test.ts(173,5): error TS2322: Type 'Map<TicketId, { phase: "Escalated"; reason: "GasExhausted" | "DependencyRevoked"; deps: ReadonlySet<number>; finalizer: Finalizer; artifact: ArtifactMark; ... 6 more ...; completions: number; }>' is not assignable to type 'ReadonlyMap<number, Ticket>'.
+  Types of property 'forEach' are incompatible.
+    Type '(callbackfn: (value: { phase: "Escalated"; reason: "GasExhausted" | "DependencyRevoked"; deps: ReadonlySet<number>; finalizer: Finalizer; artifact: ArtifactMark; ... 6 more ...; completions: number; }, key: TicketId, map: Map<...>) => void, thisArg?: any) => void' is not assignable to type '(callbackfn: (value: Ticket, key: number, map: ReadonlyMap<number, Ticket>) => void, thisArg?: any) => void'.
+      Types of parameters 'callbackfn' and 'callbackfn' are incompatible.
+        Types of parameters 'value' and 'value' are incompatible.
+          Type '{ phase: "Escalated"; reason: "GasExhausted" | "DependencyRevoked"; deps: ReadonlySet<number>; finalizer: Finalizer; artifact: ArtifactMark; ... 6 more ...; completions: number; }' is not assignable to type 'Ticket'.
+            Types of property 'reason' are incompatible.
+              Type '"GasExhausted" | "DependencyRevoked"' is not assignable to type 'Reason'.
+                Type '"GasExhausted"' is not assignable to type 'Reason'.
+test/interpreter/projection.test.ts(230,10): error TS2554: Expected 2 arguments, but got 1.
+test/interpreter/projection.test.ts(242,21): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/interpreter/projection.test.ts(243,24): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/interpreter/projection.test.ts(244,30): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/interpreter/projection.test.ts(288,8): error TS2554: Expected 2 arguments, but got 1.
+test/interpreter/projection.test.ts(292,22): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/interpreter/projection.test.ts(293,25): error TS2339: Property 'finalizationPricing' does not exist on type 'Ticket'.
+test/interpreter/projection.test.ts(307,7): error TS2353: Object literal may only specify known properties, and 'finalizationPricing' does not exist in type 'ReleaseAuthoring'.
+test/interpreter/projection.test.ts(312,40): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/interpreter/wire.test.ts(78,15): error TS2554: Expected 2 arguments, but got 1.
+test/postgres/finalizerRework.test.ts(269,23): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(269,48): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(270,23): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(270,39): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(271,23): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(271,42): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(287,23): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(287,48): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(288,23): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(288,39): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(289,23): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(289,42): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(292,29): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(293,32): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(294,38): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/postgres/nativeActionAdmits.test.ts(149,20): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/postgres/nativeActionAdmits.test.ts(159,22): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/postgres/readiness.test.ts(145,7): error TS2353: Object literal may only specify known properties, and 'resumePricing' does not exist in type 'Partial<Ticket>'.
+test/postgres/ticketProjection.test.ts(26,40): error TS2307: Cannot find module '../../src/domain/pricing.ts' or its corresponding type declarations.
+test/postgres/ticketProjection.test.ts(97,29): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/postgres/ticketProjection.test.ts(98,32): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/postgres/ticketProjection.test.ts(100,14): error TS2339: Property 'finalizationPricing' does not exist on type 'Ticket'.
+test/postgres/ticketProjection.test.ts(102,25): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/postgres/ticketProjection.test.ts(247,32): error TS2339: Property 'gas' does not exist on type 'Config'.
+test/postgres/ticketProjection.test.ts(284,53): error TS2339: Property 'reworkPolicy' does not exist on type '{ readonly deps: Set<number>; readonly prog: readonly Stage[]; readonly workFanout: 1; readonly finalizer: "ManagedFinalizer"; }'.
+test/postgres/ticketProjection.test.ts(294,33): error TS2339: Property 'reworkPolicy' does not exist on type '{ readonly deps: Set<number>; readonly prog: readonly Stage[]; readonly workFanout: 1; readonly finalizer: "ManagedFinalizer"; }'.
+test/postgres/ticketProjection.test.ts(378,26): error TS2353: Object literal may only specify known properties, and 'finalizationPricing' does not exist in type 'ReleaseAuthoring'.
+test/postgres/ticketProjection.test.ts(396,26): error TS2353: Object literal may only specify known properties, and 'finalizationPricing' does not exist in type 'ReleaseAuthoring'.
+test/postgres/ticketProjection.test.ts(401,33): error TS2339: Property 'gas' does not exist on type 'Config'.
+test/postgres/ticketProjection.test.ts(402,32): error TS2339: Property 'gas' does not exist on type 'Config'.
+test/ui/resumePoint.test.ts(39,30): error TS2307: Cannot find module '../../src/domain/pricing.ts' or its corresponding type declarations.
+test/ui/resumePoint.test.ts(58,3): error TS2353: Object literal may only specify known properties, and 'reworkPolicy' does not exist in type 'Config'.
+test/ui/resumePoint.test.ts(71,5): error TS2353: Object literal may only specify known properties, and 'reworkPolicy' does not exist in type 'Ticket'.
+test/ui/resumePoint.test.ts(153,39): error TS2339: Property 'reworkPolicy' does not exist on type 'Ticket'.
+test/ui/resumePoint.test.ts(154,27): error TS2339: Property 'resumePricing' does not exist on type 'Ticket'.
+test/ui/resumePoint.test.ts(188,7): error TS2353: Object literal may only specify known properties, and 'reworkLeft' does not exist in type 'Partial<Ticket>'.
+test/ui/resumePoint.test.ts(194,7): error TS2554: Expected 3 arguments, but got 2.
+test/ui/resumePoint.test.ts(237,5): error TS2353: Object literal may only specify known properties, and 'reworkLeft' does not exist in type 'Partial<Ticket>'.
+test/ui/resumePoint.test.ts(244,14): error TS2554: Expected 3 arguments, but got 2.
+test/ui/resumePoint.test.ts(257,7): error TS2345: Argument of type '{ record: Task[]; finalizationPricing: "DeadlineOnly"; gasLeft: number; phase: "Finalizing"; program: { readonly fanout: 1; readonly combinator: "UnanimousPass"; }[]; finalizationLeft: number; } | { ...; }' is not assignable to parameter of type 'Partial<Ticket> | undefined'.
+  Object literal may only specify known properties, and 'finalizationLeft' does not exist in type 'Partial<Ticket>'.
+test/ui/resumePoint.test.ts(329,9): error TS2322: Type '"GasExhausted"' is not assignable to type 'Reason | undefined'.
+test/ui/resumePoint.test.ts(336,16): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/ui/resumePoint.test.ts(336,32): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/ui/resumePoint.test.ts(346,15): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/ui/resumePoint.test.ts(347,28): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/ui/resumePoint.test.ts(363,7): error TS2353: Object literal may only specify known properties, and 'reworkPolicy' does not exist in type 'Partial<Ticket>'.
+test/ui/resumePoint.test.ts(369,7): error TS2554: Expected 3 arguments, but got 2.
+test/ui/ticketActions.test.ts(39,5): error TS2353: Object literal may only specify known properties, and 'reworkPolicy' does not exist in type 'Ticket'.
+test/ui/ticketActions.test.ts(103,56): error TS2353: Object literal may only specify known properties, and 'gasLeft' does not exist in type 'Partial<Ticket>'.

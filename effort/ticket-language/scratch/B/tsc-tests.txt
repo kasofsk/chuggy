@@ -1,0 +1,151 @@
+test/adapters/httpOutcomes.test.ts(451,11): error TS2353: Object literal may only specify known properties, and 'reworkPolicies' does not exist in type '{ readonly stages: readonly { readonly fanout: number; readonly combinator: "UnanimousPass" | "AnyPass"; }[]; readonly programStagesMax: number; readonly workFanouts: readonly number[]; readonly finalizers: readonly Finalizer[]; }'.
+test/adapters/httpOutcomes.test.ts(451,43): error TS2339: Property 'reworkPolicy' does not exist on type '{ readonly deps: Set<number>; readonly prog: readonly Stage[]; readonly workFanout: 1; readonly finalizer: "ManagedFinalizer"; }'.
+test/adapters/httpOutcomes.test.ts(452,49): error TS2339: Property 'finalizationPricing' does not exist on type '{ readonly deps: Set<number>; readonly prog: readonly Stage[]; readonly workFanout: 1; readonly finalizer: "ManagedFinalizer"; }'.
+test/adapters/httpOutcomes.test.ts(453,43): error TS2339: Property 'resumePricing' does not exist on type '{ readonly deps: Set<number>; readonly prog: readonly Stage[]; readonly workFanout: 1; readonly finalizer: "ManagedFinalizer"; }'.
+test/contract/representations.ts(200,7): error TS2353: Object literal may only specify known properties, and 'reworkPolicy' does not exist in type 'DispatchCandidate'.
+test/contract/responses.test.ts(233,7): error TS2322: Type '"GasExhausted"' is not assignable to type '"WorkFailed" | "ReworkBudgetExhausted" | "DependencyRevoked" | "ExecutionPolicyDenied" | "TicketConfigIncompatible" | "ExecutionProfileUnavailable" | "RuntimeVersionUnsupported" | "RequiredCapabilityUnavailable" | undefined'.
+test/contract/responses.test.ts(299,7): error TS2353: Object literal may only specify known properties, and 'accounts' does not exist in type 'TicketResource'.
+test/contract/responses.test.ts(308,30): error TS2339: Property 'accounts' does not exist on type '{ ticket: number; phase: "Pending" | "Working" | "Evaluating" | "Finalizing" | "Done" | "Escalated" | "Revoked"; sequence: number; changedAt: string; title?: string | undefined; releasedAt?: string | undefined; reason?: "WorkFailed" | ... 7 more ... | undefined; resumeAt?: "ResumeWorking" | ... 3 more ... | undefine...'.
+test/contract/responses.test.ts(319,7): error TS2353: Object literal may only specify known properties, and 'accounts' does not exist in type 'TicketResource'.
+test/contract/responses.test.ts(323,31): error TS2339: Property 'accounts' does not exist on type '{ ticket: number; phase: "Pending" | "Working" | "Evaluating" | "Finalizing" | "Done" | "Escalated" | "Revoked"; sequence: number; changedAt: string; title?: string | undefined; releasedAt?: string | undefined; reason?: "WorkFailed" | ... 7 more ... | undefined; resumeAt?: "ResumeWorking" | ... 3 more ... | undefine...'.
+test/contract/responses.test.ts(324,31): error TS2339: Property 'accounts' does not exist on type '{ ticket: number; phase: "Pending" | "Working" | "Evaluating" | "Finalizing" | "Done" | "Escalated" | "Revoked"; sequence: number; changedAt: string; title?: string | undefined; releasedAt?: string | undefined; reason?: "WorkFailed" | ... 7 more ... | undefined; resumeAt?: "ResumeWorking" | ... 3 more ... | undefine...'.
+test/contract/responses.test.ts(333,7): error TS2339: Property 'accounts' does not exist on type '{ ticket: number; phase: "Pending" | "Working" | "Evaluating" | "Finalizing" | "Done" | "Escalated" | "Revoked"; sequence: number; changedAt: string; title?: string | undefined; releasedAt?: string | undefined; reason?: "WorkFailed" | ... 7 more ... | undefined; resumeAt?: "ResumeWorking" | ... 3 more ... | undefine...'.
+test/contract/responses.test.ts(964,11): error TS2353: Object literal may only specify known properties, and 'reworkPolicies' does not exist in type '{ readonly stages: readonly { readonly fanout: number; readonly combinator: "UnanimousPass" | "AnyPass"; }[]; readonly programStagesMax: number; readonly workFanouts: readonly number[]; readonly finalizers: readonly Finalizer[]; }'.
+test/contract/rosters.test.ts(45,3): error TS2305: Module '"../../src/contract/rosters.ts"' has no exported member 'resumePricings'.
+test/contract/rosters.test.ts(115,3): error TS2305: Module '"../../src/domain/generated/modelTypes.ts"' has no exported member 'RetryPricing'.
+test/interpreter/authoring.test.ts(50,38): error TS2339: Property 'reworkPolicy' does not exist on type 'Config'.
+test/interpreter/authoring.test.ts(57,20): error TS2339: Property 'reworkPolicies' does not exist on type '{ readonly stages: readonly { readonly fanout: number; readonly combinator: "UnanimousPass" | "AnyPass"; }[]; readonly programStagesMax: number; readonly workFanouts: readonly number[]; readonly finalizers: readonly Finalizer[]; }'.
+test/interpreter/authoring.test.ts(60,28): error TS2339: Property 'reworkPolicies' does not exist on type '{ readonly stages: readonly { readonly fanout: number; readonly combinator: "UnanimousPass" | "AnyPass"; }[]; readonly programStagesMax: number; readonly workFanouts: readonly number[]; readonly finalizers: readonly Finalizer[]; }'.
+test/interpreter/authoring.test.ts(60,49): error TS7006: Parameter 'choice' implicitly has an 'any' type.
+test/interpreter/dispatchView.test.ts(7,3): error TS2305: Module '"../../src/interpreter/dispatchView.ts"' has no exported member 'decodeDispatchFinalizationPricing'.
+test/interpreter/dispatchView.test.ts(9,3): error TS2305: Module '"../../src/interpreter/dispatchView.ts"' has no exported member 'decodeDispatchReworkPolicy'.
+test/interpreter/dispatchWriter.test.ts(191,5): error TS2345: Argument of type '{ config: Config; store: ProjectStore; decisions: ProjectDecision; ticketBriefs: TicketBriefPort; executionSources: ExecutionSourceObservationPort; }' is not assignable to parameter of type 'ProjectTicketWriter'.
+  Property 'rework' is missing in type '{ config: Config; store: ProjectStore; decisions: ProjectDecision; ticketBriefs: TicketBriefPort; executionSources: ExecutionSourceObservationPort; }' but required in type 'ProjectTicketWriter'.
+test/interpreter/dispatchWriter.test.ts(510,7): error TS2741: Property 'rework' is missing in type '{ config: Config; store: ProjectStore; decisions: { decide: (decision: Decision) => Promise<{ decided: "Committed"; lease: { head: number; partition: Partition; owner: OwnerId; fencingEpoch: number; recoveryEpoch: RecoveryEpoch; }; }>; }; ticketBriefs: TicketBriefPort; executionSources: ExecutionSourceObservationPor...' but required in type 'ProjectTicketWriter'.
+test/interpreter/dispatchWriter.test.ts(644,7): error TS2353: Object literal may only specify known properties, and 'command' does not exist in type '{ readonly kind: "Continuation"; readonly continuation: string; readonly reduction: ContinuationReduction; readonly expectedTicketVersion: number; readonly expectedPhase: string; readonly taskSetGeneration: number; }'.
+test/interpreter/dispatchWriter.test.ts(814,5): error TS2345: Argument of type '{ config: Config; store: ProjectStore; decisions: { decide: () => Promise<Decided>; }; ticketBriefs: { brief: () => Promise<undefined>; }; executionSources: ExecutionSourceObservationPort; }' is not assignable to parameter of type 'ProjectTicketWriter'.
+  Property 'rework' is missing in type '{ config: Config; store: ProjectStore; decisions: { decide: () => Promise<Decided>; }; ticketBriefs: { brief: () => Promise<undefined>; }; executionSources: ExecutionSourceObservationPort; }' but required in type 'ProjectTicketWriter'.
+test/interpreter/i3.test.ts(20,3): error TS2305: Module '"../../src/domain/generated/modelTypes.ts"' has no exported member 'retryPricingTags'.
+test/interpreter/i3.test.ts(272,5): error TS2554: Expected 2 arguments, but got 1.
+test/interpreter/i3.test.ts(328,12): error TS2554: Expected 2 arguments, but got 1.
+test/interpreter/i3.test.ts(346,7): error TS2353: Object literal may only specify known properties, and 'command' does not exist in type '{ readonly kind: "Continuation"; readonly continuation: string; readonly reduction: ContinuationReduction; readonly expectedTicketVersion: number; readonly expectedPhase: string; readonly taskSetGeneration: number; }'.
+test/interpreter/i3.test.ts(365,15): error TS2353: Object literal may only specify known properties, and 'resumePricing' does not exist in type 'Partial<Ticket>'.
+test/interpreter/leadTurn.test.ts(51,3): error TS2353: Object literal may only specify known properties, and 'reworkPolicy' does not exist in type 'DispatchCandidate'.
+test/interpreter/projection.test.ts(111,37): error TS2339: Property 'gas' does not exist on type 'Config'.
+test/interpreter/projection.test.ts(135,37): error TS2339: Property 'gas' does not exist on type 'Config'.
+test/interpreter/projection.test.ts(157,35): error TS2339: Property 'gas' does not exist on type 'Config'.
+test/interpreter/projection.test.ts(173,5): error TS2322: Type 'Map<TicketId, { phase: "Escalated"; reason: "DependencyRevoked" | "GasExhausted"; deps: ReadonlySet<number>; finalizer: Finalizer; artifact: ArtifactMark; ... 6 more ...; completions: number; }>' is not assignable to type 'ReadonlyMap<number, Ticket>'.
+  Types of property 'forEach' are incompatible.
+    Type '(callbackfn: (value: { phase: "Escalated"; reason: "DependencyRevoked" | "GasExhausted"; deps: ReadonlySet<number>; finalizer: Finalizer; artifact: ArtifactMark; ... 6 more ...; completions: number; }, key: TicketId, map: Map<...>) => void, thisArg?: any) => void' is not assignable to type '(callbackfn: (value: Ticket, key: number, map: ReadonlyMap<number, Ticket>) => void, thisArg?: any) => void'.
+      Types of parameters 'callbackfn' and 'callbackfn' are incompatible.
+        Types of parameters 'value' and 'value' are incompatible.
+          Type '{ phase: "Escalated"; reason: "DependencyRevoked" | "GasExhausted"; deps: ReadonlySet<number>; finalizer: Finalizer; artifact: ArtifactMark; ... 6 more ...; completions: number; }' is not assignable to type 'Ticket'.
+            Types of property 'reason' are incompatible.
+              Type '"DependencyRevoked" | "GasExhausted"' is not assignable to type 'Reason'.
+                Type '"GasExhausted"' is not assignable to type 'Reason'.
+test/interpreter/projection.test.ts(230,10): error TS2554: Expected 2 arguments, but got 1.
+test/interpreter/projection.test.ts(242,21): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/interpreter/projection.test.ts(243,24): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/interpreter/projection.test.ts(244,30): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/interpreter/projection.test.ts(259,20): error TS2339: Property 'gasLeft' does not exist on type 'TicketProjection'.
+test/interpreter/projection.test.ts(260,23): error TS2339: Property 'reworkLeft' does not exist on type 'TicketProjection'.
+test/interpreter/projection.test.ts(261,29): error TS2339: Property 'finalizationLeft' does not exist on type 'TicketProjection'.
+test/interpreter/projection.test.ts(288,8): error TS2554: Expected 2 arguments, but got 1.
+test/interpreter/projection.test.ts(292,22): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/interpreter/projection.test.ts(293,25): error TS2339: Property 'finalizationPricing' does not exist on type 'Ticket'.
+test/interpreter/projection.test.ts(295,61): error TS2339: Property 'finalizationLeft' does not exist on type 'TicketProjection'.
+test/interpreter/projection.test.ts(307,7): error TS2353: Object literal may only specify known properties, and 'finalizationPricing' does not exist in type 'ReleaseAuthoring'.
+test/interpreter/projection.test.ts(311,21): error TS2339: Property 'finalizationLeft' does not exist on type 'TicketProjection'.
+test/interpreter/projection.test.ts(312,40): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/interpreter/selector.test.ts(531,3): error TS2353: Object literal may only specify known properties, and 'reworkPolicy' does not exist in type 'DispatchCandidate'.
+test/interpreter/ticketServiceRun.test.ts(67,3): error TS2741: Property 'rework' is missing in type '{ metrics?: TicketServiceMetrics; domain: Config; discovery: ProjectDiscovery; decisions: { decide: () => Promise<Decided>; }; ... 4 more ...; monotonicNow: () => number; }' but required in type 'TicketServiceRuntimeService'.
+test/interpreter/wire.test.ts(78,15): error TS2554: Expected 2 arguments, but got 1.
+test/postgres/digest.test.ts(82,62): error TS2345: Argument of type 'Entry' is not assignable to parameter of type 'string'.
+test/postgres/digest.test.ts(91,61): error TS2345: Argument of type 'Entry' is not assignable to parameter of type 'string'.
+test/postgres/digest.test.ts(95,61): error TS2345: Argument of type 'Entry' is not assignable to parameter of type 'string'.
+test/postgres/digest.test.ts(98,56): error TS2345: Argument of type 'Entry' is not assignable to parameter of type 'string'.
+test/postgres/digest.test.ts(115,67): error TS2345: Argument of type '{ entry: Entry; cause: { kind: "Operation"; id: OperationId; }; configuration: { configurationRevision: string; configurationDigest: string; }; eventSchemaVersion: 1; decisionSemanticsVersion: 1; }' is not assignable to parameter of type 'JournalIntegrityEnvelope'.
+  Property 'entryText' is missing in type '{ entry: Entry; cause: { kind: "Operation"; id: OperationId; }; configuration: { configurationRevision: string; configurationDigest: string; }; eventSchemaVersion: 1; decisionSemanticsVersion: 1; }' but required in type 'JournalIntegrityEnvelope'.
+test/postgres/digest.test.ts(117,54): error TS2345: Argument of type '{ cause: { kind: "Operation"; id: OperationId; }; entry: Entry; configuration: { configurationRevision: string; configurationDigest: string; }; eventSchemaVersion: 1; decisionSemanticsVersion: 1; }' is not assignable to parameter of type 'JournalIntegrityEnvelope'.
+  Property 'entryText' is missing in type '{ cause: { kind: "Operation"; id: OperationId; }; entry: Entry; configuration: { configurationRevision: string; configurationDigest: string; }; eventSchemaVersion: 1; decisionSemanticsVersion: 1; }' but required in type 'JournalIntegrityEnvelope'.
+test/postgres/digest.test.ts(124,54): error TS2345: Argument of type '{ configuration: { configurationDigest: string; configurationRevision: string; }; entry: Entry; cause: { kind: "Operation"; id: OperationId; }; eventSchemaVersion: 1; decisionSemanticsVersion: 1; }' is not assignable to parameter of type 'JournalIntegrityEnvelope'.
+  Property 'entryText' is missing in type '{ configuration: { configurationDigest: string; configurationRevision: string; }; entry: Entry; cause: { kind: "Operation"; id: OperationId; }; eventSchemaVersion: 1; decisionSemanticsVersion: 1; }' but required in type 'JournalIntegrityEnvelope'.
+test/postgres/digest.test.ts(134,54): error TS2345: Argument of type '{ eventSchemaVersion: number; entry: Entry; cause: { kind: "Operation"; id: OperationId; }; configuration: { configurationRevision: string; configurationDigest: string; }; decisionSemanticsVersion: 1; }' is not assignable to parameter of type 'JournalIntegrityEnvelope'.
+  Property 'entryText' is missing in type '{ eventSchemaVersion: number; entry: Entry; cause: { kind: "Operation"; id: OperationId; }; configuration: { configurationRevision: string; configurationDigest: string; }; decisionSemanticsVersion: 1; }' but required in type 'JournalIntegrityEnvelope'.
+test/postgres/digest.test.ts(141,54): error TS2345: Argument of type '{ decisionSemanticsVersion: number; entry: Entry; cause: { kind: "Operation"; id: OperationId; }; configuration: { configurationRevision: string; configurationDigest: string; }; eventSchemaVersion: 1; }' is not assignable to parameter of type 'JournalIntegrityEnvelope'.
+  Property 'entryText' is missing in type '{ decisionSemanticsVersion: number; entry: Entry; cause: { kind: "Operation"; id: OperationId; }; configuration: { configurationRevision: string; configurationDigest: string; }; eventSchemaVersion: 1; }' but required in type 'JournalIntegrityEnvelope'.
+test/postgres/finalizerRework.test.ts(269,23): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(269,48): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(270,23): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(270,39): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(271,23): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(271,42): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(287,23): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(287,48): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(288,23): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(288,39): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(289,23): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(289,42): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(292,29): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(293,32): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/postgres/finalizerRework.test.ts(294,38): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/postgres/harness.ts(747,3): error TS2741: Property 'rework' is missing in type '{ config: Config; store: ProjectStore; decisions: ProjectDecision; executionSources: { observe: () => Promise<{ observed: "Source"; source: { repository: RepositoryId; target: { ...; }; manifests: never[]; }; }>; }; ticketBriefs: { ...; }; }' but required in type 'ProjectTicketWriter'.
+test/postgres/journal.test.ts(141,9): error TS2353: Object literal may only specify known properties, and 'entry' does not exist in type 'JournalIntegrityEnvelope'.
+test/postgres/journal.test.ts(219,47): error TS2345: Argument of type 'Entry' is not assignable to parameter of type 'string'.
+test/postgres/journal.test.ts(296,9): error TS2353: Object literal may only specify known properties, and 'entry' does not exist in type 'JournalIntegrityEnvelope'.
+test/postgres/journal.test.ts(427,9): error TS2353: Object literal may only specify known properties, and 'entry' does not exist in type 'JournalIntegrityEnvelope'.
+test/postgres/leadDecision.test.ts(155,9): error TS2353: Object literal may only specify known properties, and 'reworkPolicy' does not exist in type 'DispatchCandidate'.
+test/postgres/leadDecision.test.ts(169,9): error TS2353: Object literal may only specify known properties, and 'reworkPolicy' does not exist in type 'DispatchCandidate'.
+test/postgres/leadDurable.test.ts(62,3): error TS2305: Module '"../../src/contract/rosters.ts"' has no exported member 'resumePricings'.
+test/postgres/nativeActionAdmits.test.ts(149,20): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/postgres/nativeActionAdmits.test.ts(159,22): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/postgres/readiness.test.ts(145,7): error TS2353: Object literal may only specify known properties, and 'resumePricing' does not exist in type 'Partial<Ticket>'.
+test/postgres/ticketProjection.test.ts(26,40): error TS2307: Cannot find module '../../src/domain/pricing.ts' or its corresponding type declarations.
+test/postgres/ticketProjection.test.ts(97,29): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/postgres/ticketProjection.test.ts(98,32): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/postgres/ticketProjection.test.ts(100,14): error TS2339: Property 'finalizationPricing' does not exist on type 'Ticket'.
+test/postgres/ticketProjection.test.ts(102,25): error TS2339: Property 'finalizationLeft' does not exist on type 'Ticket'.
+test/postgres/ticketProjection.test.ts(247,32): error TS2339: Property 'gas' does not exist on type 'Config'.
+test/postgres/ticketProjection.test.ts(251,28): error TS2339: Property 'accounts' does not exist on type 'TicketResource'.
+test/postgres/ticketProjection.test.ts(255,26): error TS2339: Property 'accounts' does not exist on type 'TicketResource'.
+test/postgres/ticketProjection.test.ts(284,53): error TS2339: Property 'reworkPolicy' does not exist on type '{ readonly deps: Set<number>; readonly prog: readonly Stage[]; readonly workFanout: 1; readonly finalizer: "ManagedFinalizer"; }'.
+test/postgres/ticketProjection.test.ts(291,25): error TS2339: Property 'accounts' does not exist on type 'TicketResource'.
+test/postgres/ticketProjection.test.ts(293,14): error TS2339: Property 'accounts' does not exist on type 'TicketResource'.
+test/postgres/ticketProjection.test.ts(294,33): error TS2339: Property 'reworkPolicy' does not exist on type '{ readonly deps: Set<number>; readonly prog: readonly Stage[]; readonly workFanout: 1; readonly finalizer: "ManagedFinalizer"; }'.
+test/postgres/ticketProjection.test.ts(359,23): error TS2339: Property 'accounts' does not exist on type 'TicketResource'.
+test/postgres/ticketProjection.test.ts(378,26): error TS2353: Object literal may only specify known properties, and 'finalizationPricing' does not exist in type 'ReleaseAuthoring'.
+test/postgres/ticketProjection.test.ts(383,43): error TS2339: Property 'accounts' does not exist on type 'TicketResource'.
+test/postgres/ticketProjection.test.ts(396,26): error TS2353: Object literal may only specify known properties, and 'finalizationPricing' does not exist in type 'ReleaseAuthoring'.
+test/postgres/ticketProjection.test.ts(400,61): error TS2339: Property 'accounts' does not exist on type 'TicketResource'.
+test/postgres/ticketProjection.test.ts(401,33): error TS2339: Property 'gas' does not exist on type 'Config'.
+test/postgres/ticketProjection.test.ts(402,32): error TS2339: Property 'gas' does not exist on type 'Config'.
+test/ui/resumePoint.test.ts(39,30): error TS2307: Cannot find module '../../src/domain/pricing.ts' or its corresponding type declarations.
+test/ui/resumePoint.test.ts(58,3): error TS2353: Object literal may only specify known properties, and 'reworkPolicy' does not exist in type 'Config'.
+test/ui/resumePoint.test.ts(71,5): error TS2353: Object literal may only specify known properties, and 'reworkPolicy' does not exist in type 'Ticket'.
+test/ui/resumePoint.test.ts(153,39): error TS2339: Property 'reworkPolicy' does not exist on type 'Ticket'.
+test/ui/resumePoint.test.ts(154,27): error TS2339: Property 'resumePricing' does not exist on type 'Ticket'.
+test/ui/resumePoint.test.ts(188,7): error TS2353: Object literal may only specify known properties, and 'reworkLeft' does not exist in type 'Partial<Ticket>'.
+test/ui/resumePoint.test.ts(194,7): error TS2554: Expected 3 arguments, but got 2.
+test/ui/resumePoint.test.ts(237,5): error TS2353: Object literal may only specify known properties, and 'reworkLeft' does not exist in type 'Partial<Ticket>'.
+test/ui/resumePoint.test.ts(244,14): error TS2554: Expected 3 arguments, but got 2.
+test/ui/resumePoint.test.ts(257,7): error TS2345: Argument of type '{ record: Task[]; finalizationPricing: "DeadlineOnly"; gasLeft: number; phase: "Finalizing"; program: { readonly fanout: 1; readonly combinator: "UnanimousPass"; }[]; finalizationLeft: number; } | { ...; }' is not assignable to parameter of type 'Partial<Ticket> | undefined'.
+  Object literal may only specify known properties, and 'finalizationLeft' does not exist in type 'Partial<Ticket>'.
+test/ui/resumePoint.test.ts(329,9): error TS2322: Type '"GasExhausted"' is not assignable to type 'Reason | undefined'.
+test/ui/resumePoint.test.ts(336,16): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/ui/resumePoint.test.ts(336,32): error TS2339: Property 'gasLeft' does not exist on type 'Ticket'.
+test/ui/resumePoint.test.ts(346,15): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/ui/resumePoint.test.ts(347,28): error TS2339: Property 'reworkLeft' does not exist on type 'Ticket'.
+test/ui/resumePoint.test.ts(363,7): error TS2353: Object literal may only specify known properties, and 'reworkPolicy' does not exist in type 'Partial<Ticket>'.
+test/ui/resumePoint.test.ts(369,7): error TS2554: Expected 3 arguments, but got 2.
+test/ui/ticketActions.test.ts(39,5): error TS2353: Object literal may only specify known properties, and 'reworkPolicy' does not exist in type 'Ticket'.
+test/ui/ticketActions.test.ts(103,56): error TS2353: Object literal may only specify known properties, and 'gasLeft' does not exist in type 'Partial<Ticket>'.
+ui/chuggy-ui/app/core/codeSentences.ts(33,10): error TS2678: Type '"FinalizationBudgetExhausted"' is not comparable to type '"WorkFailed" | "ReworkBudgetExhausted" | "DependencyRevoked" | "ExecutionPolicyDenied" | "TicketConfigIncompatible" | "ExecutionProfileUnavailable" | "RuntimeVersionUnsupported" | "RequiredCapabilityUnavailable"'.
+ui/chuggy-ui/app/core/codeSentences.ts(35,10): error TS2678: Type '"GasExhausted"' is not comparable to type '"WorkFailed" | "ReworkBudgetExhausted" | "DependencyRevoked" | "ExecutionPolicyDenied" | "TicketConfigIncompatible" | "ExecutionProfileUnavailable" | "RuntimeVersionUnsupported" | "RequiredCapabilityUnavailable"'.
+ui/chuggy-ui/app/core/resumePoint.ts(30,3): error TS2305: Module '"../../../../src/contract/rosters.ts"' has no exported member 'ResumePricing'.
+ui/chuggy-ui/app/core/resumePoint.ts(89,10): error TS2678: Type '"FinalizationBudgetExhausted"' is not comparable to type '"WorkFailed" | "ReworkBudgetExhausted" | "DependencyRevoked" | "ExecutionPolicyDenied" | "TicketConfigIncompatible" | "ExecutionProfileUnavailable" | "RuntimeVersionUnsupported" | "RequiredCapabilityUnavailable"'.
+ui/chuggy-ui/app/core/resumePoint.ts(91,10): error TS2678: Type '"GasExhausted"' is not comparable to type '"WorkFailed" | "ReworkBudgetExhausted" | "DependencyRevoked" | "ExecutionPolicyDenied" | "TicketConfigIncompatible" | "ExecutionProfileUnavailable" | "RuntimeVersionUnsupported" | "RequiredCapabilityUnavailable"'.
+ui/chuggy-ui/app/core/ticketCreation.ts(478,26): error TS2339: Property 'reworkPolicy' does not exist on type 'TicketCreationForm'.
+ui/chuggy-ui/app/core/ticketCreation.ts(479,33): error TS2339: Property 'finalizationPricing' does not exist on type 'TicketCreationForm'.
+ui/chuggy-ui/app/core/ticketCreation.ts(480,27): error TS2339: Property 'resumePricing' does not exist on type 'TicketCreationForm'.
+ui/chuggy-ui/app/core/ticketCreation.ts(548,29): error TS2339: Property 'reworkPolicy' does not exist on type '{ dependencies: number[]; workFanout: number; finalizer: "NoFinalizer" | "ManagedFinalizer"; program: { fanout: number; combinator: "UnanimousPass" | "AnyPass"; }[]; }'.
+ui/chuggy-ui/app/core/ticketCreation.ts(554,30): error TS2339: Property 'finalizationPricing' does not exist on type '{ dependencies: number[]; workFanout: number; finalizer: "NoFinalizer" | "ManagedFinalizer"; program: { fanout: number; combinator: "UnanimousPass" | "AnyPass"; }[]; }'.

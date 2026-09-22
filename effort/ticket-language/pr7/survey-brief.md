@@ -1,0 +1,28 @@
+# PR 7 survey — Import evaluation_protocol, and how to cut it
+
+Read-only. Detached worktree of your own at `origin/main` (e9a6136e, PR 6b merged and released):
+
+    git -C ~/claude/chuggy fetch -q origin && git -C ~/claude/chuggy worktree add --detach ~/claude/chuggy-wt/pr7-survey origin/main
+    ln -s ~/claude/chuggy/node_modules ~/claude/chuggy-wt/pr7-survey/node_modules
+
+Never `npm ci` under `ui/`. Read first: `~/claude/chuggy-effort/ticket-language/SPIKE.md` (the plan table's PR 7 row, "Tasks and evaluation", "Decisions", "PR 6 split"), `pr6/survey.md` and `pr6/GOAL.md` (the shape and depth wanted; the Split section is the model for what is asked here; the decisions PR 6b took as placeholders for PR 7 — `stage = index + 1`, `generation` counted per stage run off the record, `evaluator` = fan-out ordinal, `stageGeneration` in `src/domain/ticket.ts`), `pr6/tasks/6b/{A,B,C,E}-report.md` (what the tree holds now: `TaskIdentity`, `workCyclesStarted`, identity columns on `execution_request_task`, the console cutting program runs at the lowest stage), the package's `~/claude/chuggy-effort/ticket-language/package/model/ticket-domain/evaluation/evaluation.qnt` whole (480 lines) and every use of it in `package/model/ticket-domain/ticket.qnt` (`Evaluation(EvaluationInstance)`, `EvaluationBlockedEscalated(EvaluationInstance)`, `EvaluationFailurePolicy`, `evaluationReworkInput`, `currentTaskObligations`, `resumeBlocked`), `CLAUDE.md`, `.chug/tasks/review-change.md`. The fabric is at `~/claude/chuggy-fabric` (read-only) and the worker image under chuggy's `images/worker/`.
+
+## Standing decisions
+
+- The rig's tickets are disposable: a migration may refuse a non-empty journal and name `deploy/rig/wipe-tickets.sql`; no lift for old rows. Each piece you propose says whether it needs the wipe.
+- Package pinned at 76c95a9; no package changes. A model file is imported by verbatim copy, gated like any model file (PR 6b's precedent: `model/task-contract/task.qnt`, `model/AGENTS.md`).
+- Geoff (2026-09-22): PR 7 may be more than one PR if that is more tractable. **The Split section is the deliverable**: name the pieces, what each moves in the model, schema, boundary, wire and console, which need each other, which need the wipe, which move the worker or the fabric, and the order. Recommend one cut, with the reason; say what a single PR would cost instead.
+
+## Questions to answer, each with file:line evidence
+
+1. **The model today against the package.** `Ticket.program: List[StageDefinition{fanout}]`, `tasks`, `record`, `evalStage`, `spawnEvalStage`, `stageGeneration`, `reducibleEvalIn`, `decideEvalReduce`, the rework cap, `EvaluationFailureEscalated`/`EvaluationBlockedEscalated` and the resumes; against `EvaluationPlan`/`StageDefinition{key, evaluators}`/`EvaluatorDefinition`, `StageRun{generation, statuses}`, `EvaluationProgress`/`EvaluationState`/`EvaluationInstance`, `EvaluatorStatus`, `EvaluationVerdict`, `taskCurrent`, `reportProduced`/`reportWithoutResult`, `concludeStage`, `resumeBlocked`, the invariants. Which of chuggy's ticket fields the instance replaces, and which stay (the work side, `workCyclesStarted`, `spawned`).
+2. **Evaluator keys.** Where a stage's evaluators come from today (the configuration's `evaluations[]`, `program[stage].fanout`, `taskKindDefaults["Evaluation:<stage>"]`, the pod's briefing by stage purpose) and what a keyed evaluator means for authoring, the draft initialization's `choices.stages`, the dispatch candidate, and the console's picker and ledger.
+3. **The verdict and the report.** `Verdict = Pass | Fail` on the wire from the worker (`images/worker/source.mjs`, `resultManifest.ts`, `submit_worker_result`, `submit_task_completion`'s `in_outcome`), the fabric's worker plane, and the package's `EvaluatorPass | EvaluatorFail` and `EvaluatorResult`. Is the rename purely inside chuggy (adapter maps `Pass` → `EvaluatorPass`), or does the worker's manifest change? What "evaluator infrastructure death becomes EvaluationBlocked instead of Failed" touches: the blocked arm of `submit_task_completion`, `ExecutionBlocked`, `blocked_reason`, the escalation evidence.
+4. **Resume at generation+1 keeping passes.** Today's `ResumeEvaluation` re-spawns the whole lowest stage; the package resumes the blocked stage at the next generation and re-asks only the evaluators still `Awaiting`/blocked. What the console's run cut (E's rule: a run begins at the lowest stage) becomes when a resumed run does not begin at the lowest stage.
+5. **Schema.** Every relation and function that carries `program`, a stage fan-out, a task record, an evaluation verdict or a rework count; what a `StageRun` needs durably (per-evaluator status per generation) versus what the journal replays; whether `execution_request_task`'s identity columns already carry enough. Propose the migration(s) per piece.
+6. **Wire and console.** `ticketResponseSchema`'s program and evaluation fields, execution summaries, `runTotals`, `ticketLedger`, the situation card, the creation picker; what each piece changes for a reader.
+7. **Surprises**: anything the SPIKE row got wrong, and anything PR 3–6 left for PR 7 (grep the GOAL.md and survey files for "PR 7").
+
+## Output
+
+`~/claude/chuggy-effort/ticket-language/pr7/survey.md`, in the style and depth of `pr6/survey.md`, under ~260 lines, numbered surprises at the top, a **Split** section with the recommended cut, and a closing **Release coupling** section per piece. Remove your worktree when done (`git -C ~/claude/chuggy worktree remove --force ~/claude/chuggy-wt/pr7-survey`). Write the file, reply with the surprises, the Split and the release-coupling sections only, and stop.

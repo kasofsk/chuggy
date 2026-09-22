@@ -1,0 +1,20 @@
+# Task E (PR 7b) — round 1 machine fixes
+
+Worktree `~/claude/chuggy-wt/evinst-machine`, branch `fix/evaluation-instance-machine` off 64a95abe (task D is fixing `ui/` on the model branch beside you; you touch nothing under `ui/`). `node_modules` links to the root's. Read `~/claude/chuggy-effort/ticket-language/pr7/reviews/7b-round1-machine.md` (the verdict you are fixing) and `7b-round1-surface.md` (its last paragraph, the adjacent note), `pr7/GOAL.md` §"PR 7b — decisions" 3 and 4, `pr7/tasks/7b/B-report.md`, `.chug/tasks/review-change.md`, `CLAUDE.md`.
+
+## 1. A durable unreadable source at a spawn is a wall, not a deferral (finding 1)
+
+Two fixes, both needed. **The specific case:** a `FinalizationNeedsWork` rework's bundle carries `Repository` beside `TargetCommit` (`projectWriterExecutionSource` skipping the observation when finalization evidence is present is the cause; `inputBundleReferencesOf`'s evidence branch is where the repository is missing), so the next evaluation spawn is sourced and runs. Pin it with a case that walks a finalizer rework into its evaluation and sees the spawn sourced. **The general case:** a durable `Unreadable` at a spawn no client is waiting on must not defer forever. The decision that owes the task has already been journalled (the task is in the live set or the instance's obligations, and its wire integer is minted from the graph), so the writer decides `TaskDone{task, report: TerminalFailureReport{evidence: <the wire integer>, kind: ExecutionUnavailableFailure}}` for each task the spawn would have started, exactly as a wall after dispatch is journalled by the door: a work task's lands `WorkExecutionUnavailableEscalated`, an evaluator's marks it unavailable and the stage parks when the others answer. The git evidence becomes the desk row's escalation evidence (`projectWriterEscalationEvidence`). A transient evidence stays deferred. Rewrite `projectWriterUnreadableLanding` and its doc; delete the sentence that says nothing parks such a ticket. Pin: a durable unreadable at a work spawn walls the ticket in one quantum and the writer goes on deciding other tickets; the same at an evaluation spawn of a two-evaluator stage parks it once the other answers; a transient one defers and is retried. Say in the report whether the writer's quantum loop needed anything else to stop a deferred head from starving the class.
+
+## 2. The privileges guard (finding 2)
+`test/postgres/privileges.test.ts:347-350`: both fixtures spelled as 012 admits, so the tag arm is what refuses them; re-prove by patching the tag list and seeing the case red.
+
+## 3. Escalation evidence gating (finding 3)
+`projectWriter.ts:577-583` attaches the wall's evidence only when the post state's escalation is the wall's (`WorkExecutionUnavailableEscalated`, `EvaluationBlockedEscalated`); a stage that concluded `EvaluationFailed` with a walled sibling carries none. Case.
+
+## 4. `model/AGENTS.md:15-17` — the sentence reads true of all six hunks.
+
+## 5. The exhausted-retry evaluator on the execution row (surface's adjacent note)
+The execution row records what the door was told: `ProcessFailed` joins `execution_outcome_is_known` (012 re-renders the CHECK; that is 012's first DDL, say so in its header), `executionOutcomes` in `src/contract/rosters.ts`, `test/contract/rosters.test.ts` and `contractDocument.json` follow; the door's `CASE … THEN 'Failed'` goes. Anything under `ui/` that must then draw an evaluator's `ProcessFailed` as blocked and a work task's as failed is NOT yours: list the sites in the report and the orchestrator does them after D.
+
+Gates on the tip: `check-source`, `check-boundaries`, `check-queries`, `check-postgres`, `check-conformance`, `check-random`, `check-duplication`, `check-figures`, `check-comments`, `check-paths`. Commits in the tree's voice ending `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Report to `pr7/tasks/7b/E-report.md`: tip, each item's fix and its case, the `ui/` sites for item 5, gates; under ~40 lines. Write the report, reply with its contents, and stop.
