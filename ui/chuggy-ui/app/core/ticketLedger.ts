@@ -6,9 +6,9 @@
  * NOTHING HERE TRUSTS ARRIVAL ORDER. The route answers in `(ticket, task)`
  * ascending, so a page usually arrives in the order this reads it in — but
  * `ExecutionsResponse` is a list with no ordering in its type, and a live frame
- * is folded into a page already read. `task` is the ticket-wide ordinal the
- * model issues in sequence, read only to keep a set's own rows in a stable
- * order; which cycle, program run and stage a row belongs to comes off its
+ * is folded into a page already read. `task` is the wire's number for a
+ * task, ascending within a ticket, read only to keep a set's own rows in a
+ * stable order; which cycle, program run and stage a row belongs to comes off its
  * `identity` and is never inferred from where the row sits on the page.
  *
  * A SET IS EVERY ROW SHARING ONE IDENTITY OUTSIDE ITS EVALUATOR — a work
@@ -18,8 +18,8 @@
  * the whole tuple; this reads it.
  *
  * A PROGRAM RUN IS CUT AT THE LOWEST STAGE the cycle holds, because that is
- * where both spawn sites enter it — `decideEvaluateTicket` and the resume of
- * an evaluation park, each at stage 0 in `model/domain.qnt`. The generation
+ * where both spawn sites enter it — `decideWorkReduce` and the resume of
+ * an evaluation park in `decideResumeTicket`, each at stage 0 in `model/domain.qnt`. The generation
  * cannot group a run: `stageGeneration` in `model/ticket.qnt` counts per
  * stage, so a stage first reached after a resume is still on generation 1
  * while the stage below it the resume re-ran is on 2. What numbers a run is

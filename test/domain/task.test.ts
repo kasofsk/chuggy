@@ -34,6 +34,7 @@ import { isSettled } from "../../src/domain/phase.ts";
 import { combine } from "../../src/domain/program.ts";
 import {
   spawnOn,
+  spawnEvalStage,
   retireLive,
   hasOpenHumanTask,
 } from "../../src/domain/ticket.ts";
@@ -77,8 +78,29 @@ test("spawning no identities yields no tasks rather than a task", () => {
 test("an identity is valid exactly while every counter it carries is positive", () => {
   assert.ok(taskIdentityValid(workTaskOf(1, 1)));
   assert.ok(!taskIdentityValid(workTaskOf(1, 0)));
+  assert.ok(!taskIdentityValid(workTaskOf(0, 1)));
   assert.ok(taskIdentityValid(evaluationTaskOf(1, 1, 0, 1, 1)));
+  assert.ok(!taskIdentityValid(evaluationTaskOf(0, 1, 0, 1, 1)));
   assert.ok(!taskIdentityValid(evaluationTaskOf(1, 0, 0, 1, 1)));
+  assert.ok(
+    !taskIdentityValid({
+      type: "EvaluationTask",
+      value: { ticket: 1, workCycle: 1, stage: 0, generation: 1, evaluator: 1 },
+    }),
+    "the contract's stage is a positive key, not an index",
+  );
+  assert.ok(!taskIdentityValid(evaluationTaskOf(1, 1, 0, 0, 1)));
+  assert.ok(!taskIdentityValid(evaluationTaskOf(1, 1, 0, 1, 0)));
+});
+
+test("a stage's generation counts its runs, not its evaluators", () => {
+  const first = spawnEvalStage({ ...bare, workCyclesStarted: 1 }, 1, 0, 2);
+  const second = spawnEvalStage(retireLive(first), 1, 0, 2);
+  assert.deepEqual(
+    [...second.tasks].map((t) => t.identity),
+    [evaluationTaskOf(1, 1, 0, 2, 1), evaluationTaskOf(1, 1, 0, 2, 2)],
+    "a fanned-out stage re-entered once is on its second run, not its third",
+  );
 });
 
 test("two identities are the same only on the same arm and the same fields", () => {

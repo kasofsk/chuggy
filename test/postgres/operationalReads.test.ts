@@ -15,6 +15,7 @@ import { id } from "../domain/fixtures.ts";
 import {
   schedulerClaimFor,
   schedulerExecutions,
+  schedulerEvaluationRequest,
   schedulerFurtherTicket,
   schedulerIngressPool,
   schedulerOwner,
@@ -120,6 +121,43 @@ test("every execution of one fan-out names the request that spawned it", async (
     page.executions[0]?.execution ?? asExecutionId("absent"),
   );
   assert.equal(detail?.request, project.request);
+});
+
+test("an evaluation's identity is read back from its columns, counter by counter", async () => {
+  const project = await schedulerProject(rig, "operational-identity", {
+    tasks: 1,
+  });
+  const identity = { cycle: 2, stage: 3, generation: 4, evaluator: 5 };
+  const request = await schedulerEvaluationRequest(
+    rig,
+    project,
+    "operational-identity",
+    identity,
+  );
+  await operationalRegistered(project, request, "operational-identity");
+  const reads = postgresOperationalReads(ingress);
+  const page = await reads.executions(project.partition, {
+    limit: 10,
+    ticket: id(project.ticket),
+  });
+  const evaluation = page.executions.find(
+    (each) => each.identity.type === "EvaluationTask",
+  );
+  assert.deepEqual(evaluation?.identity, {
+    type: "EvaluationTask",
+    value: {
+      ticket: project.ticket,
+      workCycle: identity.cycle,
+      stage: identity.stage,
+      generation: identity.generation,
+      evaluator: identity.evaluator,
+    },
+  });
+  const detail = await reads.execution(
+    project.partition,
+    evaluation?.execution ?? asExecutionId("absent"),
+  );
+  assert.deepEqual(detail?.identity, evaluation?.identity);
 });
 
 test("an execution reads back empty until its run writes evidence", async () => {

@@ -77,3 +77,12 @@ test("a registration under a worker that names no agent asks for none", () => {
     undefined,
   );
 });
+
+test("an evaluation row's positive stage becomes the port's zero-based index", () => {
+  const execution = executionRowLogical({
+    ...rowOf({ version: 1 }),
+    task_kind: "Evaluation",
+    stage: "1",
+  });
+  assert.equal(execution.stage, 0);
+});

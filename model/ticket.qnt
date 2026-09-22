@@ -16,7 +16,7 @@
 /// per-task budget: the fabric relaunches a failed container below the cycle
 /// grain, so this machine's grain is the CYCLE and same-cycle retry
 /// machinery is a standing non-goal. No stage index (evalStage derives it
-/// from the live set's kind marks), no readiness flag, and no timestamps or
+/// from the live set's identities), no readiness flag, and no timestamps or
 /// results — implementation accounting, not machine state.
 ///
 /// Sum-type constructors share one namespace per module, which is what the
@@ -268,7 +268,7 @@ module chuggy_ticket {
     // GHOST (accounting only): how many tasks this ticket has EVER
     // spawned. Every spawn site bumps it by its fan-out (spawnOn below),
     // so the machine invariant `spawned == record.length + tasks.size`
-    // (domain.qnt idsAccounted) makes history-unique sequential identity a
+    // (domain.qnt idsAccounted) makes history-unique identity a
     // checked theorem rather than a test-pinned convention: a decider that
     // DROPPED a task set instead of retiring it would break the equality
     // in the very next state.

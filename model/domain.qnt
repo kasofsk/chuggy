@@ -648,7 +648,7 @@ module chuggy_domain {
   // unblock cascade disappears entirely — there is no Blocked->Ready edge
   // to model or to get wrong. (The open-human-task flag is derived too:
   // ticket.qnt hasOpenHumanTask; the eval-stage index is derived from
-  // the live set's kind marks: ticket.qnt evalStage.) The model extends them
+  // the live set's identities: ticket.qnt evalStage.) The model extends them
   // for free: a Pending dependency is simply not Done and blocks with no
   // new machinery; the pure bodies live with
   // the deciders (isReadyIn/isBlockedIn) so unit tests can pin exactly

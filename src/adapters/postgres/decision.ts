@@ -348,7 +348,7 @@ async function decisionExecution(
  * nulls rather than leaving them out, because `execution_request_task_check`
  * states each arm whole and half an identity is refused at the insert.
  */
-function decisionTaskColumns(identity: TaskIdentity): {
+export function decisionTaskColumns(identity: TaskIdentity): {
   readonly kind: ExecutionTaskKind;
   readonly cycle: number;
   readonly stage: number | null;
