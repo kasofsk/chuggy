@@ -5,6 +5,7 @@
  * exactly in place while memory becomes the genuine replay.
  */
 
+import { aDispatchSource } from "../../src/domain/config.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -25,11 +26,11 @@ import {
 } from "../../src/actor/state.ts";
 import { initRecord } from "../../src/domain/ticketGraph.ts";
 import { id } from "../domain/fixtures.ts";
-import { plainAuthoring, refinementInstance } from "./harness.ts";
+import { plainDefinitionOf, refinementInstance } from "./harness.ts";
 
 const config = refinementInstance;
-const release = releaseTicketEvent(id(1), plainAuthoring);
-const dispatch = dispatchEvent(id(1));
+const release = releaseTicketEvent(plainDefinitionOf(1));
+const dispatch = dispatchEvent(id(1), aDispatchSource);
 
 test("the initial state is genesis under the init record, with nothing journaled or emitted", () => {
   const state = actorInit();

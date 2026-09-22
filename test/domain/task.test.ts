@@ -30,7 +30,7 @@ import {
   effectLabel,
 } from "../../src/domain/effect.ts";
 import { isSettled } from "../../src/domain/phase.ts";
-import { allPassed } from "../../src/domain/program.ts";
+import { allPassed } from "../../src/domain/taskSet.ts";
 import {
   evaluationFailureReworksStarted,
   liveTasks,
@@ -40,6 +40,7 @@ import {
   spawnWork,
   hasOpenHumanTask,
 } from "../../src/domain/ticket.ts";
+import { evaluatorOf, releasedTicketOf } from "../../src/domain/config.ts";
 import { judgedInstance, judgedReport, producedReport } from "./fixtures.ts";
 import {
   phaseTags,
@@ -50,13 +51,15 @@ import {
   type Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
 
-const flat: readonly StageDefinition[] = [{ key: 1, evaluators: [{ key: 1 }] }];
+const flat: readonly StageDefinition[] = [
+  { key: 1, evaluators: [evaluatorOf(1)] },
+];
 
 const bare: Ticket = {
   phase: "Pending",
-  deps: new Set(),
+  definition: releasedTicketOf(1, new Set(), flat),
+  source: 0,
   artifact: "NoArtifact",
-  program: flat,
   tasks: new Set(),
   evaluations: [],
   workCyclesStarted: 0,
@@ -161,14 +164,14 @@ test("the eval stage is derived from the live identities and is zero on a work s
 });
 
 test("a work cycle is one task, and each spawn claims exactly one mint slot", () => {
-  const first = spawnWork(bare, 1);
+  const first = spawnWork(bare);
   assert.deepEqual(
     [...first.tasks].map((t) => t.identity),
     [workTaskOf(1, 1)],
   );
   assert.equal(first.workCyclesStarted, 1);
   assert.equal(first.spawned, 1);
-  const second = spawnWork(retireLive(first), 1);
+  const second = spawnWork(retireLive(first));
   assert.deepEqual(
     [...second.tasks].map((t) => t.identity),
     [workTaskOf(1, 2)],
@@ -181,6 +184,7 @@ test("retirement leaves no live task, whether the one it held was outstanding or
     ...bare,
     phase: "Work" as const,
     tasks: spawnTasks([workTaskOf(1, 1)]),
+    workCyclesStarted: 1,
   };
   assert.deepEqual(liveTasks(outstanding), [workTaskOf(1, 1)]);
   assert.equal(retireLive(outstanding).tasks.size, 0);
@@ -316,24 +320,28 @@ test("the work a passed judgement is followed by is the finalizer's, and is unca
   );
 });
 
-test("a report is matched to the task kind that can carry it", () => {
+test("a report is matched to the obligation the ticket owes the task", () => {
+  const working = spawnWork({ ...bare, phase: "Work" });
   const work = workTaskOf(1, 1);
   const judge = evaluationTaskOf(1, 1, 1, 1, 1);
-  assert.ok(reportMatchesTask(work, producedReport(work)));
-  assert.ok(!reportMatchesTask(judge, producedReport(work)));
-  assert.ok(reportMatchesTask(judge, judgedReport(judge, "EvaluatorPass")));
-  assert.ok(!reportMatchesTask(work, judgedReport(judge, "EvaluatorPass")));
+  assert.ok(reportMatchesTask(working, work, producedReport(work)));
+  assert.ok(!reportMatchesTask(working, judge, producedReport(work)));
+  assert.ok(
+    !reportMatchesTask(working, work, judgedReport(judge, "EvaluatorPass")),
+  );
   const failed = {
     type: "TerminalFailureReport",
     value: { evidence: 1, kind: "ProcessFailure" },
   } as const;
   assert.ok(
-    reportMatchesTask(work, failed) && reportMatchesTask(judge, failed),
+    reportMatchesTask(working, work, failed) &&
+      reportMatchesTask(working, judge, failed),
+    "a failure is matched by identity alone, there being no result to hold",
   );
 });
 
 test("a ticket owes exactly the tasks it holds live", () => {
-  const working = spawnWork({ ...bare, phase: "Work" }, 1);
+  const working = spawnWork({ ...bare, phase: "Work" });
   assert.ok(owesTask(working, workTaskOf(1, 1)));
   assert.ok(!owesTask(working, workTaskOf(1, 2)));
   assert.ok(!owesTask(working, evaluationTaskOf(1, 1, 1, 1, 1)));

@@ -27,7 +27,7 @@ export function workTaskOf(ticket: number, cycle: number): TaskIdentity {
 }
 
 /**
- * One evaluator of one run of one stage, under the two keys the program
+ * One evaluator of one run of one stage, under the two keys the plan
  * authored. No offset is applied: a caller holding a stage index passes that
  * stage's key, which the positional rule makes the same number.
  */
@@ -117,7 +117,7 @@ export function outstandingCount(tasks: ReadonlySet<Task>): number {
 
 /**
  * The stage an evaluation task belongs to, as a zero-based index into the
- * authored program: the identity carries the stage's key and the key is its
+ * released plan: the identity carries the stage's key and the key is its
  * position, and zero is the fold's base on an empty or work set. A run's own
  * `stageIndex` is what the machine reads; this is for a reader holding
  * identities and no instance.

@@ -20,7 +20,8 @@
  */
 
 import {
-  isValidProgram,
+  dispatchSources,
+  isValidPlan,
   stageChoices,
   type Config,
 } from "../../src/domain/config.ts";
@@ -53,10 +54,10 @@ import { type TicketId } from "../../src/domain/ids.ts";
 import type { Picks } from "../conformance/dispatch.ts";
 import { decodeValue, encodeValue, type ItfValue } from "../itf/decode.ts";
 import {
-  encodeDeps,
+  encodeDependencies,
   encodeInt,
   encodeNullaryTag,
-  encodeProgram,
+  encodePlanStages,
   encodeTaskIdentity,
   encodeTaskTerminalReport,
 } from "../itf/vocabulary.ts";
@@ -65,8 +66,9 @@ import { pickFrom, subsetFrom, type Random } from "./random.ts";
 /** One step's draws, in the domain's own vocabulary; absent means the action does not make that draw. */
 export interface Drawn {
   readonly ticket?: TicketId;
-  readonly deps?: readonly TicketId[];
-  readonly program?: readonly StageDefinition[];
+  readonly dependencies?: readonly TicketId[];
+  readonly stages?: readonly StageDefinition[];
+  readonly source?: number;
   readonly onFailure?: EvaluationFailureDisposition;
   readonly task?: TaskIdentity;
   readonly report?: TaskTerminalReport;
@@ -90,25 +92,25 @@ export interface WalkAction {
 }
 
 /**
- * Every well-formed authorable program, grown one stage at a time exactly as
- * the model folds `validPrograms`, so a pick here is a pick from that set.
+ * Every well-formed authorable plan, grown one stage at a time exactly as the
+ * model folds `validPlans`, so a pick here is a pick from that set.
  */
-export function validProgramsIn(
+export function validPlansIn(
   config: Config,
 ): readonly (readonly StageDefinition[])[] {
   const rosters = stageChoices(config);
   let grown: readonly (readonly StageDefinition[])[] = [[]];
-  const programs: (readonly StageDefinition[])[] = [];
+  const plans: (readonly StageDefinition[])[] = [];
   for (let length = 1; length <= config.maxStages; length++) {
-    grown = grown.flatMap((program) =>
+    grown = grown.flatMap((plan) =>
       rosters.map((roster) => [
-        ...program,
-        { key: program.length + 1, evaluators: roster },
+        ...plan,
+        { key: plan.length + 1, evaluators: roster },
       ]),
     );
-    programs.push(...grown);
+    plans.push(...grown);
   }
-  return programs;
+  return plans;
 }
 
 /** The shape most actions share: one ticket, drawn from one enablement set. */
@@ -129,7 +131,7 @@ function overTicketSet(
 
 /**
  * Release draws every value it freezes onto the ticket, which is what makes a
- * walk reach tickets authored differently from one another rather than a fleet
+ * walk reach tickets released differently from one another rather than a fleet
  * of identical ones.
  */
 const releaseTicket: WalkAction = {
@@ -137,31 +139,44 @@ const releaseTicket: WalkAction = {
   enabledIn: (config, graph) => releasableIdsIn(config, graph).length > 0,
   drawIn: (config, graph, random) => ({
     ticket: pickFrom(random, releasableIdsIn(config, graph)),
-    deps: subsetFrom(random, dependableIn(graph)),
-    program: pickFrom(random, validProgramsIn(config)),
+    dependencies: subsetFrom(random, dependableIn(graph)),
+    stages: pickFrom(random, validPlansIn(config)),
   }),
   permitsIn: (config, graph, drawn) => {
-    const { ticket, deps, program } = drawn;
-    if (ticket === undefined || deps === undefined || program === undefined) {
+    const { ticket, dependencies, stages } = drawn;
+    if (
+      ticket === undefined ||
+      dependencies === undefined ||
+      stages === undefined
+    ) {
       return false;
     }
     return (
       releasableIdsIn(config, graph).includes(ticket) &&
-      deps.every((d) => dependableIn(graph).includes(d)) &&
-      new Set(deps).size === deps.length &&
-      isValidProgram(config, program)
+      dependencies.every((d) => dependableIn(graph).includes(d)) &&
+      new Set(dependencies).size === dependencies.length &&
+      isValidPlan(config, stages)
     );
   },
 };
 
+/**
+ * The dispatch draws the ticket and the source the work is to be done at:
+ * the source is the selector's own choice, so the walk chooses it as freely as
+ * the machine does rather than deriving it from the ticket it picked.
+ */
 const dispatch: WalkAction = {
   action: "dispatch",
   enabledIn: (_config, graph) => readiesIn(graph).length > 0,
   drawIn: (_config, graph, random) => ({
     ticket: pickFrom(random, readiesIn(graph)),
+    source: pickFrom(random, dispatchSources),
   }),
   permitsIn: (_config, graph, drawn) =>
-    drawn.ticket !== undefined && readiesIn(graph).includes(drawn.ticket),
+    drawn.ticket !== undefined &&
+    drawn.source !== undefined &&
+    readiesIn(graph).includes(drawn.ticket) &&
+    dispatchSources.includes(drawn.source),
 };
 
 /**
@@ -179,7 +194,7 @@ const taskDone: WalkAction = {
     return {
       ticket,
       task,
-      report: pickFrom(random, reportChoices(task)),
+      report: pickFrom(random, reportChoices(graph.tickets.get(ticket)!, task)),
       onFailure: pickFrom(random, evaluationFailureDispositionTags),
     };
   },
@@ -260,12 +275,15 @@ export function drawnWire(drawn: Drawn): Readonly<Record<string, unknown>> {
     encode: (inner: T) => unknown,
   ): unknown => (value === undefined ? undefined : encode(value));
   return {
-    deps_: opt(drawn.deps, (deps) => encodeDeps(new Set(deps))),
+    dependencies_: opt(drawn.dependencies, (ids) =>
+      encodeDependencies(new Set(ids)),
+    ),
     j: opt(drawn.ticket, encodeInt),
     onFailure: opt(drawn.onFailure, encodeNullaryTag),
     out: opt(drawn.outcome, encodeNullaryTag),
-    prog: opt(drawn.program, encodeProgram),
     report: opt(drawn.report, encodeTaskTerminalReport),
+    source: opt(drawn.source, encodeInt),
+    stages: opt(drawn.stages, encodePlanStages),
     task: opt(drawn.task, encodeTaskIdentity),
   };
 }
@@ -279,8 +297,9 @@ export function drawnPicks(drawn: Drawn): Picks {
       : decodeValue(encodeValue(value as ItfValue));
   return {
     ticket: itf(wire["j"]),
-    deps: itf(wire["deps_"]),
-    program: itf(wire["prog"]),
+    dependencies: itf(wire["dependencies_"]),
+    stages: itf(wire["stages"]),
+    source: itf(wire["source"]),
     onFailure: itf(wire["onFailure"]),
     task: itf(wire["task"]),
     report: itf(wire["report"]),

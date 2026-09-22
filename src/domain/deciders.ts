@@ -79,12 +79,10 @@ export function reportChoices(
   const result = producedResult(ticket, task);
   if (task.type === "WorkTask")
     return [
-      ...acceptedSources.map(
-        (acceptedSourceRef): TaskTerminalReport => ({
-          type: "WorkResultReport",
-          value: { result, acceptedSourceRef },
-        }),
-      ),
+      ...acceptedSources.map((acceptedSourceRef): TaskTerminalReport => ({
+        type: "WorkResultReport",
+        value: { result, acceptedSourceRef },
+      })),
       ...failures,
     ];
   return [
@@ -288,7 +286,7 @@ function decideWorkTaskDone(
 }
 
 /**
- * An evaluation completion, which is also THE EVAL-PROGRAM INTERPRETER: the
+ * An evaluation completion, which is also THE EVALUATION-PLAN INTERPRETER: the
  * report goes to the instance and the state that comes back says which edge
  * this was.
  *
@@ -296,7 +294,7 @@ function decideWorkTaskDone(
  *     remaining evaluators; no transition
  *   - RUNNING a later stage — the stage passed and the next one is asked,
  *     which is a real Evaluation to Evaluation row
- *   - PASSED — the program passed, so the ticket finalizes
+ *   - PASSED — the plan passed, so the ticket finalizes
  *   - FAILED — the later stages are skipped, not failed, and no run exists
  *     for them; the edge `onFailure` names is taken
  *   - BLOCKED — every evaluator answered and one of them was stopped, so the

@@ -28,7 +28,11 @@ import type {
   StepRecord,
   Task,
   TaskIdentity,
-  TaskResultRef,
+  TaskDefinition,
+  TaskObligation,
+  ValidatedTaskResult,
+  ReleasedTicket,
+  EvaluationPlan,
   TaskTerminalReport,
   Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
@@ -155,32 +159,73 @@ function encodeSum(
 }
 
 /** A dependency set, ascending, which is the order a set has no opinion about. */
-export function encodeDeps(deps: ReadonlySet<number>): ItfValue {
+export function encodeDependencies(
+  dependencies: ReadonlySet<number>,
+): ItfValue {
   return {
     kind: "set",
-    elements: [...deps].sort((a, b) => a - b).map((d) => encodeInt(d)),
+    elements: [...dependencies].sort((a, b) => a - b).map((d) => encodeInt(d)),
   };
 }
 
-export function encodeProgram(program: Ticket["program"]): ItfValue {
-  return program.map((stage) =>
+function encodeTaskDefinition(definition: TaskDefinition): ItfValue {
+  return encodeRecord([
+    ["workload", encodeInt(definition.workload)],
+    ["inputs", encodeInt(definition.inputs)],
+    ["executionRequirements", encodeInt(definition.executionRequirements)],
+    ["resultContract", encodeInt(definition.resultContract)],
+  ]);
+}
+
+export function encodePlanStages(stages: EvaluationPlan["stages"]): ItfValue {
+  return stages.map((stage) =>
     encodeRecord([
       ["key", encodeInt(stage.key)],
       [
         "evaluators",
         stage.evaluators.map((entry) =>
-          encodeRecord([["key", encodeInt(entry.key)]]),
+          encodeRecord([
+            ["key", encodeInt(entry.key)],
+            ["task", encodeTaskDefinition(entry.task)],
+          ]),
         ),
       ],
     ]),
   );
 }
 
-function encodeTaskResultRef(result: TaskResultRef): ItfValue {
+function encodeTaskObligation(obligation: TaskObligation): ItfValue {
   return encodeRecord([
-    ["manifest", encodeInt(result.manifest)],
-    ["digest", encodeInt(result.digest)],
-    ["schema", encodeInt(result.schema)],
+    ["task", encodeTaskIdentity(obligation.task)],
+    ["definition", encodeTaskDefinition(obligation.definition)],
+    ["contextRef", encodeInt(obligation.contextRef)],
+  ]);
+}
+
+function encodeValidatedTaskResult(result: ValidatedTaskResult): ItfValue {
+  return encodeRecord([
+    ["obligation", encodeTaskObligation(result.obligation)],
+    ["resultRef", encodeInt(result.resultRef)],
+  ]);
+}
+
+/** The whole released record, in the order the model declares its fields. */
+export function encodeReleasedTicket(definition: ReleasedTicket): ItfValue {
+  return encodeRecord([
+    ["id", encodeInt(definition.id)],
+    ["content", encodeInt(definition.content)],
+    ["dependencies", encodeDependencies(definition.dependencies)],
+    ["workConfiguration", encodeTaskDefinition(definition.workConfiguration)],
+    [
+      "evaluationPlan",
+      encodeRecord([
+        ["stages", encodePlanStages(definition.evaluationPlan.stages)],
+      ]),
+    ],
+    [
+      "finalizationConfiguration",
+      encodeInt(definition.finalizationConfiguration),
+    ],
   ]);
 }
 
@@ -190,13 +235,16 @@ export function encodeTaskTerminalReport(report: TaskTerminalReport): ItfValue {
     case "WorkResultReport":
       return encodeVariant(
         "WorkResultReport",
-        encodeRecord([["result", encodeTaskResultRef(report.value.result)]]),
+        encodeRecord([
+          ["result", encodeValidatedTaskResult(report.value.result)],
+          ["acceptedSourceRef", encodeInt(report.value.acceptedSourceRef)],
+        ]),
       );
     case "EvaluationResultReport":
       return encodeVariant(
         "EvaluationResultReport",
         encodeRecord([
-          ["result", encodeTaskResultRef(report.value.result)],
+          ["result", encodeValidatedTaskResult(report.value.result)],
           ["verdict", encodeNullary(report.value.verdict)],
         ]),
       );
@@ -276,9 +324,13 @@ function encodeEvaluationInstance(instance: EvaluationInstance): ItfValue {
       encodeRecord([
         ["ticket", encodeInt(instance.input.ticket)],
         ["workResult", encodeInt(instance.input.workResult)],
+        ["acceptedSourceRef", encodeInt(instance.input.acceptedSourceRef)],
       ]),
     ],
-    ["plan", encodeRecord([["stages", encodeProgram(instance.plan.stages)]])],
+    [
+      "plan",
+      encodeRecord([["stages", encodePlanStages(instance.plan.stages)]]),
+    ],
     ["state", encodeEvaluationState(instance.state)],
   ]);
 }
@@ -321,9 +373,9 @@ function encodeTask(task: Task): ItfValue {
 function encodeTicket(ticket: Ticket): ItfValue {
   return encodeRecord([
     ["phase", encodeNullary(ticket.phase)],
-    ["deps", encodeDeps(ticket.deps)],
+    ["definition", encodeReleasedTicket(ticket.definition)],
+    ["source", encodeInt(ticket.source)],
     ["artifact", encodeSum(ticket.artifact, (mark: number) => encodeInt(mark))],
-    ["program", encodeProgram(ticket.program)],
     [
       "tasks",
       {

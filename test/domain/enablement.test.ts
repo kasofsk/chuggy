@@ -28,7 +28,6 @@ import {
   outstandingTaskIn,
   quietIn,
   readiesIn,
-  releasableAuthoring,
   releasableIdsIn,
   reducibleWorkIn,
   retryableIn,
@@ -37,7 +36,12 @@ import {
   revocablesIn,
   waitsOn,
 } from "../../src/domain/enablement.ts";
-import { defaultProgram } from "../../src/domain/config.ts";
+import {
+  defaultPlan,
+  evaluatorOf,
+  releasedTicketOf,
+  releasedTicketValid,
+} from "../../src/domain/config.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import type {
@@ -57,7 +61,7 @@ import {
 } from "./fixtures.ts";
 
 const config = modelInstance;
-const program = defaultProgram(config);
+const plan = defaultPlan(config);
 
 /** An artifact mark, as a ticket that ran carries one. */
 const produced = (value: number) =>
@@ -137,7 +141,7 @@ test("the absorbing terminals and the point of no return are the unrevocable pha
 test("a dependency that is not Done blocks, whatever else it is doing", () => {
   const blocked = graphOf([
     ticketOn(config, { phase: "Work" }),
-    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
   ]);
   assert.ok(isBlockedIn(blocked, id(2)));
   assert.ok(!isReadyIn(blocked, id(2)));
@@ -148,7 +152,7 @@ test("a dependency that is not Done blocks, whatever else it is doing", () => {
       phase: "Done",
       artifact: produced(2),
     }),
-    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
   ]);
   assert.ok(isReadyIn(landed, id(2)));
   assert.ok(!isBlockedIn(landed, id(2)));
@@ -176,7 +180,7 @@ test("what a ticket waits on is what its dependencies produced, read in id order
       6,
       ticketOn(config, {
         phase: "Pending",
-        deps: depsOf(4, 1),
+        dependencies: depsOf(4, 1),
       }),
     ],
   ]);
@@ -201,7 +205,7 @@ test("a completion lands on a ticket owing a task, and only a resolved work set 
     }),
     ticketOn(config, {
       phase: "Evaluation",
-      evaluations: [runningInstance(2, 1, 1, program, new Set([1]))],
+      evaluations: [runningInstance(2, 1, 1, plan, new Set([1]))],
       workCyclesStarted: 1,
       spawned: 3,
     }),
@@ -214,7 +218,7 @@ test("a completion lands on a ticket owing a task, and only a resolved work set 
     }),
     ticketOn(config, {
       phase: "Evaluation",
-      evaluations: [judgedInstance(5, 1, 1, program)],
+      evaluations: [judgedInstance(5, 1, 1, plan)],
       workCyclesStarted: 1,
       spawned: 3,
     }),
@@ -252,7 +256,7 @@ test("the fabric may still report on exactly the tasks a ticket has outstanding"
   const graph = graphOf([
     ticketOn(config, {
       phase: "Evaluation",
-      evaluations: [runningInstance(1, 1, 1, program, new Set([1]))],
+      evaluations: [runningInstance(1, 1, 1, plan, new Set([1]))],
       workCyclesStarted: 1,
       spawned: 3,
     }),
@@ -302,15 +306,27 @@ test("the finalizer reports every lifecycle result", () => {
   ]);
 });
 
-test("a release draws every authored value from a universe, and is refused outside one", () => {
-  const authoring = { prog: defaultProgram(config) };
-  assert.ok(releasableAuthoring(config, authoring));
-  assert.ok(!releasableAuthoring(config, { prog: [] }));
+test("a release draws every value it froze from a universe, and is refused outside one", () => {
+  const released = releasedTicketOf(1, depsOf(), defaultPlan(config));
+  assert.ok(releasedTicketValid(config, released));
   assert.ok(
-    !releasableAuthoring(config, {
-      prog: [{ key: 1, evaluators: [{ key: config.nTasks + 1 }] }],
+    !releasedTicketValid(config, {
+      ...released,
+      evaluationPlan: { stages: [] },
+    }),
+  );
+  assert.ok(
+    !releasedTicketValid(config, {
+      ...released,
+      evaluationPlan: {
+        stages: [{ key: 1, evaluators: [evaluatorOf(config.nTasks + 1)] }],
+      },
     }),
     "an evaluator key may not pass the bound",
+  );
+  assert.ok(
+    !releasedTicketValid(config, { ...released, content: 0 }),
+    "and the content it froze is a reference, which zero is not",
   );
 });
 

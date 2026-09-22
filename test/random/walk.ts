@@ -88,7 +88,7 @@ export interface WalkOutcome {
 /**
  * The initial state, refusing every instantiation the model's `init` refuses:
  * each conjunct is a validity condition on the instance, so an instance that
- * admits no task set, no ticket or no well-formed program has no initial state
+ * admits no task set, no ticket or no well-formed plan has no initial state
  * rather than a degenerate one.
  */
 export function walkInit(config: Config): TicketGraph {
@@ -98,7 +98,7 @@ export function walkInit(config: Config): TicketGraph {
     refusals.push("the release bound must admit at least one ticket");
   }
   if (config.maxStages < 1) {
-    refusals.push("at least one authorable program must exist");
+    refusals.push("at least one authorable plan must exist");
   }
   if (refusals.length > 0) {
     throw new Error(`walk: no initial state: ${refusals.join("; ")}`);

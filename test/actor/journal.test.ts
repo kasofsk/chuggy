@@ -51,28 +51,32 @@ import {
   decideRevoke,
   decideTaskDone,
 } from "../../src/domain/deciders.ts";
-import { asTicketId } from "../../src/domain/ids.ts";
+import { aDispatchSource, anAcceptedSource } from "../../src/domain/config.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import {
   id,
   judgedReport,
   producedReport,
+  resultFor,
   stoppedReport,
 } from "../domain/fixtures.ts";
 import {
-  flatProgram,
-  plainAuthoring,
+  flatPlan,
+  plainDefinitionOf,
   plainDisposition,
   refinementInstance,
 } from "./harness.ts";
-import type { TicketGraph } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  TaskTerminalReport,
+  TicketGraph,
+} from "../../src/domain/generated/modelTypes.ts";
 
 const config = refinementInstance;
 
-const event1 = releaseTicketEvent(id(1), plainAuthoring);
+const event1 = releaseTicketEvent(plainDefinitionOf(1));
 const d1 = execDecisionEvent(genesis, event1);
 const e1: Entry = { seq: 1, event: event1, rec: d1.rec };
-const event2 = dispatchEvent(id(1));
+const event2 = dispatchEvent(id(1), aDispatchSource);
 const d2 = execDecisionEvent(d1.post, event2);
 const e2: Entry = { seq: 2, event: event2, rec: d2.rec };
 const goodJournal: readonly Entry[] = [e1, e2];
@@ -83,9 +87,46 @@ const judge = evaluationTaskOf(1, 1, 1, 1, 1);
 /** A completion of `task` carrying `report`, on the disposition the suite is not steering. */
 function completion(
   task: typeof work,
-  report: ReturnType<typeof producedReport>,
+  report: TaskTerminalReport,
 ): DecisionEvent {
   return taskDoneEvent(id(1), task, report, plainDisposition);
+}
+
+/**
+ * The work report the live task owes, with one reference shifted. Each caller
+ * zeroes exactly one, which is how a suite red-proofs the well-formedness rule
+ * a conjunct at a time rather than at a shape nothing names.
+ */
+function workReport(
+  shift: {
+    readonly workload?: number;
+    readonly contextRef?: number;
+    readonly resultRef?: number;
+    readonly acceptedSourceRef?: number;
+  } = {},
+): TaskTerminalReport {
+  const result = resultFor(work);
+  return {
+    type: "WorkResultReport",
+    value: {
+      result: {
+        obligation: {
+          ...result.obligation,
+          definition: {
+            ...result.obligation.definition,
+            ...(shift.workload === undefined
+              ? {}
+              : { workload: shift.workload }),
+          },
+          ...(shift.contextRef === undefined
+            ? {}
+            : { contextRef: shift.contextRef }),
+        },
+        resultRef: shift.resultRef ?? result.resultRef,
+      },
+      acceptedSourceRef: shift.acceptedSourceRef ?? anAcceptedSource,
+    },
+  };
 }
 
 test("the empty journal is legal and replays to genesis", () => {
@@ -153,7 +194,7 @@ test("a forged record is refused: the entry's rec must be exactly the decider's"
 });
 
 test("an out-of-universe payload is refused by draw-set membership", () => {
-  const phantom = releaseTicketEvent(asTicketId(99), plainAuthoring);
+  const phantom = releaseTicketEvent(plainDefinitionOf(99));
   const phantomEntry: Entry = {
     seq: 1,
     event: phantom,
@@ -177,10 +218,7 @@ test("the world arithmetic: emission closes the gap to the book, an orphan pushe
 
 test("the task result reference is journal data: it names no part of the decision", () => {
   const real = completion(work, producedReport(work));
-  const other = completion(work, {
-    type: "WorkResultReport",
-    value: { result: { manifest: 2, digest: 2, schema: 1 } },
-  });
+  const other = completion(work, workReport({ resultRef: 2 }));
   assert.notDeepEqual(real, other);
   const taken = execDecisionEvent(d2.post, real);
   assert.deepEqual(taken.rec, execDecisionEvent(d2.post, other).rec);
@@ -242,7 +280,7 @@ const toEscalated: readonly DecisionEvent[] = [
 ];
 const toDependent: readonly DecisionEvent[] = [
   ...toPending,
-  releaseTicketEvent(id(2), { ...plainAuthoring, deps: new Set([1]) }),
+  releaseTicketEvent(plainDefinitionOf(2, new Set([1]))),
 ];
 
 const pending = graphAfter(toPending);
@@ -253,7 +291,7 @@ const escalated = graphAfter(toEscalated);
 const dependent = graphAfter(toDependent);
 const full = graphAfter([
   ...toPending,
-  releaseTicketEvent(id(2), plainAuthoring),
+  releaseTicketEvent(plainDefinitionOf(2)),
 ]);
 
 interface Refusal {
@@ -266,54 +304,51 @@ const refusals: readonly Refusal[] = [
   {
     conjunct: "CreateTicket/canReleaseIn",
     at: full,
-    event: releaseTicketEvent(id(3), plainAuthoring),
+    event: releaseTicketEvent(plainDefinitionOf(3)),
   },
   {
     conjunct: "CreateTicket/dependableIn",
     at: pending,
-    event: releaseTicketEvent(id(2), {
-      ...plainAuthoring,
-      deps: new Set([2]),
-    }),
+    event: releaseTicketEvent(plainDefinitionOf(2, new Set([2]))),
   },
   {
-    conjunct: "CreateTicket/isValidProgram",
+    conjunct: "CreateTicket/isValidPlan",
     at: genesis,
-    event: releaseTicketEvent(id(1), {
-      ...plainAuthoring,
-      prog: [...flatProgram, ...flatProgram],
+    event: releaseTicketEvent({
+      ...plainDefinitionOf(1),
+      evaluationPlan: { stages: [...flatPlan, ...flatPlan] },
     }),
   },
   { conjunct: "Revoke/revocablesIn", at: done, event: revokeEvent(id(1)) },
-  { conjunct: "Dispatch/readiesIn", at: working, event: dispatchEvent(id(1)) },
+  {
+    conjunct: "Dispatch/readiesIn",
+    at: working,
+    event: dispatchEvent(id(1), aDispatchSource),
+  },
   {
     conjunct: "TaskDone/completableIn",
     at: pending,
     event: completion(work, producedReport(work)),
   },
   {
-    conjunct: "TaskDone/reportValid/manifest",
+    conjunct: "TaskDone/reportValid/definition",
     at: working,
-    event: completion(work, {
-      type: "WorkResultReport",
-      value: { result: { manifest: 0, digest: 1, schema: 1 } },
-    }),
+    event: completion(work, workReport({ workload: 0 })),
   },
   {
-    conjunct: "TaskDone/reportValid/digest",
+    conjunct: "TaskDone/reportValid/contextRef",
     at: working,
-    event: completion(work, {
-      type: "WorkResultReport",
-      value: { result: { manifest: 1, digest: 0, schema: 1 } },
-    }),
+    event: completion(work, workReport({ contextRef: 0 })),
   },
   {
-    conjunct: "TaskDone/reportValid/schema",
+    conjunct: "TaskDone/reportValid/resultRef",
     at: working,
-    event: completion(work, {
-      type: "WorkResultReport",
-      value: { result: { manifest: 1, digest: 1, schema: 0 } },
-    }),
+    event: completion(work, workReport({ resultRef: 0 })),
+  },
+  {
+    conjunct: "TaskDone/reportValid/acceptedSourceRef",
+    at: working,
+    event: completion(work, workReport({ acceptedSourceRef: 0 })),
   },
   {
     conjunct: "TaskDone/reportValid/evidence",
@@ -373,7 +408,7 @@ test("a release naming a dependable dep is enabled", () => {
     decisionEventEnabled(
       config,
       pending,
-      releaseTicketEvent(id(2), { ...plainAuthoring, deps: new Set([1]) }),
+      releaseTicketEvent(plainDefinitionOf(2, new Set([1]))),
     ),
   );
 });

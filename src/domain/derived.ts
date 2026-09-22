@@ -63,7 +63,7 @@ export function sweep(
 /**
  * Tickets that cannot move without a human: parked, or Pending behind a chain
  * containing one. A healthy-Blocked ticket is deliberately not stuck — it
- * sits flat while its deps run, and progresses vicariously.
+ * sits flat while what it waits on runs, and progresses vicariously.
  */
 export function stuckSet(graph: TicketGraph): ReadonlySet<TicketId> {
   return sweep(graph, (c, id, stuck) => {

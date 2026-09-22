@@ -116,7 +116,7 @@ export const tasksWellFormed: Invariant = (_config, view) =>
 /**
  * Every instance is well-formed by the protocol's own invariant, which chuggy
  * re-states none of; what chuggy adds is the AGREEMENT between an instance and
- * the ticket carrying it — this ticket, this program, a cycle it has started,
+ * the ticket carrying it — this ticket, this plan, a cycle it has started,
  * and the instances in the order those cycles ran.
  *
  * THE PHASE SAYS WHICH INSTANCE IS OPEN: a ticket in Evaluation is running the
@@ -174,7 +174,7 @@ export const evaluationsMonotone: Invariant = (_config, view) =>
 /**
  * Identity accounting: the mint counter is one slot per work cycle started,
  * plus, for every run of every instance, its roster once per generation it
- * reached — every spawn site bumping the counter from the AUTHORED program
+ * reached — every spawn site bumping the counter from the RELEASED plan
  * while this sum reads the INSTANCES, so the two sides come from different
  * places.
  *
@@ -204,7 +204,8 @@ export const taskIdentitiesValid: Invariant = (_config, view) =>
 export const definitionsWellFormed: Invariant = (config, view) =>
   everyLiveTicket(
     view.post,
-    (t, id) => t.definition.id === id && releasedTicketValid(config, t.definition),
+    (t, id) =>
+      t.definition.id === id && releasedTicketValid(config, t.definition),
   );
 
 /**
@@ -214,10 +215,7 @@ export const definitionsWellFormed: Invariant = (config, view) =>
  * or resume that cleared one, and on a release that invented one.
  */
 export const sourcePinned: Invariant = (_config, view) =>
-  everyLiveTicket(
-    view.post,
-    (t) => t.source > 0 === t.workCyclesStarted > 0,
-  );
+  everyLiveTicket(view.post, (t) => t.source > 0 === t.workCyclesStarted > 0);
 
 /**
  * Everything this ticket transitively waits on, as a bounded fixpoint over

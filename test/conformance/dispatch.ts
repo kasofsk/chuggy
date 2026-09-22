@@ -36,6 +36,7 @@ import type {
   StageDefinition,
 } from "../../src/domain/generated/modelTypes.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
+import { releasedTicketOf } from "../../src/domain/config.ts";
 import {
   decodeEvaluationFailureDisposition,
   decodeFinalizationOutcome,
@@ -70,8 +71,9 @@ export const unknownActionMessage = "is not an action of this machine";
  */
 export interface Picks {
   readonly ticket: ItfValue | undefined;
-  readonly deps: ItfValue | undefined;
-  readonly program: ItfValue | undefined;
+  readonly dependencies: ItfValue | undefined;
+  readonly stages: ItfValue | undefined;
+  readonly source: ItfValue | undefined;
   readonly onFailure: ItfValue | undefined;
   readonly task: ItfValue | undefined;
   readonly report: ItfValue | undefined;
@@ -86,11 +88,19 @@ function drawnIds(value: ItfValue): readonly number[] {
   return raw.map(Number);
 }
 
-/** A drawn program: a list of stages, each read through its own decoder. */
-function drawnProgram(value: ItfValue): readonly StageDefinition[] {
+/** A drawn plan: a list of stages, each read through its own decoder. */
+function drawnStages(value: ItfValue): readonly StageDefinition[] {
   const raw = itfToWire(value);
-  if (!Array.isArray(raw)) throw new Error("replay: a program draw is a list");
+  if (!Array.isArray(raw)) throw new Error("replay: a plan draw is a list");
   return raw.map((stage) => decodeStageDefinition(stage));
+}
+
+/** A drawn source reference, which the model draws as a bare integer. */
+function drawnSource(value: ItfValue): number {
+  const raw = itfToWire(value);
+  if (typeof raw !== "number")
+    throw new Error("replay: a source draw is an integer");
+  return raw;
 }
 
 /** A draw the action needs, refused rather than defaulted when the trace has none. */
@@ -122,14 +132,22 @@ export function replayStep(
 
   switch (action) {
     case "releaseTicket":
-      return decideReleaseTicket(pre, j(), {
-        deps: new Set(drawnIds(need(picks.deps, "deps_"))),
-        program: drawnProgram(need(picks.program, "prog")),
-      });
+      return decideReleaseTicket(
+        pre,
+        releasedTicketOf(
+          decodeTicketId(need(picks.ticket, "j")),
+          new Set(drawnIds(need(picks.dependencies, "dependencies_"))),
+          drawnStages(need(picks.stages, "stages")),
+        ),
+      );
     case "revoke":
       return decideRevoke(pre, j());
     case "dispatch":
-      return decideDispatch(pre, j());
+      return decideDispatch(
+        pre,
+        j(),
+        drawnSource(need(picks.source, "source")),
+      );
     case "taskDone":
       return decideTaskDone(
         pre,

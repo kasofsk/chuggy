@@ -55,7 +55,8 @@ import {
   idsAccounted,
   evaluationsMonotone,
   evaluationsWellFormed,
-  programsWellFormed,
+  definitionsWellFormed,
+  sourcePinned,
   revokedNeverCompletes,
   stuckSubsetCovered,
   taskIdentitiesValid,
@@ -66,7 +67,11 @@ import {
 } from "../../src/domain/invariants.ts";
 import { currentInstance, hasOpenHumanTask } from "../../src/domain/ticket.ts";
 import { resumeBlocked } from "../../src/domain/evaluation.ts";
-import { defaultProgram } from "../../src/domain/config.ts";
+import {
+  anAcceptedSource,
+  defaultPlan,
+  evaluatorOf,
+} from "../../src/domain/config.ts";
 import { modelInstance } from "./configs.ts";
 import {
   blockedInstance,
@@ -85,8 +90,8 @@ import {
 } from "./fixtures.ts";
 
 const config = modelInstance;
-const program = defaultProgram(config);
-const roster = rosterOf(program);
+const plan = defaultPlan(config);
+const roster = rosterOf(plan);
 const fleet = healthyFleet(config);
 const healthy = initialView(graphOf(fleet));
 
@@ -267,6 +272,7 @@ const judging = (
   graphOf([
     ticketOn(config, {
       phase: "Evaluation",
+      source: anAcceptedSource,
       evaluations,
       workCyclesStarted: evaluations.length,
       spawned: evaluations.length * (1 + roster),
@@ -279,7 +285,7 @@ test("tasksWellFormed rejects a live task in a phase that runs none", () => {
     !tasksWellFormed(
       config,
       stateView(
-        judging([runningInstance(1, 1, 1, program, new Set())], {
+        judging([runningInstance(1, 1, 1, plan, new Set())], {
           tasks: new Set([evalOutstanding(1, 1, 1, 1)]),
         }),
       ),
@@ -289,7 +295,7 @@ test("tasksWellFormed rejects a live task in a phase that runs none", () => {
   assert.ok(
     tasksWellFormed(
       config,
-      stateView(judging([runningInstance(1, 1, 1, program, new Set())])),
+      stateView(judging([runningInstance(1, 1, 1, plan, new Set())])),
     ),
   );
 });
@@ -314,7 +320,7 @@ test("evaluationsWellFormed rejects a judgement that is not this ticket's", () =
   assert.ok(
     !evaluationsWellFormed(
       config,
-      stateView(judging([runningInstance(2, 1, 1, program, new Set())])),
+      stateView(judging([runningInstance(2, 1, 1, plan, new Set())])),
     ),
     "an instance names the ticket it judges, and a ticket carries no other's",
   );
@@ -327,19 +333,19 @@ test("evaluationsWellFormed rejects a judgement that is not this ticket's", () =
             1,
             1,
             1,
-            [{ key: 1, evaluators: [{ key: 1 }] }],
+            [{ key: 1, evaluators: [evaluatorOf(1)] }],
             new Set(),
           ),
         ]),
       ),
     ),
-    "the plan is the program the ticket was released with",
+    "the plan is the one the release froze",
   );
   assert.ok(
     !evaluationsWellFormed(
       config,
       stateView(
-        settledJudging([judgedInstance(1, 2, 1, program)], {
+        settledJudging([judgedInstance(1, 2, 1, plan)], {
           workCyclesStarted: 1,
         }),
       ),
@@ -351,8 +357,8 @@ test("evaluationsWellFormed rejects a judgement that is not this ticket's", () =
       config,
       stateView(
         settledJudging([
-          judgedInstance(1, 2, 1, program),
-          judgedInstance(1, 1, 2, program),
+          judgedInstance(1, 2, 1, plan),
+          judgedInstance(1, 1, 2, plan),
         ]),
       ),
     ),
@@ -363,8 +369,8 @@ test("evaluationsWellFormed rejects a judgement that is not this ticket's", () =
       config,
       stateView(
         settledJudging([
-          judgedInstance(1, 1, 1, program),
-          judgedInstance(1, 2, 2, program),
+          judgedInstance(1, 1, 1, plan),
+          judgedInstance(1, 2, 2, plan),
         ]),
       ),
     ),
@@ -376,7 +382,7 @@ test("evaluationsWellFormed rejects a phase that disagrees with the instance it 
   assert.ok(
     !evaluationsWellFormed(
       config,
-      stateView(judging([judgedInstance(1, 1, 1, program)])),
+      stateView(judging([judgedInstance(1, 1, 1, plan)])),
     ),
     "a ticket in Evaluation is running a stage, not holding a settled judgement",
   );
@@ -386,8 +392,8 @@ test("evaluationsWellFormed rejects a phase that disagrees with the instance it 
       stateView(
         judging(
           [
-            judgedInstance(1, 1, 1, program),
-            runningInstance(1, 2, 1, program, new Set()),
+            judgedInstance(1, 1, 1, plan),
+            runningInstance(1, 2, 1, plan, new Set()),
           ],
           { workCyclesStarted: 3 },
         ),
@@ -408,14 +414,14 @@ test("evaluationsWellFormed rejects a phase that disagrees with the instance it 
   assert.ok(
     !evaluationsWellFormed(
       config,
-      stateView(parked(judgedInstance(1, 1, 1, program))),
+      stateView(parked(judgedInstance(1, 1, 1, plan))),
     ),
     "the desk's blocked wall and the instance's blocked state are one fact",
   );
   assert.ok(
     evaluationsWellFormed(
       config,
-      stateView(parked(blockedInstance(1, 1, 1, program, new Set([1])))),
+      stateView(parked(blockedInstance(1, 1, 1, plan, new Set([1])))),
     ),
   );
 });
@@ -440,7 +446,7 @@ test("evaluationsMonotone rejects a history that shrank, was rewritten, or lost 
     "tickets are never deleted",
   );
   const advanced = fleetBut(fleet, 2, {
-    evaluations: [runningInstance(3, 1, 1, program, new Set())],
+    evaluations: [runningInstance(3, 1, 1, plan, new Set())],
   });
   assert.ok(
     evaluationsMonotone(config, {
@@ -451,7 +457,7 @@ test("evaluationsMonotone rejects a history that shrank, was rewritten, or lost 
     "the last instance is the open one and advances",
   );
   const grown = fleetBut(fleet, 2, {
-    evaluations: [...kept, judgedInstance(3, 2, 2, program)],
+    evaluations: [...kept, judgedInstance(3, 2, 2, plan)],
   });
   assert.ok(
     evaluationsMonotone(config, { ...healthy, pre: healthy.post, post: grown }),
@@ -462,8 +468,8 @@ test("evaluationsMonotone rejects a history that shrank, was rewritten, or lost 
       pre: { tickets: new Map(grown.tickets) },
       post: fleetBut(fleet, 2, {
         evaluations: [
-          runningInstance(3, 1, 1, program, new Set()),
-          judgedInstance(3, 2, 2, program),
+          runningInstance(3, 1, 1, plan, new Set()),
+          judgedInstance(3, 2, 2, plan),
         ],
       }),
     }),
@@ -490,7 +496,7 @@ test("idsAccounted rejects a mint counter the ticket's own history does not impl
   const unclaimed = graphOf([
     ticketOn(config, {
       phase: "Finalization",
-      evaluations: [judgedInstance(1, 1, 1, program)],
+      evaluations: [judgedInstance(1, 1, 1, plan)],
       workCyclesStarted: 1,
       spawned: 1,
     }),
@@ -503,7 +509,7 @@ test("idsAccounted rejects a mint counter the ticket's own history does not impl
     ticketOn(config, {
       phase: "Escalated",
       escalation: "EvaluationBlockedEscalated",
-      evaluations: [blockedInstance(1, 1, 1, program, new Set([1]))],
+      evaluations: [blockedInstance(1, 1, 1, plan, new Set([1]))],
       workCyclesStarted: 1,
       spawned: 1 + roster,
     }),
@@ -516,7 +522,7 @@ test("idsAccounted rejects a mint counter the ticket's own history does not impl
     ticketOn(config, {
       phase: "Evaluation",
       evaluations: [
-        resumeBlocked(blockedInstance(1, 1, 1, program, new Set([1]))),
+        resumeBlocked(blockedInstance(1, 1, 1, plan, new Set([1]))),
       ],
       workCyclesStarted: 1,
       spawned: 1 + 2 * roster,
@@ -556,8 +562,8 @@ test("taskIdentitiesValid rejects a live task whose identity counts from zero", 
   assert.ok(taskIdentitiesValid(config, healthy));
 });
 
-test("programsWellFormed rejects a program no release could have carried", () => {
-  const stage = { key: 1, evaluators: [{ key: 1 }] } as const;
+test("definitionsWellFormed rejects a definition no release could have carried", () => {
+  const stage = { key: 1, evaluators: [evaluatorOf(1)] } as const;
   const overlong = Array.from({ length: config.maxStages + 1 }, (_u, i) => ({
     ...stage,
     key: i + 1,
@@ -565,50 +571,78 @@ test("programsWellFormed rejects a program no release could have carried", () =>
   const illFormed: readonly (readonly StageDefinition[])[] = [
     [],
     [{ ...stage, evaluators: [] }],
-    [{ ...stage, evaluators: [{ key: 0 }] }],
-    [{ ...stage, evaluators: [{ key: 1 }, { key: 1 }] }],
+    [{ ...stage, evaluators: [{ ...evaluatorOf(1), key: 0 }] }],
+    [{ ...stage, evaluators: [evaluatorOf(1), evaluatorOf(1)] }],
     [{ ...stage, key: 2 }],
+    [{ ...stage, evaluators: [evaluatorOf(config.nTasks + 1)] }],
     overlong,
   ];
-  for (const program of illFormed) {
+  for (const stages of illFormed) {
     assert.ok(
-      !programsWellFormed(config, stateView(fleetBut(fleet, 1, { program }))),
-      `${JSON.stringify(program)} is not an authorable program`,
+      !definitionsWellFormed(config, stateView(fleetBut(fleet, 1, { stages }))),
+      `${JSON.stringify(stages)} is not an authorable plan`,
     );
   }
   assert.ok(
-    !programsWellFormed(
+    !definitionsWellFormed(
       config,
       stateView(
-        fleetBut(fleet, 1, {
-          program: [{ ...stage, evaluators: [{ key: config.nTasks + 1 }] }],
-        }),
+        graphOf([
+          {
+            ...fleet[0]!,
+            definition: { ...fleet[0]!.definition, content: 0 },
+          },
+        ]),
       ),
     ),
-    "an evaluator key may not pass the bound",
+    "the content the release froze is a reference, and zero is no reference",
   );
-  assert.ok(programsWellFormed(config, healthy));
+  assert.ok(definitionsWellFormed(config, healthy));
+});
+
+test("sourcePinned holds a source to the dispatch that pinned it", () => {
+  assert.ok(sourcePinned(config, healthy));
+  assert.ok(
+    !sourcePinned(config, stateView(fleetBut(fleet, 1, { source: 0 }))),
+    "a ticket that has started a work cycle was dispatched, and a dispatch names a source",
+  );
+  assert.ok(
+    !sourcePinned(
+      config,
+      stateView(fleetBut(fleet, 0, { workCyclesStarted: 0 })),
+    ),
+    "and one that has started none was never dispatched, so it carries no source to have been pinned at",
+  );
 });
 
 test("depsAcyclic rejects a dependency that points at nothing or back at itself", () => {
   assert.ok(
-    !depsAcyclic(config, stateView(fleetBut(fleet, 1, { deps: depsOf(9) }))),
+    !depsAcyclic(
+      config,
+      stateView(fleetBut(fleet, 1, { dependencies: depsOf(9) })),
+    ),
     "each dep points at a ticket the fleet holds",
   );
   assert.ok(
-    !depsAcyclic(config, stateView(fleetBut(fleet, 1, { deps: depsOf(2) }))),
+    !depsAcyclic(
+      config,
+      stateView(fleetBut(fleet, 1, { dependencies: depsOf(2) })),
+    ),
     "no ticket waits on itself",
   );
   const cyclic = graphOf([
-    ticketOn(config, { phase: "Pending", deps: depsOf(2) }),
-    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(2) }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
   ]);
   assert.ok(
     !depsAcyclic(config, stateView(cyclic)),
     "the closure is transitive, so a cycle of any length is caught",
   );
   assert.ok(
-    depsAcyclic(config, stateView(fleetBut(fleet, 1, { deps: depsOf(3) }))),
+    depsAcyclic(
+      config,
+      stateView(fleetBut(fleet, 1, { dependencies: depsOf(3) })),
+    ),
     "ids are sparse, so an edge pointing at a numerically larger ticket is ordinary",
   );
   assert.ok(depsAcyclic(config, healthy));
@@ -645,7 +679,7 @@ test("ticketIdsWellFormed rejects an id off the universe and a fleet past its bo
 test("stuckSubsetCovered goes red when one walk gets a base case the other lacks", () => {
   const running = graphOf([
     ticketOn(config, { phase: "Finalization" }),
-    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
   ]);
   assert.ok(stuckSubsetCovered(config, stateView(running)));
   const finalizingIsStuck = sweep(running, (graph, each, stuck) => {
@@ -664,7 +698,7 @@ test("stuckSubsetCovered goes red when one walk gets a base case the other lacks
       phase: "Escalated",
       escalation: "WorkFailureEscalated",
     }),
-    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
   ]);
   const guardedCoverage = sweep(
     parked,
@@ -686,7 +720,7 @@ test("stuckSubsetCovered goes red when one walk gets an edge kind the other lack
     ticketOn(config, {
       phase: "Escalated",
       escalation: "WorkFailureEscalated",
-      deps: depsOf(1),
+      dependencies: depsOf(1),
     }),
   ]);
   assert.ok(stuckSubsetCovered(config, stateView(upstream)));
@@ -710,7 +744,7 @@ test("stuckSubsetCovered goes red when one walk gets an edge kind the other lack
     }),
     ticketOn(config, {
       phase: "Done",
-      deps: depsOf(1),
+      dependencies: depsOf(1),
       artifact: produced(1),
       completions: 1,
     }),
@@ -725,8 +759,8 @@ test("stuckSubsetCovered goes red when one walk gets an edge kind the other lack
 test("a revoke leaves its dependents where they were, and depsAcyclic is what refuses a cycle", () => {
   const chain = graphOf([
     ticketOn(config, { phase: "Pending" }),
-    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
-    ticketOn(config, { phase: "Pending", deps: depsOf(2) }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(2) }),
   ]);
   const revoked = decideRevoke(chain, id(1));
   assert.equal(revoked.rec.transitions.length, 1);
@@ -734,8 +768,8 @@ test("a revoke leaves its dependents where they were, and depsAcyclic is what re
     assert.ok(invariant(config, stateView(revoked.post)));
   }
   const cyclic = graphOf([
-    ticketOn(config, { phase: "Pending", deps: depsOf(2) }),
-    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(2) }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
   ]);
   assert.ok(
     !depsAcyclic(config, stateView(cyclic)),
@@ -748,12 +782,15 @@ test("a revoke leaves its dependents where they were, and depsAcyclic is what re
 });
 
 test("evaluationsWellFormed holds a sparse stage to the keys it lists, not to a count from one", () => {
-  const sparse: Ticket["program"] = [{ key: 1, evaluators: [{ key: 2 }] }];
+  const sparse: readonly StageDefinition[] = [
+    { key: 1, evaluators: [evaluatorOf(2)] },
+  ];
   const judgingSparse = (instance: EvaluationInstance): TicketGraph =>
     graphOf([
       ticketOn(config, {
         phase: "Evaluation",
-        program: sparse,
+        stages: sparse,
+        source: anAcceptedSource,
         evaluations: [instance],
         workCyclesStarted: 1,
         spawned: 2,

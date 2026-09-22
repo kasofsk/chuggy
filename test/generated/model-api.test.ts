@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   phaseTags,
+  type EvaluatorDefinition,
   type EvaluationInstance,
   type TicketGraph,
 } from "../../src/domain/generated/modelTypes.ts";
@@ -12,11 +13,38 @@ import {
   encodeTicketGraph,
 } from "../../src/generated/model-api.ts";
 
+/** The one evaluator every shape here is judged by, and the task it was given. */
+const evaluator: EvaluatorDefinition = {
+  key: 1,
+  task: { workload: 1, inputs: 2, executionRequirements: 3, resultContract: 4 },
+};
+
+/** The definition a release froze, which the ticket carries whole. */
+const definition = {
+  id: 7,
+  content: 141,
+  dependencies: new Set([3]),
+  workConfiguration: {
+    workload: 142,
+    inputs: 143,
+    executionRequirements: 144,
+    resultContract: 145,
+  },
+  evaluationPlan: { stages: [{ key: 1, evaluators: [evaluator] }] },
+  finalizationConfiguration: 146,
+} as const;
+
+/** The same, as the codec writes it: a set is a list. */
+const wiredDefinition = {
+  ...definition,
+  dependencies: [3],
+};
+
 /** A judgement still running, which is the only shape carrying a map of evaluators. */
 const instance: EvaluationInstance = {
   workCycle: 1,
-  input: { ticket: 7, workResult: 1 },
-  plan: { stages: [{ key: 1, evaluators: [{ key: 1 }] }] },
+  input: { ticket: 7, workResult: 1, acceptedSourceRef: 11 },
+  plan: { stages: [{ key: 1, evaluators: [evaluator] }] },
   state: {
     type: "Running",
     value: {
@@ -38,8 +66,8 @@ const instance: EvaluationInstance = {
 /** The same, as the codec writes it: a map is a list of pairs and a sum is tag and value. */
 const wiredInstance = {
   workCycle: 1,
-  input: { ticket: 7, workResult: 1 },
-  plan: { stages: [{ key: 1, evaluators: [{ key: 1 }] }] },
+  input: { ticket: 7, workResult: 1, acceptedSourceRef: 11 },
+  plan: { stages: [{ key: 1, evaluators: [evaluator] }] },
   state: {
     type: "Running",
     value: {
@@ -64,9 +92,9 @@ const graph: TicketGraph = {
       7,
       {
         phase: "Pending",
-        deps: new Set([3]),
+        definition,
+        source: 0,
         artifact: "NoArtifact",
-        program: [{ key: 1, evaluators: [{ key: 1 }] }],
         tasks: new Set(),
         evaluations: [instance],
         workCyclesStarted: 0,
@@ -86,9 +114,9 @@ test("generated JSON codec round-trips nested lists, sets, maps and records", ()
         7,
         {
           phase: "Pending",
-          deps: [3],
+          definition: wiredDefinition,
+          source: 0,
           artifact: "NoArtifact",
-          program: [{ key: 1, evaluators: [{ key: 1 }] }],
           tasks: [],
           evaluations: [wiredInstance],
           workCyclesStarted: 0,
@@ -120,11 +148,7 @@ test("generated codecs refuse duplicates that JSON could otherwise collapse", ()
   assert.throws(() =>
     decodeDecisionEvent({
       type: "CreateTicket",
-      value: {
-        ticket: 7,
-        deps: [3, 3],
-        prog: [{ key: 1, evaluators: [{ key: 1 }] }],
-      },
+      value: { ...wiredDefinition, dependencies: [3, 3] },
     }),
   );
 });

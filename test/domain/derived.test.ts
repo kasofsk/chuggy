@@ -53,8 +53,8 @@ const ordered = (set: ReadonlySet<TicketId>): readonly number[] =>
 /** A revoked ticket with a chain of dependents hanging off it, the shape the closure walks. */
 const chain: readonly Ticket[] = [
   ticketOn(config, { phase: "Revoked" }),
-  ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
-  ticketOn(config, { phase: "Pending", deps: depsOf(2) }),
+  ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
+  ticketOn(config, { phase: "Pending", dependencies: depsOf(2) }),
 ];
 
 test("a sweep repeats once per live ticket, which is the whole of the termination argument", () => {
@@ -81,11 +81,11 @@ test("a sweep repeats once per live ticket, which is the whole of the terminatio
 test("a sweep reaches a closure an ascending fold would not, which is why the shape is kept", () => {
   const fleet = graphOf([
     ticketOn(config, { phase: "Pending" }),
-    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
     ticketOn(config, {
       phase: "Escalated",
       escalation: "WorkFailureEscalated",
-      deps: depsOf(2),
+      dependencies: depsOf(2),
     }),
   ]);
   /** An edge kind pointing upward: a ticket is admitted when one of its dependents is. */
@@ -122,9 +122,9 @@ test("stuckness grows from the desk and coverage grows from the same edges", () 
       phase: "Escalated",
       escalation: "WorkFailureEscalated",
     }),
-    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
-    ticketOn(config, { phase: "Pending", deps: depsOf(2) }),
-    ticketOn(config, { phase: "Work", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(2) }),
+    ticketOn(config, { phase: "Work", dependencies: depsOf(1) }),
   ]);
   assert.deepEqual(ordered(stuckSet(fleet)), [1, 2, 3]);
   assert.deepEqual(
@@ -135,7 +135,7 @@ test("stuckness grows from the desk and coverage grows from the same edges", () 
   assert.ok(subsetOf(stuckSet(fleet), coveredSet(fleet)));
   const healthyBlocked = graphOf([
     ticketOn(config, { phase: "Work" }),
-    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
   ]);
   assert.deepEqual(
     ordered(stuckSet(healthyBlocked)),
@@ -150,8 +150,8 @@ test("every sweep agrees with itself whatever order the map was built in", () =>
       phase: "Escalated",
       escalation: "WorkFailureEscalated",
     }),
-    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
-    ticketOn(config, { phase: "Done", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
+    ticketOn(config, { phase: "Done", dependencies: depsOf(1) }),
   ];
   const ascending = graphOf(fleet);
   const descending = builtBackwards(fleet);

@@ -10,7 +10,7 @@ import {
   nativeHttpPageItemsMax,
 } from "../contract/http.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
-import { defaultProgram, type Config } from "../domain/config.ts";
+import { defaultPlan, type Config } from "../domain/config.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import type { PublicInstant } from "./publicResource.ts";
@@ -489,7 +489,7 @@ export function draftInitializationPolicy(
       deps: new Set(),
       prog:
         configuration?.evaluations === undefined
-          ? defaultProgram(config)
+          ? defaultPlan(config)
           : configuration.evaluations.map((_block, index) => ({
               key: index + 1,
               evaluators: [{ key: 1 }],

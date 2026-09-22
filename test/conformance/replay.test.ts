@@ -219,8 +219,9 @@ function picksOf(state: ItfState): Picks {
   };
   return {
     ticket: some("j"),
-    deps: some("deps_"),
-    program: some("prog"),
+    dependencies: some("dependencies_"),
+    stages: some("stages"),
+    source: some("source"),
     onFailure: some("onFailure"),
     task: some("task"),
     report: some("report"),
