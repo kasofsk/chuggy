@@ -62,6 +62,7 @@ import { blockedReasons, type BlockedReason } from "../../contract/rosters.ts";
 import { parseStoredTicketCommand } from "../../interpreter/wire.ts";
 import {
   isApprovalResolution,
+  isSchedulerCompletion,
   type ApprovalResolution,
   type FinalizationSubmission,
   type NativeActionResolution,
@@ -404,23 +405,34 @@ async function operationSource(
   if (command.command === "SubmitFinalizationResult") {
     return finalizationRequestSource(pool, partition, row.input_id, command);
   }
+  if (isSchedulerCompletion(command)) {
+    /**
+     * A completion needs no join because `accept_operation` answers
+     * `InvalidCommand` for its tag, leaving `submit_task_completion` — which
+     * builds the settled fact from rows it locked — the only writer of one.
+     * What the join beside it answers is the wall that same function wrote to
+     * the execution and left out of the report.
+     */
+    return {
+      kind: "Operation",
+      operation: asOperationId(row.input_id),
+      command,
+      completion: command.event,
+      ...(row.blocked_reason === null
+        ? {}
+        : { executionBlockedBy: inboxBlockedReason(row.blocked_reason) }),
+    };
+  }
   if (command.command === "Decide") {
     /**
-     * A completion's event needs no join because `accept_operation` answers
-     * `InvalidCommand` for its tag, leaving `submit_task_completion` — which
-     * builds the event from rows it locked — the only writer of one, while every
-     * other `Decide` is a public command whose event is what its principal
-     * offered. What the join beside it answers is the wall that same function
-     * wrote to the execution and left out of the event.
+     * Every other `Decide` is a public command whose event is what its
+     * principal offered, so there is nothing to resolve it against.
      */
     return {
       kind: "Operation",
       operation: asOperationId(row.input_id),
       command,
       resolvedEvent: command.event,
-      ...(row.blocked_reason === null
-        ? {}
-        : { executionBlockedBy: inboxBlockedReason(row.blocked_reason) }),
     };
   }
   if (command.command === "ReleaseDraft") {
@@ -450,14 +462,16 @@ function continuationSource(row: InboxRow): DecisionInput["source"] {
   ) {
     throw new Error(`continuation ${row.input_id} has incomplete fences`);
   }
+  if (row.continuation_kind !== "ReduceWork") {
+    throw new Error(
+      `continuation ${row.input_id} reduces ${row.continuation_kind}, which this image does not schedule`,
+    );
+  }
   const ticket = projectRowCounter(row.ticket, "continuation ticket");
   return {
     kind: "Continuation",
     continuation: row.input_id,
-    reduction: {
-      reduce: row.continuation_kind === "ReduceWork" ? "Work" : "Evaluation",
-      ticket: asTicketId(ticket),
-    },
+    reduction: { ticket: asTicketId(ticket) },
     expectedTicketVersion: projectRowCounter(
       row.expected_ticket_version,
       "expected ticket version",

@@ -46,6 +46,7 @@ import type { BlockedReason } from "../contract/rosters.ts";
 import type {
   OperationId,
   PriorityClass,
+  SchedulerCompletionEvent,
   StoredTicketCommand,
 } from "./operationInbox.ts";
 import type { FinalizationEvidence } from "./finalizerPreparation.ts";
@@ -60,9 +61,13 @@ export interface Readiness {
   readonly generation: number;
 }
 
-/** Which task set a continuation reports settled, and whose. */
+/**
+ * Whose settled work cycle a continuation reports. There is one kind of
+ * continuation left: an evaluation concludes inside the completion that
+ * settles its last evaluator, so nothing follows it for a second decision to
+ * be scheduled for.
+ */
 export interface ContinuationReduction {
-  readonly reduce: "Work" | "Evaluation";
   readonly ticket: TicketId;
 }
 
@@ -83,10 +88,17 @@ export interface DecisionInput {
         readonly command: StoredTicketCommand;
         readonly resolvedEvent?: DecisionEvent;
         /**
+         * What the scheduler's boundary settled, where this operation is a
+         * completion. It stands apart from `resolvedEvent` because the edge a
+         * failing stage is taken on is the writer's own pick, so the event is
+         * finished where that pick is made rather than where the task was.
+         */
+        readonly completion?: SchedulerCompletionEvent;
+        /**
          * Which wall the execution a scheduler completion settles was blocked
-         * at, read off that execution's own row. The event the boundary built
-         * names the ticket alone, so this is the only account of the wall a
-         * decision has, and it is what the escalation records as its evidence.
+         * at, read off that execution's own row. The report the boundary built
+         * names the kind alone, so this is the only account of the wall a
+         * decision has, and it is what an escalation records as its evidence.
          */
         readonly executionBlockedBy?: BlockedReason;
         readonly draftRelease?: {

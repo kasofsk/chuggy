@@ -45,7 +45,7 @@
  * A DENIED SESSION PLACEMENT RECORDS BARE `PlacementDenied`, AND ITS REASON IS
  * DISCARDED. The placement outcome is the execution scheduler's unchanged, so
  * its `Denied` arm carries a `BlockedReason` — and a `BlockedReason` exists to
- * become `ExecutionBlocked`, which a session has no execution to become. The
+ * become a task's wall, which a session has no task to reach. The
  * reason is a diagnostic here and nothing more: there is no session state it
  * names, and wiring it to one would be reading a decision about a ticket into a
  * session that has none.

@@ -25,17 +25,15 @@ import { ticketAt } from "../domain/ticketGraph.ts";
 import type {
   TicketGraph,
   Phase,
-  Task,
-  TaskIdentity,
   Ticket,
 } from "../domain/generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import {
-  taskIdentityEquals,
-  taskPositionInSet,
-  tasksInEvaluatorKeyOrder,
-} from "../domain/task.ts";
-import { reducibleEvalIn, reducibleWorkIn } from "../domain/enablement.ts";
+  currentInstance,
+  liveTasks,
+  runningStageIndex,
+} from "../domain/ticket.ts";
+import { reducibleWorkIn } from "../domain/enablement.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
 import type { ExecutionSourceObservation } from "./executionSource.ts";
 import {
@@ -65,46 +63,45 @@ function subject(entry: Entry, effectPosition: number): TicketId {
   return asTicketId(transition.ticket);
 }
 
-function outstanding(tasks: ReadonlySet<Task>): readonly Task[] {
-  return tasksInEvaluatorKeyOrder(tasks).filter(
-    (task) => task.state === "Outstanding",
-  );
-}
-
-/** Whether these tasks already hold the named identity. */
-function named(tasks: readonly Task[], wanted: TaskIdentity): boolean {
-  return tasks.some((task) => taskIdentityEquals(task.identity, wanted));
-}
-
 /**
- * How many tasks the ticket had spawned before the set it holds live now. The
- * ghost counter is the running total and a live set is the newest run of it,
- * so the difference is where that set's numbering starts.
+ * The slots the ticket's newest spawn claimed, and the position each of them
+ * is numbered at. A work cycle claims one; an evaluation run claims the whole
+ * roster of the stage it is running, whether or not every evaluator in it was
+ * asked, which is what keeps `spawned` a function of the instance alone.
  */
-function spawnedBeforeLiveSet(ticket: Ticket): number {
-  return ticket.spawned - ticket.tasks.size;
+function liveSlotRoster(ticket: Ticket): readonly number[] {
+  if (ticket.phase !== "Evaluation") return [0];
+  const stage = ticket.program[runningStageIndex(currentInstance(ticket))];
+  if (stage === undefined)
+    throw new Error("decision plan: the running stage is outside the program");
+  return stage.evaluators.map((entry) => entry.key);
 }
 
 /**
  * THE WIRE'S NAME FOR EACH TASK, MINTED HERE AND NOWHERE ELSE, beside the
- * identity the machine knows it by: a set's numbers continue the ticket's
- * spawn count and a task takes its position in the whole set ordered by
- * evaluator key, so what a ticket hands out is injective and ascending over
- * its whole history, and a cancellation naming part of a set names it by the
- * numbers its spawn minted. Numbering by the evaluator key itself, or per
- * cycle or per generation, satisfies the identity and turns the repeat that
- * `execution_names_one_logical_task` catches into a silent no-op insert — a
- * stage keyed `{1, 3}` spends two of the count and would mint three.
+ * identity the machine knows it by: a spawn's numbers continue the ticket's
+ * spawn count and a task takes the position its evaluator holds in the stage
+ * its run is running, so what a ticket hands out is injective and ascending
+ * over its whole history and a cancellation naming part of a run names it by
+ * the numbers its spawn minted. THE BASE MOVES BY THE WHOLE ROSTER AND NOT BY
+ * WHAT WAS ASKED, because a resume re-asks only the evaluators a wall stopped
+ * and claims the roster again — numbering by the tasks dispatched would
+ * restart the second generation inside the first's numbers and re-mint one,
+ * which `execution_names_one_logical_task` absorbs as a silent no-op insert
+ * under `ON CONFLICT`.
  */
-function requestTasks(
-  spawnedBefore: number,
-  set: ReadonlySet<Task>,
-  tasks: readonly Task[],
-): ExecutionRequestPlan["tasks"] {
-  return tasks.map((task) => ({
-    task: spawnedBefore + taskPositionInSet(set, task.identity),
-    identity: task.identity,
-  }));
+function liveRequestTasks(ticket: Ticket): ExecutionRequestPlan["tasks"] {
+  const roster = liveSlotRoster(ticket);
+  const base = ticket.spawned - roster.length;
+  return liveTasks(ticket).map((identity) => {
+    const slot =
+      identity.type === "WorkTask"
+        ? 0
+        : roster.indexOf(identity.value.evaluator);
+    if (slot < 0)
+      throw new Error("decision plan: a live task names no slot of its run");
+    return { task: base + slot + 1, identity };
+  });
 }
 
 /**
@@ -158,10 +155,7 @@ function executionRequest(
   switch (effect) {
     case "SpawnWorkTasks":
     case "SpawnEvalTasks": {
-      const held = before === undefined ? [] : [...before.tasks];
-      const created = outstanding(after.tasks).filter(
-        (task) => !named(held, task.identity),
-      );
+      const created = liveRequestTasks(after);
       const kind =
         effect === "SpawnWorkTasks" ? "SpawnWork" : "SpawnEvaluation";
       if (created.length === 0)
@@ -173,29 +167,24 @@ function executionRequest(
         ticketVersion: entry.seq,
         kind,
         bundle: executionRequestBundle(input, entry, effectPosition, source),
-        tasks: requestTasks(spawnedBeforeLiveSet(after), after.tasks, created),
+        tasks: created,
       };
     }
-    case "CancelTicketWork": {
-      const stillOutstanding = outstanding(after.tasks);
-      const retired =
-        before === undefined
-          ? []
-          : outstanding(before.tasks).filter(
-              (task) => !named(stillOutstanding, task.identity),
-            );
+    case "CancelTicketWork":
+      /**
+       * Everything the ticket was owed when the cancellation was decided. A
+       * retirement empties the work set and leaves an evaluation's obligations
+       * behind with the phase, so the tasks are read off the ticket as it
+       * stood rather than off the difference the two states show.
+       */
       return {
         request: identity(entry, effectPosition, effect),
         effectPosition,
         ticket,
         ticketVersion: entry.seq,
         kind: "CancelTicketWork",
-        tasks:
-          before === undefined
-            ? []
-            : requestTasks(spawnedBeforeLiveSet(before), before.tasks, retired),
+        tasks: before === undefined ? [] : liveRequestTasks(before),
       };
-    }
     case "RunFinalizer":
     case "OpenHumanTask":
       throw new Error(`decision plan: ${effect} is not an execution request`);
@@ -413,20 +402,7 @@ export function materializationOf(
           expectedPhase: ticketAt(post, eventTicket).phase,
           taskSetGeneration: ticketAt(post, eventTicket).spawned,
         }
-      : eventTicket !== undefined && reducibleEvalIn(post).includes(eventTicket)
-        ? {
-            continuation: identity(
-              entry,
-              entry.rec.effects.length,
-              "ReduceEvaluation",
-            ),
-            kind: "ReduceEvaluation" as const,
-            ticket: eventTicket,
-            expectedTicketVersion: entry.seq,
-            expectedPhase: ticketAt(post, eventTicket).phase,
-            taskSetGeneration: ticketAt(post, eventTicket).spawned,
-          }
-        : undefined;
+      : undefined;
 
   return {
     ...(continuation === undefined ? {} : { continuation }),

@@ -52,9 +52,8 @@ import { genesis, storedJournalLegalOn } from "../actor/journal.ts";
 import { ticketEquals } from "../actor/equality.ts";
 import {
   decisionEventEnabled,
-  evalReduceEvent,
   execDecisionEvent,
-  executionBlockedEvent,
+  taskDoneEvent,
   workReduceEvent,
 } from "../actor/decisionEvent.ts";
 import type { DecisionEvent } from "../actor/decisionEvent.ts";
@@ -64,10 +63,8 @@ import type { TicketGraph } from "../domain/generated/modelTypes.ts";
 import { dependableIn } from "../domain/enablement.ts";
 import { effectFromLabel } from "../domain/effect.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
-import type {
-  ContinuationReduction,
-  DecisionInput,
-} from "./projectDiscovery.ts";
+import type { DecisionInput } from "./projectDiscovery.ts";
+import type { SchedulerCompletionEvent } from "./ticketCommand.ts";
 import type {
   ExecutionSourceObservation,
   ExecutionSourceObservationPort,
@@ -329,7 +326,6 @@ function journaledPlan(
   item: DecisionInput,
   command: DecisionEvent,
   executionSource: ExecutionSourceObservation | undefined,
-  escalated?: TicketEscalationEvidence,
 ): ProjectPlan {
   const decision = execDecisionEvent(memory.graph, command);
   const entry: Entry = {
@@ -337,7 +333,11 @@ function journaledPlan(
     event: command,
     rec: decision.rec,
   };
-  const projection = projectionChanges(memory.graph, decision.post, escalated);
+  const projection = projectionChanges(
+    memory.graph,
+    decision.post,
+    projectWriterEscalationEvidence(item, command, decision.post),
+  );
   const versions = new Map(memory.ticketVersions);
   for (const row of projection) versions.set(row.ticket, entry.seq);
   const contracts = new Map(memory.dispatchContracts ?? []);
@@ -388,23 +388,27 @@ function journaledPlan(
 }
 
 /**
- * The event a settled task set reduces by. An evaluation's carries the
- * disposition a failure is to be taken as, which is the deployment's rework cap
- * over the ticket the writer holds: a pick, journaled where it is made, because
- * nothing downstream of the journal may make it again.
+ * The completion as this writer decides it: what the boundary settled, plus
+ * the edge a failing stage would be taken on. THE PICK IS MADE HERE BECAUSE
+ * THIS IS WHERE IT CAN BE — the cap is this service's configuration and the
+ * count is read off the ticket replayed to this position, neither of which the
+ * scheduler's boundary holds, and it rides every completion because the event
+ * is one shape while only a stage that failed consults it.
  */
-function continuationReductionEvent(
+function completionEvent(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
-  reduction: ContinuationReduction,
+  completion: SchedulerCompletionEvent,
 ): DecisionEvent {
-  if (reduction.reduce === "Work") return workReduceEvent(reduction.ticket);
-  return evalReduceEvent(
-    reduction.ticket,
-    reworkDisposition(
-      ticketAt(memory.graph, reduction.ticket),
-      writer.rework.cyclesMax,
-    ),
+  const ticket = asTicketId(completion.value.ticket);
+  const held = memory.graph.tickets.get(ticket);
+  return taskDoneEvent(
+    ticket,
+    completion.value.task,
+    completion.value.report,
+    held === undefined
+      ? "EscalateEvaluationFailure"
+      : reworkDisposition(held, writer.rework.cyclesMax),
   );
 }
 
@@ -428,8 +432,10 @@ function projectWriterPreflight(
   }
   const command =
     item.source.kind === "Operation"
-      ? item.source.resolvedEvent
-      : continuationReductionEvent(writer, memory, item.source.reduction);
+      ? item.source.completion === undefined
+        ? item.source.resolvedEvent
+        : completionEvent(writer, memory, item.source.completion)
+      : workReduceEvent(item.source.reduction.ticket);
   if (
     item.source.kind === "Operation" &&
     (item.source.nativeAction?.open === false ||
@@ -528,28 +534,29 @@ async function projectWriterExecutionSource(
 }
 
 /**
- * What a source nobody could read lands as. A transient evidence defers the
- * input so a later quantum retries it; a durable one answers an operation with
- * a code, and parks a continuation's ticket on the desk instead, because a
- * continuation has no client waiting to be told.
+ * What a source nobody could read lands as: a transient evidence defers the
+ * input so a later quantum retries it, and a durable one answers a client's
+ * operation with a code. AN INPUT NO CLIENT IS WAITING ON IS DEFERRED EITHER
+ * WAY, because a wall is a task's now and no event parks a ticket whose spawn
+ * could not be sourced at all — there is nothing to journal for a
+ * continuation, and refusing a completion would settle at this boundary a task
+ * the journal never heard settle.
  */
 function projectWriterUnreadableLanding(
   item: DecisionInput,
   unreadable: Extract<SpawnSourceObserved, { observed: "Unreadable" }>,
 ):
   | { readonly landing: "Deferred" }
-  | { readonly landing: "Refused"; readonly code: RefusalCode }
-  | { readonly landing: "Blocked"; readonly event: DecisionEvent } {
-  if (transientGitEvidences.includes(unreadable.evidence))
+  | { readonly landing: "Refused"; readonly code: RefusalCode } {
+  if (
+    transientGitEvidences.includes(unreadable.evidence) ||
+    item.source.kind !== "Operation" ||
+    item.source.completion !== undefined
+  )
     return { landing: "Deferred" };
-  if (item.source.kind === "Operation")
-    return {
-      landing: "Refused",
-      code: executionSourceRefusalCode(unreadable.evidence),
-    };
   return {
-    landing: "Blocked",
-    event: executionBlockedEvent(unreadable.ticket),
+    landing: "Refused",
+    code: executionSourceRefusalCode(unreadable.evidence),
   };
 }
 
@@ -563,16 +570,17 @@ function projectWriterUnreadableLanding(
 function projectWriterEscalationEvidence(
   item: DecisionInput,
   command: DecisionEvent,
+  post: TicketGraph,
 ): TicketEscalationEvidence | undefined {
   if (item.source.kind !== "Operation") return undefined;
   const source = item.source;
-  if (command.type === "ExecutionBlocked")
-    return source.executionBlockedBy === undefined
+  if (command.type === "TaskDone") {
+    const ticket = asTicketId(command.value.ticket);
+    return source.executionBlockedBy === undefined ||
+      ticketAt(post, ticket).escalation === "NoEscalation"
       ? undefined
-      : {
-          ticket: asTicketId(command.value.ticket),
-          evidence: source.executionBlockedBy,
-        };
+      : { ticket, evidence: source.executionBlockedBy };
+  }
   if (
     command.type !== "FinalizationResult" ||
     command.value.out !== "FinalizationResultUnavailable" ||
@@ -588,8 +596,8 @@ function projectWriterEscalationEvidence(
 
 /**
  * The plan an accepted command earns once the source its spawns would run on
- * has been observed, which is the deferral, refusal or escalation that
- * unreadability lands as where there was no source to pin.
+ * has been observed, which is the deferral or refusal that unreadability lands
+ * as where there was no source to pin.
  */
 async function projectWriterPlan(
   writer: ProjectTicketWriter,
@@ -604,30 +612,13 @@ async function projectWriterPlan(
     command,
   );
   if (observed.observed === "Source")
-    return journaledPlan(
-      writer,
-      memory,
-      item,
-      command,
-      observed.source,
-      projectWriterEscalationEvidence(item, command),
-    );
+    return journaledPlan(writer, memory, item, command, observed.source);
   const landing = projectWriterUnreadableLanding(item, observed);
   if (landing.landing === "Deferred") return { deferred: observed.evidence };
-  if (landing.landing === "Refused") {
-    return {
-      outcome: { outcome: "Refused", code: landing.code },
-      post: memory.graph,
-    };
-  }
-  if (!decisionEventEnabled(writer.config, memory.graph, landing.event))
-    throw new IntegrityContradiction(
-      "a ticket spawning work is not blockable from the phase it spawns in",
-    );
-  return journaledPlan(writer, memory, item, landing.event, undefined, {
-    ticket: observed.ticket,
-    evidence: observed.evidence,
-  });
+  return {
+    outcome: { outcome: "Refused", code: landing.code },
+    post: memory.graph,
+  };
 }
 
 /**
