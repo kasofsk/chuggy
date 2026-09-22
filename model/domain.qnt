@@ -107,10 +107,11 @@ module chuggy_domain {
   /// the ticket would make the stored field a duplicate of a derivable fact
   /// (standing rule 3) that nothing could ever disagree with.
   ///
-  /// Their own BAND, clear of the evaluator definitions below and of the
-  /// release references, so a number read off a golden belongs to exactly
-  /// one of the three and the travel is legible. The named members are what
-  /// a hand-written fixture carries when which one it is is not its subject.
+  /// Their own BAND, clear of the evaluator definitions below, of the release
+  /// references and of the work results (ticket.qnt producedResultRef), so a
+  /// number read off a golden belongs to exactly one family and the travel is
+  /// legible. The named members are what a hand-written fixture carries when
+  /// which one it is is not its subject.
   pure val aDispatchSource: int = 9
   pure val anAcceptedSource: int = 11
   pure val dispatchSources: Set[int] =
