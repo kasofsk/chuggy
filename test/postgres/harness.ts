@@ -527,11 +527,17 @@ export async function postgresHarnessCompletion(
 ): Promise<void> {
   if (!isCompletionDecisionEvent(event))
     throw new Error("postgres harness: that event is not a completion");
-  const { onFailure: _picked, ...value } = event.value;
   const command = JSON.stringify({
     version: 1,
     command: "Decide",
-    event: { type: "TaskDone", value },
+    event: {
+      type: "TaskDone",
+      value: {
+        ticket: event.value.ticket,
+        task: event.value.task,
+        report: event.value.report,
+      },
+    },
   });
   await harness.query(
     `WITH claimed AS (

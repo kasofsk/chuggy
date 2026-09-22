@@ -257,8 +257,14 @@ function plannedInput(
   phase: string,
 ): DecisionInput | undefined {
   if (isCompletionDecisionEvent(event)) {
-    const { onFailure: _picked, ...value } = event.value;
-    const completion = { type: "TaskDone", value } as const;
+    const completion = {
+      type: "TaskDone",
+      value: {
+        ticket: event.value.ticket,
+        task: event.value.task,
+        report: event.value.report,
+      },
+    } as const;
     return {
       partition,
       ordinal: 1,
