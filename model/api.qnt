@@ -41,6 +41,7 @@ module chuggy_api {
   type ApiEscalation = Escalation
   type ApiFinalizationOutcome = FinalizationOutcome
   type ApiArtifactMark = ArtifactMark
+  type ApiReleasedContent = ReleasedContent
   type ApiReleasedTicket = ReleasedTicket
   type ApiTicket = Ticket
   type ApiInstallationId = InstallationId

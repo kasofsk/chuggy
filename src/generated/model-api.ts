@@ -4,20 +4,25 @@
 import * as z from "zod";
 
 import type {
+  EvaluationFailureDisposition,
+  Resume,
+  WorkTaskIdentity,
   Escalation,
   FinalizationOutcome,
-  WorkTaskIdentity,
   ArtifactMark,
-  Phase,
+  ReleasedContent,
+  TaskDefinition,
   EvaluatorDefinition,
   StageDefinition,
+  EvaluationPlan,
+  ReleasedTicket,
+  Phase,
   EvaluationTaskIdentity,
   TaskIdentity,
   TaskOutcome,
   TaskState,
   Task,
   EvaluationInput,
-  EvaluationPlan,
   EvaluatorResult,
   EvaluatorStatus,
   StageRun,
@@ -30,15 +35,14 @@ import type {
   TicketGraph,
   Transition,
   StepRecord,
-  TaskResultRef,
+  TaskObligation,
+  ValidatedTaskResult,
   EvaluationVerdict,
   FailureKind,
   TaskTerminalReport,
-  EvaluationFailureDisposition,
   DecisionEvent,
   Entry,
   EvaluationReworkEntry,
-  Resume,
 } from "../domain/generated/modelTypes.ts";
 
 export type ModelJson =
@@ -76,6 +80,61 @@ function distinctJson(values: readonly unknown[]): boolean {
     seen.add(key);
   }
   return true;
+}
+
+export const evaluationFailureDispositionSchema: z.ZodType<EvaluationFailureDisposition> =
+  z.union([
+    z.literal("ReworkEvaluationFailure"),
+    z.literal("EscalateEvaluationFailure"),
+  ]);
+const evaluationFailureDispositionSchemaWire: z.ZodType<EvaluationFailureDisposition> =
+  z.union([
+    z.literal("ReworkEvaluationFailure"),
+    z.literal("EscalateEvaluationFailure"),
+  ]);
+export function encodeEvaluationFailureDisposition(
+  value: EvaluationFailureDisposition,
+): ModelJson {
+  return encodeJson(value);
+}
+export function decodeEvaluationFailureDisposition(
+  value: unknown,
+): EvaluationFailureDisposition {
+  return evaluationFailureDispositionSchemaWire.parse(value);
+}
+
+export const resumeSchema: z.ZodType<Resume> = z.union([
+  z.literal("NoResume"),
+  z.literal("ResumeWork"),
+  z.literal("ResumeRework"),
+  z.literal("ResumeEvaluation"),
+  z.literal("ResumeFinalization"),
+]);
+const resumeSchemaWire: z.ZodType<Resume> = z.union([
+  z.literal("NoResume"),
+  z.literal("ResumeWork"),
+  z.literal("ResumeRework"),
+  z.literal("ResumeEvaluation"),
+  z.literal("ResumeFinalization"),
+]);
+export function encodeResume(value: Resume): ModelJson {
+  return encodeJson(value);
+}
+export function decodeResume(value: unknown): Resume {
+  return resumeSchemaWire.parse(value);
+}
+
+export const workTaskIdentitySchema: z.ZodType<WorkTaskIdentity> = z
+  .object({ ticket: z.number().int().safe(), cycle: z.number().int().safe() })
+  .readonly();
+const workTaskIdentitySchemaWire: z.ZodType<WorkTaskIdentity> = z
+  .object({ ticket: z.number().int().safe(), cycle: z.number().int().safe() })
+  .readonly();
+export function encodeWorkTaskIdentity(value: WorkTaskIdentity): ModelJson {
+  return encodeJson(value);
+}
+export function decodeWorkTaskIdentity(value: unknown): WorkTaskIdentity {
+  return workTaskIdentitySchemaWire.parse(value);
 }
 
 export const escalationSchema: z.ZodType<Escalation> = z.union([
@@ -121,19 +180,6 @@ export function decodeFinalizationOutcome(value: unknown): FinalizationOutcome {
   return finalizationOutcomeSchemaWire.parse(value);
 }
 
-export const workTaskIdentitySchema: z.ZodType<WorkTaskIdentity> = z
-  .object({ ticket: z.number().int().safe(), cycle: z.number().int().safe() })
-  .readonly();
-const workTaskIdentitySchemaWire: z.ZodType<WorkTaskIdentity> = z
-  .object({ ticket: z.number().int().safe(), cycle: z.number().int().safe() })
-  .readonly();
-export function encodeWorkTaskIdentity(value: WorkTaskIdentity): ModelJson {
-  return encodeJson(value);
-}
-export function decodeWorkTaskIdentity(value: unknown): WorkTaskIdentity {
-  return workTaskIdentitySchemaWire.parse(value);
-}
-
 export const artifactMarkSchema: z.ZodType<ArtifactMark> = z.union([
   z.literal("NoArtifact"),
   z
@@ -159,36 +205,49 @@ export function decodeArtifactMark(value: unknown): ArtifactMark {
   return artifactMarkSchemaWire.parse(value);
 }
 
-export const phaseSchema: z.ZodType<Phase> = z.union([
-  z.literal("Pending"),
-  z.literal("Work"),
-  z.literal("Evaluation"),
-  z.literal("Finalization"),
-  z.literal("Done"),
-  z.literal("Escalated"),
-  z.literal("Revoked"),
-]);
-const phaseSchemaWire: z.ZodType<Phase> = z.union([
-  z.literal("Pending"),
-  z.literal("Work"),
-  z.literal("Evaluation"),
-  z.literal("Finalization"),
-  z.literal("Done"),
-  z.literal("Escalated"),
-  z.literal("Revoked"),
-]);
-export function encodePhase(value: Phase): ModelJson {
+export const releasedContentSchema: z.ZodType<ReleasedContent> = z
+  .number()
+  .int()
+  .safe();
+const releasedContentSchemaWire: z.ZodType<ReleasedContent> = z
+  .number()
+  .int()
+  .safe();
+export function encodeReleasedContent(value: ReleasedContent): ModelJson {
   return encodeJson(value);
 }
-export function decodePhase(value: unknown): Phase {
-  return phaseSchemaWire.parse(value);
+export function decodeReleasedContent(value: unknown): ReleasedContent {
+  return releasedContentSchemaWire.parse(value);
+}
+
+export const taskDefinitionSchema: z.ZodType<TaskDefinition> = z
+  .object({
+    workload: z.number().int().safe(),
+    inputs: z.number().int().safe(),
+    executionRequirements: z.number().int().safe(),
+    resultContract: z.number().int().safe(),
+  })
+  .readonly();
+const taskDefinitionSchemaWire: z.ZodType<TaskDefinition> = z
+  .object({
+    workload: z.number().int().safe(),
+    inputs: z.number().int().safe(),
+    executionRequirements: z.number().int().safe(),
+    resultContract: z.number().int().safe(),
+  })
+  .readonly();
+export function encodeTaskDefinition(value: TaskDefinition): ModelJson {
+  return encodeJson(value);
+}
+export function decodeTaskDefinition(value: unknown): TaskDefinition {
+  return taskDefinitionSchemaWire.parse(value);
 }
 
 export const evaluatorDefinitionSchema: z.ZodType<EvaluatorDefinition> = z
-  .object({ key: z.number().int().safe() })
+  .object({ key: z.number().int().safe(), task: taskDefinitionSchema })
   .readonly();
 const evaluatorDefinitionSchemaWire: z.ZodType<EvaluatorDefinition> = z
-  .object({ key: z.number().int().safe() })
+  .object({ key: z.number().int().safe(), task: taskDefinitionSchemaWire })
   .readonly();
 export function encodeEvaluatorDefinition(
   value: EvaluatorDefinition,
@@ -216,6 +275,74 @@ export function encodeStageDefinition(value: StageDefinition): ModelJson {
 }
 export function decodeStageDefinition(value: unknown): StageDefinition {
   return stageDefinitionSchemaWire.parse(value);
+}
+
+export const evaluationPlanSchema: z.ZodType<EvaluationPlan> = z
+  .object({ stages: z.array(stageDefinitionSchema).readonly() })
+  .readonly();
+const evaluationPlanSchemaWire: z.ZodType<EvaluationPlan> = z
+  .object({ stages: z.array(stageDefinitionSchemaWire).readonly() })
+  .readonly();
+export function encodeEvaluationPlan(value: EvaluationPlan): ModelJson {
+  return encodeJson(value);
+}
+export function decodeEvaluationPlan(value: unknown): EvaluationPlan {
+  return evaluationPlanSchemaWire.parse(value);
+}
+
+export const releasedTicketSchema: z.ZodType<ReleasedTicket> = z
+  .object({
+    id: z.number().int().safe(),
+    content: releasedContentSchema,
+    dependencies: z.set(z.number().int().safe()).readonly(),
+    workConfiguration: taskDefinitionSchema,
+    evaluationPlan: evaluationPlanSchema,
+    finalizationConfiguration: z.number().int().safe(),
+  })
+  .readonly();
+const releasedTicketSchemaWire: z.ZodType<ReleasedTicket> = z
+  .object({
+    id: z.number().int().safe(),
+    content: releasedContentSchemaWire,
+    dependencies: z
+      .array(z.number().int().safe())
+      .refine(distinctJson, { message: "set contains a duplicate" })
+      .transform((items) => new Set(items)),
+    workConfiguration: taskDefinitionSchemaWire,
+    evaluationPlan: evaluationPlanSchemaWire,
+    finalizationConfiguration: z.number().int().safe(),
+  })
+  .readonly();
+export function encodeReleasedTicket(value: ReleasedTicket): ModelJson {
+  return encodeJson(value);
+}
+export function decodeReleasedTicket(value: unknown): ReleasedTicket {
+  return releasedTicketSchemaWire.parse(value);
+}
+
+export const phaseSchema: z.ZodType<Phase> = z.union([
+  z.literal("Pending"),
+  z.literal("Work"),
+  z.literal("Evaluation"),
+  z.literal("Finalization"),
+  z.literal("Done"),
+  z.literal("Escalated"),
+  z.literal("Revoked"),
+]);
+const phaseSchemaWire: z.ZodType<Phase> = z.union([
+  z.literal("Pending"),
+  z.literal("Work"),
+  z.literal("Evaluation"),
+  z.literal("Finalization"),
+  z.literal("Done"),
+  z.literal("Escalated"),
+  z.literal("Revoked"),
+]);
+export function encodePhase(value: Phase): ModelJson {
+  return encodeJson(value);
+}
+export function decodePhase(value: unknown): Phase {
+  return phaseSchemaWire.parse(value);
 }
 
 export const evaluationTaskIdentitySchema: z.ZodType<EvaluationTaskIdentity> = z
@@ -327,12 +454,14 @@ export const evaluationInputSchema: z.ZodType<EvaluationInput> = z
   .object({
     ticket: z.number().int().safe(),
     workResult: z.number().int().safe(),
+    acceptedSourceRef: z.number().int().safe(),
   })
   .readonly();
 const evaluationInputSchemaWire: z.ZodType<EvaluationInput> = z
   .object({
     ticket: z.number().int().safe(),
     workResult: z.number().int().safe(),
+    acceptedSourceRef: z.number().int().safe(),
   })
   .readonly();
 export function encodeEvaluationInput(value: EvaluationInput): ModelJson {
@@ -340,19 +469,6 @@ export function encodeEvaluationInput(value: EvaluationInput): ModelJson {
 }
 export function decodeEvaluationInput(value: unknown): EvaluationInput {
   return evaluationInputSchemaWire.parse(value);
-}
-
-export const evaluationPlanSchema: z.ZodType<EvaluationPlan> = z
-  .object({ stages: z.array(stageDefinitionSchema).readonly() })
-  .readonly();
-const evaluationPlanSchemaWire: z.ZodType<EvaluationPlan> = z
-  .object({ stages: z.array(stageDefinitionSchemaWire).readonly() })
-  .readonly();
-export function encodeEvaluationPlan(value: EvaluationPlan): ModelJson {
-  return encodeJson(value);
-}
-export function decodeEvaluationPlan(value: unknown): EvaluationPlan {
-  return evaluationPlanSchemaWire.parse(value);
 }
 
 export const evaluatorResultSchema: z.ZodType<EvaluatorResult> = z.union([
@@ -559,9 +675,9 @@ export function decodeEvaluationInstance(value: unknown): EvaluationInstance {
 export const ticketSchema: z.ZodType<Ticket> = z
   .object({
     phase: phaseSchema,
-    deps: z.set(z.number().int().safe()).readonly(),
+    definition: releasedTicketSchema,
+    source: z.number().int().safe(),
     artifact: artifactMarkSchema,
-    program: z.array(stageDefinitionSchema).readonly(),
     tasks: z.set(taskSchema).readonly(),
     evaluations: z.array(evaluationInstanceSchema).readonly(),
     workCyclesStarted: z.number().int().safe(),
@@ -573,12 +689,9 @@ export const ticketSchema: z.ZodType<Ticket> = z
 const ticketSchemaWire: z.ZodType<Ticket> = z
   .object({
     phase: phaseSchemaWire,
-    deps: z
-      .array(z.number().int().safe())
-      .refine(distinctJson, { message: "set contains a duplicate" })
-      .transform((items) => new Set(items)),
+    definition: releasedTicketSchemaWire,
+    source: z.number().int().safe(),
     artifact: artifactMarkSchemaWire,
-    program: z.array(stageDefinitionSchemaWire).readonly(),
     tasks: z
       .array(taskSchemaWire)
       .refine(distinctJson, { message: "set contains a duplicate" })
@@ -687,25 +800,46 @@ export function decodeStepRecord(value: unknown): StepRecord {
   return stepRecordSchemaWire.parse(value);
 }
 
-export const taskResultRefSchema: z.ZodType<TaskResultRef> = z
+export const taskObligationSchema: z.ZodType<TaskObligation> = z
   .object({
-    manifest: z.number().int().safe(),
-    digest: z.number().int().safe(),
-    schema: z.number().int().safe(),
+    task: taskIdentitySchema,
+    definition: taskDefinitionSchema,
+    contextRef: z.number().int().safe(),
   })
   .readonly();
-const taskResultRefSchemaWire: z.ZodType<TaskResultRef> = z
+const taskObligationSchemaWire: z.ZodType<TaskObligation> = z
   .object({
-    manifest: z.number().int().safe(),
-    digest: z.number().int().safe(),
-    schema: z.number().int().safe(),
+    task: taskIdentitySchemaWire,
+    definition: taskDefinitionSchemaWire,
+    contextRef: z.number().int().safe(),
   })
   .readonly();
-export function encodeTaskResultRef(value: TaskResultRef): ModelJson {
+export function encodeTaskObligation(value: TaskObligation): ModelJson {
   return encodeJson(value);
 }
-export function decodeTaskResultRef(value: unknown): TaskResultRef {
-  return taskResultRefSchemaWire.parse(value);
+export function decodeTaskObligation(value: unknown): TaskObligation {
+  return taskObligationSchemaWire.parse(value);
+}
+
+export const validatedTaskResultSchema: z.ZodType<ValidatedTaskResult> = z
+  .object({
+    obligation: taskObligationSchema,
+    resultRef: z.number().int().safe(),
+  })
+  .readonly();
+const validatedTaskResultSchemaWire: z.ZodType<ValidatedTaskResult> = z
+  .object({
+    obligation: taskObligationSchemaWire,
+    resultRef: z.number().int().safe(),
+  })
+  .readonly();
+export function encodeValidatedTaskResult(
+  value: ValidatedTaskResult,
+): ModelJson {
+  return encodeJson(value);
+}
+export function decodeValidatedTaskResult(value: unknown): ValidatedTaskResult {
+  return validatedTaskResultSchemaWire.parse(value);
 }
 
 export const evaluationVerdictSchema: z.ZodType<EvaluationVerdict> = z.union([
@@ -742,7 +876,12 @@ export const taskTerminalReportSchema: z.ZodType<TaskTerminalReport> = z.union([
   z
     .object({
       type: z.literal("WorkResultReport"),
-      value: z.object({ result: taskResultRefSchema }).readonly(),
+      value: z
+        .object({
+          result: validatedTaskResultSchema,
+          acceptedSourceRef: z.number().int().safe(),
+        })
+        .readonly(),
     })
     .readonly(),
   z
@@ -750,7 +889,7 @@ export const taskTerminalReportSchema: z.ZodType<TaskTerminalReport> = z.union([
       type: z.literal("EvaluationResultReport"),
       value: z
         .object({
-          result: taskResultRefSchema,
+          result: validatedTaskResultSchema,
           verdict: evaluationVerdictSchema,
         })
         .readonly(),
@@ -769,7 +908,12 @@ const taskTerminalReportSchemaWire: z.ZodType<TaskTerminalReport> = z.union([
   z
     .object({
       type: z.literal("WorkResultReport"),
-      value: z.object({ result: taskResultRefSchemaWire }).readonly(),
+      value: z
+        .object({
+          result: validatedTaskResultSchemaWire,
+          acceptedSourceRef: z.number().int().safe(),
+        })
+        .readonly(),
     })
     .readonly(),
   z
@@ -777,7 +921,7 @@ const taskTerminalReportSchemaWire: z.ZodType<TaskTerminalReport> = z.union([
       type: z.literal("EvaluationResultReport"),
       value: z
         .object({
-          result: taskResultRefSchemaWire,
+          result: validatedTaskResultSchemaWire,
           verdict: evaluationVerdictSchemaWire,
         })
         .readonly(),
@@ -802,45 +946,23 @@ export function decodeTaskTerminalReport(value: unknown): TaskTerminalReport {
   return taskTerminalReportSchemaWire.parse(value);
 }
 
-export const evaluationFailureDispositionSchema: z.ZodType<EvaluationFailureDisposition> =
-  z.union([
-    z.literal("ReworkEvaluationFailure"),
-    z.literal("EscalateEvaluationFailure"),
-  ]);
-const evaluationFailureDispositionSchemaWire: z.ZodType<EvaluationFailureDisposition> =
-  z.union([
-    z.literal("ReworkEvaluationFailure"),
-    z.literal("EscalateEvaluationFailure"),
-  ]);
-export function encodeEvaluationFailureDisposition(
-  value: EvaluationFailureDisposition,
-): ModelJson {
-  return encodeJson(value);
-}
-export function decodeEvaluationFailureDisposition(
-  value: unknown,
-): EvaluationFailureDisposition {
-  return evaluationFailureDispositionSchemaWire.parse(value);
-}
-
 export const decisionEventSchema: z.ZodType<DecisionEvent> = z.union([
   z
-    .object({
-      type: z.literal("CreateTicket"),
-      value: z
-        .object({
-          ticket: z.number().int().safe(),
-          deps: z.set(z.number().int().safe()).readonly(),
-          prog: z.array(stageDefinitionSchema).readonly(),
-        })
-        .readonly(),
-    })
+    .object({ type: z.literal("CreateTicket"), value: releasedTicketSchema })
     .readonly(),
   z
     .object({ type: z.literal("Revoke"), value: z.number().int().safe() })
     .readonly(),
   z
-    .object({ type: z.literal("Dispatch"), value: z.number().int().safe() })
+    .object({
+      type: z.literal("Dispatch"),
+      value: z
+        .object({
+          ticket: z.number().int().safe(),
+          source: z.number().int().safe(),
+        })
+        .readonly(),
+    })
     .readonly(),
   z
     .object({
@@ -877,23 +999,22 @@ const decisionEventSchemaWire: z.ZodType<DecisionEvent> = z.union([
   z
     .object({
       type: z.literal("CreateTicket"),
-      value: z
-        .object({
-          ticket: z.number().int().safe(),
-          deps: z
-            .array(z.number().int().safe())
-            .refine(distinctJson, { message: "set contains a duplicate" })
-            .transform((items) => new Set(items)),
-          prog: z.array(stageDefinitionSchemaWire).readonly(),
-        })
-        .readonly(),
+      value: releasedTicketSchemaWire,
     })
     .readonly(),
   z
     .object({ type: z.literal("Revoke"), value: z.number().int().safe() })
     .readonly(),
   z
-    .object({ type: z.literal("Dispatch"), value: z.number().int().safe() })
+    .object({
+      type: z.literal("Dispatch"),
+      value: z
+        .object({
+          ticket: z.number().int().safe(),
+          source: z.number().int().safe(),
+        })
+        .readonly(),
+    })
     .readonly(),
   z
     .object({
@@ -975,25 +1096,4 @@ export function decodeEvaluationReworkEntry(
   value: unknown,
 ): EvaluationReworkEntry {
   return evaluationReworkEntrySchemaWire.parse(value);
-}
-
-export const resumeSchema: z.ZodType<Resume> = z.union([
-  z.literal("NoResume"),
-  z.literal("ResumeWork"),
-  z.literal("ResumeRework"),
-  z.literal("ResumeEvaluation"),
-  z.literal("ResumeFinalization"),
-]);
-const resumeSchemaWire: z.ZodType<Resume> = z.union([
-  z.literal("NoResume"),
-  z.literal("ResumeWork"),
-  z.literal("ResumeRework"),
-  z.literal("ResumeEvaluation"),
-  z.literal("ResumeFinalization"),
-]);
-export function encodeResume(value: Resume): ModelJson {
-  return encodeJson(value);
-}
-export function decodeResume(value: unknown): Resume {
-  return resumeSchemaWire.parse(value);
 }
