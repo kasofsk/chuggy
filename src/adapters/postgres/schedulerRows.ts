@@ -12,8 +12,9 @@
  * THE STAGE COLUMN IS THE IDENTITY'S KEY AND THE PORT'S STAGE IS AN INDEX.
  * `execution_request_task.stage` is the positive key a task identity names;
  * what this tree's ports carry is the position in the released program, which
- * is one less, and every reader of a stage here reads it through this
- * translation rather than subtracting where it is used.
+ * is one less because a stage's key is its position — the rule
+ * `programsWellFormed` states — and every reader of a stage here reads it
+ * through this translation rather than subtracting where it is used.
  *
  * A REGISTRATION CARRIES NO PROVENANCE OF ITS OWN, so reading one is a join.
  * The authorizing sequence, the effect position, the ticket version, the task

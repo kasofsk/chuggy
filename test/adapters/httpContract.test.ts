@@ -106,7 +106,7 @@ test("the frontend contract is generated from the checked request schemas", () =
 
 const authoring = {
   dependencies: [1, 2],
-  program: [{ fanout: 1 }],
+  program: [{ key: 1, evaluators: [{ key: 1 }] }],
 } as const;
 
 const brief = {

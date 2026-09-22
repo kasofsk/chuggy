@@ -349,13 +349,29 @@
               "items": {
                 "type": "object",
                 "properties": {
-                  "fanout": {
+                  "key": {
                     "type": "integer",
                     "exclusiveMinimum": 0,
                     "maximum": 9007199254740991
+                  },
+                  "evaluators": {
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": ["key"],
+                      "additionalProperties": false
+                    }
                   }
                 },
-                "required": ["fanout"],
+                "required": ["key", "evaluators"],
                 "additionalProperties": false
               }
             }
@@ -512,13 +528,29 @@
               "items": {
                 "type": "object",
                 "properties": {
-                  "fanout": {
+                  "key": {
                     "type": "integer",
                     "exclusiveMinimum": 0,
                     "maximum": 9007199254740991
+                  },
+                  "evaluators": {
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": ["key"],
+                      "additionalProperties": false
+                    }
                   }
                 },
-                "required": ["fanout"],
+                "required": ["key", "evaluators"],
                 "additionalProperties": false
               }
             }

@@ -98,7 +98,12 @@ function canonicalCandidate(candidate: DispatchCandidate): unknown {
     ticket: candidate.ticket,
     ticketVersion: candidate.ticketVersion,
     dependencies: [...candidate.dependencies],
-    program: candidate.program.map((stage) => ({ fanout: stage.fanout })),
+    program: candidate.program.map((stage) => ({
+      key: stage.key,
+      evaluators: stage.evaluators.map((evaluator) => ({
+        key: evaluator.key,
+      })),
+    })),
     configurationRevision: candidate.configurationRevision,
     configurationDigest: candidate.configurationDigest,
     configurationCanonical: candidate.configurationCanonical,

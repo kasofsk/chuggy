@@ -476,6 +476,9 @@ export const nativeHttpDraftDependenciesMax = 100;
 /** How many stages one authored program carries. */
 export const nativeHttpDraftStagesMax = 100;
 
+/** How many evaluators one authored stage lists. */
+export const nativeHttpDraftEvaluatorsMax = 100;
+
 /** The longest canonical configuration one revision holds, which 007's column checks. */
 export const configurationCanonicalCharsMax = 65_536;
 

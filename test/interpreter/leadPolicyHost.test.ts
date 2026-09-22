@@ -63,7 +63,7 @@ const candidate = {
   ticket: asTicketId(41),
   ticketVersion: 3,
   dependencies: [],
-  program: [{ fanout: 1 }],
+  program: [{ key: 1, evaluators: [{ key: 1 }] }],
   configurationRevision: "revision",
   configurationDigest: "d".repeat(64),
   configurationCanonical: "{}",

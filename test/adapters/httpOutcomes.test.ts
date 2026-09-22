@@ -381,7 +381,7 @@ test("revising a draft with exactly the brief it was read back with keeps its re
     configurationRevision: draft.configurationRevision,
     authoring: {
       dependencies: [],
-      program: [{ fanout: 1 }],
+      program: [{ key: 1, evaluators: [{ key: 1 }] }],
     },
     brief: readBack,
   });
@@ -441,8 +441,8 @@ test("draft initialization outcomes remain discriminated at HTTP", () => {
         projectSequence: 2,
         defaults: plainAuthoring,
         choices: {
-          stages: plainAuthoring.prog,
           programStagesMax: 1,
+          evaluatorsMax: 1,
         },
         dependencyCandidates: [id(1)],
         dependencyCandidatesTruncated: false,

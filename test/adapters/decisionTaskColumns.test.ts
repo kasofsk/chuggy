@@ -12,7 +12,7 @@ import { decisionTaskColumns } from "../../src/adapters/postgres/decision.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 
 test("an evaluation's four counters each reach their own column", () => {
-  assert.deepEqual(decisionTaskColumns(evaluationTaskOf(7, 2, 2, 4, 5)), {
+  assert.deepEqual(decisionTaskColumns(evaluationTaskOf(7, 2, 3, 4, 5)), {
     kind: "Evaluation",
     cycle: 2,
     stage: 3,

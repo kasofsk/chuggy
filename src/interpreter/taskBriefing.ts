@@ -464,7 +464,7 @@ export interface BriefingView {
   readonly grant: PolicyAuthorityGrant;
 }
 
-/** The block one role reads, which is the only part of a configuration the two roles differ on. */
+/** The block one role reads, which is the only part of a configuration the two roles differ on; every evaluator of a stage runs the stage's block, whatever key it carries. */
 function purposeBlock(
   configuration: PinnedTaskConfiguration,
   purpose: TaskPurpose,

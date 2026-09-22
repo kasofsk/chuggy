@@ -17,8 +17,6 @@ import {
 } from "../../src/adapters/postgres/schema/migrations/009-work-fanout.ts";
 import { migration010 } from "../../src/adapters/postgres/schema/migrations/010-task-identity.ts";
 import { migration011 } from "../../src/adapters/postgres/schema/migrations/011-evaluator-keys.ts";
-import { encodeDispatchProgram } from "../../src/interpreter/dispatchView.ts";
-import type { StageDefinition } from "../../src/domain/generated/modelTypes.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -1879,21 +1877,17 @@ test("the narrowed reason checks refuse a live row at the parked reason", async 
 
 /**
  * The programs the rewrite has to render, each as the encoder that still wrote
- * the combinator stored it and as the machine now holds it: two stages, and
- * none at all. The stored side is a literal because no encoder in this tree
- * can write the deleted key any more.
+ * the combinator stored it and as the rewrite leaves it: two stages, and none
+ * at all. Both sides are literals because no encoder in this tree can write
+ * the deleted key or the width any more.
  */
-const rewrittenPrograms: readonly (readonly [
-  number,
-  string,
-  readonly StageDefinition[],
-])[] = [
+const rewrittenPrograms: readonly (readonly [number, string, string])[] = [
   [
     1,
     '[{"fanout":2,"combinator":"UnanimousPass"},{"fanout":1,"combinator":"AnyPass"}]',
-    [{ fanout: 2 }, { fanout: 1 }],
+    '[{"fanout":2},{"fanout":1}]',
   ],
-  [2, "[]", []],
+  [2, "[]", "[]"],
 ];
 
 test("a stored dispatch program is rewritten as the encoder without the combinator writes it", async () => {
@@ -1923,7 +1917,7 @@ test("a stored dispatch program is rewritten as the encoder without the combinat
       ).rows,
       rewrittenPrograms.map(([ticket, , program]) => ({
         ticket: String(ticket),
-        program: JSON.stringify(encodeDispatchProgram(program)),
+        program,
       })),
     );
   });

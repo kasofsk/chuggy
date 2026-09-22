@@ -998,8 +998,8 @@ function initializationBody(): Record<string, unknown> {
         projectSequence: 9,
         defaults: authoring,
         choices: {
-          stages: [{ fanout: 1 }],
           programStagesMax: 4,
+          evaluatorsMax: 3,
         },
         dependencyCandidates: [asTicketId(1), asTicketId(2)],
         dependencyCandidatesTruncated: false,
@@ -1015,6 +1015,7 @@ test("a draft and its initialization parse with the authoring the wire carries",
     draftInitializationResponseSchema.parse(initializationBody());
   assert.equal(initialization.fence.projectSequence, 9);
   assert.equal(initialization.choices.programStagesMax, 4);
+  assert.equal(initialization.choices.evaluatorsMax, 3);
 });
 
 test("a hand-assembled read drops an unknown field at every depth", () => {
@@ -1027,7 +1028,14 @@ test("a hand-assembled read drops an unknown field at every depth", () => {
     authoring: {
       ...inner,
       links: ["https://example.invalid/one"],
-      program: [{ fanout: 1, combinator: "UnanimousPass", label: "review" }],
+      program: [
+        {
+          key: 1,
+          evaluators: [{ key: 1, brief: "review" }],
+          combinator: "UnanimousPass",
+          label: "review",
+        },
+      ],
     },
     brief: {
       intent: "Land it elsewhere.",
@@ -1038,7 +1046,9 @@ test("a hand-assembled read drops an unknown field at every depth", () => {
   const parsed = draftResponseSchema.parse(later);
   assert.equal(parsed.state, "Draft");
   assert.deepEqual(parsed.brief?.finalization, { mode: "Push" });
-  assert.deepEqual(parsed.authoring.program, [{ fanout: 1 }]);
+  assert.deepEqual(parsed.authoring.program, [
+    { key: 1, evaluators: [{ key: 1 }] },
+  ]);
   assert.deepEqual(parsed.partition, { tenant: "acme", project: "atlas" });
   assert.equal(Object.hasOwn(parsed.authoring, "links"), false);
   assert.equal(Object.hasOwn(parsed, "intent"), false);
@@ -1054,7 +1064,20 @@ test("the request body is refused for the field a read would have dropped", () =
   assert.throws(() =>
     authoringSchema.parse({
       ...authoringWireBody,
-      program: [{ fanout: 1, combinator: "UnanimousPass", label: "review" }],
+      program: [
+        {
+          key: 1,
+          evaluators: [{ key: 1 }],
+          combinator: "UnanimousPass",
+          label: "review",
+        },
+      ],
+    }),
+  );
+  assert.throws(() =>
+    authoringSchema.parse({
+      ...authoringWireBody,
+      program: [{ key: 1, evaluators: [{ key: 1, brief: "review" }] }],
     }),
   );
 });

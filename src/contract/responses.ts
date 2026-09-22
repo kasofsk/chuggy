@@ -50,11 +50,7 @@ import {
   threadsAnsweredMax,
   ticketNumberSchema,
 } from "./http.ts";
-import {
-  authoringResponseSchema,
-  programStageResponseSchema,
-  programStageSchema,
-} from "./authoring.ts";
+import { authoringResponseSchema, programStageSchema } from "./authoring.ts";
 import { briefResponseSchema, briefTitleCharsMax } from "./brief.ts";
 import {
   repositoryLandingSchema,
@@ -847,8 +843,8 @@ export const draftInitializationResponseSchema = z.object({
   }),
   defaults: authoringResponseSchema,
   choices: z.object({
-    stages: page(programStageResponseSchema),
     programStagesMax: countSchema,
+    evaluatorsMax: countSchema,
   }),
   dependencyCandidates: page(ticketNumberSchema),
   dependencyCandidatesTruncated: z.boolean(),

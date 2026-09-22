@@ -57,14 +57,14 @@ const pinnedGenesis =
 
 /** The wire text of the shared fixture history, entry by entry. */
 const pinnedWire: readonly string[] = [
-  '{"seq":1,"event":{"type":"CreateTicket","value":{"ticket":1,"deps":[],"prog":[{"fanout":1}]}},"rec":{"label":"ticket-released","transitions":[],"effects":[]}}',
+  '{"seq":1,"event":{"type":"CreateTicket","value":{"ticket":1,"deps":[],"prog":[{"key":1,"evaluators":[{"key":1}]}]}},"rec":{"label":"ticket-released","transitions":[],"effects":[]}}',
   '{"seq":2,"event":{"type":"Dispatch","value":1},"rec":{"label":"dispatch","transitions":[{"ticket":1,"from":"Pending","to":"Work"}],"effects":["SpawnWorkTasks"]}}',
 ];
 
 /** The chain those bytes produce under that partition, starting from its genesis. */
 const pinnedDigests: readonly string[] = [
-  "e2c891d822080e63c9a2e806544f343f3a8f4fe5310b65c9906a648f70fca678",
-  "a244c3d0e622cbcb248f4aed9260f258fc86c06100db949564cefb78c085ab87",
+  "00343559eb9e6a94a7bb50c49f03062552623987a1b05b9f597af83c6e9e309a",
+  "9ea8fd0a509a80560f7fdfc7913343598aa176582459e1287fc2acff5eda83a4",
 ];
 
 test("the encoder writes the bytes these vectors were taken from", () => {
