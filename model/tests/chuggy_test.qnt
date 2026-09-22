@@ -25,8 +25,8 @@ module chuggy_test {
     evalOfRun(cycle, s, 1, e)
 
   // wr/wt build the OUTSTANDING and RESOLVED work task; only work has a
-  // task record to build, because an evaluation's tasks are derived from
-  // its instance (ticket.qnt liveTasks).
+  // task set to build, because an evaluation's tasks are derived from its
+  // instance (ticket.qnt liveTasks).
   pure def wr(cycle: int): Task =
     { identity: workOf(cycle), state: Outstanding }
   pure def wt(cycle: int, o: TaskOutcome): Task =
@@ -232,8 +232,7 @@ module chuggy_test {
 
   /// THE INSTANCE IS THE PROVENANCE: at Done ticket 1 holds one instance,
   /// for the cycle that produced the artifact it judged, with its whole
-  /// stage history and every evaluator's own outcome — a per-evaluator log
-  /// where the retired task record held one entry per task.
+  /// stage history and every evaluator's own outcome.
   run happyPathInstanceTest = assert(and {
     c6.tickets.get(1).evaluations.length() == 1,
     currentInstance(c6.tickets.get(1)).workCycle == 1,
