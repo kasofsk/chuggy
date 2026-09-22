@@ -315,7 +315,8 @@ async function schedulerResult(
       verdict,
     ],
   );
-  if (verdict === "Pass") await schedulerResultSource(fixture, execution, manifest);
+  if (verdict === "Pass")
+    await schedulerResultSource(fixture, execution, manifest);
   return { manifest, digest, ordinal: taken?.ordinal ?? "" };
 }
 

@@ -464,7 +464,10 @@ function projectWriterPreflight(
      * deciding transaction's to name behind the fence that retains the
      * revision; this is the refusal that one replaces.
      */
-    if (item.source.kind === "Operation" && item.source.draftRelease !== undefined)
+    if (
+      item.source.kind === "Operation" &&
+      item.source.draftRelease !== undefined
+    )
       return {
         outcome: { outcome: "Refused", code: "ConfigurationInvalid" },
         post: memory.graph,
@@ -609,12 +612,12 @@ async function projectWriterSpawnSources(
  * dispatch with a code. There is no third landing, because the dispatch is the
  * only command that observes and there is nothing of it to journal.
  */
-function projectWriterUnreadableLanding(
-  evidence: GitEvidence,
-): { readonly landing: "Deferred" } | {
-  readonly landing: "Refused";
-  readonly code: RefusalCode;
-} {
+function projectWriterUnreadableLanding(evidence: GitEvidence):
+  | { readonly landing: "Deferred" }
+  | {
+      readonly landing: "Refused";
+      readonly code: RefusalCode;
+    } {
   return transientGitEvidences.includes(evidence)
     ? { landing: "Deferred" }
     : { landing: "Refused", code: executionSourceRefusalCode(evidence) };

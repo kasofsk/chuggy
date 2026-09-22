@@ -126,9 +126,7 @@ function input(event: DecisionEvent): DecisionInput {
       kind: "Operation",
       operation: asOperationId("operation"),
       command,
-      ...(command.command === "Decide"
-        ? { resolvedEvent: command.event }
-        : {}),
+      ...(command.command === "Decide" ? { resolvedEvent: command.event } : {}),
     },
   };
 }
@@ -301,9 +299,7 @@ function plannedInput(
     };
   }
   if (event.type !== "WorkReduce")
-    return event.type === "CreateTicket"
-      ? undefined
-      : input(event);
+    return event.type === "CreateTicket" ? undefined : input(event);
   return {
     partition,
     ordinal: 1,
@@ -648,7 +644,11 @@ test("a decision that leaves a ticket where it found it withdraws nothing", () =
     actorInit(),
     releaseTicketEvent(plainDefinitionOf(1)),
   );
-  const after = journalStep(refinementInstance, before, dispatchEvent(id(1), aDispatchSource));
+  const after = journalStep(
+    refinementInstance,
+    before,
+    dispatchEvent(id(1), aDispatchSource),
+  );
   const entry = after.journal.at(-1);
   assert.ok(entry !== undefined);
   assert.deepEqual(

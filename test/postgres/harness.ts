@@ -862,19 +862,20 @@ export function postgresHarnessWriter(
                   commit: postgresHarnessObservedCommit,
                 },
         }),
-      spawnSource: executionSourceObservation(
-        {
-          binding: () => {
-            throw new Error("postgres harness: a spawn reads no binding");
+      spawnSource: (request) =>
+        executionSourceObservation(
+          {
+            binding: () => {
+              throw new Error("postgres harness: a spawn reads no binding");
+            },
           },
-        },
-        {
-          observeTarget: () => {
-            throw new Error("postgres harness: a spawn reads no remote");
+          {
+            observeTarget: () => {
+              throw new Error("postgres harness: a spawn reads no remote");
+            },
           },
-        },
-        postgresExecutionSourceHistory(harness.pool),
-      ).spawnSource,
+          postgresExecutionSourceHistory(harness.pool),
+        ).spawnSource(request),
     },
     ticketBriefs: postgresTicketBrief(harness.pool),
   };

@@ -71,8 +71,7 @@ function reportingManifest(
       report,
       handoffs: [],
       diagnostics: [],
-      source:
-        verdict === "Pass" ? schedulerDeclaredSource(attempt) : null,
+      source: verdict === "Pass" ? schedulerDeclaredSource(attempt) : null,
     }),
     schedulerDigest,
   );

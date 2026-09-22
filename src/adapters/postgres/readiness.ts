@@ -157,35 +157,29 @@ function inboxBlockedReason(value: string): BlockedReason {
   return wall;
 }
 
-/**
- * The release's own resolution, from the draft's authoring, the configuration
- * revision the command pinned, the brief as it stands and the provenance the
- * pair is weighed against — resolved HERE AND NOWHERE ELSE, so the material is
- * computed once, carried into the transaction that journals the event, and
- * stored beside it. A pair that contradicts itself resolves nothing and carries
- * no event, because the deciding transaction re-reads the same revision behind
- * the same fence and names the precise fault this refusal only stands in for.
- */
-async function releaseDraftSource(
+/** The retained revision one release names: its authoring, its configuration and its brief. */
+interface ReleaseDraftRow {
+  readonly authoring: string;
+  readonly digest: string;
+  readonly canonical: string;
+  readonly provenance_repository: string | null;
+  readonly title: string | null;
+  readonly intent: string | null;
+  readonly branch: string | null;
+  readonly finalization_mode: string | null;
+  readonly finalization_target: string | null;
+  readonly repository: string | null;
+  readonly links: string[] | null;
+  readonly checks: string[] | null;
+}
+
+/** The row one release command names, refusing a command whose revision was not retained. */
+async function releaseDraftRow(
   pool: pg.Pool,
   partition: Partition,
-  operation: string,
   command: Extract<TicketCommand, { readonly command: "ReleaseDraft" }>,
-): Promise<DecisionInput["source"]> {
-  const revision = await pool.query<{
-    authoring: string;
-    digest: string;
-    canonical: string;
-    provenance_repository: string | null;
-    title: string | null;
-    intent: string | null;
-    branch: string | null;
-    finalization_mode: string | null;
-    finalization_target: string | null;
-    repository: string | null;
-    links: string[] | null;
-    checks: string[] | null;
-  }>(
+): Promise<ReleaseDraftRow> {
+  const revision = await pool.query<ReleaseDraftRow>(
     sql`SELECT r.authoring,c.digest,c.canonical,p.repository AS provenance_repository,
            b.title,b.intent,b.branch,b.finalization_mode,b.finalization_target,b.repository,
            (SELECT array_agg(l.url ORDER BY l.ordinal) FROM draft_brief_link l
@@ -210,6 +204,25 @@ async function releaseDraftSource(
     throw new Error(
       `release draft ${String(command.ticket)} has no retained revision`,
     );
+  return found;
+}
+
+/**
+ * The release's own resolution, from the draft's authoring, the configuration
+ * revision the command pinned, the brief as it stands and the provenance the
+ * pair is weighed against — resolved HERE AND NOWHERE ELSE, so the material is
+ * computed once, carried into the transaction that journals the event, and
+ * stored beside it. A pair that contradicts itself resolves nothing and carries
+ * no event, because the deciding transaction re-reads the same revision behind
+ * the same fence and names the precise fault this refusal only stands in for.
+ */
+async function releaseDraftSource(
+  pool: pg.Pool,
+  partition: Partition,
+  operation: string,
+  command: Extract<TicketCommand, { readonly command: "ReleaseDraft" }>,
+): Promise<DecisionInput["source"]> {
+  const found = await releaseDraftRow(pool, partition, command);
   const brief = draftBriefOf(found);
   const authoring = parseDraftAuthoring(found.authoring);
   const readiness = draftReleaseReadiness(

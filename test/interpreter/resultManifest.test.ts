@@ -726,10 +726,7 @@ test("the model-grain fold is positive, bounded and reads the digest's leading c
   );
   assert.ok(Number.isSafeInteger(digestFold(highest)));
   assert.ok(digestFold(highest) < Number.MAX_SAFE_INTEGER);
-  assert.equal(
-    digestFold(asArtifactDigest(digestFor("out/a"))) >= 1,
-    true,
-  );
+  assert.equal(digestFold(asArtifactDigest(digestFor("out/a"))) >= 1, true);
 });
 
 test("the trusted doors refuse exactly what the untrusted one refuses", () => {

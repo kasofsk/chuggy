@@ -610,9 +610,7 @@ const workCommit = asGitObjectId("c".repeat(40));
  * remote ports fatal — so a spawn that asked a remote anything would throw
  * rather than assert.
  */
-function pinnedSources(
-  sourced: number[],
-): ExecutionSourceObservationPort {
+function pinnedSources(sourced: number[]): ExecutionSourceObservationPort {
   return executionSourceObservation(
     {
       binding: () => {
@@ -968,7 +966,11 @@ function stoppedStageMemory(): ProjectMemory {
     ),
   ].reduce(
     (each, event) => journalStep(pairedConfig, each, event),
-    journalStep(pairedConfig, actorInit(), releaseTicketEvent(pairedDefinition)),
+    journalStep(
+      pairedConfig,
+      actorInit(),
+      releaseTicketEvent(pairedDefinition),
+    ),
   );
   return { ...releasedMemory(), graph: memoryGraph(state) };
 }
