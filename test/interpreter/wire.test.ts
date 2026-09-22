@@ -75,7 +75,7 @@ const oneOfEach: Readonly<Record<DecisionEvent["type"], DecisionEvent>> = {
   Dispatch: dispatchEvent(id(1)),
   TaskDone: taskDoneEvent(
     id(1),
-    evaluationTaskOf(1, 1, 0, 1, 1),
+    evaluationTaskOf(1, 1, 1, 1, 1),
     "Fail",
     plainResult,
   ),

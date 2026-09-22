@@ -160,12 +160,12 @@ async function walled(
     memory = await reported(
       partition,
       memory,
-      evaluationTaskOf(1, cycle, 0, 1, 1),
+      evaluationTaskOf(1, cycle, 1, 1, 1),
       "Fail",
     );
   }
   memory = await reported(partition, memory, workTaskOf(1, 3), "Pass");
-  return reported(partition, memory, evaluationTaskOf(1, 3, 0, 1, 1), "Fail");
+  return reported(partition, memory, evaluationTaskOf(1, 3, 1, 1, 1), "Fail");
 }
 
 test("the projection carries the wall's escalation", async () => {

@@ -32,8 +32,8 @@ import type {
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import {
   taskIdentityEquals,
-  taskOrdinal,
-  tasksInOrdinalOrder,
+  taskPositionInSet,
+  tasksInEvaluatorKeyOrder,
 } from "../domain/task.ts";
 import { reducibleEvalIn, reducibleWorkIn } from "../domain/enablement.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
@@ -66,7 +66,7 @@ function subject(entry: Entry, effectPosition: number): TicketId {
 }
 
 function outstanding(tasks: ReadonlySet<Task>): readonly Task[] {
-  return tasksInOrdinalOrder(tasks).filter(
+  return tasksInEvaluatorKeyOrder(tasks).filter(
     (task) => task.state === "Outstanding",
   );
 }
@@ -88,17 +88,21 @@ function spawnedBeforeLiveSet(ticket: Ticket): number {
 /**
  * THE WIRE'S NAME FOR EACH TASK, MINTED HERE AND NOWHERE ELSE, beside the
  * identity the machine knows it by: a set's numbers continue the ticket's
- * spawn count and a task takes its place in its own set, so what a ticket
- * hands out is injective and ascending over its whole history. Numbering per
- * cycle or per generation satisfies the identity and turns the repeat that
- * `execution_names_one_logical_task` catches into a silent no-op insert.
+ * spawn count and a task takes its position in the whole set ordered by
+ * evaluator key, so what a ticket hands out is injective and ascending over
+ * its whole history, and a cancellation naming part of a set names it by the
+ * numbers its spawn minted. Numbering by the evaluator key itself, or per
+ * cycle or per generation, satisfies the identity and turns the repeat that
+ * `execution_names_one_logical_task` catches into a silent no-op insert — a
+ * stage keyed `{1, 3}` spends two of the count and would mint three.
  */
 function requestTasks(
   spawnedBefore: number,
+  set: ReadonlySet<Task>,
   tasks: readonly Task[],
 ): ExecutionRequestPlan["tasks"] {
   return tasks.map((task) => ({
-    task: spawnedBefore + taskOrdinal(task.identity),
+    task: spawnedBefore + taskPositionInSet(set, task.identity),
     identity: task.identity,
   }));
 }
@@ -169,7 +173,7 @@ function executionRequest(
         ticketVersion: entry.seq,
         kind,
         bundle: executionRequestBundle(input, entry, effectPosition, source),
-        tasks: requestTasks(spawnedBeforeLiveSet(after), created),
+        tasks: requestTasks(spawnedBeforeLiveSet(after), after.tasks, created),
       };
     }
     case "CancelTicketWork": {
@@ -189,7 +193,7 @@ function executionRequest(
         tasks:
           before === undefined
             ? []
-            : requestTasks(spawnedBeforeLiveSet(before), retired),
+            : requestTasks(spawnedBeforeLiveSet(before), before.tasks, retired),
       };
     }
     case "RunFinalizer":
