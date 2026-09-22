@@ -16,9 +16,10 @@
   typecheck alone.
 - `ticket-domain/evaluation/evaluation.qnt` is the same copy at the package's
   own path, so its own import of the task contract resolves unchanged. It is
-  NOT verbatim, and every divergence is a producer of a task DEFINITION,
-  which is PR 8's — this is the whole list, and `diff` against the package
-  prints exactly these hunks:
+  NOT verbatim, and every divergence drops vocabulary this tree's domain has
+  no counterpart for — the package's task DEFINITION, and the source ref a
+  work result is accepted at — both of which are PR 8's. This is the whole
+  list, and `diff` against the package prints exactly these hunks:
   - `EvaluatorDefinition` carries `key` alone.
   - `EvaluationInput` carries `ticket` and `workResult` alone.
   - `planValid` drops `taskDefinitionValid(entry.task)`.
