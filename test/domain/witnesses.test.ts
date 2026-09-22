@@ -49,7 +49,10 @@ function stepped(
   return { pre, rec: decided.rec, post: decided.post };
 }
 
-const twoStage: readonly StageDefinition[] = [{ fanout: 1 }, { fanout: 1 }];
+const twoStage: readonly StageDefinition[] = [
+  { key: 1, evaluators: [{ key: 1 }] },
+  { key: 2, evaluators: [{ key: 1 }] },
+];
 
 /** A ticket whose lowest eval stage has just passed with a later stage still to run. */
 const midProgram = graphOf([
@@ -57,7 +60,7 @@ const midProgram = graphOf([
     phase: "Evaluation",
     program: twoStage,
     record: [workTask(1, 1, "Passed")],
-    tasks: new Set([evalTask(1, 1, 0, 1, "Passed")]),
+    tasks: new Set([evalTask(1, 1, 1, 1, "Passed")]),
     workCyclesStarted: 1,
     spawned: 2,
   }),

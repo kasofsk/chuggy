@@ -49,7 +49,7 @@ export const workTask = (
   state: tsResolved(outcome),
 });
 
-/** A resolved evaluator of `ticket`'s stage, judging the named cycle. */
+/** A resolved evaluator of `ticket`'s stage, both named by their keys, judging the named cycle. */
 export const evalTask = (
   ticket: number,
   cycle: number,
@@ -67,7 +67,7 @@ export const workOutstanding = (ticket: number, cycle: number): Task => ({
   state: tsOutstanding,
 });
 
-/** An evaluator of `ticket`'s stage, still outstanding. */
+/** An evaluator of `ticket`'s stage, both named by their keys, still outstanding. */
 export const evalOutstanding = (
   ticket: number,
   cycle: number,
@@ -114,7 +114,7 @@ export function healthyFleet(config: Config): readonly Ticket[] {
   const finished = (ticket: number): Partial<Ticket> => {
     const record: Task[] = [workTask(ticket, 1, "Passed")];
     for (let i = 0; i < config.nTasks; i++)
-      record.push(evalTask(ticket, 1, 0, i + 1, "Passed"));
+      record.push(evalTask(ticket, 1, 1, i + 1, "Passed"));
     return {
       record,
       workCyclesStarted: 1,

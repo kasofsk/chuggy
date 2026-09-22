@@ -25,7 +25,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Config } from "../../src/domain/config.ts";
-import { isValidProgram } from "../../src/domain/config.ts";
+import { isValidProgram, stageChoices } from "../../src/domain/config.ts";
 
 import { declaredActions } from "../domain/declared.ts";
 import { CONFIGS, modelInstance } from "../domain/configs.ts";
@@ -133,7 +133,12 @@ test("every init conjunct refuses as the model's init does, and a valid instance
 
 test("the release's program draw ranges over exactly the well-formed set", () => {
   const programs = validProgramsIn(modelInstance);
-  assert.equal(programs.length, 6);
+  const rosters = stageChoices(modelInstance).length;
+  assert.equal(
+    programs.length,
+    rosters + rosters * rosters,
+    "one stage or two, each drawn from the roster vocabulary, as the model folds validPrograms",
+  );
   assert.ok(programs.every((p) => isValidProgram(modelInstance, p)));
   assert.equal(
     new Set(programs.map((p) => JSON.stringify(p))).size,

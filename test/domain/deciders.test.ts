@@ -38,7 +38,7 @@ import { resumeOf } from "../../src/domain/ticket.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   evaluationTaskOf,
-  tasksInOrdinalOrder,
+  tasksInEvaluatorKeyOrder,
   workTaskOf,
 } from "../../src/domain/task.ts";
 import { modelInstance } from "./configs.ts";
@@ -56,9 +56,9 @@ import {
 
 const config = modelInstance;
 
-/** The live set as a trace reads it: identities and states, in ordinal order. */
+/** The live set as a trace reads it: identities and states, by evaluator key. */
 const liveShape = (graph: TicketGraph, at: ReturnType<typeof id>) =>
-  tasksInOrdinalOrder(ticketAt(graph, at).tasks).map((t) => ({
+  tasksInEvaluatorKeyOrder(ticketAt(graph, at).tasks).map((t) => ({
     identity: t.identity,
     state: t.state,
   }));
@@ -114,14 +114,14 @@ test("first write wins, and an identity already retired matches nothing live", (
       phase: "Evaluation",
       record: [workTask(1, 1, "Passed")],
       tasks: new Set([
-        evalOutstanding(1, 1, 0, 1),
-        evalOutstanding(1, 1, 0, 2),
+        evalOutstanding(1, 1, 1, 1),
+        evalOutstanding(1, 1, 1, 2),
       ]),
       workCyclesStarted: 1,
       spawned: 3,
     }),
   ]);
-  const judging = evaluationTaskOf(1, 1, 0, 1, 1);
+  const judging = evaluationTaskOf(1, 1, 1, 1, 1);
   const first = decideTaskDone(running, id(1), judging, "Pass");
   assert.equal(first.rec.label, "task-done");
   assert.deepEqual(first.rec.transitions, []);
@@ -160,8 +160,8 @@ test("a passing work task stamps the artifact its own accounting names", () => {
   });
   assert.equal(evaluating.record.length, 1);
   assert.deepEqual(liveShape(decision.post, id(1)), [
-    { identity: evaluationTaskOf(1, 1, 0, 1, 1), state: "Outstanding" },
-    { identity: evaluationTaskOf(1, 1, 0, 1, 2), state: "Outstanding" },
+    { identity: evaluationTaskOf(1, 1, 1, 1, 1), state: "Outstanding" },
+    { identity: evaluationTaskOf(1, 1, 1, 1, 2), state: "Outstanding" },
   ]);
 });
 
@@ -186,7 +186,9 @@ test("a failed work task parks resumable at Work, retiring what failed", () => {
 });
 
 test("a stage passes only when every task in it did, so one failure sinks it", () => {
-  const wide: readonly StageDefinition[] = [{ fanout: 2 }];
+  const wide: readonly StageDefinition[] = [
+    { key: 1, evaluators: [{ key: 1 }, { key: 2 }] },
+  ];
   const evaluating = (
     outcomes: readonly ["Passed" | "Failed", "Passed" | "Failed"],
   ) =>
@@ -196,8 +198,8 @@ test("a stage passes only when every task in it did, so one failure sinks it", (
         program: wide,
         record: [workTask(1, 1, "Passed")],
         tasks: new Set([
-          evalTask(1, 1, 0, 1, outcomes[0]),
-          evalTask(1, 1, 0, 2, outcomes[1]),
+          evalTask(1, 1, 1, 1, outcomes[0]),
+          evalTask(1, 1, 1, 2, outcomes[1]),
         ]),
         workCyclesStarted: 1,
         spawned: 3,
@@ -227,8 +229,8 @@ test("one failing stage, two edges, and the disposition is the whole difference"
       phase: "Evaluation",
       record: [workTask(1, 1, "Passed")],
       tasks: new Set([
-        evalTask(1, 1, 0, 1, "Failed"),
-        evalTask(1, 1, 0, 2, "Failed"),
+        evalTask(1, 1, 1, 1, "Failed"),
+        evalTask(1, 1, 1, 2, "Failed"),
       ]),
       workCyclesStarted: 1,
       spawned: 3,
@@ -284,8 +286,8 @@ const finalizing = (): TicketGraph =>
       phase: "Finalization",
       record: [
         workTask(1, 1, "Passed"),
-        evalTask(1, 1, 0, 1, "Passed"),
-        evalTask(1, 1, 0, 2, "Passed"),
+        evalTask(1, 1, 1, 1, "Passed"),
+        evalTask(1, 1, 1, 2, "Passed"),
       ],
       workCyclesStarted: 1,
       spawned: 3,
@@ -328,11 +330,11 @@ test("a failed finalization re-enters work, and does so every time", () => {
         phase: "Finalization",
         record: [
           workTask(1, 1, "Passed"),
-          evalTask(1, 1, 0, 1, "Passed"),
-          evalTask(1, 1, 0, 2, "Passed"),
+          evalTask(1, 1, 1, 1, "Passed"),
+          evalTask(1, 1, 1, 2, "Passed"),
           workTask(1, 2, "Passed"),
-          evalTask(1, 2, 0, 1, "Passed"),
-          evalTask(1, 2, 0, 2, "Passed"),
+          evalTask(1, 2, 1, 1, "Passed"),
+          evalTask(1, 2, 1, 2, "Passed"),
         ],
         workCyclesStarted: 2,
         spawned: 6,
@@ -409,8 +411,8 @@ test("a blocked evaluation is its own wall, because its resume is its own", () =
       phase: "Evaluation",
       record: [workTask(1, 1, "Passed")],
       tasks: new Set([
-        evalOutstanding(1, 1, 0, 1),
-        evalOutstanding(1, 1, 0, 2),
+        evalOutstanding(1, 1, 1, 1),
+        evalOutstanding(1, 1, 1, 2),
       ]),
       workCyclesStarted: 1,
       spawned: 3,
@@ -470,7 +472,7 @@ test("every resume re-enters where its wall implies", () => {
   assert.deepEqual(evaluate.rec.effects, ["SpawnEvalTasks"]);
   assert.deepEqual(
     liveShape(evaluate.post, id(1)).map((t) => t.identity),
-    [evaluationTaskOf(1, 1, 0, 1, 1), evaluationTaskOf(1, 1, 0, 1, 2)],
+    [evaluationTaskOf(1, 1, 1, 1, 1), evaluationTaskOf(1, 1, 1, 1, 2)],
     "the retried tasks are new records; the failed ones stay retired in the log",
   );
 
@@ -489,8 +491,8 @@ test("the evaluation wall's resume buys a work cycle above an intact record", ()
       escalation: "EvaluationFailureEscalated",
       record: [
         workTask(1, 1, "Passed"),
-        evalTask(1, 1, 0, 1, "Failed"),
-        evalTask(1, 1, 0, 2, "Failed"),
+        evalTask(1, 1, 1, 1, "Failed"),
+        evalTask(1, 1, 1, 2, "Failed"),
       ],
       workCyclesStarted: 1,
       spawned: 3,
@@ -504,7 +506,7 @@ test("the evaluation wall's resume buys a work cycle above an intact record", ()
   assert.deepEqual(resumed.rec.effects, ["SpawnWorkTasks"]);
   const post = ticketAt(resumed.post, id(1));
   assert.deepEqual(
-    tasksInOrdinalOrder(post.tasks).map((t) => t.identity),
+    tasksInEvaluatorKeyOrder(post.tasks).map((t) => t.identity),
     [workTaskOf(1, 2)],
     "a fresh work cycle above an intact record",
   );

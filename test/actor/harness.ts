@@ -52,14 +52,16 @@ export const refinementInstance: Config = {
 /** What a release freezes when a suite does not care which values it froze. */
 export const plainAuthoring = {
   deps: new Set<number>(),
-  prog: [{ fanout: 1 }] as readonly StageDefinition[],
+  prog: [{ key: 1, evaluators: [{ key: 1 }] }] as readonly StageDefinition[],
 } as const;
 
 /** The manifest a task reports when a suite does not care what it reported. */
 export const plainResult = { manifest: 1, digest: 1, schema: 1 } as const;
 
 /** The single-stage program every refinement-model run authors. */
-export const flatProgram: readonly StageDefinition[] = [{ fanout: 1 }];
+export const flatProgram: readonly StageDefinition[] = [
+  { key: 1, evaluators: [{ key: 1 }] },
+];
 
 /**
  * The per-step gate: the domain bundle green on the carried view, and the
@@ -134,7 +136,7 @@ export function walkFirstCycle(
     state,
     taskDoneEvent(
       id(1),
-      evaluationTaskOf(1, 1, 0, 1, 1),
+      evaluationTaskOf(1, 1, 1, 1, 1),
       evalVerdict,
       plainResult,
     ),

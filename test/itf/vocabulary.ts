@@ -27,7 +27,7 @@ import type {
   Verdict,
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
-import { tasksInOrdinalOrder } from "../../src/domain/task.ts";
+import { tasksInEvaluatorKeyOrder } from "../../src/domain/task.ts";
 import { describe, encodeValue, type ItfValue } from "./decode.ts";
 
 /**
@@ -162,7 +162,15 @@ export function encodeDeps(deps: ReadonlySet<number>): ItfValue {
 
 export function encodeProgram(program: Ticket["program"]): ItfValue {
   return program.map((stage) =>
-    encodeRecord([["fanout", encodeInt(stage.fanout)]]),
+    encodeRecord([
+      ["key", encodeInt(stage.key)],
+      [
+        "evaluators",
+        stage.evaluators.map((entry) =>
+          encodeRecord([["key", encodeInt(entry.key)]]),
+        ),
+      ],
+    ]),
   );
 }
 
@@ -211,7 +219,7 @@ function encodeTicket(ticket: Ticket): ItfValue {
       "tasks",
       {
         kind: "set",
-        elements: tasksInOrdinalOrder(ticket.tasks).map(encodeTask),
+        elements: tasksInEvaluatorKeyOrder(ticket.tasks).map(encodeTask),
       },
     ],
     ["record", ticket.record.map(encodeTask)],

@@ -19,7 +19,7 @@ const graph: TicketGraph = {
         phase: "Pending",
         deps: new Set([3]),
         artifact: "NoArtifact",
-        program: [{ fanout: 1 }],
+        program: [{ key: 1, evaluators: [{ key: 1 }] }],
         tasks: new Set(),
         record: [],
         workCyclesStarted: 0,
@@ -41,7 +41,7 @@ test("generated JSON codec round-trips nested lists, sets, maps and records", ()
           phase: "Pending",
           deps: [3],
           artifact: "NoArtifact",
-          program: [{ fanout: 1 }],
+          program: [{ key: 1, evaluators: [{ key: 1 }] }],
           tasks: [],
           record: [],
           workCyclesStarted: 0,
@@ -76,7 +76,7 @@ test("generated codecs refuse duplicates that JSON could otherwise collapse", ()
       value: {
         ticket: 7,
         deps: [3, 3],
-        prog: [{ fanout: 1 }],
+        prog: [{ key: 1, evaluators: [{ key: 1 }] }],
       },
     }),
   );

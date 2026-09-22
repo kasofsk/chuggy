@@ -84,11 +84,11 @@ test("a map keeps its key order and its pairing", () => {
 
 test("a record keeps every field", () => {
   const raw = {
-    fanout: { "#bigint": "2" },
+    key: { "#bigint": "2" },
     state: { tag: "Outstanding", value: { "#tup": [] } },
   };
   roundTrips(raw);
-  assert.equal(field(decodeValue(raw), "fanout"), 2n);
+  assert.equal(field(decodeValue(raw), "key"), 2n);
 });
 
 test("a list of records round-trips", () => {
