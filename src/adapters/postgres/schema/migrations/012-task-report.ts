@@ -18,15 +18,26 @@ import type { Migration } from "../shared.ts";
  * instead and names `deploy/rig/wipe-tickets.sql`, which is what empties the
  * journal it needs.
  *
- * THE REPORT IS THE PACKAGE'S CONSTRUCTORS, MINUS THE TWO REFS THIS TREE HAS
- * NO MODEL FOR. A produced work result, a produced evaluation result with the
- * evaluator's own verdict, and a terminal failure at one of two kinds. The
- * package's work report also names the source ref it was accepted at and its
- * failure report names an evidence ref, and neither is a number this tree's
- * domain holds: the accepted commit lives in the interpreter and the evidence
- * stays on the execution, as `blocked_reason` beside a wall and as the sealed
- * manifest beside a failure. So the arm asks for the fields the report has
- * here and has no opinion about a ref it could not weigh.
+ * THE REPORT IS THE PACKAGE'S CONSTRUCTORS, MINUS THE ONE REF THIS TREE HAS NO
+ * MODEL FOR. A produced work result, a produced evaluation result with the
+ * evaluator's own verdict, and a terminal failure at one of two kinds carrying
+ * the evidence that failure can be read at. The package's work report also
+ * names the source ref it was accepted at, which is not a number this tree's
+ * domain holds — the accepted commit lives in the interpreter — so the arm
+ * asks for the fields the report has here and has no opinion about a ref it
+ * could not weigh.
+ *
+ * THE EVIDENCE IS THE WIRE TASK INTEGER, which is the one positive number this
+ * door already holds that names a row a reader would open: it is unique per
+ * ticket through `execution_names_one_logical_task`, so a failure report leads
+ * back to the execution that failed and to the wall or the manifest recorded
+ * against it.
+ *
+ * AND A DISPOSITION IS REFUSED, for the reason `verdict` is. Which edge a
+ * failed stage is taken on is the ticket writer's pick under its own rework
+ * cap, made at the serialization point where the ticket is replayed; a
+ * completion naming one would be this boundary deciding a ticket, and the
+ * writer's own pick would then sit beside a second answer nothing reads.
  *
  * AND `verdict` IS REFUSED FOR BEING NAMED RATHER THAN IGNORED FOR IT, which
  * is 009's move for 009's reason. A writer that names both is one whose two
@@ -64,12 +75,20 @@ import type { Migration } from "../shared.ts";
  *
  * WHAT THE THREE CONSTRUCTORS ARE BUILT FROM. An evaluation task's attestation
  * is the evaluator's own verdict, so `Pass` and `Fail` are the two evaluation
- * verdicts. A work task has no verdict in this vocabulary at all: it produced
- * a result or it did not, so `Pass` is the produced report and `Fail` is a
- * process failure — which is also what an exhausted retry budget arrives as,
- * since that settles as a failed work completion carrying the explicit empty
- * manifest. And a submission blocked at a definitive wall is the execution
- * being unavailable to the task, at the one kind that names it.
+ * verdicts; a work task has no verdict in this vocabulary at all, so `Pass` is
+ * the produced report and `Fail` is a process failure. A submission blocked at
+ * a definitive wall is the execution being unavailable to the task, at the one
+ * kind that names it.
+ *
+ * AND THE OUTCOME ROSTER GAINS `ProcessFailed`, BECAUSE A DEAD PROCESS IS NOT
+ * A VERDICT. An exhausted safe-retry budget settles under a manifest the
+ * scheduler authored itself, and reading that manifest's `Fail` as an
+ * evaluator's judgement would report a verdict nobody reached — the package
+ * counts a dead evaluator as blocked, so the stage would fail where it should
+ * park and be re-asked. The scheduler therefore names the death, this door
+ * reports a process failure for either task kind, and the execution row keeps
+ * the `Failed` it has always recorded: what changed is which of two things the
+ * same manifest is evidence of, not what the task did.
  *
  * ITS SIGNATURE DOES NOT MOVE, so this is a replacement and not a drop. The
  * report is derived rather than passed: the scheduler's door still takes the
@@ -98,6 +117,7 @@ const failureReportTag = "TerminalFailureReport";
 const evaluatorPassVerdict = "EvaluatorPass";
 const evaluatorFailVerdict = "EvaluatorFail";
 const processFailureKind = "ProcessFailure";
+const processFailedOutcome = "ProcessFailed";
 const executionUnavailableKind = "ExecutionUnavailableFailure";
 
 export const migration012: Migration = {
@@ -131,7 +151,7 @@ export const migration012: Migration = {
          produced := report->'value'->'result';
          IF jsonb_typeof(value) <> 'object'
             OR NOT command_integer(value->'ticket')
-            OR value ? 'tid' OR value ? 'verdict' THEN
+            OR value ? 'tid' OR value ? 'verdict' OR value ? 'onFailure' THEN
            RETURN false;
          END IF;
          IF NOT ((constructor = 'WorkTask'
@@ -145,12 +165,13 @@ export const migration012: Migration = {
                   AND command_integer(task->'value'->'evaluator'))) THEN
            RETURN false;
          END IF;
-         IF NOT command_integer(report->'value'->'ticket') THEN
+         IF report ? 'value' AND report->'value' ? 'ticket' THEN
            RETURN false;
          END IF;
          IF arm = '${failureReportTag}' THEN
-           RETURN COALESCE(report->'value'->>'kind', '')
-             IN ('${processFailureKind}', '${executionUnavailableKind}');
+           RETURN command_integer(report->'value'->'evidence')
+             AND COALESCE(report->'value'->>'kind', '')
+               IN ('${processFailureKind}', '${executionUnavailableKind}');
          END IF;
          IF arm NOT IN ('${workReportTag}', '${evaluationReportTag}')
             OR jsonb_typeof(produced) <> 'object'
@@ -224,7 +245,7 @@ export const migration012: Migration = {
      DECLARE bound record; project_lifecycle text; project_generation bigint;
        next_ordinal bigint; command_value jsonb; identity jsonb; report jsonb;
      BEGIN
-       IF in_outcome NOT IN ('Passed', 'Failed', 'Blocked') THEN
+       IF in_outcome NOT IN ('Passed', 'Failed', 'Blocked', '${processFailedOutcome}') THEN
          RAISE EXCEPTION 'completion outcome % is not one this boundary submits', in_outcome
            USING ERRCODE = 'integrity_constraint_violation';
        END IF;
@@ -284,11 +305,15 @@ export const migration012: Migration = {
        END IF;
        IF in_outcome = 'Blocked' THEN
          report := jsonb_build_object('type', '${failureReportTag}', 'value',
-           jsonb_build_object('ticket', bound.ticket,
+           jsonb_build_object('evidence', bound.task,
              'kind', '${executionUnavailableKind}'));
+       ELSIF in_outcome = '${processFailedOutcome}' THEN
+         report := jsonb_build_object('type', '${failureReportTag}', 'value',
+           jsonb_build_object('evidence', bound.task,
+             'kind', '${processFailureKind}'));
        ELSIF bound.task_kind = 'Evaluation' THEN
          report := jsonb_build_object('type', '${evaluationReportTag}', 'value',
-           jsonb_build_object('ticket', bound.ticket,
+           jsonb_build_object(
              'result', jsonb_build_object(
                'manifest', bound.manifest_ordinal,
                'digest', result_digest_fold(bound.digest),
@@ -297,14 +322,14 @@ export const migration012: Migration = {
                THEN '${evaluatorPassVerdict}' ELSE '${evaluatorFailVerdict}' END));
        ELSIF bound.verdict = 'Pass' THEN
          report := jsonb_build_object('type', '${workReportTag}', 'value',
-           jsonb_build_object('ticket', bound.ticket,
+           jsonb_build_object(
              'result', jsonb_build_object(
                'manifest', bound.manifest_ordinal,
                'digest', result_digest_fold(bound.digest),
                'schema', bound.schema_version)));
        ELSE
          report := jsonb_build_object('type', '${failureReportTag}', 'value',
-           jsonb_build_object('ticket', bound.ticket,
+           jsonb_build_object('evidence', bound.task,
              'kind', '${processFailureKind}'));
        END IF;
        command_value := jsonb_build_object('version', 1, 'command', 'Decide', 'event',
@@ -335,7 +360,10 @@ export const migration012: Migration = {
        ON CONFLICT (tenant, project) DO UPDATE
          SET ready = true, generation = project_readiness.generation + 1;
        UPDATE execution
-          SET status = 'Terminal', outcome = in_outcome, blocked_reason = in_reason,
+          SET status = 'Terminal',
+              outcome = CASE WHEN in_outcome = '${processFailedOutcome}'
+                THEN 'Failed' ELSE in_outcome END,
+              blocked_reason = in_reason,
               result_manifest = in_manifest, completion_operation = in_operation,
               terminal_at = now()
         WHERE tenant = in_tenant AND project = in_project AND execution = in_execution;
