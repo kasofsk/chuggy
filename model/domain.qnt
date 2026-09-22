@@ -26,7 +26,8 @@
 /// `EvaluationFailureDisposition` (ticket.qnt) carried with the decision.
 /// Rework re-enters Work as a new cycle; Escalate parks the ticket on the
 /// desk, where the operator's resume re-enters Work the same way. Here the
-/// disposition is a nondet draw of `evalReduce` and in refinement.qnt it is a
+/// disposition is a nondet draw of `taskDone` — the completion that concludes
+/// a failing stage is where it is consulted — and in refinement.qnt it is a
 /// journaled pick, so an implementation that computes it from a ticket's
 /// history — a cap on work cycles, a human's call — refines this machine
 /// rather than changing it. A finalization failure has no such fork: it
@@ -36,7 +37,8 @@
 /// DERIVE, DON'T STORE. Ready and Blocked are predicates over deps, not
 /// phases, so no unblock cascade exists to get wrong. Lease occupancy is a
 /// predicate over phase, so nothing cleans up. The open-desk-task flag, the
-/// current eval stage and a ticket's dependency artifacts are all derived.
+/// evaluation tasks the fabric is running and a ticket's dependency
+/// artifacts are all derived.
 ///
 /// WHAT THIS FILE DELIBERATELY DOES NOT KNOW:
 ///   - Any INTERNAL structure to a wrap-up step — staging, failure classes, a
@@ -64,6 +66,7 @@
 /// came to be.
 module chuggy_domain {
   import task_contract.* from "./task-contract/task"
+  import evaluation_protocol.* from "./ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "./ticket"
 
   /// Maximum number of released tickets. Ticket identities come from the
@@ -89,6 +92,25 @@ module chuggy_domain {
   /// either, and any implementation policy is a restriction of this draw.
   pure val dispositionChoices: Set[EvaluationFailureDisposition] =
     Set(ReworkEvaluationFailure, EscalateEvaluationFailure)
+
+  /// WHAT A TASK CAN COME BACK WITH, as the environment may produce it: a
+  /// work task produced its artifact or reached no result at all; an
+  /// evaluator judged either way or reached no result. The references are
+  /// derived from the task's identity (ticket.qnt taskResultRefOf) rather
+  /// than drawn, because the machine's only claim on them is that they
+  /// exist.
+  pure def reportChoices(task: TaskIdentity): Set[TaskTerminalReport] =
+    val failures = Set(ProcessFailure, ExecutionUnavailableFailure)
+      .map(kind => TerminalFailureReport({
+        evidence: taskRefOf(task), kind: kind }))
+    match task {
+      | WorkTask(_) => failures.union(Set(WorkResultReport({
+          result: taskResultRefOf(task) })))
+      | EvaluationTask(_) => failures.union(
+          Set(EvaluatorPass, EvaluatorFail).map(verdict =>
+            EvaluationResultReport({ result: taskResultRefOf(task),
+              verdict: verdict })))
+    }
 
   /// THE FULL ROSTER: every evaluator key the bound allows, ascending. The
   /// default program's stage, and the longest roster a stage can list.
@@ -120,7 +142,7 @@ module chuggy_domain {
 
   /// THE DEFAULT PROGRAM: ONE stage listing every evaluator the bound
   /// allows. Every evaluator defaults to stage 0, so a ticket whose
-  /// evaluators all share one stage behaves exactly like a single fan-out —
+  /// evaluators all share one stage judges in one parallel roster —
   /// pinned in tests/chuggy_test.qnt.
   pure val defaultProgram: List[StageDefinition] =
     [{ key: 1, evaluators: everyEvaluator }]
@@ -139,7 +161,7 @@ module chuggy_domain {
     program: prog,
     artifact: NoArtifact,
     tasks: Set(),
-    record: [],
+    evaluations: [],
     workCyclesStarted: 0,
     spawned: 0,
     escalation: NoEscalation,
@@ -210,10 +232,12 @@ module chuggy_domain {
   /// may be revoked (the caller's guard, revocableIn) — and lines 45-46
   /// `(Done | Revoked, Revoked) => false` — the terminals are absorbing, so
   /// no decider ever moves a ticket OUT of Revoked (invariant
-  /// terminalsAbsorbing). The revoked ticket settles: live task set RETIRED
-  /// into the record (still-outstanding tasks force-closed as Cancelled;
-  /// the record itself is KEPT: provenance survives the author's
-  /// settlement, "Revoked runs nothing" ≠ "Revoked remembers nothing") —
+  /// terminalsAbsorbing). The revoked ticket settles: the live work task is
+  /// retired and the world is told to cancel it, while the evaluation
+  /// instances are KEPT exactly as they stood — provenance survives the
+  /// author's settlement, "Revoked runs nothing" is not "Revoked remembers
+  /// nothing", and leaving the phase is already enough to stop a run's
+  /// obligations being owed (ticket.qnt liveTasks) —
   /// and the escalation cleared: Revoked opens NO human task
   /// (hasOpenHumanTask excludes it; revocation is the author's settled
   /// choice, like Done).
@@ -307,18 +331,15 @@ module chuggy_domain {
   pure def readiesIn(c: TicketGraph): Set[int] =
     c.tickets.keys().filter(j => isReadyIn(c, j))
 
-  /// Tickets whose task set can receive completion events.
-  pure def taskPhaseIn(c: TicketGraph): Set[int] =
-    c.tickets.keys().filter(j =>
-      c.tickets.get(j).phase == Work or c.tickets.get(j).phase == Evaluation)
+  /// Tickets the fabric is currently running a task for, which is who a
+  /// completion can be delivered to. Narrower than "in a task phase": a
+  /// resolved work task waits for its reduce, and nothing is running for it.
+  pure def completableIn(c: TicketGraph): Set[int] =
+    c.tickets.keys().filter(j => liveTasks(c.tickets.get(j)) != Set())
 
   pure def reducibleWorkIn(c: TicketGraph): Set[int] =
     c.tickets.keys().filter(j =>
       c.tickets.get(j).phase == Work and outstandingCount(c.tickets.get(j).tasks) == 0)
-
-  pure def reducibleEvalIn(c: TicketGraph): Set[int] =
-    c.tickets.keys().filter(j =>
-      c.tickets.get(j).phase == Evaluation and outstandingCount(c.tickets.get(j).tasks) == 0)
 
   pure def doneIn(c: TicketGraph): Set[int] =
     c.tickets.keys().filter(j => c.tickets.get(j).phase == Done)
@@ -335,24 +356,27 @@ module chuggy_domain {
   pure def isBlockedIn(c: TicketGraph, j: int): bool =
     c.tickets.get(j).phase == Pending and not(depsDoneIn(c, j))
 
-  /// Every task identity ticket j has EVER issued — retired into the record
-  /// or live in the set, which is all of them (idsAccounted). Shared,
-  /// like dispatchableIn, by the `taskDone` action's nondet draw and the
-  /// witness drivers' guards (tests/chuggy_witness_test.qnt), so the
-  /// range is referenced on both sides, never copied.
+  /// Every task identity ticket j can still be told about: one work task per
+  /// cycle it has started, and every evaluator of every run its instances
+  /// hold, at the generation those runs now stand at. DERIVED — the ticket
+  /// keeps no task log — and a superset of the live set, which is the point:
+  /// the witness drivers (tests/chuggy_witness_test.qnt) deliver a
+  /// SETTLED task's completion from here to show it absorbed by identity.
   pure def deliverableTasksIn(c: TicketGraph, j: int): Set[TaskIdentity] =
     val jb = c.tickets.get(j)
-    jb.record.foldl(Set(), (acc, t) => acc.union(Set(t.identity)))
-      .union(jb.tasks.map(t => t.identity))
+    range(1, jb.workCyclesStarted + 1)
+      .foldl(Set(), (found, cycle) => found.union(Set(workTaskOf(j, cycle))))
+      .union(jb.evaluations.foldl(Set(), (found, evaluation) =>
+        found.union(instanceTasks(evaluation))))
 
   /// Park a ticket on the human desk, naming the wall (the termination
   /// requirement commits the terminal, not the names); where Retry resumes
   /// is the wall's own (resumeOf). The open desk task
   /// is DERIVED from
   /// the phase (hasOpenHumanTask, standing rule 3); "OpenHumanTask" is its
-  /// trace-visible effect. This is THE park. The live task set is retired
-  /// into the retained record rather than dropped; execution-blocked tasks
-  /// are recorded as Cancelled.
+  /// trace-visible effect. This is THE park. The live work task is retired
+  /// and the world is told nothing more about it; an evaluation park keeps
+  /// its instance, which is what its resume re-asks from.
   pure def escalate(
       c: TicketGraph, j: int, wall: Escalation, label: str): Decision =
     move(
@@ -361,7 +385,7 @@ module chuggy_domain {
 
   /// Ready -> Work: launch a cycle for the ticket THE SELECTOR PROPOSED.
   /// Work is ONE task-set phase (one work task per cycle; Work is not
-  /// staged), and the cycle counter — with `stageGeneration` for an
+  /// staged), and the cycle counter — with the run's own generation for an
   /// evaluation — is what makes each identity a ticket names one no earlier
   /// task of it ever carried.
   ///
@@ -385,107 +409,141 @@ module chuggy_domain {
       withTicket(c, j, spawnWork(j, jb)),
       j, Work, "dispatch", ["SpawnWorkTasks"])
 
-  /// A task-completion event for the task `task` names of ticket j (Work or
-  /// Evaluation — one decider for both phases' task sets). First write
-  /// wins: if the task is not OUTSTANDING IN THE LIVE SET, this is a duplicate
-  /// or stale delivery and the decision is a state-identical no-op — a
-  /// duplicate an at-least-once fabric cannot be asked not to send. The
-  /// stale arm is structural:
-  /// task identities are unique across the ticket's whole history, so a
-  /// completion for a task of an earlier stage or incarnation names one that
-  /// is already RETIRED into the record — no live match, no-op BY IDENTITY
-  /// (had to absorb cross-incarnation staleness into the nondet
-  /// verdict of a respawned task at the same name; that argument is now
-  /// needed for nothing). No phase transition either way — task records
-  /// resolve inside the phase.
+  /// THE COMPLETION — one decider for every task this machine ever asks
+  /// for, in either phase, carrying what came back (ticket.qnt
+  /// TaskTerminalReport). There is no second event behind it: a completion
+  /// that concludes a stage decides the stage in the same step, which is why
+  /// the evaluation-failure disposition is an argument here.
+  ///
+  /// FIRST WRITE WINS: if the task is not one the ticket is currently
+  /// waiting on (ticket.qnt liveTasks), this is a duplicate or a stale
+  /// delivery and the decision is a state-identical no-op — a duplicate an
+  /// at-least-once fabric cannot be asked not to send. The stale arm is
+  /// structural: task identities are unique across the ticket's whole
+  /// history, so a completion for an earlier stage, generation or cycle
+  /// names one nothing is waiting on — no match, no-op BY IDENTITY.
+  ///
+  /// A WALL IS NOT A VERDICT, and the two phases answer it differently. An
+  /// evaluator that infrastructure could not run marks that evaluator and
+  /// the stage RUNS ON: its siblings are still judging, and whether the
+  /// ticket parks is the stage's decision once they finish (evaluation.qnt
+  /// concludeStage). A work task's wall parks the ticket at once, because a
+  /// work cycle is one task and there is nothing left of it to wait for.
   pure def decideTaskDone(
-      c: TicketGraph, j: int, task: TaskIdentity, v: Verdict): Decision =
-    { rec: { label: "task-done", transitions: [], effects: []},
-      post: withTicket(c, j, { ...c.tickets.get(j),
-        tasks: resolveTask(c.tickets.get(j).tasks, task,
-          match v { | Pass => Passed | Fail => Failed }) }) }
+      c: TicketGraph, j: int, task: TaskIdentity,
+      report: TaskTerminalReport,
+      onFailure: EvaluationFailureDisposition): Decision =
+    val jb = c.tickets.get(j)
+    if (not(liveTasks(jb).contains(task))) taskDoneStep(c, j, jb)
+    else if (jb.phase == Work) decideWorkTaskDone(c, j, task, report)
+    else decideEvalTaskDone(c, j, task, report, onFailure)
 
-  /// The Work task set fully resolved: reduce the phase, at CYCLE level
-  /// only. Work runs ONE task per cycle, so the phase's success is that
-  /// task's, and combine reads the singleton it is given. A pass RETIRES the
-  /// work set into the record and spawns the eval program's LOWEST stage
-  /// — one task per evaluator in the lowest stage, fanned out in
-  /// parallel. Every entry spawns the stage in
+  /// The completion's own step: no transition, because a task settling is
+  /// progress inside a phase. The state it carries is the caller's.
+  pure def taskDoneStep(c: TicketGraph, j: int, jb: Ticket): Decision =
+    { rec: { label: "task-done", transitions: [], effects: []},
+      post: withTicket(c, j, jb) }
+
+  /// A WORK completion. The cycle's one task settles — produced, or died
+  /// with the fabric's relaunches behind it — and the reduce that follows
+  /// reads the settled task (decideWorkReduce). Infrastructure that could
+  /// not run it at all parks the ticket here instead: there is no sibling to
+  /// wait for and no judgement to preserve.
+  pure def decideWorkTaskDone(
+      c: TicketGraph, j: int, task: TaskIdentity,
+      report: TaskTerminalReport): Decision =
+    val jb = c.tickets.get(j)
+    match report {
+      | WorkResultReport(_) =>
+        taskDoneStep(c, j, { ...jb, tasks: resolveTask(jb.tasks, task, Passed) })
+      | TerminalFailureReport(failure) =>
+        match failure.kind {
+          | ProcessFailure =>
+            taskDoneStep(c, j, { ...jb, tasks: resolveTask(jb.tasks, task, Failed) })
+          | ExecutionUnavailableFailure =>
+            escalate(c, j, WorkExecutionUnavailableEscalated,
+              "ticket-escalated work_execution_unavailable_escalated")
+        }
+      // Unreachable: a work task takes no evaluator's verdict
+      // (ticket.qnt reportMatchesTask is the completion's enablement).
+      | EvaluationResultReport(_) => taskDoneStep(c, j, jb)
+    }
+
+  /// AN EVALUATION completion, which is also THE EVAL-PROGRAM INTERPRETER:
+  /// the report goes to the instance (ticket.qnt applyTaskReport, which is
+  /// the protocol's own applyProduced/applyFailure and their concludeStage),
+  /// and the state that comes back says which edge this was:
+  ///
+  ///   - still RUNNING the same stage -> a status settled and the stage owes
+  ///     its remaining evaluators; no transition.
+  ///   - RUNNING a later stage -> the stage passed and the next one is
+  ///     asked. The Evaluation -> Evaluation transition is a real row.
+  ///   - PASSED -> the program passed, so the ticket finalizes. WHAT its
+  ///     finalizer commits, and whether that is anything at all, is the
+  ///     finalizer's own configuration below this grain.
+  ///   - FAILED -> the later stages are not created: they are skipped, not
+  ///     failed, and no run exists for them. The edge `onFailure` names is
+  ///     taken — Rework re-enters Work as a new cycle, whose judgement is a
+  ///     new instance; Escalate parks at the evaluation-failure wall, whose
+  ///     resume re-enters Work the same way.
+  ///   - BLOCKED -> every evaluator has answered and at least one of them
+  ///     was a wall, so the judgement is intact and unmade: park at the
+  ///     blocked wall, whose resume re-asks exactly those evaluators at the
+  ///     next generation (decideResumeTicket).
+  pure def decideEvalTaskDone(
+      c: TicketGraph, j: int, task: TaskIdentity,
+      report: TaskTerminalReport,
+      onFailure: EvaluationFailureDisposition): Decision =
+    val jb = c.tickets.get(j)
+    val before = currentInstance(jb)
+    val advanced = withInstance(jb, applyTaskReport(before, task, report))
+    val stepped = withTicket(c, j, advanced)
+    match advanced.evaluations[advanced.evaluations.length() - 1].state {
+      | Running(progress) =>
+        if (progress.stage.stageIndex == runningStageIndex(before))
+          taskDoneStep(c, j, advanced)
+        else
+          move(withTicket(c, j, spawnEvalRun(advanced)),
+            j, Evaluation, "eval-stage-passed", ["SpawnEvalTasks"])
+      | EvaluationPassed(_) =>
+        move(stepped, j, Finalization, "eval-passed", ["RunFinalizer"])
+      | EvaluationFailed(_) =>
+        match onFailure {
+          | ReworkEvaluationFailure =>
+            move(withTicket(c, j, spawnWork(j, advanced)),
+              j, Work, "rework-started eval_failure", ["SpawnWorkTasks"])
+          | EscalateEvaluationFailure =>
+            escalate(stepped, j, EvaluationFailureEscalated,
+              "ticket-escalated evaluation_failure_escalated")
+        }
+      | EvaluationBlocked(_) =>
+        escalate(stepped, j, EvaluationBlockedEscalated,
+          "ticket-escalated evaluation_blocked_escalated")
+    }
+
+  /// The Work task settled: reduce the phase, at CYCLE level only. Work runs
+  /// ONE task per cycle, so the phase's success is that task's. A pass
+  /// retires the work task, marks the artifact it produced and OPENS THE
+  /// INSTANCE that judges it (ticket.qnt beginEvaluation), whose first stage
+  /// is asked at once — one task per evaluator that stage lists, fanned out
+  /// in parallel. Every entry spawns the stage in
   /// full — an evaluator is never skipped on the grounds that its subject
   /// did not change, because deciding that soundly needs the evaluator to
   /// declare its own footprint honestly, which is a property of the
   /// evaluator and not of this machine. A
-  /// failed task set is a failed CYCLE and escalates directly: the fabric
-  /// has already retried each task below the cycle (trusted
+  /// failed task is a failed CYCLE and escalates directly: the fabric
+  /// has already retried it below the cycle (trusted
   /// relaunch limit), and modeling attempts of our own is a standing
   /// non-goal.
   pure def decideWorkReduce(c: TicketGraph, j: int): Decision =
     val jb = c.tickets.get(j)
-    val retired = retireLive(jb)
-    if (jb.tasks.forall(t => t.state == Resolved(Passed)))
+    if (workProduced(jb.tasks))
       move(
-        withTicket(c, j,
-          { ...spawnEvalStage(j, retired, 0), artifact: ProducedArtifact(retired.spawned) }),
+        withTicket(c, j, beginEvaluation(j, retireLive(jb))),
         j, Evaluation, "work-passed", ["SpawnEvalTasks"])
     else
       escalate(c, j, WorkFailureEscalated,
         "ticket-escalated work_failure_escalated")
-
-  /// THE EVAL-PROGRAM INTERPRETER (the machinery; the program is
-  /// data on the ticket). Fires when the CURRENT stage's task set is fully
-  /// resolved — a stage completes when all its tasks reach a terminal
-  /// state — and takes exactly one of three edges:
-  ///
-  ///   - stage PASSES, later stage remains -> ADVANCE: retire the stage
-  ///     into the record, spawn the next stage's fan-out. The
-  ///     Evaluation -> Evaluation transition is a real row ("a stage completes with every required
-  ///     evaluator passing and a later stage remains: create the next
-  ///     stage's evaluator tasks").
-  ///   - the FINAL stage passes -> the program passed: Finalization.
-  ///   - stage FAILS -> SHORT-CIRCUIT: the later stages are not created —
-  ///     they are skipped, not failed, so no task records exist for them —
-  ///     and the eval reduce proceeds immediately (the
-  ///     golden fixture staged_eval_short_circuit.yaml pins exactly this:
-  ///     stage-0 fails, stage 1 never launched), taking the edge
-  ///     `onFailure` names. Rework re-enters Work and the next Evaluation
-  ///     RESTARTS FROM THE LOWEST STAGE ("stages are recomputed per cycle,
-  ///     never resumed mid-sequence"); Escalate parks the ticket at the
-  ///     evaluation-failure wall, whose resume re-enters Work the same way.
-  ///
-  /// Evaluator-infrastructure death is a Failed INSIDE the stage — the same
-  /// edge, no new machinery. Deliberate abstraction from the extracted
-  /// vocabulary, which escalates required INFRA failures immediately
-  /// (skipping rework) and distinguishes abort verdicts; chuggy folds all
-  /// three into Failed-fails-the-stage — flagged as an open question rather
-  /// than silently adopted.
-  pure def decideEvalStageReduce(
-      c: TicketGraph, j: int, onFailure: EvaluationFailureDisposition): Decision =
-    val jb = c.tickets.get(j)
-    val s = evalStage(jb.tasks)
-    val retired = retireLive(jb)
-    if (combine(jb.tasks))
-      if (s + 1 < jb.program.length())
-        move(
-          withTicket(c, j, spawnEvalStage(j, retired, s + 1)),
-          j, Evaluation, "eval-stage-passed", ["SpawnEvalTasks"])
-      else
-        // THE PROGRAM PASSED, so the ticket finalizes. Every ticket takes
-        // this edge: WHAT its finalizer commits, and whether that is
-        // anything at all, is the finalizer's own configuration below this
-        // grain, and a ticket with nothing to commit is one whose finalizer
-        // reports success at once.
-        move(withTicket(c, j, retired), j, Finalization, "eval-passed",
-          ["RunFinalizer"])
-    else
-      match onFailure {
-        | ReworkEvaluationFailure =>
-          move(
-            withTicket(c, j, spawnWork(j, retired)),
-            j, Work, "rework-started eval_failure", ["SpawnWorkTasks"])
-        | EscalateEvaluationFailure =>
-          escalate(c, j, EvaluationFailureEscalated,
-            "ticket-escalated evaluation_failure_escalated")
-      }
 
   /// A finalizer reports only a domain outcome. Queueing,
   /// preparation, approval, permits and reconciliation are focused durable
@@ -547,27 +605,6 @@ module chuggy_domain {
           "ticket-escalated finalization_unavailable_escalated")
     }
 
-  /// Infrastructure cannot execute the current logical task set. Retire its
-  /// outstanding tasks as Cancelled, name the wall of the phase it
-  /// interrupted, and open the native human action without claiming failed
-  /// work. WHICH refusal it was is evidence an adapter records beside the
-  /// execution; the phase is the only part of it a decider reads.
-  ///
-  /// The two phases get two walls because they resume differently, and an
-  /// interruption is NOT a verdict: unlike the rework wall, an Evaluation
-  /// park here still has an intact judgement to make, so it re-enters
-  /// evaluation. The caller draws from taskPhaseIn, so Work and Evaluation
-  /// are the whole of the domain here.
-  pure def decideExecutionBlocked(c: TicketGraph, j: int): Decision =
-    match c.tickets.get(j).phase {
-      | Evaluation =>
-        escalate(c, j, EvaluationBlockedEscalated,
-          "ticket-escalated evaluation_blocked_escalated")
-      | _ =>
-        escalate(c, j, WorkExecutionUnavailableEscalated,
-          "ticket-escalated work_execution_unavailable_escalated")
-    }
-
   /// Operator Retry on a parked ticket: resume at the point its wall implies
   /// (resumeOf). Resuming is free — a resume is a human act, and this machine
   /// bounds no human. This is THE operator resume — one decider, a flavor
@@ -577,10 +614,12 @@ module chuggy_domain {
   ///     the work task as a new cycle. The two walls they answer differ
   ///     (failed work, a failed evaluation) but a verdict has no re-judge to
   ///     offer, so both are honest only as new work.
-  ///   ResumeEvaluation: A FRESH FAN-OUT OF THE LOWEST STAGE — re-enter
-  ///     evaluation against the intact artifact with a fresh eval fan-out;
-  ///     stages are never resumed mid-sequence. New ids: the retried tasks
-  ///     are NEW records, the failed ones stay retired in the log.
+  ///   ResumeEvaluation: RE-ASK THE EVALUATORS THE WALL STOPPED, and only
+  ///     those — the instance's blocked run is reopened at the next
+  ///     generation and the evaluators that already judged keep what they
+  ///     said (evaluation.qnt resumeBlocked). The generation is what makes
+  ///     the re-asked tasks new identities, so a late completion from the
+  ///     interrupted attempt names one nothing is waiting on.
   ///   ResumeFinalization: request a fresh finalization attempt.
   pure def decideResumeTicket(c: TicketGraph, j: int): Decision =
     val jb = c.tickets.get(j)
@@ -592,7 +631,9 @@ module chuggy_domain {
       | ResumeWork => workResume
       | ResumeRework => workResume
       | ResumeEvaluation =>
-        move(withTicket(c, j, spawnEvalStage(j, resumed, 0)),
+        val reopened =
+          withInstance(resumed, resumeBlocked(currentInstance(resumed)))
+        move(withTicket(c, j, spawnEvalRun(reopened)),
           j, Evaluation, "ticket-resumed", ["SpawnEvalTasks"])
       | ResumeFinalization =>
         move(withTicket(c, j, resumed), j, Finalization, "ticket-resumed", ["RunFinalizer"])
@@ -611,15 +652,15 @@ module chuggy_domain {
   /// The last decision's StepRecord — the golden-trace-shaped observation
   /// (standing rule 4: the model emits golden traces from day one).
   var lastStep: StepRecord
-  /// GHOST: the PREVIOUS state's retained task records, per ticket —
-  /// written by every action, read only by recordMonotone (the
-  /// retained-record monotonicity invariant needs one step of history).
-  var prevRecords: int -> List[Task]
+  /// GHOST: the PREVIOUS state's evaluation instances, per ticket — written
+  /// by every action, read only by evaluationsMonotone (the
+  /// history-monotonicity invariant needs one step of history).
+  var prevEvaluations: int -> List[EvaluationInstance]
 
   val graph: TicketGraph = { tickets: tickets }
-  /// The current records snapshot the ghost carries forward each step.
-  val currentRecords: int -> List[Task] =
-    tickets.keys().mapBy(j => tickets.get(j).record)
+  /// The current instances snapshot the ghost carries forward each step.
+  val currentEvaluations: int -> List[EvaluationInstance] =
+    tickets.keys().mapBy(j => tickets.get(j).evaluations)
 
   /// Released ticket identities. Ordering has no semantic meaning.
   val liveTickets: Set[int] = tickets.keys()
@@ -627,7 +668,7 @@ module chuggy_domain {
   action apply(d: Decision): bool = all {
     tickets' = d.post.tickets,
     lastStep' = d.rec,
-    prevRecords' = currentRecords
+    prevEvaluations' = currentEvaluations
   }
 
   /// REFINEMENT-LAYER SEAM (the refinement layer — the state-shaped counterpart
@@ -652,17 +693,17 @@ module chuggy_domain {
   action installGraph(c: TicketGraph, rec: StepRecord): bool = all {
     tickets' = c.tickets,
     lastStep' = rec,
-    prevRecords' = prevRecords
+    prevEvaluations' = prevEvaluations
   }
 
   // --- Derived waiting room (standing rule 3: derive, don't store) ---------
-  // Blocked and Ready are PREDICATES over deps + record, not phases.
+  // Blocked and Ready are PREDICATES over deps, not phases.
   // Storing them is what forces an unblock cascade; chuggy stores only
   // Pending and derives the split, so the
   // unblock cascade disappears entirely — there is no Blocked->Ready edge
   // to model or to get wrong. (The open-human-task flag is derived too:
-  // ticket.qnt hasOpenHumanTask; the eval-stage index is derived from
-  // the live set's identities: ticket.qnt evalStage.) The model extends them
+  // ticket.qnt hasOpenHumanTask; the evaluation tasks are derived from
+  // the current run: ticket.qnt liveTasks.) The model extends them
   // for free: a Pending dependency is simply not Done and blocks with no
   // new machinery; the pure bodies live with
   // the deciders (isReadyIn/isBlockedIn) so unit tests can pin exactly
@@ -688,10 +729,9 @@ module chuggy_domain {
   /// Every non-terminal may be revoked.
   val revocableTickets: Set[int] = revocablesIn(graph)
   val readyTickets: Set[int] = readiesIn(graph)
-  /// Tickets whose task set can receive completion events (real or duplicate).
-  val taskPhaseTickets: Set[int] = taskPhaseIn(graph)
+  /// Tickets a completion can be delivered to (real or duplicate).
+  val completableTickets: Set[int] = completableIn(graph)
   val reducibleWork: Set[int] = reducibleWorkIn(graph)
-  val reducibleEval: Set[int] = reducibleEvalIn(graph)
   val finalizerTickets: Set[int] = liveTickets.filter(j =>
     tickets.get(j).phase == Finalization)
   val doneTickets: Set[int] = doneIn(graph)
@@ -726,7 +766,7 @@ module chuggy_domain {
     MAX_STAGES >= 1,     // at least one authorable program must exist
     tickets' = Map(),
     lastStep' = { label: "init", transitions: [], effects: []},
-    prevRecords' = Map()
+    prevEvaluations' = Map()
   }
 
   // --- actions --------------------------------------------------------------
@@ -765,60 +805,49 @@ module chuggy_domain {
     apply(decideDispatch(graph, j))
   }
 
-  /// A task-completion event is released for ANY task the ticket EVER SPAWNED —
-  /// live (real resolution or duplicate of a resolved one) or already
-  /// retired to the record (a stale delivery from an earlier stage or
-  /// incarnation). One action models all of it because the fabric is
-  /// at-least-once: the machine cannot choose to not receive duplicates.
+  /// A task-completion event is released for a task the ticket is currently
+  /// running, and the report it carries is drawn: produced, judged either
+  /// way, or reached no result. One action models all of it because the
+  /// fabric is at-least-once — the machine cannot choose to not receive
+  /// duplicates — and the DISPOSITION is drawn here too, because the
+  /// completion that concludes a failing stage is where it is consulted
+  /// (decideTaskDone).
   ///
-  /// Duplicate-adversary SCOPE: the draw
-  /// below (deliverableTasksIn — the shared definition the witness
-  /// drivers reference too) is the ticket's ENTIRE task history — identities
-  /// are unique within the ticket and never reused, so a
-  /// stale completion from an earlier STAGE or incarnation names a retired
-  /// identity and no-ops BY IDENTITY (decideTaskDone finds no live
-  /// outstanding match). This RETIRES the weaker absorption argument (a stale
-  /// completion at the same name was indistinguishable from a fresh nondet
-  /// verdict on the respawned set) — staleness is now absorbed structurally, and
-  /// the only remaining first-write-wins case is a duplicate delivery for
-  /// a LIVE resolved task. A stale TICKET COMPLETION still implies a success
-  /// occurred, and Done is absorbing (completionRedelivery). The observed/actual
-  /// split that would make mid-rework duplicates dangerous — a decider
-  /// acting on a stale VIEW — is exactly the deferred §4 refinement layer
-  /// (reconcile vs journaled-actor), not this shared domain layer. the
-  /// A sharper corner: a ticket revoked
-  /// OUT of Finalization (enqueued) or Finalization (the gate
-  /// mid-validation) could race an in-flight merge in the real system — in-model
-  /// revokedNeverCompletes holds structurally (a revoked ticket leaves
-  /// holdingTickets/finalizerStartable, so neither wrap-up action can resolve
-  /// it, and the revoke frees the slot by phase); the real revoke/merge
-  /// race — the candidate already advancing when the revoke lands — is
-  /// record-vs-effect atomicity, the §4 refinement layer.
+  /// Duplicate-adversary SCOPE: this action draws from what is live, and
+  /// the witness drivers (tests/chuggy_witness_test.qnt) draw from
+  /// deliverableTasksIn — every identity the ticket's history names — so
+  /// the stale arm is exercised where the shape can be pinned
+  /// deterministically. Identities are unique within the ticket and never
+  /// reused, so a completion from an earlier stage, generation or cycle
+  /// names one nothing is waiting on and no-ops BY IDENTITY. That RETIRES
+  /// the weaker absorption argument (a stale completion at the same name was
+  /// indistinguishable from a fresh verdict on the respawned set) —
+  /// staleness is absorbed structurally, and the only remaining
+  /// first-write-wins case is a duplicate delivery for a live task. A stale
+  /// TICKET COMPLETION still implies a success occurred, and Done is
+  /// absorbing (completionRedelivery). The observed/actual split that would
+  /// make mid-rework duplicates dangerous — a decider acting on a stale
+  /// VIEW — is exactly the deferred §4 refinement layer (reconcile vs
+  /// journaled-actor), not this shared domain layer. A sharper corner: a
+  /// ticket revoked OUT of Finalization could race an in-flight merge in
+  /// the real system — in-model revokedNeverCompletes holds structurally (a
+  /// revoked ticket leaves finalizerTickets, so no wrap-up action can
+  /// resolve it, and the revoke frees the slot by phase); the real
+  /// revoke/merge race — the candidate already advancing when the revoke
+  /// lands — is record-vs-effect atomicity, the §4 refinement layer.
   action taskDone = all {
-    taskPhaseTickets.size() > 0,
-    nondet j = taskPhaseTickets.oneOf()
-    nondet task = tickets.get(j).tasks.filter(t => t.state == Outstanding).map(t => t.identity).oneOf()
-    nondet v = Set(Pass, Fail).oneOf()
-    apply(decideTaskDone(graph, j, task, v))
+    completableTickets.size() > 0,
+    nondet j = completableTickets.oneOf()
+    nondet task = liveTasks(tickets.get(j)).oneOf()
+    nondet report = reportChoices(task).oneOf()
+    nondet onFailure = dispositionChoices.oneOf()
+    apply(decideTaskDone(graph, j, task, report, onFailure))
   }
 
   action workReduce = all {
     reducibleWork.size() > 0,
     nondet j = reducibleWork.oneOf()
     apply(decideWorkReduce(graph, j))
-  }
-
-  /// The current eval STAGE's task set fully resolved: run the interpreter
-  /// over the ticket's authored program (advance / pass / short-circuit —
-  /// decideEvalStageReduce). The disposition is drawn here rather than read
-  /// off the ticket: a failing stage's continuation is an input to this
-  /// machine, and the draw is what makes every implementation policy a
-  /// refinement of it.
-  action evalReduce = all {
-    reducibleEval.size() > 0,
-    nondet j = reducibleEval.oneOf()
-    nondet onFailure = dispositionChoices.oneOf()
-    apply(decideEvalStageReduce(graph, j, onFailure))
   }
 
   /// The external finalizer returns one domain result. Queueing,
@@ -831,12 +860,6 @@ module chuggy_domain {
       finalizationOutcomeEnabled(graph, j, out),
       apply(decideFinalizationResult(graph, j, out))
     }
-  }
-
-  action executionBlocked = all {
-    taskPhaseTickets.size() > 0,
-    nondet j = taskPhaseTickets.oneOf()
-    apply(decideExecutionBlocked(graph, j))
   }
 
   /// One resume action for every retryable park.
@@ -852,7 +875,7 @@ module chuggy_domain {
     quiet,
     tickets' = tickets,
     lastStep' = { label: "settled", transitions: [], effects: []},
-    prevRecords' = currentRecords
+    prevEvaluations' = currentEvaluations
   }
 
   action step = any {
@@ -861,9 +884,7 @@ module chuggy_domain {
     dispatch,
     taskDone,
     workReduce,
-    evalReduce,
     finalizationResult,
-    executionBlocked,
     resumeTicket,
     settle
   }
@@ -933,110 +954,99 @@ module chuggy_domain {
     (tickets.get(j).phase == Escalated) iff
       (tickets.get(j).escalation != NoEscalation))
 
-  /// The LIVE task set is exactly the current phase's anatomy (this is
-  /// also the STAGE-INDEX SANITY invariant):
-  ///   - Work: the single work set — one WorkTask of the cycle just started;
-  ///   - Evaluation: ONE stage's fan-out — uniformly EvaluationTask at a
-  ///     single stage that indexes INTO the program (0 <= s < |program|),
-  ///     judging the current work cycle, naming exactly the evaluator keys
-  ///     that stage LISTS (the interpreter is running the program as
-  ///     written, not improvising);
-  ///   - every other phase: empty — dead live-task state is never carried
-  ///     (derive-don't-store spirit; a Pending has not spawned,
-  ///     Revoked runs nothing).
-  /// Cancelled never appears live (it is a retirement mark, not an outcome
-  /// events can deliver).
+  /// THE LIVE TASK SET is exactly the current phase's anatomy, and after
+  /// the evaluation instance arrived that anatomy is small: Work carries the
+  /// single work task of the cycle just started, and EVERY OTHER PHASE
+  /// CARRIES NOTHING. Evaluation's tasks are not here at all — the current
+  /// run owes them and currentTaskObligations names them — so what this
+  /// invariant used to hold (one stage, a real index into the program,
+  /// exactly the keys that stage lists, nothing settled by a cancellation)
+  /// is now the instance's own, through the protocol's stageRunInvariant.
   val tasksWellFormed: bool = liveTickets.forall(j =>
     val jb = tickets.get(j)
     if (jb.phase == Work) and {
       jb.tasks.size() == 1,
-      jb.tasks.forall(t => and {
-        t.identity == WorkTask({ ticket: j, cycle: jb.workCyclesStarted }),
-        t.state != Resolved(Cancelled)
-      })
-    } else if (jb.phase == Evaluation)
-      val s = evalStage(jb.tasks)
-      and {
-        s >= 0,
-        s < jb.program.length(),
-        jb.tasks.forall(t =>
-          match t.identity {
-            | WorkTask(_) => false
-            | EvaluationTask(e) => and {
-                e.ticket == j,
-                e.workCycle == jb.workCyclesStarted,
-                e.stage == jb.program[s].key,
-                t.state != Resolved(Cancelled)
-              }
-          }),
-        jb.tasks.size() == jb.program[s].evaluators.length(),
-        jb.tasks.map(t => taskRetirementKey(t.identity)) ==
-          evaluatorKeys(jb.program[s])
-      }
-    else jb.tasks == Set())
+      jb.tasks.forall(t =>
+        t.identity == WorkTask({ ticket: j, cycle: jb.workCyclesStarted }))
+    } else jb.tasks == Set())
 
-  /// THE RETAINED RECORD is well-formed: every entry belongs to the ticket
-  /// holding it (retirement moves a set onto its own record and nowhere
-  /// else), nothing
-  /// retired is still
-  /// outstanding — the record is the RESOLVED log, every entry Resolved
-  /// (Passed/Failed by verdict, Cancelled by revoke; the
-  /// explicit lifecycle makes this a constructor check, not an
-  /// outcome-sentinel comparison) — and every retired eval task names a
-  /// stage its ticket's program actually has (programs are immutable, so
-  /// history never dangles).
-  val recordWellFormed: bool = liveTickets.forall(j =>
+  /// EVERY INSTANCE IS WELL-FORMED by the protocol's own invariant, which is
+  /// the whole of what an evaluation's state has to satisfy — chuggy
+  /// re-states none of it. What chuggy adds is the AGREEMENT between an
+  /// instance and the ticket carrying it: it judges THIS ticket, under the
+  /// program the ticket was released with (so no plan can drift from the
+  /// authored data), for a work cycle the ticket has actually started, and
+  /// the instances stand in the order those cycles ran — strictly
+  /// ascending, so no cycle has two.
+  ///
+  /// THE PHASE SAYS WHICH INSTANCE IS OPEN: a ticket in Evaluation is
+  /// running the last one, at the cycle it is on, and a ticket parked at the
+  /// blocked wall has the last one blocked. Those two are what let
+  /// currentInstance be read without a search, and what make the desk's wall
+  /// and the instance's state one fact instead of two that can disagree.
+  /// A ticket that left evaluation keeps the instance as it stood: it is
+  /// provenance, exactly as the task log it replaced was.
+  val evaluationsWellFormed: bool = liveTickets.forall(j =>
     val jb = tickets.get(j)
     and {
-      jb.record.indices().forall(i => taskOwner(jb.record[i].identity) == j),
-      jb.record.indices().forall(i => jb.record[i].state != Outstanding),
-      jb.record.indices().forall(i =>
-        match jb.record[i].identity {
-          | WorkTask(_) => true
-          | EvaluationTask(e) =>
-            e.stage - 1 >= 0 and e.stage - 1 < jb.program.length()
-        })
+      jb.evaluations.indices().forall(i =>
+        val ev = jb.evaluations[i]
+        and {
+          invariant(ev),
+          ev.input.ticket == j,
+          ev.plan == { stages: jb.program },
+          ev.workCycle <= jb.workCyclesStarted,
+          i == 0 or jb.evaluations[i - 1].workCycle < ev.workCycle
+        }),
+      (jb.phase == Evaluation) implies and {
+        jb.evaluations.length() > 0,
+        runningStageIndex(currentInstance(jb)) >= 0,
+        currentInstance(jb).workCycle == jb.workCyclesStarted
+      },
+      (jb.escalation == EvaluationBlockedEscalated) implies and {
+        jb.evaluations.length() > 0,
+        instanceBlocked(currentInstance(jb))
+      }
     })
 
-  /// RETAINED-RECORD MONOTONICITY: the task record is append-only
-  /// history — against the previous state (ghost prevRecords), every ticket's
-  /// record still starts with exactly what it was: nothing shrinks,
-  /// nothing settled is ever rewritten (its identity or its outcome). Checked
-  /// step-wise against the ghost; with it, "retained" is a theorem, not a
-  /// convention. (Tickets are never deleted, so prevRecords' domain always
-  /// survives into liveTickets.)
-  val recordMonotone: bool = prevRecords.keys().forall(j => and {
+  /// HISTORY IS APPEND-ONLY: against the previous state (ghost
+  /// prevEvaluations), every instance a ticket held is still there and still
+  /// says what it said — with one exception, and exactly one: the LAST
+  /// instance, while it is still the last, is the open one and advances.
+  /// Once a newer instance sits behind it, it is frozen too. So a rewritten
+  /// judgement, a dropped instance and a reordered history are each caught
+  /// in the step that did it, and "the instances are the ticket's
+  /// provenance" is a theorem rather than a convention. (Tickets are never
+  /// deleted, so the ghost's domain always survives into liveTickets.)
+  val evaluationsMonotone: bool = prevEvaluations.keys().forall(j => and {
     liveTickets.contains(j),
-    tickets.get(j).record.length() >= prevRecords.get(j).length(),
-    prevRecords.get(j).indices().forall(i =>
-      tickets.get(j).record[i] == prevRecords.get(j)[i])
+    tickets.get(j).evaluations.length() >= prevEvaluations.get(j).length(),
+    prevEvaluations.get(j).indices().forall(i => or {
+      tickets.get(j).evaluations[i] == prevEvaluations.get(j)[i],
+      and {
+        i + 1 == prevEvaluations.get(j).length(),
+        tickets.get(j).evaluations.length() == prevEvaluations.get(j).length()
+      }
+    })
   })
 
-  /// IDENTITY ACCOUNTING: every task a ticket ever
-  /// spawned is STILL somewhere — retired in the record or live in the
-  /// set. The ghost spawn counter (ticket.qnt Ticket.spawned, bumped by
-  /// every spawnOn) equals record + live exactly, which makes
-  /// history-unique identity a machine-checked theorem: a
-  /// mutant decider that DROPPED a task set instead of retiring it (e.g.
-  /// escalate clearing tasks without the retireLive) would leave spawned
-  /// strictly greater in the very next state — invisible to
-  /// tasksWellFormed/recordWellFormed (both look at surviving state, not
-  /// at what vanished), caught here.
+  /// IDENTITY ACCOUNTING: the mint counter is exactly what the ticket's own
+  /// history says it must be — one slot per work cycle started, plus, for
+  /// every run of every instance, its roster once per generation it reached
+  /// (ticket.qnt evaluationSpawnTotal). Every spawn site bumps the counter
+  /// from the AUTHORED program while this sum reads the INSTANCES, so the
+  /// two sides come from different places: a spawn that claimed the wrong
+  /// stage's roster, a resume that claimed nothing, or a cycle counted twice
+  /// breaks the equality in the very state that did it.
   ///
-  /// THE WORK-CYCLE COUNTER gets the same treatment: it is stored so a spawn
-  /// site can mint from it, and held here against the work tasks the ticket
-  /// has to show for it, so a cycle counted twice or not at all is caught in
-  /// the state that did it rather than in the identity it later mints.
+  /// It is a SLOT count, not a task count. A resume re-asks only the
+  /// evaluators it reopened and still claims the roster, which is what keeps
+  /// the counter derivable at all — the subset a resume asked is not
+  /// recoverable from the run once those evaluators have answered. The
+  /// slots nothing used are gaps, and a gap costs a monotone mint nothing.
   val idsAccounted: bool = liveTickets.forall(j =>
     val jb = tickets.get(j)
-    and {
-      jb.spawned == jb.record.length() + jb.tasks.size(),
-      jb.workCyclesStarted ==
-        jb.record.foldl(Set(), (acc, t) => acc.union(Set(t.identity)))
-          .union(jb.tasks.map(t => t.identity))
-          .filter(i => match i { | WorkTask(_) => true | EvaluationTask(_) => false })
-          .size()
-    })
+    jb.spawned == jb.workCyclesStarted + evaluationSpawnTotal(jb))
 
   /// THE CONTRACT'S OWN PREDICATE over every task this machine is currently
   /// waiting on (task-contract/task.qnt taskIdentityValid). It is the one
@@ -1056,9 +1066,11 @@ module chuggy_domain {
   ///
   /// The positional stage key is CHUGGY'S rule, not the task contract's,
   /// which asks only that stage keys be distinct: the identity carries the
-  /// stage's key and nothing on a ticket stores the index, so evalStage
-  /// reads the index back out of the key. It is lifted when an evaluation
-  /// instance stores the index itself. Evaluator keys are NOT positional.
+  /// stage's key, and a layer holding an identity but no program — the
+  /// dispatch view's stage column — reads the index back out of the key.
+  /// The instance stores the index itself, so nothing HERE needs the rule
+  /// any more; it is kept because those layers still do. Evaluator keys are
+  /// NOT positional.
   val programsWellFormed: bool = liveTickets.forall(j =>
     val p = tickets.get(j).program
     and {
@@ -1180,8 +1192,8 @@ module chuggy_domain {
     terminalsAbsorbing,
     deskConsistent,
     tasksWellFormed,
-    recordWellFormed,
-    recordMonotone,
+    evaluationsWellFormed,
+    evaluationsMonotone,
     idsAccounted,
     taskIdentitiesValid,
     programsWellFormed,

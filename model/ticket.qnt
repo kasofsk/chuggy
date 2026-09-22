@@ -6,18 +6,19 @@
 /// functions of the `TicketGraph` this file declares.
 ///
 /// DERIVE, DON'T STORE (standing rule 3) is what gives the record its shape.
-/// The waiting room (Ready/Blocked), the open desk task, the current eval
-/// stage and a dependency's artifact are all PREDICATES over what is stored,
-/// so what is stored is what no predicate can reach: the phase, the data the
-/// author released, the live task set, and the retained record of the tasks
-/// that have settled.
+/// The waiting room (Ready/Blocked), the open desk task, the evaluation
+/// tasks the fabric is running and a dependency's artifact are all
+/// PREDICATES over what is stored, so what is stored is what no predicate can
+/// reach: the phase, the data the author released, the work task, and the
+/// evaluation instance of every work cycle that reached judgement.
 ///
 /// WHAT A TICKET DELIBERATELY DOES NOT CARRY. No attempt counter and no
 /// per-task budget: the fabric relaunches a failed container below the cycle
 /// grain, so this machine's grain is the CYCLE and same-cycle retry
-/// machinery is a standing non-goal. No stage index (evalStage derives it
-/// from the live set's identities), no readiness flag, and no timestamps or
-/// results — implementation accounting, not machine state.
+/// machinery is a standing non-goal. No live evaluation task set (the
+/// instance's current run owes them, and currentTaskObligations names them),
+/// no readiness flag, and no timestamps — implementation accounting, not
+/// machine state.
 ///
 /// Sum-type constructors share one namespace per module, which is what the
 /// prefixed names below are avoiding.
@@ -28,10 +29,18 @@ module chuggy_ticket {
   /// caller here yet.
   import task_contract.* from "./task-contract/task"
 
+  /// THE EVALUATION PROTOCOL, copied in at the package's own path
+  /// (model/AGENTS.md lists the divergences). It brings the authored plan,
+  /// the instance a work cycle's judgement runs in, and every function that
+  /// moves one. Chuggy re-states none of them: the deciders in domain.qnt
+  /// call begin, applyProduced, applyFailure, concludeStage, resumeBlocked
+  /// and currentTaskObligations.
+  import evaluation_protocol.* from "./ticket-domain/evaluation/evaluation"
+
   // === Vocabulary ==========================================================
 
   /// STORED ticket phases, deliberately few (standing rule 3, derive don't
-  /// store). Blocked and Ready are PREDICATES over deps + record in
+  /// store). Blocked and Ready are PREDICATES over deps in
   /// domain.qnt, not phases — a ticket that has not started is Pending, and
   /// the waiting-room split is derived. Pending must be stored (phase is
   /// total and "never started" is not expressible as a predicate over the
@@ -50,8 +59,8 @@ module chuggy_ticket {
   /// settled choice (see hasOpenHumanTask).
   ///
   /// An eval stage advance gets NO phase — it is an Evaluation ->
-  /// Evaluation edge, because within-phase progress lives in the live task
-  /// set's stage mark rather than in new phases.
+  /// Evaluation edge, because within-phase progress lives in the evaluation
+  /// instance's current run rather than in new phases.
   type Phase =
     Pending | Work | Evaluation | Finalization | Done | Escalated | Revoked
 
@@ -66,23 +75,21 @@ module chuggy_ticket {
   ///                cycle ("evaluators run in ascending stage order; within
   ///                a stage they fan out in parallel").
   /// Both of the identity's keys are AUTHORED: `stage` is the stage's own key
-  /// and `evaluator` is the evaluator's, copied out of the program rather than
-  /// counted at the spawn. evalStage reads the index back out of the stage key
-  /// under the positional rule stated at StageDefinition, which is what keeps
-  /// the CURRENT stage derivable from the live set instead of stored
-  /// (standing rule 3).
+  /// and `evaluator` is the evaluator's, and the instance's own run supplies
+  /// both — taskIdentityFor reads the stage's key out of the plan at the run's
+  /// stored index, so no layer here counts a stage or an evaluator at a spawn.
+  ///
+  /// The evaluation identities are DERIVED rather than stored: the run holds
+  /// one status per evaluator, and currentTaskObligations names exactly the
+  /// tasks whose status is still Awaiting.
 
-  /// A settled task's outcome — RESOLVED verdicts only; an outstanding task
-  /// cannot carry one (see TaskState). Failed
-  /// covers BOTH a failed verdict and evaluator-infrastructure death: "the
-  /// job pays" for evaluator crashes — one edge, no new machinery.
-  /// Cancelled is the retirement
-  /// mark for a task still OUTSTANDING when its ticket is revoked mid-flight —
-  /// revoke force-closes every pending task with a synthetic resolution
-  /// recording that the revoke, not a verdict, retired it.
-  /// Only revoke produces it: every other retirement happens at a reduce,
-  /// when the set is fully resolved.
-  type TaskOutcome = Passed | Failed | Cancelled
+  /// THE WORK TASK'S OUTCOME — RESOLVED outcomes only; an outstanding task
+  /// cannot carry one (see TaskState). A work cycle's task either produced
+  /// the artifact or it did not, and the evaluation side keeps no outcome
+  /// here at all: an evaluator's is a per-evaluator status on the run
+  /// (EvaluatorStatus), which is what lets infrastructure death be told from
+  /// a judgement.
+  type TaskOutcome = Passed | Failed
 
   /// THE EXPLICIT TASK LIFECYCLE (one small sum instead of implicit
   /// set-membership). A task is PUBLISHED to the fabric as outstanding and
@@ -90,11 +97,11 @@ module chuggy_ticket {
   /// are the trusted fabric's grain, not states of this machine. Resolved
   /// carries the outcome, so an outstanding task CANNOT carry one and a
   /// resolved task MUST. First write wins (resolveTask); resolution is final
-  /// (recordMonotone makes that a theorem).
+  /// (resolveTask is the only edge, and nothing maps a Resolved back).
 
   type TaskState = Outstanding | Resolved(TaskOutcome)
 
-  /// A first-class task record: the contract's identity + lifecycle state.
+  /// THE WORK TASK, as a record: the contract's identity + lifecycle state.
   /// An identity is UNIQUE WITHIN THE TICKET across its entire history —
   /// never reused across stages, cycles, or operator retries, because a work
   /// cycle is numbered and each run of a stage within a cycle carries its own
@@ -107,32 +114,87 @@ module chuggy_ticket {
 
   type Task = { identity: TaskIdentity, state: TaskState }
 
-  /// A task-completion event's verdict (the event, as distinct from the
-  /// stored resolution — duplicates of the event must be tolerated).
-  type Verdict = Pass | Fail
+  /// WHAT A TASK PRODUCED, as the opaque references the fabric sealed with
+  /// it: the result manifest the worker attested, its digest, and the schema
+  /// it was attested under. Opaque and positive, never read for content —
+  /// the manifest reference is the one number an evaluator's status cites
+  /// back (resultReference below).
+  type TaskResultRef = { manifest: int, digest: int, schema: int }
 
-  /// ONE EVALUATOR OF A STAGE, named by the key the author gave it. The key
-  /// is the whole of it here: what an evaluator is asked to do arrives with
-  /// the evaluation instance.
-  type EvaluatorDefinition = { key: int }
+  /// WHY A TASK REACHED NO RESULT, which is NOT a verdict: the job died
+  /// (ProcessFailure — the fabric already relaunched it below the cycle
+  /// grain, so an exhausted budget arrives here) or infrastructure could not
+  /// run it at all (ExecutionUnavailableFailure — the definitive walls). The
+  /// two are told apart because they park an evaluator differently: the
+  /// second is the only one whose judgement is intact and unmade, so it is
+  /// the only one a resume can re-ask.
+  type FailureKind = ProcessFailure | ExecutionUnavailableFailure
 
-  /// One stage of a ticket's eval program: its own key, and the evaluators it
-  /// lists — one task per listed evaluator, fanned out in parallel. A KEY IS
-  /// AN AUTHORED NAME, not a position, except that chuggy holds a stage's key
-  /// equal to its position (domain.qnt programsWellFormed) until an evaluation
-  /// instance stores the index itself; evaluator keys carry no such rule, so
-  /// a stage may list 1 and 3 and skip 2. What the stage does with the
-  /// verdicts is not per-stage data: every evaluator in it must pass
-  /// (combine below), and the required/advisory split is BELOW that grain —
-  /// an advisory evaluator is one the stage does not carry.
-  type StageDefinition = { key: int, evaluators: List[EvaluatorDefinition] }
+  /// WHAT COMES BACK FOR ONE TASK — the completion event's payload, in the
+  /// package's three arms. A work task produces its artifact's references; an
+  /// evaluator produces a reference and its verdict; either reaches no result
+  /// at all and reports the failure's evidence and kind. The task is named by
+  /// the event that carries the report (domain.qnt decideTaskDone), so no arm
+  /// repeats it.
+  type TaskTerminalReport =
+      WorkResultReport({ result: TaskResultRef })
+    | EvaluationResultReport({ result: TaskResultRef,
+        verdict: EvaluationVerdict })
+    | TerminalFailureReport({ evidence: int, kind: FailureKind })
 
-  /// THE KEYS A STAGE LISTS, which is what its live task set must name one
-  /// for one (domain.qnt tasksWellFormed). The order is the list's; the set
-  /// is what an unordered live set compares against.
-  pure def evaluatorKeys(stage: StageDefinition): Set[int] =
-    stage.evaluators.foldl(Set(), (found, entry) =>
-      found.union(Set(entry.key)))
+  /// THE REFERENCE A STATUS RETAINS: the result manifest, which is what an
+  /// evaluator's outcome cites and what a rework entry carries as evidence
+  /// (evaluation.qnt reworkEntries).
+  pure def resultReference(result: TaskResultRef): int = result.manifest
+
+  pure def taskResultRefValid(result: TaskResultRef): bool =
+    result.manifest > 0 and result.digest > 0 and result.schema > 0
+
+  /// A REPORT IS WELL-FORMED when every reference it carries is a real one.
+  /// The instance holds the same line on its own side (evaluation.qnt
+  /// stageRunInvariant demands a positive reference in every settled
+  /// status), so a report admitted here cannot make a run ill-formed.
+  pure def reportValid(report: TaskTerminalReport): bool = match report {
+    | WorkResultReport(produced) => taskResultRefValid(produced.result)
+    | EvaluationResultReport(produced) => taskResultRefValid(produced.result)
+    | TerminalFailureReport(failure) => failure.evidence > 0
+  }
+
+  /// THE REPORT APPLIED TO AN INSTANCE — the package's applyEvaluationReport
+  /// at chuggy's spelling of a report: a produced result carries its
+  /// reference and verdict into applyProduced, and a failure becomes the
+  /// contract's terminal for its kind. Nothing here decides; applyProduced
+  /// and applyFailure conclude the stage themselves.
+  pure def applyTaskReport(
+      evaluation: EvaluationInstance, task: TaskIdentity,
+      report: TaskTerminalReport): EvaluationInstance =
+    match report {
+      | EvaluationResultReport(produced) => applyProduced(
+          evaluation, task, resultReference(produced.result), produced.verdict)
+      | TerminalFailureReport(failure) => applyFailure(evaluation, task,
+          match failure.kind {
+            | ProcessFailure =>
+              TaskProcessFailed({ task: task, evidence: failure.evidence })
+            | ExecutionUnavailableFailure =>
+              TaskExecutionUnavailable({ task: task, evidence: failure.evidence })
+          })
+      | WorkResultReport(_) => evaluation
+    }
+
+  /// WHICH REPORTS A TASK CAN CARRY: a work task produces a work result, an
+  /// evaluator produces a verdict, and either can fail to produce anything.
+  /// Stated here because it is the completion's enablement (refinement.qnt
+  /// decisionEventEnabled) rather than something a decider defends against
+  /// mid-flight.
+  pure def reportMatchesTask(
+      task: TaskIdentity, report: TaskTerminalReport): bool =
+    match report {
+      | WorkResultReport(_) =>
+        match task { | WorkTask(_) => true | EvaluationTask(_) => false }
+      | EvaluationResultReport(_) =>
+        match task { | WorkTask(_) => false | EvaluationTask(_) => true }
+      | TerminalFailureReport(_) => true
+    }
 
   /// WHAT AN EVALUATION FAILURE DOES. The machine consults this at every
   /// failing stage (domain.qnt decideEvalStageReduce) and takes exactly one
@@ -156,7 +218,8 @@ module chuggy_ticket {
   /// as a new cycle. That wall is reached by a VERDICT, and a verdict has no
   /// re-judge to offer — the fabric already relaunched the container below
   /// the cycle grain — so the only honest continuation is a new artifact,
-  /// which is a work cycle.
+  /// which is a work cycle. ResumeEvaluation is the blocked wall's, and it
+  /// is the one continuation that re-asks rather than re-works.
   type Resume =
     NoResume | ResumeWork | ResumeRework | ResumeEvaluation |
     ResumeFinalization
@@ -175,9 +238,11 @@ module chuggy_ticket {
   /// EvaluationFailureEscalated is the evaluation-failure wall, reached when
   /// the failure's disposition is Escalate.
   /// EvaluationBlockedEscalated is the same infrastructure refusal against an
-  /// EVALUATION set. It is its own wall rather than the execution one because
+  /// EVALUATOR. It is its own wall rather than the execution one because
   /// an interruption is not a verdict: the judgement is intact and unmade, so
-  /// it is the only wall whose resume re-enters evaluation.
+  /// it is the only wall whose resume re-enters evaluation — and it re-asks
+  /// only the evaluators the wall stopped, because the rest of the stage
+  /// already judged (evaluation.qnt resumeBlocked).
   /// FinalizationUnavailableEscalated is the wall a finalizer hits when it
   /// reaches no result at all; like the execution wall, WHICH unreachability
   /// it was is evidence an adapter records beside the finalization request,
@@ -185,7 +250,11 @@ module chuggy_ticket {
   /// same resume.
   ///
   /// Nullary, deliberately: what each wall stood in front of is evidence an
-  /// adapter records, and a payload here would be a second home for it.
+  /// adapter records, and a payload here would be a second home for it. The
+  /// package's EvaluationBlockedEscalated carries the saved instance; here
+  /// the instance is on the ticket for every phase that has one, so carrying
+  /// it at the wall as well would be that second home. The divergence is
+  /// PR 9's (model/AGENTS.md).
   type Escalation =
     NoEscalation | WorkFailureEscalated | WorkExecutionUnavailableEscalated |
     EvaluationFailureEscalated | EvaluationBlockedEscalated |
@@ -255,41 +324,40 @@ module chuggy_ticket {
     // THE EVAL PROGRAM — an ordered list of stages, AUTHORED: it
     // is released with the Pending and is immutable after release, like
     // deps. This is "eval is data, not machinery" made
-    // literal: the program is data on the ticket record; domain.qnt's
-    // decideEvalStageReduce is the interpreter. Well-formedness (non-empty,
+    // literal: the program is the plan every instance of this ticket runs
+    // under (evaluation.qnt EvaluationPlan). Well-formedness (non-empty,
     // length <= MAX_STAGES, positional stage keys, and a non-empty roster
     // of distinct evaluator keys within the bound) is an RELEASE
     // validity condition — domain.qnt programsWellFormed.
     program: List[StageDefinition],
-    // The LIVE task set of the current Work phase or Evaluation stage;
-    // empty in every other phase.
+    // The LIVE WORK task, alone: one task while the ticket is in Work and
+    // nothing in any other phase. Evaluation carries no set here — its
+    // instance owes the tasks and currentTaskObligations names them.
     tasks: Set[Task],
-    // THE RETAINED TASK RECORD — the ticket's chronological task log
-    // — tasks form a chronological log, never referencing each other, and
-    // there is no task graph. Append-only: a task moves
-    // here, resolution settled, when its set retires (reduce, escalation,
-    // or revoke — retireLive below), and once here it NEVER changes
-    // (domain.qnt recordMonotone). This is "task records are first-class:
-    // they carry the anatomy" — outcomes are retained history
-    // the golden traces can carry as provenance, not overwritten scratch
-    // state. A set retires by ascending evaluator key (retireLive below).
-    // No decision reads it: it is provenance, and its length is
-    // whatever the authors and operators who drove the ticket made it.
-    record: List[Task],
+    // THE EVALUATION INSTANCES — one per work cycle that reached judgement,
+    // in the order those cycles ran, each holding the plan it ran under, the
+    // artifact it judged, its completed stage runs and the run it stopped
+    // at. Appended when work passes (domain.qnt decideWorkReduce) and
+    // advanced in place while the ticket judges; the LAST one is the current
+    // one exactly while the ticket is in Evaluation or parked at the blocked
+    // wall, and an earlier one never changes again (domain.qnt
+    // evaluationsMonotone).
+    evaluations: List[EvaluationInstance],
     // How many work cycles this ticket has STARTED — the counter a work
     // identity's `cycle` is drawn from, and the `workCycle` every evaluation
-    // identity of that cycle names. Held on the record rather than recounted
-    // at each spawn site, and pinned to what the record shows by the
-    // identity-accounting invariant (domain.qnt idsAccounted), which is the
-    // same treatment `spawned` gets one field below.
+    // identity of that cycle names. Held rather than recounted at each spawn
+    // site, and pinned by the identity-accounting invariant (domain.qnt
+    // idsAccounted), which is the same treatment the mint counter gets one
+    // field below.
     workCyclesStarted: int,
-    // GHOST (accounting only): how many tasks this ticket has EVER
-    // spawned. Every spawn site bumps it by its fan-out (spawnOn below),
-    // so the machine invariant `spawned == record.length + tasks.size`
-    // (domain.qnt idsAccounted) makes history-unique identity a
-    // checked theorem rather than a test-pinned convention: a decider that
-    // DROPPED a task set instead of retiring it would break the equality
-    // in the very next state.
+    // THE MINT COUNTER: how many task slots this ticket has ever claimed.
+    // A work spawn claims one; an evaluation spawn claims one per evaluator
+    // the run LISTS, whether this generation asks all of them or only the
+    // ones a resume reopened (spawnEvalRun below). It is monotone and never
+    // reused, which is what an implementation mints an external task number
+    // from, and the artifact number is drawn from it. Held against what the
+    // instances themselves say by the identity-accounting invariant
+    // (domain.qnt idsAccounted).
     spawned: int,
     // The wall this ticket is parked at (NoEscalation unless Escalated).
     // Deliberately FIRST-CLASS stored trace vocabulary, not derived from
@@ -321,7 +389,7 @@ module chuggy_ticket {
   /// authoring here with no widening needed after all — tickets RELEASE by
   /// growing the map's sparse, never-reused id domain through the
   /// `freshTicket` seam, and no decider needed surgery. The shape that
-  /// grew is the Ticket record (program, record, task kinds), not TicketGraph.
+  /// grew is the Ticket record (the program, the instances), not TicketGraph.
   type TicketGraph = { tickets: int -> Ticket }
 
   /// One observed ticket-phase transition, golden-trace shaped (standing rule
@@ -350,112 +418,44 @@ module chuggy_ticket {
   pure def outstandingCount(tasks: Set[Task]): int =
     tasks.filter(t => t.state == Outstanding).size()
 
-  /// The CURRENT eval stage as a 0-BASED INDEX into the authored program,
-  /// DERIVED from the live set's identities (standing rule 3: no stored stage
-  /// index) — meaningful only while the set is a stage's fan-out (Evaluation;
-  /// tasksWellFormed pins the set to a single stage, so the fold's pick order
-  /// is irrelevant). A stage key is its position (StageDefinition), so the
-  /// index is one less. 0 on an empty or work set (the fold's base: no eval
-  /// identity, no stage).
-  pure def evalStage(tasks: Set[Task]): int =
-    tasks.fold(0, (acc, t) =>
-      match t.identity {
-        | WorkTask(_) => acc
-        | EvaluationTask(e) => e.stage - 1
-      })
-
-  /// THE TWO IDENTITY CONSTRUCTORS, named once so everything that must NAME
-  /// a task — a spawn site, a witness driver, a replayed journal row — builds
-  /// one the way the machine does. Both keys are the authored ones and no
-  /// offset is applied here: a caller holding a stage INDEX passes
-  /// `program[s].key`, which the positional rule makes the same number.
+  /// THE TWO IDENTITY CONSTRUCTORS. The work one is chuggy's, because the
+  /// package declares it beside its own ticket; the evaluation one is the
+  /// protocol's `evaluatorTaskIdentity`, and the instance's own
+  /// `taskIdentityFor` is what every spawn here goes through.
   pure def workTaskOf(ticket: int, cycle: int): TaskIdentity =
     WorkTask({ ticket: ticket, cycle: cycle })
 
-  pure def evaluationTaskOf(ticket: int, workCycle: int, stage: int,
-      generation: int, evaluator: int): TaskIdentity =
-    EvaluationTask({ ticket: ticket, workCycle: workCycle, stage: stage,
-      generation: generation, evaluator: evaluator })
-
-  /// THE KEY A TASK RETIRES UNDER, and so the order its set enters the record
-  /// in: an evaluation task's is its evaluator key, and a work set is one
-  /// task. Named because the record is a list and a set carries no order to
-  /// inherit.
-  pure def taskRetirementKey(identity: TaskIdentity): int =
-    match identity {
-      | WorkTask(_) => 1
-      | EvaluationTask(e) => e.evaluator
+  /// AN OPAQUE POSITIVE REFERENCE derived from a task's own identity, where
+  /// the real system has a stored row — a result manifest, a digest, a piece
+  /// of failure evidence. The machine's only claim on such a reference is
+  /// that it exists and is distinct per evaluator within a run, which is the
+  /// discrimination a run's statuses need.
+  pure def taskRefOf(task: TaskIdentity): int =
+    match task {
+      | WorkTask(work) => work.cycle
+      | EvaluationTask(evaluation) => evaluation.evaluator
     }
 
-  /// THE spawn site: install a fresh fan-out under the identities the caller
-  /// names, all outstanding to the fabric in one step (see TaskState), and
-  /// bump the ghost `spawned` counter by the same count, which is what keeps
-  /// the idsAccounted equality (domain.qnt) checkable. Callers guarantee the
-  /// previous set is already retired (tasks empty), which every spawn site
-  /// satisfies: dispatch/wrapup-rework/resumeTicket spawn from task-free
-  /// phases, and the reduces spawn on the retireLive'd ticket.
-  pure def spawnOn(ticket: Ticket, identities: Set[TaskIdentity]): Ticket =
-    { ...ticket,
-      tasks: identities.map(i => { identity: i, state: Outstanding }),
-      spawned: ticket.spawned + identities.size() }
-
   /// THE WORK SPAWN: a work cycle is one task, always — work is not staged
-  /// and lists no evaluators, so the only fan-out in this machine is an
+  /// and lists no evaluators, so the only parallelism in this machine is an
   /// evaluation stage's roster. Named once here because every work spawn site
   /// (dispatch, both reworks, the work resume) is this call, and starting the
   /// cycle is the only thing that moves the counter its identity is drawn
-  /// from.
+  /// from. The mint counter claims the one slot the task takes.
   pure def spawnWork(j: int, ticket: Ticket): Ticket =
     val cycle = ticket.workCyclesStarted + 1
-    { ...spawnOn(ticket, Set(workTaskOf(j, cycle))),
-      workCyclesStarted: cycle }
-
-  /// WHICH RUN OF STAGE s THIS IS within the current work cycle. Every stage
-  /// runs once per cycle but one: an evaluation park resumes at the lowest
-  /// stage (domain.qnt decideResumeTicket), which re-enters a stage the cycle
-  /// may already have spawned, and the generation is what keeps the second
-  /// run's identities distinct from the first's. Derived from the record
-  /// rather than stored, counted at the stage's FIRST LISTED evaluator key
-  /// because every run spawns exactly one of that key.
-  pure def stageGeneration(ticket: Ticket, s: int): int =
-    val stage = ticket.program[s]
-    val first = stage.evaluators[0].key
-    1 + ticket.record.foldl(0, (n, t) =>
-      match t.identity {
-        | WorkTask(_) => n
-        | EvaluationTask(e) =>
-          if (e.workCycle == ticket.workCyclesStarted and e.stage == stage.key
-              and e.evaluator == first) n + 1 else n
-      })
-
-  /// THE EVALUATION SPAWN: one task per evaluator stage s LISTS, fanned out
-  /// in parallel, every one of them naming the work cycle it judges and the
-  /// key its evaluator was authored under. The roster is read off the
-  /// program here rather than passed in, so no caller can hand this a width.
-  pure def spawnEvalStage(j: int, ticket: Ticket, s: int): Ticket =
-    val stage = ticket.program[s]
-    val generation = stageGeneration(ticket, s)
-    spawnOn(ticket, evaluatorKeys(stage).map(e =>
-      evaluationTaskOf(j, ticket.workCyclesStarted, stage.key, generation, e)))
-
-  /// Retire the live task set into the retained record, by ASCENDING
-  /// evaluator key (taskRetirementKey) — the walk is bounded by the largest
-  /// key the set holds, because the keys a stage lists need not be
-  /// contiguous. A task
-  /// still OUTSTANDING at retirement is force-closed as Resolved(Cancelled)
-  /// — only revoke retires mid-flight sets; every reduce/escalation
-  /// retirement is of a
-  /// fully-resolved set, so the Cancelled arm never fires there. A
-  pure def retireLive(ticket: Ticket): Ticket =
-    val highest = ticket.tasks.fold(0, (m, t) =>
-      val k = taskRetirementKey(t.identity)
-      if (k > m) k else m)
     { ...ticket,
-      tasks: Set(),
-      record: range(1, highest + 1).foldl(ticket.record, (r, k) =>
-        ticket.tasks.filter(t => taskRetirementKey(t.identity) == k).fold(r, (acc, t) =>
-          acc.append({ ...t,
-            state: if (t.state == Outstanding) Resolved(Cancelled) else t.state }))) }
+      tasks: Set({ identity: workTaskOf(j, cycle), state: Outstanding }),
+      workCyclesStarted: cycle,
+      spawned: ticket.spawned + 1 }
+
+  /// Retire the live work task: a phase that has stopped running carries no
+  /// live task, and a task still outstanding when its ticket parks or is
+  /// revoked is one the world is told to cancel (domain.qnt's
+  /// "CancelTicketWork"). Evaluation needs no retirement at all — its
+  /// obligations are derived from the current run, so leaving the phase stops
+  /// them being owed.
+  pure def retireLive(ticket: Ticket): Ticket = { ...ticket, tasks: Set() }
 
   /// First write wins: resolve the task `task` names if it is still
   /// outstanding; the
@@ -464,24 +464,129 @@ module chuggy_ticket {
   /// fabric demands. The explicit
   /// lifecycle makes the finality structural: Outstanding -> Resolved(out)
   /// is the only edge, and nothing maps a Resolved back.
-  /// The resolution event carries the footprint alongside
-  /// the verdict, and first-write-wins covers BOTH — a duplicate delivery
-  /// with a different citation changes nothing, and a carried task
-  /// (born settled, no outstanding match) absorbs deliveries the same way.
   pure def resolveTask(tasks: Set[Task], task: TaskIdentity, out: TaskOutcome): Set[Task] =
     tasks.map(t =>
       if (t.identity == task and t.state == Outstanding) { ...t, state: Resolved(out) }
       else t)
 
-  /// What counts as a PASS to the stage verdict: a verdict earned this
-  /// incarnation. Named rather than inlined because the tests pin it
-  /// directly.
-  pure def taskPassed(t: Task): bool = t.state == Resolved(Passed)
+  /// DID THE WORK CYCLE PRODUCE? Work is one task, so the cycle's outcome is
+  /// that task's. Named rather than inlined because the reduce and the tests
+  /// read the same predicate.
+  pure def workProduced(tasks: Set[Task]): bool =
+    tasks.forall(t => t.state == Resolved(Passed))
 
-  /// THE STAGE VERDICT: every evaluator in the stage passed. Callers
-  /// guarantee every task is resolved; Failed and Cancelled both fail it
-  /// (taskPassed above). This is "every required evaluator in the stage
-  /// passed" at chuggy's grain, a stage's roster being its required
-  /// evaluators.
-  pure def combine(tasks: Set[Task]): bool = tasks.forall(t => taskPassed(t))
+  // === The evaluation instance (the protocol, driven from the ticket) =====
+
+  /// THE CURRENT INSTANCE: the last one, which is the open one exactly while
+  /// the ticket is in Evaluation or parked at the blocked wall (domain.qnt
+  /// evaluationsWellFormed). Callers guarantee the list is non-empty, which
+  /// every phase that has one does.
+  pure def currentInstance(ticket: Ticket): EvaluationInstance =
+    ticket.evaluations[ticket.evaluations.length() - 1]
+
+  /// Install an advanced instance in place of the current one. Only the last
+  /// instance is ever rewritten; evaluationsMonotone is what holds that.
+  pure def withInstance(ticket: Ticket, evaluation: EvaluationInstance): Ticket =
+    { ...ticket,
+      evaluations: ticket.evaluations
+        .replaceAt(ticket.evaluations.length() - 1, evaluation) }
+
+  /// WHICH STAGE AN INSTANCE IS RUNNING, as the index its run stores; -1
+  /// when it is not running one. The package's own read, spelled here
+  /// because the package declares it beside its ticket rather than in the
+  /// protocol.
+  pure def runningStageIndex(evaluation: EvaluationInstance): int =
+    match evaluation.state {
+      | Running(progress) => progress.stage.stageIndex
+      | _ => -1
+    }
+
+  /// EVERY RUN AN INSTANCE HOLDS, completed and current — the whole of what
+  /// it has asked for. A terminal state's list already holds the run that
+  /// ended it (evaluation.qnt concludeStage appends before it decides), so
+  /// only the two open states add their current run.
+  pure def instanceRuns(evaluation: EvaluationInstance): List[StageRun] =
+    match evaluation.state {
+      | Running(progress) => progress.completedStages.append(progress.stage)
+      | EvaluationBlocked(progress) =>
+        progress.completedStages.append(progress.stage)
+      | EvaluationPassed(completedStages) => completedStages
+      | EvaluationFailed(completedStages) => completedStages
+    }
+
+  /// EVERY TASK IDENTITY AN INSTANCE HAS NAMED at the generation its runs
+  /// now stand at. The generations a resume left behind are not recoverable
+  /// and are deliberately not named: an earlier generation's completion is
+  /// stale, and staleness is absorbed by identity (domain.qnt
+  /// decideTaskDone) without the machine having to enumerate it.
+  pure def instanceTasks(evaluation: EvaluationInstance): Set[TaskIdentity] =
+    instanceRuns(evaluation).foldl(Set(), (found, progress) =>
+      found.union(progress.evaluators.keys().map(evaluator =>
+        taskIdentityFor(evaluation, progress, evaluator))))
+
+  /// THE SLOTS A RUN CLAIMED: its roster once per generation it has reached.
+  /// A resume re-asks only the evaluators it reopened but claims the roster
+  /// again, which is what makes the count a function of the run alone.
+  pure def runSpawnTotal(progress: StageRun): int =
+    progress.generation * progress.evaluators.keys().size()
+
+  /// THE SLOTS EVERY INSTANCE OF THIS TICKET CLAIMED — the evaluation half
+  /// of the mint counter, derived from the instances rather than stored
+  /// beside them (domain.qnt idsAccounted holds the two equal).
+  pure def evaluationSpawnTotal(ticket: Ticket): int =
+    ticket.evaluations.foldl(0, (total, evaluation) =>
+      total + instanceRuns(evaluation).foldl(0, (n, progress) => n + runSpawnTotal(progress)))
+
+  /// THE EVALUATION SPAWN: the current run's obligations go to the fabric
+  /// (currentTaskObligations names them) and the mint counter claims one
+  /// slot per evaluator the run's stage LISTS. Claiming the roster rather
+  /// than the subset asked keeps the counter derivable from the instance;
+  /// the slots a resume leaves unused are gaps, and a gap costs a monotone
+  /// mint nothing.
+  pure def spawnEvalRun(ticket: Ticket): Ticket =
+    val index = runningStageIndex(currentInstance(ticket))
+    { ...ticket,
+      spawned: ticket.spawned + ticket.program[index].evaluators.length() }
+
+  /// WORK PASSED, SO JUDGEMENT BEGINS: the artifact the cycle produced is
+  /// the mint counter's current value, the instance is opened over it with
+  /// the ticket's authored program as its plan, and its first stage is
+  /// asked. One instance per work cycle that gets this far.
+  pure def beginEvaluation(j: int, ticket: Ticket): Ticket =
+    val artifactRef = ticket.spawned
+    spawnEvalRun({ ...ticket,
+      artifact: ProducedArtifact(artifactRef),
+      evaluations: ticket.evaluations.append(begin(
+        ticket.workCyclesStarted,
+        { ticket: j, workResult: artifactRef },
+        { stages: ticket.program })) })
+
+  /// THE TASKS THE FABRIC IS RUNNING FOR THIS TICKET: the work task while it
+  /// is outstanding, or the obligations the current run still owes. Empty in
+  /// every other phase, which is what makes leaving a phase enough to stop
+  /// owing them.
+  /// IS THE INSTANCE PARKED ON A WALL? The blocked state is the one the
+  /// desk reads, and the desk's own wall is held equal to it (domain.qnt
+  /// evaluationsWellFormed).
+  pure def instanceBlocked(evaluation: EvaluationInstance): bool =
+    match evaluation.state {
+      | EvaluationBlocked(_) => true
+      | _ => false
+    }
+
+  /// WHAT A TASK'S RESULT LOOKS LIKE TO THE MACHINE: references derived from
+  /// the task's own identity, where the real system has a stored row. The
+  /// machine's only claim on them is that they exist and tell one
+  /// evaluator's result from another's within a run.
+  pure def taskResultRefOf(task: TaskIdentity): TaskResultRef =
+    { manifest: taskRefOf(task), digest: taskRefOf(task),
+      schema: taskRefOf(task) }
+
+  pure def liveTasks(ticket: Ticket): Set[TaskIdentity] =
+    if (ticket.phase == Work)
+      ticket.tasks.filter(t => t.state == Outstanding).map(t => t.identity)
+    else if (ticket.phase == Evaluation)
+      currentTaskObligations(currentInstance(ticket))
+        .foldl(Set(), (found, task) => found.union(Set(task)))
+    else Set()
 }
