@@ -182,8 +182,9 @@ module chuggy_domain {
   ///
   /// The release also carries the ticket's EVAL PROGRAM, validated the
   /// same structural way — callers guarantee prog ∈ validPrograms, so an
-  /// empty program, a zero/oversized fan-out, or an overlong program is
-  /// REFUSED at authoring time: no reachable state holds one
+  /// empty program, an empty roster, a key past N_TASKS or named twice, an
+  /// off-position stage key, or an overlong program is REFUSED at authoring
+  /// time: no reachable state holds one
   /// (programsWellFormed), rather than the interpreter defending against
   /// one mid-flight. The program is immutable after release, like deps.
   ///

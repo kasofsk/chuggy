@@ -103,10 +103,18 @@ function liveTaskIsNotCancelled(task: Task): boolean {
   return !(task.state !== "Outstanding" && task.state.value === "Cancelled");
 }
 
-/** Two key lists name the same set, which is all an unordered live set can be held to. */
+/**
+ * Two key lists name the same set, which is all an unordered live set can be
+ * held to. `left` is counted distinct first: two task objects sharing a key
+ * are two members of a JS Set where the model's value-Set holds one.
+ */
 function sameKeys(left: readonly number[], right: readonly number[]): boolean {
   const named = new Set(right);
-  return left.length === named.size && left.every((key) => named.has(key));
+  return (
+    new Set(left).size === left.length &&
+    left.length === named.size &&
+    left.every((key) => named.has(key))
+  );
 }
 
 /**
