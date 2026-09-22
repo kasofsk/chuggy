@@ -96,12 +96,13 @@ function seededEvent(type: string, ticket: number): string {
 
 /**
  * One release entry naming the dependencies it was released on, which is the
- * only place in the store those edges are written down.
+ * only place in the store those edges are written down, and the empty program
+ * every release names beside them.
  */
 function seededRelease(ticket: number, deps: readonly number[]): string {
   return JSON.stringify({
     seq: ticket,
-    event: { type: "CreateTicket", value: { ticket, deps } },
+    event: { type: "CreateTicket", value: { ticket, deps, prog: [] } },
     rec: {},
   });
 }
