@@ -13,6 +13,7 @@ import {
 } from "../../src/actor/decisionEvent.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { retryableIn } from "../../src/domain/enablement.ts";
+import type { Config } from "../../src/domain/config.ts";
 import type {
   DecisionEvent,
   TaskIdentity,
@@ -258,23 +259,7 @@ test("a ticket's task numbers ascend over its whole history and never repeat", (
     taskDoneEvent(id(1), workTaskOf(1, 2), "Pass", plainResult),
     workReduceEvent(id(1)),
   ];
-  const minted: { task: number; identity: TaskIdentity }[] = [];
-  let state = actorInit();
-  for (const event of history) {
-    const before = memoryGraph(state);
-    state = journalStep(refinementInstance, state, event);
-    const entry = state.journal.at(-1);
-    assert.ok(entry !== undefined);
-    const post = memoryGraph(state);
-    const decided = plannedInput(
-      entry.event,
-      id(1),
-      ticketAt(post, id(1)).phase,
-    );
-    if (decided === undefined) continue;
-    const planned = materializationOf(decided, before, post, entry);
-    minted.push(...planned.execution.flatMap((request) => [...request.tasks]));
-  }
+  const minted = mintedUnder(history, refinementInstance);
   assert.deepEqual(
     minted.map((each) => each.task),
     [1, 2, 3, 4],
@@ -288,13 +273,13 @@ test("a ticket's task numbers ascend over its whole history and never repeat", (
 });
 
 /**
- * A history under a sparse stage, minted step by step: the identities a run
+ * A history minted step by step under `config`: the identities each run
  * spawns and the wire numbers the plan gave them.
  */
 function mintedUnder(
   history: readonly DecisionEvent[],
+  config: Config = { ...refinementInstance, nTasks: 3 },
 ): readonly { task: number; identity: TaskIdentity }[] {
-  const config = { ...refinementInstance, nTasks: 3 };
   const minted: { task: number; identity: TaskIdentity }[] = [];
   let state = actorInit();
   for (const event of history) {
