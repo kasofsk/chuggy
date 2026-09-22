@@ -3,29 +3,59 @@
 /// the live actor, including the sparse native ticket id and materialized
 /// ticket policy carried by CreateTicket.
 
+/// THE RELEASED RECORD these suites drive with, at the scale the refinement
+/// instance is bound to: one stage listing one evaluator, and a distinct
+/// small positive reference per slot so a reader can see which one travelled.
+/// Stated here rather than drawn from domain.qnt's release action, because
+/// these suites drive the journal directly and the domain instance they
+/// check is the refinement module's own.
+module chuggy_refinement_fixture {
+  import task_contract.* from "../task-contract/task"
+  import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
+  import chuggy_ticket.* from "../ticket"
+
+  pure def defOf(slot: int): TaskDefinition = {
+    workload: 4 * slot - 3, inputs: 4 * slot - 2,
+    executionRequirements: 4 * slot - 1, resultContract: 4 * slot }
+  pure val planFlat: List[StageDefinition] =
+    [{ key: 1, evaluators: [{ key: 1, task: defOf(1) }] }]
+  pure def released(id: int): ReleasedTicket = {
+    id: id, content: 1, dependencies: Set(),
+    workConfiguration: defOf(2), evaluationPlan: { stages: planFlat },
+    finalizationConfiguration: 2 }
+
+  /// One member of each of domain.qnt's two source draw sets. Which one an
+  /// environment observes is no suite's subject; that they come from
+  /// disjoint sets is what makes a dispatch's source tell itself from an
+  /// acceptance's in a journal.
+  pure val aDispatchSource: int = 1
+  pure val anAcceptedSource: int = 3
+}
+
 module chuggy_refinement_unit_test {
   import task_contract.* from "../task-contract/task"
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
+  import chuggy_refinement_fixture.*
 
-  pure val progFlat: List[StageDefinition] =
-    [{ key: 1, evaluators: [{ key: 1 }] }]
-  pure val release10: DecisionEvent = CreateTicket({
-    ticket: 2, deps: Set(), prog: progFlat
-  })
+  pure val release10: DecisionEvent = CreateTicket(released(2))
   pure val d1 = execDecisionEvent(genesis, release10)
   pure val e1: Entry = { seq: 1, event: release10, rec: d1.rec }
-  pure val dispatch10: DecisionEvent = Dispatch(2)
+  pure val dispatch10: DecisionEvent =
+    Dispatch({ ticket: 2, source: aDispatchSource })
   pure val d2 = execDecisionEvent(d1.post, dispatch10)
   pure val e2: Entry = { seq: 2, event: dispatch10, rec: d2.rec }
   pure val goodJ: List[Entry] = [e1, e2]
 
-  /// A completion event at the reference the task's identity derives, with
-  /// the disposition a passing report never consults.
-  pure def workDone(ticket: int, task: TaskIdentity): DecisionEvent =
+  /// A completion event at the obligation the graph says the ticket owes
+  /// the task, with the disposition a passing report never consults.
+  pure def workDone(c: TicketGraph, ticket: int,
+      task: TaskIdentity): DecisionEvent =
     TaskDone({ ticket: ticket, task: task,
-      report: WorkResultReport({ result: taskResultRefOf(task) }),
+      report: WorkResultReport({
+        result: producedResult(c.tickets.get(ticket), task),
+        acceptedSourceRef: anAcceptedSource }),
       onFailure: ReworkEvaluationFailure })
   pure def wallDone(ticket: int, task: TaskIdentity): DecisionEvent =
     TaskDone({ ticket: ticket, task: task,
@@ -61,45 +91,55 @@ module chuggy_refinement_unit_test {
   })
 
   run journalRefusesDisabledEventsTest = assert(and {
-    not(decisionEventEnabled(genesis, Dispatch(2))),
-    not(decisionEventEnabled(genesis, workDone(2, workTaskOf(2, 1)))),
+    not(decisionEventEnabled(genesis, dispatch10)),
+    not(decisionEventEnabled(genesis, workDone(d2.post, 2, workTaskOf(2, 1)))),
     not(decisionEventEnabled(genesis, wallDone(2, workTaskOf(2, 1)))),
     not(decisionEventEnabled(genesis, FinalizationResult({ ticket: 2, out: FinalizationSucceeded }))),
     not(decisionEventEnabled(genesis, ResumeTicket(2)))
   })
 
-  /// A REPORT IS REFUSED UNLESS IT FITS ITS TASK. Two ways to be unfit,
-  /// both checked in the enablement and neither reachable from a fabric
-  /// that plays by the rules: a reference at zero (the wire integers are
-  /// positive, so zero is a hole where a result should be), and a verdict
-  /// carried by a WORK task, which judges nothing.
+  /// A REPORT IS REFUSED UNLESS IT FITS ITS TASK, and each way to be unfit
+  /// is checked in the enablement and none is reachable from a fabric that
+  /// plays by the rules: a reference at zero (the wire integers are
+  /// positive, so zero is a hole where a result should be), a verdict
+  /// carried by a WORK task, which judges nothing, and — the exact-
+  /// obligation rule — a result whose obligation is not the one this
+  /// ticket owes for the task, which is a result for a spawn it never made.
+  /// That last refusal is the only place it can be shown: a refused report
+  /// never reaches a golden trace.
+  pure val owed2 = producedResult(d2.post.tickets.get(2), workTaskOf(2, 1))
   run reportAdmissibilityRequiredTest = assert(and {
     not(decisionEventEnabled(d2.post, TaskDone({ ticket: 2,
       task: workTaskOf(2, 1),
-      report: WorkResultReport({ result: { manifest: 0, digest: 1, schema: 1 } }),
+      report: WorkResultReport({ result: { ...owed2, resultRef: 0 },
+        acceptedSourceRef: anAcceptedSource }),
       onFailure: ReworkEvaluationFailure }))),
     not(decisionEventEnabled(d2.post, TaskDone({ ticket: 2,
       task: workTaskOf(2, 1),
-      report: EvaluationResultReport({ result: taskResultRefOf(workTaskOf(2, 1)),
-        verdict: EvaluatorPass }),
+      report: EvaluationResultReport({ result: owed2, verdict: EvaluatorPass }),
       onFailure: ReworkEvaluationFailure }))),
     not(decisionEventEnabled(d2.post, TaskDone({ ticket: 2,
       task: workTaskOf(2, 1),
       report: TerminalFailureReport({ evidence: 0, kind: ProcessFailure }),
       onFailure: ReworkEvaluationFailure }))),
-    decisionEventEnabled(d2.post, workDone(2, workTaskOf(2, 1)))
+    not(decisionEventEnabled(d2.post, TaskDone({ ticket: 2,
+      task: workTaskOf(2, 1),
+      report: WorkResultReport({
+        result: { ...owed2, obligation: { ...owed2.obligation,
+          contextRef: owed2.obligation.contextRef + 1 } },
+        acceptedSourceRef: anAcceptedSource }),
+      onFailure: ReworkEvaluationFailure }))),
+    decisionEventEnabled(d2.post, workDone(d2.post, 2, workTaskOf(2, 1)))
   })
 
   run journalRefusesInvalidReleasePayloadTest =
-    val badDeps: DecisionEvent = CreateTicket({
-      ticket: 2, deps: Set(99), prog: progFlat
-    })
-    val badProgram: DecisionEvent = CreateTicket({
-      ticket: 2, deps: Set(), prog: []
-    })
+    val badDeps: DecisionEvent =
+      CreateTicket({ ...released(2), dependencies: Set(99) })
+    val badPlan: DecisionEvent =
+      CreateTicket({ ...released(2), evaluationPlan: { stages: [] } })
     assert(and {
       not(decisionEventEnabled(genesis, badDeps)),
-      not(decisionEventEnabled(genesis, badProgram))
+      not(decisionEventEnabled(genesis, badPlan))
     })
 
   run worldArithmeticTest = assert(and {
@@ -115,11 +155,14 @@ module chuggy_refinement_unit_test {
   /// reference are different events that replay to the same state, because
   /// the reference is carried and never compared. That is what lets the
   /// journal be the authority on what happened without the machine having
-  /// to model what a result IS.
+  /// to model what a result IS. The obligation and the accepted source on
+  /// the same report are held equal here because those the machine does
+  /// read — one to admit the report, one to pin on the ticket.
   run taskCompletionDecisionReplaysTest =
-    val realEvent = workDone(2, workTaskOf(2, 1))
+    val realEvent = workDone(d2.post, 2, workTaskOf(2, 1))
     val otherRef = TaskDone({ ticket: 2, task: workTaskOf(2, 1),
-      report: WorkResultReport({ result: { manifest: 2, digest: 2, schema: 1 } }),
+      report: WorkResultReport({ result: { ...owed2, resultRef: 99 },
+        acceptedSourceRef: anAcceptedSource }),
       onFailure: ReworkEvaluationFailure })
     val real = execDecisionEvent(d2.post, realEvent)
     assert(and {
@@ -136,23 +179,27 @@ module chuggy_refinement_witness_test {
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
+  import chuggy_refinement_fixture.*
 
-  pure val progFlat: List[StageDefinition] =
-    [{ key: 1, evaluators: [{ key: 1 }] }]
-  pure def release(ticket: int): DecisionEvent = CreateTicket({
-    ticket: ticket, deps: Set(), prog: progFlat
-  })
+  pure def release(ticket: int): DecisionEvent = CreateTicket(released(ticket))
+  pure val dispatch2: DecisionEvent =
+    Dispatch({ ticket: 2, source: aDispatchSource })
 
-  pure def workDone(ticket: int, task: TaskIdentity): DecisionEvent =
+  /// The produced reports, at the obligation the actor's memory says the
+  /// ticket owes: a report carrying any other is one the enablement refuses.
+  def workDone(ticket: int, task: TaskIdentity): DecisionEvent =
     TaskDone({ ticket: ticket, task: task,
-      report: WorkResultReport({ result: taskResultRefOf(task) }),
+      report: WorkResultReport({
+        result: producedResult(memGraph.tickets.get(ticket), task),
+        acceptedSourceRef: anAcceptedSource }),
       onFailure: ReworkEvaluationFailure })
   /// Every judgement below walks a PASSING stage, where the disposition is
   /// not consulted; it is named once here so the walks stay about recovery.
-  pure def judged(ticket: int, task: TaskIdentity,
+  def judged(ticket: int, task: TaskIdentity,
       v: EvaluationVerdict): DecisionEvent =
     TaskDone({ ticket: ticket, task: task,
-      report: EvaluationResultReport({ result: taskResultRefOf(task),
+      report: EvaluationResultReport({
+        result: producedResult(memGraph.tickets.get(ticket), task),
         verdict: v }),
       onFailure: ReworkEvaluationFailure })
   pure def walled(ticket: int, task: TaskIdentity): DecisionEvent =
@@ -174,7 +221,7 @@ module chuggy_refinement_witness_test {
   run executionBlockedResumeRecoversTest =
     rinit
       .then(stepEmit(release(2), "ticket-released"))
-      .then(stepEmit(Dispatch(2), "dispatch"))
+      .then(stepEmit(dispatch2, "dispatch"))
       .then(journalStep(walled(2, workTaskOf(2, 1))))
       .expect(and {
         memGraph.tickets.get(2).phase == Escalated,
@@ -206,7 +253,7 @@ module chuggy_refinement_witness_test {
   run evaluationBlockedResumeRecoversTest =
     rinit
       .then(stepEmit(release(2), "ticket-released"))
-      .then(stepEmit(Dispatch(2), "dispatch"))
+      .then(stepEmit(dispatch2, "dispatch"))
       .then(stepEmit(workDone(2, workTaskOf(2, 1)), "task-done"))
       .then(stepEmit(WorkReduce(2), "work-passed"))
       .then(journalStep(walled(2, evalTask(2, 1, 1))))
@@ -241,7 +288,7 @@ module chuggy_refinement_witness_test {
   run finalizationCompletionCrashRecoveryTest =
     rinit
       .then(stepEmit(release(2), "ticket-released"))
-      .then(stepEmit(Dispatch(2), "dispatch"))
+      .then(stepEmit(dispatch2, "dispatch"))
       .then(stepEmit(workDone(2, workTaskOf(2, 1)), "task-done"))
       .then(stepEmit(WorkReduce(2), "work-passed"))
       .then(stepEmit(judged(2, evalTask(2, 1, 1), EvaluatorPass), "eval-passed"))
@@ -271,7 +318,7 @@ module chuggy_refinement_witness_test {
   run finalizationFailureEntersReworkTest =
     rinit
       .then(stepEmit(release(2), "ticket-released"))
-      .then(stepEmit(Dispatch(2), "dispatch"))
+      .then(stepEmit(dispatch2, "dispatch"))
       .then(stepEmit(workDone(2, workTaskOf(2, 1)), "task-done"))
       .then(stepEmit(WorkReduce(2), "work-passed"))
       .then(stepEmit(judged(2, evalTask(2, 1, 1), EvaluatorPass), "eval-passed"))
@@ -290,24 +337,26 @@ module chuggy_refinement_hazard_test {
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
+  import chuggy_refinement_fixture.*
 
-  pure val progFlat: List[StageDefinition] =
-    [{ key: 1, evaluators: [{ key: 1 }] }]
-  pure val release10: DecisionEvent = CreateTicket({
-    ticket: 2, deps: Set(), prog: progFlat
-  })
+  pure val release10: DecisionEvent = CreateTicket(released(2))
+  pure val dispatch2: DecisionEvent =
+    Dispatch({ ticket: 2, source: aDispatchSource })
 
-  pure def workDone(ticket: int, task: TaskIdentity): DecisionEvent =
+  def workDone(ticket: int, task: TaskIdentity): DecisionEvent =
     TaskDone({ ticket: ticket, task: task,
-      report: WorkResultReport({ result: taskResultRefOf(task) }),
+      report: WorkResultReport({
+        result: producedResult(memGraph.tickets.get(ticket), task),
+        acceptedSourceRef: anAcceptedSource }),
       onFailure: ReworkEvaluationFailure })
   /// The hazard walks reach a judgement on a PASSING stage once and on a
   /// FAILING one once; the failing walk asks for rework, which is the
   /// disposition that spawns — and a spawn is what a double spend is made of.
-  pure def judged(ticket: int, task: TaskIdentity,
+  def judged(ticket: int, task: TaskIdentity,
       v: EvaluationVerdict): DecisionEvent =
     TaskDone({ ticket: ticket, task: task,
-      report: EvaluationResultReport({ result: taskResultRefOf(task),
+      report: EvaluationResultReport({
+        result: producedResult(memGraph.tickets.get(ticket), task),
         verdict: v }),
       onFailure: ReworkEvaluationFailure })
   pure def evalTask(ticket: int, cycle: int): TaskIdentity =
@@ -316,14 +365,14 @@ module chuggy_refinement_hazard_test {
   run dispatchEffectFirstDoubleSpendTest =
     rinit
       .then(journalStep(release10)).then(emitNext)
-      .then(effectCrash(Dispatch(2)))
+      .then(effectCrash(dispatch2))
       .expect(and {
         memGraph.tickets.get(2).phase == Pending,
         worldSpawns(2) == 1, journalSpawns(2) == 0,
         not(journalCoversWorld), not(noDoubleSpentWork),
         journalLegal, recoveryComplete, allDomainInvariants
       })
-      .then(journalStep(Dispatch(2))).then(emitNext)
+      .then(journalStep(dispatch2)).then(emitNext)
       .expect(and {
         worldSpawns(2) == 2, journalSpawns(2) == 1,
         not(noDoubleSpentWork), refinementCore, allDomainInvariants
@@ -336,7 +385,7 @@ module chuggy_refinement_hazard_test {
   run finalizationEffectFirstDuplicatesIrreversibleCompletionTest =
     rinit
       .then(journalStep(release10)).then(emitNext)
-      .then(journalStep(Dispatch(2))).then(emitNext)
+      .then(journalStep(dispatch2)).then(emitNext)
       .then(journalStep(workDone(2, workTaskOf(2, 1)))).then(emitNext)
       .then(journalStep(WorkReduce(2))).then(emitNext)
       .then(journalStep(judged(2, evalTask(2, 1), EvaluatorPass))).then(emitNext)
@@ -361,7 +410,7 @@ module chuggy_refinement_hazard_test {
   run reworkEffectFirstDoubleSpendTest =
     rinit
       .then(journalStep(release10)).then(emitNext)
-      .then(journalStep(Dispatch(2))).then(emitNext)
+      .then(journalStep(dispatch2)).then(emitNext)
       .then(journalStep(workDone(2, workTaskOf(2, 1)))).then(emitNext)
       .then(journalStep(WorkReduce(2))).then(emitNext)
       .then(effectCrash(judged(2, evalTask(2, 1), EvaluatorFail)))

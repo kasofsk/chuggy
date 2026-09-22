@@ -19,8 +19,10 @@ module chuggy_api {
   type ApiTaskOutcome = TaskOutcome
   type ApiTaskState = TaskState
   type ApiTask = Task
-  type ApiTaskResultRef = TaskResultRef
   type ApiFailureKind = FailureKind
+  type ApiTaskDefinition = TaskDefinition
+  type ApiTaskObligation = TaskObligation
+  type ApiValidatedTaskResult = ValidatedTaskResult
   type ApiTaskTerminalReport = TaskTerminalReport
   type ApiEvaluatorDefinition = EvaluatorDefinition
   type ApiStageDefinition = StageDefinition
@@ -39,6 +41,7 @@ module chuggy_api {
   type ApiEscalation = Escalation
   type ApiFinalizationOutcome = FinalizationOutcome
   type ApiArtifactMark = ArtifactMark
+  type ApiReleasedTicket = ReleasedTicket
   type ApiTicket = Ticket
   type ApiInstallationId = InstallationId
   type ApiTicketRef = TicketRef
