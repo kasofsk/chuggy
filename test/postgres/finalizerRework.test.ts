@@ -41,6 +41,8 @@ import {
   type InputBundleReference,
 } from "../../src/interpreter/finalizer.ts";
 import { canonicalInputBundle } from "../../src/interpreter/finalizerPreparation.ts";
+import { postgresExecutionSourceHistory } from "../../src/adapters/postgres/executionSourceHistory.ts";
+import { executionSourceObservation } from "../../src/interpreter/executionSourceObservation.ts";
 import {
   finalizerDrain,
   finalizerExpireClaim,
@@ -87,16 +89,17 @@ interface ReworkBundle {
   readonly references: readonly ReworkReference[];
 }
 
-/** What one project's newest spawn registration pins, read as a worker would read it. */
+/** What one project's newest spawn registration of a kind pins, read as a worker would read it. */
 async function reworkBundleOf(
   project: FinalizerProject,
+  kind = "SpawnWork",
 ): Promise<ReworkBundle> {
   const pinned = (await rig.harness.query(
     `SELECT input_bundle AS bundle, input_bundle_digest AS digest
        FROM execution_request
-      WHERE tenant=$1 AND project=$2 AND kind='SpawnWork'
+      WHERE tenant=$1 AND project=$2 AND kind=$3
       ORDER BY authorizing_seq DESC LIMIT 1`,
-    [project.partition.tenant, project.partition.project],
+    [project.partition.tenant, project.partition.project, kind],
   )) as readonly { bundle: string; digest: string }[];
   const row = pinned[0];
   if (row === undefined) {
@@ -383,4 +386,40 @@ test("a target ref that moved afterwards changes nothing the bundle names", asyn
   );
   assert.notEqual(reworkReference(bundle, "TargetCommit")?.reference_id, moved);
   assert.deepEqual(await reworkBundleOf(project), bundle);
+});
+
+/**
+ * A bundle built from the evidence pins no source of its own, so what the
+ * next evaluation spawn is observed against is what the failed attempt
+ * carried forward, and a spawn the writer cannot source is not decided at
+ * all. The observation here is the real one over the rows the decision wrote,
+ * because the drained writer above answers its own source.
+ */
+test("the evaluation of a rework's work is sourced from the evidence the conflict pinned", async () => {
+  const { project, attempt } = await reworked("rework-evaluation");
+  const observed = await executionSourceObservation(
+    {
+      binding: () => {
+        throw new Error("an evaluation reads no repository binding");
+      },
+    },
+    {
+      observeTarget: () => {
+        throw new Error("an evaluation reads no remote");
+      },
+    },
+    postgresExecutionSourceHistory(rig.harness.pool),
+  ).observe({
+    partition: project.partition,
+    ticket: project.ticket,
+    kind: "Evaluation",
+  });
+  assert.deepEqual(observed, {
+    observed: "Source",
+    source: {
+      repository: project.repository,
+      target: { commit: attempt.target_commit },
+      manifests: [],
+    },
+  });
 });
