@@ -5,6 +5,7 @@ import {
   dispatchEvent,
   finalizationResultEvent,
   releaseTicketEvent,
+  resumeTicketEvent,
   revokeEvent,
   taskDoneEvent,
   workReduceEvent,
@@ -14,6 +15,7 @@ import { retryableIn } from "../../src/domain/enablement.ts";
 import type { Config } from "../../src/domain/config.ts";
 import type {
   DecisionEvent,
+  FailureKind,
   TaskIdentity,
 } from "../../src/domain/generated/modelTypes.ts";
 import { escalationTags } from "../../src/domain/generated/modelTypes.ts";
@@ -378,6 +380,47 @@ test("a sparse stage mints consecutive numbers and the set after it repeats none
       workTaskOf(1, 2),
     ],
   );
+});
+
+/** A program whose one stage lists three evaluators, so a resume can re-ask one of them. */
+const wideAuthoring = {
+  deps: new Set<number>(),
+  prog: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }, { key: 3 }] }],
+} as const;
+
+/** One evaluator stopped rather than answering, which is what a resume comes back for. */
+function stopped(cycle: number, evaluator: number, kind: FailureKind) {
+  const judge = evaluationTaskOf(1, cycle, 1, 1, evaluator);
+  return taskDoneEvent(
+    id(1),
+    judge,
+    stoppedReport(judge, kind),
+    plainDisposition,
+  );
+}
+
+/**
+ * The count a run spends is its whole roster, generation by generation, so the
+ * re-ask takes a number above every one the first pass minted rather than one
+ * of the set it is resuming. Minted off the tasks dispatched instead, the lone
+ * re-ask would land back inside its own stage's first run.
+ */
+test("a resume re-asks the stopped evaluator alone, at a number the first pass never held", () => {
+  const minted = mintedUnder([
+    releaseTicketEvent(id(1), wideAuthoring),
+    dispatchEvent(id(1)),
+    workDone(1),
+    workReduceEvent(id(1)),
+    judged(1, 1, "EvaluatorPass"),
+    stopped(1, 2, "ProcessFailure"),
+    judged(1, 3, "EvaluatorPass"),
+    resumeTicketEvent(id(1)),
+  ]);
+  assert.deepEqual(
+    minted.map((each) => each.task),
+    [1, 2, 3, 4, 6],
+  );
+  assert.deepEqual(minted.at(-1)?.identity, evaluationTaskOf(1, 1, 1, 2, 2));
 });
 
 /**

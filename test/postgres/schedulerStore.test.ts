@@ -699,7 +699,7 @@ test("a definitive inability blocks one execution and releases its slot", async 
   assert.equal(execution?.resultManifest, undefined);
   assert.equal(
     (await completionOf(project, blocked.operation))?.["command_tag"],
-    "ExecutionBlocked",
+    "TaskDone",
   );
   assert.deepEqual(
     await rig.store.blockExecution(
@@ -713,8 +713,8 @@ test("a definitive inability blocks one execution and releases its slot", async 
 
 /**
  * The wall a block recorded, from the boundary that wrote it to the page that
- * shows it. The event names no wall, so the writer reads it off the execution
- * the completion settled and puts it on the projection for the read.
+ * shows it. The report names the kind alone, so the writer reads the wall off
+ * the execution the completion settled and puts it on the projection.
  */
 test("a blocked ticket escalates at the one wall and records what it hit", async () => {
   const project = await schedulerProject(rig, "wall-read", { tasks: 1 });

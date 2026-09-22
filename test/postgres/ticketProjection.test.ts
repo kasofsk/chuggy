@@ -23,13 +23,16 @@ import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts"
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
-import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  TaskIdentity,
+  TaskTerminalReport,
+} from "../../src/domain/generated/modelTypes.ts";
 import type { TicketResource } from "../../src/interpreter/nativeWeb.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
 import { plainDisposition } from "../actor/harness.ts";
 import { escalationTags } from "../../src/domain/generated/modelTypes.ts";
-import { id, reportedAt } from "../domain/fixtures.ts";
+import { id, reportedAt, stoppedReport } from "../domain/fixtures.ts";
 import {
   postgresHarnessCompletion,
   postgresHarnessDrain,
@@ -105,11 +108,21 @@ async function reported(
   task: TaskIdentity,
   verdict: "Pass" | "Fail",
 ): Promise<ProjectMemory> {
+  return reportedWith(partition, memory, task, reportedAt(task, verdict));
+}
+
+/** The same, under a report the verdict pairing has no name for. */
+async function reportedWith(
+  partition: Partition,
+  memory: ProjectMemory,
+  task: TaskIdentity,
+  report: TaskTerminalReport,
+): Promise<ProjectMemory> {
   await postgresHarnessCompletion(
     harness,
     partition,
     `operation-projection-${randomUUID()}`,
-    taskDoneEvent(subject, task, reportedAt(task, verdict), plainDisposition),
+    taskDoneEvent(subject, task, report, plainDisposition),
   );
   const drained = await postgresHarnessDrain(harness, partition, memory);
   assert.deepEqual(
@@ -260,6 +273,68 @@ test("a resume clears the escalation it re-entered at", async () => {
   assert.deepEqual(await projected(partition), carried(drained.memory));
   const reads = postgresNativeReads(pool);
   assert.equal((await reads.ticket(partition, subject))?.escalation, undefined);
+});
+
+/**
+ * A stopped evaluator is an absence of an answer rather than a judgement, so
+ * the stage parks the ticket instead of concluding it and the resume comes
+ * back for that evaluator alone, at the next generation and a fresh number.
+ */
+test("a stopped evaluator parks the ticket and its resume re-asks that evaluator", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "projection-stopped",
+  );
+  let memory = await postgresHarnessHistory(
+    harness,
+    partition,
+    "projection-stopped",
+    postgresHarnessJournal().length,
+  );
+  memory = await reported(partition, memory, workTaskOf(1, 1), "Pass");
+  const judge = evaluationTaskOf(1, 1, 1, 1, 1);
+  memory = await reportedWith(
+    partition,
+    memory,
+    judge,
+    stoppedReport(judge, "ProcessFailure"),
+  );
+  assert.deepEqual(await projected(partition), {
+    phase: "Escalated",
+    escalation: "EvaluationBlockedEscalated",
+  });
+  const action = await openAction(partition);
+  const accepted = await harness.inbox.accept({
+    ...postgresHarnessSubmission(partition, "projection-stopped-answer"),
+    command: {
+      version: 1,
+      command: "ResolveNativeAction",
+      action: action.action,
+      authorizingSeq: action.authorizingSeq,
+      resolution: "Resume",
+    },
+  });
+  assert.equal(accepted.accepted, "Accepted");
+  const drained = await postgresHarnessDrain(harness, partition, memory);
+  assert.deepEqual(drained.decided, ["Committed"]);
+  assert.deepEqual(await projected(partition), {
+    phase: "Evaluation",
+    escalation: "NoEscalation",
+  });
+  assert.deepEqual(
+    await harness.query(
+      `SELECT task::text AS task, generation::text AS generation,
+              evaluator::text AS evaluator
+         FROM execution_request_task
+        WHERE tenant=$1 AND project=$2 AND kind='Evaluation'
+        ORDER BY task`,
+      [partition.tenant, partition.project],
+    ),
+    [
+      { task: "2", generation: "1", evaluator: "1" },
+      { task: "3", generation: "2", evaluator: "1" },
+    ],
+  );
 });
 
 /**
