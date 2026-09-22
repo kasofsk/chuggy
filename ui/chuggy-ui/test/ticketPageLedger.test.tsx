@@ -431,8 +431,14 @@ test("after a resume the current cycle draws its resumed evaluator running, agai
   const running = rowsOf(current).find((row) => row.includes("Running"));
   expect(running).toBeDefined();
   expect(running).toContain("running ");
-  expect(running).toContain("again");
+  expect(running).toContain("generation 2");
   expect(current.querySelector(".fig-live")).not.toBeNull();
+  const blocked = rowsOf(current).find((row) => row.includes("Blocked"));
+  expect(blocked).toContain("Superseded");
+  const blockedRow = [...current.querySelectorAll(".ledger-row")].find(
+    (row) => row.textContent?.includes("Blocked") === true,
+  );
+  expect(blockedRow?.classList.contains("ledger-row-superseded")).toBe(true);
 });
 
 test("a resumed ticket says it was resumed", async () => {

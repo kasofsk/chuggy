@@ -1,8 +1,7 @@
 /**
  * The ticket's executions as the machine's own structure: cycles newest first,
  * each holding the work run that produced an artifact and the stages that
- * judged it, an evaluator drawn once per stage at whichever generation is its
- * own current one.
+ * judged it, an evaluator drawn at every generation it has reached.
  *
  * The current cycle is railed and open and the superseded ones are dimmed and
  * closed, because the question a reader opens this page with is about the
@@ -11,9 +10,9 @@
  * and "not on this page" that a flat list cannot draw. Every figure is
  * `core/figures.ts`'s and every sum `runTotals.ts`'s, so nothing here counts;
  * the fabric's own relaunches are a note on the row and are not the cycle's
- * rework. A generation past an evaluator's first is a note on its row too,
- * never a row of its own: a resume re-asks only the evaluators a stage
- * blocked, and the ones it did not re-ask keep their own, earlier row.
+ * rework. An evaluator a stage resumed draws its earlier generation too,
+ * dimmed and beneath the one that replaced it, so what a reader sums over the
+ * rows never falls short of the cycle's own rollup beside them.
  */
 
 import { useCallback, useState } from "react";
@@ -46,6 +45,7 @@ import {
   cycleLabel,
   cycleLastSet,
   retriesLabel,
+  stageEvaluatorsCurrent,
   stageLabel,
   ticketLedger,
 } from "../../core/ticketLedger.ts";
@@ -104,8 +104,9 @@ function setShortfall(set: TaskSet): string | undefined {
  * evaluator it did hold.
  */
 function stageShortfall(stage: RanStage): string | undefined {
-  return stage.evaluators.length < stage.expected
-    ? `${String(stage.evaluators.length)} of ${String(stage.expected)} evaluators on this page`
+  const current = stageEvaluatorsCurrent(stage).length;
+  return current < stage.expected
+    ? `${String(current)} of ${String(stage.expected)} evaluators on this page`
     : undefined;
 }
 
@@ -145,6 +146,7 @@ function SetRow(props: {
   readonly set: TaskSet;
   readonly standing?: string;
   readonly shortfall?: string;
+  readonly superseded?: boolean;
 }): ReactNode {
   const first = props.set.executions[0];
   const pill = {
@@ -175,6 +177,9 @@ function SetRow(props: {
           shortfall={props.shortfall}
         />
       }
+      {...(props.superseded === undefined
+        ? {}
+        : { superseded: props.superseded })}
       expand={{
         open,
         onToggle: () => {
@@ -203,8 +208,16 @@ function evaluatorLabel(
   return many ? `${label} · ${String(key)}` : label;
 }
 
-/** An evaluator's own row: a generation past its first, and the roster's own
- * shortfall on the last evaluator the page holds for the stage. */
+/** What an evaluator's row says of itself beyond its verdict: which
+ * generation it stands at now, or that a later one replaced it. */
+function evaluatorStanding(row: EvaluatorRow): string | undefined {
+  return row.standing === "Superseded"
+    ? "Superseded"
+    : generationLabel(row.generation);
+}
+
+/** An evaluator's own row: which generation it names, and the roster's own
+ * shortfall on the last current evaluator the page holds for the stage. */
 function EvaluatorLine(props: {
   readonly chrome: RowChrome;
   readonly stage: RanStage;
@@ -212,8 +225,8 @@ function EvaluatorLine(props: {
   readonly last: boolean;
   readonly stageCount: number;
 }): ReactNode {
-  const many = props.stage.evaluators.length > 1;
-  const standing = generationLabel(props.row.generation);
+  const many = stageEvaluatorsCurrent(props.stage).length > 1;
+  const standing = evaluatorStanding(props.row);
   const shortfall = props.last ? stageShortfall(props.stage) : undefined;
   return (
     <SetRow
@@ -225,6 +238,7 @@ function EvaluatorLine(props: {
         many,
       )}
       set={props.row.set}
+      superseded={props.row.standing === "Superseded"}
       {...(standing === undefined ? {} : { standing })}
       {...(shortfall === undefined ? {} : { shortfall })}
     />
@@ -249,15 +263,19 @@ function StageLine(props: {
     );
   }
   const stage = props.row;
+  const lastCurrent = stage.evaluators.reduce(
+    (held, row, index) => (row.standing === "Current" ? index : held),
+    -1,
+  );
   return (
     <>
       {stage.evaluators.map((row, index) => (
         <EvaluatorLine
-          key={`${String(stage.stage)}/${String(row.key)}`}
+          key={`${String(stage.stage)}/${String(row.key)}/${String(row.generation)}`}
           chrome={props.chrome}
           stage={stage}
           row={row}
-          last={index === stage.evaluators.length - 1}
+          last={index === lastCurrent}
           stageCount={props.stageCount}
         />
       ))}
