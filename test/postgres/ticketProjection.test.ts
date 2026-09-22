@@ -246,15 +246,15 @@ test("the public read serves the escalation the row holds", async () => {
   }
 });
 
-test("a resume clears the escalation it re-entered at", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "projection-resume",
-  );
-  const memory = await walled(partition, "projection-resume");
+/** Answers the ticket's open action with a resume and drains the one decision it earns. */
+async function resumed(
+  partition: Partition,
+  memory: Parameters<typeof postgresHarnessDrain>[2],
+  submission: string,
+): Promise<Awaited<ReturnType<typeof postgresHarnessDrain>>> {
   const action = await openAction(partition);
   const accepted = await harness.inbox.accept({
-    ...postgresHarnessSubmission(partition, "projection-resume-answer"),
+    ...postgresHarnessSubmission(partition, submission),
     command: {
       version: 1,
       command: "ResolveNativeAction",
@@ -266,6 +266,16 @@ test("a resume clears the escalation it re-entered at", async () => {
   assert.equal(accepted.accepted, "Accepted");
   const drained = await postgresHarnessDrain(harness, partition, memory);
   assert.deepEqual(drained.decided, ["Committed"]);
+  return drained;
+}
+
+test("a resume clears the escalation it re-entered at", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "projection-resume",
+  );
+  const memory = await walled(partition, "projection-resume");
+  const drained = await resumed(partition, memory, "projection-resume-answer");
   assert.deepEqual(await projected(partition), {
     phase: "Work",
     escalation: "NoEscalation",
@@ -303,20 +313,7 @@ test("a stopped evaluator parks the ticket and its resume re-asks that evaluator
     phase: "Escalated",
     escalation: "EvaluationBlockedEscalated",
   });
-  const action = await openAction(partition);
-  const accepted = await harness.inbox.accept({
-    ...postgresHarnessSubmission(partition, "projection-stopped-answer"),
-    command: {
-      version: 1,
-      command: "ResolveNativeAction",
-      action: action.action,
-      authorizingSeq: action.authorizingSeq,
-      resolution: "Resume",
-    },
-  });
-  assert.equal(accepted.accepted, "Accepted");
-  const drained = await postgresHarnessDrain(harness, partition, memory);
-  assert.deepEqual(drained.decided, ["Committed"]);
+  await resumed(partition, memory, "projection-stopped-answer");
   assert.deepEqual(await projected(partition), {
     phase: "Evaluation",
     escalation: "NoEscalation",

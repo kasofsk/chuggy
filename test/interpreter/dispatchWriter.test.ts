@@ -591,8 +591,8 @@ test("a brief landing elsewhere still has its work observed at the branch it hap
 const workBase = asGitObjectId("b".repeat(40));
 const workCommit = asGitObjectId("c".repeat(40));
 
-/** The memory of a ticket whose single work task has passed and awaits its reduce. */
-function workPassedMemory(): ProjectMemory {
+/** The state of a ticket whose single work task has passed and awaits its reduce. */
+function workPassedState(): ReturnType<typeof journalStep> {
   const config = refinementInstance;
   let state = journalStep(
     config,
@@ -600,7 +600,7 @@ function workPassedMemory(): ProjectMemory {
     releaseTicketEvent(id(1), plainAuthoring),
   );
   state = journalStep(config, state, dispatchEvent(id(1)));
-  state = journalStep(
+  return journalStep(
     config,
     state,
     taskDoneEvent(
@@ -610,7 +610,11 @@ function workPassedMemory(): ProjectMemory {
       plainDisposition,
     ),
   );
-  return { ...releasedMemory(), graph: memoryGraph(state) };
+}
+
+/** The memory of a ticket whose single work task has passed and awaits its reduce. */
+function workPassedMemory(): ProjectMemory {
+  return { ...releasedMemory(), graph: memoryGraph(workPassedState()) };
 }
 
 /** The reduce that turns passed work into the evaluation spawn under test. */
@@ -804,24 +808,11 @@ test("a source that may read later defers the input rather than deciding it", as
  * completion that spawns: a rework re-enters work off the same decision.
  */
 function judgementMemory(): ProjectMemory {
-  const config = refinementInstance;
-  let state = journalStep(
-    config,
-    actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
+  const state = journalStep(
+    refinementInstance,
+    workPassedState(),
+    workReduceEvent(id(1)),
   );
-  state = journalStep(config, state, dispatchEvent(id(1)));
-  state = journalStep(
-    config,
-    state,
-    taskDoneEvent(
-      id(1),
-      workTaskOf(1, 1),
-      producedReport(workTaskOf(1, 1)),
-      plainDisposition,
-    ),
-  );
-  state = journalStep(config, state, workReduceEvent(id(1)));
   return { ...releasedMemory(), graph: memoryGraph(state) };
 }
 

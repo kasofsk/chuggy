@@ -193,7 +193,8 @@ test("a work run still running has no artifact and no evaluation yet", () => {
   expect(cycle.artifact).toBe("None");
 });
 
-test("a sparse stage draws both evaluators", () => {
+/** A one-stage program keyed 1 and 3, after the evaluators named have passed. */
+function sparseStage(evaluators: readonly number[]): StageRow | undefined {
   const sparse: typeof ticket21Authoring = {
     ...ticket21Authoring,
     program: [{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }],
@@ -206,22 +207,20 @@ test("a sparse stage draws both evaluators", () => {
         identity: workIdentity(1),
         outcome: "Passed",
       },
-      {
-        execution: "execution-bb-2",
-        task: 2,
-        identity: evalIdentity(1, 1, 1, 1),
-        outcome: "Passed",
-      },
-      {
-        execution: "execution-cc-3",
-        task: 3,
-        identity: evalIdentity(1, 1, 1, 3),
-        outcome: "Passed",
-      },
+      ...evaluators.map((evaluator) => ({
+        execution: `execution-bb-${evaluator}`,
+        task: evaluator + 1,
+        identity: evalIdentity(1, 1, 1, evaluator),
+        outcome: "Passed" as const,
+      })),
     ]),
     sparse,
   );
-  const stage = ledger.cycles[0]?.stages[0];
+  return ledger.cycles[0]?.stages[0];
+}
+
+test("a sparse stage draws both evaluators", () => {
+  const stage = sparseStage([1, 3]);
   if (stage?.kind !== "Ran") throw new Error("stage did not run");
   expect(stage.evaluators.map((row) => row.key)).toEqual([1, 3]);
   expect(stage.expected).toBe(2);
@@ -357,28 +356,7 @@ test("a stage is drawn against the fan-out its stage was authored with", () => {
 });
 
 test("a sparse stage's expected width is its evaluator count, not its highest key", () => {
-  const sparse: typeof ticket21Authoring = {
-    ...ticket21Authoring,
-    program: [{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }],
-  };
-  const ledger = ticketLedger(
-    ledgerPage([
-      {
-        execution: "execution-aa-1",
-        task: 1,
-        identity: workIdentity(1),
-        outcome: "Passed",
-      },
-      {
-        execution: "execution-bb-2",
-        task: 2,
-        identity: evalIdentity(1, 1, 1),
-        outcome: "Passed",
-      },
-    ]),
-    sparse,
-  );
-  const row = ledger.cycles[0]?.stages[0];
+  const row = sparseStage([1]);
   expect(row?.kind === "Ran" ? row.expected : undefined).toBe(2);
 });
 
