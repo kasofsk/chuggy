@@ -33,13 +33,20 @@ import {
   journalStep,
   type ActorState,
 } from "../../src/actor/state.ts";
-import type { Config } from "../../src/domain/config.ts";
+import {
+  aDispatchSource,
+  evaluatorOf,
+  releasedTicketOf,
+  type Config,
+} from "../../src/domain/config.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import type {
   EvaluationFailureDisposition,
   EvaluationVerdict,
+  ReleasedTicket,
   StageDefinition,
 } from "../../src/domain/generated/modelTypes.ts";
+import type { ReleaseAuthoring } from "../../src/interpreter/authoring.ts";
 import { bundleHolds, evaluateBundle } from "../conformance/evaluate.ts";
 import { id, judgedReport, producedReport } from "../domain/fixtures.ts";
 
@@ -50,19 +57,34 @@ export const refinementInstance: Config = {
   maxStages: 1,
 };
 
+/** The single-stage plan every refinement-model run is released with. */
+export const flatPlan: readonly StageDefinition[] = [
+  { key: 1, evaluators: [evaluatorOf(1)] },
+];
+
+/** What a release freezes when a suite cares only which id it took and which ids it waits on. */
+export function plainDefinitionOf(
+  ticket: number,
+  dependencies: ReadonlySet<number> = new Set<number>(),
+): ReleasedTicket {
+  return releasedTicketOf(ticket, dependencies, flatPlan);
+}
+
 /** What a release freezes when a suite does not care which values it froze. */
-export const plainAuthoring = {
+export const plainDefinition: ReleasedTicket = plainDefinitionOf(1);
+
+/**
+ * What an author chose when a suite cares only that a draft has semantics. The
+ * definition above is what a release resolves from it; a draft holds neither
+ * the definition nor a way to resolve one.
+ */
+export const plainAuthoring: ReleaseAuthoring = {
   deps: new Set<number>(),
-  prog: [{ key: 1, evaluators: [{ key: 1 }] }] as readonly StageDefinition[],
-} as const;
+  prog: [{ key: 1, evaluators: [{ key: 1 }] }],
+};
 
 /** The disposition a completion rides when the suite is not steering a failure. */
 export const plainDisposition = "ReworkEvaluationFailure" as const;
-
-/** The single-stage program every refinement-model run authors. */
-export const flatProgram: readonly StageDefinition[] = [
-  { key: 1, evaluators: [{ key: 1 }] },
-];
 
 /**
  * The per-step gate: the domain bundle green on the carried view, and the
@@ -120,10 +142,15 @@ export function walkToFirstJudgement(
   state = stepEmit(
     config,
     state,
-    releaseTicketEvent(id(1), plainAuthoring),
+    releaseTicketEvent(plainDefinition),
     "ticket-released",
   );
-  state = stepEmit(config, state, dispatchEvent(id(1)), "dispatch");
+  state = stepEmit(
+    config,
+    state,
+    dispatchEvent(id(1), aDispatchSource),
+    "dispatch",
+  );
   const work = workTaskOf(1, 1);
   state = stepEmit(
     config,

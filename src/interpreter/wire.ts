@@ -35,8 +35,8 @@ import {
 } from "../domain/generated/modelTypes.ts";
 import {
   allNativeActionResolutions,
+  asOperationDecisionEvent,
   completionEventTypes,
-  isCompletionDecisionEvent,
   type FinalizationSubmission,
   type SchedulerCompletion,
   type StoredTicketCommand,
@@ -171,18 +171,13 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
     if (record["version"] !== 1)
       throw new TypeError("command version is not 1");
     if (record["command"] === "Decide") {
-      const event = decodeDecisionEvent(record["event"]);
-      if (
-        event.type === "WorkReduce" ||
-        event.type === "CreateTicket" ||
-        event.type === "FinalizationResult" ||
-        isCompletionDecisionEvent(event)
-      ) {
-        throw new TypeError("event is not a public decision command");
-      }
       return {
         parsed: "Ok",
-        value: { version: 1, command: "Decide", event },
+        value: {
+          version: 1,
+          command: "Decide",
+          event: asOperationDecisionEvent(decodeDecisionEvent(record["event"])),
+        },
       };
     }
     const dispatch = parsedDispatchCommand(record);

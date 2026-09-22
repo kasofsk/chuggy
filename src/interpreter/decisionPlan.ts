@@ -47,6 +47,7 @@ import {
   type ExecutionRequestBundle,
   type ExecutionRequestPlan,
   type NativeActionPlan,
+  type TicketSourceRecord,
 } from "./projectDecision.ts";
 
 function identity(entry: Entry, effectPosition: number, kind: string): string {
@@ -71,9 +72,12 @@ function subject(entry: Entry, effectPosition: number): TicketId {
  */
 function liveSlotRoster(ticket: Ticket): readonly number[] {
   if (ticket.phase !== "Evaluation") return [0];
-  const stage = ticket.program[runningStageIndex(currentInstance(ticket))];
+  const stage =
+    ticket.definition.evaluationPlan.stages[
+      runningStageIndex(currentInstance(ticket))
+    ];
   if (stage === undefined)
-    throw new Error("decision plan: the running stage is outside the program");
+    throw new Error("decision plan: the running stage is outside the plan");
   return stage.evaluators.map((entry) => entry.key);
 }
 
@@ -106,7 +110,11 @@ function liveRequestTasks(ticket: Ticket): ExecutionRequestPlan["tasks"] {
 
 /**
  * The bundle a spawn pins, carrying the evidence of the finalization that
- * caused it where one did. A cancellation authorizes no work, so it pins none.
+ * caused it where one did, and a cancellation authorizes no work so it pins
+ * none. A bundle built from evidence pins no source of its own, because the
+ * evidence carries the failed attempt's whole bundle forward — target commit
+ * and all — and a second one under that kind leaves a worker two answers to
+ * what its work is based on.
  */
 function executionRequestBundle(
   input: DecisionInput,
@@ -123,7 +131,7 @@ function executionRequestBundle(
   return {
     bundle: identity(entry, effectPosition, inputBundleIdentityKind),
     ...(evidence === undefined ? {} : { evidence }),
-    ...(source === undefined
+    ...(source === undefined || evidence !== undefined
       ? {}
       : {
           source: {
@@ -378,15 +386,26 @@ function materializationWithdrawals(
   });
 }
 
+/**
+ * What a decision's spawns run against: the source the requests are built from,
+ * and the row a dispatch's own observation adds to the ticket's sources. Only a
+ * dispatch carries the second, every other spawn running at a source some
+ * earlier decision already wrote down.
+ */
+export interface SpawnSources {
+  readonly source?: ExecutionSourceObservation;
+  readonly pinned?: TicketSourceRecord;
+}
+
 /** Derives every durable consequence of one pure ticket decision. */
 export function materializationOf(
   input: DecisionInput,
   pre: TicketGraph,
   post: TicketGraph,
   entry: Entry,
-  source?: ExecutionSourceObservation,
+  spawn: SpawnSources = {},
 ): DecisionMaterialization {
-  const effects = effectPlans(input, entry, pre, post, source);
+  const effects = effectPlans(input, entry, pre, post, spawn.source);
 
   const eventTicket =
     entry.event.type === "TaskDone"
@@ -416,5 +435,6 @@ export function materializationOf(
     input.source.nativeAction !== undefined
       ? { resolveAction: input.source.nativeAction }
       : {}),
+    ...(spawn.pinned === undefined ? {} : { ticketSource: spawn.pinned }),
   };
 }

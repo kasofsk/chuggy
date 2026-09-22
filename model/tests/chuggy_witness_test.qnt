@@ -11,15 +11,17 @@ module chuggy_witness_resume_test {
   /// keys rather than a width, so the spawn, the retirement and the
   /// generation count all have to read the key the stage names instead of
   /// counting from one — which this witness's second run is what exercises.
-  pure val p = [{ key: 1, evaluators: [{ key: 2 }] }]
+  pure val p = [{ key: 1, evaluators: [evaluatorOf(2)] }]
   /// And the same stage with BOTH evaluators, for the partial resume: one
   /// judges, the other is stopped, and only the stopped one comes back.
-  pure val pWide = [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }]
+  pure val pWide = [{ key: 1, evaluators: [evaluatorOf(1), evaluatorOf(2)] }]
 
-  pure def produced(task: TaskIdentity): TaskTerminalReport =
-    WorkResultReport({ result: taskResultRefOf(task) })
-  pure def judged(task: TaskIdentity, v: EvaluationVerdict): TaskTerminalReport =
-    EvaluationResultReport({ result: taskResultRefOf(task), verdict: v })
+  /// A PRODUCED REPORT, at the obligation the ticket owes the task right
+  /// now: the state is what says which obligation that is, so the builder
+  /// reads it rather than take it.
+  def judged(j: int, task: TaskIdentity, v: EvaluationVerdict): TaskTerminalReport =
+    EvaluationResultReport({ result: producedResult(tickets.get(j), task),
+      verdict: v })
   pure def walled(task: TaskIdentity): TaskTerminalReport =
     TerminalFailureReport({ evidence: taskRefOf(task),
       kind: ExecutionUnavailableFailure })
@@ -33,15 +35,23 @@ module chuggy_witness_resume_test {
         stages[stages.length() - 1].evaluators.get(evaluator)
     }
 
-  action release(j: int, deps: Set[int], prog: List[StageDefinition]): bool = all {
-    releasableIds.contains(j), deps.subseteq(dependableTickets),
-    validPrograms.contains(prog),
-    apply(decideReleaseTicket(graph, j, deps, prog)) }
-  action doDispatch(j: int): bool = all { readyTickets.contains(j), apply(decideDispatch(graph,j)) }
+  action release(j: int, dependencies: Set[int], stages: List[StageDefinition]): bool = all {
+    releasableIds.contains(j), dependencies.subseteq(dependableTickets),
+    validPlans.contains(stages),
+    apply(decideReleaseTicket(graph, releasedTicketOf(j, dependencies, stages))) }
+  action doDispatch(j: int): bool =
+    nondet source = dispatchSources.oneOf()
+    all { readyTickets.contains(j), apply(decideDispatch(graph, j, source)) }
   action done(j: int, task: TaskIdentity, report: TaskTerminalReport): bool = all {
     completableTickets.contains(j), deliverableTasksIn(graph,j).contains(task),
-    reportChoices(task).contains(report),
+    reportChoices(tickets.get(j), task).contains(report),
     apply(decideTaskDone(graph,j,task,report,ReworkEvaluationFailure)) }
+  /// A WORK COMPLETION: the source the application accepted the result at
+  /// is the environment's, so the driver draws it where the machine does.
+  action doneProduced(j: int, task: TaskIdentity): bool =
+    nondet accepted = acceptedSources.oneOf()
+    done(j, task, WorkResultReport({
+      result: producedResult(tickets.get(j), task), acceptedSourceRef: accepted }))
   action reduceWork(j: int): bool = all { reducibleWork.contains(j), apply(decideWorkReduce(graph,j)) }
   action resume(j: int): bool = all { retryableEscalated.contains(j), apply(decideResumeTicket(graph,j)) }
 
@@ -70,7 +80,7 @@ module chuggy_witness_resume_test {
   run evaluationResumeWitness = init
     .then(release(4, Set(), p)).expect(allInvariants)
     .then(doDispatch(4)).expect(allInvariants)
-    .then(done(4, workTaskOf(4, 1), produced(workTaskOf(4, 1)))).expect(allInvariants)
+    .then(doneProduced(4, workTaskOf(4, 1))).expect(allInvariants)
     .then(reduceWork(4)).expect(and {
       tickets.get(4).phase == Evaluation,
       tickets.get(4).tasks == Set(),
@@ -99,13 +109,13 @@ module chuggy_witness_resume_test {
   run partialEvaluationResumeWitness = init
     .then(release(4, Set(), pWide)).expect(allInvariants)
     .then(doDispatch(4))
-    .then(done(4, workTaskOf(4, 1), produced(workTaskOf(4, 1))))
+    .then(doneProduced(4, workTaskOf(4, 1)))
     .then(reduceWork(4)).expect(and {
       liveTasks(tickets.get(4)) ==
         Set(evaluatorTaskIdentity(4, 1, 1, 1, 1), evaluatorTaskIdentity(4, 1, 1, 1, 2)),
       allInvariants })
     .then(done(4, evaluatorTaskIdentity(4, 1, 1, 1, 1),
-        judged(evaluatorTaskIdentity(4, 1, 1, 1, 1), EvaluatorPass))).expect(and {
+        judged(4, evaluatorTaskIdentity(4, 1, 1, 1, 1), EvaluatorPass))).expect(and {
       // one answer does not conclude the stage
       tickets.get(4).phase == Evaluation, lastStep.label == "task-done",
       liveTasks(tickets.get(4)) == Set(evaluatorTaskIdentity(4, 1, 1, 1, 2)),
@@ -119,7 +129,7 @@ module chuggy_witness_resume_test {
       statusOf(tickets.get(4), 2) == Awaiting,
       allInvariants })
     .then(done(4, evaluatorTaskIdentity(4, 1, 1, 2, 2),
-        judged(evaluatorTaskIdentity(4, 1, 1, 2, 2), EvaluatorPass))).expect(and {
+        judged(4, evaluatorTaskIdentity(4, 1, 1, 2, 2), EvaluatorPass))).expect(and {
       tickets.get(4).phase == Finalization,
       lastStep.label == "eval-passed", allInvariants })
 }
@@ -134,22 +144,28 @@ module chuggy_witness_rework_test {
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2, N_TASKS=1, MAX_STAGES=1).* from "../domain"
-  pure val p = [{ key: 1, evaluators: [{ key: 1 }] }]
+  pure val p = [{ key: 1, evaluators: [evaluatorOf(1)] }]
   action release(j: int): bool = all {
-    releasableIds.contains(j), validPrograms.contains(p),
-    apply(decideReleaseTicket(graph, j, Set(), p)) }
-  action doDispatch(j: int): bool = all { readyTickets.contains(j), apply(decideDispatch(graph,j)) }
-  action doneWork(j: int, task: TaskIdentity): bool = all {
-    completableTickets.contains(j), deliverableTasksIn(graph,j).contains(task),
-    apply(decideTaskDone(graph, j, task,
-      WorkResultReport({ result: taskResultRefOf(task) }),
-      ReworkEvaluationFailure)) }
+    releasableIds.contains(j), validPlans.contains(p),
+    apply(decideReleaseTicket(graph, releasedTicketOf(j, Set(), p))) }
+  action doDispatch(j: int): bool =
+    nondet source = dispatchSources.oneOf()
+    all { readyTickets.contains(j), apply(decideDispatch(graph, j, source)) }
+  action doneWork(j: int, task: TaskIdentity): bool =
+    nondet accepted = acceptedSources.oneOf()
+    all {
+      completableTickets.contains(j), deliverableTasksIn(graph,j).contains(task),
+      apply(decideTaskDone(graph, j, task,
+        WorkResultReport({ result: producedResult(tickets.get(j), task),
+          acceptedSourceRef: accepted }),
+        ReworkEvaluationFailure)) }
   action judge(j: int, task: TaskIdentity, v: EvaluationVerdict,
       d: EvaluationFailureDisposition): bool = all {
     completableTickets.contains(j), deliverableTasksIn(graph,j).contains(task),
     dispositionChoices.contains(d),
     apply(decideTaskDone(graph, j, task,
-      EvaluationResultReport({ result: taskResultRefOf(task), verdict: v }), d)) }
+      EvaluationResultReport({ result: producedResult(tickets.get(j), task),
+        verdict: v }), d)) }
   action reduceWork(j: int): bool = all { reducibleWork.contains(j), apply(decideWorkReduce(graph,j)) }
   action resume(j: int): bool = all { retryableEscalated.contains(j), apply(decideResumeTicket(graph,j)) }
 
@@ -190,21 +206,27 @@ module chuggy_witness_stage_test {
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=1, N_TASKS=2, MAX_STAGES=2).* from "../domain"
-  pure val p = [{ key: 1, evaluators: [{ key: 1 }] },
-                { key: 2, evaluators: [{ key: 1 }] }]
-  action release: bool = apply(decideReleaseTicket(graph,2,Set(),p))
-  action doDispatch: bool = all { readyTickets.contains(2), apply(decideDispatch(graph,2)) }
-  action doneWork(task: TaskIdentity): bool = all {
-    deliverableTasksIn(graph,2).contains(task),
-    apply(decideTaskDone(graph, 2, task,
-      WorkResultReport({ result: taskResultRefOf(task) }), ReworkEvaluationFailure)) }
+  pure val p = [{ key: 1, evaluators: [evaluatorOf(1)] },
+                { key: 2, evaluators: [evaluatorOf(1)] }]
+  action release: bool = apply(decideReleaseTicket(graph, releasedTicketOf(2, Set(), p)))
+  action doDispatch: bool =
+    nondet source = dispatchSources.oneOf()
+    all { readyTickets.contains(2), apply(decideDispatch(graph, 2, source)) }
+  action doneWork(task: TaskIdentity): bool =
+    nondet accepted = acceptedSources.oneOf()
+    all {
+      deliverableTasksIn(graph,2).contains(task),
+      apply(decideTaskDone(graph, 2, task,
+        WorkResultReport({ result: producedResult(tickets.get(2), task),
+          acceptedSourceRef: accepted }), ReworkEvaluationFailure)) }
   action pass(task: TaskIdentity): bool = all {
     deliverableTasksIn(graph,2).contains(task),
     apply(decideTaskDone(graph, 2, task,
-      EvaluationResultReport({ result: taskResultRefOf(task), verdict: EvaluatorPass }),
+      EvaluationResultReport({ result: producedResult(tickets.get(2), task),
+        verdict: EvaluatorPass }),
       ReworkEvaluationFailure)) }
   action wr: bool = all { reducibleWork.contains(2), apply(decideWorkReduce(graph,2)) }
-  run stagedProgramWitness = init.then(release).then(doDispatch)
+  run stagedPlanWitness = init.then(release).then(doDispatch)
     .then(doneWork(workTaskOf(2, 1))).then(wr)
     .then(pass(evaluatorTaskIdentity(2, 1, 1, 1, 1)))
     .expect(and { tickets.get(2).phase == Evaluation,
@@ -217,21 +239,22 @@ module chuggy_witness_stage_test {
 }
 
 /// Authored data is ticket-local and immutable: two tickets released into
-/// one fleet keep the evaluation program each was authored with.
+/// one fleet keep the evaluation plan each was authored with.
 module chuggy_witness_sparse_test {
   import task_contract.* from "../task-contract/task"
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2, N_TASKS=2, MAX_STAGES=1).* from "../domain"
-  pure val pNarrow = [{ key: 1, evaluators: [{ key: 1 }] }]
-  pure val pWide = [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }]
-  action release(j:int, prog: List[StageDefinition]): bool = all {
-    releasableIds.contains(j), validPrograms.contains(prog),
-    apply(decideReleaseTicket(graph,j,Set(),prog)) }
+  pure val pNarrow = [{ key: 1, evaluators: [evaluatorOf(1)] }]
+  pure val pWide = [{ key: 1, evaluators: [evaluatorOf(1), evaluatorOf(2)] }]
+  action release(j:int, stages: List[StageDefinition]): bool = all {
+    releasableIds.contains(j), validPlans.contains(stages),
+    apply(decideReleaseTicket(graph, releasedTicketOf(j, Set(), stages))) }
   run ticketLocalPolicyWitness = init
     .then(release(1,pNarrow))
     .then(release(4,pWide))
-    .expect(and { tickets.get(1).program == pNarrow, tickets.get(4).program == pWide,
+    .expect(and { tickets.get(1).definition.evaluationPlan.stages == pNarrow,
+      tickets.get(4).definition.evaluationPlan.stages == pWide,
       allInvariants })
 }
 
@@ -240,15 +263,22 @@ module chuggy_witness_gate_test {
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2, N_TASKS=1, MAX_STAGES=1).* from "../domain"
-  pure val p=[{key:1,evaluators:[{key:1}]}]
-  action release(j:int):bool=apply(decideReleaseTicket(graph,j,Set(),p))
-  action doDispatch(j:int):bool=all{readyTickets.contains(j),apply(decideDispatch(graph,j))}
-  action td(j:int,task:TaskIdentity):bool=all{deliverableTasksIn(graph,j).contains(task),
-    apply(decideTaskDone(graph,j,task,WorkResultReport({result: taskResultRefOf(task)}),
-      ReworkEvaluationFailure))}
+  pure val p=[{key:1,evaluators:[evaluatorOf(1)]}]
+  action release(j:int):bool=apply(decideReleaseTicket(graph, releasedTicketOf(j, Set(), p)))
+  action doDispatch(j:int):bool=
+    nondet source = dispatchSources.oneOf()
+    all{readyTickets.contains(j),apply(decideDispatch(graph, j, source))}
+  action td(j:int,task:TaskIdentity):bool=
+    nondet accepted = acceptedSources.oneOf()
+    all{deliverableTasksIn(graph,j).contains(task),
+      apply(decideTaskDone(graph,j,task,
+        WorkResultReport({result: producedResult(tickets.get(j), task),
+          acceptedSourceRef: accepted}),
+        ReworkEvaluationFailure))}
   action pass(j:int,task:TaskIdentity):bool=all{deliverableTasksIn(graph,j).contains(task),
     apply(decideTaskDone(graph,j,task,
-      EvaluationResultReport({result: taskResultRefOf(task), verdict: EvaluatorPass}),
+      EvaluationResultReport({result: producedResult(tickets.get(j), task),
+        verdict: EvaluatorPass}),
       ReworkEvaluationFailure))}
   action wr(j:int):bool=all{reducibleWork.contains(j),apply(decideWorkReduce(graph,j))}
   action resolve(j:int,o:FinalizationOutcome):bool=all{tickets.get(j).phase==Finalization,apply(decideFinalizationResult(graph,j,o))}
@@ -293,9 +323,9 @@ module chuggy_witness_dependency_test {
   import task_contract.* from "../task-contract/task"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2,N_TASKS=1,MAX_STAGES=1).* from "../domain"
-  pure val p=[{key:1,evaluators:[{key:1}]}]
+  pure val p=[{key:1,evaluators:[evaluatorOf(1)]}]
   run existingDependencyWitness=init
-    .then(apply(decideReleaseTicket(graph,4,Set(),p)))
-    .then(apply(decideReleaseTicket(graph,1,Set(4),p)))
-    .expect(and{tickets.keys()==Set(1,4),tickets.get(1).deps==Set(4),isBlocked(1),allInvariants})
+    .then(apply(decideReleaseTicket(graph, releasedTicketOf(4, Set(), p))))
+    .then(apply(decideReleaseTicket(graph, releasedTicketOf(1, Set(4), p))))
+    .expect(and{tickets.keys()==Set(1,4),tickets.get(1).definition.dependencies==Set(4),isBlocked(1),allInvariants})
 }

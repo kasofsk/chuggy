@@ -127,7 +127,12 @@ test("an evaluation's identity is read back from its columns, counter by counter
   const project = await schedulerProject(rig, "operational-identity", {
     tasks: 1,
   });
-  const identity = { cycle: 2, stage: 3, generation: 4, evaluator: 5 };
+  /**
+   * The stage and the evaluator are the only ones this deployment's plan
+   * names, and a release resolves a definition per stage, so a spawn at any
+   * other pair is one no ticket here was released for.
+   */
+  const identity = { cycle: 2, stage: 1, generation: 4, evaluator: 1 };
   const request = await schedulerEvaluationRequest(
     rig,
     project,

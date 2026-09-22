@@ -32,7 +32,7 @@ export type TicketId = number & { readonly [ticketIdBrand]: true };
  */
 export type TaskId = number & { readonly [taskIdBrand]: true };
 
-/** A zero-based index into a ticket's authored program. */
+/** A zero-based index into a ticket's released plan. */
 export type StageIndex = number & { readonly [stageIndexBrand]: true };
 
 /** The durable authority whose journal gives local ticket identities meaning. */

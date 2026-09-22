@@ -27,17 +27,23 @@ import { postgresDomainConfigurationPrecondition } from "../../src/adapters/post
 import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
+  type CanonicalConfiguration,
   type AuthoringStore,
+  type ReleaseAuthoring,
 } from "../../src/interpreter/authoring.ts";
 import {
   dispatchEvent,
   releaseTicketEvent,
-  type ReleaseAuthoring,
 } from "../../src/actor/decisionEvent.ts";
+import { aDispatchSource } from "../../src/domain/config.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 
-import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
+import {
+  plainAuthoring,
+  plainDefinitionOf,
+  refinementInstance,
+} from "../actor/harness.ts";
 import {
   asDraftBrief,
   type DraftBrief,
@@ -50,10 +56,23 @@ export const postgresHarnessBrief = asDraftBrief({
   links: ["https://example.test/harness"],
   branch: "refs/heads/harness",
 });
-import { id } from "../domain/fixtures.ts";
+import { id, reportedAt } from "../domain/fixtures.ts";
+import { liveObligations } from "../../src/domain/ticket.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
+import { taskIdentityEquals } from "../../src/domain/task.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
+import type {
+  TaskIdentity,
+  TaskTerminalReport,
+  TicketGraph,
+} from "../../src/domain/generated/modelTypes.ts";
 import type { IdempotencyKeying } from "../../src/adapters/postgres/keying.ts";
 import { postgresOperationInbox } from "../../src/adapters/postgres/operationInbox.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
+import { postgresExecutionSourceHistory } from "../../src/adapters/postgres/executionSourceHistory.ts";
+import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
+import { executionSourceObservation } from "../../src/interpreter/executionSourceObservation.ts";
+import { unsourcedTicketReference } from "../../src/interpreter/executionSource.ts";
 import { postgresProjectDecision } from "../../src/adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "../../src/adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
@@ -585,10 +604,13 @@ export function postgresHarnessJournal(): readonly Entry[] {
   const released = journalStep(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(1)),
   );
-  return journalStep(refinementInstance, released, dispatchEvent(id(1)))
-    .journal;
+  return journalStep(
+    refinementInstance,
+    released,
+    dispatchEvent(id(1), aDispatchSource),
+  ).journal;
 }
 
 /** The fixture history's entry at `index`, refusing an index the fixture is shorter than. */
@@ -644,6 +666,7 @@ export async function postgresHarnessReleaseSubmission(
   partition: Partition,
   label: string,
   authoring: ReleaseAuthoring = plainAuthoring,
+  canonical: CanonicalConfiguration = postgresHarnessConfiguration,
 ): Promise<Submission> {
   const revision = asConfigurationRevisionId(`config-${label}-${randomUUID()}`);
   const base = postgresHarnessSubmission(partition, label);
@@ -652,7 +675,7 @@ export async function postgresHarnessReleaseSubmission(
     partition,
     authority,
     revision,
-    canonical: postgresHarnessConfiguration,
+    canonical,
   });
   const initialized = await harness.authoring.initializeDraft(
     partition,
@@ -708,7 +731,7 @@ export async function postgresHarnessAccept(
       resolvedEvent:
         submission.command.command === "Decide"
           ? submission.command.event
-          : releaseTicketEvent(id(1), plainAuthoring),
+          : releaseTicketEvent(plainDefinitionOf(1)),
     },
   };
 }
@@ -729,6 +752,7 @@ export function postgresHarnessAccepted(
   label: string,
   index: number,
   authoring: ReleaseAuthoring = plainAuthoring,
+  canonical: CanonicalConfiguration = postgresHarnessConfiguration,
 ): Promise<DecisionInput> {
   return (async () => {
     const submission =
@@ -738,6 +762,7 @@ export function postgresHarnessAccepted(
             partition,
             label,
             authoring,
+            canonical,
           )
         : postgresHarnessDecisionSubmission(partition, label, index);
     const accepted = await harness.inbox.accept(submission);
@@ -751,6 +776,57 @@ export function postgresHarnessAccepted(
     return input;
   })();
 }
+
+/**
+ * The entries a project's writer actually committed. A RELEASE RESOLVES ITS
+ * OWN DEFINITION, so the fixture history says which decisions were taken and
+ * the store says what they wrote.
+ */
+export async function postgresHarnessCommitted(
+  harness: PostgresHarness,
+  memory: ProjectMemory,
+): Promise<readonly Entry[]> {
+  const loaded = await harness.store.load(memory.lease);
+  if (loaded.parsed !== "Ok")
+    throw new Error("postgres harness: the committed journal did not load");
+  return loaded.value.map((row) => row.entry);
+}
+
+/**
+ * The report a task comes back with, at the obligation the ticket actually
+ * owes it and at the source it actually ran at. A RELEASE RESOLVES ITS OWN
+ * DEFINITION from the draft and the revision it pinned, so a fixture minting
+ * one from the ticket id alone would answer an obligation the machine is not
+ * holding open, and a work result naming a source no row records would leave
+ * the next spawn nowhere to run.
+ */
+export function postgresHarnessReport(
+  graph: TicketGraph,
+  task: TaskIdentity,
+  verdict: "Pass" | "Fail" = "Pass",
+): TaskTerminalReport {
+  const report = reportedAt(task, verdict);
+  if (report.type === "TerminalFailureReport") return report;
+  const ticket = ticketAt(graph, asTicketId(task.value.ticket));
+  const owed = liveObligations(ticket).find((each) =>
+    taskIdentityEquals(each.task, task),
+  );
+  if (owed === undefined)
+    throw new Error("postgres harness: the ticket owes that task nothing");
+  return {
+    ...report,
+    value: {
+      ...report.value,
+      ...(report.type === "WorkResultReport"
+        ? { acceptedSourceRef: ticket.source }
+        : {}),
+      result: { ...report.value.result, obligation: owed },
+    },
+  } as TaskTerminalReport;
+}
+
+/** The commit every harness observation answers at, which is no repository's real head. */
+export const postgresHarnessObservedCommit = asGitObjectId("a".repeat(40));
 
 /**
  * The rework cap every harness writer holds: two cycles beyond the first,
@@ -768,17 +844,40 @@ export function postgresHarnessWriter(
     store: harness.store,
     decisions: harness.decisions,
     executionSources: {
-      observe: () =>
+      /**
+       * THE ONE REMOTE READ A HARNESS FAKES. A brief naming a repository is
+       * answered at a fixed commit, and one naming none is dispatched at the
+       * reserved reference — which is what the real port answers too, so a
+       * fixture's ticket carries the source its own brief earns it.
+       */
+      observe: (request) =>
         Promise.resolve({
           observed: "Source",
-          source: {
-            repository: asRepositoryId("repository"),
-            target: { commit: asGitObjectId("a".repeat(40)) },
-            manifests: [],
-          },
+          source:
+            request.repository === undefined
+              ? { reference: unsourcedTicketReference }
+              : {
+                  reference: aDispatchSource,
+                  repository: request.repository,
+                  commit: postgresHarnessObservedCommit,
+                },
         }),
+      spawnSource: (request) =>
+        executionSourceObservation(
+          {
+            binding: () => {
+              throw new Error("postgres harness: a spawn reads no binding");
+            },
+          },
+          {
+            observeTarget: () => {
+              throw new Error("postgres harness: a spawn reads no remote");
+            },
+          },
+          postgresExecutionSourceHistory(harness.pool),
+        ).spawnSource(request),
     },
-    ticketBriefs: { brief: () => Promise.resolve(undefined) },
+    ticketBriefs: postgresTicketBrief(harness.pool),
   };
 }
 
@@ -793,6 +892,7 @@ export async function postgresHarnessHistory(
   label: string,
   count: number,
   authoring: ReleaseAuthoring = plainAuthoring,
+  canonical: CanonicalConfiguration = postgresHarnessConfiguration,
 ): Promise<ProjectMemory> {
   const writer = postgresHarnessWriter(harness);
   let memory = await projectWriterLoad(
@@ -806,6 +906,7 @@ export async function postgresHarnessHistory(
       `${label}-${String(index)}`,
       index,
       authoring,
+      canonical,
     );
     const step = await projectWriterDecide(writer, memory, item);
     if (step.decided.decided !== "Committed") {

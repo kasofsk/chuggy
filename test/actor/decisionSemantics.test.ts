@@ -28,6 +28,7 @@ import {
   workReduceEvent,
   type DecisionEvent,
 } from "../../src/actor/decisionEvent.ts";
+import { aDispatchSource } from "../../src/domain/config.ts";
 import {
   genesis,
   journalLegalOn,
@@ -50,7 +51,7 @@ import {
   stoppedReport,
 } from "../domain/fixtures.ts";
 import {
-  plainAuthoring,
+  plainDefinitionOf,
   plainDisposition,
   refinementInstance,
 } from "./harness.ts";
@@ -86,8 +87,8 @@ const stopped = evaluationTaskOf(1, 2, 1, 1, 1);
 const reasked = evaluationTaskOf(1, 2, 1, 2, 1);
 
 const walls = decided([
-  releaseTicketEvent(id(1), plainAuthoring),
-  dispatchEvent(id(1)),
+  releaseTicketEvent(plainDefinitionOf(1)),
+  dispatchEvent(id(1), aDispatchSource),
   taskDoneEvent(
     id(1),
     walled,

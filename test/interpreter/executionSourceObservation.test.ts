@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { executionSourceObservation } from "../../src/interpreter/executionSourceObservation.ts";
+import type {
+  ExecutionSourceHistoryPort,
+  TicketSourceRow,
+} from "../../src/interpreter/executionSourceObservation.ts";
+import { unsourcedTicketReference } from "../../src/interpreter/executionSource.ts";
 import {
   asGitObjectId,
   asGitRefName,
@@ -13,11 +18,24 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
-import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
+import {
+  asResultManifestId,
+  digestFold,
+} from "../../src/interpreter/resultManifest.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
   project: asProjectId("project"),
+};
+
+/** A history nothing in an observation case reaches. */
+const noHistory: ExecutionSourceHistoryPort = {
+  workSource: () => {
+    throw new Error("an observation reads no history");
+  },
+  ticketSource: () => {
+    throw new Error("an observation reads no history");
+  },
 };
 
 /** An observation over the project's default binding, recording what was asked about. */
@@ -45,7 +63,7 @@ function observingBinding(
         });
       },
     },
-    { workSource: () => Promise.resolve(undefined) },
+    noHistory,
   );
 }
 
@@ -67,18 +85,31 @@ function observingUncalled(): {
         throw new Error("mutable Git must not be observed");
       },
     },
-    { workSource: () => Promise.resolve(undefined) },
+    noHistory,
   );
   return { subject, bindingReads: () => bindingReads };
 }
 
-test("evaluation without retained work source never reads mutable Git", async () => {
+test("a brief naming no repository is dispatched at the reserved reference", async () => {
+  const { subject, bindingReads } = observingUncalled();
+  assert.deepEqual(await subject.observe({ partition, ticket: 3 }), {
+    observed: "Source",
+    source: { reference: unsourcedTicketReference },
+  });
+  assert.equal(bindingReads(), 0);
+});
+
+test("a repository the project has not bound is unreadable", async () => {
   const { subject, bindingReads } = observingUncalled();
   assert.deepEqual(
-    await subject.observe({ partition, ticket: 1, kind: "Evaluation" }),
+    await subject.observe({
+      partition,
+      ticket: 1,
+      repository: asRepositoryId("unbound"),
+    }),
     { observed: "Unreadable", evidence: "RefUnreadable" },
   );
-  assert.equal(bindingReads(), 0);
+  assert.equal(bindingReads(), 1);
 });
 
 test("the ticket's own branch is the last word on what work is observed against", async () => {
@@ -87,7 +118,6 @@ test("the ticket's own branch is the last word on what work is observed against"
   const source = await subject.observe({
     partition,
     ticket: 1,
-    kind: "Work",
     repository: asRepositoryId("project-default"),
     ref: asGitRefName("refs/heads/ticket"),
   });
@@ -99,10 +129,15 @@ test("the ticket's own branch is the last word on what work is observed against"
       targetRef: "refs/heads/ticket",
     },
   ]);
-  assert.equal(
-    source.observed === "Source" ? source.source.target.ref : undefined,
-    "refs/heads/ticket",
-  );
+  assert.deepEqual(source, {
+    observed: "Source",
+    source: {
+      reference: digestFold("a".repeat(40)),
+      repository: "project-default",
+      commit: "a".repeat(40),
+      ref: "refs/heads/ticket",
+    },
+  });
 });
 
 /** The branch the absent-branch cases name, which no fixture remote holds. */
@@ -145,7 +180,7 @@ function observingWithout(
         return Promise.resolve(answer);
       },
     },
-    { workSource: () => Promise.resolve(undefined) },
+    noHistory,
   );
 }
 
@@ -158,7 +193,6 @@ test("a brief branch the remote does not hold is based on the binding's own targ
   ).observe({
     partition,
     ticket: 1,
-    kind: "Work",
     repository: asRepositoryId("project-default"),
     ref: asGitRefName(ticketBranch),
   });
@@ -166,9 +200,10 @@ test("a brief branch the remote does not hold is based on the binding's own targ
   assert.deepEqual(source, {
     observed: "Source",
     source: {
+      reference: digestFold(workRefCommit),
       repository: "project-default",
-      target: { ref: ticketBranch, commit: workRefCommit },
-      manifests: [],
+      commit: workRefCommit,
+      ref: ticketBranch,
     },
   });
 });
@@ -182,7 +217,6 @@ test("a branch nobody can read is unreadable still, and is asked about once", as
   ).observe({
     partition,
     ticket: 1,
-    kind: "Work",
     repository: asRepositoryId("project-default"),
     ref: asGitRefName(ticketBranch),
   });
@@ -191,79 +225,6 @@ test("a branch nobody can read is unreadable still, and is asked about once", as
     evidence: "RemoteUnreachable",
   });
   assert.deepEqual(observed, [ticketBranch]);
-});
-
-const workBase = asGitObjectId("b".repeat(40));
-const workCommit = asGitObjectId("c".repeat(40));
-
-/** An observation whose history answers with one work spawn's declarations. */
-function observingWork(
-  declared: readonly ReturnType<typeof asGitObjectId>[],
-): ReturnType<typeof executionSourceObservation> {
-  return executionSourceObservation(
-    {
-      binding: () => {
-        throw new Error("an evaluation must not read the project binding");
-      },
-    },
-    {
-      observeTarget: () => {
-        throw new Error("mutable Git must not be observed");
-      },
-    },
-    {
-      workSource: () =>
-        Promise.resolve({
-          repository: asRepositoryId("work-repository"),
-          base: workBase,
-          declared,
-          manifests: [asResultManifestId("manifest-one")],
-        }),
-    },
-  );
-}
-
-test("evaluation is observed at the commit its work produced", async () => {
-  const observed = await observingWork([workCommit]).observe({
-    partition,
-    ticket: 1,
-    kind: "Evaluation",
-  });
-  assert.deepEqual(observed, {
-    observed: "Source",
-    source: {
-      repository: "work-repository",
-      target: { commit: workCommit },
-      manifests: ["manifest-one"],
-    },
-  });
-});
-
-test("work that declared no commit leaves its evaluation the base it ran on", async () => {
-  const observed = await observingWork([]).observe({
-    partition,
-    ticket: 1,
-    kind: "Evaluation",
-  });
-  assert.equal(
-    observed.observed === "Source" ? observed.source.target.commit : undefined,
-    workBase,
-  );
-});
-
-test("work that declared several commits is evaluated at the base they shared", async () => {
-  const observed = await observingWork([
-    workCommit,
-    asGitObjectId("d".repeat(40)),
-  ]).observe({ partition, ticket: 1, kind: "Evaluation" });
-  assert.deepEqual(observed, {
-    observed: "Source",
-    source: {
-      repository: "work-repository",
-      target: { commit: workBase },
-      manifests: ["manifest-one"],
-    },
-  });
 });
 
 /**
@@ -295,7 +256,7 @@ function observingBound(
         });
       },
     },
-    { workSource: () => Promise.resolve(undefined) },
+    noHistory,
   );
 }
 
@@ -310,7 +271,6 @@ test("two tickets of one project are each observed in the repository their brief
     const source = await subject.observe({
       partition,
       ticket,
-      kind: "Work",
       repository: asRepositoryId(repository),
     });
     sources.push(
@@ -321,11 +281,91 @@ test("two tickets of one project are each observed in the repository their brief
   assert.deepEqual(sources, ["repository-oldest", "repository-sibling"]);
 });
 
-test("a request naming no repository is unreadable, and the binding is never read for it", async () => {
-  const { subject, bindingReads } = observingUncalled();
-  assert.deepEqual(
-    await subject.observe({ partition, ticket: 3, kind: "Work" }),
-    { observed: "Unreadable", evidence: "RefUnreadable" },
+const acceptedCommit = asGitObjectId("c".repeat(40));
+const acceptedReference = digestFold(acceptedCommit);
+
+/** A spawn whose history answers the ticket's own source and its latest work manifests. */
+function spawningFrom(
+  row: TicketSourceRow | undefined,
+): ReturnType<typeof executionSourceObservation> {
+  return executionSourceObservation(
+    {
+      binding: () => {
+        throw new Error("a spawn must not read the project binding");
+      },
+    },
+    {
+      observeTarget: () => {
+        throw new Error("mutable Git must not be observed");
+      },
+    },
+    {
+      workSource: () =>
+        Promise.resolve({ manifests: [asResultManifestId("manifest-one")] }),
+      ticketSource: () => Promise.resolve(row),
+    },
   );
-  assert.equal(bindingReads(), 0);
+}
+
+test("a rework runs at the source the ticket carries and judges nothing", async () => {
+  assert.deepEqual(
+    await spawningFrom({
+      repository: asRepositoryId("work-repository"),
+      commit: acceptedCommit,
+      ref: asGitRefName(ticketBranch),
+    }).spawnSource({
+      partition,
+      ticket: 1,
+      source: acceptedReference,
+      kind: "Work",
+    }),
+    {
+      repository: "work-repository",
+      target: { commit: acceptedCommit, ref: ticketBranch },
+      manifests: [],
+    },
+  );
+});
+
+test("an evaluation runs at that same source, over the manifests its work produced", async () => {
+  assert.deepEqual(
+    await spawningFrom({
+      repository: asRepositoryId("work-repository"),
+      commit: acceptedCommit,
+    }).spawnSource({
+      partition,
+      ticket: 1,
+      source: acceptedReference,
+      kind: "Evaluation",
+    }),
+    {
+      repository: "work-repository",
+      target: { commit: acceptedCommit },
+      manifests: ["manifest-one"],
+    },
+  );
+});
+
+test("a ticket whose source names no repository has nothing for a bundle to name", async () => {
+  assert.equal(
+    await spawningFrom({}).spawnSource({
+      partition,
+      ticket: 1,
+      source: unsourcedTicketReference,
+      kind: "Work",
+    }),
+    undefined,
+  );
+});
+
+test("a reference no row carries answers the same nothing", async () => {
+  assert.equal(
+    await spawningFrom(undefined).spawnSource({
+      partition,
+      ticket: 1,
+      source: acceptedReference,
+      kind: "Evaluation",
+    }),
+    undefined,
+  );
 });

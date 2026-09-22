@@ -45,6 +45,7 @@ import {
   isCompletionDecisionEvent,
   nativeActionResolutions,
   safetyResolution,
+  type TicketCommand,
 } from "../../src/interpreter/ticketCommand.ts";
 import {
   encodeTicketCommand,
@@ -52,7 +53,7 @@ import {
   parseTicketCommand,
 } from "../../src/interpreter/wire.ts";
 import {
-  plainAuthoring,
+  plainDefinitionOf,
   plainDisposition,
   refinementInstance,
 } from "../actor/harness.ts";
@@ -61,11 +62,19 @@ import {
   id,
   judgedReport,
   producedReport,
+  resultFor,
   stoppedReport,
   ticketOn,
 } from "../domain/fixtures.ts";
 import { populated } from "./roster.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import {
+  aDispatchSource,
+  anAcceptedSource,
+  evaluatorOf,
+  releasedTicketOf,
+} from "../../src/domain/config.ts";
+import { liveObligations, taskRefOf } from "../../src/domain/ticket.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type { DecisionInput } from "../../src/interpreter/projectDiscovery.ts";
@@ -93,10 +102,25 @@ function judged(
   return taskDoneEvent(id(1), judge, judgedReport(judge, verdict), onFailure);
 }
 
-function input(
-  event: ReturnType<typeof asOperationDecisionEvent>,
-): DecisionInput {
-  const command = { version: 1, command: "Decide", event } as const;
+/**
+ * One decision input naming the event, in the envelope that event actually
+ * arrives in: a dispatch is asked for by name and carries no resolved event,
+ * every other public decision carrying its own.
+ */
+function input(event: DecisionEvent): DecisionInput {
+  const command: TicketCommand =
+    event.type === "Dispatch"
+      ? {
+          version: 1,
+          command: "ManualDispatch",
+          ticket: id(event.value.ticket),
+          expectedTicketVersion: 1,
+        }
+      : {
+          version: 1,
+          command: "Decide",
+          event: asOperationDecisionEvent(event),
+        };
   return {
     partition,
     ordinal: 1,
@@ -105,7 +129,7 @@ function input(
       kind: "Operation",
       operation: asOperationId("operation"),
       command,
-      resolvedEvent: event,
+      ...(command.command === "Decide" ? { resolvedEvent: command.event } : {}),
     },
   };
 }
@@ -114,7 +138,7 @@ test("typed commands round-trip and internal reducers are not operation commands
   const command = {
     version: 1,
     command: "Decide",
-    event: asOperationDecisionEvent(dispatchEvent(id(1))),
+    event: asOperationDecisionEvent(resumeTicketEvent(id(1))),
   } as const;
   assert.deepEqual(parseTicketCommand(encodeTicketCommand(command)), {
     parsed: "Ok",
@@ -226,17 +250,17 @@ test("dispatch materializes exact logical work tasks from the pure state delta",
   const released = journalStep(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(1)),
   );
   const dispatched = journalStep(
     refinementInstance,
     released,
-    dispatchEvent(id(1)),
+    dispatchEvent(id(1), aDispatchSource),
   );
   const entry = dispatched.journal[1];
   assert.ok(entry !== undefined);
   const planned = materializationOf(
-    input(asOperationDecisionEvent(entry.event)),
+    input(entry.event),
     memoryGraph(released),
     memoryGraph(dispatched),
     entry,
@@ -278,9 +302,7 @@ function plannedInput(
     };
   }
   if (event.type !== "WorkReduce")
-    return event.type === "CreateTicket"
-      ? undefined
-      : input(asOperationDecisionEvent(event));
+    return event.type === "CreateTicket" ? undefined : input(event);
   return {
     partition,
     ordinal: 1,
@@ -303,8 +325,8 @@ function plannedInput(
  */
 test("a ticket's task numbers ascend over its whole history and never repeat", () => {
   const history = [
-    releaseTicketEvent(id(1), plainAuthoring),
-    dispatchEvent(id(1)),
+    releaseTicketEvent(plainDefinitionOf(1)),
+    dispatchEvent(id(1), aDispatchSource),
     workDone(1),
     workReduceEvent(id(1)),
     judged(1, 1, "EvaluatorFail"),
@@ -352,11 +374,10 @@ function mintedUnder(
   return minted;
 }
 
-/** A program whose one stage lists evaluators 1 and 3 and no evaluator 2. */
-const sparseAuthoring = {
-  deps: new Set<number>(),
-  prog: [{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }],
-} as const;
+/** A release whose one stage lists evaluators 1 and 3 and no evaluator 2. */
+const sparseDefinition = releasedTicketOf(1, new Set<number>(), [
+  { key: 1, evaluators: [evaluatorOf(1), evaluatorOf(3)] },
+]);
 
 /**
  * The count a spawn spends is the set's size, so a sparse stage takes the two
@@ -366,8 +387,8 @@ const sparseAuthoring = {
  */
 test("a sparse stage mints consecutive numbers and the set after it repeats none", () => {
   const minted = mintedUnder([
-    releaseTicketEvent(id(1), sparseAuthoring),
-    dispatchEvent(id(1)),
+    releaseTicketEvent(sparseDefinition),
+    dispatchEvent(id(1), aDispatchSource),
     workDone(1),
     workReduceEvent(id(1)),
     judged(1, 1, "EvaluatorFail"),
@@ -388,11 +409,10 @@ test("a sparse stage mints consecutive numbers and the set after it repeats none
   );
 });
 
-/** A program whose one stage lists three evaluators, so a resume can re-ask one of them. */
-const wideAuthoring = {
-  deps: new Set<number>(),
-  prog: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }, { key: 3 }] }],
-} as const;
+/** A release whose one stage lists three evaluators, so a resume can re-ask one of them. */
+const wideDefinition = releasedTicketOf(1, new Set<number>(), [
+  { key: 1, evaluators: [evaluatorOf(1), evaluatorOf(2), evaluatorOf(3)] },
+]);
 
 /** One evaluator stopped rather than answering, which is what a resume comes back for. */
 function stopped(cycle: number, evaluator: number, kind: FailureKind) {
@@ -413,8 +433,8 @@ function stopped(cycle: number, evaluator: number, kind: FailureKind) {
  */
 test("a resume re-asks the stopped evaluator alone, at a number the first pass never held", () => {
   const minted = mintedUnder([
-    releaseTicketEvent(id(1), wideAuthoring),
-    dispatchEvent(id(1)),
+    releaseTicketEvent(wideDefinition),
+    dispatchEvent(id(1), aDispatchSource),
     workDone(1),
     workReduceEvent(id(1)),
     judged(1, 1, "EvaluatorPass"),
@@ -436,8 +456,8 @@ test("a resume re-asks the stopped evaluator alone, at a number the first pass n
  */
 test("a cancellation names a retired task by the number its spawn minted", () => {
   const minted = mintedUnder([
-    releaseTicketEvent(id(1), sparseAuthoring),
-    dispatchEvent(id(1)),
+    releaseTicketEvent(sparseDefinition),
+    dispatchEvent(id(1), aDispatchSource),
     workDone(1),
     workReduceEvent(id(1)),
     judged(1, 1, "EvaluatorPass"),
@@ -469,16 +489,59 @@ test("a spawn bundle pins its exact source and prior result manifests", () => {
   ]);
 });
 
+/**
+ * A passed work result moves the ticket onto the source it was accepted at and
+ * opens the judgement over the reference its report carried: the instance
+ * answers for that source, and every evaluator is asked under that reference as
+ * its context. An evaluator's obligation is what the door has to rebuild, so
+ * the two references are read here rather than trusted — and neither is the
+ * cycle, which is what a rebuild that derived one would produce.
+ */
+test("a work pass carries its accepted source and its result into the judgement", () => {
+  const passed = [
+    releaseTicketEvent(plainDefinitionOf(1)),
+    dispatchEvent(id(1), aDispatchSource),
+    workDone(1),
+    workReduceEvent(id(1)),
+  ].reduce(
+    (state, event) => journalStep(refinementInstance, state, event),
+    actorInit(),
+  );
+  const ticket = ticketAt(memoryGraph(passed), id(1));
+  assert.equal(ticket.source, anAcceptedSource);
+  const instance = ticket.evaluations.at(-1);
+  assert.ok(instance !== undefined);
+  const reported = resultFor(workTaskOf(1, 1)).resultRef;
+  assert.deepEqual(instance.input, {
+    ticket: 1,
+    workResult: reported,
+    acceptedSourceRef: anAcceptedSource,
+  });
+  assert.deepEqual(ticket.artifact, {
+    type: "ProducedArtifact",
+    value: reported,
+  });
+  assert.deepEqual(
+    liveObligations(ticket).map((owed) => owed.contextRef),
+    [reported],
+  );
+  assert.notEqual(
+    reported,
+    taskRefOf(workTaskOf(1, 1)),
+    "the judgement's context is the reported reference, not the cycle",
+  );
+});
+
 test("a decision leaving escalation withdraws its open native action", () => {
   const released = journalStep(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(1)),
   );
   const working = journalStep(
     refinementInstance,
     released,
-    dispatchEvent(id(1)),
+    dispatchEvent(id(1), aDispatchSource),
   );
   const escalated = journalStep(
     refinementInstance,
@@ -498,7 +561,7 @@ test("a decision leaving escalation withdraws its open native action", () => {
   const entry = revoked.journal.at(-1);
   assert.ok(entry !== undefined);
   const planned = materializationOf(
-    input(asOperationDecisionEvent(entry.event)),
+    input(entry.event),
     memoryGraph(escalated),
     memoryGraph(revoked),
     entry,
@@ -509,8 +572,8 @@ test("a decision leaving escalation withdraws its open native action", () => {
 /** The state a ticket reaches by passing its whole program: one finalization awaiting a report. */
 function finalizing(): ReturnType<typeof journalStep> {
   const steps: readonly DecisionEvent[] = [
-    releaseTicketEvent(id(1), plainAuthoring),
-    dispatchEvent(id(1)),
+    releaseTicketEvent(plainDefinitionOf(1)),
+    dispatchEvent(id(1), aDispatchSource),
     workDone(1),
     workReduceEvent(id(1)),
     judged(1, 1, "EvaluatorPass"),
@@ -625,14 +688,18 @@ test("a decision that leaves a ticket where it found it withdraws nothing", () =
   const before = journalStep(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(1)),
   );
-  const after = journalStep(refinementInstance, before, dispatchEvent(id(1)));
+  const after = journalStep(
+    refinementInstance,
+    before,
+    dispatchEvent(id(1), aDispatchSource),
+  );
   const entry = after.journal.at(-1);
   assert.ok(entry !== undefined);
   assert.deepEqual(
     materializationOf(
-      input(asOperationDecisionEvent(entry.event)),
+      input(entry.event),
       memoryGraph(before),
       memoryGraph(after),
       entry,
@@ -661,7 +728,7 @@ test("submission exposes no caller-selected admission or priority", () => {
     command: {
       version: 1,
       command: "Decide",
-      event: asOperationDecisionEvent(dispatchEvent(id(1))),
+      event: asOperationDecisionEvent(resumeTicketEvent(id(1))),
     },
   };
   assert.equal("admission" in submission, false);

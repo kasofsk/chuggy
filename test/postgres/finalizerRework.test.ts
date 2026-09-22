@@ -43,6 +43,7 @@ import {
 import { canonicalInputBundle } from "../../src/interpreter/finalizerPreparation.ts";
 import { postgresExecutionSourceHistory } from "../../src/adapters/postgres/executionSourceHistory.ts";
 import { executionSourceObservation } from "../../src/interpreter/executionSourceObservation.ts";
+import { postgresHarnessObservedCommit } from "./harness.ts";
 import {
   finalizerDrain,
   finalizerExpireClaim,
@@ -389,37 +390,35 @@ test("a target ref that moved afterwards changes nothing the bundle names", asyn
 });
 
 /**
- * A bundle built from the evidence pins no source of its own, so what the
- * next evaluation spawn is observed against is what the failed attempt
- * carried forward, and a spawn the writer cannot source is not decided at
- * all. The observation here is the real one over the rows the decision wrote,
- * because the drained writer above answers its own source.
+ * A rework's spawn reads the ticket's own source row and asks no remote, so
+ * what its work runs at is the commit the accepted work pinned rather than
+ * whatever the branch holds by the time the finalization failed. The read here
+ * is the real one over the rows the decision wrote, because the drained writer
+ * above answers its own source.
  */
-test("the evaluation of a rework's work is sourced from the evidence the conflict pinned", async () => {
-  const { project, attempt } = await reworked("rework-evaluation");
-  const observed = await executionSourceObservation(
+test("a rework runs at the accepted source with no observation", async () => {
+  const { project, decided } = await reworked("rework-evaluation");
+  const sourced = await executionSourceObservation(
     {
       binding: () => {
-        throw new Error("an evaluation reads no repository binding");
+        throw new Error("a rework reads no repository binding");
       },
     },
     {
       observeTarget: () => {
-        throw new Error("an evaluation reads no remote");
+        throw new Error("a rework reads no remote");
       },
     },
     postgresExecutionSourceHistory(rig.harness.pool),
-  ).observe({
+  ).spawnSource({
     partition: project.partition,
     ticket: project.ticket,
-    kind: "Evaluation",
+    source: decided.source,
+    kind: "Work",
   });
-  assert.deepEqual(observed, {
-    observed: "Source",
-    source: {
-      repository: project.repository,
-      target: { commit: attempt.target_commit },
-      manifests: [],
-    },
+  assert.deepEqual(sourced, {
+    repository: project.repository,
+    target: { commit: postgresHarnessObservedCommit },
+    manifests: [],
   });
 });

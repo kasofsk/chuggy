@@ -19,19 +19,27 @@
  */
 
 import type { Config } from "../../src/domain/config.ts";
-import { defaultProgram } from "../../src/domain/config.ts";
+import {
+  anAcceptedSource,
+  defaultPlan,
+  evaluatorTaskOf,
+  releasedTicketOf,
+} from "../../src/domain/config.ts";
 import { initRecord } from "../../src/domain/ticketGraph.ts";
 import type {
   TicketGraph,
+  EvaluationInput,
   EvaluationInstance,
   EvaluationVerdict,
   FailureKind,
   StageDefinition,
   Task,
   TaskIdentity,
+  TaskObligation,
   TaskOutcome,
   TaskTerminalReport,
   Ticket,
+  ValidatedTaskResult,
 } from "../../src/domain/generated/modelTypes.ts";
 import { freshTicket } from "../../src/domain/deciders.ts";
 import {
@@ -44,8 +52,8 @@ import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
 import {
   evaluationSpawnTotal,
+  producedResultRef,
   taskRefOf,
-  taskResultRefOf,
 } from "../../src/domain/ticket.ts";
 import {
   evaluationTaskOf,
@@ -62,6 +70,65 @@ function evaluatorOf(task: TaskIdentity): number {
 }
 
 /**
+ * The obligation a task identity implies, under the conventions every fixture
+ * here builds by: a released definition minted from the ticket's own id, an
+ * evaluator's definition minted from its key, a work task asked under its own
+ * cycle, and a judgement asked under the reference the cycle it judges
+ * reported. Derived rather than passed so a caller states the task and nothing
+ * about the record it is held against.
+ */
+export function obligationFor(task: TaskIdentity): TaskObligation {
+  if (task.type === "WorkTask")
+    return {
+      task,
+      definition: releasedTicketOf(task.value.ticket, new Set(), [])
+        .workConfiguration,
+      contextRef: task.value.cycle,
+    };
+  return {
+    task,
+    definition: evaluatorTaskOf(task.value.evaluator),
+    contextRef: workResultOf(task.value.ticket, task.value.workCycle),
+  };
+}
+
+/** What the work cycle `cycle` of ticket `ticket` reported, at fixture scope. */
+export function workResultOf(ticket: number, cycle: number): number {
+  return producedResultRef(workTaskOf(ticket, cycle));
+}
+
+/** The result a task produced, at the obligation it was spawned under. */
+export function resultFor(task: TaskIdentity): ValidatedTaskResult {
+  return {
+    obligation: obligationFor(task),
+    resultRef: producedResultRef(task),
+  };
+}
+
+/** An instance's input: what the cycle reported, at the source it was accepted at. */
+function inputFor(ticket: number, cycle: number): EvaluationInput {
+  return {
+    ticket,
+    workResult: workResultOf(ticket, cycle),
+    acceptedSourceRef: anAcceptedSource,
+  };
+}
+
+/** One evaluator's answer, carried at the obligation the running stage owes it. */
+function answer(
+  instance: EvaluationInstance,
+  obligation: TaskObligation,
+  verdict: EvaluationVerdict,
+): EvaluationInstance {
+  return applyProduced(
+    instance,
+    obligation.task,
+    { obligation, resultRef: evaluatorOf(obligation.task) },
+    verdict,
+  );
+}
+
+/**
  * A judgement of one work cycle, driven through the protocol until it settles:
  * every evaluator answers with what `verdictFor` says, so a fixture states
  * which dissenter it wants and nothing about the shape that results.
@@ -69,16 +136,18 @@ function evaluatorOf(task: TaskIdentity): number {
 export function judgedInstance(
   ticket: number,
   cycle: number,
-  workResult: number,
-  program: readonly StageDefinition[],
+  stages: readonly StageDefinition[],
   verdictFor: (evaluator: number) => EvaluationVerdict = () => "EvaluatorPass",
 ): EvaluationInstance {
-  let instance = begin(cycle, { ticket, workResult }, { stages: program });
+  let instance = begin(cycle, inputFor(ticket, cycle), { stages });
   for (let owed = currentTaskObligations(instance); owed.length > 0;) {
-    const task = owed[0];
-    if (task === undefined) break;
-    const evaluator = evaluatorOf(task);
-    instance = applyProduced(instance, task, evaluator, verdictFor(evaluator));
+    const obligation = owed[0];
+    if (obligation === undefined) break;
+    instance = answer(
+      instance,
+      obligation,
+      verdictFor(evaluatorOf(obligation.task)),
+    );
     owed = currentTaskObligations(instance);
   }
   return instance;
@@ -91,15 +160,13 @@ export function judgedInstance(
 export function runningInstance(
   ticket: number,
   cycle: number,
-  workResult: number,
-  program: readonly StageDefinition[],
+  stages: readonly StageDefinition[],
   answered: ReadonlySet<number>,
 ): EvaluationInstance {
-  let instance = begin(cycle, { ticket, workResult }, { stages: program });
-  for (const task of currentTaskObligations(instance)) {
-    const evaluator = evaluatorOf(task);
-    if (answered.has(evaluator))
-      instance = applyProduced(instance, task, evaluator, "EvaluatorPass");
+  let instance = begin(cycle, inputFor(ticket, cycle), { stages });
+  for (const obligation of currentTaskObligations(instance)) {
+    if (answered.has(evaluatorOf(obligation.task)))
+      instance = answer(instance, obligation, "EvaluatorPass");
   }
   return instance;
 }
@@ -111,26 +178,30 @@ export function runningInstance(
 export function blockedInstance(
   ticket: number,
   cycle: number,
-  workResult: number,
-  program: readonly StageDefinition[],
+  stages: readonly StageDefinition[],
   stopped: ReadonlySet<number>,
 ): EvaluationInstance {
-  let instance = begin(cycle, { ticket, workResult }, { stages: program });
+  let instance = begin(cycle, inputFor(ticket, cycle), { stages });
   for (let owed = currentTaskObligations(instance); owed.length > 0;) {
-    const task = owed[0];
-    if (task === undefined) break;
-    const evaluator = evaluatorOf(task);
+    const obligation = owed[0];
+    if (obligation === undefined) break;
+    const evaluator = evaluatorOf(obligation.task);
     instance = stopped.has(evaluator)
-      ? applyFailure(instance, task, "ExecutionUnavailableFailure", evaluator)
-      : applyProduced(instance, task, evaluator, "EvaluatorPass");
+      ? applyFailure(
+          instance,
+          obligation.task,
+          "ExecutionUnavailableFailure",
+          evaluator,
+        )
+      : answer(instance, obligation, "EvaluatorPass");
     owed = currentTaskObligations(instance);
   }
   return instance;
 }
 
-/** How many evaluators a program's first stage lists, which is what one run of it claims. */
-export function rosterOf(program: readonly StageDefinition[]): number {
-  return program[0]?.evaluators.length ?? 0;
+/** How many evaluators a plan's first stage lists, which is what one run of it claims. */
+export function rosterOf(stages: readonly StageDefinition[]): number {
+  return stages[0]?.evaluators.length ?? 0;
 }
 
 /** A ticket id, so a fixture reads the way the model's numbering does. */
@@ -179,10 +250,10 @@ export const evalOutstanding = (
   state: tsOutstanding,
 });
 
-/** What a work task comes back with when it produced its artifact. */
+/** What a work task comes back with when it produced its artifact, at the source it was accepted at. */
 export const producedReport = (task: TaskIdentity): TaskTerminalReport => ({
   type: "WorkResultReport",
-  value: { result: taskResultRefOf(task) },
+  value: { result: resultFor(task), acceptedSourceRef: anAcceptedSource },
 });
 
 /** What an evaluator comes back with, carrying the verdict it reached. */
@@ -191,8 +262,34 @@ export const judgedReport = (
   verdict: EvaluationVerdict,
 ): TaskTerminalReport => ({
   type: "EvaluationResultReport",
-  value: { result: taskResultRefOf(task), verdict },
+  value: { result: resultFor(task), verdict },
 });
+
+/**
+ * The same report a task would send, carried at the obligation named rather
+ * than the one it owes: what a fabric answering for a spawn that was never made
+ * puts on the wire, and the only thing that tells the two apart is the rule
+ * that weighs the whole obligation.
+ */
+export const carriedAt = (
+  task: TaskIdentity,
+  obligation: TaskObligation,
+): TaskTerminalReport =>
+  task.type === "WorkTask"
+    ? {
+        type: "WorkResultReport",
+        value: {
+          result: { obligation, resultRef: producedResultRef(task) },
+          acceptedSourceRef: anAcceptedSource,
+        },
+      }
+    : {
+        type: "EvaluationResultReport",
+        value: {
+          result: { obligation, resultRef: producedResultRef(task) },
+          verdict: "EvaluatorPass",
+        },
+      };
 
 /** What a task comes back with when it stopped instead of answering. */
 export const stoppedReport = (
@@ -221,22 +318,48 @@ export const reportedAt = (
     : stoppedReport(task, "ProcessFailure");
 };
 
+/**
+ * What a fixture may override on a ticket: every field of the record, plus the
+ * two halves of the released definition a fixture varies — the ids it waits on
+ * and the stages it is judged by — so a caller states those and nothing about
+ * the rest of what the release froze.
+ */
+export type TicketOverrides = Partial<Ticket> & {
+  readonly dependencies?: ReadonlySet<number>;
+  readonly stages?: readonly StageDefinition[];
+};
+
 /** A ticket as a release leaves it, with whatever the caller overrides. */
 export function ticketOn(
   config: Config,
-  overrides: Partial<Ticket> = {},
+  overrides: TicketOverrides = {},
 ): Ticket {
-  const born = freshTicket({
-    deps: new Set<number>(),
-    program: defaultProgram(config),
-  });
-  return { ...born, ...overrides };
+  const { dependencies, stages, ...rest } = overrides;
+  const born = freshTicket(
+    releasedTicketOf(
+      1,
+      dependencies ?? new Set<number>(),
+      stages ?? defaultPlan(config),
+    ),
+  );
+  return { ...born, ...rest };
 }
 
-/** A graph holding these tickets under dense ids from one, in the order given. */
+/**
+ * A graph holding these tickets under dense ids from one, in the order given.
+ * The release names the ticket inside the record it froze, so the id the map
+ * assigns is written there too: a fixture that stated one and was filed under
+ * another is a state no release could have produced.
+ */
 export function graphOf(tickets: readonly Ticket[]): TicketGraph {
   const map = new Map<TicketId, Ticket>();
-  tickets.forEach((ticket, index) => map.set(id(index + 1), ticket));
+  tickets.forEach((ticket, index) => {
+    const ticketId = id(index + 1);
+    map.set(ticketId, {
+      ...ticket,
+      definition: { ...ticket.definition, id: ticketId },
+    });
+  });
   return { tickets: map };
 }
 
@@ -254,16 +377,14 @@ export function initialView(post: TicketGraph): StepView {
  * below is one edit away from a state that passes.
  */
 export function healthyFleet(config: Config): readonly Ticket[] {
-  const program = defaultProgram(config);
-  const finished = (ticket: number): Partial<Ticket> => {
-    const judged = judgedInstance(ticket, 1, 1, program);
-    return {
-      evaluations: [judged],
-      workCyclesStarted: 1,
-      spawned: 1 + rosterOf(program),
-      artifact: { type: "ProducedArtifact", value: 1 },
-    };
-  };
+  const stages = defaultPlan(config);
+  const finished = (ticket: number): Partial<Ticket> => ({
+    evaluations: [judgedInstance(ticket, 1, stages)],
+    workCyclesStarted: 1,
+    spawned: 1 + rosterOf(stages),
+    source: anAcceptedSource,
+    artifact: { type: "ProducedArtifact", value: workResultOf(ticket, 1) },
+  });
   return [
     ticketOn(config, {
       ...finished(1),
@@ -272,7 +393,8 @@ export function healthyFleet(config: Config): readonly Ticket[] {
     }),
     ticketOn(config, {
       phase: "Work",
-      deps: new Set([1]),
+      dependencies: new Set([1]),
+      source: anAcceptedSource,
       tasks: new Set<Task>([workOutstanding(2, 1)]),
       workCyclesStarted: 1,
       spawned: 1,
@@ -288,11 +410,22 @@ export function healthyFleet(config: Config): readonly Ticket[] {
 export function fleetBut(
   fleet: readonly Ticket[],
   index: number,
-  overrides: Partial<Ticket>,
+  overrides: TicketOverrides,
 ): TicketGraph {
+  const { dependencies, stages, ...rest } = overrides;
   return graphOf(
     fleet.map((ticket, at) =>
-      at === index ? { ...ticket, ...overrides } : ticket,
+      at === index
+        ? {
+            ...ticket,
+            ...rest,
+            definition: {
+              ...ticket.definition,
+              ...(dependencies === undefined ? {} : { dependencies }),
+              ...(stages === undefined ? {} : { evaluationPlan: { stages } }),
+            },
+          }
+        : ticket,
     ),
   );
 }

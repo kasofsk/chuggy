@@ -10,7 +10,7 @@ import { z } from "zod";
 import { nativeHttpEndpoints } from "../../contract/endpoints.ts";
 
 import { revokeEvent, resumeTicketEvent } from "../../actor/decisionEvent.ts";
-import type { ReleaseAuthoring } from "../../actor/decisionEvent.ts";
+import type { ReleaseAuthoring } from "../../interpreter/authoring.ts";
 import {
   nativeHttpCursorCharsMax,
   nativeHttpVersion,

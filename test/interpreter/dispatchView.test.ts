@@ -7,24 +7,24 @@ import {
   decodeDispatchProgram,
   deriveDispatchCandidates,
   dispatchViewDigest,
+  encodeDispatchProgram,
 } from "../../src/interpreter/dispatchView.ts";
 import { asConfigurationVersion } from "../../src/interpreter/repositoryConfigurationIdentity.ts";
-import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
+import { plainDefinitionOf, refinementInstance } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 
 function pendingCandidates() {
   const one = journalStep(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(1)),
   );
   const two = journalStep(
     refinementInstance,
     one,
-    releaseTicketEvent(id(2), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(2)),
   );
   return deriveDispatchCandidates(
-    refinementInstance,
     two.view.post,
     new Map([
       [id(1), 1],
@@ -130,6 +130,11 @@ test("dispatch JSON codecs refuse malformed stored structures", () => {
   );
   assert.throws(() => decodeDispatchProgram([{}]), /invalid input/i);
   assert.throws(() => decodeDispatchProgram([{ fanout: 2 }]), /invalid input/i);
+  assert.throws(
+    () => encodeDispatchProgram([{ key: 0, evaluators: [{ key: 1 }] }]),
+    /too small/i,
+    "the write goes through the schema too, a stage key being a position",
+  );
 });
 
 test("dispatch JSON codecs accept every stored model variant", () => {

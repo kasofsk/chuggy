@@ -27,7 +27,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"ticket-escalated work_execution_unavailable_escalated\"",
-      "steps": 3,
+      "steps": 7,
       "quintVersion": "0.32.0",
       "purpose": "Infrastructure refuses to run an intact contract. It is not failed work: the set retires as cancelled and the wall names its own reason."
     },
@@ -41,7 +41,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"ticket-escalated evaluation_blocked_escalated\"",
-      "steps": 8,
+      "steps": 7,
       "quintVersion": "0.32.0",
       "purpose": "The same infrastructure refusal against an evaluation set, which is its own wall: the judgement is intact and unmade, so this is the only park whose resume re-enters evaluation. Its pair is work-execution-unavailable, the same refusal one phase earlier."
     },
@@ -55,7 +55,7 @@
       "maxSamples": 20000,
       "maxSteps": 60,
       "invariant": "not(lastStep.label == \"ticket-resumed\" and partialEvaluationResumed)",
-      "steps": 52,
+      "steps": 48,
       "quintVersion": "0.32.0",
       "purpose": "The blocked wall's own exit, and the only resume that re-asks part of what it interrupted: the stage comes back at the next generation owing the evaluator infrastructure stopped, while the one that answered keeps what it said. Its pair is evaluation-blocked, the park this continues from; the aim is a state and not a label, because every wall's resume carries the same label (mc_chuggy_directed partialEvaluationResumed)."
     },
@@ -69,7 +69,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"eval-stage-passed\"",
-      "steps": 12,
+      "steps": 9,
       "quintVersion": "0.32.0",
       "purpose": "The stage advance: a stage passes, the next one spawns, and the ticket stays in Evaluation. It is the only step whose transition is a phase to itself."
     },
@@ -83,7 +83,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"rework-started finalization_needs_work\"",
-      "steps": 20,
+      "steps": 11,
       "quintVersion": "0.32.0",
       "purpose": "A finalizer reports failure and the ticket re-enters work. There is no wall on this edge: the finalizer that keeps failing keeps buying cycles."
     },
@@ -97,7 +97,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"ticket-escalated work_failure_escalated\"",
-      "steps": 7,
+      "steps": 8,
       "quintVersion": "0.32.0",
       "purpose": "The work wall: the work task resolves Failed and the cycle escalates, parking the ticket at ResumeWork with an open desk task."
     },
@@ -111,7 +111,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"rework-started eval_failure\"",
-      "steps": 9,
+      "steps": 11,
       "quintVersion": "0.32.0",
       "purpose": "The Rework disposition on a failing evaluation: the stage retires and the ticket re-enters Work with a fresh work task. Its pair is evaluation-failure-escalated, which is the same failure taken the other way."
     },
@@ -125,7 +125,7 @@
       "maxSamples": 20000,
       "maxSteps": 60,
       "invariant": "lastStep.label != \"ticket-escalated evaluation_failure_escalated\"",
-      "steps": 5,
+      "steps": 7,
       "quintVersion": "0.32.0",
       "purpose": "The Escalate disposition on a failing evaluation: the same state as rework-started-eval-failure, parked at the desk instead of reworked."
     },
@@ -139,7 +139,7 @@
       "maxSamples": 20000,
       "maxSteps": 60,
       "invariant": "not(lastStep.label == \"ticket-resumed\" and lastStep.transitions.foldl(false, (b, t) => b or (t.to == Work and tickets.get(t.ticket).evaluations.length() > 0 and match currentInstance(tickets.get(t.ticket)).state { | EvaluationFailed(_) => true | _ => false })))",
-      "steps": 7,
+      "steps": 8,
       "quintVersion": "0.32.0",
       "purpose": "The desk sends an escalated ticket back: the judgement it last reached is a failed one, so this is the evaluation wall's exit, and it re-enters Work with a fresh work task rather than a second opinion on the old artifact."
     },
@@ -153,7 +153,7 @@
       "maxSamples": 60000,
       "maxSteps": 60,
       "invariant": "not(lastStep.label == \"ticket-done\" and lastStep.transitions.foldl(false, (b, t) => b or t.from == Finalization))",
-      "steps": 10,
+      "steps": 57,
       "quintVersion": "0.32.0",
       "purpose": "The finalizer draws FinalizationSucceeded and the ticket completes Finalization -> Done. It is the only completion route this machine has: a passing final stage always runs a finalizer first."
     },
@@ -167,7 +167,7 @@
       "maxSamples": 60000,
       "maxSteps": 60,
       "invariant": "not(lastStep.label == \"ticket-resumed\" and lastStep.transitions.foldl(false, (b, t) => b or t.to == Finalization))",
-      "steps": 45,
+      "steps": 56,
       "quintVersion": "0.32.0",
       "purpose": "The finalizer reaches no result, the ticket parks at ResumeFinalization, and the desk's resume runs the finalizer again. It is aimed at the resume rather than at the wall so one row carries both halves: a resume into Finalization is the only one this machine has, and only this wall stamps it."
     }

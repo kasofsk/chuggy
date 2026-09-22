@@ -42,6 +42,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type pg from "pg";
 
 import { revokeEvent } from "../../src/actor/decisionEvent.ts";
+import type { CanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import { postgresExecutionScheduler } from "../../src/adapters/postgres/scheduler.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
@@ -220,11 +221,16 @@ async function schedulerCapacityFor(
   return cluster;
 }
 
-/** A project with one dispatched ticket, a spawn request to register, and capacity behind it. */
+/**
+ * A project with one dispatched ticket, a spawn request to register, and
+ * capacity behind it. A case naming a configuration is released under it,
+ * because what a ticket runs at is resolved by its release.
+ */
 export async function schedulerProject(
   rig: SchedulerRig,
   label: string,
   capacity: SchedulerCapacity = {},
+  canonical?: CanonicalConfiguration,
 ): Promise<SchedulerProject> {
   const partition = await postgresHarnessProject(rig.harness.store, label);
   const memory = await postgresHarnessHistory(
@@ -232,6 +238,8 @@ export async function schedulerProject(
     partition,
     label,
     postgresHarnessJournal().length,
+    undefined,
+    canonical,
   );
   const spawn = await schedulerSpawnRequest(rig, partition);
   return {
@@ -452,6 +460,44 @@ export function schedulerArtifact(
   };
 }
 
+/** The commit every harness ticket is dispatched at, which its work runs on and lands from. */
+export const schedulerHarnessCommit = "a".repeat(40);
+
+/** What a worker declares it worked at: the ticket's own branch, at the commit it was dispatched at. */
+export interface SchedulerDeclaredSource {
+  readonly repository: string;
+  readonly ref: string;
+  readonly commit: string;
+  readonly base: string;
+}
+
+/** The source the harness ticket's work runs at, which is what a passing result declares. */
+export function schedulerDeclaredSource(
+  attempt: FencedAttempt,
+): SchedulerDeclaredSource {
+  return {
+    repository: `repository-${attempt.partition.tenant}`,
+    ref: "refs/heads/harness",
+    commit: schedulerHarnessCommit,
+    base: schedulerHarnessCommit,
+  };
+}
+
+/**
+ * The source a manifest declares by default: one on a clean pass, because the
+ * harness ticket names a repository and the door refuses a passed work result
+ * that records none, and none otherwise, which the manifest schema requires.
+ */
+function schedulerDeclaredWhenSourced(
+  attempt: FencedAttempt,
+  verdict: "Pass" | "Fail",
+  handoffs: readonly unknown[],
+): SchedulerDeclaredSource | undefined {
+  return verdict === "Pass" && handoffs.length === 0
+    ? schedulerDeclaredSource(attempt)
+    : undefined;
+}
+
 /**
  * The report one worker sends: the fenced identity its credential was issued
  * under and a manifest sealed by the same acceptance a real ingress applies, so
@@ -461,6 +507,12 @@ export function schedulerReport(
   attempt: FencedAttempt & Partial<Pick<PhysicalAttempt, "capability">>,
   verdict: "Pass" | "Fail",
   handoffs: readonly { path: string; digest: string; bytes: number }[] = [],
+  diagnostics: readonly { path: string; digest: string; bytes: number }[] = [],
+  source: SchedulerDeclaredSource | undefined = schedulerDeclaredWhenSourced(
+    attempt,
+    verdict,
+    handoffs,
+  ),
 ): AttemptReport {
   const accepted = acceptResultManifest(
     {
@@ -471,7 +523,9 @@ export function schedulerReport(
     "capability" in attempt
       ? attempt.capability.manifest
       : asResultManifestId(`manifest-${randomUUID()}`),
-    JSON.stringify({ version: 1, verdict, handoffs, diagnostics: [] }),
+    source === undefined
+      ? JSON.stringify({ version: 1, verdict, handoffs, diagnostics })
+      : JSON.stringify({ version: 2, verdict, handoffs, diagnostics, source }),
     schedulerDigest,
   );
   if (accepted.accepted === "Rejected") {

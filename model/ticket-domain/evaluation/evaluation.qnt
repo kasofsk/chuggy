@@ -2,7 +2,8 @@ module evaluation_protocol {
   import task_contract.* from "../../task-contract/task"
 
   type EvaluatorDefinition = {
-    key: int
+    key: int,
+    task: TaskDefinition
   }
 
   type StageDefinition = {
@@ -16,7 +17,8 @@ module evaluation_protocol {
 
   type EvaluationInput = {
     ticket: int,
-    workResult: int
+    workResult: int,
+    acceptedSourceRef: int
   }
 
   type EvaluationVerdict = EvaluatorPass | EvaluatorFail
@@ -272,15 +274,15 @@ module evaluation_protocol {
   pure def applyProduced(
     current: EvaluationInstance,
     task: TaskIdentity,
-    result: int,
+    result: ValidatedTaskResult,
     verdict: EvaluationVerdict,
   ): EvaluationInstance = {
     val interpreted = match verdict {
-      | EvaluatorPass => EvaluatorPassed(result)
-      | EvaluatorFail => EvaluatorFailed(result)
+      | EvaluatorPass => EvaluatorPassed(result.resultRef)
+      | EvaluatorFail => EvaluatorFailed(result.resultRef)
     }
     if (currentTaskObligations(current).select(obligation =>
-      obligation == task).length() > 0)
+      obligation == result.obligation).length() > 0)
       concludeStage(reportProduced(current, task, interpreted))
     else current
   }
@@ -324,12 +326,15 @@ module evaluation_protocol {
 
   pure def currentTaskObligations(
     current: EvaluationInstance,
-  ): List[TaskIdentity] = match current.state {
+  ): List[TaskObligation] = match current.state {
     | Running(running) => current.plan.stages[running.stage.stageIndex].evaluators
         .select(entry => statusAwaiting(
           running.stage.evaluators.get(entry.key)))
-        .foldl([], (tasks, entry) => tasks.append(
-          taskIdentityFor(current, running.stage, entry.key)))
+        .foldl([], (tasks, entry) => tasks.append({
+          task: taskIdentityFor(current, running.stage, entry.key),
+          definition: entry.task,
+          contextRef: current.input.workResult,
+        }))
     | _ => []
   }
 
@@ -460,7 +465,7 @@ module evaluation_protocol {
       and evaluatorKeysUnique(stage)
       and stage.evaluators.indices().forall(evaluatorIndex => {
         val entry = stage.evaluators[evaluatorIndex]
-        entry.key > 0
+        entry.key > 0 and taskDefinitionValid(entry.task)
       })
     })
 
@@ -468,6 +473,7 @@ module evaluation_protocol {
     current.workCycle > 0
     and current.input.ticket > 0
     and current.input.workResult > 0
+    and current.input.acceptedSourceRef > 0
     and planValid(current.plan)
 
     and stateHistoryInvariant(current)

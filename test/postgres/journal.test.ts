@@ -24,7 +24,11 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { storedJournalLegalOn } from "../../src/actor/journal.ts";
+import {
+  replayGraph,
+  storedJournalLegalOn,
+  type Entry,
+} from "../../src/actor/journal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   journalChainDigest,
@@ -42,6 +46,7 @@ import {
   postgresHarnessHistory,
   postgresHarnessJournal,
   postgresHarnessOpen,
+  postgresHarnessCommitted,
   postgresHarnessProject,
   type PostgresHarness,
 } from "./harness.ts";
@@ -71,8 +76,12 @@ test("a committed history advances the head and loads back as a legal journal", 
   assert.equal(loaded.parsed, "Ok");
   assert.ok(loaded.parsed === "Ok");
   assert.deepEqual(
-    loaded.value.map((row) => row.entry),
-    journal,
+    loaded.value.map((row) => row.entry.event.type),
+    journal.map((entry) => entry.event.type),
+  );
+  assert.deepEqual(
+    replayGraph(loaded.value.map((row) => row.entry)),
+    memory.graph,
   );
   assert.ok(storedJournalLegalOn(refinementInstance, loaded.value));
 });
@@ -205,7 +214,7 @@ test("load refuses unsupported event and decision semantic versions", async () =
 test("a restated envelope at the versions this image writes still loads", async () => {
   const partition = await postgresHarnessProject(harness.store, "restated");
   const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
-  const entry = postgresHarnessJournal()[0];
+  const entry = (await postgresHarnessCommitted(harness, memory))[0];
   assert.ok(entry !== undefined);
   await restateEnvelope(
     partition,
@@ -221,20 +230,29 @@ test("a restated envelope at the versions this image writes still loads", async 
 });
 
 /**
- * A creation carrying fields the model has since dropped, which the parse
+ * The same release carrying fields the model has since dropped, which the parse
  * ignores and this image re-encodes to shorter bytes. That is why the chain
  * covers what was stored rather than what a replay would write today.
  */
-const createWithDroppedFields =
-  '{"seq":1,"event":{"type":"CreateTicket","value":{"ticket":1,"deps":[],"prog":[{"key":1,"evaluators":[{"key":1}],"combinator":"UnanimousPass"}],"workFanout":1,"reworkPolicy":{"type":"BudgetedRework","value":1},"finalizationPricing":{"type":"Budgeted","value":1},"resumePricing":"RetryCharged"}},"rec":{"label":"ticket-released","transitions":[],"effects":[]}}';
+function createWithDroppedFields(entry: Entry): string {
+  const restated = JSON.parse(encodeEntry(entry)) as {
+    event: { value: Record<string, unknown> };
+  };
+  restated.event.value["combinator"] = "UnanimousPass";
+  restated.event.value["workFanout"] = 1;
+  restated.event.value["resumePricing"] = "RetryCharged";
+  return JSON.stringify(restated);
+}
 
 test("a row this image would re-encode differently still verifies and replays", async () => {
   const partition = await postgresHarnessProject(harness.store, "older-bytes");
   const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
+  const committed = (await postgresHarnessCommitted(harness, memory))[0];
+  assert.ok(committed !== undefined);
   await restateEnvelope(
     partition,
     1,
-    createWithDroppedFields,
+    createWithDroppedFields(committed),
     journalChainGenesis(partition),
     {
       eventSchemaVersion: 1,
@@ -246,13 +264,13 @@ test("a row this image would re-encode differently still verifies and replays", 
   assert.ok(loaded.parsed === "Ok");
   const first = loaded.value[0];
   assert.ok(first !== undefined);
-  assert.deepEqual(first.entry, postgresHarnessJournal()[0]);
+  assert.deepEqual(first.entry, committed);
 });
 
 test("a pre-envelope row is refused at the semantics its digest attests, not its column", async () => {
   const partition = await postgresHarnessProject(harness.store, "preenvelope");
   const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
-  const entry = postgresHarnessJournal()[0];
+  const entry = (await postgresHarnessCommitted(harness, memory))[0];
   assert.ok(entry !== undefined);
   const previous = journalChainGenesis(partition);
   await harness.query(
@@ -308,8 +326,13 @@ test("a load under a fenced lease is refused, not served the prefix it would rep
 
 test("each stored digest chains onto its predecessor, and the first onto the partition's genesis", async () => {
   const partition = await postgresHarnessProject(harness.store, "chain");
-  const journal = postgresHarnessJournal();
-  await postgresHarnessHistory(harness, partition, "writer", journal.length);
+  const memory = await postgresHarnessHistory(
+    harness,
+    partition,
+    "writer",
+    postgresHarnessJournal().length,
+  );
+  const journal = await postgresHarnessCommitted(harness, memory);
 
   const stored = (await harness.query(
     `SELECT seq,entry_digest,prev_digest,cause_kind,cause_id,

@@ -16,9 +16,10 @@ import type {
   StageRun,
   Task,
   TaskIdentity,
-  TaskResultRef,
+  TaskObligation,
   TaskTerminalReport,
   Ticket,
+  ValidatedTaskResult,
 } from "./generated/modelTypes.ts";
 import {
   applyFailure,
@@ -28,7 +29,13 @@ import {
   taskIdentityFor,
 } from "./evaluation.ts";
 import { isSettled } from "./phase.ts";
-import { taskIdentityEquals, workTaskOf } from "./task.ts";
+import {
+  outstandingCount,
+  taskIdentityEquals,
+  taskObligationEquals,
+  taskObligationValid,
+  workTaskOf,
+} from "./task.ts";
 
 /**
  * A desk task is open exactly while the ticket is parked, and parked is one
@@ -68,12 +75,15 @@ export function resumeOf(escalation: Escalation): Resume {
  * roster, and every work spawn site is this call — which is also the only
  * thing that claims the one mint slot its identity is drawn from.
  */
-export function spawnWork(ticket: Ticket, id: number): Ticket {
+export function spawnWork(ticket: Ticket): Ticket {
   const cycle = ticket.workCyclesStarted + 1;
   return {
     ...ticket,
     tasks: new Set<Task>([
-      { identity: workTaskOf(id, cycle), state: "Outstanding" },
+      {
+        identity: workTaskOf(ticket.definition.id, cycle),
+        state: "Outstanding",
+      },
     ]),
     workCyclesStarted: cycle,
     spawned: ticket.spawned + 1,
@@ -179,31 +189,34 @@ export function evaluationSpawnTotal(ticket: Ticket): number {
  */
 export function spawnEvalRun(ticket: Ticket): Ticket {
   const index = runningStageIndex(currentInstance(ticket));
-  const stage = ticket.program[index];
+  const stage = ticket.definition.evaluationPlan.stages[index];
   if (stage === undefined)
-    throw new Error(
-      "spawnEvalRun: the running stage indexes outside the program",
-    );
+    throw new Error("spawnEvalRun: the running stage indexes outside the plan");
   return { ...ticket, spawned: ticket.spawned + stage.evaluators.length };
 }
 
 /**
- * Work passed, so judgement begins: the artifact the cycle produced is the
- * mint counter's current value, the instance is opened over it with the
- * ticket's authored program as its plan, and its first stage is asked. One
- * instance per work cycle that gets this far.
+ * Work passed, so judgement begins: the instance is opened over the ACCEPTED
+ * WORK RESULT — `workResult`, the reference the passing report carried and the
+ * completion pinned as this ticket's artifact — with the released plan and the
+ * source it was accepted at. That same reference is the artifact the
+ * dependents read and every evaluator obligation's `contextRef`, a judgement
+ * being of a result; the mint counter is an identity ledger and never stands
+ * in for it, and neither does the cycle.
  */
-export function beginEvaluation(ticket: Ticket, id: number): Ticket {
-  const artifact = ticket.spawned;
+export function beginEvaluation(ticket: Ticket, workResult: number): Ticket {
   return spawnEvalRun({
     ...ticket,
-    artifact: { type: "ProducedArtifact", value: artifact },
     evaluations: [
       ...ticket.evaluations,
       begin(
         ticket.workCyclesStarted,
-        { ticket: id, workResult: artifact },
-        { stages: ticket.program },
+        {
+          ticket: ticket.definition.id,
+          workResult,
+          acceptedSourceRef: ticket.source,
+        },
+        ticket.definition.evaluationPlan,
       ),
     ],
   });
@@ -226,18 +239,40 @@ export function instanceTasks(
 }
 
 /**
- * The tasks the fabric is running for this ticket: the work task while it is
- * outstanding, or the obligations the current run still owes. Empty in every
- * other phase, which is what makes leaving a phase enough to stop owing them.
+ * The work obligation: the cycle's own identity, the definition the release
+ * pinned for work, and the work cycle as the context reference, which is the
+ * scope the application commits the cycle's input bundle under.
  */
-export function liveTasks(ticket: Ticket): readonly TaskIdentity[] {
+export function workTaskObligation(
+  ticket: Ticket,
+  cycleNumber: number,
+): TaskObligation {
+  return {
+    task: workTaskOf(ticket.definition.id, cycleNumber),
+    definition: ticket.definition.workConfiguration,
+    contextRef: cycleNumber,
+  };
+}
+
+/**
+ * What the fabric is running for this ticket, as the obligations it owes: the
+ * work cycle's one obligation while its task is outstanding, or the ones the
+ * current run still owes. The whole obligation and not the identity alone,
+ * because that is what a produced report is held against.
+ */
+export function liveObligations(ticket: Ticket): readonly TaskObligation[] {
   if (ticket.phase === "Work")
-    return [...ticket.tasks]
-      .filter((t) => t.state === "Outstanding")
-      .map((t) => t.identity);
+    return outstandingCount(ticket.tasks) > 0
+      ? [workTaskObligation(ticket, ticket.workCyclesStarted)]
+      : [];
   if (ticket.phase === "Evaluation")
     return currentTaskObligations(currentInstance(ticket));
   return [];
+}
+
+/** The tasks the fabric is running for this ticket — the identities the obligations name. */
+export function liveTasks(ticket: Ticket): readonly TaskIdentity[] {
+  return liveObligations(ticket).map((owed) => owed.task);
 }
 
 /** Whether this identity is one the ticket is currently owed. */
@@ -246,63 +281,122 @@ export function owesTask(ticket: Ticket, task: TaskIdentity): boolean {
 }
 
 /**
+ * The exact-obligation rule: an obligation is current for a task when it names
+ * that task and is, field for field, one this ticket owes right now. Naming an
+ * owed task is not enough — the definition and the context reference are what
+ * say which spawn the result answers.
+ */
+export function obligationCurrent(
+  ticket: Ticket,
+  task: TaskIdentity,
+  obligation: TaskObligation,
+): boolean {
+  return (
+    taskIdentityEquals(obligation.task, task) &&
+    liveObligations(ticket).some((owed) =>
+      taskObligationEquals(owed, obligation),
+    )
+  );
+}
+
+/**
+ * What a live task's result looks like to the machine: the obligation this
+ * ticket owes for it, drawn from `liveTasks`, and the reference
+ * `producedResultRef` derives. This is the CORPUS's constructor and the only
+ * place a result reference is derived at all: every decider takes the one its
+ * report carried.
+ */
+export function producedResult(
+  ticket: Ticket,
+  task: TaskIdentity,
+): ValidatedTaskResult {
+  const obligation = liveObligations(ticket).find((owed) =>
+    taskIdentityEquals(owed.task, task),
+  );
+  if (obligation === undefined)
+    throw new Error("producedResult: the ticket owes this task nothing");
+  return { obligation, resultRef: producedResultRef(task) };
+}
+
+/**
  * An opaque positive reference derived from a task's own identity, where the
- * real system has a stored row. The machine's only claim on such a reference
- * is that it exists and tells one evaluator's result from another's in a run.
+ * real system has a stored row — a piece of failure evidence. The machine's
+ * only claim on such a reference is that it exists and tells one evaluator's
+ * result from another's in a run.
  */
 export function taskRefOf(task: TaskIdentity): number {
   return task.type === "WorkTask" ? task.value.cycle : task.value.evaluator;
 }
 
-export function taskResultRefOf(task: TaskIdentity): TaskResultRef {
-  const ref = taskRefOf(task);
-  return { manifest: ref, digest: ref, schema: ref };
-}
+/** The band a work result's model-scope reference is drawn in. */
+const workResultBand = 100;
 
-/** The one reference the protocol reads out of a result triple. */
-export function resultReference(result: TaskResultRef): number {
-  return result.manifest;
-}
-
-export function taskResultRefValid(result: TaskResultRef): boolean {
-  return result.manifest > 0 && result.digest > 0 && result.schema > 0;
+/**
+ * What a produced result's reference is at model scope, where the real system
+ * folds the digest of the manifest the task attested. A WORK result takes a
+ * band of its own, clear of the cycle that produced it: the reference a report
+ * carries is a fact the completion is TOLD, and one that read back as the
+ * cycle would let a reader — and a golden — mistake a derivation for the
+ * number that travelled.
+ */
+export function producedResultRef(task: TaskIdentity): number {
+  return task.type === "WorkTask"
+    ? workResultBand * task.value.ticket + task.value.cycle
+    : task.value.evaluator;
 }
 
 /** A report is well-formed when every reference it carries is a real one. */
 export function reportValid(report: TaskTerminalReport): boolean {
   switch (report.type) {
     case "WorkResultReport":
+      return (
+        taskObligationValid(report.value.result.obligation) &&
+        report.value.result.resultRef > 0 &&
+        report.value.acceptedSourceRef > 0
+      );
     case "EvaluationResultReport":
-      return taskResultRefValid(report.value.result);
+      return (
+        taskObligationValid(report.value.result.obligation) &&
+        report.value.result.resultRef > 0
+      );
     case "TerminalFailureReport":
       return report.value.evidence > 0;
   }
 }
 
 /**
- * Which reports a task can carry: a work task produces a work result, an
- * evaluator produces a verdict, and either can fail to produce anything.
- * Stated here because it is the completion's enablement rather than something
- * a decider defends against mid-flight.
+ * Which reports a task can carry: a work task produces a work result and an
+ * evaluator a verdict, each admitted only at the obligation it was spawned
+ * under, while a failure matches by identity alone, carrying no result to
+ * hold against one. Stated here because it is the completion's enablement
+ * rather than something a decider defends against mid-flight.
  */
 export function reportMatchesTask(
+  ticket: Ticket,
   task: TaskIdentity,
   report: TaskTerminalReport,
 ): boolean {
   switch (report.type) {
     case "WorkResultReport":
-      return task.type === "WorkTask";
+      return (
+        task.type === "WorkTask" &&
+        obligationCurrent(ticket, task, report.value.result.obligation)
+      );
     case "EvaluationResultReport":
-      return task.type === "EvaluationTask";
+      return (
+        task.type === "EvaluationTask" &&
+        obligationCurrent(ticket, task, report.value.result.obligation)
+      );
     case "TerminalFailureReport":
       return true;
   }
 }
 
 /**
- * The report applied to an instance: a produced result carries its reference
- * and verdict into `applyProduced`, and a failure becomes the terminal for its
- * kind. Nothing here decides — the protocol concludes the stage itself.
+ * The report applied to an instance: a produced result goes to `applyProduced`
+ * whole, which is what lets the protocol hold it against the obligation it
+ * owes, and a failure becomes the terminal for its kind. Nothing here
+ * decides — the protocol concludes the stage itself.
  */
 export function applyTaskReport(
   instance: EvaluationInstance,
@@ -314,7 +408,7 @@ export function applyTaskReport(
       return applyProduced(
         instance,
         task,
-        resultReference(report.value.result),
+        report.value.result,
         report.value.verdict satisfies EvaluationVerdict,
       );
     case "TerminalFailureReport":

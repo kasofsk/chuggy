@@ -16,7 +16,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { dispatchEvent, revokeEvent } from "../../src/actor/decisionEvent.ts";
+import {
+  resumeTicketEvent,
+  revokeEvent,
+} from "../../src/actor/decisionEvent.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import type { Entitlement } from "../../src/interpreter/executionScheduler.ts";
 import { asOperationDecisionEvent } from "../../src/interpreter/operationInbox.ts";
@@ -189,12 +192,6 @@ test("an account no policy revision covers is refused rather than assumed", () =
 });
 
 /** One command of each shape the guard classifies. */
-const dispatch: TicketCommand = {
-  version: 1,
-  command: "Decide",
-  event: asOperationDecisionEvent(dispatchEvent(asTicketId(1))),
-};
-
 const resume: TicketCommand = {
   version: 1,
   command: "ResolveNativeAction",
@@ -239,13 +236,20 @@ test("manual dispatch and an agentic proposal need the same headroom", () => {
   assert.equal(dispatchNeedsExecutionHeadroom(proposeDispatch), true);
 });
 
-test("no decision is gated, including the one carrying a dispatch event", () => {
-  assert.equal(dispatchNeedsExecutionHeadroom(dispatch), false);
+test("no decision is gated, dispatch not being one a decision can carry", () => {
   assert.equal(
     dispatchNeedsExecutionHeadroom({
       version: 1,
       command: "Decide",
       event: asOperationDecisionEvent(revokeEvent(asTicketId(1))),
+    }),
+    false,
+  );
+  assert.equal(
+    dispatchNeedsExecutionHeadroom({
+      version: 1,
+      command: "Decide",
+      event: asOperationDecisionEvent(resumeTicketEvent(asTicketId(1))),
     }),
     false,
   );

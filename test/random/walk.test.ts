@@ -25,13 +25,13 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Config } from "../../src/domain/config.ts";
-import { isValidProgram, stageChoices } from "../../src/domain/config.ts";
+import { isValidPlan, stageChoices } from "../../src/domain/config.ts";
 
 import { declaredActions } from "../domain/declared.ts";
 import { CONFIGS, modelInstance } from "../domain/configs.ts";
 import { graphOf, id, ticketOn } from "../domain/fixtures.ts";
 import {
-  validProgramsIn,
+  validPlansIn,
   walkActionOf,
   walkActions,
   type Drawn,
@@ -131,35 +131,38 @@ test("every init conjunct refuses as the model's init does, and a valid instance
   assert.equal(walkInit(modelInstance).tickets.size, 0);
 });
 
-test("the release's program draw ranges over exactly the well-formed set", () => {
-  const programs = validProgramsIn(modelInstance);
+test("the release's plan draw ranges over exactly the well-formed set", () => {
+  const plans = validPlansIn(modelInstance);
   const rosters = stageChoices(modelInstance).length;
   assert.equal(
-    programs.length,
+    plans.length,
     rosters + rosters * rosters,
-    "one stage or two, each drawn from the roster vocabulary, as the model folds validPrograms",
+    "one stage or two, each drawn from the roster vocabulary, as the model folds validPlans",
   );
-  assert.ok(programs.every((p) => isValidProgram(modelInstance, p)));
+  assert.ok(plans.every((plan) => isValidPlan(modelInstance, plan)));
   assert.equal(
-    new Set(programs.map((p) => JSON.stringify(p))).size,
-    programs.length,
-    "a duplicate would weight one program over its siblings",
+    new Set(plans.map((plan) => JSON.stringify(plan))).size,
+    plans.length,
+    "a duplicate would weight one plan over its siblings",
   );
 });
 
-test("the release's permit refuses the dep named twice", () => {
+test("the release's permit refuses the dependency named twice", () => {
   const graph = graphOf([ticketOn(modelInstance)]);
-  const program = validProgramsIn(modelInstance)[0];
-  assert.ok(program);
+  const stages = validPlansIn(modelInstance)[0];
+  assert.ok(stages);
   const drawn: Drawn = {
     ticket: id(2),
-    deps: [id(1), id(1)],
-    program,
+    dependencies: [id(1), id(1)],
+    stages,
   };
   const release = walkActionOf("releaseTicket");
   assert.equal(release.permitsIn(modelInstance, graph, drawn), false);
   assert.equal(
-    release.permitsIn(modelInstance, graph, { ...drawn, deps: [id(1)] }),
+    release.permitsIn(modelInstance, graph, {
+      ...drawn,
+      dependencies: [id(1)],
+    }),
     true,
   );
 });

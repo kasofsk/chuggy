@@ -4,7 +4,7 @@
  * green is a run that proved nothing.
  *
  * WHAT IT BUYS BY FAILING. `stageAdvanceNever` failing is the proof that
- * multi-stage programs run stage by stage, without which `eval-stage-passed`
+ * multi-stage plans run stage by stage, without which `eval-stage-passed`
  * never fires and the interpreter's advance edge is untested.
  *
  * THEY LIVE IN THEIR OWN FILE AND UNDER THEIR OWN TYPE, so folding one into

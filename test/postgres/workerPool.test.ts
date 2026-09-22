@@ -27,6 +27,7 @@ import {
   postgresWorkerPoolRegistry,
 } from "../../src/adapters/postgres/workerPool.ts";
 import { postgresWorkerPlaneAuthority } from "../../src/adapters/postgres/workerPlane.ts";
+import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { WorkerPoolIdentity } from "../../src/interpreter/workerPool.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
@@ -74,10 +75,19 @@ function poolConfiguration(agent: "Claude" | "Codex" | undefined): string {
     string,
     unknown
   >;
-  if (agent === undefined) return JSON.stringify(authored);
-  return JSON.stringify({
+  if (agent === undefined) return poolCanonical(authored);
+  return poolCanonical({
     ...authored,
-    worker: { mode: { type: "SingleAgent", agent } },
+    worker: {
+      setup: [],
+      files: [],
+      mode: {
+        type: "SingleAgent",
+        agent,
+        arguments: [],
+        ...(agent === "Codex" ? { model: "gpt-5-codex" } : {}),
+      },
+    },
     executionRequirements: {
       platformDefault: {
         mode: "ContainerCapability",
@@ -90,25 +100,33 @@ function poolConfiguration(agent: "Claude" | "Codex" | undefined): string {
   });
 }
 
+/** The same document with its keys ascending at every depth, which is the form a release pins. */
+function poolCanonical(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(poolCanonical).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${poolCanonical(record[key])}`)
+    .join(",")}}`;
+}
+
 /**
  * A project whose spawn request is registered, which is what leaves work to
- * admit. Its pinned revision is rewritten first where the case wants its work
- * to require a capability: the requirement is read out of the canonical at
- * registration and is a pin afterwards, which the durable authority enforces.
+ * admit. It is released under the configuration the case wants its work to
+ * require a capability from, because the requirement is resolved by the
+ * release and is a pin afterwards, which the durable authority enforces.
  */
 async function poolProject(
   label: string,
   tasks = 1,
   agent?: "Claude" | "Codex",
 ): Promise<SchedulerProject> {
-  const project = await schedulerProject(rig, label, { tasks });
-  await rig.harness.query(
-    `UPDATE configuration_revision SET canonical=$3 WHERE tenant=$1 AND project=$2`,
-    [
-      project.partition.tenant,
-      project.partition.project,
-      poolConfiguration(agent),
-    ],
+  const project = await schedulerProject(
+    rig,
+    label,
+    { tasks },
+    asCanonicalConfiguration(poolConfiguration(agent)),
   );
   await rig.store.registerSpawn(
     await schedulerClaimFor(

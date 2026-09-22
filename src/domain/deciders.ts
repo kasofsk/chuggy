@@ -19,12 +19,12 @@ import type {
   EvaluationFailureDisposition,
   FinalizationOutcome,
   Phase,
-  StageDefinition,
+  ReleasedTicket,
   TaskIdentity,
   TaskTerminalReport,
   Ticket,
 } from "./generated/modelTypes.ts";
-import type { TicketId } from "./ids.ts";
+import { asTicketId, type TicketId } from "./ids.ts";
 import { resolveTask } from "./task.ts";
 import { resumeBlocked } from "./evaluation.ts";
 import {
@@ -32,16 +32,17 @@ import {
   beginEvaluation,
   currentInstance,
   owesTask,
+  producedResult,
   resumeOf,
   retireLive,
   runningStageIndex,
   spawnEvalRun,
   spawnWork,
-  taskResultRefOf,
   taskRefOf,
   withInstance,
   workProduced,
 } from "./ticket.ts";
+import { acceptedSources } from "./config.ts";
 
 /**
  * Both ways a failing evaluation can be taken. The choice is an input to the
@@ -55,12 +56,13 @@ export const dispositionChoices: readonly EvaluationFailureDisposition[] = [
 
 /**
  * What a task can come back with, as the environment may produce it: a work
- * task produced its artifact or reached no result at all; an evaluator judged
- * either way or reached no result. The references are derived from the task's
- * identity rather than drawn, because the machine's only claim on them is that
- * they exist.
+ * task produced its artifact at a source the application accepted, or reached
+ * no result at all; an evaluator judged either way or reached no result. A
+ * produced report carries the obligation the ticket owes for the task, which
+ * is the only obligation the completion's enablement admits.
  */
 export function reportChoices(
+  ticket: Ticket,
   task: TaskIdentity,
 ): readonly TaskTerminalReport[] {
   const evidence = taskRefOf(task);
@@ -74,9 +76,15 @@ export function reportChoices(
       value: { evidence, kind: "ExecutionUnavailableFailure" },
     },
   ];
-  const result = taskResultRefOf(task);
+  const result = producedResult(ticket, task);
   if (task.type === "WorkTask")
-    return [{ type: "WorkResultReport", value: { result } }, ...failures];
+    return [
+      ...acceptedSources.map((acceptedSourceRef): TaskTerminalReport => ({
+        type: "WorkResultReport",
+        value: { result, acceptedSourceRef },
+      })),
+      ...failures,
+    ];
   return [
     {
       type: "EvaluationResultReport",
@@ -105,15 +113,15 @@ function move(
   };
 }
 
-/** A ticket as a release leaves it: Pending, with nothing yet spawned. */
-export function freshTicket(authoring: {
-  readonly deps: ReadonlySet<number>;
-  readonly program: readonly StageDefinition[];
-}): Ticket {
+/**
+ * A ticket as a release leaves it: Pending, with nothing yet spawned and no
+ * source, because nothing has been dispatched yet.
+ */
+export function freshTicket(definition: ReleasedTicket): Ticket {
   return {
     phase: "Pending",
-    deps: authoring.deps,
-    program: authoring.program,
+    definition,
+    source: 0,
     artifact: "NoArtifact",
     tasks: new Set(),
     evaluations: [],
@@ -131,14 +139,10 @@ export function freshTicket(authoring: {
  */
 export function decideReleaseTicket(
   graph: TicketGraph,
-  id: TicketId,
-  authoring: {
-    readonly deps: ReadonlySet<number>;
-    readonly program: readonly StageDefinition[];
-  },
+  definition: ReleasedTicket,
 ): Decision {
   const tickets = new Map(graph.tickets);
-  tickets.set(id, freshTicket(authoring));
+  tickets.set(asTicketId(definition.id), freshTicket(definition));
   return {
     rec: { label: "ticket-released", transitions: [], effects: [] },
     post: { tickets },
@@ -188,14 +192,19 @@ export function decideRevoke(graph: TicketGraph, id: TicketId): Decision {
 }
 
 /**
- * Ready to Work. Which Ready ticket runs next is an agentic pick rather than
- * a queue position, so it arrives as an argument and the recorded step IS the
- * ticket writer's decision.
+ * Ready to Work, at a source the caller names: which Ready ticket runs next
+ * and what its work is done against are both agentic picks rather than queue
+ * positions, so both arrive as arguments and the recorded step IS the ticket
+ * writer's decision. The dispatch is the only edge that pins a source.
  */
-export function decideDispatch(graph: TicketGraph, id: TicketId): Decision {
+export function decideDispatch(
+  graph: TicketGraph,
+  id: TicketId,
+  source: number,
+): Decision {
   const ticket = ticketAt(graph, id);
   return move(
-    withTicket(graph, id, spawnWork(ticket, id)),
+    withTicket(graph, id, { ...spawnWork(ticket), source }),
     id,
     "Work",
     "dispatch",
@@ -240,9 +249,12 @@ function taskDoneStep(
 
 /**
  * A work completion: the cycle's one task settles — produced, or died with the
- * fabric's relaunches behind it — and the reduce that follows reads it.
- * Infrastructure that could not run it at all parks the ticket here instead,
- * there being no sibling to wait for and no judgement to preserve.
+ * fabric's relaunches behind it — and infrastructure that could not run it at
+ * all parks the ticket here instead, there being no sibling to wait for and no
+ * judgement to preserve. A pass pins both references the report carried,
+ * neither being derivable and this the only step told them: the result becomes
+ * the artifact the reduce opens the judgement over, and the source it was
+ * accepted at replaces the one the ticket ran at.
  */
 function decideWorkTaskDone(
   graph: TicketGraph,
@@ -256,6 +268,11 @@ function decideWorkTaskDone(
       return taskDoneStep(graph, id, {
         ...ticket,
         tasks: resolveTask(ticket.tasks, task, "Passed"),
+        artifact: {
+          type: "ProducedArtifact",
+          value: report.value.result.resultRef,
+        },
+        source: report.value.acceptedSourceRef,
       });
     case "TerminalFailureReport":
       return report.value.kind === "ProcessFailure"
@@ -276,7 +293,7 @@ function decideWorkTaskDone(
 }
 
 /**
- * An evaluation completion, which is also THE EVAL-PROGRAM INTERPRETER: the
+ * An evaluation completion, which is also THE EVALUATION-PLAN INTERPRETER: the
  * report goes to the instance and the state that comes back says which edge
  * this was.
  *
@@ -284,7 +301,7 @@ function decideWorkTaskDone(
  *     remaining evaluators; no transition
  *   - RUNNING a later stage — the stage passed and the next one is asked,
  *     which is a real Evaluation to Evaluation row
- *   - PASSED — the program passed, so the ticket finalizes
+ *   - PASSED — the plan passed, so the ticket finalizes
  *   - FAILED — the later stages are skipped, not failed, and no run exists
  *     for them; the edge `onFailure` names is taken
  *   - BLOCKED — every evaluator answered and one of them was stopped, so the
@@ -319,7 +336,7 @@ function decideEvalTaskDone(
     case "EvaluationFailed":
       return onFailure === "ReworkEvaluationFailure"
         ? move(
-            withTicket(graph, id, spawnWork(advanced, id)),
+            withTicket(graph, id, spawnWork(advanced)),
             id,
             "Work",
             "rework-started eval_failure",
@@ -342,14 +359,15 @@ function decideEvalTaskDone(
 }
 
 /**
- * The work task has settled: a pass retires it, stamps the artifact the
- * dependents will read and OPENS THE INSTANCE that judges it, whose first
- * stage is asked at once. A failed task is a failed CYCLE and parks, the
- * fabric having already retried it below the cycle grain.
+ * The work task has settled: a pass retires it and OPENS THE INSTANCE that
+ * judges the artifact its completion pinned, whose first stage is asked at
+ * once. A failed task is a failed CYCLE and parks, the fabric having already
+ * retried it below the cycle grain.
  */
 export function decideWorkReduce(graph: TicketGraph, id: TicketId): Decision {
   const ticket = ticketAt(graph, id);
-  if (!workProduced(ticket.tasks)) {
+  /** Unreachable: the completion that resolved the cycle Passed pinned it. */
+  if (!workProduced(ticket.tasks) || ticket.artifact === "NoArtifact") {
     return escalate(
       graph,
       id,
@@ -358,7 +376,11 @@ export function decideWorkReduce(graph: TicketGraph, id: TicketId): Decision {
     );
   }
   return move(
-    withTicket(graph, id, beginEvaluation(retireLive(ticket), id)),
+    withTicket(
+      graph,
+      id,
+      beginEvaluation(retireLive(ticket), ticket.artifact.value),
+    ),
     id,
     "Evaluation",
     "work-passed",
@@ -395,7 +417,7 @@ function completeTicket(graph: TicketGraph, id: TicketId): Decision {
 function finalizerFailure(graph: TicketGraph, id: TicketId): Decision {
   const ticket = ticketAt(graph, id);
   return move(
-    withTicket(graph, id, spawnWork(ticket, id)),
+    withTicket(graph, id, spawnWork(ticket)),
     id,
     "Work",
     "rework-started finalization_needs_work",
@@ -447,7 +469,7 @@ export function decideResumeTicket(graph: TicketGraph, id: TicketId): Decision {
     case "ResumeWork":
     case "ResumeRework":
       return move(
-        withTicket(graph, id, spawnWork(resumed, id)),
+        withTicket(graph, id, spawnWork(resumed)),
         id,
         "Work",
         "ticket-resumed",

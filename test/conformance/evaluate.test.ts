@@ -38,7 +38,9 @@ const fleet = healthyFleet(config);
 const healthy = initialView(fleetBut(fleet, 0, {}));
 
 /** A ticket whose dependency is not in the map, which is where a derived walk falls over. */
-const dangling = initialView(graphOf([ticketOn(config, { deps: depsOf(9) })]));
+const dangling = initialView(
+  graphOf([ticketOn(config, { dependencies: depsOf(9) })]),
+);
 
 test("a healthy state answers every leaf, and answers each of them yes", () => {
   const verdict = evaluateBundle(config, healthy);
@@ -75,7 +77,7 @@ test("a leaf that cannot be asked is named rather than taking the run down", () 
   const partial: NamedInvariant = {
     invariant: "readsADanglingDep",
     holds: (_config, view) =>
-      [...ticketAt(view.post, id(1)).deps].every(
+      [...ticketAt(view.post, id(1)).definition.dependencies].every(
         (d) => ticketAt(view.post, d as TicketId).phase !== "Revoked",
       ),
   };

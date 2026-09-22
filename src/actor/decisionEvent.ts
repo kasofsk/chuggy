@@ -42,17 +42,17 @@ import {
   outstandingTaskIn,
   readiesIn,
   reducibleWorkIn,
-  releasableAuthoring,
   retryablesIn,
   revocablesIn,
 } from "../domain/enablement.ts";
+import { releasedTicketValid } from "../domain/config.ts";
 import { dispositionChoices } from "../domain/deciders.ts";
 import type {
   TicketGraph,
   DecisionEvent,
   EvaluationFailureDisposition,
   FinalizationOutcome,
-  StageDefinition,
+  ReleasedTicket,
   TaskIdentity,
   TaskTerminalReport,
 } from "../domain/generated/modelTypes.ts";
@@ -62,32 +62,33 @@ import { asTicketId, type TicketId } from "../domain/ids.ts";
 export { decisionEventTags } from "../domain/generated/modelTypes.ts";
 export type { DecisionEvent };
 
-/** What a release freezes onto the ticket, every value of it behaviour-affecting. */
-export interface ReleaseAuthoring {
-  readonly deps: ReadonlySet<number>;
-  readonly prog: readonly StageDefinition[];
+/**
+ * A release freezes the whole definition onto the ticket, and the ticket it
+ * names is the `id` inside it: the payload and the graph's key cannot
+ * disagree, so neither the event nor its readers carry a second ticket field.
+ */
+export function releaseTicketEvent(definition: ReleasedTicket): DecisionEvent {
+  return { type: "CreateTicket", value: definition };
 }
 
-export function releaseTicketEvent(
-  ticket: TicketId,
-  authoring: ReleaseAuthoring,
-): DecisionEvent {
-  return { type: "CreateTicket", value: { ticket, ...authoring } };
-}
-
-/** Extracts the frozen authoring contract from a release fact. */
-export function releaseAuthoringOf(event: DecisionEvent): ReleaseAuthoring {
+/** Extracts the frozen definition from a release fact. */
+export function releasedTicketOf(event: DecisionEvent): ReleasedTicket {
   if (event.type !== "CreateTicket")
     throw new TypeError("decision event is not a ticket release");
-  return { deps: event.value.deps, prog: event.value.prog };
+  return event.value;
 }
 
 export function revokeEvent(ticket: TicketId): DecisionEvent {
   return { type: "Revoke", value: ticket };
 }
 
-export function dispatchEvent(ticket: TicketId): DecisionEvent {
-  return { type: "Dispatch", value: ticket };
+/**
+ * The dispatch carries the source it observed: the one edge that looks at what
+ * the ticket's repository is at, so the observation is the actor's pick and a
+ * replay re-decides nothing.
+ */
+export function dispatchEvent(ticket: TicketId, source: number): DecisionEvent {
+  return { type: "Dispatch", value: { ticket, source } };
 }
 
 /**
@@ -127,17 +128,16 @@ export function execDecisionEvent(
   event: DecisionEvent,
 ): Decision {
   switch (event.type) {
-    case "CreateTicket": {
-      const { ticket, ...authoring } = event.value;
-      return decideReleaseTicket(graph, asTicketId(ticket), {
-        deps: authoring.deps,
-        program: authoring.prog,
-      });
-    }
+    case "CreateTicket":
+      return decideReleaseTicket(graph, event.value);
     case "Revoke":
       return decideRevoke(graph, asTicketId(event.value));
     case "Dispatch":
-      return decideDispatch(graph, asTicketId(event.value));
+      return decideDispatch(
+        graph,
+        asTicketId(event.value.ticket),
+        event.value.source,
+      );
     case "TaskDone":
       return decideTaskDone(
         graph,
@@ -167,25 +167,38 @@ export function decisionEventEnabled(
 ): boolean {
   switch (event.type) {
     case "CreateTicket": {
-      const value = event.value;
-      const id = asTicketId(value.ticket);
+      const definition = event.value;
       const dependable = new Set<number>(dependableIn(graph));
       return (
-        canReleaseIn(config, graph, id) &&
-        [...value.deps].every((d) => dependable.has(d)) &&
-        releasableAuthoring(config, value)
+        canReleaseIn(config, graph, asTicketId(definition.id)) &&
+        [...definition.dependencies].every((d) => dependable.has(d)) &&
+        releasedTicketValid(config, definition)
       );
     }
     case "Revoke":
       return revocablesIn(graph).includes(asTicketId(event.value));
     case "Dispatch":
-      return readiesIn(graph).includes(asTicketId(event.value));
+      /**
+       * The model draws a source from a two-element set because that is the
+       * universe one instantiation offers; what it claims of the value is
+       * `sourcePinned`'s floor, which is what a deployment folding a commit
+       * digest can hold to and what `releasedTicketValid` holds every other
+       * reference to.
+       */
+      return (
+        readiesIn(graph).includes(asTicketId(event.value.ticket)) &&
+        event.value.source > 0
+      );
     case "TaskDone": {
       const id = asTicketId(event.value.ticket);
       return (
         completableIn(graph).includes(id) &&
         outstandingTaskIn(graph, id, event.value.task) &&
-        reportMatchesTask(event.value.task, event.value.report) &&
+        reportMatchesTask(
+          ticketAt(graph, id),
+          event.value.task,
+          event.value.report,
+        ) &&
         reportValid(event.value.report) &&
         dispositionChoices.includes(event.value.onFailure)
       );
@@ -209,11 +222,12 @@ export function decisionEventEnabled(
 export function decisionEventSubject(event: DecisionEvent): TicketId {
   switch (event.type) {
     case "CreateTicket":
+      return asTicketId(event.value.id);
     case "TaskDone":
     case "FinalizationResult":
+    case "Dispatch":
       return asTicketId(event.value.ticket);
     case "Revoke":
-    case "Dispatch":
     case "WorkReduce":
     case "ResumeTicket":
       return asTicketId(event.value);

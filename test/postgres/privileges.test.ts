@@ -834,6 +834,8 @@ test("the scheduler cannot write ticket state or append history", async () => {
     ["INSERT INTO finalization_request DEFAULT VALUES", "finalization_request"],
     ["INSERT INTO project_continuation DEFAULT VALUES", "project_continuation"],
     ["UPDATE native_action SET state='Resolved'", "native_action"],
+    ["INSERT INTO ticket_source DEFAULT VALUES", "ticket_source"],
+    ["INSERT INTO ticket_definition DEFAULT VALUES", "ticket_definition"],
   ] as readonly (readonly [string, string])[]) {
     const refusal = await harness.attemptAs(schedulerRole, statement);
     assert.match(refusal ?? "", postgresHarnessDenial(object));
@@ -1022,6 +1024,8 @@ test("the scheduler reads execution and capacity, and of the project only its li
       "recovery_epoch",
       "scheduler_incident",
       "schema_migration",
+      "ticket_definition",
+      "ticket_source",
     ],
   );
   assert.equal(

@@ -207,7 +207,7 @@
 /// domain's TIMES the journal — the instance is fixed TINY, at the
 /// smallest consts that exercise a REWORK (a rework is where the
 /// double-spend bites: it is the re-entry that launches work again):
-/// N_TICKETS = 2 (deps stay expressible), N_TASKS = 1 (singleton task
+/// N_TICKETS = 2 (dependencies stay expressible), N_TASKS = 1 (singleton task
 /// sets), MAX_STAGES = 1 (one stage is enough to fail; the stage advance
 /// is the domain instance's coverage, not the seam's). The wrap-up's
 /// invalidated draw still exercises both paths.
@@ -278,9 +278,9 @@ module chuggy_refinement {
   /// the same treatment every other draw gets here — the picks are what the
   /// crash could lose, whether or not the decider consults them.
   type DecisionEvent =
-      CreateTicket({ ticket: int, deps: Set[int], prog: List[StageDefinition] })
+      CreateTicket(ReleasedTicket)
     | Revoke(int)
-    | Dispatch(int)
+    | Dispatch({ ticket: int, source: int })
     | TaskDone({ ticket: int, task: TaskIdentity, report: TaskTerminalReport,
         onFailure: EvaluationFailureDisposition })
     | WorkReduce(int)
@@ -311,9 +311,9 @@ module chuggy_refinement {
   /// function, so they cannot drift.
   pure def execDecisionEvent(
       c: TicketGraph, event: DecisionEvent): Decision = match event {
-    | CreateTicket(a) => decideReleaseTicket(c, a.ticket, a.deps, a.prog)
+    | CreateTicket(definition) => decideReleaseTicket(c, definition)
     | Revoke(j) => decideRevoke(c, j)
-    | Dispatch(j) => decideDispatch(c, j)
+    | Dispatch(a) => decideDispatch(c, a.ticket, a.source)
     | TaskDone(a) =>
       decideTaskDone(c, a.ticket, a.task, a.report, a.onFailure)
     | WorkReduce(j) => decideWorkReduce(c, j)
@@ -330,17 +330,18 @@ module chuggy_refinement {
   /// re-checked by journalLegal at every replayed prefix.
   pure def decisionEventEnabled(
       c: TicketGraph, event: DecisionEvent): bool = match event {
-    | CreateTicket(a) => and {
-        canReleaseIn(c, a.ticket),
-        a.deps.subseteq(dependableIn(c)),
-        validPrograms.contains(a.prog)
+    | CreateTicket(definition) => and {
+        canReleaseIn(c, definition.id),
+        definition.dependencies.subseteq(dependableIn(c)),
+        releasedTicketValid(definition)
       }
     | Revoke(j) => revocablesIn(c).contains(j)
-    | Dispatch(j) => readiesIn(c).contains(j)
+    | Dispatch(a) => readiesIn(c).contains(a.ticket) and
+        dispatchSources.contains(a.source)
     | TaskDone(a) => and {
         completableIn(c).contains(a.ticket),
         liveTasks(c.tickets.get(a.ticket)).contains(a.task),
-        reportMatchesTask(a.task, a.report),
+        reportMatchesTask(c.tickets.get(a.ticket), a.task, a.report),
         reportValid(a.report),
         dispositionChoices.contains(a.onFailure)
       }
@@ -545,9 +546,9 @@ module chuggy_refinement {
   action actorReleaseTicket = all {
     releasableIds.size() > 0,
     nondet j = releasableIds.oneOf()
-    nondet deps_ = dependableTickets.powerset().oneOf()
-    nondet prog = validPrograms.oneOf()
-    journalStep(CreateTicket({ ticket: j, deps: deps_, prog: prog }))
+    nondet dependencies_ = dependableTickets.powerset().oneOf()
+    nondet stages = validPlans.oneOf()
+    journalStep(CreateTicket(releasedTicketOf(j, dependencies_, stages)))
   }
   action actorRevoke = all {
     revocableTickets.size() > 0,
@@ -557,13 +558,14 @@ module chuggy_refinement {
   action actorDispatch = all {
     readyTickets.size() > 0,
     nondet j = readyTickets.oneOf()
-    journalStep(Dispatch(j))
+    nondet source = dispatchSources.oneOf()
+    journalStep(Dispatch({ ticket: j, source: source }))
   }
   action actorTaskDone = all {
     completableTickets.size() > 0,
     nondet j = completableTickets.oneOf()
     nondet task = liveTasks(graph.tickets.get(j)).oneOf()
-    nondet report = reportChoices(task).oneOf()
+    nondet report = reportChoices(graph.tickets.get(j), task).oneOf()
     nondet onFailure = dispositionChoices.oneOf()
     journalStep(TaskDone({ ticket: j, task: task, report: report,
       onFailure: onFailure }))
@@ -600,13 +602,14 @@ module chuggy_refinement {
   action hazardDispatch = all {
     readyTickets.size() > 0,
     nondet j = readyTickets.oneOf()
-    effectCrash(Dispatch(j))
+    nondet source = dispatchSources.oneOf()
+    effectCrash(Dispatch({ ticket: j, source: source }))
   }
   action hazardTaskDone = all {
     completableTickets.size() > 0,
     nondet j = completableTickets.oneOf()
     nondet task = liveTasks(graph.tickets.get(j)).oneOf()
-    nondet report = reportChoices(task).oneOf()
+    nondet report = reportChoices(graph.tickets.get(j), task).oneOf()
     nondet onFailure = dispositionChoices.oneOf()
     effectCrash(TaskDone({ ticket: j, task: task, report: report,
       onFailure: onFailure }))

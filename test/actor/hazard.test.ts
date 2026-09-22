@@ -14,6 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { aDispatchSource } from "../../src/domain/config.ts";
 import {
   dispatchEvent,
   finalizationResultEvent,
@@ -45,7 +46,7 @@ import { id, producedReport } from "../domain/fixtures.ts";
 import {
   assertStep,
   firstJudgement,
-  plainAuthoring,
+  plainDefinitionOf,
   plainDisposition,
   refinementInstance,
   stepEmit,
@@ -63,17 +64,17 @@ function phaseDispatchDoubleSpend(): ActorState {
   state = stepEmit(
     config,
     state,
-    releaseTicketEvent(id(1), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(1)),
     "ticket-released",
   );
-  state = effectCrash(config, state, dispatchEvent(id(1)));
+  state = effectCrash(config, state, dispatchEvent(id(1), aDispatchSource));
   assert.equal(state.orphans.length, 1);
   assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Pending");
   assert.equal(worldSpawns(state, id(1)), 1);
   assert.equal(journalSpawns(state, id(1)), 0);
   assertStep(config, state, "a work set the journal never decided", spentWorld);
   assert.ok(obligationsHold(config, state, refinementCore));
-  state = journalStep(config, state, dispatchEvent(id(1)));
+  state = journalStep(config, state, dispatchEvent(id(1), aDispatchSource));
   assertStep(config, state, "the orphan against the re-decided step", [
     "journalCoversWorld",
   ]);

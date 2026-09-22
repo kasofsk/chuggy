@@ -56,6 +56,7 @@ const executionSources = {
       observed: "Unreadable" as const,
       evidence: "RefUnreadable" as const,
     }),
+  spawnSource: () => unreachablePromise<undefined>(),
 };
 
 /** The pass's service around the two ports every case here is actually about. */

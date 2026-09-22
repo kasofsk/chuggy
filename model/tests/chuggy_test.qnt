@@ -6,8 +6,8 @@ module chuggy_test {
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "../ticket"
 
-  // The reference instance. Programs up to 2 stages, so the
-  // program-as-data tests below get a staged program and a flat one out of
+  // The reference instance. Plans up to 2 stages, so the
+  // plan-as-data tests below get a staged plan and a flat one out of
   // ONE instance (which is the point).
   import chuggy_domain(
     N_TICKETS = 2, N_TASKS = 2, MAX_STAGES = 2
@@ -18,6 +18,7 @@ module chuggy_test {
   // — the key the identity carries is its position — and the evaluator's
   // authored key; the one taking a GENERATION is for the edge that asks a
   // stage twice in a cycle (the blocked resume).
+
   pure def workOf(cycle: int): TaskIdentity = workTaskOf(1, cycle)
   pure def evalOfRun(cycle: int, s: int, generation: int, e: int): TaskIdentity =
     evaluatorTaskIdentity(1, cycle, s + 1, generation, e)
@@ -32,12 +33,17 @@ module chuggy_test {
   pure def wt(cycle: int, o: TaskOutcome): Task =
     { identity: workOf(cycle), state: Resolved(o) }
 
-  // WHAT A COMPLETION CAN CARRY, at the references the machine
-  // derives from the task's own identity (ticket.qnt taskResultRefOf).
-  pure def produced(task: TaskIdentity): TaskTerminalReport =
-    WorkResultReport({ result: taskResultRefOf(task) })
-  pure def judged(task: TaskIdentity, v: EvaluationVerdict): TaskTerminalReport =
-    EvaluationResultReport({ result: taskResultRefOf(task), verdict: v })
+  // THE TWO SOURCES a fixture uses: one the dispatch observes, one a work
+  // result is accepted at. Their sets are disjoint by construction
+  // (domain.qnt), so which of the two a ticket carries says whether it has
+  // been told a work result's source or has only ever been dispatched.
+  pure val srcDispatch: int = D::aDispatchSource
+  pure val srcAccepted: int = D::anAcceptedSource
+
+  // WHAT A COMPLETION CAN CARRY. A produced report carries the obligation
+  // the ticket owes for the task (ticket.qnt producedResult) — the only one
+  // the completion's enablement admits — under a result reference the
+  // machine derives from the task's own identity.
   pure def died(task: TaskIdentity): TaskTerminalReport =
     TerminalFailureReport({ evidence: taskRefOf(task), kind: ProcessFailure })
   pure def walled(task: TaskIdentity): TaskTerminalReport =
@@ -54,6 +60,34 @@ module chuggy_test {
   pure def done(c: TicketGraph, j: int, task: TaskIdentity,
       report: TaskTerminalReport): Decision =
     doneAt(c, j, task, report, ReworkEvaluationFailure)
+
+  /// A WORK COMPLETION that produced, at the obligation the ticket owes and
+  /// the source the application accepted it at.
+  pure def doneProduced(c: TicketGraph, j: int, task: TaskIdentity): Decision =
+    done(c, j, task, WorkResultReport({
+      result: producedResult(c.tickets.get(j), task),
+      acceptedSourceRef: srcAccepted }))
+
+  /// AN EVALUATOR'S VERDICT, at the obligation the running stage owes it.
+  pure def doneJudgedAt(c: TicketGraph, j: int, task: TaskIdentity,
+      v: EvaluationVerdict, d: EvaluationFailureDisposition): Decision =
+    doneAt(c, j, task, EvaluationResultReport({
+      result: producedResult(c.tickets.get(j), task), verdict: v }), d)
+  pure def doneJudged(c: TicketGraph, j: int, task: TaskIdentity,
+      v: EvaluationVerdict): Decision =
+    doneJudgedAt(c, j, task, v, ReworkEvaluationFailure)
+
+  /// A VERDICT NOTHING IS OWED — the stale and duplicate deliveries. The
+  /// ticket has no obligation for the task to read, so the builder states
+  /// one; the decider settles by identity and never opens the report, which
+  /// is the whole of what these call sites assert.
+  pure def doneJudgedStale(c: TicketGraph, j: int, task: TaskIdentity,
+      v: EvaluationVerdict): Decision =
+    done(c, j, task, EvaluationResultReport({
+      result: { obligation: { task: task, definition: D::evaluatorTaskOf(1),
+                              contextRef: 1 },
+                resultRef: taskRefOf(task) },
+      verdict: v }))
 
   // Reading an instance back: the run a ticket's judgement stands at, and
   // the status one evaluator holds in it.
@@ -81,79 +115,78 @@ module chuggy_test {
   // built by the deciders instead, which is also the only honest way to get
   // a well-formed instance.
 
-  // Programs used throughout. progU2 is exactly D::defaultProgram — the
+  // Plans used throughout. planU2 is exactly D::defaultPlan — the
   // unanimous single-stage default, which is the compatibility shape: a
   // ticket whose evaluators all share one stage judges in one roster.
-  pure val progU2: List[StageDefinition] =
-    [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }]
-  pure val progStaged: List[StageDefinition] =
-    [{ key: 1, evaluators: [{ key: 1 }] },
-     { key: 2, evaluators: [{ key: 1 }, { key: 2 }] }]
+  pure val planU2: List[StageDefinition] =
+    [{ key: 1, evaluators: [D::evaluatorOf(1), D::evaluatorOf(2)] }]
+  pure val planStaged: List[StageDefinition] =
+    [{ key: 1, evaluators: [D::evaluatorOf(1)] },
+     { key: 2, evaluators: [D::evaluatorOf(1), D::evaluatorOf(2)] }]
 
   // A SPARSE STAGE: one evaluator, authored under key 2, with no key 1 in
   // the roster. Every site that once counted a width from one would drop
   // this stage's only task.
-  pure val progSparse: List[StageDefinition] =
-    [{ key: 1, evaluators: [{ key: 2 }] }]
+  pure val planSparse: List[StageDefinition] =
+    [{ key: 1, evaluators: [D::evaluatorOf(2)] }]
 
   // Test constructors mirror released ticket contracts while keeping
   // fixtures readable.
-  pure def fresh(deps: Set[int], prog: List[StageDefinition]): Ticket =
-    D::freshTicket(deps, prog)
+  pure def fresh(j: int, dependencies: Set[int], stages: List[StageDefinition]): Ticket =
+    D::freshTicket(D::releasedTicketOf(j, dependencies, stages))
 
-  pure def release(c: TicketGraph, j: int, deps: Set[int], prog: List[StageDefinition]): Decision =
-    D::decideReleaseTicket(c, j, deps, prog)
+  pure def release(c: TicketGraph, j: int, dependencies: Set[int], stages: List[StageDefinition]): Decision =
+    D::decideReleaseTicket(c, D::releasedTicketOf(j, dependencies, stages))
 
-  run defaultProgramIsUnanimousSingleStageTest = assert(and {
-    D::defaultProgram == progU2,
-    D::validPrograms.contains(D::defaultProgram)
+  run defaultPlanIsUnanimousSingleStageTest = assert(and {
+    D::defaultPlan == planU2,
+    D::validPlans.contains(D::defaultPlan)
   })
 
-  /// validPrograms IS the release-refusal rule (programs must be non-empty
-  /// and valid or release refuses): the ill-formed shapes are simply not
-  /// authorable. A stage is a ROSTER of keys, so the reference instance
-  /// offers one stage choice per non-empty roster and every program of at
+  /// validPlans IS the plan half of the release-refusal rule (a definition
+  /// carrying any other plan is refused): the ill-formed shapes are simply
+  /// not authorable. A stage is a ROSTER of keys, so the reference instance
+  /// offers one stage choice per non-empty roster and every plan of at
   /// most MAX_STAGES of them, each stage keyed by its position.
-  run validProgramsRefusalTest = assert(and {
-    D::validPrograms.contains(progU2),
-    D::validPrograms.contains(progStaged),
-    D::validPrograms.contains(progSparse),
-    not(D::validPrograms.contains([])),                          // empty program
-    not(D::validPrograms.contains(                               // empty roster
+  run validPlansRefusalTest = assert(and {
+    D::validPlans.contains(planU2),
+    D::validPlans.contains(planStaged),
+    D::validPlans.contains(planSparse),
+    not(D::validPlans.contains([])),                          // empty plan
+    not(D::validPlans.contains(                               // empty roster
       [{ key: 1, evaluators: [] }])),
-    not(D::validPrograms.contains(                               // key > N_TASKS
-      [{ key: 1, evaluators: [{ key: 3 }] }])),
-    not(D::validPrograms.contains(                               // repeated key
-      [{ key: 1, evaluators: [{ key: 1 }, { key: 1 }] }])),
-    not(D::validPrograms.contains(                               // stage key off its position
-      [{ key: 2, evaluators: [{ key: 1 }] }])),
-    not(D::validPrograms.contains([                              // length > MAX_STAGES
-      { key: 1, evaluators: [{ key: 1 }] },
-      { key: 2, evaluators: [{ key: 1 }] },
-      { key: 3, evaluators: [{ key: 1 }] }])),
-    D::validPrograms.size() ==
+    not(D::validPlans.contains(                               // key > N_TASKS
+      [{ key: 1, evaluators: [D::evaluatorOf(3)] }])),
+    not(D::validPlans.contains(                               // repeated key
+      [{ key: 1, evaluators: [D::evaluatorOf(1), D::evaluatorOf(1)] }])),
+    not(D::validPlans.contains(                               // stage key off its position
+      [{ key: 2, evaluators: [D::evaluatorOf(1)] }])),
+    not(D::validPlans.contains([                              // length > MAX_STAGES
+      { key: 1, evaluators: [D::evaluatorOf(1)] },
+      { key: 2, evaluators: [D::evaluatorOf(1)] },
+      { key: 3, evaluators: [D::evaluatorOf(1)] }])),
+    D::validPlans.size() ==
       D::stageChoices.size() + D::stageChoices.size() * D::stageChoices.size()
   })
 
-  /// EVERY AUTHORABLE PROGRAM IS A PLAN THE PROTOCOL ACCEPTS: chuggy's
-  /// release rule is the package's planValid plus chuggy's bounds, so an
-  /// authorable program can never open an instance the protocol's own
-  /// invariant refuses.
-  run validProgramsArePlansTest = assert(
-    D::validPrograms.forall(prog => planValid({ stages: prog })))
+  /// EVERY AUTHORABLE PLAN IS ONE THE PROTOCOL ACCEPTS: chuggy's release
+  /// rule is the package's planValid plus chuggy's bounds, so an authorable
+  /// plan can never open an instance the protocol's own invariant refuses.
+  run validPlansAreProtocolPlansTest = assert(
+    D::validPlans.forall(stages => planValid({ stages: stages })))
 
   /// A SPARSE STAGE SURVIVES ITS OWN LIFECYCLE. The stage lists key 2 alone:
   /// the spawn owes that key and no other, the completion settles it, and
   /// the stage concludes — the sites that once walked 1..width would have
   /// asked key 1, matched nothing, and concluded nothing.
   pure val cSparse0: TicketGraph =
-    release(cEmpty, 1, Set(), progSparse).post
-  pure val cSparse1: TicketGraph = D::decideDispatch(cSparse0, 1).post
+    release(cEmpty, 1, Set(), planSparse).post
+  pure val cSparse1: TicketGraph = D::decideDispatch(cSparse0, 1, srcDispatch).post
   pure val cSparse2: TicketGraph =
-    done(cSparse1, 1, workOf(1), produced(workOf(1))).post
+    doneProduced(cSparse1, 1, workOf(1)).post
   pure val cSparse3: TicketGraph = D::decideWorkReduce(cSparse2, 1).post
   pure val dSparseJudged =
-    done(cSparse3, 1, evalOf(1, 0, 2), judged(evalOf(1, 0, 2), EvaluatorPass))
+    doneJudged(cSparse3, 1, evalOf(1, 0, 2), EvaluatorPass)
   pure val cSparse4: TicketGraph = dSparseJudged.post
 
   run sparseStageAskedSettledAndConcludedTest = assert(and {
@@ -170,28 +203,28 @@ module chuggy_test {
   // The path STARTS at authoring — the fleet is empty, ticket 1 is released
   // as a Pending (freshTicket seam); ticket 3 is released as a Pending
   // depending on 1 and stays unreleased throughout. ticket 1 carries
-  // the DEFAULT program, so its history is one work cycle and that cycle's
+  // the DEFAULT plan, so its history is one work cycle and that cycle's
   // stage-0 roster of two evaluators.
 
   pure val cEmpty: TicketGraph = { tickets: Map() }
-  pure val dRelease = release(cEmpty, 1, Set(), D::defaultProgram)
+  pure val dRelease = release(cEmpty, 1, Set(), D::defaultPlan)
   pure val cA1 = dRelease.post
-  pure val dReleaseDependent = release(cA1, 3, Set(1), D::defaultProgram)
+  pure val dReleaseDependent = release(cA1, 3, Set(1), D::defaultPlan)
   pure val cA2 = dReleaseDependent.post
 
   pure val c0: TicketGraph = cA2
-  pure val dDispatch = D::decideDispatch(c0, 1)   // spawns cycle 1's work task
+  pure val dDispatch = D::decideDispatch(c0, 1, srcDispatch)   // spawns cycle 1's work task
   pure val c1 = dDispatch.post
-  pure val dWork1 = done(c1, 1, workOf(1), produced(workOf(1)))
+  pure val dWork1 = doneProduced(c1, 1, workOf(1))
   pure val c2 = dWork1.post
   // retires the work task; opens the instance and asks stage 0's roster
   pure val dWorkReduce = D::decideWorkReduce(c2, 1)
   pure val c3 = dWorkReduce.post
-  pure val dEval1 = done(c3, 1, evalOf(1, 0, 1), judged(evalOf(1, 0, 1), EvaluatorPass))
+  pure val dEval1 = doneJudged(c3, 1, evalOf(1, 0, 1), EvaluatorPass)
   pure val c4 = dEval1.post
-  // the second evaluator's pass CONCLUDES the only stage, so the program
+  // the second evaluator's pass CONCLUDES the only stage, so the plan
   // passed and the ticket finalizes in this same decision
-  pure val dEval2 = done(c4, 1, evalOf(1, 0, 2), judged(evalOf(1, 0, 2), EvaluatorPass))
+  pure val dEval2 = doneJudged(c4, 1, evalOf(1, 0, 2), EvaluatorPass)
   pure val c5 = dEval2.post
   /// The finalizer succeeds and the ticket completes from Finalization.
   pure val dComplete = D::decideFinalizationResult(c5, 1, FinalizationSucceeded)
@@ -227,8 +260,7 @@ module chuggy_test {
   /// completion concludes a FAILING stage, so the passing path is the same
   /// decision either way.
   run passingStageIgnoresDispositionTest = assert(
-    doneAt(c4, 1, evalOf(1, 0, 2), judged(evalOf(1, 0, 2), EvaluatorPass),
-      EscalateEvaluationFailure) == dEval2)
+    doneJudgedAt(c4, 1, evalOf(1, 0, 2), EvaluatorPass, EscalateEvaluationFailure) == dEval2)
 
   /// THE INSTANCE IS THE PROVENANCE: at Done ticket 1 holds one instance,
   /// for the cycle that produced the artifact it judged, with its whole
@@ -236,8 +268,9 @@ module chuggy_test {
   run happyPathInstanceTest = assert(and {
     c6.tickets.get(1).evaluations.length() == 1,
     currentInstance(c6.tickets.get(1)).workCycle == 1,
-    currentInstance(c6.tickets.get(1)).input == { ticket: 1, workResult: 1 },
-    currentInstance(c6.tickets.get(1)).plan == { stages: progU2 },
+    currentInstance(c6.tickets.get(1)).input ==
+      { ticket: 1, workResult: 101, acceptedSourceRef: srcAccepted },
+    currentInstance(c6.tickets.get(1)).plan == { stages: planU2 },
     currentInstance(c6.tickets.get(1)).state ==
       EvaluationPassed([{ stageIndex: 0, generation: 1,
         evaluators: Map(1 -> passedWith(1), 2 -> passedWith(2)) }]),
@@ -306,8 +339,7 @@ module chuggy_test {
     done(c2, 1, workOf(1), died(workOf(1))).rec.label == "task-done",
     done(c2, 1, workOf(1), died(workOf(1))).rec.effects == [],
     // the same for an evaluator that has already judged
-    done(c4, 1, evalOf(1, 0, 1),
-      judged(evalOf(1, 0, 1), EvaluatorFail)).post == c4
+    doneJudgedStale(c4, 1, evalOf(1, 0, 1), EvaluatorFail).post == c4
   })
 
   /// STALE completions no-op BY IDENTITY: identities are unique within the
@@ -320,10 +352,8 @@ module chuggy_test {
     done(c3, 1, workOf(1), died(workOf(1))).post == c3,
     done(c3, 1, workOf(1), died(workOf(1))).rec.label == "task-done",
     // c5: Finalization; a late evaluator completion no-ops.
-    done(c5, 1, evalOf(1, 0, 1),
-      judged(evalOf(1, 0, 1), EvaluatorFail)).post == c5,
-    done(c5, 1, evalOf(1, 0, 1),
-      judged(evalOf(1, 0, 1), EvaluatorFail)).rec.label == "task-done"
+    doneJudgedStale(c5, 1, evalOf(1, 0, 1), EvaluatorFail).post == c5,
+    doneJudgedStale(c5, 1, evalOf(1, 0, 1), EvaluatorFail).rec.label == "task-done"
   })
 
   // === The work walls: cycle-level, no below-cycle retries =================
@@ -371,11 +401,9 @@ module chuggy_test {
   /// task; Escalate parks the ticket at the evaluation-failure wall, whose
   /// resume re-enters Work later. Both keep the instance that failed.
   pure val cEvalFail: TicketGraph =
-    done(c3, 1, evalOf(1, 0, 1), judged(evalOf(1, 0, 1), EvaluatorFail)).post
-  pure val dEvalRework = doneAt(cEvalFail, 1, evalOf(1, 0, 2),
-    judged(evalOf(1, 0, 2), EvaluatorPass), ReworkEvaluationFailure)
-  pure val dEvalEscalate = doneAt(cEvalFail, 1, evalOf(1, 0, 2),
-    judged(evalOf(1, 0, 2), EvaluatorPass), EscalateEvaluationFailure)
+    doneJudged(c3, 1, evalOf(1, 0, 1), EvaluatorFail).post
+  pure val dEvalRework = doneJudgedAt(cEvalFail, 1, evalOf(1, 0, 2), EvaluatorPass, ReworkEvaluationFailure)
+  pure val dEvalEscalate = doneJudgedAt(cEvalFail, 1, evalOf(1, 0, 2), EvaluatorPass, EscalateEvaluationFailure)
 
   run evalFailureDispositionTest = assert(and {
     // one dissenter fails the stage even though the other evaluator passed
@@ -413,7 +441,7 @@ module chuggy_test {
   /// the instances are the ticket's judgement history, one per cycle that
   /// reached judgement.
   pure val cReworkWork: TicketGraph =
-    done(dEvalRework.post, 1, workOf(2), produced(workOf(2))).post
+    doneProduced(dEvalRework.post, 1, workOf(2)).post
   pure val cReworkEval: TicketGraph = D::decideWorkReduce(cReworkWork, 1).post
 
   run secondCycleOpensSecondInstanceTest = assert(and {
@@ -426,28 +454,26 @@ module chuggy_test {
     accounted(cReworkEval)
   })
 
-  // === THE STAGED PROGRAM, walked stage by stage ===========================
-  // progStaged lists one evaluator at stage 0 and two at stage 1 on the
+  // === THE STAGED PLAN, walked stage by stage ===========================
+  // planStaged lists one evaluator at stage 0 and two at stage 1 on the
   // reference instance. The walk mirrors staged progression edge by edge;
   // the short-circuit mirrors the staged-eval short-circuit golden.
 
-  pure val cStagedPend: TicketGraph = release(cEmpty, 1, Set(), progStaged).post
-  pure val cStagedWork: TicketGraph = D::decideDispatch(cStagedPend, 1).post
+  pure val cStagedPend: TicketGraph = release(cEmpty, 1, Set(), planStaged).post
+  pure val cStagedWork: TicketGraph = D::decideDispatch(cStagedPend, 1, srcDispatch).post
   pure val cStagedWorkDone: TicketGraph =
-    done(cStagedWork, 1, workOf(1), produced(workOf(1))).post
+    doneProduced(cStagedWork, 1, workOf(1)).post
   // Work passes -> open the instance and ask the LOWEST stage, which lists
   // one evaluator.
   pure val dToEval = D::decideWorkReduce(cStagedWorkDone, 1)
   pure val cS0 = dToEval.post
   // THE ADVANCE: stage 0's one evaluator passes, stage 1 remains ->
   // Evaluation -> Evaluation, the next roster is asked.
-  pure val dAdvance = done(cS0, 1, evalOf(1, 0, 1),
-    judged(evalOf(1, 0, 1), EvaluatorPass))
+  pure val dAdvance = doneJudged(cS0, 1, evalOf(1, 0, 1), EvaluatorPass)
   pure val cS1 = dAdvance.post
   // Stage 1 lists two evaluators: both pass -> the final stage passes.
-  pure val dS1a = done(cS1, 1, evalOf(1, 1, 1), judged(evalOf(1, 1, 1), EvaluatorPass))
-  pure val dStagedFinal = done(dS1a.post, 1, evalOf(1, 1, 2),
-    judged(evalOf(1, 1, 2), EvaluatorPass))
+  pure val dS1a = doneJudged(cS1, 1, evalOf(1, 1, 1), EvaluatorPass)
+  pure val dStagedFinal = doneJudged(dS1a.post, 1, evalOf(1, 1, 2), EvaluatorPass)
 
   /// The advance edge, exactly: label eval-stage-passed, an Evaluation ->
   /// Evaluation transition, the next stage's roster owed under its own
@@ -465,10 +491,10 @@ module chuggy_test {
     accounted(cS1)
   })
 
-  /// The FINAL stage passing lands the program: eval-passed, nothing owed,
-  /// both stages in the instance's history at the rosters the program
+  /// The FINAL stage passing lands the plan: eval-passed, nothing owed,
+  /// both stages in the instance's history at the rosters the plan
   /// declared for them.
-  run stagedProgramPassesTest = assert(and {
+  run stagedPlanPassesTest = assert(and {
     dStagedFinal.rec.label == "eval-passed",
     dStagedFinal.rec.transitions == [{ ticket: 1, from: Evaluation, to: Finalization }],
     liveTasks(dStagedFinal.post.tickets.get(1)) == Set(),
@@ -481,11 +507,9 @@ module chuggy_test {
 
   // --- The short-circuit: stage 0 fails, stage 1 is never asked ------------
 
-  pure val dShort = done(cS0, 1, evalOf(1, 0, 1),
-    judged(evalOf(1, 0, 1), EvaluatorFail))
+  pure val dShort = doneJudged(cS0, 1, evalOf(1, 0, 1), EvaluatorFail)
   pure val cAfterShort = dShort.post
-  pure val dStagedWall = doneAt(cS0, 1, evalOf(1, 0, 1),
-    judged(evalOf(1, 0, 1), EvaluatorFail), EscalateEvaluationFailure)
+  pure val dStagedWall = doneJudgedAt(cS0, 1, evalOf(1, 0, 1), EvaluatorFail, EscalateEvaluationFailure)
 
   /// SHORT-CIRCUIT ROUTES TO THE FAILING EDGE: the later stages are not
   /// created — they are skipped, not failed, so no run exists for them —
@@ -509,7 +533,7 @@ module chuggy_test {
   /// The rework cycle RESTARTS FROM THE LOWEST STAGE — a new cycle's
   /// judgement is a new instance, which begins at stage 0 by construction,
   /// never mid-sequence.
-  pure val dReworkW1 = done(cAfterShort, 1, workOf(2), produced(workOf(2)))
+  pure val dReworkW1 = doneProduced(cAfterShort, 1, workOf(2))
   pure val dBackToEval = D::decideWorkReduce(dReworkW1.post, 1)
 
   run reworkRestartsLowestStageTest = assert(and {
@@ -523,21 +547,20 @@ module chuggy_test {
   /// re-delivered completion for the settled stage-0 evaluator — even with
   /// a contradicting verdict — no-ops by identity.
   run staleStageDuplicateNoopsTest = assert(and {
-    done(cS1, 1, evalOf(1, 0, 1), judged(evalOf(1, 0, 1), EvaluatorFail)).post == cS1,
-    done(cS1, 1, evalOf(1, 0, 1),
-      judged(evalOf(1, 0, 1), EvaluatorFail)).rec.label == "task-done"
+    doneJudgedStale(cS1, 1, evalOf(1, 0, 1), EvaluatorFail).post == cS1,
+    doneJudgedStale(cS1, 1, evalOf(1, 0, 1), EvaluatorFail).rec.label == "task-done"
   })
 
-  // === PROGRAM-AS-DATA at machine level ====================================
-  // ONE machine instance, two tickets identical but for the program on
-  // their record: different decisions. The program makes eval what it is
+  // === PLAN-AS-DATA at machine level ====================================
+  // ONE machine instance, two tickets identical but for the plan on
+  // their record: different decisions. The plan makes eval what it is
   // meant to be — data, and the plan the instance runs under is that data.
 
-  run programAsDataStructureTest = assert(and {
+  run planAsDataStructureTest = assert(and {
     liveTasks(c3.tickets.get(1)) == Set(evalOf(1, 0, 1), evalOf(1, 0, 2)),
     liveTasks(cS0.tickets.get(1)) == Set(evalOf(1, 0, 1)),
-    currentInstance(c3.tickets.get(1)).plan == { stages: progU2 },
-    currentInstance(cS0.tickets.get(1)).plan == { stages: progStaged }
+    currentInstance(c3.tickets.get(1)).plan == { stages: planU2 },
+    currentInstance(cS0.tickets.get(1)).plan == { stages: planStaged }
   })
 
   /// THE STAGE VERDICT at the pure grain: a stage passes when every
@@ -575,7 +598,7 @@ module chuggy_test {
   /// work task — and it does so EVERY time: there is no wall on this edge,
   /// so a finalizer that keeps reporting failure keeps buying cycles, which
   /// is the finalizer's problem and not the machine's.
-  pure val cFinalizing: TicketGraph = { tickets: Map(1 -> { ...fresh(Set(), progU2),
+  pure val cFinalizing: TicketGraph = { tickets: Map(1 -> { ...fresh(1, Set(), planU2),
     phase: Finalization }) }
   pure val dFinalizationRework = D::decideFinalizationResult(cFinalizing, 1, FinalizationNeedsWork)
   pure val dFinalizationReworkAgain =
@@ -639,8 +662,7 @@ module chuggy_test {
   /// THE STAGE CONCLUDES BLOCKED once its last evaluator answers: an
   /// interruption is not a verdict, so the judgement is intact and unmade
   /// and the ticket parks at its own wall rather than reworking.
-  pure val dBlockedPark = done(cOneWalled, 1, evalOf(1, 0, 2),
-    judged(evalOf(1, 0, 2), EvaluatorPass))
+  pure val dBlockedPark = doneJudged(cOneWalled, 1, evalOf(1, 0, 2), EvaluatorPass)
   pure val cBlockedPark = dBlockedPark.post
   pure val dBlockedResume = D::decideResumeTicket(cBlockedPark, 1)
   pure val cBlockedResume = dBlockedResume.post
@@ -669,19 +691,18 @@ module chuggy_test {
 
     // and the re-asked evaluator's second-generation completion lands the
     // stage, which is what makes the new generation a new identity.
-    done(cBlockedResume, 1, evalOfRun(1, 0, 2, 1),
-      judged(evalOfRun(1, 0, 2, 1), EvaluatorPass)).rec.label == "eval-passed",
+    doneJudged(cBlockedResume, 1, evalOfRun(1, 0, 2, 1), EvaluatorPass).rec.label == "eval-passed",
     // while a late completion from the interrupted attempt no-ops.
-    done(cBlockedResume, 1, evalOf(1, 0, 1),
-      judged(evalOf(1, 0, 1), EvaluatorPass)).post == cBlockedResume
+    doneJudgedStale(cBlockedResume, 1, evalOf(1, 0, 1), EvaluatorPass).post == cBlockedResume
   })
 
   /// A STAGE THAT BOTH FAILED AND WAS WALLED FAILS: a verdict is an answer
   /// and a wall is not, so the answer decides. Nothing is left to re-ask
   /// that a new artifact would not replace.
-  pure val dFailAndWall = done(
-    done(c3, 1, evalOf(1, 0, 1), walled(evalOf(1, 0, 1))).post,
-    1, evalOf(1, 0, 2), judged(evalOf(1, 0, 2), EvaluatorFail))
+  pure val cOneWalledThenFail: TicketGraph =
+    done(c3, 1, evalOf(1, 0, 1), walled(evalOf(1, 0, 1))).post
+  pure val dFailAndWall =
+    doneJudged(cOneWalledThenFail, 1, evalOf(1, 0, 2), EvaluatorFail)
 
   run failureBeatsAWallTest = assert(and {
     dFailAndWall.rec.label == "rework-started eval_failure",
@@ -696,9 +717,10 @@ module chuggy_test {
   /// is an answer, so neither makes a judgement, and what the desk can offer
   /// is the same re-ask. The two are still told apart in the run, because
   /// what stopped the evaluator is what the desk has to act on.
-  pure val dEvaluatorDied = done(
-    done(c3, 1, evalOf(1, 0, 1), died(evalOf(1, 0, 1))).post,
-    1, evalOf(1, 0, 2), judged(evalOf(1, 0, 2), EvaluatorPass))
+  pure val cOneDied: TicketGraph =
+    done(c3, 1, evalOf(1, 0, 1), died(evalOf(1, 0, 1))).post
+  pure val dEvaluatorDied =
+    doneJudged(cOneDied, 1, evalOf(1, 0, 2), EvaluatorPass)
   pure val cDiedResume = D::decideResumeTicket(dEvaluatorDied.post, 1).post
 
   run evaluatorProcessFailureParksTest = assert(and {
@@ -737,7 +759,7 @@ module chuggy_test {
   pure val cEscFinalizer: TicketGraph = dFinalizationUnavailable.post
   pure val dResumeFinalizer = D::decideResumeTicket(cEscFinalizer, 1)
 
-  pure val escWorking: Ticket = { ...fresh(Set(), progU2),
+  pure val escWorking: Ticket = { ...fresh(1, Set(), planU2),
     phase: Escalated, escalation: WorkFailureEscalated }
   pure val cEscWorking: TicketGraph = { tickets: Map(1 -> escWorking) }
   pure val dResumeWorking = D::decideResumeTicket(cEscWorking, 1)
@@ -776,24 +798,24 @@ module chuggy_test {
 
   // === Direct release, sparse identity, and ticket-local policy ============
 
-  pure val sparseBase = release(cEmpty, 4, Set(), progU2).post
-  pure val sparseCore = release(sparseBase, 1, Set(4), progStaged).post
+  pure val sparseBase = release(cEmpty, 4, Set(), planU2).post
+  pure val sparseCore = release(sparseBase, 1, Set(4), planStaged).post
 
   run releaseSparseIdentityTest = assert(and {
     sparseCore.tickets.keys() == Set(1, 4),
-    sparseCore.tickets.get(1).deps == Set(4),
+    sparseCore.tickets.get(1).definition.dependencies == Set(4),
     sparseCore.tickets.get(1).phase == Pending,
     D::isBlockedIn(sparseCore, 1),
     not(D::canReleaseIn(sparseCore, 2)), // count bound reached despite sparse gaps
     not(D::canReleaseIn(sparseCore, 4))
   })
 
-  pure val localPolicy = D::decideReleaseTicket(cEmpty, 2, Set(),
-    progStaged).post.tickets.get(2)
+  pure val localPolicy =
+    release(cEmpty, 2, Set(), planStaged).post.tickets.get(2)
 
   run releaseMaterializesTicketPolicyTest = assert(and {
-    localPolicy.program == progStaged,
-    localPolicy.deps == Set(),
+    localPolicy.definition.evaluationPlan.stages == planStaged,
+    localPolicy.definition.dependencies == Set(),
     localPolicy.evaluations == []
   })
 
@@ -811,9 +833,9 @@ module chuggy_test {
     not(hasOpenHumanTask(j))        // revocation is the author's settled choice
   }
 
-  pure val jBase: Ticket = fresh(Set(), progU2)
+  pure val jBase: Ticket = fresh(1, Set(), planU2)
   pure val jPend: Ticket = { ...jBase, phase: Pending }
-  pure val jWork: Ticket = { ...spawnWork(1, jBase), phase: Work }
+  pure val jWork: Ticket = { ...spawnWork(jBase), phase: Work }
   // the one Evaluation fixture the deciders built: a mid-stage instance
   pure val jEval: Ticket = cOneWalled.tickets.get(1)
   pure val jFinalizer: Ticket = { ...jBase, phase: Finalization }
@@ -876,9 +898,9 @@ module chuggy_test {
   // dependents stay where their own authors left them.
 
   pure val cChain: TicketGraph = { tickets: Map(
-    1 -> { ...fresh(Set(), progU2), phase: Pending },
-    2 -> { ...fresh(Set(1), progU2), phase: Pending },
-    3 -> fresh(Set(2), progU2)
+    1 -> { ...fresh(1, Set(), planU2), phase: Pending },
+    2 -> { ...fresh(2, Set(1), planU2), phase: Pending },
+    3 -> fresh(3, Set(2), planU2)
   ) }
   pure val dChainRevoke = D::decideRevoke(cChain, 1)
   pure val cStranded = dChainRevoke.post
@@ -913,12 +935,12 @@ module chuggy_test {
   // === Finalization is not a TicketGraph lease protocol ===================
 
   pure val cGateOcc: TicketGraph = { tickets: Map(
-    1 -> { ...fresh(Set(), progU2), phase: Finalization },
-    2 -> { ...fresh(Set(), progU2), phase: Finalization }
+    1 -> { ...fresh(1, Set(), planU2), phase: Finalization },
+    2 -> { ...fresh(2, Set(), planU2), phase: Finalization }
   ) }
 
   run finalizationBoundaryTest = assert(and {
-    not(D::revocableIn({ tickets: Map(1 -> { ...fresh(Set(), progU2), phase: Finalization }) }, 1)),
+    not(D::revocableIn({ tickets: Map(1 -> { ...fresh(1, Set(), planU2), phase: Finalization }) }, 1)),
     not(D::revocableIn(cGateOcc, 1)),
     not(D::revocableIn(cGateOcc, 2))
   })
@@ -927,15 +949,22 @@ module chuggy_test {
     D::finalizationOutcomes == Set(FinalizationSucceeded, FinalizationNeedsWork,
       FinalizationResultUnavailable))
 
-  /// WORK-PASSED STAMPS AN ARTIFACT, and a rework SUPERSEDES it. The second
-  /// half is what makes the mark an identity rather than a flag: two cycles
-  /// of the same ticket produced different things and the model can say so.
-  /// The instance judging each cycle names the same number as its input, so
-  /// a judgement can never be about the wrong artifact.
+  /// THE COMPLETION STAMPS AN ARTIFACT, and a rework SUPERSEDES it. The
+  /// second half is what makes the mark an identity rather than a flag: two
+  /// cycles of the same ticket produced different things and the model can
+  /// say so. The instance judging each cycle names the same number as its
+  /// input, so a judgement can never be about the wrong artifact.
+  ///
+  /// AND THE NUMBER IS THE REPORT'S. The report carried 101 and the cycle is
+  /// 1, so a stamp or an instance that derived the reference from the work
+  /// identity would read back as the cycle and fail here.
   run artifactStampedAndSupersededTest = assert(and {
     dDispatch.post.tickets.get(1).artifact == NoArtifact,
-    dWorkReduce.post.tickets.get(1).artifact == ProducedArtifact(1),
-    currentInstance(c3.tickets.get(1)).input.workResult == 1,
+    dWork1.post.tickets.get(1).artifact == ProducedArtifact(101),
+    dWorkReduce.post.tickets.get(1).artifact == ProducedArtifact(101),
+    currentInstance(c3.tickets.get(1)).input.workResult == 101,
+    currentInstance(c3.tickets.get(1)).input.workResult !=
+      currentInstance(c3.tickets.get(1)).workCycle,
     // The rework fixture walks a second cycle; its product differs from the
     // first, which a stamp-once mutant would fail.
     dBackToEval.post.tickets.get(1).artifact != NoArtifact,
@@ -947,12 +976,12 @@ module chuggy_test {
 
   /// A dependency gate depends only on the released predecessor's state.
   pure val cXDepPre: TicketGraph = { tickets: Map(
-    1 -> { ...fresh(Set(), progU2), phase: Finalization },
-    2 -> { ...fresh(Set(1), progU2), phase: Pending }
+    1 -> { ...fresh(1, Set(), planU2), phase: Finalization },
+    2 -> { ...fresh(2, Set(1), planU2), phase: Pending }
   ) }
   pure val cXDepDone: TicketGraph = { tickets: Map(
-    1 -> { ...fresh(Set(), progU2), phase: Done, completions: 1 },
-    2 -> { ...fresh(Set(1), progU2), phase: Pending }
+    1 -> { ...fresh(1, Set(), planU2), phase: Done, completions: 1 },
+    2 -> { ...fresh(2, Set(1), planU2), phase: Pending }
   ) }
 
   run dependencyGateTest = assert(and {

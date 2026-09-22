@@ -15,7 +15,7 @@
 /// selector picks it out of the derived Ready set — which pick is the
 /// selector's own agency, not scheduler noise, so any policy refines
 /// unrestricted choice. Work runs one task set per cycle. Evaluation runs the
-/// ticket's authored program, stage by stage, short-circuiting on a failure.
+/// ticket's authored plan, stage by stage, short-circuiting on a failure.
 /// Then the ticket finalizes: a passing final stage moves it into Finalization,
 /// where a platform-owned finalizer runs and reports one outcome, and the
 /// ticket leaves the phase by that report — including when the report is that
@@ -34,7 +34,7 @@
 /// always re-enters Work, and bounding a finalizer's own failure loop is
 /// the finalizer's business, below this grain.
 ///
-/// DERIVE, DON'T STORE. Ready and Blocked are predicates over deps, not
+/// DERIVE, DON'T STORE. Ready and Blocked are predicates over dependencies, not
 /// phases, so no unblock cascade exists to get wrong. Lease occupancy is a
 /// predicate over phase, so nothing cleans up. The open-desk-task flag, the
 /// evaluation tasks the fabric is running and a ticket's dependency
@@ -77,7 +77,7 @@ module chuggy_domain {
   /// carries at most that many possibly-parallel tasks. Work is not fanned
   /// out (ticket.qnt spawnWork) and names no evaluator.
   const N_TASKS: int
-  /// Authored-program length cap — release's validity ceiling. Real programs
+  /// Authored-plan length cap — release's validity ceiling. Real plans
   /// are short by construction (stages are declared per evaluator), so the
   /// cap is a model-checking bound rather than domain vocabulary.
   const MAX_STAGES: int
@@ -93,29 +93,79 @@ module chuggy_domain {
   pure val dispositionChoices: Set[EvaluationFailureDisposition] =
     Set(ReworkEvaluationFailure, EscalateEvaluationFailure)
 
+  /// THE SOURCE REFERENCES the application may observe, at model scope.
+  /// Opaque and positive: what the machine claims about one is that a
+  /// dispatched ticket has it and that what the ticket carries afterwards is
+  /// what it was last TOLD, never what it could observe again. Two DISJOINT
+  /// pairs — a dispatch observes one of the first, a work result is accepted
+  /// at one of the second — so a spawn that re-observed a source where it
+  /// should have carried one names a number from the wrong pair, and the
+  /// goldens show which it carried.
+  ///
+  /// DRAWN rather than derived, unlike every other opaque reference here: a
+  /// source is an observation made outside the machine, and one derived from
+  /// the ticket would make the stored field a duplicate of a derivable fact
+  /// (standing rule 3) that nothing could ever disagree with.
+  ///
+  /// Their own BAND, clear of the release references and of the work results
+  /// (ticket.qnt producedResultRef), so a number read off a golden belongs to
+  /// one of those families and the travel is legible. The evaluator
+  /// definitions below are not held clear of it — a wide enough roster reaches
+  /// these numbers — and a reader tells the two apart by where a number sits,
+  /// a definition only ever inside a plan. The named members are what a
+  /// hand-written fixture carries when which one it is is not its subject.
+  pure val aDispatchSource: int = 9
+  pure val anAcceptedSource: int = 11
+  pure val dispatchSources: Set[int] =
+    Set(aDispatchSource, aDispatchSource + 1)
+  pure val acceptedSources: Set[int] =
+    Set(anAcceptedSource, anAcceptedSource + 1)
+
   /// WHAT A TASK CAN COME BACK WITH, as the environment may produce it: a
-  /// work task produced its artifact or reached no result at all; an
-  /// evaluator judged either way or reached no result. The references are
-  /// derived from the task's identity (ticket.qnt taskResultRefOf) rather
-  /// than drawn, because the machine's only claim on them is that they
-  /// exist.
-  pure def reportChoices(task: TaskIdentity): Set[TaskTerminalReport] =
+  /// work task produced its artifact at a source the application accepted,
+  /// or reached no result at all; an evaluator judged either way or reached
+  /// no result. A produced report carries the obligation the ticket owes for
+  /// the task (ticket.qnt producedResult), which is the only obligation the
+  /// completion's enablement admits; callers draw the task from liveTasks.
+  pure def reportChoices(
+      jb: Ticket, task: TaskIdentity): Set[TaskTerminalReport] =
     val failures = Set(ProcessFailure, ExecutionUnavailableFailure)
       .map(kind => TerminalFailureReport({
         evidence: taskRefOf(task), kind: kind }))
     match task {
-      | WorkTask(_) => failures.union(Set(WorkResultReport({
-          result: taskResultRefOf(task) })))
+      | WorkTask(_) => failures.union(acceptedSources.map(accepted =>
+          WorkResultReport({ result: producedResult(jb, task),
+            acceptedSourceRef: accepted })))
       | EvaluationTask(_) => failures.union(
           Set(EvaluatorPass, EvaluatorFail).map(verdict =>
-            EvaluationResultReport({ result: taskResultRefOf(task),
+            EvaluationResultReport({ result: producedResult(jb, task),
               verdict: verdict })))
     }
 
+  /// THE DEFINITION AN EVALUATOR RUNS UNDER, at model scope: a distinct
+  /// positive reference per slot, derived from the evaluator's own key,
+  /// where the release resolves that stage's configuration and folds the
+  /// digests it stores. Distinct per slot so a reader can see which one
+  /// travelled. That a stage's evaluators share one definition is the
+  /// release's rule rather than the machine's, so nothing here holds them
+  /// equal.
+  pure def evaluatorTaskOf(key: int): TaskDefinition = {
+    workload: 4 * key - 3,
+    inputs: 4 * key - 2,
+    executionRequirements: 4 * key - 1,
+    resultContract: 4 * key
+  }
+
+  /// ONE AUTHORED EVALUATOR: a key and the definition it runs under. Named
+  /// so a hand-written roster states a key and nothing else — the
+  /// definition is the release's to fold, never a fixture's to invent.
+  pure def evaluatorOf(key: int): EvaluatorDefinition = {
+    key: key, task: evaluatorTaskOf(key) }
+
   /// THE FULL ROSTER: every evaluator key the bound allows, ascending. The
-  /// default program's stage, and the longest roster a stage can list.
+  /// default plan's stage, and the longest roster a stage can list.
   pure val everyEvaluator: List[EvaluatorDefinition] =
-    range(1, N_TASKS + 1).foldl([], (roster, k) => roster.append({ key: k }))
+    range(1, N_TASKS + 1).foldl([], (roster, k) => roster.append(evaluatorOf(k)))
 
   /// The stage rosters an author may draw from: every NON-EMPTY ascending
   /// list of distinct keys from 1..N_TASKS, grown one key at a time. Keys
@@ -127,38 +177,99 @@ module chuggy_domain {
       acc.union(acc.map(roster => roster.append(entry))))
       .filter(roster => roster.length() >= 1)
 
-  /// Every WELL-FORMED authorable program: non-empty, at most MAX_STAGES
+  /// Every WELL-FORMED authorable plan: non-empty, at most MAX_STAGES
   /// stages, each stage a roster from stageChoices under its POSITIONAL key.
-  /// This set IS the release-refusal rule (programsWellFormed): the empty
-  /// program, the empty roster, a key past the bound and an overlong program
-  /// are not in it, so no release can carry one — the same
-  /// structural-refusal shape as dependableTickets for deps
-  /// draws from exactly this set).
-  pure val validPrograms: Set[List[StageDefinition]] =
+  /// This set is the plan half of the release-refusal rule
+  /// (releasedTicketValid): the empty plan, the empty roster, a key past the
+  /// bound and an overlong plan are not in it, so no release can carry one —
+  /// the same structural-refusal shape as dependableTickets for
+  /// dependencies.
+  pure val validPlans: Set[List[StageDefinition]] =
     1.to(MAX_STAGES).fold(Set([]), (acc, _) =>
       acc.union(acc.map(p => stageChoices.map(roster =>
         p.append({ key: p.length() + 1, evaluators: roster }))).flatten()))
       .filter(p => p.length() >= 1)
 
-  /// THE DEFAULT PROGRAM: ONE stage listing every evaluator the bound
+  /// THE DEFAULT PLAN: ONE stage listing every evaluator the bound
   /// allows. Every evaluator defaults to stage 0, so a ticket whose
   /// evaluators all share one stage judges in one parallel roster —
   /// pinned in tests/chuggy_test.qnt.
-  pure val defaultProgram: List[StageDefinition] =
+  pure val defaultPlan: List[StageDefinition] =
     [{ key: 1, evaluators: everyEvaluator }]
 
-  /// The ticket-source seam, now CLOSED:
-  /// every ticket the machine ever holds is built here, and the only caller is
-  /// reaches the released pipeline only through decideRelease. The author's
-  /// eval PROGRAM is released with the Pending (eval is data; authoring came
-  /// first precisely so programs would have an release to ride).
-  /// The TARGET PROJECT is released the same way — authored data
-  /// riding the release, immutable after, like deps and the program.
-  pure def freshTicket(
-      deps_: Set[int], prog: List[StageDefinition]): Ticket = {
+  /// THE REFERENCES A RELEASE PINS for ticket j, at model scope: one distinct
+  /// small positive int per slot, where the real release folds the digest of
+  /// the material each one names. Derived rather than drawn for the same
+  /// reason a task's result reference is (ticket.qnt producedResult) — the
+  /// machine's only claim on one is that it is positive and is the same
+  /// number everywhere it travels, and a draw per slot would buy a state
+  /// space and no refutation. What is STORED is still the definition the
+  /// release carried: it is authored input, and nothing in a reachable state
+  /// recomputes it.
+  pure def releaseRef(j: int, slot: int): int = 20 * j + slot
+
+  /// THE DEFINITION A RELEASE OF TICKET j CARRIES, over the dependencies and
+  /// the plan the author drew. The id is the definition's own: a release
+  /// names the ticket inside the record it releases, so the graph's key and
+  /// the definition cannot disagree (definitionsWellFormed).
+  pure def releasedTicketOf(
+      j: int, dependencies_: Set[int],
+      stages: List[StageDefinition]): ReleasedTicket = {
+    id: j,
+    content: releaseRef(j, 1),
+    dependencies: dependencies_,
+    workConfiguration: {
+      workload: releaseRef(j, 2),
+      inputs: releaseRef(j, 3),
+      executionRequirements: releaseRef(j, 4),
+      resultContract: releaseRef(j, 5)
+    },
+    evaluationPlan: { stages: stages },
+    finalizationConfiguration: releaseRef(j, 6)
+  }
+
+  /// THE RELEASE'S VALIDITY RULE — the package's releasedTicketValid, plus
+  /// the bounds this instantiation is checked under. Positive wherever the
+  /// package asks, a plan the protocol will run (evaluation.qnt planValid,
+  /// which is also what holds each evaluator's own definition valid), and
+  /// then chuggy's own: at most MAX_STAGES stages, each keyed by its own
+  /// POSITION, and every evaluator key inside 1..N_TASKS.
+  ///
+  /// The positional stage key is CHUGGY'S rule and not the contract's, which
+  /// asks only that stage keys be distinct: a layer holding an identity but
+  /// no plan reads the index back out of the key. Evaluator keys are NOT
+  /// positional.
+  ///
+  /// This IS the release-refusal rule — a definition outside it is refused at
+  /// authoring time (refinement.qnt decisionEventEnabled) rather than
+  /// defended against mid-flight, which is what makes definitionsWellFormed
+  /// hold in every reachable state.
+  pure def releasedTicketValid(definition: ReleasedTicket): bool = and {
+    definition.id > 0,
+    releasedContentValid(definition.content),
+    definition.dependencies.forall(dependency => dependency > 0),
+    taskDefinitionValid(definition.workConfiguration),
+    planValid(definition.evaluationPlan),
+    definition.finalizationConfiguration > 0,
+    definition.evaluationPlan.stages.length() <= MAX_STAGES,
+    definition.evaluationPlan.stages.indices().forall(i =>
+      val stage = definition.evaluationPlan.stages[i]
+      and {
+        stage.key == i + 1,
+        evaluatorKeys(stage).forall(k => k >= 1 and k <= N_TASKS)
+      })
+  }
+
+  /// The ticket-construction seam, now CLOSED: every ticket the machine holds
+  /// is built here, and the released pipeline is reached only through
+  /// decideReleaseTicket. Everything that will affect the ticket's behaviour
+  /// rides the release inside one record and is immutable after it; the
+  /// source is the one field a release cannot fill, because nothing has been
+  /// dispatched yet.
+  pure def freshTicket(definition: ReleasedTicket): Ticket = {
     phase: Pending,
-    deps: deps_,
-    program: prog,
+    definition: definition,
+    source: 0,
     artifact: NoArtifact,
     tasks: Set(),
     evaluations: [],
@@ -200,15 +311,15 @@ module chuggy_domain {
   /// becomes Done, so an edge to one is an edge that blocks its dependent
   /// for good, and refusing it at authoring time is what keeps an author
   /// from writing that ticket rather than discovering it afterwards.
-  /// Callers guarantee deps_ ⊆ dependable ids (see `dependableTickets`).
+  /// Callers guarantee dependencies_ ⊆ dependable ids (see `dependableTickets`).
   ///
-  /// The release also carries the ticket's EVAL PROGRAM, validated the
-  /// same structural way — callers guarantee prog ∈ validPrograms, so an
-  /// empty program, an empty roster, a key past N_TASKS or named twice, an
-  /// off-position stage key, or an overlong program is REFUSED at authoring
-  /// time: no reachable state holds one
-  /// (programsWellFormed), rather than the interpreter defending against
-  /// one mid-flight. The program is immutable after release, like deps.
+  /// The release carries the whole DEFINITION, validated the same structural
+  /// way — callers guarantee it satisfies releasedTicketValid, so an empty
+  /// plan, an empty roster, a key past N_TASKS or named twice, an
+  /// off-position stage key, an overlong plan or a reference at zero is
+  /// REFUSED at authoring time: no reachable state holds one
+  /// (definitionsWellFormed), rather than the interpreter defending against
+  /// one mid-flight. The definition is immutable after release.
   ///
   /// Dynamic-DAG boundary: releases are author actions — only
   /// the environment action `release` calls this decider, and no ticket-event
@@ -222,10 +333,10 @@ module chuggy_domain {
   /// release candidate authoring, may be sparse, and is never minted or
   /// ordered by TicketGraph.
   pure def decideReleaseTicket(
-      c: TicketGraph, j: int, deps_: Set[int],
-      prog: List[StageDefinition]): Decision =
+      c: TicketGraph, definition: ReleasedTicket): Decision =
     { rec: { label: "ticket-released", transitions: [], effects: []},
-      post: { ...c, tickets: c.tickets.put(j, freshTicket(deps_, prog)) } }
+      post: { ...c,
+        tickets: c.tickets.put(definition.id, freshTicket(definition)) } }
 
   /// REVOKE — the author settles one ticket. Table provenance for the
   /// edge: lines 47-48 `(_, Revoked) => true` — every non-terminal phase
@@ -285,7 +396,8 @@ module chuggy_domain {
   /// One definition on purpose: the grouping defect was a DERIVED waiting
   /// relation diverging from the stored field depsAcyclic watched, so a
   /// future derived relation moves both checks or neither.
-  pure def waitsOn(c: TicketGraph, j: int): Set[int] = c.tickets.get(j).deps
+  pure def waitsOn(c: TicketGraph, j: int): Set[int] =
+    c.tickets.get(j).definition.dependencies
 
   /// WHAT THIS TICKET'S DEPENDENCIES PRODUCED (design 002) — the read that
   /// makes a release ticket expressible at all. Derived, never stored, and
@@ -403,10 +515,14 @@ module chuggy_domain {
   /// (unrestricted nondet) a const would have one branch and nothing to
   /// compare — it enters only when a real competing policy needs modeling.
   /// No queue, no fairness — standing non-goals.
-  pure def decideDispatch(c: TicketGraph, j: int): Decision =
+  ///
+  /// THE SOURCE IS OBSERVED HERE AND NOWHERE ELSE (ticket.qnt Ticket.source):
+  /// the dispatch is the one edge that looks at what the ticket's repository
+  /// is at, so it is an argument to this decider and to no other.
+  pure def decideDispatch(c: TicketGraph, j: int, source_: int): Decision =
     val jb = c.tickets.get(j)
     move(
-      withTicket(c, j, spawnWork(j, jb)),
+      withTicket(c, j, { ...spawnWork(jb), source: source_ }),
       j, Work, "dispatch", ["SpawnWorkTasks"])
 
   /// THE COMPLETION — one decider for every task this machine ever asks
@@ -449,13 +565,22 @@ module chuggy_domain {
   /// reads the settled task (decideWorkReduce). Infrastructure that could
   /// not run it at all parks the ticket here instead: there is no sibling to
   /// wait for and no judgement to preserve.
+  ///
+  /// A PASS PINS BOTH REFERENCES THE REPORT CARRIED, because neither is
+  /// derivable and this is the only step that is told them: the result
+  /// becomes the ticket's artifact, and the source it was accepted at
+  /// replaces the one the ticket ran at. The reduce reads the artifact back
+  /// and opens the judgement over it.
   pure def decideWorkTaskDone(
       c: TicketGraph, j: int, task: TaskIdentity,
       report: TaskTerminalReport): Decision =
     val jb = c.tickets.get(j)
     match report {
-      | WorkResultReport(_) =>
-        taskDoneStep(c, j, { ...jb, tasks: resolveTask(jb.tasks, task, Passed) })
+      | WorkResultReport(produced) =>
+        taskDoneStep(c, j, { ...jb,
+          tasks: resolveTask(jb.tasks, task, Passed),
+          artifact: ProducedArtifact(produced.result.resultRef),
+          source: produced.acceptedSourceRef })
       | TerminalFailureReport(failure) =>
         match failure.kind {
           | ProcessFailure =>
@@ -469,7 +594,7 @@ module chuggy_domain {
       | EvaluationResultReport(_) => taskDoneStep(c, j, jb)
     }
 
-  /// AN EVALUATION completion, which is also THE EVAL-PROGRAM INTERPRETER:
+  /// AN EVALUATION completion, which is also THE EVALUATION-PLAN INTERPRETER:
   /// the report goes to the instance (ticket.qnt applyTaskReport, which is
   /// the protocol's own applyProduced/applyFailure and their concludeStage),
   /// and the state that comes back says which edge this was:
@@ -478,7 +603,7 @@ module chuggy_domain {
   ///     its remaining evaluators; no transition.
   ///   - RUNNING a later stage -> the stage passed and the next one is
   ///     asked. The Evaluation -> Evaluation transition is a real row.
-  ///   - PASSED -> the program passed, so the ticket finalizes. WHAT its
+  ///   - PASSED -> the plan passed, so the ticket finalizes. WHAT its
   ///     finalizer commits, and whether that is anything at all, is the
   ///     finalizer's own configuration below this grain.
   ///   - FAILED -> the later stages are not created: they are skipped, not
@@ -510,7 +635,7 @@ module chuggy_domain {
       | EvaluationFailed(_) =>
         match onFailure {
           | ReworkEvaluationFailure =>
-            move(withTicket(c, j, spawnWork(j, advanced)),
+            move(withTicket(c, j, spawnWork(advanced)),
               j, Work, "rework-started eval_failure", ["SpawnWorkTasks"])
           | EscalateEvaluationFailure =>
             escalate(stepped, j, EvaluationFailureEscalated,
@@ -523,8 +648,8 @@ module chuggy_domain {
 
   /// The Work task settled: reduce the phase, at CYCLE level only. Work runs
   /// ONE task per cycle, so the phase's success is that task's. A pass
-  /// retires the work task, marks the artifact it produced and OPENS THE
-  /// INSTANCE that judges it (ticket.qnt beginEvaluation), whose first stage
+  /// retires the work task and OPENS THE INSTANCE that judges the artifact
+  /// its completion pinned (ticket.qnt beginEvaluation), whose first stage
   /// is asked at once — one task per evaluator that stage lists, fanned out
   /// in parallel. Every entry spawns the stage in
   /// full — an evaluator is never skipped on the grounds that its subject
@@ -537,13 +662,20 @@ module chuggy_domain {
   /// non-goal.
   pure def decideWorkReduce(c: TicketGraph, j: int): Decision =
     val jb = c.tickets.get(j)
-    if (workProduced(jb.tasks))
-      move(
-        withTicket(c, j, beginEvaluation(j, retireLive(jb))),
-        j, Evaluation, "work-passed", ["SpawnEvalTasks"])
-    else
+    if (not(workProduced(jb.tasks)))
       escalate(c, j, WorkFailureEscalated,
         "ticket-escalated work_failure_escalated")
+    else match jb.artifact {
+      | ProducedArtifact(workResult) =>
+        move(
+          withTicket(c, j, beginEvaluation(retireLive(jb), workResult)),
+          j, Evaluation, "work-passed", ["SpawnEvalTasks"])
+      // Unreachable: the completion that resolved the cycle Passed is the
+      // one that pinned the mark (decideWorkTaskDone).
+      | NoArtifact =>
+        escalate(c, j, WorkFailureEscalated,
+          "ticket-escalated work_failure_escalated")
+    }
 
   /// A finalizer reports only a domain outcome. Queueing,
   /// preparation, approval, permits and reconciliation are focused durable
@@ -568,7 +700,7 @@ module chuggy_domain {
   /// report failure is the finalizer's own business, below this grain.
   pure def finalizerFailure(c: TicketGraph, j: int): Decision =
     val jb = c.tickets.get(j)
-    move(withTicket(c, j, spawnWork(j, jb)),
+    move(withTicket(c, j, spawnWork(jb)),
       j, Work, "rework-started finalization_needs_work", ["SpawnWorkTasks"])
 
   /// THE COMPLETION: the ticket reaches Done. Native desk state is updated
@@ -625,7 +757,7 @@ module chuggy_domain {
     val jb = c.tickets.get(j)
     val resumed = { ...jb, escalation: NoEscalation }
     val workResume =
-      move(withTicket(c, j, spawnWork(j, resumed)),
+      move(withTicket(c, j, spawnWork(resumed)),
         j, Work, "ticket-resumed", ["SpawnWorkTasks"])
     match resumeOf(jb.escalation) {
       | ResumeWork => workResume
@@ -697,7 +829,7 @@ module chuggy_domain {
   }
 
   // --- Derived waiting room (standing rule 3: derive, don't store) ---------
-  // Blocked and Ready are PREDICATES over deps, not phases.
+  // Blocked and Ready are PREDICATES over dependencies, not phases.
   // Storing them is what forces an unblock cascade; chuggy stores only
   // Pending and derives the split, so the
   // unblock cascade disappears entirely — there is no Blocked->Ready edge
@@ -754,16 +886,16 @@ module chuggy_domain {
 
   /// The fleet starts EMPTY: authoring is the ticket source now —
   /// the static nondet DAG is fully replaced by `release`, which grows
-  /// the fleet one Pending at a time through the freshTicket seam (deps still
+  /// the fleet one Pending at a time through the freshTicket seam (dependencies still
   /// acyclic by construction: they may only point at already-released,
   /// strictly smaller ids).
   /// The conjuncts are validity conditions on the instantiation: an
-  /// instance that admits no well-formed eval program, or no task set, or
+  /// instance that admits no well-formed evaluation plan, or no task set, or
   /// no ticket, has NO initial state rather than a degenerate one.
   action init = all {
     N_TASKS >= 1,        // well-formedness: a phase carries a real task set
     N_TICKETS >= 1,         // the release bound must admit at least one ticket
-    MAX_STAGES >= 1,     // at least one authorable program must exist
+    MAX_STAGES >= 1,     // at least one authorable plan must exist
     tickets' = Map(),
     lastStep' = { label: "init", transitions: [], effects: []},
     prevEvaluations' = Map()
@@ -772,15 +904,15 @@ module chuggy_domain {
   // --- actions --------------------------------------------------------------
 
   /// A new ticket is released as Pending with a nondeterministic subset of
-  /// dependable existing tickets and a well-formed evaluation program. At
+  /// dependable existing tickets and a well-formed evaluation plan. At
   /// most N_TICKETS releases ever happen, which is the only bound on how
   /// many tickets a run holds.
   action releaseTicket = all {
     releasableIds.size() > 0,
     nondet j = releasableIds.oneOf()
-    nondet deps_ = dependableTickets.powerset().oneOf()
-    nondet prog = validPrograms.oneOf()
-    apply(decideReleaseTicket(graph, j, deps_, prog))
+    nondet dependencies_ = dependableTickets.powerset().oneOf()
+    nondet stages = validPlans.oneOf()
+    apply(decideReleaseTicket(graph, releasedTicketOf(j, dependencies_, stages)))
   }
 
   /// Author revokes any non-terminal ticket, and that ticket alone
@@ -802,7 +934,8 @@ module chuggy_domain {
   action dispatch = all {
     readyTickets.size() > 0,
     nondet j = readyTickets.oneOf()
-    apply(decideDispatch(graph, j))
+    nondet source = dispatchSources.oneOf()
+    apply(decideDispatch(graph, j, source))
   }
 
   /// A task-completion event is released for a task the ticket is currently
@@ -839,7 +972,7 @@ module chuggy_domain {
     completableTickets.size() > 0,
     nondet j = completableTickets.oneOf()
     nondet task = liveTasks(tickets.get(j)).oneOf()
-    nondet report = reportChoices(task).oneOf()
+    nondet report = reportChoices(tickets.get(j), task).oneOf()
     nondet onFailure = dispositionChoices.oneOf()
     apply(decideTaskDone(graph, j, task, report, onFailure))
   }
@@ -918,11 +1051,12 @@ module chuggy_domain {
   /// REVOKED NEVER COMPLETES: a revoked ticket
   /// has emitted no completion effect — and never will: Revoked is absorbing
   /// (terminalsAbsorbing), no decider touches a revoked
-  /// ticket's `completions`. Post-evaluation phases are deliberately not revocable. Stated as its own named
-  /// invariant because it is the model's exclusivity half, though
-  /// state-wise it is a corollary of completionExclusive (completions = 1 iff
-  /// Done, completions <= 1, Revoked != Done ⇒ completions = 0) — same
-  /// stated-corollary treatment as stuckSubsetCovered.
+  /// ticket's `completions`. Post-evaluation phases are deliberately not
+  /// revocable. Stated as its own named invariant because it is the model's
+  /// exclusivity half, though state-wise it is a corollary of
+  /// completionExclusive (completions = 1 iff Done, completions <= 1,
+  /// Revoked != Done ⇒ completions = 0) — same stated-corollary treatment as
+  /// stuckSubsetCovered.
   val revokedNeverCompletes: bool = liveTickets.forall(j =>
     (tickets.get(j).phase == Revoked) implies (tickets.get(j).completions == 0))
 
@@ -959,7 +1093,7 @@ module chuggy_domain {
   /// single work task of the cycle just started, and EVERY OTHER PHASE
   /// CARRIES NOTHING. Evaluation's tasks are not here at all — the current
   /// run owes them and currentTaskObligations names them — so what this
-  /// invariant used to hold (one stage, a real index into the program,
+  /// invariant used to hold (one stage, a real index into the plan,
   /// exactly the keys that stage lists, nothing settled by a cancellation)
   /// is now the instance's own, through the protocol's stageRunInvariant.
   val tasksWellFormed: bool = liveTickets.forall(j =>
@@ -974,7 +1108,7 @@ module chuggy_domain {
   /// the whole of what an evaluation's state has to satisfy — chuggy
   /// re-states none of it. What chuggy adds is the AGREEMENT between an
   /// instance and the ticket carrying it: it judges THIS ticket, under the
-  /// program the ticket was released with (so no plan can drift from the
+  /// plan the ticket was released with (so no plan can drift from the
   /// authored data), for a work cycle the ticket has actually started, and
   /// the instances stand in the order those cycles ran — strictly
   /// ascending, so no cycle has two.
@@ -994,14 +1128,15 @@ module chuggy_domain {
         and {
           invariant(ev),
           ev.input.ticket == j,
-          ev.plan == { stages: jb.program },
+          ev.plan == jb.definition.evaluationPlan,
           ev.workCycle <= jb.workCyclesStarted,
           i == 0 or jb.evaluations[i - 1].workCycle < ev.workCycle
         }),
       (jb.phase == Evaluation) implies and {
         jb.evaluations.length() > 0,
         runningStageIndex(currentInstance(jb)) >= 0,
-        currentInstance(jb).workCycle == jb.workCyclesStarted
+        currentInstance(jb).workCycle == jb.workCyclesStarted,
+        currentInstance(jb).input.acceptedSourceRef == jb.source
       },
       (jb.escalation == EvaluationBlockedEscalated) implies and {
         jb.evaluations.length() > 0,
@@ -1034,7 +1169,7 @@ module chuggy_domain {
   /// history says it must be — one slot per work cycle started, plus, for
   /// every run of every instance, its roster once per generation it reached
   /// (ticket.qnt evaluationSpawnTotal). Every spawn site bumps the counter
-  /// from the AUTHORED program while this sum reads the INSTANCES, so the
+  /// from the AUTHORED plan while this sum reads the INSTANCES, so the
   /// two sides come from different places: a spawn that claimed the wrong
   /// stage's roster, a resume that claimed nothing, or a cycle counted twice
   /// breaks the equality in the very state that did it.
@@ -1057,39 +1192,30 @@ module chuggy_domain {
   val taskIdentitiesValid: bool = liveTickets.forall(j =>
     tickets.get(j).tasks.forall(t => taskIdentityValid(t.identity)))
 
-  /// PROGRAM WELL-FORMEDNESS: every live ticket carries a well-formed
-  /// eval program — non-empty, at most MAX_STAGES stages, each stage keyed
-  /// by its own POSITION and listing a non-empty roster of distinct keys in
-  /// 1..N_TASKS. Holding in EVERY reachable state is the release-refusal
-  /// callers draw from validPrograms) and are never rewritten, so an
-  /// ill-formed program is refused at authoring time or never exists.
-  ///
-  /// The positional stage key is CHUGGY'S rule, not the task contract's,
-  /// which asks only that stage keys be distinct: the identity carries the
-  /// stage's key, and a layer holding an identity but no program — the
-  /// dispatch view's stage column — reads the index back out of the key.
-  /// The instance stores the index itself, so nothing HERE needs the rule
-  /// any more; it is kept because those layers still do. Evaluator keys are
-  /// NOT positional.
-  val programsWellFormed: bool = liveTickets.forall(j =>
-    val p = tickets.get(j).program
-    and {
-      p.length() >= 1,
-      p.length() <= MAX_STAGES,
-      p.indices().forall(i => and {
-        p[i].key == i + 1,
-        p[i].evaluators.length() >= 1,
-        evaluatorKeys(p[i]).size() == p[i].evaluators.length(),
-        evaluatorKeys(p[i]).forall(k => k >= 1 and k <= N_TASKS)
-      })
-    })
+  /// THE RELEASED DEFINITION IS WELL-FORMED, in every reachable state: the
+  /// ticket is the one its definition names, and the definition satisfies
+  /// the release's own rule (releasedTicketValid). Holding everywhere is
+  /// what makes that rule a REFUSAL — a definition outside it is turned away
+  /// at authoring time, and the definition is never rewritten, so no decider
+  /// defends against an ill-formed one mid-flight.
+  val definitionsWellFormed: bool = liveTickets.forall(j =>
+    val jb = tickets.get(j)
+    jb.definition.id == j and releasedTicketValid(jb.definition))
+
+  /// THE SOURCE IS PINNED BY THE DISPATCH AND BY NOTHING ELSE: a ticket
+  /// carries a source exactly once it has started a work cycle, which is
+  /// exactly what a dispatch does. It goes red on a dispatch that filled no
+  /// source, on a rework or resume that cleared one, and on a release that
+  /// invented one before anything was observed.
+  val sourcePinned: bool = liveTickets.forall(j =>
+    (tickets.get(j).source > 0) iff (tickets.get(j).workCyclesStarted > 0))
 
   def dependencyClosure(j: int): Set[int] =
-    range(1, N_TICKETS + 1).foldl(tickets.get(j).deps, (seen, _) =>
-      seen.union(seen.map(d => tickets.get(d).deps).flatten()))
+    range(1, N_TICKETS + 1).foldl(waitsOn(graph, j), (seen, _) =>
+      seen.union(seen.map(d => waitsOn(graph, d)).flatten()))
 
   val depsAcyclic: bool = liveTickets.forall(j => and {
-    tickets.get(j).deps.subseteq(liveTickets),
+    waitsOn(graph, j).subseteq(liveTickets),
     not(dependencyClosure(j).contains(j))
   })
 
@@ -1105,12 +1231,12 @@ module chuggy_domain {
   /// edges, and only those. A withdrawn revision added the group's
   /// The walks below are bounded monotone fixpoints over actual keys, so
   /// sparse or numerically reversed edges behave identically.
-  def visEdges(j: int): Set[int] = tickets.get(j).deps
+  def visEdges(j: int): Set[int] = waitsOn(graph, j)
 
   /// Tickets that cannot move without a human: parked on the desk, or
   /// Pending behind a dependency chain containing a parked ticket. A
   /// healthy-Blocked ticket is deliberately NOT stuck — it sits flat while
-  /// its deps run, and progresses VICARIOUSLY.
+  /// its dependencies run, and progresses VICARIOUSLY.
   val stuckSet: Set[int] =
     range(1, liveTickets.size() + 1).foldl(Set(), (st, _) =>
       liveTickets.filter(j => or {
@@ -1175,10 +1301,10 @@ module chuggy_domain {
   /// tests/chuggy_witness_test.qnt, plus the demoted pinned-seed probe)
   /// — a reachable
   /// eval-stage-passed step is the machine-level proof that multi-stage
-  /// programs actually run stage-by-stage on machine traces, so the green
+  /// plans actually run stage-by-stage on machine traces, so the green
   /// invariant runs above are checked against traces where the stage
   /// advance edge is exercised, not vacuous (a
-  /// fleet that only ever drew single-stage programs would never take the
+  /// fleet that only ever drew single-stage plans would never take the
   /// edge). The unit tests walk the advance deterministically; this pins
   /// it as REACHABLE.
   val stageAdvanceNever: bool =
@@ -1196,7 +1322,8 @@ module chuggy_domain {
     evaluationsMonotone,
     idsAccounted,
     taskIdentitiesValid,
-    programsWellFormed,
+    definitionsWellFormed,
+    sourcePinned,
     depsAcyclic,
     ticketIdsWellFormed,
     stuckSubsetCovered

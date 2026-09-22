@@ -87,22 +87,26 @@ async function seedEntry(
 
 /** One entry of `type` naming `ticket`, as the encoder writes an event that has one. */
 function seededEvent(type: string, ticket: number): string {
+  const released = type === "CreateTicket" || type === "ReleaseTicket";
   return JSON.stringify({
     seq: ticket,
-    event: { type, value: { ticket } },
+    event: { type, value: released ? { id: ticket } : { ticket } },
     rec: {},
   });
 }
 
 /**
  * One release entry naming the dependencies it was released on, which is the
- * only place in the store those edges are written down, and the empty program
- * every release names beside them.
+ * only place in the store those edges are written down, beside the empty plan
+ * every release names.
  */
 function seededRelease(ticket: number, deps: readonly number[]): string {
   return JSON.stringify({
     seq: ticket,
-    event: { type: "CreateTicket", value: { ticket, deps, prog: [] } },
+    event: {
+      type: "CreateTicket",
+      value: { id: ticket, dependencies: deps, evaluationPlan: { stages: [] } },
+    },
     rec: {},
   });
 }

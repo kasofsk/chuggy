@@ -17,7 +17,11 @@ import type {
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { defaultProgram } from "../../src/domain/config.ts";
+import {
+  aDispatchSource,
+  defaultPlan,
+  releasedTicketOf,
+} from "../../src/domain/config.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import {
   decideDispatch,
@@ -42,23 +46,26 @@ import { modelInstance } from "./configs.ts";
 import {
   accountsForAll,
   blockedInstance,
+  carriedAt,
   graphOf,
   depsOf,
   id,
   judgedInstance,
   judgedReport,
+  obligationFor,
   producedReport,
   runningInstance,
   stoppedReport,
   rosterOf,
   ticketOn,
   workOutstanding,
+  workResultOf,
   workTask,
 } from "./fixtures.ts";
 
 const config = modelInstance;
-const program = defaultProgram(config);
-const roster = rosterOf(program);
+const plan = defaultPlan(config);
+const roster = rosterOf(plan);
 
 /** What the ticket is owed, which is exactly what a completion may name. */
 const owed = (graph: TicketGraph, at: ReturnType<typeof id>) =>
@@ -71,14 +78,11 @@ const liveShape = (graph: TicketGraph, at: ReturnType<typeof id>) =>
     state: t.state,
   }));
 
-/** The authoring a release carries, which every value on it is drawn from a universe. */
-const authoring = {
-  deps: depsOf(),
-  program: defaultProgram(config),
-};
+/** The definition a release freezes, every value on it drawn from a universe. */
+const definition = releasedTicketOf(5, depsOf(), defaultPlan(config));
 
 test("a release arrives already Pending, having spawned nothing", () => {
-  const born = freshTicket(authoring);
+  const born = freshTicket(definition);
   assert.equal(born.phase, "Pending");
   assert.equal(born.spawned, 0);
   assert.equal(born.completions, 0);
@@ -90,7 +94,7 @@ test("a release arrives already Pending, having spawned nothing", () => {
 
 test("the release records no transition, and takes the sparse id it was handed", () => {
   const empty = graphOf([]);
-  const released = decideReleaseTicket(empty, asTicketId(5), authoring);
+  const released = decideReleaseTicket(empty, definition);
   assert.equal(released.rec.label, "ticket-released");
   assert.deepEqual(released.rec.transitions, []);
   assert.deepEqual(
@@ -103,7 +107,7 @@ test("the release records no transition, and takes the sparse id it was handed",
 
 test("a dispatch spawns the cycle's one work task", () => {
   const ready = graphOf([ticketOn(config, { phase: "Pending" })]);
-  const decision = decideDispatch(ready, id(1));
+  const decision = decideDispatch(ready, id(1), aDispatchSource);
   assert.equal(decision.rec.label, "dispatch");
   assert.deepEqual(decision.rec.transitions, [
     { ticket: id(1), from: "Pending", to: "Work" },
@@ -120,7 +124,7 @@ test("first write wins, and an identity nothing is waiting on matches nothing ow
   const running = graphOf([
     ticketOn(config, {
       phase: "Evaluation",
-      evaluations: [runningInstance(1, 1, 1, program, new Set())],
+      evaluations: [runningInstance(1, 1, plan, new Set())],
       workCyclesStarted: 1,
       spawned: 1 + roster,
     }),
@@ -166,15 +170,64 @@ test("first write wins, and an identity nothing is waiting on matches nothing ow
     "an identity from an earlier phase is owed by nothing, so it no-ops",
   );
   assert.deepEqual(owed(stale.post, id(1)), owed(first.post, id(1)));
+  const owedJudge = obligationFor(judging);
+  const elsewhere = decideTaskDone(
+    running,
+    id(1),
+    judging,
+    carriedAt(judging, {
+      ...owedJudge,
+      contextRef: owedJudge.contextRef + 1,
+    }),
+    "ReworkEvaluationFailure",
+  );
+  assert.deepEqual(
+    ticketAt(elsewhere.post, id(1)).evaluations,
+    ticketAt(running, id(1)).evaluations,
+    "and an answer for a spawn this stage never made is not its to record",
+  );
 });
 
-test("a passing work task stamps the artifact its own accounting names", () => {
+test("a passing work completion pins the reference its report carried", () => {
+  const working = graphOf([
+    ticketOn(config, {
+      phase: "Work",
+      tasks: new Set([workOutstanding(1, 1)]),
+      workCyclesStarted: 1,
+      spawned: 1,
+      source: aDispatchSource,
+    }),
+  ]);
+  const report = producedReport(workTaskOf(1, 1));
+  assert.equal(report.type, "WorkResultReport");
+  const decision = decideTaskDone(
+    working,
+    id(1),
+    workTaskOf(1, 1),
+    report,
+    "ReworkEvaluationFailure",
+  );
+  const settled = ticketAt(decision.post, id(1));
+  assert.deepEqual(settled.artifact, {
+    type: "ProducedArtifact",
+    value: workResultOf(1, 1),
+  });
+  assert.notEqual(
+    workResultOf(1, 1),
+    1,
+    "the reported reference is not the cycle, so a derivation cannot pass for it",
+  );
+  assert.equal(settled.source, report.value.acceptedSourceRef);
+});
+
+test("the work reduce judges the artifact the completion pinned", () => {
   const settledWork = graphOf([
     ticketOn(config, {
       phase: "Work",
       tasks: new Set([workTask(1, 1, "Passed")]),
       workCyclesStarted: 1,
       spawned: 1,
+      artifact: { type: "ProducedArtifact", value: workResultOf(1, 1) },
     }),
   ]);
   const decision = decideWorkReduce(settledWork, id(1));
@@ -183,9 +236,14 @@ test("a passing work task stamps the artifact its own accounting names", () => {
   const evaluating = ticketAt(decision.post, id(1));
   assert.deepEqual(evaluating.artifact, {
     type: "ProducedArtifact",
-    value: 1,
+    value: workResultOf(1, 1),
   });
   assert.equal(evaluating.evaluations.length, 1);
+  assert.equal(
+    evaluating.evaluations[0]?.input.workResult,
+    workResultOf(1, 1),
+    "the judgement is opened over the artifact, not over the cycle",
+  );
   assert.equal(evaluating.tasks.size, 0, "the work task is retired, not kept");
   assert.deepEqual(owed(decision.post, id(1)), [
     evaluationTaskOf(1, 1, 1, 1, 1),
@@ -223,7 +281,7 @@ const halfJudged = (first: "EvaluatorPass" | "EvaluatorFail"): TicketGraph => {
   const running = graphOf([
     ticketOn(config, {
       phase: "Evaluation",
-      evaluations: [runningInstance(1, 1, 1, program, new Set())],
+      evaluations: [runningInstance(1, 1, plan, new Set())],
       workCyclesStarted: 1,
       spawned: 1 + roster,
       artifact: { type: "ProducedArtifact", value: 1 },
@@ -325,7 +383,7 @@ const finalizing = (): TicketGraph =>
   graphOf([
     ticketOn(config, {
       phase: "Finalization",
-      evaluations: [judgedInstance(1, 1, 1, program)],
+      evaluations: [judgedInstance(1, 1, plan)],
       workCyclesStarted: 1,
       spawned: 1 + roster,
       artifact: { type: "ProducedArtifact", value: 1 },
@@ -365,10 +423,7 @@ test("a failed finalization re-enters work, and does so every time", () => {
     graphOf([
       ticketOn(config, {
         phase: "Finalization",
-        evaluations: [
-          judgedInstance(1, 1, 1, program),
-          judgedInstance(1, 2, 2, program),
-        ],
+        evaluations: [judgedInstance(1, 1, plan), judgedInstance(1, 2, plan)],
         workCyclesStarted: 2,
         spawned: 2 * (1 + roster),
         artifact: { type: "ProducedArtifact", value: 1 },
@@ -446,7 +501,7 @@ test("a stopped evaluator leaves the stage running, and the stage parks once it 
   const running = graphOf([
     ticketOn(config, {
       phase: "Evaluation",
-      evaluations: [runningInstance(1, 1, 1, program, new Set())],
+      evaluations: [runningInstance(1, 1, plan, new Set())],
       workCyclesStarted: 1,
       spawned: 1 + roster,
     }),
@@ -498,7 +553,7 @@ test("every resume re-enters where its wall implies", () => {
         escalation: wall,
         evaluations:
           wall === "EvaluationBlockedEscalated"
-            ? [blockedInstance(1, 1, 1, program, new Set([1]))]
+            ? [blockedInstance(1, 1, plan, new Set([1]))]
             : [],
         workCyclesStarted: 1,
         spawned: wall === "EvaluationBlockedEscalated" ? 1 + roster : 1,
@@ -550,7 +605,7 @@ test("the evaluation wall's resume buys a work cycle above an intact history", (
     ticketOn(config, {
       phase: "Escalated",
       escalation: "EvaluationFailureEscalated",
-      evaluations: [judgedInstance(1, 1, 1, program, () => "EvaluatorFail")],
+      evaluations: [judgedInstance(1, 1, plan, () => "EvaluatorFail")],
       workCyclesStarted: 1,
       spawned: 1 + roster,
     }),
@@ -604,8 +659,8 @@ test("a revoke retires what was running and settles without completing", () => {
 const chain: TicketGraph = {
   tickets: new Map([
     [id(6), ticketOn(config, { phase: "Pending" })],
-    [id(4), ticketOn(config, { phase: "Pending", deps: depsOf(6) })],
-    [id(1), ticketOn(config, { phase: "Pending", deps: depsOf(4) })],
+    [id(4), ticketOn(config, { phase: "Pending", dependencies: depsOf(6) })],
+    [id(1), ticketOn(config, { phase: "Pending", dependencies: depsOf(4) })],
   ]),
 };
 const stranded = decideRevoke(chain, id(6)).post;

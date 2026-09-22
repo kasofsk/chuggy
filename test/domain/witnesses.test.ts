@@ -3,7 +3,7 @@
  *
  * A GREEN WITNESS IS A WITNESS THAT PROVED NOTHING. `model/domain.qnt` expects
  * this one violated, and the violation is what makes the invariants beside it
- * mean something: that multi-stage programs really run stage by stage rather
+ * mean something: that multi-stage plans really run stage by stage rather
  * than leaving `eval-stage-passed` unfired and the interpreter's advance edge
  * untested.
  *
@@ -16,7 +16,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import type { Config } from "../../src/domain/config.ts";
+import { evaluatorOf, type Config } from "../../src/domain/config.ts";
 
 import { decideRevoke, decideTaskDone } from "../../src/domain/deciders.ts";
 import { evaluationTaskOf } from "../../src/domain/task.ts";
@@ -48,16 +48,16 @@ function stepped(
 }
 
 const twoStage: readonly StageDefinition[] = [
-  { key: 1, evaluators: [{ key: 1 }] },
-  { key: 2, evaluators: [{ key: 1 }] },
+  { key: 1, evaluators: [evaluatorOf(1)] },
+  { key: 2, evaluators: [evaluatorOf(1)] },
 ];
 
 /** A ticket running the lowest of two stages, with its one evaluator still to answer. */
 const midProgram = graphOf([
   ticketOn(config, {
     phase: "Evaluation",
-    program: twoStage,
-    evaluations: [runningInstance(1, 1, 1, twoStage, new Set())],
+    stages: twoStage,
+    evaluations: [runningInstance(1, 1, twoStage, new Set())],
     workCyclesStarted: 1,
     spawned: 2,
   }),
@@ -69,7 +69,7 @@ const judged = evaluationTaskOf(1, 1, 1, 1, 1);
 const revoked = ((): StepView => {
   const pre = graphOf([
     ticketOn(config, { phase: "Pending" }),
-    ticketOn(config, { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
   ]);
   return stepped(pre, decideRevoke(pre, id(1)));
 })();

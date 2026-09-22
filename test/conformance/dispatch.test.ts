@@ -40,8 +40,9 @@ const emptyGraph: TicketGraph = { tickets: new Map() };
 /** A state that records no draw at all, so an arm that needs one refuses by naming it. */
 const noPicks: Picks = {
   ticket: undefined,
-  deps: undefined,
-  program: undefined,
+  dependencies: undefined,
+  stages: undefined,
+  source: undefined,
   onFailure: undefined,
   task: undefined,
   report: undefined,

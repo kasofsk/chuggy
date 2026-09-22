@@ -13,6 +13,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { aDispatchSource } from "../../src/domain/config.ts";
 import {
   decisionEventEnabled,
   dispatchEvent,
@@ -40,7 +41,7 @@ import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import { id, judgedReport, producedReport } from "../domain/fixtures.ts";
 import {
   assertStep,
-  plainAuthoring,
+  plainDefinitionOf,
   plainDisposition,
   refinementInstance,
   stepEmit,
@@ -53,7 +54,7 @@ function phaseDispatchSurvives(): ActorState {
   let state = journalStep(
     config,
     actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(1)),
   );
   assert.equal(state.journal.length, 1);
   assertStep(config, state, "release (journaled)");
@@ -65,7 +66,7 @@ function phaseDispatchSurvives(): ActorState {
   state = emitNext(state);
   assert.equal(state.applied, 1);
   assertStep(config, state, "release (emitted)");
-  state = journalStep(config, state, dispatchEvent(id(1)));
+  state = journalStep(config, state, dispatchEvent(id(1), aDispatchSource));
   assert.equal(journalSpawns(state, id(1)), 1);
   assert.equal(worldSpawns(state, id(1)), 0);
   assertStep(config, state, "dispatch (journaled)");

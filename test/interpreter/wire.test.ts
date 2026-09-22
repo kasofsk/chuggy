@@ -47,10 +47,11 @@ import {
 } from "../../src/interpreter/wire.ts";
 import { asOperationDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
 import {
-  plainAuthoring,
+  plainDefinitionOf,
   plainDisposition,
   refinementInstance,
 } from "../actor/harness.ts";
+import { aDispatchSource } from "../../src/domain/config.ts";
 import { id, judgedReport } from "../domain/fixtures.ts";
 import type { StepRecord } from "../../src/domain/generated/modelTypes.ts";
 
@@ -65,12 +66,9 @@ const plainRecord: StepRecord = {
 
 /** One decision event per constructor, keyed by its own tag so the roster can be checked against the vocabulary. */
 const oneOfEach: Readonly<Record<DecisionEvent["type"], DecisionEvent>> = {
-  CreateTicket: releaseTicketEvent(id(1), {
-    ...plainAuthoring,
-    deps: new Set([2]),
-  }),
+  CreateTicket: releaseTicketEvent(plainDefinitionOf(1, new Set([2]))),
   Revoke: revokeEvent(id(1)),
-  Dispatch: dispatchEvent(id(1)),
+  Dispatch: dispatchEvent(id(1), aDispatchSource),
   TaskDone: taskDoneEvent(
     id(1),
     evaluationTaskOf(1, 1, 1, 1, 1),
@@ -103,7 +101,7 @@ function journaledRelease(): Entry {
   const state = journalStep(
     config,
     actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(1)),
   );
   const written = state.journal[0];
   assert.ok(written !== undefined);
@@ -132,8 +130,8 @@ test("every decision event this machine declares has a schema arm, and the roste
 test("a release naming a ticket twice is refused, which is the gap between an array and the model's set", () => {
   const written = JSON.parse(
     encodeEntry({ seq: 1, event: oneOfEach.CreateTicket, rec: plainRecord }),
-  ) as { event: { value: { deps: number[] } } };
-  written.event.value.deps = [1, 1];
+  ) as { event: { value: { dependencies: number[] } } };
+  written.event.value.dependencies = [1, 1];
   const refused = parseEntry(written);
   assert.equal(refused.parsed, "Refused");
   assert.ok(refused.parsed === "Refused");
@@ -143,23 +141,20 @@ test("a release naming a ticket twice is refused, which is the gap between an ar
 test("the same release with distinct deps is accepted, so the refusal is about the repeat", () => {
   const written = JSON.parse(
     encodeEntry({ seq: 1, event: oneOfEach.CreateTicket, rec: plainRecord }),
-  ) as { event: { value: { deps: number[] } } };
-  written.event.value.deps = [1, 2];
+  ) as { event: { value: { dependencies: number[] } } };
+  written.event.value.dependencies = [1, 2];
   const read = accepted(parseEntry(written));
   assert.ok(read.event.type === "CreateTicket");
-  assert.deepEqual(read.event.value.deps, new Set([1, 2]));
+  assert.deepEqual(read.event.value.dependencies, new Set([1, 2]));
 });
 
 test("a multi-dep release is written as an array and read back as the set it was", () => {
   const entry: Entry = {
     seq: 1,
-    event: releaseTicketEvent(id(1), {
-      ...plainAuthoring,
-      deps: new Set([2, 1]),
-    }),
+    event: releaseTicketEvent(plainDefinitionOf(1, new Set([2, 1]))),
     rec: plainRecord,
   };
-  assert.match(encodeEntry(entry), /"deps":\[(1,2|2,1)\]/);
+  assert.match(encodeEntry(entry), /"dependencies":\[(1,2|2,1)\]/);
   assert.deepEqual(accepted(reread(entry)), entry);
 });
 
@@ -238,12 +233,13 @@ test("a whole journal is refused when it is not a list of rows, and by the index
   );
 });
 
-test("a decide carrying a finalization result is refused, as a reduction and a release are", () => {
+test("a decide carrying a dispatch is refused, as a finalization result, a reduction, a completion and a release are", () => {
   for (const closed of [
     oneOfEach.FinalizationResult,
     oneOfEach.WorkReduce,
     oneOfEach.TaskDone,
     oneOfEach.CreateTicket,
+    oneOfEach.Dispatch,
   ]) {
     const refused = parseTicketCommand(
       JSON.stringify({

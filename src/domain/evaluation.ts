@@ -25,8 +25,16 @@ import type {
   StageDefinition,
   StageRun,
   TaskIdentity,
+  TaskObligation,
+  ValidatedTaskResult,
 } from "./generated/modelTypes.ts";
-import { evaluationTaskOf, taskIdentityEquals } from "./task.ts";
+import {
+  evaluationTaskOf,
+  taskDefinitionEquals,
+  taskDefinitionValid,
+  taskIdentityEquals,
+  taskObligationEquals,
+} from "./task.ts";
 
 /** The evaluator keys a stage lists, which is what a run of it is keyed by. */
 export function evaluatorKeys(stage: StageDefinition): ReadonlySet<number> {
@@ -227,45 +235,51 @@ export function concludeStage(
   };
 }
 
-/** The obligations the running stage still owes, in the roster's own order. */
+/**
+ * The obligations the running stage still owes, in the roster's own order:
+ * each evaluator's identity, the definition the release resolved for it, and
+ * the work result the judgement is of as the context it answers under.
+ */
 export function currentTaskObligations(
   instance: EvaluationInstance,
-): readonly TaskIdentity[] {
+): readonly TaskObligation[] {
   const run = runningRun(instance);
   if (run === undefined) return [];
   return stageOf(instance, run)
     .evaluators.filter((entry) =>
       statusAwaiting(run.evaluators.get(entry.key) ?? "Awaiting"),
     )
-    .map((entry) => taskIdentityFor(instance, run, entry.key));
-}
-
-/** Whether this task is one the instance is currently owed, by identity. */
-function owed(instance: EvaluationInstance, task: TaskIdentity): boolean {
-  return currentTaskObligations(instance).some((obligation) =>
-    taskIdentityEquals(obligation, task),
-  );
+    .map((entry) => ({
+      task: taskIdentityFor(instance, run, entry.key),
+      definition: entry.task,
+      contextRef: instance.input.workResult,
+    }));
 }
 
 /**
  * An evaluator answered. The verdict becomes its result, and the stage is
- * asked whether that concluded it — an answer to a task nothing is waiting on
- * changes nothing, which is the idempotence an at-least-once fabric demands.
+ * asked whether that concluded it — an answer carrying an obligation this
+ * instance does not owe changes nothing, which is both the idempotence an
+ * at-least-once fabric demands and the refusal of a result for a spawn that
+ * was never made.
  */
 export function applyProduced(
   instance: EvaluationInstance,
   task: TaskIdentity,
-  result: number,
+  result: ValidatedTaskResult,
   verdict: EvaluationVerdict,
 ): EvaluationInstance {
-  if (!owed(instance, task)) return instance;
+  const owed = currentTaskObligations(instance).some((obligation) =>
+    taskObligationEquals(obligation, result.obligation),
+  );
+  if (!owed) return instance;
   return concludeStage(
     withStatus(instance, task, {
       type: "Produced",
       value: {
         type:
           verdict === "EvaluatorPass" ? "EvaluatorPassed" : "EvaluatorFailed",
-        value: result,
+        value: result.resultRef,
       },
     }),
   );
@@ -440,7 +454,10 @@ function stateHistoryValid(instance: EvaluationInstance): boolean {
   }
 }
 
-/** A plan the protocol will run: stages and rosters non-empty, keys unique and positive. */
+/**
+ * A plan the protocol will run: stages and rosters non-empty, keys unique and
+ * positive, and every evaluator carrying a definition the contract admits.
+ */
 export function planValid(plan: EvaluationPlan): boolean {
   const stageKeys = plan.stages.map((stage) => stage.key);
   return (
@@ -452,7 +469,9 @@ export function planValid(plan: EvaluationPlan): boolean {
         stage.key > 0 &&
         keys.length > 0 &&
         new Set(keys).size === keys.length &&
-        keys.every((key) => key > 0)
+        stage.evaluators.every(
+          (entry) => entry.key > 0 && taskDefinitionValid(entry.task),
+        )
       );
     })
   );
@@ -464,6 +483,7 @@ export function instanceValid(instance: EvaluationInstance): boolean {
     instance.workCycle > 0 &&
     instance.input.ticket > 0 &&
     instance.input.workResult > 0 &&
+    instance.input.acceptedSourceRef > 0 &&
     planValid(instance.plan) &&
     stateHistoryValid(instance)
   );
@@ -483,9 +503,14 @@ export function stageDefinitionEquals(
   return (
     left.key === right.key &&
     left.evaluators.length === right.evaluators.length &&
-    left.evaluators.every(
-      (entry, index) => entry.key === right.evaluators[index]?.key,
-    )
+    left.evaluators.every((entry, index) => {
+      const other = right.evaluators[index];
+      return (
+        other !== undefined &&
+        entry.key === other.key &&
+        taskDefinitionEquals(entry.task, other.task)
+      );
+    })
   );
 }
 
@@ -588,6 +613,7 @@ export function instanceEquals(
     left.workCycle === right.workCycle &&
     left.input.ticket === right.input.ticket &&
     left.input.workResult === right.input.workResult &&
+    left.input.acceptedSourceRef === right.input.acceptedSourceRef &&
     stagesEqual(left.plan.stages, right.plan.stages) &&
     evaluationStateEquals(left.state, right.state)
   );

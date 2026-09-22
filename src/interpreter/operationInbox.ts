@@ -246,7 +246,6 @@ export function classifyCommand(command: TicketCommand): {
   switch (command.event.type) {
     case "Revoke":
       return { admission: "CorrectnessReducing", priority: "Safety" };
-    case "Dispatch":
     case "ResumeTicket":
       return { admission: "Ordinary", priority: "Ordinary" };
   }

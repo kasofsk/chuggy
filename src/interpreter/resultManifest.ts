@@ -127,20 +127,22 @@ export const manifestBytesMax = 5_368_709_120;
 export const resultManifestTextCharsMax = 131_072;
 
 /**
- * How much of a manifest digest the model-grain fold reads. Thirteen hexadecimal
+ * How much of a stored digest the model-grain fold reads. Thirteen hexadecimal
  * characters are fifty-two bits, which stays inside the integers a journal
  * command admits and never turns negative the way a full-width cast would.
  */
-export const resultDigestFoldHexChars = 13;
+export const digestFoldHexChars = 13;
 
 /**
- * The model's result reference is three opaque positive integers, so the
- * authoritative digest is folded to one. It is deliberately not injective: the
- * authority is the manifest identity and full digest on the execution row, and
- * the project-local ordinal beside this value is already unique per project.
+ * The model's references are opaque positive integers, so a digest this tree
+ * stores — a manifest's, a commit's, a released configuration's — is folded to
+ * one, deliberately not injectively: the authority is the full digest on the
+ * row the reference names, and this is the number the journal carries. It is
+ * `result_digest_fold`'s TypeScript twin and must fold the same bytes to the
+ * same integer, which `test/postgres` holds the two to.
  */
-export function resultDigestFold(digest: ArtifactDigest): number {
-  return Number.parseInt(digest.slice(0, resultDigestFoldHexChars), 16) + 1;
+export function digestFold(digest: string): number {
+  return Number.parseInt(digest.slice(0, digestFoldHexChars), 16) + 1;
 }
 
 /** The first code point retained text may carry, below which every value is a control character. */

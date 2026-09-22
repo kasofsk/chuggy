@@ -48,6 +48,18 @@ export const authoringSchema = z.strictObject({
 
 export type ReleaseAuthoringBody = z.infer<typeof authoringSchema>;
 
+/**
+ * The program an author draws, as everything that holds one holds it: a draft's
+ * stored authoring and a dispatch candidate alike. It is spelled deeply
+ * readonly beside the schema rather than inferred from it, because a released
+ * stage carries a task definition per evaluator that no author writes and no
+ * reader of this one may be handed.
+ */
+export type ReleaseAuthoringProgram = readonly {
+  readonly key: number;
+  readonly evaluators: readonly { readonly key: number }[];
+}[];
+
 export const programStageResponseSchema = programStageSchema.strip().extend({
   evaluators: z
     .array(evaluatorDefinitionSchema.strip())

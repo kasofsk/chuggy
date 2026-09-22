@@ -78,7 +78,11 @@ import {
   type ResultManifest,
 } from "../../interpreter/resultManifest.ts";
 import { executionRowLogical, type ExecutionRow } from "./schedulerRows.ts";
-import { schedulerRole } from "./schema.ts";
+import {
+  schedulerRole,
+  sourceUnrecordedResult,
+  workResultUnrecordedResult,
+} from "./schema.ts";
 
 /** The report a manifest a worker never produced is composed from. */
 const exhaustedManifestText = JSON.stringify({
@@ -108,6 +112,10 @@ export const schedulerEvidence = {
   NoReporter: "an exhausted execution has no attempt that could have reported",
   RefusedBinding:
     "the completion boundary refused a binding built from its own rows",
+  SourceUnrecorded:
+    "a passed work result names a commit no source row of its ticket records",
+  WorkResultUnrecorded:
+    "an evaluator reports on a work cycle that records no passed result",
   ForeignManifest:
     "a manifest is bound to an execution other than the one reporting it",
 } as const;
@@ -378,16 +386,32 @@ async function schedulerTerminalized(
       operation: asOperationId(submitted.operation),
     };
   }
+  /**
+   * A report the door would not settle although the binding was sound: a pass
+   * whose commit no source row of a repository-bound ticket records, or a
+   * verdict whose cycle records no passed work result to be judged. Each names
+   * the row that is missing rather than blaming the rows the boundary built its
+   * report from.
+   */
   return {
     terminalized: "Conflicting",
     incident: await schedulerRecordIncident(
       client,
       execution.partition,
       "ImpossibleState",
-      schedulerEvidence.RefusedBinding,
+      schedulerRefusalEvidence(submitted.result),
       { execution: execution.execution },
     ),
   };
+}
+
+/** Which missing row the door named, or a binding this file built wrong. */
+function schedulerRefusalEvidence(result: string | null): string {
+  if (result === sourceUnrecordedResult)
+    return schedulerEvidence.SourceUnrecorded;
+  if (result === workResultUnrecordedResult)
+    return schedulerEvidence.WorkResultUnrecorded;
+  return schedulerEvidence.RefusedBinding;
 }
 
 /** Whether the manifest offered is the one already recorded against a settled execution. */

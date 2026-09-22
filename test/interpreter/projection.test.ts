@@ -47,16 +47,17 @@ import {
 } from "../../src/interpreter/projectWriter.ts";
 import type { TicketProjection } from "../../src/interpreter/projectDecision.ts";
 import {
-  plainAuthoring,
+  plainDefinitionOf,
   plainDisposition,
   refinementInstance,
 } from "../actor/harness.ts";
+import { aDispatchSource } from "../../src/domain/config.ts";
 import { id, judgedReport, producedReport } from "../domain/fixtures.ts";
 
 /** A history long enough to release a ticket, move it, and then change its task ledger. */
 const history: readonly DecisionEvent[] = [
-  releaseTicketEvent(id(1), plainAuthoring),
-  dispatchEvent(id(1)),
+  releaseTicketEvent(plainDefinitionOf(1)),
+  dispatchEvent(id(1), aDispatchSource),
   taskDoneEvent(
     id(1),
     workTaskOf(1, 1),
@@ -99,12 +100,12 @@ test("a decision reports exactly the tickets whose complete state changed", () =
   const released = journalStep(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(1)),
   );
   const dispatched = journalStep(
     refinementInstance,
     released,
-    dispatchEvent(id(1)),
+    dispatchEvent(id(1), aDispatchSource),
   );
   assert.deepEqual(
     projectionChanges(released.view.post, dispatched.view.post),
@@ -148,7 +149,7 @@ test("a release is a change although it transitions nothing", () => {
   const released = journalStep(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(1)),
   );
   assert.deepEqual(released.journal.at(-1)?.rec.transitions, []);
   assert.deepEqual(projectionChanges(genesis, released.view.post), [
@@ -168,7 +169,7 @@ function owedTask(graph: TicketGraph): TaskIdentity {
   const [obligation] = currentTaskObligations(currentInstance(ticket));
   if (obligation === undefined)
     throw new Error("projection case: the ticket owes no task");
-  return obligation;
+  return obligation.task;
 }
 
 /**
@@ -178,8 +179,8 @@ function owedTask(graph: TicketGraph): TaskIdentity {
  */
 function walledHistory(): readonly DecisionEvent[] {
   const events: DecisionEvent[] = [
-    releaseTicketEvent(id(1), plainAuthoring),
-    dispatchEvent(id(1)),
+    releaseTicketEvent(plainDefinitionOf(1)),
+    dispatchEvent(id(1), aDispatchSource),
   ];
   let graph = events.reduce(
     (state, event) => execDecisionEvent(state, event).post,
@@ -236,7 +237,7 @@ test("every projected row is the graph the step it names left behind", () => {
  */
 test("a decision's evidence lands on the ticket it escalated and no other", () => {
   const graph = [
-    releaseTicketEvent(id(2), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(2)),
     ...walledHistory().slice(0, -1),
   ].reduce((state, event) => execDecisionEvent(state, event).post, genesis);
   assert.equal(ticketAt(graph, id(1)).escalation, "EvaluationFailureEscalated");

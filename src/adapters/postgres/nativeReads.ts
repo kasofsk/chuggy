@@ -437,14 +437,14 @@ async function readTicketsByActivity(
           LEFT JOIN LATERAL (
             SELECT j.committed_at,
                    (CASE WHEN j.entry IS JSON OBJECT
-                         THEN j.entry::jsonb->'event'->'value'->'deps' END) AS deps
+                         THEN j.entry::jsonb->'event'->'value'->'dependencies' END) AS deps
               FROM journal_entry j
              WHERE j.tenant=t.tenant AND j.project=t.project
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->>'type' END)
                      IN ('ReleaseTicket','CreateTicket')
                AND (CASE WHEN j.entry IS JSON OBJECT
-                         THEN j.entry::jsonb->'event'->'value'->'ticket' END)=to_jsonb(t.ticket)
+                         THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
           AND (${query.recentActivityAfter?.sequence ?? null}::bigint IS NULL
@@ -482,14 +482,14 @@ async function readTicketsByIdentity(
           LEFT JOIN LATERAL (
             SELECT j.committed_at,
                    (CASE WHEN j.entry IS JSON OBJECT
-                         THEN j.entry::jsonb->'event'->'value'->'deps' END) AS deps
+                         THEN j.entry::jsonb->'event'->'value'->'dependencies' END) AS deps
               FROM journal_entry j
              WHERE j.tenant=t.tenant AND j.project=t.project
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->>'type' END)
                      IN ('ReleaseTicket','CreateTicket')
                AND (CASE WHEN j.entry IS JSON OBJECT
-                         THEN j.entry::jsonb->'event'->'value'->'ticket' END)=to_jsonb(t.ticket)
+                         THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
           AND t.ticket>${query.after ?? 0}
@@ -530,14 +530,14 @@ async function readTicketRow(
           LEFT JOIN LATERAL (
             SELECT j.committed_at,
                    (CASE WHEN j.entry IS JSON OBJECT
-                         THEN j.entry::jsonb->'event'->'value'->'deps' END) AS deps
+                         THEN j.entry::jsonb->'event'->'value'->'dependencies' END) AS deps
               FROM journal_entry j
              WHERE j.tenant=t.tenant AND j.project=t.project
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->>'type' END)
                      IN ('ReleaseTicket','CreateTicket')
                AND (CASE WHEN j.entry IS JSON OBJECT
-                         THEN j.entry::jsonb->'event'->'value'->'ticket' END)=to_jsonb(t.ticket)
+                         THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
           LEFT JOIN draft_brief b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket

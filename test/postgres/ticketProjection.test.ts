@@ -32,7 +32,7 @@ import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
 import { plainDisposition } from "../actor/harness.ts";
 import { escalationTags } from "../../src/domain/generated/modelTypes.ts";
-import { id, reportedAt, stoppedReport } from "../domain/fixtures.ts";
+import { id, stoppedReport } from "../domain/fixtures.ts";
 import {
   postgresHarnessCompletion,
   postgresHarnessDrain,
@@ -40,6 +40,7 @@ import {
   postgresHarnessJournal,
   postgresHarnessOpen,
   postgresHarnessProject,
+  postgresHarnessReport,
   postgresHarnessSubmission,
   postgresHarnessUrl,
   type PostgresHarness,
@@ -108,7 +109,12 @@ async function reported(
   task: TaskIdentity,
   verdict: "Pass" | "Fail",
 ): Promise<ProjectMemory> {
-  return reportedWith(partition, memory, task, reportedAt(task, verdict));
+  return reportedWith(
+    partition,
+    memory,
+    task,
+    postgresHarnessReport(memory.graph, task, verdict),
+  );
 }
 
 /** The same, under a report the verdict pairing has no name for. */

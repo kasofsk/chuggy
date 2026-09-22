@@ -47,11 +47,8 @@
  * spawns work tasks too and 006 still pauses dispatch alone, so a criterion
  * reading "asks for new execution work" would have to classify resume and
  * native-action resumption the other way from the way this file does. A
- * `Decide` is never one of them either, including one carrying a `Dispatch`
- * event: the inbox refuses that command as `InvalidCommand` whatever the
- * backlog, so gating it here would answer a command that can never be accepted
- * with a retryable `Backlogged` for as long as the project stayed backlogged —
- * two answers to one invalid command, and the retryable one first.
+ * `Decide` is never one of them: the dispatch is not an event a principal may
+ * offer, so the two spellings above are the whole of what arrives.
  *
  * EVERY REFUSAL IS A VALUE, as elsewhere in this layer. A backlogged project is
  * an outcome a submitter must handle, not an exception it may ignore.

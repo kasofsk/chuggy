@@ -21,6 +21,7 @@ import {
   migration011,
 } from "../../src/adapters/postgres/schema/migrations/011-evaluator-keys.ts";
 import { migration012 } from "../../src/adapters/postgres/schema/migrations/012-task-report.ts";
+import { migration013 } from "../../src/adapters/postgres/schema/migrations/013-released-ticket.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -336,8 +337,10 @@ async function seedReleasedTickets(
        (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
         recovery_epoch,cause_kind,cause_id)
      SELECT $1,$2,k.step*$3+n,
-       format('{"seq":%s,"event":{"type":"%s","value":{"ticket":%s}},"rec":{}}',
-              k.step*$3+n,k.type,n),
+       format('{"seq":%s,"event":{"type":"%s","value":{"%s":%s}},"rec":{}}',
+              k.step*$3+n,k.type,
+              CASE WHEN k.type IN ('ReleaseTicket','CreateTicket')
+                   THEN 'id' ELSE 'ticket' END,n),
        'digest-'||(k.step*$3+n),'previous-'||(k.step*$3+n),'owner',1,$4,
        'Continuation','entry-'||(k.step*$3+n)
        FROM generate_series(1,$3::bigint) n, (VALUES ${kinds}) AS k(step,type)`,
@@ -371,7 +374,12 @@ async function releaseIndexUse(
   return { scans: Number(row.scans), tuples: Number(row.tuples) };
 }
 
-test("the baseline's index is what answers every read of a ticket's release", async () => {
+/**
+ * At the installed schema and no vintage: 013 re-renders the release index
+ * over the key the payload now carries, and these reads spell the same key, so
+ * a case pinned behind it would ask the adapter for a field no row holds.
+ */
+test("the release index is what answers every read of a ticket's release", async () => {
   await migrationDatabase("journal_instants_index", async (subject, url) => {
     await postgresMigrate(subject);
     const store = postgresProjectStore(subject);
@@ -1050,7 +1058,7 @@ test("fresh selector settings carry current controls and only their initial hist
  * literal that constraint used to admit.
  * `native_action_kind_names_its_capability` has no reachable row of its own,
  * because PostgreSQL evaluates a relation's checks in name order and
- * `native_action_kind_is_known` refuses `HandoffBlock` first. The rows carry
+ * `native_action_kind_is_known` refuses `HandoffBlock` first; the rows carry
  * the phase and resume spellings 006 renamed, so 006 is the schema they are
  * asked of.
  */
@@ -2519,7 +2527,7 @@ test("the release index answers a read at either tag", async () => {
          (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
           recovery_epoch,cause_kind,cause_id)
        SELECT 'tenant-5','project-5',k.step*$1+n,
-         format('{"seq":%s,"event":{"type":"%s","value":{"ticket":%s}},"rec":{}}',
+         format('{"seq":%s,"event":{"type":"%s","value":{"id":%s}},"rec":{}}',
                 k.step*$1+n,k.tag,n),
          'digest-'||(k.step*$1+n),'previous-'||(k.step*$1+n),'owner',1,'epoch-5',
          'Continuation','entry-'||(k.step*$1+n)
@@ -2536,7 +2544,7 @@ test("the release index answers a read at either tag", async () => {
             AND (CASE WHEN j.entry IS JSON OBJECT
                       THEN j.entry::jsonb->'event'->>'type' END)=$1
             AND (CASE WHEN j.entry IS JSON OBJECT
-                      THEN j.entry::jsonb->'event'->'value'->'ticket' END)=to_jsonb(1)`,
+                      THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(1)`,
         [tag],
       );
       assert.equal(found.rowCount, 1, `${tag} was not seeded`);
@@ -3612,7 +3620,7 @@ const fanoutEvents: readonly (readonly [string, unknown, boolean])[] = [
 
 test("the boundary admits a release that names no fan-out and refuses one that names any", async () => {
   await migrationDatabase("fanout_events", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration012.version);
     for (const [label, event, admitted] of fanoutEvents)
       assert.deepEqual(
         (
@@ -4021,14 +4029,17 @@ function identityExecution(
   columns: string,
   values: string,
   verdict: "Pass" | "Fail" | null = "Pass",
+  digest: string = "repeat('d',64)",
+  ticket: number = 1,
 ): string {
   const at = String(ordinal);
+  const on = String(ticket);
   return `
   INSERT INTO execution_request
     (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
      kind,capacity_account,configuration_revision,configuration_digest,
      input_bundle,input_bundle_digest)
-  SELECT 'tenant-5','project-5','request-${at}',1,${at},1,1,'${requestKind}',a.account,
+  SELECT 'tenant-5','project-5','request-${at}',1,${at},${on},1,'${requestKind}',a.account,
          'revision-5','digest-5','bundle-5',repeat('b',64)
     FROM capacity_account a
    WHERE a.account=project_capacity_account('tenant-5','project-5');
@@ -4037,7 +4048,7 @@ function identityExecution(
   INSERT INTO execution
     (tenant,project,execution,ticket,task,source_request,account,cluster,
      configuration_revision,configuration_digest,status)
-  SELECT 'tenant-5','project-5','execution-${at}',1,${at},'request-${at}',a.account,a.cluster,
+  SELECT 'tenant-5','project-5','execution-${at}',${on},${at},'request-${at}',a.account,a.cluster,
          'revision-5','digest-5','Running'
     FROM capacity_account a
    WHERE a.account=project_capacity_account('tenant-5','project-5');
@@ -4052,7 +4063,7 @@ function identityExecution(
   INSERT INTO execution_result
     (tenant,project,manifest,execution,attempt,manifest_ordinal,schema_version,digest,verdict)
   VALUES('tenant-5','project-5','manifest-${at}','execution-${at}','attempt-${at}',
-         ${at},1,repeat('d',64),'${verdict}')`
+         ${at},1,${digest},'${verdict}')`
          }`;
 }
 
@@ -4088,7 +4099,7 @@ const identityCompletions: readonly (readonly [
 
 test("the scheduler's door journals the identity it read off the task it settled", async () => {
   await migrationDatabase("identity_completion", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration012.version);
     await subject.query(
       `${deletionPartition}\n${deletionJournalRow(1, "{}")};
        UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
@@ -4280,7 +4291,7 @@ test("a journal with an entry in it refuses the roster arriving and names the wi
 
 test("the boundary admits a program that names its evaluators and refuses one that counts them", async () => {
   await migrationDatabase("evaluatorkeys_events", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration012.version);
     for (const [label, prog, admitted] of evaluatorKeyPrograms)
       assert.deepEqual(
         (
@@ -4582,7 +4593,7 @@ test("a journal with an entry in it refuses the report arriving and names the wi
 
 test("the boundary admits a completion that reports what its task produced and refuses one that attests a verdict", async () => {
   await migrationDatabase("taskreport_events", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration012.version);
     for (const [label, report, admitted] of taskReports)
       assert.deepEqual(
         (
@@ -4760,7 +4771,7 @@ const taskReportCompletions: readonly (readonly [
 
 test("the scheduler's door journals the report the task it settled terminated under", async () => {
   await migrationDatabase("taskreport_completion", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration012.version);
     await subject.query(
       `${deletionPartition}\n${deletionJournalRow(1, "{}")};
        UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
@@ -4821,6 +4832,1204 @@ test("the scheduler's door journals the report the task it settled terminated un
       ).rows,
       [{ outcome: "ProcessFailed" }, { outcome: "ProcessFailed" }],
       "a death the door was told of is the outcome the execution records",
+    );
+  });
+});
+
+test("a fresh install records the ticket released as a definition", async () => {
+  await migrationDatabase("released_install", async (subject) => {
+    assert.ok((await postgresMigrate(subject)).includes(migration013.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT version,name FROM schema_migration WHERE version=$1",
+          [migration013.version],
+        )
+      ).rows,
+      [
+        {
+          version: migration013.version,
+          name: "a ticket is released as a definition, and runs at the source it was dispatched from",
+        },
+      ],
+    );
+  });
+});
+
+/** The four references a task definition is, as a release carries one. */
+const releasedWorkDefinition = {
+  workload: 1,
+  inputs: 2,
+  executionRequirements: 3,
+  resultContract: 4,
+};
+
+/** The definition the stage's evaluators carry, one each, so a read of one can miss. */
+const releasedEvaluatorDefinition = {
+  workload: 5,
+  inputs: 6,
+  executionRequirements: 7,
+  resultContract: 8,
+};
+
+const releasedSecondDefinition = {
+  workload: 9,
+  inputs: 10,
+  executionRequirements: 11,
+  resultContract: 12,
+};
+
+/** The released ticket every case below varies one field of. */
+const releasedWhole = {
+  id: 1,
+  content: 13,
+  dependencies: [2, 3],
+  workConfiguration: releasedWorkDefinition,
+  evaluationPlan: {
+    stages: [
+      {
+        key: 1,
+        evaluators: [
+          { key: 1, task: releasedEvaluatorDefinition },
+          { key: 3, task: releasedSecondDefinition },
+        ],
+      },
+    ],
+  },
+  finalizationConfiguration: 14,
+};
+
+function releasedEvent(value: unknown): unknown {
+  return { type: "CreateTicket", value };
+}
+
+function releasedWithout(field: string): unknown {
+  const value: Record<string, unknown> = { ...releasedWhole };
+  delete value[field];
+  return releasedEvent(value);
+}
+
+/** Every release this image admits, and every way of naming one it refuses. */
+const releasedTickets: readonly (readonly [string, unknown, boolean])[] = [
+  [
+    "a ticket released as the whole definition it runs at",
+    releasedEvent(releasedWhole),
+    true,
+  ],
+  [
+    "a ticket released with nothing to wait on and one evaluator to pass",
+    releasedEvent({
+      ...releasedWhole,
+      dependencies: [],
+      evaluationPlan: {
+        stages: [
+          {
+            key: 1,
+            evaluators: [{ key: 1, task: releasedEvaluatorDefinition }],
+          },
+        ],
+      },
+    }),
+    true,
+  ],
+  [
+    "the release the vintage before this one wrote",
+    releasedEvent({
+      ticket: 1,
+      deps: [],
+      prog: [{ key: 1, evaluators: [{ key: 1 }] }],
+    }),
+    false,
+  ],
+  [
+    "a release naming its dependencies and its program beside the definition",
+    releasedEvent({ ...releasedWhole, deps: [], prog: [] }),
+    false,
+  ],
+  ["a release naming no ticket at all", releasedWithout("id"), false],
+  [
+    "a release whose ticket is the number no ticket is",
+    releasedEvent({ ...releasedWhole, id: 0 }),
+    false,
+  ],
+  [
+    "a release whose content is the number no reference is",
+    releasedEvent({ ...releasedWhole, content: 0 }),
+    false,
+  ],
+  [
+    "a release whose finalization is the number no reference is",
+    releasedEvent({ ...releasedWhole, finalizationConfiguration: 0 }),
+    false,
+  ],
+  [
+    "a release naming no definition its work runs at",
+    releasedWithout("workConfiguration"),
+    false,
+  ],
+  [
+    "a release whose work definition names no contract to attest",
+    releasedEvent({
+      ...releasedWhole,
+      workConfiguration: {
+        workload: 1,
+        inputs: 2,
+        executionRequirements: 3,
+      },
+    }),
+    false,
+  ],
+  [
+    "a release whose work definition names its workload by text",
+    releasedEvent({
+      ...releasedWhole,
+      workConfiguration: { ...releasedWorkDefinition, workload: "1" },
+    }),
+    false,
+  ],
+  [
+    "a release naming no dependencies at all",
+    releasedWithout("dependencies"),
+    false,
+  ],
+  [
+    "a release waiting on the same ticket twice",
+    releasedEvent({ ...releasedWhole, dependencies: [2, 2] }),
+    false,
+  ],
+  [
+    "a release waiting on the ticket no ticket is",
+    releasedEvent({ ...releasedWhole, dependencies: [0] }),
+    false,
+  ],
+  [
+    "a release naming no plan its evaluators run",
+    releasedWithout("evaluationPlan"),
+    false,
+  ],
+  [
+    "a release whose plan is the list its stages used to be",
+    releasedEvent({ ...releasedWhole, evaluationPlan: [] }),
+    false,
+  ],
+  [
+    "a release whose evaluator names no definition of its own",
+    releasedEvent({
+      ...releasedWhole,
+      evaluationPlan: { stages: [{ key: 1, evaluators: [{ key: 1 }] }] },
+    }),
+    false,
+  ],
+  [
+    "a release whose stage is keyed somewhere other than its place",
+    releasedEvent({
+      ...releasedWhole,
+      evaluationPlan: {
+        stages: [
+          {
+            key: 2,
+            evaluators: [{ key: 1, task: releasedEvaluatorDefinition }],
+          },
+        ],
+      },
+    }),
+    false,
+  ],
+  [
+    "a release whose stage runs one evaluator under two names of the same key",
+    releasedEvent({
+      ...releasedWhole,
+      evaluationPlan: {
+        stages: [
+          {
+            key: 1,
+            evaluators: [
+              { key: 1, task: releasedEvaluatorDefinition },
+              { key: 1, task: releasedSecondDefinition },
+            ],
+          },
+        ],
+      },
+    }),
+    false,
+  ],
+  [
+    "a release whose stage runs no evaluator at all",
+    releasedEvent({
+      ...releasedWhole,
+      evaluationPlan: { stages: [{ key: 1, evaluators: [] }] },
+    }),
+    false,
+  ],
+];
+
+/** The dispatch carries the source it was taken at, and no dispatch carries none. */
+const releasedDispatches: readonly (readonly [string, unknown, boolean])[] = [
+  [
+    "a dispatch naming the ticket and the source it was taken at",
+    { type: "Dispatch", value: { ticket: 1, source: 9 } },
+    true,
+  ],
+  [
+    "the dispatch the vintage before this one wrote",
+    { type: "Dispatch", value: 1 },
+    false,
+  ],
+  [
+    "a dispatch naming no source at all",
+    { type: "Dispatch", value: { ticket: 1 } },
+    false,
+  ],
+  [
+    "a dispatch at the source no source is",
+    { type: "Dispatch", value: { ticket: 1, source: 0 } },
+    false,
+  ],
+  [
+    "a dispatch naming its source by text",
+    { type: "Dispatch", value: { ticket: 1, source: "9" } },
+    false,
+  ],
+  [
+    "a revocation, which names a ticket and nothing else",
+    { type: "Revoke", value: 1 },
+    true,
+  ],
+];
+
+/** The task a produced report below is the obligation of. */
+const releasedTask = { type: "WorkTask", value: { ticket: 1, cycle: 3 } };
+
+const releasedObligation = {
+  task: releasedTask,
+  definition: releasedWorkDefinition,
+  contextRef: 3,
+};
+
+/** What a task returned, which is one reference like every other. */
+const releasedResultRef = 5;
+
+function releasedCompletion(report: unknown): unknown {
+  return {
+    type: "TaskDone",
+    value: { ticket: 1, task: releasedTask, report },
+  };
+}
+
+/** Every produced report this image admits, and every way of producing one it refuses. */
+const releasedReports: readonly (readonly [string, unknown, boolean])[] = [
+  [
+    "a work task reporting the obligation it was given and the source it was accepted at",
+    releasedCompletion({
+      type: "WorkResultReport",
+      value: {
+        result: {
+          obligation: releasedObligation,
+          resultRef: releasedResultRef,
+        },
+        acceptedSourceRef: 7,
+      },
+    }),
+    true,
+  ],
+  [
+    "an evaluator reporting its own obligation and the verdict it reached",
+    {
+      type: "TaskDone",
+      value: {
+        ticket: 1,
+        task: {
+          type: "EvaluationTask",
+          value: {
+            ticket: 1,
+            workCycle: 2,
+            stage: 1,
+            generation: 1,
+            evaluator: 3,
+          },
+        },
+        report: {
+          type: "EvaluationResultReport",
+          value: {
+            result: {
+              obligation: {
+                task: {
+                  type: "EvaluationTask",
+                  value: {
+                    ticket: 1,
+                    workCycle: 2,
+                    stage: 1,
+                    generation: 1,
+                    evaluator: 3,
+                  },
+                },
+                definition: releasedEvaluatorDefinition,
+                contextRef: 2,
+              },
+              resultRef: releasedResultRef,
+            },
+            verdict: "EvaluatorPass",
+          },
+        },
+      },
+    },
+    true,
+  ],
+  [
+    "the produced report the vintage before this one wrote",
+    releasedCompletion({
+      type: "WorkResultReport",
+      value: { result: releasedResultRef },
+    }),
+    false,
+  ],
+  [
+    "a produced report carrying no obligation at all",
+    releasedCompletion({
+      type: "WorkResultReport",
+      value: {
+        result: { resultRef: releasedResultRef },
+        acceptedSourceRef: 7,
+      },
+    }),
+    false,
+  ],
+  [
+    "a produced report whose result is the reference it used to be",
+    releasedCompletion({
+      type: "WorkResultReport",
+      value: { result: 7, acceptedSourceRef: 7 },
+    }),
+    false,
+  ],
+  [
+    "a produced report whose obligation is a definition short",
+    releasedCompletion({
+      type: "WorkResultReport",
+      value: {
+        result: {
+          obligation: { task: releasedTask, contextRef: 3 },
+          resultRef: releasedResultRef,
+        },
+        acceptedSourceRef: 7,
+      },
+    }),
+    false,
+  ],
+  [
+    "a produced report whose obligation names no context it ran in",
+    releasedCompletion({
+      type: "WorkResultReport",
+      value: {
+        result: {
+          obligation: {
+            task: releasedTask,
+            definition: releasedWorkDefinition,
+          },
+          resultRef: releasedResultRef,
+        },
+        acceptedSourceRef: 7,
+      },
+    }),
+    false,
+  ],
+  [
+    "a produced report whose obligation is another task's",
+    releasedCompletion({
+      type: "WorkResultReport",
+      value: {
+        result: {
+          obligation: {
+            ...releasedObligation,
+            task: { type: "WorkTask", value: { ticket: 1, cycle: 4 } },
+          },
+          resultRef: releasedResultRef,
+        },
+        acceptedSourceRef: 7,
+      },
+    }),
+    false,
+  ],
+  [
+    "a work result accepted at no source at all",
+    releasedCompletion({
+      type: "WorkResultReport",
+      value: {
+        result: {
+          obligation: releasedObligation,
+          resultRef: releasedResultRef,
+        },
+      },
+    }),
+    false,
+  ],
+  [
+    "a work result accepted at the source no source is",
+    releasedCompletion({
+      type: "WorkResultReport",
+      value: {
+        result: {
+          obligation: releasedObligation,
+          resultRef: releasedResultRef,
+        },
+        acceptedSourceRef: 0,
+      },
+    }),
+    false,
+  ],
+  [
+    "a produced report referencing nothing it returned",
+    releasedCompletion({
+      type: "WorkResultReport",
+      value: {
+        result: { obligation: releasedObligation },
+        acceptedSourceRef: 7,
+      },
+    }),
+    false,
+  ],
+  [
+    "a produced report returning a record where a reference belongs",
+    releasedCompletion({
+      type: "WorkResultReport",
+      value: {
+        result: {
+          obligation: releasedObligation,
+          resultRef: { manifest: 1, digest: 2, schema: 1 },
+        },
+        acceptedSourceRef: 7,
+      },
+    }),
+    false,
+  ],
+  [
+    "a produced report naming what it returned by text",
+    releasedCompletion({
+      type: "WorkResultReport",
+      value: {
+        result: { obligation: releasedObligation, resultRef: "5" },
+        acceptedSourceRef: 7,
+      },
+    }),
+    false,
+  ],
+  [
+    "a task reporting the process that died under it",
+    releasedCompletion({
+      type: "TerminalFailureReport",
+      value: { evidence: 1, kind: "ProcessFailure" },
+    }),
+    true,
+  ],
+];
+
+test("the boundary admits a ticket released as the definition it runs at and refuses the spelling it left", async () => {
+  await migrationDatabase("released_events", async (subject) => {
+    await postgresMigrate(subject);
+    for (const [label, event, admitted] of [
+      ...releasedTickets,
+      ...releasedDispatches,
+      ...releasedReports,
+    ])
+      assert.deepEqual(
+        (
+          await subject.query<{ admitted: boolean }>(
+            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+            [JSON.stringify(event)],
+          )
+        ).rows,
+        [{ admitted }],
+        label,
+      );
+  });
+});
+
+/** The release the vintage before this one stored, which is what the guard is for. */
+const releasedBefore = {
+  type: "CreateTicket",
+  value: { ticket: 1, deps: [], prog: [{ key: 1, evaluators: [{ key: 1 }] }] },
+};
+
+test("a journal with an entry in it refuses the definition arriving and names the wipe", async () => {
+  await migrationDatabase("released_guard", async (subject) => {
+    await installationBefore(subject, migration013.version);
+    await subject.query(`${deletionPartition}\n${journaledDecision}`);
+    await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
+    assert.deepEqual(
+      (
+        await subject.query<{ admitted: boolean }>(
+          "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+          [JSON.stringify(releasedBefore)],
+        )
+      ).rows,
+      [{ admitted: true }],
+      "the shape the guard refused over is the shape it left admitted",
+    );
+    assert.deepEqual(
+      (
+        await postgresRuntimeSchema(subject).applied(
+          new AbortController().signal,
+        )
+      )
+        .map(({ version }) => version)
+        .at(-1),
+      migration013.version - 1,
+    );
+  });
+});
+
+/** Each row the two relations a release fills admit, and each half one they refuse. */
+const releasedRows: readonly (readonly [string, string, boolean])[] = [
+  [
+    "a definition materialized for the ticket that was released",
+    `INSERT INTO ticket_definition(tenant,project,ticket,definition,digest)
+     VALUES('tenant-5','project-5',1,'{"image":"worker"}','digest-1')`,
+    true,
+  ],
+  [
+    "a definition for the ticket no ticket is",
+    `INSERT INTO ticket_definition(tenant,project,ticket,definition,digest)
+     VALUES('tenant-5','project-5',0,'{}','digest-0')`,
+    false,
+  ],
+  [
+    "a definition that is a document rather than the material it names",
+    `INSERT INTO ticket_definition(tenant,project,ticket,definition,digest)
+     VALUES('tenant-5','project-5',2,'"worker"','digest-2')`,
+    false,
+  ],
+  [
+    "a definition nothing can be addressed by",
+    `INSERT INTO ticket_definition(tenant,project,ticket,definition,digest)
+     VALUES('tenant-5','project-5',3,'{}','')`,
+    false,
+  ],
+  [
+    "the source a ticket bound to a repository was dispatched at",
+    `INSERT INTO ticket_source(tenant,project,ticket,source,repository,commit,ref)
+     VALUES('tenant-5','project-5',1,7,'owner/repo',repeat('a',40),'refs/heads/main')`,
+    true,
+  ],
+  [
+    "the source a ticket naming no repository runs at",
+    `INSERT INTO ticket_source(tenant,project,ticket,source)
+     VALUES('tenant-5','project-5',2,8)`,
+    true,
+  ],
+  [
+    "a source at the reference no reference is",
+    `INSERT INTO ticket_source(tenant,project,ticket,source)
+     VALUES('tenant-5','project-5',3,0)`,
+    false,
+  ],
+  [
+    "a repository named with no commit taken from it",
+    `INSERT INTO ticket_source(tenant,project,ticket,source,repository)
+     VALUES('tenant-5','project-5',4,9,'owner/repo')`,
+    false,
+  ],
+  [
+    "a commit named by no repository it was taken from",
+    `INSERT INTO ticket_source(tenant,project,ticket,source,commit)
+     VALUES('tenant-5','project-5',5,10,repeat('a',40))`,
+    false,
+  ],
+  [
+    "a commit that is not one",
+    `INSERT INTO ticket_source(tenant,project,ticket,source,repository,commit)
+     VALUES('tenant-5','project-5',6,11,'owner/repo','head')`,
+    false,
+  ],
+];
+
+test("the two relations a release fills hold a whole row and refuse a half one", async () => {
+  await migrationDatabase("released_rows", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(deletionPartition);
+    for (const [label, row, held] of releasedRows)
+      if (held) await subject.query(row);
+      else await assert.rejects(subject.query(row), label);
+  });
+});
+
+/** The release the door reads back the definition it reports, as the writer journals one. */
+const releasedEntry = JSON.stringify({
+  seq: 1,
+  event: releasedEvent(releasedWhole),
+  rec: { label: "ticket-released", transitions: [], effects: [] },
+});
+
+/** The repository the accepted work result was produced at, and the commit it names. */
+const releasedRepository = "owner/repo";
+const releasedRef = "refs/heads/main";
+const releasedCommit = "a".repeat(40);
+
+async function releasedFold(subject: pg.Pool, digest: string): Promise<number> {
+  const found = (
+    await subject.query<{ folded: string }>(
+      "SELECT result_digest_fold($1)::text AS folded",
+      [digest],
+    )
+  ).rows[0]?.folded;
+  if (found === undefined) throw new Error("the digest fold answered nothing");
+  return Number(found);
+}
+
+async function releasedJournalled(
+  subject: pg.Pool,
+  operation: string,
+): Promise<unknown> {
+  return (
+    await subject.query<{ journalled: unknown }>(
+      `SELECT (command::jsonb)#>'{event,value}' AS journalled
+         FROM operation WHERE operation=$1`,
+      [operation],
+    )
+  ).rows[0]?.journalled;
+}
+
+/** What every case below hangs the door off: the release, the revision and the bundle a request pins. */
+async function releasedSeeded(subject: pg.Pool): Promise<void> {
+  await subject.query(
+    `${deletionPartition}\n${deletionJournalRow(1, releasedEntry)};
+     UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
+     INSERT INTO configuration_revision
+       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+     VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
+     INSERT INTO input_bundle(tenant,project,bundle,digest)
+     VALUES('tenant-5','project-5','bundle-5',repeat('b',64))`,
+  );
+}
+
+function releasedSubmission(ordinal: number): string {
+  const at = String(ordinal);
+  return `SELECT result,operation FROM submit_task_completion
+     ('tenant-5','project-5','execution-${at}',1,${at},${at},'Passed','manifest-${at}',
+      repeat('d',64),NULL,'operation-released-${at}','subject-5')`;
+}
+
+test("the door reports the work obligation the release wrote down and the source it was accepted at", async () => {
+  await migrationDatabase("released_work", async (subject) => {
+    await postgresMigrate(subject);
+    await releasedSeeded(subject);
+    const digest = await releasedFold(subject, "d".repeat(64));
+    const source = await releasedFold(subject, releasedCommit);
+    await subject.query(
+      identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3"),
+    );
+    await subject.query(
+      `INSERT INTO execution_result_source
+         (tenant,project,manifest,repository,ref,commit,base,expected_base)
+       VALUES('tenant-5','project-5','manifest-1','${releasedRepository}','${releasedRef}',
+              '${releasedCommit}',repeat('e',40),repeat('e',40))`,
+    );
+    assert.deepEqual(
+      (await subject.query(releasedSubmission(1))).rows,
+      [{ result: "Submitted", operation: "operation-released-1" }],
+      "the work result the release was dispatched for",
+    );
+    assert.deepEqual(
+      await releasedJournalled(subject, "operation-released-1"),
+      {
+        ticket: 1,
+        task: { type: "WorkTask", value: { ticket: 1, cycle: 3 } },
+        report: {
+          type: "WorkResultReport",
+          value: {
+            result: {
+              obligation: {
+                task: { type: "WorkTask", value: { ticket: 1, cycle: 3 } },
+                definition: releasedWorkDefinition,
+                contextRef: 3,
+              },
+              resultRef: digest,
+            },
+            acceptedSourceRef: source,
+          },
+        },
+      },
+      "the work obligation is the definition the release wrote down",
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT ticket::text AS ticket,source::text AS source,repository,commit,ref
+             FROM ticket_source WHERE tenant='tenant-5' AND project='project-5'`,
+        )
+      ).rows,
+      [
+        {
+          ticket: "1",
+          source: String(source),
+          repository: releasedRepository,
+          commit: releasedCommit,
+          ref: releasedRef,
+        },
+      ],
+      "the source the result was accepted at is the source the ticket now runs at",
+    );
+  });
+});
+
+/** The identity the stage the release names spawns its second evaluator under. */
+const releasedEvaluatorTask = {
+  type: "EvaluationTask",
+  value: { ticket: 1, workCycle: 2, stage: 1, generation: 5, evaluator: 3 },
+};
+
+/** The passed work manifest of the cycle the evaluator above judges. */
+const releasedJudgedDigest = "f".repeat(64);
+
+/** That cycle's work execution, at a digest of its own so its fold is visible. */
+const releasedJudgedWork = identityExecution(
+  2,
+  "SpawnWork",
+  "kind,cycle",
+  "'Work',2",
+  "Pass",
+  `repeat('f',64)`,
+);
+
+/**
+ * A LATER cycle of the same ticket, passed and written first, so a read that
+ * asks the ticket for a work result rather than the cycle takes this one.
+ */
+const releasedLaterWork = identityExecution(
+  3,
+  "SpawnWork",
+  "kind,cycle",
+  "'Work',3",
+  "Pass",
+  `repeat('9',64)`,
+);
+
+/** The same cycle, passed, on ANOTHER ticket: a read not scoped by ticket takes it. */
+const releasedOtherTicketWork = identityExecution(
+  4,
+  "SpawnWork",
+  "kind,cycle",
+  "'Work',2",
+  "Pass",
+  `repeat('8',64)`,
+  2,
+);
+
+test("the door reports the definition the evaluator's own key carries, under what its cycle produced", async () => {
+  await migrationDatabase("released_evaluation", async (subject) => {
+    await postgresMigrate(subject);
+    await releasedSeeded(subject);
+    const digest = await releasedFold(subject, "d".repeat(64));
+    const judged = await releasedFold(subject, releasedJudgedDigest);
+    await subject.query(
+      identityExecution(
+        1,
+        "SpawnEvaluation",
+        "kind,cycle,stage,generation,evaluator",
+        "'Evaluation',2,1,5,3",
+      ),
+    );
+    await subject.query(releasedLaterWork);
+    await subject.query(releasedJudgedWork);
+    assert.notEqual(
+      judged,
+      2,
+      "the reference the work reported is not the cycle it ran in",
+    );
+    assert.notEqual(judged, digest, "nor is it the evaluator's own result");
+    assert.deepEqual(
+      (await subject.query(releasedSubmission(1))).rows,
+      [{ result: "Submitted", operation: "operation-released-1" }],
+      "the evaluator the stage the release names runs",
+    );
+    assert.deepEqual(
+      await releasedJournalled(subject, "operation-released-1"),
+      {
+        ticket: 1,
+        task: releasedEvaluatorTask,
+        report: {
+          type: "EvaluationResultReport",
+          value: {
+            result: {
+              obligation: {
+                task: releasedEvaluatorTask,
+                definition: releasedSecondDefinition,
+                contextRef: judged,
+              },
+              resultRef: digest,
+            },
+            verdict: "EvaluatorPass",
+          },
+        },
+      },
+      "the evaluator judges under the reference its work cycle reported",
+    );
+  });
+});
+
+/** A definition a second stage carries, distinct from every one the first stage lists. */
+const releasedThirdDefinition = {
+  workload: 17,
+  inputs: 18,
+  executionRequirements: 19,
+  resultContract: 20,
+};
+
+/**
+ * A release of TWO stages listing the same evaluator key under different
+ * definitions, so a door that selects by evaluator key alone answers the
+ * first stage's definition for the second stage's task.
+ */
+const releasedTwoStageEntry = JSON.stringify({
+  seq: 1,
+  event: releasedEvent({
+    ...releasedWhole,
+    evaluationPlan: {
+      stages: [
+        { key: 1, evaluators: [{ key: 3, task: releasedSecondDefinition }] },
+        { key: 2, evaluators: [{ key: 3, task: releasedThirdDefinition }] },
+      ],
+    },
+  }),
+  rec: { label: "ticket-released", transitions: [], effects: [] },
+});
+
+test("the door reports the definition of the stage the evaluator runs in, not the first stage listing its key", async () => {
+  await migrationDatabase("released_second_stage", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(
+      `${deletionPartition}\n${deletionJournalRow(1, releasedTwoStageEntry)};
+       UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
+       INSERT INTO configuration_revision
+         (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+       VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
+       INSERT INTO input_bundle(tenant,project,bundle,digest)
+       VALUES('tenant-5','project-5','bundle-5',repeat('b',64))`,
+    );
+    const digest = await releasedFold(subject, "d".repeat(64));
+    const judged = await releasedFold(subject, releasedJudgedDigest);
+    await subject.query(
+      identityExecution(
+        1,
+        "SpawnEvaluation",
+        "kind,cycle,stage,generation,evaluator",
+        "'Evaluation',2,2,1,3",
+      ),
+    );
+    await subject.query(releasedJudgedWork);
+    assert.deepEqual(
+      (await subject.query(releasedSubmission(1))).rows,
+      [{ result: "Submitted", operation: "operation-released-1" }],
+      "the second stage's evaluator runs",
+    );
+    assert.deepEqual(
+      await releasedJournalled(subject, "operation-released-1"),
+      {
+        ticket: 1,
+        task: {
+          type: "EvaluationTask",
+          value: {
+            ticket: 1,
+            workCycle: 2,
+            stage: 2,
+            generation: 1,
+            evaluator: 3,
+          },
+        },
+        report: {
+          type: "EvaluationResultReport",
+          value: {
+            result: {
+              obligation: {
+                task: {
+                  type: "EvaluationTask",
+                  value: {
+                    ticket: 1,
+                    workCycle: 2,
+                    stage: 2,
+                    generation: 1,
+                    evaluator: 3,
+                  },
+                },
+                definition: releasedThirdDefinition,
+                contextRef: judged,
+              },
+              resultRef: digest,
+            },
+            verdict: "EvaluatorPass",
+          },
+        },
+      },
+      "the evaluator judges under its own stage's definition",
+    );
+  });
+});
+
+test("an evaluator whose cycle records no passed work result is refused by name", async () => {
+  await migrationDatabase("released_unjudged", async (subject) => {
+    await postgresMigrate(subject);
+    await releasedSeeded(subject);
+    await subject.query(
+      identityExecution(
+        1,
+        "SpawnEvaluation",
+        "kind,cycle,stage,generation,evaluator",
+        "'Evaluation',2,1,5,3",
+      ),
+    );
+    await subject.query(
+      identityExecution(2, "SpawnWork", "kind,cycle", "'Work',2", "Fail"),
+    );
+    await subject.query(releasedLaterWork);
+    await subject.query(releasedOtherTicketWork);
+    assert.deepEqual(
+      (await subject.query(releasedSubmission(1))).rows,
+      [{ result: "WorkResultUnrecorded", operation: null }],
+      "a judgement whose own cycle records no passed result of its own ticket",
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ held: number }>(
+          "SELECT count(*)::int AS held FROM operation WHERE operation='operation-released-1'",
+        )
+      ).rows,
+      [{ held: 0 }],
+      "the refused completion journalled nothing",
+    );
+  });
+});
+
+test("a work result nothing observed a source for is refused on a ticket bound to a repository", async () => {
+  await migrationDatabase("released_unsourced", async (subject) => {
+    await postgresMigrate(subject);
+    await releasedSeeded(subject);
+    await subject.query(
+      `INSERT INTO ticket_source(tenant,project,ticket,source,repository,commit,ref)
+       VALUES('tenant-5','project-5',1,7,'${releasedRepository}','${releasedCommit}','${releasedRef}')`,
+    );
+    await subject.query(
+      identityExecution(1, "SpawnWork", "kind,cycle", "'Work',4"),
+    );
+    assert.deepEqual(
+      (await subject.query(releasedSubmission(1))).rows,
+      [{ result: "SourceUnrecorded", operation: null }],
+      "a pass nothing observed a source for",
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ held: number }>(
+          "SELECT count(*)::int AS held FROM operation WHERE operation='operation-released-1'",
+        )
+      ).rows,
+      [{ held: 0 }],
+      "the refused completion journalled nothing",
+    );
+  });
+});
+
+/** How many releases the index case seeds, so a scan of them all is visible as one. */
+const releasedIndexEntries = 400;
+
+test("the release index answers a read at the key a released ticket names", async () => {
+  await migrationDatabase("released_index", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(deletionPartition);
+    await subject.query("BEGIN");
+    await subject.query(
+      `INSERT INTO decision_input
+         (tenant,project,ordinal,input_kind,input_id,base_priority,
+          lifecycle_generation,state,decided_seq,terminal_at)
+       SELECT 'tenant-5','project-5',n,'Continuation','entry-'||n,
+              'Continuation',1,'Journaled',n,now()
+         FROM generate_series(1,$1::bigint) n`,
+      [releasedIndexEntries],
+    );
+    await subject.query(
+      `INSERT INTO journal_entry
+         (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
+          recovery_epoch,cause_kind,cause_id)
+       SELECT 'tenant-5','project-5',n,
+         format('{"seq":%s,"event":{"type":"CreateTicket","value":{"id":%s}},"rec":{}}',n,n),
+         'digest-'||n,'previous-'||n,'owner',1,'epoch-5','Continuation','entry-'||n
+         FROM generate_series(1,$1::bigint) n`,
+      [releasedIndexEntries],
+    );
+    await subject.query("COMMIT");
+    await subject.query("ANALYZE journal_entry");
+    const before = await releaseIndexUse(subject);
+    assert.equal(
+      (
+        await subject.query(
+          `SELECT j.seq FROM journal_entry j
+            WHERE j.tenant='tenant-5' AND j.project='project-5'
+              AND (CASE WHEN j.entry IS JSON OBJECT
+                        THEN j.entry::jsonb->'event'->>'type' END)
+                  = ANY (ARRAY['ReleaseTicket'::text, 'CreateTicket'::text])
+              AND (CASE WHEN j.entry IS JSON OBJECT
+                        THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(1)`,
+        )
+      ).rowCount,
+      1,
+    );
+    await subject.query("SELECT pg_stat_force_next_flush()");
+    const after = await releaseIndexUse(subject);
+    assert.ok(
+      after.tuples - before.tuples <= 1,
+      `one release cost ${String(after.tuples - before.tuples)} entries out of the index, so it was scanned for rather than looked up`,
+    );
+  });
+});
+
+/** What each role may do with the two relations a release fills, and what it may not. */
+const releasedPrivileges: readonly (readonly [
+  string,
+  string,
+  string,
+  boolean,
+])[] = [
+  ["ticket_definition", ticketServiceRole, "SELECT", true],
+  ["ticket_definition", ticketServiceRole, "INSERT", true],
+  ["ticket_definition", ticketServiceRole, "UPDATE", false],
+  ["ticket_definition", boundaryOwnerRole, "SELECT", true],
+  ["ticket_definition", boundaryOwnerRole, "INSERT", false],
+  ["ticket_definition", apiRole, "SELECT", false],
+  ["ticket_source", ticketServiceRole, "INSERT", true],
+  ["ticket_source", boundaryOwnerRole, "INSERT", true],
+  ["ticket_source", boundaryOwnerRole, "UPDATE", false],
+  ["ticket_source", schedulerRole, "SELECT", true],
+  ["ticket_source", schedulerRole, "INSERT", false],
+  ["ticket_source", apiRole, "INSERT", false],
+];
+
+/** The columns the api reads off a ticket's source, which is every one it has. */
+const releasedSourceColumns = [
+  "tenant",
+  "project",
+  "ticket",
+  "source",
+  "repository",
+  "commit",
+  "ref",
+];
+
+/** The columns the door that builds an obligation reads a release back out of. */
+const releasedEntryColumns = ["tenant", "project", "entry"];
+
+test("the two relations a release fills are open to the roles that write and read them and no others", async () => {
+  await migrationDatabase("released_grants", async (subject) => {
+    await postgresMigrate(subject);
+    for (const [relation, role, privilege, granted] of releasedPrivileges)
+      assert.equal(
+        (
+          await subject.query<{ held: boolean }>(
+            "SELECT has_table_privilege($1,$2,$3) AS held",
+            [role, `public.${relation}`, privilege],
+          )
+        ).rows[0]?.held,
+        granted,
+        `${role} on ${relation} ${privilege}`,
+      );
+    for (const column of releasedSourceColumns)
+      assert.equal(
+        (
+          await subject.query<{ held: boolean }>(
+            "SELECT has_column_privilege($1,'public.ticket_source',$2,'SELECT') AS held",
+            [apiRole, column],
+          )
+        ).rows[0]?.held,
+        true,
+        `${apiRole} reads ticket_source.${column}`,
+      );
+    for (const column of releasedEntryColumns)
+      assert.equal(
+        (
+          await subject.query<{ held: boolean }>(
+            "SELECT has_column_privilege($1,'public.journal_entry',$2,'SELECT') AS held",
+            [boundaryOwnerRole, column],
+          )
+        ).rows[0]?.held,
+        true,
+        `${boundaryOwnerRole} reads journal_entry.${column}`,
+      );
+    assert.equal(
+      (
+        await subject.query<{ held: boolean }>(
+          "SELECT has_table_privilege($1,'public.journal_entry','INSERT') AS held",
+          [boundaryOwnerRole],
+        )
+      ).rows[0]?.held,
+      false,
+      `${boundaryOwnerRole} writes no journal entry`,
+    );
+  });
+});
+
+/** The predicates the arms weigh a reference and a task definition with. */
+const releasedPredicates = [
+  "public.command_reference(jsonb)",
+  "public.command_task_definition(jsonb)",
+];
+
+test("the reference predicates are the boundary owner's and nobody's to execute", async () => {
+  await migrationDatabase("released_predicates", async (subject) => {
+    await postgresMigrate(subject);
+    for (const predicate of releasedPredicates) {
+      for (const role of [apiRole, ticketServiceRole, schedulerRole, "public"])
+        assert.equal(
+          (
+            await subject.query<{ granted: boolean }>(
+              "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+              [role, predicate],
+            )
+          ).rows[0]?.granted,
+          false,
+          `${role} on ${predicate}`,
+        );
+      assert.equal(
+        (
+          await subject.query<{ owner: string }>(
+            "SELECT pg_get_userbyid(proowner) AS owner FROM pg_proc WHERE oid = $1::regprocedure",
+            [predicate],
+          )
+        ).rows[0]?.owner,
+        boundaryOwnerRole,
+        predicate,
+      );
+    }
+  });
+});
+
+/** The tag the authority CHECK switched on until a wall became a task's. */
+const releasedRetiredTag = "ExecutionBlocked";
+
+test("the authority a completion is admitted under names no tag this machine retired", async () => {
+  await migrationDatabase("released_authority", async (subject) => {
+    await postgresMigrate(subject);
+    const rendered = (
+      await subject.query<{ rendered: string }>(
+        `SELECT pg_get_constraintdef(oid) AS rendered FROM pg_constraint
+          WHERE conname='operation_completion_authority_is_its_boundary'`,
+      )
+    ).rows[0]?.rendered;
+    assert.ok(rendered !== undefined, "the authority CHECK is not installed");
+    assert.ok(
+      !rendered.includes(releasedRetiredTag),
+      `the authority CHECK still switches on ${releasedRetiredTag}`,
+    );
+    assert.ok(
+      rendered.includes("TaskDone"),
+      "the authority CHECK stopped weighing the completion it is for",
+    );
+    await subject.query(deletionPartition);
+    await assert.rejects(
+      subject.query(
+        `INSERT INTO operation
+           (tenant,project,operation,authority_kind,authority_subject,admission,
+            key_version,key_digest,payload_digest,command,command_tag)
+         VALUES('tenant-5','project-5','operation-5','User','author','Ordinary',
+                'v1','key-5','payload-5','{}','TaskDone')`,
+      ),
+      /operation_completion_authority_is_its_boundary/u,
+      "a completion from an authority that is not the scheduler's",
     );
   });
 });

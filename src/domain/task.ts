@@ -13,7 +13,9 @@
 import { assertNever } from "./assertNever.ts";
 import type {
   Task,
+  TaskDefinition,
   TaskIdentity,
+  TaskObligation,
   TaskOutcome,
   TaskState,
 } from "./generated/modelTypes.ts";
@@ -25,7 +27,7 @@ export function workTaskOf(ticket: number, cycle: number): TaskIdentity {
 }
 
 /**
- * One evaluator of one run of one stage, under the two keys the program
+ * One evaluator of one run of one stage, under the two keys the plan
  * authored. No offset is applied: a caller holding a stage index passes that
  * stage's key, which the positional rule makes the same number.
  */
@@ -115,7 +117,7 @@ export function outstandingCount(tasks: ReadonlySet<Task>): number {
 
 /**
  * The stage an evaluation task belongs to, as a zero-based index into the
- * authored program: the identity carries the stage's key and the key is its
+ * released plan: the identity carries the stage's key and the key is its
  * position, and zero is the fold's base on an empty or work set. A run's own
  * `stageIndex` is what the machine reads; this is for a reader holding
  * identities and no instance.
@@ -203,5 +205,56 @@ export function taskIdentityValid(identity: TaskIdentity): boolean {
     identity.value.stage > 0 &&
     identity.value.generation > 0 &&
     identity.value.evaluator > 0
+  );
+}
+
+/**
+ * The contract's claim about a definition (`taskDefinitionValid`): every
+ * reference it names is a real one.
+ */
+export function taskDefinitionValid(definition: TaskDefinition): boolean {
+  return (
+    definition.workload > 0 &&
+    definition.inputs > 0 &&
+    definition.executionRequirements > 0 &&
+    definition.resultContract > 0
+  );
+}
+
+/** The contract's claim about an obligation (`taskObligationValid`). */
+export function taskObligationValid(obligation: TaskObligation): boolean {
+  return (
+    taskIdentityValid(obligation.task) &&
+    taskDefinitionValid(obligation.definition) &&
+    obligation.contextRef > 0
+  );
+}
+
+/** Structural equality on a definition: the four references, field for field. */
+export function taskDefinitionEquals(
+  left: TaskDefinition,
+  right: TaskDefinition,
+): boolean {
+  return (
+    left.workload === right.workload &&
+    left.inputs === right.inputs &&
+    left.executionRequirements === right.executionRequirements &&
+    left.resultContract === right.resultContract
+  );
+}
+
+/**
+ * Structural equality on an obligation, which is what admits a produced
+ * report: the task, the definition it runs under and the context it was
+ * spawned for, all three.
+ */
+export function taskObligationEquals(
+  left: TaskObligation,
+  right: TaskObligation,
+): boolean {
+  return (
+    taskIdentityEquals(left.task, right.task) &&
+    taskDefinitionEquals(left.definition, right.definition) &&
+    left.contextRef === right.contextRef
   );
 }

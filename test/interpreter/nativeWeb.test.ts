@@ -52,7 +52,10 @@ import {
   asOperationDecisionEvent,
   type TicketCommand,
 } from "../../src/interpreter/operationInbox.ts";
-import { dispatchEvent, revokeEvent } from "../../src/actor/decisionEvent.ts";
+import {
+  resumeTicketEvent,
+  revokeEvent,
+} from "../../src/actor/decisionEvent.ts";
 import {
   asAttemptId,
   asExecutionId,
@@ -743,11 +746,11 @@ test("authoring reads conceal inaccessible resources", async () => {
   assert.deepEqual(denied.calls, ["authorize:Read"]);
 });
 
-/** The dispatch decision the inbox refuses, which is what the case below is about. */
-const dispatchDecision: TicketCommand = {
+/** A decision the stub inbox refuses, which is what the case below is about. */
+const refusedDecision: TicketCommand = {
   version: 1,
   command: "Decide",
-  event: asOperationDecisionEvent(dispatchEvent(id(1))),
+  event: asOperationDecisionEvent(resumeTicketEvent(id(1))),
 };
 
 /** Dispatch as it actually arrives, which is what the guard is consulted for. */
@@ -758,7 +761,7 @@ const manualDispatch: TicketCommand = {
   expectedTicketVersion: 1,
 };
 
-test("a command the inbox refuses is answered the same way backlogged or not", async () => {
+test("a command that is not a dispatch is answered the same way backlogged or not", async () => {
   const backlogged = boundary(true, backloggedGuard);
   const admitting = boundary(true);
   const refused = {
@@ -766,11 +769,11 @@ test("a command the inbox refuses is answered the same way backlogged or not", a
     acceptance: { accepted: "InvalidCommand" },
   };
   assert.deepEqual(
-    await backlogged.web.submit(principal, submissionOf(dispatchDecision)),
+    await backlogged.web.submit(principal, submissionOf(refusedDecision)),
     refused,
   );
   assert.deepEqual(
-    await admitting.web.submit(principal, submissionOf(dispatchDecision)),
+    await admitting.web.submit(principal, submissionOf(refusedDecision)),
     refused,
   );
   assert.deepEqual(backlogged.calls, ["authorize:Mutate", "accept"]);
@@ -964,10 +967,10 @@ test("the session a submission came through reaches the inbox, and the authority
   const session = asSessionId("session-one");
   const { web, accepted } = submittingBoundary();
   await web.submit(principal, {
-    ...submissionOf(dispatchDecision),
+    ...submissionOf(manualDispatch),
     viaSession: session,
   });
-  await web.submit(principal, submissionOf(dispatchDecision));
+  await web.submit(principal, submissionOf(manualDispatch));
   assert.deepEqual(
     accepted.map((submission) => submission.viaSession),
     [session, undefined],

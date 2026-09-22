@@ -14,7 +14,7 @@
  *
  * `recordEqualsTransition` and `ticketEqualsStage` are not exported, so their
  * rosters are lifted into the exported comparison that reaches them — a
- * transition inside a record, a stage inside a ticket's program, and the
+ * transition inside a record, a stage inside a ticket's plan, and the
  * protocol's own shapes inside the instance the ticket carries.
  */
 
@@ -26,10 +26,14 @@ import { instanceEquals } from "../../src/domain/evaluation.ts";
 import { initRecord } from "../../src/domain/ticketGraph.ts";
 import { freshTicket } from "../../src/domain/deciders.ts";
 import { id, judgedInstance, workOutstanding } from "../domain/fixtures.ts";
-import { flatProgram } from "./harness.ts";
+import { flatPlan, plainDefinition } from "./harness.ts";
+import { evaluatorOf, evaluatorTaskOf } from "../../src/domain/config.ts";
 import type {
+  EvaluationInput,
   EvaluationInstance,
   EvaluationProgress,
+  EvaluatorDefinition,
+  ReleasedTicket,
   StageDefinition,
   StageRun,
   StepRecord,
@@ -57,22 +61,40 @@ function assertDiscriminates<Shape>(
   }
 }
 
-const baseTicket: Ticket = freshTicket({
-  deps: new Set<number>(),
-  program: flatProgram,
-});
+const baseTicket: Ticket = freshTicket(plainDefinition);
 
 /** A judgement of one cycle, which is the smallest instance a ticket can carry. */
-const judged: EvaluationInstance = judgedInstance(1, 1, 1, flatProgram);
+const judged: EvaluationInstance = judgedInstance(1, 1, flatPlan);
+
+/** A ticket carrying this definition, which is how a definition is compared at all. */
+const carrying = (definition: ReleasedTicket): Ticket => ({
+  ...baseTicket,
+  definition,
+});
+
+const definitionMutants: FieldMutants<ReleasedTicket> = {
+  id: (d) => ({ ...d, id: d.id + 1 }),
+  content: (d) => ({ ...d, content: d.content + 1 }),
+  dependencies: (d) => ({ ...d, dependencies: new Set([2]) }),
+  workConfiguration: (d) => ({
+    ...d,
+    workConfiguration: { ...d.workConfiguration, workload: 0 },
+  }),
+  evaluationPlan: (d) => ({ ...d, evaluationPlan: { stages: [] } }),
+  finalizationConfiguration: (d) => ({
+    ...d,
+    finalizationConfiguration: d.finalizationConfiguration + 1,
+  }),
+};
 
 const ticketMutants: FieldMutants<Ticket> = {
   phase: (t) => ({ ...t, phase: "Done" }),
-  deps: (t) => ({ ...t, deps: new Set([2]) }),
+  definition: (t) => ({ ...t, definition: definitionMutants.id(t.definition) }),
+  source: (t) => ({ ...t, source: t.source + 1 }),
   artifact: (t) => ({
     ...t,
     artifact: { type: "ProducedArtifact", value: 1 },
   }),
-  program: (t) => ({ ...t, program: [] }),
   tasks: (t) => ({ ...t, tasks: new Set([workOutstanding(1, 1)]) }),
   evaluations: (t) => ({ ...t, evaluations: [judged] }),
   workCyclesStarted: (t) => ({
@@ -105,11 +127,25 @@ const transitionMutants: FieldMutants<Transition> = {
   to: (t) => ({ ...t, to: "Done" }),
 };
 
-const baseStage: StageDefinition = { key: 1, evaluators: [{ key: 1 }] };
+const baseStage: StageDefinition = { key: 1, evaluators: [evaluatorOf(1)] };
 
 const stageMutants: FieldMutants<StageDefinition> = {
   key: (s) => ({ ...s, key: s.key + 1 }),
-  evaluators: (s) => ({ ...s, evaluators: [{ key: 2 }] }),
+  evaluators: (s) => ({ ...s, evaluators: [evaluatorOf(2)] }),
+};
+
+const evaluatorMutants: FieldMutants<EvaluatorDefinition> = {
+  key: (e) => ({ ...e, key: e.key + 1 }),
+  task: (e) => ({ ...e, task: evaluatorTaskOf(e.key + 1) }),
+};
+
+const inputMutants: FieldMutants<EvaluationInput> = {
+  ticket: (i) => ({ ...i, ticket: i.ticket + 1 }),
+  workResult: (i) => ({ ...i, workResult: i.workResult + 1 }),
+  acceptedSourceRef: (i) => ({
+    ...i,
+    acceptedSourceRef: i.acceptedSourceRef + 1,
+  }),
 };
 
 const instanceMutants: FieldMutants<EvaluationInstance> = {
@@ -171,11 +207,20 @@ test("the transition comparison reads every field Transition declares", () => {
   );
 });
 
+test("the definition comparison reads every field ReleasedTicket declares", () => {
+  assertDiscriminates(
+    plainDefinition,
+    (left, right) => ticketEquals(carrying(left), carrying(right)),
+    definitionMutants,
+  );
+});
+
 test("the stage comparison reads every field StageDefinition declares", () => {
-  const inTicket = (stage: StageDefinition): Ticket => ({
-    ...baseTicket,
-    program: [stage],
-  });
+  const inTicket = (stage: StageDefinition): Ticket =>
+    carrying({
+      ...plainDefinition,
+      evaluationPlan: { stages: [stage] },
+    });
   assertDiscriminates(
     baseStage,
     (left, right) => ticketEquals(inTicket(left), inTicket(right)),
@@ -183,8 +228,33 @@ test("the stage comparison reads every field StageDefinition declares", () => {
   );
 });
 
+test("the evaluator comparison reads every field EvaluatorDefinition declares", () => {
+  const inTicket = (entry: EvaluatorDefinition): Ticket =>
+    carrying({
+      ...plainDefinition,
+      evaluationPlan: { stages: [{ key: 1, evaluators: [entry] }] },
+    });
+  assertDiscriminates(
+    evaluatorOf(1),
+    (left, right) => ticketEquals(inTicket(left), inTicket(right)),
+    evaluatorMutants,
+  );
+});
+
 test("instanceEquals reads every field EvaluationInstance declares", () => {
   assertDiscriminates(judged, instanceEquals, instanceMutants);
+});
+
+test("instanceEquals reads every field EvaluationInput declares", () => {
+  const withInput = (input: EvaluationInput): EvaluationInstance => ({
+    ...judged,
+    input,
+  });
+  assertDiscriminates(
+    judged.input,
+    (left, right) => instanceEquals(withInput(left), withInput(right)),
+    inputMutants,
+  );
 });
 
 test("the progress comparison reads every field EvaluationProgress declares", () => {
@@ -219,10 +289,11 @@ test("the run comparison reads every field StageRun declares", () => {
 });
 
 test("a list of equal length is compared member by member, not by length alone", () => {
-  const twice = (stage: StageDefinition): Ticket => ({
-    ...baseTicket,
-    program: [stage, stage],
-  });
+  const twice = (stage: StageDefinition): Ticket =>
+    carrying({
+      ...plainDefinition,
+      evaluationPlan: { stages: [stage, stage] },
+    });
   assert.ok(
     !ticketEquals(twice(baseStage), twice(stageMutants.evaluators(baseStage))),
   );

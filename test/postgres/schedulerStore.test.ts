@@ -16,7 +16,7 @@
  */
 
 import assert from "node:assert/strict";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
 import {
@@ -27,6 +27,7 @@ import {
 } from "../../src/interpreter/executionScheduler.ts";
 import { asPlacementId } from "../../src/interpreter/executionScheduler.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
+import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import { asExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
@@ -37,7 +38,13 @@ import {
   backlogFunction,
   schedulerRole,
 } from "../../src/adapters/postgres/schema.ts";
+import { schedulerEvidence } from "../../src/adapters/postgres/schedulerCompletion.ts";
 import {
+  canonicalConfigurationOf,
+  type CanonicalConfiguration,
+} from "../../src/interpreter/authoring.ts";
+import {
+  postgresHarnessConfiguration,
   postgresHarnessDrain,
   postgresHarnessRolePool,
   postgresHarnessSubmission,
@@ -281,11 +288,182 @@ test("registering creates one execution per declared task, pinned to its request
     const value = asExecutionRequirement(row.requirement_value);
     assert.equal(row.requirement_source, "PlatformDefault");
     assert.equal(row.platform_default_version, "1");
-    assert.equal(
-      row.requirement_digest,
-      createHash("sha256").update(JSON.stringify(value)).digest("hex"),
-    );
+    assert.equal(row.requirement_digest, materialDigest(value));
   }
+});
+
+/**
+ * The revision rewritten behind a release: a platform default of another
+ * version, naming a capability the authored worker states, which is the shape
+ * a materializer accepts and a release that ran now would resolve instead.
+ */
+const rewrittenConfiguration = JSON.stringify({
+  brief: {
+    acceptanceCriteria: ["The ticket is complete."],
+    constraints: [],
+    motivation: ["The ticket should be completed."],
+  },
+  executionRequirements: {
+    platformDefault: {
+      architecture: "Amd64",
+      capabilities: ["Agent:Claude"],
+      mode: "ContainerCapability",
+      operatingSystem: "Linux",
+    },
+    platformDefaultVersion: 2,
+  },
+  image: "worker:v1",
+  practices: [],
+  review: { instructions: [] },
+  version: 1,
+  work: { instructions: [] },
+  worker: {
+    files: [],
+    mode: { agent: "Claude", arguments: [], type: "SingleAgent" },
+    setup: [],
+  },
+});
+
+/**
+ * A ticket runs at what its release resolved, which is why the material is
+ * stored rather than re-derived. This rewrites the pinned revision behind the
+ * release — a platform default of another version, which is how a requirement
+ * moves between images — and registers afterwards: a registration that
+ * materialized from the configuration would copy the rewrite.
+ */
+test("a registration runs the requirement the release resolved, not the one the revision now says", async () => {
+  const project = await schedulerProject(rig, "released-requirement");
+  const [stored] = (await rig.harness.query(
+    `SELECT definition->'tasks'->0->'executionRequirements'->>'digest' AS digest
+       FROM ticket_definition WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  )) as readonly { digest: string }[];
+  await rig.harness.query(
+    `UPDATE configuration_revision SET canonical=$3 WHERE tenant=$1 AND project=$2`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      rewrittenConfiguration,
+    ],
+  );
+  assert.equal(
+    (await registerAll(project, "released-requirement")).registered,
+    "Registered",
+  );
+  const requirements = (await rig.harness.query(
+    `SELECT requirement_digest,platform_default_version::text AS platform_default_version
+       FROM execution WHERE tenant=$1 AND project=$2`,
+    [project.partition.tenant, project.partition.project],
+  )) as readonly {
+    requirement_digest: string;
+    platform_default_version: string;
+  }[];
+  assert.equal(requirements.length, project.tasks);
+  for (const row of requirements) {
+    assert.equal(row.platform_default_version, "1");
+    assert.equal(row.requirement_digest, stored?.digest);
+  }
+});
+
+/** A container requirement naming one image, in the shape a configuration states it. */
+const container = (image: string) => ({
+  architecture: "Amd64",
+  image,
+  mode: "Container",
+  operatingSystem: "Linux",
+});
+
+/**
+ * A configuration whose evaluation stage runs under a requirement of its own.
+ * Every other fixture resolves one requirement for both kinds, under which a
+ * registration reading the work task's key for an evaluator copies the right
+ * value by accident.
+ */
+const stagedRequirements: CanonicalConfiguration = canonicalConfigurationOf({
+  ...(JSON.parse(String(postgresHarnessConfiguration)) as Record<
+    string,
+    unknown
+  >),
+  evaluations: [{ instructions: ["Review it."], practices: [] }],
+  executionRequirements: {
+    platformDefault: container("worker:v1"),
+    platformDefaultVersion: 1,
+    taskKindDefaults: { "Evaluation:1": container("reviewer:v1") },
+  },
+});
+
+/** What the release resolved for each task key, by the digest it stored. */
+async function storedRequirements(
+  project: SchedulerProject,
+): Promise<Readonly<Record<string, string>>> {
+  const rows = (await rig.harness.query(
+    `SELECT task->>'key' AS key,
+            task->'executionRequirements'->>'digest' AS digest
+       FROM ticket_definition d,
+            LATERAL jsonb_array_elements(d.definition->'tasks') AS task
+      WHERE d.tenant=$1 AND d.project=$2 AND d.ticket=$3`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  )) as readonly { key: string; digest: string }[];
+  return Object.fromEntries(rows.map((row) => [row.key, row.digest]));
+}
+
+/**
+ * THE KEY A REGISTRATION READS IS THE TASK'S OWN. The requirement is copied
+ * out of the stored material at the key the request's kind and stage name, so
+ * an evaluator of stage one runs what that stage was released with and not
+ * what the work task was.
+ */
+test("an evaluation registration copies its own stage's requirement, not the work task's", async () => {
+  const project = await schedulerProject(
+    rig,
+    "staged-requirement",
+    { tasks: 1 },
+    stagedRequirements,
+  );
+  const stored = await storedRequirements(project);
+  assert.notEqual(
+    stored["Work"],
+    stored["Evaluation:1"],
+    "the release resolved a requirement per stage, or this case proves nothing",
+  );
+  const request = await schedulerEvaluationRequest(
+    rig,
+    project,
+    "staged-requirement",
+    { cycle: 1, stage: 1, generation: 1, evaluator: 1 },
+  );
+  assert.equal(
+    (await registerAll(project, "staged-requirement")).registered,
+    "Registered",
+  );
+  await rig.store.registerSpawn(
+    await schedulerClaimFor(
+      rig,
+      project.partition,
+      request,
+      schedulerOwner("staged-requirement"),
+    ),
+    executionSchedulerDefaults.nTasks,
+  );
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT t.kind, t.stage::text AS stage, e.requirement_digest
+         FROM execution e
+         JOIN execution_request_task t
+           ON t.tenant=e.tenant AND t.project=e.project
+          AND t.request=e.source_request AND t.task=e.task
+        WHERE e.tenant=$1 AND e.project=$2 ORDER BY t.kind`,
+      [project.partition.tenant, project.partition.project],
+    ),
+    [
+      {
+        kind: "Evaluation",
+        stage: "1",
+        requirement_digest: stored["Evaluation:1"],
+      },
+      { kind: "Work", stage: null, requirement_digest: stored["Work"] },
+    ],
+  );
 });
 
 test("a registration retry creates only the tasks that are missing", async () => {
@@ -481,9 +659,12 @@ test("an attempt is opened, placed and settles the logical task exactly once", a
   const project = await schedulerProject(rig, "settle", { tasks: 1 });
   await registerAll(project, "settle");
   const attempt = await placedAttempt(project, "settle");
-  const report = schedulerReport(attempt, "Pass", [
-    schedulerArtifact("handoff/one.txt"),
-  ]);
+  const report = schedulerReport(
+    attempt,
+    "Pass",
+    [],
+    [schedulerArtifact("diagnostic/one.txt")],
+  );
   const settled = await rig.store.terminalize(report);
   assert.ok(settled.terminalized === "Terminalized");
   assert.equal(settled.outcome, "Passed");
@@ -508,7 +689,7 @@ test("an attempt is opened, placed and settles the logical task exactly once", a
       "SELECT role, path FROM execution_result_artifact WHERE tenant=$1 AND project=$2",
       [project.partition.tenant, project.partition.project],
     ),
-    [{ role: "Handoff", path: "handoff/one.txt" }],
+    [{ role: "Diagnostic", path: "diagnostic/one.txt" }],
   );
   assert.deepEqual(await schedulerRequestStates(rig, project.partition), {
     [project.request]: "Fulfilled",
@@ -1018,6 +1199,88 @@ test("a manifest bound to another execution settles nothing and is an incident",
     ),
     [{ kind: "CrossProjectReference" }],
   );
+});
+
+/** What this project's boundary recorded as an impossible state, and why. */
+async function incidentsOf(
+  project: SchedulerProject,
+): Promise<readonly Record<string, unknown>[]> {
+  return rig.harness.query(
+    `SELECT kind, evidence FROM scheduler_incident
+      WHERE tenant=$1 AND project=$2`,
+    [project.partition.tenant, project.partition.project],
+  );
+}
+
+/**
+ * THE DOOR'S TWO NEW REFUSALS ARE TOLD APART. Both settle nothing and both are
+ * recorded as an impossible state, so the evidence string is the whole of what
+ * a reader is left with: a pass whose commit no source row records is a
+ * different missing row from an evaluator judging a cycle that recorded no
+ * passed work result, and one named for the other sends an operator to the
+ * wrong table.
+ */
+test("a passed work result whose commit no source row records names that row", async () => {
+  const project = await schedulerProject(rig, "unsourced", { tasks: 1 });
+  await registerAll(project, "unsourced");
+  const attempt = await placedAttempt(project, "unsourced");
+  assert.equal(
+    (
+      await rig.harness.query(
+        `SELECT source FROM ticket_source
+          WHERE tenant=$1 AND project=$2 AND ticket=$3
+            AND repository IS NOT NULL`,
+        [project.partition.tenant, project.partition.project, project.ticket],
+      )
+    ).length,
+    1,
+    "the dispatch bound this ticket to a repository, or the arm is unreached",
+  );
+  assert.equal(
+    (
+      await rig.store.terminalize(
+        schedulerReport(attempt, "Pass", [
+          schedulerArtifact("handoff/one.txt"),
+        ]),
+      )
+    ).terminalized,
+    "Conflicting",
+    "a passed manifest declaring no source is what the arm is about; the harness declares one on a clean pass for that very reason",
+  );
+  assert.deepEqual(await incidentsOf(project), [
+    { kind: "ImpossibleState", evidence: schedulerEvidence.SourceUnrecorded },
+  ]);
+});
+
+test("an evaluator answering for a cycle that recorded no work result names that row", async () => {
+  const project = await schedulerProject(rig, "unjudgeable", { tasks: 1 });
+  const request = await schedulerEvaluationRequest(
+    rig,
+    project,
+    "unjudgeable",
+    { cycle: 1, stage: 1, generation: 1, evaluator: 1 },
+  );
+  await rig.store.registerSpawn(
+    await schedulerClaimFor(
+      rig,
+      project.partition,
+      request,
+      schedulerOwner("unjudgeable"),
+    ),
+    executionSchedulerDefaults.nTasks,
+  );
+  const attempt = await placedAttempt(project, "unjudgeable");
+  assert.equal(
+    (await rig.store.terminalize(schedulerReport(attempt, "Pass")))
+      .terminalized,
+    "Conflicting",
+  );
+  assert.deepEqual(await incidentsOf(project), [
+    {
+      kind: "ImpossibleState",
+      evidence: schedulerEvidence.WorkResultUnrecorded,
+    },
+  ]);
 });
 
 test("a project in retention admits no completion and keeps no result", async () => {
