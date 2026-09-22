@@ -233,15 +233,15 @@ function cycleBucketsOf(page: ExecutionsResponse): Map<number, CycleBucket> {
 
 /**
  * The width an evaluation stage was expected to hold: the authoring's own
- * fan-out, or the page's own count where the stage is outside the program the
- * ticket was authored with.
+ * evaluator count, or the page's own count where the stage is outside the
+ * program the ticket was authored with.
  */
 function stageExpected(
   stage: number,
   executions: readonly ExecutionSummary[],
   authoring: TicketAuthoring,
 ): number {
-  return authoring.program[stage - 1]?.fanout ?? executions.length;
+  return authoring.program[stage - 1]?.evaluators.length ?? executions.length;
 }
 
 /** A run's sets by stage, merging any two of one stage the page put in one run. */

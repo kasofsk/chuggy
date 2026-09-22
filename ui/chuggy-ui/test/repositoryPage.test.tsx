@@ -80,11 +80,11 @@ const initialization = {
   fence: { projectSequence: 41, configurationDigest: "a".repeat(64) },
   defaults: {
     dependencies: [],
-    program: [{ fanout: 1 }],
+    program: [{ key: 1, evaluators: [{ key: 1 }] }],
   },
   choices: {
-    stages: [{ fanout: 1 }],
     programStagesMax: 2,
+    evaluatorsMax: 3,
   },
   dependencyCandidates: [],
   dependencyCandidatesTruncated: false,

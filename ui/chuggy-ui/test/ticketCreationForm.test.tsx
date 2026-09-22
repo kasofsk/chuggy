@@ -320,7 +320,14 @@ test("the advanced disclosure holds the authoring, and offers what is chosen", (
     ...creationInitialization,
     defaults: {
       ...creationInitialization.defaults,
-      program: [{ fanout: 9 }],
+      program: [
+        {
+          key: 1,
+          evaluators: Array.from({ length: 9 }, (_, index) => ({
+            key: index + 1,
+          })),
+        },
+      ],
     },
   };
   draw(api({ state: "Succeeded" }).ports, [], chosen);
@@ -335,7 +342,39 @@ test("the advanced disclosure holds the authoring, and offers what is chosen", (
     "9",
     "1",
     "2",
+    "3",
   ]);
+});
+
+/**
+ * The picker mints its own evaluator keys and holds every stage's key to its
+ * position, so a two-stage pick sends `{key, evaluators}` rather than a width.
+ */
+test("a two-stage pick sends positional stage keys and evaluators keyed 1..n", async () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, []);
+  typeIntent("ship it");
+  fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+  fireEvent.click(screen.getByText("add stage"));
+  fireEvent.change(screen.getByLabelText("stage 2"), {
+    target: { value: "3" },
+  });
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  const body = drafts(held.sent)[0]?.body;
+  const authoring =
+    body !== null && typeof body === "object" && "authoring" in body
+      ? body.authoring
+      : undefined;
+  expect(authoring).toStrictEqual({
+    dependencies: [],
+    program: [
+      { key: 1, evaluators: [{ key: 1 }] },
+      { key: 2, evaluators: [{ key: 1 }, { key: 2 }, { key: 3 }] },
+    ],
+  });
 });
 
 test("the checks editor is drawn only where the configuration commands a stage for them", async () => {

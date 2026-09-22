@@ -93,21 +93,43 @@ function Dependencies(
   );
 }
 
+/** The counts a stage's picker offers: every width up to what the project allows. */
+function evaluatorCountsOffered(evaluatorsMax: number): readonly number[] {
+  return Array.from({ length: evaluatorsMax }, (_, index) => index + 1);
+}
+
+/** A stage of the given width, its evaluators keyed densely from one. */
+function stageOfCount(count: number): CreationStage {
+  return {
+    key: 1,
+    evaluators: Array.from({ length: count }, (_, index) => ({
+      key: index + 1,
+    })),
+  };
+}
+
+/** A program with every stage's key set to its position, the rule the wire holds it to. */
+function programPositioned(program: readonly CreationStage[]): CreationStage[] {
+  return program.map((stage, index) => ({ ...stage, key: index + 1 }));
+}
+
 function stageAdded(
   form: TicketCreationForm,
-  offered: readonly CreationStage[],
+  evaluatorsMax: number,
 ): CreationStage[] {
-  const next = offered[0] ?? form.program[form.program.length - 1];
-  return next === undefined ? [...form.program] : [...form.program, next];
+  const last = form.program[form.program.length - 1];
+  const count = Math.min(last?.evaluators.length ?? 1, evaluatorsMax);
+  return programPositioned([...form.program, stageOfCount(count)]);
 }
 
 function Program(
   props: FormEdit & {
-    readonly offered: readonly CreationStage[];
+    readonly evaluatorsMax: number;
     readonly stagesMax: number;
   },
 ): ReactNode {
-  const { form, offered, onChange } = props;
+  const { form, evaluatorsMax, onChange } = props;
+  const offered = evaluatorCountsOffered(evaluatorsMax);
   return (
     <fieldset className="creation-set">
       <legend>evaluation program</legend>
@@ -119,13 +141,15 @@ function Program(
           <ChoiceRow
             label={`stage ${index + 1}`}
             offered={offered}
-            chosen={stage}
-            render={creationStageLabel}
-            onChoose={(chosen) => {
+            chosen={stage.evaluators.length}
+            render={(count) => String(count)}
+            onChoose={(count) => {
               onChange({
                 ...form,
-                program: form.program.map((held, at) =>
-                  at === index ? chosen : held,
+                program: programPositioned(
+                  form.program.map((held, at) =>
+                    at === index ? stageOfCount(count) : held,
+                  ),
                 ),
               });
             }}
@@ -135,7 +159,9 @@ function Program(
             onClick={() => {
               onChange({
                 ...form,
-                program: form.program.filter((_, at) => at !== index),
+                program: programPositioned(
+                  form.program.filter((_, at) => at !== index),
+                ),
               });
             }}
           >
@@ -147,7 +173,7 @@ function Program(
         size="sm"
         disabled={form.program.length >= props.stagesMax}
         onClick={() => {
-          onChange({ ...form, program: stageAdded(form, offered) });
+          onChange({ ...form, program: stageAdded(form, evaluatorsMax) });
         }}
       >
         add stage
@@ -174,7 +200,7 @@ export function TicketCreationAdvanced(
         <Program
           form={form}
           onChange={onChange}
-          offered={initialization.choices.stages}
+          evaluatorsMax={initialization.choices.evaluatorsMax}
           stagesMax={initialization.choices.programStagesMax}
         />
       </div>

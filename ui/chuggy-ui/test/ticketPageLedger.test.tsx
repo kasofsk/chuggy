@@ -757,7 +757,7 @@ test("the by-stage table is work first and then the program's own order", async 
  * relaunched, its cycle superseded by the work that ran after it. */
 const fanoutAuthoring: TicketAuthoring = {
   dependencies: [],
-  program: [{ fanout: 3 }],
+  program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }, { key: 3 }] }],
 };
 
 const fanoutShapes: readonly ExecutionShape[] = [
