@@ -45,7 +45,7 @@ import {
   retryablesIn,
   revocablesIn,
 } from "../domain/enablement.ts";
-import { dispatchSources, releasedTicketValid } from "../domain/config.ts";
+import { releasedTicketValid } from "../domain/config.ts";
 import { dispositionChoices } from "../domain/deciders.ts";
 import type {
   TicketGraph,
@@ -178,9 +178,16 @@ export function decisionEventEnabled(
     case "Revoke":
       return revocablesIn(graph).includes(asTicketId(event.value));
     case "Dispatch":
+      /**
+       * The model draws a source from a two-element set because that is the
+       * universe one instantiation offers; what it claims of the value is
+       * `sourcePinned`'s floor, which is what a deployment folding a commit
+       * digest can hold to and what `releasedTicketValid` holds every other
+       * reference to.
+       */
       return (
         readiesIn(graph).includes(asTicketId(event.value.ticket)) &&
-        dispatchSources.includes(event.value.source)
+        event.value.source > 0
       );
     case "TaskDone": {
       const id = asTicketId(event.value.ticket);

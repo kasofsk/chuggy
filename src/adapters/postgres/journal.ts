@@ -208,7 +208,7 @@ export async function postgresJournalDispatchContracts(
         );
       const event = parsed.value.event;
       if (event.type === "CreateTicket") {
-        contracts.set(event.value.ticket, {
+        contracts.set(event.value.id, {
           configurationRevision: stored.configuration_revision,
           configurationDigest: stored.configuration_digest,
           configurationCanonical: stored.configuration_canonical,

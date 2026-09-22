@@ -6,20 +6,13 @@ import {
   textCodePointsCount,
 } from "../contract/http.ts";
 
-import { decisionEventEnabled } from "../actor/decisionEvent.ts";
-import type { Config } from "../domain/config.ts";
-import { ticketAt, ticketIds } from "../domain/ticketGraph.ts";
-import type {
-  TicketGraph,
-  StageDefinition,
-} from "../domain/generated/modelTypes.ts";
+import { authoringSchema } from "../contract/authoring.ts";
+import type { ReleaseAuthoringProgram } from "../contract/authoring.ts";
+import { readiesIn } from "../domain/enablement.ts";
+import { ticketAt } from "../domain/ticketGraph.ts";
+import type { TicketGraph } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type { ConfigurationVersion } from "./repositoryConfigurationIdentity.ts";
-import {
-  decodeStageDefinition,
-  encodeStageDefinition,
-  type ModelJson,
-} from "../generated/model-api.ts";
 
 /** How many candidates one page carries, surfaced where every reader of it looks. */
 export { dispatchViewPageLimitMax };
@@ -29,7 +22,7 @@ export interface DispatchCandidate {
   readonly ticket: TicketId;
   readonly ticketVersion: number;
   readonly dependencies: readonly number[];
-  readonly program: readonly StageDefinition[];
+  readonly program: ReleaseAuthoringProgram;
   readonly configurationRevision: string;
   readonly configurationDigest: string;
   readonly configurationCanonical: string;
@@ -79,18 +72,32 @@ export interface DispatchViewStore {
   ): Promise<DispatchViewPage>;
 }
 
+/**
+ * The program a stored candidate carries, read and written through the
+ * authoring schema the wire states. A candidate offers a selector what its
+ * author chose, not what the release resolved: the task definitions a released
+ * stage hangs off each evaluator are no part of a choice, and a reader that was
+ * handed them would be reading a second copy of the journal.
+ */
+const dispatchProgramSchema = authoringSchema.shape.program;
+
 export function decodeDispatchProgram(
   value: unknown,
 ): DispatchCandidate["program"] {
   if (!Array.isArray(value))
     throw new TypeError("dispatch program is not an array");
-  return value.map(decodeStageDefinition);
+  return dispatchProgramSchema.parse(value);
 }
 
 export function encodeDispatchProgram(
   value: DispatchCandidate["program"],
-): ModelJson {
-  return value.map(encodeStageDefinition);
+): unknown {
+  return dispatchProgramSchema.parse(
+    value.map((stage) => ({
+      key: stage.key,
+      evaluators: stage.evaluators.map((entry) => ({ key: entry.key })),
+    })),
+  );
 }
 
 function canonicalCandidate(candidate: DispatchCandidate): unknown {
@@ -128,18 +135,18 @@ export function dispatchViewDigest(
     .digest("hex");
 }
 
-/** Derives selection-visible truth from authoritative state and immutable contract pins. */
+/**
+ * Derives selection-visible truth from authoritative state and immutable
+ * contract pins. A candidate is a ticket a dispatch is enabled at, which is a
+ * ready ticket: the source the dispatch would carry is observed when it is
+ * decided and is no part of whether there is one to decide.
+ */
 export function deriveDispatchCandidates(
-  config: Config,
   graph: TicketGraph,
   ticketVersions: ReadonlyMap<number, number>,
   contracts: ReadonlyMap<number, DispatchContractPin>,
 ): readonly DispatchCandidate[] {
-  return ticketIds(graph).flatMap((ticket) => {
-    if (
-      !decisionEventEnabled(config, graph, { type: "Dispatch", value: ticket })
-    )
-      return [];
+  return readiesIn(graph).flatMap((ticket) => {
     const value = ticketAt(graph, ticket);
     const ticketVersion = ticketVersions.get(ticket);
     const contract = contracts.get(ticket);
@@ -151,8 +158,13 @@ export function deriveDispatchCandidates(
       {
         ticket,
         ticketVersion,
-        dependencies: [...value.deps].sort((left, right) => left - right),
-        program: value.program.map((stage) => ({ ...stage })),
+        dependencies: [...value.definition.dependencies].sort(
+          (left, right) => left - right,
+        ),
+        program: value.definition.evaluationPlan.stages.map((stage) => ({
+          key: stage.key,
+          evaluators: stage.evaluators.map((entry) => ({ key: entry.key })),
+        })),
         ...contract,
       },
     ];

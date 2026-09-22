@@ -61,7 +61,8 @@ import type { Lease, Lifecycle } from "./projectStore.ts";
 import type { DispatchCandidate } from "./dispatchView.ts";
 import type { FinalizationEvidence } from "./finalizerPreparation.ts";
 import type { NativeActionResolution } from "./ticketCommand.ts";
-import type { ReleaseBrief } from "./ticketBrief.ts";
+import type { DraftBrief } from "./ticketBrief.ts";
+import type { TicketDefinitionMaterial } from "./ticketDefinition.ts";
 
 /**
  * The finite vocabulary a refused operation answers with. It is closed because
@@ -90,6 +91,19 @@ export const allRefusalCodes: readonly RefusalCode[] = [
   "BriefNamesNoRepository",
 ];
 
+/**
+ * One source a ticket has run at, as the row keyed by the reference the
+ * journal carries holds it. A ticket whose brief names no repository has one
+ * too — the reserved reference, and no commit to go with it.
+ */
+export interface TicketSourceRecord {
+  readonly ticket: TicketId;
+  readonly source: number;
+  readonly repository?: string;
+  readonly commit?: string;
+  readonly ref?: string;
+}
+
 export interface ConfigurationPin {
   readonly configurationRevision: string;
   readonly configurationDigest: string;
@@ -105,7 +119,13 @@ export interface DraftReleaseFence extends ConfigurationPin {
    * still editable, so it is where a pair that contradicts each other is
    * refused.
    */
-  readonly brief?: ReleaseBrief;
+  readonly brief?: DraftBrief;
+  /**
+   * What this release resolved, written beside its entry. The references the
+   * entry carries are folds of the digests in it, so the row is what says what
+   * a number in the journal names.
+   */
+  readonly definition?: TicketDefinitionMaterial;
 }
 
 /**
@@ -225,6 +245,8 @@ export interface DecisionMaterialization {
   readonly fulfillFinalizationFor: readonly TicketId[];
   readonly withdrawActionsFor: readonly TicketId[];
   readonly resolveAction?: NativeActionAnswer;
+  /** The source a dispatch observed, recorded so every later spawn reads it back. */
+  readonly ticketSource?: TicketSourceRecord;
 }
 
 /**

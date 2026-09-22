@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   dispatchEvent,
   releaseTicketEvent,
+  resumeTicketEvent,
   taskDoneEvent,
   workReduceEvent,
   ticketAt,
@@ -15,6 +16,7 @@ import {
 import { actorInit, journalStep, memoryGraph } from "../../src/actor/state.ts";
 import { storedAtCurrentSemantics } from "../../src/actor/journal.ts";
 import {
+  asOperationDecisionEvent,
   asOperationId,
   classifyCommand,
 } from "../../src/interpreter/operationInbox.ts";
@@ -60,18 +62,24 @@ import {
 } from "../../src/interpreter/dispatchView.ts";
 import type { TicketCommand } from "../../src/interpreter/ticketCommand.ts";
 import { executionSourceObservation } from "../../src/interpreter/executionSourceObservation.ts";
-import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
+import {
+  asResultManifestId,
+  digestFold,
+} from "../../src/interpreter/resultManifest.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
-import type {
-  StageDefinition,
-  TaskIdentity,
-} from "../../src/domain/generated/modelTypes.ts";
+import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import {
-  plainAuthoring,
+  plainDefinitionOf,
   plainDisposition,
   refinementInstance,
 } from "../actor/harness.ts";
+import {
+  aDispatchSource,
+  anAcceptedSource,
+  evaluatorOf,
+  releasedTicketOf,
+} from "../../src/domain/config.ts";
 import {
   id,
   judgedReport,
@@ -101,7 +109,7 @@ function releasedMemory(head = 1): ProjectMemory {
   const released = journalStep(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(1)),
   );
   return {
     lease: {
@@ -126,10 +134,12 @@ function operationInput(command: TicketCommand): DecisionInput {
       kind: "Operation",
       operation: asOperationId("operation"),
       command,
-      resolvedEvent: { type: "Dispatch", value: id(1) },
     },
   };
 }
+
+/** The commit every source here is read at, and the reference it folds to. */
+const observedCommit = asGitObjectId("a".repeat(40));
 
 /** The source a test that is not about observation is answered with. */
 const readableSources: ExecutionSourceObservationPort = {
@@ -137,11 +147,12 @@ const readableSources: ExecutionSourceObservationPort = {
     Promise.resolve({
       observed: "Source",
       source: {
+        reference: digestFold(observedCommit),
         repository: asRepositoryId("repository"),
-        target: { commit: asGitObjectId("a".repeat(40)) },
-        manifests: [],
+        commit: observedCommit,
       },
     }),
+  spawnSource: () => Promise.resolve(undefined),
 };
 
 /** The brief a test that is not about briefing is answered with. */
@@ -212,15 +223,14 @@ function recordingSources(
       return Promise.resolve({
         observed: "Source",
         source: {
+          reference: digestFold(observedCommit),
           repository: request.repository ?? asRepositoryId("repository"),
-          target: {
-            ref: asGitRefName(request.ref ?? "refs/heads/main"),
-            commit: asGitObjectId("a".repeat(40)),
-          },
-          manifests: [],
+          commit: observedCommit,
+          ref: asGitRefName(request.ref ?? "refs/heads/main"),
         },
       });
     },
+    spawnSource: () => Promise.resolve(undefined),
   };
 }
 
@@ -239,7 +249,7 @@ test("a source observation is gathered before a spawn bundle is materialized", a
     manualDispatch,
     recordingSources(observed),
   );
-  assert.deepEqual(observed, [{ partition, ticket: id(1), kind: "Work" }]);
+  assert.deepEqual(observed, [{ partition, ticket: id(1) }]);
   assert.deepEqual(
     decision.outcome.outcome === "Journaled"
       ? decision.outcome.materialization.execution[0]?.bundle?.source
@@ -266,6 +276,7 @@ test("manual dispatch distinguishes a stale ticket from a disabled ticket", asyn
       observe: () => {
         throw new Error("a stale command must not observe Git");
       },
+      spawnSource: () => Promise.resolve(undefined),
     },
   );
   assert.deepEqual(decision.outcome, {
@@ -277,7 +288,6 @@ test("manual dispatch distinguishes a stale ticket from a disabled ticket", asyn
 test("proposal validity ignores an unrelated journal-head advance", async () => {
   const memory = releasedMemory(40);
   const candidates = deriveDispatchCandidates(
-    refinementInstance,
     memory.graph,
     memory.ticketVersions,
     contracts,
@@ -360,7 +370,6 @@ function releasedAtVersion(version: number): ProjectMemory {
 function currentDigestOf(memory: ProjectMemory): string {
   return dispatchViewDigest(
     deriveDispatchCandidates(
-      refinementInstance,
       memory.graph,
       memory.ticketVersions,
       memory.dispatchContracts ?? new Map(),
@@ -426,7 +435,7 @@ function twoReleasedMemory(): ProjectMemory {
     state = journalStep(
       refinementInstance,
       state,
-      releaseTicketEvent(ticket, plainAuthoring),
+      releaseTicketEvent(plainDefinitionOf(ticket)),
     );
     for (const row of projectionChanges(before, memoryGraph(state)))
       ticketVersions.set(row.ticket, index + 1);
@@ -483,7 +492,6 @@ function proposalInput(
       kind: "Operation",
       operation: asOperationId(`operation-${String(ticket)}`),
       command,
-      resolvedEvent: { type: "Dispatch", value: ticket },
     },
   };
 }
@@ -594,8 +602,41 @@ test("a brief landing elsewhere still has its work observed at the branch it hap
   );
 });
 
-const workBase = asGitObjectId("b".repeat(40));
+/** The commit the ticket's own source row carries, which every later spawn runs at. */
 const workCommit = asGitObjectId("c".repeat(40));
+
+/**
+ * The real observation over a history that answers one source row, with both
+ * remote ports fatal — so a spawn that asked a remote anything would throw
+ * rather than assert.
+ */
+function pinnedSources(
+  sourced: number[],
+): ExecutionSourceObservationPort {
+  return executionSourceObservation(
+    {
+      binding: () => {
+        throw new Error("a spawn reads no repository binding");
+      },
+    },
+    {
+      observeTarget: () => {
+        throw new Error("a spawn observes no remote");
+      },
+    },
+    {
+      workSource: () =>
+        Promise.resolve({ manifests: [asResultManifestId("manifest-one")] }),
+      ticketSource: (_partition, _ticket, source) => {
+        sourced.push(source);
+        return Promise.resolve({
+          repository: asRepositoryId("work-repository"),
+          commit: workCommit,
+        });
+      },
+    },
+  );
+}
 
 /** The state of a ticket whose single work task has passed and awaits its reduce. */
 function workPassedState(): ReturnType<typeof journalStep> {
@@ -603,9 +644,9 @@ function workPassedState(): ReturnType<typeof journalStep> {
   let state = journalStep(
     config,
     actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(1)),
   );
-  state = journalStep(config, state, dispatchEvent(id(1)));
+  state = journalStep(config, state, dispatchEvent(id(1), aDispatchSource));
   return journalStep(
     config,
     state,
@@ -641,44 +682,24 @@ function workReduceInput(memory: ProjectMemory): DecisionInput {
   };
 }
 
-/** The evaluation spawn a work reduce materializes over one work spawn's declarations. */
-async function evaluationSpawn(
-  declared: readonly ReturnType<typeof asGitObjectId>[],
+/** The one request a decision authorized, materialized at the sources it read. */
+async function spawnedAt(
+  memory: ProjectMemory,
+  input: DecisionInput,
+  sourced: number[],
 ): Promise<ExecutionRequestPlan | undefined> {
-  const memory = workPassedMemory();
-  const { offered } = await decidedWith(
-    memory,
-    workReduceInput(memory),
-    executionSourceObservation(
-      {
-        binding: () => {
-          throw new Error("an evaluation must not read the project binding");
-        },
-      },
-      {
-        observeTarget: () => {
-          throw new Error("mutable Git must not be observed");
-        },
-      },
-      {
-        workSource: () =>
-          Promise.resolve({
-            repository: asRepositoryId("work-repository"),
-            base: workBase,
-            declared,
-            manifests: [asResultManifestId("manifest-one")],
-          }),
-      },
-    ),
-  );
+  const { offered } = await decidedWith(memory, input, pinnedSources(sourced));
   return offered?.outcome.outcome === "Journaled"
     ? offered.outcome.materialization.execution[0]
     : undefined;
 }
 
-test("an evaluation spawn pins the commit its work produced, not the base it ran on", async () => {
-  const spawn = await evaluationSpawn([workCommit]);
+test("an evaluation spawns at the source its ticket carries and judges the work's manifests", async () => {
+  const sourced: number[] = [];
+  const memory = workPassedMemory();
+  const spawn = await spawnedAt(memory, workReduceInput(memory), sourced);
   assert.equal(spawn?.kind, "SpawnEvaluation");
+  assert.deepEqual(sourced, [anAcceptedSource]);
   assert.deepEqual(spawn?.bundle?.source, {
     repository: "work-repository",
     targetCommit: workCommit,
@@ -686,22 +707,13 @@ test("an evaluation spawn pins the commit its work produced, not the base it ran
   });
 });
 
-test("a fan-out that declared several commits spawns its evaluation at the base", async () => {
-  const spawn = await evaluationSpawn([
-    workCommit,
-    asGitObjectId("d".repeat(40)),
-  ]);
-  assert.equal(spawn?.kind, "SpawnEvaluation");
-  assert.equal(spawn?.bundle?.source?.targetCommit, workBase);
-});
-
 /** A ticket dispatched into work, which is the phase a settled block interrupts. */
 function dispatchedMemory(): ProjectMemory {
   const config = refinementInstance;
   const state = journalStep(
     config,
-    journalStep(config, actorInit(), releaseTicketEvent(id(1), plainAuthoring)),
-    dispatchEvent(id(1)),
+    journalStep(config, actorInit(), releaseTicketEvent(plainDefinitionOf(1))),
+    dispatchEvent(id(1), aDispatchSource),
   );
   return { ...releasedMemory(), graph: memoryGraph(state) };
 }
@@ -758,12 +770,9 @@ test("a settled block parks its ticket carrying the wall its execution recorded"
 
 /** A stage of two evaluators, so one can fail while the other hits a wall. */
 const pairedConfig = { ...refinementInstance, nTasks: 2 };
-const pairedAuthoring = {
-  deps: new Set<number>(),
-  prog: [
-    { key: 1, evaluators: [{ key: 1 }, { key: 2 }] },
-  ] as readonly StageDefinition[],
-} as const;
+const pairedDefinition = releasedTicketOf(1, new Set<number>(), [
+  { key: 1, evaluators: [evaluatorOf(1), evaluatorOf(2)] },
+]);
 
 /**
  * A judgement one evaluator has already failed and the other has yet to
@@ -773,7 +782,7 @@ function failedStageState(): ReturnType<typeof journalStep> {
   const work = workTaskOf(1, 1);
   const failing = evaluationTaskOf(1, 1, 1, 1, 1);
   return [
-    dispatchEvent(id(1)),
+    dispatchEvent(id(1), aDispatchSource),
     taskDoneEvent(id(1), work, producedReport(work), plainDisposition),
     workReduceEvent(id(1)),
     taskDoneEvent(
@@ -787,7 +796,7 @@ function failedStageState(): ReturnType<typeof journalStep> {
     journalStep(
       pairedConfig,
       actorInit(),
-      releaseTicketEvent(id(1), pairedAuthoring),
+      releaseTicketEvent(pairedDefinition),
     ),
   );
 }
@@ -825,6 +834,7 @@ function unreadableSources(
 ): ExecutionSourceObservationPort {
   return {
     observe: () => Promise.resolve({ observed: "Unreadable", evidence }),
+    spawnSource: () => Promise.resolve(undefined),
   };
 }
 
@@ -912,78 +922,101 @@ function reworkCompletionInput(): DecisionInput {
 }
 
 /**
- * A refusal would settle at this boundary a task the journal never heard
- * settle, and a deferral would leave this ticket at the head of its class
- * forever, so the writer takes its failing judgement on the other edge.
+ * A rework re-enters work off the judgement that failed, and what it runs at is
+ * the source the ticket already carries — so the decision reads its own row and
+ * asks no remote, and the commit that was judged is the commit that is reworked.
  */
-test("a rework no source can be read for parks the ticket in the one quantum", async () => {
-  for (const [evidence] of durableEvidences) {
-    const { offered, result } = await decidedWith(
-      judgementMemory(),
-      reworkCompletionInput(),
-      unreadableSources(evidence),
-    );
-    assert.equal(offered?.outcome.outcome, "Journaled", evidence);
-    if (offered?.outcome.outcome !== "Journaled") return;
-    assert.deepEqual(
-      offered.outcome.projection.map((row) => [
-        row.escalation,
-        row.escalationEvidence,
-      ]),
-      [["EvaluationFailureEscalated", evidence]],
-    );
-    assert.notEqual(result.decided.decided, "Deferred", evidence);
-  }
+test("a rework spawns at the accepted source, asking no remote", async () => {
+  const sourced: number[] = [];
+  const spawn = await spawnedAt(
+    judgementMemory(),
+    reworkCompletionInput(),
+    sourced,
+  );
+  assert.equal(spawn?.kind, "SpawnWork");
+  assert.deepEqual(sourced, [anAcceptedSource]);
+  assert.deepEqual(spawn?.bundle?.source, {
+    repository: "work-repository",
+    targetCommit: workCommit,
+    manifests: [],
+  });
 });
 
-/** A source that may read later is not a rework that cannot be run. */
-test("a rework meeting a source that may read later is deferred still", async () => {
-  for (const evidence of transientEvidences) {
-    const memory = judgementMemory();
-    const { offered, result } = await decidedWith(
-      memory,
-      reworkCompletionInput(),
-      unreadableSources(evidence),
-    );
-    assert.equal(offered, undefined, evidence);
-    assert.equal(result.memory, memory);
-    assert.deepEqual(result.decided, { decided: "Deferred", evidence });
-  }
-});
+/** A stage whose second evaluator stopped rather than answering, which is what a resume returns to. */
+function stoppedStageMemory(): ProjectMemory {
+  const stopping = evaluationTaskOf(1, 1, 1, 1, 2);
+  const state = [
+    dispatchEvent(id(1), aDispatchSource),
+    taskDoneEvent(
+      id(1),
+      workTaskOf(1, 1),
+      producedReport(workTaskOf(1, 1)),
+      plainDisposition,
+    ),
+    workReduceEvent(id(1)),
+    taskDoneEvent(
+      id(1),
+      evaluationTaskOf(1, 1, 1, 1, 1),
+      judgedReport(evaluationTaskOf(1, 1, 1, 1, 1), "EvaluatorPass"),
+      plainDisposition,
+    ),
+    taskDoneEvent(
+      id(1),
+      stopping,
+      stoppedReport(stopping, "ProcessFailure"),
+      plainDisposition,
+    ),
+  ].reduce(
+    (each, event) => journalStep(pairedConfig, each, event),
+    journalStep(pairedConfig, actorInit(), releaseTicketEvent(pairedDefinition)),
+  );
+  return { ...releasedMemory(), graph: memoryGraph(state) };
+}
 
-test("a continuation whose source cannot be read is deferred, whatever named the wall", async () => {
-  for (const [evidence] of durableEvidences) {
-    const memory = workPassedMemory();
-    const { offered, result } = await decidedWith(
-      memory,
-      workReduceInput(memory),
-      unreadableSources(evidence),
-    );
-    assert.equal(offered, undefined, evidence);
-    assert.equal(result.memory, memory);
-    assert.deepEqual(result.decided, { decided: "Deferred", evidence });
-  }
-});
+/** A resume as a principal offers one, which re-asks the evaluator that stopped. */
+const resumeInput: DecisionInput = {
+  partition,
+  ordinal: 1,
+  priority: "Ordinary",
+  source: {
+    kind: "Operation",
+    operation: asOperationId("resume"),
+    command: {
+      version: 1,
+      command: "Decide",
+      event: asOperationDecisionEvent(resumeTicketEvent(id(1))),
+    },
+    resolvedEvent: resumeTicketEvent(id(1)),
+  },
+};
 
-test("a continuation meeting a source that may read later is deferred too", async () => {
-  for (const evidence of transientEvidences) {
-    const memory = workPassedMemory();
-    const { offered, result } = await decidedWith(
-      memory,
-      workReduceInput(memory),
-      unreadableSources(evidence),
-    );
-    assert.equal(offered, undefined);
-    assert.equal(result.memory, memory);
-    assert.deepEqual(result.decided, { decided: "Deferred", evidence });
-  }
+/** A resume is no dispatch either, so the re-ask runs where the stopped pass ran. */
+test("a resume re-asks at the accepted source, asking no remote", async () => {
+  const sourced: number[] = [];
+  const { offered } = await decidedWith(
+    stoppedStageMemory(),
+    resumeInput,
+    pinnedSources(sourced),
+    unbriefedTickets,
+    { config: pairedConfig },
+  );
+  assert.equal(offered?.outcome.outcome, "Journaled");
+  if (offered?.outcome.outcome !== "Journaled") return;
+  const spawn = offered.outcome.materialization.execution[0];
+  assert.equal(spawn?.kind, "SpawnEvaluation");
+  assert.deepEqual(sourced, [anAcceptedSource]);
+  assert.deepEqual(spawn?.bundle?.source, {
+    repository: "work-repository",
+    targetCommit: workCommit,
+    manifests: ["manifest-one"],
+  });
 });
 
 test("a deferred input ends the run it arrived in without clearing readiness", async () => {
   const journal = journalStep(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(1)),
   ).journal;
   const taken: number[] = [];
   let deferred = 0;

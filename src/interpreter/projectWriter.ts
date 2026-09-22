@@ -19,11 +19,18 @@
  * priority belong to authenticated ingress; this writer alone decides whether
  * the requested domain transition is enabled at its serialized position.
  *
+ * THE DISPATCH OBSERVES BEFORE IT DECIDES, AND IT IS THE ONLY COMMAND THAT
+ * OBSERVES. The source a dispatch pins is a fact about a remote rather than
+ * about this journal, so it is read before the event exists and the event
+ * carries what was read. Every later spawn runs at the source the ticket
+ * already holds, which is a row this partition wrote.
+ *
  * AN UNREADABLE EXECUTION SOURCE IS AN OUTCOME, NOT A FAULT. What a remote
  * holds is a fact about the world rather than a contradiction in this
  * partition's journal, so a source the writer cannot read lands as a coded
- * refusal, as a ticket parked on the desk, or as a deferral a later quantum
- * retries — never as a rejection that ends the run the input arrived in.
+ * refusal or as a deferral a later quantum retries — never as a rejection that
+ * ends the run the input arrived in, and never as a journal row, there being
+ * no dispatch to record.
  *
  * THE PROJECTION IS DERIVED, NEVER OBSERVED. Its rows are a function of the
  * replayed `TicketGraph` alone, so rebuilding them from the journal and folding the
@@ -52,6 +59,7 @@ import { genesis, storedJournalLegalOn } from "../actor/journal.ts";
 import { ticketEquals } from "../actor/equality.ts";
 import {
   decisionEventEnabled,
+  dispatchEvent,
   execDecisionEvent,
   taskDoneEvent,
   workReduceEvent,
@@ -69,7 +77,7 @@ import { asTicketId, type TicketId } from "../domain/ids.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
 import type { SchedulerCompletionEvent } from "./ticketCommand.ts";
 import type {
-  ExecutionSourceObservation,
+  DispatchSource,
   ExecutionSourceObservationPort,
 } from "./executionSource.ts";
 import type { GitEvidence } from "./finalizer.ts";
@@ -80,10 +88,11 @@ import type {
   ProjectDecision,
   RefusalCode,
   TicketProjection,
+  TicketSourceRecord,
 } from "./projectDecision.ts";
 import type { Lease, ProjectStore } from "./projectStore.ts";
 import { reworkDisposition, type ReworkCap } from "./reworkCap.ts";
-import { materializationOf } from "./decisionPlan.ts";
+import { materializationOf, type SpawnSources } from "./decisionPlan.ts";
 import {
   deriveDispatchCandidates,
   dispatchViewDigest,
@@ -251,7 +260,6 @@ export async function projectWriterLoad(
     writer.decisions.rebuildDispatchView !== undefined
   ) {
     const candidates = deriveDispatchCandidates(
-      writer.config,
       graph,
       ticketVersions,
       dispatchContracts,
@@ -289,7 +297,6 @@ function continuationFenceOutcome(
 }
 
 function operationDispatchFence(
-  writer: ProjectTicketWriter,
   memory: ProjectMemory,
   source: Extract<DecisionInput["source"], { kind: "Operation" }>,
 ): DecisionOutcome | undefined {
@@ -304,7 +311,6 @@ function operationDispatchFence(
       "project writer: strict dispatch contracts were not loaded",
     );
   const candidates = deriveDispatchCandidates(
-    writer.config,
     memory.graph,
     memory.ticketVersions,
     memory.dispatchContracts,
@@ -324,12 +330,10 @@ function operationDispatchFence(
 }
 
 function journaledPlan(
-  writer: ProjectTicketWriter,
   memory: ProjectMemory,
   item: DecisionInput,
   command: DecisionEvent,
-  executionSource: ExecutionSourceObservation | undefined,
-  walled?: TicketEscalationEvidence,
+  spawn: SpawnSources,
 ): ProjectPlan {
   const decision = execDecisionEvent(memory.graph, command);
   const entry: Entry = {
@@ -340,7 +344,7 @@ function journaledPlan(
   const projection = projectionChanges(
     memory.graph,
     decision.post,
-    walled ?? projectWriterEscalationEvidence(item, command, decision.post),
+    projectWriterEscalationEvidence(item, command, decision.post),
   );
   const versions = new Map(memory.ticketVersions);
   for (const row of projection) versions.set(row.ticket, entry.seq);
@@ -359,12 +363,7 @@ function journaledPlan(
     (item.source.kind === "Operation" &&
       item.source.draftRelease !== undefined);
   const candidates = materializeView
-    ? deriveDispatchCandidates(
-        writer.config,
-        decision.post,
-        versions,
-        contracts,
-      )
+    ? deriveDispatchCandidates(decision.post, versions, contracts)
     : undefined;
   return {
     outcome: {
@@ -376,7 +375,7 @@ function journaledPlan(
         memory.graph,
         decision.post,
         entry,
-        executionSource,
+        spawn,
       ),
       ...(candidates === undefined
         ? {}
@@ -418,16 +417,22 @@ function completionEvent(
 
 /**
  * What one inbox item asks of the state in hand: a decision the machine would
- * take, or the refusal it earns. Nothing here reaches the world.
+ * take, the ticket a dispatch must be observed at before there is one, or the
+ * refusal it earns. Nothing here reaches the world.
  */
 function projectWriterPreflight(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   item: DecisionInput,
-): ProjectPlan | { readonly command: DecisionEvent } {
+):
+  | ProjectPlan
+  | { readonly command: DecisionEvent }
+  | { readonly dispatch: TicketId } {
   if (item.source.kind === "Operation") {
-    const fence = operationDispatchFence(writer, memory, item.source);
+    const fence = operationDispatchFence(memory, item.source);
     if (fence !== undefined) return { outcome: fence, post: memory.graph };
+    const dispatch = operationDispatchTicket(item);
+    if (dispatch !== undefined) return { dispatch };
   }
   if (item.source.kind === "Continuation") {
     const fenceOutcome = continuationFenceOutcome(memory, item.source);
@@ -453,6 +458,17 @@ function projectWriterPreflight(
   const answer =
     item.source.kind === "Operation" ? item.source.nativeAction : undefined;
   if (command === undefined) {
+    /**
+     * A release whose draft and configuration contradict each other resolved
+     * no definition, so there is no event to weigh. Which fault it is, is the
+     * deciding transaction's to name behind the fence that retains the
+     * revision; this is the refusal that one replaces.
+     */
+    if (item.source.kind === "Operation" && item.source.draftRelease !== undefined)
+      return {
+        outcome: { outcome: "Refused", code: "ConfigurationInvalid" },
+        post: memory.graph,
+      };
     if (answer === undefined)
       throw new Error(
         "project writer: an input names neither event nor answer",
@@ -467,18 +483,6 @@ function projectWriterPreflight(
   }
   return { command };
 }
-
-/** What the source a decision's spawns would run on was observed to be. */
-type SpawnSourceObserved =
-  | {
-      readonly observed: "Source";
-      readonly source?: ExecutionSourceObservation;
-    }
-  | {
-      readonly observed: "Unreadable";
-      readonly evidence: GitEvidence;
-      readonly ticket: TicketId;
-    };
 
 /**
  * The evidence a later observation may find readable, because each names a
@@ -500,88 +504,120 @@ function executionSourceRefusalCode(evidence: GitEvidence): RefusalCode {
     : "ExecutionSourceUnreadable";
 }
 
-async function projectWriterExecutionSource(
+/** The ticket a dispatch command names, absent for every other input. */
+function operationDispatchTicket(item: DecisionInput): TicketId | undefined {
+  if (item.source.kind !== "Operation") return undefined;
+  const command = item.source.command;
+  return command.command === "ManualDispatch" ||
+    command.command === "ProposeDispatch"
+    ? command.ticket
+    : undefined;
+}
+
+/**
+ * The source the dispatch pins, read at the repository and branch the ticket's
+ * brief names. A brief naming no repository is not a failed observation: such a
+ * ticket runs against nothing, and the port answers the reserved reference for
+ * it without asking a remote anything.
+ */
+async function projectWriterDispatchSource(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
-  item: DecisionInput,
-  command: DecisionEvent,
-): Promise<SpawnSourceObserved> {
-  if (
-    item.source.kind === "Operation" &&
-    item.source.finalizationRequest?.evidence !== undefined
-  )
-    return { observed: "Source" };
-  const rec = execDecisionEvent(memory.graph, command).rec;
-  const spawn = rec.effects.find((label) => {
-    const effect = effectFromLabel(label);
-    return effect === "SpawnWorkTasks" || effect === "SpawnEvalTasks";
-  });
-  if (spawn === undefined) return { observed: "Source" };
-  const effect = effectFromLabel(spawn);
-  const spawned = rec.transitions[rec.effects.indexOf(spawn)]?.ticket;
-  if (spawned === undefined)
-    throw new IntegrityContradiction("a spawn effect has no ticket transition");
-  const ticket = asTicketId(spawned);
+  ticket: TicketId,
+): Promise<
+  | { readonly observed: "Source"; readonly source: DispatchSource }
+  | { readonly observed: "Unreadable"; readonly evidence: GitEvidence }
+> {
   const brief = await writer.ticketBriefs.brief(memory.lease.partition, ticket);
   const observed = await writer.executionSources.observe({
     partition: memory.lease.partition,
     ticket,
-    kind: effect === "SpawnWorkTasks" ? "Work" : "Evaluation",
     ...(brief?.repository === undefined
       ? {}
       : { repository: brief.repository }),
     ...(brief?.branch === undefined ? {} : { ref: brief.branch }),
   });
   return observed.observed === "Source"
-    ? { observed: "Source", source: observed.source }
-    : { observed: "Unreadable", evidence: observed.evidence, ticket };
+    ? observed
+    : { observed: "Unreadable", evidence: observed.evidence };
+}
+
+/** What the dispatch's own spawn runs against, which is what it just observed. */
+function dispatchSpawnSources(
+  ticket: TicketId,
+  source: DispatchSource,
+): SpawnSources {
+  const pinned: TicketSourceRecord = {
+    ticket,
+    source: source.reference,
+    ...(source.repository === undefined
+      ? {}
+      : { repository: source.repository }),
+    ...(source.commit === undefined ? {} : { commit: source.commit }),
+    ...(source.ref === undefined ? {} : { ref: source.ref }),
+  };
+  if (source.repository === undefined || source.commit === undefined)
+    return { pinned };
+  return {
+    pinned,
+    source: {
+      repository: source.repository,
+      target: {
+        commit: source.commit,
+        ...(source.ref === undefined ? {} : { ref: source.ref }),
+      },
+      manifests: [],
+    },
+  };
+}
+
+/**
+ * What a decision that is not a dispatch spawns against: the source the ticket
+ * already carries, read out of this partition's own rows. NOTHING HERE ASKS A
+ * REMOTE — a rework runs at the commit its work was judged at, and an
+ * evaluation at the commit the result it judges was produced at, both of which
+ * are facts already written down.
+ */
+async function projectWriterSpawnSources(
+  writer: ProjectTicketWriter,
+  memory: ProjectMemory,
+  command: DecisionEvent,
+): Promise<SpawnSources> {
+  const decision = execDecisionEvent(memory.graph, command);
+  const spawn = decision.rec.effects.find((label) => {
+    const effect = effectFromLabel(label);
+    return effect === "SpawnWorkTasks" || effect === "SpawnEvalTasks";
+  });
+  if (spawn === undefined) return {};
+  const spawned =
+    decision.rec.transitions[decision.rec.effects.indexOf(spawn)]?.ticket;
+  if (spawned === undefined)
+    throw new IntegrityContradiction("a spawn effect has no ticket transition");
+  const ticket = asTicketId(spawned);
+  const source = await writer.executionSources.spawnSource({
+    partition: memory.lease.partition,
+    ticket,
+    source: ticketAt(decision.post, ticket).source,
+    kind: effectFromLabel(spawn) === "SpawnWorkTasks" ? "Work" : "Evaluation",
+  });
+  return source === undefined ? {} : { source };
 }
 
 /**
  * What a source nobody could read lands as: a transient evidence defers the
- * input so a later quantum retries it, a durable one answers a client's
- * operation with a code, and a durable one under a task's own completion
- * parks the ticket. A continuation is deferred whatever named the wall,
- * because a wall is a task's and the tasks of a spawn that did not happen
- * were never journalled for one to be reported against.
- */
-type UnreadableLanding =
-  | { readonly landing: "Deferred" }
-  | { readonly landing: "Refused"; readonly code: RefusalCode }
-  | { readonly landing: "Parked"; readonly event: DecisionEvent };
-
-/**
- * The only completion that spawns is a failing judgement taken to rework, and
- * which edge that judgement is taken on is this writer's own pick — so a
- * rework the fabric cannot be given a source for is taken on the other edge,
- * where the desk row carries what the remote said and the resume re-enters
- * work exactly where the rework would have. Deferring it left the input at
- * the head of its class, whose aging term carries it above every other class
- * while the project decides nothing else at all.
+ * input so a later quantum retries it, and a durable one answers the client's
+ * dispatch with a code. There is no third landing, because the dispatch is the
+ * only command that observes and there is nothing of it to journal.
  */
 function projectWriterUnreadableLanding(
-  item: DecisionInput,
-  unreadable: Extract<SpawnSourceObserved, { observed: "Unreadable" }>,
-  command: DecisionEvent,
-): UnreadableLanding {
-  if (transientGitEvidences.includes(unreadable.evidence))
-    return { landing: "Deferred" };
-  if (item.source.kind === "Operation" && item.source.completion === undefined)
-    return {
-      landing: "Refused",
-      code: executionSourceRefusalCode(unreadable.evidence),
-    };
-  return command.type === "TaskDone"
-    ? {
-        landing: "Parked",
-        event: taskDoneEvent(
-          asTicketId(command.value.ticket),
-          command.value.task,
-          command.value.report,
-          "EscalateEvaluationFailure",
-        ),
-      }
-    : { landing: "Deferred" };
+  evidence: GitEvidence,
+): { readonly landing: "Deferred" } | {
+  readonly landing: "Refused";
+  readonly code: RefusalCode;
+} {
+  return transientGitEvidences.includes(evidence)
+    ? { landing: "Deferred" }
+    : { landing: "Refused", code: executionSourceRefusalCode(evidence) };
 }
 
 /**
@@ -631,35 +667,56 @@ function projectWriterEscalationEvidence(
 }
 
 /**
- * The plan an accepted command earns once the source its spawns would run on
- * has been observed, which is the deferral or refusal that unreadability lands
- * as where there was no source to pin.
+ * The plan a dispatch earns: the source is read first, the event is built
+ * around what was read, and only then is the transition weighed — so a client
+ * whose source nobody could read is answered a code and this journal gains
+ * nothing. A ticket the graph is not ready to dispatch is still refused
+ * `NotEnabled`; the observation is a read of a remote and changes nothing
+ * there, so taking it first costs the refusal only its latency.
  */
+async function projectWriterDispatchPlan(
+  writer: ProjectTicketWriter,
+  memory: ProjectMemory,
+  item: DecisionInput,
+  ticket: TicketId,
+): Promise<ProjectPlan | { readonly deferred: GitEvidence }> {
+  const observed = await projectWriterDispatchSource(writer, memory, ticket);
+  if (observed.observed !== "Source") {
+    const landing = projectWriterUnreadableLanding(observed.evidence);
+    return landing.landing === "Deferred"
+      ? { deferred: observed.evidence }
+      : {
+          outcome: { outcome: "Refused", code: landing.code },
+          post: memory.graph,
+        };
+  }
+  const command = dispatchEvent(ticket, observed.source.reference);
+  return decisionEventEnabled(writer.config, memory.graph, command)
+    ? journaledPlan(
+        memory,
+        item,
+        command,
+        dispatchSpawnSources(ticket, observed.source),
+      )
+    : {
+        outcome: { outcome: "Refused", code: "NotEnabled" },
+        post: memory.graph,
+      };
+}
+
+/** The plan an accepted command earns, at the source its spawns already run on. */
 async function projectWriterPlan(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   item: DecisionInput,
   command: DecisionEvent,
-): Promise<ProjectPlan | { readonly deferred: GitEvidence }> {
-  const observed = await projectWriterExecutionSource(
-    writer,
+): Promise<ProjectPlan> {
+  return journaledPlan(
     memory,
     item,
     command,
+    await projectWriterSpawnSources(writer, memory, command),
   );
-  if (observed.observed === "Source")
-    return journaledPlan(writer, memory, item, command, observed.source);
-  const landing = projectWriterUnreadableLanding(item, observed, command);
-  if (landing.landing === "Deferred") return { deferred: observed.evidence };
-  if (landing.landing === "Parked")
-    return journaledPlan(writer, memory, item, landing.event, undefined, {
-      ticket: observed.ticket,
-      evidence: observed.evidence,
-    });
-  return {
-    outcome: { outcome: "Refused", code: landing.code },
-    post: memory.graph,
-  };
 }
 
 /**
@@ -675,7 +732,14 @@ export async function projectWriterDecide(
   const plan =
     "command" in preflight
       ? await projectWriterPlan(writer, memory, item, preflight.command)
-      : preflight;
+      : "dispatch" in preflight
+        ? await projectWriterDispatchPlan(
+            writer,
+            memory,
+            item,
+            preflight.dispatch,
+          )
+        : preflight;
   if ("deferred" in plan)
     return {
       memory,

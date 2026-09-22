@@ -15,10 +15,11 @@ const partition = {
   tenant: asTenantId("tenant"),
   project: asProjectId("project"),
 };
-const oldBase = "a".repeat(40);
 const latestBase = "b".repeat(40);
 const produced = "c".repeat(40);
-const alsoProduced = "d".repeat(40);
+/** The two references the fixture's rows are keyed by: a dispatch's, and a pass's. */
+const dispatched = 9;
+const accepted = 11;
 
 before(async () => {
   pool = postgresPool(postgresHarnessUrl(), {
@@ -30,40 +31,29 @@ before(async () => {
   ticketServiceUrl.searchParams.set("options", `-c role=${ticketServiceRole}`);
   ticketServicePool = postgresPool(ticketServiceUrl.toString());
   await pool.query(`CREATE TEMP TABLE execution_request (
-    tenant text, project text, request text, input_bundle text,
+    tenant text, project text, request text,
     ticket bigint, kind text, authorizing_seq bigint)`);
-  await pool.query(`CREATE TEMP TABLE input_bundle_reference (
-    tenant text, project text, bundle text, reference_kind text, reference_id text)`);
   await pool.query(`CREATE TEMP TABLE execution (
     tenant text, project text, ticket bigint, task bigint,
     source_request text, result_manifest text)`);
-  await pool.query(`CREATE TEMP TABLE execution_result_source (
-    tenant text, project text, manifest text, commit text)`);
+  await pool.query(`CREATE TEMP TABLE ticket_source (
+    tenant text, project text, ticket bigint, source bigint,
+    repository text, commit text, ref text)`);
   await pool.query(`INSERT INTO execution_request VALUES
-    ('tenant','project','old','old-bundle',1,'SpawnWork',1),
-    ('tenant','project','latest','latest-bundle',1,'SpawnWork',2),
-    ('tenant','project','artifacts','artifacts-bundle',2,'SpawnWork',3),
-    ('tenant','project','fanned','fanned-bundle',3,'SpawnWork',4)`);
-  await pool.query(`INSERT INTO input_bundle_reference VALUES
-    ('tenant','project','old-bundle','Repository','old-repository'),
-    ('tenant','project','old-bundle','TargetCommit','${oldBase}'),
-    ('tenant','project','latest-bundle','Repository','latest-repository'),
-    ('tenant','project','latest-bundle','TargetCommit','${latestBase}'),
-    ('tenant','project','artifacts-bundle','Repository','artifact-repository'),
-    ('tenant','project','artifacts-bundle','TargetCommit','${latestBase}'),
-    ('tenant','project','fanned-bundle','Repository','fanned-repository'),
-    ('tenant','project','fanned-bundle','TargetCommit','${latestBase}')`);
+    ('tenant','project','old',1,'SpawnWork',1),
+    ('tenant','project','latest',1,'SpawnWork',2),
+    ('tenant','project','artifacts',2,'SpawnWork',3),
+    ('tenant','project','fanned',3,'SpawnWork',4)`);
   await pool.query(`INSERT INTO execution VALUES
     ('tenant','project',1,1,'old','manifest-old'),
     ('tenant','project',1,2,'latest','manifest-latest'),
-    ('tenant','project',2,3,'artifacts','manifest-artifacts'),
+    ('tenant','project',2,3,'artifacts',NULL),
     ('tenant','project',3,4,'fanned','manifest-fanned-one'),
     ('tenant','project',3,5,'fanned','manifest-fanned-two')`);
-  await pool.query(`INSERT INTO execution_result_source VALUES
-    ('tenant','project','manifest-old','${oldBase}'),
-    ('tenant','project','manifest-latest','${produced}'),
-    ('tenant','project','manifest-fanned-one','${produced}'),
-    ('tenant','project','manifest-fanned-two','${alsoProduced}')`);
+  await pool.query(`INSERT INTO ticket_source VALUES
+    ('tenant','project',1,${dispatched},'latest-repository','${latestBase}','refs/heads/one'),
+    ('tenant','project',1,${accepted},'latest-repository','${produced}',NULL),
+    ('tenant','project',2,${dispatched},NULL,NULL,NULL)`);
 });
 
 after(async () => {
@@ -71,36 +61,54 @@ after(async () => {
   await pool.end();
 });
 
-test("evaluation reads the commit the latest work generation produced", async () => {
+test("evaluation reads the manifests the latest work generation terminalized", async () => {
   assert.deepEqual(
     await postgresExecutionSourceHistory(pool).workSource(partition, 1),
-    {
-      repository: "latest-repository",
-      base: latestBase,
-      declared: [produced],
-      manifests: ["manifest-latest"],
-    },
+    { manifests: ["manifest-latest"] },
   );
 });
 
-test("work that handed off artifacts declares no commit and keeps its base", async () => {
+test("work that terminalized no manifest gathers none", async () => {
   assert.deepEqual(
     await postgresExecutionSourceHistory(pool).workSource(partition, 2),
-    {
-      repository: "artifact-repository",
-      base: latestBase,
-      declared: [],
-      manifests: ["manifest-artifacts"],
-    },
+    { manifests: [] },
   );
 });
 
-test("a spawn whose executions declared two commits is gathered as two", async () => {
-  const work = await postgresExecutionSourceHistory(pool).workSource(
-    partition,
-    3,
+test("a spawn whose executions each reported a manifest is gathered as both", async () => {
+  assert.deepEqual(
+    await postgresExecutionSourceHistory(pool).workSource(partition, 3),
+    { manifests: ["manifest-fanned-one", "manifest-fanned-two"] },
   );
-  assert.deepEqual(work?.declared, [produced, alsoProduced]);
+});
+
+test("a source is read at the reference the ticket currently carries", async () => {
+  assert.deepEqual(
+    await postgresExecutionSourceHistory(pool).ticketSource(
+      partition,
+      1,
+      accepted,
+    ),
+    { repository: "latest-repository", commit: produced },
+  );
+});
+
+test("a ticket dispatched at no repository keeps a source row and names nothing", async () => {
+  assert.deepEqual(
+    await postgresExecutionSourceHistory(pool).ticketSource(
+      partition,
+      2,
+      dispatched,
+    ),
+    {},
+  );
+});
+
+test("a reference no row of the ticket carries is read as no source at all", async () => {
+  assert.equal(
+    await postgresExecutionSourceHistory(pool).ticketSource(partition, 1, 7),
+    undefined,
+  );
 });
 
 test("the ticket service can observe completed work source through its own role", async () => {

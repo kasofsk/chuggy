@@ -54,6 +54,7 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import { materialDigest } from "../../interpreter/ticketDefinition.ts";
 import { assertNever } from "../../domain/assertNever.ts";
 import type { TaskIdentity } from "../../domain/generated/modelTypes.ts";
 import { decisionEventSubject } from "../../actor/decisionEvent.ts";
@@ -484,12 +485,55 @@ async function decisionContinuation(
   }
 }
 
+/**
+ * The source a dispatch pinned, keyed by the reference its event carries, and
+ * the same relation an accepted work result writes into — so a later spawn
+ * reads the ticket's current source without knowing which decision put it
+ * there. A row already present is tolerated because a reference is a fold of
+ * the commit it names, so a second dispatch at the same commit writes the same
+ * row.
+ */
+async function decisionTicketSource(
+  client: pg.PoolClient,
+  partition: Partition,
+  outcome: JournaledOutcome,
+): Promise<void> {
+  const pinned = outcome.materialization.ticketSource;
+  if (pinned === undefined) return;
+  await client.query(
+    sql`INSERT INTO ticket_source (tenant,project,ticket,source,repository,commit,ref)
+       VALUES (${partition.tenant},${partition.project},${pinned.ticket},${pinned.source},
+               ${pinned.repository ?? null},${pinned.commit ?? null},${pinned.ref ?? null})
+       ON CONFLICT (tenant,project,ticket,source) DO NOTHING`,
+  );
+}
+
+/**
+ * What the release resolved, written beside the entry that journalled the
+ * references folded from it. One row per ticket: a release happens once, and a
+ * ticket runs at what that release froze.
+ */
+async function decisionTicketDefinition(
+  client: pg.PoolClient,
+  partition: Partition,
+  draftRelease: Decision["draftRelease"],
+): Promise<void> {
+  const material = draftRelease?.definition;
+  if (draftRelease === undefined || material === undefined) return;
+  await client.query(
+    sql`INSERT INTO ticket_definition (tenant,project,ticket,definition,digest)
+       VALUES (${partition.tenant},${partition.project},${draftRelease.ticket},
+               ${JSON.stringify(material)}::jsonb,${materialDigest(material)})`,
+  );
+}
+
 async function decisionMaterialize(
   client: pg.PoolClient,
   lease: Lease,
   outcome: JournaledOutcome,
   configuration: DecisionConfiguration,
 ): Promise<void> {
+  await decisionTicketSource(client, lease.partition, outcome);
   await decisionExecution(client, lease.partition, outcome, configuration);
   await decisionFinalization(client, lease.partition, outcome);
   await decisionActions(client, lease.partition, outcome);
@@ -612,7 +656,7 @@ async function decisionAdvanceTicketIdentity(
 ): Promise<void> {
   if (outcome.entry.event.type !== "CreateTicket") return;
   await client.query(
-    sql`UPDATE project SET ticket_next=greatest(ticket_next,${outcome.entry.event.value.ticket + 1})
+    sql`UPDATE project SET ticket_next=greatest(ticket_next,${outcome.entry.event.value.id + 1})
       WHERE tenant=${partition.tenant} AND project=${partition.project}`,
   );
 }
@@ -639,6 +683,7 @@ async function decisionApplyJournaled(
     configuration,
   );
   await decisionAdvanceTicketIdentity(client, lease.partition, outcome);
+  await decisionTicketDefinition(client, lease.partition, draftRelease);
   await decisionSettle(
     client,
     lease,

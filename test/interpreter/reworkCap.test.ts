@@ -31,7 +31,8 @@ import {
   checkedReworkCap,
   reworkDisposition,
 } from "../../src/interpreter/reworkCap.ts";
-import { plainAuthoring, plainDisposition } from "../actor/harness.ts";
+import { plainDefinitionOf, plainDisposition } from "../actor/harness.ts";
+import { aDispatchSource } from "../../src/domain/config.ts";
 import { id, judgedReport, producedReport } from "../domain/fixtures.ts";
 
 /** The one task a single-width ticket owes, which is what a completion names. */
@@ -41,7 +42,7 @@ function owed(graph: TicketGraph): TaskIdentity {
   const [obligation] = currentTaskObligations(currentInstance(ticket));
   if (obligation === undefined)
     throw new Error("rework cap case: the ticket owes no task");
-  return obligation;
+  return obligation.task;
 }
 
 /**
@@ -70,8 +71,8 @@ function dispositionsUnder(
     );
     return disposition;
   };
-  step(releaseTicketEvent(id(1), plainAuthoring));
-  step(dispatchEvent(id(1)));
+  step(releaseTicketEvent(plainDefinitionOf(1)));
+  step(dispatchEvent(id(1), aDispatchSource));
   for (let failure = 0; failure < finalizationFailures; failure++) {
     evaluated("EvaluatorPass");
     step(finalizationResultEvent(id(1), "FinalizationNeedsWork"));

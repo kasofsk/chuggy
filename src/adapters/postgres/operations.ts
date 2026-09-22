@@ -306,11 +306,6 @@ export async function postgresOperationsAccept(
   config: TicketServiceConfig,
   metrics: TicketServiceMetrics,
 ): Promise<Accepted> {
-  if (
-    submission.command.command === "Decide" &&
-    submission.command.event.type === "Dispatch"
-  )
-    return { accepted: "InvalidCommand" };
   return postgresTransaction(pool, async (client) => {
     const scope = operationsScope(
       submission.partition,

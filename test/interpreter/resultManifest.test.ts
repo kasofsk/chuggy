@@ -28,8 +28,8 @@ import {
   manifestDiagnosticsMax,
   manifestHandoffsMax,
   manifestsAgree,
-  resultDigestFold,
-  resultDigestFoldHexChars,
+  digestFold,
+  digestFoldHexChars,
   resultManifestSchemaVersion,
   resultManifestTextCharsMax,
   type CanonicalManifest,
@@ -719,15 +719,15 @@ test("a digest function answering with something else is refused rather than sto
 test("the model-grain fold is positive, bounded and reads the digest's leading characters", () => {
   const lowest = asArtifactDigest("0".repeat(64));
   const highest = asArtifactDigest("f".repeat(64));
-  assert.equal(resultDigestFold(lowest), 1);
+  assert.equal(digestFold(lowest), 1);
   assert.equal(
-    resultDigestFold(highest),
-    Number.parseInt("f".repeat(resultDigestFoldHexChars), 16) + 1,
+    digestFold(highest),
+    Number.parseInt("f".repeat(digestFoldHexChars), 16) + 1,
   );
-  assert.ok(Number.isSafeInteger(resultDigestFold(highest)));
-  assert.ok(resultDigestFold(highest) < Number.MAX_SAFE_INTEGER);
+  assert.ok(Number.isSafeInteger(digestFold(highest)));
+  assert.ok(digestFold(highest) < Number.MAX_SAFE_INTEGER);
   assert.equal(
-    resultDigestFold(asArtifactDigest(digestFor("out/a"))) >= 1,
+    digestFold(asArtifactDigest(digestFor("out/a"))) >= 1,
     true,
   );
 });

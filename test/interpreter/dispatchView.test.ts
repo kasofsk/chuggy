@@ -9,22 +9,21 @@ import {
   dispatchViewDigest,
 } from "../../src/interpreter/dispatchView.ts";
 import { asConfigurationVersion } from "../../src/interpreter/repositoryConfigurationIdentity.ts";
-import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
+import { plainDefinitionOf, refinementInstance } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 
 function pendingCandidates() {
   const one = journalStep(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(1)),
   );
   const two = journalStep(
     refinementInstance,
     one,
-    releaseTicketEvent(id(2), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(2)),
   );
   return deriveDispatchCandidates(
-    refinementInstance,
     two.view.post,
     new Map([
       [id(1), 1],

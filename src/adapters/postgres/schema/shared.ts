@@ -168,6 +168,13 @@ export const projectChangeSessionStateFunction =
   "session_state_appends_a_change";
 export const finalizerRole = "chuggy_finalizer";
 export const completionFunction = "submit_task_completion";
+/**
+ * What that function answers a passed work result whose commit no source row
+ * records. The ticket's next spawn would have nowhere to run, so the door
+ * settles nothing and the scheduler names it rather than reading it as a
+ * binding it built wrong.
+ */
+export const sourceUnrecordedResult = "SourceUnrecorded";
 export const finalizationFunction = "submit_finalization_result";
 export const approvalRequestFunction = "request_finalization_approval";
 export const activeWorkFunction = "project_active_work";

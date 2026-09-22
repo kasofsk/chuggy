@@ -23,6 +23,7 @@ import type {
   TicketGraph,
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { plainDefinitionOf } from "../actor/harness.ts";
 import {
   actionsFor,
   ticketResumable,
@@ -34,9 +35,9 @@ const id = asTicketId(7);
 function ticketIn(phase: TicketPhase, over: Partial<Ticket> = {}): Ticket {
   return {
     phase,
-    deps: new Set<number>(),
+    definition: plainDefinitionOf(7),
+    source: 0,
     artifact: "NoArtifact",
-    program: [],
     tasks: new Set(),
     evaluations: [],
     workCyclesStarted: 0,

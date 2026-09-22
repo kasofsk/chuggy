@@ -46,6 +46,7 @@ import type {
   ReleasedTicket,
   StageDefinition,
 } from "../../src/domain/generated/modelTypes.ts";
+import type { ReleaseAuthoring } from "../../src/interpreter/authoring.ts";
 import { bundleHolds, evaluateBundle } from "../conformance/evaluate.ts";
 import { id, judgedReport, producedReport } from "../domain/fixtures.ts";
 
@@ -71,6 +72,16 @@ export function plainDefinitionOf(
 
 /** What a release freezes when a suite does not care which values it froze. */
 export const plainDefinition: ReleasedTicket = plainDefinitionOf(1);
+
+/**
+ * What an author chose when a suite cares only that a draft has semantics. The
+ * definition above is what a release resolves from it; a draft holds neither
+ * the definition nor a way to resolve one.
+ */
+export const plainAuthoring: ReleaseAuthoring = {
+  deps: new Set<number>(),
+  prog: [{ key: 1, evaluators: [{ key: 1 }] }],
+};
 
 /** The disposition a completion rides when the suite is not steering a failure. */
 export const plainDisposition = "ReworkEvaluationFailure" as const;

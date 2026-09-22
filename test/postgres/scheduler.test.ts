@@ -44,7 +44,7 @@ import {
 import {
   allArtifactRoles,
   asArtifactDigest,
-  resultDigestFold,
+  digestFold,
   resultManifestSchemaVersion,
 } from "../../src/interpreter/resultManifest.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
@@ -924,7 +924,7 @@ test("the server folds a manifest digest exactly as the interpreter does", async
   )) as readonly { folded: string }[];
   assert.deepEqual(
     folded.map((row) => row.folded),
-    digests.map((digest) => String(resultDigestFold(asArtifactDigest(digest)))),
+    digests.map((digest) => String(digestFold(asArtifactDigest(digest)))),
   );
 });
 

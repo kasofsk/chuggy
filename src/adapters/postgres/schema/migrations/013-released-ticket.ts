@@ -2,6 +2,7 @@ import {
   apiRole,
   boundaryOwnerRole,
   schedulerRole,
+  sourceUnrecordedResult,
   ticketServiceRole,
   type Migration,
 } from "../shared.ts";
@@ -77,7 +78,8 @@ import {
  * the configuration says when the cycle starts. It is not a second copy of the
  * references: those are read back from the entry the release journalled, which
  * is why this migration gives the boundary owner the columns of `journal_entry`
- * that read names and nothing else.
+ * that read names and nothing else. The scheduler reads it because the
+ * requirement is copied into `execution`, which is the scheduler's own row.
  *
  * `ticket_source` IS ONE ROW PER SOURCE A TICKET HAS RUN AT, keyed by the
  * reference the source folds to, so the dispatch's observation and every
@@ -100,6 +102,14 @@ import {
  * without that arm and stays unvalidated, because re-rendering a roster is not
  * a new rule about the rows already under it.
  *
+ * AND A DISPATCH JOINS THE EVENTS NO PRINCIPAL MAY OFFER, which is 007's move
+ * for 007's reason: the dispatch carries the commit its work is observed at,
+ * and only the writer observes one, so a `Decide` carrying the event is a
+ * principal authoring a source. `ticket_command_is_valid` is re-rendered with
+ * it beside `FinalizationResult` — the acceptance function classifies a
+ * decision by the event it carries and would otherwise have admitted this one
+ * as ordinary.
+ *
  * `submit_task_completion` IS REWRITTEN WHOLE AGAIN, AND THE OBLIGATION IS
  * WHY. A produced report carries the whole of what the task was asked for, so
  * the door reads the released definition off the entry the release journalled —
@@ -108,7 +118,9 @@ import {
  * the obligation from rows rather than taking one from the caller. The context
  * a task ran in is its work cycle: the model's evaluation input is begun at the
  * cycle that produced the result it judges, so the two kinds of task answer the
- * same number and neither is authored.
+ * same number and neither is authored. What it returned is one reference like
+ * every other, the fold of its manifest's digest, because that is the shape the
+ * machine reads and a record in its place is a payload no replay admits.
  *
  * AND A PASSED WORK RESULT IS WHERE THE TICKET'S SOURCE MOVES. The commit the
  * manifest was produced at is what the next cycle, the next evaluation and the
@@ -165,9 +177,6 @@ const dispatchSourceField = "source";
 const referencePredicate = "command_reference";
 const taskDefinitionPredicate = "command_task_definition";
 
-/** What the door answers a passed work result whose source nothing recorded. */
-const sourceUnrecordedResult = "SourceUnrecorded";
-
 /**
  * The bound a released ticket's material takes, which is the bound this tree
  * already holds a configuration document to: the material is resolved from one.
@@ -218,7 +227,8 @@ export const migration013: Migration = {
     `ALTER TABLE ONLY public.ticket_source
     ADD CONSTRAINT ticket_source_belongs_to_project FOREIGN KEY (tenant, project) REFERENCES public.project(tenant, project)`,
     `GRANT SELECT,INSERT ON TABLE public.ticket_definition TO ${ticketServiceRole};
-GRANT SELECT ON TABLE public.ticket_definition TO ${boundaryOwnerRole};`,
+GRANT SELECT ON TABLE public.ticket_definition TO ${boundaryOwnerRole};
+GRANT SELECT ON TABLE public.ticket_definition TO ${schedulerRole};`,
     `GRANT SELECT,INSERT ON TABLE public.ticket_source TO ${ticketServiceRole};
 GRANT SELECT,INSERT ON TABLE public.ticket_source TO ${boundaryOwnerRole};
 GRANT SELECT ON TABLE public.ticket_source TO ${schedulerRole};`,
@@ -232,6 +242,37 @@ GRANT SELECT ON TABLE public.ticket_source TO ${schedulerRole};`,
     `GRANT SELECT(tenant) ON TABLE public.journal_entry TO ${boundaryOwnerRole}`,
     `GRANT SELECT(project) ON TABLE public.journal_entry TO ${boundaryOwnerRole}`,
     `GRANT SELECT(entry) ON TABLE public.journal_entry TO ${boundaryOwnerRole}`,
+    `CREATE OR REPLACE FUNCTION public.ticket_command_is_valid(command jsonb) RETURNS boolean
+    LANGUAGE plpgsql IMMUTABLE
+    AS $$
+       BEGIN
+         IF command IS NULL OR jsonb_typeof(command) <> 'object' THEN
+           RETURN false;
+         END IF;
+         IF command->>'command' = 'SubmitFinalizationResult' THEN
+           RETURN jsonb_typeof(command->'version') = 'number'
+             AND command->>'version' = '1'
+             AND jsonb_typeof(command->'request') = 'string'
+             AND length(command->>'request') BETWEEN 1 AND 256
+             AND (command->'attempt' IS NULL
+               OR (jsonb_typeof(command->'attempt') = 'string'
+                 AND length(command->>'attempt') BETWEEN 1 AND 256))
+             AND command_integer(command->'requestGeneration')
+             AND (command->>'requestGeneration')::numeric >= 1
+             AND jsonb_typeof(command->'recoveryEpoch') = 'string'
+             AND length(command->>'recoveryEpoch') BETWEEN 1 AND 256
+             AND command->>'outcome' IN ('FinalizationSucceeded', 'FinalizationFailed',
+               'FinalizationNeedsWork', 'FinalizationResultUnavailable')
+             AND (command->'kind' IS NOT NULL)
+               = (command->>'outcome' = 'FinalizationResultUnavailable')
+             AND (command->'kind' IS NULL
+               OR (jsonb_typeof(command->'kind') = 'string'
+                 AND length(command->>'kind') BETWEEN 1 AND 256));
+         END IF;
+         RETURN public_ticket_command_is_valid(command)
+           AND (command->>'command' <> 'Decide'
+             OR command->'event'->>'type' NOT IN ('FinalizationResult', 'Dispatch'));
+       END $$;`,
     `DROP INDEX public.journal_entry_release_ticket`,
     `CREATE INDEX journal_entry_release_ticket ON public.journal_entry USING btree (tenant, project, (
 CASE
@@ -321,10 +362,7 @@ END) NOT VALID`,
             OR obligation->'${obligationTaskField}' IS DISTINCT FROM task
             OR NOT ${taskDefinitionPredicate}(obligation->'${obligationDefinitionField}')
             OR NOT ${referencePredicate}(obligation->'${obligationContextField}')
-            OR jsonb_typeof(produced->'${resultReferenceField}') <> 'object'
-            OR NOT ${referencePredicate}(produced->'${resultReferenceField}'->'manifest')
-            OR NOT ${referencePredicate}(produced->'${resultReferenceField}'->'digest')
-            OR NOT ${referencePredicate}(produced->'${resultReferenceField}'->'schema') THEN
+            OR NOT ${referencePredicate}(produced->'${resultReferenceField}') THEN
            RETURN false;
          END IF;
          IF arm = 'WorkResultReport' THEN
@@ -404,7 +442,7 @@ END) NOT VALID`,
            USING ERRCODE = 'integrity_constraint_violation';
        END IF;
        SELECT e.ticket, e.task, e.status, e.completion_operation, q.effect_position,
-              r.manifest, r.digest, r.verdict, r.manifest_ordinal, r.schema_version,
+              r.manifest, r.digest, r.verdict,
               t.kind AS task_kind, t.cycle, t.stage, t.generation, t.evaluator
          INTO bound
          FROM execution e
@@ -492,10 +530,7 @@ END) NOT VALID`,
            '${obligationDefinitionField}', definition,
            '${obligationContextField}', bound.cycle);
          produced := jsonb_build_object('${obligationField}', obligation,
-           '${resultReferenceField}', jsonb_build_object(
-             'manifest', bound.manifest_ordinal,
-             'digest', result_digest_fold(bound.digest),
-             'schema', bound.schema_version));
+           '${resultReferenceField}', result_digest_fold(bound.digest));
          IF bound.task_kind = 'Evaluation' THEN
            report := jsonb_build_object('type', 'EvaluationResultReport', 'value',
              jsonb_build_object('result', produced, 'verdict',

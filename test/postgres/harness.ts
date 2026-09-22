@@ -28,16 +28,21 @@ import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
   type AuthoringStore,
+  type ReleaseAuthoring,
 } from "../../src/interpreter/authoring.ts";
 import {
   dispatchEvent,
   releaseTicketEvent,
-  type ReleaseAuthoring,
 } from "../../src/actor/decisionEvent.ts";
+import { aDispatchSource } from "../../src/domain/config.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 
-import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
+import {
+  plainAuthoring,
+  plainDefinitionOf,
+  refinementInstance,
+} from "../actor/harness.ts";
 import {
   asDraftBrief,
   type DraftBrief,
@@ -585,10 +590,13 @@ export function postgresHarnessJournal(): readonly Entry[] {
   const released = journalStep(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
+    releaseTicketEvent(plainDefinitionOf(1)),
   );
-  return journalStep(refinementInstance, released, dispatchEvent(id(1)))
-    .journal;
+  return journalStep(
+    refinementInstance,
+    released,
+    dispatchEvent(id(1), aDispatchSource),
+  ).journal;
 }
 
 /** The fixture history's entry at `index`, refusing an index the fixture is shorter than. */
@@ -708,7 +716,7 @@ export async function postgresHarnessAccept(
       resolvedEvent:
         submission.command.command === "Decide"
           ? submission.command.event
-          : releaseTicketEvent(id(1), plainAuthoring),
+          : releaseTicketEvent(plainDefinitionOf(1)),
     },
   };
 }
@@ -772,10 +780,16 @@ export function postgresHarnessWriter(
         Promise.resolve({
           observed: "Source",
           source: {
+            reference: aDispatchSource,
             repository: asRepositoryId("repository"),
-            target: { commit: asGitObjectId("a".repeat(40)) },
-            manifests: [],
+            commit: asGitObjectId("a".repeat(40)),
           },
+        }),
+      spawnSource: () =>
+        Promise.resolve({
+          repository: asRepositoryId("repository"),
+          target: { commit: asGitObjectId("a".repeat(40)) },
+          manifests: [],
         }),
     },
     ticketBriefs: { brief: () => Promise.resolve(undefined) },

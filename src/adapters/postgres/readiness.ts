@@ -68,12 +68,21 @@ import {
   type NativeActionResolution,
   type TicketCommand,
 } from "../../interpreter/ticketCommand.ts";
-import { parseDraftAuthoring } from "../../interpreter/authoring.ts";
-import { draftReleaseBriefOf } from "./ticketBrief.ts";
+import {
+  asCanonicalConfiguration,
+  draftReleaseReadiness,
+  parseDraftAuthoring,
+} from "../../interpreter/authoring.ts";
+import {
+  releasedTicketDefinition,
+  ticketDefinitionMaterial,
+} from "../../interpreter/ticketDefinition.ts";
+import { draftBriefOf } from "./ticketBrief.ts";
 import {
   allInputBundleReferenceKinds,
   asFinalizationAttemptId,
   asGitObjectId,
+  asRepositoryId,
   inputBundleReferencesMax,
 } from "../../interpreter/finalizer.ts";
 import {
@@ -148,6 +157,15 @@ function inboxBlockedReason(value: string): BlockedReason {
   return wall;
 }
 
+/**
+ * The release's own resolution, from the draft's authoring, the configuration
+ * revision the command pinned, the brief as it stands and the provenance the
+ * pair is weighed against — resolved HERE AND NOWHERE ELSE, so the material is
+ * computed once, carried into the transaction that journals the event, and
+ * stored beside it. A pair that contradicts itself resolves nothing and carries
+ * no event, because the deciding transaction re-reads the same revision behind
+ * the same fence and names the precise fault this refusal only stands in for.
+ */
 async function releaseDraftSource(
   pool: pg.Pool,
   partition: Partition,
@@ -158,20 +176,28 @@ async function releaseDraftSource(
     authoring: string;
     digest: string;
     canonical: string;
+    provenance_repository: string | null;
+    title: string | null;
     intent: string | null;
+    branch: string | null;
     finalization_mode: string | null;
     finalization_target: string | null;
     repository: string | null;
+    links: string[] | null;
     checks: string[] | null;
   }>(
-    sql`SELECT r.authoring,c.digest,c.canonical,
-           b.intent,b.finalization_mode,b.finalization_target,b.repository,
+    sql`SELECT r.authoring,c.digest,c.canonical,p.repository AS provenance_repository,
+           b.title,b.intent,b.branch,b.finalization_mode,b.finalization_target,b.repository,
+           (SELECT array_agg(l.url ORDER BY l.ordinal) FROM draft_brief_link l
+             WHERE l.tenant=r.tenant AND l.project=r.project AND l.ticket=r.ticket) AS links,
            (SELECT array_agg(k.command ORDER BY k.ordinal) FROM draft_brief_check k
              WHERE k.tenant=r.tenant AND k.project=r.project AND k.ticket=r.ticket) AS checks
       FROM draft_revision r
        JOIN configuration_revision c
          ON c.tenant=r.tenant AND c.project=r.project
         AND c.revision=r.configuration_revision
+       LEFT JOIN repository_configuration_provenance p
+         ON p.tenant=c.tenant AND p.project=c.project AND p.revision=c.revision
        LEFT JOIN draft_brief b
          ON b.tenant=r.tenant AND b.project=r.project AND b.ticket=r.ticket
       WHERE r.tenant=${partition.tenant} AND r.project=${partition.project}
@@ -184,15 +210,38 @@ async function releaseDraftSource(
     throw new Error(
       `release draft ${String(command.ticket)} has no retained revision`,
     );
-  const brief = draftReleaseBriefOf(found);
+  const brief = draftBriefOf(found);
+  const authoring = parseDraftAuthoring(found.authoring);
+  const readiness = draftReleaseReadiness(
+    asCanonicalConfiguration(found.canonical),
+    brief,
+    found.provenance_repository === null
+      ? undefined
+      : asRepositoryId(found.provenance_repository),
+  );
+  const material =
+    readiness.readiness === "Ready"
+      ? ticketDefinitionMaterial({
+          authoring,
+          configuration: readiness.configuration,
+          ...(brief === undefined ? {} : { brief }),
+        })
+      : undefined;
   return {
     kind: "Operation",
     operation: asOperationId(operation),
     command,
-    resolvedEvent: releaseTicketEvent(
-      asTicketId(command.ticket),
-      parseDraftAuthoring(found.authoring),
-    ),
+    ...(material === undefined
+      ? {}
+      : {
+          resolvedEvent: releaseTicketEvent(
+            releasedTicketDefinition(
+              asTicketId(command.ticket),
+              authoring,
+              material,
+            ),
+          ),
+        }),
     draftRelease: {
       ticket: command.ticket,
       authoringVersion: command.authoringVersion,
@@ -200,6 +249,7 @@ async function releaseDraftSource(
       configurationDigest: found.digest,
       configurationCanonical: found.canonical,
       ...(brief === undefined ? {} : { brief }),
+      ...(material === undefined ? {} : { definition: material }),
     },
   };
 }
@@ -442,11 +492,15 @@ async function operationSource(
     command.command === "ManualDispatch" ||
     command.command === "ProposeDispatch"
   ) {
+    /**
+     * A dispatch resolves to no event here. The source it carries is read at
+     * the remote by the writer, which is the only place that reads one, so the
+     * command reaches the writer naming its ticket and nothing else.
+     */
     return {
       kind: "Operation",
       operation: asOperationId(row.input_id),
       command,
-      resolvedEvent: { type: "Dispatch", value: command.ticket },
     };
   }
   return nativeActionSource(pool, partition, row.input_id, command);

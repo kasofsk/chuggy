@@ -50,9 +50,11 @@ import type {
   StoredTicketCommand,
 } from "./operationInbox.ts";
 import type { FinalizationEvidence } from "./finalizerPreparation.ts";
-import type { NativeActionAnswer } from "./projectDecision.ts";
+import type {
+  DraftReleaseFence,
+  NativeActionAnswer,
+} from "./projectDecision.ts";
 import type { Partition } from "./projectStore.ts";
-import type { ReleaseBrief } from "./ticketBrief.ts";
 import type { TicketId } from "../domain/ids.ts";
 
 /** One project's discovery record: the partition with work waiting, and the generation that wake-up carries. */
@@ -101,14 +103,7 @@ export interface DecisionInput {
          * decision has, and it is what an escalation records as its evidence.
          */
         readonly executionBlockedBy?: BlockedReason;
-        readonly draftRelease?: {
-          readonly ticket: number;
-          readonly authoringVersion: number;
-          readonly configurationRevision: string;
-          readonly configurationDigest: string;
-          readonly configurationCanonical: string;
-          readonly brief?: ReleaseBrief;
-        };
+        readonly draftRelease?: DraftReleaseFence;
         readonly nativeAction?: NativeActionAnswer;
         readonly finalizationRequest?: {
           readonly request: string;

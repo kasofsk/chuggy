@@ -1,15 +1,15 @@
 /** Versioned native authoring state, outside the journaled ticket core. */
 
 import {
-  releaseAuthoringOf,
-  releaseTicketEvent,
-  type ReleaseAuthoring,
-} from "../actor/decisionEvent.ts";
+  authoringSchema,
+  type ReleaseAuthoringBody,
+  type ReleaseAuthoringProgram,
+} from "../contract/authoring.ts";
 import {
   nativeHttpPageItemsDefault,
   nativeHttpPageItemsMax,
 } from "../contract/http.ts";
-import { asTicketId, type TicketId } from "../domain/ids.ts";
+import type { TicketId } from "../domain/ids.ts";
 import { defaultPlan, type Config } from "../domain/config.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
@@ -21,7 +21,6 @@ import type {
   RepositoryConfigurationPath,
 } from "./repositoryConfigurationIdentity.ts";
 import type { Worker } from "./workerCatalog.ts";
-import { encodeDecisionEventText, parseDecisionEventText } from "./wire.ts";
 import { executionRequirementConfigurationIsValid } from "./executionRequirement.ts";
 import { handoffApprovalRequired } from "./finalizerPreparation.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
@@ -211,18 +210,43 @@ function canonicalJson(value: unknown): string {
   return encoded;
 }
 
-/** Canonicalizes draft semantics through the generated model codec. */
-export function encodeDraftAuthoring(authoring: ReleaseAuthoring): string {
-  return encodeDecisionEventText(releaseTicketEvent(asTicketId(1), authoring));
+/**
+ * WHAT AN AUTHOR CHOSE, WHICH IS NOT WHAT A RELEASE FREEZES. The dependencies
+ * and the stages are the draft's; the definition the ticket runs at is
+ * resolved against the configuration revision the release names, so a draft
+ * cannot hold one and this is all a draft holds.
+ */
+export interface ReleaseAuthoring {
+  readonly deps: ReadonlySet<number>;
+  readonly prog: ReleaseAuthoringProgram;
 }
 
-/** Reads stored draft semantics through the same model codec used by the journal. */
+/**
+ * Canonicalizes draft semantics through the wire's own authoring schema, which
+ * is the only shape a draft has ever carried: it was stored as an encoded
+ * release event while a release carried nothing else, and a release now carries
+ * a definition no draft can resolve.
+ */
+export function encodeDraftAuthoring(authoring: ReleaseAuthoring): string {
+  return JSON.stringify(
+    authoringSchema.parse({
+      dependencies: [...authoring.deps].sort((left, right) => left - right),
+      program: authoring.prog.map((stage) => ({
+        key: stage.key,
+        evaluators: stage.evaluators.map((entry) => ({ key: entry.key })),
+      })),
+    } satisfies ReleaseAuthoringBody),
+  );
+}
+
+/** Reads stored draft semantics through the same schema that wrote them. */
 export function parseDraftAuthoring(value: string): ReleaseAuthoring {
-  const parsed = parseDecisionEventText(value);
-  if (parsed.parsed === "Refused")
-    throw new TypeError(`draft authoring is unreadable: ${parsed.why}`);
-  const event = parsed.value;
-  return releaseAuthoringOf(event);
+  const parsed = authoringSchema.safeParse(JSON.parse(value));
+  if (!parsed.success)
+    throw new TypeError(
+      `draft authoring is unreadable: ${parsed.error.issues[0]?.message ?? "malformed"}`,
+    );
+  return { deps: new Set(parsed.data.dependencies), prog: parsed.data.program };
 }
 
 export type DraftState = "Draft" | "Released" | "Deleted";
@@ -489,7 +513,10 @@ export function draftInitializationPolicy(
       deps: new Set(),
       prog:
         configuration?.evaluations === undefined
-          ? defaultPlan(config)
+          ? defaultPlan(config).map((stage) => ({
+              key: stage.key,
+              evaluators: stage.evaluators.map((entry) => ({ key: entry.key })),
+            }))
           : configuration.evaluations.map((_block, index) => ({
               key: index + 1,
               evaluators: [{ key: 1 }],

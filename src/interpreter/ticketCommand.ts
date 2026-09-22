@@ -9,6 +9,14 @@
  * both unspellable rather than merely refused. `CreateTicket` has been kept
  * out this way since I3, and this is the same device at a second seam.
  *
+ * `Dispatch` IS THE FOURTH SEAM, AND IT IS THE SOURCE THAT CLOSES IT. A
+ * dispatch carries the commit its work is observed at, and nobody outside the
+ * writer observes one: a principal offering the event would be authoring the
+ * source, and a source the world did not answer with is a ticket whose work
+ * runs at a commit nobody read. So a dispatch is asked for by
+ * `ManualDispatch` and `ProposeDispatch`, which name a ticket and no source,
+ * and the event itself is unspellable in a `Decide`.
+ *
  * `TaskDone` IS THE THIRD SEAM. Only the execution scheduler settles a logical
  * task, and settling one is not a decision a principal holding `Mutate` may
  * offer: a forged completion would conclude work that never ran, or mark an
@@ -30,7 +38,11 @@ export type OperationDecisionEvent = Exclude<
   DecisionEvent,
   {
     readonly type:
-      "WorkReduce" | "CreateTicket" | "FinalizationResult" | "TaskDone";
+      | "WorkReduce"
+      | "CreateTicket"
+      | "FinalizationResult"
+      | "TaskDone"
+      | "Dispatch";
   }
 >;
 
@@ -111,6 +123,7 @@ export function asOperationDecisionEvent(
     event.type === "WorkReduce" ||
     event.type === "CreateTicket" ||
     event.type === "FinalizationResult" ||
+    event.type === "Dispatch" ||
     isCompletionDecisionEvent(event)
   ) {
     throw new RangeError("event is not a public decision command");

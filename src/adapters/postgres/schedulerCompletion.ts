@@ -78,7 +78,7 @@ import {
   type ResultManifest,
 } from "../../interpreter/resultManifest.ts";
 import { executionRowLogical, type ExecutionRow } from "./schedulerRows.ts";
-import { schedulerRole } from "./schema.ts";
+import { schedulerRole, sourceUnrecordedResult } from "./schema.ts";
 
 /** The report a manifest a worker never produced is composed from. */
 const exhaustedManifestText = JSON.stringify({
@@ -108,6 +108,8 @@ export const schedulerEvidence = {
   NoReporter: "an exhausted execution has no attempt that could have reported",
   RefusedBinding:
     "the completion boundary refused a binding built from its own rows",
+  SourceUnrecorded:
+    "a passed work result names a commit no source row of its ticket records",
   ForeignManifest:
     "a manifest is bound to an execution other than the one reporting it",
 } as const;
@@ -378,13 +380,22 @@ async function schedulerTerminalized(
       operation: asOperationId(submitted.operation),
     };
   }
+  /**
+   * A pass the door would not settle because the ticket has a repository and
+   * nothing recorded the commit its manifest was produced at. The binding was
+   * sound — what is missing is the source the next cycle, the next evaluation
+   * and the finalizer would all run at — so the incident says that rather than
+   * blaming the rows the boundary built its report from.
+   */
   return {
     terminalized: "Conflicting",
     incident: await schedulerRecordIncident(
       client,
       execution.partition,
       "ImpossibleState",
-      schedulerEvidence.RefusedBinding,
+      submitted.result === sourceUnrecordedResult
+        ? schedulerEvidence.SourceUnrecorded
+        : schedulerEvidence.RefusedBinding,
       { execution: execution.execution },
     ),
   };

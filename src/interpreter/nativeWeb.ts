@@ -69,6 +69,7 @@ import type {
   DraftPageQuery,
   DraftResource,
   DraftRevised,
+  ReleaseAuthoring,
 } from "./authoring.ts";
 import {
   checkedConfigurationPageQuery,
@@ -77,7 +78,6 @@ import {
   releaseConfigurationReadiness,
 } from "./authoring.ts";
 import { firstCommandedCheckStage } from "./taskConfiguration.ts";
-import type { ReleaseAuthoring } from "../actor/decisionEvent.ts";
 import type { DraftBrief } from "./ticketBrief.ts";
 import {
   dispatchNeedsExecutionHeadroom,

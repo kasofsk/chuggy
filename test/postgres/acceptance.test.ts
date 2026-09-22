@@ -5,12 +5,9 @@ import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { idempotencyPayloadDigest } from "../../src/adapters/postgres/keying.ts";
 import {
   asOperationCommand,
-  asOperationDecisionEvent,
   asOperationId,
 } from "../../src/interpreter/operationInbox.ts";
 import { encodeDecisionEventText } from "../../src/interpreter/wire.ts";
-import { dispatchEvent } from "../../src/actor/decisionEvent.ts";
-import { id } from "../domain/fixtures.ts";
 import {
   postgresHarnessKeying,
   postgresHarnessEntry,
@@ -199,26 +196,16 @@ test("native-action resolution is accepted only against its open versioned reque
   );
 });
 
-test("a decision carrying a dispatch event is refused and allocates nothing", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "accept-dispatch-decision",
-  );
-  const submission = postgresHarnessSubmission(partition, "dispatch-decision");
-  const dispatchDecision = {
-    ...submission,
-    command: {
-      version: 1 as const,
-      command: "Decide" as const,
-      event: asOperationDecisionEvent(dispatchEvent(id(1))),
-    },
-  };
-  assert.deepEqual(await harness.inbox.accept(dispatchDecision), {
-    accepted: "InvalidCommand",
-  });
-  assert.equal(
-    await harness.inbox.operation(partition, dispatchDecision.operation),
-    undefined,
+test("durable command validation rejects a decision carrying a dispatch", async () => {
+  assert.deepEqual(
+    await harness.query("SELECT ticket_command_is_valid($1::jsonb) AS valid", [
+      JSON.stringify({
+        version: 1,
+        command: "Decide",
+        event: { type: "Dispatch", value: { ticket: 1, source: 9 } },
+      }),
+    ]),
+    [{ valid: false }],
   );
 });
 

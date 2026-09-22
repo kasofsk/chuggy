@@ -75,7 +75,10 @@
 import { sql } from "@ts-safeql/sql-tag";
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
-import { materializeExecutionRequirement } from "../../interpreter/executionRequirement.ts";
+import {
+  ticketTaskKey,
+  ticketTaskRequirement,
+} from "../../interpreter/ticketDefinition.ts";
 
 import {
   asAttemptId,
@@ -348,7 +351,13 @@ async function schedulerRegistrationConflict(
   return found.rows[0]?.execution;
 }
 
-/** Creates the executions this request authorizes that do not exist yet, and only those. */
+/**
+ * Creates the executions this request authorizes that do not exist yet, and
+ * only those. THE REQUIREMENT IS COPIED, NOT RESOLVED: what a task runs under
+ * was resolved when the ticket was released and stored beside it, so every
+ * cycle of a ticket runs what that release froze rather than what this image's
+ * platform defaults would say today.
+ */
 async function schedulerCreateExecutions(
   client: pg.PoolClient,
   claim: RequestClaim,
@@ -358,12 +367,13 @@ async function schedulerCreateExecutions(
     task: string;
     kind: string;
     stage: string | null;
-    canonical: string;
+    definition: string;
     configuration_revision: string;
     configuration_digest: string;
     capacity_account: string;
     cluster: string;
-  }>(sql`SELECT t.task::text AS task,t.kind,t.stage::text AS stage,c.canonical,q.configuration_revision,
+  }>(sql`SELECT t.task::text AS task,t.kind,t.stage::text AS stage,
+       d.definition::text AS definition,q.configuration_revision,
        q.configuration_digest,q.capacity_account,a.cluster
      FROM execution_request q
      JOIN execution_request_task t
@@ -371,6 +381,8 @@ async function schedulerCreateExecutions(
      JOIN configuration_revision c
        ON c.tenant=q.tenant AND c.project=q.project
       AND c.revision=q.configuration_revision AND c.digest=q.configuration_digest
+     JOIN ticket_definition d
+       ON d.tenant=q.tenant AND d.project=q.project AND d.ticket=q.ticket
      JOIN capacity_account a ON a.account=q.capacity_account
      WHERE q.tenant=${claim.partition.tenant} AND q.project=${claim.partition.project}
        AND q.request=${claim.request} ORDER BY t.task
@@ -380,19 +392,19 @@ async function schedulerCreateExecutions(
   const executionStem = `execution-${randomUUID()}`;
   for (const input of inputs.rows) {
     const task = projectRowCounter(input.task, "execution task");
-    const materialized = materializeExecutionRequirement(
-      JSON.parse(input.canonical) as unknown,
-      executionRowTaskKind(input.kind),
-      input.stage === null
-        ? undefined
-        : projectRowCounter(input.stage, "task stage"),
+    const materialized = ticketTaskRequirement(
+      JSON.parse(input.definition) as unknown,
+      ticketTaskKey(
+        executionRowTaskKind(input.kind),
+        input.stage === null
+          ? undefined
+          : projectRowCounter(input.stage, "task stage"),
+      ),
     );
     const execution = `${executionStem}-${input.task}`;
     const requirementIdentity = execution;
     const requirementValue = JSON.stringify(materialized.value);
-    const requirementDigest = createHash("sha256")
-      .update(requirementValue)
-      .digest("hex");
+    const requirementDigest = materialized.digest;
     const inserted = await client.query(sql`INSERT INTO execution
        (tenant,project,execution,ticket,task,source_request,account,cluster,
         configuration_revision,configuration_digest,requirement_identity,requirement_value,
