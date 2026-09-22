@@ -11,7 +11,7 @@
 /// WHY IT EXISTS. Some declared step labels sit at the end of a long,
 /// specific chain: a ticket must dispatch, work, evaluate, and reach the
 /// finalizer. Under the whole action roster the sampler spends its budget on
-/// arrivals, revokes and execution blocks that end the chain, and the labels
+/// arrivals, revokes and evaluator walls that end the chain, and the labels
 /// are not reached at a sample budget any gate can afford. They are
 /// reachable — the deterministic witness runs in
 /// tests/chuggy_witness_test.qnt walk straight to them — so the missing
@@ -29,8 +29,6 @@
 /// module emits; the instance in mc_chuggy.qnt is what the invariants are
 /// checked over, and it keeps the full roster.
 ///   revoke      — ends a ticket's life, and the chain needs it alive.
-///   executionBlocked   — parks the ticket before it ever reaches the
-///               finalizer.
 /// Everything else stays, INCLUDING release and resumeTicket: dropping release would
 /// stop the fleet ever filling, and resumeTicket is how a parked ticket rejoins the
 /// chain, so both are part of the shape being aimed at rather than noise.
@@ -57,7 +55,6 @@ module mc_chuggy_directed {
     dispatch,
     taskDone,
     workReduce,
-    evalReduce,
     finalizationResult,
     finalizationResult,
     finalizationResult,

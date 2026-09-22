@@ -2,7 +2,7 @@
 ///
 /// Bounds are the smallest that still reach the shapes worth reaching:
 /// MAX_STAGES = 2 so a program can advance rather than only pass, N_TASKS = 2
-/// so a fan-out is a set rather than a singleton, N_TICKETS = 3 so a
+/// so a stage lists more than one evaluator, N_TICKETS = 3 so a
 /// dependency chain can be revoked from underneath. Everything else is as
 /// small as it goes — the state space is the budget.
 ///
