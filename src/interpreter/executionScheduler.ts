@@ -151,14 +151,21 @@ export const allExecutionStatuses: readonly ExecutionStatus[] = [
   "Cancelled",
 ];
 
-/** What one logical task settled as, which is the only thing `TicketGraph` is told. */
-export type ExecutionOutcome = "Passed" | "Failed" | "Blocked";
+/**
+ * What one logical task settled as. `ProcessFailed` is the death of the
+ * process behind a failed manifest this scheduler authored itself, which is
+ * not the verdict `Failed` reports: what the ticket is told of either is the
+ * report the door builds, and the row is where a reader tells them apart.
+ */
+export type ExecutionOutcome =
+  "Passed" | "Failed" | "Blocked" | "ProcessFailed";
 
 /** Every terminal outcome, so a suite and a database CHECK iterate rather than restate. */
 export const allExecutionOutcomes: readonly ExecutionOutcome[] = [
   "Passed",
   "Failed",
   "Blocked",
+  "ProcessFailed",
 ];
 
 /** The kind of logical task an execution runs, mirroring the spawn request's child rows. */

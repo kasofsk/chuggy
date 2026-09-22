@@ -134,7 +134,12 @@ export const executionStatuses = [
 ] as const;
 export type ExecutionStatus = (typeof executionStatuses)[number];
 
-export const executionOutcomes = ["Passed", "Failed", "Blocked"] as const;
+export const executionOutcomes = [
+  "Passed",
+  "Failed",
+  "Blocked",
+  "ProcessFailed",
+] as const;
 export type ExecutionOutcome = (typeof executionOutcomes)[number];
 
 export const executionTaskKinds = ["Work", "Evaluation"] as const;

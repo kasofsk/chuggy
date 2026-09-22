@@ -644,7 +644,7 @@ test("a lost attempt spends the retry budget and a withdrawn one does not", asyn
   );
 });
 
-test("an exhausted retry budget settles one failed completion with an empty manifest", async () => {
+test("an exhausted retry budget settles a dead process under an empty manifest", async () => {
   const project = await schedulerProject(rig, "exhausted", { tasks: 1 });
   await registerAll(project, "exhausted");
   const attempt = await placedAttempt(project, "exhausted");
@@ -666,7 +666,7 @@ test("an exhausted retry budget settles one failed completion with an empty mani
     attempt.execution,
   );
   assert.ok(settled.terminalized === "Terminalized");
-  assert.equal(settled.outcome, "Failed");
+  assert.equal(settled.outcome, "ProcessFailed");
   assert.deepEqual(
     await rig.harness.query(
       `SELECT r.verdict, count(a.ordinal)::text AS artifacts
@@ -684,7 +684,9 @@ test("an exhausted retry budget settles one failed completion with an empty mani
  * The empty manifest a spent budget seals carries a failed verdict, which for
  * an evaluator would read as the judgement it never reached. The submission
  * names the death instead, so the report is the process failure and the stage
- * parks to be re-asked rather than concluding against the ticket.
+ * parks to be re-asked rather than concluding against the ticket — and the
+ * row records that name too, which is where a reader of the execution alone
+ * tells the two apart.
  */
 test("an evaluator whose budget ran out reports a dead process, not a verdict", async () => {
   const project = await schedulerProject(rig, "exhausted-eval", { tasks: 1 });
@@ -715,7 +717,7 @@ test("an evaluator whose budget ran out reports a dead process, not a verdict", 
     attempt.execution,
   );
   assert.ok(settled.terminalized === "Terminalized");
-  assert.equal(settled.outcome, "Failed");
+  assert.equal(settled.outcome, "ProcessFailed");
   assert.deepEqual(
     await rig.harness.query(
       `SELECT e.outcome, (o.command::jsonb#>'{event,value,report}') AS report
@@ -727,7 +729,7 @@ test("an evaluator whose budget ran out reports a dead process, not a verdict", 
     ),
     [
       {
-        outcome: "Failed",
+        outcome: "ProcessFailed",
         report: {
           type: "TerminalFailureReport",
           value: { evidence: project.tasks + 1, kind: "ProcessFailure" },

@@ -220,18 +220,11 @@ export async function schedulerFulfilRequest(
   );
 }
 
-/**
- * What the boundary is told a task settled as, which is the execution's own
- * outcome on every path but one. An exhausted budget has no worker behind its
- * failed manifest, and this is the value that says so.
- */
-type CompletionOutcome = ExecutionOutcome | "ProcessFailed";
-
 /** Offers one completion to the boundary, which validates the binding and builds the envelope. */
 async function schedulerSubmit(
   client: pg.PoolClient,
   execution: LogicalExecution,
-  outcome: CompletionOutcome,
+  outcome: ExecutionOutcome,
   manifest: { readonly id: string; readonly digest: string } | undefined,
   reason: BlockedReason | undefined,
 ): Promise<CompletionRow> {
@@ -476,22 +469,23 @@ async function schedulerReporterReported(
 
 /**
  * Retains the manifest and submits the completion it settles, in the
- * transaction already open. `reported` is what the boundary is told, which is
- * the manifest's own outcome unless the caller authored that manifest itself.
+ * transaction already open. `reported` is what the boundary is told and what
+ * the execution then records, which is the manifest's own outcome unless the
+ * caller authored that manifest itself.
  */
 async function schedulerSettle(
   client: pg.PoolClient,
   execution: LogicalExecution,
   manifest: ResultManifest,
-  reported?: CompletionOutcome,
+  reported?: ExecutionOutcome,
 ): Promise<Terminalized> {
   const ordinal = await schedulerManifestOrdinal(client, execution.partition);
   await schedulerWriteManifest(client, manifest, ordinal);
-  const outcome = schedulerOutcomeOf(manifest);
+  const outcome = reported ?? schedulerOutcomeOf(manifest);
   const submitted = await schedulerSubmit(
     client,
     execution,
-    reported ?? outcome,
+    outcome,
     { id: manifest.manifest, digest: manifest.digest },
     undefined,
   );

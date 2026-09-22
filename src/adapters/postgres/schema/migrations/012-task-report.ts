@@ -85,10 +85,18 @@ import type { Migration } from "../shared.ts";
  * scheduler authored itself, and reading that manifest's `Fail` as an
  * evaluator's judgement would report a verdict nobody reached — the package
  * counts a dead evaluator as blocked, so the stage would fail where it should
- * park and be re-asked. The scheduler therefore names the death, this door
- * reports a process failure for either task kind, and the execution row keeps
- * the `Failed` it has always recorded: what changed is which of two things the
- * same manifest is evidence of, not what the task did.
+ * park and be re-asked. The scheduler therefore names the death and this door
+ * reports a process failure for either task kind.
+ *
+ * AND THE ROW RECORDS THE NAME IT WAS TOLD, WHICH IS THE ONE RELATION THIS
+ * MIGRATION TOUCHES. Folding the name back to `Failed` on the way to the
+ * execution left every reader of that row — the console among them — unable
+ * to tell a dead evaluator from one that judged, because the journal carries
+ * the report and the row carried the fold. So `execution_outcome_is_known` is
+ * re-rendered over the fourth value and the outcome is stored verbatim;
+ * `execution_outcome_is_whole` needs nothing, a process failure carrying the
+ * manifest the scheduler authored and no blocked reason, exactly as `Failed`
+ * did. Every other statement here replaces a function.
  *
  * ITS SIGNATURE DOES NOT MOVE, so this is a replacement and not a drop. The
  * report is derived rather than passed: the scheduler's door still takes the
@@ -131,6 +139,9 @@ export const migration012: Migration = {
              USING ERRCODE = 'integrity_constraint_violation';
          END IF;
        END $$`,
+    `ALTER TABLE public.execution
+       DROP CONSTRAINT execution_outcome_is_known,
+       ADD CONSTRAINT execution_outcome_is_known CHECK (((outcome IS NULL) OR (outcome = ANY (ARRAY['Passed'::text, 'Failed'::text, 'Blocked'::text, '${processFailedOutcome}'::text]))))`,
     `CREATE OR REPLACE FUNCTION public.decision_event_is_valid(event jsonb) RETURNS boolean
     LANGUAGE plpgsql IMMUTABLE
     AS $$
@@ -361,8 +372,7 @@ export const migration012: Migration = {
          SET ready = true, generation = project_readiness.generation + 1;
        UPDATE execution
           SET status = 'Terminal',
-              outcome = CASE WHEN in_outcome = '${processFailedOutcome}'
-                THEN 'Failed' ELSE in_outcome END,
+              outcome = in_outcome,
               blocked_reason = in_reason,
               result_manifest = in_manifest, completion_operation = in_operation,
               terminal_at = now()
