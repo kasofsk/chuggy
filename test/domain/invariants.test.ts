@@ -65,6 +65,7 @@ import {
   type StepView,
 } from "../../src/domain/invariants.ts";
 import { currentInstance, hasOpenHumanTask } from "../../src/domain/ticket.ts";
+import { resumeBlocked } from "../../src/domain/evaluation.ts";
 import { defaultProgram } from "../../src/domain/config.ts";
 import { modelInstance } from "./configs.ts";
 import {
@@ -293,6 +294,22 @@ test("tasksWellFormed rejects a live task in a phase that runs none", () => {
   );
 });
 
+/** The same history on a ticket past Evaluation, where no open instance is expected. */
+const settledJudging = (
+  evaluations: readonly ReturnType<typeof judgedInstance>[],
+  overrides: Partial<Ticket> = {},
+): TicketGraph =>
+  graphOf([
+    ticketOn(config, {
+      phase: "Finalization",
+      evaluations,
+      workCyclesStarted: evaluations.length,
+      spawned: evaluations.length * (1 + roster),
+      artifact: { type: "ProducedArtifact", value: 1 },
+      ...overrides,
+    }),
+  ]);
+
 test("evaluationsWellFormed rejects a judgement that is not this ticket's", () => {
   assert.ok(
     !evaluationsWellFormed(
@@ -322,7 +339,7 @@ test("evaluationsWellFormed rejects a judgement that is not this ticket's", () =
     !evaluationsWellFormed(
       config,
       stateView(
-        judging([runningInstance(1, 2, 1, program, new Set())], {
+        settledJudging([judgedInstance(1, 2, 1, program)], {
           workCyclesStarted: 1,
         }),
       ),
@@ -333,13 +350,24 @@ test("evaluationsWellFormed rejects a judgement that is not this ticket's", () =
     !evaluationsWellFormed(
       config,
       stateView(
-        judging([
+        settledJudging([
           judgedInstance(1, 2, 1, program),
-          runningInstance(1, 1, 1, program, new Set()),
+          judgedInstance(1, 1, 2, program),
         ]),
       ),
     ),
     "the instances stand in the order their cycles ran",
+  );
+  assert.ok(
+    evaluationsWellFormed(
+      config,
+      stateView(
+        settledJudging([
+          judgedInstance(1, 1, 1, program),
+          judgedInstance(1, 2, 2, program),
+        ]),
+      ),
+    ),
   );
   assert.ok(evaluationsWellFormed(config, healthy));
 });
@@ -483,6 +511,20 @@ test("idsAccounted rejects a mint counter the ticket's own history does not impl
   assert.ok(
     idsAccounted(config, stateView(resumed)),
     "a generation's slots are claimed whether or not the resume used them",
+  );
+  const reasked = graphOf([
+    ticketOn(config, {
+      phase: "Evaluation",
+      evaluations: [
+        resumeBlocked(blockedInstance(1, 1, 1, program, new Set([1]))),
+      ],
+      workCyclesStarted: 1,
+      spawned: 1 + 2 * roster,
+    }),
+  ]);
+  assert.ok(
+    idsAccounted(config, stateView(reasked)),
+    "a second generation claims the roster a second time",
   );
   assert.ok(idsAccounted(config, healthy));
 });

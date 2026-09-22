@@ -161,15 +161,12 @@ export const evaluationsMonotone: Invariant = (_config, view) =>
     if (!view.post.tickets.has(id)) return false;
     const before = ticketAt(view.pre, id).evaluations;
     const after = ticketAt(view.post, id).evaluations;
-    return (
-      after.length >= before.length &&
-      before.every((instance, index) => {
-        const kept = after[index];
-        if (kept === undefined) return false;
-        if (instanceEquals(instance, kept)) return true;
-        return index + 1 === before.length && after.length === before.length;
-      })
-    );
+    return before.every((instance, index) => {
+      const kept = after[index];
+      if (kept === undefined) return false;
+      if (instanceEquals(instance, kept)) return true;
+      return index + 1 === before.length && after.length === before.length;
+    });
   });
 
 /**
