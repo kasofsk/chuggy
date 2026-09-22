@@ -80,7 +80,10 @@ export function spawnWork(ticket: Ticket): Ticket {
   return {
     ...ticket,
     tasks: new Set<Task>([
-      { identity: workTaskOf(ticket.definition.id, cycle), state: "Outstanding" },
+      {
+        identity: workTaskOf(ticket.definition.id, cycle),
+        state: "Outstanding",
+      },
     ]),
     workCyclesStarted: cycle,
     spawned: ticket.spawned + 1,
@@ -194,13 +197,10 @@ export function spawnEvalRun(ticket: Ticket): Ticket {
 
 /**
  * Work passed, so judgement begins: the instance is opened over the ACCEPTED
- * WORK RESULT — the reference the passing report carried, which is the one
- * the cycle's own task derives — with the released plan and the source that
- * result was accepted at, and its first stage is asked.
- *
- * The artifact the dependents read is that same reference, and so is every
- * evaluator obligation's `contextRef`: a judgement is of a result, so the
- * number the work produced is the number the judgement is asked under. The
+ * WORK RESULT — the reference the passing report carried, which the cycle's
+ * own task derives — with the released plan and the source it was accepted
+ * at. That same reference is the artifact the dependents read and every
+ * evaluator obligation's `contextRef`, a judgement being of a result; the
  * mint counter is an identity ledger and never stands in for it.
  */
 export function beginEvaluation(ticket: Ticket): Ticket {
@@ -349,12 +349,11 @@ export function reportValid(report: TaskTerminalReport): boolean {
 }
 
 /**
- * Which reports a task can carry: a work task produces a work result, an
- * evaluator produces a verdict, and either can fail to produce anything — and
- * a produced one is admitted only at the obligation it was spawned under. A
- * failure matches by identity alone: it carries no result, so there is no
- * obligation on it to compare. Stated here because it is the completion's
- * enablement rather than something a decider defends against mid-flight.
+ * Which reports a task can carry: a work task produces a work result and an
+ * evaluator a verdict, each admitted only at the obligation it was spawned
+ * under, while a failure matches by identity alone, carrying no result to
+ * hold against one. Stated here because it is the completion's enablement
+ * rather than something a decider defends against mid-flight.
  */
 export function reportMatchesTask(
   ticket: Ticket,

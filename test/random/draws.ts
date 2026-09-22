@@ -40,6 +40,7 @@ import {
   revocablesIn,
 } from "../../src/domain/enablement.ts";
 import { reportChoices } from "../../src/domain/deciders.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import {
   evaluationFailureDispositionTags,
   type TicketGraph,
@@ -194,7 +195,7 @@ const taskDone: WalkAction = {
     return {
       ticket,
       task,
-      report: pickFrom(random, reportChoices(graph.tickets.get(ticket)!, task)),
+      report: pickFrom(random, reportChoices(ticketAt(graph, ticket), task)),
       onFailure: pickFrom(random, evaluationFailureDispositionTags),
     };
   },

@@ -583,15 +583,14 @@ test("definitionsWellFormed rejects a definition no release could have carried",
       `${JSON.stringify(stages)} is not an authorable plan`,
     );
   }
+  const first = fleet[0];
+  assert.ok(first);
   assert.ok(
     !definitionsWellFormed(
       config,
       stateView(
         graphOf([
-          {
-            ...fleet[0]!,
-            definition: { ...fleet[0]!.definition, content: 0 },
-          },
+          { ...first, definition: { ...first.definition, content: 0 } },
         ]),
       ),
     ),

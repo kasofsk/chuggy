@@ -87,10 +87,7 @@ export function revokeEvent(ticket: TicketId): DecisionEvent {
  * the ticket's repository is at, so the observation is the actor's pick and a
  * replay re-decides nothing.
  */
-export function dispatchEvent(
-  ticket: TicketId,
-  source: number,
-): DecisionEvent {
+export function dispatchEvent(ticket: TicketId, source: number): DecisionEvent {
   return { type: "Dispatch", value: { ticket, source } };
 }
 

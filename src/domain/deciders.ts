@@ -192,10 +192,10 @@ export function decideRevoke(graph: TicketGraph, id: TicketId): Decision {
 }
 
 /**
- * Ready to Work. Which Ready ticket runs next is an agentic pick rather than
- * a queue position, so it arrives as an argument and the recorded step IS the
- * ticket writer's decision. The source is observed here and on no other edge:
- * the dispatch is the one that looks at what the ticket's repository is at.
+ * Ready to Work, at a source the caller names: which Ready ticket runs next
+ * and what its work is done against are both agentic picks rather than queue
+ * positions, so both arrive as arguments and the recorded step IS the ticket
+ * writer's decision. The dispatch is the only edge that pins a source.
  */
 export function decideDispatch(
   graph: TicketGraph,
