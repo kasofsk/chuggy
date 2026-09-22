@@ -38,7 +38,7 @@ function ticketIn(phase: TicketPhase, over: Partial<Ticket> = {}): Ticket {
     artifact: "NoArtifact",
     program: [],
     tasks: new Set(),
-    record: [],
+    evaluations: [],
     workCyclesStarted: 0,
     spawned: 0,
     escalation: "NoEscalation",
