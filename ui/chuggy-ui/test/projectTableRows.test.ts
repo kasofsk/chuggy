@@ -272,6 +272,12 @@ test("the execution cell is the status, refined only where an outcome exists", (
     projectTableExecutionPhrase({ ...running, executionOutcome: "Failed" }),
   ).toBe("Running \u00b7 Failed");
   expect(
+    projectTableExecutionPhrase({
+      ...running,
+      executionOutcome: "ProcessFailed",
+    }),
+  ).toBe("Running \u00b7 Stopped");
+  expect(
     projectTableExecutionPhrase({ ...running, executionStatus: undefined }),
   ).toBeUndefined();
 });

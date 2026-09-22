@@ -9,15 +9,15 @@
  * both unspellable rather than merely refused. `CreateTicket` has been kept
  * out this way since I3, and this is the same device at a second seam.
  *
- * `TaskDone` AND `ExecutionBlocked` ARE THE THIRD SEAM. Only the execution
- * scheduler settles a logical task, and settling one is not a decision a
- * principal holding `Mutate` may offer: a forged pass would conclude work that
- * never ran, and a forged block would park a ticket no infrastructure refused.
- * So both leave `OperationDecisionEvent` for the same reason the finalizer's
- * event did, and `SchedulerCompletion` below is the envelope the scheduler's
- * own boundary writes. The two arrive at a writer through
- * `parseStoredTicketCommand` and never through the ingress parser, which is
- * what makes the exclusion a shape rather than a check that could be skipped.
+ * `TaskDone` IS THE THIRD SEAM. Only the execution scheduler settles a logical
+ * task, and settling one is not a decision a principal holding `Mutate` may
+ * offer: a forged completion would conclude work that never ran, or mark an
+ * evaluator stopped that no infrastructure refused. So it leaves
+ * `OperationDecisionEvent` for the same reason the finalizer's event did, and
+ * `SchedulerCompletion` below is the envelope the scheduler's own boundary
+ * writes. It arrives at a writer through `parseStoredTicketCommand` and never
+ * through the ingress parser, which is what makes the exclusion a shape rather
+ * than a check that could be skipped.
  */
 
 import type { DecisionEvent } from "../actor/decisionEvent.ts";
@@ -30,25 +30,19 @@ export type OperationDecisionEvent = Exclude<
   DecisionEvent,
   {
     readonly type:
-      | "WorkReduce"
-      | "EvalReduce"
-      | "CreateTicket"
-      | "FinalizationResult"
-      | "TaskDone"
-      | "ExecutionBlocked";
+      "WorkReduce" | "CreateTicket" | "FinalizationResult" | "TaskDone";
   }
 >;
 
-/** The two events only the execution scheduler's own boundary submits. */
+/** The one event only the execution scheduler's own boundary submits. */
 export type CompletionDecisionEvent = Extract<
   DecisionEvent,
-  { readonly type: "TaskDone" | "ExecutionBlocked" }
+  { readonly type: "TaskDone" }
 >;
 
 /** Every event kind a `Decide` envelope may carry that no principal may offer. */
 export const completionEventTypes = [
   "TaskDone",
-  "ExecutionBlocked",
 ] as const satisfies readonly CompletionDecisionEvent["type"][];
 
 /** Whether one decision event is a completion the scheduler alone may submit. */
@@ -115,7 +109,6 @@ export function asOperationDecisionEvent(
 ): OperationDecisionEvent {
   if (
     event.type === "WorkReduce" ||
-    event.type === "EvalReduce" ||
     event.type === "CreateTicket" ||
     event.type === "FinalizationResult" ||
     isCompletionDecisionEvent(event)
@@ -186,18 +179,38 @@ export interface FinalizationSubmission {
 }
 
 /**
- * The execution scheduler's own submission. `submit_task_completion` builds the
- * event from the durable execution, attempt and result rows it has already
- * locked and validated, so what is stored is the settled event itself rather
- * than a binding a writer would resolve a second time — which is the one way
- * this envelope differs from the finalizer's above.
+ * What one settled logical task came back with, as `submit_task_completion`
+ * built it from the durable execution, attempt and result rows it had already
+ * locked — the settled fact itself rather than a binding a writer would
+ * resolve a second time, which is the one way this envelope differs from the
+ * finalizer's above. THE DISPOSITION IS NOT HERE, because which edge a failed
+ * stage is taken on is this deployment's rework cap over the replayed ticket
+ * and the boundary holds neither of those, so it says what the task did and
+ * leaves the pick to the actor that makes it.
  */
+export type SchedulerCompletionEvent = {
+  readonly type: "TaskDone";
+  readonly value: Omit<CompletionDecisionEvent["value"], "onFailure">;
+};
+
+/** The execution scheduler's own submission, which only a writer reading its inbox reads. */
 export interface SchedulerCompletion {
   readonly version: 1;
   readonly command: "Decide";
-  readonly event: CompletionDecisionEvent;
+  readonly event: SchedulerCompletionEvent;
 }
 
 /** What a stored operation may carry: a public command, or one of the two envelopes only a boundary writes. */
 export type StoredTicketCommand =
   TicketCommand | FinalizationSubmission | SchedulerCompletion;
+
+/**
+ * Whether a stored envelope is the scheduler's completion, which its event's
+ * tag decides on its own: no public `Decide` may carry one, so a `Decide` that
+ * does was written by the boundary.
+ */
+export function isSchedulerCompletion(
+  command: StoredTicketCommand,
+): command is SchedulerCompletion {
+  return command.command === "Decide" && command.event.type === "TaskDone";
+}

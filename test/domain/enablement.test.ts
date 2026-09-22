@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 
 import {
   canReleaseIn,
+  completableIn,
   dependableIn,
   depArtifacts,
   depsDoneIn,
@@ -29,13 +30,11 @@ import {
   readiesIn,
   releasableAuthoring,
   releasableIdsIn,
-  reducibleEvalIn,
   reducibleWorkIn,
   retryableIn,
   retryablesIn,
   revocableIn,
   revocablesIn,
-  taskPhaseIn,
   waitsOn,
 } from "../../src/domain/enablement.ts";
 import { defaultProgram } from "../../src/domain/config.ts";
@@ -49,15 +48,16 @@ import { modelInstance } from "./configs.ts";
 import {
   graphOf,
   depsOf,
-  evalOutstanding,
-  evalTask,
   id,
+  judgedInstance,
+  runningInstance,
   ticketOn,
   workOutstanding,
   workTask,
 } from "./fixtures.ts";
 
 const config = modelInstance;
+const program = defaultProgram(config);
 
 /** An artifact mark, as a ticket that ran carries one. */
 const produced = (value: number) =>
@@ -191,7 +191,7 @@ test("what a ticket waits on is what its dependencies produced, read in id order
   );
 });
 
-test("only the two task phases can receive a completion, and only a resolved set reduces", () => {
+test("a completion lands on a ticket owing a task, and only a resolved work set reduces", () => {
   const graph = graphOf([
     ticketOn(config, {
       phase: "Work",
@@ -201,10 +201,9 @@ test("only the two task phases can receive a completion, and only a resolved set
     }),
     ticketOn(config, {
       phase: "Evaluation",
-      record: [workTask(2, 1, "Passed")],
-      tasks: new Set([evalTask(2, 1, 1, 1, "Failed")]),
+      evaluations: [runningInstance(2, 1, 1, program, new Set([1]))],
       workCyclesStarted: 1,
-      spawned: 2,
+      spawned: 3,
     }),
     ticketOn(config, { phase: "Finalization" }),
     ticketOn(config, {
@@ -215,15 +214,18 @@ test("only the two task phases can receive a completion, and only a resolved set
     }),
     ticketOn(config, {
       phase: "Evaluation",
-      record: [workTask(5, 1, "Passed")],
-      tasks: new Set([evalOutstanding(5, 1, 1, 1)]),
+      evaluations: [judgedInstance(5, 1, 1, program)],
       workCyclesStarted: 1,
-      spawned: 2,
+      spawned: 3,
     }),
   ]);
-  assert.deepEqual(taskPhaseIn(graph), [id(1), id(2), id(4), id(5)]);
+  assert.deepEqual(completableIn(graph), [id(1), id(2)]);
   assert.deepEqual(reducibleWorkIn(graph), [id(4)]);
-  assert.deepEqual(reducibleEvalIn(graph), [id(2)]);
+  assert.deepEqual(
+    outstandingTasksIn(graph, id(5)),
+    [],
+    "a judgement that has settled owes nothing, whatever phase the ticket is in",
+  );
 });
 
 test("the phase holding the finalizer obligation is the only one a result resolves from", () => {
@@ -250,11 +252,7 @@ test("the fabric may still report on exactly the tasks a ticket has outstanding"
   const graph = graphOf([
     ticketOn(config, {
       phase: "Evaluation",
-      record: [workTask(1, 1, "Passed")],
-      tasks: new Set([
-        evalOutstanding(1, 1, 1, 2),
-        evalTask(1, 1, 1, 1, "Passed"),
-      ]),
+      evaluations: [runningInstance(1, 1, 1, program, new Set([1]))],
       workCyclesStarted: 1,
       spawned: 3,
     }),
@@ -270,7 +268,7 @@ test("the fabric may still report on exactly the tasks a ticket has outstanding"
   );
   assert.ok(
     !outstandingTaskIn(graph, id(1), workTaskOf(1, 1)),
-    "a stale delivery names an identity already retired into the record",
+    "a stale delivery names the work task the judgement was opened over",
   );
   assert.deepEqual(outstandingTasksIn(graph, id(2)), []);
 });

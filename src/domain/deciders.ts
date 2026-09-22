@@ -21,13 +21,27 @@ import type {
   Phase,
   StageDefinition,
   TaskIdentity,
+  TaskTerminalReport,
   Ticket,
-  Verdict,
 } from "./generated/modelTypes.ts";
 import type { TicketId } from "./ids.ts";
-import { combine } from "./program.ts";
-import { evalStage, resolveTask } from "./task.ts";
-import { resumeOf, retireLive, spawnEvalStage, spawnWork } from "./ticket.ts";
+import { resolveTask } from "./task.ts";
+import { resumeBlocked } from "./evaluation.ts";
+import {
+  applyTaskReport,
+  beginEvaluation,
+  currentInstance,
+  owesTask,
+  resumeOf,
+  retireLive,
+  runningStageIndex,
+  spawnEvalRun,
+  spawnWork,
+  taskResultRefOf,
+  taskRefOf,
+  withInstance,
+  workProduced,
+} from "./ticket.ts";
 
 /**
  * Both ways a failing evaluation can be taken. The choice is an input to the
@@ -38,6 +52,43 @@ export const dispositionChoices: readonly EvaluationFailureDisposition[] = [
   "ReworkEvaluationFailure",
   "EscalateEvaluationFailure",
 ];
+
+/**
+ * What a task can come back with, as the environment may produce it: a work
+ * task produced its artifact or reached no result at all; an evaluator judged
+ * either way or reached no result. The references are derived from the task's
+ * identity rather than drawn, because the machine's only claim on them is that
+ * they exist.
+ */
+export function reportChoices(
+  task: TaskIdentity,
+): readonly TaskTerminalReport[] {
+  const evidence = taskRefOf(task);
+  const failures: readonly TaskTerminalReport[] = [
+    {
+      type: "TerminalFailureReport",
+      value: { evidence, kind: "ProcessFailure" },
+    },
+    {
+      type: "TerminalFailureReport",
+      value: { evidence, kind: "ExecutionUnavailableFailure" },
+    },
+  ];
+  const result = taskResultRefOf(task);
+  if (task.type === "WorkTask")
+    return [{ type: "WorkResultReport", value: { result } }, ...failures];
+  return [
+    {
+      type: "EvaluationResultReport",
+      value: { result, verdict: "EvaluatorPass" },
+    },
+    {
+      type: "EvaluationResultReport",
+      value: { result, verdict: "EvaluatorFail" },
+    },
+    ...failures,
+  ];
+}
 
 /** One phase change and the record that reports it — the shape most deciders return. */
 function move(
@@ -65,7 +116,7 @@ export function freshTicket(authoring: {
     program: authoring.program,
     artifact: "NoArtifact",
     tasks: new Set(),
-    record: [],
+    evaluations: [],
     workCyclesStarted: 0,
     spawned: 0,
     escalation: "NoEscalation",
@@ -95,10 +146,11 @@ export function decideReleaseTicket(
 }
 
 /**
- * Park a ticket on the desk, naming the wall and retiring the failed set into
- * the record rather than dropping it; where a resume puts it back is the
- * wall's own (`resumeOf`). The open desk task is derived from the phase, and
- * `OpenHumanTask` is its visible effect.
+ * Park a ticket on the desk, naming the wall and retiring the live work task;
+ * where a resume puts it back is the wall's own (`resumeOf`), the open desk
+ * task is derived from the phase, and `OpenHumanTask` is its visible effect.
+ * An evaluation park keeps its instance, which is what its resume re-asks
+ * from.
  */
 function escalate(
   graph: TicketGraph,
@@ -152,43 +204,152 @@ export function decideDispatch(graph: TicketGraph, id: TicketId): Decision {
 }
 
 /**
- * A task completion, first write wins: resolving a task that is not outstanding
- * changes nothing, which is the idempotence an at-least-once fabric demands.
- * Identities are unique across the ticket's history, so a stale completion
- * names one already retired and matches nothing live.
+ * A task completion, first write wins: a completion for a task nothing is
+ * waiting on changes nothing — identities are never reused, so a stale
+ * delivery names one already settled and matches nothing owed.
+ *
+ * A WALL IS NOT A VERDICT, and the two phases answer it differently: an
+ * evaluator's wall marks that evaluator and the stage runs on, where a work
+ * task's parks the ticket at once, a work cycle being one task.
  */
 export function decideTaskDone(
   graph: TicketGraph,
   id: TicketId,
   task: TaskIdentity,
-  verdict: Verdict,
+  report: TaskTerminalReport,
+  onFailure: EvaluationFailureDisposition,
 ): Decision {
   const ticket = ticketAt(graph, id);
+  if (!owesTask(ticket, task)) return taskDoneStep(graph, id, ticket);
+  return ticket.phase === "Work"
+    ? decideWorkTaskDone(graph, id, task, report)
+    : decideEvalTaskDone(graph, id, task, report, onFailure);
+}
+
+/** The completion's own step: no transition, because a task settling is progress inside a phase. */
+function taskDoneStep(
+  graph: TicketGraph,
+  id: TicketId,
+  ticket: Ticket,
+): Decision {
   return {
     rec: { label: "task-done", transitions: [], effects: [] },
-    post: withTicket(graph, id, {
-      ...ticket,
-      tasks: resolveTask(
-        ticket.tasks,
-        task,
-        verdict === "Pass" ? "Passed" : "Failed",
-      ),
-    }),
+    post: withTicket(graph, id, ticket),
   };
 }
 
 /**
- * The work set has settled. Unanimous pass moves into evaluation and stamps
- * the artifact the dependents will read; anything else parks, resumable at
- * Work.
+ * A work completion: the cycle's one task settles — produced, or died with the
+ * fabric's relaunches behind it — and the reduce that follows reads it.
+ * Infrastructure that could not run it at all parks the ticket here instead,
+ * there being no sibling to wait for and no judgement to preserve.
+ */
+function decideWorkTaskDone(
+  graph: TicketGraph,
+  id: TicketId,
+  task: TaskIdentity,
+  report: TaskTerminalReport,
+): Decision {
+  const ticket = ticketAt(graph, id);
+  switch (report.type) {
+    case "WorkResultReport":
+      return taskDoneStep(graph, id, {
+        ...ticket,
+        tasks: resolveTask(ticket.tasks, task, "Passed"),
+      });
+    case "TerminalFailureReport":
+      return report.value.kind === "ProcessFailure"
+        ? taskDoneStep(graph, id, {
+            ...ticket,
+            tasks: resolveTask(ticket.tasks, task, "Failed"),
+          })
+        : escalate(
+            graph,
+            id,
+            "WorkExecutionUnavailableEscalated",
+            "ticket-escalated work_execution_unavailable_escalated",
+          );
+    /** Unreachable: `reportMatchesTask` refuses an evaluator's verdict here. */
+    case "EvaluationResultReport":
+      return taskDoneStep(graph, id, ticket);
+  }
+}
+
+/**
+ * An evaluation completion, which is also THE EVAL-PROGRAM INTERPRETER: the
+ * report goes to the instance and the state that comes back says which edge
+ * this was.
+ *
+ *   - still RUNNING the same stage — a status settled and the stage owes its
+ *     remaining evaluators; no transition
+ *   - RUNNING a later stage — the stage passed and the next one is asked,
+ *     which is a real Evaluation to Evaluation row
+ *   - PASSED — the program passed, so the ticket finalizes
+ *   - FAILED — the later stages are skipped, not failed, and no run exists
+ *     for them; the edge `onFailure` names is taken
+ *   - BLOCKED — every evaluator answered and one of them was stopped, so the
+ *     judgement is intact and unmade: park, and the resume re-asks exactly
+ *     those evaluators at the next generation
+ */
+function decideEvalTaskDone(
+  graph: TicketGraph,
+  id: TicketId,
+  task: TaskIdentity,
+  report: TaskTerminalReport,
+  onFailure: EvaluationFailureDisposition,
+): Decision {
+  const ticket = ticketAt(graph, id);
+  const before = currentInstance(ticket);
+  const advanced = withInstance(ticket, applyTaskReport(before, task, report));
+  const stepped = withTicket(graph, id, advanced);
+  const state = currentInstance(advanced).state;
+  switch (state.type) {
+    case "Running":
+      return state.value.stage.stageIndex === runningStageIndex(before)
+        ? taskDoneStep(graph, id, advanced)
+        : move(
+            withTicket(graph, id, spawnEvalRun(advanced)),
+            id,
+            "Evaluation",
+            "eval-stage-passed",
+            ["SpawnEvalTasks"],
+          );
+    case "EvaluationPassed":
+      return move(stepped, id, "Finalization", "eval-passed", ["RunFinalizer"]);
+    case "EvaluationFailed":
+      return onFailure === "ReworkEvaluationFailure"
+        ? move(
+            withTicket(graph, id, spawnWork(advanced, id)),
+            id,
+            "Work",
+            "rework-started eval_failure",
+            ["SpawnWorkTasks"],
+          )
+        : escalate(
+            stepped,
+            id,
+            "EvaluationFailureEscalated",
+            "ticket-escalated evaluation_failure_escalated",
+          );
+    case "EvaluationBlocked":
+      return escalate(
+        stepped,
+        id,
+        "EvaluationBlockedEscalated",
+        "ticket-escalated evaluation_blocked_escalated",
+      );
+  }
+}
+
+/**
+ * The work task has settled: a pass retires it, stamps the artifact the
+ * dependents will read and OPENS THE INSTANCE that judges it, whose first
+ * stage is asked at once. A failed task is a failed CYCLE and parks, the
+ * fabric having already retried it below the cycle grain.
  */
 export function decideWorkReduce(graph: TicketGraph, id: TicketId): Decision {
   const ticket = ticketAt(graph, id);
-  const retired = retireLive(ticket);
-  const allPassed = [...ticket.tasks].every(
-    (t) => t.state !== "Outstanding" && t.state.value === "Passed",
-  );
-  if (!allPassed) {
+  if (!workProduced(ticket.tasks)) {
     return escalate(
       graph,
       id,
@@ -197,71 +358,12 @@ export function decideWorkReduce(graph: TicketGraph, id: TicketId): Decision {
     );
   }
   return move(
-    withTicket(graph, id, {
-      ...spawnEvalStage(retired, id, 0),
-      artifact: { type: "ProducedArtifact", value: retired.spawned },
-    }),
+    withTicket(graph, id, beginEvaluation(retireLive(ticket), id)),
     id,
     "Evaluation",
     "work-passed",
     ["SpawnEvalTasks"],
   );
-}
-
-/**
- * One eval stage has settled. A passing stage advances, or finishes the
- * program; a failing one short-circuits — the later stages are never created —
- * and is taken the way `onFailure` says, which is the only place that choice is
- * read.
- */
-export function decideEvalStageReduce(
-  graph: TicketGraph,
-  id: TicketId,
-  onFailure: EvaluationFailureDisposition,
-): Decision {
-  const ticket = ticketAt(graph, id);
-  const stageIndex = evalStage(ticket.tasks);
-  const retired = retireLive(ticket);
-  const stage = ticket.program[stageIndex];
-  if (stage === undefined)
-    throw new Error("eval-reduce: the live stage indexes outside the program");
-
-  if (combine(ticket.tasks)) {
-    if (retired.program[stageIndex + 1] !== undefined) {
-      return move(
-        withTicket(graph, id, spawnEvalStage(retired, id, stageIndex + 1)),
-        id,
-        "Evaluation",
-        "eval-stage-passed",
-        ["SpawnEvalTasks"],
-      );
-    }
-    return move(
-      withTicket(graph, id, retired),
-      id,
-      "Finalization",
-      "eval-passed",
-      ["RunFinalizer"],
-    );
-  }
-
-  switch (onFailure) {
-    case "ReworkEvaluationFailure":
-      return move(
-        withTicket(graph, id, spawnWork(retired, id)),
-        id,
-        "Work",
-        "rework-started eval_failure",
-        ["SpawnWorkTasks"],
-      );
-    case "EscalateEvaluationFailure":
-      return escalate(
-        graph,
-        id,
-        "EvaluationFailureEscalated",
-        "ticket-escalated evaluation_failure_escalated",
-      );
-  }
 }
 
 /**
@@ -330,38 +432,13 @@ export function decideFinalizationResult(
 }
 
 /**
- * Infrastructure cannot run an intact contract, which is not failed work: it
- * names the wall of the phase it interrupted, and which refusal it was is
- * evidence the adapter records beside the execution. The two phases get two
- * walls because they resume differently — an evaluation park still has an
- * intact judgement to make, where a work park buys a new artifact.
- */
-export function decideExecutionBlocked(
-  graph: TicketGraph,
-  id: TicketId,
-): Decision {
-  return ticketAt(graph, id).phase === "Evaluation"
-    ? escalate(
-        graph,
-        id,
-        "EvaluationBlockedEscalated",
-        "ticket-escalated evaluation_blocked_escalated",
-      )
-    : escalate(
-        graph,
-        id,
-        "WorkExecutionUnavailableEscalated",
-        "ticket-escalated work_execution_unavailable_escalated",
-      );
-}
-
-/**
  * A parked ticket rejoins the pipeline where its wall implies it would
  * (`resumeOf`), and an unparked one refuses and records that it did.
  *
- * The walls whose resume is work take the same exit: an evaluation failure was
- * reached by a verdict, which has no re-judge to offer, so it buys a new
- * artifact rather than a second opinion on the old one.
+ * The walls whose resume is work take the same exit — an evaluation failure
+ * was reached by a verdict, which has no re-judge to offer, so it buys a new
+ * artifact rather than a second opinion — and the blocked wall, reached
+ * without a verdict, is the only one that re-asks.
  */
 export function decideResumeTicket(graph: TicketGraph, id: TicketId): Decision {
   const ticket = ticketAt(graph, id);
@@ -377,8 +454,13 @@ export function decideResumeTicket(graph: TicketGraph, id: TicketId): Decision {
         ["SpawnWorkTasks"],
       );
     case "ResumeEvaluation": {
+      /** A re-ask and not a fresh fan-out: the answers already given stand. */
+      const reopened = withInstance(
+        resumed,
+        resumeBlocked(currentInstance(resumed)),
+      );
       return move(
-        withTicket(graph, id, spawnEvalStage(resumed, id, 0)),
+        withTicket(graph, id, spawnEvalRun(reopened)),
         id,
         "Evaluation",
         "ticket-resumed",

@@ -1104,7 +1104,7 @@ test("a verified result becomes exactly one completion input the ticket service 
   );
 });
 
-test("the completion command carries the manifest ordinal, folded digest and verdict", async () => {
+test("the completion command carries the report its work task terminated under", async () => {
   const fixture = await schedulerFixture("envelope");
   const reported = await schedulerReported(fixture, "envelope", "Fail");
   const submitted = await schedulerSubmit(
@@ -1136,13 +1136,9 @@ test("the completion command carries the manifest ordinal, folded digest and ver
                 type: "WorkTask",
                 value: { ticket: Number(fixture.ticket), cycle: 1 },
               },
-              verdict: "Fail",
-              result: {
-                manifest: Number(reported.result.ordinal),
-                digest: resultDigestFold(
-                  asArtifactDigest(reported.result.digest),
-                ),
-                schema: resultManifestSchemaVersion,
+              report: {
+                type: "TerminalFailureReport",
+                value: { evidence: 1, kind: "ProcessFailure" },
               },
             },
           },
@@ -1285,7 +1281,7 @@ test("an outcome this boundary does not submit is refused before anything is wri
   );
 });
 
-test("a definitive inability blocks the execution at the wall and journals the ticket alone", async () => {
+test("a definitive inability blocks the execution at the wall and reports it unavailable", async () => {
   const fixture = await schedulerFixture("blocked");
   const execution = await schedulerRegister(fixture, "blocked");
   await schedulerAdvance(fixture, execution, "Admitted");
@@ -1298,7 +1294,7 @@ test("a definitive inability blocks the execution at the wall and journals the t
     await harness.query(
       `SELECT e.status, e.outcome, e.blocked_reason, e.result_manifest,
               o.command_tag,
-              (o.command::jsonb->'event'->'value') - 'ticket' AS beyond_ticket
+              (o.command::jsonb#>'{event,value,report}') AS report
          FROM execution e JOIN operation o
            ON o.tenant=e.tenant AND o.project=e.project AND o.operation=e.completion_operation
         WHERE e.tenant=$1 AND e.project=$2 AND e.execution=$3`,
@@ -1310,8 +1306,11 @@ test("a definitive inability blocks the execution at the wall and journals the t
         outcome: "Blocked",
         blocked_reason: "TicketConfigIncompatible",
         result_manifest: null,
-        command_tag: "ExecutionBlocked",
-        beyond_ticket: {},
+        command_tag: "TaskDone",
+        report: {
+          type: "TerminalFailureReport",
+          value: { evidence: 1, kind: "ExecutionUnavailableFailure" },
+        },
       },
     ],
   );

@@ -114,6 +114,14 @@
     font-style: italic;
   }
 
+  .ledger-row-superseded {
+    color: var(--ink-3);
+  }
+
+  .ledger-row-superseded .ledger-label {
+    color: var(--ink-3);
+  }
+
   .ledger-row-changed {
     box-shadow: inset var(--rail) 0 0 var(--tone-live);
     padding-left: var(--space-2);

@@ -23,9 +23,7 @@ import {
   decisionEventEnabled,
   decisionEventTags,
   dispatchEvent,
-  evalReduceEvent,
   execDecisionEvent,
-  executionBlockedEvent,
   finalizationResultEvent,
   releaseTicketEvent,
   resumeTicketEvent,
@@ -48,18 +46,23 @@ import {
 } from "../../src/actor/world.ts";
 import { ticketAt, type Decision } from "../../src/domain/ticketGraph.ts";
 import {
-  decideExecutionBlocked,
   decideFinalizationResult,
   decideResumeTicket,
   decideRevoke,
+  decideTaskDone,
 } from "../../src/domain/deciders.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
-import { id } from "../domain/fixtures.ts";
+import {
+  id,
+  judgedReport,
+  producedReport,
+  stoppedReport,
+} from "../domain/fixtures.ts";
 import {
   flatProgram,
   plainAuthoring,
-  plainResult,
+  plainDisposition,
   refinementInstance,
 } from "./harness.ts";
 import type { TicketGraph } from "../../src/domain/generated/modelTypes.ts";
@@ -73,6 +76,17 @@ const event2 = dispatchEvent(id(1));
 const d2 = execDecisionEvent(d1.post, event2);
 const e2: Entry = { seq: 2, event: event2, rec: d2.rec };
 const goodJournal: readonly Entry[] = [e1, e2];
+
+const work = workTaskOf(1, 1);
+const judge = evaluationTaskOf(1, 1, 1, 1, 1);
+
+/** A completion of `task` carrying `report`, on the disposition the suite is not steering. */
+function completion(
+  task: typeof work,
+  report: ReturnType<typeof producedReport>,
+): DecisionEvent {
+  return taskDoneEvent(id(1), task, report, plainDisposition);
+}
 
 test("the empty journal is legal and replays to genesis", () => {
   assert.ok(journalLegalOn(config, []));
@@ -110,11 +124,8 @@ test("a decision that was never enabled is refused, cleanly, at any tampered pay
     !decisionEventEnabled(
       config,
       genesis,
-      taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
+      completion(work, producedReport(work)),
     ),
-  );
-  assert.ok(
-    !decisionEventEnabled(config, genesis, executionBlockedEvent(id(1))),
   );
   assert.ok(
     !decisionEventEnabled(
@@ -165,11 +176,10 @@ test("the world arithmetic: emission closes the gap to the book, an orphan pushe
 });
 
 test("the task result reference is journal data: it names no part of the decision", () => {
-  const real = taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult);
-  const other = taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", {
-    manifest: 2,
-    digest: 2,
-    schema: 1,
+  const real = completion(work, producedReport(work));
+  const other = completion(work, {
+    type: "WorkResultReport",
+    value: { result: { manifest: 2, digest: 2, schema: 1 } },
   });
   assert.notDeepEqual(real, other);
   const taken = execDecisionEvent(d2.post, real);
@@ -179,14 +189,14 @@ test("the task result reference is journal data: it names no part of the decisio
 });
 
 test("a task already resolved is no longer outstanding, so a second report never journals", () => {
-  const first = taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult);
+  const first = completion(work, producedReport(work));
   assert.ok(decisionEventEnabled(config, d2.post, first));
   const resolved = execDecisionEvent(d2.post, first).post;
   assert.ok(
     !decisionEventEnabled(
       config,
       resolved,
-      taskDoneEvent(id(1), workTaskOf(1, 1), "Fail", plainResult),
+      completion(work, stoppedReport(work, "ProcessFailure")),
     ),
   );
 });
@@ -215,13 +225,12 @@ const toPending: readonly DecisionEvent[] = [event1];
 const toWorking: readonly DecisionEvent[] = [...toPending, event2];
 const toEvaluating: readonly DecisionEvent[] = [
   ...toWorking,
-  taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
+  completion(work, producedReport(work)),
   workReduceEvent(id(1)),
 ];
 const toFinalizing: readonly DecisionEvent[] = [
   ...toEvaluating,
-  taskDoneEvent(id(1), evaluationTaskOf(1, 1, 1, 1, 1), "Pass", plainResult),
-  evalReduceEvent(id(1), "ReworkEvaluationFailure"),
+  completion(judge, judgedReport(judge, "EvaluatorPass")),
 ];
 const toDone: readonly DecisionEvent[] = [
   ...toFinalizing,
@@ -229,7 +238,7 @@ const toDone: readonly DecisionEvent[] = [
 ];
 const toEscalated: readonly DecisionEvent[] = [
   ...toWorking,
-  executionBlockedEvent(id(1)),
+  completion(work, stoppedReport(work, "ExecutionUnavailableFailure")),
 ];
 const toDependent: readonly DecisionEvent[] = [
   ...toPending,
@@ -238,7 +247,6 @@ const toDependent: readonly DecisionEvent[] = [
 
 const pending = graphAfter(toPending);
 const working = graphAfter(toWorking);
-const evaluating = graphAfter(toEvaluating);
 const finalizing = graphAfter(toFinalizing);
 const done = graphAfter(toDone);
 const escalated = graphAfter(toEscalated);
@@ -279,38 +287,51 @@ const refusals: readonly Refusal[] = [
   { conjunct: "Revoke/revocablesIn", at: done, event: revokeEvent(id(1)) },
   { conjunct: "Dispatch/readiesIn", at: working, event: dispatchEvent(id(1)) },
   {
-    conjunct: "TaskDone/taskPhaseIn",
+    conjunct: "TaskDone/completableIn",
     at: pending,
-    event: taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
+    event: completion(work, producedReport(work)),
   },
   {
-    conjunct: "TaskDone/manifest",
+    conjunct: "TaskDone/reportValid/manifest",
     at: working,
-    event: taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", {
-      ...plainResult,
-      manifest: 0,
+    event: completion(work, {
+      type: "WorkResultReport",
+      value: { result: { manifest: 0, digest: 1, schema: 1 } },
     }),
   },
   {
-    conjunct: "TaskDone/digest",
+    conjunct: "TaskDone/reportValid/digest",
     at: working,
-    event: taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", {
-      ...plainResult,
-      digest: 0,
+    event: completion(work, {
+      type: "WorkResultReport",
+      value: { result: { manifest: 1, digest: 0, schema: 1 } },
     }),
   },
   {
-    conjunct: "TaskDone/schema",
+    conjunct: "TaskDone/reportValid/schema",
     at: working,
-    event: taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", {
-      ...plainResult,
-      schema: 0,
+    event: completion(work, {
+      type: "WorkResultReport",
+      value: { result: { manifest: 1, digest: 1, schema: 0 } },
     }),
+  },
+  {
+    conjunct: "TaskDone/reportValid/evidence",
+    at: working,
+    event: completion(work, {
+      type: "TerminalFailureReport",
+      value: { evidence: 0, kind: "ProcessFailure" },
+    }),
+  },
+  {
+    conjunct: "TaskDone/reportMatchesTask",
+    at: working,
+    event: completion(work, judgedReport(judge, "EvaluatorPass")),
   },
   {
     conjunct: "TaskDone/outstandingTaskIn",
     at: working,
-    event: taskDoneEvent(id(1), workTaskOf(1, 9), "Pass", plainResult),
+    event: completion(workTaskOf(1, 9), producedReport(workTaskOf(1, 9))),
   },
   {
     conjunct: "WorkReduce/reducibleWorkIn",
@@ -318,19 +339,9 @@ const refusals: readonly Refusal[] = [
     event: workReduceEvent(id(1)),
   },
   {
-    conjunct: "EvalReduce/reducibleEvalIn",
-    at: evaluating,
-    event: evalReduceEvent(id(1), "ReworkEvaluationFailure"),
-  },
-  {
     conjunct: "FinalizationResult/finalizableIn",
     at: working,
     event: finalizationResultEvent(id(1), "FinalizationSucceeded"),
-  },
-  {
-    conjunct: "ExecutionBlocked/taskPhaseIn",
-    at: pending,
-    event: executionBlockedEvent(id(1)),
   },
   {
     conjunct: "ResumeTicket/retryablesIn",
@@ -340,10 +351,11 @@ const refusals: readonly Refusal[] = [
 ];
 
 /**
- * Two conjuncts have no row, because nothing outside their draw set can be
- * constructed: a release's `finalizer` and a finalization result's outcome are
- * each a closed type whose every value the configuration offers. The release repeating a dep has no row and no conjunct either — the
- * payload is the model's set — so that refusal lives in
+ * Three conjuncts have no row, because nothing outside their draw set can be
+ * constructed: a release's `finalizer`, a finalization result's outcome and a
+ * completion's disposition are each a closed type whose every value the
+ * configuration offers. The release repeating a dep has no row and no conjunct
+ * either — the payload is the model's set — so that refusal lives in
  * `test/interpreter/wire.test.ts`, on the array a stored journal carries.
  */
 test("every conjunct of every enablement refuses on a state that fails it alone", () => {
@@ -398,11 +410,17 @@ const drives: readonly Drive[] = [
     decided: decideRevoke(dependent, id(1)),
   },
   {
-    arm: "ExecutionBlocked",
+    arm: "TaskDone/a work task walled",
     before: toWorking,
-    event: executionBlockedEvent(id(1)),
+    event: completion(work, stoppedReport(work, "ExecutionUnavailableFailure")),
     at: working,
-    decided: decideExecutionBlocked(working, id(1)),
+    decided: decideTaskDone(
+      working,
+      id(1),
+      work,
+      stoppedReport(work, "ExecutionUnavailableFailure"),
+      plainDisposition,
+    ),
   },
   {
     arm: "ResumeTicket",

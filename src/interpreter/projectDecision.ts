@@ -206,7 +206,7 @@ export interface NativeActionAnswer {
 export interface DecisionMaterialization {
   readonly continuation?: {
     readonly continuation: string;
-    readonly kind: "ReduceWork" | "ReduceEvaluation";
+    readonly kind: "ReduceWork";
     readonly ticket: TicketId;
     readonly expectedTicketVersion: number;
     readonly expectedPhase: Phase;

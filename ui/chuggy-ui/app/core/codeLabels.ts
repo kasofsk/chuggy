@@ -81,8 +81,8 @@ export function blockedReasonLabel(reason: BlockedReason): string {
 
 /**
  * Which git act failed, off the escalation's evidence when it is a
- * `GitEvidenceLabel`: the continuation path's own wall, where no execution row
- * survives to carry a `BlockedReason`.
+ * `GitEvidenceLabel`: a rework whose source could not be read before any
+ * execution row existed to carry a `BlockedReason`.
  */
 export function gitEvidenceLabel(evidence: GitEvidenceLabel): string {
   switch (evidence) {
@@ -193,8 +193,10 @@ function walledStageFailed(facts: WallFacts): string | undefined {
 
 /**
  * The one optional line under the wall, from the facts the page already holds.
- * The cancelled-set line names the phase the kind itself interrupted, needing
- * no fact from the page; the stage line still needs the last set to say which.
+ * The work-cancelled and evaluation-blocked lines need no fact from the page —
+ * a resume drains no sibling and cancels nothing, so the second names what a
+ * resume does rather than a loss — and the stage line still needs the last
+ * set to say which.
  */
 export function escalationDetailLine(
   kind: EscalationKind,
@@ -208,7 +210,7 @@ export function escalationDetailLine(
     case "WorkExecutionUnavailableEscalated":
       return "Work cancelled";
     case "EvaluationBlockedEscalated":
-      return "Evaluation cancelled";
+      return "Resume asks it again";
     case "FinalizationUnavailableEscalated":
       return undefined;
   }

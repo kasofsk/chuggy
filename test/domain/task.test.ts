@@ -11,7 +11,6 @@ import {
   evalStage,
   evaluationTaskOf,
   resolveTask,
-  retiredInEvaluatorKeyOrder,
   outstandingCount,
   spawnTasks,
   taskIdentityEquals,
@@ -20,7 +19,6 @@ import {
   taskRetirementKey,
   tasksInEvaluatorKeyOrder,
   taskPassed,
-  evaluationFailureReworksStarted,
   tsResolved,
   tsOutstanding,
   workTaskOf,
@@ -32,28 +30,35 @@ import {
   effectLabel,
 } from "../../src/domain/effect.ts";
 import { isSettled } from "../../src/domain/phase.ts";
-import { combine } from "../../src/domain/program.ts";
+import { allPassed } from "../../src/domain/program.ts";
 import {
-  spawnOn,
-  spawnEvalStage,
+  evaluationFailureReworksStarted,
+  liveTasks,
+  owesTask,
+  reportMatchesTask,
   retireLive,
+  spawnWork,
   hasOpenHumanTask,
 } from "../../src/domain/ticket.ts";
+import { judgedInstance, judgedReport, producedReport } from "./fixtures.ts";
 import {
   phaseTags,
+  type EvaluationVerdict,
   type Phase,
+  type StageDefinition,
   type Task,
-  type TaskOutcome,
   type Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
+
+const flat: readonly StageDefinition[] = [{ key: 1, evaluators: [{ key: 1 }] }];
 
 const bare: Ticket = {
   phase: "Pending",
   deps: new Set(),
   artifact: "NoArtifact",
-  program: [],
+  program: flat,
   tasks: new Set(),
-  record: [],
+  evaluations: [],
   workCyclesStarted: 0,
   spawned: 0,
   escalation: "NoEscalation",
@@ -94,67 +99,6 @@ test("an identity is valid exactly while every counter it carries is positive", 
   assert.ok(!taskIdentityValid(evaluationTaskOf(1, 1, 1, 1, 0)));
 });
 
-/** A cycle-one ticket about to run the program it is handed, as the work reduce leaves it. */
-function judging(program: Ticket["program"]): Ticket {
-  return { ...bare, program, workCyclesStarted: 1 };
-}
-
-const paired: Ticket["program"] = [
-  { key: 1, evaluators: [{ key: 1 }, { key: 2 }] },
-];
-const sparse: Ticket["program"] = [{ key: 1, evaluators: [{ key: 2 }] }];
-
-test("a stage's generation counts its runs, not its evaluators", () => {
-  const first = spawnEvalStage(judging(paired), 1, 0);
-  const second = spawnEvalStage(retireLive(first), 1, 0);
-  assert.deepEqual(
-    tasksInEvaluatorKeyOrder(second.tasks).map((t) => t.identity),
-    [evaluationTaskOf(1, 1, 1, 2, 1), evaluationTaskOf(1, 1, 1, 2, 2)],
-    "a fanned-out stage re-entered once is on its second run, not its third",
-  );
-});
-
-test("a sparse stage spawns, resolves and retires under the one key it lists", () => {
-  const listed = evaluationTaskOf(1, 1, 1, 1, 2);
-  const spawned = spawnEvalStage(judging(sparse), 1, 0);
-  assert.deepEqual(
-    [...spawned.tasks].map((t) => t.identity),
-    [listed],
-    "the spawn names the listed key, not the count from one",
-  );
-  const resolved = {
-    ...spawned,
-    tasks: resolveTask(spawned.tasks, listed, "Passed"),
-  };
-  assert.equal(outstandingCount(resolved.tasks), 0);
-  const retired = retireLive(resolved);
-  assert.equal(retired.tasks.size, 0);
-  assert.deepEqual(retired.record, [
-    { identity: listed, state: tsResolved("Passed") },
-  ]);
-  assert.equal(retired.spawned, retired.record.length);
-  const again = spawnEvalStage(retired, 1, 0);
-  assert.deepEqual(
-    [...again.tasks].map((t) => t.identity),
-    [evaluationTaskOf(1, 1, 1, 2, 2)],
-    "the generation is counted at the key the stage lists first, so a re-entry is run two",
-  );
-});
-
-test("retiring a stage keyed one and three keeps both tasks", () => {
-  const both = spawnOn(
-    judging([{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }]),
-    [evaluationTaskOf(1, 1, 1, 1, 3), evaluationTaskOf(1, 1, 1, 1, 1)],
-  );
-  const retired = retireLive(both);
-  assert.deepEqual(
-    retired.record.map((t) => taskRetirementKey(t.identity)),
-    [1, 3],
-    "a walk from one to the set's size would have dropped key three",
-  );
-  assert.equal(retired.spawned, retired.record.length + retired.tasks.size);
-});
-
 test("a task's position in its set counts the set by evaluator key, not by the key itself", () => {
   const tasks = spawnTasks([
     evaluationTaskOf(1, 1, 1, 1, 3),
@@ -167,6 +111,7 @@ test("a task's position in its set counts the set by evaluator key, not by the k
     /not in this set/,
   );
 });
+
 test("two identities are the same only on the same arm and the same fields", () => {
   assert.ok(taskIdentityEquals(workTaskOf(2, 3), workTaskOf(2, 3)));
   assert.ok(!taskIdentityEquals(workTaskOf(2, 3), workTaskOf(2, 4)));
@@ -201,24 +146,6 @@ test("resolving an identity that is not there changes nothing", () => {
   );
 });
 
-test("retirement force-closes an outstanding task as cancelled and leaves a resolved one alone", () => {
-  const mixed: ReadonlySet<Task> = new Set([
-    {
-      identity: evaluationTaskOf(1, 1, 1, 1, 2),
-      state: tsResolved("Passed"),
-    },
-    { identity: evaluationTaskOf(1, 1, 1, 1, 1), state: tsOutstanding },
-  ]);
-  const retired = retiredInEvaluatorKeyOrder(mixed);
-  assert.deepEqual(
-    retired.map((t) => taskRetirementKey(t.identity)),
-    [1, 2],
-    "retirement is by evaluator key, not in the order the set happened to hold",
-  );
-  assert.deepEqual(retired[0]?.state, tsResolved("Cancelled"));
-  assert.deepEqual(retired[1]?.state, tsResolved("Passed"));
-});
-
 test("the eval stage is derived from the live identities and is zero on a work set", () => {
   assert.equal(evalStage(spawnTasks([workTaskOf(1, 1)])), 0);
   assert.equal(
@@ -233,24 +160,35 @@ test("the eval stage is derived from the live identities and is zero on a work s
   assert.equal(evalStage(new Set()), 0);
 });
 
-test("spawnOn refuses a ticket that still holds live tasks", () => {
-  const live = spawnOn(bare, [workTaskOf(1, 1)]);
-  assert.equal(live.spawned, 1);
-  assert.throws(() => spawnOn(live, [workTaskOf(1, 2)]), /must retire first/);
+test("a work cycle is one task, and each spawn claims exactly one mint slot", () => {
+  const first = spawnWork(bare, 1);
+  assert.deepEqual(
+    [...first.tasks].map((t) => t.identity),
+    [workTaskOf(1, 1)],
+  );
+  assert.equal(first.workCyclesStarted, 1);
+  assert.equal(first.spawned, 1);
+  const second = spawnWork(retireLive(first), 1);
+  assert.deepEqual(
+    [...second.tasks].map((t) => t.identity),
+    [workTaskOf(1, 2)],
+  );
+  assert.equal(second.spawned, 2, "the counter is a ghost and never restarts");
 });
 
-test("retiring then spawning keeps the ghost counting rather than restarting it", () => {
-  const first = spawnOn(bare, [workTaskOf(1, 1)]);
-  const second = spawnOn(retireLive(first), [
-    evaluationTaskOf(1, 1, 1, 1, 1),
-    evaluationTaskOf(1, 1, 1, 1, 2),
+test("retirement leaves no live task, whether the one it held was outstanding or resolved", () => {
+  const outstanding = {
+    ...bare,
+    phase: "Work" as const,
+    tasks: spawnTasks([workTaskOf(1, 1)]),
+  };
+  assert.deepEqual(liveTasks(outstanding), [workTaskOf(1, 1)]);
+  assert.equal(retireLive(outstanding).tasks.size, 0);
+  const resolved: ReadonlySet<Task> = new Set([
+    { identity: workTaskOf(1, 1), state: tsResolved("Passed") },
   ]);
-  assert.equal(second.spawned, 3, "the ghost counts every task ever spawned");
-  assert.equal(
-    second.spawned,
-    second.record.length + second.tasks.size,
-    "which is exactly the equality idsAccounted checks",
-  );
+  assert.equal(retireLive({ ...bare, tasks: resolved }).tasks.size, 0);
+  assert.deepEqual(liveTasks({ ...bare, phase: "Work", tasks: resolved }), []);
 });
 
 test("a desk task is open exactly while the ticket is parked", () => {
@@ -300,26 +238,19 @@ test("a string that is not one of this machine's effects is refused", () => {
   );
 });
 
-test("a stage passes only when every task in it passed", () => {
+test("a task set passes only when every task in it passed", () => {
   const mixed: ReadonlySet<Task> = new Set([
-    {
-      identity: evaluationTaskOf(1, 1, 1, 1, 1),
-      state: tsResolved("Passed"),
-    },
-    {
-      identity: evaluationTaskOf(1, 1, 1, 1, 2),
-      state: tsResolved("Failed"),
-    },
+    { identity: workTaskOf(1, 1), state: tsResolved("Passed") },
+    { identity: workTaskOf(1, 2), state: tsResolved("Failed") },
   ]);
-  assert.equal(combine(mixed), false);
-  assert.equal(combine(new Set()), true, "vacuously, as forall does");
-});
-
-test("a cancelled task fails its stage, so a revoked set never passes", () => {
-  const cancelled: ReadonlySet<Task> = new Set([
-    { identity: workTaskOf(1, 1), state: tsResolved("Cancelled") },
-  ]);
-  assert.equal(combine(cancelled), false);
+  assert.equal(allPassed(mixed), false);
+  assert.equal(allPassed(new Set()), true, "vacuously, as forall does");
+  assert.equal(
+    allPassed(spawnTasks([workTaskOf(1, 1)])),
+    false,
+    "an outstanding task has not passed",
+  );
+  assert.equal(tsOutstanding, "Outstanding");
 });
 
 test("an identifier outside the exactly representable range is refused, not truncated", () => {
@@ -331,111 +262,80 @@ test("an identifier outside the exactly representable range is refused, not trun
   assert.throws(() => asTaskId(0), /below the first id/);
 });
 
-/** A ticket's history as the rework count reads it: the record, then what is still live. */
-function reworksOver(history: readonly Task[], live: number): number {
-  return evaluationFailureReworksStarted(
-    history.slice(0, history.length - live),
-    new Set(history.slice(history.length - live)),
-  );
-}
-
-/** The work task of one cycle of ticket one, as it looks while it runs. */
-function working(cycle: number): Task {
-  return { identity: workTaskOf(1, cycle), state: tsOutstanding };
-}
-
-/** One evaluator of the first stage judging `cycle`, carrying the outcome it resolved to. */
-function evaluated(cycle: number, outcome: TaskOutcome, evaluator = 1): Task {
+/** A ticket that judged one cycle per verdict listed, having started `cycles` of them. */
+function judgedOver(
+  verdicts: readonly EvaluationVerdict[],
+  cycles: number,
+): Ticket {
   return {
-    identity: evaluationTaskOf(1, cycle, 1, 1, evaluator),
-    state: tsResolved(outcome),
+    ...bare,
+    workCyclesStarted: cycles,
+    evaluations: verdicts.map((verdict, at) =>
+      judgedInstance(1, at + 1, 1, flat, () => verdict),
+    ),
   };
 }
 
-test("a rework is a work cycle that follows an evaluation run some task failed", () => {
-  assert.equal(reworksOver([], 0), 0, "nothing dispatched has been reworked");
-  assert.equal(reworksOver([working(1)], 1), 0, "the first cycle is no rework");
+test("a rework is a work cycle a failed judgement bought", () => {
   assert.equal(
-    reworksOver([working(1), evaluated(1, "Failed")], 0),
+    evaluationFailureReworksStarted(bare),
     0,
-    "evaluating is no rework",
+    "nothing judged has been reworked",
   );
   assert.equal(
-    reworksOver([working(1), evaluated(1, "Failed"), working(2)], 1),
+    evaluationFailureReworksStarted(judgedOver(["EvaluatorFail"], 1)),
+    0,
+    "a failure with no cycle above it bought nothing yet",
+  );
+  assert.equal(
+    evaluationFailureReworksStarted(judgedOver(["EvaluatorFail"], 2)),
     1,
-    "the work after the failure is the first rework",
+    "the cycle above the failure is the first rework",
   );
   assert.equal(
-    reworksOver(
-      [
-        working(1),
-        evaluated(1, "Failed"),
-        working(2),
-        evaluated(2, "Failed"),
-        working(3),
-      ],
-      1,
+    evaluationFailureReworksStarted(
+      judgedOver(["EvaluatorFail", "EvaluatorFail"], 3),
     ),
     2,
-    "and the work after the second failure is the second",
+    "and the cycle above the second failure is the second",
   );
 });
 
-test("the work a passed evaluation is followed by is the finalizer's, and is uncapped", () => {
+test("the work a passed judgement is followed by is the finalizer's, and is uncapped", () => {
   assert.equal(
-    reworksOver([working(1), evaluated(1, "Passed"), working(2)], 1),
+    evaluationFailureReworksStarted(judgedOver(["EvaluatorPass"], 2)),
     0,
     "a finalization failure re-enters Work without spending the cap",
   );
   assert.equal(
-    reworksOver(
-      [
-        working(1),
-        evaluated(1, "Passed"),
-        working(2),
-        evaluated(2, "Failed"),
-        working(3),
-        evaluated(3, "Passed"),
-        working(4),
-      ],
-      1,
+    evaluationFailureReworksStarted(
+      judgedOver(["EvaluatorPass", "EvaluatorFail"], 3),
     ),
     1,
     "and the evaluation failure between them still counts once",
   );
 });
 
-test("an evaluation run counts once however many of its tasks resolved", () => {
-  assert.equal(
-    reworksOver(
-      [
-        working(1),
-        evaluated(1, "Failed"),
-        evaluated(1, "Cancelled", 2),
-        working(2),
-      ],
-      1,
-    ),
-    1,
-    "one failure cancels the rest of the run, and the run is one rework",
-  );
-  assert.equal(
-    reworksOver(
-      [
-        working(1),
-        evaluated(1, "Cancelled"),
-        evaluated(1, "Cancelled", 2),
-        working(2),
-      ],
-      1,
-    ),
-    0,
-    "a run nothing failed is no rework",
+test("a report is matched to the task kind that can carry it", () => {
+  const work = workTaskOf(1, 1);
+  const judge = evaluationTaskOf(1, 1, 1, 1, 1);
+  assert.ok(reportMatchesTask(work, producedReport(work)));
+  assert.ok(!reportMatchesTask(judge, producedReport(work)));
+  assert.ok(reportMatchesTask(judge, judgedReport(judge, "EvaluatorPass")));
+  assert.ok(!reportMatchesTask(work, judgedReport(judge, "EvaluatorPass")));
+  const failed = {
+    type: "TerminalFailureReport",
+    value: { evidence: 1, kind: "ProcessFailure" },
+  } as const;
+  assert.ok(
+    reportMatchesTask(work, failed) && reportMatchesTask(judge, failed),
   );
 });
 
-test("the count folds the record and the live set as one history", () => {
-  const history = [working(1), evaluated(1, "Failed"), working(2)];
-  for (const live of [0, 1, 3])
-    assert.equal(reworksOver(history, live), 1, `with ${String(live)} live`);
+test("a ticket owes exactly the tasks it holds live", () => {
+  const working = spawnWork({ ...bare, phase: "Work" }, 1);
+  assert.ok(owesTask(working, workTaskOf(1, 1)));
+  assert.ok(!owesTask(working, workTaskOf(1, 2)));
+  assert.ok(!owesTask(working, evaluationTaskOf(1, 1, 1, 1, 1)));
+  assert.ok(!owesTask(bare, workTaskOf(1, 1)));
 });

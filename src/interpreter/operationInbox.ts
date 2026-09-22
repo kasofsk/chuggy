@@ -50,6 +50,7 @@ export {
   type NativeActionKind,
   type NativeActionResolution,
   type OperationDecisionEvent,
+  type SchedulerCompletionEvent,
   type StoredTicketCommand,
   type TicketCommand,
 } from "./ticketCommand.ts";

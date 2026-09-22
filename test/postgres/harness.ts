@@ -515,9 +515,9 @@ export function postgresHarnessSubmission(
 /**
  * One completion written the way `submit_task_completion` writes it: under the
  * scheduler's own authority, at the project's next ingress ordinal, and with
- * the `Completion` priority no ingress classification produces. A case that
- * needs a settled logical task takes this rather than the public inbox, because
- * a completion is no command a principal may offer.
+ * the `Completion` priority no ingress classification produces. The
+ * disposition is dropped on the way, because the boundary does not pick one
+ * and the writer stamps its own at the serialization point.
  */
 export async function postgresHarnessCompletion(
   harness: PostgresHarness,
@@ -527,7 +527,18 @@ export async function postgresHarnessCompletion(
 ): Promise<void> {
   if (!isCompletionDecisionEvent(event))
     throw new Error("postgres harness: that event is not a completion");
-  const command = JSON.stringify({ version: 1, command: "Decide", event });
+  const command = JSON.stringify({
+    version: 1,
+    command: "Decide",
+    event: {
+      type: "TaskDone",
+      value: {
+        ticket: event.value.ticket,
+        task: event.value.task,
+        report: event.value.report,
+      },
+    },
+  });
   await harness.query(
     `WITH claimed AS (
        UPDATE project SET ingress_next = ingress_next + 1

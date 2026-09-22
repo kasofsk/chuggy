@@ -20,9 +20,7 @@ import { test } from "node:test";
 
 import {
   dispatchEvent,
-  evalReduceEvent,
   execDecisionEvent,
-  executionBlockedEvent,
   finalizationResultEvent,
   releaseTicketEvent,
   resumeTicketEvent,
@@ -45,8 +43,17 @@ import {
 } from "../../src/actor/decisionSemantics.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
-import { id } from "../domain/fixtures.ts";
-import { plainAuthoring, plainResult, refinementInstance } from "./harness.ts";
+import {
+  id,
+  judgedReport,
+  producedReport,
+  stoppedReport,
+} from "../domain/fixtures.ts";
+import {
+  plainAuthoring,
+  plainDisposition,
+  refinementInstance,
+} from "./harness.ts";
 
 const config = refinementInstance;
 
@@ -73,17 +80,36 @@ function storedAt(
  * blocked and resumed, then an evaluation set blocked and resumed, then the
  * finalizer reaching no result and resuming into a success.
  */
+const walled = workTaskOf(1, 1);
+const reworked = workTaskOf(1, 2);
+const stopped = evaluationTaskOf(1, 2, 1, 1, 1);
+const reasked = evaluationTaskOf(1, 2, 1, 2, 1);
+
 const walls = decided([
   releaseTicketEvent(id(1), plainAuthoring),
   dispatchEvent(id(1)),
-  executionBlockedEvent(id(1)),
+  taskDoneEvent(
+    id(1),
+    walled,
+    stoppedReport(walled, "ExecutionUnavailableFailure"),
+    plainDisposition,
+  ),
   resumeTicketEvent(id(1)),
-  taskDoneEvent(id(1), workTaskOf(1, 2), "Pass", plainResult),
+  taskDoneEvent(id(1), reworked, producedReport(reworked), plainDisposition),
   workReduceEvent(id(1)),
-  executionBlockedEvent(id(1)),
+  taskDoneEvent(
+    id(1),
+    stopped,
+    stoppedReport(stopped, "ExecutionUnavailableFailure"),
+    plainDisposition,
+  ),
   resumeTicketEvent(id(1)),
-  taskDoneEvent(id(1), evaluationTaskOf(1, 2, 1, 2, 1), "Pass", plainResult),
-  evalReduceEvent(id(1), "ReworkEvaluationFailure"),
+  taskDoneEvent(
+    id(1),
+    reasked,
+    judgedReport(reasked, "EvaluatorPass"),
+    plainDisposition,
+  ),
   finalizationResultEvent(id(1), "FinalizationResultUnavailable"),
   resumeTicketEvent(id(1)),
   finalizationResultEvent(id(1), "FinalizationSucceeded"),
@@ -129,8 +155,8 @@ test("each wall names itself and its resume re-enters the phase it interrupted",
   assert.equal(after(4).phase, "Work");
   assert.equal(after(7).escalation, "EvaluationBlockedEscalated");
   assert.equal(after(8).phase, "Evaluation");
-  assert.equal(after(11).escalation, "FinalizationUnavailableEscalated");
-  assert.equal(after(12).phase, "Finalization");
+  assert.equal(after(10).escalation, "FinalizationUnavailableEscalated");
+  assert.equal(after(11).phase, "Finalization");
 });
 
 test("the whole history is legal as decisions this image took, and ends Done", () => {

@@ -11,7 +11,7 @@
 /// WHY IT EXISTS. Some declared step labels sit at the end of a long,
 /// specific chain: a ticket must dispatch, work, evaluate, and reach the
 /// finalizer. Under the whole action roster the sampler spends its budget on
-/// arrivals, revokes and execution blocks that end the chain, and the labels
+/// arrivals, revokes and evaluator walls that end the chain, and the labels
 /// are not reached at a sample budget any gate can afford. They are
 /// reachable — the deterministic witness runs in
 /// tests/chuggy_witness_test.qnt walk straight to them — so the missing
@@ -29,8 +29,6 @@
 /// module emits; the instance in mc_chuggy.qnt is what the invariants are
 /// checked over, and it keeps the full roster.
 ///   revoke      — ends a ticket's life, and the chain needs it alive.
-///   executionBlocked   — parks the ticket before it ever reaches the
-///               finalizer.
 /// Everything else stays, INCLUDING release and resumeTicket: dropping release would
 /// stop the fleet ever filling, and resumeTicket is how a parked ticket rejoins the
 /// chain, so both are part of the shape being aimed at rather than noise.
@@ -42,6 +40,7 @@
 /// so every golden reproduces from what is written beside it.
 
 module mc_chuggy_directed {
+  import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(
     N_TICKETS = 3,
@@ -52,12 +51,38 @@ module mc_chuggy_directed {
   /// The consts above are mc_chuggy's, unchanged. `finalizationResult`
   /// appears repeatedly so the sampler reaches the finalizer's own outcomes
   /// rather than spending its draws on the arrivals that precede them.
+  /// THE AIM for the partial-resume golden (test/golden/manifest.json). A
+  /// label is not enough to name that shape: "ticket-resumed" is every
+  /// wall's resume, and what distinguishes this one is the STATE it lands
+  /// in — a ticket back in evaluation at a later generation of the stage it
+  /// was already judging, still holding an answer an evaluator gave before
+  /// the wall, and owing the one that was stopped. Nothing else in the
+  /// machine produces that, so refuting "this never happens" is what finds
+  /// the trace. It is an observation and not an invariant: mc_chuggy keeps
+  /// the roster the invariants are checked over.
+  val partialEvaluationResumed: bool =
+    tickets.keys().exists(j =>
+      val jb = tickets.get(j)
+      jb.phase == Evaluation and jb.evaluations.length() > 0 and
+        match currentInstance(jb).state {
+          | Running(progress) => and {
+              progress.stage.generation > 1,
+              progress.stage.evaluators.keys().exists(e =>
+                match progress.stage.evaluators.get(e) {
+                  | Produced(_) => true
+                  | _ => false
+                }),
+              progress.stage.evaluators.keys().exists(e =>
+                statusAwaiting(progress.stage.evaluators.get(e)))
+            }
+          | _ => false
+        })
+
   action gateLoopStep = any {
     releaseTicket,
     dispatch,
     taskDone,
     workReduce,
-    evalReduce,
     finalizationResult,
     finalizationResult,
     finalizationResult,

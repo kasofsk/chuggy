@@ -28,9 +28,9 @@
  * fenced attempt, a conflicting result and a cluster with no headroom are
  * outcomes a caller must handle, not exceptions it may ignore.
  *
- * NOTHING HERE DECIDES A TICKET. The scheduler submits `TaskDone` and
- * `ExecutionBlocked` through the narrow completion boundary and cannot append
- * a journal entry, settle an operation or move a ticket projection.
+ * NOTHING HERE DECIDES A TICKET. The scheduler submits `TaskDone` through the
+ * narrow completion boundary and cannot append a journal entry, settle an
+ * operation or move a ticket projection.
  *
  * THE IMMUTABLE INPUT CONTRACT IS THE SPAWN REQUEST ITSELF, at this point in
  * the tree. 006 has every registration pin its input bundle, and a bundle
@@ -83,14 +83,11 @@
  * dispatch guard, and a count grown by finalizations would refuse a project's
  * dispatch for work no dispatch relieves.
  *
- * A BLOCK RETIRES ONE EXECUTION AND NOT ITS SIBLINGS. `ExecutionBlocked`
- * escalates the whole ticket in `TicketGraph`, but the decider emits only
- * `OpenHumanTask`, so no cancellation obligation reaches this scheduler for the
- * work that was still outstanding. Those siblings therefore drain: each
- * terminalizes normally, releasing its own slot exactly once, and its
- * completion is refused by the writer as the auditable staleness 006 already
- * describes. Retiring them here instead would make the scheduler decide a
- * ticket-wide fact it is not the authority for.
+ * A BLOCK RETIRES ONE EXECUTION AND SAYS NOTHING ABOUT ITS SIBLINGS. The
+ * completion it submits names the task whose wall it was, so the siblings
+ * still running are still owed: each finishes or hits its own wall, and the
+ * stage decides what their answers add up to. Retiring them here would make
+ * the scheduler decide a ticket-wide fact it is not the authority for.
  */
 
 import type { Config as DomainConfig } from "../domain/config.ts";
@@ -154,14 +151,21 @@ export const allExecutionStatuses: readonly ExecutionStatus[] = [
   "Cancelled",
 ];
 
-/** What one logical task settled as, which is the only thing `TicketGraph` is told. */
-export type ExecutionOutcome = "Passed" | "Failed" | "Blocked";
+/**
+ * What one logical task settled as. `ProcessFailed` is the death of the
+ * process behind a failed manifest this scheduler authored itself, which is
+ * not the verdict `Failed` reports: what the ticket is told of either is the
+ * report the door builds, and the row is where a reader tells them apart.
+ */
+export type ExecutionOutcome =
+  "Passed" | "Failed" | "Blocked" | "ProcessFailed";
 
 /** Every terminal outcome, so a suite and a database CHECK iterate rather than restate. */
 export const allExecutionOutcomes: readonly ExecutionOutcome[] = [
   "Passed",
   "Failed",
   "Blocked",
+  "ProcessFailed",
 ];
 
 /** The kind of logical task an execution runs, mirroring the spawn request's child rows. */
@@ -695,8 +699,8 @@ export interface ExecutionSchedulerStore {
   terminalize(report: AttemptReport): Promise<Terminalized>;
 
   /**
-   * Retires one execution that definitively cannot run and submits its
-   * `ExecutionBlocked`, releasing the slot in the same transaction.
+   * Retires one execution that definitively cannot run and submits the
+   * completion naming its wall, releasing the slot in the same transaction.
    */
   blockExecution(
     partition: Partition,
@@ -776,8 +780,8 @@ export interface AttemptPlacement extends FencedAttempt {
 
 /**
  * What a placement found. `Denied` is a definitive inability to run the
- * immutable contract and becomes `ExecutionBlocked`; `Unavailable` is
- * temporary and leaves the execution visibly held.
+ * immutable contract and becomes the task's wall; `Unavailable` is temporary
+ * and leaves the execution visibly held.
  */
 export type AttemptPlacementOutcome =
   | { readonly placed: "Placed"; readonly placement: PlacementId }
@@ -786,8 +790,8 @@ export type AttemptPlacementOutcome =
 
 /**
  * The mandatory execution policy, evaluated separately from the pinned release
- * briefing. A denial is definitive and becomes `ExecutionBlocked`; an
- * unavailable policy is a hold that leaves the execution exactly as it was.
+ * briefing. A denial is definitive and becomes the task's wall; an unavailable
+ * policy is a hold that leaves the execution exactly as it was.
  */
 export interface ExecutionPolicy {
   profileFor(execution: LogicalExecution): Promise<ProfileResolved>;

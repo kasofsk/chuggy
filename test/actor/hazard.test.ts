@@ -16,7 +16,6 @@ import assert from "node:assert/strict";
 
 import {
   dispatchEvent,
-  evalReduceEvent,
   finalizationResultEvent,
   releaseTicketEvent,
   taskDoneEvent,
@@ -41,15 +40,16 @@ import {
   worldSpawns,
 } from "../../src/actor/world.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
-import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
-import { id } from "../domain/fixtures.ts";
+import { workTaskOf } from "../../src/domain/task.ts";
+import { id, producedReport } from "../domain/fixtures.ts";
 import {
   assertStep,
+  firstJudgement,
   plainAuthoring,
-  plainResult,
+  plainDisposition,
   refinementInstance,
   stepEmit,
-  walkFirstCycle,
+  walkToFirstJudgement,
 } from "./harness.ts";
 
 const config = refinementInstance;
@@ -99,7 +99,12 @@ function phaseDuplicateCycle(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
+    taskDoneEvent(
+      id(1),
+      workTaskOf(1, 1),
+      producedReport(workTaskOf(1, 1)),
+      plainDisposition,
+    ),
     "task-done",
     spentWorld,
   );
@@ -113,14 +118,7 @@ function phaseDuplicateCycle(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 1, 1, 1), "Pass", plainResult),
-    "task-done",
-    spentWorld,
-  );
-  state = stepEmit(
-    config,
-    state,
-    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
+    firstJudgement("EvaluatorPass"),
     "eval-passed",
     spentWorld,
   );
@@ -156,18 +154,10 @@ test("the duplicate dispatch and the duplicate completion, one effect-first cras
   phaseDuplicateCycle(phaseDispatchDoubleSpend());
 });
 
-/** The disciplined walk to the state whose next decision is the rework. */
-function walkToEvalFailure(): ActorState {
-  return walkFirstCycle(config, actorInit(), "Fail");
-}
-
 test("the rework crash: the fan-out launches and the step dies with the crash", () => {
-  let state = walkToEvalFailure();
-  state = effectCrash(
-    config,
-    state,
-    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
-  );
+  let state = walkToFirstJudgement(config, actorInit());
+  const dissenting = firstJudgement("EvaluatorFail", "ReworkEvaluationFailure");
+  state = effectCrash(config, state, dissenting);
   assert.equal(state.orphans.length, 1);
   const recovered = ticketAt(memoryGraph(state), id(1));
   assert.equal(recovered.phase, "Evaluation");
@@ -180,11 +170,7 @@ test("the rework crash: the fan-out launches and the step dies with the crash", 
     spentWorld,
   );
   assert.ok(obligationsHold(config, state, refinementCore));
-  state = journalStep(
-    config,
-    state,
-    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
-  );
+  state = journalStep(config, state, dissenting);
   assert.equal(state.view.rec.label, "rework-started eval_failure");
   state = emitNext(state);
   assert.equal(worldSpawns(state, id(1)), 3);

@@ -45,6 +45,7 @@ import {
 import {
   schedulerArtifact,
   schedulerClaimFor,
+  schedulerEvaluationRequest,
   schedulerExecutions,
   schedulerOwner,
   schedulerProject,
@@ -643,7 +644,7 @@ test("a lost attempt spends the retry budget and a withdrawn one does not", asyn
   );
 });
 
-test("an exhausted retry budget settles one failed completion with an empty manifest", async () => {
+test("an exhausted retry budget settles a dead process under an empty manifest", async () => {
   const project = await schedulerProject(rig, "exhausted", { tasks: 1 });
   await registerAll(project, "exhausted");
   const attempt = await placedAttempt(project, "exhausted");
@@ -665,7 +666,7 @@ test("an exhausted retry budget settles one failed completion with an empty mani
     attempt.execution,
   );
   assert.ok(settled.terminalized === "Terminalized");
-  assert.equal(settled.outcome, "Failed");
+  assert.equal(settled.outcome, "ProcessFailed");
   assert.deepEqual(
     await rig.harness.query(
       `SELECT r.verdict, count(a.ordinal)::text AS artifacts
@@ -676,6 +677,65 @@ test("an exhausted retry budget settles one failed completion with an empty mani
       [project.partition.tenant, project.partition.project],
     ),
     [{ verdict: "Fail", artifacts: "0" }],
+  );
+});
+
+/**
+ * The empty manifest a spent budget seals carries a failed verdict, which for
+ * an evaluator would read as the judgement it never reached. The submission
+ * names the death instead, so the report is the process failure and the stage
+ * parks to be re-asked rather than concluding against the ticket — and the
+ * row records that name too, which is where a reader of the execution alone
+ * tells the two apart.
+ */
+test("an evaluator whose budget ran out reports a dead process, not a verdict", async () => {
+  const project = await schedulerProject(rig, "exhausted-eval", { tasks: 1 });
+  const request = await schedulerEvaluationRequest(
+    rig,
+    project,
+    "exhausted-eval",
+    { cycle: 1, stage: 1, generation: 1, evaluator: 1 },
+  );
+  await rig.store.registerSpawn(
+    await schedulerClaimFor(
+      rig,
+      project.partition,
+      request,
+      schedulerOwner("exhausted-eval"),
+    ),
+    executionSchedulerDefaults.nTasks,
+  );
+  const attempt = await placedAttempt(project, "exhausted-eval");
+  assert.equal(await rig.store.attemptEnded(attempt, "Lost", "Vanished"), true);
+  await rig.harness.query(
+    `UPDATE execution SET retries_spent=3, placement_backoff_from=NULL
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [project.partition.tenant, project.partition.project, attempt.execution],
+  );
+  const settled = await rig.store.retriesExhausted(
+    project.partition,
+    attempt.execution,
+  );
+  assert.ok(settled.terminalized === "Terminalized");
+  assert.equal(settled.outcome, "ProcessFailed");
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT e.outcome, (o.command::jsonb#>'{event,value,report}') AS report
+         FROM execution e JOIN operation o
+           ON o.tenant=e.tenant AND o.project=e.project
+          AND o.operation=e.completion_operation
+        WHERE e.tenant=$1 AND e.project=$2 AND e.execution=$3`,
+      [project.partition.tenant, project.partition.project, attempt.execution],
+    ),
+    [
+      {
+        outcome: "ProcessFailed",
+        report: {
+          type: "TerminalFailureReport",
+          value: { evidence: project.tasks + 1, kind: "ProcessFailure" },
+        },
+      },
+    ],
   );
 });
 
@@ -699,7 +759,7 @@ test("a definitive inability blocks one execution and releases its slot", async 
   assert.equal(execution?.resultManifest, undefined);
   assert.equal(
     (await completionOf(project, blocked.operation))?.["command_tag"],
-    "ExecutionBlocked",
+    "TaskDone",
   );
   assert.deepEqual(
     await rig.store.blockExecution(
@@ -713,8 +773,8 @@ test("a definitive inability blocks one execution and releases its slot", async 
 
 /**
  * The wall a block recorded, from the boundary that wrote it to the page that
- * shows it. The event names no wall, so the writer reads it off the execution
- * the completion settled and puts it on the projection for the read.
+ * shows it. The report names the kind alone, so the writer reads the wall off
+ * the execution the completion settled and puts it on the projection.
  */
 test("a blocked ticket escalates at the one wall and records what it hit", async () => {
   const project = await schedulerProject(rig, "wall-read", { tasks: 1 });

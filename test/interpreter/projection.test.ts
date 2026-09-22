@@ -22,7 +22,6 @@ import { test } from "node:test";
 
 import {
   dispatchEvent,
-  evalReduceEvent,
   execDecisionEvent,
   releaseTicketEvent,
   resumeTicketEvent,
@@ -39,7 +38,8 @@ import type {
 } from "../../src/domain/generated/modelTypes.ts";
 import { workTaskOf } from "../../src/domain/task.ts";
 import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
-import { resumeOf } from "../../src/domain/ticket.ts";
+import { currentTaskObligations } from "../../src/domain/evaluation.ts";
+import { currentInstance, resumeOf } from "../../src/domain/ticket.ts";
 import {
   IntegrityContradiction,
   projectionChanges,
@@ -48,16 +48,21 @@ import {
 import type { TicketProjection } from "../../src/interpreter/projectDecision.ts";
 import {
   plainAuthoring,
-  plainResult,
+  plainDisposition,
   refinementInstance,
 } from "../actor/harness.ts";
-import { id } from "../domain/fixtures.ts";
+import { id, judgedReport, producedReport } from "../domain/fixtures.ts";
 
 /** A history long enough to release a ticket, move it, and then change its task ledger. */
 const history: readonly DecisionEvent[] = [
   releaseTicketEvent(id(1), plainAuthoring),
   dispatchEvent(id(1)),
-  taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
+  taskDoneEvent(
+    id(1),
+    workTaskOf(1, 1),
+    producedReport(workTaskOf(1, 1)),
+    plainDisposition,
+  ),
 ];
 
 /** The journal that history writes, which is what a rebuild reads. */
@@ -119,7 +124,12 @@ test("a decision reports exactly the tickets whose complete state changed", () =
   const completed = journalStep(
     refinementInstance,
     dispatched,
-    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
+    taskDoneEvent(
+      id(1),
+      workTaskOf(1, 1),
+      producedReport(workTaskOf(1, 1)),
+      plainDisposition,
+    ),
   );
   assert.deepEqual(
     projectionChanges(dispatched.view.post, completed.view.post),
@@ -151,14 +161,14 @@ test("a release is a change although it transitions nothing", () => {
   ]);
 });
 
-/** The one outstanding task of a single-width ticket, which is what a completion names. */
-function outstandingTask(graph: TicketGraph): TaskIdentity {
-  const task = [...ticketAt(graph, id(1)).tasks].find(
-    (candidate) => candidate.state === "Outstanding",
-  );
-  if (task === undefined)
-    throw new Error("projection case: the ticket has no outstanding task");
-  return task.identity;
+/** The one task a single-width ticket owes, which is what a completion names. */
+function owedTask(graph: TicketGraph): TaskIdentity {
+  const ticket = ticketAt(graph, id(1));
+  if (ticket.phase === "Work") return workTaskOf(1, ticket.workCyclesStarted);
+  const [obligation] = currentTaskObligations(currentInstance(ticket));
+  if (obligation === undefined)
+    throw new Error("projection case: the ticket owes no task");
+  return obligation;
 }
 
 /**
@@ -180,12 +190,15 @@ function walledHistory(): readonly DecisionEvent[] {
     graph = execDecisionEvent(graph, event).post;
   };
   for (const cycle of [0, 1]) {
-    step(taskDoneEvent(id(1), outstandingTask(graph), "Pass", plainResult));
+    const work = owedTask(graph);
+    step(taskDoneEvent(id(1), work, producedReport(work), plainDisposition));
     step(workReduceEvent(id(1)));
-    step(taskDoneEvent(id(1), outstandingTask(graph), "Fail", plainResult));
+    const judge = owedTask(graph);
     step(
-      evalReduceEvent(
+      taskDoneEvent(
         id(1),
+        judge,
+        judgedReport(judge, "EvaluatorFail"),
         cycle === 1 ? "EscalateEvaluationFailure" : "ReworkEvaluationFailure",
       ),
     );

@@ -20,11 +20,17 @@ import {
 } from "../../src/generated/model-api.ts";
 import type {
   TicketGraph,
+  EvaluationInstance,
+  EvaluationProgress,
+  EvaluationState,
+  EvaluatorStatus,
+  StageRun,
   StepRecord,
   Task,
   TaskIdentity,
+  TaskResultRef,
+  TaskTerminalReport,
   Ticket,
-  Verdict,
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
 import { tasksInEvaluatorKeyOrder } from "../../src/domain/task.ts";
@@ -148,10 +154,6 @@ function encodeSum(
   return encodeVariant(value.type, payload(value.value as never));
 }
 
-export function encodeVerdict(value: Verdict): ItfValue {
-  return encodeNullary(value);
-}
-
 /** A dependency set, ascending, which is the order a set has no opinion about. */
 export function encodeDeps(deps: ReadonlySet<number>): ItfValue {
   return {
@@ -172,6 +174,113 @@ export function encodeProgram(program: Ticket["program"]): ItfValue {
       ],
     ]),
   );
+}
+
+function encodeTaskResultRef(result: TaskResultRef): ItfValue {
+  return encodeRecord([
+    ["manifest", encodeInt(result.manifest)],
+    ["digest", encodeInt(result.digest)],
+    ["schema", encodeInt(result.schema)],
+  ]);
+}
+
+/** What a task came back with, whichever arm it is. */
+export function encodeTaskTerminalReport(report: TaskTerminalReport): ItfValue {
+  switch (report.type) {
+    case "WorkResultReport":
+      return encodeVariant(
+        "WorkResultReport",
+        encodeRecord([["result", encodeTaskResultRef(report.value.result)]]),
+      );
+    case "EvaluationResultReport":
+      return encodeVariant(
+        "EvaluationResultReport",
+        encodeRecord([
+          ["result", encodeTaskResultRef(report.value.result)],
+          ["verdict", encodeNullary(report.value.verdict)],
+        ]),
+      );
+    case "TerminalFailureReport":
+      return encodeVariant(
+        "TerminalFailureReport",
+        encodeRecord([
+          ["evidence", encodeInt(report.value.evidence)],
+          ["kind", encodeNullary(report.value.kind)],
+        ]),
+      );
+  }
+}
+
+/** One evaluator's standing in a run, whichever arm it is. */
+function encodeEvaluatorStatus(status: EvaluatorStatus): ItfValue {
+  if (status === "Awaiting") return encodeNullary("Awaiting");
+  if (status.type === "Produced")
+    return encodeVariant(
+      "Produced",
+      encodeVariant(status.value.type, encodeInt(status.value.value)),
+    );
+  return encodeVariant(status.type, encodeInt(status.value));
+}
+
+/** One run of one stage; its evaluator map ascends by key, as ITF writes one. */
+function encodeStageRun(run: StageRun): ItfValue {
+  return encodeRecord([
+    ["stageIndex", encodeInt(run.stageIndex)],
+    ["generation", encodeInt(run.generation)],
+    [
+      "evaluators",
+      {
+        kind: "map",
+        entries: [...run.evaluators.keys()]
+          .sort((a, b) => a - b)
+          .map((evaluator) => {
+            const status = run.evaluators.get(evaluator);
+            if (status === undefined)
+              throw new Error(
+                `vocabulary: no status for evaluator ${String(evaluator)}`,
+              );
+            return [
+              encodeInt(evaluator),
+              encodeEvaluatorStatus(status),
+            ] as const;
+          }),
+      },
+    ],
+  ]);
+}
+
+function encodeEvaluationProgress(progress: EvaluationProgress): ItfValue {
+  return encodeRecord([
+    ["completedStages", progress.completedStages.map(encodeStageRun)],
+    ["stage", encodeStageRun(progress.stage)],
+  ]);
+}
+
+function encodeEvaluationState(state: EvaluationState): ItfValue {
+  switch (state.type) {
+    case "Running":
+    case "EvaluationBlocked":
+      return encodeVariant(state.type, encodeEvaluationProgress(state.value));
+    case "EvaluationPassed":
+    case "EvaluationFailed":
+      return encodeVariant(state.type, state.value.map(encodeStageRun));
+  }
+}
+
+/** One judgement of one work cycle, as the ticket keeps it. */
+function encodeEvaluationInstance(instance: EvaluationInstance): ItfValue {
+  return encodeRecord([
+    ["workCycle", encodeInt(instance.workCycle)],
+    [
+      "input",
+      encodeRecord([
+        ["ticket", encodeInt(instance.input.ticket)],
+        ["workResult", encodeInt(instance.input.workResult)],
+      ]),
+    ],
+    ["plan", encodeRecord([["stages", encodeProgram(instance.plan.stages)]])],
+    ["state", encodeEvaluationState(instance.state)],
+  ]);
 }
 
 /** The contract's identity, whichever arm it is, with its own record inside. */
@@ -222,7 +331,7 @@ function encodeTicket(ticket: Ticket): ItfValue {
         elements: tasksInEvaluatorKeyOrder(ticket.tasks).map(encodeTask),
       },
     ],
-    ["record", ticket.record.map(encodeTask)],
+    ["evaluations", ticket.evaluations.map(encodeEvaluationInstance)],
     ["workCyclesStarted", encodeInt(ticket.workCyclesStarted)],
     ["spawned", encodeInt(ticket.spawned)],
     ["escalation", encodeNullary(ticket.escalation)],

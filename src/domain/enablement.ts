@@ -21,13 +21,9 @@ import type {
   StageDefinition,
   TaskIdentity,
 } from "./generated/modelTypes.ts";
-import { hasOpenHumanTask } from "./ticket.ts";
+import { hasOpenHumanTask, liveTasks, owesTask } from "./ticket.ts";
 import type { TicketId } from "./ids.ts";
-import {
-  outstandingCount,
-  taskIdentityEquals,
-  tasksInEvaluatorKeyOrder,
-} from "./task.ts";
+import { outstandingCount } from "./task.ts";
 
 /** Anything not settled and not past the point of no return. */
 export function revocableIn(graph: TicketGraph, id: TicketId): boolean {
@@ -101,27 +97,21 @@ export function readiesIn(graph: TicketGraph): readonly TicketId[] {
   return ticketIds(graph).filter((j) => isReadyIn(graph, j));
 }
 
-/** The two phases that hold a live task set, and so may take a completion. */
-export function taskPhaseIn(graph: TicketGraph): readonly TicketId[] {
-  return ticketIds(graph).filter((j) => {
-    const phase = ticketAt(graph, j).phase;
-    return phase === "Work" || phase === "Evaluation";
-  });
+/**
+ * Tickets the fabric is currently running a task for, which is who a
+ * completion can be delivered to. Narrower than "in a task phase": a resolved
+ * work task waits for its reduce, and nothing is running for it.
+ */
+export function completableIn(graph: TicketGraph): readonly TicketId[] {
+  return ticketIds(graph).filter(
+    (j) => liveTasks(ticketAt(graph, j)).length > 0,
+  );
 }
 
 export function reducibleWorkIn(graph: TicketGraph): readonly TicketId[] {
   return ticketIds(graph).filter((j) => {
     const ticket = ticketAt(graph, j);
     return ticket.phase === "Work" && outstandingCount(ticket.tasks) === 0;
-  });
-}
-
-export function reducibleEvalIn(graph: TicketGraph): readonly TicketId[] {
-  return ticketIds(graph).filter((j) => {
-    const ticket = ticketAt(graph, j);
-    return (
-      ticket.phase === "Evaluation" && outstandingCount(ticket.tasks) === 0
-    );
   });
 }
 
@@ -168,15 +158,13 @@ export const finalizationOutcomes: readonly FinalizationOutcome[] = [
   "FinalizationResultUnavailable",
 ];
 
-/** Whether the task this identity names is still outstanding on this ticket. */
+/** Whether the task this identity names is one this ticket is currently owed. */
 export function outstandingTaskIn(
   graph: TicketGraph,
   id: TicketId,
   task: TaskIdentity,
 ): boolean {
-  return [...ticketAt(graph, id).tasks].some(
-    (t) => taskIdentityEquals(t.identity, task) && t.state === "Outstanding",
-  );
+  return owesTask(ticketAt(graph, id), task);
 }
 
 /** Every value a release must draw from a universe, which is its program alone. */
@@ -218,12 +206,13 @@ export function quietIn(config: Config, graph: TicketGraph): boolean {
   );
 }
 
-/** The tasks of this ticket the fabric could still report on, by evaluator key. */
+/**
+ * The tasks of this ticket the fabric could still report on: the work cycle's
+ * one task, or the obligations the running stage owes, in the roster's order.
+ */
 export function outstandingTasksIn(
   graph: TicketGraph,
   id: TicketId,
 ): readonly TaskIdentity[] {
-  return tasksInEvaluatorKeyOrder(
-    [...ticketAt(graph, id).tasks].filter((t) => t.state === "Outstanding"),
-  ).map((t) => t.identity);
+  return liveTasks(ticketAt(graph, id));
 }

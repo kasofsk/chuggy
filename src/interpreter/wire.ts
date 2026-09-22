@@ -23,6 +23,8 @@
 import {
   decodeDecisionEvent,
   decodeEntry,
+  decodeTaskIdentity,
+  decodeTaskTerminalReport,
   encodeDecisionEvent,
   encodeEntry as encodeEntryValue,
 } from "../generated/model-api.ts";
@@ -172,7 +174,6 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
       const event = decodeDecisionEvent(record["event"]);
       if (
         event.type === "WorkReduce" ||
-        event.type === "EvalReduce" ||
         event.type === "CreateTicket" ||
         event.type === "FinalizationResult" ||
         isCompletionDecisionEvent(event)
@@ -270,19 +271,43 @@ function claimsCompletion(
 
 /**
  * The scheduler boundary's stored envelope, refused by the ingress parser by
- * design and read here: `submit_task_completion` builds its `ExecutionBlocked`
- * from the ticket alone, and the wall name it used to carry is now the phase's
- * own, so the bytes are the model's vocabulary like any other command's.
+ * design and read here. The two model-typed fields go through the model's own
+ * decoders, so what a completion may say about a task and its report is the
+ * generated codec's answer and not a second one; the ticket is the one plain
+ * integer left, and a disposition is refused outright rather than ignored —
+ * the boundary does not hold the cap that picks one, so bytes naming one were
+ * not written by it.
  */
 function storedSchedulerCompletion(
   record: Record<string, unknown>,
 ): SchedulerCompletion {
   if (record["version"] !== 1)
     throw new TypeError("stored completion version is not 1");
-  const event = decodeDecisionEvent(record["event"]);
-  if (!isCompletionDecisionEvent(event))
+  const event = record["event"];
+  const value =
+    typeof event === "object" && event !== null
+      ? (event as Record<string, unknown>)["value"]
+      : undefined;
+  if (typeof value !== "object" || value === null)
     throw new TypeError("stored completion carries no completion event");
-  return { version: 1, command: "Decide", event };
+  const fields = value as Record<string, unknown>;
+  const ticket = fields["ticket"];
+  if (typeof ticket !== "number" || !Number.isSafeInteger(ticket) || ticket < 1)
+    throw new TypeError("stored completion names no ticket");
+  if (fields["onFailure"] !== undefined)
+    throw new TypeError("stored completion names a disposition it cannot pick");
+  return {
+    version: 1,
+    command: "Decide",
+    event: {
+      type: "TaskDone",
+      value: {
+        ticket,
+        task: decodeTaskIdentity(fields["task"]),
+        report: decodeTaskTerminalReport(fields["report"]),
+      },
+    },
+  };
 }
 
 /**

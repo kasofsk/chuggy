@@ -16,7 +16,6 @@ import assert from "node:assert/strict";
 import {
   decisionEventEnabled,
   dispatchEvent,
-  evalReduceEvent,
   finalizationResultEvent,
   releaseTicketEvent,
   taskDoneEvent,
@@ -38,11 +37,11 @@ import {
 } from "../../src/actor/world.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
-import { id } from "../domain/fixtures.ts";
+import { id, judgedReport, producedReport } from "../domain/fixtures.ts";
 import {
   assertStep,
   plainAuthoring,
-  plainResult,
+  plainDisposition,
   refinementInstance,
   stepEmit,
 } from "./harness.ts";
@@ -83,10 +82,11 @@ function phaseDispatchSurvives(): ActorState {
 
 /** The rework survives total cursor loss, and the whole re-emitted prefix absorbs. */
 function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
+  const work = workTaskOf(1, 1);
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
+    taskDoneEvent(id(1), work, producedReport(work), plainDisposition),
     "task-done",
   );
   assert.throws(
@@ -94,23 +94,23 @@ function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
       journalStep(
         config,
         state,
-        taskDoneEvent(id(1), workTaskOf(1, 1), "Fail", plainResult),
+        taskDoneEvent(id(1), work, producedReport(work), plainDisposition),
       ),
     /TaskDone is refused/,
     "a task already resolved is no longer outstanding, so a second report is refused",
   );
   assert.equal(state.journal.length, 3);
   state = stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
-  state = stepEmit(
-    config,
-    state,
-    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 1, 1, 1), "Fail", plainResult),
-    "task-done",
-  );
+  const dissenter = evaluationTaskOf(1, 1, 1, 1, 1);
   state = journalStep(
     config,
     state,
-    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
+    taskDoneEvent(
+      id(1),
+      dissenter,
+      judgedReport(dissenter, "EvaluatorFail"),
+      "ReworkEvaluationFailure",
+    ),
   );
   assert.equal(state.view.rec.label, "rework-started eval_failure");
   assert.equal(journalSpawns(state, id(1)), 2);
@@ -119,20 +119,20 @@ function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
   state = crashRecoverTo(state, 0);
   assert.equal(state.applied, 0);
   assert.equal(worldSpawns(state, id(1)), 1);
-  assert.equal(state.worldEffects.size, 5);
+  assert.equal(state.worldEffects.size, 4);
   assertStep(config, state, "crash at the rework seam, cursor lost whole");
   state = emitNext(state);
   assert.equal(state.applied, 1);
-  assert.equal(state.worldEffects.size, 5);
+  assert.equal(state.worldEffects.size, 4);
   assert.equal(worldSpawns(state, id(1)), 1);
   assertStep(config, state, "a re-emission is absorbed by its seq");
-  for (let ahead = state.applied; ahead < 5; ahead++) state = emitNext(state);
-  assert.equal(state.applied, 5);
-  assert.equal(state.worldEffects.size, 5);
+  for (let ahead = state.applied; ahead < 4; ahead++) state = emitNext(state);
+  assert.equal(state.applied, 4);
+  assert.equal(state.worldEffects.size, 4);
   assertStep(config, state, "the whole lost prefix re-emits absorbed");
   state = emitNext(state);
-  assert.equal(state.applied, 6);
-  assert.equal(state.worldEffects.size, 6);
+  assert.equal(state.applied, 5);
+  assert.equal(state.worldEffects.size, 5);
   assert.equal(worldSpawns(state, id(1)), 2);
   assert.equal(journalSpawns(state, id(1)), 2);
   assertStep(config, state, "the rework's fan-out launches for the first time");
@@ -141,23 +141,24 @@ function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
 
 /** The completion decision is durable before it is told, and the ticket lands exactly once. */
 function phaseCompletionLandsOnce(state: ActorState): void {
+  const rework = workTaskOf(1, 2);
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), workTaskOf(1, 2), "Pass", plainResult),
+    taskDoneEvent(id(1), rework, producedReport(rework), plainDisposition),
     "task-done",
   );
   state = stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
+  const judge = evaluationTaskOf(1, 2, 1, 1, 1);
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), evaluationTaskOf(1, 2, 1, 1, 1), "Pass", plainResult),
-    "task-done",
-  );
-  state = stepEmit(
-    config,
-    state,
-    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
+    taskDoneEvent(
+      id(1),
+      judge,
+      judgedReport(judge, "EvaluatorPass"),
+      plainDisposition,
+    ),
     "eval-passed",
   );
   const succeeded = finalizationResultEvent(id(1), "FinalizationSucceeded");
@@ -169,7 +170,7 @@ function phaseCompletionLandsOnce(state: ActorState): void {
   assert.equal(worldCompletions(state, id(1)), 0);
   assert.ok(!decisionEventEnabled(config, memoryGraph(state), succeeded));
   assertStep(config, state, "completion (journaled, untold)");
-  state = crashRecoverTo(state, 10);
+  state = crashRecoverTo(state, 8);
   assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Done");
   assert.equal(ticketAt(memoryGraph(state), id(1)).completions, 1);
   assert.equal(worldCompletions(state, id(1)), 0);
@@ -179,7 +180,7 @@ function phaseCompletionLandsOnce(state: ActorState): void {
   assertStep(config, state, "the completion reaches the world");
   state = crashRecoverTo(state, 0);
   assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Done");
-  assert.equal(state.journal.length, 11);
+  assert.equal(state.journal.length, 9);
   while (state.applied < state.journal.length) state = emitNext(state);
   assert.equal(worldCompletions(state, id(1)), 1);
   assert.equal(worldSpawns(state, id(1)), 2);

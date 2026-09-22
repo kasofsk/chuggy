@@ -23,7 +23,7 @@ import type { ConversationStanding } from "./conversation.ts";
 import type { ForgeAppStanding } from "./forgeInstallation.ts";
 import { leadDispatchLanded } from "./leadTranscript.ts";
 import type { AgenticRefusalStanding, LeadDispatch } from "./leadTranscript.ts";
-import type { CycleStanding, SetVerdict, StageRow } from "./ticketLedger.ts";
+import type { SetVerdict, StageRow } from "./ticketLedger.ts";
 
 export const pillTones = [
   "pass",
@@ -87,6 +87,7 @@ export function executionTone(
       case "Passed":
         return "pass";
       case "Failed":
+      case "ProcessFailed":
         return "fail";
       case "Blocked":
         return "retired";
@@ -106,16 +107,6 @@ export function executionTone(
   }
 }
 
-/** Whether the ticket's current artifact is this cycle's, or a later one's. */
-export function standingTone(standing: CycleStanding): Tone {
-  switch (standing) {
-    case "Current":
-      return "live";
-    case "Superseded":
-      return "retired";
-  }
-}
-
 /** One status word and its tone for a stage the program did not run. */
 export interface StageArm {
   readonly word: string;
@@ -123,13 +114,13 @@ export interface StageArm {
 }
 
 /**
- * The three arms a stage row has without a set: short-circuited, not yet
+ * The three arms a stage row has without evaluators: short-circuited, not yet
  * started, or off the page this screen holds.
  */
 export function stageArm(row: StageRow): StageArm {
   switch (row.kind) {
     case "Ran":
-      return { word: row.set.verdict, tone: verdictTone(row.set.verdict) };
+      return { word: row.verdict, tone: verdictTone(row.verdict) };
     case "Skipped":
       return { word: "Skipped", tone: "retired" };
     case "Queued":

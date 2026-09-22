@@ -223,7 +223,7 @@ function picksOf(state: ItfState): Picks {
     program: some("prog"),
     onFailure: some("onFailure"),
     task: some("task"),
-    verdict: some("v"),
+    report: some("report"),
     outcome: some("out"),
   };
 }

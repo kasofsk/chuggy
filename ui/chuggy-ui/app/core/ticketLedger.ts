@@ -1,45 +1,48 @@
 /**
  * A ticket's executions read as the machine's own structure: cycles, each
- * holding the work run that produced an artifact and the program runs that
- * evaluated it.
+ * holding the work run that produced an artifact and, once it began, the
+ * evaluation of it — a stage in the order the program declares, and within a
+ * stage the evaluators the roster names.
  *
  * NOTHING HERE TRUSTS ARRIVAL ORDER. The route answers in `(ticket, task)`
  * ascending, so a page usually arrives in the order this reads it in — but
  * `ExecutionsResponse` is a list with no ordering in its type, and a live frame
  * is folded into a page already read. `task` is the wire's number for a
- * task, ascending within a ticket, read only to keep a set's own rows in a
- * stable order; which cycle, program run and stage a row belongs to comes off its
- * `identity` and is never inferred from where the row sits on the page.
+ * task, ascending within a ticket, read only to keep a stage's own rows in a
+ * stable order; which cycle, stage, generation and evaluator a row belongs to
+ * comes off its `identity` and is never inferred from where the row sits on
+ * the page.
  *
- * A SET IS EVERY ROW SHARING ONE IDENTITY OUTSIDE ITS EVALUATOR — a work
- * task's own cycle, or an evaluation task's cycle, generation and stage — so
- * nothing here counts a work run to number a cycle or trims a task ordinal off
- * an execution's own string identity to find its fan-out. The model hands out
- * the whole tuple; this reads it.
- *
- * A PROGRAM RUN IS CUT AT THE LOWEST STAGE the cycle holds, because that is
- * where both spawn sites enter it — `decideWorkReduce` and the resume of
- * an evaluation park in `decideResumeTicket`, each at stage 0 in `model/domain.qnt`. The generation
- * cannot group a run: `stageGeneration` in `model/ticket.qnt` counts per
- * stage, so a stage first reached after a resume is still on generation 1
- * while the stage below it the resume re-ran is on 2. What numbers a run is
- * the generation of the set that opened it.
+ * AN EVALUATOR DRAWS A ROW AT EVERY GENERATION IT HAS REACHED. `resumeBlocked`
+ * in `model/ticket-domain/evaluation/evaluation.qnt` re-asks only the
+ * evaluators a stage blocked, bumping their generation while every evaluator
+ * it did not re-ask keeps its `Produced` row; so two evaluators of one stage
+ * can sit at different generations at once, and an evaluator a stage resumed
+ * holds an earlier generation the ledger does not drop — it is marked
+ * `Superseded` rather than merged away, because a sum over the rows a page
+ * draws must equal the sum the page already charges the cycle. A stage's
+ * `verdict` and `expected` still read off each evaluator's highest generation
+ * only. There is one evaluation instance per work cycle — nothing here groups
+ * by a "program run".
  *
  * IT IS TOTAL OVER THE PAGES THE ROSTERS ADMIT, not only over the pages the
  * machine produces or the route can page to. Ordering by `(ticket, task)` makes
  * a short page a prefix of the ticket's history, so pagination alone no longer
  * cuts a cycle in half; the shapes are inputs regardless, because the rosters
  * admit them — `executions` is a list whose type promises neither an order nor
- * a whole ticket, and an evaluation task's `stage` and `generation` are each an
- * unbounded count. So a cycle whose work run is missing, a gap between two
- * stages and a stage the authored program does not declare each get a row of
- * their own rather than being merged into a neighbour.
+ * a whole ticket, and an evaluation task's `stage`, `generation` and
+ * `evaluator` are each an unbounded count. So a cycle whose work run is
+ * missing, a gap between two stages and a stage the authored program does not
+ * declare each get a row of their own rather than being merged into a
+ * neighbour.
  *
- * EVERY LOOP IS BOUNDED BY SOMETHING DECLARED. A run draws one row per stage
- * the authoring declares and one per set the page holds beyond it, which are
- * bounded by `nativeHttpDraftStagesMax` and by the page; a task's `stage` is
- * an unbounded count and is never a loop bound, because one row naming a stage
- * in the millions would otherwise build that many rows.
+ * EVERY LOOP IS BOUNDED BY SOMETHING DECLARED. A cycle draws one row per
+ * stage the authoring declares and one per stage the page holds beyond it,
+ * bounded by `nativeHttpDraftStagesMax` and by the page; within a stage, one
+ * row per evaluator per generation the page holds for it, bounded by the
+ * page. A task's `stage`, `generation` and
+ * `evaluator` are each unbounded counts and are never loop bounds, because one
+ * row naming a stage in the millions would otherwise build that many rows.
  *
  * WHAT IT EMITS IS FACTS, and the three labels at the end are the only strings
  * in it: each names a row the ledger numbered, and every word a reader is given
@@ -50,8 +53,8 @@
  *
  * A ROLLUP SAYS HOW MUCH OF ITSELF IT COULD SEE. `complete` is false wherever
  * the page cannot have held every execution of a cycle — a short page, a work
- * run cut off it, a stage row with no set, a fan-out holding fewer tasks than
- * its stage was authored with — so a sum is never read as the ticket's own.
+ * run cut off it, a stage row with no evaluators, a stage short of the roster
+ * it was authored with — so a sum is never read as the ticket's own.
  */
 
 import type {
@@ -83,15 +86,27 @@ export interface TaskSet {
   readonly span: RunSpan;
 }
 
+/** One evaluator's own row, at one generation: its key, the set it holds
+ * there, and whether this is the generation it now stands at. */
+export interface EvaluatorRow {
+  readonly key: number;
+  readonly generation: number;
+  readonly set: TaskSet;
+  readonly standing: CycleStanding;
+}
+
 export interface RanStage {
   readonly kind: "Ran";
   readonly stage: number;
-  readonly set: TaskSet;
+  readonly evaluators: readonly EvaluatorRow[];
+  readonly expected: number;
+  readonly verdict: SetVerdict;
+  readonly span: RunSpan;
 }
 
 /**
- * One line of a program run: the stage ran, or it was short-circuited, or it
- * has not started, or the page simply does not hold it.
+ * One line of a cycle's evaluation: the stage ran, or it was short-circuited,
+ * or it has not started, or the page simply does not hold it.
  */
 export type StageRow =
   | RanStage
@@ -99,17 +114,11 @@ export type StageRow =
   | { readonly kind: "Queued"; readonly stage: number; readonly after: number }
   | { readonly kind: "Missing"; readonly stage: number };
 
-export interface ProgramRun {
-  readonly ordinal: number;
-  readonly stages: readonly StageRow[];
-  readonly standing: CycleStanding;
-}
-
 export interface Cycle {
   readonly ordinal: number;
   readonly work: TaskSet | undefined;
   readonly artifact: CycleArtifact;
-  readonly programRuns: readonly ProgramRun[];
+  readonly stages: readonly StageRow[];
   readonly standing: CycleStanding;
   readonly span: RunSpan;
   readonly spend: RunSpend;
@@ -138,7 +147,7 @@ function pageTruncated(page: ExecutionsResponse): boolean {
 
 /**
  * A settled set's figures, over whichever tasks named it and against the width
- * it was expected to hold — one, always, for a work task.
+ * it was expected to hold — one, always, for a work task or one evaluator.
  */
 function taskSetOf(
   executions: readonly ExecutionSummary[],
@@ -153,10 +162,24 @@ function taskSetOf(
 }
 
 /**
- * A set settles only once no task can still move, and a blocked task is a wall
- * of its own rather than a failure the unanimous rule gets to weigh.
+ * An execution that answered nothing: a wall, or an evaluator whose process
+ * died, which the machine treats as a stop to resume rather than a judgement.
  */
-function setVerdict(executions: readonly ExecutionSummary[]): SetVerdict {
+export function executionStopped(row: ExecutionSummary): boolean {
+  return (
+    row.outcome === "Blocked" ||
+    (row.outcome === "ProcessFailed" && row.identity.type === "EvaluationTask")
+  );
+}
+
+/**
+ * A set settles only once no task can still move, and a stopped task is a wall
+ * of its own rather than a failure the unanimous rule gets to weigh. An
+ * execution read on its own is a set of one and settles like one.
+ */
+export function setVerdict(
+  executions: readonly ExecutionSummary[],
+): SetVerdict {
   if (
     executions.some(
       (row) => row.status !== "Terminal" && row.status !== "Cancelled",
@@ -164,26 +187,19 @@ function setVerdict(executions: readonly ExecutionSummary[]): SetVerdict {
   )
     return "Running";
   if (executions.every((row) => row.status === "Cancelled")) return "Cancelled";
-  if (executions.some((row) => row.outcome === "Blocked")) return "Blocked";
+  if (executions.some(executionStopped)) return "Blocked";
   return executions.every((row) => row.outcome === "Passed")
     ? "Passed"
     : "Failed";
 }
 
-/** One spawn of one evaluation stage: every row naming that stage and generation. */
-interface EvaluationSet {
-  readonly stage: number;
-  readonly generation: number;
-  executions: readonly ExecutionSummary[];
-}
-
 /**
  * A cycle's tasks, gathered by what they are: the work run, and every
- * evaluation set it holds, in the order the wire issued them.
+ * evaluation row it holds, in the order the wire issued them.
  */
 interface CycleBucket {
   work: ExecutionSummary[] | undefined;
-  evaluations: Map<string, EvaluationSet>;
+  evaluations: ExecutionSummary[];
 }
 
 function cycleBucket(
@@ -192,19 +208,14 @@ function cycleBucket(
 ): CycleBucket {
   const held = cycles.get(cycle);
   if (held !== undefined) return held;
-  const fresh: CycleBucket = { work: undefined, evaluations: new Map() };
+  const fresh: CycleBucket = { work: undefined, evaluations: [] };
   cycles.set(cycle, fresh);
   return fresh;
 }
 
-/** A set's key, which is the stage and generation its identity names and nothing else. */
-function evaluationSetKey(stage: number, generation: number): string {
-  return `${String(stage)}/${String(generation)}`;
-}
-
 /**
- * The page's rows sorted into the cycle, stage and generation their own
- * identity names, each cycle's sets held in task order.
+ * The page's rows sorted into the cycle their own identity names, each
+ * cycle's rows held in task order.
  */
 function cycleBucketsOf(page: ExecutionsResponse): Map<number, CycleBucket> {
   const ordered = [...page.executions].sort(
@@ -218,15 +229,7 @@ function cycleBucketsOf(page: ExecutionsResponse): Map<number, CycleBucket> {
       bucket.work = [...(bucket.work ?? []), row];
       continue;
     }
-    const { stage, generation } = identity.value;
-    const held = bucket.evaluations.get(evaluationSetKey(stage, generation));
-    if (held === undefined)
-      bucket.evaluations.set(evaluationSetKey(stage, generation), {
-        stage,
-        generation,
-        executions: [row],
-      });
-    else held.executions = [...held.executions, row];
+    bucket.evaluations = [...bucket.evaluations, row];
   }
   return cycles;
 }
@@ -238,48 +241,108 @@ function cycleBucketsOf(page: ExecutionsResponse): Map<number, CycleBucket> {
  */
 function stageExpected(
   stage: number,
-  executions: readonly ExecutionSummary[],
+  evaluators: number,
   authoring: TicketAuthoring,
 ): number {
-  return authoring.program[stage - 1]?.evaluators.length ?? executions.length;
+  return authoring.program[stage - 1]?.evaluators.length ?? evaluators;
 }
 
-/** A run's sets by stage, merging any two of one stage the page put in one run. */
-function taskSetMapOf(
-  run: readonly EvaluationSet[],
+interface StageAggregate {
+  readonly stage: number;
+  readonly evaluators: readonly EvaluatorRow[];
+  readonly expected: number;
+  readonly verdict: SetVerdict;
+  readonly span: RunSpan;
+}
+
+/**
+ * One evaluator's rows, current generation first: an earlier generation is a
+ * fact the ledger keeps rather than merges away, drawn beneath the generation
+ * that replaced it.
+ */
+function evaluatorRowsOf(
+  key: number,
+  byGeneration: ReadonlyMap<number, ExecutionSummary>,
+): readonly EvaluatorRow[] {
+  const highest = Math.max(...byGeneration.keys());
+  return [...byGeneration.entries()]
+    .sort(([left], [right]) => right - left)
+    .map(([generation, execution]) => ({
+      key,
+      generation,
+      set: taskSetOf([execution], 1),
+      standing: generation === highest ? "Current" : "Superseded",
+    }));
+}
+
+/**
+ * A cycle's evaluation rows folded into one aggregate per stage: every
+ * generation an evaluator key names, held apart from the others under the
+ * same key, since a resume re-asks only the evaluators a stage blocked and
+ * leaves the rest at the generation that produced them. The stage's own
+ * `verdict`, `expected` and `span` read off each key's highest generation
+ * only — the earlier ones are rows, not inputs to the stage's own facts.
+ */
+function stageAggregatesOf(
+  rows: readonly ExecutionSummary[],
   authoring: TicketAuthoring,
-): ReadonlyMap<number, TaskSet> {
-  const byStage = new Map<number, readonly ExecutionSummary[]>();
-  for (const set of run)
-    byStage.set(set.stage, [
-      ...(byStage.get(set.stage) ?? []),
-      ...set.executions,
-    ]);
-  const sets = new Map<number, TaskSet>();
-  for (const [stage, executions] of byStage)
-    sets.set(
+): Map<number, StageAggregate> {
+  const byStage = new Map<number, Map<number, Map<number, ExecutionSummary>>>();
+  for (const row of rows) {
+    if (row.identity.type !== "EvaluationTask") continue;
+    const { stage, generation, evaluator } = row.identity.value;
+    const stageMap =
+      byStage.get(stage) ?? new Map<number, Map<number, ExecutionSummary>>();
+    byStage.set(stage, stageMap);
+    const evaluatorMap =
+      stageMap.get(evaluator) ?? new Map<number, ExecutionSummary>();
+    stageMap.set(evaluator, evaluatorMap);
+    evaluatorMap.set(generation, row);
+  }
+  const aggregates = new Map<number, StageAggregate>();
+  for (const [stage, stageMap] of byStage) {
+    const evaluators: EvaluatorRow[] = [...stageMap.entries()]
+      .sort(([left], [right]) => left - right)
+      .flatMap(([key, byGeneration]) => evaluatorRowsOf(key, byGeneration));
+    const current = evaluators.filter((row) => row.standing === "Current");
+    const executions = current.flatMap((row) => row.set.executions);
+    aggregates.set(stage, {
       stage,
-      taskSetOf(executions, stageExpected(stage, executions, authoring)),
-    );
-  return sets;
+      evaluators,
+      expected: stageExpected(stage, current.length, authoring),
+      verdict: setVerdict(executions),
+      span: runSpanOf(executions),
+    });
+  }
+  return aggregates;
 }
 
-/** A short-circuit stops the run; anything else leaves the later stages ahead of it. */
+/** An evaluator's rows at their current generation only, which is the width a
+ * roster's shortfall is measured against. */
+export function stageEvaluatorsCurrent(
+  stage: RanStage,
+): readonly EvaluatorRow[] {
+  return stage.evaluators.filter((row) => row.standing === "Current");
+}
+
+/**
+ * A failure or a cancellation ends the program; a block parks it instead, so
+ * the stages after it stay ahead of it — queued, not skipped, because the
+ * plan they belong to still exists once a resume lifts the block.
+ */
 function stageStopped(verdict: SetVerdict): boolean {
-  return (
-    verdict === "Failed" || verdict === "Cancelled" || verdict === "Blocked"
-  );
+  return verdict === "Failed" || verdict === "Cancelled";
 }
 
-/** What a stage the authoring declares holds: a set, a gap, or a reason nothing ran. */
+/** What a stage the authoring declares holds: an aggregate, a gap, or a reason nothing ran. */
 function programStageRow(
   stage: number,
-  ran: ReadonlyMap<number, TaskSet>,
+  aggregates: ReadonlyMap<number, StageAggregate>,
   highest: number,
 ): StageRow {
-  const set = ran.get(stage);
-  if (set !== undefined) return { kind: "Ran", stage, set };
-  const last = ran.get(highest);
+  const aggregate = aggregates.get(stage);
+  if (aggregate !== undefined) return { kind: "Ran", ...aggregate };
+  const last = aggregates.get(highest);
   if (stage < highest || last === undefined) return { kind: "Missing", stage };
   return stageStopped(last.verdict)
     ? { kind: "Skipped", stage, after: highest }
@@ -287,60 +350,24 @@ function programStageRow(
 }
 
 /**
- * One row per stage the authoring declares and one per set this run holds
+ * One row per stage the authoring declares and one per stage this cycle holds
  * beyond it, so a stage outside the program is drawn without its own stage
  * number ever becoming a count of rows.
  */
 function stageRowsOf(
-  ran: ReadonlyMap<number, TaskSet>,
+  aggregates: ReadonlyMap<number, StageAggregate>,
   declared: number,
 ): readonly StageRow[] {
-  const highest = Math.max(...ran.keys());
+  if (aggregates.size === 0) return [];
+  const highest = Math.max(...aggregates.keys());
   const rows: StageRow[] = [];
   for (let stage = 1; stage <= declared; stage++)
-    rows.push(programStageRow(stage, ran, highest));
-  for (const [stage, set] of [...ran].sort((left, right) => left[0] - right[0]))
-    if (stage > declared) rows.push({ kind: "Ran", stage, set });
+    rows.push(programStageRow(stage, aggregates, highest));
+  for (const [stage, aggregate] of [...aggregates].sort(
+    (left, right) => left[0] - right[0],
+  ))
+    if (stage > declared) rows.push({ kind: "Ran", ...aggregate });
   return rows;
-}
-
-/** One pass of the program, and the generation of the set that opened it. */
-interface CutRun {
-  readonly ordinal: number;
-  readonly sets: EvaluationSet[];
-}
-
-/**
- * The cycle's sets cut at every set of the lowest stage it holds, which is the
- * stage a spawn enters the program at. The first set opens a run whatever its
- * stage, because a page is free to begin above that stage.
- */
-function runsCutOf(sets: readonly EvaluationSet[]): readonly CutRun[] {
-  const lowest = Math.min(...sets.map((set) => set.stage));
-  const runs: CutRun[] = [];
-  for (const set of sets) {
-    const open = runs.at(-1);
-    if (open === undefined || set.stage === lowest)
-      runs.push({ ordinal: set.generation, sets: [set] });
-    else open.sets.push(set);
-  }
-  return runs;
-}
-
-/** The cycle's program runs, each one a pass over the stages the artifact faced. */
-function programRunsOf(
-  sets: readonly EvaluationSet[],
-  authoring: TicketAuthoring,
-): readonly ProgramRun[] {
-  const runs = runsCutOf(sets);
-  return runs.map((run, index) => ({
-    ordinal: run.ordinal,
-    stages: stageRowsOf(
-      taskSetMapOf(run.sets, authoring),
-      authoring.program.length,
-    ),
-    standing: index === runs.length - 1 ? "Current" : "Superseded",
-  }));
 }
 
 /** The model stamps an artifact on exactly the edge a work set passes on. */
@@ -349,32 +376,21 @@ function cycleArtifactOf(work: TaskSet | undefined): CycleArtifact {
   return work.verdict === "Passed" ? "Produced" : "None";
 }
 
-/** Every set a cycle holds, which is its work run and each stage that ran. */
-function cycleSetsHeld(
-  work: TaskSet | undefined,
-  runs: readonly ProgramRun[],
-): readonly TaskSet[] {
-  const ran = runs.flatMap((run) =>
-    run.stages.flatMap((row) => (row.kind === "Ran" ? [row.set] : [])),
-  );
-  return work === undefined ? ran : [work, ...ran];
-}
-
 /**
  * Whether the page can have held every execution of this cycle: its work run
- * is on the page, no stage row is missing one, and no set is short of the
- * fan-out its stage was authored with.
+ * is on the page, no stage row is missing one, and no stage is short of the
+ * roster it was authored with.
  */
 function cycleComplete(
   work: TaskSet | undefined,
-  runs: readonly ProgramRun[],
+  stages: readonly StageRow[],
   truncated: boolean,
 ): boolean {
   if (truncated || work === undefined) return false;
-  if (runs.some((run) => run.stages.some((row) => row.kind === "Missing")))
-    return false;
-  return cycleSetsHeld(work, runs).every(
-    (set) => set.executions.length >= set.expected,
+  if (stages.some((row) => row.kind === "Missing")) return false;
+  return stages.every(
+    (row) =>
+      row.kind !== "Ran" || stageEvaluatorsCurrent(row).length >= row.expected,
   );
 }
 
@@ -386,21 +402,19 @@ function cycleFacts(
 ): Omit<Cycle, "ordinal"> {
   const work =
     bucket.work === undefined ? undefined : taskSetOf(bucket.work, 1);
-  const programRuns = programRunsOf(
-    [...bucket.evaluations.values()],
-    authoring,
+  const stages = stageRowsOf(
+    stageAggregatesOf(bucket.evaluations, authoring),
+    authoring.program.length,
   );
-  const held = cycleSetsHeld(work, programRuns).flatMap(
-    (set) => set.executions,
-  );
+  const held = [...(bucket.work ?? []), ...bucket.evaluations];
   return {
     work,
     artifact: cycleArtifactOf(work),
-    programRuns,
+    stages,
     standing,
     span: runSpanOf(held),
     spend: runSpendOf(held),
-    complete: cycleComplete(work, programRuns, pageTruncated(page)),
+    complete: cycleComplete(work, stages, pageTruncated(page)),
   };
 }
 
@@ -435,18 +449,15 @@ export function ticketLedger(
   };
 }
 
-/** The last set this cycle holds, which is the one the machine priced its exit from. */
+/** The last stage this cycle holds, which is the one the machine priced its exit from. */
 export function cycleLastSet(cycle: Cycle): ClosedSet | undefined {
-  const run = cycle.programRuns.at(-1);
-  const ran = (run?.stages ?? []).filter(
-    (row): row is RanStage => row.kind === "Ran",
-  );
+  const ran = cycle.stages.filter((row): row is RanStage => row.kind === "Ran");
   const last = ran.at(-1);
   if (last !== undefined)
     return {
       taskKind: "Evaluation",
       stage: last.stage,
-      verdict: last.set.verdict,
+      verdict: last.verdict,
     };
   if (cycle.work === undefined) return undefined;
   return {

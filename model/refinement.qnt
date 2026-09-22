@@ -213,8 +213,9 @@
 /// invalidated draw still exercises both paths.
 ///
 /// THE JOURNAL BOUND, honestly: the journal grows by one entry per
-/// decision, forever retained, and nothing reads it but replay (like
-/// Ticket.record: append-only provenance). Its length is bounded by
+/// decision, forever retained, and nothing reads it but replay (like a
+/// ticket's evaluation instances: append-only provenance). Its length is
+/// bounded by
 /// nothing in this model: a run's decisions are bounded by the authors
 /// who release and the operators who resume, which is where this machine
 /// deliberately stops. An implementation compacts by snapshot; snapshots
@@ -245,6 +246,7 @@
 ///     worldEffects/orphans, declared here).
 module chuggy_refinement {
   import task_contract.* from "./task-contract/task"
+  import evaluation_protocol.* from "./ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "./ticket"
 
   /// The embedded domain machine — the actor's in-memory state IS this
@@ -268,18 +270,21 @@ module chuggy_refinement {
   /// a real journal row must carry for replay to work: the deciders are
   /// pure, so (TicketGraph, picks) determines everything; the picks are the
   /// only information the crash could lose.
-  type TaskResultRef = { manifest: int, digest: int, schema: int }
-
+  ///
+  /// THE COMPLETION CARRIES ITS DISPOSITION. A completion that concludes a
+  /// failing stage takes the rework-or-escalate edge in the same decision
+  /// (domain.qnt decideTaskDone), so the pick has to be journaled with it;
+  /// on every other completion it is a recorded pick nothing reads. That is
+  /// the same treatment every other draw gets here — the picks are what the
+  /// crash could lose, whether or not the decider consults them.
   type DecisionEvent =
       CreateTicket({ ticket: int, deps: Set[int], prog: List[StageDefinition] })
     | Revoke(int)
     | Dispatch(int)
-    | TaskDone({ ticket: int, task: TaskIdentity, verdict: Verdict,
-        result: TaskResultRef })
+    | TaskDone({ ticket: int, task: TaskIdentity, report: TaskTerminalReport,
+        onFailure: EvaluationFailureDisposition })
     | WorkReduce(int)
-    | EvalReduce({ ticket: int, onFailure: EvaluationFailureDisposition })
     | FinalizationResult({ ticket: int, out: FinalizationOutcome })
-    | ExecutionBlocked({ ticket: int })
     | ResumeTicket(int)
 
   /// One journal row: monotone dense seq (entry i carries seq i+1 —
@@ -309,11 +314,10 @@ module chuggy_refinement {
     | CreateTicket(a) => decideReleaseTicket(c, a.ticket, a.deps, a.prog)
     | Revoke(j) => decideRevoke(c, j)
     | Dispatch(j) => decideDispatch(c, j)
-    | TaskDone(a) => decideTaskDone(c, a.ticket, a.task, a.verdict)
+    | TaskDone(a) =>
+      decideTaskDone(c, a.ticket, a.task, a.report, a.onFailure)
     | WorkReduce(j) => decideWorkReduce(c, j)
-    | EvalReduce(a) => decideEvalStageReduce(c, a.ticket, a.onFailure)
     | FinalizationResult(a) => decideFinalizationResult(c, a.ticket, a.out)
-    | ExecutionBlocked(a) => decideExecutionBlocked(c, a.ticket)
     | ResumeTicket(j) => decideResumeTicket(c, j)
   }
 
@@ -334,22 +338,16 @@ module chuggy_refinement {
     | Revoke(j) => revocablesIn(c).contains(j)
     | Dispatch(j) => readiesIn(c).contains(j)
     | TaskDone(a) => and {
-        taskPhaseIn(c).contains(a.ticket),
-        a.result.manifest >= 1,
-        a.result.digest >= 1,
-        a.result.schema >= 1,
-        c.tickets.get(a.ticket).tasks.exists(t =>
-          t.identity == a.task and t.state == Outstanding)
-      }
-    | WorkReduce(j) => reducibleWorkIn(c).contains(j)
-    | EvalReduce(a) => and {
-        reducibleEvalIn(c).contains(a.ticket),
+        completableIn(c).contains(a.ticket),
+        liveTasks(c.tickets.get(a.ticket)).contains(a.task),
+        reportMatchesTask(a.task, a.report),
+        reportValid(a.report),
         dispositionChoices.contains(a.onFailure)
       }
+    | WorkReduce(j) => reducibleWorkIn(c).contains(j)
     | FinalizationResult(a) => c.tickets.keys().contains(a.ticket) and
         finalizationOutcomes.contains(a.out) and
         finalizationOutcomeEnabled(c, a.ticket, a.out)
-    | ExecutionBlocked(a) => taskPhaseIn(c).contains(a.ticket)
     | ResumeTicket(j) => retryablesIn(c).contains(j)
   }
 
@@ -562,24 +560,18 @@ module chuggy_refinement {
     journalStep(Dispatch(j))
   }
   action actorTaskDone = all {
-    taskPhaseTickets.size() > 0,
-    nondet j = taskPhaseTickets.oneOf()
-    nondet task = graph.tickets.get(j).tasks.filter(t => t.state == Outstanding).map(t => t.identity).oneOf()
-    nondet v = Set(Pass, Fail).oneOf()
-    journalStep(TaskDone({ ticket: j, task: task, verdict: v,
-      result: { manifest: taskRetirementKey(task), digest: taskRetirementKey(task),
-        schema: 1 } }))
+    completableTickets.size() > 0,
+    nondet j = completableTickets.oneOf()
+    nondet task = liveTasks(graph.tickets.get(j)).oneOf()
+    nondet report = reportChoices(task).oneOf()
+    nondet onFailure = dispositionChoices.oneOf()
+    journalStep(TaskDone({ ticket: j, task: task, report: report,
+      onFailure: onFailure }))
   }
   action actorWorkReduce = all {
     reducibleWork.size() > 0,
     nondet j = reducibleWork.oneOf()
     journalStep(WorkReduce(j))
-  }
-  action actorEvalReduce = all {
-    reducibleEval.size() > 0,
-    nondet j = reducibleEval.oneOf()
-    nondet onFailure = dispositionChoices.oneOf()
-    journalStep(EvalReduce({ ticket: j, onFailure: onFailure }))
   }
   action actorFinalizationResult = all {
     finalizerTickets.size() > 0,
@@ -597,8 +589,9 @@ module chuggy_refinement {
   // --- The hazard roster (rstepHazard only): the effect-first seam on ------
   // the world-effect-bearing decisions. The seam exists at EVERY
   // decision; these are the ones whose orphaned effects the
-  // theorems count — the spawns (dispatch, the eval-rework, the
-  // finalization failure's respawn) and the wrap-up resolutions (the
+  // theorems count — the spawns (dispatch, the completion that reworks a
+  // failed stage, the finalization failure's respawn) and the wrap-up
+  // resolutions (the
   // dequeue's fast-path squash, the gated promotion). An orphaned bookkeeping
   // effect (OpenHumanTask, OpenHumanTask, ...) is the same shape with
   // nothing counted riding it — journalCoversWorld still flags it; the
@@ -609,11 +602,14 @@ module chuggy_refinement {
     nondet j = readyTickets.oneOf()
     effectCrash(Dispatch(j))
   }
-  action hazardEvalReduce = all {
-    reducibleEval.size() > 0,
-    nondet j = reducibleEval.oneOf()
+  action hazardTaskDone = all {
+    completableTickets.size() > 0,
+    nondet j = completableTickets.oneOf()
+    nondet task = liveTasks(graph.tickets.get(j)).oneOf()
+    nondet report = reportChoices(task).oneOf()
     nondet onFailure = dispositionChoices.oneOf()
-    effectCrash(EvalReduce({ ticket: j, onFailure: onFailure }))
+    effectCrash(TaskDone({ ticket: j, task: task, report: report,
+      onFailure: onFailure }))
   }
   action hazardFinalizationResult = all {
     finalizerTickets.size() > 0,
@@ -626,7 +622,7 @@ module chuggy_refinement {
   /// before anything reaches the world; crashes at any instant.
   action rstep = any {
     actorReleaseTicket, actorRevoke, actorDispatch,
-    actorTaskDone, actorWorkReduce, actorEvalReduce, actorFinalizationResult,
+    actorTaskDone, actorWorkReduce, actorFinalizationResult,
     actorResumeTicket,
     emitNext, crashRecover
   }
@@ -637,7 +633,7 @@ module chuggy_refinement {
   /// that single delta breaking the theorems.
   action rstepHazard = any {
     rstep,
-    hazardDispatch, hazardEvalReduce, hazardFinalizationResult
+    hazardDispatch, hazardTaskDone, hazardFinalizationResult
   }
 
   // ==========================================================================

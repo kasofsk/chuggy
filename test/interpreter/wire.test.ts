@@ -24,8 +24,6 @@ import { test } from "node:test";
 import {
   decisionEventTags,
   dispatchEvent,
-  evalReduceEvent,
-  executionBlockedEvent,
   finalizationResultEvent,
   releaseTicketEvent,
   resumeTicketEvent,
@@ -50,10 +48,10 @@ import {
 import { asOperationDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
 import {
   plainAuthoring,
-  plainResult,
+  plainDisposition,
   refinementInstance,
 } from "../actor/harness.ts";
-import { id } from "../domain/fixtures.ts";
+import { id, judgedReport } from "../domain/fixtures.ts";
 import type { StepRecord } from "../../src/domain/generated/modelTypes.ts";
 
 const config = refinementInstance;
@@ -76,13 +74,11 @@ const oneOfEach: Readonly<Record<DecisionEvent["type"], DecisionEvent>> = {
   TaskDone: taskDoneEvent(
     id(1),
     evaluationTaskOf(1, 1, 1, 1, 1),
-    "Fail",
-    plainResult,
+    judgedReport(evaluationTaskOf(1, 1, 1, 1, 1), "EvaluatorFail"),
+    plainDisposition,
   ),
   WorkReduce: workReduceEvent(id(1)),
-  EvalReduce: evalReduceEvent(id(1), "ReworkEvaluationFailure"),
   FinalizationResult: finalizationResultEvent(id(1), "FinalizationNeedsWork"),
-  ExecutionBlocked: executionBlockedEvent(id(1)),
   ResumeTicket: resumeTicketEvent(id(1)),
 };
 
@@ -246,7 +242,7 @@ test("a decide carrying a finalization result is refused, as a reduction and a r
   for (const closed of [
     oneOfEach.FinalizationResult,
     oneOfEach.WorkReduce,
-    oneOfEach.EvalReduce,
+    oneOfEach.TaskDone,
     oneOfEach.CreateTicket,
   ]) {
     const refused = parseTicketCommand(
@@ -299,29 +295,109 @@ test("the finalizer's own envelope is read only by the parse a writer reads its 
   }
 });
 
+/** The evaluation task and the report a stored completion of one carries. */
+const storedTask = {
+  type: "EvaluationTask",
+  value: { ticket: 1, workCycle: 1, stage: 1, generation: 1, evaluator: 1 },
+};
+const storedReport = {
+  type: "TerminalFailureReport",
+  value: { evidence: 4, kind: "ProcessFailure" },
+};
+
+/** The scheduler's envelope around one completion value, as the store holds it. */
+function storedCompletion(value: unknown): string {
+  return JSON.stringify({
+    version: 1,
+    command: "Decide",
+    event: { type: "TaskDone", value },
+  });
+}
+
 /**
- * The scheduler's own envelope. `submit_task_completion` builds its event from
- * the ticket alone now that the phase says which escalation a block is, so the
- * wall it recorded travels on the execution and not in these bytes.
+ * The scheduler's own envelope: `submit_task_completion` names the task it
+ * settled and the report it terminated under, and the two model-typed fields
+ * come back as the generated decoders read them.
  */
-test("a stored block names its ticket and nothing else", () => {
-  assert.deepEqual(
-    parseStoredTicketCommand(
-      JSON.stringify({
-        version: 1,
-        command: "Decide",
-        event: { type: "ExecutionBlocked", value: { ticket: 1 } },
-      }),
-    ),
-    {
-      parsed: "Ok",
-      value: {
-        version: 1,
-        command: "Decide",
-        event: { type: "ExecutionBlocked", value: { ticket: 1 } },
+test("a stored completion names its task and the report it terminated under", () => {
+  const text = storedCompletion({
+    ticket: 1,
+    task: storedTask,
+    report: storedReport,
+  });
+  assert.deepEqual(parseStoredTicketCommand(text), {
+    parsed: "Ok",
+    value: {
+      version: 1,
+      command: "Decide",
+      event: {
+        type: "TaskDone",
+        value: {
+          ticket: 1,
+          task: {
+            type: "EvaluationTask",
+            value: {
+              ticket: id(1),
+              workCycle: 1,
+              stage: 1,
+              generation: 1,
+              evaluator: 1,
+            },
+          },
+          report: storedReport,
+        },
       },
     },
-  );
+  });
+  assert.equal(parseTicketCommand(text).parsed, "Refused");
+});
+
+/**
+ * The boundary picks no edge, the cap that picks one living at the writer, so
+ * bytes naming a disposition were not written by it.
+ */
+test("a stored completion is refused for every field the boundary cannot have written", () => {
+  for (const [why, value] of [
+    [
+      "a disposition the boundary cannot pick",
+      {
+        ticket: 1,
+        task: storedTask,
+        report: storedReport,
+        onFailure: "ReworkEvaluationFailure",
+      },
+    ],
+    ["no ticket at all", { task: storedTask, report: storedReport }],
+    [
+      "a ticket named by text",
+      { ticket: "1", task: storedTask, report: storedReport },
+    ],
+    [
+      "a task at no constructor of this machine",
+      {
+        ticket: 1,
+        task: { type: "FinalizerTask", value: { ticket: 1 } },
+        report: storedReport,
+      },
+    ],
+    [
+      "a report still naming its ticket",
+      {
+        ticket: 1,
+        task: storedTask,
+        report: {
+          type: "TerminalFailureReport",
+          value: { ticket: 1, kind: "ProcessFailure" },
+        },
+      },
+    ],
+  ] as const) {
+    assert.equal(
+      parseStoredTicketCommand(storedCompletion(value)).parsed,
+      "Refused",
+      why,
+    );
+  }
 });
 
 /**

@@ -14,19 +14,24 @@
  *
  * `recordEqualsTransition` and `ticketEqualsStage` are not exported, so their
  * rosters are lifted into the exported comparison that reaches them — a
- * transition inside a record, a stage inside a ticket's program.
+ * transition inside a record, a stage inside a ticket's program, and the
+ * protocol's own shapes inside the instance the ticket carries.
  */
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { recordEquals, ticketEquals } from "../../src/actor/equality.ts";
+import { instanceEquals } from "../../src/domain/evaluation.ts";
 import { initRecord } from "../../src/domain/ticketGraph.ts";
 import { freshTicket } from "../../src/domain/deciders.ts";
-import { id, workOutstanding, workTask } from "../domain/fixtures.ts";
+import { id, judgedInstance, workOutstanding } from "../domain/fixtures.ts";
 import { flatProgram } from "./harness.ts";
 import type {
+  EvaluationInstance,
+  EvaluationProgress,
   StageDefinition,
+  StageRun,
   StepRecord,
   Ticket,
   Transition,
@@ -57,6 +62,9 @@ const baseTicket: Ticket = freshTicket({
   program: flatProgram,
 });
 
+/** A judgement of one cycle, which is the smallest instance a ticket can carry. */
+const judged: EvaluationInstance = judgedInstance(1, 1, 1, flatProgram);
+
 const ticketMutants: FieldMutants<Ticket> = {
   phase: (t) => ({ ...t, phase: "Done" }),
   deps: (t) => ({ ...t, deps: new Set([2]) }),
@@ -66,7 +74,7 @@ const ticketMutants: FieldMutants<Ticket> = {
   }),
   program: (t) => ({ ...t, program: [] }),
   tasks: (t) => ({ ...t, tasks: new Set([workOutstanding(1, 1)]) }),
-  record: (t) => ({ ...t, record: [workTask(1, 1, "Passed")] }),
+  evaluations: (t) => ({ ...t, evaluations: [judged] }),
   workCyclesStarted: (t) => ({
     ...t,
     workCyclesStarted: t.workCyclesStarted + 1,
@@ -104,6 +112,45 @@ const stageMutants: FieldMutants<StageDefinition> = {
   evaluators: (s) => ({ ...s, evaluators: [{ key: 2 }] }),
 };
 
+const instanceMutants: FieldMutants<EvaluationInstance> = {
+  workCycle: (i) => ({ ...i, workCycle: i.workCycle + 1 }),
+  input: (i) => ({ ...i, input: { ...i.input, workResult: 2 } }),
+  plan: (i) => ({ ...i, plan: { stages: [] } }),
+  state: (i) => ({ ...i, state: { type: "EvaluationFailed", value: [] } }),
+};
+
+const baseRun: StageRun = {
+  stageIndex: 0,
+  generation: 1,
+  evaluators: new Map([[1, "Awaiting"]]),
+};
+
+const runMutants: FieldMutants<StageRun> = {
+  stageIndex: (r) => ({ ...r, stageIndex: r.stageIndex + 1 }),
+  generation: (r) => ({ ...r, generation: r.generation + 1 }),
+  evaluators: (r) => ({
+    ...r,
+    evaluators: new Map([
+      [1, { type: "Produced", value: { type: "EvaluatorPassed", value: 1 } }],
+    ]),
+  }),
+};
+
+const baseProgress: EvaluationProgress = {
+  completedStages: [],
+  stage: baseRun,
+};
+
+const progressMutants: FieldMutants<EvaluationProgress> = {
+  completedStages: (p) => ({ ...p, completedStages: [baseRun] }),
+  stage: (p) => ({ ...p, stage: runMutants.generation(baseRun) }),
+};
+
+/** The instance in the state that carries a progress, which is how a run is reached. */
+function running(progress: EvaluationProgress): EvaluationInstance {
+  return { ...judged, state: { type: "Running", value: progress } };
+}
+
 test("ticketEquals reads every field Ticket declares", () => {
   assertDiscriminates(baseTicket, ticketEquals, ticketMutants);
 });
@@ -133,6 +180,41 @@ test("the stage comparison reads every field StageDefinition declares", () => {
     baseStage,
     (left, right) => ticketEquals(inTicket(left), inTicket(right)),
     stageMutants,
+  );
+});
+
+test("instanceEquals reads every field EvaluationInstance declares", () => {
+  assertDiscriminates(judged, instanceEquals, instanceMutants);
+});
+
+test("the progress comparison reads every field EvaluationProgress declares", () => {
+  assertDiscriminates(
+    baseProgress,
+    (left, right) => instanceEquals(running(left), running(right)),
+    progressMutants,
+  );
+});
+
+test("the run comparison reads every field StageRun declares", () => {
+  const inProgress = (run: StageRun): EvaluationInstance =>
+    running({ ...baseProgress, stage: run });
+  assertDiscriminates(
+    baseRun,
+    (left, right) => instanceEquals(inProgress(left), inProgress(right)),
+    runMutants,
+  );
+  const produced = (mark: number): StageRun => ({
+    ...baseRun,
+    evaluators: new Map([
+      [
+        1,
+        { type: "Produced", value: { type: "EvaluatorPassed", value: mark } },
+      ],
+    ]),
+  });
+  assert.ok(
+    !instanceEquals(inProgress(produced(1)), inProgress(produced(2))),
+    "what a produced status produced is part of the status",
   );
 });
 

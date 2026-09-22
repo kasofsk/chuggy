@@ -132,6 +132,11 @@ export function projectTableRow(
   };
 }
 
+/** The one word an outcome is drawn as; the roster's own spellings but one. */
+function executionOutcomeWord(outcome: ExecutionOutcome): string {
+  return outcome === "ProcessFailed" ? "Stopped" : outcome;
+}
+
 /** The status, refined by the outcome where the execution has reached one, and
  * nothing at all where no execution is joined to the row. */
 export function projectTableExecutionPhrase(
@@ -140,7 +145,7 @@ export function projectTableExecutionPhrase(
   if (row.executionStatus === undefined) return undefined;
   return row.executionOutcome === undefined
     ? row.executionStatus
-    : `${row.executionStatus} · ${row.executionOutcome}`;
+    : `${row.executionStatus} · ${executionOutcomeWord(row.executionOutcome)}`;
 }
 
 export function projectTableRows(

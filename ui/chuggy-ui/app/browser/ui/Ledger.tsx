@@ -96,9 +96,14 @@ export function LedgerBlock(props: {
   );
 }
 
-function ledgerRowClassName(ghost: boolean, changed: boolean): string {
+function ledgerRowClassName(
+  ghost: boolean,
+  changed: boolean,
+  superseded: boolean,
+): string {
   const ghosted = ghost ? " ledger-row-ghost" : "";
-  return `ledger-row${ghosted}${changed ? " ledger-row-changed" : ""}`;
+  const superseding = superseded ? " ledger-row-superseded" : "";
+  return `ledger-row${ghosted}${changed ? " ledger-row-changed" : ""}${superseding}`;
 }
 
 export interface LedgerRowProps {
@@ -110,6 +115,9 @@ export interface LedgerRowProps {
   readonly note?: ReactNode | undefined;
   readonly ghost?: boolean;
   readonly changed?: boolean;
+  /** A generation an evaluator's own resume replaced, drawn dimmed beneath
+   * the one that stands now. */
+  readonly superseded?: boolean;
   readonly expand?: {
     readonly open: boolean;
     readonly onToggle: () => void;
@@ -139,6 +147,7 @@ export function LedgerRow(props: LedgerRowProps): ReactNode {
       className={ledgerRowClassName(
         props.ghost === true,
         props.changed === true,
+        props.superseded === true,
       )}
     >
       <span className="ledger-label">{props.label}</span>

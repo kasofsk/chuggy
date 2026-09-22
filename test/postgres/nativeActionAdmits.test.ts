@@ -22,7 +22,6 @@ import { test } from "node:test";
 import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
-import type { Verdict } from "../../src/domain/generated/modelTypes.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
@@ -32,8 +31,8 @@ import {
   type ProjectMemory,
 } from "../../src/interpreter/projectWriter.ts";
 import type { NativeActionResolution } from "../../src/interpreter/ticketCommand.ts";
-import { plainAuthoring, plainResult } from "../actor/harness.ts";
-import { id } from "../domain/fixtures.ts";
+import { plainAuthoring, plainDisposition } from "../actor/harness.ts";
+import { id, reportedAt } from "../domain/fixtures.ts";
 import {
   postgresHarnessCompletion,
   postgresHarnessHistory,
@@ -77,13 +76,13 @@ async function admitsReport(
   memory: ProjectMemory,
   label: string,
   task: TaskIdentity,
-  verdict: Verdict,
+  verdict: "Pass" | "Fail",
 ): Promise<ProjectMemory> {
   await postgresHarnessCompletion(
     subject.harness,
     partition,
     `operation-${label}-${randomUUID()}`,
-    taskDoneEvent(id(1), task, verdict, plainResult),
+    taskDoneEvent(id(1), task, reportedAt(task, verdict), plainDisposition),
   );
   return admitsDrain(partition, memory);
 }

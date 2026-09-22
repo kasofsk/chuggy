@@ -4,7 +4,7 @@
  *
  * A DECISION EVENT IS A FACT, NOT AN INSTRUCTION. It names a choice already
  * made at the writer's serialization point — which ticket the selector
- * proposed, which verdict a task reported — so replaying one re-decides nothing
+ * proposed, what a task came back with — so replaying one re-decides nothing
  * and consults nobody. That is what makes the journal a sufficient basis for
  * recovery.
  *
@@ -24,8 +24,6 @@ import type { Config } from "../domain/config.ts";
 import { ticketAt, type Decision } from "../domain/ticketGraph.ts";
 import {
   decideDispatch,
-  decideEvalStageReduce,
-  decideExecutionBlocked,
   decideFinalizationResult,
   decideReleaseTicket,
   decideResumeTicket,
@@ -35,6 +33,7 @@ import {
 } from "../domain/deciders.ts";
 import {
   canReleaseIn,
+  completableIn,
   dependableIn,
   doneIn,
   finalizableIn,
@@ -42,12 +41,10 @@ import {
   finalizationOutcomes,
   outstandingTaskIn,
   readiesIn,
-  reducibleEvalIn,
   reducibleWorkIn,
   releasableAuthoring,
   retryablesIn,
   revocablesIn,
-  taskPhaseIn,
 } from "../domain/enablement.ts";
 import { dispositionChoices } from "../domain/deciders.ts";
 import type {
@@ -57,9 +54,9 @@ import type {
   FinalizationOutcome,
   StageDefinition,
   TaskIdentity,
-  TaskResultRef,
-  Verdict,
+  TaskTerminalReport,
 } from "../domain/generated/modelTypes.ts";
+import { reportMatchesTask, reportValid } from "../domain/ticket.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 
 export { decisionEventTags } from "../domain/generated/modelTypes.ts";
@@ -93,29 +90,24 @@ export function dispatchEvent(ticket: TicketId): DecisionEvent {
   return { type: "Dispatch", value: ticket };
 }
 
+/**
+ * The completion carries WHAT THE TASK CAME BACK WITH, and the disposition a
+ * failing stage would be taken on. The disposition rides here because a
+ * completion can be the step that concludes a failed stage, and the journal
+ * records the picks the actor made: a replay that re-drew it would re-decide
+ * the step rather than re-perform it.
+ */
 export function taskDoneEvent(
   ticket: TicketId,
   task: TaskIdentity,
-  verdict: Verdict,
-  result: TaskResultRef,
+  report: TaskTerminalReport,
+  onFailure: EvaluationFailureDisposition,
 ): DecisionEvent {
-  return { type: "TaskDone", value: { ticket, task, verdict, result } };
+  return { type: "TaskDone", value: { ticket, task, report, onFailure } };
 }
 
 export function workReduceEvent(ticket: TicketId): DecisionEvent {
   return { type: "WorkReduce", value: ticket };
-}
-
-/**
- * The eval reduce carries the disposition the evaluation reported, because the
- * journal records the picks the actor made: a replay that re-drew it would
- * re-decide the step rather than re-perform it.
- */
-export function evalReduceEvent(
-  ticket: TicketId,
-  onFailure: EvaluationFailureDisposition,
-): DecisionEvent {
-  return { type: "EvalReduce", value: { ticket, onFailure } };
 }
 
 export function finalizationResultEvent(
@@ -123,10 +115,6 @@ export function finalizationResultEvent(
   out: FinalizationOutcome,
 ): DecisionEvent {
   return { type: "FinalizationResult", value: { ticket, out } };
-}
-
-export function executionBlockedEvent(ticket: TicketId): DecisionEvent {
-  return { type: "ExecutionBlocked", value: { ticket } };
 }
 
 export function resumeTicketEvent(ticket: TicketId): DecisionEvent {
@@ -155,24 +143,17 @@ export function execDecisionEvent(
         graph,
         asTicketId(event.value.ticket),
         event.value.task,
-        event.value.verdict,
+        event.value.report,
+        event.value.onFailure,
       );
     case "WorkReduce":
       return decideWorkReduce(graph, asTicketId(event.value));
-    case "EvalReduce":
-      return decideEvalStageReduce(
-        graph,
-        asTicketId(event.value.ticket),
-        event.value.onFailure,
-      );
     case "FinalizationResult":
       return decideFinalizationResult(
         graph,
         asTicketId(event.value.ticket),
         event.value.out,
       );
-    case "ExecutionBlocked":
-      return decideExecutionBlocked(graph, asTicketId(event.value.ticket));
     case "ResumeTicket":
       return decideResumeTicket(graph, asTicketId(event.value));
   }
@@ -202,20 +183,15 @@ export function decisionEventEnabled(
     case "TaskDone": {
       const id = asTicketId(event.value.ticket);
       return (
-        taskPhaseIn(graph).includes(id) &&
-        event.value.result.manifest >= 1 &&
-        event.value.result.digest >= 1 &&
-        event.value.result.schema >= 1 &&
-        outstandingTaskIn(graph, id, event.value.task)
+        completableIn(graph).includes(id) &&
+        outstandingTaskIn(graph, id, event.value.task) &&
+        reportMatchesTask(event.value.task, event.value.report) &&
+        reportValid(event.value.report) &&
+        dispositionChoices.includes(event.value.onFailure)
       );
     }
     case "WorkReduce":
       return reducibleWorkIn(graph).includes(asTicketId(event.value));
-    case "EvalReduce":
-      return (
-        reducibleEvalIn(graph).includes(asTicketId(event.value.ticket)) &&
-        dispositionChoices.includes(event.value.onFailure)
-      );
     case "FinalizationResult": {
       const id = asTicketId(event.value.ticket);
       return (
@@ -224,8 +200,6 @@ export function decisionEventEnabled(
         finalizationOutcomeEnabled(graph, id, event.value.out)
       );
     }
-    case "ExecutionBlocked":
-      return taskPhaseIn(graph).includes(asTicketId(event.value.ticket));
     case "ResumeTicket":
       return retryablesIn(graph).includes(asTicketId(event.value));
   }
@@ -237,8 +211,6 @@ export function decisionEventSubject(event: DecisionEvent): TicketId {
     case "CreateTicket":
     case "TaskDone":
     case "FinalizationResult":
-    case "ExecutionBlocked":
-    case "EvalReduce":
       return asTicketId(event.value.ticket);
     case "Revoke":
     case "Dispatch":

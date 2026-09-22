@@ -14,6 +14,7 @@ import type {
   TaskIdentity,
 } from "../../../src/contract/responses.ts";
 import {
+  generationLabel,
   runCostLabel,
   runCountLabel,
   runDurationLabel,
@@ -56,12 +57,16 @@ function workIdentity(cycle: number): TaskIdentity {
   return { type: "WorkTask", value: { ticket: 7, cycle } };
 }
 
-/** An evaluation task's identity, its stage and cycle a case names, its first
- * generation and evaluator held constant since no case here reworks. */
-function evalIdentity(cycle: number, stage: number): TaskIdentity {
+/** An evaluation task's identity, its stage and cycle a case names, its
+ * generation the first unless a case reworks, its evaluator held constant. */
+function evalIdentity(
+  cycle: number,
+  stage: number,
+  generation = 1,
+): TaskIdentity {
   return {
     type: "EvaluationTask",
-    value: { ticket: 7, workCycle: cycle, stage, generation: 1, evaluator: 1 },
+    value: { ticket: 7, workCycle: cycle, stage, generation, evaluator: 1 },
   };
 }
 
@@ -103,6 +108,12 @@ test("a dollar figure always says the basis it was published under", () => {
 test("a spend below a cent is drawn finer rather than as nothing", () => {
   expect(runCostLabel(4_200, "List")).toBe("$0.0042 (list price)");
   expect(runCostLabel(0, "List")).toBe("$0.00 (list price)");
+});
+
+test("a generation past the first is drawn by number, in one spelling, never as a run", () => {
+  expect(generationLabel(1)).toBeUndefined();
+  expect(generationLabel(2)).toBe("generation 2");
+  expect(generationLabel(3)).toBe("generation 3");
 });
 
 test("a count is grouped and a duration is whole units, largest first", () => {
@@ -238,6 +249,26 @@ test("two cycles sharing a stage number keep their totals apart", () => {
   expect(rows.map((row) => row.totals?.costUsdMicros)).toEqual([1_000, 5_000]);
 });
 
+test("two generations of one stage keep their totals apart", () => {
+  const rows = runStageRows([
+    summary("e1", {
+      taskKind: "Evaluation",
+      identity: evalIdentity(1, 1, 1),
+      runTotals: totals({ costUsdMicros: 1_000 }),
+    }),
+    summary("e2", {
+      taskKind: "Evaluation",
+      identity: evalIdentity(1, 1, 2),
+      runTotals: totals({ costUsdMicros: 5_000 }),
+    }),
+  ]);
+  expect(rows.map(runStageLabel)).toEqual([
+    "cycle 1 evaluation stage 1",
+    "cycle 1 evaluation stage 1 · generation 2",
+  ]);
+  expect(rows.map((row) => row.totals?.costUsdMicros)).toEqual([1_000, 5_000]);
+});
+
 test("an execution carrying no figures is counted and not measured", () => {
   const rows = runStageRows([
     summary("e1", { taskKind: "Evaluation", identity: evalIdentity(1, 1) }),
@@ -252,6 +283,7 @@ test("a row says how many executions it groups and how many were measured", () =
     cycle: 1,
     taskKind: "Work" as const,
     stage: 1,
+    generation: undefined,
     executions: 2,
     measured: 1,
     totals: undefined,

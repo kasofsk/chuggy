@@ -23,12 +23,14 @@ import { ticketAt, ticketIds } from "../domain/ticketGraph.ts";
 import type {
   ArtifactMark,
   TicketGraph,
+  EvaluationInstance,
   StageDefinition,
   StepRecord,
   Ticket,
   Transition,
 } from "../domain/generated/modelTypes.ts";
 import { tasksInEvaluatorKeyOrder, taskEquals } from "../domain/task.ts";
+import { instanceEquals, stageDefinitionEquals } from "../domain/evaluation.ts";
 
 /** Same length, and equal member by member in order. */
 function listEquals<Value>(
@@ -83,17 +85,23 @@ function depsInOrder(deps: ReadonlySet<number>): readonly number[] {
   return [...deps].sort((a, b) => a - b);
 }
 
+/**
+ * The program's stages and the instances' own shapes are the protocol's, so
+ * their equality is stated once beside the protocol (`src/domain/evaluation.ts`)
+ * and read here. Two homes for one conjunction is two answers within a year.
+ */
 function ticketEqualsStage(
   left: StageDefinition,
   right: StageDefinition,
 ): boolean {
-  return (
-    left.key === right.key &&
-    left.evaluators.length === right.evaluators.length &&
-    left.evaluators.every(
-      (entry, index) => entry.key === right.evaluators[index]?.key,
-    )
-  );
+  return stageDefinitionEquals(left, right);
+}
+
+function ticketEqualsInstance(
+  left: EvaluationInstance,
+  right: EvaluationInstance,
+): boolean {
+  return instanceEquals(left, right);
 }
 
 /** Whether two tickets carry the same record, every declared field compared. */
@@ -108,7 +116,7 @@ export function ticketEquals(left: Ticket, right: Ticket): boolean {
       tasksInEvaluatorKeyOrder(right.tasks),
       taskEquals,
     ) &&
-    listEquals(left.record, right.record, taskEquals) &&
+    listEquals(left.evaluations, right.evaluations, ticketEqualsInstance) &&
     left.workCyclesStarted === right.workCyclesStarted &&
     left.spawned === right.spawned &&
     left.escalation === right.escalation &&

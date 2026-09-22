@@ -1,14 +1,13 @@
 /**
- * What the machine does with a task set: name a task, spawn a set, resolve
- * into it, read what it is still waiting on, and retire it into the record.
+ * What the machine does with a task set: name a task, spawn one, resolve into
+ * it, and read what it is still waiting on.
  *
  * The model holds the live set as `Set[Task]` and this mirrors it, so the
- * folds below read the set the model reads. Where a fold's result depends on
- * order — retirement into the record, and every comparison a trace makes —
- * `tasksInEvaluatorKeyOrder` is what supplies it: a live set is one work task
- * or one stage's roster, so the authored evaluator key is canonical rather
- * than incidental, and nothing here inherits whatever order a rebuild
- * produced.
+ * folds below read the set the model reads. A live set is the work cycle's one
+ * task, so `tasksInEvaluatorKeyOrder` supplies the order every comparison a
+ * trace makes needs rather than inheriting whatever order a rebuild produced;
+ * an evaluation's obligations are not a set at all but the running stage's
+ * own roster (`src/domain/evaluation.ts`).
  */
 
 import { assertNever } from "./assertNever.ts";
@@ -71,9 +70,8 @@ export function taskOwner(identity: TaskIdentity): number {
 }
 
 /**
- * The key a task retires under, and so the order its set enters the record in:
- * an evaluation task's is its authored evaluator key, and a work cycle is one
- * task.
+ * The key a task sorts under within its own set: an evaluation task's authored
+ * evaluator key, and a work cycle is one task.
  */
 export function taskRetirementKey(identity: TaskIdentity): number {
   switch (identity.type) {
@@ -110,41 +108,17 @@ export function taskPositionInSet(
   return position + 1;
 }
 
-/**
- * How many reworks a failing evaluation has cost a ticket, read off its
- * retired record and its live set together: a work cycle counts when the cycle
- * before it had an evaluator resolve `Failed`, so neither the first cycle nor
- * one bought by a failed finalization or a work wall is one. Derived rather
- * than carried on the ticket, which would be a stored duplicate of it; what
- * the tasks alone cannot separate is stated at the cap.
- */
-export function evaluationFailureReworksStarted(
-  record: readonly Task[],
-  live: ReadonlySet<Task>,
-): number {
-  const all = [...record, ...live];
-  const failedCycles = new Set<number>();
-  for (const task of all) {
-    if (task.identity.type !== "EvaluationTask") continue;
-    if (task.state !== "Outstanding" && task.state.value === "Failed")
-      failedCycles.add(task.identity.value.workCycle);
-  }
-  return all.filter(
-    (task) =>
-      task.identity.type === "WorkTask" &&
-      failedCycles.has(task.identity.value.cycle - 1),
-  ).length;
-}
-
 /** How many of these tasks are still outstanding to the fabric. */
 export function outstandingCount(tasks: ReadonlySet<Task>): number {
   return [...tasks].filter((t) => t.state === "Outstanding").length;
 }
 
 /**
- * The current eval stage as a zero-based index into the authored program,
- * derived from the set's identities rather than stored. Zero on an empty or
- * work set, which is the fold's base.
+ * The stage an evaluation task belongs to, as a zero-based index into the
+ * authored program: the identity carries the stage's key and the key is its
+ * position, and zero is the fold's base on an empty or work set. A run's own
+ * `stageIndex` is what the machine reads; this is for a reader holding
+ * identities and no instance.
  */
 export function evalStage(tasks: ReadonlySet<Task>): StageIndex {
   let stage = asStageIndex(0);
@@ -197,7 +171,7 @@ export function resolveTask(
   );
 }
 
-/** A pass earned this incarnation. Both other outcomes fail it. */
+/** A pass earned this incarnation; a failure is the only other outcome. */
 export function taskPassed(task: Task): boolean {
   return task.state !== "Outstanding" && task.state.value === "Passed";
 }
@@ -214,19 +188,6 @@ export function taskEquals(left: Task, right: Task): boolean {
 function taskEqualsState(left: TaskState, right: TaskState): boolean {
   if (left === "Outstanding") return right === "Outstanding";
   return right !== "Outstanding" && right.value === left.value;
-}
-
-/**
- * Retire a live set into the retained record, by ascending evaluator key. A
- * task still outstanding at retirement is force-closed as cancelled, which
- * only a revoke ever reaches.
- */
-export function retiredInEvaluatorKeyOrder(
-  tasks: ReadonlySet<Task>,
-): readonly Task[] {
-  return tasksInEvaluatorKeyOrder(tasks).map((t) =>
-    t.state === "Outstanding" ? { ...t, state: tsResolved("Cancelled") } : t,
-  );
 }
 
 /**

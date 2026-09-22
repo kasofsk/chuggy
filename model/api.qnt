@@ -7,6 +7,7 @@
 /// represent faithfully in TypeScript and Zod.
 module chuggy_api {
   import task_contract.* from "./task-contract/task"
+  import evaluation_protocol.* from "./ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "./ticket"
   import chuggy_refinement.* from "./refinement"
   import chuggy_identity.* from "./identity"
@@ -18,9 +19,21 @@ module chuggy_api {
   type ApiTaskOutcome = TaskOutcome
   type ApiTaskState = TaskState
   type ApiTask = Task
-  type ApiVerdict = Verdict
+  type ApiTaskResultRef = TaskResultRef
+  type ApiFailureKind = FailureKind
+  type ApiTaskTerminalReport = TaskTerminalReport
   type ApiEvaluatorDefinition = EvaluatorDefinition
   type ApiStageDefinition = StageDefinition
+  type ApiEvaluationPlan = EvaluationPlan
+  type ApiEvaluationInput = EvaluationInput
+  type ApiEvaluationVerdict = EvaluationVerdict
+  type ApiEvaluatorResult = EvaluatorResult
+  type ApiEvaluatorStatus = EvaluatorStatus
+  type ApiEvaluationReworkEntry = EvaluationReworkEntry
+  type ApiStageRun = StageRun
+  type ApiEvaluationProgress = EvaluationProgress
+  type ApiEvaluationState = EvaluationState
+  type ApiEvaluationInstance = EvaluationInstance
   type ApiEvaluationFailureDisposition = EvaluationFailureDisposition
   type ApiResume = Resume
   type ApiEscalation = Escalation
@@ -36,7 +49,6 @@ module chuggy_api {
   type ApiTransition = Transition
   type ApiStepRecord = StepRecord
 
-  type ApiTaskResultRef = TaskResultRef
   type ApiDecisionEvent = DecisionEvent
   type ApiEntry = Entry
 

@@ -3,12 +3,12 @@
  *
  * Three cycles, two of them superseded, a stage that passed an artifact the
  * ticket no longer holds, a stage the fabric relaunched its container for, and
- * a resume that re-ran the program from its lowest stage. The list is held by
- * execution identity — a string the model never gives meaning to — in an
- * order the route no longer answers in, so every suite reading it proves the
- * derivation recovers a cycle from whatever order a page reaches it in; only
- * `task` orders it, and only each row's own `identity` says which cycle, stage
- * and generation it belongs to.
+ * a resume that re-asks the evaluator its stage blocked, at the next
+ * generation. The list is held by execution identity — a string the model
+ * never gives meaning to — in an order the route no longer answers in, so
+ * every suite reading it proves the derivation recovers a cycle from whatever
+ * order a page reaches it in; only `task` orders it, and only each row's own
+ * `identity` says which cycle, stage and generation it belongs to.
  */
 
 import type {
@@ -221,7 +221,15 @@ export const ticket21Parked: readonly ExecutionShape[] = [
   },
 ];
 
-/** The eighth execution: the resume's fresh fan-out of the lowest stage. */
+/**
+ * Cycle 3's evaluator blocked rather than failed, so its wall is one a resume
+ * re-asks in place; the seventh execution's totals stay its own.
+ */
+const ticket21ResumedBase: readonly ExecutionShape[] = ticket21Parked.map(
+  (shape) => (shape.task === 7 ? { ...shape, outcome: "Blocked" } : shape),
+);
+
+/** The eighth execution: the resume's re-ask of the evaluator stage 1 blocked. */
 const ticket21Resume: ExecutionShape = {
   execution: "execution-c40de507-8",
   task: 8,
@@ -230,6 +238,6 @@ const ticket21Resume: ExecutionShape = {
 };
 
 export const ticket21Resumed: readonly ExecutionShape[] = [
-  ...ticket21Parked,
+  ...ticket21ResumedBase,
   ticket21Resume,
 ].sort((left, right) => (left.execution < right.execution ? -1 : 1));

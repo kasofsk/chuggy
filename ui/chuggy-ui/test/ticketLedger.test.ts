@@ -12,7 +12,7 @@
 
 import { expect, test } from "vitest";
 
-import type { Cycle, ProgramRun, TaskSet } from "../app/core/ticketLedger.ts";
+import type { Cycle, StageRow, TaskSet } from "../app/core/ticketLedger.ts";
 import {
   cycleLabel,
   cycleLastSet,
@@ -35,11 +35,18 @@ function tasksOf(set: TaskSet | undefined): readonly number[] {
   return (set?.executions ?? []).map((row) => row.task);
 }
 
-/** Each stage row of a run as its kind and the tasks it ran, in stage order. */
-function stagesOf(run: ProgramRun | undefined): readonly string[] {
-  return (run?.stages ?? []).map((row) =>
+/** Every task a Ran stage's current evaluators hold, in evaluator-key order. */
+function ranTasks(row: StageRow): readonly number[] {
+  return row.kind === "Ran"
+    ? row.evaluators.flatMap((evaluator) => tasksOf(evaluator.set))
+    : [];
+}
+
+/** Each stage row as its kind and the tasks it ran, in stage order. */
+function stagesOf(stages: readonly StageRow[]): readonly string[] {
+  return stages.map((row) =>
     row.kind === "Ran"
-      ? `${String(row.stage)} ${row.set.verdict} ${tasksOf(row.set).join(",")}`
+      ? `${String(row.stage)} ${row.verdict} ${ranTasks(row).join(",")}`
       : `${String(row.stage)} ${row.kind}`,
   );
 }
@@ -67,9 +74,7 @@ test("a ticket's page becomes one cycle per work run, newest last", () => {
 
 test("the work runs are ordered by task and not by the identity they are held in", () => {
   const ledger = ticketLedger(ledgerPage(ticket21Parked), ticket21Authoring);
-  const evaluated = ledger.cycles.flatMap((cycle) =>
-    cycle.programRuns.flatMap((run) => stagesOf(run)),
-  );
+  const evaluated = ledger.cycles.flatMap((cycle) => stagesOf(cycle.stages));
   expect(evaluated).toEqual([
     "1 Failed 2",
     "2 Skipped",
@@ -81,78 +86,95 @@ test("the work runs are ordered by task and not by the identity they are held in
 });
 
 test("a stage that failed short-circuits the stages after it", () => {
-  expect(stagesOf(cycleAt(ticket21Parked, 0).programRuns[0])).toEqual([
+  expect(stagesOf(cycleAt(ticket21Parked, 0).stages)).toEqual([
     "1 Failed 2",
     "2 Skipped",
   ]);
 });
 
-test("the pass and the failure of one artifact stay in one program run", () => {
-  const cycle = cycleAt(ticket21Parked, 1);
-  expect(cycle.programRuns).toHaveLength(1);
-  expect(stagesOf(cycle.programRuns[0])).toEqual(["1 Passed 4", "2 Failed 5"]);
-});
-
-test("a resume starts a second program run against the same artifact", () => {
+test("a resume re-asks only the evaluator its stage blocked, at the next generation", () => {
   const cycle = cycleAt(ticket21Resumed, 2);
-  expect(cycle.programRuns.map((run) => run.ordinal)).toEqual([1, 2]);
-  expect(stagesOf(cycle.programRuns[0])).toEqual(["1 Failed 7", "2 Skipped"]);
-  expect(stagesOf(cycle.programRuns[1])).toEqual(["1 Running 8", "2 Queued"]);
+  expect(stagesOf(cycle.stages)).toEqual(["1 Running 8,7", "2 Queued"]);
+  const stage = cycle.stages[0];
+  expect(
+    stage?.kind === "Ran" ? stage.evaluators[0]?.generation : undefined,
+  ).toBe(2);
+  expect(
+    stage?.kind === "Ran"
+      ? stage.evaluators.map((row) => [row.generation, row.standing])
+      : undefined,
+  ).toEqual([
+    [2, "Current"],
+    [1, "Superseded"],
+  ]);
 });
 
-test("a stage first reached after a resume belongs to the run that resumed", () => {
-  const cycle = cycleAt(
-    [
+test("a stage blocked at generation 1 draws its resumed evaluator beside the pass it kept, and keeps its blocked generation as a row of its own", () => {
+  const twoEvaluatorStage: typeof ticket21Authoring = {
+    ...ticket21Authoring,
+    program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
+  };
+  const ledger = ticketLedger(
+    ledgerPage([
       {
         execution: "execution-aa-1",
         task: 1,
         identity: workIdentity(1),
         outcome: "Passed",
+        totals: { turns: 1, durationMs: 1_000, costUsdMicros: 1_000_000 },
       },
       {
         execution: "execution-bb-2",
         task: 2,
-        identity: evalIdentity(1, 1, 1),
+        identity: evalIdentity(1, 1, 1, 1),
         outcome: "Blocked",
+        totals: { turns: 1, durationMs: 1_000, costUsdMicros: 500_000 },
       },
       {
         execution: "execution-cc-3",
         task: 3,
-        identity: evalIdentity(1, 1, 2),
+        identity: evalIdentity(1, 1, 1, 2),
         outcome: "Passed",
+        totals: { turns: 1, durationMs: 1_000, costUsdMicros: 300_000 },
       },
       {
         execution: "execution-dd-4",
         task: 4,
-        identity: evalIdentity(1, 2, 1),
+        identity: evalIdentity(1, 1, 2, 1),
         outcome: "Passed",
+        totals: { turns: 1, durationMs: 1_000, costUsdMicros: 700_000 },
       },
-    ],
-    0,
+    ]),
+    twoEvaluatorStage,
   );
-  expect(cycle.programRuns.map((run) => [run.ordinal, run.standing])).toEqual([
-    [1, "Superseded"],
-    [2, "Current"],
+  const cycle = ledger.cycles[0];
+  const stage = cycle?.stages[0];
+  if (stage?.kind !== "Ran") throw new Error("stage did not run");
+  expect(
+    stage.evaluators.map((row) => [
+      row.key,
+      row.generation,
+      row.set.verdict,
+      row.standing,
+      ...tasksOf(row.set),
+    ]),
+  ).toEqual([
+    [1, 2, "Passed", "Current", 4],
+    [1, 1, "Blocked", "Superseded", 2],
+    [2, 1, "Passed", "Current", 3],
   ]);
-  expect(stagesOf(cycle.programRuns[0])).toEqual(["1 Blocked 2", "2 Skipped"]);
-  expect(stagesOf(cycle.programRuns[1])).toEqual(["1 Passed 3", "2 Passed 4"]);
-  expect(cycleLastSet(cycle)).toEqual({
-    taskKind: "Evaluation",
-    stage: 2,
-    verdict: "Passed",
-  });
-  expect(cycle.complete).toBe(true);
+  expect(stage.verdict).toBe("Passed");
+  expect(stage.expected).toBe(2);
+  expect(cycle?.spend.totals?.costUsdMicros).toBe(2_500_000);
 });
 
-test("only the last cycle and the last run of it stand as current", () => {
+test("only the last cycle stands as current", () => {
   const ledger = ticketLedger(ledgerPage(ticket21Resumed), ticket21Authoring);
   expect(ledger.cycles.map((cycle) => cycle.standing)).toEqual([
     "Superseded",
     "Superseded",
     "Current",
   ]);
-  const runs = ledger.cycles[2]?.programRuns ?? [];
-  expect(runs.map((run) => run.standing)).toEqual(["Superseded", "Current"]);
 });
 
 test("a passed work run marks the cycle's artifact and a failed one marks none", () => {
@@ -169,7 +191,7 @@ test("a passed work run marks the cycle's artifact and a failed one marks none",
     0,
   );
   expect(failed.artifact).toBe("None");
-  expect(failed.programRuns).toEqual([]);
+  expect(failed.stages).toEqual([]);
 });
 
 test("a work run still running has no artifact and no evaluation yet", () => {
@@ -188,8 +210,13 @@ test("a work run still running has no artifact and no evaluation yet", () => {
   expect(cycle.artifact).toBe("None");
 });
 
-test("one spawn of many tasks is one set, and two generations of one stage are two runs", () => {
-  const fanned = ticketLedger(
+/** A one-stage program keyed 1 and 3, after the evaluators named have passed. */
+function sparseStage(evaluators: readonly number[]): StageRow | undefined {
+  const sparse: typeof ticket21Authoring = {
+    ...ticket21Authoring,
+    program: [{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }],
+  };
+  const ledger = ticketLedger(
     ledgerPage([
       {
         execution: "execution-aa-1",
@@ -197,41 +224,23 @@ test("one spawn of many tasks is one set, and two generations of one stage are t
         identity: workIdentity(1),
         outcome: "Passed",
       },
-      {
-        execution: "execution-bb-2",
-        task: 2,
-        identity: evalIdentity(1, 1, 1, 1),
-        outcome: "Passed",
-      },
-      {
-        execution: "execution-bb-3",
-        task: 3,
-        identity: evalIdentity(1, 1, 1, 2),
-        outcome: "Failed",
-      },
-      {
-        execution: "execution-cc-4",
-        task: 4,
-        identity: evalIdentity(1, 1, 2, 1),
-        outcome: "Passed",
-      },
-      {
-        execution: "execution-cc-5",
-        task: 5,
-        identity: evalIdentity(1, 1, 2, 2),
-        outcome: "Passed",
-      },
+      ...evaluators.map((evaluator) => ({
+        execution: `execution-bb-${evaluator}`,
+        task: evaluator + 1,
+        identity: evalIdentity(1, 1, 1, evaluator),
+        outcome: "Passed" as const,
+      })),
     ]),
-    {
-      ...singleStage,
-      program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
-    },
+    sparse,
   );
-  const runs = fanned.cycles[0]?.programRuns ?? [];
-  expect(runs.map((run) => stagesOf(run))).toEqual([
-    ["1 Failed 2,3"],
-    ["1 Passed 4,5"],
-  ]);
+  return ledger.cycles[0]?.stages[0];
+}
+
+test("a sparse stage draws both evaluators", () => {
+  const stage = sparseStage([1, 3]);
+  if (stage?.kind !== "Ran") throw new Error("stage did not run");
+  expect(stage.evaluators.map((row) => row.key)).toEqual([1, 3]);
+  expect(stage.expected).toBe(2);
 });
 
 test("a cancelled set and a blocked one are each their own verdict", () => {
@@ -253,10 +262,46 @@ test("a cancelled set and a blocked one are each their own verdict", () => {
     singleStage,
   );
   expect(blocked.cycles[0]?.work?.verdict).toBe("Cancelled");
-  expect(stagesOf(blocked.cycles[0]?.programRuns[0])).toEqual(["1 Blocked 2"]);
+  expect(stagesOf(blocked.cycles[0]?.stages ?? [])).toEqual(["1 Blocked 2"]);
 });
 
-test("a stage that was blocked skips the stages after it, as a failed one does", () => {
+test("an evaluator whose process died is a stop, and a work task's is a failure", () => {
+  const stopped = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-aa-1",
+        task: 1,
+        identity: workIdentity(1),
+        outcome: "Passed",
+      },
+      {
+        execution: "execution-bb-2",
+        task: 2,
+        identity: evalIdentity(1, 1, 1),
+        outcome: "ProcessFailed",
+      },
+    ]),
+    ticket21Authoring,
+  );
+  expect(stagesOf(stopped.cycles[0]?.stages ?? [])).toEqual([
+    "1 Blocked 2",
+    "2 Queued",
+  ]);
+  const died = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-aa-1",
+        task: 1,
+        identity: workIdentity(1),
+        outcome: "ProcessFailed",
+      },
+    ]),
+    ticket21Authoring,
+  );
+  expect(died.cycles[0]?.work?.verdict).toBe("Failed");
+});
+
+test("a stage that was blocked leaves the stages after it queued, not skipped", () => {
   const ledger = ticketLedger(
     ledgerPage([
       {
@@ -268,9 +313,9 @@ test("a stage that was blocked skips the stages after it, as a failed one does",
     ]),
     ticket21Authoring,
   );
-  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual([
+  expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual([
     "1 Blocked 1",
-    "2 Skipped",
+    "2 Queued",
   ]);
 });
 
@@ -286,7 +331,7 @@ test("a stage that was cancelled skips the stages after it, as a failed one does
     ]),
     ticket21Authoring,
   );
-  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual([
+  expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual([
     "1 Cancelled 1",
     "2 Skipped",
   ]);
@@ -304,13 +349,13 @@ test("a stage that is still running leaves the stages after it queued", () => {
     ]),
     ticket21Authoring,
   );
-  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual([
+  expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual([
     "1 Running 1",
     "2 Queued",
   ]);
 });
 
-test("two stages of one generation are two sets, not one merged set", () => {
+test("two stages of one generation are two rows, not one merged row", () => {
   const ledger = ticketLedger(
     ledgerPage([
       {
@@ -328,7 +373,7 @@ test("two stages of one generation are two sets, not one merged set", () => {
     ]),
     ticket21Authoring,
   );
-  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual([
+  expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual([
     "1 Passed 1",
     "2 Failed 2",
   ]);
@@ -353,43 +398,22 @@ test("a work task and an evaluation task of one cycle are two sets", () => {
     singleStage,
   );
   expect(tasksOf(ledger.cycles[0]?.work)).toEqual([1]);
-  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual(["1 Passed 2"]);
+  expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual(["1 Passed 2"]);
 });
 
-test("a set is drawn against the fan-out its stage was authored with", () => {
+test("a stage is drawn against the fan-out its stage was authored with", () => {
   const cycle = cycleAt(ticket21Parked, 0);
   expect(cycle.work?.expected).toBe(1);
-  const run = cycle.programRuns[0]?.stages[0];
-  expect(run?.kind === "Ran" ? run.set.expected : undefined).toBe(1);
+  const row = cycle.stages[0];
+  expect(row?.kind === "Ran" ? row.expected : undefined).toBe(1);
 });
 
 test("a sparse stage's expected width is its evaluator count, not its highest key", () => {
-  const sparse: typeof ticket21Authoring = {
-    ...ticket21Authoring,
-    program: [{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }],
-  };
-  const ledger = ticketLedger(
-    ledgerPage([
-      {
-        execution: "execution-aa-1",
-        task: 1,
-        identity: workIdentity(1),
-        outcome: "Passed",
-      },
-      {
-        execution: "execution-bb-2",
-        task: 2,
-        identity: evalIdentity(1, 1, 1),
-        outcome: "Passed",
-      },
-    ]),
-    sparse,
-  );
-  const run = ledger.cycles[0]?.programRuns[0]?.stages[0];
-  expect(run?.kind === "Ran" ? run.set.expected : undefined).toBe(2);
+  const row = sparseStage([1]);
+  expect(row?.kind === "Ran" ? row.expected : undefined).toBe(2);
 });
 
-test("a single-stage program draws one row per run and no stage after it", () => {
+test("a single-stage program draws one row and no stage after it", () => {
   const ledger = ticketLedger(
     ledgerPage([
       {
@@ -407,7 +431,7 @@ test("a single-stage program draws one row per run and no stage after it", () =>
     ]),
     singleStage,
   );
-  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual(["1 Passed 2"]);
+  expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual(["1 Passed 2"]);
 });
 
 test("a page the route has more of says so", () => {
@@ -436,6 +460,40 @@ test("the page's cursor reaches the ledger and every cycle under it", () => {
     ticket21Authoring,
   );
   expect([short.truncated, short.cycles[0]?.complete]).toEqual([true, false]);
+});
+
+test("a superseded generation does not stand in for an evaluator the page lacks", () => {
+  const twoEvaluatorStage: typeof ticket21Authoring = {
+    ...ticket21Authoring,
+    program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
+  };
+  const ledger = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-aa-1",
+        task: 1,
+        identity: workIdentity(1),
+        outcome: "Passed",
+      },
+      {
+        execution: "execution-bb-2",
+        task: 2,
+        identity: evalIdentity(1, 1, 1, 1),
+        outcome: "Blocked",
+      },
+      {
+        execution: "execution-dd-4",
+        task: 4,
+        identity: evalIdentity(1, 1, 2, 1),
+        outcome: "Passed",
+      },
+    ]),
+    twoEvaluatorStage,
+  );
+  expect([ledger.truncated, ledger.cycles[0]?.complete]).toEqual([
+    false,
+    false,
+  ]);
 });
 
 test("a page cut before a cycle's work run says the artifact is unknown", () => {
@@ -472,7 +530,7 @@ test("a stage the page holds no set for is missing rather than skipped", () => {
     ]),
     ticket21Authoring,
   );
-  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual([
+  expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual([
     "1 Missing",
     "2 Failed 3",
   ]);
@@ -506,7 +564,7 @@ test("a stage number in the millions draws rows, not that many rows", () => {
     ]),
     ticket21Authoring,
   );
-  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual([
+  expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual([
     "1 Missing",
     "2 Missing",
     `${String(beyond)} Failed 1`,
@@ -531,8 +589,17 @@ test("a stage past the authored program is still given a row", () => {
     ]),
     singleStage,
   );
-  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual([
+  expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual([
     "1 Passed 2",
     "2 Failed 3",
   ]);
+});
+
+test("the last stage's verdict is what cycleLastSet and the wall it fed report", () => {
+  const cycle = cycleAt(ticket21Parked, 1);
+  expect(cycleLastSet(cycle)).toEqual({
+    taskKind: "Evaluation",
+    stage: 2,
+    verdict: "Failed",
+  });
 });

@@ -3,10 +3,9 @@ import { test } from "node:test";
 
 import {
   dispatchEvent,
-  evalReduceEvent,
-  executionBlockedEvent,
   finalizationResultEvent,
   releaseTicketEvent,
+  resumeTicketEvent,
   revokeEvent,
   taskDoneEvent,
   workReduceEvent,
@@ -16,6 +15,7 @@ import { retryableIn } from "../../src/domain/enablement.ts";
 import type { Config } from "../../src/domain/config.ts";
 import type {
   DecisionEvent,
+  FailureKind,
   TaskIdentity,
 } from "../../src/domain/generated/modelTypes.ts";
 import { escalationTags } from "../../src/domain/generated/modelTypes.ts";
@@ -53,10 +53,17 @@ import {
 } from "../../src/interpreter/wire.ts";
 import {
   plainAuthoring,
-  plainResult,
+  plainDisposition,
   refinementInstance,
 } from "../actor/harness.ts";
-import { graphOf, id, ticketOn } from "../domain/fixtures.ts";
+import {
+  graphOf,
+  id,
+  judgedReport,
+  producedReport,
+  stoppedReport,
+  ticketOn,
+} from "../domain/fixtures.ts";
 import { populated } from "./roster.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
@@ -67,6 +74,24 @@ const partition = {
   tenant: asTenantId("tenant"),
   project: asProjectId("project"),
 };
+
+/** A work task settling with the artifact it produced, which is what a completion names. */
+function workDone(cycle: number) {
+  const work = workTaskOf(1, cycle);
+  return taskDoneEvent(id(1), work, producedReport(work), plainDisposition);
+}
+
+/** One evaluator of a stage answering, under the disposition its failure is taken on. */
+function judged(
+  cycle: number,
+  evaluator: number,
+  verdict: "EvaluatorPass" | "EvaluatorFail",
+  onFailure:
+    "ReworkEvaluationFailure" | "EscalateEvaluationFailure" = plainDisposition,
+) {
+  const judge = evaluationTaskOf(1, cycle, 1, 1, evaluator);
+  return taskDoneEvent(id(1), judge, judgedReport(judge, verdict), onFailure);
+}
 
 function input(
   event: ReturnType<typeof asOperationDecisionEvent>,
@@ -115,19 +140,29 @@ test("trusted classification reserves safety traffic", () => {
 });
 
 test("a completion is no command a principal may offer, and a writer still reads one", () => {
-  for (const event of [
-    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
-    executionBlockedEvent(id(1)),
+  const work = workTaskOf(1, 1);
+  for (const report of [
+    producedReport(work),
+    stoppedReport(work, "ExecutionUnavailableFailure"),
   ]) {
+    const event = taskDoneEvent(id(1), work, report, plainDisposition);
     assert.throws(
       () => asOperationDecisionEvent(event),
       /not a public decision command/,
     );
-    const stored = JSON.stringify({ version: 1, command: "Decide", event });
+    const submitted = {
+      type: "TaskDone",
+      value: { ticket: id(1), task: work, report },
+    } as const;
+    const stored = JSON.stringify({
+      version: 1,
+      command: "Decide",
+      event: submitted,
+    });
     assert.equal(parseTicketCommand(stored).parsed, "Refused");
     assert.deepEqual(parseStoredTicketCommand(stored), {
       parsed: "Ok",
-      value: { version: 1, command: "Decide", event },
+      value: { version: 1, command: "Decide", event: submitted },
     });
   }
 });
@@ -212,17 +247,38 @@ test("dispatch materializes exact logical work tasks from the pure state delta",
 });
 
 /**
- * How each event reaches a writer: a reduce on its continuation, a public
- * command on its operation. A release and a completion are left out, because
- * neither of them spawns.
+ * How each event reaches a writer: the one reduce on its continuation, a
+ * completion on the scheduler's operation, a public command on its own. A
+ * release is left out, because it spawns nothing.
  */
 function plannedInput(
   event: DecisionEvent,
   ticket: ReturnType<typeof id>,
   phase: string,
 ): DecisionInput | undefined {
-  if (event.type !== "WorkReduce" && event.type !== "EvalReduce")
-    return isCompletionDecisionEvent(event) || event.type === "CreateTicket"
+  if (isCompletionDecisionEvent(event)) {
+    const completion = {
+      type: "TaskDone",
+      value: {
+        ticket: event.value.ticket,
+        task: event.value.task,
+        report: event.value.report,
+      },
+    } as const;
+    return {
+      partition,
+      ordinal: 1,
+      priority: "Completion",
+      source: {
+        kind: "Operation",
+        operation: asOperationId("completion"),
+        command: { version: 1, command: "Decide", event: completion },
+        completion,
+      },
+    };
+  }
+  if (event.type !== "WorkReduce")
+    return event.type === "CreateTicket"
       ? undefined
       : input(asOperationDecisionEvent(event));
   return {
@@ -232,10 +288,7 @@ function plannedInput(
     source: {
       kind: "Continuation",
       continuation: "continuation",
-      reduction: {
-        reduce: event.type === "WorkReduce" ? "Work" : "Evaluation",
-        ticket,
-      },
+      reduction: { ticket },
       expectedTicketVersion: 1,
       expectedPhase: phase,
       taskSetGeneration: 1,
@@ -252,11 +305,10 @@ test("a ticket's task numbers ascend over its whole history and never repeat", (
   const history = [
     releaseTicketEvent(id(1), plainAuthoring),
     dispatchEvent(id(1)),
-    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
+    workDone(1),
     workReduceEvent(id(1)),
-    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 1, 1, 1), "Fail", plainResult),
-    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
-    taskDoneEvent(id(1), workTaskOf(1, 2), "Pass", plainResult),
+    judged(1, 1, "EvaluatorFail"),
+    workDone(2),
     workReduceEvent(id(1)),
   ];
   const minted = mintedUnder(history, refinementInstance);
@@ -316,11 +368,10 @@ test("a sparse stage mints consecutive numbers and the set after it repeats none
   const minted = mintedUnder([
     releaseTicketEvent(id(1), sparseAuthoring),
     dispatchEvent(id(1)),
-    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
+    workDone(1),
     workReduceEvent(id(1)),
-    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 1, 1, 1), "Fail", plainResult),
-    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 1, 1, 3), "Pass", plainResult),
-    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
+    judged(1, 1, "EvaluatorFail"),
+    judged(1, 3, "EvaluatorPass"),
   ]);
   assert.deepEqual(
     minted.map((each) => each.task),
@@ -337,6 +388,47 @@ test("a sparse stage mints consecutive numbers and the set after it repeats none
   );
 });
 
+/** A program whose one stage lists three evaluators, so a resume can re-ask one of them. */
+const wideAuthoring = {
+  deps: new Set<number>(),
+  prog: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }, { key: 3 }] }],
+} as const;
+
+/** One evaluator stopped rather than answering, which is what a resume comes back for. */
+function stopped(cycle: number, evaluator: number, kind: FailureKind) {
+  const judge = evaluationTaskOf(1, cycle, 1, 1, evaluator);
+  return taskDoneEvent(
+    id(1),
+    judge,
+    stoppedReport(judge, kind),
+    plainDisposition,
+  );
+}
+
+/**
+ * The count a run spends is its whole roster, generation by generation, so the
+ * re-ask takes a number above every one the first pass minted rather than one
+ * of the set it is resuming. Minted off the tasks dispatched instead, the lone
+ * re-ask would land back inside its own stage's first run.
+ */
+test("a resume re-asks the stopped evaluator alone, at a number the first pass never held", () => {
+  const minted = mintedUnder([
+    releaseTicketEvent(id(1), wideAuthoring),
+    dispatchEvent(id(1)),
+    workDone(1),
+    workReduceEvent(id(1)),
+    judged(1, 1, "EvaluatorPass"),
+    stopped(1, 2, "ProcessFailure"),
+    judged(1, 3, "EvaluatorPass"),
+    resumeTicketEvent(id(1)),
+  ]);
+  assert.deepEqual(
+    minted.map((each) => each.task),
+    [1, 2, 3, 4, 6],
+  );
+  assert.deepEqual(minted.at(-1)?.identity, evaluationTaskOf(1, 1, 1, 2, 2));
+});
+
 /**
  * A cancellation names only the tasks it retires, by the numbers their spawn
  * minted: the retired evaluator's position is counted in the whole set, not
@@ -346,9 +438,9 @@ test("a cancellation names a retired task by the number its spawn minted", () =>
   const minted = mintedUnder([
     releaseTicketEvent(id(1), sparseAuthoring),
     dispatchEvent(id(1)),
-    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
+    workDone(1),
     workReduceEvent(id(1)),
-    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 1, 1, 1), "Pass", plainResult),
+    judged(1, 1, "EvaluatorPass"),
     revokeEvent(id(1)),
   ]);
   assert.deepEqual(minted.at(-1), {
@@ -391,7 +483,12 @@ test("a decision leaving escalation withdraws its open native action", () => {
   const escalated = journalStep(
     refinementInstance,
     working,
-    executionBlockedEvent(id(1)),
+    taskDoneEvent(
+      id(1),
+      workTaskOf(1, 1),
+      stoppedReport(workTaskOf(1, 1), "ExecutionUnavailableFailure"),
+      plainDisposition,
+    ),
   );
   const revoked = journalStep(
     refinementInstance,
@@ -414,10 +511,9 @@ function finalizing(): ReturnType<typeof journalStep> {
   const steps: readonly DecisionEvent[] = [
     releaseTicketEvent(id(1), plainAuthoring),
     dispatchEvent(id(1)),
-    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
+    workDone(1),
     workReduceEvent(id(1)),
-    taskDoneEvent(id(1), evaluationTaskOf(1, 1, 1, 1, 1), "Pass", plainResult),
-    evalReduceEvent(id(1), "ReworkEvaluationFailure"),
+    judged(1, 1, "EvaluatorPass"),
   ];
   return steps.reduce(
     (state, event) => journalStep(refinementInstance, state, event),
@@ -473,7 +569,7 @@ test("a decision leaving finalization withdraws the approval it left unanswered"
 function parkEntry(): Entry {
   return {
     seq: 4,
-    event: evalReduceEvent(id(1), "EscalateEvaluationFailure"),
+    event: judged(1, 1, "EvaluatorFail", "EscalateEvaluationFailure"),
     rec: {
       label: "ticket-escalated",
       transitions: [{ ticket: 1, from: "Evaluation", to: "Escalated" }],
@@ -491,7 +587,7 @@ function continuationInput(): DecisionInput {
     source: {
       kind: "Continuation",
       continuation: "continuation",
-      reduction: { reduce: "Evaluation", ticket: id(1) },
+      reduction: { ticket: id(1) },
       expectedTicketVersion: 1,
       expectedPhase: "Evaluation",
       taskSetGeneration: 1,

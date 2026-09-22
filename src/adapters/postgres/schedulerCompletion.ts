@@ -42,6 +42,13 @@
  * verdict — and puts it through the same acceptance and the same digest every
  * reported one goes through. Writing the row directly would be a result that
  * skipped validation, which is the one thing the sealed type exists to prevent.
+ *
+ * AND IT IS SUBMITTED UNDER ITS OWN OUTCOME, because that manifest is this
+ * adapter's sentence and not a worker's. The failed verdict in it says the
+ * process died with the fabric's relaunches behind it, which for an evaluator
+ * is not the judgement `Failed` reports — so the boundary is told
+ * `ProcessFailed`, and the door has the one fact it could not otherwise
+ * recover from a manifest it only ever sees the identity of.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -460,15 +467,21 @@ async function schedulerReporterReported(
   return reported.rowCount === 1;
 }
 
-/** Retains the manifest and submits the completion it settles, in the transaction already open. */
+/**
+ * Retains the manifest and submits the completion it settles, in the
+ * transaction already open. `reported` is what the boundary is told and what
+ * the execution then records, which is the manifest's own outcome unless the
+ * caller authored that manifest itself.
+ */
 async function schedulerSettle(
   client: pg.PoolClient,
   execution: LogicalExecution,
   manifest: ResultManifest,
+  reported?: ExecutionOutcome,
 ): Promise<Terminalized> {
   const ordinal = await schedulerManifestOrdinal(client, execution.partition);
   await schedulerWriteManifest(client, manifest, ordinal);
-  const outcome = schedulerOutcomeOf(manifest);
+  const outcome = reported ?? schedulerOutcomeOf(manifest);
   const submitted = await schedulerSubmit(
     client,
     execution,
@@ -653,6 +666,7 @@ export async function schedulerRetriesExhausted(
     client,
     standing.execution,
     schedulerEmptyManifest(standing.execution, reporter),
+    "ProcessFailed",
   );
 }
 

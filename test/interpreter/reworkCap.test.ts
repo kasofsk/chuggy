@@ -13,7 +13,6 @@ import { test } from "node:test";
 
 import {
   dispatchEvent,
-  evalReduceEvent,
   execDecisionEvent,
   finalizationResultEvent,
   releaseTicketEvent,
@@ -22,6 +21,9 @@ import {
   type DecisionEvent,
 } from "../../src/actor/decisionEvent.ts";
 import { genesis } from "../../src/actor/journal.ts";
+import { currentTaskObligations } from "../../src/domain/evaluation.ts";
+import { currentInstance } from "../../src/domain/ticket.ts";
+import { workTaskOf } from "../../src/domain/task.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type { TicketGraph } from "../../src/domain/generated/modelTypes.ts";
 import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
@@ -29,24 +31,25 @@ import {
   checkedReworkCap,
   reworkDisposition,
 } from "../../src/interpreter/reworkCap.ts";
-import { plainAuthoring, plainResult } from "../actor/harness.ts";
-import { id } from "../domain/fixtures.ts";
+import { plainAuthoring, plainDisposition } from "../actor/harness.ts";
+import { id, judgedReport, producedReport } from "../domain/fixtures.ts";
 
-/** The one outstanding task of a single-width ticket, which is what a completion names. */
-function outstanding(graph: TicketGraph): TaskIdentity {
-  const task = [...ticketAt(graph, id(1)).tasks].find(
-    (candidate) => candidate.state === "Outstanding",
-  );
-  if (task === undefined)
-    throw new Error("rework cap case: the ticket has no outstanding task");
-  return task.identity;
+/** The one task a single-width ticket owes, which is what a completion names. */
+function owed(graph: TicketGraph): TaskIdentity {
+  const ticket = ticketAt(graph, id(1));
+  if (ticket.phase === "Work") return workTaskOf(1, ticket.workCyclesStarted);
+  const [obligation] = currentTaskObligations(currentInstance(ticket));
+  if (obligation === undefined)
+    throw new Error("rework cap case: the ticket owes no task");
+  return obligation;
 }
 
 /**
  * The dispositions the cap picks, one per failing evaluation, until it parks
  * the ticket — after `finalizationFailures` rounds its finalization failed
- * instead. Every step is the decider's, and the failure it feeds the cap is the
- * one the cap's own previous answer produced.
+ * instead. Every step is the decider's, the pick is made over the ticket as it
+ * stands before the completion that concludes the stage, and the failure it
+ * feeds the cap is the one the cap's own previous answer produced.
  */
 function dispositionsUnder(
   cyclesMax: number,
@@ -56,24 +59,27 @@ function dispositionsUnder(
   const step = (event: DecisionEvent) => {
     graph = execDecisionEvent(graph, event).post;
   };
-  const evaluated = (verdict: "Pass" | "Fail") => {
-    step(taskDoneEvent(id(1), outstanding(graph), "Pass", plainResult));
+  const evaluated = (verdict: "EvaluatorPass" | "EvaluatorFail") => {
+    const work = owed(graph);
+    step(taskDoneEvent(id(1), work, producedReport(work), plainDisposition));
     step(workReduceEvent(id(1)));
-    step(taskDoneEvent(id(1), outstanding(graph), verdict, plainResult));
+    const judge = owed(graph);
+    const disposition = reworkDisposition(ticketAt(graph, id(1)), cyclesMax);
+    step(
+      taskDoneEvent(id(1), judge, judgedReport(judge, verdict), disposition),
+    );
+    return disposition;
   };
   step(releaseTicketEvent(id(1), plainAuthoring));
   step(dispatchEvent(id(1)));
   for (let failure = 0; failure < finalizationFailures; failure++) {
-    evaluated("Pass");
-    step(evalReduceEvent(id(1), "ReworkEvaluationFailure"));
+    evaluated("EvaluatorPass");
     step(finalizationResultEvent(id(1), "FinalizationNeedsWork"));
   }
   const picked: string[] = [];
   for (let round = 0; round <= cyclesMax + 1; round++) {
-    evaluated("Fail");
-    const disposition = reworkDisposition(ticketAt(graph, id(1)), cyclesMax);
+    const disposition = evaluated("EvaluatorFail");
     picked.push(disposition);
-    step(evalReduceEvent(id(1), disposition));
     if (disposition === "EscalateEvaluationFailure") return picked;
   }
   throw new Error("rework cap case: the cap never parked the ticket");
