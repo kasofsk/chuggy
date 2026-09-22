@@ -336,18 +336,6 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
       config,
       stateView(
         evaluating(
-          new Set([evalOutstanding(1, 1, 1, 1), evalOutstanding(1, 1, 1, 1)]),
-          [{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }],
-        ),
-      ),
-    ),
-    "two live tasks sharing a key are not the roster, whatever their count (a JS Set holds both objects)",
-  );
-  assert.ok(
-    !tasksWellFormed(
-      config,
-      stateView(
-        evaluating(
           new Set([
             evalTask(1, 1, 1, 1, "Cancelled"),
             evalOutstanding(1, 1, 1, 2),
@@ -356,6 +344,21 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
       ),
     ),
     "cancelled is a retirement mark on the eval side too, and this branch has its own conjunct saying so",
+  );
+});
+
+/** A JS Set holds two task objects sharing a key where the model's value-Set holds one. */
+test("tasksWellFormed rejects two live tasks sharing a key, whatever their count", () => {
+  assert.ok(
+    !tasksWellFormed(
+      config,
+      stateView(
+        evaluating(
+          new Set([evalOutstanding(1, 1, 1, 1), evalOutstanding(1, 1, 1, 1)]),
+          [{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }],
+        ),
+      ),
+    ),
   );
 });
 
