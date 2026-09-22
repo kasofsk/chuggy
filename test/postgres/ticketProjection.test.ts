@@ -22,15 +22,14 @@ import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
-import type { Verdict } from "../../src/domain/generated/modelTypes.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import type { TicketResource } from "../../src/interpreter/nativeWeb.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
-import { plainResult } from "../actor/harness.ts";
+import { plainDisposition } from "../actor/harness.ts";
 import { escalationTags } from "../../src/domain/generated/modelTypes.ts";
-import { id } from "../domain/fixtures.ts";
+import { id, reportedAt } from "../domain/fixtures.ts";
 import {
   postgresHarnessCompletion,
   postgresHarnessDrain,
@@ -104,13 +103,13 @@ async function reported(
   partition: Partition,
   memory: ProjectMemory,
   task: TaskIdentity,
-  verdict: Verdict,
+  verdict: "Pass" | "Fail",
 ): Promise<ProjectMemory> {
   await postgresHarnessCompletion(
     harness,
     partition,
     `operation-projection-${randomUUID()}`,
-    taskDoneEvent(subject, task, verdict, plainResult),
+    taskDoneEvent(subject, task, reportedAt(task, verdict), plainDisposition),
   );
   const drained = await postgresHarnessDrain(harness, partition, memory);
   assert.deepEqual(

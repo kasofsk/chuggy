@@ -56,10 +56,7 @@ import { tmpdir } from "node:os";
 import type pg from "pg";
 
 import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
-import type {
-  DecisionEvent,
-  Verdict,
-} from "../../src/domain/generated/modelTypes.ts";
+import type { DecisionEvent } from "../../src/domain/generated/modelTypes.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   accountIdentityFunction,
@@ -124,8 +121,8 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import { type ProjectMemory } from "../../src/interpreter/projectWriter.ts";
-import { plainResult } from "../actor/harness.ts";
-import { id } from "../domain/fixtures.ts";
+import { plainDisposition } from "../actor/harness.ts";
+import { id, reportedAt } from "../domain/fixtures.ts";
 import {
   postgresHarnessDrain,
   postgresHarnessHistory,
@@ -450,9 +447,14 @@ export async function finalizerAccept(
 /** The completion one task reports, defaulted to the pass an evaluation is driven by. */
 export function finalizerTaskDone(
   task: TaskIdentity,
-  verdict: Verdict = "Pass",
+  verdict: "Pass" | "Fail" = "Pass",
 ): DecisionEvent {
-  return taskDoneEvent(id(1), task, verdict, plainResult);
+  return taskDoneEvent(
+    id(1),
+    task,
+    reportedAt(task, verdict),
+    plainDisposition,
+  );
 }
 
 /** The lone evaluator of the first stage of one work cycle, which is the fixture's only stage. */
@@ -467,7 +469,7 @@ async function finalizerReport(
   memory: ProjectMemory,
   label: string,
   task: TaskIdentity,
-  verdict: Verdict = "Pass",
+  verdict: "Pass" | "Fail" = "Pass",
 ): Promise<ProjectMemory> {
   const accepted = await finalizerAccept(
     harness,

@@ -24,8 +24,6 @@ import { test } from "node:test";
 import {
   decisionEventTags,
   dispatchEvent,
-  evalReduceEvent,
-  executionBlockedEvent,
   finalizationResultEvent,
   releaseTicketEvent,
   resumeTicketEvent,
@@ -50,10 +48,10 @@ import {
 import { asOperationDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
 import {
   plainAuthoring,
-  plainResult,
+  plainDisposition,
   refinementInstance,
 } from "../actor/harness.ts";
-import { id } from "../domain/fixtures.ts";
+import { id, judgedReport } from "../domain/fixtures.ts";
 import type { StepRecord } from "../../src/domain/generated/modelTypes.ts";
 
 const config = refinementInstance;
@@ -76,13 +74,11 @@ const oneOfEach: Readonly<Record<DecisionEvent["type"], DecisionEvent>> = {
   TaskDone: taskDoneEvent(
     id(1),
     evaluationTaskOf(1, 1, 1, 1, 1),
-    "Fail",
-    plainResult,
+    judgedReport(evaluationTaskOf(1, 1, 1, 1, 1), "EvaluatorFail"),
+    plainDisposition,
   ),
   WorkReduce: workReduceEvent(id(1)),
-  EvalReduce: evalReduceEvent(id(1), "ReworkEvaluationFailure"),
   FinalizationResult: finalizationResultEvent(id(1), "FinalizationNeedsWork"),
-  ExecutionBlocked: executionBlockedEvent(id(1)),
   ResumeTicket: resumeTicketEvent(id(1)),
 };
 
@@ -246,7 +242,7 @@ test("a decide carrying a finalization result is refused, as a reduction and a r
   for (const closed of [
     oneOfEach.FinalizationResult,
     oneOfEach.WorkReduce,
-    oneOfEach.EvalReduce,
+    oneOfEach.TaskDone,
     oneOfEach.CreateTicket,
   ]) {
     const refused = parseTicketCommand(
@@ -300,28 +296,88 @@ test("the finalizer's own envelope is read only by the parse a writer reads its 
 });
 
 /**
- * The scheduler's own envelope. `submit_task_completion` builds its event from
- * the ticket alone now that the phase says which escalation a block is, so the
- * wall it recorded travels on the execution and not in these bytes.
+ * The scheduler's own envelope. `submit_task_completion` names the task it
+ * settled and the report it terminated under, and picks no edge: the cap that
+ * picks one lives at the writer, so bytes naming a disposition were not
+ * written by that boundary.
  */
-test("a stored block names its ticket and nothing else", () => {
+test("a stored completion names its task and its report and no disposition", () => {
+  const task = {
+    type: "EvaluationTask",
+    value: { ticket: 1, workCycle: 1, stage: 1, generation: 1, evaluator: 1 },
+  };
+  const report = {
+    type: "TerminalFailureReport",
+    value: { evidence: 4, kind: "ProcessFailure" },
+  };
+  const stored = (value: unknown) =>
+    JSON.stringify({
+      version: 1,
+      command: "Decide",
+      event: { type: "TaskDone", value },
+    });
   assert.deepEqual(
-    parseStoredTicketCommand(
-      JSON.stringify({
-        version: 1,
-        command: "Decide",
-        event: { type: "ExecutionBlocked", value: { ticket: 1 } },
-      }),
-    ),
+    parseStoredTicketCommand(stored({ ticket: 1, task, report })),
     {
       parsed: "Ok",
       value: {
         version: 1,
         command: "Decide",
-        event: { type: "ExecutionBlocked", value: { ticket: 1 } },
+        event: {
+          type: "TaskDone",
+          value: {
+            ticket: 1,
+            task: {
+              type: "EvaluationTask",
+              value: {
+                ticket: id(1),
+                workCycle: 1,
+                stage: 1,
+                generation: 1,
+                evaluator: 1,
+              },
+            },
+            report,
+          },
+        },
       },
     },
   );
+  assert.equal(
+    parseTicketCommand(stored({ ticket: 1, task, report })).parsed,
+    "Refused",
+    "ingress spells no completion",
+  );
+  for (const [why, value] of [
+    [
+      "a disposition the boundary cannot pick",
+      { ticket: 1, task, report, onFailure: "ReworkEvaluationFailure" },
+    ],
+    ["no ticket at all", { task, report }],
+    ["a ticket named by text", { ticket: "1", task, report }],
+    [
+      "a task at no constructor of this machine",
+      {
+        ticket: 1,
+        task: { type: "FinalizerTask", value: { ticket: 1 } },
+        report,
+      },
+    ],
+    [
+      "a report still naming its ticket",
+      {
+        ticket: 1,
+        task,
+        report: {
+          type: "TerminalFailureReport",
+          value: { ticket: 1, kind: "ProcessFailure" },
+        },
+      },
+    ],
+  ] as const) {
+    const refused = parseStoredTicketCommand(stored(value));
+    assert.equal(refused.parsed, "Refused", why);
+  }
 });
 
 /**

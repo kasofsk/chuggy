@@ -4367,27 +4367,27 @@ const reportResultRef = { manifest: 1, digest: 1, schema: 1 };
 const taskReports: readonly (readonly [string, unknown, boolean])[] = [
   [
     "a work task reporting the result it produced",
-    { type: "WorkResultReport", value: { ticket: 1, result: reportResultRef } },
+    { type: "WorkResultReport", value: { result: reportResultRef } },
     true,
   ],
   [
     "a work result whose manifest is named by text",
     {
       type: "WorkResultReport",
-      value: { ticket: 1, result: { ...reportResultRef, manifest: "1" } },
+      value: { result: { ...reportResultRef, manifest: "1" } },
     },
     false,
   ],
   [
     "a work result that produced nothing to reference",
-    { type: "WorkResultReport", value: { ticket: 1 } },
+    { type: "WorkResultReport", value: {} },
     false,
   ],
   [
     "an evaluator reporting the verdict it reached",
     {
       type: "EvaluationResultReport",
-      value: { ticket: 1, result: reportResultRef, verdict: "EvaluatorFail" },
+      value: { result: reportResultRef, verdict: "EvaluatorFail" },
     },
     true,
   ],
@@ -4395,23 +4395,28 @@ const taskReports: readonly (readonly [string, unknown, boolean])[] = [
     "an evaluator reporting the verdict the manifest attested instead of its own",
     {
       type: "EvaluationResultReport",
-      value: { ticket: 1, result: reportResultRef, verdict: "Fail" },
+      value: { result: reportResultRef, verdict: "Fail" },
     },
     false,
   ],
   [
     "an evaluator reporting a result at no verdict at all",
-    {
-      type: "EvaluationResultReport",
-      value: { ticket: 1, result: reportResultRef },
-    },
+    { type: "EvaluationResultReport", value: { result: reportResultRef } },
     false,
   ],
   [
     "a task reporting the wall its execution hit",
     {
       type: "TerminalFailureReport",
-      value: { ticket: 1, kind: "ExecutionUnavailableFailure" },
+      value: { evidence: 1, kind: "ExecutionUnavailableFailure" },
+    },
+    true,
+  ],
+  [
+    "a task reporting the process that died under it",
+    {
+      type: "TerminalFailureReport",
+      value: { evidence: 1, kind: "ProcessFailure" },
     },
     true,
   ],
@@ -4419,26 +4424,42 @@ const taskReports: readonly (readonly [string, unknown, boolean])[] = [
     "a failure at a kind this machine has no name for",
     {
       type: "TerminalFailureReport",
-      value: { ticket: 1, kind: "EvaluatorProcessFailed" },
+      value: { evidence: 1, kind: "EvaluatorProcessFailed" },
     },
     false,
   ],
   [
     "a failure at no kind at all",
-    { type: "TerminalFailureReport", value: { ticket: 1 } },
+    { type: "TerminalFailureReport", value: { evidence: 1 } },
+    false,
+  ],
+  [
+    "a failure naming no evidence a reader could open",
+    { type: "TerminalFailureReport", value: { kind: "ProcessFailure" } },
+    false,
+  ],
+  [
+    "a failure whose evidence is named by text",
+    {
+      type: "TerminalFailureReport",
+      value: { evidence: "1", kind: "ProcessFailure" },
+    },
+    false,
+  ],
+  [
+    "a report naming the ticket its task already names",
+    {
+      type: "TerminalFailureReport",
+      value: { ticket: 1, evidence: 1, kind: "ProcessFailure" },
+    },
     false,
   ],
   [
     "a report at a constructor this machine has none of",
-    { type: "TaskTerminal", value: { ticket: 1, kind: "ProcessFailure" } },
+    { type: "TaskTerminal", value: { evidence: 1, kind: "ProcessFailure" } },
     false,
   ],
   ["a report that is the text of one", "TerminalFailureReport", false],
-  [
-    "a report naming no ticket",
-    { type: "TerminalFailureReport", value: { kind: "ProcessFailure" } },
-    false,
-  ],
 ];
 
 function taskReportCompletion(report: unknown): unknown {
@@ -4475,7 +4496,22 @@ const taskReportRefused: readonly (readonly [string, unknown])[] = [
         verdict: "Pass",
         report: {
           type: "WorkResultReport",
-          value: { ticket: 1, result: reportResultRef },
+          value: { result: reportResultRef },
+        },
+      },
+    },
+  ],
+  [
+    "a completion picking the edge a failed stage is taken on",
+    {
+      type: "TaskDone",
+      value: {
+        ticket: 1,
+        task: { type: "WorkTask", value: { ticket: 1, cycle: 1 } },
+        onFailure: "ReworkEvaluationFailure",
+        report: {
+          type: "WorkResultReport",
+          value: { result: reportResultRef },
         },
       },
     },
@@ -4564,7 +4600,8 @@ test("the boundary admits a completion that reports what its task produced and r
 /**
  * Each task the door settles, what its row carries, and the report it journals:
  * a produced work result, an evaluator's own verdict, a work task that produced
- * none, and an evaluator whose execution never ran.
+ * none, an evaluator whose execution never ran, and an evaluator whose process
+ * died with its retries.
  */
 const taskReportCompletions: readonly (readonly [
   string,
@@ -4589,7 +4626,7 @@ const taskReportCompletions: readonly (readonly [
       task: { type: "WorkTask", value: { ticket: 1, cycle: 3 } },
       report: {
         type: "WorkResultReport",
-        value: { ticket: 1, result: { manifest: 1, digest, schema: 1 } },
+        value: { result: { manifest: 1, digest, schema: 1 } },
       },
     }),
   ],
@@ -4616,7 +4653,6 @@ const taskReportCompletions: readonly (readonly [
       report: {
         type: "EvaluationResultReport",
         value: {
-          ticket: 1,
           result: { manifest: 2, digest, schema: 1 },
           verdict: "EvaluatorFail",
         },
@@ -4624,7 +4660,7 @@ const taskReportCompletions: readonly (readonly [
     }),
   ],
   [
-    "the work task whose exhausted budget settled under the empty manifest",
+    "the work task that produced none",
     3,
     "SpawnWork",
     "kind,cycle",
@@ -4636,7 +4672,7 @@ const taskReportCompletions: readonly (readonly [
       task: { type: "WorkTask", value: { ticket: 1, cycle: 7 } },
       report: {
         type: "TerminalFailureReport",
-        value: { ticket: 1, kind: "ProcessFailure" },
+        value: { evidence: 3, kind: "ProcessFailure" },
       },
     }),
   ],
@@ -4662,7 +4698,50 @@ const taskReportCompletions: readonly (readonly [
       },
       report: {
         type: "TerminalFailureReport",
-        value: { ticket: 1, kind: "ExecutionUnavailableFailure" },
+        value: { evidence: 4, kind: "ExecutionUnavailableFailure" },
+      },
+    }),
+  ],
+  [
+    "the evaluator whose process died under the manifest the scheduler sealed",
+    5,
+    "SpawnEvaluation",
+    "kind,cycle,stage,generation,evaluator",
+    "'Evaluation',12,13,14,15",
+    "Fail",
+    "'ProcessFailed','manifest-5',repeat('d',64),NULL",
+    () => ({
+      ticket: 1,
+      task: {
+        type: "EvaluationTask",
+        value: {
+          ticket: 1,
+          workCycle: 12,
+          stage: 13,
+          generation: 14,
+          evaluator: 15,
+        },
+      },
+      report: {
+        type: "TerminalFailureReport",
+        value: { evidence: 5, kind: "ProcessFailure" },
+      },
+    }),
+  ],
+  [
+    "the work task whose process died the same way",
+    6,
+    "SpawnWork",
+    "kind,cycle",
+    "'Work',16",
+    "Fail",
+    "'ProcessFailed','manifest-6',repeat('d',64),NULL",
+    () => ({
+      ticket: 1,
+      task: { type: "WorkTask", value: { ticket: 1, cycle: 16 } },
+      report: {
+        type: "TerminalFailureReport",
+        value: { evidence: 6, kind: "ProcessFailure" },
       },
     }),
   ],
@@ -4722,6 +4801,16 @@ test("the scheduler's door journals the report the task it settled terminated un
         what,
       );
     }
+    assert.deepEqual(
+      (
+        await subject.query<{ outcome: string }>(
+          `SELECT outcome FROM execution
+             WHERE execution IN ('execution-5','execution-6') ORDER BY execution`,
+        )
+      ).rows,
+      [{ outcome: "Failed" }, { outcome: "Failed" }],
+      "a death the door was told of records the outcome the execution has always kept",
+    );
   });
 });
 

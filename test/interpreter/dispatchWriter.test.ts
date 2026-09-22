@@ -5,6 +5,7 @@ import {
   dispatchEvent,
   releaseTicketEvent,
   taskDoneEvent,
+  workReduceEvent,
   ticketAt,
 } from "../../src/actor/decisionEvent.ts";
 import {
@@ -61,13 +62,18 @@ import type { TicketCommand } from "../../src/interpreter/ticketCommand.ts";
 import { executionSourceObservation } from "../../src/interpreter/executionSourceObservation.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
-import { workTaskOf } from "../../src/domain/task.ts";
+import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import {
   plainAuthoring,
-  plainResult,
+  plainDisposition,
   refinementInstance,
 } from "../actor/harness.ts";
-import { id } from "../domain/fixtures.ts";
+import {
+  id,
+  judgedReport,
+  producedReport,
+  stoppedReport,
+} from "../domain/fixtures.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -597,7 +603,12 @@ function workPassedMemory(): ProjectMemory {
   state = journalStep(
     config,
     state,
-    taskDoneEvent(id(1), workTaskOf(1, 1), "Pass", plainResult),
+    taskDoneEvent(
+      id(1),
+      workTaskOf(1, 1),
+      producedReport(workTaskOf(1, 1)),
+      plainDisposition,
+    ),
   );
   return { ...releasedMemory(), graph: memoryGraph(state) };
 }
@@ -612,7 +623,7 @@ function workReduceInput(memory: ProjectMemory): DecisionInput {
     source: {
       kind: "Continuation",
       continuation: "continuation",
-      reduction: { reduce: "Work", ticket: id(1) },
+      reduction: { ticket: id(1) },
       expectedTicketVersion: 1,
       expectedPhase: ticket.phase,
       taskSetGeneration: ticket.spawned,
@@ -687,7 +698,15 @@ function dispatchedMemory(): ProjectMemory {
 
 /** The completion as the inbox assembles one, with the wall read off its execution. */
 function blockedCompletionInput(blockedBy: BlockedReason): DecisionInput {
-  const event = { type: "ExecutionBlocked", value: { ticket: id(1) } } as const;
+  const work = workTaskOf(1, 1);
+  const event = {
+    type: "TaskDone",
+    value: {
+      ticket: id(1),
+      task: work,
+      report: stoppedReport(work, "ExecutionUnavailableFailure"),
+    },
+  } as const;
   return {
     partition,
     ordinal: 1,
@@ -696,7 +715,7 @@ function blockedCompletionInput(blockedBy: BlockedReason): DecisionInput {
       kind: "Operation",
       operation: asOperationId("completion"),
       command: { version: 1, command: "Decide", event },
-      resolvedEvent: event,
+      completion: event,
       executionBlockedBy: blockedBy,
     },
   };
@@ -780,40 +799,89 @@ test("a source that may read later defers the input rather than deciding it", as
   }
 });
 
-test("a continuation whose source cannot be read parks its ticket on the desk", async () => {
+/**
+ * The memory of a ticket whose one evaluator is about to fail, which is the
+ * completion that spawns: a rework re-enters work off the same decision.
+ */
+function judgementMemory(): ProjectMemory {
+  const config = refinementInstance;
+  let state = journalStep(
+    config,
+    actorInit(),
+    releaseTicketEvent(id(1), plainAuthoring),
+  );
+  state = journalStep(config, state, dispatchEvent(id(1)));
+  state = journalStep(
+    config,
+    state,
+    taskDoneEvent(
+      id(1),
+      workTaskOf(1, 1),
+      producedReport(workTaskOf(1, 1)),
+      plainDisposition,
+    ),
+  );
+  state = journalStep(config, state, workReduceEvent(id(1)));
+  return { ...releasedMemory(), graph: memoryGraph(state) };
+}
+
+/** The failing judgement as the inbox assembles it, which reworks and so spawns. */
+function reworkCompletionInput(): DecisionInput {
+  const judge = evaluationTaskOf(1, 1, 1, 1, 1);
+  const event = {
+    type: "TaskDone",
+    value: {
+      ticket: id(1),
+      task: judge,
+      report: judgedReport(judge, "EvaluatorFail"),
+    },
+  } as const;
+  return {
+    partition,
+    ordinal: 1,
+    priority: "Completion",
+    source: {
+      kind: "Operation",
+      operation: asOperationId("completion"),
+      command: { version: 1, command: "Decide", event },
+      completion: event,
+    },
+  };
+}
+
+/**
+ * A refusal here would settle at this boundary a task the journal never heard
+ * settle, so the completion waits for a source a later quantum can read.
+ */
+test("a completion whose spawn has no readable source is deferred, not refused", async () => {
+  for (const [evidence] of durableEvidences) {
+    const memory = judgementMemory();
+    const { offered, result } = await decidedWith(
+      memory,
+      reworkCompletionInput(),
+      unreadableSources(evidence),
+    );
+    assert.equal(offered, undefined, evidence);
+    assert.equal(result.memory, memory);
+    assert.deepEqual(result.decided, { decided: "Deferred", evidence });
+  }
+});
+
+test("a continuation whose source cannot be read is deferred, whatever named the wall", async () => {
   for (const [evidence] of durableEvidences) {
     const memory = workPassedMemory();
-    const { offered } = await decidedWith(
+    const { offered, result } = await decidedWith(
       memory,
       workReduceInput(memory),
       unreadableSources(evidence),
     );
-    assert.equal(offered?.outcome.outcome, "Journaled");
-    if (offered?.outcome.outcome !== "Journaled") continue;
-    assert.deepEqual(offered.outcome.entry.event, {
-      type: "ExecutionBlocked",
-      value: { ticket: id(1) },
-    });
-    assert.deepEqual(
-      offered.outcome.projection.map((row) => [
-        row.ticket,
-        row.phase,
-        row.escalation,
-        row.escalationEvidence,
-      ]),
-      [[id(1), "Escalated", unreadableWall, evidence]],
-    );
-    assert.deepEqual(
-      offered.outcome.materialization.actions.map((action) => [
-        action.kind,
-        action.capability,
-      ]),
-      [["TicketEscalation", "ResolveTicket"]],
-    );
+    assert.equal(offered, undefined, evidence);
+    assert.equal(result.memory, memory);
+    assert.deepEqual(result.decided, { decided: "Deferred", evidence });
   }
 });
 
-test("a continuation meeting a source that may read later is deferred, not parked", async () => {
+test("a continuation meeting a source that may read later is deferred too", async () => {
   for (const evidence of transientEvidences) {
     const memory = workPassedMemory();
     const { offered, result } = await decidedWith(

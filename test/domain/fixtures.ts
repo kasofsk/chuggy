@@ -203,6 +203,24 @@ export const stoppedReport = (
   value: { evidence: taskRefOf(task), kind },
 });
 
+/**
+ * What a task of either kind comes back with when its execution settled at
+ * `verdict`, which is the pairing `submit_task_completion` builds from a row.
+ */
+export const reportedAt = (
+  task: TaskIdentity,
+  verdict: "Pass" | "Fail",
+): TaskTerminalReport => {
+  if (task.type === "EvaluationTask")
+    return judgedReport(
+      task,
+      verdict === "Pass" ? "EvaluatorPass" : "EvaluatorFail",
+    );
+  return verdict === "Pass"
+    ? producedReport(task)
+    : stoppedReport(task, "ProcessFailure");
+};
+
 /** A ticket as a release leaves it, with whatever the caller overrides. */
 export function ticketOn(
   config: Config,
