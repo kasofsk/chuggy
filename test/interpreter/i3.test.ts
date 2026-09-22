@@ -62,6 +62,7 @@ import {
   id,
   judgedReport,
   producedReport,
+  resultFor,
   stoppedReport,
   ticketOn,
 } from "../domain/fixtures.ts";
@@ -490,10 +491,11 @@ test("a spawn bundle pins its exact source and prior result manifests", () => {
 
 /**
  * A passed work result moves the ticket onto the source it was accepted at and
- * opens the judgement over the result it produced: the instance answers for
- * that source, and every evaluator is asked under the work result as its
- * context. An evaluator's obligation is what the door has to rebuild, so the
- * two references are read here rather than trusted.
+ * opens the judgement over the reference its report carried: the instance
+ * answers for that source, and every evaluator is asked under that reference as
+ * its context. An evaluator's obligation is what the door has to rebuild, so
+ * the two references are read here rather than trusted — and neither is the
+ * cycle, which is what a rebuild that derived one would produce.
  */
 test("a work pass carries its accepted source and its result into the judgement", () => {
   const passed = [
@@ -509,14 +511,24 @@ test("a work pass carries its accepted source and its result into the judgement"
   assert.equal(ticket.source, anAcceptedSource);
   const instance = ticket.evaluations.at(-1);
   assert.ok(instance !== undefined);
+  const reported = resultFor(workTaskOf(1, 1)).resultRef;
   assert.deepEqual(instance.input, {
     ticket: 1,
-    workResult: taskRefOf(workTaskOf(1, 1)),
+    workResult: reported,
     acceptedSourceRef: anAcceptedSource,
+  });
+  assert.deepEqual(ticket.artifact, {
+    type: "ProducedArtifact",
+    value: reported,
   });
   assert.deepEqual(
     liveObligations(ticket).map((owed) => owed.contextRef),
-    [instance.input.workResult],
+    [reported],
+  );
+  assert.notEqual(
+    reported,
+    taskRefOf(workTaskOf(1, 1)),
+    "the judgement's context is the reported reference, not the cycle",
   );
 });
 

@@ -78,7 +78,11 @@ import {
   type ResultManifest,
 } from "../../interpreter/resultManifest.ts";
 import { executionRowLogical, type ExecutionRow } from "./schedulerRows.ts";
-import { schedulerRole, sourceUnrecordedResult } from "./schema.ts";
+import {
+  schedulerRole,
+  sourceUnrecordedResult,
+  workResultUnrecordedResult,
+} from "./schema.ts";
 
 /** The report a manifest a worker never produced is composed from. */
 const exhaustedManifestText = JSON.stringify({
@@ -110,6 +114,8 @@ export const schedulerEvidence = {
     "the completion boundary refused a binding built from its own rows",
   SourceUnrecorded:
     "a passed work result names a commit no source row of its ticket records",
+  WorkResultUnrecorded:
+    "an evaluator reports on a work cycle that records no passed result",
   ForeignManifest:
     "a manifest is bound to an execution other than the one reporting it",
 } as const;
@@ -381,11 +387,11 @@ async function schedulerTerminalized(
     };
   }
   /**
-   * A pass the door would not settle because the ticket has a repository and
-   * nothing recorded the commit its manifest was produced at. The binding was
-   * sound — what is missing is the source the next cycle, the next evaluation
-   * and the finalizer would all run at — so the incident says that rather than
-   * blaming the rows the boundary built its report from.
+   * A report the door would not settle although the binding was sound: a pass
+   * whose commit no source row of a repository-bound ticket records, or a
+   * verdict whose cycle records no passed work result to be judged. Each names
+   * the row that is missing rather than blaming the rows the boundary built its
+   * report from.
    */
   return {
     terminalized: "Conflicting",
@@ -393,12 +399,19 @@ async function schedulerTerminalized(
       client,
       execution.partition,
       "ImpossibleState",
-      submitted.result === sourceUnrecordedResult
-        ? schedulerEvidence.SourceUnrecorded
-        : schedulerEvidence.RefusedBinding,
+      schedulerRefusalEvidence(submitted.result),
       { execution: execution.execution },
     ),
   };
+}
+
+/** Which missing row the door named, or a binding this file built wrong. */
+function schedulerRefusalEvidence(result: string | null): string {
+  if (result === sourceUnrecordedResult)
+    return schedulerEvidence.SourceUnrecorded;
+  if (result === workResultUnrecordedResult)
+    return schedulerEvidence.WorkResultUnrecorded;
+  return schedulerEvidence.RefusedBinding;
 }
 
 /** Whether the manifest offered is the one already recorded against a settled execution. */

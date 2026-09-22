@@ -145,15 +145,17 @@ test("the scheduler role reads the work reports its execution's bundle pinned", 
 /**
  * A further spawn request on the project's ticket, declaring the named tasks
  * after the ones already spawned: the row the writer leaves when a stage or a
- * rework is spawned, written by the case because no writer runs here. Each
- * evaluation names the one evaluator this deployment's plan has, and its tasks
- * stay distinct because a task's own number is the cycle it names.
+ * rework is spawned, written by the case because no writer runs here. A work
+ * task's own number is the cycle it names; an evaluation names the cycle whose
+ * result it judges, which is what the completion boundary reads its context
+ * off.
  */
 async function furtherSpawn(
   project: SchedulerProject,
   kind: "SpawnWork" | "SpawnEvaluation",
   tasks: readonly number[],
   position: number,
+  judging: number = 0,
 ): Promise<string> {
   const request = `request-${kind}-${randomUUID()}`;
   await rig.harness.query(
@@ -181,7 +183,7 @@ async function furtherSpawn(
     await rig.harness.query(
       `INSERT INTO execution_request_task
          (tenant,project,request,task,kind,cycle,stage,generation,evaluator)
-       VALUES ($1,$2,$3,$4,$5,$4,$6,$7,$8)`,
+       VALUES ($1,$2,$3,$4,$5,$9,$6,$7,$8)`,
       [
         project.partition.tenant,
         project.partition.project,
@@ -191,6 +193,7 @@ async function furtherSpawn(
         evaluation ? 1 : null,
         evaluation ? 1 : null,
         evaluation ? 1 : null,
+        evaluation ? judging : task,
       ],
     );
   }
@@ -258,7 +261,7 @@ test("the scheduler role reads the failed reports of the evaluation a rework fol
     { read: "Reports", reports: { reports: [] } },
     "a first attempt follows no evaluation",
   );
-  const evaluation = await furtherSpawn(project, "SpawnEvaluation", [2, 3], 1);
+  const evaluation = await furtherSpawn(project, "SpawnEvaluation", [2, 3], 1, 1);
   await registered(project, evaluation, "prior-eval-stage");
   const failed = ".chug/tasks/ci.sh exited 1; last output: format FAILED";
   await settled(project, failed, "Fail");
@@ -285,7 +288,7 @@ test("the scheduler role reads the failed reports of the evaluation a rework fol
       "Pass",
     ),
   );
-  const later = await furtherSpawn(project, "SpawnEvaluation", [6], 3);
+  const later = await furtherSpawn(project, "SpawnEvaluation", [6], 3, 5);
   await registered(project, later, "prior-eval-later-stage");
   const laterFailed =
     "CHANGES — importer.ts:40 drops a row and reports success.";

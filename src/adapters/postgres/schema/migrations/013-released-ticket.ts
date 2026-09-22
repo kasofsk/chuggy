@@ -4,6 +4,7 @@ import {
   schedulerRole,
   sourceUnrecordedResult,
   ticketServiceRole,
+  workResultUnrecordedResult,
   type Migration,
 } from "../shared.ts";
 
@@ -115,12 +116,21 @@ import {
  * the door reads the released definition off the entry the release journalled —
  * the work definition for a work task, the named evaluator's for an evaluation
  * one — inside the transaction that already holds the execution row, and builds
- * the obligation from rows rather than taking one from the caller. The context
- * a task ran in is its work cycle: the model's evaluation input is begun at the
- * cycle that produced the result it judges, so the two kinds of task answer the
- * same number and neither is authored. What it returned is one reference like
- * every other, the fold of its manifest's digest, because that is the shape the
- * machine reads and a record in its place is a payload no replay admits.
+ * the obligation from rows rather than taking one from the caller. What it
+ * returned is one reference like every other, the fold of its manifest's
+ * digest, because that is the shape the machine reads and a record in its place
+ * is a payload no replay admits.
+ *
+ * AND THE TWO KINDS OF TASK ANSWER DIFFERENT CONTEXTS, BECAUSE THE MODEL ASKS
+ * THEM DIFFERENT QUESTIONS. A work task's context is its cycle, the scope the
+ * application commits the cycle's input bundle under. An evaluator's is the
+ * reference the work it judges REPORTED — the model opens the instance over
+ * the passing report's result and hands that to every evaluator obligation —
+ * so the door reads the cycle's passed work manifest back in the same
+ * transaction and folds its digest, which is the same fold that manifest's own
+ * report carried. A cycle with no such row is one whose judgement has no
+ * subject, so the report is refused by name rather than settled under a number
+ * the door invented.
  *
  * AND A PASSED WORK RESULT IS WHERE THE TICKET'S SOURCE MOVES. The commit the
  * manifest was produced at is what the next cycle, the next evaluation and the
@@ -445,6 +455,7 @@ END) NOT VALID`,
        project_generation bigint; next_ordinal bigint; command_value jsonb;
        identity jsonb; report jsonb; released jsonb; definition jsonb;
        obligation jsonb; produced jsonb; accepted bigint;
+       context_reference bigint;
      BEGIN
        IF in_outcome NOT IN ('Passed', 'Failed', 'Blocked', 'ProcessFailed') THEN
          RAISE EXCEPTION 'completion outcome % is not one this boundary submits', in_outcome
@@ -525,6 +536,7 @@ END) NOT VALID`,
           LIMIT 1;
          IF bound.task_kind = 'Work' THEN
            definition := released->'${releasedWorkField}';
+           context_reference := bound.cycle;
          ELSE
            SELECT evaluators.evaluator->'${evaluatorTaskField}' INTO definition
              FROM jsonb_array_elements(released->'${releasedPlanField}'->'${releasedStagesField}')
@@ -533,11 +545,28 @@ END) NOT VALID`,
                     AS evaluators(evaluator)
             WHERE (stages.stage->>'${stageKeyField}')::bigint = bound.stage
               AND (evaluators.evaluator->>'${evaluatorKeyField}')::bigint = bound.evaluator;
+           SELECT result_digest_fold(w.digest) INTO context_reference
+             FROM execution e2
+             JOIN execution_request_task t2
+               ON t2.tenant = e2.tenant AND t2.project = e2.project
+              AND t2.request = e2.source_request AND t2.task = e2.task
+             JOIN execution_result w
+               ON w.tenant = e2.tenant AND w.project = e2.project
+              AND w.execution = e2.execution
+            WHERE e2.tenant = in_tenant AND e2.project = in_project
+              AND e2.ticket = bound.ticket
+              AND t2.kind = 'Work' AND t2.cycle = bound.cycle
+              AND w.verdict = 'Pass'
+            LIMIT 1;
+           IF NOT FOUND THEN
+             RETURN QUERY SELECT '${workResultUnrecordedResult}'::text, NULL::text, NULL::bigint;
+             RETURN;
+           END IF;
          END IF;
          obligation := jsonb_build_object(
            '${obligationTaskField}', identity,
            '${obligationDefinitionField}', definition,
-           '${obligationContextField}', bound.cycle);
+           '${obligationContextField}', context_reference);
          produced := jsonb_build_object('${obligationField}', obligation,
            '${resultReferenceField}', result_digest_fold(bound.digest));
          IF bound.task_kind = 'Evaluation' THEN

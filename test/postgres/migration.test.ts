@@ -4029,14 +4029,17 @@ function identityExecution(
   columns: string,
   values: string,
   verdict: "Pass" | "Fail" | null = "Pass",
+  digest: string = "repeat('d',64)",
+  ticket: number = 1,
 ): string {
   const at = String(ordinal);
+  const on = String(ticket);
   return `
   INSERT INTO execution_request
     (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
      kind,capacity_account,configuration_revision,configuration_digest,
      input_bundle,input_bundle_digest)
-  SELECT 'tenant-5','project-5','request-${at}',1,${at},1,1,'${requestKind}',a.account,
+  SELECT 'tenant-5','project-5','request-${at}',1,${at},${on},1,'${requestKind}',a.account,
          'revision-5','digest-5','bundle-5',repeat('b',64)
     FROM capacity_account a
    WHERE a.account=project_capacity_account('tenant-5','project-5');
@@ -4045,7 +4048,7 @@ function identityExecution(
   INSERT INTO execution
     (tenant,project,execution,ticket,task,source_request,account,cluster,
      configuration_revision,configuration_digest,status)
-  SELECT 'tenant-5','project-5','execution-${at}',1,${at},'request-${at}',a.account,a.cluster,
+  SELECT 'tenant-5','project-5','execution-${at}',${on},${at},'request-${at}',a.account,a.cluster,
          'revision-5','digest-5','Running'
     FROM capacity_account a
    WHERE a.account=project_capacity_account('tenant-5','project-5');
@@ -4060,7 +4063,7 @@ function identityExecution(
   INSERT INTO execution_result
     (tenant,project,manifest,execution,attempt,manifest_ordinal,schema_version,digest,verdict)
   VALUES('tenant-5','project-5','manifest-${at}','execution-${at}','attempt-${at}',
-         ${at},1,repeat('d',64),'${verdict}')`
+         ${at},1,${digest},'${verdict}')`
          }`;
 }
 
@@ -5574,11 +5577,49 @@ const releasedEvaluatorTask = {
   value: { ticket: 1, workCycle: 2, stage: 1, generation: 5, evaluator: 3 },
 };
 
-test("the door reports the definition the evaluator's own key carries", async () => {
+/** The passed work manifest of the cycle the evaluator above judges. */
+const releasedJudgedDigest = "f".repeat(64);
+
+/** That cycle's work execution, at a digest of its own so its fold is visible. */
+const releasedJudgedWork = identityExecution(
+  2,
+  "SpawnWork",
+  "kind,cycle",
+  "'Work',2",
+  "Pass",
+  `repeat('f',64)`,
+);
+
+/**
+ * A LATER cycle of the same ticket, passed and written first, so a read that
+ * asks the ticket for a work result rather than the cycle takes this one.
+ */
+const releasedLaterWork = identityExecution(
+  3,
+  "SpawnWork",
+  "kind,cycle",
+  "'Work',3",
+  "Pass",
+  `repeat('9',64)`,
+);
+
+/** The same cycle, passed, on ANOTHER ticket: a read not scoped by ticket takes it. */
+const releasedOtherTicketWork = identityExecution(
+  4,
+  "SpawnWork",
+  "kind,cycle",
+  "'Work',2",
+  "Pass",
+  `repeat('8',64)`,
+  2,
+);
+
+test("the door reports the definition the evaluator's own key carries, under what its cycle produced", async () => {
   await migrationDatabase("released_evaluation", async (subject) => {
     await postgresMigrate(subject);
     await releasedSeeded(subject);
     const digest = await releasedFold(subject, "d".repeat(64));
+    const judged = await releasedFold(subject, releasedJudgedDigest);
     await subject.query(
       identityExecution(
         1,
@@ -5587,6 +5628,14 @@ test("the door reports the definition the evaluator's own key carries", async ()
         "'Evaluation',2,1,5,3",
       ),
     );
+    await subject.query(releasedLaterWork);
+    await subject.query(releasedJudgedWork);
+    assert.notEqual(
+      judged,
+      2,
+      "the reference the work reported is not the cycle it ran in",
+    );
+    assert.notEqual(judged, digest, "nor is it the evaluator's own result");
     assert.deepEqual(
       (await subject.query(releasedSubmission(1))).rows,
       [{ result: "Submitted", operation: "operation-released-1" }],
@@ -5604,7 +5653,7 @@ test("the door reports the definition the evaluator's own key carries", async ()
               obligation: {
                 task: releasedEvaluatorTask,
                 definition: releasedSecondDefinition,
-                contextRef: 2,
+                contextRef: judged,
               },
               resultRef: digest,
             },
@@ -5612,7 +5661,41 @@ test("the door reports the definition the evaluator's own key carries", async ()
           },
         },
       },
-      "the evaluator's obligation is the definition its own key carries",
+      "the evaluator judges under the reference its work cycle reported",
+    );
+  });
+});
+
+test("an evaluator whose cycle records no passed work result is refused by name", async () => {
+  await migrationDatabase("released_unjudged", async (subject) => {
+    await postgresMigrate(subject);
+    await releasedSeeded(subject);
+    await subject.query(
+      identityExecution(
+        1,
+        "SpawnEvaluation",
+        "kind,cycle,stage,generation,evaluator",
+        "'Evaluation',2,1,5,3",
+      ),
+    );
+    await subject.query(
+      identityExecution(2, "SpawnWork", "kind,cycle", "'Work',2", "Fail"),
+    );
+    await subject.query(releasedLaterWork);
+    await subject.query(releasedOtherTicketWork);
+    assert.deepEqual(
+      (await subject.query(releasedSubmission(1))).rows,
+      [{ result: "WorkResultUnrecorded", operation: null }],
+      "a judgement whose own cycle records no passed result of its own ticket",
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ held: number }>(
+          "SELECT count(*)::int AS held FROM operation WHERE operation='operation-released-1'",
+        )
+      ).rows,
+      [{ held: 0 }],
+      "the refused completion journalled nothing",
     );
   });
 });
