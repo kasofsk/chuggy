@@ -526,6 +526,18 @@ test("idsAccounted rejects a mint counter the ticket's own history does not impl
     idsAccounted(config, stateView(reasked)),
     "a second generation claims the roster a second time",
   );
+  const overMinted = graphOf([
+    ticketOn(config, {
+      phase: "Escalated",
+      escalation: "WorkFailureEscalated",
+      workCyclesStarted: 1,
+      spawned: 2,
+    }),
+  ]);
+  assert.ok(
+    !idsAccounted(config, stateView(overMinted)),
+    "a spawn site that bumped the counter twice is as wrong as one that never did",
+  );
   assert.ok(idsAccounted(config, healthy));
 });
 

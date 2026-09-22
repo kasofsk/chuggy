@@ -79,15 +79,14 @@ test("a Pending ticket waiting on nothing revoked draws its phase, not a banner"
  * resumed and settled, stage 2 resumed and still running. The notice names
  * the one resumed now, not the first one a resume ever touched.
  */
-test("resumedFrom names the highest-numbered stage whose resume is still running", () => {
-  const authoring = {
-    dependencies: [],
-    program: [
-      { key: 1, evaluators: [{ key: 1 }] },
-      { key: 2, evaluators: [{ key: 1 }] },
-    ],
-  };
-  const twoStageFacts = ticketLedger(
+/**
+ * A two-stage page where each stage blocked at generation 1 and was re-asked;
+ * the second stage's second generation ends however the case says.
+ */
+function twoResumedStages(
+  lastRow: { readonly outcome: "Failed" } | { readonly status: "Running" },
+): ReturnType<typeof ticketLedger> {
+  return ticketLedger(
     ledgerPage([
       {
         execution: "execution-aa-1",
@@ -117,15 +116,36 @@ test("resumedFrom names the highest-numbered stage whose resume is still running
         execution: "execution-ee-5",
         task: 5,
         identity: evalIdentity(1, 2, 2),
-        status: "Running",
+        ...lastRow,
       },
     ]),
-    authoring,
+    {
+      dependencies: [],
+      program: [
+        { key: 1, evaluators: [{ key: 1 }] },
+        { key: 2, evaluators: [{ key: 1 }] },
+      ],
+    },
   );
+}
+
+test("resumedFrom names the highest-numbered stage whose resume is still running", () => {
   render(
     <SituationNotice
       ticket={ticket({ phase: "Evaluation", revokedDependencies: [] })}
-      facts={twoStageFacts}
+      facts={twoResumedStages({ status: "Running" })}
+      stageCount={2}
+      nowMs={0}
+    />,
+  );
+  expect(screen.getByText("Resumed at stage 2 · cycle 1")).toBeDefined();
+});
+
+test("with nothing running, resumedFrom names the highest-numbered stage a resume re-asked", () => {
+  render(
+    <SituationNotice
+      ticket={ticket({ phase: "Evaluation", revokedDependencies: [] })}
+      facts={twoResumedStages({ outcome: "Failed" })}
       stageCount={2}
       nowMs={0}
     />,

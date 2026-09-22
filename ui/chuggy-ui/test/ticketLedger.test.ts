@@ -462,6 +462,40 @@ test("the page's cursor reaches the ledger and every cycle under it", () => {
   expect([short.truncated, short.cycles[0]?.complete]).toEqual([true, false]);
 });
 
+test("a superseded generation does not stand in for an evaluator the page lacks", () => {
+  const twoEvaluatorStage: typeof ticket21Authoring = {
+    ...ticket21Authoring,
+    program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
+  };
+  const ledger = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-aa-1",
+        task: 1,
+        identity: workIdentity(1),
+        outcome: "Passed",
+      },
+      {
+        execution: "execution-bb-2",
+        task: 2,
+        identity: evalIdentity(1, 1, 1, 1),
+        outcome: "Blocked",
+      },
+      {
+        execution: "execution-dd-4",
+        task: 4,
+        identity: evalIdentity(1, 1, 2, 1),
+        outcome: "Passed",
+      },
+    ]),
+    twoEvaluatorStage,
+  );
+  expect([ledger.truncated, ledger.cycles[0]?.complete]).toEqual([
+    false,
+    false,
+  ]);
+});
+
 test("a page cut before a cycle's work run says the artifact is unknown", () => {
   const cycle = cycleAt(
     [

@@ -36,7 +36,6 @@ import type {
   EvaluatorRow,
   Ledger as LedgerFacts,
   RanStage,
-  SetVerdict,
   StageRow,
   TaskSet,
   TicketAuthoring,
@@ -44,8 +43,8 @@ import type {
 import {
   cycleLabel,
   cycleLastSet,
-  executionStopped,
   retriesLabel,
+  setVerdict,
   stageEvaluatorsCurrent,
   stageLabel,
   ticketLedger,
@@ -423,14 +422,6 @@ export function TicketCycles(props: {
   );
 }
 
-/** One execution read on its own, which is a set of one and settles like one. */
-export function summaryVerdict(summary: ExecutionSummary): SetVerdict {
-  if (summary.status === "Cancelled") return "Cancelled";
-  if (summary.status !== "Terminal") return "Running";
-  if (summary.outcome === "Passed") return "Passed";
-  return executionStopped(summary) ? "Blocked" : "Failed";
-}
-
 function ungroupedLabel(summary: ExecutionSummary): string {
   return summary.identity.type === "WorkTask"
     ? "Work"
@@ -461,7 +452,7 @@ export function UngroupedRows(props: {
             set={{
               executions: [summary],
               expected: 1,
-              verdict: summaryVerdict(summary),
+              verdict: setVerdict([summary]),
               span: { from: summary.registeredAt, to: summary.terminalAt },
             }}
           />

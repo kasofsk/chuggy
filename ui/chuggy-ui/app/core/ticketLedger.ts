@@ -39,8 +39,8 @@
  * EVERY LOOP IS BOUNDED BY SOMETHING DECLARED. A cycle draws one row per
  * stage the authoring declares and one per stage the page holds beyond it,
  * bounded by `nativeHttpDraftStagesMax` and by the page; within a stage, one
- * row per evaluator the page holds for it, bounded by
- * `nativeHttpDraftEvaluatorsMax`. A task's `stage`, `generation` and
+ * row per evaluator per generation the page holds for it, bounded by the
+ * page. A task's `stage`, `generation` and
  * `evaluator` are each unbounded counts and are never loop bounds, because one
  * row naming a stage in the millions would otherwise build that many rows.
  *
@@ -174,9 +174,12 @@ export function executionStopped(row: ExecutionSummary): boolean {
 
 /**
  * A set settles only once no task can still move, and a stopped task is a wall
- * of its own rather than a failure the unanimous rule gets to weigh.
+ * of its own rather than a failure the unanimous rule gets to weigh. An
+ * execution read on its own is a set of one and settles like one.
  */
-function setVerdict(executions: readonly ExecutionSummary[]): SetVerdict {
+export function setVerdict(
+  executions: readonly ExecutionSummary[],
+): SetVerdict {
   if (
     executions.some(
       (row) => row.status !== "Terminal" && row.status !== "Cancelled",

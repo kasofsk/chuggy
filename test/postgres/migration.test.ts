@@ -4459,6 +4459,17 @@ const taskReports: readonly (readonly [string, unknown, boolean])[] = [
     { type: "TaskTerminal", value: { evidence: 1, kind: "ProcessFailure" } },
     false,
   ],
+  [
+    "a fourth constructor carrying a well-formed judgement",
+    {
+      type: "TaskJudgementReport",
+      value: {
+        result: { manifest: 1, digest: 1, schema: 1 },
+        verdict: "EvaluatorPass",
+      },
+    },
+    false,
+  ],
   ["a report that is the text of one", "TerminalFailureReport", false],
 ];
 

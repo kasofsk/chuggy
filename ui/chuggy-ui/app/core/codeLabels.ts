@@ -81,8 +81,8 @@ export function blockedReasonLabel(reason: BlockedReason): string {
 
 /**
  * Which git act failed, off the escalation's evidence when it is a
- * `GitEvidenceLabel`: the continuation path's own wall, where no execution row
- * survives to carry a `BlockedReason`.
+ * `GitEvidenceLabel`: a rework whose source could not be read before any
+ * execution row existed to carry a `BlockedReason`.
  */
 export function gitEvidenceLabel(evidence: GitEvidenceLabel): string {
   switch (evidence) {

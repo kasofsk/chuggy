@@ -34,11 +34,13 @@ import { allPassed } from "../../src/domain/program.ts";
 import {
   evaluationFailureReworksStarted,
   liveTasks,
+  owesTask,
+  reportMatchesTask,
   retireLive,
   spawnWork,
   hasOpenHumanTask,
 } from "../../src/domain/ticket.ts";
-import { judgedInstance } from "./fixtures.ts";
+import { judgedInstance, judgedReport, producedReport } from "./fixtures.ts";
 import {
   phaseTags,
   type EvaluationVerdict,
@@ -312,4 +314,28 @@ test("the work a passed judgement is followed by is the finalizer's, and is unca
     1,
     "and the evaluation failure between them still counts once",
   );
+});
+
+test("a report is matched to the task kind that can carry it", () => {
+  const work = workTaskOf(1, 1);
+  const judge = evaluationTaskOf(1, 1, 1, 1, 1);
+  assert.ok(reportMatchesTask(work, producedReport(work)));
+  assert.ok(!reportMatchesTask(judge, producedReport(work)));
+  assert.ok(reportMatchesTask(judge, judgedReport(judge, "EvaluatorPass")));
+  assert.ok(!reportMatchesTask(work, judgedReport(judge, "EvaluatorPass")));
+  const failed = {
+    type: "TerminalFailureReport",
+    value: { evidence: 1, kind: "ProcessFailure" },
+  } as const;
+  assert.ok(
+    reportMatchesTask(work, failed) && reportMatchesTask(judge, failed),
+  );
+});
+
+test("a ticket owes exactly the tasks it holds live", () => {
+  const working = spawnWork({ ...bare, phase: "Work" }, 1);
+  assert.ok(owesTask(working, workTaskOf(1, 1)));
+  assert.ok(!owesTask(working, workTaskOf(1, 2)));
+  assert.ok(!owesTask(working, evaluationTaskOf(1, 1, 1, 1, 1)));
+  assert.ok(!owesTask(bare, workTaskOf(1, 1)));
 });

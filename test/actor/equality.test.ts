@@ -203,6 +203,19 @@ test("the run comparison reads every field StageRun declares", () => {
     (left, right) => instanceEquals(inProgress(left), inProgress(right)),
     runMutants,
   );
+  const produced = (mark: number): StageRun => ({
+    ...baseRun,
+    evaluators: new Map([
+      [
+        1,
+        { type: "Produced", value: { type: "EvaluatorPassed", value: mark } },
+      ],
+    ]),
+  });
+  assert.ok(
+    !instanceEquals(inProgress(produced(1)), inProgress(produced(2))),
+    "what a produced status produced is part of the status",
+  );
 });
 
 test("a list of equal length is compared member by member, not by length alone", () => {
