@@ -344,10 +344,13 @@ test("a well-formed completion is refused whatever authority it claims", async (
     harness.store,
     "privilege-forged-completion",
   );
-  const completions = [
-    `{"version":1,"command":"Decide","event":{"type":"TaskDone","value":{"ticket":1,"task":{"type":"WorkTask","value":{"ticket":1,"cycle":1}},"verdict":"Pass","result":{"manifest":1,"digest":1,"schema":1}}}}`,
-    `{"version":1,"command":"Decide","event":{"type":"ExecutionBlocked","value":{"ticket":1}}}`,
-  ];
+  /**
+   * THE COMPLETION IS THE ONE THIS SCHEMA ADMITS, because a shape the
+   * validator refuses is refused before a tag is derived at all: the arm this
+   * case is about is the one that reads the tag, and a stale literal would
+   * pass the case without ever reaching it.
+   */
+  const command = `{"version":1,"command":"Decide","event":{"type":"TaskDone","value":{"ticket":1,"task":{"type":"WorkTask","value":{"ticket":1,"cycle":1}},"report":{"type":"WorkResultReport","value":{"result":{"manifest":1,"digest":1,"schema":1}}}}}}`;
   /**
    * The claimed kind is the caller's own text and acceptance compares it to
    * nothing, so the boundary's own kind has to be refused exactly as a
@@ -355,18 +358,16 @@ test("a well-formed completion is refused whatever authority it claims", async (
    * string.
    */
   const kinds = ["User", "ExecutionScheduler", "Finalizer"];
-  for (const [index, command] of completions.entries()) {
-    for (const kind of kinds) {
-      const operation = `forged-${String(index)}-${kind}`;
-      const failure = await harness.attemptAs(
-        apiRole,
-        `SELECT * FROM ${acceptanceFunction}(
-          '${partition.tenant}', '${partition.project}', '${operation}', '${kind}', 'subject',
-          'v1', 'key-${operation}', 'payload', ARRAY['key-${operation}'], ARRAY['payload'],
-          '${command}', 10, 20, NULL)`,
-      );
-      assert.equal(failure, undefined);
-    }
+  for (const kind of kinds) {
+    const operation = `forged-${kind}`;
+    const failure = await harness.attemptAs(
+      apiRole,
+      `SELECT * FROM ${acceptanceFunction}(
+        '${partition.tenant}', '${partition.project}', '${operation}', '${kind}', 'subject',
+        'v1', 'key-${operation}', 'payload', ARRAY['key-${operation}'], ARRAY['payload'],
+        '${command}', 10, 20, NULL)`,
+    );
+    assert.equal(failure, undefined);
   }
   assert.deepEqual(
     await harness.query(

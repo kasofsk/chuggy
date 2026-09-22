@@ -4808,8 +4808,8 @@ test("the scheduler's door journals the report the task it settled terminated un
              WHERE execution IN ('execution-5','execution-6') ORDER BY execution`,
         )
       ).rows,
-      [{ outcome: "Failed" }, { outcome: "Failed" }],
-      "a death the door was told of records the outcome the execution has always kept",
+      [{ outcome: "ProcessFailed" }, { outcome: "ProcessFailed" }],
+      "a death the door was told of is the outcome the execution records",
     );
   });
 });
