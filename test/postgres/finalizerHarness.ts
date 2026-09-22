@@ -70,7 +70,10 @@ import {
 } from "../../src/adapters/artifacts/artifactKey.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
-import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  TaskIdentity,
+  TicketGraph,
+} from "../../src/domain/generated/modelTypes.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
 import type { ChangeProposalForges } from "../../src/interpreter/changeProposal.ts";
@@ -122,7 +125,7 @@ import {
 } from "../../src/interpreter/projectStore.ts";
 import { type ProjectMemory } from "../../src/interpreter/projectWriter.ts";
 import { plainDisposition } from "../actor/harness.ts";
-import { id, reportedAt } from "../domain/fixtures.ts";
+import { id } from "../domain/fixtures.ts";
 import {
   postgresHarnessDrain,
   postgresHarnessHistory,
@@ -130,6 +133,7 @@ import {
   postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessCompletion,
+  postgresHarnessReport,
   postgresHarnessSubmission,
   postgresHarnessUrl,
   type PostgresHarness,
@@ -446,13 +450,14 @@ export async function finalizerAccept(
 
 /** The completion one task reports, defaulted to the pass an evaluation is driven by. */
 export function finalizerTaskDone(
+  graph: TicketGraph,
   task: TaskIdentity,
   verdict: "Pass" | "Fail" = "Pass",
 ): DecisionEvent {
   return taskDoneEvent(
     id(1),
     task,
-    reportedAt(task, verdict),
+    postgresHarnessReport(graph, task, verdict),
     plainDisposition,
   );
 }
@@ -475,7 +480,7 @@ async function finalizerReport(
     harness,
     partition,
     label,
-    finalizerTaskDone(task, verdict),
+    finalizerTaskDone(memory.graph, task, verdict),
   );
   if (accepted !== "Accepted") {
     throw new Error(`finalizer harness: the report was ${accepted}`);

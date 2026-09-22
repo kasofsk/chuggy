@@ -110,7 +110,11 @@ function liveRequestTasks(ticket: Ticket): ExecutionRequestPlan["tasks"] {
 
 /**
  * The bundle a spawn pins, carrying the evidence of the finalization that
- * caused it where one did. A cancellation authorizes no work, so it pins none.
+ * caused it where one did, and a cancellation authorizes no work so it pins
+ * none. A bundle built from evidence pins no source of its own, because the
+ * evidence carries the failed attempt's whole bundle forward — target commit
+ * and all — and a second one under that kind leaves a worker two answers to
+ * what its work is based on.
  */
 function executionRequestBundle(
   input: DecisionInput,
@@ -127,7 +131,7 @@ function executionRequestBundle(
   return {
     bundle: identity(entry, effectPosition, inputBundleIdentityKind),
     ...(evidence === undefined ? {} : { evidence }),
-    ...(source === undefined
+    ...(source === undefined || evidence !== undefined
       ? {}
       : {
           source: {

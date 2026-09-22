@@ -132,6 +132,15 @@ import {
  * next spawn has nowhere to run and a completion that settled it would leave
  * the ticket pointing at a commit nobody wrote down.
  *
+ * AND THE WORKER'S DOOR STOPS WRITING THE OBSERVATION AFTER THE COMPLETION IT
+ * IS READ BY. `submit_worker_result` took the source, delegated the whole
+ * submission to its own sourceless overload and recorded the observation once
+ * that returned — which is after the completion asked for it, so a passed work
+ * result through the worker plane would be refused for recording nothing. The
+ * overload carrying the source becomes the implementation, writing the row
+ * between the result it belongs to and the completion that reads it, and the
+ * sourceless one becomes the call to it that passes none.
+ *
  * ITS SIGNATURE DOES NOT MOVE, so this is a replacement and not a drop. The
  * obligation is derived rather than passed: the scheduler's door still takes
  * the ticket, the wire integer and the outcome it was told, weighs them against
@@ -599,5 +608,215 @@ END) NOT VALID`,
         WHERE tenant = in_tenant AND project = in_project AND execution = in_execution;
        RETURN QUERY SELECT 'Submitted'::text, in_operation, next_ordinal;
      END $$;`,
+    `CREATE OR REPLACE FUNCTION public.submit_worker_result(in_secret_digest text, in_generation bigint, in_manifest text, in_schema integer, in_digest text, in_verdict text, in_artifacts jsonb, in_source jsonb, in_operation text) RETURNS TABLE(terminalized text, outcome text, operation text, incident text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $_$
+       DECLARE bound record; next_manifest bigint; submitted record; incident_id text;
+         settled_outcome text; submitted_artifact jsonb; project_lifecycle text;
+       BEGIN
+         IF in_source IS NOT NULL AND (
+              in_verdict<>'Pass'
+              OR CASE WHEN jsonb_typeof(in_artifacts)='array' THEN EXISTS(
+                   SELECT 1 FROM jsonb_array_elements(in_artifacts) x(artifact)
+                    WHERE artifact->>'role'='Handoff') ELSE true END
+              OR jsonb_typeof(in_source) IS DISTINCT FROM 'object'
+              OR (SELECT array_agg(key ORDER BY key) FROM jsonb_object_keys(in_source) key)
+                 IS DISTINCT FROM ARRAY['base','commit','ref','repository']::text[]
+              OR length(coalesce(in_source->>'repository','')) NOT BETWEEN 1 AND 256
+              OR length(coalesce(in_source->>'ref','')) NOT BETWEEN 1 AND 256
+              OR coalesce(in_source->>'commit','') !~ '^([0-9a-f]{40}|[0-9a-f]{64})$'
+              OR coalesce(in_source->>'base','') !~ '^([0-9a-f]{40}|[0-9a-f]{64})$'
+              OR NOT EXISTS (
+                SELECT 1 FROM execution_attempt a
+                JOIN execution e
+                  ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
+                JOIN execution_request q
+                  ON q.tenant=e.tenant AND q.project=e.project AND q.request=e.source_request
+                JOIN input_bundle_reference b
+                  ON b.tenant=q.tenant AND b.project=q.project AND b.bundle=q.input_bundle
+                     AND b.reference_kind='TargetCommit'
+               WHERE a.capability_secret_digest=in_secret_digest
+                 AND b.reference_id=in_source->>'base')) THEN
+           SELECT a.tenant,a.project,a.execution,a.attempt INTO bound
+             FROM execution_attempt a WHERE a.capability_secret_digest=in_secret_digest;
+           IF NOT FOUND THEN
+             RETURN QUERY SELECT 'Fenced'::text,NULL::text,NULL::text,NULL::text; RETURN;
+           END IF;
+           incident_id='incident-'||gen_random_uuid()::text;
+           INSERT INTO scheduler_incident(tenant,project,incident,kind,execution,attempt,evidence)
+             VALUES(bound.tenant,bound.project,incident_id,'ConflictingResult',bound.execution,
+                    bound.attempt,'ForeignManifest');
+           RETURN QUERY SELECT 'Conflicting'::text,NULL::text,NULL::text,incident_id; RETURN;
+         END IF;
+         SELECT a.tenant,a.project,a.execution,e.source_request INTO bound
+           FROM execution_attempt a
+           JOIN execution e ON e.tenant=a.tenant AND e.project=a.project
+                           AND e.execution=a.execution
+          WHERE a.capability_secret_digest=in_secret_digest;
+         IF NOT FOUND THEN
+           RETURN QUERY SELECT 'Fenced'::text,NULL::text,NULL::text,NULL::text; RETURN;
+         END IF;
+         PERFORM 1 FROM execution_request q
+          WHERE q.tenant=bound.tenant AND q.project=bound.project
+            AND q.request=bound.source_request FOR UPDATE;
+         SELECT a.tenant,a.project,a.execution,a.attempt,a.manifest,a.state,a.recovery_epoch,
+                e.status,e.outcome,e.result_manifest,e.completion_operation,e.ticket,e.task,
+                e.source_request,q.effect_position
+           INTO bound FROM execution_attempt a
+           JOIN execution e ON e.tenant=a.tenant AND e.project=a.project
+                           AND e.execution=a.execution
+           JOIN execution_request q ON q.tenant=e.tenant AND q.project=e.project
+                                   AND q.request=e.source_request
+          WHERE a.capability_secret_digest=in_secret_digest
+          FOR UPDATE OF e;
+         IF NOT FOUND OR bound.recovery_epoch<>(SELECT epoch FROM recovery_epoch
+                                                ORDER BY ordinal DESC LIMIT 1)
+            OR bound.state NOT IN ('Placing','Running','Reported') THEN
+           RETURN QUERY SELECT 'Fenced'::text,NULL::text,NULL::text,NULL::text; RETURN;
+         END IF;
+         IF bound.status='Cancelled' THEN
+           RETURN QUERY SELECT 'Cancelled'::text,NULL::text,NULL::text,NULL::text; RETURN;
+         END IF;
+         IF bound.status='Terminal' THEN
+           IF bound.result_manifest=in_manifest AND EXISTS(
+             SELECT 1 FROM execution_result r WHERE r.tenant=bound.tenant
+              AND r.project=bound.project AND r.manifest=in_manifest AND r.digest=in_digest) THEN
+             RETURN QUERY SELECT 'AlreadyTerminal'::text,bound.outcome::text,
+                                 bound.completion_operation::text,NULL::text; RETURN;
+           END IF;
+           incident_id='incident-'||gen_random_uuid()::text;
+           INSERT INTO scheduler_incident(tenant,project,incident,kind,execution,attempt,evidence)
+             VALUES(bound.tenant,bound.project,incident_id,'ConflictingResult',bound.execution,
+                    bound.attempt,'ConflictingResult');
+           RETURN QUERY SELECT 'Conflicting'::text,NULL::text,NULL::text,incident_id; RETURN;
+         END IF;
+         IF bound.manifest<>in_manifest OR in_generation IS DISTINCT FROM (
+              SELECT generation FROM execution_attempt WHERE capability_secret_digest=in_secret_digest)
+            OR in_verdict NOT IN ('Pass','Fail') THEN
+           incident_id='incident-'||gen_random_uuid()::text;
+           INSERT INTO scheduler_incident(tenant,project,incident,kind,execution,attempt,evidence)
+             VALUES(bound.tenant,bound.project,incident_id,'ConflictingResult',bound.execution,
+                    bound.attempt,'ForeignManifest');
+           RETURN QUERY SELECT 'Conflicting'::text,NULL::text,NULL::text,incident_id; RETURN;
+         END IF;
+         IF jsonb_typeof(in_artifacts) IS DISTINCT FROM 'array' THEN
+           incident_id='incident-'||gen_random_uuid()::text;
+           INSERT INTO scheduler_incident(tenant,project,incident,kind,execution,attempt,evidence)
+             VALUES(bound.tenant,bound.project,incident_id,'ConflictingResult',bound.execution,
+                    bound.attempt,'ForeignManifest');
+           RETURN QUERY SELECT 'Conflicting'::text,NULL::text,NULL::text,incident_id; RETURN;
+         END IF;
+         IF jsonb_array_length(in_artifacts)>256
+            OR EXISTS(SELECT 1 FROM jsonb_array_elements(in_artifacts) x(artifact)
+              WHERE jsonb_typeof(artifact) IS DISTINCT FROM 'object'
+                 OR artifact->>'role' NOT IN ('Handoff','Diagnostic')
+                 OR NOT (coalesce(artifact->>'ordinal','') ~ '^[0-9]+$')
+                 OR CASE WHEN coalesce(artifact->>'ordinal','') ~ '^[0-9]+$'
+                         THEN (artifact->>'ordinal')::numeric NOT BETWEEN 1 AND 256
+                         ELSE true END
+                 OR length(coalesce(artifact->>'path','')) NOT BETWEEN 1 AND 256
+                 OR coalesce(artifact->>'path','') ~ '^/'
+                 OR coalesce(artifact->>'path','') ~ '//'
+                 OR coalesce(artifact->>'path','') ~ '[\\\\]'
+                 OR coalesce(artifact->>'path','') ~ '(^|/)[.][.]?(/|$)'
+                 OR coalesce(artifact->>'path','') ~ '[[:cntrl:]]'
+                 OR coalesce(artifact->>'path','') ~ '(^|/)[[:space:]]'
+                 OR coalesce(artifact->>'path','') ~ '[[:space:]](/|$)'
+                 OR coalesce(artifact->>'digest','') !~ '^[0-9a-f]{64}$'
+                 OR NOT (coalesce(artifact->>'bytes','') ~ '^[0-9]+$')
+                 OR CASE WHEN coalesce(artifact->>'bytes','') ~ '^[0-9]+$'
+                         THEN (artifact->>'bytes')::numeric NOT BETWEEN 0 AND 1073741824
+                         ELSE true END)
+            OR (SELECT count(DISTINCT artifact->>'ordinal')
+                  FROM jsonb_array_elements(in_artifacts) x(artifact))
+               <>jsonb_array_length(in_artifacts)
+            OR (SELECT count(DISTINCT artifact->>'path')
+                  FROM jsonb_array_elements(in_artifacts) x(artifact))
+               <>jsonb_array_length(in_artifacts)
+            OR (SELECT coalesce(sum(CASE
+                    WHEN coalesce(artifact->>'bytes','') ~ '^[0-9]+$'
+                    THEN (artifact->>'bytes')::numeric
+                    ELSE 5368709121 END),0)
+                  FROM jsonb_array_elements(in_artifacts) x(artifact))>5368709120 THEN
+           incident_id='incident-'||gen_random_uuid()::text;
+           INSERT INTO scheduler_incident(tenant,project,incident,kind,execution,attempt,evidence)
+             VALUES(bound.tenant,bound.project,incident_id,'ConflictingResult',bound.execution,
+                    bound.attempt,'ForeignManifest');
+           RETURN QUERY SELECT 'Conflicting'::text,NULL::text,NULL::text,incident_id; RETURN;
+         END IF;
+         IF EXISTS(SELECT 1 FROM jsonb_array_elements(in_artifacts) x(artifact)
+              WHERE NOT EXISTS(SELECT 1 FROM worker_artifact_reservation r
+                WHERE r.tenant=bound.tenant AND r.project=bound.project
+                  AND r.execution=bound.execution AND r.attempt=bound.attempt
+                  AND r.path=artifact->>'path' AND r.digest=artifact->>'digest'
+                  AND r.bytes=(artifact->>'bytes')::bigint)) THEN
+           incident_id='incident-'||gen_random_uuid()::text;
+           INSERT INTO scheduler_incident(tenant,project,incident,kind,execution,attempt,evidence)
+             VALUES(bound.tenant,bound.project,incident_id,'ConflictingResult',bound.execution,
+                    bound.attempt,'ForeignManifest');
+           RETURN QUERY SELECT 'Conflicting'::text,NULL::text,NULL::text,incident_id; RETURN;
+         END IF;
+         SELECT lifecycle INTO STRICT project_lifecycle FROM project
+          WHERE tenant=bound.tenant AND project=bound.project FOR UPDATE;
+         IF project_lifecycle='Retention' THEN
+           RETURN QUERY SELECT 'NotAdmitted'::text,NULL::text,NULL::text,NULL::text; RETURN;
+         END IF;
+         UPDATE execution_attempt SET state='Reported',ended_at=now(),lease_owner=NULL,
+              lease_expires_at=NULL WHERE capability_secret_digest=in_secret_digest
+              AND state IN ('Placing','Running');
+         IF NOT FOUND THEN
+           RETURN QUERY SELECT 'Fenced'::text,NULL::text,NULL::text,NULL::text; RETURN;
+         END IF;
+         UPDATE project SET manifest_next=manifest_next+1
+          WHERE tenant=bound.tenant AND project=bound.project
+          RETURNING manifest_next-1 INTO next_manifest;
+         INSERT INTO execution_result(tenant,project,manifest,execution,attempt,manifest_ordinal,
+                                      schema_version,digest,verdict)
+           VALUES(bound.tenant,bound.project,in_manifest,bound.execution,bound.attempt,next_manifest,
+                  in_schema,in_digest,in_verdict);
+         FOR submitted_artifact IN SELECT value FROM jsonb_array_elements(in_artifacts) LOOP
+           INSERT INTO execution_result_artifact(tenant,project,manifest,ordinal,role,path,digest,bytes)
+             VALUES(bound.tenant,bound.project,in_manifest,(submitted_artifact->>'ordinal')::integer,
+                    submitted_artifact->>'role',submitted_artifact->>'path',submitted_artifact->>'digest',
+                    (submitted_artifact->>'bytes')::bigint);
+         END LOOP;
+         IF in_source IS NOT NULL THEN
+           INSERT INTO execution_result_source
+             (tenant,project,manifest,repository,ref,commit,base,expected_base)
+             SELECT bound.tenant,bound.project,in_manifest,in_source->>'repository',
+                    in_source->>'ref',in_source->>'commit',in_source->>'base',b.reference_id
+               FROM execution_request q
+               JOIN input_bundle_reference b
+                 ON b.tenant=q.tenant AND b.project=q.project AND b.bundle=q.input_bundle
+                    AND b.reference_kind='TargetCommit'
+              WHERE q.tenant=bound.tenant AND q.project=bound.project
+                AND q.request=bound.source_request;
+         END IF;
+         settled_outcome=CASE in_verdict WHEN 'Pass' THEN 'Passed' ELSE 'Failed' END;
+         SELECT result,s.operation INTO submitted FROM submit_task_completion(
+           bound.tenant,bound.project,bound.execution,bound.ticket,bound.task,bound.effect_position,
+           settled_outcome,in_manifest,in_digest,NULL,in_operation,'chuggy_worker_plane') s;
+         IF submitted.result NOT IN ('Submitted','AlreadySubmitted') THEN
+           RAISE EXCEPTION 'worker completion binding was refused: %',submitted.result
+             USING ERRCODE='integrity_constraint_violation';
+         END IF;
+         UPDATE execution_request q SET state='Fulfilled'
+          WHERE q.tenant=bound.tenant AND q.project=bound.project AND q.request=bound.source_request
+            AND q.state='Registered' AND NOT EXISTS(SELECT 1 FROM execution e
+              WHERE e.tenant=q.tenant AND e.project=q.project AND e.source_request=q.request
+                AND e.status NOT IN ('Terminal','Cancelled'));
+         RETURN QUERY SELECT CASE submitted.result WHEN 'Submitted' THEN 'Terminalized'
+                           ELSE 'AlreadyTerminal' END,settled_outcome,submitted.operation,NULL::text;
+       END $_$;`,
+    `CREATE OR REPLACE FUNCTION public.submit_worker_result(in_secret_digest text, in_generation bigint, in_manifest text, in_schema integer, in_digest text, in_verdict text, in_artifacts jsonb, in_operation text) RETURNS TABLE(terminalized text, outcome text, operation text, incident text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $_$
+       BEGIN
+         RETURN QUERY SELECT * FROM submit_worker_result(
+           in_secret_digest,in_generation,in_manifest,in_schema,in_digest,in_verdict,
+           in_artifacts,NULL::jsonb,in_operation);
+       END $_$;`,
   ],
 };

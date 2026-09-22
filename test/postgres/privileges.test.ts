@@ -1024,6 +1024,7 @@ test("the scheduler reads execution and capacity, and of the project only its li
       "recovery_epoch",
       "scheduler_incident",
       "schema_migration",
+      "ticket_definition",
       "ticket_source",
     ],
   );

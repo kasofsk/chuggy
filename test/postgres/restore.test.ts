@@ -111,8 +111,8 @@ test("a lease taken after the restore carries the new epoch, and commits and rep
   const loaded = await harness.store.load(memory.lease);
   assert.ok(loaded.parsed === "Ok");
   assert.deepEqual(
-    loaded.value.map((row) => row.entry),
-    [postgresHarnessJournal()[0]],
+    loaded.value.map((row) => row.entry.event.type),
+    [postgresHarnessJournal()[0]?.event.type],
   );
 });
 

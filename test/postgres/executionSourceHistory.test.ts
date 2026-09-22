@@ -111,12 +111,12 @@ test("a reference no row of the ticket carries is read as no source at all", asy
   );
 });
 
-test("the ticket service can observe completed work source through its own role", async () => {
-  assert.equal(
+test("the ticket service can read completed work source through its own role", async () => {
+  assert.deepEqual(
     await postgresExecutionSourceHistory(ticketServicePool).workSource(
       { tenant: asTenantId("absent"), project: asProjectId("absent") },
       1,
     ),
-    undefined,
+    { manifests: [] },
   );
 });

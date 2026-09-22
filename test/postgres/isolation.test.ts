@@ -25,7 +25,7 @@ import {
   postgresHarnessAccepted,
   postgresHarnessHeld,
   postgresHarnessHistory,
-  postgresHarnessJournal,
+  postgresHarnessCommitted,
   postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessRowLock,
@@ -124,9 +124,10 @@ test("a load returns the partition's own entries and no other partition's", asyn
   const committed = await commitFirst(left, "ownleft");
   assert.ok(committed.decided.decided === "Committed");
 
-  assert.deepEqual(await entriesOf(committed.memory.lease), [
-    postgresHarnessJournal()[0],
-  ]);
+  assert.deepEqual(
+    await entriesOf(committed.memory.lease),
+    await postgresHarnessCommitted(harness, committed.memory),
+  );
   assert.deepEqual(await entriesOf(right.lease), []);
 });
 

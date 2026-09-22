@@ -21,6 +21,7 @@ import {
 import { acceptResultManifest } from "../../src/interpreter/resultManifest.ts";
 import {
   schedulerClaimFor,
+  schedulerDeclaredSource,
   schedulerDigest,
   schedulerOwner,
   schedulerProject,
@@ -70,7 +71,8 @@ function reportingManifest(
       report,
       handoffs: [],
       diagnostics: [],
-      source: null,
+      source:
+        verdict === "Pass" ? schedulerDeclaredSource(attempt) : null,
     }),
     schedulerDigest,
   );
@@ -144,7 +146,9 @@ test("the scheduler role reads the work reports its execution's bundle pinned", 
 /**
  * A further spawn request on the project's ticket, declaring the named tasks
  * after the ones already spawned: the row the writer leaves when a stage or a
- * rework is spawned, written by the case because no writer runs here.
+ * rework is spawned, written by the case because no writer runs here. Each
+ * evaluation names the one evaluator this deployment's plan has, and its tasks
+ * stay distinct because a task's own number is the cycle it names.
  */
 async function furtherSpawn(
   project: SchedulerProject,
@@ -187,7 +191,7 @@ async function furtherSpawn(
         evaluation ? "Evaluation" : "Work",
         evaluation ? 1 : null,
         evaluation ? 1 : null,
-        evaluation ? task : null,
+        evaluation ? 1 : null,
       ],
     );
   }

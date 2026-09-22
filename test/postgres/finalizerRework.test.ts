@@ -43,6 +43,7 @@ import {
 import { canonicalInputBundle } from "../../src/interpreter/finalizerPreparation.ts";
 import { postgresExecutionSourceHistory } from "../../src/adapters/postgres/executionSourceHistory.ts";
 import { executionSourceObservation } from "../../src/interpreter/executionSourceObservation.ts";
+import { postgresHarnessObservedCommit } from "./harness.ts";
 import {
   finalizerDrain,
   finalizerExpireClaim,
@@ -396,7 +397,7 @@ test("a target ref that moved afterwards changes nothing the bundle names", asyn
  * above answers its own source.
  */
 test("a rework runs at the accepted source with no observation", async () => {
-  const { project, attempt, decided } = await reworked("rework-evaluation");
+  const { project, decided } = await reworked("rework-evaluation");
   const sourced = await executionSourceObservation(
     {
       binding: () => {
@@ -417,7 +418,7 @@ test("a rework runs at the accepted source with no observation", async () => {
   });
   assert.deepEqual(sourced, {
     repository: project.repository,
-    target: { commit: attempt.target_commit },
+    target: { commit: postgresHarnessObservedCommit },
     manifests: [],
   });
 });

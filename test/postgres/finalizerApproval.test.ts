@@ -454,7 +454,11 @@ test("an ask the phase outlived is withdrawn, and the next desk task can be open
       rig.harness,
       project.partition,
       `${label}-failed`,
-      finalizerTaskDone(outstandingTaskOf(project, reworked.memory), "Fail"),
+      finalizerTaskDone(
+        reworked.memory.graph,
+        outstandingTaskOf(project, reworked.memory),
+        "Fail",
+      ),
     ),
     "Accepted",
   );

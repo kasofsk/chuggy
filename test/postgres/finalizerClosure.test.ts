@@ -159,7 +159,7 @@ test("a revocation in the mailbox wins the entry, whichever of the two was accep
       rig.harness,
       partition,
       "done",
-      finalizerTaskDone(finalizerEvaluation(1)),
+      finalizerTaskDone(memory.graph, finalizerEvaluation(1)),
     ),
     "Accepted",
   );
@@ -219,7 +219,7 @@ test("a boundary write and an acceptance racing on the project row are still res
           rig.harness,
           partition,
           "race-done",
-          finalizerTaskDone(finalizerEvaluation(1)),
+          finalizerTaskDone(memory.graph, finalizerEvaluation(1)),
         ),
         finalizerAccept(
           rig.harness,

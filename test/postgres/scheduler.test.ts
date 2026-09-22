@@ -49,6 +49,7 @@ import {
 } from "../../src/interpreter/resultManifest.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
+  postgresHarnessBrief,
   postgresHarnessDenial,
   postgresHarnessHistory,
   postgresHarnessJournal,
@@ -314,7 +315,44 @@ async function schedulerResult(
       verdict,
     ],
   );
+  if (verdict === "Pass") await schedulerResultSource(fixture, execution, manifest);
   return { manifest, digest, ordinal: taken?.ordinal ?? "" };
+}
+
+/**
+ * Records what a passing result was produced at: the commit the execution's
+ * bundle pinned, on the ticket's own branch. The door refuses a passed work
+ * result that records none, because the ticket's next spawn would have nowhere
+ * to run.
+ */
+async function schedulerResultSource(
+  fixture: SchedulerFixture,
+  execution: string,
+  manifest: string,
+): Promise<void> {
+  await harness.query(
+    `INSERT INTO execution_result_source
+       (tenant,project,manifest,repository,ref,commit,base,expected_base)
+     SELECT e.tenant,e.project,$3,t.repository,$4,b.reference_id,
+            b.reference_id,b.reference_id
+       FROM execution e
+       JOIN execution_request q
+         ON q.tenant=e.tenant AND q.project=e.project AND q.request=e.source_request
+       JOIN input_bundle_reference b
+         ON b.tenant=q.tenant AND b.project=q.project AND b.bundle=q.input_bundle
+        AND b.reference_kind='TargetCommit'
+       JOIN ticket_source t
+         ON t.tenant=e.tenant AND t.project=e.project AND t.ticket=e.ticket
+        AND t.commit=b.reference_id
+      WHERE e.tenant=$1 AND e.project=$2 AND e.execution=$5`,
+    [
+      fixture.partition.tenant,
+      fixture.partition.project,
+      manifest,
+      postgresHarnessBrief.branch,
+      execution,
+    ],
+  );
 }
 
 /** What the completion boundary answered, and the operation identity the caller offered it. */

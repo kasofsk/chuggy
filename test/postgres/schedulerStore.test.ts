@@ -16,7 +16,7 @@
  */
 
 import assert from "node:assert/strict";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
 import {
@@ -27,6 +27,7 @@ import {
 } from "../../src/interpreter/executionScheduler.ts";
 import { asPlacementId } from "../../src/interpreter/executionScheduler.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
+import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import { asExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
@@ -281,10 +282,7 @@ test("registering creates one execution per declared task, pinned to its request
     const value = asExecutionRequirement(row.requirement_value);
     assert.equal(row.requirement_source, "PlatformDefault");
     assert.equal(row.platform_default_version, "1");
-    assert.equal(
-      row.requirement_digest,
-      createHash("sha256").update(JSON.stringify(value)).digest("hex"),
-    );
+    assert.equal(row.requirement_digest, materialDigest(value));
   }
 });
 
@@ -481,9 +479,12 @@ test("an attempt is opened, placed and settles the logical task exactly once", a
   const project = await schedulerProject(rig, "settle", { tasks: 1 });
   await registerAll(project, "settle");
   const attempt = await placedAttempt(project, "settle");
-  const report = schedulerReport(attempt, "Pass", [
-    schedulerArtifact("handoff/one.txt"),
-  ]);
+  const report = schedulerReport(
+    attempt,
+    "Pass",
+    [],
+    [schedulerArtifact("diagnostic/one.txt")],
+  );
   const settled = await rig.store.terminalize(report);
   assert.ok(settled.terminalized === "Terminalized");
   assert.equal(settled.outcome, "Passed");
@@ -508,7 +509,7 @@ test("an attempt is opened, placed and settles the logical task exactly once", a
       "SELECT role, path FROM execution_result_artifact WHERE tenant=$1 AND project=$2",
       [project.partition.tenant, project.partition.project],
     ),
-    [{ role: "Handoff", path: "handoff/one.txt" }],
+    [{ role: "Diagnostic", path: "diagnostic/one.txt" }],
   );
   assert.deepEqual(await schedulerRequestStates(rig, project.partition), {
     [project.request]: "Fulfilled",

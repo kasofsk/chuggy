@@ -2376,6 +2376,7 @@ test("a released ticket that lands nothing still hands release a brief", async (
       ? input.source.draftRelease?.brief
       : undefined,
     {
+      ...postgresHarnessBrief,
       checks: [],
       repository: landless.repository,
       finalization: { mode: "None" },

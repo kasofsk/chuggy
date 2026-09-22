@@ -32,12 +32,13 @@ import {
 } from "../../src/interpreter/projectWriter.ts";
 import type { NativeActionResolution } from "../../src/interpreter/ticketCommand.ts";
 import { plainAuthoring, plainDisposition } from "../actor/harness.ts";
-import { id, reportedAt } from "../domain/fixtures.ts";
+import { id } from "../domain/fixtures.ts";
 import {
   postgresHarnessCompletion,
   postgresHarnessHistory,
   postgresHarnessJournal,
   postgresHarnessProject,
+  postgresHarnessReport,
   postgresHarnessReleaseSubmission,
   postgresHarnessSubmission,
   postgresHarnessWriter,
@@ -82,7 +83,12 @@ async function admitsReport(
     subject.harness,
     partition,
     `operation-${label}-${randomUUID()}`,
-    taskDoneEvent(id(1), task, reportedAt(task, verdict), plainDisposition),
+    taskDoneEvent(
+      id(1),
+      task,
+      postgresHarnessReport(memory.graph, task, verdict),
+      plainDisposition,
+    ),
   );
   return admitsDrain(partition, memory);
 }

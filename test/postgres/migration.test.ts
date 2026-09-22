@@ -337,8 +337,10 @@ async function seedReleasedTickets(
        (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
         recovery_epoch,cause_kind,cause_id)
      SELECT $1,$2,k.step*$3+n,
-       format('{"seq":%s,"event":{"type":"%s","value":{"ticket":%s}},"rec":{}}',
-              k.step*$3+n,k.type,n),
+       format('{"seq":%s,"event":{"type":"%s","value":{"%s":%s}},"rec":{}}',
+              k.step*$3+n,k.type,
+              CASE WHEN k.type IN ('ReleaseTicket','CreateTicket')
+                   THEN 'id' ELSE 'ticket' END,n),
        'digest-'||(k.step*$3+n),'previous-'||(k.step*$3+n),'owner',1,$4,
        'Continuation','entry-'||(k.step*$3+n)
        FROM generate_series(1,$3::bigint) n, (VALUES ${kinds}) AS k(step,type)`,
@@ -373,13 +375,13 @@ async function releaseIndexUse(
 }
 
 /**
- * Pinned at the vintage whose payload it seeds: 013 moves a release's ticket
- * from `ticket` to `id`, and the reads asked here spell the key their own
- * adapter reads.
+ * At the installed schema and no vintage: 013 re-renders the release index
+ * over the key the payload now carries, and these reads spell the same key, so
+ * a case pinned behind it would ask the adapter for a field no row holds.
  */
-test("the baseline's index is what answers every read of a ticket's release", async () => {
+test("the release index is what answers every read of a ticket's release", async () => {
   await migrationDatabase("journal_instants_index", async (subject, url) => {
-    await installationAt(subject, migration012.version);
+    await postgresMigrate(subject);
     const store = postgresProjectStore(subject);
     const epoch = await postgresHarnessEpoch(store);
     const partition = await postgresHarnessProject(store, "journal-instants");
@@ -5101,7 +5103,8 @@ const releasedObligation = {
   contextRef: 3,
 };
 
-const releasedResultRef = { manifest: 1, digest: 2, schema: 1 };
+/** What a task returned, which is one reference like every other. */
+const releasedResultRef = 5;
 
 function releasedCompletion(report: unknown): unknown {
   return {
@@ -5283,14 +5286,25 @@ const releasedReports: readonly (readonly [string, unknown, boolean])[] = [
     false,
   ],
   [
-    "a produced report naming the manifest it returned by text",
+    "a produced report returning a record where a reference belongs",
     releasedCompletion({
       type: "WorkResultReport",
       value: {
         result: {
           obligation: releasedObligation,
-          resultRef: { ...releasedResultRef, manifest: "1" },
+          resultRef: { manifest: 1, digest: 2, schema: 1 },
         },
+        acceptedSourceRef: 7,
+      },
+    }),
+    false,
+  ],
+  [
+    "a produced report naming what it returned by text",
+    releasedCompletion({
+      type: "WorkResultReport",
+      value: {
+        result: { obligation: releasedObligation, resultRef: "5" },
         acceptedSourceRef: 7,
       },
     }),
@@ -5525,7 +5539,7 @@ test("the door reports the work obligation the release wrote down and the source
                 definition: releasedWorkDefinition,
                 contextRef: 3,
               },
-              resultRef: { manifest: 1, digest, schema: 1 },
+              resultRef: digest,
             },
             acceptedSourceRef: source,
           },
@@ -5592,7 +5606,7 @@ test("the door reports the definition the evaluator's own key carries", async ()
                 definition: releasedSecondDefinition,
                 contextRef: 2,
               },
-              resultRef: { manifest: 1, digest, schema: 1 },
+              resultRef: digest,
             },
             verdict: "EvaluatorPass",
           },
