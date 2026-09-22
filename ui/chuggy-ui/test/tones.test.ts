@@ -54,7 +54,7 @@ test("the machine's own meanings keep their own hues", () => {
   expect(verdictTone("Blocked")).toBe("retired");
 });
 
-test("each arm a stage has without a set is its own word and its own tone", () => {
+test("each arm a stage has without evaluators is its own word and its own tone", () => {
   expect(stageArm({ kind: "Skipped", stage: 1, after: 0 })).toEqual({
     word: "Skipped",
     tone: "retired",
@@ -71,12 +71,10 @@ test("each arm a stage has without a set is its own word and its own tone", () =
     stageArm({
       kind: "Ran",
       stage: 0,
-      set: {
-        executions: [],
-        expected: 1,
-        verdict: "Failed",
-        span: { from: undefined, to: undefined },
-      },
+      evaluators: [],
+      expected: 1,
+      verdict: "Failed",
+      span: { from: undefined, to: undefined },
     }),
   ).toEqual({ word: "Failed", tone: "fail" });
 });

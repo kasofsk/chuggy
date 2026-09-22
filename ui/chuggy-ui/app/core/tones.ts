@@ -123,13 +123,13 @@ export interface StageArm {
 }
 
 /**
- * The three arms a stage row has without a set: short-circuited, not yet
+ * The three arms a stage row has without evaluators: short-circuited, not yet
  * started, or off the page this screen holds.
  */
 export function stageArm(row: StageRow): StageArm {
   switch (row.kind) {
     case "Ran":
-      return { word: row.set.verdict, tone: verdictTone(row.set.verdict) };
+      return { word: row.verdict, tone: verdictTone(row.verdict) };
     case "Skipped":
       return { word: "Skipped", tone: "retired" };
     case "Queued":

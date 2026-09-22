@@ -221,7 +221,15 @@ export const ticket21Parked: readonly ExecutionShape[] = [
   },
 ];
 
-/** The eighth execution: the resume's fresh fan-out of the lowest stage. */
+/**
+ * Cycle 3's evaluator blocked rather than failed, so its wall is one a resume
+ * re-asks in place; the seventh execution's totals stay its own.
+ */
+const ticket21ResumedBase: readonly ExecutionShape[] = ticket21Parked.map(
+  (shape) => (shape.task === 7 ? { ...shape, outcome: "Blocked" } : shape),
+);
+
+/** The eighth execution: the resume's re-ask of the evaluator stage 1 blocked. */
 const ticket21Resume: ExecutionShape = {
   execution: "execution-c40de507-8",
   task: 8,
@@ -230,6 +238,6 @@ const ticket21Resume: ExecutionShape = {
 };
 
 export const ticket21Resumed: readonly ExecutionShape[] = [
-  ...ticket21Parked,
+  ...ticket21ResumedBase,
   ticket21Resume,
 ].sort((left, right) => (left.execution < right.execution ? -1 : 1));
