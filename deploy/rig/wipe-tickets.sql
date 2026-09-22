@@ -93,7 +93,9 @@ TRUNCATE TABLE
   public.session_attempt,
   public.session_store_batch,
   public.session_turn,
+  public.ticket_definition,
   public.ticket_projection,
+  public.ticket_source,
   public.worker_artifact_reservation
   RESTART IDENTITY;
 
