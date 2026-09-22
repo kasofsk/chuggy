@@ -13,7 +13,9 @@
 import { assertNever } from "./assertNever.ts";
 import type {
   Task,
+  TaskDefinition,
   TaskIdentity,
+  TaskObligation,
   TaskOutcome,
   TaskState,
 } from "./generated/modelTypes.ts";
@@ -203,5 +205,56 @@ export function taskIdentityValid(identity: TaskIdentity): boolean {
     identity.value.stage > 0 &&
     identity.value.generation > 0 &&
     identity.value.evaluator > 0
+  );
+}
+
+/**
+ * The contract's claim about a definition (`taskDefinitionValid`): every
+ * reference it names is a real one.
+ */
+export function taskDefinitionValid(definition: TaskDefinition): boolean {
+  return (
+    definition.workload > 0 &&
+    definition.inputs > 0 &&
+    definition.executionRequirements > 0 &&
+    definition.resultContract > 0
+  );
+}
+
+/** The contract's claim about an obligation (`taskObligationValid`). */
+export function taskObligationValid(obligation: TaskObligation): boolean {
+  return (
+    taskIdentityValid(obligation.task) &&
+    taskDefinitionValid(obligation.definition) &&
+    obligation.contextRef > 0
+  );
+}
+
+/** Structural equality on a definition: the four references, field for field. */
+export function taskDefinitionEquals(
+  left: TaskDefinition,
+  right: TaskDefinition,
+): boolean {
+  return (
+    left.workload === right.workload &&
+    left.inputs === right.inputs &&
+    left.executionRequirements === right.executionRequirements &&
+    left.resultContract === right.resultContract
+  );
+}
+
+/**
+ * Structural equality on an obligation, which is what admits a produced
+ * report: the task, the definition it runs under and the context it was
+ * spawned for, all three.
+ */
+export function taskObligationEquals(
+  left: TaskObligation,
+  right: TaskObligation,
+): boolean {
+  return (
+    taskIdentityEquals(left.task, right.task) &&
+    taskDefinitionEquals(left.definition, right.definition) &&
+    left.contextRef === right.contextRef
   );
 }

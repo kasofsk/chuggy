@@ -13,7 +13,7 @@
  * trust.
  */
 
-import { type Config } from "./config.ts";
+import { releasedTicketValid, type Config } from "./config.ts";
 import { liveTickets, ticketAt } from "./ticketGraph.ts";
 import { coveredSet, stuckSet, subsetOf } from "./derived.ts";
 import type {
@@ -24,6 +24,7 @@ import type {
 import { type TicketId } from "./ids.ts";
 import { taskIdentityEquals, taskIdentityValid, workTaskOf } from "./task.ts";
 import { instanceEquals, instanceValid, stagesEqual } from "./evaluation.ts";
+import { waitsOn } from "./enablement.ts";
 import {
   currentInstance,
   evaluationSpawnTotal,
@@ -130,7 +131,7 @@ export const evaluationsWellFormed: Invariant = (_config, view) =>
       return (
         instanceValid(instance) &&
         instance.input.ticket === id &&
-        stagesEqual(instance.plan.stages, t.program) &&
+        stagesEqual(instance.plan.stages, t.definition.evaluationPlan.stages) &&
         instance.workCycle <= t.workCyclesStarted &&
         (previous === undefined || previous.workCycle < instance.workCycle)
       );
@@ -141,6 +142,7 @@ export const evaluationsWellFormed: Invariant = (_config, view) =>
       const open = currentInstance(t);
       if (runningStageIndex(open) < 0) return false;
       if (open.workCycle !== t.workCyclesStarted) return false;
+      if (open.input.acceptedSourceRef !== t.source) return false;
     }
     if (t.escalation === "EvaluationBlockedEscalated") {
       if (t.evaluations.length === 0) return false;
@@ -194,22 +196,27 @@ export const taskIdentitiesValid: Invariant = (_config, view) =>
     [...t.tasks].every((task) => taskIdentityValid(task.identity)),
   );
 
-/** Every authored program is one a release could have drawn. */
-export const programsWellFormed: Invariant = (config, view) =>
+/**
+ * The released definition is well-formed, in every reachable state: the ticket
+ * is the one its definition names, and the definition satisfies the release's
+ * own rule. Holding everywhere is what makes that rule a refusal.
+ */
+export const definitionsWellFormed: Invariant = (config, view) =>
   everyLiveTicket(
     view.post,
-    (t) =>
-      t.program.length >= 1 &&
-      t.program.length <= config.maxStages &&
-      t.program.every((stage, index) => {
-        const keys = stage.evaluators.map((e) => e.key);
-        return (
-          stage.key === index + 1 &&
-          keys.length >= 1 &&
-          new Set(keys).size === keys.length &&
-          keys.every((key) => key >= 1 && key <= config.nTasks)
-        );
-      }),
+    (t, id) => t.definition.id === id && releasedTicketValid(config, t.definition),
+  );
+
+/**
+ * The source is pinned by the dispatch and by nothing else: a ticket carries
+ * one exactly once it has started a work cycle, which is exactly what a
+ * dispatch does. It goes red on a dispatch that filled no source, on a rework
+ * or resume that cleared one, and on a release that invented one.
+ */
+export const sourcePinned: Invariant = (_config, view) =>
+  everyLiveTicket(
+    view.post,
+    (t) => t.source > 0 === t.workCyclesStarted > 0,
   );
 
 /**
@@ -221,12 +228,11 @@ function dependencyClosure(
   graph: TicketGraph,
   id: TicketId,
 ): ReadonlySet<number> {
-  const seen = new Set<number>(ticketAt(graph, id).deps);
+  const seen = new Set<number>(waitsOn(graph, id));
   for (let pass = 0; pass < liveTickets(graph).length; pass++) {
     for (const d of [...seen]) {
       if (!graph.tickets.has(d)) continue;
-      for (const further of ticketAt(graph, d as TicketId).deps)
-        seen.add(further);
+      for (const further of waitsOn(graph, d as TicketId)) seen.add(further);
     }
   }
   return seen;
@@ -234,10 +240,10 @@ function dependencyClosure(
 
 /** Dependencies name live tickets, and no ticket waits on itself through any chain. */
 export const depsAcyclic: Invariant = (_config, view) =>
-  everyLiveTicket(view.post, (t, id) => {
+  everyLiveTicket(view.post, (_t, id) => {
     const live = new Set<number>(liveTickets(view.post));
     return (
-      [...t.deps].every((d) => live.has(d)) &&
+      [...waitsOn(view.post, id)].every((d) => live.has(d)) &&
       !dependencyClosure(view.post, id).has(id)
     );
   });
@@ -276,7 +282,8 @@ export const invariantBundle: readonly NamedInvariant[] = [
   { invariant: "evaluationsMonotone", holds: evaluationsMonotone },
   { invariant: "idsAccounted", holds: idsAccounted },
   { invariant: "taskIdentitiesValid", holds: taskIdentitiesValid },
-  { invariant: "programsWellFormed", holds: programsWellFormed },
+  { invariant: "definitionsWellFormed", holds: definitionsWellFormed },
+  { invariant: "sourcePinned", holds: sourcePinned },
   { invariant: "depsAcyclic", holds: depsAcyclic },
   { invariant: "ticketIdsWellFormed", holds: ticketIdsWellFormed },
   { invariant: "stuckSubsetCovered", holds: stuckSubsetCovered },

@@ -12,13 +12,12 @@
  * state — a value, not a live variable.
  */
 
-import { isValidProgram, ticketIdUniverse, type Config } from "./config.ts";
+import { ticketIdUniverse, type Config } from "./config.ts";
 import { ticketAt, ticketIds } from "./ticketGraph.ts";
 import type {
   ArtifactMark,
   TicketGraph,
   FinalizationOutcome,
-  StageDefinition,
   TaskIdentity,
 } from "./generated/modelTypes.ts";
 import { hasOpenHumanTask, liveTasks, owesTask } from "./ticket.ts";
@@ -41,7 +40,7 @@ export function retryableIn(graph: TicketGraph, id: TicketId): boolean {
 
 /** What this ticket waits on before it may run — the single definition every reader shares. */
 export function waitsOn(graph: TicketGraph, id: TicketId): ReadonlySet<number> {
-  return ticketAt(graph, id).deps;
+  return ticketAt(graph, id).definition.dependencies;
 }
 
 /**
@@ -165,14 +164,6 @@ export function outstandingTaskIn(
   task: TaskIdentity,
 ): boolean {
   return owesTask(ticketAt(graph, id), task);
-}
-
-/** Every value a release must draw from a universe, which is its program alone. */
-export function releasableAuthoring(
-  config: Config,
-  authoring: { readonly prog: readonly StageDefinition[] },
-): boolean {
-  return isValidProgram(config, authoring.prog);
 }
 
 /** The ids a release may still claim, which is what makes a fleet quiet or not. */

@@ -571,14 +571,22 @@ module chuggy_ticket {
       spawned: ticket.spawned +
         ticket.definition.evaluationPlan.stages[index].evaluators.length() }
 
-  /// WORK PASSED, SO JUDGEMENT BEGINS: the artifact the cycle produced is
-  /// the mint counter's current value, the instance is opened over it with
-  /// the released plan and the source the work result was accepted at, and
-  /// its first stage is asked. One instance per work cycle that gets this
-  /// far. The instance's acceptedSourceRef is the ticket's own — the
-  /// completion that carried it put it there, and nothing observes a second.
+  /// WORK PASSED, SO JUDGEMENT BEGINS: the instance is opened over the
+  /// ACCEPTED WORK RESULT — the reference the passing report carried, which
+  /// is the one the cycle's own task derives (producedResult) — with the
+  /// released plan and the source that result was accepted at, and its first
+  /// stage is asked. One instance per work cycle that gets this far.
+  ///
+  /// The artifact the dependents read is that same reference, and so is every
+  /// evaluator obligation's contextRef (evaluation.qnt currentTaskObligations
+  /// builds it from input.workResult): a judgement is OF a result, so the
+  /// number the work produced is the number the judgement is asked under. The
+  /// mint counter is an identity ledger and never stands in for it. The
+  /// instance's acceptedSourceRef is the ticket's own — the completion that
+  /// carried it put it there, and nothing observes a second.
   pure def beginEvaluation(ticket: Ticket): Ticket =
-    val artifactRef = ticket.spawned
+    val artifactRef =
+      taskRefOf(workTaskOf(ticket.definition.id, ticket.workCyclesStarted))
     spawnEvalRun({ ...ticket,
       artifact: ProducedArtifact(artifactRef),
       evaluations: ticket.evaluations.append(begin(

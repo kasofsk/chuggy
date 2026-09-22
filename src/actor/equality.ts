@@ -24,12 +24,17 @@ import type {
   ArtifactMark,
   TicketGraph,
   EvaluationInstance,
+  ReleasedTicket,
   StageDefinition,
   StepRecord,
   Ticket,
   Transition,
 } from "../domain/generated/modelTypes.ts";
-import { tasksInEvaluatorKeyOrder, taskEquals } from "../domain/task.ts";
+import {
+  taskDefinitionEquals,
+  tasksInEvaluatorKeyOrder,
+  taskEquals,
+} from "../domain/task.ts";
 import { instanceEquals, stageDefinitionEquals } from "../domain/evaluation.ts";
 
 /** Same length, and equal member by member in order. */
@@ -81,12 +86,37 @@ function ticketEqualsArtifact(
 }
 
 /** The dependency set as a list, ascending, so two sets compare member by member. */
-function depsInOrder(deps: ReadonlySet<number>): readonly number[] {
-  return [...deps].sort((a, b) => a - b);
+function dependenciesInOrder(
+  dependencies: ReadonlySet<number>,
+): readonly number[] {
+  return [...dependencies].sort((a, b) => a - b);
+}
+
+/** Whether two releases froze the same record, every declared field compared. */
+function ticketEqualsDefinition(
+  left: ReleasedTicket,
+  right: ReleasedTicket,
+): boolean {
+  return (
+    left.id === right.id &&
+    left.content === right.content &&
+    listEquals(
+      dependenciesInOrder(left.dependencies),
+      dependenciesInOrder(right.dependencies),
+      sameValue,
+    ) &&
+    taskDefinitionEquals(left.workConfiguration, right.workConfiguration) &&
+    listEquals(
+      left.evaluationPlan.stages,
+      right.evaluationPlan.stages,
+      ticketEqualsStage,
+    ) &&
+    left.finalizationConfiguration === right.finalizationConfiguration
+  );
 }
 
 /**
- * The program's stages and the instances' own shapes are the protocol's, so
+ * The plan's stages and the instances' own shapes are the protocol's, so
  * their equality is stated once beside the protocol (`src/domain/evaluation.ts`)
  * and read here. Two homes for one conjunction is two answers within a year.
  */
@@ -108,9 +138,9 @@ function ticketEqualsInstance(
 export function ticketEquals(left: Ticket, right: Ticket): boolean {
   return (
     left.phase === right.phase &&
-    listEquals(depsInOrder(left.deps), depsInOrder(right.deps), sameValue) &&
+    ticketEqualsDefinition(left.definition, right.definition) &&
+    left.source === right.source &&
     ticketEqualsArtifact(left.artifact, right.artifact) &&
-    listEquals(left.program, right.program, ticketEqualsStage) &&
     listEquals(
       tasksInEvaluatorKeyOrder(left.tasks),
       tasksInEvaluatorKeyOrder(right.tasks),

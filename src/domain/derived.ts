@@ -29,7 +29,9 @@ export function visEdges(
   graph: TicketGraph,
   id: TicketId,
 ): readonly TicketId[] {
-  return [...ticketAt(graph, id).deps].sort((a, b) => a - b) as TicketId[];
+  return [...ticketAt(graph, id).definition.dependencies].sort(
+    (a, b) => a - b,
+  ) as TicketId[];
 }
 
 /** Whether a ticket belongs to the set being swept, given what the pass before it admitted. */
