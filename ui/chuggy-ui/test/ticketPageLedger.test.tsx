@@ -692,6 +692,22 @@ test("a fan-out's wait is measured from the earliest task to start", async () =>
   expect(when).not.toContain("waited 15m");
 });
 
+/** The provenance panel draws a stage as its evaluator count, never its key. */
+test("provenance draws each stage as its evaluator count", async () => {
+  const { container } = await drawTicket({
+    shapes: ticket21Parked,
+    ticket: parkedTicket,
+    authoring: {
+      dependencies: [],
+      program: [
+        { key: 1, evaluators: [{ key: 1 }, { key: 2 }, { key: 3 }] },
+        { key: 2, evaluators: [{ key: 1 }, { key: 3 }] },
+      ],
+    },
+  });
+  expect(container.textContent).toContain("3× then 2×");
+});
+
 /** A cancelled run has stopped, so it is not one of the runs still going. */
 test("a cancelled run is counted but is not counted as running", async () => {
   const cancelled: readonly ExecutionShape[] = ticket21Parked.map((shape) => {

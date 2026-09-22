@@ -346,6 +346,20 @@ test("the advanced disclosure holds the authoring, and offers what is chosen", (
   ]);
 });
 
+/** Submits the form and returns the authoring the one draft it sent carries. */
+async function submittedAuthoring(held: {
+  readonly sent: readonly Sent[];
+}): Promise<unknown> {
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  const body = drafts(held.sent)[0]?.body;
+  return body !== null && typeof body === "object" && "authoring" in body
+    ? body.authoring
+    : undefined;
+}
+
 /**
  * The picker mints its own evaluator keys and holds every stage's key to its
  * position, so a two-stage pick sends `{key, evaluators}` rather than a width.
@@ -359,21 +373,31 @@ test("a two-stage pick sends positional stage keys and evaluators keyed 1..n", a
   fireEvent.change(screen.getByLabelText("stage 2"), {
     target: { value: "3" },
   });
-  submit();
-  await waitFor(() => {
-    expect(drafts(held.sent).length).toBe(1);
-  });
-  const body = drafts(held.sent)[0]?.body;
-  const authoring =
-    body !== null && typeof body === "object" && "authoring" in body
-      ? body.authoring
-      : undefined;
+  const authoring = await submittedAuthoring(held);
   expect(authoring).toStrictEqual({
     dependencies: [],
     program: [
       { key: 1, evaluators: [{ key: 1 }] },
       { key: 2, evaluators: [{ key: 1 }, { key: 2 }, { key: 3 }] },
     ],
+  });
+});
+
+/** Removing a stage moves the ones after it up, and their keys move with them. */
+test("removing the first stage sends the remaining stage keyed to its new position", async () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, []);
+  typeIntent("ship it");
+  fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+  fireEvent.click(screen.getByText("add stage"));
+  fireEvent.change(screen.getByLabelText("stage 2"), {
+    target: { value: "2" },
+  });
+  fireEvent.click(screen.getAllByText("remove")[0] as HTMLElement);
+  const authoring = await submittedAuthoring(held);
+  expect(authoring).toStrictEqual({
+    dependencies: [],
+    program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
   });
 });
 
