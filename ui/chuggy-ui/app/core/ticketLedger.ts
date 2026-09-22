@@ -162,7 +162,18 @@ function taskSetOf(
 }
 
 /**
- * A set settles only once no task can still move, and a blocked task is a wall
+ * An execution that answered nothing: a wall, or an evaluator whose process
+ * died, which the machine treats as a stop to resume rather than a judgement.
+ */
+export function executionStopped(row: ExecutionSummary): boolean {
+  return (
+    row.outcome === "Blocked" ||
+    (row.outcome === "ProcessFailed" && row.identity.type === "EvaluationTask")
+  );
+}
+
+/**
+ * A set settles only once no task can still move, and a stopped task is a wall
  * of its own rather than a failure the unanimous rule gets to weigh.
  */
 function setVerdict(executions: readonly ExecutionSummary[]): SetVerdict {
@@ -173,7 +184,7 @@ function setVerdict(executions: readonly ExecutionSummary[]): SetVerdict {
   )
     return "Running";
   if (executions.every((row) => row.status === "Cancelled")) return "Cancelled";
-  if (executions.some((row) => row.outcome === "Blocked")) return "Blocked";
+  if (executions.some(executionStopped)) return "Blocked";
   return executions.every((row) => row.outcome === "Passed")
     ? "Passed"
     : "Failed";

@@ -265,6 +265,42 @@ test("a cancelled set and a blocked one are each their own verdict", () => {
   expect(stagesOf(blocked.cycles[0]?.stages ?? [])).toEqual(["1 Blocked 2"]);
 });
 
+test("an evaluator whose process died is a stop, and a work task's is a failure", () => {
+  const stopped = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-aa-1",
+        task: 1,
+        identity: workIdentity(1),
+        outcome: "Passed",
+      },
+      {
+        execution: "execution-bb-2",
+        task: 2,
+        identity: evalIdentity(1, 1, 1),
+        outcome: "ProcessFailed",
+      },
+    ]),
+    ticket21Authoring,
+  );
+  expect(stagesOf(stopped.cycles[0]?.stages ?? [])).toEqual([
+    "1 Blocked 2",
+    "2 Queued",
+  ]);
+  const died = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-aa-1",
+        task: 1,
+        identity: workIdentity(1),
+        outcome: "ProcessFailed",
+      },
+    ]),
+    ticket21Authoring,
+  );
+  expect(died.cycles[0]?.work?.verdict).toBe("Failed");
+});
+
 test("a stage that was blocked leaves the stages after it queued, not skipped", () => {
   const ledger = ticketLedger(
     ledgerPage([

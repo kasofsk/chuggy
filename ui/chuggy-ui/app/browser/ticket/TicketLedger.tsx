@@ -44,6 +44,7 @@ import type {
 import {
   cycleLabel,
   cycleLastSet,
+  executionStopped,
   retriesLabel,
   stageEvaluatorsCurrent,
   stageLabel,
@@ -426,15 +427,8 @@ export function TicketCycles(props: {
 export function summaryVerdict(summary: ExecutionSummary): SetVerdict {
   if (summary.status === "Cancelled") return "Cancelled";
   if (summary.status !== "Terminal") return "Running";
-  switch (summary.outcome) {
-    case "Passed":
-      return "Passed";
-    case "Blocked":
-      return "Blocked";
-    case "Failed":
-    case undefined:
-      return "Failed";
-  }
+  if (summary.outcome === "Passed") return "Passed";
+  return executionStopped(summary) ? "Blocked" : "Failed";
 }
 
 function ungroupedLabel(summary: ExecutionSummary): string {

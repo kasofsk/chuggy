@@ -87,6 +87,7 @@ export function executionTone(
       case "Passed":
         return "pass";
       case "Failed":
+      case "ProcessFailed":
         return "fail";
       case "Blocked":
         return "retired";
