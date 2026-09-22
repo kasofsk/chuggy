@@ -412,9 +412,9 @@ module chuggy_ticket {
 
   // === Vocabulary helpers (task plumbing shared by machine and tests) ======
 
-  /// How much of the live set has yet to resolve. A set with none
-  /// outstanding is what makes a phase reducible (domain.qnt
-  /// reducibleWorkIn/reducibleEvalIn).
+  /// How much of the live set has yet to resolve. A work set with none
+  /// outstanding is what makes the cycle reducible (domain.qnt
+  /// reducibleWorkIn).
   pure def outstandingCount(tasks: Set[Task]): int =
     tasks.filter(t => t.state == Outstanding).size()
 
@@ -561,10 +561,6 @@ module chuggy_ticket {
         { ticket: j, workResult: artifactRef },
         { stages: ticket.program })) })
 
-  /// THE TASKS THE FABRIC IS RUNNING FOR THIS TICKET: the work task while it
-  /// is outstanding, or the obligations the current run still owes. Empty in
-  /// every other phase, which is what makes leaving a phase enough to stop
-  /// owing them.
   /// IS THE INSTANCE PARKED ON A WALL? The blocked state is the one the
   /// desk reads, and the desk's own wall is held equal to it (domain.qnt
   /// evaluationsWellFormed).
@@ -582,6 +578,10 @@ module chuggy_ticket {
     { manifest: taskRefOf(task), digest: taskRefOf(task),
       schema: taskRefOf(task) }
 
+  /// THE TASKS THE FABRIC IS RUNNING FOR THIS TICKET: the work task while it
+  /// is outstanding, or the obligations the current run still owes. Empty in
+  /// every other phase, which is what makes leaving a phase enough to stop
+  /// owing them.
   pure def liveTasks(ticket: Ticket): Set[TaskIdentity] =
     if (ticket.phase == Work)
       ticket.tasks.filter(t => t.state == Outstanding).map(t => t.identity)
