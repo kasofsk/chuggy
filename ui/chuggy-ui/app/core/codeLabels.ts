@@ -193,8 +193,10 @@ function walledStageFailed(facts: WallFacts): string | undefined {
 
 /**
  * The one optional line under the wall, from the facts the page already holds.
- * The cancelled-set line names the phase the kind itself interrupted, needing
- * no fact from the page; the stage line still needs the last set to say which.
+ * The work-cancelled and evaluation-blocked lines need no fact from the page —
+ * a resume drains no sibling and cancels nothing, so the second names what a
+ * resume does rather than a loss — and the stage line still needs the last
+ * set to say which.
  */
 export function escalationDetailLine(
   kind: EscalationKind,
@@ -208,7 +210,7 @@ export function escalationDetailLine(
     case "WorkExecutionUnavailableEscalated":
       return "Work cancelled";
     case "EvaluationBlockedEscalated":
-      return "Evaluation cancelled";
+      return "Resume asks it again";
     case "FinalizationUnavailableEscalated":
       return undefined;
   }

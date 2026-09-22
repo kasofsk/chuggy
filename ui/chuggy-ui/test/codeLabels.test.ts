@@ -104,17 +104,25 @@ test("a detail line names only the facts the page holds", () => {
 });
 
 /**
- * A blocked execution's cancelled-set line names the phase the kind itself
- * interrupted — Work for the wall the ticket's own work hit, Evaluation for
- * the one `EvaluationBlockedEscalated` names — with no fact from the page.
+ * A cancelled work execution's line names the phase the kind itself
+ * interrupted, with no fact from the page.
  */
-test("a blocked execution's line names the phase its own kind interrupted", () => {
+test("a cancelled work execution's line names the phase its own kind interrupted", () => {
   const bare = { lastSet: undefined, stageCount: 2 };
   expect(escalationDetailLine("WorkExecutionUnavailableEscalated", bare)).toBe(
     "Work cancelled",
   );
+});
+
+/**
+ * An evaluation block retires one execution and says nothing about its
+ * siblings, and a resume keeps every pass it already holds — so the line
+ * names what a resume does, never a cancellation that did not happen.
+ */
+test("an evaluation block's line names what a resume does, not a cancellation", () => {
+  const bare = { lastSet: undefined, stageCount: 2 };
   expect(escalationDetailLine("EvaluationBlockedEscalated", bare)).toBe(
-    "Evaluation cancelled",
+    "Resume asks it again",
   );
 });
 
