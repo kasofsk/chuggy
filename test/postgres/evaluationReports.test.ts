@@ -261,7 +261,13 @@ test("the scheduler role reads the failed reports of the evaluation a rework fol
     { read: "Reports", reports: { reports: [] } },
     "a first attempt follows no evaluation",
   );
-  const evaluation = await furtherSpawn(project, "SpawnEvaluation", [2, 3], 1, 1);
+  const evaluation = await furtherSpawn(
+    project,
+    "SpawnEvaluation",
+    [2, 3],
+    1,
+    1,
+  );
   await registered(project, evaluation, "prior-eval-stage");
   const failed = ".chug/tasks/ci.sh exited 1; last output: format FAILED";
   await settled(project, failed, "Fail");
