@@ -13,14 +13,17 @@
  * comes off its `identity` and is never inferred from where the row sits on
  * the page.
  *
- * AN EVALUATOR DRAWS AT WHICHEVER GENERATION IS ITS OWN CURRENT ONE.
- * `resumeBlocked` in `model/ticket-domain/evaluation/evaluation.qnt` re-asks
- * only the evaluators a stage blocked, bumping their generation while every
- * evaluator it did not re-ask keeps its `Produced` row; so two evaluators of
- * one stage can sit at different generations at once, and a stage's current
- * view is each of its evaluators at the highest generation it has reached.
- * There is one evaluation instance per work cycle — nothing here groups by a
- * "program run".
+ * AN EVALUATOR DRAWS A ROW AT EVERY GENERATION IT HAS REACHED. `resumeBlocked`
+ * in `model/ticket-domain/evaluation/evaluation.qnt` re-asks only the
+ * evaluators a stage blocked, bumping their generation while every evaluator
+ * it did not re-ask keeps its `Produced` row; so two evaluators of one stage
+ * can sit at different generations at once, and an evaluator a stage resumed
+ * holds an earlier generation the ledger does not drop — it is marked
+ * `Superseded` rather than merged away, because a sum over the rows a page
+ * draws must equal the sum the page already charges the cycle. A stage's
+ * `verdict` and `expected` still read off each evaluator's highest generation
+ * only. There is one evaluation instance per work cycle — nothing here groups
+ * by a "program run".
  *
  * IT IS TOTAL OVER THE PAGES THE ROSTERS ADMIT, not only over the pages the
  * machine produces or the route can page to. Ordering by `(ticket, task)` makes
@@ -83,12 +86,13 @@ export interface TaskSet {
   readonly span: RunSpan;
 }
 
-/** One evaluator's own row: its key, and the set it holds at whichever
- * generation is its current one. */
+/** One evaluator's own row, at one generation: its key, the set it holds
+ * there, and whether this is the generation it now stands at. */
 export interface EvaluatorRow {
   readonly key: number;
   readonly generation: number;
   readonly set: TaskSet;
+  readonly standing: CycleStanding;
 }
 
 export interface RanStage {
@@ -229,12 +233,6 @@ function stageExpected(
   return authoring.program[stage - 1]?.evaluators.length ?? evaluators;
 }
 
-/** One evaluator's row at whichever generation is its highest so far. */
-interface EvaluatorCurrent {
-  readonly generation: number;
-  readonly execution: ExecutionSummary;
-}
-
 interface StageAggregate {
   readonly stage: number;
   readonly evaluators: readonly EvaluatorRow[];
@@ -244,39 +242,60 @@ interface StageAggregate {
 }
 
 /**
- * A cycle's evaluation rows folded into one aggregate per stage: each
- * evaluator key held at the highest generation it names, since a resume
- * re-asks only the evaluators a stage blocked and leaves the rest at the
- * generation that produced them.
+ * One evaluator's rows, current generation first: an earlier generation is a
+ * fact the ledger keeps rather than merges away, drawn beneath the generation
+ * that replaced it.
+ */
+function evaluatorRowsOf(
+  key: number,
+  byGeneration: ReadonlyMap<number, ExecutionSummary>,
+): readonly EvaluatorRow[] {
+  const highest = Math.max(...byGeneration.keys());
+  return [...byGeneration.entries()]
+    .sort(([left], [right]) => right - left)
+    .map(([generation, execution]) => ({
+      key,
+      generation,
+      set: taskSetOf([execution], 1),
+      standing: generation === highest ? "Current" : "Superseded",
+    }));
+}
+
+/**
+ * A cycle's evaluation rows folded into one aggregate per stage: every
+ * generation an evaluator key names, held apart from the others under the
+ * same key, since a resume re-asks only the evaluators a stage blocked and
+ * leaves the rest at the generation that produced them. The stage's own
+ * `verdict`, `expected` and `span` read off each key's highest generation
+ * only — the earlier ones are rows, not inputs to the stage's own facts.
  */
 function stageAggregatesOf(
   rows: readonly ExecutionSummary[],
   authoring: TicketAuthoring,
 ): Map<number, StageAggregate> {
-  const byStage = new Map<number, Map<number, EvaluatorCurrent>>();
+  const byStage = new Map<number, Map<number, Map<number, ExecutionSummary>>>();
   for (const row of rows) {
     if (row.identity.type !== "EvaluationTask") continue;
     const { stage, generation, evaluator } = row.identity.value;
-    const stageMap = byStage.get(stage) ?? new Map<number, EvaluatorCurrent>();
+    const stageMap =
+      byStage.get(stage) ?? new Map<number, Map<number, ExecutionSummary>>();
     byStage.set(stage, stageMap);
-    const held = stageMap.get(evaluator);
-    if (held === undefined || generation >= held.generation)
-      stageMap.set(evaluator, { generation, execution: row });
+    const evaluatorMap =
+      stageMap.get(evaluator) ?? new Map<number, ExecutionSummary>();
+    stageMap.set(evaluator, evaluatorMap);
+    evaluatorMap.set(generation, row);
   }
   const aggregates = new Map<number, StageAggregate>();
   for (const [stage, stageMap] of byStage) {
     const evaluators: EvaluatorRow[] = [...stageMap.entries()]
       .sort(([left], [right]) => left - right)
-      .map(([key, held]) => ({
-        key,
-        generation: held.generation,
-        set: taskSetOf([held.execution], 1),
-      }));
-    const executions = evaluators.flatMap((row) => row.set.executions);
+      .flatMap(([key, byGeneration]) => evaluatorRowsOf(key, byGeneration));
+    const current = evaluators.filter((row) => row.standing === "Current");
+    const executions = current.flatMap((row) => row.set.executions);
     aggregates.set(stage, {
       stage,
       evaluators,
-      expected: stageExpected(stage, evaluators.length, authoring),
+      expected: stageExpected(stage, current.length, authoring),
       verdict: setVerdict(executions),
       span: runSpanOf(executions),
     });
@@ -284,11 +303,21 @@ function stageAggregatesOf(
   return aggregates;
 }
 
-/** A short-circuit stops the program; anything else leaves the later stages ahead of it. */
+/** An evaluator's rows at their current generation only, which is the width a
+ * roster's shortfall is measured against. */
+export function stageEvaluatorsCurrent(
+  stage: RanStage,
+): readonly EvaluatorRow[] {
+  return stage.evaluators.filter((row) => row.standing === "Current");
+}
+
+/**
+ * A failure or a cancellation ends the program; a block parks it instead, so
+ * the stages after it stay ahead of it — queued, not skipped, because the
+ * plan they belong to still exists once a resume lifts the block.
+ */
 function stageStopped(verdict: SetVerdict): boolean {
-  return (
-    verdict === "Failed" || verdict === "Cancelled" || verdict === "Blocked"
-  );
+  return verdict === "Failed" || verdict === "Cancelled";
 }
 
 /** What a stage the authoring declares holds: an aggregate, a gap, or a reason nothing ran. */
@@ -346,7 +375,8 @@ function cycleComplete(
   if (truncated || work === undefined) return false;
   if (stages.some((row) => row.kind === "Missing")) return false;
   return stages.every(
-    (row) => row.kind !== "Ran" || row.evaluators.length >= row.expected,
+    (row) =>
+      row.kind !== "Ran" || stageEvaluatorsCurrent(row).length >= row.expected,
   );
 }
 

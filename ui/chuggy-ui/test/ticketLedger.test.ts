@@ -94,14 +94,22 @@ test("a stage that failed short-circuits the stages after it", () => {
 
 test("a resume re-asks only the evaluator its stage blocked, at the next generation", () => {
   const cycle = cycleAt(ticket21Resumed, 2);
-  expect(stagesOf(cycle.stages)).toEqual(["1 Running 8", "2 Queued"]);
+  expect(stagesOf(cycle.stages)).toEqual(["1 Running 8,7", "2 Queued"]);
   const stage = cycle.stages[0];
   expect(
     stage?.kind === "Ran" ? stage.evaluators[0]?.generation : undefined,
   ).toBe(2);
+  expect(
+    stage?.kind === "Ran"
+      ? stage.evaluators.map((row) => [row.generation, row.standing])
+      : undefined,
+  ).toEqual([
+    [2, "Current"],
+    [1, "Superseded"],
+  ]);
 });
 
-test("a stage blocked at generation 1 draws its resumed evaluator beside the pass it kept", () => {
+test("a stage blocked at generation 1 draws its resumed evaluator beside the pass it kept, and keeps its blocked generation as a row of its own", () => {
   const twoEvaluatorStage: typeof ticket21Authoring = {
     ...ticket21Authoring,
     program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
@@ -113,42 +121,51 @@ test("a stage blocked at generation 1 draws its resumed evaluator beside the pas
         task: 1,
         identity: workIdentity(1),
         outcome: "Passed",
+        totals: { turns: 1, durationMs: 1_000, costUsdMicros: 1_000_000 },
       },
       {
         execution: "execution-bb-2",
         task: 2,
         identity: evalIdentity(1, 1, 1, 1),
         outcome: "Blocked",
+        totals: { turns: 1, durationMs: 1_000, costUsdMicros: 500_000 },
       },
       {
         execution: "execution-cc-3",
         task: 3,
         identity: evalIdentity(1, 1, 1, 2),
         outcome: "Passed",
+        totals: { turns: 1, durationMs: 1_000, costUsdMicros: 300_000 },
       },
       {
         execution: "execution-dd-4",
         task: 4,
         identity: evalIdentity(1, 1, 2, 1),
         outcome: "Passed",
+        totals: { turns: 1, durationMs: 1_000, costUsdMicros: 700_000 },
       },
     ]),
     twoEvaluatorStage,
   );
-  const stage = ledger.cycles[0]?.stages[0];
+  const cycle = ledger.cycles[0];
+  const stage = cycle?.stages[0];
   if (stage?.kind !== "Ran") throw new Error("stage did not run");
   expect(
     stage.evaluators.map((row) => [
       row.key,
       row.generation,
       row.set.verdict,
+      row.standing,
       ...tasksOf(row.set),
     ]),
   ).toEqual([
-    [1, 2, "Passed", 4],
-    [2, 1, "Passed", 3],
+    [1, 2, "Passed", "Current", 4],
+    [1, 1, "Blocked", "Superseded", 2],
+    [2, 1, "Passed", "Current", 3],
   ]);
   expect(stage.verdict).toBe("Passed");
+  expect(stage.expected).toBe(2);
+  expect(cycle?.spend.totals?.costUsdMicros).toBe(2_500_000);
 });
 
 test("only the last cycle stands as current", () => {
@@ -248,7 +265,7 @@ test("a cancelled set and a blocked one are each their own verdict", () => {
   expect(stagesOf(blocked.cycles[0]?.stages ?? [])).toEqual(["1 Blocked 2"]);
 });
 
-test("a stage that was blocked skips the stages after it, as a failed one does", () => {
+test("a stage that was blocked leaves the stages after it queued, not skipped", () => {
   const ledger = ticketLedger(
     ledgerPage([
       {
@@ -262,7 +279,7 @@ test("a stage that was blocked skips the stages after it, as a failed one does",
   );
   expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual([
     "1 Blocked 1",
-    "2 Skipped",
+    "2 Queued",
   ]);
 });
 
