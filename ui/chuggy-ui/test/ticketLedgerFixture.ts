@@ -3,12 +3,12 @@
  *
  * Three cycles, two of them superseded, a stage that passed an artifact the
  * ticket no longer holds, a stage the fabric relaunched its container for, and
- * a resume that re-ran the program from its lowest stage. The list is held by
- * execution identity — a string the model never gives meaning to — in an
- * order the route no longer answers in, so every suite reading it proves the
- * derivation recovers a cycle from whatever order a page reaches it in; only
- * `task` orders it, and only each row's own `identity` says which cycle, stage
- * and generation it belongs to.
+ * a resume that re-asks the evaluator its stage blocked, at the next
+ * generation. The list is held by execution identity — a string the model
+ * never gives meaning to — in an order the route no longer answers in, so
+ * every suite reading it proves the derivation recovers a cycle from whatever
+ * order a page reaches it in; only `task` orders it, and only each row's own
+ * `identity` says which cycle, stage and generation it belongs to.
  */
 
 import type {

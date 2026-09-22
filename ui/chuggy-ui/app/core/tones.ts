@@ -23,7 +23,7 @@ import type { ConversationStanding } from "./conversation.ts";
 import type { ForgeAppStanding } from "./forgeInstallation.ts";
 import { leadDispatchLanded } from "./leadTranscript.ts";
 import type { AgenticRefusalStanding, LeadDispatch } from "./leadTranscript.ts";
-import type { CycleStanding, SetVerdict, StageRow } from "./ticketLedger.ts";
+import type { SetVerdict, StageRow } from "./ticketLedger.ts";
 
 export const pillTones = [
   "pass",
@@ -102,16 +102,6 @@ export function executionTone(
     case "Terminal":
       return "neutral";
     case "Cancelled":
-      return "retired";
-  }
-}
-
-/** Whether the ticket's current artifact is this cycle's, or a later one's. */
-export function standingTone(standing: CycleStanding): Tone {
-  switch (standing) {
-    case "Current":
-      return "live";
-    case "Superseded":
       return "retired";
   }
 }

@@ -110,9 +110,9 @@ test("a spend below a cent is drawn finer rather than as nothing", () => {
   expect(runCostLabel(0, "List")).toBe("$0.00 (list price)");
 });
 
-test("a generation is drawn as again or by number, never as a run", () => {
+test("a generation past the first is drawn by number, in one spelling, never as a run", () => {
   expect(generationLabel(1)).toBeUndefined();
-  expect(generationLabel(2)).toBe("again");
+  expect(generationLabel(2)).toBe("generation 2");
   expect(generationLabel(3)).toBe("generation 3");
 });
 
@@ -264,7 +264,7 @@ test("two generations of one stage keep their totals apart", () => {
   ]);
   expect(rows.map(runStageLabel)).toEqual([
     "cycle 1 evaluation stage 1",
-    "cycle 1 evaluation stage 1 · again",
+    "cycle 1 evaluation stage 1 · generation 2",
   ]);
   expect(rows.map((row) => row.totals?.costUsdMicros)).toEqual([1_000, 5_000]);
 });

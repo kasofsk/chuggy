@@ -20,7 +20,6 @@ import {
   pillTones,
   phaseTone,
   stageArm,
-  standingTone,
   verdictTone,
 } from "../app/core/tones.ts";
 import type { SetVerdict } from "../app/core/ticketLedger.ts";
@@ -33,13 +32,11 @@ const verdicts: readonly SetVerdict[] = [
   "Blocked",
 ];
 
-test("every phase, verdict and standing draws a tone the pill knows", () => {
+test("every phase and verdict draws a tone the pill knows", () => {
   for (const phase of phaseRoster)
     expect(pillTones).toContain(phaseTone(phase));
   for (const verdict of verdicts)
     expect(pillTones).toContain(verdictTone(verdict));
-  expect(standingTone("Current")).toBe("live");
-  expect(standingTone("Superseded")).toBe("retired");
 });
 
 test("the machine's own meanings keep their own hues", () => {

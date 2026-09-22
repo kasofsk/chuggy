@@ -263,10 +263,10 @@ function identityGeneration(identity: TaskIdentity): number | undefined {
   return identity.type === "WorkTask" ? undefined : identity.value.generation;
 }
 
-/** The word a generation past the first draws as, never "run". */
+/** The word a generation past the first draws as, never "run" — one spelling
+ * for every generation past the first, the model's own word for it. */
 export function generationLabel(generation: number): string | undefined {
-  if (generation <= 1) return undefined;
-  return generation === 2 ? "again" : `generation ${String(generation)}`;
+  return generation <= 1 ? undefined : `generation ${String(generation)}`;
 }
 
 function runStageKey(summary: ExecutionSummary): string {
