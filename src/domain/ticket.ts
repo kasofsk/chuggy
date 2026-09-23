@@ -478,9 +478,10 @@ export function executeEvaluationTasks(
   ticket: number,
   instance: EvaluationInstance,
 ): readonly Obligation[] {
-  return currentTaskObligations(instance).map(
-    (task): Obligation => ({ type: "ExecuteTask", value: { ticket, task } }),
-  );
+  return currentTaskObligations(instance).map((task): Obligation => ({
+    type: "ExecuteTask",
+    value: { ticket, task },
+  }));
 }
 
 /** Attempt a finalization, under the configuration the release pinned. */
@@ -500,12 +501,10 @@ export function finalize(
 
 /** Stop every task the fabric is running for this ticket. */
 export function cancelLiveTasks(ticket: Ticket): readonly Obligation[] {
-  return liveTasks(ticket).map(
-    (task): Obligation => ({
-      type: "CancelTask",
-      value: { ticket: ticket.definition.id, task },
-    }),
-  );
+  return liveTasks(ticket).map((task): Obligation => ({
+    type: "CancelTask",
+    value: { ticket: ticket.definition.id, task },
+  }));
 }
 
 /**

@@ -24,7 +24,11 @@ import type {
 } from "./generated/modelTypes.ts";
 import { resumeBlocked } from "./evaluation.ts";
 import { asTicketId, type TicketId } from "./ids.ts";
-import { taskIdentityEquals, taskObligationEquals, workTaskOf } from "./task.ts";
+import {
+  taskIdentityEquals,
+  taskObligationEquals,
+  workTaskOf,
+} from "./task.ts";
 import { freshTicket } from "./deciders.ts";
 import {
   applyEvaluationReport,
@@ -122,19 +126,20 @@ function onCurrentAttempt(
   );
 }
 
-/** One ticket under one event, each arm applying only to a ticket that still owes it. */
-export function evolveTicket(ticket: Ticket, event: TicketEvent): Ticket {
+/** A resume, which moves only a ticket parked at a wall that resumes this way. */
+function evolveResume(
+  ticket: Ticket,
+  event: Extract<
+    TicketEvent,
+    {
+      readonly type:
+        | "TicketWorkResumed"
+        | "TicketEvaluationResumed"
+        | "TicketFinalizationResumed";
+    }
+  >,
+): Ticket {
   switch (event.type) {
-    case "TicketCreated":
-      return ticket;
-    case "TicketDispatched":
-      return ticket.phase === "Pending"
-        ? { ...enterWork(ticket), source: event.value.source }
-        : ticket;
-    case "TicketRevoked":
-      return revocationAllowed(ticket.phase)
-        ? { ...ticket, phase: "Revoked", escalation: "NoEscalation" }
-        : ticket;
     case "TicketWorkResumed":
       return ticket.phase === "Escalated" &&
         (ticket.escalation === "WorkFailureEscalated" ||
@@ -161,38 +166,25 @@ export function evolveTicket(ticket: Ticket, event: TicketEvent): Ticket {
             finalizationGeneration: ticket.finalizationGeneration + 1,
           }
         : ticket;
-    case "TicketWorkResultAccepted": {
-      const accepted = event.value;
-      if (
-        ticket.phase !== "Work" ||
-        !taskObligationEquals(
-          accepted.result.obligation,
-          workTaskObligation(ticket, ticket.workCyclesStarted),
-        )
-      )
-        return ticket;
-      return spawnEvalRun({
-        ...ticket,
-        phase: "Evaluation",
-        source: accepted.acceptedSourceRef,
-        evaluations: [
-          ...ticket.evaluations,
-          begunInstance(
-            ticket,
-            accepted.result.resultRef,
-            accepted.acceptedSourceRef,
-          ),
-        ],
-      });
+  }
+}
+
+/** A judgement's report, which moves only an instance still awaiting the reported task. */
+function evolveJudgement(
+  ticket: Ticket,
+  event: Extract<
+    TicketEvent,
+    {
+      readonly type:
+        | "TicketEvaluationProgressed"
+        | "TicketEvaluationPassed"
+        | "TicketEvaluationReworkStarted"
+        | "TicketEvaluationFailureEscalated"
+        | "TicketEvaluationBlocked";
     }
-    case "TicketWorkProcessFailed":
-      return onCurrentWork(ticket, event.value)
-        ? park(ticket, "WorkFailureEscalated")
-        : ticket;
-    case "TicketWorkExecutionUnavailable":
-      return onCurrentWork(ticket, event.value)
-        ? park(ticket, "WorkExecutionUnavailableEscalated")
-        : ticket;
+  >,
+): Ticket {
+  switch (event.type) {
     case "TicketEvaluationProgressed":
       return evolveEvaluation(
         ticket,
@@ -238,6 +230,23 @@ export function evolveTicket(ticket: Ticket, event: TicketEvent): Ticket {
         (advanced) =>
           park(withInstance(ticket, advanced), "EvaluationBlockedEscalated"),
       );
+  }
+}
+
+/** A finalizer's report, which moves only the attempt the ticket is on. */
+function evolveFinalization(
+  ticket: Ticket,
+  event: Extract<
+    TicketEvent,
+    {
+      readonly type:
+        | "TicketFinalizationSucceeded"
+        | "TicketFinalizationNeedsWork"
+        | "TicketFinalizationUnavailable";
+    }
+  >,
+): Ticket {
+  switch (event.type) {
     case "TicketFinalizationSucceeded":
       return onCurrentAttempt(ticket, event.value)
         ? { ...ticket, phase: "Done", completions: ticket.completions + 1 }
@@ -248,6 +257,68 @@ export function evolveTicket(ticket: Ticket, event: TicketEvent): Ticket {
       return onCurrentAttempt(ticket, event.value)
         ? park(ticket, "FinalizationUnavailableEscalated")
         : ticket;
+  }
+}
+
+/** One ticket under one event, each arm applying only to a ticket that still owes it. */
+export function evolveTicket(ticket: Ticket, event: TicketEvent): Ticket {
+  switch (event.type) {
+    case "TicketCreated":
+      return ticket;
+    case "TicketDispatched":
+      return ticket.phase === "Pending"
+        ? { ...enterWork(ticket), source: event.value.source }
+        : ticket;
+    case "TicketRevoked":
+      return revocationAllowed(ticket.phase)
+        ? { ...ticket, phase: "Revoked", escalation: "NoEscalation" }
+        : ticket;
+    case "TicketWorkResumed":
+    case "TicketEvaluationResumed":
+    case "TicketFinalizationResumed":
+      return evolveResume(ticket, event);
+    case "TicketWorkResultAccepted": {
+      const accepted = event.value;
+      if (
+        ticket.phase !== "Work" ||
+        !taskObligationEquals(
+          accepted.result.obligation,
+          workTaskObligation(ticket, ticket.workCyclesStarted),
+        )
+      )
+        return ticket;
+      return spawnEvalRun({
+        ...ticket,
+        phase: "Evaluation",
+        source: accepted.acceptedSourceRef,
+        evaluations: [
+          ...ticket.evaluations,
+          begunInstance(
+            ticket,
+            accepted.result.resultRef,
+            accepted.acceptedSourceRef,
+          ),
+        ],
+      });
+    }
+    case "TicketWorkProcessFailed":
+      return onCurrentWork(ticket, event.value)
+        ? park(ticket, "WorkFailureEscalated")
+        : ticket;
+    case "TicketWorkExecutionUnavailable":
+      return onCurrentWork(ticket, event.value)
+        ? park(ticket, "WorkExecutionUnavailableEscalated")
+        : ticket;
+    case "TicketEvaluationProgressed":
+    case "TicketEvaluationPassed":
+    case "TicketEvaluationReworkStarted":
+    case "TicketEvaluationFailureEscalated":
+    case "TicketEvaluationBlocked":
+      return evolveJudgement(ticket, event);
+    case "TicketFinalizationSucceeded":
+    case "TicketFinalizationNeedsWork":
+    case "TicketFinalizationUnavailable":
+      return evolveFinalization(ticket, event);
   }
 }
 

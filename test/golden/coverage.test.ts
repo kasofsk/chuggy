@@ -70,7 +70,9 @@ test("every event the model declares is carried somewhere in the corpus", () => 
 });
 
 /** The obligation arms a decision owes, in order. */
-function owed(decision: SuccessfulTicketDecision): readonly Obligation["type"][] {
+function owed(
+  decision: SuccessfulTicketDecision,
+): readonly Obligation["type"][] {
   return decision.obligations.map((obligation) => obligation.type);
 }
 

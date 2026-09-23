@@ -174,7 +174,14 @@ test("a golden decodes into states whose variables are readable by name", () => 
     lastStep,
     "a trace with no lastStep variable is not this machine's",
   );
-  assert.equal(field(stateValue(first, lastStep), "label"), "init");
+  const initial = stateValue(first, lastStep);
+  assert.ok(
+    typeof initial === "object" &&
+      !Array.isArray(initial) &&
+      initial.kind === "variant" &&
+      initial.tag === "NoDecision",
+    "the initial state records no decision",
+  );
 });
 
 test("a trace missing its vars array is refused", () => {

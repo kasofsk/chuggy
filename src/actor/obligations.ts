@@ -31,7 +31,10 @@ import {
 } from "./world.ts";
 
 /** The one signature every obligation has: a predicate over the actor's own state. */
-export type RefinementObligation = (config: Config, state: ActorState) => boolean;
+export type RefinementObligation = (
+  config: Config,
+  state: ActorState,
+) => boolean;
 
 /** One obligation under the name `model/refinement.qnt` declares it by. */
 export interface NamedObligation {
@@ -67,7 +70,10 @@ export const executorSound: RefinementObligation = (_config, state) => {
  * the ticket. A corollary of legality plus recovery on any reachable state,
  * stated anyway so a mutant journal is caught by name.
  */
-export const journalCompletionsMatchLedger: RefinementObligation = (_config, state) =>
+export const journalCompletionsMatchLedger: RefinementObligation = (
+  _config,
+  state,
+) =>
   liveTickets(memoryGraph(state)).every(
     (ticket) =>
       journalCompletions(state, ticket) ===

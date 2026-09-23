@@ -29,7 +29,19 @@ export function isSpawnFor(event: TicketEvent, ticket: TicketId): boolean {
     case "TicketEvaluationReworkStarted":
     case "TicketFinalizationNeedsWork":
       return true;
-    default:
+    case "TicketCreated":
+    case "TicketRevoked":
+    case "TicketEvaluationResumed":
+    case "TicketFinalizationResumed":
+    case "TicketWorkResultAccepted":
+    case "TicketWorkProcessFailed":
+    case "TicketWorkExecutionUnavailable":
+    case "TicketEvaluationProgressed":
+    case "TicketEvaluationPassed":
+    case "TicketEvaluationFailureEscalated":
+    case "TicketEvaluationBlocked":
+    case "TicketFinalizationSucceeded":
+    case "TicketFinalizationUnavailable":
       return false;
   }
 }
