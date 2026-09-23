@@ -20,10 +20,11 @@ module chuggy_witness_resume_test {
   /// now: the state is what says which obligation that is, so the builder
   /// reads it rather than take it.
   def judged(j: int, task: TaskIdentity, v: EvaluationVerdict): TaskTerminalReport =
-    EvaluationResultReport({ result: producedResult(tickets.get(j), task),
-      verdict: v })
+    EvaluationResultReport({ ticket: j,
+      result: producedResult(tickets.get(j), task), verdict: v })
   pure def walled(task: TaskIdentity): TaskTerminalReport =
-    TerminalFailureReport({ failure: { task: task, evidence: taskRefOf(task) },
+    TerminalFailureReport({ ticket: taskOwner(task),
+      failure: { task: task, evidence: taskRefOf(task) },
       kind: ExecutionUnavailableFailure })
   pure def statusOf(jb: Ticket, evaluator: int): EvaluatorStatus =
     match currentInstance(jb).state {
@@ -38,21 +39,24 @@ module chuggy_witness_resume_test {
   action release(j: int, dependencies: Set[int], stages: List[StageDefinition]): bool = all {
     releasableIds.contains(j), dependencies.subseteq(dependableTickets),
     validPlans.contains(stages),
-    apply(decideReleaseTicket(graph, releasedTicketOf(j, dependencies, stages))) }
+    take(CreateTicket(releasedTicketOf(j, dependencies, stages)),
+      unaskedDisposition) }
   action doDispatch(j: int): bool =
     nondet source = dispatchSources.oneOf()
-    all { readyTickets.contains(j), apply(decideDispatch(graph, j, source)) }
+    all { readyTickets.contains(j),
+      take(DispatchTicket({ ticket: j, source: source }), unaskedDisposition) }
   action done(j: int, task: TaskIdentity, report: TaskTerminalReport): bool = all {
     completableTickets.contains(j), liveTasks(tickets.get(j)).contains(task),
     reportChoices(tickets.get(j), task).contains(report),
-    apply(decideTaskDone(graph,j,task,report,_ => ReworkEvaluationFailure)) }
+    take(ReportTaskTerminal(report), ReworkEvaluationFailure) }
   /// A WORK COMPLETION: the source the application accepted the result at
   /// is the environment's, so the driver draws it where the machine does.
   action doneProduced(j: int, task: TaskIdentity): bool =
     nondet accepted = acceptedSources.oneOf()
-    done(j, task, WorkResultReport({
+    done(j, task, WorkResultReport({ ticket: j,
       result: producedResult(tickets.get(j), task), acceptedSourceRef: accepted }))
-  action resume(j: int): bool = all { retryableEscalated.contains(j), apply(decideResumeTicket(graph,j)) }
+  action resume(j: int): bool = all { retryableEscalated.contains(j),
+    take(ResumeTicket(j), unaskedDisposition) }
 
   /// A WORK TASK'S WALL parks the ticket in the completion itself: a work
   /// cycle is one task, so nothing is left to wait for. Its resume buys a
@@ -148,26 +152,27 @@ module chuggy_witness_rework_test {
   pure val p = [{ key: 1, evaluators: [evaluatorOf(1)] }]
   action release(j: int): bool = all {
     releasableIds.contains(j), validPlans.contains(p),
-    apply(decideReleaseTicket(graph, releasedTicketOf(j, Set(), p))) }
+    take(CreateTicket(releasedTicketOf(j, Set(), p)), unaskedDisposition) }
   action doDispatch(j: int): bool =
     nondet source = dispatchSources.oneOf()
-    all { readyTickets.contains(j), apply(decideDispatch(graph, j, source)) }
+    all { readyTickets.contains(j),
+      take(DispatchTicket({ ticket: j, source: source }), unaskedDisposition) }
   action doneWork(j: int, task: TaskIdentity): bool =
     nondet accepted = acceptedSources.oneOf()
     all {
       completableTickets.contains(j), liveTasks(tickets.get(j)).contains(task),
-      apply(decideTaskDone(graph, j, task,
-        WorkResultReport({ result: producedResult(tickets.get(j), task),
-          acceptedSourceRef: accepted }),
-        _ => ReworkEvaluationFailure)) }
+      take(ReportTaskTerminal(WorkResultReport({ ticket: j,
+          result: producedResult(tickets.get(j), task),
+          acceptedSourceRef: accepted })),
+        ReworkEvaluationFailure) }
   action judge(j: int, task: TaskIdentity, v: EvaluationVerdict,
       d: EvaluationFailureDisposition): bool = all {
     completableTickets.contains(j), liveTasks(tickets.get(j)).contains(task),
     dispositionChoices.contains(d),
-    apply(decideTaskDone(graph, j, task,
-      EvaluationResultReport({ result: producedResult(tickets.get(j), task),
-        verdict: v }), _ => d)) }
-  action resume(j: int): bool = all { retryableEscalated.contains(j), apply(decideResumeTicket(graph,j)) }
+    take(ReportTaskTerminal(EvaluationResultReport({ ticket: j,
+      result: producedResult(tickets.get(j), task), verdict: v })), d) }
+  action resume(j: int): bool = all { retryableEscalated.contains(j),
+    take(ResumeTicket(j), unaskedDisposition) }
 
   /// Rework: the failing stage re-enters Work directly, as a new cycle
   /// with a fresh work task, and the instance that failed is kept.
@@ -208,23 +213,24 @@ module chuggy_witness_stage_test {
   import chuggy_domain(N_TICKETS=1, N_TASKS=2, MAX_STAGES=2).* from "../domain"
   pure val p = [{ key: 1, evaluators: [evaluatorOf(1)] },
                 { key: 2, evaluators: [evaluatorOf(1)] }]
-  action release: bool = apply(decideReleaseTicket(graph, releasedTicketOf(2, Set(), p)))
+  action release: bool =
+    take(CreateTicket(releasedTicketOf(2, Set(), p)), unaskedDisposition)
   action doDispatch: bool =
     nondet source = dispatchSources.oneOf()
-    all { readyTickets.contains(2), apply(decideDispatch(graph, 2, source)) }
+    all { readyTickets.contains(2),
+      take(DispatchTicket({ ticket: 2, source: source }), unaskedDisposition) }
   action doneWork(task: TaskIdentity): bool =
     nondet accepted = acceptedSources.oneOf()
     all {
       liveTasks(tickets.get(2)).contains(task),
-      apply(decideTaskDone(graph, 2, task,
-        WorkResultReport({ result: producedResult(tickets.get(2), task),
-          acceptedSourceRef: accepted }), _ => ReworkEvaluationFailure)) }
+      take(ReportTaskTerminal(WorkResultReport({ ticket: 2,
+        result: producedResult(tickets.get(2), task),
+        acceptedSourceRef: accepted })), ReworkEvaluationFailure) }
   action pass(task: TaskIdentity): bool = all {
     liveTasks(tickets.get(2)).contains(task),
-    apply(decideTaskDone(graph, 2, task,
-      EvaluationResultReport({ result: producedResult(tickets.get(2), task),
-        verdict: EvaluatorPass }),
-      _ => ReworkEvaluationFailure)) }
+    take(ReportTaskTerminal(EvaluationResultReport({ ticket: 2,
+      result: producedResult(tickets.get(2), task),
+      verdict: EvaluatorPass })), ReworkEvaluationFailure) }
   run stagedPlanWitness = init.then(release).then(doDispatch)
     .then(doneWork(workTaskOf(2, 1)))
     .then(pass(evaluatorTaskIdentity(2, 1, 1, 1, 1)))
@@ -248,7 +254,7 @@ module chuggy_witness_sparse_test {
   pure val pWide = [{ key: 1, evaluators: [evaluatorOf(1), evaluatorOf(2)] }]
   action release(j:int, stages: List[StageDefinition]): bool = all {
     releasableIds.contains(j), validPlans.contains(stages),
-    apply(decideReleaseTicket(graph, releasedTicketOf(j, Set(), stages))) }
+    take(CreateTicket(releasedTicketOf(j, Set(), stages)), unaskedDisposition) }
   run ticketLocalPolicyWitness = init
     .then(release(1,pNarrow))
     .then(release(4,pWide))
@@ -263,38 +269,64 @@ module chuggy_witness_gate_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2, N_TASKS=1, MAX_STAGES=1).* from "../domain"
   pure val p=[{key:1,evaluators:[evaluatorOf(1)]}]
-  action release(j:int):bool=apply(decideReleaseTicket(graph, releasedTicketOf(j, Set(), p)))
+  action releaseOn(j:int,dependencies:Set[int]):bool=all{releasableIds.contains(j),
+    dependencies.subseteq(dependableTickets),
+    take(CreateTicket(releasedTicketOf(j, dependencies, p)), unaskedDisposition)}
+  action release(j:int):bool=releaseOn(j, Set())
   action doDispatch(j:int):bool=
     nondet source = dispatchSources.oneOf()
-    all{readyTickets.contains(j),apply(decideDispatch(graph, j, source))}
+    all{readyTickets.contains(j),
+      take(DispatchTicket({ticket: j, source: source}), unaskedDisposition)}
   action td(j:int,task:TaskIdentity):bool=
     nondet accepted = acceptedSources.oneOf()
     all{liveTasks(tickets.get(j)).contains(task),
-      apply(decideTaskDone(graph,j,task,
-        WorkResultReport({result: producedResult(tickets.get(j), task),
-          acceptedSourceRef: accepted}),
-        _ => ReworkEvaluationFailure))}
+      take(ReportTaskTerminal(WorkResultReport({ticket: j,
+          result: producedResult(tickets.get(j), task),
+          acceptedSourceRef: accepted})),
+        ReworkEvaluationFailure)}
   action pass(j:int,task:TaskIdentity):bool=all{liveTasks(tickets.get(j)).contains(task),
-    apply(decideTaskDone(graph,j,task,
-      EvaluationResultReport({result: producedResult(tickets.get(j), task),
-        verdict: EvaluatorPass}),
-      _ => ReworkEvaluationFailure))}
-  action resolve(j:int,o:FinalizationOutcome):bool=all{tickets.get(j).phase==Finalization,apply(decideFinalizationResult(graph,j,o,aFinalizationEvidence))}
+    take(ReportTaskTerminal(EvaluationResultReport({ticket: j,
+        result: producedResult(tickets.get(j), task),
+        verdict: EvaluatorPass})),
+      ReworkEvaluationFailure)}
+  /// The finalizer's result for the attempt the ticket is on.
+  action resolve(j:int,o:int => FinalizationResult):bool=all{
+    finalizerTickets.contains(j),
+    take(ReportFinalizationResult({ticket: j,
+        workCycle: tickets.get(j).workCyclesStarted,
+        generation: tickets.get(j).finalizationGeneration,
+        result: o(aFinalizationEvidence)}),
+      unaskedDisposition)}
+  /// A command out of turn, drawn where the machine's `refuse` draws it:
+  /// the machine answers it with the refusal and moves nothing.
+  action refuseWith(command:TicketCommand):bool=all{
+    refusedCommands.contains(command),
+    take(command, unaskedDisposition)}
+  /// The step refused with exactly this, and left the tickets standing.
+  def refusedWith(reason:TicketRefusal):bool=and{
+    lastStep==Refused(reason), tickets==prevTickets, allInvariants}
   run finalizationSuccessWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
     .expect(and{tickets.get(1).phase==Finalization,lastEvent=="TicketEvaluationPassed",
       lastObligations==[finalize(tickets.get(1),finalizationOperationOf(tickets.get(1)))],
       not(revocableTickets.contains(1)),allInvariants})
-    .then(resolve(1,FinalizationSucceeded)).expect(and{tickets.get(1).phase==Done,allInvariants})
+    .then(resolve(1,e => FinalizationSucceeded(e))).expect(and{tickets.get(1).phase==Done,allInvariants})
 
   /// A finalizer that reports failure sends the ticket back to work, every
   /// time: there is no wall on this edge. The second cycle's judgement is a
   /// SECOND instance, which is what makes the history a list.
   run safeAbortReworkWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
-    .then(resolve(1,FinalizationNeedsWork)).expect(and{tickets.get(1).phase==Work,
+    .then(resolve(1,e => FinalizationNeedsWork(e))).expect(and{tickets.get(1).phase==Work,
       lastEvent=="TicketFinalizationNeedsWork",allInvariants})
+    // A failure for the cycle the rework replaced names no task the ticket
+    // owes.
+    .then(refuseWith(ReportTaskTerminal(failureReportOf(1,workTaskOf(1,1)))))
+    .expect(refusedWith(TaskNotCurrent({ticket:1,task:workTaskOf(1,1)})))
     .then(td(1,workTaskOf(1,2))).then(pass(1,evaluatorTaskIdentity(1,2,1,1,1)))
     .expect(and{tickets.get(1).evaluations.length()==2,allInvariants})
-    .then(resolve(1,FinalizationNeedsWork)).expect(and{tickets.get(1).phase==Work,
+    // A result for the first cycle's attempt is fenced by the cycle.
+    .then(refuseWith(finalizationReportOf(1,1,1)))
+    .expect(refusedWith(FinalizationNotCurrent({ticket:1,workCycle:1,generation:1})))
+    .then(resolve(1,e => FinalizationNeedsWork(e))).expect(and{tickets.get(1).phase==Work,
       lastEvent=="TicketFinalizationNeedsWork",allInvariants})
 
   /// A finalizer that reaches NO result parks the ticket, and the desk's
@@ -302,9 +334,10 @@ module chuggy_witness_gate_test {
   /// it interrupted, and the only exit a held finalization has: Finalization
   /// is neither revocable nor retryable, so before this wall the ticket sat
   /// there until the environment moved.
-  action resume(j:int):bool=all{retryableEscalated.contains(j),apply(decideResumeTicket(graph,j))}
+  action resume(j:int):bool=all{retryableEscalated.contains(j),
+    take(ResumeTicket(j), unaskedDisposition)}
   run finalizationUnavailableWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
-    .then(resolve(1,FinalizationResultUnavailable)).expect(and{tickets.get(1).phase==Escalated,
+    .then(resolve(1,e => FinalizationResultUnavailable(e))).expect(and{tickets.get(1).phase==Escalated,
       lastEvent=="TicketFinalizationUnavailable",
       tickets.get(1).escalation==FinalizationUnavailableEscalated,
       resumeOf(tickets.get(1).escalation)==ResumeFinalization,
@@ -312,10 +345,43 @@ module chuggy_witness_gate_test {
     .then(resume(1)).expect(and{tickets.get(1).phase==Finalization,
       lastEvent=="TicketFinalizationResumed",tickets.get(1).finalizationGeneration==2,
       tickets.get(1).escalation==NoEscalation,allInvariants})
-    .then(resolve(1,FinalizationSucceeded)).expect(and{tickets.get(1).phase==Done,allInvariants})
+    // A result for the attempt the resume superseded is fenced by the
+    // generation.
+    .then(refuseWith(finalizationReportOf(1,1,1)))
+    .expect(refusedWith(FinalizationNotCurrent({ticket:1,workCycle:1,generation:1})))
+    .then(resolve(1,e => FinalizationSucceeded(e))).expect(and{tickets.get(1).phase==Done,allInvariants})
 
   run revokeBoundaryWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
     .expect(and{not(revocableTickets.contains(1)),allInvariants})
+    .then(refuseWith(RevokeTicket(1)))
+    .expect(refusedWith(TicketNotRevocable(1)))
+
+  /// EVERY REFUSAL THIS INSTANCE CAN REACH, each drawn where `refuse` draws
+  /// it (commandProbesIn), each answered with its own payload and nothing
+  /// moved. The three that only an update can meet are declared and not
+  /// reachable (ticket.qnt TicketRefusal).
+  run refusalsWitness=init.then(release(1))
+    .then(refuseWith(CreateTicket(releasedTicketOf(1,Set(),defaultPlan))))
+    .expect(refusedWith(TicketAlreadyExists(1)))
+    .then(refuseWith(CreateTicket(releasedTicketOf(2,Set(2),defaultPlan))))
+    .expect(refusedWith(SelfDependency(2)))
+    .then(refuseWith(CreateTicket(releasedTicketOf(2,Set(3,4),defaultPlan))))
+    .expect(refusedWith(DependenciesNotFound({ticket:2,dependencies:Set(3,4)})))
+    .then(refuseWith(RevokeTicket(3)))
+    .expect(refusedWith(TicketNotFound(3)))
+    .then(refuseWith(ResumeTicket(1)))
+    .expect(refusedWith(TicketNotResumable(1)))
+    .then(releaseOn(2,Set(1)))
+    .then(refuseWith(DispatchTicket({ticket:2,source:aDispatchSource})))
+    .expect(refusedWith(DependenciesIncomplete({ticket:2,dependencies:Set(1)})))
+    .then(doDispatch(1))
+    .then(refuseWith(DispatchTicket({ticket:1,source:aDispatchSource})))
+    .expect(refusedWith(TicketNotPending(1)))
+    .then(td(1,workTaskOf(1,1)))
+    .then(refuseWith(ReportTaskTerminal(failureReportOf(1,workTaskOf(1,1)))))
+    .expect(refusedWith(TaskNotCurrent({ticket:1,task:workTaskOf(1,1)})))
+    .then(refuseWith(finalizationReportOf(1,1,1)))
+    .expect(refusedWith(FinalizationNotCurrent({ticket:1,workCycle:1,generation:1})))
 }
 
 /// Former release candidate-wait slot: dependency admission requires an already-existing id.
@@ -325,7 +391,7 @@ module chuggy_witness_dependency_test {
   import chuggy_domain(N_TICKETS=2,N_TASKS=1,MAX_STAGES=1).* from "../domain"
   pure val p=[{key:1,evaluators:[evaluatorOf(1)]}]
   run existingDependencyWitness=init
-    .then(apply(decideReleaseTicket(graph, releasedTicketOf(4, Set(), p))))
-    .then(apply(decideReleaseTicket(graph, releasedTicketOf(1, Set(4), p))))
+    .then(take(CreateTicket(releasedTicketOf(4, Set(), p)), unaskedDisposition))
+    .then(take(CreateTicket(releasedTicketOf(1, Set(4), p)), unaskedDisposition))
     .expect(and{tickets.keys()==Set(1,4),tickets.get(1).definition.dependencies==Set(4),isBlocked(1),allInvariants})
 }

@@ -98,20 +98,29 @@ module chuggy_ticket {
   type FailureKind = ProcessFailure | ExecutionUnavailableFailure
 
   /// WHAT COMES BACK FOR ONE TASK — the completion's payload, in the
-  /// package's three arms, each minus the `ticket` the command and the event
-  /// carry beside it. Each produced arm carries the contract's VALIDATED
-  /// RESULT: the full obligation the task was spawned under and the
+  /// package's three arms. Each names the ticket it reports for, which is
+  /// what lets the command be decided and the event carrying the report be
+  /// applied with nothing beside it. Each produced arm carries the contract's
+  /// VALIDATED RESULT: the full obligation the task was spawned under and the
   /// reference it produced under it. A work result also carries the source
   /// the application accepted it at; an evaluator's carries its verdict
   /// instead; a task that reached no result reports the contract's FAILURE —
-  /// the task and the evidence — and its kind. Every arm names its task,
-  /// which is what lets an event carrying the report be applied without the
-  /// command that decided it.
+  /// the task and the evidence — and its kind.
   type TaskTerminalReport =
-      WorkResultReport({ result: ValidatedTaskResult, acceptedSourceRef: int })
-    | EvaluationResultReport({ result: ValidatedTaskResult,
+      WorkResultReport({ ticket: int, result: ValidatedTaskResult,
+        acceptedSourceRef: int })
+    | EvaluationResultReport({ ticket: int, result: ValidatedTaskResult,
         verdict: EvaluationVerdict })
-    | TerminalFailureReport({ failure: TaskFailure, kind: FailureKind })
+    | TerminalFailureReport({ ticket: int, failure: TaskFailure,
+        kind: FailureKind })
+
+  /// THE TICKET A REPORT IS FOR, whichever arm it is (the package's
+  /// reportTicket).
+  pure def reportTicket(report: TaskTerminalReport): int = match report {
+    | WorkResultReport(work) => work.ticket
+    | EvaluationResultReport(evaluation) => evaluation.ticket
+    | TerminalFailureReport(failure) => failure.ticket
+  }
 
   /// THE TASK A REPORT IS ABOUT, whichever arm it is (the package's
   /// reportTask).
@@ -121,18 +130,19 @@ module chuggy_ticket {
     | TerminalFailureReport(failed) => failed.failure.task
   }
 
-  /// A REPORT IS WELL-FORMED when every reference it carries is a real one.
-  /// The instance holds the same line on its own side (evaluation.qnt
-  /// stageRunInvariant demands a positive reference in every settled
-  /// status), so a report admitted here cannot make a run ill-formed.
+  /// A REPORT IS WELL-FORMED when it names a ticket and every reference it
+  /// carries is a real one (the package's reportValid). The instance holds
+  /// the same line on its own side (evaluation.qnt stageRunInvariant demands
+  /// a positive reference in every settled status), so a report admitted
+  /// here cannot make a run ill-formed.
   pure def reportValid(report: TaskTerminalReport): bool = match report {
-    | WorkResultReport(produced) =>
-      terminalValid(TaskResultProduced(produced.result))
-        and produced.acceptedSourceRef > 0
-    | EvaluationResultReport(produced) =>
-      terminalValid(TaskResultProduced(produced.result))
-    | TerminalFailureReport(failed) =>
-      terminalValid(TaskProcessFailed(failed.failure))
+    | WorkResultReport(work) => work.ticket > 0 and work.acceptedSourceRef > 0
+        and terminalValid(TaskResultProduced(work.result))
+    | EvaluationResultReport(evaluation) => evaluation.ticket > 0
+        and terminalValid(TaskResultProduced(evaluation.result))
+    | TerminalFailureReport(failure) => failure.ticket > 0
+        and failure.failure.evidence > 0
+        and taskIdentityValid(failure.failure.task)
   }
 
   /// THE REPORT APPLIED TO AN INSTANCE — the package's applyEvaluationReport
@@ -166,7 +176,7 @@ module chuggy_ticket {
     taskCurrent(evaluation, reportTask(report))
 
   /// WHAT AN EVALUATION FAILURE DOES. The machine consults this at every
-  /// failing stage (domain.qnt decideEvalTaskDone) and takes exactly one of
+  /// failing stage (domain.qnt decideEvaluationTerminal) and takes exactly one of
   /// two edges: Rework re-enters Work as a new cycle; Escalate parks the
   /// ticket on the desk, where the operator's resume re-enters Work the same
   /// way. The machine does not choose between them — the policy is an INPUT
@@ -252,23 +262,40 @@ module chuggy_ticket {
       | FinalizationUnavailableEscalated => ResumeFinalization
     }
 
-  /// How a finalization attempt resolves. ONE success, deliberately: an earlier
-  /// model named two, because a merge promotes differently depending on
-  /// whether it went through the gate — and *which* mechanism a merge uses
-  /// is a property of the merge adapter, not of the machine. The domain
-  /// knows only that the step succeeded, failed, or could not be taken.
+  /// How a finalization attempt resolves, each carrying the evidence the
+  /// finalizer returned. ONE success, deliberately: *which* mechanism a
+  /// merge uses is a property of the merge adapter, not of the machine. The
+  /// domain knows only that the step succeeded, failed, or could not be
+  /// taken.
   ///   - FinalizationSucceeded  the step committed the artifact.
-  ///   - FinalizationNeedsWork     it did not, and is drawable only when the
-  ///                            environment invalidated the artifact
-  ///                            (domain.qnt finalizationOutcomes).
+  ///   - FinalizationNeedsWork  it did not, and new work is the way on.
   ///   - FinalizationResultUnavailable
   ///                            it reached no result: the artifact is intact
   ///                            and untried, and what stood in the way is
   ///                            outside the ticket. Distinct from NeedsWork
   ///                            because new work would change nothing.
-  type FinalizationOutcome =
-    FinalizationSucceeded | FinalizationNeedsWork |
-    FinalizationResultUnavailable
+  type FinalizationResult =
+    FinalizationSucceeded(int)
+    | FinalizationNeedsWork(int)
+    | FinalizationResultUnavailable(int)
+
+  pure def finalizationResultValid(result: FinalizationResult): bool =
+    match result {
+      | FinalizationSucceeded(evidence) => evidence > 0
+      | FinalizationNeedsWork(evidence) => evidence > 0
+      | FinalizationResultUnavailable(evidence) => evidence > 0
+    }
+
+  /// A FINALIZER'S REPORT, as the attempt it answers: the ticket, the work
+  /// cycle and the generation it was asked under, and what came back. The
+  /// attempt is the report's own, so a result for one a resume superseded is
+  /// told apart from the current one (domain.qnt decideFinalizationResult).
+  type FinalizationResultReport = {
+    ticket: int,
+    workCycle: int,
+    generation: int,
+    result: FinalizationResult
+  }
 
   /// WHAT A TICKET PRODUCED (design 002): an opaque identity for the thing
   /// work built, that evaluation judged, and that wrap-up commits. Its only
@@ -493,15 +520,90 @@ module chuggy_ticket {
     | FinalizeTicket(FinalizationObligation)
     | CancelTask(TaskCancellation)
 
-  /// What a decider returns: the event, and what it owes.
+  /// What a decider returns when it accepts: the event, and what it owes.
   type SuccessfulTicketDecision = {
     event: TicketEvent,
     obligations: List[Obligation]
   }
 
+  // === Commands, refusals and the decision (the package's, verbatim) =======
+
+  /// WHAT THE MACHINE IS ASKED — the decider's input, one arm per thing a
+  /// principal or the fabric can ask of a ticket: release one, dispatch it at
+  /// the source the application observed, revoke or resume it, report what a
+  /// task came back with, report what a finalizer did. The package's
+  /// `UpdateTicket` arrives with the ticket's revision. A command is never
+  /// journaled: `decide` turns it into the event the journal keeps, or into
+  /// a refusal nothing keeps.
+  type TicketCommand =
+    CreateTicket(ReleasedTicket)
+    | DispatchTicket({ ticket: int, source: int })
+    | RevokeTicket(int)
+    | ResumeTicket(int)
+    | ReportTaskTerminal(TaskTerminalReport)
+    | ReportFinalizationResult(FinalizationResultReport)
+
+  /// Which dependencies a refusal is about: the ones a release named that do
+  /// not exist, or the ones a dispatch found not Done.
+  type IncompleteDependencies = {
+    ticket: int,
+    dependencies: Set[int]
+  }
+
+  /// The task a report named that its ticket does not owe.
+  type CurrentTaskRefusal = {
+    ticket: int,
+    task: TaskIdentity
+  }
+
+  /// The finalization attempt a report named that its ticket is not on.
+  type CurrentFinalizationRefusal = {
+    ticket: int,
+    workCycle: int,
+    generation: int
+  }
+
+  /// The revision an update expected, beside the one the ticket holds.
+  type StaleRevision = {
+    ticket: int,
+    expected: int,
+    current: int
+  }
+
+  /// WHY THE MACHINE WOULD NOT — one arm per check a decider makes, each
+  /// carrying the numbers it found. The first check that fails names the
+  /// refusal, so each decider's order is the package's.
+  /// TicketIdentityMismatch, TicketRevisionStale and
+  /// TicketDependenciesChanged are declared for the package's UpdateTicket,
+  /// which no command here carries, so nothing reaches them yet.
+  type TicketRefusal =
+    TicketAlreadyExists(int)
+    | DependenciesNotFound(IncompleteDependencies)
+    | SelfDependency(int)
+    | TicketNotFound(int)
+    | TicketNotPending(int)
+    | TicketIdentityMismatch(int)
+    | TicketRevisionStale(StaleRevision)
+    | TicketDependenciesChanged(int)
+    | DependenciesIncomplete(IncompleteDependencies)
+    | TicketNotRevocable(int)
+    | TicketNotResumable(int)
+    | TaskNotCurrent(CurrentTaskRefusal)
+    | FinalizationNotCurrent(CurrentFinalizationRefusal)
+
+  /// WHAT `decide` RETURNS: a refusal, or the event and what it owes. A
+  /// refusal changes nothing and is journaled nowhere.
+  type TicketDecision =
+    TicketRefused(TicketRefusal)
+    | TicketDecided(SuccessfulTicketDecision)
+
   /// THE MACHINE'S LAST DECISION, as the golden traces record it: none before
-  /// the first, and the last one taken after it.
-  type LastDecision = NoDecision | Decided(SuccessfulTicketDecision)
+  /// the first, and after it the last one taken — an accepted command's
+  /// event and obligations, or a refused command's refusal.
+  type LastDecision =
+    NoDecision
+    | Decided(SuccessfulTicketDecision)
+    | Refused(TicketRefusal)
 
   // === Vocabulary helpers (task plumbing shared by machine and tests) ======
 
@@ -516,8 +618,8 @@ module chuggy_ticket {
   /// the cycle's own identity, the definition the release pinned for work,
   /// and the work CYCLE as the context reference, which is the scope the
   /// application commits the cycle's input bundle under. Every work spawn
-  /// owes exactly this, and a produced work report is admitted only when it
-  /// carries the same record (reportMatchesTask).
+  /// owes exactly this, and a produced work report is accepted only when it
+  /// carries the same record (domain.qnt decideTaskTerminal).
   pure def workTaskObligation(ticket: Ticket, cycleNumber: int): TaskObligation = {
     task: workTaskOf(ticket.definition.id, cycleNumber),
     definition: ticket.definition.workConfiguration,
@@ -717,42 +819,6 @@ module chuggy_ticket {
   /// Whether a list names this task (the package's listHasTask).
   pure def listHasTask(tasks: List[TaskIdentity], task: TaskIdentity): bool =
     tasks.indices().exists(index => tasks[index] == task)
-
-  /// THE EXACT-OBLIGATION RULE: an obligation is current for a task when it
-  /// names that task AND is, field for field, one this ticket owes right now.
-  /// Naming an owed task is not enough — the definition and the context
-  /// reference are what say which spawn the result answers.
-  pure def obligationCurrent(
-      ticket: Ticket, task: TaskIdentity, obligation: TaskObligation): bool =
-    obligation.task == task and
-      liveObligations(ticket).select(owed => owed == obligation).length() > 0
-
-  /// WHICH REPORTS A TASK CAN CARRY: a work task produces a work result, an
-  /// evaluator produces a verdict, and either can fail to produce anything —
-  /// and a produced one is admitted only at the obligation it was spawned
-  /// under. A failure is admitted by identity alone: it carries no result, so
-  /// there is no obligation on it to compare, but the task it names is the
-  /// task the completion names. Stated here because it is the completion's
-  /// enablement (refinement.qnt decisionEventEnabled) rather than something a
-  /// decider defends against mid-flight.
-  pure def reportMatchesTask(
-      ticket: Ticket, task: TaskIdentity,
-      report: TaskTerminalReport): bool =
-    match report {
-      | WorkResultReport(produced) =>
-        match task {
-          | WorkTask(_) =>
-            obligationCurrent(ticket, task, produced.result.obligation)
-          | EvaluationTask(_) => false
-        }
-      | EvaluationResultReport(produced) =>
-        match task {
-          | WorkTask(_) => false
-          | EvaluationTask(_) =>
-            obligationCurrent(ticket, task, produced.result.obligation)
-        }
-      | TerminalFailureReport(failed) => failed.failure.task == task
-    }
 
   /// WHAT A LIVE TASK'S RESULT LOOKS LIKE TO THE MACHINE: the obligation this
   /// ticket owes for it, and the reference producedResultRef derives where

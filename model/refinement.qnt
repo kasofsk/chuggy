@@ -31,8 +31,8 @@
 /// model/{ticket,domain}.qnt or the mc instances reads it, and no
 /// earlier stage of the model gate does. Deleting refinement.qnt and its
 /// tests leaves the rest of the model standing, except that domain.qnt
-/// keeps its pure exports (the TicketGraph-parameterized enablement forms and
-/// the installGraph seam), which the witness drivers use either way.
+/// keeps its pure exports (the TicketGraph-parameterized draw sets, `decide`
+/// and the installGraph seam), which the witness drivers use either way.
 ///
 /// ==========================================================================
 /// THE MACHINE
@@ -76,8 +76,9 @@
 ///                  which is exactly why it cannot be absorbed and why
 ///                  the discipline is load-bearing.
 ///   rlabel       : str — the refinement-layer step label ("actor-step" /
-///                  "emit" / "crash-recover" / "effect-crash-recover"),
-///                  trace visibility only (no invariant reads it).
+///                  "actor-refused" / "emit" / "crash-recover" /
+///                  "effect-crash-recover"), trace visibility only (no
+///                  invariant reads it).
 ///
 /// THE SEAM MODEL. A decision passes through three points — (1) decided,
 /// (2) journaled, (3) effected — and the actor may crash between any
@@ -113,12 +114,10 @@
 ///     tests/chuggy_refinement_test.qnt as the gate.
 ///
 /// THE ACTOR'S DECIDE STEP IS THE DOMAIN DECIDER — structurally. Every
-/// actor action draws its picks from the domain's OWN enablement sets
-/// (the same vals the domain's `step` draws from), and journalStep
-/// executes `decide` = a total dispatch onto the domain's pure deciders,
-/// guarded by `decisionEventEnabled` = the same enablement re-stated over an
-/// explicit TicketGraph (the TicketGraph-parameterized forms hoisted into
-/// domain.qnt — referenced, never copied), and then evolve. The actor cannot
+/// actor action draws its command from the domain's OWN draw sets (the
+/// same vals the domain's `step` draws from), and journalStep takes it
+/// through the domain's own `take`: `decide`, then evolve. A command
+/// `decide` refuses is answered and journals nothing; the actor cannot
 /// journal an event the domain's deciders would not produce from its state:
 /// refinement is structural. It is then ALSO stated as the checked
 /// invariant journalLegal (below), so a mutant actor — or a tampered
@@ -234,7 +233,7 @@
 ///   - The importing module cannot assign the instance's vars from its
 ///     own expressions (evaluator: "Variable not set"); every write to
 ///     the domain vars below therefore routes through the domain's own
-///     actions — `apply` for actor steps (ghost snapshots: a real domain
+///     actions — `take` for actor steps (ghost snapshots: a real domain
 ///     step), `installGraph` for executor/crash steps (ghost stale: not
 ///     a domain step; see its header in domain.qnt).
 ///   - Imports are not re-exported: downstream modules (the tests) see
@@ -261,20 +260,6 @@ module chuggy_refinement {
   // === Vocabulary ===========================================================
   // ==========================================================================
 
-  /// THE DECISION EVENT — the decider's INPUT: which decider, at which
-  /// named picks, one constructor per domain action and its payload exactly
-  /// the action's nondet draws but the policy (the witness-driver discipline
-  /// as data). The inbox holds these; the journal holds what `decide` makes
-  /// of them, so none of these is ever replayed.
-  type DecisionEvent =
-      CreateTicket(ReleasedTicket)
-    | Revoke(int)
-    | Dispatch({ ticket: int, source: int })
-    | TaskDone({ ticket: int, task: TaskIdentity, report: TaskTerminalReport })
-    | FinalizationResult({ ticket: int, out: FinalizationOutcome,
-        evidence: int })
-    | ResumeTicket(int)
-
   /// One journal row: monotone dense seq (entry i carries seq i+1 —
   /// journalLegal checks it) and the event the decision took.
   type Entry = { seq: int, event: TicketEvent }
@@ -289,52 +274,13 @@ module chuggy_refinement {
   // === Decide and replay (pure — this is the payoff) =======================
   // ==========================================================================
 
-  /// Total dispatch onto the domain's pure deciders — THE actor's decide
-  /// step. The policy is asked only by a completion that concludes a failing
-  /// stage, and the event it returns names the edge taken, so nothing after
-  /// this ever asks it again.
-  pure def decide(
-      c: TicketGraph, event: DecisionEvent,
-      failurePolicy: EvaluationFailurePolicy): SuccessfulTicketDecision =
-    match event {
-      | CreateTicket(definition) => decideReleaseTicket(c, definition)
-      | Revoke(j) => decideRevoke(c, j)
-      | Dispatch(a) => decideDispatch(c, a.ticket, a.source)
-      | TaskDone(a) =>
-        decideTaskDone(c, a.ticket, a.task, a.report, failurePolicy)
-      | FinalizationResult(a) =>
-        decideFinalizationResult(c, a.ticket, a.out, a.evidence)
-      | ResumeTicket(j) => decideResumeTicket(c, j)
+  /// The event a decision journals: its own when the command was accepted,
+  /// none when it was refused.
+  pure def decidedEvents(decision: TicketDecision): List[TicketEvent] =
+    match decision {
+      | TicketDecided(d) => [d.event]
+      | TicketRefused(_) => []
     }
-
-  /// The decision's enablement at an explicit TicketGraph — per constructor,
-  /// exactly the domain action's guard + draw-set membership, each
-  /// conjunct a REFERENCE to the definition the domain action reads
-  /// (the TicketGraph-parameterized forms hoisted into domain.qnt; the m6
-  /// audit rule: nothing here is a copied expression). Conjoined by
-  /// journalStep: the actor cannot journal a refused decision.
-  pure def decisionEventEnabled(
-      c: TicketGraph, event: DecisionEvent): bool = match event {
-    | CreateTicket(definition) => and {
-        canReleaseIn(c, definition.id),
-        definition.dependencies.subseteq(dependableIn(c)),
-        releasedTicketValid(definition)
-      }
-    | Revoke(j) => revocablesIn(c).contains(j)
-    | Dispatch(a) => readiesIn(c).contains(a.ticket) and
-        dispatchSources.contains(a.source)
-    | TaskDone(a) => and {
-        completableIn(c).contains(a.ticket),
-        liveTasks(c.tickets.get(a.ticket)).contains(a.task),
-        reportMatchesTask(c.tickets.get(a.ticket), a.task, a.report),
-        reportValid(a.report)
-      }
-    | FinalizationResult(a) => c.tickets.keys().contains(a.ticket) and
-        finalizationOutcomes.contains(a.out) and
-        finalizationEvidences.contains(a.evidence) and
-        finalizationOutcomeEnabled(c, a.ticket, a.out)
-    | ResumeTicket(j) => retryablesIn(c).contains(j)
-  }
 
   /// RECOVERY: replay the journal into a fresh in-memory state by folding
   /// evolve over its events. Deterministic by purity (evolve is a pure
@@ -443,27 +389,27 @@ module chuggy_refinement {
   }
 
   /// THE ACTOR'S STEP: decide + journal, atomically (the decide<->journal
-  /// seam is unobservable — header). The decision is the domain decider
-  /// at the named picks (decide), refused unless enabled
-  /// (decisionEventEnabled — so the machine structurally cannot journal an
-  /// illegal decision), with the failing stage's edge the one `onFailure`
-  /// names; `apply` evolves memory by the event and records the decision (a
-  /// REAL domain step: the ghost snapshots), and the entry appends with the
-  /// next dense seq. No emission here: the executor cursor lags
-  /// (journal-then-effect). Doubles as the deterministic witness driver
-  /// (tests pass explicit commands; the actor* actions below are the same
-  /// step with the picks drawn nondet).
+  /// seam is unobservable — header). The command goes through the domain's
+  /// `take` (decide, with the failing stage's edge the one `onFailure`
+  /// names, then evolve — a REAL domain step: the ghost snapshots). An
+  /// accepted command's event appends with the next dense seq; a refused one
+  /// appends nothing, so the journal holds no row a replay could refuse and
+  /// the refusal lives only in the step it answered. No emission here: the
+  /// executor cursor lags (journal-then-effect). Doubles as the
+  /// deterministic witness driver (tests pass explicit commands; the actor*
+  /// actions below are the same step with the command drawn nondet).
   action journalStep(
-      event: DecisionEvent, onFailure: EvaluationFailureDisposition): bool =
-    val d = decide(graph, event, _ => onFailure)
+      command: TicketCommand, onFailure: EvaluationFailureDisposition): bool =
+    val decision = decide(graph, command, _ => onFailure)
     all {
-      decisionEventEnabled(graph, event),
-      apply(d),
-      journal' = journal.append({ seq: journal.length() + 1, event: d.event }),
+      take(command, onFailure),
+      journal' = decidedEvents(decision).foldl(journal, (jl, fact) =>
+        jl.append({ seq: jl.length() + 1, event: fact })),
       applied' = applied,
       worldEffects' = worldEffects,
       orphans' = orphans,
-      rlabel' = "actor-step"
+      rlabel' = if (decidedEvents(decision) == []) "actor-refused"
+        else "actor-step"
     }
 
   /// THE EXECUTOR: emit the next unemitted journal entry's obligations to
@@ -518,23 +464,25 @@ module chuggy_refinement {
   /// with memory — the domain vars, which by recoveryComplete already
   /// equal that replay, do not move). Every domain invariant keeps
   /// holding across this step — the domain machine is BLIND to the
-  /// hazard, which is the whole reason this layer exists.
+  /// hazard, which is the whole reason this layer exists. Only an accepted
+  /// command has an effect to emit.
   action effectCrash(
-      event: DecisionEvent, onFailure: EvaluationFailureDisposition): bool =
-    val d = decide(graph, event, _ => onFailure)
+      command: TicketCommand, onFailure: EvaluationFailureDisposition): bool =
+    val decision = decide(graph, command, _ => onFailure)
     all {
-      decisionEventEnabled(graph, event),
+      commandValid(command),
+      decidedEvents(decision) != [],
       installGraph(replayGraph(journal)),
       journal' = journal,
       applied' = applied,
       worldEffects' = worldEffects,
-      orphans' = orphans.append(d.event),
+      orphans' = orphans.concat(decidedEvents(decision)),
       rlabel' = "effect-crash-recover"
     }
 
   // --- The actor roster: the domain actions, journaled ----------------------
   // Each mirrors its domain action byte-for-byte in guard + draws (the
-  // same enablement vals, the same oneOf sets) and routes through
+  // same draw-set vals, the same oneOf sets) and routes through
   // journalStep. The domain's own actions are unusable as steps here —
   // they assign none of this module's vars — so the machine structurally
   // cannot bypass the actor: every domain step in any run of this
@@ -548,19 +496,19 @@ module chuggy_refinement {
     nondet dependencies_ = dependableTickets.powerset().oneOf()
     nondet stages = validPlans.oneOf()
     journalStep(CreateTicket(releasedTicketOf(j, dependencies_, stages)),
-      ReworkEvaluationFailure)
+      unaskedDisposition)
   }
   action actorRevoke = all {
     revocableTickets.size() > 0,
     nondet j = revocableTickets.oneOf()
-    journalStep(Revoke(j), ReworkEvaluationFailure)
+    journalStep(RevokeTicket(j), unaskedDisposition)
   }
   action actorDispatch = all {
     readyTickets.size() > 0,
     nondet j = readyTickets.oneOf()
     nondet source = dispatchSources.oneOf()
-    journalStep(Dispatch({ ticket: j, source: source }),
-      ReworkEvaluationFailure)
+    journalStep(DispatchTicket({ ticket: j, source: source }),
+      unaskedDisposition)
   }
   action actorTaskDone = all {
     completableTickets.size() > 0,
@@ -568,22 +516,30 @@ module chuggy_refinement {
     nondet task = liveTasks(graph.tickets.get(j)).oneOf()
     nondet report = reportChoices(graph.tickets.get(j), task).oneOf()
     nondet onFailure = dispositionChoices.oneOf()
-    journalStep(TaskDone({ ticket: j, task: task, report: report }),
-      onFailure)
+    journalStep(ReportTaskTerminal(report), onFailure)
   }
   action actorFinalizationResult = all {
     finalizerTickets.size() > 0,
     nondet j = finalizerTickets.oneOf()
-    nondet out = finalizationOutcomes.oneOf()
-    nondet evidence = finalizationEvidences.oneOf()
-    journalStep(FinalizationResult({ ticket: j, out: out,
-      evidence: evidence }), ReworkEvaluationFailure)
+    nondet result = finalizationResults.oneOf()
+    journalStep(ReportFinalizationResult({ ticket: j,
+      workCycle: graph.tickets.get(j).workCyclesStarted,
+      generation: graph.tickets.get(j).finalizationGeneration,
+      result: result }), unaskedDisposition)
   }
 
   action actorResumeTicket = all {
     retryableEscalated.size() > 0,
     nondet j = retryableEscalated.oneOf()
-    journalStep(ResumeTicket(j), ReworkEvaluationFailure)
+    journalStep(ResumeTicket(j), unaskedDisposition)
+  }
+
+  /// The environment out of turn (domain.qnt refuse): answered, journaled
+  /// nowhere.
+  action actorRefuse = all {
+    refusedCommands.size() > 0,
+    nondet command = refusedCommands.oneOf()
+    journalStep(command, unaskedDisposition)
   }
 
   // --- The hazard roster (rstepHazard only): the effect-first seam on ------
@@ -599,8 +555,8 @@ module chuggy_refinement {
     readyTickets.size() > 0,
     nondet j = readyTickets.oneOf()
     nondet source = dispatchSources.oneOf()
-    effectCrash(Dispatch({ ticket: j, source: source }),
-      ReworkEvaluationFailure)
+    effectCrash(DispatchTicket({ ticket: j, source: source }),
+      unaskedDisposition)
   }
   action hazardTaskDone = all {
     completableTickets.size() > 0,
@@ -608,16 +564,16 @@ module chuggy_refinement {
     nondet task = liveTasks(graph.tickets.get(j)).oneOf()
     nondet report = reportChoices(graph.tickets.get(j), task).oneOf()
     nondet onFailure = dispositionChoices.oneOf()
-    effectCrash(TaskDone({ ticket: j, task: task, report: report }),
-      onFailure)
+    effectCrash(ReportTaskTerminal(report), onFailure)
   }
   action hazardFinalizationResult = all {
     finalizerTickets.size() > 0,
     nondet j = finalizerTickets.oneOf()
-    nondet out = finalizationOutcomes.oneOf()
-    nondet evidence = finalizationEvidences.oneOf()
-    effectCrash(FinalizationResult({ ticket: j, out: out,
-      evidence: evidence }), ReworkEvaluationFailure)
+    nondet result = finalizationResults.oneOf()
+    effectCrash(ReportFinalizationResult({ ticket: j,
+      workCycle: graph.tickets.get(j).workCyclesStarted,
+      generation: graph.tickets.get(j).finalizationGeneration,
+      result: result }), unaskedDisposition)
   }
 
   /// THE DISCIPLINED MACHINE (journal-then-effect): decisions journal
@@ -625,7 +581,7 @@ module chuggy_refinement {
   action rstep = any {
     actorReleaseTicket, actorRevoke, actorDispatch,
     actorTaskDone, actorFinalizationResult,
-    actorResumeTicket,
+    actorResumeTicket, actorRefuse,
     emitNext, crashRecover
   }
 
@@ -728,6 +684,20 @@ module chuggy_refinement {
     evolve(c, event)
   /// The embedded machine's name for an event's constructor.
   pure def eventNameOf(event: TicketEvent): str = eventName(event)
+  /// The embedded machine's decision at an explicit graph.
+  pure def decideAt(
+      c: TicketGraph, command: TicketCommand,
+      onFailure: EvaluationFailureDisposition): TicketDecision =
+    decide(c, command, _ => onFailure)
+  /// What the actor answers a command with at an explicit graph, by name:
+  /// the event it decides, or the refusal it answers — and "" for a command
+  /// outside commandValid, which the actor does not take at all.
+  pure def answerAt(c: TicketGraph, command: TicketCommand): str =
+    if (not(commandValid(command))) ""
+    else match decideAt(c, command, unaskedDisposition) {
+      | TicketDecided(d) => eventName(d.event)
+      | TicketRefused(reason) => refusalName(reason)
+    }
   /// The last DOMAIN decision (stale across emit/crash steps — those are
   /// not domain steps; rlabel carries this layer's trace).
   val obs: LastDecision = lastStep

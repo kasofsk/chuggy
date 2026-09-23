@@ -35,15 +35,24 @@ module chuggy_test {
   pure val evidence: int = D::aFinalizationEvidence
 
   /// ONE DECISION, TAKEN: the event and the obligations the decider
-  /// returned, and the state evolve takes the graph it was decided at to.
+  /// returned, and the state evolve takes the graph it was decided at to —
+  /// or, for a refused command, the refusal's name and the graph unmoved.
+  /// A refused step's event is a placeholder nothing reads: `named` answers
+  /// with the refusal instead.
   type Stepped = {
     event: TicketEvent,
     obligations: List[Obligation],
-    post: TicketGraph
+    post: TicketGraph,
+    refusal: str
   }
-  pure def stepped(c: TicketGraph, d: SuccessfulTicketDecision): Stepped =
-    { event: d.event, obligations: d.obligations, post: D::evolve(c, d.event) }
-  pure def named(s: Stepped): str = D::eventName(s.event)
+  pure def stepped(c: TicketGraph, d: TicketDecision): Stepped = match d {
+    | TicketDecided(s) => { event: s.event, obligations: s.obligations,
+        post: D::evolve(c, s.event), refusal: "" }
+    | TicketRefused(reason) => { event: TicketRevoked(0), obligations: [],
+        post: c, refusal: D::refusalName(reason) }
+  }
+  pure def named(s: Stepped): str =
+    if (s.refusal != "") s.refusal else D::eventName(s.event)
 
   /// What a step owes, read back: the tasks it asks the fabric to run and
   /// the kind of every obligation, in order.
@@ -59,22 +68,24 @@ module chuggy_test {
 
   // WHAT A COMPLETION CAN CARRY. A produced report carries the obligation
   // the ticket owes for the task (ticket.qnt producedResult) — the only one
-  // the completion's enablement admits — under a result reference the
-  // machine derives from the task's own identity.
+  // the completion accepts — under a result reference the machine derives
+  // from the task's own identity. Every report names the task's own ticket.
   pure def died(task: TaskIdentity): TaskTerminalReport =
-    TerminalFailureReport({ failure: { task: task, evidence: taskRefOf(task) },
-      kind: ProcessFailure })
+    TerminalFailureReport({ ticket: taskOwner(task),
+      failure: { task: task, evidence: taskRefOf(task) }, kind: ProcessFailure })
   pure def walled(task: TaskIdentity): TaskTerminalReport =
-    TerminalFailureReport({ failure: { task: task, evidence: taskRefOf(task) },
+    TerminalFailureReport({ ticket: taskOwner(task),
+      failure: { task: task, evidence: taskRefOf(task) },
       kind: ExecutionUnavailableFailure })
 
   /// A completion at a named disposition — the failing stage's choice is an
   /// input to the decision, so every call site says which edge it is asking
   /// for. `done` asks for the rework edge, which every completion that does
-  /// not conclude a failing stage ignores.
+  /// not conclude a failing stage ignores. The ticket and the task are the
+  /// report's own; a call site names them so it reads as the delivery it is.
   pure def doneAt(c: TicketGraph, j: int, task: TaskIdentity,
       report: TaskTerminalReport, d: EvaluationFailureDisposition): Stepped =
-    stepped(c, D::decideTaskDone(c, j, task, report, _ => d))
+    stepped(c, D::decide(c, ReportTaskTerminal(report), _ => d))
   pure def done(c: TicketGraph, j: int, task: TaskIdentity,
       report: TaskTerminalReport): Stepped =
     doneAt(c, j, task, report, ReworkEvaluationFailure)
@@ -82,14 +93,14 @@ module chuggy_test {
   /// A WORK COMPLETION that produced, at the obligation the ticket owes and
   /// the source the application accepted it at.
   pure def doneProduced(c: TicketGraph, j: int, task: TaskIdentity): Stepped =
-    done(c, j, task, WorkResultReport({
+    done(c, j, task, WorkResultReport({ ticket: j,
       result: producedResult(c.tickets.get(j), task),
       acceptedSourceRef: srcAccepted }))
 
   /// AN EVALUATOR'S VERDICT, at the obligation the running stage owes it.
   pure def judgedReport(c: TicketGraph, j: int, task: TaskIdentity,
       v: EvaluationVerdict): TaskTerminalReport =
-    EvaluationResultReport({
+    EvaluationResultReport({ ticket: j,
       result: producedResult(c.tickets.get(j), task), verdict: v })
   pure def doneJudgedAt(c: TicketGraph, j: int, task: TaskIdentity,
       v: EvaluationVerdict, d: EvaluationFailureDisposition): Stepped =
@@ -102,18 +113,21 @@ module chuggy_test {
   /// ticket has no obligation for the task to read, so the builder states
   /// the one the task was spawned under.
   pure def staleVerdict(task: TaskIdentity, v: EvaluationVerdict): TaskTerminalReport =
-    EvaluationResultReport({
+    EvaluationResultReport({ ticket: taskOwner(task),
       result: { obligation: { task: task, definition: D::evaluatorTaskOf(1),
                               contextRef: 101 },
                 resultRef: taskRefOf(task) },
       verdict: v })
 
-  pure def finalized(c: TicketGraph, j: int, out: FinalizationOutcome): Stepped =
-    stepped(c, D::decideFinalizationResult(c, j, out, evidence))
+  /// The finalizer's result for the attempt ticket j is on.
+  pure def finalized(c: TicketGraph, j: int, result: FinalizationResult): Stepped =
+    stepped(c, D::decideFinalizationResult(c, { ticket: j,
+      workCycle: c.tickets.get(j).workCyclesStarted,
+      generation: c.tickets.get(j).finalizationGeneration, result: result }))
   pure def resumed(c: TicketGraph, j: int): Stepped =
-    stepped(c, D::decideResumeTicket(c, j))
+    stepped(c, D::decideResume(c, j))
   pure def dispatched(c: TicketGraph, j: int): Stepped =
-    stepped(c, D::decideDispatch(c, j, srcDispatch))
+    stepped(c, D::decideDispatch(c, { ticket: j, source: srcDispatch }))
 
   // Reading an instance back: the run a ticket's judgement stands at, and
   // the status one evaluator holds in it.
@@ -160,7 +174,7 @@ module chuggy_test {
     D::freshTicket(D::releasedTicketOf(j, dependencies, stages))
 
   pure def release(c: TicketGraph, j: int, dependencies: Set[int], stages: List[StageDefinition]): Stepped =
-    stepped(c, D::decideReleaseTicket(c, D::releasedTicketOf(j, dependencies, stages)))
+    stepped(c, D::decideCreate(c, D::releasedTicketOf(j, dependencies, stages)))
 
   run defaultPlanIsUnanimousSingleStageTest = assert(and {
     D::defaultPlan == planU2,
@@ -250,7 +264,7 @@ module chuggy_test {
   pure val dEval2 = doneJudged(c4, 1, evalOf(1, 0, 2), EvaluatorPass)
   pure val c5 = dEval2.post
   /// The finalizer succeeds and the ticket completes from Finalization.
-  pure val dComplete = finalized(c5, 1, FinalizationSucceeded)
+  pure val dComplete = finalized(c5, 1, FinalizationSucceeded(evidence))
   pure val c6 = dComplete.post
 
   /// The events are the ones the anatomy says, and each owes exactly what
@@ -291,15 +305,15 @@ module chuggy_test {
   /// eventsNeverIdentity) — pinned here on the exact decisions, where the
   /// machine checks them on every reachable one.
   run happyPathDecisionsValidTest = assert(and {
-    D::decisionValid(cEmpty, D::decideReleaseTicket(cEmpty,
+    D::decisionValid(cEmpty, D::decideCreate(cEmpty,
       D::releasedTicketOf(1, Set(), D::defaultPlan))),
-    D::decisionValid(c0, D::decideDispatch(c0, 1, srcDispatch)),
+    D::decisionValid(c0, D::decideDispatch(c0, { ticket: 1, source: srcDispatch })),
     c1 != c0, c3 != c1, c4 != c3, c5 != c4, c6 != c5,
-    D::decisionValid(c1, { event: dWork1.event, obligations: dWork1.obligations }),
-    D::decisionValid(c3, { event: dEval1.event, obligations: dEval1.obligations }),
-    D::decisionValid(c4, { event: dEval2.event, obligations: dEval2.obligations }),
-    D::decisionValid(c5, { event: dComplete.event,
-      obligations: dComplete.obligations })
+    D::decisionValid(c1, TicketDecided({ event: dWork1.event, obligations: dWork1.obligations })),
+    D::decisionValid(c3, TicketDecided({ event: dEval1.event, obligations: dEval1.obligations })),
+    D::decisionValid(c4, TicketDecided({ event: dEval2.event, obligations: dEval2.obligations })),
+    D::decisionValid(c5, TicketDecided({ event: dComplete.event,
+      obligations: dComplete.obligations }))
   })
 
   /// A PASSING STAGE IGNORES THE DISPOSITION: it is consulted only where a
@@ -366,8 +380,8 @@ module chuggy_test {
   // === Events a state no longer owes fall through evolve ===================
 
   /// AN EVENT APPLIED TO A STATE THAT NO LONGER OWES IT IS THE IDENTITY
-  /// (domain.qnt evolve). The machine never decides one — enablement refuses
-  /// the completion first — so no trace carries it, and this is where it is
+  /// (domain.qnt evolve). The machine never decides one — `decide` refuses
+  /// the command first — so no trace carries it, and this is where it is
   /// pinned: a duplicate for a settled task, whatever it reports; a stale
   /// evaluator after the ticket left evaluation or after a resume moved the
   /// generation on; a finalization result for an attempt a resume
@@ -673,7 +687,7 @@ module chuggy_test {
   /// work task — and it does so EVERY time: there is no wall on this edge,
   /// so a finalizer that keeps reporting failure keeps buying cycles, which
   /// is the finalizer's problem and not the machine's.
-  pure val dFinalizationRework = finalized(c5, 1, FinalizationNeedsWork)
+  pure val dFinalizationRework = finalized(c5, 1, FinalizationNeedsWork(evidence))
 
   run finalizationFailureReworksTest = assert(and {
     named(dFinalizationRework) == "TicketFinalizationNeedsWork",
@@ -692,7 +706,7 @@ module chuggy_test {
   /// resume that re-runs the finalizer: the artifact is intact and untried,
   /// so new work would change nothing.
   pure val dFinalizationUnavailable =
-    finalized(c5, 1, FinalizationResultUnavailable)
+    finalized(c5, 1, FinalizationResultUnavailable(evidence))
 
   run finalizationUnavailableEscalatesTest = assert(and {
     named(dFinalizationUnavailable) == "TicketFinalizationUnavailable",
@@ -1021,9 +1035,14 @@ module chuggy_test {
     not(D::revocableIn(dStagedFinal.post, 1))
   })
 
-  run finalizationOutcomesDrawRuleTest = assert(
-    D::finalizationOutcomes == Set(FinalizationSucceeded, FinalizationNeedsWork,
-      FinalizationResultUnavailable))
+  /// A finalizer may report any of the three results, at any evidence it
+  /// may return, and every one is a well-formed result.
+  run finalizationResultsDrawRuleTest = assert(and {
+    D::finalizationResults == D::finalizationEvidences.map(e =>
+      Set(FinalizationSucceeded(e), FinalizationNeedsWork(e),
+        FinalizationResultUnavailable(e))).flatten(),
+    D::finalizationResults.forall(r => finalizationResultValid(r))
+  })
 
   /// THE ARTIFACT IS THE ACCEPTED RESULT, and a rework SUPERSEDES it. The
   /// second half is what makes the mark an identity rather than a flag: two
