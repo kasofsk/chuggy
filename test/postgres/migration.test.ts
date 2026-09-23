@@ -23,6 +23,7 @@ import {
 import { migration012 } from "../../src/adapters/postgres/schema/migrations/012-task-report.ts";
 import { migration013 } from "../../src/adapters/postgres/schema/migrations/013-released-ticket.ts";
 import { migration014 } from "../../src/adapters/postgres/schema/migrations/014-ticket-events.ts";
+import { migration015 } from "../../src/adapters/postgres/schema/migrations/015-ticket-commands.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -2651,7 +2652,7 @@ test("the finalizer's door concludes at either spelling of the outcome it needs 
             "SELECT command_tag FROM operation WHERE operation='operation-5'",
           )
         ).rows,
-        [{ command_tag: "FinalizationResult" }],
+        [{ command_tag: "ReportFinalizationResult" }],
         outcome,
       );
     });
@@ -3090,7 +3091,7 @@ test("the door concludes unavailable on the recorded hold and on nothing else", 
           "SELECT command_tag,command FROM operation WHERE operation='operation-5'",
         )
       ).rows[0];
-      assert.equal(written?.command_tag, "FinalizationResult");
+      assert.equal(written?.command_tag, "ReportFinalizationResult");
       assert.deepEqual(JSON.parse(written.command), {
         version: 1,
         command: "SubmitFinalizationResult",
@@ -5525,7 +5526,7 @@ async function releasedJournalled(
 ): Promise<unknown> {
   return (
     await subject.query<{ journalled: unknown }>(
-      `SELECT (command::jsonb)#>'{event,value}' AS journalled
+      `SELECT (command::jsonb)->'ticketCommand' AS journalled
          FROM operation WHERE operation=$1`,
       [operation],
     )
@@ -5575,11 +5576,11 @@ test("the door reports the work obligation the release wrote down and the source
     assert.deepEqual(
       await releasedJournalled(subject, "operation-released-1"),
       {
-        ticket: 1,
-        task: { type: "WorkTask", value: { ticket: 1, cycle: 3 } },
-        report: {
+        type: "ReportTaskTerminal",
+        value: {
           type: "WorkResultReport",
           value: {
+            ticket: 1,
             result: {
               obligation: {
                 task: { type: "WorkTask", value: { ticket: 1, cycle: 3 } },
@@ -5634,11 +5635,14 @@ test("the door reports a failure as the task that failed and the evidence it can
     );
     const task = { type: "WorkTask", value: { ticket: 1, cycle: 3 } };
     assert.deepEqual(await releasedJournalled(subject, "operation-failed-1"), {
-      ticket: 1,
-      task,
-      report: {
+      type: "ReportTaskTerminal",
+      value: {
         type: "TerminalFailureReport",
-        value: { failure: { task, evidence: 1 }, kind: "ProcessFailure" },
+        value: {
+          ticket: 1,
+          failure: { task, evidence: 1 },
+          kind: "ProcessFailure",
+        },
       },
     });
   });
@@ -5717,11 +5721,11 @@ test("the door reports the definition the evaluator's own key carries, under wha
     assert.deepEqual(
       await releasedJournalled(subject, "operation-released-1"),
       {
-        ticket: 1,
-        task: releasedEvaluatorTask,
-        report: {
+        type: "ReportTaskTerminal",
+        value: {
           type: "EvaluationResultReport",
           value: {
+            ticket: 1,
             result: {
               obligation: {
                 task: releasedEvaluatorTask,
@@ -5796,20 +5800,11 @@ test("the door reports the definition of the stage the evaluator runs in, not th
     assert.deepEqual(
       await releasedJournalled(subject, "operation-released-1"),
       {
-        ticket: 1,
-        task: {
-          type: "EvaluationTask",
-          value: {
-            ticket: 1,
-            workCycle: 2,
-            stage: 2,
-            generation: 1,
-            evaluator: 3,
-          },
-        },
-        report: {
+        type: "ReportTaskTerminal",
+        value: {
           type: "EvaluationResultReport",
           value: {
+            ticket: 1,
             result: {
               obligation: {
                 task: {
@@ -6083,7 +6078,7 @@ const releasedRetiredTag = "ExecutionBlocked";
 
 test("the authority a completion is admitted under names no tag this machine retired", async () => {
   await migrationDatabase("released_authority", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration013.version);
     const rendered = (
       await subject.query<{ rendered: string }>(
         `SELECT pg_get_constraintdef(oid) AS rendered FROM pg_constraint
@@ -6735,7 +6730,7 @@ async function eventsAdmitted(
 
 test("the journal takes one ticket event per row and refuses a command, a record and a ref that is not one", async () => {
   await migrationDatabase("events_journal", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration014.version);
     await subject.query(deletionPartition);
     for (const [label, event, admitted] of eventsJournalled)
       assert.equal(
@@ -6933,7 +6928,7 @@ const eventsCommands: readonly (readonly [
 
 test("the inbox's grammar keeps the commands less the reduce and the disposition, and both exclusions", async () => {
   await migrationDatabase("events_commands", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration014.version);
     for (const [label, event, grammar, mailbox] of eventsCommands) {
       assert.deepEqual(
         (
@@ -7096,5 +7091,753 @@ test("the predicates the events arrive with are the boundary owner's and nobody'
   await migrationDatabase("events_owners", async (subject) => {
     await postgresMigrate(subject);
     await predicatesClosed(subject, eventsPredicates);
+  });
+});
+
+test("a fresh install records the ticket commands arriving and the refusal column", async () => {
+  await migrationDatabase("commands_install", async (subject) => {
+    assert.ok((await postgresMigrate(subject)).includes(migration015.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT version,name FROM schema_migration WHERE version=$1",
+          [migration015.version],
+        )
+      ).rows,
+      [
+        {
+          version: migration015.version,
+          name: "the inbox holds ticket commands, and a refusal keeps what was refused",
+        },
+      ],
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT data_type FROM information_schema.columns
+            WHERE table_name='decision_input' AND column_name='refusal'`,
+        )
+      ).rows,
+      [{ data_type: "text" }],
+    );
+  });
+});
+
+/** An operation stored before the commands arrive, beside no journal row. */
+const commandsStoredOperation = `
+  INSERT INTO operation
+    (tenant,project,operation,authority_kind,authority_subject,admission,
+     key_version,key_digest,payload_digest,command,command_tag)
+  VALUES('tenant-5','project-5','operation-5','User','author','Ordinary',
+         'v1','key-5','payload-5','{}','Revoke')`;
+
+test("a journal or an inbox with a row in it refuses the commands arriving and names the wipe", async () => {
+  for (const [label, seed] of [
+    ["a journal entry", deletionJournalRow(1, journalledRevocation)],
+    ["an operation and no journal entry", commandsStoredOperation],
+  ] as const)
+    await migrationDatabase("commands_guard", async (subject) => {
+      await installationBefore(subject, migration015.version);
+      await subject.query(`${deletionPartition}\n${seed}`);
+      await assert.rejects(
+        postgresMigrate(subject),
+        /wipe-tickets\.sql/u,
+        label,
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT max(version) AS version,
+                    (SELECT count(*)::int FROM information_schema.columns
+                      WHERE table_name='decision_input' AND column_name='refusal') AS refusal
+               FROM schema_migration`,
+          )
+        ).rows,
+        [{ version: migration014.version, refusal: 0 }],
+        label,
+      );
+    });
+});
+
+/** A report as the package spells it, naming the ticket it is about when one is given. */
+function commandsReport(
+  report: { readonly type: string; readonly value: object },
+  ticket?: number,
+): unknown {
+  return {
+    type: report.type,
+    value: ticket === undefined ? report.value : { ticket, ...report.value },
+  };
+}
+
+const commandsWorkReport = {
+  type: "WorkResultReport",
+  value: {
+    result: { obligation: releasedObligation, resultRef: 5 },
+    acceptedSourceRef: 7,
+  },
+};
+
+const commandsEvaluationReport = {
+  type: "EvaluationResultReport",
+  value: {
+    result: { obligation: eventsEvaluatorObligation, resultRef: 11 },
+    verdict: "EvaluatorFail",
+  },
+};
+
+const commandsBlockedReport = {
+  type: "TerminalFailureReport",
+  value: eventsBlocked.value,
+};
+
+const commandsFailureReport = {
+  type: "TerminalFailureReport",
+  value: {
+    failure: { task: releasedTask, evidence: 2 },
+    kind: "ProcessFailure",
+  },
+};
+
+/** The events that carry a report, each around the report it is given. */
+const commandsReportEvents: readonly (readonly [
+  string,
+  { readonly type: string; readonly value: object },
+  (report: unknown) => unknown,
+])[] = [
+  [
+    "TicketEvaluationProgressed",
+    commandsEvaluationReport,
+    (report) => ({
+      type: "TicketEvaluationProgressed",
+      value: { ticket: 1, report },
+    }),
+  ],
+  [
+    "TicketEvaluationPassed",
+    commandsEvaluationReport,
+    (report) => ({
+      type: "TicketEvaluationPassed",
+      value: { ticket: 1, report },
+    }),
+  ],
+  [
+    "TicketEvaluationBlocked",
+    commandsBlockedReport,
+    (report) => ({
+      type: "TicketEvaluationBlocked",
+      value: { ticket: 1, report },
+    }),
+  ],
+  [
+    "TicketEvaluationReworkStarted",
+    commandsEvaluationReport,
+    (report) => ({
+      type: "TicketEvaluationReworkStarted",
+      value: { ticket: 1, report, evidence: eventsRework },
+    }),
+  ],
+  [
+    "TicketEvaluationFailureEscalated",
+    commandsEvaluationReport,
+    (report) => ({
+      type: "TicketEvaluationFailureEscalated",
+      value: { ticket: 1, report, evidence: eventsRework },
+    }),
+  ],
+];
+
+test("the journal takes a report only about the ticket its event is about", async () => {
+  await migrationDatabase("commands_journal", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(deletionPartition);
+    for (const [tag, report, around] of commandsReportEvents)
+      for (const [label, event, admitted] of [
+        ["about its ticket", around(commandsReport(report, 1)), true],
+        ["naming no ticket", around(commandsReport(report)), false],
+        ["about another ticket", around(commandsReport(report, 2)), false],
+        ["about no ticket", around(commandsReport(report, 0)), false],
+      ] as const)
+        assert.equal(
+          await eventsAdmitted(subject, JSON.stringify({ seq: 1, event })),
+          admitted,
+          `${tag}: a report ${label}`,
+        );
+    for (const [label, event, admitted] of eventsJournalled)
+      if (!JSON.stringify(event).includes('"report"'))
+        assert.equal(
+          await eventsAdmitted(subject, JSON.stringify({ seq: 1, event })),
+          admitted,
+          `as 014 admits it: ${label}`,
+        );
+  });
+});
+
+/** A `Decide` envelope around one ticket command, under the field it is carried at. */
+function commandsDecide(command: unknown): string {
+  return JSON.stringify({
+    version: 1,
+    command: "Decide",
+    ticketCommand: command,
+  });
+}
+
+const commandsFinalization = {
+  ticket: 1,
+  workCycle: 2,
+  generation: 1,
+  result: { type: "FinalizationNeedsWork", value: 6 },
+};
+
+/** What the grammar and the mailbox answer about each command, one per tag and each tag that left. */
+const commandsTable: readonly (readonly [string, unknown, boolean, boolean])[] =
+  [
+    ["a release", { type: "CreateTicket", value: releasedWhole }, true, false],
+    [
+      "a dispatch",
+      { type: "DispatchTicket", value: { ticket: 1, source: 9 } },
+      true,
+      false,
+    ],
+    ["a revocation", { type: "RevokeTicket", value: 1 }, true, true],
+    ["a resume", { type: "ResumeTicket", value: 1 }, true, true],
+    [
+      "a work report",
+      {
+        type: "ReportTaskTerminal",
+        value: commandsReport(commandsWorkReport, 1),
+      },
+      true,
+      true,
+    ],
+    [
+      "an evaluation report",
+      {
+        type: "ReportTaskTerminal",
+        value: commandsReport(commandsEvaluationReport, 1),
+      },
+      true,
+      true,
+    ],
+    [
+      "a failure report",
+      {
+        type: "ReportTaskTerminal",
+        value: commandsReport(commandsFailureReport, 1),
+      },
+      true,
+      true,
+    ],
+    [
+      "a report naming no ticket",
+      { type: "ReportTaskTerminal", value: commandsReport(commandsWorkReport) },
+      false,
+      false,
+    ],
+    [
+      "a report about no ticket",
+      {
+        type: "ReportTaskTerminal",
+        value: commandsReport(commandsFailureReport, 0),
+      },
+      false,
+      false,
+    ],
+    [
+      "a finalization result",
+      { type: "ReportFinalizationResult", value: commandsFinalization },
+      true,
+      false,
+    ],
+    [
+      "a finalization result at no evidence",
+      {
+        type: "ReportFinalizationResult",
+        value: {
+          ...commandsFinalization,
+          result: { type: "FinalizationSucceeded", value: 0 },
+        },
+      },
+      false,
+      false,
+    ],
+    [
+      "a finalization result in an arm the package has none of",
+      {
+        type: "ReportFinalizationResult",
+        value: {
+          ...commandsFinalization,
+          result: { type: "FinalizationFailed", value: 6 },
+        },
+      },
+      false,
+      false,
+    ],
+    [
+      "a finalization result at no generation",
+      {
+        type: "ReportFinalizationResult",
+        value: { ...commandsFinalization, generation: undefined },
+      },
+      false,
+      false,
+    ],
+    [
+      "a dispatch at no source",
+      { type: "DispatchTicket", value: { ticket: 1, source: 0 } },
+      false,
+      false,
+    ],
+    [
+      "a revocation of no ticket",
+      { type: "RevokeTicket", value: 0 },
+      false,
+      false,
+    ],
+    ["the revocation's old tag", { type: "Revoke", value: 1 }, false, false],
+    [
+      "the dispatch's old tag",
+      { type: "Dispatch", value: { ticket: 1, source: 9 } },
+      false,
+      false,
+    ],
+    [
+      "the completion's old tag",
+      releasedCompletion(commandsReport(commandsWorkReport, 1)),
+      false,
+      false,
+    ],
+    [
+      "the finalization's old tag",
+      {
+        type: "FinalizationResult",
+        value: { ticket: 1, out: "FinalizationSucceeded", evidence: 3 },
+      },
+      false,
+      false,
+    ],
+    ["a ticket event", { type: "TicketRevoked", value: 1 }, false, false],
+  ];
+
+test("the inbox's grammar is the ticket commands, and both exclusions hold at their names", async () => {
+  await migrationDatabase("commands_grammar", async (subject) => {
+    await postgresMigrate(subject);
+    for (const [label, command, grammar, mailbox] of commandsTable)
+      assert.deepEqual(
+        (
+          await subject.query<{ grammar: boolean; mailbox: boolean }>(
+            `SELECT decision_command_is_valid($1::jsonb) AS grammar,
+                    ticket_command_is_valid($2::jsonb) AS mailbox`,
+            [JSON.stringify(command), commandsDecide(command)],
+          )
+        ).rows,
+        [{ grammar, mailbox }],
+        label,
+      );
+    const revocation = { type: "RevokeTicket", value: 1 };
+    for (const [label, envelope] of [
+      [
+        "a command under the field an event was carried at",
+        { version: 1, command: "Decide", event: revocation },
+      ],
+      [
+        "a command beside an event",
+        {
+          version: 1,
+          command: "Decide",
+          ticketCommand: revocation,
+          event: revocation,
+        },
+      ],
+    ] as const)
+      assert.deepEqual(
+        (
+          await subject.query<{ mailbox: boolean }>(
+            "SELECT ticket_command_is_valid($1::jsonb) AS mailbox",
+            [JSON.stringify(envelope)],
+          )
+        ).rows,
+        [{ mailbox: false }],
+        label,
+      );
+  });
+});
+
+test("the mailbox classifies at the new tags and a revocation keeps its priority", async () => {
+  await migrationDatabase("commands_accept", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(deletionPartition);
+    const accepted = async (
+      door: string,
+      operation: string,
+      command: string,
+    ): Promise<unknown> =>
+      (
+        await subject.query(
+          `SELECT result FROM ${door}('tenant-5','project-5',$1,'User','subject',
+             'v1',$1,$1,ARRAY[$1]::text[],ARRAY[$1]::text[],$2,1000,2000,NULL)`,
+          [operation, command],
+        )
+      ).rows[0];
+    const classified = async (operation: string): Promise<unknown> =>
+      (
+        await subject.query(
+          `SELECT o.command_tag, o.admission, d.base_priority FROM operation o
+             JOIN decision_input d ON d.input_id=o.operation WHERE o.operation=$1`,
+          [operation],
+        )
+      ).rows;
+    for (const [operation, tag, priority, admission] of [
+      ["operation-revoke", "RevokeTicket", "Safety", "CorrectnessReducing"],
+      ["operation-resume", "ResumeTicket", "Ordinary", "Ordinary"],
+    ] as const) {
+      assert.deepEqual(
+        await accepted(
+          "accept_operation",
+          operation,
+          commandsDecide({ type: tag, value: 1 }),
+        ),
+        { result: "Accepted" },
+        tag,
+      );
+      assert.deepEqual(
+        await classified(operation),
+        [{ command_tag: tag, admission, base_priority: priority }],
+        tag,
+      );
+    }
+    assert.deepEqual(
+      await accepted(
+        "accept_operation",
+        "operation-report",
+        commandsDecide({
+          type: "ReportTaskTerminal",
+          value: commandsReport(commandsFailureReport, 1),
+        }),
+      ),
+      { result: "InvalidCommand" },
+      "a report a caller offers",
+    );
+    assert.deepEqual(
+      await accepted(
+        "accept_dispatch_operation",
+        "operation-dispatch",
+        JSON.stringify({
+          version: 1,
+          command: "ManualDispatch",
+          ticket: 1,
+          expectedTicketVersion: 1,
+        }),
+      ),
+      { result: "Accepted" },
+      "a dispatch through its own door",
+    );
+    assert.deepEqual(await classified("operation-dispatch"), [
+      {
+        command_tag: "ManualDispatch",
+        admission: "Ordinary",
+        base_priority: "Ordinary",
+      },
+    ]);
+  });
+});
+
+test("the authority a completion is admitted under follows the completion's new tags", async () => {
+  await migrationDatabase("commands_authority", async (subject) => {
+    await postgresMigrate(subject);
+    const rendered = (
+      await subject.query<{ rendered: string }>(
+        `SELECT pg_get_constraintdef(oid) AS rendered FROM pg_constraint
+          WHERE conname='operation_completion_authority_is_its_boundary'`,
+      )
+    ).rows[0]?.rendered;
+    assert.ok(rendered !== undefined, "the authority CHECK is not installed");
+    for (const retired of ["'TaskDone'", "'FinalizationResult'"])
+      assert.ok(
+        !rendered.includes(retired),
+        `the CHECK still names ${retired}`,
+      );
+    await subject.query(deletionPartition);
+    const stored = (operation: string, authority: string, tag: string) =>
+      subject.query(
+        `INSERT INTO operation
+           (tenant,project,operation,authority_kind,authority_subject,admission,
+            key_version,key_digest,payload_digest,command,command_tag)
+         VALUES('tenant-5','project-5',$1,$2,'author','CorrectnessReducing',
+                'v1',$1,'payload-5','{}',$3)`,
+        [operation, authority, tag],
+      );
+    for (const [tag, authority] of [
+      ["ReportTaskTerminal", "ExecutionScheduler"],
+      ["ReportFinalizationResult", "Finalizer"],
+    ] as const) {
+      await assert.rejects(
+        stored(`operation-user-${tag}`, "User", tag),
+        /operation_completion_authority_is_its_boundary/u,
+        `${tag} from an authority that is not ${authority}`,
+      );
+      await stored(`operation-own-${tag}`, authority, tag);
+    }
+  });
+});
+
+test("the completion door stores the report under the tag of the command it built", async () => {
+  await migrationDatabase("commands_door", async (subject) => {
+    await postgresMigrate(subject);
+    await releasedSeeded(subject);
+    await subject.query(
+      identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3", "Fail"),
+    );
+    await subject.query(
+      `SELECT result FROM submit_task_completion
+         ('tenant-5','project-5','execution-1',1,1,1,'Failed','manifest-1',
+          repeat('d',64),NULL,'operation-failed-1','subject-5')`,
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT command_tag, (command::jsonb)->>'command' AS envelope,
+                  (command::jsonb) ? 'event' AS event
+             FROM operation WHERE operation='operation-failed-1'`,
+        )
+      ).rows,
+      [{ command_tag: "ReportTaskTerminal", envelope: "Decide", event: false }],
+    );
+  });
+});
+
+/** A refusal the machine decided, in the codec's spelling. */
+function commandsRefusal(type: string, value: unknown): string {
+  return JSON.stringify({ type, value });
+}
+
+/** One payload each machine refusal is admitted with. */
+const commandsRefusals: readonly (readonly [string, unknown])[] = [
+  ["TicketAlreadyExists", 1],
+  ["DependenciesNotFound", { ticket: 1, dependencies: [2, 3] }],
+  ["SelfDependency", 1],
+  ["TicketNotFound", 1],
+  ["TicketNotPending", 1],
+  ["TicketIdentityMismatch", 1],
+  ["TicketRevisionStale", { ticket: 1, expected: 2, current: 3 }],
+  ["TicketDependenciesChanged", 1],
+  ["DependenciesIncomplete", { ticket: 1, dependencies: [2] }],
+  ["TicketNotRevocable", 1],
+  ["TicketNotResumable", 1],
+  ["TaskNotCurrent", { ticket: 1, task: releasedTask }],
+  ["FinalizationNotCurrent", { ticket: 1, workCycle: 2, generation: 1 }],
+];
+
+/** The boundary's own refusals, which carry none. */
+const commandsBoundaryRefusals = [
+  "AuthoringChanged",
+  "ConfigurationInvalid",
+  "TicketChanged",
+  "SelectionChanged",
+  "ExecutionSourceUnreadable",
+  "ExecutionSourceDenied",
+  "BriefNamesNoRepository",
+];
+
+const commandsKnown = "decision_input_outcome_is_known";
+const commandsCarried = "decision_input_refusal_is_its_outcome";
+
+/** What the refusal columns refuse, and the check that refuses it. */
+const commandsRefused: readonly (readonly [
+  string,
+  string,
+  string | null,
+  string,
+])[] = [
+  ["the one word every refusal was", "NotEnabled", null, commandsKnown],
+  ["a code nothing produces", "CommandUnreadable", null, commandsKnown],
+  [
+    "a machine refusal with nothing refused",
+    "TicketNotFound",
+    null,
+    commandsCarried,
+  ],
+  [
+    "a boundary refusal with a payload",
+    "TicketChanged",
+    commandsRefusal("TicketNotFound", 1),
+    commandsCarried,
+  ],
+  ["a payload that is not json", "TicketNotFound", "not json", commandsCarried],
+  [
+    "a payload of another refusal",
+    "TicketNotFound",
+    commandsRefusal("TicketNotRevocable", 1),
+    commandsCarried,
+  ],
+  [
+    "a refusal about no ticket",
+    "TicketNotFound",
+    commandsRefusal("TicketNotFound", 0),
+    commandsCarried,
+  ],
+  [
+    "incomplete dependencies naming none",
+    "DependenciesIncomplete",
+    commandsRefusal("DependenciesIncomplete", { ticket: 1, dependencies: [] }),
+    commandsCarried,
+  ],
+  [
+    "missing dependencies naming one twice",
+    "DependenciesNotFound",
+    commandsRefusal("DependenciesNotFound", {
+      ticket: 1,
+      dependencies: [2, 2],
+    }),
+    commandsCarried,
+  ],
+  [
+    "missing dependencies naming no ticket",
+    "DependenciesNotFound",
+    commandsRefusal("DependenciesNotFound", { ticket: 1, dependencies: [0] }),
+    commandsCarried,
+  ],
+  [
+    "a stale revision naming no current one",
+    "TicketRevisionStale",
+    commandsRefusal("TicketRevisionStale", { ticket: 1, expected: 2 }),
+    commandsCarried,
+  ],
+  [
+    "a task not current naming no task",
+    "TaskNotCurrent",
+    commandsRefusal("TaskNotCurrent", {
+      ticket: 1,
+      task: { type: "WorkTask", value: { ticket: 1, cycle: 0 } },
+    }),
+    commandsCarried,
+  ],
+  [
+    "a finalization not current at no generation",
+    "FinalizationNotCurrent",
+    commandsRefusal("FinalizationNotCurrent", { ticket: 1, workCycle: 2 }),
+    commandsCarried,
+  ],
+  [
+    "a finalization not current about no ticket",
+    "FinalizationNotCurrent",
+    commandsRefusal("FinalizationNotCurrent", { workCycle: 2, generation: 1 }),
+    commandsCarried,
+  ],
+];
+
+/** Writes one refused input, answering the error it was refused with, if any. */
+async function commandsRefuse(
+  subject: pg.Pool,
+  ordinal: number,
+  code: string,
+  refusal: string | null,
+): Promise<string | null> {
+  try {
+    await subject.query(
+      `INSERT INTO decision_input
+         (tenant,project,ordinal,input_kind,input_id,base_priority,lifecycle_generation,
+          state,outcome_code,refusal,refused_head,refused_lifecycle_generation,terminal_at)
+       VALUES('tenant-5','project-5',$1,'Operation',$2,'Ordinary',1,
+              'Refused',$3,$4,0,1,now())`,
+      [ordinal, `input-${String(ordinal)}`, code, refusal],
+    );
+    return null;
+  } catch (error: unknown) {
+    return String(error);
+  }
+}
+
+test("a refused input keeps the refusal the machine decided and none for the boundary's own", async () => {
+  await migrationDatabase("commands_refusals", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(deletionPartition);
+    let ordinal = 0;
+    for (const [code, value] of commandsRefusals)
+      assert.equal(
+        await commandsRefuse(
+          subject,
+          ++ordinal,
+          code,
+          commandsRefusal(code, value),
+        ),
+        null,
+        code,
+      );
+    for (const code of commandsBoundaryRefusals)
+      assert.equal(
+        await commandsRefuse(subject, ++ordinal, code, null),
+        null,
+        code,
+      );
+    for (const [label, code, refusal, check] of commandsRefused) {
+      const refused = await commandsRefuse(subject, ++ordinal, code, refusal);
+      assert.ok(refused?.includes(check), `${label}: ${String(refused)}`);
+    }
+  });
+});
+
+test("the ticket service settles a refusal through the check, and the api reads it", async () => {
+  await migrationDatabase("commands_refusal_writer", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(deletionPartition);
+    await subject.query(
+      `INSERT INTO decision_input
+         (tenant,project,ordinal,input_kind,input_id,base_priority,lifecycle_generation)
+       VALUES('tenant-5','project-5',1,'Operation','input-1','Ordinary',1)`,
+    );
+    const settled = commandsRefusal("TicketNotFound", 1);
+    const client = await subject.connect();
+    const settle = (refusal: string | null) =>
+      client.query(
+        `UPDATE decision_input
+            SET state='Refused', outcome_code='TicketNotFound', refusal=$1,
+                refused_head=0, refused_lifecycle_generation=1, terminal_at=now()
+          WHERE input_id='input-1'`,
+        [refusal],
+      );
+    try {
+      await client.query("BEGIN");
+      await client.query(`SET LOCAL ROLE ${ticketServiceRole}`);
+      await assert.rejects(settle(null), new RegExp(commandsCarried, "u"));
+      await client.query("ROLLBACK");
+      await client.query("BEGIN");
+      await client.query(`SET LOCAL ROLE ${ticketServiceRole}`);
+      await settle(settled);
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT refusal,
+                  has_column_privilege($1,'public.decision_input','refusal','SELECT') AS reads,
+                  has_column_privilege($1,'public.decision_input','refusal','UPDATE') AS writes,
+                  has_function_privilege($1,'public.decision_refusal_is_valid(text,text)','EXECUTE') AS executes,
+                  has_function_privilege('public','public.decision_refusal_is_valid(text,text)','EXECUTE') AS anyone
+             FROM decision_input`,
+          [apiRole],
+        )
+      ).rows,
+      [
+        {
+          refusal: settled,
+          reads: true,
+          writes: false,
+          executes: false,
+          anyone: false,
+        },
+      ],
+    );
+  });
+});
+
+test("the command validator rebuilt whole stays the boundary owner's and nobody's to execute", async () => {
+  await migrationDatabase("commands_owners", async (subject) => {
+    await postgresMigrate(subject);
+    await predicatesClosed(subject, [
+      "public.decision_command_is_valid(jsonb)",
+    ]);
   });
 });
