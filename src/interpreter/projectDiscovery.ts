@@ -26,11 +26,6 @@
  * its serialized position must refuse a submission whose authority moved
  * between acceptance and decision.
  *
- * A CONTINUATION NAMES A REDUCTION, NOT AN EVENT. The durable row says which
- * task set reduced and whose; what a failing evaluation is then taken as is the
- * writer's rework cap read over the ticket's own history, so the event is
- * assembled where that cap is held rather than here.
- *
  * A COMMAND NAMING NO DOMAIN EVENT CARRIES NO `resolvedEvent`. The two answers
  * a finalization approval admits change no `TicketGraph` state, so the source assembled
  * for one carries the answer alone and there is nothing for a decider to be
@@ -46,7 +41,6 @@ import type { BlockedReason } from "../contract/rosters.ts";
 import type {
   OperationId,
   PriorityClass,
-  SchedulerCompletionEvent,
   StoredTicketCommand,
 } from "./operationInbox.ts";
 import type { FinalizationEvidence } from "./finalizerPreparation.ts";
@@ -55,22 +49,11 @@ import type {
   NativeActionAnswer,
 } from "./projectDecision.ts";
 import type { Partition } from "./projectStore.ts";
-import type { TicketId } from "../domain/ids.ts";
 
 /** One project's discovery record: the partition with work waiting, and the generation that wake-up carries. */
 export interface Readiness {
   readonly partition: Partition;
   readonly generation: number;
-}
-
-/**
- * Whose settled work cycle a continuation reports. There is one kind of
- * continuation left: an evaluation concludes inside the completion that
- * settles its last evaluator, so nothing follows it for a second decision to
- * be scheduled for.
- */
-export interface ContinuationReduction {
-  readonly ticket: TicketId;
 }
 
 /**
@@ -83,43 +66,32 @@ export interface DecisionInput {
   readonly partition: Partition;
   readonly ordinal: number;
   readonly priority: PriorityClass;
-  readonly source:
-    | {
-        readonly kind: "Operation";
-        readonly operation: OperationId;
-        readonly command: StoredTicketCommand;
-        readonly resolvedEvent?: DecisionEvent;
-        /**
-         * What the scheduler's boundary settled, where this operation is a
-         * completion. It stands apart from `resolvedEvent` because the edge a
-         * failing stage is taken on is the writer's own pick, so the event is
-         * finished where that pick is made rather than where the task was.
-         */
-        readonly completion?: SchedulerCompletionEvent;
-        /**
-         * Which wall the execution a scheduler completion settles was blocked
-         * at, read off that execution's own row. The report the boundary built
-         * names the kind alone, so this is the only account of the wall a
-         * decision has, and it is what an escalation records as its evidence.
-         */
-        readonly executionBlockedBy?: BlockedReason;
-        readonly draftRelease?: DraftReleaseFence;
-        readonly nativeAction?: NativeActionAnswer;
-        readonly finalizationRequest?: {
-          readonly request: string;
-          readonly requestGeneration: number;
-          readonly open: boolean;
-          readonly evidence?: FinalizationEvidence;
-        };
-      }
-    | {
-        readonly kind: "Continuation";
-        readonly continuation: string;
-        readonly reduction: ContinuationReduction;
-        readonly expectedTicketVersion: number;
-        readonly expectedPhase: string;
-        readonly taskSetGeneration: number;
-      };
+  /**
+   * How many passes have already deferred this input on a source nobody could
+   * yet read, which is what bounds a remote that stays transient.
+   */
+  readonly deferredPasses: number;
+  readonly source: {
+    readonly kind: "Operation";
+    readonly operation: OperationId;
+    readonly command: StoredTicketCommand;
+    readonly resolvedEvent?: DecisionEvent;
+    /**
+     * Which wall the execution a scheduler completion settles was blocked
+     * at, read off that execution's own row. The report the boundary built
+     * names the kind alone, so this is the only account of the wall a
+     * decision has, and it is what an escalation records as its evidence.
+     */
+    readonly executionBlockedBy?: BlockedReason;
+    readonly draftRelease?: DraftReleaseFence;
+    readonly nativeAction?: NativeActionAnswer;
+    readonly finalizationRequest?: {
+      readonly request: string;
+      readonly requestGeneration: number;
+      readonly open: boolean;
+      readonly evidence?: FinalizationEvidence;
+    };
+  };
 }
 
 /**

@@ -6,16 +6,15 @@
 /// nothing. This module models that shape AS a machine and proves it
 /// refines the domain machine it embeds.
 ///
-/// HOW A DECISION REACHES THE WORLD. Decision events ARE journal
-/// entries. Every decision appends (seq, decision-event, StepRecord) to
-/// a durable journal; the EXECUTOR is a cursor (`applied`) consuming
-/// that journal in order and emitting each entry's effects toward the
-/// world; crash recovery replays the journal into a fresh in-memory
-/// state and resumes the cursor. Decisions flow decide -> journal ->
-/// cursor -> world. The seam between recording a decision and effecting
-/// it is the atomicity this module proves safe in one order
-/// (journal-then-effect) and demonstrates unsafe in the other
-/// (effect-then-journal, which double-spends).
+/// HOW A DECISION REACHES THE WORLD. Events ARE journal entries. Every
+/// decision appends (seq, event) to a durable journal; the EXECUTOR is a
+/// cursor (`applied`) consuming that journal in order and emitting each
+/// entry's obligations toward the world; crash recovery replays the journal
+/// into a fresh in-memory state by folding evolve over it and resumes the
+/// cursor. Decisions flow decide -> journal -> cursor -> world. The seam
+/// between recording a decision and effecting it is the atomicity this
+/// module proves safe in one order (journal-then-effect) and demonstrates
+/// unsafe in the other (effect-then-journal, which double-spends).
 ///
 /// PLATFORM CAPTURE, the formal guard made concrete: the domain machine
 /// (domain.qnt/ticket.qnt) contains NO vocabulary from this file — no
@@ -40,26 +39,21 @@
 /// ==========================================================================
 ///
 /// STATE. The actor's in-memory view of the domain ("mem") is the
-/// EMBEDDED DOMAIN INSTANCE's own vars — tickets/lastStep and the two
-/// step-history ghosts, imported below — so every domain invariant
+/// EMBEDDED DOMAIN INSTANCE's own vars — tickets, lastStep and the
+/// step-history ghost, imported below — so every domain invariant
 /// (allInvariants) is checked against the actor's memory at every step
 /// of every run in this file's harness. On top of it, this module's own
 /// vars:
 ///
 ///   journal      : List[Entry] — THE DURABLE DECISION LOG, the only
-///                  thing that survives a crash. An Entry is the domain
-///                  StepRecord plus a monotone sequence number plus the
-///                  DECISION EVENT itself (`event`: which decider, at which
-///                  named picks — the witness-driver discipline as data).
-///                  The event is what makes replay possible (the deciders
-///                  are pure; the picks must be recorded); the rec is
-///                  what the executor emits and what conformance
-///                  replays — journal rows are golden-trace steps
-///                  (standing rule 4). An implementation may derive rec
-///                  from event at read time; the model stores both and
-///                  proves them consistent (journalLegal).
+///                  thing that survives a crash. An Entry is the EVENT the
+///                  decision took plus a monotone sequence number. The
+///                  event is what makes replay possible — evolve is pure and
+///                  reads nothing else, so a replay re-decides nothing and
+///                  consults no policy — and it is what conformance replays:
+///                  journal rows are golden-trace steps (standing rule 4).
 ///   applied      : int — THE EXECUTOR CURSOR: how many journal entries'
-///                  effects have been emitted to the world. Deliberately
+///                  obligations have been emitted to the world. Deliberately
 ///                  NOT atomic with emission: a crash may lose cursor
 ///                  progress (crashRecover regresses it nondet), which
 ///                  re-emits a suffix — at-least-once toward the world,
@@ -67,14 +61,14 @@
 ///   worldEffects : Set[int] — WHAT THE WORLD RECEIVED, by decision
 ///                  identity (journal seq). A set, deliberately: emitting
 ///                  seq s twice is absorbed (union) — this is the model's
-///                  form of "every effect is idempotent, keyed by its
+///                  form of "every obligation is idempotent, keyed by its
 ///                  decision" — the one thing the fabric is trusted to
 ///                  honour, given a key. Re-emission is REAL in the traces (the
 ///                  cursor re-covers ground); the set records that the
 ///                  world cannot be made to act twice on the SAME
 ///                  decision — only on distinct ones.
-///   orphans      : List[StepRecord] — effects the world received from
-///                  decisions the journal NEVER recorded: the
+///   orphans      : List[TicketEvent] — decisions whose obligations the
+///                  world received but the journal NEVER recorded: the
 ///                  effect-then-journal hazard's residue. Structurally
 ///                  empty under the disciplined step relation (only
 ///                  effectCrash appends). An orphan is un-keyed — no seq
@@ -105,8 +99,8 @@
 ///     the only trace is possible re-emission, absorbed by identity.
 ///   effect -> journal (THE HAZARD, `rstepHazard` = rstep + effectCrash):
 ///     effectCrash is the one extra behavior an effect-first
-///     implementation admits: decide, emit the effects, crash BEFORE the
-///     journal write. Memory is lost; recovery replays a journal that
+///     implementation admits: decide, emit the obligations, crash BEFORE
+///     the journal write. Memory is lost; recovery replays a journal that
 ///     never saw the decision — the book says it never happened, the
 ///     world already acted on it (orphans). The actor then legitimately
 ///     re-decides, re-emits: two task fan-outs for one journaled
@@ -121,11 +115,11 @@
 /// THE ACTOR'S DECIDE STEP IS THE DOMAIN DECIDER — structurally. Every
 /// actor action draws its picks from the domain's OWN enablement sets
 /// (the same vals the domain's `step` draws from), and journalStep
-/// executes `execDecisionEvent` = a total dispatch onto the domain's pure
-/// deciders, guarded by `decisionEventEnabled` = the same enablement re-stated
-/// over an explicit TicketGraph (the TicketGraph-parameterized forms hoisted
-/// into domain.qnt — referenced, never copied). The actor cannot journal a
-/// decision the domain's deciders would not produce from its state:
+/// executes `decide` = a total dispatch onto the domain's pure deciders,
+/// guarded by `decisionEventEnabled` = the same enablement re-stated over an
+/// explicit TicketGraph (the TicketGraph-parameterized forms hoisted into
+/// domain.qnt — referenced, never copied), and then evolve. The actor cannot
+/// journal an event the domain's deciders would not produce from its state:
 /// refinement is structural. It is then ALSO stated as the checked
 /// invariant journalLegal (below), so a mutant actor — or a tampered
 /// journal — is caught by state predicate, not by construction argument.
@@ -134,28 +128,34 @@
 /// THE THEOREMS (the PR gate), as implemented
 /// ==========================================================================
 ///
-///   1. REFINEMENT (journalLegal): every journaled history projects to a
-///      legal domain-machine trace. Checked by replay: fold the journal
-///      from the genesis TicketGraph; at each entry, (a) the sequence number is
-///      the next in the monotone dense order, (b) the decision was
-///      ENABLED at the replayed prefix state (decisionEventEnabled — the domain's
-///      own guards), and (c) the domain decider at the recorded picks
-///      reproduces the recorded StepRecord EXACTLY (execDecisionEvent(st, event).rec
-///      == rec). With every non-actor step leaving the domain vars
-///      untouched, the domain-visible trace of any disciplined run IS
-///      the journal's record sequence — the projection is the identity
-///      on decisions.
+///   1. REFINEMENT (journalLegal): every journaled history replays, and
+///      every row in it did something. Checked by replay: fold the
+///      journal from the genesis TicketGraph; at each entry, (a) the
+///      sequence number is the next in the monotone dense order, (b) the
+///      ticket the event names stands at the replayed prefix state (a
+///      TicketCreated's does not), and (c) the event MOVES that state —
+///      evolve(prefix, event) != prefix. (c) refuses no row the machine
+///      decides, because a decided event is never the identity
+///      (domain.qnt eventsNeverIdentity, an invariant the model checks),
+///      and it refuses a row applied to a state that no longer owes it,
+///      because evolve is the identity there. It does NOT re-check a
+///      decider's guard: a TicketDispatched for a ticket whose dependency
+///      is not Done moves the state and passes. Every row is decided
+///      under its guard before it is journaled, so replay trusts that and
+///      restates none of evolve's or decide's conditions. With every
+///      non-actor step leaving the domain vars untouched, the domain-visible
+///      trace of any disciplined run IS the journal's event sequence.
 ///   2. NO DOUBLE-SPENT WORK / NO DUPLICATE CYCLE ACROSS CRASHES
 ///      (noDoubleSpentWork, noDuplicateCycle, journalCoversWorld;
 ///      journalCompletionsMatchLedger is the journal-side half): under
 ///      journal-then-effect, crash/recover at ANY seam never runs more
 ///      work in the world than the journal recorded (per ticket:
-///      distinct-decision spawn emissions <= journaled spawn decisions)
+///      distinct-decision work spawns emitted <= journaled work spawns)
 ///      and never lands one ticket's diff twice (distinct-decision
-///      completion emissions <= 1). Effects between the journal position
-///      and the applied cursor are re-emitted — at-least-once toward the
-///      world — but re-emission carries the SAME decision seq and is
-///      absorbed by identity; the JOURNAL never gains a duplicate
+///      completion emissions <= 1). Obligations between the journal
+///      position and the applied cursor are re-emitted — at-least-once
+///      toward the world — but re-emission carries the SAME decision seq and
+///      is absorbed by identity; the JOURNAL never gains a duplicate
 ///      decision (seqs are dense and each entry re-checks as a fresh
 ///      legal step; the ledger's completions ghost, capped at 1 by the
 ///      domain's completionExclusive, equals the journal's completion count).
@@ -163,12 +163,12 @@
 ///      journal yields EXACTLY the domain state the actor holds — in
 ///      every reachable state, so every prefix of every run is covered
 ///      (each state's journal is that prefix, and the invariant holds
-///      there). Determinism of replay is by PURITY: the deciders are
-///      pure functions of (TicketGraph, picks), and every runtime shape reuses
-///      those same deciders, which is precisely what makes the journal a
-///      sufficient basis for recovery — and the incremental/batch
-///      agreement (replaying n+1 entries == stepping the n-entry replay
-///      once) is pinned as a unit test (replayAppendAgreesTest).
+///      there). Determinism of replay is by PURITY: evolve is a pure
+///      function of (TicketGraph, event), and every runtime shape reuses
+///      it, which is precisely what makes the journal a sufficient basis for
+///      recovery — and the incremental/batch agreement (replaying n+1
+///      entries == evolving the n-entry replay once) is pinned as a unit
+///      test (replayAppendAgreesTest).
 ///   4. THE DEMONSTRATION WITNESS (tests/chuggy_refinement_test.qnt,
 ///      chuggy_refinement_hazard_test): under effect-first, a crash
 ///      between effect and journal double-spends on recovery —
@@ -190,13 +190,13 @@
 /// Outbound (journal -> world): the fabric may deliver an emission more
 /// than once and the executor may re-emit after cursor loss — both are
 /// the SAME at-least-once, and both are absorbed because every emitted
-/// effect is keyed by its decision's journal seq (worldEffects' set
+/// obligation is keyed by its decision's journal seq (worldEffects' set
 /// semantics IS that assumption, stated as a model primitive: "every
-/// effect is idempotent", given its key). Inbound completion and wrap-up
+/// obligation is idempotent", given its key). Inbound completion and wrap-up
 /// redelivery is absorbed by durable request identity before a decision
 /// input is constructed. The composition absorbs at-least-once delivery on
 /// both sides below TicketGraph; what neither can absorb is an UN-KEYED
-/// effect — a decision that reached the world but never the journal —
+/// obligation — a decision that reached the world but never the journal —
 /// and that is exactly the orphan the discipline forbids.
 ///
 /// ==========================================================================
@@ -207,8 +207,8 @@
 /// domain's TIMES the journal — the instance is fixed TINY, at the
 /// smallest consts that exercise a REWORK (a rework is where the
 /// double-spend bites: it is the re-entry that launches work again):
-/// N_TICKETS = 2 (dependencies stay expressible), N_TASKS = 1 (singleton task
-/// sets), MAX_STAGES = 1 (one stage is enough to fail; the stage advance
+/// N_TICKETS = 2 (dependencies stay expressible), N_TASKS = 1 (singleton
+/// rosters), MAX_STAGES = 1 (one stage is enough to fail; the stage advance
 /// is the domain instance's coverage, not the seam's). The wrap-up's
 /// invalidated draw still exercises both paths.
 ///
@@ -234,8 +234,8 @@
 ///   - The importing module cannot assign the instance's vars from its
 ///     own expressions (evaluator: "Variable not set"); every write to
 ///     the domain vars below therefore routes through the domain's own
-///     actions — `apply` for actor steps (ghosts snapshot: a real domain
-///     step), `installGraph` for executor/crash steps (ghosts stale: not
+///     actions — `apply` for actor steps (ghost snapshots: a real domain
+///     step), `installGraph` for executor/crash steps (ghost stale: not
 ///     a domain step; see its header in domain.qnt).
 ///   - Imports are not re-exported: downstream modules (the tests) see
 ///     this module's OWN defs only, so the handful of domain-instance
@@ -260,74 +260,59 @@ module chuggy_refinement {
   // ==========================================================================
   // === Vocabulary ===========================================================
   // ==========================================================================
-  // One constructor namespace per module: the J prefix (Journal) marks
-  // the decision-event constructors; the imported vocabulary already
-  // holds P/T/TK/TS/V/R/Rs/C/RW/W/WO/A.
 
-  /// THE DECISION EVENT: which decider, at which named picks — one
-  /// constructor per domain action, payload exactly the action's nondet
-  /// draws (the witness-driver discipline as journal data). This is what
-  /// a real journal row must carry for replay to work: the deciders are
-  /// pure, so (TicketGraph, picks) determines everything; the picks are the
-  /// only information the crash could lose.
-  ///
-  /// THE COMPLETION CARRIES ITS DISPOSITION. A completion that concludes a
-  /// failing stage takes the rework-or-escalate edge in the same decision
-  /// (domain.qnt decideTaskDone), so the pick has to be journaled with it;
-  /// on every other completion it is a recorded pick nothing reads. That is
-  /// the same treatment every other draw gets here — the picks are what the
-  /// crash could lose, whether or not the decider consults them.
+  /// THE DECISION EVENT — the decider's INPUT: which decider, at which
+  /// named picks, one constructor per domain action and its payload exactly
+  /// the action's nondet draws but the policy (the witness-driver discipline
+  /// as data). The inbox holds these; the journal holds what `decide` makes
+  /// of them, so none of these is ever replayed.
   type DecisionEvent =
       CreateTicket(ReleasedTicket)
     | Revoke(int)
     | Dispatch({ ticket: int, source: int })
-    | TaskDone({ ticket: int, task: TaskIdentity, report: TaskTerminalReport,
-        onFailure: EvaluationFailureDisposition })
-    | WorkReduce(int)
-    | FinalizationResult({ ticket: int, out: FinalizationOutcome })
+    | TaskDone({ ticket: int, task: TaskIdentity, report: TaskTerminalReport })
+    | FinalizationResult({ ticket: int, out: FinalizationOutcome,
+        evidence: int })
     | ResumeTicket(int)
 
   /// One journal row: monotone dense seq (entry i carries seq i+1 —
-  /// journalLegal checks it), the decision event, and the StepRecord the
-  /// decision produced when first decided (the executor's emission
-  /// payload; golden-trace shaped, standing rule 4). rec is derivable
-  /// from the event-replay — journalLegal proves exactly that — so an
-  /// implementation may store either; the model stores both to make the
-  /// consistency a checked theorem instead of a storage convention.
-  type Entry = { seq: int, event: DecisionEvent, rec: StepRecord }
+  /// journalLegal checks it) and the event the decision took.
+  type Entry = { seq: int, event: TicketEvent }
 
   /// The journal's base state: the machine's init fleet — empty (domain
-  /// init: tickets' = Map()). Replay starts here; entry 1's event must be
-  /// enabled here (an release — nothing else is enabled on an empty
-  /// fleet, which journalLegal then enforces for free).
+  /// init: tickets' = Map()). Replay starts here; entry 1's event must name
+  /// a ticket that is not here yet (a release — nothing else can move an
+  /// empty fleet, which journalLegal then enforces for free).
   pure val genesis: TicketGraph = { tickets: Map() }
 
   // ==========================================================================
-  // === Replay (pure — the deciders are pure; this is the payoff) ===========
+  // === Decide and replay (pure — this is the payoff) =======================
   // ==========================================================================
 
   /// Total dispatch onto the domain's pure deciders — THE actor's decide
-  /// step, and THE replay step: both sides of theorem 3 are this one
-  /// function, so they cannot drift.
-  pure def execDecisionEvent(
-      c: TicketGraph, event: DecisionEvent): Decision = match event {
-    | CreateTicket(definition) => decideReleaseTicket(c, definition)
-    | Revoke(j) => decideRevoke(c, j)
-    | Dispatch(a) => decideDispatch(c, a.ticket, a.source)
-    | TaskDone(a) =>
-      decideTaskDone(c, a.ticket, a.task, a.report, a.onFailure)
-    | WorkReduce(j) => decideWorkReduce(c, j)
-    | FinalizationResult(a) => decideFinalizationResult(c, a.ticket, a.out)
-    | ResumeTicket(j) => decideResumeTicket(c, j)
-  }
+  /// step. The policy is asked only by a completion that concludes a failing
+  /// stage, and the event it returns names the edge taken, so nothing after
+  /// this ever asks it again.
+  pure def decide(
+      c: TicketGraph, event: DecisionEvent,
+      failurePolicy: EvaluationFailurePolicy): SuccessfulTicketDecision =
+    match event {
+      | CreateTicket(definition) => decideReleaseTicket(c, definition)
+      | Revoke(j) => decideRevoke(c, j)
+      | Dispatch(a) => decideDispatch(c, a.ticket, a.source)
+      | TaskDone(a) =>
+        decideTaskDone(c, a.ticket, a.task, a.report, failurePolicy)
+      | FinalizationResult(a) =>
+        decideFinalizationResult(c, a.ticket, a.out, a.evidence)
+      | ResumeTicket(j) => decideResumeTicket(c, j)
+    }
 
   /// The decision's enablement at an explicit TicketGraph — per constructor,
   /// exactly the domain action's guard + draw-set membership, each
   /// conjunct a REFERENCE to the definition the domain action reads
   /// (the TicketGraph-parameterized forms hoisted into domain.qnt; the m6
   /// audit rule: nothing here is a copied expression). Conjoined by
-  /// journalStep (the actor cannot journal a refused decision) and
-  /// re-checked by journalLegal at every replayed prefix.
+  /// journalStep: the actor cannot journal a refused decision.
   pure def decisionEventEnabled(
       c: TicketGraph, event: DecisionEvent): bool = match event {
     | CreateTicket(definition) => and {
@@ -342,80 +327,91 @@ module chuggy_refinement {
         completableIn(c).contains(a.ticket),
         liveTasks(c.tickets.get(a.ticket)).contains(a.task),
         reportMatchesTask(c.tickets.get(a.ticket), a.task, a.report),
-        reportValid(a.report),
-        dispositionChoices.contains(a.onFailure)
+        reportValid(a.report)
       }
-    | WorkReduce(j) => reducibleWorkIn(c).contains(j)
     | FinalizationResult(a) => c.tickets.keys().contains(a.ticket) and
         finalizationOutcomes.contains(a.out) and
+        finalizationEvidences.contains(a.evidence) and
         finalizationOutcomeEnabled(c, a.ticket, a.out)
     | ResumeTicket(j) => retryablesIn(c).contains(j)
   }
 
-  /// RECOVERY: replay the journal into a fresh in-memory state.
-  /// Deterministic by purity (execDecisionEvent is a pure function; the fold has
-  /// one result) — theorem 3's mechanism.
+  /// RECOVERY: replay the journal into a fresh in-memory state by folding
+  /// evolve over its events. Deterministic by purity (evolve is a pure
+  /// function; the fold has one result) — theorem 3's mechanism.
   pure def replayGraph(jl: List[Entry]): TicketGraph =
-    jl.foldl(genesis, (c, e) => execDecisionEvent(c, e.event).post)
+    jl.foldl(genesis, (c, e) => evolve(c, e.event))
 
-  /// THEOREM 1's checker: the journaled history is a legal domain trace.
-  /// One fold, three checks per entry at the replayed prefix state —
-  /// dense monotone seq, enablement, record reproduced — chaining the
-  /// decider's post as the next prefix state. TOTAL by construction: a
-  /// disabled entry short-circuits to false WITHOUT executing the
-  /// decider (deciders assume their guards — running one on a state
-  /// that refuses it is a lookup error, not a boolean; enablement is
-  /// checked first, so a tampered journal is rejected, never crashed
-  /// on).
+  /// Does the ticket an event names stand where the event would apply? A
+  /// release names one that must not exist yet; every other event names one
+  /// that must.
+  pure def eventTicketStands(c: TicketGraph, fact: TicketEvent): bool =
+    match fact {
+      | TicketCreated(definition) => not(c.tickets.keys().contains(definition.id))
+      | _ => c.tickets.keys().contains(eventTicket(fact))
+    }
+
+  /// THEOREM 1's checker: the journaled history replays and no row of it
+  /// is inert (it does not re-check a decider's guard). One fold, three checks per entry at the replayed prefix
+  /// state — dense monotone seq, the event's ticket standing, and the event
+  /// moving the state — chaining the evolved state as the next prefix.
   pure def journalLegalOn(jl: List[Entry]): bool =
     jl.foldl({ ok: true, st: genesis, n: 0 }, (acc, e) =>
-      if (not(acc.ok) or e.seq != acc.n + 1 or not(decisionEventEnabled(acc.st, e.event)))
+      if (not(acc.ok) or e.seq != acc.n + 1 or
+          not(eventTicketStands(acc.st, e.event)))
         { ok: false, st: acc.st, n: acc.n + 1 }
       else
-        val d = execDecisionEvent(acc.st, e.event)
-        { ok: d.rec == e.rec, st: d.post, n: acc.n + 1 })
+        val evolved = evolve(acc.st, e.event)
+        { ok: evolved != acc.st, st: evolved, n: acc.n + 1 })
     .ok
 
   // ==========================================================================
   // === World accounting (pure) ==============================================
   // ==========================================================================
   // What the world DOES with an emission is trusted fabric; what the
-  // theorems need is arithmetic over which DECISIONS reached it. A
-  // "spawn" emission runs a task fan-out (the SpawnWorkTasks effect —
-  // dispatch, both rework arms, the Work resumes); a "completion"
-  // emission merges the ticket's diff (the ticket-done success step).
-  // Attribution is transitions[0].ticket: every effect-bearing record's
-  // head transition is the stepped ticket (domain.qnt move/completeTicket).
+  // theorems need is arithmetic over which DECISIONS reached it. A work
+  // spawn is a decision whose event starts a work cycle — and so owes the
+  // cycle's ExecuteTask (dispatch, both reworks, the work resume); a
+  // completion lands the ticket's diff (the finalization success). Each is
+  // attributed to the ticket its event names.
 
-  pure def hasEffect(r: StepRecord, e: str): bool =
-    r.effects.foldl(false, (b, x) => b or x == e)
-  pure def stepsTicket(r: StepRecord, j: int): bool =
-    r.transitions.length() >= 1 and r.transitions[0].ticket == j
-  pure def isSpawnFor(r: StepRecord, j: int): bool =
-    hasEffect(r, "SpawnWorkTasks") and stepsTicket(r, j)
-  pure def isCompletionFor(r: StepRecord, j: int): bool =
-    r.label == "ticket-done" and stepsTicket(r, j)
+  /// Does this event start a work cycle for ticket j?
+  pure def isSpawnFor(fact: TicketEvent, j: int): bool =
+    eventTicket(fact) == j and match fact {
+      | TicketDispatched(_) => true
+      | TicketWorkResumed(_) => true
+      | TicketEvaluationReworkStarted(_) => true
+      | TicketFinalizationNeedsWork(_) => true
+      | _ => false
+    }
+
+  /// Does this event land ticket j's diff?
+  pure def isCompletionFor(fact: TicketEvent, j: int): bool =
+    eventTicket(fact) == j and match fact {
+      | TicketFinalizationSucceeded(_) => true
+      | _ => false
+    }
 
   /// Distinct-decision spawn emissions the world received for ticket j:
   /// journaled entries whose seq was emitted at least once (re-emission
   /// of a seq is the same decision — absorbed), plus every orphan (each
   /// orphan IS a distinct decision: it has no seq to absorb against).
   pure def worldSpawnsOn(
-      jl: List[Entry], we: Set[int], orph: List[StepRecord], j: int): int =
-    jl.indices().filter(i => we.contains(i + 1) and isSpawnFor(jl[i].rec, j)).size()
+      jl: List[Entry], we: Set[int], orph: List[TicketEvent], j: int): int =
+    jl.indices().filter(i => we.contains(i + 1) and isSpawnFor(jl[i].event, j)).size()
       + orph.indices().filter(i => isSpawnFor(orph[i], j)).size()
 
   pure def worldCompletionsOn(
-      jl: List[Entry], we: Set[int], orph: List[StepRecord], j: int): int =
-    jl.indices().filter(i => we.contains(i + 1) and isCompletionFor(jl[i].rec, j)).size()
+      jl: List[Entry], we: Set[int], orph: List[TicketEvent], j: int): int =
+    jl.indices().filter(i => we.contains(i + 1) and isCompletionFor(jl[i].event, j)).size()
       + orph.indices().filter(i => isCompletionFor(orph[i], j)).size()
 
   /// The journal-side counts: spawn/completion DECISIONS recorded (whether
   /// emitted yet or not) — the book the world must never exceed.
   pure def journalSpawnsOn(jl: List[Entry], j: int): int =
-    jl.indices().filter(i => isSpawnFor(jl[i].rec, j)).size()
+    jl.indices().filter(i => isSpawnFor(jl[i].event, j)).size()
   pure def journalCompletionsOn(jl: List[Entry], j: int): int =
-    jl.indices().filter(i => isCompletionFor(jl[i].rec, j)).size()
+    jl.indices().filter(i => isCompletionFor(jl[i].event, j)).size()
 
   // ==========================================================================
   // === State ================================================================
@@ -424,7 +420,7 @@ module chuggy_refinement {
   var journal: List[Entry]
   var applied: int
   var worldEffects: Set[int]
-  var orphans: List[StepRecord]
+  var orphans: List[TicketEvent]
   var rlabel: str
 
   // Per-ticket world/journal counts over the live vars (test-visible).
@@ -448,35 +444,37 @@ module chuggy_refinement {
 
   /// THE ACTOR'S STEP: decide + journal, atomically (the decide<->journal
   /// seam is unobservable — header). The decision is the domain decider
-  /// at the named picks (execDecisionEvent), refused unless enabled (decisionEventEnabled —
-  /// so the machine structurally cannot journal an illegal decision);
-  /// `apply` installs the post-state in memory and records the step (a
-  /// REAL domain step: ghosts snapshot), and the entry appends with the
+  /// at the named picks (decide), refused unless enabled
+  /// (decisionEventEnabled — so the machine structurally cannot journal an
+  /// illegal decision), with the failing stage's edge the one `onFailure`
+  /// names; `apply` evolves memory by the event and records the decision (a
+  /// REAL domain step: the ghost snapshots), and the entry appends with the
   /// next dense seq. No emission here: the executor cursor lags
   /// (journal-then-effect). Doubles as the deterministic witness driver
-  /// (tests pass explicit events; the actor* actions below are the same
+  /// (tests pass explicit commands; the actor* actions below are the same
   /// step with the picks drawn nondet).
-  action journalStep(event: DecisionEvent): bool =
-    val d = execDecisionEvent(graph, event)
+  action journalStep(
+      event: DecisionEvent, onFailure: EvaluationFailureDisposition): bool =
+    val d = decide(graph, event, _ => onFailure)
     all {
       decisionEventEnabled(graph, event),
       apply(d),
-      journal' = journal.append({ seq: journal.length() + 1, event: event, rec: d.rec }),
+      journal' = journal.append({ seq: journal.length() + 1, event: d.event }),
       applied' = applied,
       worldEffects' = worldEffects,
       orphans' = orphans,
       rlabel' = "actor-step"
     }
 
-  /// THE EXECUTOR: emit the next unemitted journal entry's effects to
+  /// THE EXECUTOR: emit the next unemitted journal entry's obligations to
   /// the world (cursor advance; entry at index `applied` carries seq
   /// applied + 1). The union absorbs a re-emission — same seq, same
   /// decision, the world's idempotency key (composition argument in the
   /// header). Not a domain step: installGraph keeps the domain vars and
-  /// ghosts exactly in place.
+  /// ghost exactly in place.
   action emitNext = all {
     applied < journal.length(),
-    installGraph(graph, lastStep),
+    installGraph(graph),
     journal' = journal,
     applied' = applied + 1,
     worldEffects' = worldEffects.union(Set(applied + 1)),
@@ -495,7 +493,7 @@ module chuggy_refinement {
   action crashRecoverTo(a: int): bool = all {
     a >= 0,
     a <= applied,
-    installGraph(replayGraph(journal), lastStep),
+    installGraph(replayGraph(journal)),
     journal' = journal,
     applied' = a,
     worldEffects' = worldEffects,
@@ -513,23 +511,24 @@ module chuggy_refinement {
   }
 
   /// THE HAZARD SEAM (theorem 4; step relation rstepHazard only): the
-  /// effect-then-journal ordering's crash — decide, EMIT THE EFFECTS,
-  /// die before the journal write. The world keeps the emission as an
+  /// effect-then-journal ordering's crash — decide, EMIT THE OBLIGATIONS,
+  /// die before the journal write. The world keeps the decision as an
   /// un-keyed orphan; the journal never learns; recovered memory =
   /// replay(journal) = the pre-decision state (the decision was lost
   /// with memory — the domain vars, which by recoveryComplete already
   /// equal that replay, do not move). Every domain invariant keeps
   /// holding across this step — the domain machine is BLIND to the
   /// hazard, which is the whole reason this layer exists.
-  action effectCrash(event: DecisionEvent): bool =
-    val d = execDecisionEvent(graph, event)
+  action effectCrash(
+      event: DecisionEvent, onFailure: EvaluationFailureDisposition): bool =
+    val d = decide(graph, event, _ => onFailure)
     all {
       decisionEventEnabled(graph, event),
-      installGraph(replayGraph(journal), lastStep),
+      installGraph(replayGraph(journal)),
       journal' = journal,
       applied' = applied,
       worldEffects' = worldEffects,
-      orphans' = orphans.append(d.rec),
+      orphans' = orphans.append(d.event),
       rlabel' = "effect-crash-recover"
     }
 
@@ -538,7 +537,7 @@ module chuggy_refinement {
   // same enablement vals, the same oneOf sets) and routes through
   // journalStep. The domain's own actions are unusable as steps here —
   // they assign none of this module's vars — so the machine structurally
-  // cannot bypass the actor: every domain transition in any run of this
+  // cannot bypass the actor: every domain step in any run of this
   // module is a journaled decision. (`settle` has no counterpart: it is
   // simulator plumbing, not a decision, and crashRecover already keeps
   // runs deadlock-free.)
@@ -548,18 +547,20 @@ module chuggy_refinement {
     nondet j = releasableIds.oneOf()
     nondet dependencies_ = dependableTickets.powerset().oneOf()
     nondet stages = validPlans.oneOf()
-    journalStep(CreateTicket(releasedTicketOf(j, dependencies_, stages)))
+    journalStep(CreateTicket(releasedTicketOf(j, dependencies_, stages)),
+      ReworkEvaluationFailure)
   }
   action actorRevoke = all {
     revocableTickets.size() > 0,
     nondet j = revocableTickets.oneOf()
-    journalStep(Revoke(j))
+    journalStep(Revoke(j), ReworkEvaluationFailure)
   }
   action actorDispatch = all {
     readyTickets.size() > 0,
     nondet j = readyTickets.oneOf()
     nondet source = dispatchSources.oneOf()
-    journalStep(Dispatch({ ticket: j, source: source }))
+    journalStep(Dispatch({ ticket: j, source: source }),
+      ReworkEvaluationFailure)
   }
   action actorTaskDone = all {
     completableTickets.size() > 0,
@@ -567,43 +568,39 @@ module chuggy_refinement {
     nondet task = liveTasks(graph.tickets.get(j)).oneOf()
     nondet report = reportChoices(graph.tickets.get(j), task).oneOf()
     nondet onFailure = dispositionChoices.oneOf()
-    journalStep(TaskDone({ ticket: j, task: task, report: report,
-      onFailure: onFailure }))
-  }
-  action actorWorkReduce = all {
-    reducibleWork.size() > 0,
-    nondet j = reducibleWork.oneOf()
-    journalStep(WorkReduce(j))
+    journalStep(TaskDone({ ticket: j, task: task, report: report }),
+      onFailure)
   }
   action actorFinalizationResult = all {
     finalizerTickets.size() > 0,
     nondet j = finalizerTickets.oneOf()
     nondet out = finalizationOutcomes.oneOf()
-    journalStep(FinalizationResult({ ticket: j, out: out }))
+    nondet evidence = finalizationEvidences.oneOf()
+    journalStep(FinalizationResult({ ticket: j, out: out,
+      evidence: evidence }), ReworkEvaluationFailure)
   }
 
   action actorResumeTicket = all {
     retryableEscalated.size() > 0,
     nondet j = retryableEscalated.oneOf()
-    journalStep(ResumeTicket(j))
+    journalStep(ResumeTicket(j), ReworkEvaluationFailure)
   }
 
   // --- The hazard roster (rstepHazard only): the effect-first seam on ------
   // the world-effect-bearing decisions. The seam exists at EVERY
-  // decision; these are the ones whose orphaned effects the
+  // decision; these are the ones whose orphaned obligations the
   // theorems count — the spawns (dispatch, the completion that reworks a
   // failed stage, the finalization failure's respawn) and the wrap-up
-  // resolutions (the
-  // dequeue's fast-path squash, the gated promotion). An orphaned bookkeeping
-  // effect (OpenHumanTask, OpenHumanTask, ...) is the same shape with
-  // nothing counted riding it — journalCoversWorld still flags it; the
-  // demonstration keeps to the shapes the theorems name.
+  // resolutions. An orphaned decision that owes nothing counted is the same
+  // shape with nothing counted riding it — journalCoversWorld still flags
+  // it; the demonstration keeps to the shapes the theorems name.
 
   action hazardDispatch = all {
     readyTickets.size() > 0,
     nondet j = readyTickets.oneOf()
     nondet source = dispatchSources.oneOf()
-    effectCrash(Dispatch({ ticket: j, source: source }))
+    effectCrash(Dispatch({ ticket: j, source: source }),
+      ReworkEvaluationFailure)
   }
   action hazardTaskDone = all {
     completableTickets.size() > 0,
@@ -611,21 +608,23 @@ module chuggy_refinement {
     nondet task = liveTasks(graph.tickets.get(j)).oneOf()
     nondet report = reportChoices(graph.tickets.get(j), task).oneOf()
     nondet onFailure = dispositionChoices.oneOf()
-    effectCrash(TaskDone({ ticket: j, task: task, report: report,
-      onFailure: onFailure }))
+    effectCrash(TaskDone({ ticket: j, task: task, report: report }),
+      onFailure)
   }
   action hazardFinalizationResult = all {
     finalizerTickets.size() > 0,
     nondet j = finalizerTickets.oneOf()
     nondet out = finalizationOutcomes.oneOf()
-    effectCrash(FinalizationResult({ ticket: j, out: out }))
+    nondet evidence = finalizationEvidences.oneOf()
+    effectCrash(FinalizationResult({ ticket: j, out: out,
+      evidence: evidence }), ReworkEvaluationFailure)
   }
 
   /// THE DISCIPLINED MACHINE (journal-then-effect): decisions journal
   /// before anything reaches the world; crashes at any instant.
   action rstep = any {
     actorReleaseTicket, actorRevoke, actorDispatch,
-    actorTaskDone, actorWorkReduce, actorFinalizationResult,
+    actorTaskDone, actorFinalizationResult,
     actorResumeTicket,
     emitNext, crashRecover
   }
@@ -643,9 +642,9 @@ module chuggy_refinement {
   // === Invariants (this layer's — the domain's live in chuggy_domain) ======
   // ==========================================================================
 
-  /// THEOREM 1 — REFINEMENT: the journal is a legal domain trace (dense
-  /// seqs, every decision enabled at its replayed prefix, every record
-  /// reproduced by the decider). See journalLegalOn.
+  /// THEOREM 1 — REFINEMENT: the journal is a legal domain history (dense
+  /// seqs, every event's ticket standing at its replayed prefix, every
+  /// event moving it). See journalLegalOn.
   val journalLegal: bool = journalLegalOn(journal)
 
   /// THEOREM 3 — RECOVERY COMPLETENESS: replay of the current journal is
@@ -666,7 +665,7 @@ module chuggy_refinement {
     worldEffects.size() <= journal.length()
   }
 
-  /// THE DISCIPLINE CLAIM, coverage half: every effect the world ever
+  /// THE DISCIPLINE CLAIM, coverage half: every obligation the world ever
   /// received traces to a journaled decision — no orphans. Structural
   /// under rstep (only effectCrash appends); the FIRST invariant to fall
   /// under the hazard, on the very crash step.
@@ -681,9 +680,7 @@ module chuggy_refinement {
     worldSpawns(j) <= journalSpawns(j))
 
   /// THEOREM 2, cycle half — NO DUPLICATE CYCLE: the world lands a
-  /// ticket's diff at most once, across crashes at any seam. (A group's
-  /// diff rides its lead's single completion emission — R2 — so per-lead
-  /// counting covers the group.)
+  /// ticket's diff at most once, across crashes at any seam.
   val noDuplicateCycle: bool = liveTickets.forall(j =>
     worldCompletions(j) <= 1)
 
@@ -726,7 +723,12 @@ module chuggy_refinement {
   val allDomainInvariants: bool = allInvariants
   /// The actor's in-memory view (the embedded instance's TicketGraph).
   val memGraph: TicketGraph = graph
-  /// The last DOMAIN step's record (stale across emit/crash steps —
-  /// those are not domain steps; rlabel carries this layer's trace).
-  val obs: StepRecord = lastStep
+  /// The embedded machine's evolve, for the suites that replay by hand.
+  pure def evolveGraph(c: TicketGraph, event: TicketEvent): TicketGraph =
+    evolve(c, event)
+  /// The embedded machine's name for an event's constructor.
+  pure def eventNameOf(event: TicketEvent): str = eventName(event)
+  /// The last DOMAIN decision (stale across emit/crash steps — those are
+  /// not domain steps; rlabel carries this layer's trace).
+  val obs: LastDecision = lastStep
 }

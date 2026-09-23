@@ -211,13 +211,11 @@ export interface Submission {
 }
 
 /** The immutable scheduling class trusted ingress derives from a typed command. */
-export type PriorityClass =
-  "Safety" | "Completion" | "Continuation" | "Ordinary";
+export type PriorityClass = "Safety" | "Completion" | "Ordinary";
 
 export const allPriorityClasses: readonly PriorityClass[] = [
   "Safety",
   "Completion",
-  "Continuation",
   "Ordinary",
 ];
 
@@ -228,7 +226,7 @@ export const allPriorityClasses: readonly PriorityClass[] = [
  */
 export function classifyCommand(command: TicketCommand): {
   readonly admission: AdmissionClass;
-  readonly priority: Exclude<PriorityClass, "Continuation" | "Completion">;
+  readonly priority: Exclude<PriorityClass, "Completion">;
 } {
   if (
     command.command === "ReleaseDraft" ||

@@ -21,7 +21,6 @@ import {
   dispatchEvent,
   releaseTicketEvent,
   taskDoneEvent,
-  workReduceEvent,
   type DecisionEvent,
 } from "../../src/actor/decisionEvent.ts";
 import {
@@ -39,10 +38,14 @@ import {
   releasedTicketOf,
   type Config,
 } from "../../src/domain/config.ts";
+import {
+  alwaysPolicy,
+  type EvaluationFailurePolicy,
+} from "../../src/domain/deciders.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import type {
-  EvaluationFailureDisposition,
   EvaluationVerdict,
+  TicketEvent,
   ReleasedTicket,
   StageDefinition,
 } from "../../src/domain/generated/modelTypes.ts";
@@ -83,8 +86,20 @@ export const plainAuthoring: ReleaseAuthoring = {
   prog: [{ key: 1, evaluators: [{ key: 1 }] }],
 };
 
-/** The disposition a completion rides when the suite is not steering a failure. */
+/** The disposition a decision takes when the suite is not steering a failure. */
 export const plainDisposition = "ReworkEvaluationFailure" as const;
+
+/** The policy the actor decides under when the suite is not steering a failure. */
+export const plainPolicy: EvaluationFailurePolicy =
+  alwaysPolicy(plainDisposition);
+
+/** The event the carried view's last decision took, by its constructor. */
+export function lastEventOf(
+  state: ActorState,
+): TicketEvent["type"] | undefined {
+  const last = state.view.last;
+  return last === "NoDecision" ? undefined : last.value.event.type;
+}
 
 /**
  * The per-step gate: the domain bundle green on the carried view, and the
@@ -111,7 +126,7 @@ export function assertStep(
 
 /**
  * The routine decision-and-emission pair with the gate at both intermediate
- * states and the produced label pinned, exactly the model tests' `stepEmit`.
+ * states and the decided event pinned, exactly the model tests' `stepEmit`.
  * `failed` carries through a hazard trace's tail, where an earlier orphan
  * keeps the expected violations standing.
  */
@@ -119,21 +134,22 @@ export function stepEmit(
   config: Config,
   state: ActorState,
   event: DecisionEvent,
-  label: string,
+  name: TicketEvent["type"],
   failed: readonly string[] = [],
+  policy: EvaluationFailurePolicy = plainPolicy,
 ): ActorState {
-  const journaled = journalStep(config, state, event);
-  assert.equal(journaled.view.rec.label, label);
-  assertStep(config, journaled, `${label} (journaled)`, failed);
+  const journaled = journalStep(config, state, event, policy);
+  assert.equal(lastEventOf(journaled), name);
+  assertStep(config, journaled, `${name} (journaled)`, failed);
   const emitted = emitNext(journaled);
-  assertStep(config, emitted, `${label} (emitted)`, failed);
+  assertStep(config, emitted, `${name} (emitted)`, failed);
   return emitted;
 }
 
 /**
  * The disciplined walk to the state whose next decision is the first stage's
- * one evaluator answering: release, dispatch, the work task producing, and the
- * reduce that opens the judgement.
+ * one evaluator answering: release, dispatch, and the work result accepted,
+ * which opens the judgement in the same step.
  */
 export function walkToFirstJudgement(
   config: Config,
@@ -143,29 +159,25 @@ export function walkToFirstJudgement(
     config,
     state,
     releaseTicketEvent(plainDefinition),
-    "ticket-released",
+    "TicketCreated",
   );
   state = stepEmit(
     config,
     state,
     dispatchEvent(id(1), aDispatchSource),
-    "dispatch",
+    "TicketDispatched",
   );
   const work = workTaskOf(1, 1);
-  state = stepEmit(
+  return stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), work, producedReport(work), plainDisposition),
-    "task-done",
+    taskDoneEvent(id(1), work, producedReport(work)),
+    "TicketWorkResultAccepted",
   );
-  return stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
 }
 
 /** That stage's one evaluator answering with `verdict`, which is the step that concludes it. */
-export function firstJudgement(
-  verdict: EvaluationVerdict,
-  onFailure: EvaluationFailureDisposition = plainDisposition,
-): DecisionEvent {
+export function firstJudgement(verdict: EvaluationVerdict): DecisionEvent {
   const judge = evaluationTaskOf(1, 1, 1, 1, 1);
-  return taskDoneEvent(id(1), judge, judgedReport(judge, verdict), onFailure);
+  return taskDoneEvent(id(1), judge, judgedReport(judge, verdict));
 }

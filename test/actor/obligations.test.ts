@@ -39,7 +39,11 @@ import {
   declaredRefinementCore,
   declaredRefinementObligations,
 } from "./declared.ts";
-import { plainDefinitionOf, refinementInstance } from "./harness.ts";
+import {
+  plainDefinitionOf,
+  plainPolicy,
+  refinementInstance,
+} from "./harness.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const config = refinementInstance;
@@ -50,6 +54,7 @@ function journaledRelease(): ActorState {
     config,
     actorInit(),
     releaseTicketEvent(plainDefinitionOf(1)),
+    plainPolicy,
   );
 }
 

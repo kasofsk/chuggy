@@ -213,7 +213,7 @@ test("the queue is drawn oldest first and one pass takes only what it is bounded
     claimLeaseSecs,
   );
   const project = await finalizerProject(rig, "claim-order");
-  const earlier = "1:7:RunFinalizer";
+  const earlier = "1:7:FinalizeTicket";
   await rig.harness.query(
     `INSERT INTO finalization_request
        (tenant, project, request, authorizing_seq, effect_position, ticket,
@@ -444,7 +444,7 @@ test("no principal may offer a finalization result as an ordinary command", asyn
     command: "Decide",
     event: {
       type: "FinalizationResult",
-      value: { ticket: 1, out: "FinalizationSucceeded" },
+      value: { ticket: 1, out: "FinalizationSucceeded", evidence: 1 },
     },
   });
   assert.deepEqual(

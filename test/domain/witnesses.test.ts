@@ -4,8 +4,8 @@
  * A GREEN WITNESS IS A WITNESS THAT PROVED NOTHING. `model/domain.qnt` expects
  * this one violated, and the violation is what makes the invariants beside it
  * mean something: that multi-stage plans really run stage by stage rather
- * than leaving `eval-stage-passed` unfired and the interpreter's advance edge
- * untested.
+ * than leaving a progress that owes the next stage unreached and the
+ * interpreter's advance edge untested.
  *
  * EVERY REFUTATION BELOW COMES OUT OF A DECIDER rather than out of a
  * hand-written record, because a record nobody's machine produced would refute
@@ -18,7 +18,12 @@ import assert from "node:assert/strict";
 
 import { evaluatorOf, type Config } from "../../src/domain/config.ts";
 
-import { decideRevoke, decideTaskDone } from "../../src/domain/deciders.ts";
+import {
+  alwaysPolicy,
+  decideRevoke,
+  decideTaskDone,
+} from "../../src/domain/deciders.ts";
+import { evolve } from "../../src/domain/evolve.ts";
 import { evaluationTaskOf } from "../../src/domain/task.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
 
@@ -35,6 +40,7 @@ import {
 import type {
   TicketGraph,
   StageDefinition,
+  SuccessfulTicketDecision,
 } from "../../src/domain/generated/modelTypes.ts";
 
 const config = modelInstance;
@@ -42,9 +48,13 @@ const config = modelInstance;
 /** The view a decision produces, which is the shape a witness is read at. */
 function stepped(
   pre: TicketGraph,
-  decided: { rec: StepView["rec"]; post: TicketGraph },
+  decision: SuccessfulTicketDecision,
 ): StepView {
-  return { pre, rec: decided.rec, post: decided.post };
+  return {
+    pre,
+    last: { type: "Decided", value: decision },
+    post: evolve(pre, decision.event),
+  };
 }
 
 const twoStage: readonly StageDefinition[] = [
@@ -81,12 +91,16 @@ const advance = stepped(
     id(1),
     judged,
     judgedReport(judged, "EvaluatorPass"),
-    "ReworkEvaluationFailure",
+    alwaysPolicy("ReworkEvaluationFailure"),
   ),
 );
 
-test("an eval stage advances, which is what keeps eval-stage-passed exercised", () => {
-  assert.equal(advance.rec.label, "eval-stage-passed");
+test("an eval stage advances, which is what keeps the stage advance exercised", () => {
+  assert.ok(
+    advance.last !== "NoDecision" &&
+      advance.last.value.event.type === "TicketEvaluationProgressed" &&
+      advance.last.value.obligations.length > 0,
+  );
   assert.ok(!stageAdvanceNever(config, advance));
   assert.ok(stageAdvanceNever(config, revoked));
 });

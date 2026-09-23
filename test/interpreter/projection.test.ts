@@ -11,24 +11,27 @@
  * IT IS PURE, SO IT IS TESTED HERE. PostgreSQL transaction tests assert the
  * stored sequence; whether the delta is right needs no server at all.
  *
- * THE DELTA IS NOT THE RECORD'S TRANSITIONS, and the last case is why. A
- * release transitions nothing — it creates a ticket that had no prior phase to
- * leave — so a projection driven off `StepRecord` would never file the row it
- * created.
+ * THE DELTA IS THE TICKETS WHOSE STATE MOVED, and a release is why. It
+ * creates a ticket that had no prior phase to leave, so a projection driven off
+ * phase changes would never file the row it created.
  */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  decide,
   dispatchEvent,
-  execDecisionEvent,
   releaseTicketEvent,
   resumeTicketEvent,
   taskDoneEvent,
-  workReduceEvent,
   type DecisionEvent,
 } from "../../src/actor/decisionEvent.ts";
+import {
+  alwaysPolicy,
+  type EvaluationFailurePolicy,
+} from "../../src/domain/deciders.ts";
+import { evolve } from "../../src/domain/evolve.ts";
 import { genesis, replayGraph, type Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
@@ -48,7 +51,7 @@ import {
 import type { TicketProjection } from "../../src/interpreter/projectDecision.ts";
 import {
   plainDefinitionOf,
-  plainDisposition,
+  plainPolicy,
   refinementInstance,
 } from "../actor/harness.ts";
 import { aDispatchSource } from "../../src/domain/config.ts";
@@ -58,18 +61,23 @@ import { id, judgedReport, producedReport } from "../domain/fixtures.ts";
 const history: readonly DecisionEvent[] = [
   releaseTicketEvent(plainDefinitionOf(1)),
   dispatchEvent(id(1), aDispatchSource),
-  taskDoneEvent(
-    id(1),
-    workTaskOf(1, 1),
-    producedReport(workTaskOf(1, 1)),
-    plainDisposition,
-  ),
+  taskDoneEvent(id(1), workTaskOf(1, 1), producedReport(workTaskOf(1, 1))),
 ];
+
+/** The graph one command leaves, decided under `policy` and evolved by what it decided. */
+function decidedOn(
+  graph: TicketGraph,
+  event: DecisionEvent,
+  policy: EvaluationFailurePolicy = plainPolicy,
+): TicketGraph {
+  return evolve(graph, decide(graph, event, policy).event);
+}
 
 /** The journal that history writes, which is what a rebuild reads. */
 function journalOf(): readonly Entry[] {
   return history.reduce(
-    (state, event) => journalStep(refinementInstance, state, event),
+    (state, event) =>
+      journalStep(refinementInstance, state, event, plainPolicy),
     actorInit(),
   ).journal;
 }
@@ -79,7 +87,7 @@ function folded(): ReadonlyMap<number, TicketProjection> {
   const table = new Map<number, TicketProjection>();
   let graph: TicketGraph = genesis;
   for (const event of history) {
-    const post = execDecisionEvent(graph, event).post;
+    const post = decidedOn(graph, event);
     for (const row of projectionChanges(graph, post)) {
       table.set(row.ticket, row);
     }
@@ -93,7 +101,7 @@ test("folding what each decision changed reaches the table a rebuild reads", () 
     projectionOf(replayGraph(journalOf())).map((row) => [row.ticket, row]),
   );
   assert.deepEqual(folded(), rebuilt);
-  assert.equal(rebuilt.get(id(1))?.phase, "Work");
+  assert.equal(rebuilt.get(id(1))?.phase, "Evaluation");
 });
 
 test("a decision reports exactly the tickets whose complete state changed", () => {
@@ -101,11 +109,13 @@ test("a decision reports exactly the tickets whose complete state changed", () =
     refinementInstance,
     actorInit(),
     releaseTicketEvent(plainDefinitionOf(1)),
+    plainPolicy,
   );
   const dispatched = journalStep(
     refinementInstance,
     released,
     dispatchEvent(id(1), aDispatchSource),
+    plainPolicy,
   );
   assert.deepEqual(
     projectionChanges(released.view.post, dispatched.view.post),
@@ -125,19 +135,15 @@ test("a decision reports exactly the tickets whose complete state changed", () =
   const completed = journalStep(
     refinementInstance,
     dispatched,
-    taskDoneEvent(
-      id(1),
-      workTaskOf(1, 1),
-      producedReport(workTaskOf(1, 1)),
-      plainDisposition,
-    ),
+    taskDoneEvent(id(1), workTaskOf(1, 1), producedReport(workTaskOf(1, 1))),
+    plainPolicy,
   );
   assert.deepEqual(
     projectionChanges(dispatched.view.post, completed.view.post),
     [
       {
         ticket: id(1),
-        phase: "Work",
+        phase: "Evaluation",
         dependable: true,
         escalation: "NoEscalation",
       },
@@ -145,13 +151,14 @@ test("a decision reports exactly the tickets whose complete state changed", () =
   );
 });
 
-test("a release is a change although it transitions nothing", () => {
+test("a release is a change although it leaves no phase", () => {
   const released = journalStep(
     refinementInstance,
     actorInit(),
     releaseTicketEvent(plainDefinitionOf(1)),
+    plainPolicy,
   );
-  assert.deepEqual(released.journal.at(-1)?.rec.transitions, []);
+  assert.equal(released.journal.at(-1)?.event.type, "TicketCreated");
   assert.deepEqual(projectionChanges(genesis, released.view.post), [
     {
       ticket: id(1),
@@ -177,35 +184,31 @@ function owedTask(graph: TicketGraph): TaskIdentity {
  * that wall: the states whose escalation the projection exists to carry, and
  * the only ones where it is anything but the absent value.
  */
-function walledHistory(): readonly DecisionEvent[] {
-  const events: DecisionEvent[] = [
-    releaseTicketEvent(plainDefinitionOf(1)),
-    dispatchEvent(id(1), aDispatchSource),
-  ];
-  let graph = events.reduce(
-    (state, event) => execDecisionEvent(state, event).post,
-    genesis,
-  );
-  const step = (event: DecisionEvent) => {
-    events.push(event);
-    graph = execDecisionEvent(graph, event).post;
+function walledHistory(): readonly (readonly [
+  DecisionEvent,
+  EvaluationFailurePolicy,
+])[] {
+  const steps: (readonly [DecisionEvent, EvaluationFailurePolicy])[] = [];
+  let graph: TicketGraph = genesis;
+  const step = (event: DecisionEvent, policy = plainPolicy) => {
+    steps.push([event, policy]);
+    graph = decidedOn(graph, event, policy);
   };
+  step(releaseTicketEvent(plainDefinitionOf(1)));
+  step(dispatchEvent(id(1), aDispatchSource));
   for (const cycle of [0, 1]) {
     const work = owedTask(graph);
-    step(taskDoneEvent(id(1), work, producedReport(work), plainDisposition));
-    step(workReduceEvent(id(1)));
+    step(taskDoneEvent(id(1), work, producedReport(work)));
     const judge = owedTask(graph);
     step(
-      taskDoneEvent(
-        id(1),
-        judge,
-        judgedReport(judge, "EvaluatorFail"),
+      taskDoneEvent(id(1), judge, judgedReport(judge, "EvaluatorFail")),
+      alwaysPolicy(
         cycle === 1 ? "EscalateEvaluationFailure" : "ReworkEvaluationFailure",
       ),
     );
     if (cycle === 1) step(resumeTicketEvent(id(1)));
   }
-  return events;
+  return steps;
 }
 
 /** What the row claims about the ticket, read off the ticket itself. */
@@ -216,8 +219,8 @@ function ticketFacts(ticket: Ticket) {
 test("every projected row is the graph the step it names left behind", () => {
   let graph: TicketGraph = genesis;
   const seen: string[] = [];
-  for (const event of walledHistory()) {
-    graph = execDecisionEvent(graph, event).post;
+  for (const [event, policy] of walledHistory()) {
+    graph = decidedOn(graph, event, policy);
     const row = projectionOf(graph).find((each) => each.ticket === id(1));
     assert.ok(row !== undefined);
     assert.deepEqual(ticketFacts(ticketAt(graph, id(1))), {
@@ -237,9 +240,12 @@ test("every projected row is the graph the step it names left behind", () => {
  */
 test("a decision's evidence lands on the ticket it escalated and no other", () => {
   const graph = [
-    releaseTicketEvent(plainDefinitionOf(2)),
+    [releaseTicketEvent(plainDefinitionOf(2)), plainPolicy] as const,
     ...walledHistory().slice(0, -1),
-  ].reduce((state, event) => execDecisionEvent(state, event).post, genesis);
+  ].reduce(
+    (state, [event, policy]) => decidedOn(state, event, policy),
+    genesis,
+  );
   assert.equal(ticketAt(graph, id(1)).escalation, "EvaluationFailureEscalated");
   assert.deepEqual(
     projectionOf(graph, { ticket: id(1), evidence: "RefUnreadable" }),
@@ -259,7 +265,7 @@ test("a decision's evidence lands on the ticket it escalated and no other", () =
       },
     ],
   );
-  const resumed = execDecisionEvent(graph, resumeTicketEvent(id(1))).post;
+  const resumed = decidedOn(graph, resumeTicketEvent(id(1)));
   assert.throws(
     () => projectionOf(resumed, { ticket: id(1), evidence: "RefUnreadable" }),
     IntegrityContradiction,

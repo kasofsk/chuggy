@@ -264,14 +264,16 @@ function claimsCompletion(
   return completionEventTypes.some((known) => known === type);
 }
 
+/** The fields `submit_task_completion` writes into a completion, and the only ones. */
+const storedCompletionFields = ["ticket", "task", "report"] as const;
+
 /**
  * The scheduler boundary's stored envelope, refused by the ingress parser by
  * design and read here. The two model-typed fields go through the model's own
  * decoders, so what a completion may say about a task and its report is the
  * generated codec's answer and not a second one; the ticket is the one plain
- * integer left, and a disposition is refused outright rather than ignored —
- * the boundary does not hold the cap that picks one, so bytes naming one were
- * not written by it.
+ * integer left, and a field the boundary does not write is refused rather
+ * than ignored.
  */
 function storedSchedulerCompletion(
   record: Record<string, unknown>,
@@ -286,11 +288,17 @@ function storedSchedulerCompletion(
   if (typeof value !== "object" || value === null)
     throw new TypeError("stored completion carries no completion event");
   const fields = value as Record<string, unknown>;
+  if (
+    Object.keys(fields).some(
+      (field) => !storedCompletionFields.some((known) => known === field),
+    )
+  )
+    throw new TypeError(
+      "stored completion carries a field its boundary does not write",
+    );
   const ticket = fields["ticket"];
   if (typeof ticket !== "number" || !Number.isSafeInteger(ticket) || ticket < 1)
     throw new TypeError("stored completion names no ticket");
-  if (fields["onFailure"] !== undefined)
-    throw new TypeError("stored completion names a disposition it cannot pick");
   return {
     version: 1,
     command: "Decide",

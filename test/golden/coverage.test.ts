@@ -1,10 +1,11 @@
 /**
- * The corpus fires every step label the model declares, and each row contains
- * what its manifest row says it was aimed at.
+ * The corpus carries every event the model declares, the decisions whose
+ * obligations are the point of their event, and in each row what its manifest
+ * row says it was aimed at.
  *
- * This fails the corpus rather than reporting on it. A label no golden fires is
- * an edge of the machine nothing replays, which is the same as an edge the
- * implementation is free to get wrong.
+ * This fails the corpus rather than reporting on it. An event no golden
+ * carries is an edge of the machine nothing replays, which is the same as an
+ * edge the implementation is free to get wrong.
  */
 
 import { test } from "node:test";
@@ -12,8 +13,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { decodeTrace, field, stateValue } from "../itf/decode.ts";
-import { declaredLabels, loadCorpus, UNREACHABLE_LABEL } from "./corpus.ts";
+import {
+  ticketEventTags,
+  type Obligation,
+  type SuccessfulTicketDecision,
+} from "../../src/domain/generated/modelTypes.ts";
+import { decodeTrace, stateValue } from "../itf/decode.ts";
+import { decodeLastDecision } from "../itf/vocabulary.ts";
+import { loadCorpus } from "./corpus.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 
@@ -52,37 +59,81 @@ test("every manifest row records what reproduces it", () => {
   }
 });
 
-test("the declared roster is read from the model, not from this file", () => {
-  const labels = declaredLabels(ROOT);
-  assert.ok(labels.has("init"), "the label roster did not parse");
-  assert.ok(
-    labels.has(UNREACHABLE_LABEL),
-    "the guarded label is not in the roster",
-  );
-});
-
-test("every reachable label the model declares is fired somewhere in the corpus", () => {
-  const declared = declaredLabels(ROOT);
+test("every event the model declares is carried somewhere in the corpus", () => {
   const fired = corpus.firedAcross();
-  const missing = [...declared].filter(
-    (l) => l !== UNREACHABLE_LABEL && !fired.has(l),
-  );
+  const missing = ticketEventTags.filter((tag) => !fired.has(tag));
   assert.deepEqual(
     missing,
     [],
-    `these declared labels are in no golden, so nothing replays them: ${missing.join(", ")}`,
+    `these events are in no golden, so nothing replays them: ${missing.join(", ")}`,
   );
 });
 
-test("the guarded label is not fired, because the model asserts it unreachable", () => {
-  const fired = corpus.firedAcross();
-  assert.ok(
-    !fired.has(UNREACHABLE_LABEL),
-    `${UNREACHABLE_LABEL} appears in the corpus; the model says its guard refuses it`,
+/** The obligation arms a decision owes, in order. */
+function owed(
+  decision: SuccessfulTicketDecision,
+): readonly Obligation["type"][] {
+  return decision.obligations.map((obligation) => obligation.type);
+}
+
+/** Whether some decision in the corpus took this event and owed exactly these arms. */
+function carries(
+  event: SuccessfulTicketDecision["event"]["type"],
+  holds: (arms: readonly Obligation["type"][]) => boolean,
+): boolean {
+  return corpus
+    .decisionsAcross()
+    .some((decision) => decision.event.type === event && holds(owed(decision)));
+}
+
+const someOf =
+  (arm: Obligation["type"]) =>
+  (arms: readonly Obligation["type"][]): boolean =>
+    arms.length > 0 && arms.every((owedArm) => owedArm === arm);
+
+test("the decisions whose obligations are the point of their event are carried", () => {
+  const scenarios: readonly (readonly [string, boolean])[] = [
+    [
+      "a work acceptance owing its first stage's evaluators",
+      carries("TicketWorkResultAccepted", someOf("ExecuteTask")),
+    ],
+    [
+      "a rework owing its work task",
+      carries(
+        "TicketEvaluationReworkStarted",
+        (arms) => arms.length === 1 && arms[0] === "ExecuteTask",
+      ),
+    ],
+    [
+      "an escalated evaluation failure owing nothing",
+      carries("TicketEvaluationFailureEscalated", (arms) => arms.length === 0),
+    ],
+    [
+      "a work resume owing its work task",
+      carries("TicketWorkResumed", someOf("ExecuteTask")),
+    ],
+    [
+      "an evaluation resume owing the evaluators it re-asks",
+      carries("TicketEvaluationResumed", someOf("ExecuteTask")),
+    ],
+    [
+      "a finalization resume owing the next attempt",
+      carries("TicketFinalizationResumed", someOf("FinalizeTicket")),
+    ],
+    [
+      "a revoke owing the cancellation of what was running",
+      carries("TicketRevoked", someOf("CancelTask")),
+    ],
+  ];
+  const missing = scenarios.filter(([, carried]) => !carried);
+  assert.deepEqual(
+    missing.map(([scenario]) => scenario),
+    [],
+    "the corpus does not carry these decisions",
   );
 });
 
-test("every golden's first state is the init step", () => {
+test("every golden's first state records no decision", () => {
   for (const row of corpus.rows) {
     const trace = decodeTrace(row.trace);
     const lastStep = trace.vars.find((v) => v.endsWith("::lastStep"));
@@ -90,8 +141,8 @@ test("every golden's first state is the init step", () => {
     const first = trace.states[0];
     assert.ok(first, `${row.name}: no states`);
     assert.equal(
-      field(stateValue(first, lastStep), "label"),
-      "init",
+      decodeLastDecision(stateValue(first, lastStep)),
+      "NoDecision",
       `${row.name}`,
     );
   }
@@ -109,15 +160,15 @@ test("every golden's step count matches what its manifest row records", () => {
 });
 
 /**
- * An aim is either `lastStep.label != "x"` or `not(lastStep.label == "x" and
- * ...)`; both are refuted only by a step labelled `x`, so a trace that reaches
+ * An aim is either `lastEvent != "x"` or `not(lastEvent == "x" and ...)`; both
+ * are refuted only by a decision taking event `x`, so a trace that reaches
  * neither has drifted from its row. Any other shape is refused rather than
  * skipped: an aim this test cannot read is an aim nothing checks.
  */
 test("an aimed golden actually contains what it was aimed at", () => {
   for (const row of corpus.rows) {
     if (row.invariant === "") continue;
-    const aimed = /lastStep\.label (?:!=|==) "([^"]+)"/.exec(row.invariant);
+    const aimed = /lastEvent (?:!=|==) "([^"]+)"/.exec(row.invariant);
     assert.ok(
       aimed?.[1],
       `${row.name} is aimed by an invariant this test cannot read: ${row.invariant}`,
@@ -149,7 +200,7 @@ test("a decoded state carries the ghosts the replayer reads", () => {
   const trace = decodeTrace(row.trace);
   const first = trace.states[0];
   assert.ok(first, `${row.name}: no states`);
-  for (const suffix of ["::prevEvaluations", "::tickets"]) {
+  for (const suffix of ["::prevTickets", "::tickets", "::lastStep"]) {
     const name = trace.vars.find((v) => v.endsWith(suffix));
     assert.ok(
       name,

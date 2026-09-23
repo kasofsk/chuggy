@@ -1,6 +1,5 @@
 /**
- * Reading and replacing one ticket in the observed state, and what a decision
- * returns about itself.
+ * Reading and replacing one ticket in the observed state.
  *
  * `TicketGraph` is the model's record around the ticket map rather than the bare map,
  * for the reason the model keeps it: the ticket source stays open, and
@@ -13,25 +12,8 @@
  * different source — and ids are sparse, so insertion order is not id order.
  */
 
-import type {
-  TicketGraph,
-  StepRecord,
-  Ticket,
-} from "./generated/modelTypes.ts";
+import type { TicketGraph, Ticket } from "./generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "./ids.ts";
-
-/** What a pure decider returns: the record performed, and the state after it. */
-export interface Decision {
-  readonly rec: StepRecord;
-  readonly post: TicketGraph;
-}
-
-/** The record the model's `init` writes: what is observed at a state no decision has reached. */
-export const initRecord: StepRecord = {
-  label: "init",
-  transitions: [],
-  effects: [],
-};
 
 /** The ticket ids of a graph, ascending. Every fold over the fleet reads this. */
 export function ticketIds(graph: TicketGraph): readonly TicketId[] {

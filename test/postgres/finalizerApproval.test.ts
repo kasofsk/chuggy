@@ -38,6 +38,7 @@ import type {
   FinalizerStore,
 } from "../../src/interpreter/finalizer.ts";
 import type { NativeActionResolution } from "../../src/interpreter/ticketCommand.ts";
+import { liveTasks } from "../../src/domain/ticket.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
@@ -396,14 +397,12 @@ function outstandingTaskOf(
   project: FinalizerProject,
   memory: Awaited<ReturnType<typeof finalizerDrain>>["memory"],
 ): TaskIdentity {
-  const tasks = [
-    ...ticketAt(memory.graph, asTicketId(project.ticket)).tasks,
-  ].filter((task) => task.state === "Outstanding");
+  const tasks = liveTasks(ticketAt(memory.graph, asTicketId(project.ticket)));
   const task = tasks[0];
   if (tasks.length !== 1 || task === undefined) {
     throw new Error("finalizer approval: the rework spawned no single task");
   }
-  return task.identity;
+  return task;
 }
 
 test("an ask the phase outlived is withdrawn, and the next desk task can be opened", async () => {
@@ -467,7 +466,7 @@ test("an ask the phase outlived is withdrawn, and the next desk task can be open
     project.partition,
     reworked.memory,
   );
-  assert.deepEqual(escalated.decided, ["Committed", "Committed"]);
+  assert.deepEqual(escalated.decided, ["Committed"]);
   assert.equal(await finalizerPhase(rig, project.partition), "Escalated");
   assert.deepEqual(await actionsOf(project), [
     { kind: "FinalizationApproval", state: "Withdrawn" },

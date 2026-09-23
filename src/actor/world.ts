@@ -3,11 +3,10 @@
  * decisions the world received, counted by decision identity.
  *
  * What the world does with an emission is the trusted fabric's; what the
- * obligations need is arithmetic over which decisions reached it. A spawn is a
- * record carrying the paid task fan-out effect; a completion is the ticket's
- * single landing step. Attribution is the record's head transition — the
- * stepped ticket — exactly as the model states it; the interpreter's
- * per-effect subject routing is a different question and a different layer.
+ * obligations need is arithmetic over which decisions reached it. A spawn is
+ * an event that starts a work cycle and so owes its work task — a dispatch,
+ * both reworks and the work resume; a completion is the finalization's
+ * success. Each is attributed to the ticket its event names.
  *
  * An emitted journal row counts once however many times its seq re-emitted,
  * because the received set is keyed by seq; every orphan counts on its own,
@@ -15,46 +14,59 @@
  * price of the effect-first hazard, stated as arithmetic.
  */
 
-import type { StepRecord } from "../domain/generated/modelTypes.ts";
-import type { Effect } from "../domain/effect.ts";
+import type { TicketEvent } from "../domain/generated/modelTypes.ts";
+import { eventTicket } from "../domain/evolve.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type { Entry } from "./journal.ts";
 import type { ActorState } from "./state.ts";
 
-/** Whether the record asks the world for this effect. */
-export function hasEffect(rec: StepRecord, effect: Effect): boolean {
-  return rec.effects.includes(effect);
+/** Whether this event starts a work cycle for the ticket. */
+export function isSpawnFor(event: TicketEvent, ticket: TicketId): boolean {
+  if (eventTicket(event) !== ticket) return false;
+  switch (event.type) {
+    case "TicketDispatched":
+    case "TicketWorkResumed":
+    case "TicketEvaluationReworkStarted":
+    case "TicketFinalizationNeedsWork":
+      return true;
+    case "TicketCreated":
+    case "TicketRevoked":
+    case "TicketEvaluationResumed":
+    case "TicketFinalizationResumed":
+    case "TicketWorkResultAccepted":
+    case "TicketWorkProcessFailed":
+    case "TicketWorkExecutionUnavailable":
+    case "TicketEvaluationProgressed":
+    case "TicketEvaluationPassed":
+    case "TicketEvaluationFailureEscalated":
+    case "TicketEvaluationBlocked":
+    case "TicketFinalizationSucceeded":
+    case "TicketFinalizationUnavailable":
+      return false;
+  }
 }
 
-/** Whether the record's head transition steps this ticket. */
-export function stepsTicket(rec: StepRecord, ticket: TicketId): boolean {
-  const first = rec.transitions[0];
-  return first !== undefined && first.ticket === ticket;
-}
-
-/** A paid task fan-out for this ticket. */
-export function isSpawnFor(rec: StepRecord, ticket: TicketId): boolean {
-  return hasEffect(rec, "SpawnWorkTasks") && stepsTicket(rec, ticket);
-}
-
-/** This ticket's single landing step. */
-export function isCompletionFor(rec: StepRecord, ticket: TicketId): boolean {
-  return rec.label === "ticket-done" && stepsTicket(rec, ticket);
+/** Whether this event lands the ticket's diff. */
+export function isCompletionFor(event: TicketEvent, ticket: TicketId): boolean {
+  return (
+    eventTicket(event) === ticket &&
+    event.type === "TicketFinalizationSucceeded"
+  );
 }
 
 /** Distinct decisions the world received for the ticket: emitted rows by position, plus every orphan. */
 function worldCountOn(
   journal: readonly Entry[],
   worldEffects: ReadonlySet<number>,
-  orphans: readonly StepRecord[],
+  orphans: readonly TicketEvent[],
   ticket: TicketId,
-  counts: (rec: StepRecord, subject: TicketId) => boolean,
+  counts: (event: TicketEvent, subject: TicketId) => boolean,
 ): number {
   return (
     journal.filter(
       (entry, index) =>
-        worldEffects.has(index + 1) && counts(entry.rec, ticket),
-    ).length + orphans.filter((rec) => counts(rec, ticket)).length
+        worldEffects.has(index + 1) && counts(entry.event, ticket),
+    ).length + orphans.filter((event) => counts(event, ticket)).length
   );
 }
 
@@ -62,15 +74,15 @@ function worldCountOn(
 function journalCountOn(
   journal: readonly Entry[],
   ticket: TicketId,
-  counts: (rec: StepRecord, subject: TicketId) => boolean,
+  counts: (event: TicketEvent, subject: TicketId) => boolean,
 ): number {
-  return journal.filter((entry) => counts(entry.rec, ticket)).length;
+  return journal.filter((entry) => counts(entry.event, ticket)).length;
 }
 
 export function worldSpawnsOn(
   journal: readonly Entry[],
   worldEffects: ReadonlySet<number>,
-  orphans: readonly StepRecord[],
+  orphans: readonly TicketEvent[],
   ticket: TicketId,
 ): number {
   return worldCountOn(journal, worldEffects, orphans, ticket, isSpawnFor);
@@ -79,7 +91,7 @@ export function worldSpawnsOn(
 export function worldCompletionsOn(
   journal: readonly Entry[],
   worldEffects: ReadonlySet<number>,
-  orphans: readonly StepRecord[],
+  orphans: readonly TicketEvent[],
   ticket: TicketId,
 ): number {
   return worldCountOn(journal, worldEffects, orphans, ticket, isCompletionFor);

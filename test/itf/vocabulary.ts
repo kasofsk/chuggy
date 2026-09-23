@@ -10,34 +10,39 @@
  * does not have.
  *
  * Encoding back to ITF stays explicit, and that is not an oversight: a value
- * alone cannot say whether a string is a step label or a nullary variant, so
- * the direction that needs the type has the type written down.
+ * alone cannot say which model type it is, so the direction that needs the
+ * type has the type written down.
  */
 
 import {
   decodeTicketGraph as decodeTicketGraphValue,
-  decodeStepRecord as decodeStepRecordValue,
+  decodeLastDecision as decodeLastDecisionValue,
 } from "../../src/generated/model-api.ts";
 import type {
   TicketGraph,
   EvaluationInstance,
   EvaluationProgress,
+  EvaluationReworkFact,
   EvaluationState,
   EvaluatorStatus,
+  FinalizationFact,
+  FinalizationOperation,
+  LastDecision,
+  Obligation,
   StageRun,
-  StepRecord,
-  Task,
   TaskIdentity,
   TaskDefinition,
   TaskObligation,
+  TaskTerminalFact,
   ValidatedTaskResult,
   ReleasedTicket,
   EvaluationPlan,
   TaskTerminalReport,
   Ticket,
+  TicketEvent,
+  WorkFailureEvent,
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
-import { tasksInEvaluatorKeyOrder } from "../../src/domain/task.ts";
 import { describe, encodeValue, type ItfValue } from "./decode.ts";
 
 /**
@@ -84,9 +89,9 @@ export function decodeTicketGraph(value: ItfValue): TicketGraph {
   return decodeTicketGraphValue({ tickets: itfToWire(value) });
 }
 
-/** One observed decision, read through the model's own decoder. */
-export function decodeStepRecord(value: ItfValue): StepRecord {
-  return decodeStepRecordValue(itfToWire(value));
+/** The last decision a state records, read through the model's own decoder. */
+export function decodeLastDecision(value: ItfValue): LastDecision {
+  return decodeLastDecisionValue(itfToWire(value));
 }
 
 /** A drawn ticket id, branded at the boundary it enters through. */
@@ -147,15 +152,6 @@ function encodeRecord(
   fields: readonly (readonly [string, ItfValue])[],
 ): ItfValue {
   return { kind: "record", fields: new Map(fields) };
-}
-
-/** A model sum, whichever shape the generated type gave it. */
-function encodeSum(
-  value: string | { readonly type: string; readonly value: unknown },
-  payload: (inner: never) => ItfValue,
-): ItfValue {
-  if (typeof value === "string") return encodeNullary(value);
-  return encodeVariant(value.type, payload(value.value as never));
 }
 
 /** A dependency set, ascending, which is the order a set has no opinion about. */
@@ -252,7 +248,13 @@ export function encodeTaskTerminalReport(report: TaskTerminalReport): ItfValue {
       return encodeVariant(
         "TerminalFailureReport",
         encodeRecord([
-          ["evidence", encodeInt(report.value.evidence)],
+          [
+            "failure",
+            encodeRecord([
+              ["task", encodeTaskIdentity(report.value.failure.task)],
+              ["evidence", encodeInt(report.value.failure.evidence)],
+            ]),
+          ],
           ["kind", encodeNullary(report.value.kind)],
         ]),
       );
@@ -360,32 +362,15 @@ export function encodeTaskIdentity(identity: TaskIdentity): ItfValue {
   }
 }
 
-function encodeTask(task: Task): ItfValue {
-  return encodeRecord([
-    ["identity", encodeTaskIdentity(task.identity)],
-    [
-      "state",
-      encodeSum(task.state, (outcome: string) => encodeNullary(outcome)),
-    ],
-  ]);
-}
-
 function encodeTicket(ticket: Ticket): ItfValue {
   return encodeRecord([
     ["phase", encodeNullary(ticket.phase)],
     ["definition", encodeReleasedTicket(ticket.definition)],
     ["source", encodeInt(ticket.source)],
-    ["artifact", encodeSum(ticket.artifact, (mark: number) => encodeInt(mark))],
-    [
-      "tasks",
-      {
-        kind: "set",
-        elements: tasksInEvaluatorKeyOrder(ticket.tasks).map(encodeTask),
-      },
-    ],
     ["evaluations", ticket.evaluations.map(encodeEvaluationInstance)],
     ["workCyclesStarted", encodeInt(ticket.workCyclesStarted)],
     ["spawned", encodeInt(ticket.spawned)],
+    ["finalizationGeneration", encodeInt(ticket.finalizationGeneration)],
     ["escalation", encodeNullary(ticket.escalation)],
     ["completions", encodeInt(ticket.completions)],
   ]);
@@ -406,20 +391,143 @@ export function encodeTicketGraph(graph: TicketGraph): ItfValue {
   };
 }
 
-/** One observed decision, written back as ITF holds one. */
-export function encodeStepRecord(rec: StepRecord): ItfValue {
+function encodeTaskTerminalFact(fact: TaskTerminalFact): ItfValue {
   return encodeRecord([
-    ["label", rec.label],
+    ["ticket", encodeInt(fact.ticket)],
+    ["report", encodeTaskTerminalReport(fact.report)],
+  ]);
+}
+
+function encodeEvaluationReworkFact(fact: EvaluationReworkFact): ItfValue {
+  return encodeRecord([
+    ["ticket", encodeInt(fact.ticket)],
+    ["report", encodeTaskTerminalReport(fact.report)],
     [
-      "transitions",
-      rec.transitions.map((t) =>
+      "evidence",
+      fact.evidence.map((entry) =>
         encodeRecord([
-          ["ticket", encodeInt(t.ticket)],
-          ["from", encodeNullary(t.from)],
-          ["to", encodeNullary(t.to)],
+          ["evaluator", encodeInt(entry.evaluator)],
+          ["resultRef", encodeInt(entry.resultRef)],
         ]),
       ),
     ],
-    ["effects", rec.effects.map((effect) => effect)],
   ]);
+}
+
+function encodeWorkFailureEvent(fact: WorkFailureEvent): ItfValue {
+  return encodeRecord([
+    ["ticket", encodeInt(fact.ticket)],
+    ["task", encodeTaskIdentity(fact.task)],
+    ["evidence", encodeInt(fact.evidence)],
+  ]);
+}
+
+function encodeFinalizationFact(fact: FinalizationFact): ItfValue {
+  return encodeRecord([
+    ["ticket", encodeInt(fact.ticket)],
+    ["workCycle", encodeInt(fact.workCycle)],
+    ["generation", encodeInt(fact.generation)],
+    ["evidence", encodeInt(fact.evidence)],
+  ]);
+}
+
+/** What happened, whichever of the seventeen arms it is. */
+export function encodeTicketEvent(event: TicketEvent): ItfValue {
+  switch (event.type) {
+    case "TicketCreated":
+      return encodeVariant(event.type, encodeReleasedTicket(event.value));
+    case "TicketDispatched":
+      return encodeVariant(
+        event.type,
+        encodeRecord([
+          ["ticket", encodeInt(event.value.ticket)],
+          ["source", encodeInt(event.value.source)],
+        ]),
+      );
+    case "TicketRevoked":
+    case "TicketWorkResumed":
+    case "TicketEvaluationResumed":
+    case "TicketFinalizationResumed":
+      return encodeVariant(event.type, encodeInt(event.value));
+    case "TicketWorkResultAccepted":
+      return encodeVariant(
+        event.type,
+        encodeRecord([
+          ["ticket", encodeInt(event.value.ticket)],
+          ["result", encodeValidatedTaskResult(event.value.result)],
+          ["acceptedSourceRef", encodeInt(event.value.acceptedSourceRef)],
+        ]),
+      );
+    case "TicketWorkProcessFailed":
+    case "TicketWorkExecutionUnavailable":
+      return encodeVariant(event.type, encodeWorkFailureEvent(event.value));
+    case "TicketEvaluationProgressed":
+    case "TicketEvaluationPassed":
+    case "TicketEvaluationBlocked":
+      return encodeVariant(event.type, encodeTaskTerminalFact(event.value));
+    case "TicketEvaluationReworkStarted":
+    case "TicketEvaluationFailureEscalated":
+      return encodeVariant(event.type, encodeEvaluationReworkFact(event.value));
+    case "TicketFinalizationSucceeded":
+    case "TicketFinalizationNeedsWork":
+    case "TicketFinalizationUnavailable":
+      return encodeVariant(event.type, encodeFinalizationFact(event.value));
+  }
+}
+
+function encodeFinalizationOperation(
+  operation: FinalizationOperation,
+): ItfValue {
+  return encodeRecord([
+    ["workCycle", encodeInt(operation.workCycle)],
+    ["generation", encodeInt(operation.generation)],
+    ["input", encodeInt(operation.input)],
+    ["source", encodeInt(operation.source)],
+  ]);
+}
+
+/** What a decision owes the world, whichever of the three arms it is. */
+export function encodeObligation(obligation: Obligation): ItfValue {
+  switch (obligation.type) {
+    case "ExecuteTask":
+      return encodeVariant(
+        obligation.type,
+        encodeRecord([
+          ["ticket", encodeInt(obligation.value.ticket)],
+          ["task", encodeTaskObligation(obligation.value.task)],
+        ]),
+      );
+    case "FinalizeTicket":
+      return encodeVariant(
+        obligation.type,
+        encodeRecord([
+          ["ticket", encodeInt(obligation.value.ticket)],
+          [
+            "finalization",
+            encodeFinalizationOperation(obligation.value.finalization),
+          ],
+          ["configuration", encodeInt(obligation.value.configuration)],
+        ]),
+      );
+    case "CancelTask":
+      return encodeVariant(
+        obligation.type,
+        encodeRecord([
+          ["ticket", encodeInt(obligation.value.ticket)],
+          ["task", encodeTaskIdentity(obligation.value.task)],
+        ]),
+      );
+  }
+}
+
+/** The last decision, written back as ITF holds one. */
+export function encodeLastDecision(last: LastDecision): ItfValue {
+  if (last === "NoDecision") return encodeNullary("NoDecision");
+  return encodeVariant(
+    "Decided",
+    encodeRecord([
+      ["event", encodeTicketEvent(last.value.event)],
+      ["obligations", last.value.obligations.map(encodeObligation)],
+    ]),
+  );
 }

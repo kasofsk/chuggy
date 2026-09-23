@@ -114,7 +114,7 @@ const goldenPlacement: AttemptPlacement = {
   task: asTaskId(3),
   taskKind: "Work",
   stage: 2,
-  sourceRequest: "11:0:SpawnWork",
+  sourceRequest: "11:0:ExecuteTask",
   inputBundle: "11:0:InputBundle",
   inputBundleDigest: "c".repeat(64),
   configurationRevision: "revision-of-record",

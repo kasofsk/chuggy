@@ -53,7 +53,7 @@ function executionOf(taskKind: ExecutionTaskKind): LogicalExecution {
     ticket: asTicketId(1),
     task: asTaskId(1),
     taskKind,
-    sourceRequest: "1:0:SpawnWork",
+    sourceRequest: "1:0:ExecuteTask",
     inputBundle: "1:0:InputBundle",
     inputBundleDigest: "b".repeat(64),
     sourceSeq: 1,

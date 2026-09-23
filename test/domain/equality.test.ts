@@ -7,27 +7,28 @@
  * conjunction still compiles, still returns a boolean, and answers `true` on
  * two values that differ in the field nobody added a conjunct for. Downstream
  * that is `recoveryComplete` green on a state the journal cannot rebuild and
- * `journalLegalOn` accepting a forged record — so the roster's type is what
+ * `journalLegalOn` accepting a row that moved nothing — so the roster's type is what
  * makes a field added to a domain type a compile error here, and the loop below
  * is what makes a field named in the roster but unread by the conjunction a
  * failure.
  *
- * `recordEqualsTransition` and `ticketEqualsStage` are not exported, so their
- * rosters are lifted into the exported comparison that reaches them — a
- * transition inside a record, a stage inside a ticket's plan, and the
- * protocol's own shapes inside the instance the ticket carries.
+ * `ticketEqualsStage` is not exported, so its roster is lifted into the
+ * exported comparison that reaches it — a stage inside a ticket's plan — as
+ * are the protocol's own shapes inside the instance the ticket carries.
  */
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { recordEquals, ticketEquals } from "../../src/actor/equality.ts";
+import { ticketEquals } from "../../src/domain/equality.ts";
 import { instanceEquals } from "../../src/domain/evaluation.ts";
-import { initRecord } from "../../src/domain/ticketGraph.ts";
 import { freshTicket } from "../../src/domain/deciders.ts";
-import { id, judgedInstance, workOutstanding } from "../domain/fixtures.ts";
-import { flatPlan, plainDefinition } from "./harness.ts";
-import { evaluatorOf, evaluatorTaskOf } from "../../src/domain/config.ts";
+import { judgedInstance } from "./fixtures.ts";
+import {
+  evaluatorOf,
+  evaluatorTaskOf,
+  releasedTicketOf,
+} from "../../src/domain/config.ts";
 import type {
   EvaluationInput,
   EvaluationInstance,
@@ -36,10 +37,20 @@ import type {
   ReleasedTicket,
   StageDefinition,
   StageRun,
-  StepRecord,
   Ticket,
-  Transition,
 } from "../../src/domain/generated/modelTypes.ts";
+
+/** A one-stage plan with one evaluator, the smallest a release accepts. */
+const flatPlan: readonly StageDefinition[] = [
+  { key: 1, evaluators: [evaluatorOf(1)] },
+];
+
+/** What a release freezes when a suite does not care which values it froze. */
+const plainDefinition: ReleasedTicket = releasedTicketOf(
+  1,
+  new Set<number>(),
+  flatPlan,
+);
 
 /** One mutation per declared field of a shape; a roster short a field does not compile. */
 type FieldMutants<Shape> = Record<keyof Shape, (value: Shape) => Shape>;
@@ -91,40 +102,18 @@ const ticketMutants: FieldMutants<Ticket> = {
   phase: (t) => ({ ...t, phase: "Done" }),
   definition: (t) => ({ ...t, definition: definitionMutants.id(t.definition) }),
   source: (t) => ({ ...t, source: t.source + 1 }),
-  artifact: (t) => ({
-    ...t,
-    artifact: { type: "ProducedArtifact", value: 1 },
-  }),
-  tasks: (t) => ({ ...t, tasks: new Set([workOutstanding(1, 1)]) }),
   evaluations: (t) => ({ ...t, evaluations: [judged] }),
   workCyclesStarted: (t) => ({
     ...t,
     workCyclesStarted: t.workCyclesStarted + 1,
   }),
   spawned: (t) => ({ ...t, spawned: t.spawned + 1 }),
+  finalizationGeneration: (t) => ({
+    ...t,
+    finalizationGeneration: t.finalizationGeneration + 1,
+  }),
   escalation: (t) => ({ ...t, escalation: "WorkFailureEscalated" }),
   completions: (t) => ({ ...t, completions: t.completions + 1 }),
-};
-
-const recordMutants: FieldMutants<StepRecord> = {
-  label: (r) => ({ ...r, label: "ticket-done" }),
-  transitions: (r) => ({
-    ...r,
-    transitions: [{ ticket: id(1), from: "Pending", to: "Work" }],
-  }),
-  effects: (r) => ({ ...r, effects: ["SpawnWorkTasks"] }),
-};
-
-const baseTransition: Transition = {
-  ticket: id(1),
-  from: "Work",
-  to: "Evaluation",
-};
-
-const transitionMutants: FieldMutants<Transition> = {
-  ticket: (t) => ({ ...t, ticket: id(2) }),
-  from: (t) => ({ ...t, from: "Pending" }),
-  to: (t) => ({ ...t, to: "Done" }),
 };
 
 const baseStage: StageDefinition = { key: 1, evaluators: [evaluatorOf(1)] };
@@ -189,22 +178,6 @@ function running(progress: EvaluationProgress): EvaluationInstance {
 
 test("ticketEquals reads every field Ticket declares", () => {
   assertDiscriminates(baseTicket, ticketEquals, ticketMutants);
-});
-
-test("recordEquals reads every field StepRecord declares", () => {
-  assertDiscriminates(initRecord, recordEquals, recordMutants);
-});
-
-test("the transition comparison reads every field Transition declares", () => {
-  const inRecord = (transition: Transition): StepRecord => ({
-    ...initRecord,
-    transitions: [transition],
-  });
-  assertDiscriminates(
-    baseTransition,
-    (left, right) => recordEquals(inRecord(left), inRecord(right)),
-    transitionMutants,
-  );
 });
 
 test("the definition comparison reads every field ReleasedTicket declares", () => {
@@ -300,12 +273,21 @@ test("a list of equal length is compared member by member, not by length alone",
 });
 
 test("each variant arm's payload is compared, not only its tag", () => {
-  const marked = (mark: number): Ticket => ({
-    ...baseTicket,
-    artifact: { type: "ProducedArtifact", value: mark },
+  const failed = (evidence: number): EvaluationInstance => ({
+    ...judged,
+    state: {
+      type: "Running",
+      value: {
+        completedStages: [],
+        stage: {
+          ...baseRun,
+          evaluators: new Map([
+            [1, { type: "EvaluatorProcessFailed", value: evidence }],
+          ]),
+        },
+      },
+    },
   });
-  assert.ok(!ticketEquals(marked(1), marked(2)));
-  assert.ok(
-    !ticketEquals(marked(1), { ...baseTicket, artifact: "NoArtifact" }),
-  );
+  assert.ok(!instanceEquals(failed(1), failed(2)));
+  assert.ok(!instanceEquals(failed(1), running(baseProgress)));
 });

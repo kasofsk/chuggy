@@ -18,6 +18,15 @@ export const ticketServiceDefaults: TicketServiceConfig = {
   backpressureRetryAfterSeconds: 1,
 };
 
+/**
+ * How many passes may defer one input on a source nobody could yet read before
+ * the input is refused instead. It is counted in passes rather than time for
+ * the reason the finalizer's `holdPassesMax` is, and it is what stops a remote
+ * that stays transient leaving its operation unanswered and its class head
+ * standing in front of everything behind it.
+ */
+export const sourceDeferralPassesMax = 10;
+
 export function checkedTicketServiceConfig(
   config: TicketServiceConfig,
 ): TicketServiceConfig {
@@ -52,7 +61,7 @@ export type DecisionMetricOutcome =
   | "Journaled"
   | "Refused"
   | "Answered"
-  | "Stale"
+  | "Deferred"
   | "Fenced"
   | "NotActive"
   | "StaleHead"
@@ -75,9 +84,11 @@ export interface TicketServiceMetrics {
   ): void;
   decision(outcome: DecisionMetricOutcome, milliseconds: number): void;
   quantumExhausted(reason: "Count" | "Time"): void;
-  continuation(
-    outcome: "Created" | "Journaled" | "Stale" | "Contradictory",
-  ): void;
+  /**
+   * A decision the writer found contradicting the state it replayed, which
+   * ends the writer's turn rather than landing anything.
+   */
+  contradiction(): void;
   focusedRequest(kind: "Execution" | "Finalization"): void;
   nativeAction(outcome: "Opened" | "Resolved" | "Withdrawn"): void;
 
@@ -99,7 +110,7 @@ export const silentTicketServiceMetrics: TicketServiceMetrics = {
   backpressure: () => undefined,
   decision: () => undefined,
   quantumExhausted: () => undefined,
-  continuation: () => undefined,
+  contradiction: () => undefined,
   focusedRequest: () => undefined,
   nativeAction: () => undefined,
   executionSourceDeferred: () => undefined,

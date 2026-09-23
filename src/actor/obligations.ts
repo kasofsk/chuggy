@@ -20,7 +20,7 @@
 
 import type { Config } from "../domain/config.ts";
 import { liveTickets, ticketAt } from "../domain/ticketGraph.ts";
-import { graphEquals } from "./equality.ts";
+import { graphEquals } from "../domain/equality.ts";
 import { journalLegalOn, replayGraph } from "./journal.ts";
 import { memoryGraph, type ActorState } from "./state.ts";
 import {
@@ -31,20 +31,23 @@ import {
 } from "./world.ts";
 
 /** The one signature every obligation has: a predicate over the actor's own state. */
-export type Obligation = (config: Config, state: ActorState) => boolean;
+export type RefinementObligation = (
+  config: Config,
+  state: ActorState,
+) => boolean;
 
 /** One obligation under the name `model/refinement.qnt` declares it by. */
 export interface NamedObligation {
   readonly obligation: string;
-  readonly holds: Obligation;
+  readonly holds: RefinementObligation;
 }
 
 /** Refinement: the journaled history is a legal domain trace. */
-export const journalLegal: Obligation = (config, state) =>
-  journalLegalOn(config, state.journal);
+export const journalLegal: RefinementObligation = (_config, state) =>
+  journalLegalOn(state.journal);
 
 /** Recovery completeness: replay of the current journal is exactly the state the actor holds. */
-export const recoveryComplete: Obligation = (_config, state) =>
+export const recoveryComplete: RefinementObligation = (_config, state) =>
   graphEquals(replayGraph(state.journal), memoryGraph(state));
 
 /**
@@ -53,7 +56,7 @@ export const recoveryComplete: Obligation = (_config, state) =>
  * journal, and holding every seq up to its own size, which pins it to a dense
  * run from one.
  */
-export const executorSound: Obligation = (_config, state) => {
+export const executorSound: RefinementObligation = (_config, state) => {
   if (state.applied < 0 || state.applied > state.journal.length) return false;
   if (state.worldEffects.size > state.journal.length) return false;
   for (let seq = 1; seq <= state.worldEffects.size; seq++) {
@@ -67,7 +70,10 @@ export const executorSound: Obligation = (_config, state) => {
  * the ticket. A corollary of legality plus recovery on any reachable state,
  * stated anyway so a mutant journal is caught by name.
  */
-export const journalCompletionsMatchLedger: Obligation = (_config, state) =>
+export const journalCompletionsMatchLedger: RefinementObligation = (
+  _config,
+  state,
+) =>
   liveTickets(memoryGraph(state)).every(
     (ticket) =>
       journalCompletions(state, ticket) ===
@@ -75,17 +81,17 @@ export const journalCompletionsMatchLedger: Obligation = (_config, state) =>
   );
 
 /** Coverage: every effect the world ever received traces to a journaled decision — no orphans. */
-export const journalCoversWorld: Obligation = (_config, state) =>
+export const journalCoversWorld: RefinementObligation = (_config, state) =>
   state.orphans.length === 0;
 
 /** No double-spent work: the world never runs more work for a ticket than the journal decided. */
-export const noDoubleSpentWork: Obligation = (_config, state) =>
+export const noDoubleSpentWork: RefinementObligation = (_config, state) =>
   liveTickets(memoryGraph(state)).every(
     (ticket) => worldSpawns(state, ticket) <= journalSpawns(state, ticket),
   );
 
 /** No duplicate cycle: the world lands a ticket's diff at most once, across crashes at any seam. */
-export const noDuplicateCycle: Obligation = (_config, state) =>
+export const noDuplicateCycle: RefinementObligation = (_config, state) =>
   liveTickets(memoryGraph(state)).every(
     (ticket) => worldCompletions(state, ticket) <= 1,
   );

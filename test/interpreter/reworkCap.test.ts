@@ -12,15 +12,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  decide,
   dispatchEvent,
-  execDecisionEvent,
   finalizationResultEvent,
   releaseTicketEvent,
   taskDoneEvent,
-  workReduceEvent,
   type DecisionEvent,
 } from "../../src/actor/decisionEvent.ts";
 import { genesis } from "../../src/actor/journal.ts";
+import { alwaysPolicy } from "../../src/domain/deciders.ts";
+import { evolve } from "../../src/domain/evolve.ts";
 import { currentTaskObligations } from "../../src/domain/evaluation.ts";
 import { currentInstance } from "../../src/domain/ticket.ts";
 import { workTaskOf } from "../../src/domain/task.ts";
@@ -31,7 +32,7 @@ import {
   checkedReworkCap,
   reworkDisposition,
 } from "../../src/interpreter/reworkCap.ts";
-import { plainDefinitionOf, plainDisposition } from "../actor/harness.ts";
+import { plainDefinitionOf, plainPolicy } from "../actor/harness.ts";
 import { aDispatchSource } from "../../src/domain/config.ts";
 import { id, judgedReport, producedReport } from "../domain/fixtures.ts";
 
@@ -57,17 +58,17 @@ function dispositionsUnder(
   finalizationFailures = 0,
 ): readonly string[] {
   let graph: TicketGraph = genesis;
-  const step = (event: DecisionEvent) => {
-    graph = execDecisionEvent(graph, event).post;
+  const step = (event: DecisionEvent, policy = plainPolicy) => {
+    graph = evolve(graph, decide(graph, event, policy).event);
   };
   const evaluated = (verdict: "EvaluatorPass" | "EvaluatorFail") => {
     const work = owed(graph);
-    step(taskDoneEvent(id(1), work, producedReport(work), plainDisposition));
-    step(workReduceEvent(id(1)));
+    step(taskDoneEvent(id(1), work, producedReport(work)));
     const judge = owed(graph);
     const disposition = reworkDisposition(ticketAt(graph, id(1)), cyclesMax);
     step(
-      taskDoneEvent(id(1), judge, judgedReport(judge, verdict), disposition),
+      taskDoneEvent(id(1), judge, judgedReport(judge, verdict)),
+      alwaysPolicy(disposition),
     );
     return disposition;
   };
@@ -75,7 +76,7 @@ function dispositionsUnder(
   step(dispatchEvent(id(1), aDispatchSource));
   for (let failure = 0; failure < finalizationFailures; failure++) {
     evaluated("EvaluatorPass");
-    step(finalizationResultEvent(id(1), "FinalizationNeedsWork"));
+    step(finalizationResultEvent(id(1), "FinalizationNeedsWork", 1));
   }
   const picked: string[] = [];
   for (let round = 0; round <= cyclesMax + 1; round++) {

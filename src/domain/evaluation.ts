@@ -144,7 +144,7 @@ function runningRun(instance: EvaluationInstance): StageRun | undefined {
 }
 
 /** Whether this task is one the running stage is still waiting on. */
-function taskCurrent(
+export function taskCurrent(
   instance: EvaluationInstance,
   task: TaskIdentity,
 ): boolean {
@@ -493,7 +493,7 @@ export function instanceValid(instance: EvaluationInstance): boolean {
  * Structural equality over the protocol's own shapes, written out because
  * `node:util`'s deep compare sits outside the layers that need it
  * (`.dependency-cruiser.cjs`). Every entry below is a conjunction over its
- * shape's declared fields, which `test/actor/equality.test.ts` holds to a
+ * shape's declared fields, which `test/domain/equality.test.ts` holds to a
  * `Record<keyof Shape, ...>` roster.
  */
 export function stageDefinitionEquals(

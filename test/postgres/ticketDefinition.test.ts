@@ -178,8 +178,8 @@ test("a release resolves each task's material from the block its own key names",
     digest: materialDigest(evaluationBlock),
   });
   const release = (await postgresHarnessCommitted(harness, memory))[0]?.event;
-  assert.equal(release?.type, "CreateTicket");
-  if (release?.type !== "CreateTicket") return;
+  assert.equal(release?.type, "TicketCreated");
+  if (release?.type !== "TicketCreated") return;
   assert.equal(
     release.value.workConfiguration.inputs,
     digestFold(materialDigest(workBlock)),

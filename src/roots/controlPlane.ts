@@ -477,9 +477,7 @@ export function ticketServiceProcessRoot(
         additional: [
           postgresRolePrecondition(pool, ticketServiceRole),
           postgresDomainConfigurationPrecondition(pool, config.domain),
-          journalLegalityPrecondition(
-            postgresJournalLegality(pool, config.domain),
-          ),
+          journalLegalityPrecondition(postgresJournalLegality(pool)),
           gitAvailablePrecondition(config.source.environment),
           gitScratchWritablePrecondition(config.source.scratchDirectory),
           credentialFilesPrecondition(config.source),

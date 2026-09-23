@@ -1,20 +1,22 @@
 /**
- * What a ticket does with its own fields: what a park implies, the one site
- * that moves its task set, and the instances that hold its judgements.
+ * What a ticket does with its own fields: what a park implies, what it owes
+ * the fabric, and the instances that hold its judgements.
  *
  * `completions` is a stored ghost here as it is in the model rather than
  * reconstructed from the phase — a stored duplicate of a derivable fact is a
  * finding, and this one is the model's own accounting, carried so a golden
- * state compares field for field.
+ * state compares field for field. The artifact is not stored at all: it is
+ * the result the latest instance judges (`artifactOf`).
  */
 
 import type {
+  ArtifactMark,
   Escalation,
   EvaluationInstance,
-  EvaluationVerdict,
+  FinalizationOperation,
+  Obligation,
   Resume,
   StageRun,
-  Task,
   TaskIdentity,
   TaskObligation,
   TaskTerminalReport,
@@ -26,12 +28,13 @@ import {
   applyProduced,
   begin,
   currentTaskObligations,
+  taskCurrent,
   taskIdentityFor,
 } from "./evaluation.ts";
 import { isSettled } from "./phase.ts";
 import {
-  outstandingCount,
   taskIdentityEquals,
+  taskIdentityValid,
   taskObligationEquals,
   taskObligationValid,
   workTaskOf,
@@ -48,7 +51,7 @@ export function hasOpenHumanTask(ticket: Ticket): boolean {
 
 /**
  * Where each wall resumes, total on the sum, so every park offers the desk
- * exactly one continuation and the unparked ticket offers none — which is what
+ * exactly one way on and the unparked ticket offers none — which is what
  * lets the resume point stay off the ticket rather than sit beside the wall
  * that implies it. The two work walls and the evaluation-failure wall all buy
  * a new artifact; the blocked wall alone re-asks what it interrupted.
@@ -70,41 +73,18 @@ export function resumeOf(escalation: Escalation): Resume {
 }
 
 /**
- * The work spawn: a work cycle is one task, always. Work is not staged and
- * lists no evaluators, so the only fan-out left is an evaluation stage's
- * roster, and every work spawn site is this call — which is also the only
- * thing that claims the one mint slot its identity is drawn from.
+ * The work spawn: a work cycle is one task, always, so starting the cycle is
+ * the only thing that moves the counter its identity is drawn from. The mint
+ * counter claims the one slot the task takes, and the cycle has no
+ * finalization yet.
  */
 export function spawnWork(ticket: Ticket): Ticket {
-  const cycle = ticket.workCyclesStarted + 1;
   return {
     ...ticket,
-    tasks: new Set<Task>([
-      {
-        identity: workTaskOf(ticket.definition.id, cycle),
-        state: "Outstanding",
-      },
-    ]),
-    workCyclesStarted: cycle,
+    workCyclesStarted: ticket.workCyclesStarted + 1,
     spawned: ticket.spawned + 1,
+    finalizationGeneration: 0,
   };
-}
-
-/**
- * Retire the live work task: a phase that has stopped running carries no live
- * task, and one still outstanding when its ticket parks or is revoked is one
- * the world is told to cancel. Evaluation needs no retirement at all, its
- * obligations being derived from the running stage.
- */
-export function retireLive(ticket: Ticket): Ticket {
-  return { ...ticket, tasks: new Set<Task>() };
-}
-
-/** Did the work cycle produce? Work is one task, so the cycle's outcome is that task's. */
-export function workProduced(tasks: ReadonlySet<Task>): boolean {
-  return [...tasks].every(
-    (t) => t.state !== "Outstanding" && t.state.value === "Passed",
-  );
 }
 
 /**
@@ -196,37 +176,81 @@ export function spawnEvalRun(ticket: Ticket): Ticket {
 }
 
 /**
- * Work passed, so judgement begins: the instance is opened over the ACCEPTED
- * WORK RESULT — `workResult`, the reference the passing report carried and the
- * completion pinned as this ticket's artifact — with the released plan and the
- * source it was accepted at. That same reference is the artifact the
+ * The instance an accepted work result opens, over `workResult` — the
+ * reference the accepted report carried — with the released plan and the
+ * source that result was accepted at. That same reference is the artifact the
  * dependents read and every evaluator obligation's `contextRef`, a judgement
- * being of a result; the mint counter is an identity ledger and never stands
- * in for it, and neither does the cycle.
+ * being of a result.
  */
-export function beginEvaluation(ticket: Ticket, workResult: number): Ticket {
-  return spawnEvalRun({
-    ...ticket,
-    evaluations: [
-      ...ticket.evaluations,
-      begin(
-        ticket.workCyclesStarted,
-        {
-          ticket: ticket.definition.id,
-          workResult,
-          acceptedSourceRef: ticket.source,
-        },
-        ticket.definition.evaluationPlan,
-      ),
-    ],
-  });
+export function begunInstance(
+  ticket: Ticket,
+  workResult: number,
+  acceptedSourceRef: number,
+): EvaluationInstance {
+  return begin(
+    ticket.workCyclesStarted,
+    { ticket: ticket.definition.id, workResult, acceptedSourceRef },
+    ticket.definition.evaluationPlan,
+  );
+}
+
+/**
+ * What this ticket produced, derived: the accepted work result the latest
+ * instance judges, and nothing before any work was accepted. Each accepted
+ * result opens an instance over itself, so a rework's supersedes the one
+ * before it.
+ */
+export function artifactOf(ticket: Ticket): ArtifactMark {
+  if (ticket.evaluations.length === 0) return "NoArtifact";
+  return {
+    type: "ProducedArtifact",
+    value: currentInstance(ticket).input.workResult,
+  };
+}
+
+/**
+ * The finalization attempt this ticket is on: the cycle, the stored
+ * generation, and the accepted result and source that cycle's judgement
+ * passed. Read only in Finalization and at the finalization wall, where the
+ * current instance is the passed one.
+ */
+export function finalizationOperationOf(ticket: Ticket): FinalizationOperation {
+  return {
+    workCycle: ticket.workCyclesStarted,
+    generation: ticket.finalizationGeneration,
+    input: currentInstance(ticket).input.workResult,
+    source: ticket.source,
+  };
+}
+
+/** Whether a finalizer's report answers this attempt; one for an attempt a resume superseded names one nothing owes. */
+export function finalizationCurrent(
+  operation: FinalizationOperation,
+  workCycle: number,
+  generation: number,
+): boolean {
+  return (
+    operation.workCycle === workCycle && operation.generation === generation
+  );
+}
+
+/** Structural equality on a finalization attempt, field for field. */
+export function finalizationOperationEquals(
+  left: FinalizationOperation,
+  right: FinalizationOperation,
+): boolean {
+  return (
+    left.workCycle === right.workCycle &&
+    left.generation === right.generation &&
+    left.input === right.input &&
+    left.source === right.source
+  );
 }
 
 /**
  * Every task identity an instance has named at the generation its runs now
- * stand at. The generations a resume left behind are not recoverable and are
- * deliberately not named: an earlier generation's completion is stale, and
- * staleness is absorbed by identity without the machine enumerating it.
+ * stand at. The generations a resume left behind are deliberately not named:
+ * an event about one of their tasks is one nothing owes.
  */
 export function instanceTasks(
   instance: EvaluationInstance,
@@ -256,21 +280,19 @@ export function workTaskObligation(
 
 /**
  * What the fabric is running for this ticket, as the obligations it owes: the
- * work cycle's one obligation while its task is outstanding, or the ones the
- * current run still owes. The whole obligation and not the identity alone,
- * because that is what a produced report is held against.
+ * work cycle's one obligation while the ticket is in Work, or the ones the
+ * current run still owes. Empty in every other phase, which is what makes
+ * leaving a phase enough to stop owing them.
  */
 export function liveObligations(ticket: Ticket): readonly TaskObligation[] {
   if (ticket.phase === "Work")
-    return outstandingCount(ticket.tasks) > 0
-      ? [workTaskObligation(ticket, ticket.workCyclesStarted)]
-      : [];
+    return [workTaskObligation(ticket, ticket.workCyclesStarted)];
   if (ticket.phase === "Evaluation")
     return currentTaskObligations(currentInstance(ticket));
   return [];
 }
 
-/** The tasks the fabric is running for this ticket — the identities the obligations name. */
+/** The tasks the fabric is running for this ticket, in the obligations' order. */
 export function liveTasks(ticket: Ticket): readonly TaskIdentity[] {
   return liveObligations(ticket).map((owed) => owed.task);
 }
@@ -301,10 +323,9 @@ export function obligationCurrent(
 
 /**
  * What a live task's result looks like to the machine: the obligation this
- * ticket owes for it, drawn from `liveTasks`, and the reference
- * `producedResultRef` derives. This is the CORPUS's constructor and the only
- * place a result reference is derived at all: every decider takes the one its
- * report carried.
+ * ticket owes for it and the reference `producedResultRef` derives. This is
+ * the CORPUS's constructor and the only place a result reference is derived
+ * at all: every decider takes the one its report carried.
  */
 export function producedResult(
   ticket: Ticket,
@@ -334,15 +355,24 @@ const workResultBand = 100;
 /**
  * What a produced result's reference is at model scope, where the real system
  * folds the digest of the manifest the task attested. A WORK result takes a
- * band of its own, clear of the cycle that produced it: the reference a report
- * carries is a fact the completion is TOLD, and one that read back as the
- * cycle would let a reader — and a golden — mistake a derivation for the
- * number that travelled.
+ * band of its own, clear of the cycle that produced it, so no reader mistakes
+ * a derivation for the number that travelled.
  */
 export function producedResultRef(task: TaskIdentity): number {
   return task.type === "WorkTask"
     ? workResultBand * task.value.ticket + task.value.cycle
     : task.value.evaluator;
+}
+
+/** The task a report is about, whichever arm it is. */
+export function reportTask(report: TaskTerminalReport): TaskIdentity {
+  switch (report.type) {
+    case "WorkResultReport":
+    case "EvaluationResultReport":
+      return report.value.result.obligation.task;
+    case "TerminalFailureReport":
+      return report.value.failure.task;
+  }
 }
 
 /** A report is well-formed when every reference it carries is a real one. */
@@ -360,16 +390,18 @@ export function reportValid(report: TaskTerminalReport): boolean {
         report.value.result.resultRef > 0
       );
     case "TerminalFailureReport":
-      return report.value.evidence > 0;
+      return (
+        taskIdentityValid(report.value.failure.task) &&
+        report.value.failure.evidence > 0
+      );
   }
 }
 
 /**
  * Which reports a task can carry: a work task produces a work result and an
  * evaluator a verdict, each admitted only at the obligation it was spawned
- * under, while a failure matches by identity alone, carrying no result to
- * hold against one. Stated here because it is the completion's enablement
- * rather than something a decider defends against mid-flight.
+ * under, while a failure is admitted when it names the task the completion
+ * names, carrying no result to hold against an obligation.
  */
 export function reportMatchesTask(
   ticket: Ticket,
@@ -388,7 +420,7 @@ export function reportMatchesTask(
         obligationCurrent(ticket, task, report.value.result.obligation)
       );
     case "TerminalFailureReport":
-      return true;
+      return taskIdentityEquals(report.value.failure.task, task);
   }
 }
 
@@ -398,40 +430,88 @@ export function reportMatchesTask(
  * owes, and a failure becomes the terminal for its kind. Nothing here
  * decides — the protocol concludes the stage itself.
  */
-export function applyTaskReport(
+export function applyEvaluationReport(
   instance: EvaluationInstance,
-  task: TaskIdentity,
   report: TaskTerminalReport,
 ): EvaluationInstance {
   switch (report.type) {
     case "EvaluationResultReport":
       return applyProduced(
         instance,
-        task,
+        report.value.result.obligation.task,
         report.value.result,
-        report.value.verdict satisfies EvaluationVerdict,
+        report.value.verdict,
       );
     case "TerminalFailureReport":
       return applyFailure(
         instance,
-        task,
+        report.value.failure.task,
         report.value.kind,
-        report.value.evidence,
+        report.value.failure.evidence,
       );
     case "WorkResultReport":
       return instance;
   }
 }
 
+/** An evaluation event applies only to the instance still owing its reported task. */
+export function reportAdmissible(
+  instance: EvaluationInstance,
+  report: TaskTerminalReport,
+): boolean {
+  return taskCurrent(instance, reportTask(report));
+}
+
+/** Run a work cycle's task, under the obligation the cycle owes. */
+export function executeWork(ticket: Ticket, cycleNumber: number): Obligation {
+  return {
+    type: "ExecuteTask",
+    value: {
+      ticket: ticket.definition.id,
+      task: workTaskObligation(ticket, cycleNumber),
+    },
+  };
+}
+
+/** Run every evaluator an instance's current run still owes, in the roster's order. */
+export function executeEvaluationTasks(
+  ticket: number,
+  instance: EvaluationInstance,
+): readonly Obligation[] {
+  return currentTaskObligations(instance).map((task): Obligation => ({
+    type: "ExecuteTask",
+    value: { ticket, task },
+  }));
+}
+
+/** Attempt a finalization, under the configuration the release pinned. */
+export function finalize(
+  ticket: Ticket,
+  operation: FinalizationOperation,
+): Obligation {
+  return {
+    type: "FinalizeTicket",
+    value: {
+      ticket: ticket.definition.id,
+      finalization: operation,
+      configuration: ticket.definition.finalizationConfiguration,
+    },
+  };
+}
+
+/** Stop every task the fabric is running for this ticket. */
+export function cancelLiveTasks(ticket: Ticket): readonly Obligation[] {
+  return liveTasks(ticket).map((task): Obligation => ({
+    type: "CancelTask",
+    value: { ticket: ticket.definition.id, task },
+  }));
+}
+
 /**
  * How many reworks a failing evaluation has cost this ticket, read off its
- * instances rather than carried, which would be a stored duplicate: a
- * judgement that ended failed, with a later cycle started above it, bought
- * that cycle, and both edges of a failing stage count, the escalate arm's
- * resume buying the same cycle one human later.
- *
- * The model declares no cap of its own, how many being a policy rather than a
- * rule about what the machine may do.
+ * instances rather than carried: a judgement that ended failed, with a later
+ * cycle started above it, bought that cycle, and both edges of a failing stage
+ * count, the escalate arm's resume buying the same cycle one human later.
  */
 export function evaluationFailureReworksStarted(ticket: Ticket): number {
   return ticket.evaluations.filter(

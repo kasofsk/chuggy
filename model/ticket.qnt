@@ -6,27 +6,28 @@
 /// functions of the `TicketGraph` this file declares.
 ///
 /// DERIVE, DON'T STORE (standing rule 3) is what gives the record its shape.
-/// The waiting room (Ready/Blocked), the open desk task, the evaluation
-/// tasks the fabric is running and a dependency's artifact are all
-/// PREDICATES over what is stored, so what is stored is what no predicate can
-/// reach: the phase, the data the author released, the work task, and the
+/// The waiting room (Ready/Blocked), the open desk task, the tasks the fabric
+/// is running and a ticket's artifact are all PREDICATES over what is stored,
+/// so what is stored is what no predicate can reach: the phase, the data the
+/// author released, the counters identities are drawn from, and the
 /// evaluation instance of every work cycle that reached judgement.
 ///
 /// WHAT A TICKET DELIBERATELY DOES NOT CARRY. No attempt counter and no
 /// per-task budget: the fabric relaunches a failed container below the cycle
 /// grain, so this machine's grain is the CYCLE and same-cycle retry
-/// machinery is a standing non-goal. No live evaluation task set (the
-/// instance's current run owes them, and currentTaskObligations names them),
-/// no readiness flag, and no timestamps — implementation accounting, not
-/// machine state.
+/// machinery is a standing non-goal. No live task set (Work runs the cycle's
+/// one task and the instance's current run owes the evaluators, and
+/// liveObligations names both), no readiness flag, and no timestamps —
+/// implementation accounting, not machine state.
 ///
 /// Sum-type constructors share one namespace per module, which is what the
 /// prefixed names below are avoiding.
 module chuggy_ticket {
   /// The task contract, copied verbatim into this tree (model/AGENTS.md says
   /// why). It brings the task identity and the predicates over it, the task
-  /// DEFINITION a released ticket pins, the OBLIGATION a spawn owes and the
-  /// VALIDATED RESULT a produced report carries back.
+  /// DEFINITION a released ticket pins, the OBLIGATION a spawn owes, the
+  /// VALIDATED RESULT a produced report carries back and the FAILURE a report
+  /// that reached no result carries instead.
   import task_contract.* from "./task-contract/task"
 
   /// THE EVALUATION PROTOCOL, copied in at the package's own path
@@ -44,9 +45,9 @@ module chuggy_ticket {
   /// domain.qnt, not phases — a ticket that has not started is Pending, and
   /// the waiting-room split is derived. Pending must be stored (phase is
   /// total and "never started" is not expressible as a predicate over the
-  /// other fields without overloading them). Work/Evaluation carry the
-  /// parallel task set; Finalization is its own phase because its outcome is
-  /// the exclusivity boundary; Done is absorbing; Escalated is the human desk.
+  /// other fields without overloading them). Work/Evaluation run tasks;
+  /// Finalization is its own phase because its outcome is the exclusivity
+  /// boundary; Done is absorbing; Escalated is the human desk.
   ///
   /// Pending is the ONLY authoring phase: release goes Pending -> Pending
   /// directly, with Ready and Blocked derived.
@@ -58,15 +59,14 @@ module chuggy_ticket {
   /// completes, and opens NO human task, because revocation is the author's
   /// settled choice (see hasOpenHumanTask).
   ///
-  /// An eval stage advance gets NO phase — it is an Evaluation ->
-  /// Evaluation edge, because within-phase progress lives in the evaluation
-  /// instance's current run rather than in new phases.
+  /// An eval stage advance gets NO phase — within-phase progress lives in the
+  /// evaluation instance's current run rather than in new phases.
   type Phase =
     Pending | Work | Evaluation | Finalization | Done | Escalated | Revoked
 
   /// WHAT A TASK IS FOR is the contract's `TaskIdentity`:
   ///   WorkTask{ticket, cycle}
-  ///              — the one task a work cycle runs (Work stays ONE task-set
+  ///              — the one task a work cycle runs (Work stays ONE task
   ///                phase per kasofsk's anatomy note; the extracted
   ///                vocabulary agrees task creation: "Job enters Work (new
   ///                cycle): one work task", i.e. Work is not staged).
@@ -79,40 +79,14 @@ module chuggy_ticket {
   /// both — taskIdentityFor reads the stage's key out of the plan at the run's
   /// stored index, so no layer here counts a stage or an evaluator at a spawn.
   ///
-  /// The evaluation identities are DERIVED rather than stored: the run holds
-  /// one status per evaluator, and currentTaskObligations names exactly the
-  /// tasks whose status is still Awaiting.
-
-  /// THE WORK TASK'S OUTCOME — RESOLVED outcomes only; an outstanding task
-  /// cannot carry one (see TaskState). A work cycle's task either produced
-  /// the artifact or it did not, and the evaluation side keeps no outcome
-  /// here at all: an evaluator's is a per-evaluator status on the run
-  /// (EvaluatorStatus), which is what lets infrastructure death be told from
-  /// a judgement.
-  type TaskOutcome = Passed | Failed
-
-  /// THE EXPLICIT TASK LIFECYCLE (one small sum instead of implicit
-  /// set-membership). A task is PUBLISHED to the fabric as outstanding and
-  /// RESOLVES exactly once. Assignment, launch, execution and their retries
-  /// are the trusted fabric's grain, not states of this machine. Resolved
-  /// carries the outcome, so an outstanding task CANNOT carry one and a
-  /// resolved task MUST. First write wins (resolveTask); resolution is final
-  /// (resolveTask is the only edge, and nothing maps a Resolved back).
-
-  type TaskState = Outstanding | Resolved(TaskOutcome)
-
-  /// THE WORK TASK, as a record: the contract's identity + lifecycle state.
-  /// An identity is UNIQUE WITHIN THE TICKET across its entire history —
-  /// never reused across stages, cycles, or operator retries, because a work
-  /// cycle is numbered and each run of a stage within a cycle carries its own
-  /// generation. That uniqueness is load-bearing: it is what lets a stale
-  /// completion from an earlier stage/incarnation be absorbed BY IDENTITY
-  /// (domain.qnt decideTaskDone).
-  /// Deliberately absent: `attempt` and the
-  /// per-task retry budgets (below-cycle machinery, a standing non-goal),
-  /// timestamps/results (implementation accounting, not machine state).
-
-  type Task = { identity: TaskIdentity, state: TaskState }
+  /// Every identity is DERIVED rather than stored: the work task is the
+  /// cycle the ticket is on, and the run holds one status per evaluator, of
+  /// which currentTaskObligations names exactly those still Awaiting. An
+  /// identity is UNIQUE WITHIN THE TICKET across its entire history — never
+  /// reused across stages, cycles, or operator resumes, because a work cycle
+  /// is numbered and each run of a stage carries its own generation — which
+  /// is what lets an event about a task nothing owes any more fall through
+  /// evolve untouched (domain.qnt).
 
   /// WHY A TASK REACHED NO RESULT, which is NOT a verdict: the job died
   /// (ProcessFailure — the fabric already relaunched it below the cycle
@@ -123,19 +97,29 @@ module chuggy_ticket {
   /// the only one a resume can re-ask.
   type FailureKind = ProcessFailure | ExecutionUnavailableFailure
 
-  /// WHAT COMES BACK FOR ONE TASK — the completion event's payload, in the
-  /// package's three arms. Each produced arm carries the contract's
-  /// VALIDATED RESULT: the full obligation the task was spawned under and the
+  /// WHAT COMES BACK FOR ONE TASK — the completion's payload, in the
+  /// package's three arms, each minus the `ticket` the command and the event
+  /// carry beside it. Each produced arm carries the contract's VALIDATED
+  /// RESULT: the full obligation the task was spawned under and the
   /// reference it produced under it. A work result also carries the source
   /// the application accepted it at; an evaluator's carries its verdict
-  /// instead; either task reaches no result at all and reports the failure's
-  /// evidence and kind. The task is named by the event that carries the
-  /// report (domain.qnt decideTaskDone), so no arm repeats it.
+  /// instead; a task that reached no result reports the contract's FAILURE —
+  /// the task and the evidence — and its kind. Every arm names its task,
+  /// which is what lets an event carrying the report be applied without the
+  /// command that decided it.
   type TaskTerminalReport =
       WorkResultReport({ result: ValidatedTaskResult, acceptedSourceRef: int })
     | EvaluationResultReport({ result: ValidatedTaskResult,
         verdict: EvaluationVerdict })
-    | TerminalFailureReport({ evidence: int, kind: FailureKind })
+    | TerminalFailureReport({ failure: TaskFailure, kind: FailureKind })
+
+  /// THE TASK A REPORT IS ABOUT, whichever arm it is (the package's
+  /// reportTask).
+  pure def reportTask(report: TaskTerminalReport): TaskIdentity = match report {
+    | WorkResultReport(produced) => produced.result.obligation.task
+    | EvaluationResultReport(produced) => produced.result.obligation.task
+    | TerminalFailureReport(failed) => failed.failure.task
+  }
 
   /// A REPORT IS WELL-FORMED when every reference it carries is a real one.
   /// The instance holds the same line on its own side (evaluation.qnt
@@ -143,13 +127,12 @@ module chuggy_ticket {
   /// status), so a report admitted here cannot make a run ill-formed.
   pure def reportValid(report: TaskTerminalReport): bool = match report {
     | WorkResultReport(produced) =>
-      taskObligationValid(produced.result.obligation)
-        and produced.result.resultRef > 0
+      terminalValid(TaskResultProduced(produced.result))
         and produced.acceptedSourceRef > 0
     | EvaluationResultReport(produced) =>
-      taskObligationValid(produced.result.obligation)
-        and produced.result.resultRef > 0
-    | TerminalFailureReport(failure) => failure.evidence > 0
+      terminalValid(TaskResultProduced(produced.result))
+    | TerminalFailureReport(failed) =>
+      terminalValid(TaskProcessFailed(failed.failure))
   }
 
   /// THE REPORT APPLIED TO AN INSTANCE — the package's applyEvaluationReport
@@ -158,46 +141,59 @@ module chuggy_ticket {
   /// owes; a failure becomes the contract's terminal for its kind. Nothing
   /// here decides; applyProduced and applyFailure conclude the stage
   /// themselves.
-  pure def applyTaskReport(
-      evaluation: EvaluationInstance, task: TaskIdentity,
+  pure def applyEvaluationReport(
+      evaluation: EvaluationInstance,
       report: TaskTerminalReport): EvaluationInstance =
     match report {
       | EvaluationResultReport(produced) => applyProduced(
-          evaluation, task, produced.result, produced.verdict)
-      | TerminalFailureReport(failure) => applyFailure(evaluation, task,
-          match failure.kind {
-            | ProcessFailure =>
-              TaskProcessFailed({ task: task, evidence: failure.evidence })
+          evaluation, produced.result.obligation.task, produced.result,
+          produced.verdict)
+      | TerminalFailureReport(failed) => applyFailure(evaluation,
+          failed.failure.task,
+          match failed.kind {
+            | ProcessFailure => TaskProcessFailed(failed.failure)
             | ExecutionUnavailableFailure =>
-              TaskExecutionUnavailable({ task: task, evidence: failure.evidence })
+              TaskExecutionUnavailable(failed.failure)
           })
       | WorkResultReport(_) => evaluation
     }
 
+  /// An evaluation event may only be applied to the evaluation that still
+  /// owes its reported task; the phase alone does not make the pairing legal
+  /// (the package's reportAdmissible).
+  pure def reportAdmissible(
+      evaluation: EvaluationInstance, report: TaskTerminalReport): bool =
+    taskCurrent(evaluation, reportTask(report))
+
   /// WHAT AN EVALUATION FAILURE DOES. The machine consults this at every
-  /// failing stage (domain.qnt decideEvalStageReduce) and takes exactly one
-  /// of two edges: Rework re-enters Work as a new cycle; Escalate parks
-  /// the ticket on the desk, where the operator's resume re-enters Work
-  /// the same way. The machine does not choose between them — the
-  /// disposition is an INPUT to the decision, drawn nondeterministically by
-  /// the `evalReduce` action and journaled with it, so any policy an
-  /// implementation runs over a ticket's history refines this machine.
+  /// failing stage (domain.qnt decideEvalTaskDone) and takes exactly one of
+  /// two edges: Rework re-enters Work as a new cycle; Escalate parks the
+  /// ticket on the desk, where the operator's resume re-enters Work the same
+  /// way. The machine does not choose between them — the policy is an INPUT
+  /// to the decision, drawn nondeterministically by the `taskDone` action,
+  /// and the event records which edge it took, so any policy an
+  /// implementation runs over a ticket's history refines this machine and no
+  /// replay ever consults one.
   type EvaluationFailureDisposition =
     ReworkEvaluationFailure
     | EscalateEvaluationFailure
+
+  /// The package's policy: a function of the failed instance.
+  type EvaluationFailurePolicy =
+    EvaluationInstance => EvaluationFailureDisposition
 
   /// Where an operator Retry resumes a parked ticket. DERIVED from the wall
   /// (resumeOf below), never stored: a resume point beside the wall that
   /// implies it is a stored duplicate of a derivable fact (standing rule 3),
   /// and the pair could disagree. NoResume belongs to the unparked ticket,
-  /// which has no continuation to offer the desk.
+  /// which has nothing to offer the desk.
   ///
   /// ResumeRework is the evaluation-failure wall's: it re-enters Work
   /// as a new cycle. That wall is reached by a VERDICT, and a verdict has no
   /// re-judge to offer — the fabric already relaunched the container below
-  /// the cycle grain — so the only honest continuation is a new artifact,
-  /// which is a work cycle. ResumeEvaluation is the blocked wall's, and it
-  /// is the one continuation that re-asks rather than re-works.
+  /// the cycle grain — so the only honest way on is a new artifact, which is
+  /// a work cycle. ResumeEvaluation is the blocked wall's, and it is the one
+  /// resume that re-asks rather than re-works.
   type Resume =
     NoResume | ResumeWork | ResumeRework | ResumeEvaluation |
     ResumeFinalization
@@ -209,10 +205,10 @@ module chuggy_ticket {
   /// no retries wall: retrying a failed container below the cycle grain is
   /// the fabric's job, trusted here rather than modeled).
   /// WorkExecutionUnavailableEscalated is the wall infrastructure hits when
-  /// it could not run an intact WORK task set; WHICH refusal it was is
-  /// evidence an adapter records beside the execution, never a distinction a
-  /// decider reads — every refusal takes the same edge to the same desk with
-  /// the same resume.
+  /// it could not run an intact WORK task; WHICH refusal it was is evidence
+  /// an adapter records beside the execution, never a distinction a decider
+  /// reads — every refusal takes the same edge to the same desk with the same
+  /// resume.
   /// EvaluationFailureEscalated is the evaluation-failure wall, reached when
   /// the failure's disposition is Escalate.
   /// EvaluationBlockedEscalated is the same infrastructure refusal against an
@@ -240,8 +236,8 @@ module chuggy_ticket {
 
   /// WHERE EACH WALL RESUMES — the derivation that lets the resume point
   /// leave the record (standing rule 3). Total on the sum, so every park the
-  /// machine can reach offers the desk exactly one continuation and the
-  /// unparked ticket offers none.
+  /// machine can reach offers the desk exactly one way on and the unparked
+  /// ticket offers none.
   ///
   /// The two work walls share ResumeWork and the evaluation-failure wall
   /// takes ResumeRework: all three buy a new artifact, and only the names of
@@ -286,7 +282,7 @@ module chuggy_ticket {
   /// tickets are safe by construction — terminalsAbsorbing forbids leaving
   /// Done, depsDoneIn requires every dep to be Done, and only a completion
   /// writes Done, so a dependency's artifact is final before any dependent
-  /// can dispatch.
+  /// can dispatch. DERIVED (artifactOf), never stored.
   type ArtifactMark = NoArtifact | ProducedArtifact(int)
 
   /// WHAT THE AUTHOR RELEASED, as the one opaque reference the brief became.
@@ -317,6 +313,19 @@ module chuggy_ticket {
     finalizationConfiguration: int
   }
 
+  /// ONE FINALIZATION ATTEMPT, as the package spells it: the work cycle it
+  /// finalizes, its generation within that cycle, the accepted work result it
+  /// commits and the source that result was accepted at. Chuggy stores the
+  /// generation alone (Ticket.finalizationGeneration) and derives the rest
+  /// (finalizationOperationOf), because the cycle, the result and the source
+  /// are already on the ticket.
+  type FinalizationOperation = {
+    workCycle: int,
+    generation: int,
+    input: int,
+    source: int
+  }
+
   /// One ticket's record.
   type Ticket = {
     phase: Phase,
@@ -330,30 +339,19 @@ module chuggy_ticket {
     // ticket has been dispatched and 0 before (domain.qnt sourcePinned),
     // where the package hangs the same value off WorkExecution, its three
     // escalations, FinalizationOperation and EvaluationInput.
-    // The dispatch observes one and a passed work result replaces it with
+    // The dispatch observes one and an accepted work result replaces it with
     // the source that result was accepted at; a rework, a resume and the
     // finalizer run at what the ticket already carries, because a spawn
     // that observed a source of its own could run against one nobody
     // accepted.
     source: int,
-    // The artifact this ticket has produced, if it has passed work (design
-    // 002) — the reference the passing report carried. Pinned by the work
-    // completion that carried it (domain.qnt decideWorkTaskDone), read by
-    // the reduce that opens the judgement of it, and superseded by each
-    // rework's product.
-    artifact: ArtifactMark,
-    // The LIVE WORK task, alone: one task while the ticket is in Work and
-    // nothing in any other phase. Evaluation carries no set here — its
-    // instance owes the tasks and currentTaskObligations names them.
-    tasks: Set[Task],
     // THE EVALUATION INSTANCES — one per work cycle that reached judgement,
     // in the order those cycles ran, each holding the plan it ran under, the
     // artifact it judged, its completed stage runs and the run it stopped
-    // at. Appended when work passes (domain.qnt decideWorkReduce) and
-    // advanced in place while the ticket judges; the LAST one is the current
-    // one exactly while the ticket is in Evaluation or parked at the blocked
-    // wall, and an earlier one never changes again (domain.qnt
-    // evaluationsMonotone).
+    // at. Appended when work is accepted (domain.qnt evolve) and advanced in
+    // place while the ticket judges; the LAST one is the current one exactly
+    // while the ticket is in Evaluation or parked at the blocked wall, and an
+    // earlier one never changes again (domain.qnt evaluationsMonotone).
     evaluations: List[EvaluationInstance],
     // How many work cycles this ticket has STARTED — the counter a work
     // identity's `cycle` is drawn from, and the `workCycle` every evaluation
@@ -371,14 +369,21 @@ module chuggy_ticket {
     // it. Held against what the instances themselves say by the
     // identity-accounting invariant (domain.qnt idsAccounted).
     spawned: int,
+    // THE GENERATION OF THIS CYCLE'S FINALIZATION: 0 until the cycle's
+    // judgement passes, 1 for the first attempt, and one more for each
+    // resume from the finalization wall — the one part of the package's
+    // FinalizationOperation no other field holds, and what makes a result for
+    // an attempt a resume superseded one nothing owes (domain.qnt
+    // finalizationCurrent). Every work spawn clears it.
+    finalizationGeneration: int,
     // The wall this ticket is parked at (NoEscalation unless Escalated).
     // Deliberately FIRST-CLASS stored trace vocabulary, not derived from
     // phase: with one parked phase, the wall is what tells the desk what it
     // is looking at. Where a retry resumes is derived from it (resumeOf).
     escalation: Escalation,
-    // GHOST: completion effects ever emitted for this ticket — the counter the
-    // effect-exclusivity invariant (exactly one completion) reads.
-    // Not implementation state.
+    // GHOST: finalization successes ever applied to this ticket — the
+    // counter the exactly-one-completion invariant reads. Not implementation
+    // state.
     completions: int
   }
 
@@ -386,8 +391,8 @@ module chuggy_ticket {
   /// predicate over the phase — a desk task is open exactly while the ticket
   /// is parked on the desk, and Escalated is THE parked phase.
   /// (storing the flag would need the iff proved as an invariant; deriving
-  /// it makes the invariant hold by construction.) The trace-visible
-  /// artifact is the "OpenHumanTask" effect string.
+  /// it makes the invariant hold by construction.) The desk is implied by
+  /// the park itself: no obligation opens it.
   ///
   /// Revoked is deliberately NOT here: revocation is the author's
   /// settled choice — the desk owes a revoked ticket nothing, exactly like
@@ -397,38 +402,108 @@ module chuggy_ticket {
   pure def hasOpenHumanTask(ticket: Ticket): bool = ticket.phase == Escalated
 
   /// The machine's observed state, as the pure deciders see it. A record
-  /// (not a bare map) so the ticket-source shape stays open.  attached
-  /// authoring here with no widening needed after all — tickets RELEASE by
-  /// growing the map's sparse, never-reused id domain through the
-  /// `freshTicket` seam, and no decider needed surgery. The shape that
-  /// grew is the Ticket record (the plan, the instances), not TicketGraph.
+  /// (not a bare map) so the ticket-source shape stays open: tickets RELEASE
+  /// by growing the map's sparse, never-reused id domain through the
+  /// `freshTicket` seam, and no decider needed surgery. The shape that grew
+  /// is the Ticket record (the plan, the instances), not TicketGraph.
   type TicketGraph = { tickets: int -> Ticket }
 
-  /// One observed ticket-phase transition, golden-trace shaped (standing rule
-  /// 4: conformance from day one — the model emits, the implementation
-  /// replays). from == to is a REAL row, not a degenerate one — the
-  /// stage advance is Evaluation -> Evaluation.
-  type Transition = { ticket: int, from: Phase, to: Phase }
+  // === Events, obligations and decisions (the package's, verbatim) =========
 
-  /// One decision's observable record, mirroring the golden-trace step
-  /// schema. Infrastructure request and permit identities live in the
-  /// journal cause envelope rather than domain state or this record.
-  type StepRecord = {
-    label: str,
-    transitions: List[Transition],
-    effects: List[str]
+  /// A report as an event carries it: the ticket, and what came back.
+  type TaskTerminalFact = {
+    ticket: int,
+    report: TaskTerminalReport
   }
 
-  /// What a pure decider returns: record performed + post-state.
-  type Decision = { rec: StepRecord, post: TicketGraph }
+  /// A failing stage's report, and the failed entries the rework or the
+  /// escalation carries.
+  type EvaluationReworkFact = {
+    ticket: int,
+    report: TaskTerminalReport,
+    evidence: List[EvaluationReworkEntry]
+  }
+
+  type WorkResultAcceptedEvent = {
+    ticket: int,
+    result: ValidatedTaskResult,
+    acceptedSourceRef: int
+  }
+
+  type WorkFailureEvent = {
+    ticket: int,
+    task: TaskIdentity,
+    evidence: int
+  }
+
+  /// A finalizer's report, as the attempt it answers: the work cycle and the
+  /// generation, and the evidence the finalizer returned.
+  type FinalizationFact = {
+    ticket: int,
+    workCycle: int,
+    generation: int,
+    evidence: int
+  }
+
+  /// WHAT HAPPENED — the journal's row, and the only thing evolve reads. One
+  /// arm per fact the package names but `TicketUpdated`, which arrives with
+  /// the command that decides it. A fact carries what a replay needs and no
+  /// more: which edge a failing stage took is its arm, so the policy that
+  /// chose it is never consulted again.
+  type TicketEvent =
+    TicketCreated(ReleasedTicket)
+    | TicketDispatched({ ticket: int, source: int })
+    | TicketRevoked(int)
+    | TicketWorkResumed(int)
+    | TicketEvaluationResumed(int)
+    | TicketFinalizationResumed(int)
+    | TicketWorkResultAccepted(WorkResultAcceptedEvent)
+    | TicketWorkProcessFailed(WorkFailureEvent)
+    | TicketWorkExecutionUnavailable(WorkFailureEvent)
+    | TicketEvaluationProgressed(TaskTerminalFact)
+    | TicketEvaluationPassed(TaskTerminalFact)
+    | TicketEvaluationReworkStarted(EvaluationReworkFact)
+    | TicketEvaluationFailureEscalated(EvaluationReworkFact)
+    | TicketEvaluationBlocked(TaskTerminalFact)
+    | TicketFinalizationSucceeded(FinalizationFact)
+    | TicketFinalizationNeedsWork(FinalizationFact)
+    | TicketFinalizationUnavailable(FinalizationFact)
+
+  type TicketTaskObligation = {
+    ticket: int,
+    task: TaskObligation
+  }
+
+  type FinalizationObligation = {
+    ticket: int,
+    finalization: FinalizationOperation,
+    configuration: int
+  }
+
+  type TaskCancellation = {
+    ticket: int,
+    task: TaskIdentity
+  }
+
+  /// WHAT A DECISION OWES THE WORLD, each naming its own ticket: a task to
+  /// run under its full obligation, a finalization to attempt, a task to
+  /// stop. The desk is not one — it is implied by the park.
+  type Obligation =
+    ExecuteTask(TicketTaskObligation)
+    | FinalizeTicket(FinalizationObligation)
+    | CancelTask(TaskCancellation)
+
+  /// What a decider returns: the event, and what it owes.
+  type SuccessfulTicketDecision = {
+    event: TicketEvent,
+    obligations: List[Obligation]
+  }
+
+  /// THE MACHINE'S LAST DECISION, as the golden traces record it: none before
+  /// the first, and the last one taken after it.
+  type LastDecision = NoDecision | Decided(SuccessfulTicketDecision)
 
   // === Vocabulary helpers (task plumbing shared by machine and tests) ======
-
-  /// How much of the live set has yet to resolve. A work set with none
-  /// outstanding is what makes the cycle reducible (domain.qnt
-  /// reducibleWorkIn).
-  pure def outstandingCount(tasks: Set[Task]): int =
-    tasks.filter(t => t.state == Outstanding).size()
 
   /// THE TWO IDENTITY CONSTRUCTORS. The work one is chuggy's, because the
   /// package declares it beside its own ticket; the evaluation one is the
@@ -482,40 +557,13 @@ module chuggy_ticket {
   /// evaluation stage's roster. Named once here because every work spawn site
   /// (dispatch, both reworks, the work resume) is this call, and starting the
   /// cycle is the only thing that moves the counter its identity is drawn
-  /// from. The mint counter claims the one slot the task takes.
+  /// from. The mint counter claims the one slot the task takes, and the
+  /// cycle has no finalization yet.
   pure def spawnWork(ticket: Ticket): Ticket =
-    val cycle = ticket.workCyclesStarted + 1
     { ...ticket,
-      tasks: Set({ identity: workTaskOf(ticket.definition.id, cycle),
-        state: Outstanding }),
-      workCyclesStarted: cycle,
-      spawned: ticket.spawned + 1 }
-
-  /// Retire the live work task: a phase that has stopped running carries no
-  /// live task, and a task still outstanding when its ticket parks or is
-  /// revoked is one the world is told to cancel (domain.qnt's
-  /// "CancelTicketWork"). Evaluation needs no retirement at all — its
-  /// obligations are derived from the current run, so leaving the phase stops
-  /// them being owed.
-  pure def retireLive(ticket: Ticket): Ticket = { ...ticket, tasks: Set() }
-
-  /// First write wins: resolve the task `task` names if it is still
-  /// outstanding; the
-  /// caller (decideTaskDone) treats an already-resolved task as a duplicate
-  /// delivery and changes nothing — the idempotence an at-least-once
-  /// fabric demands. The explicit
-  /// lifecycle makes the finality structural: Outstanding -> Resolved(out)
-  /// is the only edge, and nothing maps a Resolved back.
-  pure def resolveTask(tasks: Set[Task], task: TaskIdentity, out: TaskOutcome): Set[Task] =
-    tasks.map(t =>
-      if (t.identity == task and t.state == Outstanding) { ...t, state: Resolved(out) }
-      else t)
-
-  /// DID THE WORK CYCLE PRODUCE? Work is one task, so the cycle's outcome is
-  /// that task's. Named rather than inlined because the reduce and the tests
-  /// read the same predicate.
-  pure def workProduced(tasks: Set[Task]): bool =
-    tasks.forall(t => t.state == Resolved(Passed))
+      workCyclesStarted: ticket.workCyclesStarted + 1,
+      spawned: ticket.spawned + 1,
+      finalizationGeneration: 0 }
 
   // === The evaluation instance (the protocol, driven from the ticket) =====
 
@@ -558,9 +606,9 @@ module chuggy_ticket {
 
   /// EVERY TASK IDENTITY AN INSTANCE HAS NAMED at the generation its runs
   /// now stand at. The generations a resume left behind are not recoverable
-  /// and are deliberately not named: an earlier generation's completion is
-  /// stale, and staleness is absorbed by identity (domain.qnt
-  /// decideTaskDone) without the machine having to enumerate it.
+  /// and are deliberately not named: an event about an earlier generation's
+  /// task is one nothing owes, and evolve lets it fall through by identity
+  /// without the machine having to enumerate it.
   pure def instanceTasks(evaluation: EvaluationInstance): Set[TaskIdentity] =
     instanceRuns(evaluation).foldl(Set(), (found, progress) =>
       found.union(progress.evaluators.keys().map(evaluator =>
@@ -591,27 +639,25 @@ module chuggy_ticket {
       spawned: ticket.spawned +
         ticket.definition.evaluationPlan.stages[index].evaluators.length() }
 
-  /// WORK PASSED, SO JUDGEMENT BEGINS: the instance is opened over the
-  /// ACCEPTED WORK RESULT — `workResult`, the reference the passing report
-  /// carried and the completion pinned as this ticket's artifact — with the
-  /// released plan and the source that result was accepted at, and its first
-  /// stage is asked. One instance per work cycle that gets this far.
+  /// THE INSTANCE AN ACCEPTED WORK RESULT OPENS: the instance is begun over
+  /// `workResult`, the reference the accepted report carried, with the
+  /// released plan and the source that result was accepted at. One instance
+  /// per work cycle that gets this far.
   ///
-  /// The artifact the dependents read is that same reference, and so is every
-  /// evaluator obligation's contextRef (evaluation.qnt currentTaskObligations
-  /// builds it from input.workResult): a judgement is OF a result, so the
-  /// number the work reported is the number the judgement is asked under. The
-  /// mint counter is an identity ledger and never stands in for it, and
-  /// neither does the cycle. The instance's acceptedSourceRef is the ticket's
-  /// own — the completion that carried it put it there, and nothing observes
-  /// a second.
-  pure def beginEvaluation(ticket: Ticket, workResult: int): Ticket =
-    spawnEvalRun({ ...ticket,
-      evaluations: ticket.evaluations.append(begin(
-        ticket.workCyclesStarted,
-        { ticket: ticket.definition.id, workResult: workResult,
-          acceptedSourceRef: ticket.source },
-        ticket.definition.evaluationPlan)) })
+  /// The artifact the dependents read is that same reference (artifactOf),
+  /// and so is every evaluator obligation's contextRef (evaluation.qnt
+  /// currentTaskObligations builds it from input.workResult): a judgement is
+  /// OF a result, so the number the work reported is the number the
+  /// judgement is asked under. The mint counter is an identity ledger and
+  /// never stands in for it, and neither does the cycle.
+  pure def begunInstance(
+      ticket: Ticket, workResult: int,
+      acceptedSourceRef: int): EvaluationInstance =
+    begin(
+      ticket.workCyclesStarted,
+      { ticket: ticket.definition.id, workResult: workResult,
+        acceptedSourceRef: acceptedSourceRef },
+      ticket.definition.evaluationPlan)
 
   /// IS THE INSTANCE PARKED ON A WALL? The blocked state is the one the
   /// desk reads, and the desk's own wall is held equal to it (domain.qnt
@@ -622,9 +668,28 @@ module chuggy_ticket {
       | _ => false
     }
 
+  /// WHAT THIS TICKET PRODUCED, derived: the accepted work result the latest
+  /// instance judges, and nothing before any work was accepted. Each
+  /// accepted result opens an instance over itself, so the last instance's
+  /// input is the latest product and a rework's supersedes the one before it.
+  pure def artifactOf(ticket: Ticket): ArtifactMark =
+    if (ticket.evaluations.length() == 0) NoArtifact
+    else ProducedArtifact(currentInstance(ticket).input.workResult)
+
+  /// THE FINALIZATION ATTEMPT THIS TICKET IS ON: the cycle it is on, the
+  /// stored generation, and the accepted result and source that cycle's
+  /// judgement passed. Read only in Finalization and at the finalization
+  /// wall, where the current instance is the passed one.
+  pure def finalizationOperationOf(ticket: Ticket): FinalizationOperation = {
+    workCycle: ticket.workCyclesStarted,
+    generation: ticket.finalizationGeneration,
+    input: currentInstance(ticket).input.workResult,
+    source: ticket.source
+  }
+
   /// WHAT THE FABRIC IS RUNNING FOR THIS TICKET, as the OBLIGATIONS it owes:
-  /// the work cycle's one obligation while its task is outstanding, or the
-  /// ones the current run still owes (evaluation.qnt currentTaskObligations).
+  /// the work cycle's one obligation while the ticket is in Work, or the ones
+  /// the current run still owes (evaluation.qnt currentTaskObligations).
   /// Empty in every other phase, which is what makes leaving a phase enough
   /// to stop owing them.
   ///
@@ -634,18 +699,24 @@ module chuggy_ticket {
   /// ticket never made.
   pure def liveObligations(ticket: Ticket): List[TaskObligation] =
     if (ticket.phase == Work)
-      if (outstandingCount(ticket.tasks) > 0)
-        [workTaskObligation(ticket, ticket.workCyclesStarted)]
-      else []
+      [workTaskObligation(ticket, ticket.workCyclesStarted)]
     else if (ticket.phase == Evaluation)
       currentTaskObligations(currentInstance(ticket))
     else []
 
-  /// THE TASKS THE FABRIC IS RUNNING FOR THIS TICKET — the identities the
-  /// obligations above name.
+  /// THE TASKS THE FABRIC IS RUNNING FOR THIS TICKET, in the obligations'
+  /// order (the package's liveTaskList).
+  pure def liveTaskList(ticket: Ticket): List[TaskIdentity] =
+    liveObligations(ticket).foldl([], (tasks, owed) => tasks.append(owed.task))
+
+  /// The same identities as a set, which is what the actions draw from.
   pure def liveTasks(ticket: Ticket): Set[TaskIdentity] =
     liveObligations(ticket).foldl(Set(), (found, owed) =>
       found.union(Set(owed.task)))
+
+  /// Whether a list names this task (the package's listHasTask).
+  pure def listHasTask(tasks: List[TaskIdentity], task: TaskIdentity): bool =
+    tasks.indices().exists(index => tasks[index] == task)
 
   /// THE EXACT-OBLIGATION RULE: an obligation is current for a task when it
   /// names that task AND is, field for field, one this ticket owes right now.
@@ -659,10 +730,11 @@ module chuggy_ticket {
   /// WHICH REPORTS A TASK CAN CARRY: a work task produces a work result, an
   /// evaluator produces a verdict, and either can fail to produce anything —
   /// and a produced one is admitted only at the obligation it was spawned
-  /// under. A failure matches by identity alone: it carries no result, so
-  /// there is no obligation on it to compare. Stated here because it is the
-  /// completion's enablement (refinement.qnt decisionEventEnabled) rather
-  /// than something a decider defends against mid-flight.
+  /// under. A failure is admitted by identity alone: it carries no result, so
+  /// there is no obligation on it to compare, but the task it names is the
+  /// task the completion names. Stated here because it is the completion's
+  /// enablement (refinement.qnt decisionEventEnabled) rather than something a
+  /// decider defends against mid-flight.
   pure def reportMatchesTask(
       ticket: Ticket, task: TaskIdentity,
       report: TaskTerminalReport): bool =
@@ -679,7 +751,7 @@ module chuggy_ticket {
           | EvaluationTask(_) =>
             obligationCurrent(ticket, task, produced.result.obligation)
         }
-      | TerminalFailureReport(_) => true
+      | TerminalFailureReport(failed) => failed.failure.task == task
     }
 
   /// WHAT A LIVE TASK'S RESULT LOOKS LIKE TO THE MACHINE: the obligation this
@@ -693,4 +765,30 @@ module chuggy_ticket {
       ticket: Ticket, task: TaskIdentity): ValidatedTaskResult =
     { obligation: liveObligations(ticket).select(owed => owed.task == task)[0],
       resultRef: producedResultRef(task) }
+
+  // === Obligations (the package's constructors, at chuggy's record) ========
+
+  /// Run a work cycle's task, under the obligation the cycle owes.
+  pure def executeWork(ticket: Ticket, cycleNumber: int): Obligation =
+    ExecuteTask({ ticket: ticket.definition.id,
+      task: workTaskObligation(ticket, cycleNumber) })
+
+  /// Run every evaluator an instance's current run still owes, in the
+  /// roster's order.
+  pure def executeEvaluationTasks(
+      ticket: int, evaluation: EvaluationInstance): List[Obligation] =
+    currentTaskObligations(evaluation).foldl([], (obligations, task) =>
+      obligations.append(ExecuteTask({ ticket: ticket, task: task })))
+
+  /// Attempt a finalization, under the configuration the release pinned.
+  pure def finalize(
+      ticket: Ticket, operation: FinalizationOperation): Obligation =
+    FinalizeTicket({ ticket: ticket.definition.id, finalization: operation,
+      configuration: ticket.definition.finalizationConfiguration })
+
+  /// Stop every task the fabric is running for this ticket.
+  pure def cancelLiveTasks(ticket: Ticket): List[Obligation] =
+    liveTaskList(ticket).foldl([], (obligations, task) =>
+      obligations.append(CancelTask({ ticket: ticket.definition.id,
+        task: task })))
 }

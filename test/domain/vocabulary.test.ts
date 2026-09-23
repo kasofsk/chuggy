@@ -22,10 +22,10 @@ import {
   type ItfTrace,
 } from "../itf/decode.ts";
 import {
+  decodeLastDecision,
   decodeTicketGraph,
-  decodeStepRecord,
+  encodeLastDecision,
   encodeTicketGraph,
-  encodeStepRecord,
 } from "../itf/vocabulary.ts";
 import { asInstallationId } from "../../src/domain/ids.ts";
 
@@ -89,7 +89,7 @@ test("every golden ticket map decodes into Ticket and re-encodes identically", (
   );
 });
 
-test("every golden step record decodes and re-encodes identically", () => {
+test("every golden decision decodes and re-encodes identically", () => {
   for (const { name, trace } of goldens()) {
     const stepVar = varNamed(trace, "::lastStep");
     const raw = JSON.parse(readFileSync(join(GOLDEN_DIR, name), "utf8")) as {
@@ -97,11 +97,11 @@ test("every golden step record decodes and re-encodes identically", () => {
     };
     for (const state of trace.states) {
       const original = raw.states[state.index]?.[stepVar];
-      const record = decodeStepRecord(stateValue(state, stepVar));
+      const last = decodeLastDecision(stateValue(state, stepVar));
       assert.deepEqual(
-        encodeValue(encodeStepRecord(record)),
+        encodeValue(encodeLastDecision(last)),
         original,
-        `${name} state ${String(state.index)}: the step record did not survive the round trip`,
+        `${name} state ${String(state.index)}: the decision did not survive the round trip`,
       );
     }
   }

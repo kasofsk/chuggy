@@ -2,10 +2,6 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
 import {
-  continuationFunction,
-  ticketServiceRole,
-} from "../../src/adapters/postgres/schema/shared.ts";
-import {
   asAuthorityKind,
   asAuthoritySubject,
   type Cancellation,
@@ -139,33 +135,12 @@ test("journal, input outcome, projection and focused execution request commit to
   );
 });
 
-test("the API role cannot fabricate a continuation input", async () => {
+test("the API role cannot fabricate a decision input", async () => {
   const refusal = await harness.attemptAs(
     "chuggy_api",
     `INSERT INTO decision_input
        (tenant,project,ordinal,input_kind,input_id,base_priority,lifecycle_generation)
-     VALUES ('t','p',1,'Continuation','c','Continuation',1)`,
+     VALUES ('t','p',1,'Operation','c','Ordinary',1)`,
   );
   assert.match(refusal ?? "", postgresHarnessDenial("decision_input"));
-});
-
-test("the continuation boundary publishes its readiness wake-up", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "continuation-ready",
-  );
-  const transaction = await harness.begin();
-  await transaction.query(`SET LOCAL ROLE ${ticketServiceRole}`);
-  await transaction.query(`SELECT ${continuationFunction}($1,$2,99,'ready')`, [
-    partition.tenant,
-    partition.project,
-  ]);
-  assert.deepEqual(
-    await transaction.query(
-      `SELECT ready,generation FROM project_readiness WHERE tenant=$1 AND project=$2`,
-      [partition.tenant, partition.project],
-    ),
-    [{ ready: true, generation: "1" }],
-  );
-  await transaction.rollback();
 });

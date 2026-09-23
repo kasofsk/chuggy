@@ -20,14 +20,20 @@ import type {
   FinalizationOutcome,
   TaskIdentity,
 } from "./generated/modelTypes.ts";
-import { hasOpenHumanTask, liveTasks, owesTask } from "./ticket.ts";
+import {
+  artifactOf,
+  instanceTasks,
+  hasOpenHumanTask,
+  liveTasks,
+  owesTask,
+} from "./ticket.ts";
 import type { TicketId } from "./ids.ts";
-import { outstandingCount } from "./task.ts";
+import { revocationAllowed } from "./phase.ts";
+import { workTaskOf } from "./task.ts";
 
 /** Anything not settled and not past the point of no return. */
 export function revocableIn(graph: TicketGraph, id: TicketId): boolean {
-  const phase = ticketAt(graph, id).phase;
-  return !["Done", "Revoked", "Finalization"].includes(phase);
+  return revocationAllowed(ticketAt(graph, id).phase);
 }
 
 /**
@@ -54,7 +60,7 @@ export function depArtifacts(
 ): readonly ArtifactMark[] {
   return [...waitsOn(graph, id)]
     .sort((a, b) => a - b)
-    .map((d) => ticketAt(graph, d as TicketId).artifact);
+    .map((d) => artifactOf(ticketAt(graph, d as TicketId)));
 }
 
 export function depsDoneIn(graph: TicketGraph, id: TicketId): boolean {
@@ -96,22 +102,11 @@ export function readiesIn(graph: TicketGraph): readonly TicketId[] {
   return ticketIds(graph).filter((j) => isReadyIn(graph, j));
 }
 
-/**
- * Tickets the fabric is currently running a task for, which is who a
- * completion can be delivered to. Narrower than "in a task phase": a resolved
- * work task waits for its reduce, and nothing is running for it.
- */
+/** Tickets the fabric is currently running a task for, which is who a completion can be delivered to. */
 export function completableIn(graph: TicketGraph): readonly TicketId[] {
   return ticketIds(graph).filter(
     (j) => liveTasks(ticketAt(graph, j)).length > 0,
   );
-}
-
-export function reducibleWorkIn(graph: TicketGraph): readonly TicketId[] {
-  return ticketIds(graph).filter((j) => {
-    const ticket = ticketAt(graph, j);
-    return ticket.phase === "Work" && outstandingCount(ticket.tasks) === 0;
-  });
 }
 
 export function doneIn(graph: TicketGraph): readonly TicketId[] {
@@ -206,4 +201,21 @@ export function outstandingTasksIn(
   id: TicketId,
 ): readonly TaskIdentity[] {
   return liveTasks(ticketAt(graph, id));
+}
+
+/**
+ * Every task identity this ticket has ever been owed: one work task per cycle
+ * it started, and every evaluator of every run its instances hold. A superset
+ * of the live set, which is the point: an event about a settled task is built
+ * from here to show `evolve` lets it fall through.
+ */
+export function deliverableTasksIn(
+  graph: TicketGraph,
+  id: TicketId,
+): readonly TaskIdentity[] {
+  const ticket = ticketAt(graph, id);
+  const work = Array.from({ length: ticket.workCyclesStarted }, (_, index) =>
+    workTaskOf(id, index + 1),
+  );
+  return [...work, ...ticket.evaluations.flatMap(instanceTasks)];
 }

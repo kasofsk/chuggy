@@ -1,14 +1,14 @@
 /**
- * The decision events: what a journal entry records having decided, and the
- * two total tables that say what each one means.
+ * The decision events: what the actor is asked to decide, and the two total
+ * tables that say what each one means.
  *
- * A DECISION EVENT IS A FACT, NOT AN INSTRUCTION. It names a choice already
- * made at the writer's serialization point — which ticket the selector
- * proposed, what a task came back with — so replaying one re-decides nothing
- * and consults nobody. That is what makes the journal a sufficient basis for
- * recovery.
+ * A DECISION EVENT IS THE DECIDER'S INPUT, NOT THE JOURNAL'S ROW. It names a
+ * choice already made at the writer's serialization point — which ticket the
+ * selector proposed, what a task came back with — and `decide` turns it into
+ * the `TicketEvent` the journal keeps, so replay folds `evolve` over events
+ * and never consults a decider or a policy.
  *
- * THE TWO TABLES MOVE TOGETHER. `execDecisionEvent` routes an event onto its
+ * THE TWO TABLES MOVE TOGETHER. `decide` routes a decision event onto its
  * decider and `decisionEventEnabled` says whether the machine would accept it
  * there; a constructor added to one and not the other is a compile error,
  * which is the only reason they are written as exhaustive switches rather than
@@ -21,7 +21,7 @@
  */
 
 import type { Config } from "../domain/config.ts";
-import { ticketAt, type Decision } from "../domain/ticketGraph.ts";
+import { ticketAt } from "../domain/ticketGraph.ts";
 import {
   decideDispatch,
   decideFinalizationResult,
@@ -29,7 +29,7 @@ import {
   decideResumeTicket,
   decideRevoke,
   decideTaskDone,
-  decideWorkReduce,
+  type EvaluationFailurePolicy,
 } from "../domain/deciders.ts";
 import {
   canReleaseIn,
@@ -41,18 +41,16 @@ import {
   finalizationOutcomes,
   outstandingTaskIn,
   readiesIn,
-  reducibleWorkIn,
   retryablesIn,
   revocablesIn,
 } from "../domain/enablement.ts";
 import { releasedTicketValid } from "../domain/config.ts";
-import { dispositionChoices } from "../domain/deciders.ts";
 import type {
   TicketGraph,
   DecisionEvent,
-  EvaluationFailureDisposition,
   FinalizationOutcome,
   ReleasedTicket,
+  SuccessfulTicketDecision,
   TaskIdentity,
   TaskTerminalReport,
 } from "../domain/generated/modelTypes.ts";
@@ -71,7 +69,7 @@ export function releaseTicketEvent(definition: ReleasedTicket): DecisionEvent {
   return { type: "CreateTicket", value: definition };
 }
 
-/** Extracts the frozen definition from a release fact. */
+/** Extracts the frozen definition from a release. */
 export function releasedTicketOf(event: DecisionEvent): ReleasedTicket {
   if (event.type !== "CreateTicket")
     throw new TypeError("decision event is not a ticket release");
@@ -84,49 +82,44 @@ export function revokeEvent(ticket: TicketId): DecisionEvent {
 
 /**
  * The dispatch carries the source it observed: the one edge that looks at what
- * the ticket's repository is at, so the observation is the actor's pick and a
- * replay re-decides nothing.
+ * the ticket's repository is at, so the observation is the actor's pick.
  */
 export function dispatchEvent(ticket: TicketId, source: number): DecisionEvent {
   return { type: "Dispatch", value: { ticket, source } };
 }
 
-/**
- * The completion carries WHAT THE TASK CAME BACK WITH, and the disposition a
- * failing stage would be taken on. The disposition rides here because a
- * completion can be the step that concludes a failed stage, and the journal
- * records the picks the actor made: a replay that re-drew it would re-decide
- * the step rather than re-perform it.
- */
+/** The completion carries what the task came back with; the failure policy is the decide step's own argument. */
 export function taskDoneEvent(
   ticket: TicketId,
   task: TaskIdentity,
   report: TaskTerminalReport,
-  onFailure: EvaluationFailureDisposition,
 ): DecisionEvent {
-  return { type: "TaskDone", value: { ticket, task, report, onFailure } };
+  return { type: "TaskDone", value: { ticket, task, report } };
 }
 
-export function workReduceEvent(ticket: TicketId): DecisionEvent {
-  return { type: "WorkReduce", value: ticket };
-}
-
+/** The finalizer's report carries its outcome and the evidence it returned. */
 export function finalizationResultEvent(
   ticket: TicketId,
   out: FinalizationOutcome,
+  evidence: number,
 ): DecisionEvent {
-  return { type: "FinalizationResult", value: { ticket, out } };
+  return { type: "FinalizationResult", value: { ticket, out, evidence } };
 }
 
 export function resumeTicketEvent(ticket: TicketId): DecisionEvent {
   return { type: "ResumeTicket", value: ticket };
 }
 
-/** Total dispatch onto the pure deciders — THE actor's decide step, and nothing else's. */
-export function execDecisionEvent(
+/**
+ * Total dispatch onto the pure deciders — THE actor's decide step. The policy
+ * is asked only by a completion that concludes a failing stage, and the event
+ * returned names the edge taken, so nothing after this asks it again.
+ */
+export function decide(
   graph: TicketGraph,
   event: DecisionEvent,
-): Decision {
+  failurePolicy: EvaluationFailurePolicy,
+): SuccessfulTicketDecision {
   switch (event.type) {
     case "CreateTicket":
       return decideReleaseTicket(graph, event.value);
@@ -144,22 +137,21 @@ export function execDecisionEvent(
         asTicketId(event.value.ticket),
         event.value.task,
         event.value.report,
-        event.value.onFailure,
+        failurePolicy,
       );
-    case "WorkReduce":
-      return decideWorkReduce(graph, asTicketId(event.value));
     case "FinalizationResult":
       return decideFinalizationResult(
         graph,
         asTicketId(event.value.ticket),
         event.value.out,
+        event.value.evidence,
       );
     case "ResumeTicket":
       return decideResumeTicket(graph, asTicketId(event.value));
   }
 }
 
-/** The same enablement the machine's own actions carry, re-checked at a replayed state. */
+/** The same enablement the machine's own actions carry, checked at the state the actor holds. */
 export function decisionEventEnabled(
   config: Config,
   graph: TicketGraph,
@@ -182,8 +174,7 @@ export function decisionEventEnabled(
        * The model draws a source from a two-element set because that is the
        * universe one instantiation offers; what it claims of the value is
        * `sourcePinned`'s floor, which is what a deployment folding a commit
-       * digest can hold to and what `releasedTicketValid` holds every other
-       * reference to.
+       * digest can hold to.
        */
       return (
         readiesIn(graph).includes(asTicketId(event.value.ticket)) &&
@@ -199,17 +190,16 @@ export function decisionEventEnabled(
           event.value.task,
           event.value.report,
         ) &&
-        reportValid(event.value.report) &&
-        dispositionChoices.includes(event.value.onFailure)
+        reportValid(event.value.report)
       );
     }
-    case "WorkReduce":
-      return reducibleWorkIn(graph).includes(asTicketId(event.value));
     case "FinalizationResult": {
       const id = asTicketId(event.value.ticket);
+      /** The evidence is held to the floor every opaque reference is, for the reason a dispatch's source is. */
       return (
         finalizableIn(graph, id) &&
         finalizationOutcomes.includes(event.value.out) &&
+        event.value.evidence > 0 &&
         finalizationOutcomeEnabled(graph, id, event.value.out)
       );
     }
@@ -218,7 +208,7 @@ export function decisionEventEnabled(
   }
 }
 
-/** The ticket a decision event is about, which every journal reader needs and no arm hides. */
+/** The ticket a decision event is about, which every reader needs and no arm hides. */
 export function decisionEventSubject(event: DecisionEvent): TicketId {
   switch (event.type) {
     case "CreateTicket":
@@ -228,7 +218,6 @@ export function decisionEventSubject(event: DecisionEvent): TicketId {
     case "Dispatch":
       return asTicketId(event.value.ticket);
     case "Revoke":
-    case "WorkReduce":
     case "ResumeTicket":
       return asTicketId(event.value);
   }

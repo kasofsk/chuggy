@@ -79,7 +79,7 @@ async function ticketRead(partition: Partition) {
 
 /**
  * Decides the input the last commit left behind and anything behind that, which
- * is how an answer that opens a continuation reaches the writer owing it.
+ * is how an answer reaches the writer owing it.
  */
 async function answered(
   partition: Partition,
@@ -226,7 +226,7 @@ test("a release naming no number is a row the journal keeps and the read skips",
   );
   await rig.harness.query(
     `UPDATE journal_entry
-        SET entry='{"seq":1,"event":{"type":"CreateTicket","value":{"ticket":"one"}},"rec":{}}'
+        SET entry='{"seq":1,"event":{"type":"TicketCreated","value":{"id":"one"}}}'
       WHERE tenant=$1 AND project=$2 AND seq=1`,
     [partition.tenant, partition.project],
   );

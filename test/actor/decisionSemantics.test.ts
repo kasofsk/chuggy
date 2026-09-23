@@ -19,16 +19,19 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  decide,
   dispatchEvent,
-  execDecisionEvent,
   finalizationResultEvent,
   releaseTicketEvent,
   resumeTicketEvent,
   taskDoneEvent,
-  workReduceEvent,
   type DecisionEvent,
 } from "../../src/actor/decisionEvent.ts";
-import { aDispatchSource } from "../../src/domain/config.ts";
+import {
+  aDispatchSource,
+  aFinalizationEvidence,
+} from "../../src/domain/config.ts";
+import { evolve } from "../../src/domain/evolve.ts";
 import {
   genesis,
   journalLegalOn,
@@ -50,21 +53,15 @@ import {
   producedReport,
   stoppedReport,
 } from "../domain/fixtures.ts";
-import {
-  plainDefinitionOf,
-  plainDisposition,
-  refinementInstance,
-} from "./harness.ts";
-
-const config = refinementInstance;
+import { plainDefinitionOf, plainPolicy } from "./harness.ts";
 
 /** A history the current deciders wrote, which is the only vintage this image holds. */
 function decided(events: readonly DecisionEvent[]): readonly Entry[] {
   let graph = genesis;
-  return events.map((event, at) => {
-    const decision = execDecisionEvent(graph, event);
-    graph = decision.post;
-    return { seq: at + 1, event, rec: decision.rec };
+  return events.map((command, at) => {
+    const decision = decide(graph, command, plainPolicy);
+    graph = evolve(graph, decision.event);
+    return { seq: at + 1, event: decision.event };
   });
 }
 
@@ -93,76 +90,80 @@ const walls = decided([
     id(1),
     walled,
     stoppedReport(walled, "ExecutionUnavailableFailure"),
-    plainDisposition,
   ),
   resumeTicketEvent(id(1)),
-  taskDoneEvent(id(1), reworked, producedReport(reworked), plainDisposition),
-  workReduceEvent(id(1)),
+  taskDoneEvent(id(1), reworked, producedReport(reworked)),
   taskDoneEvent(
     id(1),
     stopped,
     stoppedReport(stopped, "ExecutionUnavailableFailure"),
-    plainDisposition,
   ),
   resumeTicketEvent(id(1)),
-  taskDoneEvent(
+  taskDoneEvent(id(1), reasked, judgedReport(reasked, "EvaluatorPass")),
+  finalizationResultEvent(
     id(1),
-    reasked,
-    judgedReport(reasked, "EvaluatorPass"),
-    plainDisposition,
+    "FinalizationResultUnavailable",
+    aFinalizationEvidence,
   ),
-  finalizationResultEvent(id(1), "FinalizationResultUnavailable"),
   resumeTicketEvent(id(1)),
-  finalizationResultEvent(id(1), "FinalizationSucceeded"),
+  finalizationResultEvent(
+    id(1),
+    "FinalizationSucceeded",
+    aFinalizationEvidence,
+  ),
 ]);
 
 test("this image knows one decision semantics and says which", () => {
-  assert.equal(decisionSemanticsVersionCurrent, 6);
-  assert.ok(isDecisionSemanticsVersion(6));
-  for (const older of [1, 2, 3, 4, 5])
+  assert.equal(decisionSemanticsVersionCurrent, 7);
+  assert.ok(isDecisionSemanticsVersion(7));
+  for (const older of [1, 2, 3, 4, 5, 6])
     assert.ok(
       !isDecisionSemanticsVersion(older),
       `${String(older)} names deciders this image does not have`,
     );
-  assert.ok(!isDecisionSemanticsVersion(7));
+  assert.ok(!isDecisionSemanticsVersion(8));
   assert.ok(!isDecisionSemanticsVersion(6.5));
 });
 
 test("a row declaring another semantics is refused rather than replayed", () => {
-  assert.ok(storedJournalLegalOn(config, storedAt(walls, 6)));
-  for (const older of [1, 2, 3, 4, 5])
+  assert.ok(storedJournalLegalOn(storedAt(walls, 7)));
+  for (const older of [1, 2, 3, 4, 5, 6])
     assert.ok(
-      !storedJournalLegalOn(
-        config,
-        storedAt(walls, older as DecisionSemanticsVersion),
-      ),
+      !storedJournalLegalOn(storedAt(walls, older as DecisionSemanticsVersion)),
       `a history at ${String(older)} is not one this image decided`,
     );
 });
 
-test("each wall names itself and its resume re-enters the phase it interrupted", () => {
-  const labels = walls.map((entry) => entry.rec.label);
+test("each wall names itself and its resume says which phase it re-enters", () => {
   assert.deepEqual(
-    labels.filter((label) => label.startsWith("ticket-escalated")),
+    walls.map((entry) => entry.event.type),
     [
-      "ticket-escalated work_execution_unavailable_escalated",
-      "ticket-escalated evaluation_blocked_escalated",
-      "ticket-escalated finalization_unavailable_escalated",
+      "TicketCreated",
+      "TicketDispatched",
+      "TicketWorkExecutionUnavailable",
+      "TicketWorkResumed",
+      "TicketWorkResultAccepted",
+      "TicketEvaluationBlocked",
+      "TicketEvaluationResumed",
+      "TicketEvaluationPassed",
+      "TicketFinalizationUnavailable",
+      "TicketFinalizationResumed",
+      "TicketFinalizationSucceeded",
     ],
   );
   const after = (at: number) =>
-    ticketAt(storedReplayGraph(storedAt(walls.slice(0, at), 6)), id(1));
+    ticketAt(storedReplayGraph(storedAt(walls.slice(0, at), 7)), id(1));
   assert.equal(after(3).escalation, "WorkExecutionUnavailableEscalated");
   assert.equal(after(4).phase, "Work");
-  assert.equal(after(7).escalation, "EvaluationBlockedEscalated");
-  assert.equal(after(8).phase, "Evaluation");
-  assert.equal(after(10).escalation, "FinalizationUnavailableEscalated");
-  assert.equal(after(11).phase, "Finalization");
+  assert.equal(after(6).escalation, "EvaluationBlockedEscalated");
+  assert.equal(after(7).phase, "Evaluation");
+  assert.equal(after(9).escalation, "FinalizationUnavailableEscalated");
+  assert.equal(after(10).phase, "Finalization");
 });
 
 test("the whole history is legal as decisions this image took, and ends Done", () => {
-  assert.ok(journalLegalOn(config, walls));
-  const settled = ticketAt(storedReplayGraph(storedAt(walls, 6)), id(1));
+  assert.ok(journalLegalOn(walls));
+  const settled = ticketAt(storedReplayGraph(storedAt(walls, 7)), id(1));
   assert.equal(settled.phase, "Done");
   assert.equal(settled.escalation, "NoEscalation");
 });

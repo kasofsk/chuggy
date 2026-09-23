@@ -2,46 +2,39 @@
  * The durable decision log: one `Entry` per decision, replay from `genesis`,
  * and the legality check the refinement obligation `journalLegal` asks.
  *
- * A row carries the decision event and the record it produced when first
- * decided. The record is derivable from the event — `journalLegalOn` proves
- * exactly that, row by row — so storing both makes the consistency a checked
- * claim instead of a storage convention, which is the model's own choice.
+ * A ROW IS THE EVENT THE DECISION TOOK, and replay folds `evolve` over the
+ * rows. No decider and no policy is consulted again: the event already names
+ * the edge a failing stage took, so a replay re-applies what happened rather
+ * than re-deciding it, and the journal is a sufficient basis for the state
+ * because nothing else ever entered one.
  *
- * REPLAY IS DETERMINISTIC BY PURITY: `execDecisionEvent` is a pure function, so the fold
- * has one result, and that is the whole mechanism behind recovery — the
- * journal is a sufficient basis for the state because nothing else ever
- * entered a decision.
+ * LEGALITY IS WHAT A ROW COULD NOT BE IF IT WAS DECIDED. Its seq is the next
+ * one, its ticket stands (a release's must not), and its event moves the
+ * prefix it lands on. The last refuses no decided row, because a decided event
+ * is never the identity (`eventsNeverIdentity`, an invariant the model
+ * checks), and it refuses a replayed row, a stale one and one for a task
+ * nothing owes alike. It re-checks no decider's guard: a dispatch of a ticket
+ * whose dependency is not Done moves the state and passes, so the check
+ * trusts that every row was decided under its guard before it was written.
  *
  * A ROW CARRIES THE SEMANTICS IT WAS DECIDED UNDER, and this image has the
  * deciders for exactly one (`src/actor/decisionSemantics.ts`). A row declaring
- * another is refused below rather than replayed. A rolling deploy runs two
- * images at once, and each refuses the other's rows on read while both demand
- * a single version, which is what makes the refusal total rather than a
- * restatement of a guarantee held elsewhere.
+ * another is refused below rather than replayed.
  */
 
-import type { Config } from "../domain/config.ts";
 import type {
+  Entry,
+  TicketEvent,
   TicketGraph,
-  StepRecord,
 } from "../domain/generated/modelTypes.ts";
-import {
-  decisionEventEnabled,
-  execDecisionEvent,
-  type DecisionEvent,
-} from "./decisionEvent.ts";
+import { eventTicket, evolve } from "../domain/evolve.ts";
+import { graphEquals } from "../domain/equality.ts";
 import {
   decisionSemanticsVersionCurrent,
   type DecisionSemanticsVersion,
 } from "./decisionSemantics.ts";
-import { recordEquals } from "./equality.ts";
 
-/** One journal row: dense monotone seq, the decision event, and its record. */
-export interface Entry {
-  readonly seq: number;
-  readonly event: DecisionEvent;
-  readonly rec: StepRecord;
-}
+export type { Entry };
 
 /** One row as a store holds it: the entry, and the semantics it was decided under. */
 export interface StoredEntry {
@@ -62,51 +55,50 @@ export function storedAtCurrentSemantics(
   }));
 }
 
-/** Recovery: replay a stored history into a fresh state, one decision at a time. */
+/** Recovery: fold `evolve` over a stored history from `genesis`. */
 export function storedReplayGraph(stored: readonly StoredEntry[]): TicketGraph {
-  return stored.reduce(
-    (graph, row) => execDecisionEvent(graph, row.entry.event).post,
-    genesis,
-  );
+  return stored.reduce((graph, row) => evolve(graph, row.entry.event), genesis);
 }
 
-/** Recovery: replay the journal into a fresh state, one decision at a time from `genesis`. */
+/** Recovery: fold `evolve` over the journal's events from `genesis`. */
 export function replayGraph(journal: readonly Entry[]): TicketGraph {
   return storedReplayGraph(storedAtCurrentSemantics(journal));
 }
 
-/**
- * Whether a stored history is a legal domain trace: this image's semantics on
- * every row, dense seqs, every decision enabled at its replayed prefix, every
- * record reproduced by the decider that wrote it. Enablement is checked before
- * the decider runs, because deciders assume their guards.
- */
-export function storedJournalLegalOn(
-  config: Config,
-  stored: readonly StoredEntry[],
+/** Whether the ticket an event names stands where it would apply: a release's must not exist yet, every other's must. */
+export function eventTicketStands(
+  graph: TicketGraph,
+  event: TicketEvent,
 ): boolean {
+  const exists = graph.tickets.has(eventTicket(event));
+  return event.type === "TicketCreated" ? !exists : exists;
+}
+
+/**
+ * Whether a stored history replays with no inert row: this image's semantics
+ * on every row, dense seqs, every event's ticket standing at its replayed
+ * prefix, and every event moving that prefix.
+ */
+export function storedJournalLegalOn(stored: readonly StoredEntry[]): boolean {
   let replayed = genesis;
   let next = 1;
   for (const row of stored) {
     if (
       row.semantics !== decisionSemanticsVersionCurrent ||
       row.entry.seq !== next ||
-      !decisionEventEnabled(config, replayed, row.entry.event)
+      !eventTicketStands(replayed, row.entry.event)
     ) {
       return false;
     }
-    const decision = execDecisionEvent(replayed, row.entry.event);
-    if (!recordEquals(decision.rec, row.entry.rec)) return false;
-    replayed = decision.post;
+    const evolved = evolve(replayed, row.entry.event);
+    if (graphEquals(evolved, replayed)) return false;
+    replayed = evolved;
     next += 1;
   }
   return true;
 }
 
 /** Whether a history this image decided whole is a legal domain trace, as the model asks it. */
-export function journalLegalOn(
-  config: Config,
-  journal: readonly Entry[],
-): boolean {
-  return storedJournalLegalOn(config, storedAtCurrentSemantics(journal));
+export function journalLegalOn(journal: readonly Entry[]): boolean {
+  return storedJournalLegalOn(storedAtCurrentSemantics(journal));
 }

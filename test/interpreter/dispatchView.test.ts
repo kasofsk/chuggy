@@ -10,7 +10,11 @@ import {
   encodeDispatchProgram,
 } from "../../src/interpreter/dispatchView.ts";
 import { asConfigurationVersion } from "../../src/interpreter/repositoryConfigurationIdentity.ts";
-import { plainDefinitionOf, refinementInstance } from "../actor/harness.ts";
+import {
+  plainDefinitionOf,
+  plainPolicy,
+  refinementInstance,
+} from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 
 function pendingCandidates() {
@@ -18,11 +22,13 @@ function pendingCandidates() {
     refinementInstance,
     actorInit(),
     releaseTicketEvent(plainDefinitionOf(1)),
+    plainPolicy,
   );
   const two = journalStep(
     refinementInstance,
     one,
     releaseTicketEvent(plainDefinitionOf(2)),
+    plainPolicy,
   );
   return deriveDispatchCandidates(
     two.view.post,

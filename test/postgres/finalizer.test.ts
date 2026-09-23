@@ -411,7 +411,7 @@ test("each relation carries exactly the indexes its recovery and its identities 
       "input_bundle_reference_is_declared_once",
       "input_bundle_reference_pkey",
       "native_action_approves_an_attempt_once",
-      "native_action_effect_is_materialized_once",
+      "native_action_decision_opens_one_desk",
       "native_action_one_open",
       "native_action_pkey",
       "project_repository_is_exclusive",
@@ -490,7 +490,7 @@ async function finalizerSibling(
      VALUES ($1,$2,$3,'Work the sibling repository.',$4)`,
     [...keys, repository],
   );
-  const request = `${project.authorizingSeq}:1:RunFinalizer`;
+  const request = `${project.authorizingSeq}:1:FinalizeTicket`;
   await rig.harness.query(
     `INSERT INTO finalization_request
        (tenant,project,request,authorizing_seq,effect_position,ticket,
@@ -563,7 +563,8 @@ async function finalizerUnboundTicket(
     `INSERT INTO journal_entry
        (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
         recovery_epoch,cause_kind,cause_id)
-     VALUES ($1,$2,1,'{}',$3,'genesis','owner',1,$4,'Operation',$5)`,
+     VALUES ($1,$2,1,'{"seq":1,"event":{"type":"TicketRevoked","value":1}}',$3,
+             'genesis','owner',1,$4,'Operation',$5)`,
     [
       partition.tenant,
       partition.project,

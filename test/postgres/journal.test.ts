@@ -36,7 +36,6 @@ import {
   journalEnvelopeDigest,
 } from "../../src/adapters/postgres/digest.ts";
 import { postgresJournalLegality } from "../../src/adapters/postgres/journal.ts";
-import { refinementInstance } from "../actor/harness.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import { encodeEntry } from "../../src/interpreter/wire.ts";
 import { decisionSemanticsVersionCurrent } from "../../src/actor/decisionSemantics.ts";
@@ -83,7 +82,7 @@ test("a committed history advances the head and loads back as a legal journal", 
     replayGraph(loaded.value.map((row) => row.entry)),
     memory.graph,
   );
-  assert.ok(storedJournalLegalOn(refinementInstance, loaded.value));
+  assert.ok(storedJournalLegalOn(loaded.value));
 });
 
 test("load refuses a changed complete-envelope digest", async () => {
@@ -180,8 +179,14 @@ test("load refuses unsupported event and decision semantic versions", async () =
     },
     {
       column: "decision_semantics_version",
-      versions: { eventSchemaVersion: 1, decisionSemanticsVersion: 7 },
-      why: /declares decision semantics 7, which this image has no deciders for/,
+      versions: {
+        eventSchemaVersion: 1,
+        decisionSemanticsVersion: decisionSemanticsVersionCurrent - 1,
+      },
+      why: new RegExp(
+        `declares decision semantics ${String(decisionSemanticsVersionCurrent - 1)}, which this image has no deciders for`,
+        "u",
+      ),
     },
   ] as const;
   for (const unsupported of cases) {
@@ -476,7 +481,7 @@ test("the legality scan names a history whose declared machine could not have de
     journal.length,
   );
   const named = `${partition.tenant}/${partition.project}`;
-  const legality = postgresJournalLegality(harness.pool, refinementInstance);
+  const legality = postgresJournalLegality(harness.pool);
 
   const before = await legality.scan(new AbortController().signal);
   assert.ok(before.scanned === "Scanned");

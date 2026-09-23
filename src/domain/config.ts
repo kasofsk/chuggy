@@ -174,3 +174,13 @@ export const acceptedSources: readonly number[] = [
   anAcceptedSource,
   anAcceptedSource + 1,
 ];
+
+/**
+ * The evidence a finalizer may return, at model scope: drawn for the reason a
+ * source is, in a band of its own beside the sources.
+ */
+export const aFinalizationEvidence = 15;
+export const finalizationEvidences: readonly number[] = [
+  aFinalizationEvidence,
+  aFinalizationEvidence + 1,
+];

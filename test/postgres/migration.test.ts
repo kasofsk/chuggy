@@ -22,6 +22,7 @@ import {
 } from "../../src/adapters/postgres/schema/migrations/011-evaluator-keys.ts";
 import { migration012 } from "../../src/adapters/postgres/schema/migrations/012-task-report.ts";
 import { migration013 } from "../../src/adapters/postgres/schema/migrations/013-released-ticket.ts";
+import { migration014 } from "../../src/adapters/postgres/schema/migrations/014-ticket-events.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -301,10 +302,34 @@ test("the baseline opens five journal columns to the API and leaves the rest shu
 
 const journalInstantsReleases = 400;
 
-const journalInstantsEvents = [
-  "ReleaseTicket",
-  "TaskDone",
-  "FinalizationResult",
+/**
+ * Each event the case journals, the value it carries and the key its ticket is
+ * at: a release beside two events that name a ticket without releasing one.
+ */
+const journalInstantsEvents: readonly (readonly [string, unknown, string])[] = [
+  [
+    "TicketCreated",
+    {
+      id: 0,
+      content: 1,
+      dependencies: [],
+      workConfiguration: {
+        workload: 1,
+        inputs: 1,
+        executionRequirements: 1,
+        resultContract: 1,
+      },
+      evaluationPlan: { stages: [] },
+      finalizationConfiguration: 1,
+    },
+    "id",
+  ],
+  ["TicketDispatched", { ticket: 0, source: 1 }, "ticket"],
+  [
+    "TicketFinalizationSucceeded",
+    { ticket: 0, workCycle: 1, generation: 1, evidence: 1 },
+    "ticket",
+  ],
 ];
 
 function releasedPage(read: ProjectRead): readonly (string | undefined)[] {
@@ -319,7 +344,10 @@ async function seedReleasedTickets(
   epoch: string,
 ): Promise<void> {
   const kinds = journalInstantsEvents
-    .map((type, step) => `(${String(step)},'${type}')`)
+    .map(
+      ([type, value, key], step) =>
+        `(${String(step)},'${type}','${JSON.stringify(value)}'::jsonb,'${key}')`,
+    )
     .join(",");
   const entries = journalInstantsReleases * journalInstantsEvents.length;
   await subject.query("BEGIN");
@@ -327,9 +355,10 @@ async function seedReleasedTickets(
     `INSERT INTO decision_input
        (tenant,project,ordinal,input_kind,input_id,base_priority,
         lifecycle_generation,state,decided_seq,terminal_at)
-     SELECT $1,$2,k.step*$3+n,'Continuation','entry-'||(k.step*$3+n),
-            'Continuation',1,'Journaled',k.step*$3+n,now()
-       FROM generate_series(1,$3::bigint) n, (VALUES ${kinds}) AS k(step,type)`,
+     SELECT $1,$2,k.step*$3+n,'Operation','entry-'||(k.step*$3+n),
+            'Ordinary',1,'Journaled',k.step*$3+n,now()
+       FROM generate_series(1,$3::bigint) n,
+            (VALUES ${kinds}) AS k(step,type,value,key)`,
     [partition.tenant, partition.project, journalInstantsReleases],
   );
   await subject.query(
@@ -337,13 +366,12 @@ async function seedReleasedTickets(
        (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
         recovery_epoch,cause_kind,cause_id)
      SELECT $1,$2,k.step*$3+n,
-       format('{"seq":%s,"event":{"type":"%s","value":{"%s":%s}},"rec":{}}',
-              k.step*$3+n,k.type,
-              CASE WHEN k.type IN ('ReleaseTicket','CreateTicket')
-                   THEN 'id' ELSE 'ticket' END,n),
+       jsonb_build_object('seq',k.step*$3+n,'event',jsonb_build_object(
+         'type',k.type,'value',jsonb_set(k.value,ARRAY[k.key],to_jsonb(n))))::text,
        'digest-'||(k.step*$3+n),'previous-'||(k.step*$3+n),'owner',1,$4,
-       'Continuation','entry-'||(k.step*$3+n)
-       FROM generate_series(1,$3::bigint) n, (VALUES ${kinds}) AS k(step,type)`,
+       'Operation','entry-'||(k.step*$3+n)
+       FROM generate_series(1,$3::bigint) n,
+            (VALUES ${kinds}) AS k(step,type,value,key)`,
     [partition.tenant, partition.project, journalInstantsReleases, epoch],
   );
   await subject.query(
@@ -1648,6 +1676,15 @@ function deletionJournalRow(seq: number, entry: string): string {
             'digest-${ordinal}','genesis','owner',1,'epoch-5','Operation','operation-${ordinal}')`;
 }
 
+/**
+ * A row every journal admits, 014's included, where a case needs an entry to
+ * hang a row from and not what the entry says.
+ */
+const journalledRevocation = JSON.stringify({
+  seq: 1,
+  event: { type: "TicketRevoked", value: 1 },
+});
+
 function deletionReleaseEntry(
   finalizer: string,
   combinator: string,
@@ -1711,7 +1748,7 @@ const deletedRows: readonly (readonly [string, string, string])[] = [
   [
     "native_action",
     "an open desk task at the parked reason",
-    `${deletionJournalRow(1, "{}")};
+    `${deletionJournalRow(1, journalledRevocation)};
      INSERT INTO native_action
        (tenant,project,action,authorizing_seq,effect_position,
         ticket,action_version,kind,reason,required_capability)
@@ -1743,7 +1780,7 @@ const undeletedRows: readonly (readonly [string, string])[] = [
   ],
   [
     "a settled desk task at the parked reason",
-    `${deletionJournalRow(1, "{}")};
+    `${deletionJournalRow(1, journalledRevocation)};
      INSERT INTO native_action
        (tenant,project,action,authorizing_seq,effect_position,
         ticket,action_version,kind,reason,required_capability,state)
@@ -1831,7 +1868,7 @@ test("a fresh install records the three leaving and keeps no finalizer column", 
 });
 
 /** A desk task the rig settled at the parked reason, and the resolution it was settled with. */
-const settledDeskTask = `${deletionJournalRow(1, "{}")};
+const settledDeskTask = `${deletionJournalRow(1, journalledRevocation)};
    INSERT INTO native_action
      (tenant,project,action,authorizing_seq,effect_position,
       ticket,action_version,kind,reason,required_capability,state)
@@ -1866,7 +1903,7 @@ const parkedReasonRows: readonly (readonly [string, string])[] = [
   ],
   [
     "native_action_reason_check",
-    `${deletionJournalRow(1, "{}")};
+    `${deletionJournalRow(1, journalledRevocation)};
      INSERT INTO native_action
        (tenant,project,action,authorizing_seq,effect_position,
         ticket,action_version,kind,reason,required_capability)
@@ -2214,7 +2251,7 @@ function renamedRowValues(
     .join(",");
 }
 
-const renamedSeed = `${deletionJournalRow(1, "{}")};
+const renamedSeed = `${deletionJournalRow(1, journalledRevocation)};
   INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,reason,resume_at)
   VALUES ${renamedRowValues(
     renamedProjection.map(({ ticket, phase, reason, resume }) => [
@@ -2372,7 +2409,9 @@ const renamedAway: readonly (readonly [string, string])[] = [
 test("each rewritten column refuses the spelling it left", async () => {
   await migrationDatabase("rename_checks", async (subject) => {
     await installationAt(subject, migration006.version);
-    await subject.query(`${deletionPartition}\n${deletionJournalRow(1, "{}")}`);
+    await subject.query(
+      `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)}`,
+    );
     for (const [constraint, refused] of renamedAway)
       await assert.rejects(
         subject.query(refused),
@@ -2506,7 +2545,7 @@ const renamedReleasesPerTag = 400;
 
 test("the release index answers a read at either tag", async () => {
   await migrationDatabase("rename_index", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration013.version);
     await subject.query(deletionPartition);
     const tags = ["ReleaseTicket", "CreateTicket"];
     const tagged = tags
@@ -2559,7 +2598,7 @@ test("the release index answers a read at either tag", async () => {
 
 /** A claimed finalization request, and the attempt the cases below give an outcome to. */
 function renamedFinalization(attempt: string): string {
-  return `${deletionJournalRow(1, "{}")};
+  return `${deletionJournalRow(1, journalledRevocation)};
   UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
   INSERT INTO configuration_revision
     (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
@@ -2653,7 +2692,7 @@ test("the approval door binds to a ticket the projection holds at the renamed ph
 });
 
 /** A claimed request with no attempt behind it, which is what a held pass leaves. */
-const heldRequest = `${deletionJournalRow(1, "{}")};
+const heldRequest = `${deletionJournalRow(1, journalledRevocation)};
   UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
   INSERT INTO finalization_request
     (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
@@ -2751,7 +2790,9 @@ test("a fresh install records the escalation a held finalization reaches", async
 test("the two reason rosters admit the escalation and refuse a name neither has", async () => {
   await migrationDatabase("unavailable_reasons", async (subject) => {
     await installationAt(subject, migration007.version);
-    await subject.query(`${deletionPartition}\n${deletionJournalRow(1, "{}")}`);
+    await subject.query(
+      `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)}`,
+    );
     for (const [ticket, reason, admitted] of [
       [1, "FinalizationUnavailableEscalated", true],
       [2, "FinalizationUnavailable", false],
@@ -2809,7 +2850,7 @@ async function heldAdmits(
 
 test("the two validators admit the outcome a held finalization reports and refuse a name neither has", async () => {
   await migrationDatabase("unavailable_validators", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration013.version);
     for (const [outcome, kind, admitted] of [
       ["FinalizationResultUnavailable", heldKind, true],
       ["FinalizationUnavailable", heldKind, false],
@@ -3127,7 +3168,7 @@ test("the finalizer records a hold the api role reads and cannot record itself",
  * One journal entry and no projection row: the guard reads the journal the
  * actor replays, and a projection emptied ahead of it is no wipe.
  */
-const journaledDecision = deletionJournalRow(1, "{}");
+const journaledDecision = deletionJournalRow(1, journalledRevocation);
 
 test("a fresh install records the reason and the resume becoming one escalation", async () => {
   await migrationDatabase("escalation_install", async (subject) => {
@@ -3296,8 +3337,10 @@ test("the projection admits evidence only beside an escalation, and the desk rea
 
 test("the desk task takes the projection's roster and keeps the arm its settled rows are at", async () => {
   await migrationDatabase("escalation_desk", async (subject) => {
-    await postgresMigrate(subject);
-    await subject.query(`${deletionPartition}\n${deletionJournalRow(1, "{}")}`);
+    await installationAt(subject, migration013.version);
+    await subject.query(
+      `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)}`,
+    );
     const task = async (
       index: number,
       escalation: string,
@@ -3397,7 +3440,7 @@ test("the boundary admits a block that names only its ticket, and neither spelli
 });
 
 /** A running work execution the scheduler's door can conclude, and the wall it concludes at. */
-const escalationExecution = `${deletionJournalRow(1, "{}")};
+const escalationExecution = `${deletionJournalRow(1, journalledRevocation)};
   UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
   INSERT INTO configuration_revision
     (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
@@ -3715,7 +3758,7 @@ test("a journal with an entry in it refuses the identity arriving and names the 
 });
 
 /** What a request task hangs from: a journalled decision, a revision and the request it authorized. */
-const identityRequest = `${deletionJournalRow(1, "{}")};
+const identityRequest = `${deletionJournalRow(1, journalledRevocation)};
   INSERT INTO configuration_revision
     (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
   VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
@@ -4103,7 +4146,7 @@ test("the scheduler's door journals the identity it read off the task it settled
   await migrationDatabase("identity_completion", async (subject) => {
     await installationAt(subject, migration012.version);
     await subject.query(
-      `${deletionPartition}\n${deletionJournalRow(1, "{}")};
+      `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)};
        UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
        INSERT INTO configuration_revision
          (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
@@ -4775,7 +4818,7 @@ test("the scheduler's door journals the report the task it settled terminated un
   await migrationDatabase("taskreport_completion", async (subject) => {
     await installationAt(subject, migration012.version);
     await subject.query(
-      `${deletionPartition}\n${deletionJournalRow(1, "{}")};
+      `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)};
        UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
        INSERT INTO configuration_revision
          (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
@@ -5327,7 +5370,7 @@ const releasedReports: readonly (readonly [string, unknown, boolean])[] = [
 
 test("the boundary admits a ticket released as the definition it runs at and refuses the spelling it left", async () => {
   await migrationDatabase("released_events", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration013.version);
     for (const [label, event, admitted] of [
       ...releasedTickets,
       ...releasedDispatches,
@@ -5457,8 +5500,7 @@ test("the two relations a release fills hold a whole row and refuse a half one",
 /** The release the door reads back the definition it reports, as the writer journals one. */
 const releasedEntry = JSON.stringify({
   seq: 1,
-  event: releasedEvent(releasedWhole),
-  rec: { label: "ticket-released", transitions: [], effects: [] },
+  event: ticketCreated(releasedWhole),
 });
 
 /** The repository the accepted work result was produced at, and the commit it names. */
@@ -5573,6 +5615,35 @@ test("the door reports the work obligation the release wrote down and the source
   });
 });
 
+test("the door reports a failure as the task that failed and the evidence it can be read at", async () => {
+  await migrationDatabase("events_failure_door", async (subject) => {
+    await postgresMigrate(subject);
+    await releasedSeeded(subject);
+    await subject.query(
+      identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3", "Fail"),
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT result,operation FROM submit_task_completion
+             ('tenant-5','project-5','execution-1',1,1,1,'Failed','manifest-1',
+              repeat('d',64),NULL,'operation-failed-1','subject-5')`,
+        )
+      ).rows,
+      [{ result: "Submitted", operation: "operation-failed-1" }],
+    );
+    const task = { type: "WorkTask", value: { ticket: 1, cycle: 3 } };
+    assert.deepEqual(await releasedJournalled(subject, "operation-failed-1"), {
+      ticket: 1,
+      task,
+      report: {
+        type: "TerminalFailureReport",
+        value: { failure: { task, evidence: 1 }, kind: "ProcessFailure" },
+      },
+    });
+  });
+});
+
 /** The identity the stage the release names spawns its second evaluator under. */
 const releasedEvaluatorTask = {
   type: "EvaluationTask",
@@ -5683,7 +5754,7 @@ const releasedThirdDefinition = {
  */
 const releasedTwoStageEntry = JSON.stringify({
   seq: 1,
-  event: releasedEvent({
+  event: ticketCreated({
     ...releasedWhole,
     evaluationPlan: {
       stages: [
@@ -5692,7 +5763,6 @@ const releasedTwoStageEntry = JSON.stringify({
       ],
     },
   }),
-  rec: { label: "ticket-released", transitions: [], effects: [] },
 });
 
 test("the door reports the definition of the stage the evaluator runs in, not the first stage listing its key", async () => {
@@ -5833,7 +5903,7 @@ const releasedIndexEntries = 400;
 
 test("the release index answers a read at the key a released ticket names", async () => {
   await migrationDatabase("released_index", async (subject) => {
-    await postgresMigrate(subject);
+    await installationAt(subject, migration013.version);
     await subject.query(deletionPartition);
     await subject.query("BEGIN");
     await subject.query(
@@ -5971,32 +6041,40 @@ const releasedPredicates = [
   "public.command_task_definition(jsonb)",
 ];
 
+/** Asserts each predicate is the boundary owner's and no runtime role's to execute. */
+async function predicatesClosed(
+  subject: pg.Pool,
+  predicates: readonly string[],
+): Promise<void> {
+  for (const predicate of predicates) {
+    for (const role of [apiRole, ticketServiceRole, schedulerRole, "public"])
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+            [role, predicate],
+          )
+        ).rows[0]?.granted,
+        false,
+        `${role} on ${predicate}`,
+      );
+    assert.equal(
+      (
+        await subject.query<{ owner: string }>(
+          "SELECT pg_get_userbyid(proowner) AS owner FROM pg_proc WHERE oid = $1::regprocedure",
+          [predicate],
+        )
+      ).rows[0]?.owner,
+      boundaryOwnerRole,
+      predicate,
+    );
+  }
+}
+
 test("the reference predicates are the boundary owner's and nobody's to execute", async () => {
   await migrationDatabase("released_predicates", async (subject) => {
     await postgresMigrate(subject);
-    for (const predicate of releasedPredicates) {
-      for (const role of [apiRole, ticketServiceRole, schedulerRole, "public"])
-        assert.equal(
-          (
-            await subject.query<{ granted: boolean }>(
-              "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
-              [role, predicate],
-            )
-          ).rows[0]?.granted,
-          false,
-          `${role} on ${predicate}`,
-        );
-      assert.equal(
-        (
-          await subject.query<{ owner: string }>(
-            "SELECT pg_get_userbyid(proowner) AS owner FROM pg_proc WHERE oid = $1::regprocedure",
-            [predicate],
-          )
-        ).rows[0]?.owner,
-        boundaryOwnerRole,
-        predicate,
-      );
-    }
+    await predicatesClosed(subject, releasedPredicates);
   });
 });
 
@@ -6090,8 +6168,8 @@ const wipedHistory = `
   INSERT INTO journal_entry
     (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
      recovery_epoch,cause_kind,cause_id)
-  VALUES('tenant-91','project-91',1,'{}','digest-91','genesis','owner',1,'epoch-91',
-         'Operation','operation-91');
+  VALUES('tenant-91','project-91',1,'${journalledRevocation}','digest-91','genesis',
+         'owner',1,'epoch-91','Operation','operation-91');
   INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,escalation)
   VALUES('tenant-91','project-91',1,'Escalated',1,'WorkFailureEscalated');
   UPDATE project SET head=1,ingress_next=51,ticket_next=9,notification_next=4,
@@ -6230,5 +6308,793 @@ test("the wipe empties every relation it names, resets the counters and keeps th
       wipeKept,
       "every relation this schema has is either wiped or kept on purpose",
     );
+  });
+});
+
+test("a fresh install records the ticket events arriving and keeps no continuation", async () => {
+  await migrationDatabase("events_install", async (subject) => {
+    assert.ok((await postgresMigrate(subject)).includes(migration014.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT version,name FROM schema_migration WHERE version=$1",
+          [migration014.version],
+        )
+      ).rows,
+      [
+        {
+          version: migration014.version,
+          name: "the journal records ticket events, and a pass waits for no reduce",
+        },
+      ],
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT to_regclass('public.project_continuation')::text AS relation,
+                  to_regclass('public.decision_input_continuation_head')::text AS head,
+                  to_regprocedure('public.publish_continuation(text,text,bigint,text)')::text AS door`,
+        )
+      ).rows,
+      [{ relation: null, head: null, door: null }],
+    );
+  });
+});
+
+test("a journal with an entry in it refuses the events arriving and names the wipe", async () => {
+  await migrationDatabase("events_guard", async (subject) => {
+    await installationBefore(subject, migration014.version);
+    await subject.query(
+      `${deletionPartition}\n${deletionJournalRow(1, releasedEntry)}`,
+    );
+    await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT max(version) AS version,
+                  to_regclass('public.project_continuation')::text AS relation
+             FROM schema_migration`,
+        )
+      ).rows,
+      [{ version: migration013.version, relation: "project_continuation" }],
+    );
+  });
+});
+
+/** A release as the journal records one, which is the released ticket under the event's tag. */
+function ticketCreated(value: unknown): unknown {
+  return { type: "TicketCreated", value };
+}
+
+/** The evaluator obligation a produced evaluation report below carries. */
+const eventsEvaluatorObligation = {
+  task: {
+    type: "EvaluationTask",
+    value: { ticket: 1, workCycle: 2, stage: 1, generation: 1, evaluator: 3 },
+  },
+  definition: releasedEvaluatorDefinition,
+  contextRef: 9,
+};
+
+function eventsEvaluated(verdict: string): unknown {
+  return {
+    type: "EvaluationResultReport",
+    value: {
+      result: { obligation: eventsEvaluatorObligation, resultRef: 11 },
+      verdict,
+    },
+  };
+}
+
+const eventsBlocked = {
+  type: "TerminalFailureReport",
+  value: {
+    failure: { task: eventsEvaluatorObligation.task, evidence: 4 },
+    kind: "ExecutionUnavailableFailure",
+  },
+};
+
+const eventsRework = [{ evaluator: 3, resultRef: 11 }];
+
+const eventsFinalization = {
+  ticket: 1,
+  workCycle: 2,
+  generation: 1,
+  evidence: 6,
+};
+
+/** Every event a journal row may carry, one per arm, and the rows it may not. */
+const eventsJournalled: readonly (readonly [string, unknown, boolean])[] = [
+  ["TicketCreated", ticketCreated(releasedWhole), true],
+  [
+    "TicketDispatched",
+    { type: "TicketDispatched", value: { ticket: 1, source: 7 } },
+    true,
+  ],
+  ["TicketRevoked", { type: "TicketRevoked", value: 1 }, true],
+  ["TicketWorkResumed", { type: "TicketWorkResumed", value: 1 }, true],
+  [
+    "TicketEvaluationResumed",
+    { type: "TicketEvaluationResumed", value: 1 },
+    true,
+  ],
+  [
+    "TicketFinalizationResumed",
+    { type: "TicketFinalizationResumed", value: 1 },
+    true,
+  ],
+  [
+    "TicketWorkResultAccepted",
+    {
+      type: "TicketWorkResultAccepted",
+      value: {
+        ticket: 1,
+        result: { obligation: releasedObligation, resultRef: 5 },
+        acceptedSourceRef: 7,
+      },
+    },
+    true,
+  ],
+  [
+    "TicketWorkProcessFailed",
+    {
+      type: "TicketWorkProcessFailed",
+      value: { ticket: 1, task: releasedTask, evidence: 2 },
+    },
+    true,
+  ],
+  [
+    "TicketWorkExecutionUnavailable",
+    {
+      type: "TicketWorkExecutionUnavailable",
+      value: { ticket: 1, task: releasedTask, evidence: 2 },
+    },
+    true,
+  ],
+  [
+    "TicketEvaluationProgressed",
+    {
+      type: "TicketEvaluationProgressed",
+      value: { ticket: 1, report: eventsEvaluated("EvaluatorPass") },
+    },
+    true,
+  ],
+  [
+    "TicketEvaluationPassed",
+    {
+      type: "TicketEvaluationPassed",
+      value: { ticket: 1, report: eventsEvaluated("EvaluatorPass") },
+    },
+    true,
+  ],
+  [
+    "TicketEvaluationReworkStarted",
+    {
+      type: "TicketEvaluationReworkStarted",
+      value: {
+        ticket: 1,
+        report: eventsEvaluated("EvaluatorFail"),
+        evidence: eventsRework,
+      },
+    },
+    true,
+  ],
+  [
+    "TicketEvaluationFailureEscalated",
+    {
+      type: "TicketEvaluationFailureEscalated",
+      value: {
+        ticket: 1,
+        report: eventsEvaluated("EvaluatorFail"),
+        evidence: eventsRework,
+      },
+    },
+    true,
+  ],
+  [
+    "TicketEvaluationBlocked",
+    {
+      type: "TicketEvaluationBlocked",
+      value: { ticket: 1, report: eventsBlocked },
+    },
+    true,
+  ],
+  [
+    "TicketFinalizationSucceeded",
+    { type: "TicketFinalizationSucceeded", value: eventsFinalization },
+    true,
+  ],
+  [
+    "TicketFinalizationNeedsWork",
+    { type: "TicketFinalizationNeedsWork", value: eventsFinalization },
+    true,
+  ],
+  [
+    "TicketFinalizationUnavailable",
+    { type: "TicketFinalizationUnavailable", value: eventsFinalization },
+    true,
+  ],
+  [
+    "a command-shaped completion",
+    releasedCompletion({
+      type: "WorkResultReport",
+      value: {
+        result: { obligation: releasedObligation, resultRef: 5 },
+        acceptedSourceRef: 7,
+      },
+    }),
+    false,
+  ],
+  ["a command's release", releasedEvent(releasedWhole), false],
+  [
+    "a dispatch at the source no source is",
+    { type: "TicketDispatched", value: { ticket: 1, source: 0 } },
+    false,
+  ],
+  ["a revocation of no ticket", { type: "TicketRevoked", value: 0 }, false],
+  [
+    "a finalization fact about no ticket",
+    {
+      type: "TicketFinalizationSucceeded",
+      value: { ...eventsFinalization, ticket: 0 },
+    },
+    false,
+  ],
+  [
+    "a finalization fact at no evidence",
+    {
+      type: "TicketFinalizationNeedsWork",
+      value: { ...eventsFinalization, evidence: 0 },
+    },
+    false,
+  ],
+  [
+    "a finalization fact with no evidence",
+    {
+      type: "TicketFinalizationUnavailable",
+      value: { ...eventsFinalization, evidence: undefined },
+    },
+    false,
+  ],
+  [
+    "a work failure at no evidence",
+    {
+      type: "TicketWorkProcessFailed",
+      value: { ticket: 1, task: releasedTask, evidence: 0 },
+    },
+    false,
+  ],
+  [
+    "a work failure with no evidence",
+    {
+      type: "TicketWorkExecutionUnavailable",
+      value: { ticket: 1, task: releasedTask },
+    },
+    false,
+  ],
+  [
+    "a release with no work definition",
+    ticketCreated({ ...releasedWhole, workConfiguration: undefined }),
+    false,
+  ],
+  [
+    "an accepted work result at no source",
+    {
+      type: "TicketWorkResultAccepted",
+      value: {
+        ticket: 1,
+        result: { obligation: releasedObligation, resultRef: 5 },
+      },
+    },
+    false,
+  ],
+  [
+    "an accepted work result whose obligation has no definition",
+    {
+      type: "TicketWorkResultAccepted",
+      value: {
+        ticket: 1,
+        result: {
+          obligation: { ...releasedObligation, definition: undefined },
+          resultRef: 5,
+        },
+        acceptedSourceRef: 7,
+      },
+    },
+    false,
+  ],
+  [
+    "a work failure of a task at cycle zero",
+    {
+      type: "TicketWorkProcessFailed",
+      value: {
+        ticket: 1,
+        task: { type: "WorkTask", value: { ticket: 1, cycle: 0 } },
+        evidence: 2,
+      },
+    },
+    false,
+  ],
+  [
+    "an evaluator's report at a verdict nobody gives",
+    {
+      type: "TicketEvaluationPassed",
+      value: { ticket: 1, report: eventsEvaluated("EvaluatorAbstains") },
+    },
+    false,
+  ],
+  [
+    "a block whose failure names no kind",
+    {
+      type: "TicketEvaluationBlocked",
+      value: {
+        ticket: 1,
+        report: {
+          ...eventsBlocked,
+          value: { failure: eventsBlocked.value.failure },
+        },
+      },
+    },
+    false,
+  ],
+  [
+    "a block whose failure names no task",
+    {
+      type: "TicketEvaluationBlocked",
+      value: {
+        ticket: 1,
+        report: {
+          ...eventsBlocked,
+          value: { ...eventsBlocked.value, failure: { evidence: 4 } },
+        },
+      },
+    },
+    false,
+  ],
+  [
+    "a block in the spelling that named no task",
+    {
+      type: "TicketEvaluationBlocked",
+      value: {
+        ticket: 1,
+        report: {
+          ...eventsBlocked,
+          value: { evidence: 4, kind: "ExecutionUnavailableFailure" },
+        },
+      },
+    },
+    false,
+  ],
+  [
+    "a rework that names no evidence",
+    {
+      type: "TicketEvaluationReworkStarted",
+      value: { ticket: 1, report: eventsEvaluated("EvaluatorFail") },
+    },
+    false,
+  ],
+  [
+    "an escalation whose evidence is empty",
+    {
+      type: "TicketEvaluationFailureEscalated",
+      value: {
+        ticket: 1,
+        report: eventsEvaluated("EvaluatorFail"),
+        evidence: [],
+      },
+    },
+    false,
+  ],
+  [
+    "a rework whose evidence names no evaluator",
+    {
+      type: "TicketEvaluationReworkStarted",
+      value: {
+        ticket: 1,
+        report: eventsEvaluated("EvaluatorFail"),
+        evidence: [{ evaluator: 0, resultRef: 11 }],
+      },
+    },
+    false,
+  ],
+  [
+    "a finalization fact at no generation",
+    {
+      type: "TicketFinalizationSucceeded",
+      value: { ...eventsFinalization, generation: undefined },
+    },
+    false,
+  ],
+];
+
+/** Journals one entry at seq 1 and takes it back, answering whether the journal admitted it. */
+async function eventsAdmitted(
+  subject: pg.Pool,
+  entry: string,
+): Promise<boolean> {
+  const client = await subject.connect();
+  try {
+    await client.query("BEGIN");
+    try {
+      await client.query(deletionJournalRow(1, entry));
+      return true;
+    } catch (error: unknown) {
+      assert.match(
+        String(error),
+        /is not its sequence and one ticket event/u,
+        "a row the journal refuses is refused by the journal's own check",
+      );
+      return false;
+    } finally {
+      await client.query("ROLLBACK");
+    }
+  } finally {
+    client.release();
+  }
+}
+
+test("the journal takes one ticket event per row and refuses a command, a record and a ref that is not one", async () => {
+  await migrationDatabase("events_journal", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(deletionPartition);
+    for (const [label, event, admitted] of eventsJournalled)
+      assert.equal(
+        await eventsAdmitted(subject, JSON.stringify({ seq: 1, event })),
+        admitted,
+        label,
+      );
+    for (const [label, entry] of [
+      [
+        "an event beside the record of deciding it",
+        {
+          seq: 1,
+          event: { type: "TicketRevoked", value: 1 },
+          rec: { label: "ticket-revoked", transitions: [], effects: [] },
+        },
+      ],
+      [
+        "an entry at another sequence",
+        { seq: 2, event: { type: "TicketRevoked", value: 1 } },
+      ],
+      ["an entry with no event", { seq: 1 }],
+    ] as const)
+      assert.equal(
+        await eventsAdmitted(subject, JSON.stringify(entry)),
+        false,
+        label,
+      );
+    assert.equal(await eventsAdmitted(subject, "not json"), false, "text");
+  });
+});
+
+test("the ticket service journals through the check without holding the validator", async () => {
+  await migrationDatabase("events_writer", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(deletionPartition);
+    const journalled = (entry: string) =>
+      `INSERT INTO journal_entry
+         (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
+          recovery_epoch,cause_kind,cause_id)
+       VALUES('tenant-5','project-5',1,$entry$${entry}$entry$,'digest-1','genesis',
+              'owner',1,'epoch-5','Operation','operation-1')`;
+    const client = await subject.connect();
+    try {
+      for (const [entry, admitted] of [
+        [
+          JSON.stringify({ seq: 1, event: { type: "Revoke", value: 1 } }),
+          false,
+        ],
+        [journalledRevocation, true],
+      ] as const) {
+        await client.query("BEGIN");
+        await client.query(
+          `INSERT INTO decision_input
+             (tenant,project,ordinal,input_kind,input_id,base_priority,
+              lifecycle_generation,state,decided_seq,terminal_at)
+           VALUES('tenant-5','project-5',1,'Operation','operation-1','Ordinary',
+                  1,'Journaled',1,now())`,
+        );
+        await client.query(`SET LOCAL ROLE ${ticketServiceRole}`);
+        if (admitted) {
+          await client.query(journalled(entry));
+          await client.query("COMMIT");
+        } else {
+          await assert.rejects(
+            client.query(journalled(entry)),
+            /is not its sequence and one ticket event/u,
+          );
+          await client.query("ROLLBACK");
+        }
+      }
+    } finally {
+      client.release();
+    }
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT has_function_privilege($1,'public.decision_event_is_valid(jsonb)','EXECUTE') AS validator,
+                  has_function_privilege($1,'public.journal_entry_is_an_event()','EXECUTE') AS check,
+                  (SELECT count(*)::int FROM journal_entry) AS journalled`,
+          [ticketServiceRole],
+        )
+      ).rows,
+      [{ validator: false, check: false, journalled: 1 }],
+    );
+  });
+});
+
+/** A `Decide` envelope around one command event, as the mailbox is asked about it. */
+function eventsDecide(event: unknown): string {
+  return JSON.stringify({ version: 1, command: "Decide", event });
+}
+
+/** A work failure as a completion reports it, naming the task it is the failure of. */
+function eventsFailed(task: unknown): unknown {
+  return {
+    type: "TerminalFailureReport",
+    value: { failure: { task, evidence: 2 }, kind: "ProcessFailure" },
+  };
+}
+
+/** What the mailbox's grammar answers about the commands the inbox still carries. */
+const eventsCommands: readonly (readonly [
+  string,
+  unknown,
+  boolean,
+  boolean,
+])[] = [
+  [
+    "a completion naming no disposition",
+    releasedCompletion({
+      type: "WorkResultReport",
+      value: {
+        result: { obligation: releasedObligation, resultRef: 5 },
+        acceptedSourceRef: 7,
+      },
+    }),
+    true,
+    true,
+  ],
+  [
+    "a completion naming the disposition the writer picks",
+    {
+      type: "TaskDone",
+      value: {
+        ticket: 1,
+        task: releasedTask,
+        report: eventsFailed(releasedTask),
+        onFailure: "ReworkEvaluationFailure",
+      },
+    },
+    false,
+    false,
+  ],
+  [
+    "a failure naming the task that failed",
+    releasedCompletion(eventsFailed(releasedTask)),
+    true,
+    true,
+  ],
+  [
+    "a failure naming a task the completion does not",
+    releasedCompletion(eventsFailed(eventsEvaluatorObligation.task)),
+    false,
+    false,
+  ],
+  [
+    "a failure in the spelling that named no task",
+    releasedCompletion({
+      type: "TerminalFailureReport",
+      value: { evidence: 2, kind: "ProcessFailure" },
+    }),
+    false,
+    false,
+  ],
+  [
+    "a finalization naming no evidence",
+    {
+      type: "FinalizationResult",
+      value: { ticket: 1, out: "FinalizationSucceeded" },
+    },
+    false,
+    false,
+  ],
+  [
+    "the reduce a pass no longer waits for",
+    { type: "WorkReduce", value: 1 },
+    false,
+    false,
+  ],
+  ["a revocation", { type: "Revoke", value: 1 }, true, true],
+  ["a resume", { type: "ResumeTicket", value: 1 }, true, true],
+  ["a ticket event", { type: "TicketRevoked", value: 1 }, false, false],
+  [
+    "a release, which no caller offers",
+    releasedEvent(releasedWhole),
+    true,
+    false,
+  ],
+  [
+    "a finalization, which no caller offers",
+    {
+      type: "FinalizationResult",
+      value: { ticket: 1, out: "FinalizationSucceeded", evidence: 3 },
+    },
+    true,
+    false,
+  ],
+  [
+    "a dispatch, which no caller offers",
+    { type: "Dispatch", value: { ticket: 1, source: 9 } },
+    true,
+    false,
+  ],
+];
+
+test("the inbox's grammar keeps the commands less the reduce and the disposition, and both exclusions", async () => {
+  await migrationDatabase("events_commands", async (subject) => {
+    await postgresMigrate(subject);
+    for (const [label, event, grammar, mailbox] of eventsCommands) {
+      assert.deepEqual(
+        (
+          await subject.query<{ grammar: boolean; mailbox: boolean }>(
+            `SELECT decision_command_is_valid($1::jsonb) AS grammar,
+                    ticket_command_is_valid($2::jsonb) AS mailbox`,
+            [JSON.stringify(event), eventsDecide(event)],
+          )
+        ).rows,
+        [{ grammar, mailbox }],
+        label,
+      );
+    }
+  });
+});
+
+test("a desk task is opened once per decision, whatever position it names", async () => {
+  await migrationDatabase("events_desk", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(
+      `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)}`,
+    );
+    const desk = (action: string, position: number, ticket: number) =>
+      subject.query(
+        `INSERT INTO native_action
+           (tenant,project,action,authorizing_seq,effect_position,ticket,
+            action_version,kind,escalation,required_capability,state)
+         VALUES('tenant-5','project-5',$1,1,$2,$3,1,'TicketEscalation',
+                'WorkFailureEscalated','ResolveTicket','Withdrawn')`,
+        [action, position, ticket],
+      );
+    await desk("action-1", 0, 1);
+    await assert.rejects(
+      desk("action-2", 1, 2),
+      /native_action_decision_opens_one_desk/u,
+      "a second desk task at the same decision, whatever position it names",
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT to_regclass('public.native_action_effect_is_materialized_once')::text AS index",
+        )
+      ).rows,
+      [{ index: null }],
+    );
+  });
+});
+
+test("a decision input counts the passes it was deferred", async () => {
+  await migrationDatabase("events_deferral", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(deletionPartition);
+    const input = (ordinal: number, kind: string, passes?: number) =>
+      passes === undefined
+        ? subject.query(
+            `INSERT INTO decision_input
+               (tenant,project,ordinal,input_kind,input_id,base_priority,
+                lifecycle_generation)
+             VALUES('tenant-5','project-5',$1,$2,$3,'Ordinary',1)`,
+            [ordinal, kind, `input-${String(ordinal)}`],
+          )
+        : subject.query(
+            `INSERT INTO decision_input
+               (tenant,project,ordinal,input_kind,input_id,base_priority,
+                lifecycle_generation,deferred_passes)
+             VALUES('tenant-5','project-5',$1,$2,$3,'Ordinary',1,$4)`,
+            [ordinal, kind, `input-${String(ordinal)}`, passes],
+          );
+    await input(1, "Operation");
+    assert.deepEqual(
+      (await subject.query("SELECT deferred_passes FROM decision_input")).rows,
+      [{ deferred_passes: 0 }],
+    );
+    await assert.rejects(
+      input(2, "Operation", -1),
+      /decision_input_deferred_passes_are_counted/u,
+    );
+    await assert.rejects(
+      input(3, "Continuation"),
+      /decision_input_kind_is_known/u,
+    );
+    for (const column of ["deferred_passes"])
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_column_privilege($1,'public.decision_input',$2,'UPDATE') AS granted",
+            [ticketServiceRole, column],
+          )
+        ).rows[0]?.granted,
+        true,
+        `${ticketServiceRole} bumps ${column}`,
+      );
+  });
+});
+
+/** How many releases the index case seeds, so a scan of them all is visible as one. */
+const eventsIndexEntries = 400;
+
+test("the release index answers a read at the one tag a release is journalled at", async () => {
+  await migrationDatabase("events_index", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(deletionPartition);
+    await subject.query("BEGIN");
+    await subject.query(
+      `INSERT INTO decision_input
+         (tenant,project,ordinal,input_kind,input_id,base_priority,
+          lifecycle_generation,state,decided_seq,terminal_at)
+       SELECT 'tenant-5','project-5',n,'Operation','entry-'||n,
+              'Ordinary',1,'Journaled',n,now()
+         FROM generate_series(1,$1::bigint) n`,
+      [eventsIndexEntries],
+    );
+    await subject.query(
+      `INSERT INTO journal_entry
+         (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
+          recovery_epoch,cause_kind,cause_id)
+       SELECT 'tenant-5','project-5',n,
+         jsonb_build_object('seq',n,'event',jsonb_build_object('type','TicketCreated',
+           'value',jsonb_set($2::jsonb,'{id}',to_jsonb(n))))::text,
+         'digest-'||n,'previous-'||n,'owner',1,'epoch-5','Operation','entry-'||n
+         FROM generate_series(1,$1::bigint) n`,
+      [eventsIndexEntries, JSON.stringify(releasedWhole)],
+    );
+    await subject.query("COMMIT");
+    await subject.query("ANALYZE journal_entry");
+    const before = await releaseIndexUse(subject);
+    assert.equal(
+      (
+        await subject.query(
+          `SELECT j.seq FROM journal_entry j
+            WHERE j.tenant='tenant-5' AND j.project='project-5'
+              AND (CASE WHEN j.entry IS JSON OBJECT
+                        THEN j.entry::jsonb->'event'->>'type' END) = 'TicketCreated'
+              AND (CASE WHEN j.entry IS JSON OBJECT
+                        THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(1)`,
+        )
+      ).rowCount,
+      1,
+    );
+    await subject.query("SELECT pg_stat_force_next_flush()");
+    const after = await releaseIndexUse(subject);
+    assert.ok(
+      after.scans > before.scans && after.tuples - before.tuples <= 1,
+      `one release cost ${String(after.tuples - before.tuples)} entries out of the index, so it was scanned for rather than looked up`,
+    );
+  });
+});
+
+/** The predicates 014 installs, each the boundary owner's and nobody else's to execute. */
+const eventsPredicates = [
+  "public.released_ticket_is_valid(jsonb)",
+  "public.task_identity_is_valid(jsonb)",
+  "public.validated_task_result_is_valid(jsonb)",
+  "public.task_report_is_valid(jsonb)",
+  "public.decision_command_is_valid(jsonb)",
+  "public.journal_entry_is_an_event()",
+];
+
+test("the predicates the events arrive with are the boundary owner's and nobody's to execute", async () => {
+  await migrationDatabase("events_owners", async (subject) => {
+    await postgresMigrate(subject);
+    await predicatesClosed(subject, eventsPredicates);
   });
 });

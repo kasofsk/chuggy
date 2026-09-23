@@ -23,7 +23,7 @@ module chuggy_witness_resume_test {
     EvaluationResultReport({ result: producedResult(tickets.get(j), task),
       verdict: v })
   pure def walled(task: TaskIdentity): TaskTerminalReport =
-    TerminalFailureReport({ evidence: taskRefOf(task),
+    TerminalFailureReport({ failure: { task: task, evidence: taskRefOf(task) },
       kind: ExecutionUnavailableFailure })
   pure def statusOf(jb: Ticket, evaluator: int): EvaluatorStatus =
     match currentInstance(jb).state {
@@ -43,34 +43,35 @@ module chuggy_witness_resume_test {
     nondet source = dispatchSources.oneOf()
     all { readyTickets.contains(j), apply(decideDispatch(graph, j, source)) }
   action done(j: int, task: TaskIdentity, report: TaskTerminalReport): bool = all {
-    completableTickets.contains(j), deliverableTasksIn(graph,j).contains(task),
+    completableTickets.contains(j), liveTasks(tickets.get(j)).contains(task),
     reportChoices(tickets.get(j), task).contains(report),
-    apply(decideTaskDone(graph,j,task,report,ReworkEvaluationFailure)) }
+    apply(decideTaskDone(graph,j,task,report,_ => ReworkEvaluationFailure)) }
   /// A WORK COMPLETION: the source the application accepted the result at
   /// is the environment's, so the driver draws it where the machine does.
   action doneProduced(j: int, task: TaskIdentity): bool =
     nondet accepted = acceptedSources.oneOf()
     done(j, task, WorkResultReport({
       result: producedResult(tickets.get(j), task), acceptedSourceRef: accepted }))
-  action reduceWork(j: int): bool = all { reducibleWork.contains(j), apply(decideWorkReduce(graph,j)) }
   action resume(j: int): bool = all { retryableEscalated.contains(j), apply(decideResumeTicket(graph,j)) }
 
   /// A WORK TASK'S WALL parks the ticket in the completion itself: a work
-  /// cycle is one task, so nothing is left to wait for and nothing to
-  /// reduce. Its resume buys a new cycle.
+  /// cycle is one task, so nothing is left to wait for. Its resume buys a
+  /// new cycle.
   run executionBlockedResumeWitness = init
     .then(release(4, Set(), p)).expect(and { tickets.get(4).phase == Pending, allInvariants })
     .then(doDispatch(4)).expect(and { tickets.get(4).phase == Work, allInvariants })
     .then(done(4, workTaskOf(4, 1), walled(workTaskOf(4, 1)))).expect(and {
       tickets.get(4).phase == Escalated,
       tickets.get(4).escalation == WorkExecutionUnavailableEscalated,
-      lastStep.label == "ticket-escalated work_execution_unavailable_escalated",
-      resumeOf(tickets.get(4).escalation) == ResumeWork, tickets.get(4).tasks.size() == 0,
+      lastEvent == "TicketWorkExecutionUnavailable",
+      resumeOf(tickets.get(4).escalation) == ResumeWork,
+      liveTasks(tickets.get(4)) == Set(),
       // no judgement was reached, so there is no instance to keep
       tickets.get(4).evaluations == [], allInvariants })
     .then(resume(4)).expect(and { tickets.get(4).phase == Work,
       tickets.get(4).escalation == NoEscalation,
-      tickets.get(4).tasks.map(t => t.identity) == Set(workTaskOf(4, 2)),
+      lastEvent == "TicketWorkResumed",
+      liveTasks(tickets.get(4)) == Set(workTaskOf(4, 2)),
       allInvariants })
 
   /// An interrupted EVALUATION parks at its OWN wall and resumes into
@@ -80,16 +81,15 @@ module chuggy_witness_resume_test {
   run evaluationResumeWitness = init
     .then(release(4, Set(), p)).expect(allInvariants)
     .then(doDispatch(4)).expect(allInvariants)
-    .then(doneProduced(4, workTaskOf(4, 1))).expect(allInvariants)
-    .then(reduceWork(4)).expect(and {
+    .then(doneProduced(4, workTaskOf(4, 1))).expect(and {
       tickets.get(4).phase == Evaluation,
-      tickets.get(4).tasks == Set(),
+      lastEvent == "TicketWorkResultAccepted",
       liveTasks(tickets.get(4)) == Set(evaluatorTaskIdentity(4, 1, 1, 1, 2)),
       allInvariants })
     .then(done(4, evaluatorTaskIdentity(4, 1, 1, 1, 2),
         walled(evaluatorTaskIdentity(4, 1, 1, 1, 2)))).expect(and {
       tickets.get(4).escalation == EvaluationBlockedEscalated,
-      lastStep.label == "ticket-escalated evaluation_blocked_escalated",
+      lastEvent == "TicketEvaluationBlocked",
       resumeOf(tickets.get(4).escalation) == ResumeEvaluation,
       // the instance is the provenance the resume re-asks from
       tickets.get(4).evaluations.length() == 1,
@@ -99,6 +99,7 @@ module chuggy_witness_resume_test {
       allInvariants })
     .then(resume(4)).expect(and {
       tickets.get(4).phase == Evaluation,
+      lastEvent == "TicketEvaluationResumed",
       liveTasks(tickets.get(4)) == Set(evaluatorTaskIdentity(4, 1, 1, 2, 2)),
       allInvariants })
 
@@ -109,15 +110,15 @@ module chuggy_witness_resume_test {
   run partialEvaluationResumeWitness = init
     .then(release(4, Set(), pWide)).expect(allInvariants)
     .then(doDispatch(4))
-    .then(doneProduced(4, workTaskOf(4, 1)))
-    .then(reduceWork(4)).expect(and {
+    .then(doneProduced(4, workTaskOf(4, 1))).expect(and {
       liveTasks(tickets.get(4)) ==
         Set(evaluatorTaskIdentity(4, 1, 1, 1, 1), evaluatorTaskIdentity(4, 1, 1, 1, 2)),
       allInvariants })
     .then(done(4, evaluatorTaskIdentity(4, 1, 1, 1, 1),
         judged(4, evaluatorTaskIdentity(4, 1, 1, 1, 1), EvaluatorPass))).expect(and {
       // one answer does not conclude the stage
-      tickets.get(4).phase == Evaluation, lastStep.label == "task-done",
+      tickets.get(4).phase == Evaluation,
+      lastEvent == "TicketEvaluationProgressed", lastObligations == [],
       liveTasks(tickets.get(4)) == Set(evaluatorTaskIdentity(4, 1, 1, 1, 2)),
       allInvariants })
     .then(done(4, evaluatorTaskIdentity(4, 1, 1, 1, 2),
@@ -131,7 +132,7 @@ module chuggy_witness_resume_test {
     .then(done(4, evaluatorTaskIdentity(4, 1, 1, 2, 2),
         judged(4, evaluatorTaskIdentity(4, 1, 1, 2, 2), EvaluatorPass))).expect(and {
       tickets.get(4).phase == Finalization,
-      lastStep.label == "eval-passed", allInvariants })
+      lastEvent == "TicketEvaluationPassed", allInvariants })
 }
 
 /// THE TWO EDGES OF AN EVALUATION FAILURE, reached through the machine
@@ -154,19 +155,18 @@ module chuggy_witness_rework_test {
   action doneWork(j: int, task: TaskIdentity): bool =
     nondet accepted = acceptedSources.oneOf()
     all {
-      completableTickets.contains(j), deliverableTasksIn(graph,j).contains(task),
+      completableTickets.contains(j), liveTasks(tickets.get(j)).contains(task),
       apply(decideTaskDone(graph, j, task,
         WorkResultReport({ result: producedResult(tickets.get(j), task),
           acceptedSourceRef: accepted }),
-        ReworkEvaluationFailure)) }
+        _ => ReworkEvaluationFailure)) }
   action judge(j: int, task: TaskIdentity, v: EvaluationVerdict,
       d: EvaluationFailureDisposition): bool = all {
-    completableTickets.contains(j), deliverableTasksIn(graph,j).contains(task),
+    completableTickets.contains(j), liveTasks(tickets.get(j)).contains(task),
     dispositionChoices.contains(d),
     apply(decideTaskDone(graph, j, task,
       EvaluationResultReport({ result: producedResult(tickets.get(j), task),
-        verdict: v }), d)) }
-  action reduceWork(j: int): bool = all { reducibleWork.contains(j), apply(decideWorkReduce(graph,j)) }
+        verdict: v }), _ => d)) }
   action resume(j: int): bool = all { retryableEscalated.contains(j), apply(decideResumeTicket(graph,j)) }
 
   /// Rework: the failing stage re-enters Work directly, as a new cycle
@@ -174,22 +174,22 @@ module chuggy_witness_rework_test {
   run evaluationReworkWitness = init
     .then(release(4)).expect(allInvariants)
     .then(doDispatch(4)).expect(allInvariants)
-    .then(doneWork(4, workTaskOf(4, 1))).then(reduceWork(4)).expect(and {
+    .then(doneWork(4, workTaskOf(4, 1))).expect(and {
       tickets.get(4).phase == Evaluation, allInvariants })
     .then(judge(4, evaluatorTaskIdentity(4, 1, 1, 1, 1), EvaluatorFail,
         ReworkEvaluationFailure)).expect(and {
       tickets.get(4).phase == Work,
-      lastStep.label == "rework-started eval_failure",
-      tickets.get(4).tasks.map(t => t.identity) == Set(workTaskOf(4, 2)),
+      lastEvent == "TicketEvaluationReworkStarted",
+      lastObligations.length() == 1,
       tickets.get(4).evaluations.length() == 1,
       liveTasks(tickets.get(4)) == Set(workTaskOf(4, 2)), allInvariants })
 
   /// Escalate: the same failure parks the ticket instead, and the desk's
-  /// resume re-enters Work — the same continuation, one human later.
+  /// resume re-enters Work — the same rework, one human later.
   run evaluationEscalateWitness = init
     .then(release(4)).expect(allInvariants)
     .then(doDispatch(4)).expect(allInvariants)
-    .then(doneWork(4, workTaskOf(4, 1))).then(reduceWork(4)).expect(allInvariants)
+    .then(doneWork(4, workTaskOf(4, 1))).expect(allInvariants)
     .then(judge(4, evaluatorTaskIdentity(4, 1, 1, 1, 1), EvaluatorFail,
         EscalateEvaluationFailure)).expect(and {
       tickets.get(4).phase == Escalated,
@@ -215,23 +215,22 @@ module chuggy_witness_stage_test {
   action doneWork(task: TaskIdentity): bool =
     nondet accepted = acceptedSources.oneOf()
     all {
-      deliverableTasksIn(graph,2).contains(task),
+      liveTasks(tickets.get(2)).contains(task),
       apply(decideTaskDone(graph, 2, task,
         WorkResultReport({ result: producedResult(tickets.get(2), task),
-          acceptedSourceRef: accepted }), ReworkEvaluationFailure)) }
+          acceptedSourceRef: accepted }), _ => ReworkEvaluationFailure)) }
   action pass(task: TaskIdentity): bool = all {
-    deliverableTasksIn(graph,2).contains(task),
+    liveTasks(tickets.get(2)).contains(task),
     apply(decideTaskDone(graph, 2, task,
       EvaluationResultReport({ result: producedResult(tickets.get(2), task),
         verdict: EvaluatorPass }),
-      ReworkEvaluationFailure)) }
-  action wr: bool = all { reducibleWork.contains(2), apply(decideWorkReduce(graph,2)) }
+      _ => ReworkEvaluationFailure)) }
   run stagedPlanWitness = init.then(release).then(doDispatch)
-    .then(doneWork(workTaskOf(2, 1))).then(wr)
+    .then(doneWork(workTaskOf(2, 1)))
     .then(pass(evaluatorTaskIdentity(2, 1, 1, 1, 1)))
     .expect(and { tickets.get(2).phase == Evaluation,
-      lastStep.label == "eval-stage-passed",
-      lastStep.transitions == [{ticket:2, from:Evaluation, to:Evaluation}],
+      lastEvent == "TicketEvaluationProgressed",
+      lastObligations.length() == 1, not(stageAdvanceNever),
       liveTasks(tickets.get(2)) == Set(evaluatorTaskIdentity(2, 1, 2, 1, 1)),
       allInvariants })
     .then(pass(evaluatorTaskIdentity(2, 1, 2, 1, 1)))
@@ -270,33 +269,33 @@ module chuggy_witness_gate_test {
     all{readyTickets.contains(j),apply(decideDispatch(graph, j, source))}
   action td(j:int,task:TaskIdentity):bool=
     nondet accepted = acceptedSources.oneOf()
-    all{deliverableTasksIn(graph,j).contains(task),
+    all{liveTasks(tickets.get(j)).contains(task),
       apply(decideTaskDone(graph,j,task,
         WorkResultReport({result: producedResult(tickets.get(j), task),
           acceptedSourceRef: accepted}),
-        ReworkEvaluationFailure))}
-  action pass(j:int,task:TaskIdentity):bool=all{deliverableTasksIn(graph,j).contains(task),
+        _ => ReworkEvaluationFailure))}
+  action pass(j:int,task:TaskIdentity):bool=all{liveTasks(tickets.get(j)).contains(task),
     apply(decideTaskDone(graph,j,task,
       EvaluationResultReport({result: producedResult(tickets.get(j), task),
         verdict: EvaluatorPass}),
-      ReworkEvaluationFailure))}
-  action wr(j:int):bool=all{reducibleWork.contains(j),apply(decideWorkReduce(graph,j))}
-  action resolve(j:int,o:FinalizationOutcome):bool=all{tickets.get(j).phase==Finalization,apply(decideFinalizationResult(graph,j,o))}
-  run finalizationSuccessWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(wr(1)).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
-    .expect(and{tickets.get(1).phase==Finalization,lastStep.effects==["RunFinalizer"],
+      _ => ReworkEvaluationFailure))}
+  action resolve(j:int,o:FinalizationOutcome):bool=all{tickets.get(j).phase==Finalization,apply(decideFinalizationResult(graph,j,o,aFinalizationEvidence))}
+  run finalizationSuccessWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
+    .expect(and{tickets.get(1).phase==Finalization,lastEvent=="TicketEvaluationPassed",
+      lastObligations==[finalize(tickets.get(1),finalizationOperationOf(tickets.get(1)))],
       not(revocableTickets.contains(1)),allInvariants})
     .then(resolve(1,FinalizationSucceeded)).expect(and{tickets.get(1).phase==Done,allInvariants})
 
   /// A finalizer that reports failure sends the ticket back to work, every
   /// time: there is no wall on this edge. The second cycle's judgement is a
   /// SECOND instance, which is what makes the history a list.
-  run safeAbortReworkWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(wr(1)).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
+  run safeAbortReworkWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
     .then(resolve(1,FinalizationNeedsWork)).expect(and{tickets.get(1).phase==Work,
-      lastStep.label=="rework-started finalization_needs_work",allInvariants})
-    .then(td(1,workTaskOf(1,2))).then(wr(1)).then(pass(1,evaluatorTaskIdentity(1,2,1,1,1)))
+      lastEvent=="TicketFinalizationNeedsWork",allInvariants})
+    .then(td(1,workTaskOf(1,2))).then(pass(1,evaluatorTaskIdentity(1,2,1,1,1)))
     .expect(and{tickets.get(1).evaluations.length()==2,allInvariants})
     .then(resolve(1,FinalizationNeedsWork)).expect(and{tickets.get(1).phase==Work,
-      lastStep.label=="rework-started finalization_needs_work",allInvariants})
+      lastEvent=="TicketFinalizationNeedsWork",allInvariants})
 
   /// A finalizer that reaches NO result parks the ticket, and the desk's
   /// resume runs the finalizer again — the only resume that re-runs the step
@@ -304,17 +303,18 @@ module chuggy_witness_gate_test {
   /// is neither revocable nor retryable, so before this wall the ticket sat
   /// there until the environment moved.
   action resume(j:int):bool=all{retryableEscalated.contains(j),apply(decideResumeTicket(graph,j))}
-  run finalizationUnavailableWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(wr(1)).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
+  run finalizationUnavailableWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
     .then(resolve(1,FinalizationResultUnavailable)).expect(and{tickets.get(1).phase==Escalated,
-      lastStep.label=="ticket-escalated finalization_unavailable_escalated",
+      lastEvent=="TicketFinalizationUnavailable",
       tickets.get(1).escalation==FinalizationUnavailableEscalated,
       resumeOf(tickets.get(1).escalation)==ResumeFinalization,
       retryableEscalated.contains(1),allInvariants})
     .then(resume(1)).expect(and{tickets.get(1).phase==Finalization,
-      lastStep.effects==["RunFinalizer"],tickets.get(1).escalation==NoEscalation,allInvariants})
+      lastEvent=="TicketFinalizationResumed",tickets.get(1).finalizationGeneration==2,
+      tickets.get(1).escalation==NoEscalation,allInvariants})
     .then(resolve(1,FinalizationSucceeded)).expect(and{tickets.get(1).phase==Done,allInvariants})
 
-  run revokeBoundaryWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(wr(1)).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
+  run revokeBoundaryWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
     .expect(and{not(revocableTickets.contains(1)),allInvariants})
 }
 

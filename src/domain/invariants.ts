@@ -2,7 +2,7 @@
  * The safety invariants, one predicate per name `model/domain.qnt` declares.
  *
  * EVERY ONE IS A PURE FUNCTION OF A STEP VIEW — the states either side of a
- * decision and the record it wrote. That is what lets the same predicates
+ * decision and the decision itself. That is what lets the same predicates
  * judge a replayed golden, a randomized walk and a unit fixture without any of
  * them knowing which is which.
  *
@@ -17,25 +17,35 @@ import { releasedTicketValid, type Config } from "./config.ts";
 import { liveTickets, ticketAt } from "./ticketGraph.ts";
 import { coveredSet, stuckSet, subsetOf } from "./derived.ts";
 import type {
+  LastDecision,
   TicketGraph,
-  StepRecord,
   Ticket,
 } from "./generated/modelTypes.ts";
 import { type TicketId } from "./ids.ts";
-import { taskIdentityEquals, taskIdentityValid, workTaskOf } from "./task.ts";
+import { taskIdentityValid } from "./task.ts";
 import { instanceEquals, instanceValid, stagesEqual } from "./evaluation.ts";
 import { waitsOn } from "./enablement.ts";
 import {
+  artifactOf,
   currentInstance,
   evaluationSpawnTotal,
   instanceBlocked,
+  liveTasks,
   runningStageIndex,
 } from "./ticket.ts";
+import { decisionValid } from "./decisionValid.ts";
+import { evolve } from "./evolve.ts";
+import { graphEquals } from "./equality.ts";
+import { isTerminalPhase } from "./phase.ts";
 
-/** What one invariant is evaluated against: the last decision, and the states either side of it. */
+/**
+ * What one invariant is evaluated against: the state the last decision found,
+ * that decision, and the state now. A step that decides nothing carries the
+ * first two unchanged.
+ */
 export interface StepView {
   readonly pre: TicketGraph;
-  readonly rec: StepRecord;
+  readonly last: LastDecision;
   readonly post: TicketGraph;
 }
 
@@ -78,40 +88,28 @@ export const revokedNeverCompletes: Invariant = (_config, view) =>
 export const artifactWellFormed: Invariant = (_config, view) =>
   everyLiveTicket(
     view.post,
-    (t) => t.phase !== "Done" || t.artifact !== "NoArtifact",
+    (t) => t.phase !== "Done" || artifactOf(t) !== "NoArtifact",
   );
 
-/** Terminal outcomes absorb: no transition ever leaves one. */
+/** Terminal outcomes absorb: a ticket the last decision found Done or Revoked is still in that phase. */
 export const terminalsAbsorbing: Invariant = (_config, view) =>
-  view.rec.transitions.every((t) => !["Done", "Revoked"].includes(t.from));
+  liveTickets(view.pre).every((id) => {
+    const before = ticketAt(view.pre, id).phase;
+    if (!isTerminalPhase(before)) return true;
+    const after = view.post.tickets.get(id);
+    return after !== undefined && after.phase === before;
+  });
 
 /**
  * The desk's one equivalence. A ticket names a wall exactly while it is
  * parked; where that wall resumes is derived from it and total, so a desk task
- * cannot offer a continuation the deciders would refuse.
+ * cannot offer a way on the deciders would refuse.
  */
 export const deskConsistent: Invariant = (_config, view) =>
   everyLiveTicket(
     view.post,
     (t) => (t.phase === "Escalated") === (t.escalation !== "NoEscalation"),
   );
-
-/**
- * The live task set is the work cycle's one task while Work, and empty
- * everywhere else. It CARRIES NOTHING for evaluation — the running stage owes
- * those obligations and names them — so one stage, a real index and exactly
- * the listed keys are now the instance's own, through the run invariant.
- */
-export const tasksWellFormed: Invariant = (_config, view) =>
-  everyLiveTicket(view.post, (t, id) => {
-    if (t.phase !== "Work") return t.tasks.size === 0;
-    return (
-      t.tasks.size === 1 &&
-      [...t.tasks].every((task) =>
-        taskIdentityEquals(task.identity, workTaskOf(id, t.workCyclesStarted)),
-      )
-    );
-  });
 
 /**
  * Every instance is well-formed by the protocol's own invariant, which chuggy
@@ -192,9 +190,7 @@ export const idsAccounted: Invariant = (_config, view) =>
 
 /** The contract's own predicate over every task the machine is waiting on. */
 export const taskIdentitiesValid: Invariant = (_config, view) =>
-  everyLiveTicket(view.post, (t) =>
-    [...t.tasks].every((task) => taskIdentityValid(task.identity)),
-  );
+  everyLiveTicket(view.post, (t) => liveTasks(t).every(taskIdentityValid));
 
 /**
  * The released definition is well-formed, in every reachable state: the ticket
@@ -216,6 +212,37 @@ export const definitionsWellFormed: Invariant = (config, view) =>
  */
 export const sourcePinned: Invariant = (_config, view) =>
   everyLiveTicket(view.post, (t) => t.source > 0 === t.workCyclesStarted > 0);
+
+/**
+ * The finalization generation is held where an attempt is: positive while the
+ * ticket finalizes or is parked at the finalization wall, and zero while it
+ * has not reached one this cycle.
+ */
+export const finalizationGenerationHeld: Invariant = (_config, view) =>
+  everyLiveTicket(view.post, (t) => {
+    const attempting =
+      t.phase === "Finalization" ||
+      t.escalation === "FinalizationUnavailableEscalated";
+    const before =
+      t.phase === "Pending" || t.phase === "Work" || t.phase === "Evaluation";
+    return (
+      (!attempting || t.finalizationGeneration > 0) &&
+      (!before || t.finalizationGeneration === 0)
+    );
+  });
+
+/** The last decision is valid where it was taken (`decisionValid`). */
+export const decisionsValid: Invariant = (_config, view) =>
+  view.last === "NoDecision" || decisionValid(view.pre, view.last.value);
+
+/**
+ * A decided event is never the identity: the event the machine decides at a
+ * state moves that state. It is what lets a journal's legality check refuse
+ * an inert row without refusing one the machine decided.
+ */
+export const eventsNeverIdentity: Invariant = (_config, view) =>
+  view.last === "NoDecision" ||
+  !graphEquals(evolve(view.pre, view.last.value.event), view.pre);
 
 /**
  * Everything this ticket transitively waits on, as a bounded fixpoint over
@@ -275,13 +302,18 @@ export const invariantBundle: readonly NamedInvariant[] = [
   { invariant: "artifactWellFormed", holds: artifactWellFormed },
   { invariant: "terminalsAbsorbing", holds: terminalsAbsorbing },
   { invariant: "deskConsistent", holds: deskConsistent },
-  { invariant: "tasksWellFormed", holds: tasksWellFormed },
   { invariant: "evaluationsWellFormed", holds: evaluationsWellFormed },
   { invariant: "evaluationsMonotone", holds: evaluationsMonotone },
   { invariant: "idsAccounted", holds: idsAccounted },
   { invariant: "taskIdentitiesValid", holds: taskIdentitiesValid },
   { invariant: "definitionsWellFormed", holds: definitionsWellFormed },
   { invariant: "sourcePinned", holds: sourcePinned },
+  {
+    invariant: "finalizationGenerationHeld",
+    holds: finalizationGenerationHeld,
+  },
+  { invariant: "decisionsValid", holds: decisionsValid },
+  { invariant: "eventsNeverIdentity", holds: eventsNeverIdentity },
   { invariant: "depsAcyclic", holds: depsAcyclic },
   { invariant: "ticketIdsWellFormed", holds: ticketIdsWellFormed },
   { invariant: "stuckSubsetCovered", holds: stuckSubsetCovered },

@@ -36,3 +36,8 @@ export function isTerminalPhase(phase: Phase): boolean {
 export const nonTerminalPhaseTags: readonly Phase[] = phaseTags.filter(
   (phase) => !isTerminalPhase(phase),
 );
+
+/** Revocation stops before finalization and cannot rewrite a terminal outcome. */
+export function revocationAllowed(phase: Phase): boolean {
+  return phase !== "Done" && phase !== "Revoked" && phase !== "Finalization";
+}

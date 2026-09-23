@@ -32,7 +32,7 @@ function rowOf(configuration: unknown): ExecutionRow {
     task: "1",
     task_kind: "Work",
     stage: null,
-    source_request: "1:0:SpawnWork",
+    source_request: "1:0:ExecuteTask",
     input_bundle: "1:0:InputBundle",
     input_bundle_digest: "b".repeat(64),
     source_seq: "1",

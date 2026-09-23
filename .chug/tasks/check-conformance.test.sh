@@ -101,18 +101,18 @@ run_gate "$WORK/readonly"
 chmod -R u+w "$WORK/readonly"
 check "a corpus it cannot write to still replays clean" 0 "$RC" "replayed clean"
 
-# --- A record the model never emitted ----------------------------------------
+# --- A decision the model never took ------------------------------------------
 
 fixture "$WORK/tampered"
 node -e '
 const fs = require("fs")
 const doc = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
 const lastStep = doc.vars.find((v) => v.endsWith("::lastStep"))
-doc.states[1][lastStep].label = "a-label-this-machine-never-emits"
+doc.states[1][lastStep].value.event.value.content = { "#bigint": "999999" }
 fs.writeFileSync(process.argv[1], JSON.stringify(doc, null, 2) + "\n")
 ' "$WORK/tampered/$GOLDEN.itf.json"
 run_gate "$WORK/tampered"
-check "a step record that is not the model's is a finding" 1 "$RC" "the step record diverged"
+check "a decision that is not the model's is a finding" 1 "$RC" "the decision diverged"
 grep -qF "$GOLDEN state 1" "$OUT" || {
 	echo "FAIL - the finding did not name the golden and the state a reader has to open"
 	fail=$((fail + 1))

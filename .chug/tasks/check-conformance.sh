@@ -1,6 +1,6 @@
 #!/bin/sh
 # Every step of every committed golden replays through this implementation's own
-# deciders, reproducing the model's step record and post-state exactly, with the
+# deciders, reproducing the model's decision and post-state exactly, with the
 # whole invariant bundle evaluated on every state either side of the step.
 #
 # `model/` is proved and it emits the corpus, so the corpus is the
@@ -21,9 +21,9 @@
 #     action was enabled, so no guard is ever consulted and a guard that drifted
 #     replays green on every step. `test/domain/enablement.test.ts` is their
 #     evidence and is the whole of it.
-#   - NOT EVERY ARM OF EVERY DECIDER. The corpus's coverage claim is per step
-#     label and per exemption arm, and a decider has arms that carry a label
-#     some other arm already fired. Those are `test/domain/deciders.test.ts`'s.
+#   - NOT EVERY ARM OF EVERY DECIDER. The corpus's coverage claim is per
+#     event and per named decision, and a decider has arms that take an event
+#     some other arm already took. Those are `test/domain/deciders.test.ts`'s.
 #   - NOT THE INVARIANTS AGAINST THE MACHINE. The states here are the model's
 #     own OUTPUT. What stands behind `allInvariants` in this tree is the
 #     unseeded randomized run `.chug/tasks/check-model.sh` makes over the

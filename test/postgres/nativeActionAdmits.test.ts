@@ -31,7 +31,7 @@ import {
   type ProjectMemory,
 } from "../../src/interpreter/projectWriter.ts";
 import type { NativeActionResolution } from "../../src/interpreter/ticketCommand.ts";
-import { plainAuthoring, plainDisposition } from "../actor/harness.ts";
+import { plainAuthoring } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   postgresHarnessCompletion,
@@ -50,7 +50,7 @@ const subject = postgresReadHarness();
 /** The most decisions one reported task can enqueue, which bounds every drain below. */
 const admitsDecisionsMax = 8;
 
-/** Decides everything the project's queue holds, which is how a continuation reaches its writer. */
+/** Decides everything the project's queue holds, which is how an admitted answer reaches its writer. */
 async function admitsDrain(
   partition: Partition,
   memory: ProjectMemory,
@@ -87,7 +87,6 @@ async function admitsReport(
       id(1),
       task,
       postgresHarnessReport(memory.graph, task, verdict),
-      plainDisposition,
     ),
   );
   return admitsDrain(partition, memory);

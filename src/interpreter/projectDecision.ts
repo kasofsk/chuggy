@@ -35,6 +35,10 @@
  * which of the offered answers was given, and the head and the projection are
  * exactly as they were.
  *
+ * A DEFERRAL SETTLES NOTHING AND COUNTS ITSELF. The input stays pending and
+ * its deferred passes go up by one, so the writer that takes it next knows how
+ * many passes a transient source has already cost it.
+ *
  * A REFUSAL WRITES NO ENTRY. It settles the decision input
  * and moves nothing else, so the head, the projection and the journal are
  * exactly as they were — which is what makes a refusal replayable as an
@@ -137,9 +141,10 @@ export const projectTicketWriterAuthorityKind: AuthorityKind = asAuthorityKind(
   "ProjectTicketWriter",
 );
 
-export type DecisionCause =
-  | { readonly kind: "Operation"; readonly id: OperationId }
-  | { readonly kind: "Continuation"; readonly id: string };
+export interface DecisionCause {
+  readonly kind: "Operation";
+  readonly id: OperationId;
+}
 
 /**
  * One row of the primary projection: where a ticket currently stands, whether
@@ -202,7 +207,6 @@ export interface ExecutionRequestPlan {
 
 export interface NativeActionPlan {
   readonly action: string;
-  readonly effectPosition: number;
   readonly ticket: TicketId;
   readonly version: number;
   readonly kind: "TicketEscalation";
@@ -224,14 +228,6 @@ export interface NativeActionAnswer {
 }
 
 export interface DecisionMaterialization {
-  readonly continuation?: {
-    readonly continuation: string;
-    readonly kind: "ReduceWork";
-    readonly ticket: TicketId;
-    readonly expectedTicketVersion: number;
-    readonly expectedPhase: Phase;
-    readonly taskSetGeneration: number;
-  };
   readonly actions: readonly NativeActionPlan[];
   readonly execution: readonly ExecutionRequestPlan[];
   readonly finalization: readonly {
@@ -267,7 +263,7 @@ export type DecisionOutcome =
     }
   | { readonly outcome: "Refused"; readonly code: RefusalCode }
   | { readonly outcome: "Answered"; readonly answer: NativeActionAnswer }
-  | { readonly outcome: "Stale" };
+  | { readonly outcome: "Deferred" };
 
 /** One decision offered for commit: what authorizes it, what caused it, and what it writes. */
 export interface Decision {
@@ -286,8 +282,7 @@ export type DecisionInputOutcome =
   | { readonly settled: "Succeeded"; readonly seq: number }
   | { readonly settled: "Refused"; readonly code: RefusalCode }
   | { readonly settled: "Answered" }
-  | { readonly settled: "Cancelled" }
-  | { readonly settled: "Stale" };
+  | { readonly settled: "Cancelled" };
 
 /**
  * What a decision found. `Committed` carries the lease the commit advanced, so
@@ -297,7 +292,7 @@ export type Decided =
   | { readonly decided: "Committed"; readonly lease: Lease }
   | { readonly decided: "Refused" }
   | { readonly decided: "Answered" }
-  | { readonly decided: "Stale" }
+  | { readonly decided: "Deferred" }
   | {
       readonly decided: "AlreadyTerminal";
       readonly outcome: DecisionInputOutcome;

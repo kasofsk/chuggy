@@ -57,14 +57,14 @@ const pinnedGenesis =
 
 /** The wire text of the shared fixture history, entry by entry. */
 const pinnedWire: readonly string[] = [
-  '{"seq":1,"event":{"type":"CreateTicket","value":{"id":1,"content":21,"dependencies":[],"workConfiguration":{"workload":22,"inputs":23,"executionRequirements":24,"resultContract":25},"evaluationPlan":{"stages":[{"key":1,"evaluators":[{"key":1,"task":{"workload":1,"inputs":2,"executionRequirements":3,"resultContract":4}}]}]},"finalizationConfiguration":26}},"rec":{"label":"ticket-released","transitions":[],"effects":[]}}',
-  '{"seq":2,"event":{"type":"Dispatch","value":{"ticket":1,"source":9}},"rec":{"label":"dispatch","transitions":[{"ticket":1,"from":"Pending","to":"Work"}],"effects":["SpawnWorkTasks"]}}',
+  '{"seq":1,"event":{"type":"TicketCreated","value":{"id":1,"content":21,"dependencies":[],"workConfiguration":{"workload":22,"inputs":23,"executionRequirements":24,"resultContract":25},"evaluationPlan":{"stages":[{"key":1,"evaluators":[{"key":1,"task":{"workload":1,"inputs":2,"executionRequirements":3,"resultContract":4}}]}]},"finalizationConfiguration":26}}}',
+  '{"seq":2,"event":{"type":"TicketDispatched","value":{"ticket":1,"source":9}}}',
 ];
 
 /** The chain those bytes produce under that partition, starting from its genesis. */
 const pinnedDigests: readonly string[] = [
-  "65eaedb32f2e373f02e900290928568163a724cc79f04aef2cb686c43fc8178d",
-  "58eea09723a89e9c0c86f446d2b81679676b5a72ef5e247cc99ecd17dfa421a1",
+  "4595e93b722f23f83862a05de58676f755af25ab0fd792a0bc6e0b0efa7e6353",
+  "d06cc99da23f8340ecba5deeadb58e7de51312c85ee68e47b8ac7dfbd07e9d73",
 ];
 
 test("the encoder writes the bytes these vectors were taken from", () => {

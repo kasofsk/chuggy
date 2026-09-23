@@ -1177,7 +1177,16 @@ test("the completion command carries the report its work task terminated under",
               },
               report: {
                 type: "TerminalFailureReport",
-                value: { evidence: 1, kind: "ProcessFailure" },
+                value: {
+                  failure: {
+                    task: {
+                      type: "WorkTask",
+                      value: { ticket: Number(fixture.ticket), cycle: 1 },
+                    },
+                    evidence: 1,
+                  },
+                  kind: "ProcessFailure",
+                },
               },
             },
           },
@@ -1348,7 +1357,16 @@ test("a definitive inability blocks the execution at the wall and reports it una
         command_tag: "TaskDone",
         report: {
           type: "TerminalFailureReport",
-          value: { evidence: 1, kind: "ExecutionUnavailableFailure" },
+          value: {
+            failure: {
+              task: {
+                type: "WorkTask",
+                value: { ticket: Number(fixture.ticket), cycle: 1 },
+              },
+              evidence: 1,
+            },
+            kind: "ExecutionUnavailableFailure",
+          },
         },
       },
     ],

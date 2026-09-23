@@ -36,7 +36,9 @@ ticket-service role is granted INSERT and SELECT and deliberately not UPDATE or
 DELETE: a runtime that could rewrite history would make replay an opinion.
 Its identity is that primary key, and `seq` is the project's head plus one,
 so the identity and the concurrency control are the same value. It is
-changed by the decision transaction and by nothing else. Unfinished work
+changed by the decision transaction and by nothing else, and
+`journal_entry_is_an_event` refuses on insert a row that is not its sequence
+and one ticket event. Unfinished work
 does not exist for it — an entry is committed or it was rolled back — which
 is the whole point of putting the head in the same transaction.
 

@@ -14,13 +14,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { aDispatchSource } from "../../src/domain/config.ts";
+import {
+  aDispatchSource,
+  aFinalizationEvidence,
+} from "../../src/domain/config.ts";
 import {
   dispatchEvent,
   finalizationResultEvent,
   releaseTicketEvent,
   taskDoneEvent,
-  workReduceEvent,
 } from "../../src/actor/decisionEvent.ts";
 import {
   obligationsHold,
@@ -46,8 +48,9 @@ import { id, producedReport } from "../domain/fixtures.ts";
 import {
   assertStep,
   firstJudgement,
+  lastEventOf,
   plainDefinitionOf,
-  plainDisposition,
+  plainPolicy,
   refinementInstance,
   stepEmit,
   walkToFirstJudgement,
@@ -65,16 +68,26 @@ function phaseDispatchDoubleSpend(): ActorState {
     config,
     state,
     releaseTicketEvent(plainDefinitionOf(1)),
-    "ticket-released",
+    "TicketCreated",
   );
-  state = effectCrash(config, state, dispatchEvent(id(1), aDispatchSource));
+  state = effectCrash(
+    config,
+    state,
+    dispatchEvent(id(1), aDispatchSource),
+    plainPolicy,
+  );
   assert.equal(state.orphans.length, 1);
   assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Pending");
   assert.equal(worldSpawns(state, id(1)), 1);
   assert.equal(journalSpawns(state, id(1)), 0);
   assertStep(config, state, "a work set the journal never decided", spentWorld);
   assert.ok(obligationsHold(config, state, refinementCore));
-  state = journalStep(config, state, dispatchEvent(id(1), aDispatchSource));
+  state = journalStep(
+    config,
+    state,
+    dispatchEvent(id(1), aDispatchSource),
+    plainPolicy,
+  );
   assertStep(config, state, "the orphan against the re-decided step", [
     "journalCoversWorld",
   ]);
@@ -100,32 +113,24 @@ function phaseDuplicateCycle(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(
-      id(1),
-      workTaskOf(1, 1),
-      producedReport(workTaskOf(1, 1)),
-      plainDisposition,
-    ),
-    "task-done",
-    spentWorld,
-  );
-  state = stepEmit(
-    config,
-    state,
-    workReduceEvent(id(1)),
-    "work-passed",
+    taskDoneEvent(id(1), workTaskOf(1, 1), producedReport(workTaskOf(1, 1))),
+    "TicketWorkResultAccepted",
     spentWorld,
   );
   state = stepEmit(
     config,
     state,
     firstJudgement("EvaluatorPass"),
-    "eval-passed",
+    "TicketEvaluationPassed",
     spentWorld,
   );
   assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Finalization");
-  const succeeded = finalizationResultEvent(id(1), "FinalizationSucceeded");
-  state = effectCrash(config, state, succeeded);
+  const succeeded = finalizationResultEvent(
+    id(1),
+    "FinalizationSucceeded",
+    aFinalizationEvidence,
+  );
+  state = effectCrash(config, state, succeeded, plainPolicy);
   assert.equal(state.orphans.length, 2);
   assert.equal(worldCompletions(state, id(1)), 1);
   assert.equal(journalCompletions(state, id(1)), 0);
@@ -138,7 +143,7 @@ function phaseDuplicateCycle(state: ActorState): void {
     spentWorld,
   );
   assert.ok(obligationsHold(config, state, refinementCore));
-  state = journalStep(config, state, succeeded);
+  state = journalStep(config, state, succeeded, plainPolicy);
   state = emitNext(state);
   assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Done");
   assert.equal(worldCompletions(state, id(1)), 2);
@@ -157,8 +162,8 @@ test("the duplicate dispatch and the duplicate completion, one effect-first cras
 
 test("the rework crash: the fan-out launches and the step dies with the crash", () => {
   let state = walkToFirstJudgement(config, actorInit());
-  const dissenting = firstJudgement("EvaluatorFail", "ReworkEvaluationFailure");
-  state = effectCrash(config, state, dissenting);
+  const dissenting = firstJudgement("EvaluatorFail");
+  state = effectCrash(config, state, dissenting, plainPolicy);
   assert.equal(state.orphans.length, 1);
   const recovered = ticketAt(memoryGraph(state), id(1));
   assert.equal(recovered.phase, "Evaluation");
@@ -171,8 +176,8 @@ test("the rework crash: the fan-out launches and the step dies with the crash", 
     spentWorld,
   );
   assert.ok(obligationsHold(config, state, refinementCore));
-  state = journalStep(config, state, dissenting);
-  assert.equal(state.view.rec.label, "rework-started eval_failure");
+  state = journalStep(config, state, dissenting, plainPolicy);
+  assert.equal(lastEventOf(state), "TicketEvaluationReworkStarted");
   state = emitNext(state);
   assert.equal(worldSpawns(state, id(1)), 3);
   assert.equal(journalSpawns(state, id(1)), 2);

@@ -6,8 +6,7 @@
  * counterpart here would otherwise cost nothing: every existing check would
  * stay green, the replay would stay green, and this tree would quietly be
  * proving less than the specification does. Reading the model's own bundle is
- * what turns that into a failure, and it is the mechanism `test/golden/corpus.ts`
- * already uses for the label and exemption-arm rosters.
+ * what turns that into a failure.
  *
  * THE WITNESSES ARE CHECKED OUT rather than in. The model expects them
  * violated, so one folded into the bundle would make a run report a failure
@@ -80,7 +79,7 @@ test("the bundle's verdict is exactly an empty list of failures", () => {
   const views = [
     healthy,
     initialView(fleetBut(fleet, 1, { spawned: 99 })),
-    { ...healthy, rec: { ...healthy.rec, label: "dispatch" } },
+    { ...healthy, pre: fleetBut(fleet, 0, {}) },
   ];
   for (const view of views) {
     assert.equal(
@@ -96,7 +95,9 @@ test("the bundle is green on a fleet in mid-flight, so no red below is a member 
 });
 
 test("a failure names the members that failed rather than collapsing to one answer", () => {
-  const broke = initialView(fleetBut(fleet, 0, { artifact: "NoArtifact" }));
+  const broke = initialView(
+    fleetBut(fleet, 0, { evaluations: [], spawned: 1 }),
+  );
   assert.deepEqual(failedInvariants(config, broke), ["artifactWellFormed"]);
   assert.ok(!allInvariants(config, broke));
 });

@@ -42,6 +42,7 @@ import { actorInit, journalStep } from "../../src/actor/state.ts";
 import {
   plainAuthoring,
   plainDefinitionOf,
+  plainPolicy,
   refinementInstance,
 } from "../actor/harness.ts";
 import {
@@ -605,11 +606,13 @@ export function postgresHarnessJournal(): readonly Entry[] {
     refinementInstance,
     actorInit(),
     releaseTicketEvent(plainDefinitionOf(1)),
+    plainPolicy,
   );
   return journalStep(
     refinementInstance,
     released,
     dispatchEvent(id(1), aDispatchSource),
+    plainPolicy,
   ).journal;
 }
 
@@ -634,25 +637,18 @@ export function postgresHarnessDecisionSubmission(
   index: number,
   unique?: string,
 ): Submission {
-  if (index === 0)
+  if (postgresHarnessEntry(index).event.type !== "TicketDispatched")
     throw new Error(
       "postgres harness: releases use postgresHarnessReleaseSubmission",
     );
   return {
     ...postgresHarnessSubmission(partition, label, unique),
-    command:
-      postgresHarnessEntry(index).event.type === "Dispatch"
-        ? {
-            version: 1,
-            command: "ManualDispatch",
-            ticket: id(1),
-            expectedTicketVersion: index,
-          }
-        : {
-            version: 1,
-            command: "Decide",
-            event: asOperationDecisionEvent(postgresHarnessEntry(index).event),
-          },
+    command: {
+      version: 1,
+      command: "ManualDispatch",
+      ticket: id(1),
+      expectedTicketVersion: index,
+    },
   };
 }
 
@@ -723,6 +719,7 @@ export async function postgresHarnessAccept(
   return {
     partition: submission.partition,
     ordinal: accepted.operation.ordinal,
+    deferredPasses: 0,
     priority: "Ordinary",
     source: {
       kind: "Operation",
@@ -739,9 +736,6 @@ export async function postgresHarnessAccept(
 export function postgresHarnessInputOperation(
   input: DecisionInput,
 ): OperationId {
-  if (input.source.kind !== "Operation") {
-    throw new Error("postgres harness: expected an operation decision input");
-  }
   return input.source.operation;
 }
 
@@ -929,8 +923,8 @@ export interface PostgresHarnessDrained {
 }
 
 /**
- * Decides everything the project's queue currently holds, which is how a
- * continuation the last commit emitted reaches the writer that must consume it.
+ * Decides everything the project's queue currently holds, which is how an
+ * answer the last commit accepted reaches the writer that must consume it.
  * A refusal is one of the answers a writer gives, so a fenced input drains and
  * is reported rather than raising.
  */

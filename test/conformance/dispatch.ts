@@ -5,7 +5,7 @@
  * IT IS READ OFF `model/domain.qnt`'s ACTION ROSTER ONE ACTION AT A TIME, and
  * one row is worth reading twice: `settle` has no decider at all. It is the
  * stutter that keeps a quiesced fleet from deadlocking the sampler, so its arm
- * asserts state identity and carries the label the model writes.
+ * decides nothing and the caller carries the last decision the model kept.
  *
  * AN UNKNOWN ACTION THROWS. A trace names its action, and falling through to a
  * neighbouring decider would replay something the model never took while
@@ -20,18 +20,17 @@
  * model, it is a failure the moment the model moves.
  */
 
-import type { Decision } from "../../src/domain/ticketGraph.ts";
 import {
+  alwaysPolicy,
   decideDispatch,
   decideFinalizationResult,
   decideReleaseTicket,
   decideResumeTicket,
   decideRevoke,
   decideTaskDone,
-  decideWorkReduce,
-  settledRecord,
 } from "../../src/domain/deciders.ts";
 import type {
+  SuccessfulTicketDecision,
   TicketGraph,
   StageDefinition,
 } from "../../src/domain/generated/modelTypes.ts";
@@ -56,7 +55,6 @@ export const replayActions: readonly string[] = [
   "revoke",
   "dispatch",
   "taskDone",
-  "workReduce",
   "finalizationResult",
   "resumeTicket",
   "settle",
@@ -78,6 +76,7 @@ export interface Picks {
   readonly task: ItfValue | undefined;
   readonly report: ItfValue | undefined;
   readonly outcome: ItfValue | undefined;
+  readonly evidence: ItfValue | undefined;
 }
 
 /** A drawn set of ticket ids, which no single model type names. */
@@ -95,11 +94,11 @@ function drawnStages(value: ItfValue): readonly StageDefinition[] {
   return raw.map((stage) => decodeStageDefinition(stage));
 }
 
-/** A drawn source reference, which the model draws as a bare integer. */
-function drawnSource(value: ItfValue): number {
+/** A drawn reference — a source or a finalizer's evidence — which the model draws as a bare integer. */
+function drawnReference(value: ItfValue): number {
   const raw = itfToWire(value);
   if (typeof raw !== "number")
-    throw new Error("replay: a source draw is an integer");
+    throw new Error("replay: a reference draw is an integer");
   return raw;
 }
 
@@ -118,14 +117,15 @@ function drawn(
 }
 
 /**
- * Replays one recorded step through this implementation's deciders. The caller
+ * Replays one recorded step through this implementation's deciders, and
+ * answers undefined for the stutter, which decides nothing. The caller
  * guarantees the action was enabled at `pre`, which the golden's existence is.
  */
 export function replayStep(
   pre: TicketGraph,
   action: string,
   picks: Picks,
-): Decision {
+): SuccessfulTicketDecision | undefined {
   const need = (value: ItfValue | undefined, name: string): ItfValue =>
     drawn(value, name, action);
   const j = (): TicketId => decodeTicketId(need(picks.ticket, "j"));
@@ -146,7 +146,7 @@ export function replayStep(
       return decideDispatch(
         pre,
         j(),
-        drawnSource(need(picks.source, "source")),
+        drawnReference(need(picks.source, "source")),
       );
     case "taskDone":
       return decideTaskDone(
@@ -154,22 +154,23 @@ export function replayStep(
         j(),
         decodeTaskIdentity(itfToWire(need(picks.task, "task"))),
         decodeTaskTerminalReport(itfToWire(need(picks.report, "report"))),
-        decodeEvaluationFailureDisposition(
-          itfToWire(need(picks.onFailure, "onFailure")),
+        alwaysPolicy(
+          decodeEvaluationFailureDisposition(
+            itfToWire(need(picks.onFailure, "onFailure")),
+          ),
         ),
       );
-    case "workReduce":
-      return decideWorkReduce(pre, j());
     case "finalizationResult":
       return decideFinalizationResult(
         pre,
         j(),
         decodeFinalizationOutcome(itfToWire(need(picks.outcome, "out"))),
+        drawnReference(need(picks.evidence, "evidence")),
       );
     case "resumeTicket":
       return decideResumeTicket(pre, j());
     case "settle":
-      return { rec: settledRecord(), post: pre };
+      return undefined;
     default:
       throw new Error(`replay: ${action} ${unknownActionMessage}`);
   }

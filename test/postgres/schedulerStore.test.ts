@@ -913,7 +913,22 @@ test("an evaluator whose budget ran out reports a dead process, not a verdict", 
         outcome: "ProcessFailed",
         report: {
           type: "TerminalFailureReport",
-          value: { evidence: project.tasks + 1, kind: "ProcessFailure" },
+          value: {
+            failure: {
+              task: {
+                type: "EvaluationTask",
+                value: {
+                  ticket: 1,
+                  workCycle: 1,
+                  stage: 1,
+                  generation: 1,
+                  evaluator: 1,
+                },
+              },
+              evidence: project.tasks + 1,
+            },
+            kind: "ProcessFailure",
+          },
         },
       },
     ],

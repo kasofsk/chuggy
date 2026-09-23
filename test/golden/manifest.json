@@ -1,7 +1,7 @@
 {
   "quintVersion": "0.32.0",
   "regeneratedBy": ".chug/tasks/emit-goldens.sh",
-  "note": "Every row reproduces byte for byte from the fields beside it. A row with an invariant is aimed: quint is asked to refute 'this label never occurs' and the counterexample is kept. A row with none is an ordinary walk.",
+  "note": "Every row reproduces byte for byte from the fields beside it. A row with an invariant is aimed: quint is asked to refute 'this event is never decided' and the counterexample is kept. A row with none is an ordinary walk.",
   "goldens": [
     {
       "name": "walk",
@@ -15,7 +15,7 @@
       "invariant": "",
       "steps": 30,
       "quintVersion": "0.32.0",
-      "purpose": "The unaimed walk. It is where the ordinary labels come from \u2014 released, dispatched, task-done, settled and the desk-only revoke \u2014 without any of them being asked for."
+      "purpose": "The unaimed walk. It is where the ordinary events come from \u2014 created, dispatched, a work result accepted and the desk-only revoke \u2014 without any of them being asked for."
     },
     {
       "name": "work-execution-unavailable",
@@ -26,8 +26,8 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 32,
-      "invariant": "lastStep.label != \"ticket-escalated work_execution_unavailable_escalated\"",
-      "steps": 7,
+      "invariant": "lastEvent != \"TicketWorkExecutionUnavailable\"",
+      "steps": 5,
       "quintVersion": "0.32.0",
       "purpose": "Infrastructure refuses to run an intact contract. It is not failed work: the set retires as cancelled and the wall names its own reason."
     },
@@ -40,8 +40,8 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 32,
-      "invariant": "lastStep.label != \"ticket-escalated evaluation_blocked_escalated\"",
-      "steps": 7,
+      "invariant": "lastEvent != \"TicketEvaluationBlocked\"",
+      "steps": 10,
       "quintVersion": "0.32.0",
       "purpose": "The same infrastructure refusal against an evaluation set, which is its own wall: the judgement is intact and unmade, so this is the only park whose resume re-enters evaluation. Its pair is work-execution-unavailable, the same refusal one phase earlier."
     },
@@ -54,10 +54,10 @@
       "seed": "0x1",
       "maxSamples": 20000,
       "maxSteps": 60,
-      "invariant": "not(lastStep.label == \"ticket-resumed\" and partialEvaluationResumed)",
-      "steps": 48,
+      "invariant": "not(lastEvent == \"TicketEvaluationResumed\" and partialEvaluationResumed)",
+      "steps": 23,
       "quintVersion": "0.32.0",
-      "purpose": "The blocked wall's own exit, and the only resume that re-asks part of what it interrupted: the stage comes back at the next generation owing the evaluator infrastructure stopped, while the one that answered keeps what it said. Its pair is evaluation-blocked, the park this continues from; the aim is a state and not a label, because every wall's resume carries the same label (mc_chuggy_directed partialEvaluationResumed)."
+      "purpose": "The blocked wall's own exit, and the only resume that re-asks part of what it interrupted: the stage comes back at the next generation owing the evaluator infrastructure stopped, while the one that answered keeps what it said. Its pair is evaluation-blocked, the park this resumes from; the aim adds a state to the event, because the partial re-ask is what the row is for (mc_chuggy_directed partialEvaluationResumed)."
     },
     {
       "name": "eval-stage-passed",
@@ -68,10 +68,10 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 32,
-      "invariant": "lastStep.label != \"eval-stage-passed\"",
+      "invariant": "not(lastEvent == \"TicketEvaluationProgressed\" and lastObligations.length() > 0)",
       "steps": 9,
       "quintVersion": "0.32.0",
-      "purpose": "The stage advance: a stage passes, the next one spawns, and the ticket stays in Evaluation. It is the only step whose transition is a phase to itself."
+      "purpose": "The stage advance: a stage passes, the next one's evaluators are owed, and the ticket stays in Evaluation. It is the only progress that owes tasks."
     },
     {
       "name": "finalization-needs-work",
@@ -82,8 +82,8 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 32,
-      "invariant": "lastStep.label != \"rework-started finalization_needs_work\"",
-      "steps": 11,
+      "invariant": "lastEvent != \"TicketFinalizationNeedsWork\"",
+      "steps": 9,
       "quintVersion": "0.32.0",
       "purpose": "A finalizer reports failure and the ticket re-enters work. There is no wall on this edge: the finalizer that keeps failing keeps buying cycles."
     },
@@ -96,10 +96,10 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 32,
-      "invariant": "lastStep.label != \"ticket-escalated work_failure_escalated\"",
-      "steps": 8,
+      "invariant": "lastEvent != \"TicketWorkProcessFailed\"",
+      "steps": 4,
       "quintVersion": "0.32.0",
-      "purpose": "The work wall: the work task resolves Failed and the cycle escalates, parking the ticket at ResumeWork with an open desk task."
+      "purpose": "The work wall: the work task fails and the cycle escalates, parking the ticket at ResumeWork with an open desk task."
     },
     {
       "name": "rework-started-eval-failure",
@@ -110,8 +110,8 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 32,
-      "invariant": "lastStep.label != \"rework-started eval_failure\"",
-      "steps": 11,
+      "invariant": "lastEvent != \"TicketEvaluationReworkStarted\"",
+      "steps": 10,
       "quintVersion": "0.32.0",
       "purpose": "The Rework disposition on a failing evaluation: the stage retires and the ticket re-enters Work with a fresh work task. Its pair is evaluation-failure-escalated, which is the same failure taken the other way."
     },
@@ -124,8 +124,8 @@
       "seed": "0x1",
       "maxSamples": 20000,
       "maxSteps": 60,
-      "invariant": "lastStep.label != \"ticket-escalated evaluation_failure_escalated\"",
-      "steps": 7,
+      "invariant": "lastEvent != \"TicketEvaluationFailureEscalated\"",
+      "steps": 8,
       "quintVersion": "0.32.0",
       "purpose": "The Escalate disposition on a failing evaluation: the same state as rework-started-eval-failure, parked at the desk instead of reworked."
     },
@@ -138,8 +138,8 @@
       "seed": "0x1",
       "maxSamples": 20000,
       "maxSteps": 60,
-      "invariant": "not(lastStep.label == \"ticket-resumed\" and lastStep.transitions.foldl(false, (b, t) => b or (t.to == Work and tickets.get(t.ticket).evaluations.length() > 0 and match currentInstance(tickets.get(t.ticket)).state { | EvaluationFailed(_) => true | _ => false })))",
-      "steps": 8,
+      "invariant": "not(lastEvent == \"TicketWorkResumed\" and tickets.get(lastEventTicket).evaluations.length() > 0 and match currentInstance(tickets.get(lastEventTicket)).state { | EvaluationFailed(_) => true | _ => false })",
+      "steps": 13,
       "quintVersion": "0.32.0",
       "purpose": "The desk sends an escalated ticket back: the judgement it last reached is a failed one, so this is the evaluation wall's exit, and it re-enters Work with a fresh work task rather than a second opinion on the old artifact."
     },
@@ -152,8 +152,8 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 60,
-      "invariant": "not(lastStep.label == \"ticket-done\" and lastStep.transitions.foldl(false, (b, t) => b or t.from == Finalization))",
-      "steps": 57,
+      "invariant": "lastEvent != \"TicketFinalizationSucceeded\"",
+      "steps": 20,
       "quintVersion": "0.32.0",
       "purpose": "The finalizer draws FinalizationSucceeded and the ticket completes Finalization -> Done. It is the only completion route this machine has: a passing final stage always runs a finalizer first."
     },
@@ -166,10 +166,24 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 60,
-      "invariant": "not(lastStep.label == \"ticket-resumed\" and lastStep.transitions.foldl(false, (b, t) => b or t.to == Finalization))",
+      "invariant": "lastEvent != \"TicketFinalizationResumed\"",
       "steps": 56,
       "quintVersion": "0.32.0",
-      "purpose": "The finalizer reaches no result, the ticket parks at ResumeFinalization, and the desk's resume runs the finalizer again. It is aimed at the resume rather than at the wall so one row carries both halves: a resume into Finalization is the only one this machine has, and only this wall stamps it."
+      "purpose": "The finalizer reaches no result, the ticket parks at ResumeFinalization, and the desk's resume runs the finalizer again. It is aimed at the resume rather than at the wall so one row carries both halves: TicketFinalizationResumed is only ever decided after this wall."
+    },
+    {
+      "name": "revoke-cancels-tasks",
+      "instance": "mc_chuggy",
+      "module": "mc_chuggy",
+      "source": "model/mc/mc_chuggy.qnt",
+      "step": "step",
+      "seed": "0x1",
+      "maxSamples": 60000,
+      "maxSteps": 32,
+      "invariant": "not(lastEvent == \"TicketRevoked\" and lastObligations.length() > 0)",
+      "steps": 7,
+      "quintVersion": "0.32.0",
+      "purpose": "A revoke of a ticket with tasks running: the event owes a CancelTask for each live task, which no other event does. The walk revokes only tickets with nothing running."
     }
   ]
 }
