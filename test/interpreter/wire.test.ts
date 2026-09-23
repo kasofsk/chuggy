@@ -7,9 +7,9 @@
  * each case edits stored text the way something outside this process would and
  * asks what comes back.
  *
- * The constructor roster is walked against `decisionEventTags` rather than
- * against a list written here, because a decision event with no schema arm is
- * exactly the drift a hand-written roster hides.
+ * The constructor rosters are walked against `ticketEventTags` and
+ * `decisionEventTags` rather than against lists written here, because an event
+ * with no schema arm is exactly the drift a hand-written roster hides.
  *
  * THE ROUND TRIP IS THE ENCODE DIRECTION'S ONLY CHECK. The codec is generated
  * from the model, so nothing in this tree states the schema twice; what a
@@ -29,14 +29,16 @@ import {
   resumeTicketEvent,
   revokeEvent,
   taskDoneEvent,
-  workReduceEvent,
   type DecisionEvent,
 } from "../../src/actor/decisionEvent.ts";
-import { recordEquals } from "../../src/actor/equality.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
-import { evaluationTaskOf } from "../../src/domain/task.ts";
+import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import { encodeDecisionEvent } from "../../src/generated/model-api.ts";
+import {
+  ticketEventTags,
+  type TicketEvent,
+} from "../../src/domain/generated/modelTypes.ts";
 import {
   encodeEntry,
   parseEntry,
@@ -48,21 +50,18 @@ import {
 import { asOperationDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
 import {
   plainDefinitionOf,
-  plainDisposition,
+  plainPolicy,
   refinementInstance,
 } from "../actor/harness.ts";
 import { aDispatchSource } from "../../src/domain/config.ts";
-import { id, judgedReport } from "../domain/fixtures.ts";
-import type { StepRecord } from "../../src/domain/generated/modelTypes.ts";
+import {
+  id,
+  judgedReport,
+  resultFor,
+  stoppedReport,
+} from "../domain/fixtures.ts";
 
 const config = refinementInstance;
-
-/** A well-formed record, so a case about a decision event is not also a case about a record. */
-const plainRecord: StepRecord = {
-  label: "dispatch",
-  transitions: [{ ticket: id(1), from: "Pending", to: "Work" }],
-  effects: ["SpawnWorkTasks"],
-};
 
 /** One decision event per constructor, keyed by its own tag so the roster can be checked against the vocabulary. */
 const oneOfEach: Readonly<Record<DecisionEvent["type"], DecisionEvent>> = {
@@ -73,11 +72,87 @@ const oneOfEach: Readonly<Record<DecisionEvent["type"], DecisionEvent>> = {
     id(1),
     evaluationTaskOf(1, 1, 1, 1, 1),
     judgedReport(evaluationTaskOf(1, 1, 1, 1, 1), "EvaluatorFail"),
-    plainDisposition,
   ),
-  WorkReduce: workReduceEvent(id(1)),
-  FinalizationResult: finalizationResultEvent(id(1), "FinalizationNeedsWork"),
+  FinalizationResult: finalizationResultEvent(
+    id(1),
+    "FinalizationNeedsWork",
+    1,
+  ),
   ResumeTicket: resumeTicketEvent(id(1)),
+};
+
+const judge = evaluationTaskOf(1, 1, 1, 1, 1);
+const judged = { ticket: 1, report: judgedReport(judge, "EvaluatorFail") };
+const reworked = {
+  ...judged,
+  evidence: [{ evaluator: 1, resultRef: resultFor(judge).resultRef }],
+};
+const workFailure = {
+  ticket: 1,
+  task: workTaskOf(1, 1),
+  evidence: 1,
+};
+const finalized = { ticket: 1, workCycle: 1, generation: 1, evidence: 1 };
+
+/** One ticket event per constructor, which is every arm a journal row can carry. */
+const eventOfEach: Readonly<Record<TicketEvent["type"], TicketEvent>> = {
+  TicketCreated: { type: "TicketCreated", value: plainDefinitionOf(1) },
+  TicketDispatched: {
+    type: "TicketDispatched",
+    value: { ticket: 1, source: aDispatchSource },
+  },
+  TicketRevoked: { type: "TicketRevoked", value: 1 },
+  TicketWorkResumed: { type: "TicketWorkResumed", value: 1 },
+  TicketEvaluationResumed: { type: "TicketEvaluationResumed", value: 1 },
+  TicketFinalizationResumed: { type: "TicketFinalizationResumed", value: 1 },
+  TicketWorkResultAccepted: {
+    type: "TicketWorkResultAccepted",
+    value: {
+      ticket: 1,
+      result: resultFor(workTaskOf(1, 1)),
+      acceptedSourceRef: aDispatchSource,
+    },
+  },
+  TicketWorkProcessFailed: {
+    type: "TicketWorkProcessFailed",
+    value: workFailure,
+  },
+  TicketWorkExecutionUnavailable: {
+    type: "TicketWorkExecutionUnavailable",
+    value: workFailure,
+  },
+  TicketEvaluationProgressed: {
+    type: "TicketEvaluationProgressed",
+    value: judged,
+  },
+  TicketEvaluationPassed: { type: "TicketEvaluationPassed", value: judged },
+  TicketEvaluationReworkStarted: {
+    type: "TicketEvaluationReworkStarted",
+    value: reworked,
+  },
+  TicketEvaluationFailureEscalated: {
+    type: "TicketEvaluationFailureEscalated",
+    value: reworked,
+  },
+  TicketEvaluationBlocked: {
+    type: "TicketEvaluationBlocked",
+    value: {
+      ticket: 1,
+      report: stoppedReport(judge, "ExecutionUnavailableFailure"),
+    },
+  },
+  TicketFinalizationSucceeded: {
+    type: "TicketFinalizationSucceeded",
+    value: finalized,
+  },
+  TicketFinalizationNeedsWork: {
+    type: "TicketFinalizationNeedsWork",
+    value: finalized,
+  },
+  TicketFinalizationUnavailable: {
+    type: "TicketFinalizationUnavailable",
+    value: finalized,
+  },
 };
 
 /** Through the wire and back, which is the only route a stored entry ever takes. */
@@ -102,34 +177,39 @@ function journaledRelease(): Entry {
     config,
     actorInit(),
     releaseTicketEvent(plainDefinitionOf(1)),
+    plainPolicy,
   );
   const written = state.journal[0];
   assert.ok(written !== undefined);
   return written;
 }
 
-test("a journaled entry survives the wire unchanged, record and all", () => {
+test("a journaled entry survives the wire unchanged", () => {
   const written = journaledRelease();
-  const read = accepted(reread(written));
-  assert.equal(read.seq, written.seq);
-  assert.deepEqual(read.event, written.event);
-  assert.ok(recordEquals(read.rec, written.rec));
+  assert.deepEqual(accepted(reread(written)), written);
 });
 
-test("every decision event this machine declares has a schema arm, and the roster is the vocabulary's", () => {
+test("every ticket event this machine declares has a schema arm, and the roster is the vocabulary's", () => {
   assert.deepEqual(
-    [...Object.keys(oneOfEach)].sort(),
-    [...decisionEventTags].sort(),
+    [...Object.keys(eventOfEach)].sort(),
+    [...ticketEventTags].sort(),
   );
-  for (const [tag, event] of Object.entries(oneOfEach)) {
-    const read = accepted(reread({ seq: 1, event, rec: plainRecord }));
+  for (const [tag, event] of Object.entries(eventOfEach)) {
+    const read = accepted(reread({ seq: 1, event }));
     assert.deepEqual(read.event, event, `${tag} did not survive the wire`);
   }
 });
 
+test("every decision event this machine declares is spelled in a command", () => {
+  assert.deepEqual(
+    [...Object.keys(oneOfEach)].sort(),
+    [...decisionEventTags].sort(),
+  );
+});
+
 test("a release naming a ticket twice is refused, which is the gap between an array and the model's set", () => {
   const written = JSON.parse(
-    encodeEntry({ seq: 1, event: oneOfEach.CreateTicket, rec: plainRecord }),
+    encodeEntry({ seq: 1, event: eventOfEach.TicketCreated }),
   ) as { event: { value: { dependencies: number[] } } };
   written.event.value.dependencies = [1, 1];
   const refused = parseEntry(written);
@@ -140,52 +220,47 @@ test("a release naming a ticket twice is refused, which is the gap between an ar
 
 test("the same release with distinct deps is accepted, so the refusal is about the repeat", () => {
   const written = JSON.parse(
-    encodeEntry({ seq: 1, event: oneOfEach.CreateTicket, rec: plainRecord }),
+    encodeEntry({ seq: 1, event: eventOfEach.TicketCreated }),
   ) as { event: { value: { dependencies: number[] } } };
   written.event.value.dependencies = [1, 2];
   const read = accepted(parseEntry(written));
-  assert.ok(read.event.type === "CreateTicket");
+  assert.ok(read.event.type === "TicketCreated");
   assert.deepEqual(read.event.value.dependencies, new Set([1, 2]));
 });
 
 test("a multi-dep release is written as an array and read back as the set it was", () => {
   const entry: Entry = {
     seq: 1,
-    event: releaseTicketEvent(plainDefinitionOf(1, new Set([2, 1]))),
-    rec: plainRecord,
+    event: {
+      type: "TicketCreated",
+      value: plainDefinitionOf(1, new Set([2, 1])),
+    },
   };
   assert.match(encodeEntry(entry), /"dependencies":\[(1,2|2,1)\]/);
   assert.deepEqual(accepted(reread(entry)), entry);
 });
 
 test("a row is refused, with the field named, for each way the wire can lie", () => {
+  const dispatched = eventOfEach.TicketDispatched;
   const cases: readonly (readonly [string, unknown, RegExp])[] = [
     [
       "a sequence number that is not a whole number",
-      { seq: 1.5, event: oneOfEach.Dispatch, rec: plainRecord },
+      { seq: 1.5, event: dispatched },
       /"seq"/,
     ],
     [
-      "a decision-event tag this machine has not got",
-      { seq: 1, event: { type: "JSquash", value: 1 }, rec: plainRecord },
+      "an event tag this machine has not got",
+      { seq: 1, event: { type: "JSquash", value: 1 } },
       /"event"/,
     ],
     [
-      "a phase outside the vocabulary",
-      {
-        seq: 1,
-        event: oneOfEach.Dispatch,
-        rec: {
-          ...plainRecord,
-          transitions: [{ ticket: 1, from: "PParked", to: "Done" }],
-        },
-      },
-      /"rec",\s+"transitions"/,
+      "a command where an event belongs",
+      { seq: 1, event: oneOfEach.Dispatch },
+      /"event"/,
     ],
-    ["a missing record", { seq: 1, event: oneOfEach.Dispatch }, /"rec"/],
     [
       "a ticket id that is not a whole number",
-      { seq: 1, event: { type: "Dispatch", value: 1.5 }, rec: plainRecord },
+      { seq: 1, event: { type: "TicketRevoked", value: 1.5 } },
       /"event"/,
     ],
     ["nothing at all", null, /received null/],
@@ -198,28 +273,13 @@ test("a row is refused, with the field named, for each way the wire can lie", ()
   }
 });
 
-/**
- * The model types a record's effects as strings, so the wire carries any of
- * them and the vocabulary is enforced by the pure decision planner.
- */
-test("an effect string outside the vocabulary passes the wire, which does not know the vocabulary", () => {
-  const read = accepted(
-    parseEntry({
-      seq: 1,
-      event: oneOfEach.Dispatch,
-      rec: { ...plainRecord, effects: ["Deploy"] },
-    }),
-  );
-  assert.deepEqual(read.rec.effects, ["Deploy"]);
-});
-
 test("a whole journal is refused when it is not a list of rows, and by the index of the row that lied", () => {
   const notAList = parseJournal({ seq: 1 });
   assert.equal(notAList.parsed, "Refused");
   assert.ok(notAList.parsed === "Refused");
   assert.match(notAList.why, /a journal is an array of entries/);
 
-  const good = { seq: 1, event: oneOfEach.Dispatch, rec: plainRecord };
+  const good = { seq: 1, event: eventOfEach.TicketDispatched };
   const badRow = parseJournal([good, { ...good, seq: 1.5 }]);
   assert.equal(badRow.parsed, "Refused");
   assert.ok(badRow.parsed === "Refused");
@@ -233,10 +293,9 @@ test("a whole journal is refused when it is not a list of rows, and by the index
   );
 });
 
-test("a decide carrying a dispatch is refused, as a finalization result, a reduction, a completion and a release are", () => {
+test("a decide carrying a dispatch is refused, as a finalization result, a completion and a release are", () => {
   for (const closed of [
     oneOfEach.FinalizationResult,
-    oneOfEach.WorkReduce,
     oneOfEach.TaskDone,
     oneOfEach.CreateTicket,
     oneOfEach.Dispatch,
@@ -298,7 +357,7 @@ const storedTask = {
 };
 const storedReport = {
   type: "TerminalFailureReport",
-  value: { evidence: 4, kind: "ProcessFailure" },
+  value: { failure: { task: storedTask, evidence: 4 }, kind: "ProcessFailure" },
 };
 
 /** The scheduler's envelope around one completion value, as the store holds it. */
@@ -340,7 +399,25 @@ test("a stored completion names its task and the report it terminated under", ()
               evaluator: 1,
             },
           },
-          report: storedReport,
+          report: {
+            type: "TerminalFailureReport",
+            value: {
+              failure: {
+                task: {
+                  type: "EvaluationTask",
+                  value: {
+                    ticket: id(1),
+                    workCycle: 1,
+                    stage: 1,
+                    generation: 1,
+                    evaluator: 1,
+                  },
+                },
+                evidence: 4,
+              },
+              kind: "ProcessFailure",
+            },
+          },
         },
       },
     },
@@ -348,19 +425,16 @@ test("a stored completion names its task and the report it terminated under", ()
   assert.equal(parseTicketCommand(text).parsed, "Refused");
 });
 
-/**
- * The boundary picks no edge, the cap that picks one living at the writer, so
- * bytes naming a disposition were not written by it.
- */
+/** The boundary writes the ticket, the task and the report, so bytes carrying more were not written by it. */
 test("a stored completion is refused for every field the boundary cannot have written", () => {
   for (const [why, value] of [
     [
-      "a disposition the boundary cannot pick",
+      "a field beside the ones the boundary writes",
       {
         ticket: 1,
         task: storedTask,
         report: storedReport,
-        onFailure: "ReworkEvaluationFailure",
+        edge: "ReworkEvaluationFailure",
       },
     ],
     ["no ticket at all", { task: storedTask, report: storedReport }],

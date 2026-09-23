@@ -57,7 +57,7 @@ import type pg from "pg";
 import { materialDigest } from "../../interpreter/ticketDefinition.ts";
 import { assertNever } from "../../domain/assertNever.ts";
 import type { TaskIdentity } from "../../domain/generated/modelTypes.ts";
-import { decisionEventSubject } from "../../actor/decisionEvent.ts";
+import { eventTicket } from "../../domain/evolve.ts";
 import type { ExecutionTaskKind } from "../../interpreter/executionScheduler.ts";
 import {
   asCanonicalConfiguration,
@@ -122,7 +122,6 @@ function decisionRefusalCode(value: string): RefusalCode {
 function decisionOutcomeOf(row: DecisionCauseRow): DecisionInputOutcome {
   if (row.state === "Cancelled") return { settled: "Cancelled" };
   if (row.state === "Answered") return { settled: "Answered" };
-  if (row.state === "Stale") return { settled: "Stale" };
   if (row.state === "Refused" && row.outcome_code !== null) {
     return { settled: "Refused", code: decisionRefusalCode(row.outcome_code) };
   }
@@ -270,7 +269,7 @@ async function decisionConfiguration(
       ...release,
       canonical: asCanonicalConfiguration(release.configurationCanonical),
     };
-  const ticket = decisionEventSubject(outcome.entry.event);
+  const ticket = eventTicket(outcome.entry.event);
   const found = await client.query<{
     configuration_revision: string;
     configuration_digest: string;
@@ -434,12 +433,13 @@ async function decisionActions(
     );
   }
   for (const action of outcome.materialization.actions) {
+    /** A desk answers no obligation, so it has no position; the column is NOT NULL for the approval rows that copy theirs. */
     await client.query(
       sql`INSERT INTO native_action
        (tenant, project, action, authorizing_seq, effect_position, ticket,
         action_version, kind, escalation, required_capability)
        VALUES (${partition.tenant},${partition.project},${action.action},${seq},
-               ${action.effectPosition},${action.ticket},${action.version},
+               0,${action.ticket},${action.version},
                ${action.kind},${action.escalation},${action.capability})`,
     );
     for (const resolution of action.resolutions) {
@@ -452,37 +452,6 @@ async function decisionActions(
   }
   if (resolved !== undefined)
     await decisionAnswerAction(client, partition, resolved);
-}
-
-async function decisionContinuation(
-  client: pg.PoolClient,
-  partition: Partition,
-  outcome: JournaledOutcome,
-): Promise<void> {
-  const seq = outcome.entry.seq;
-  const continuation = outcome.materialization.continuation;
-  if (continuation !== undefined) {
-    const allocated = await client.query<{ ordinal: string | null }>(
-      sql`UPDATE project SET ingress_next=ingress_next+1
-        WHERE tenant=${partition.tenant} AND project=${partition.project}
-        RETURNING (ingress_next-1)::text AS ordinal`,
-    );
-    const ordinal = allocated.rows[0]?.ordinal;
-    if (ordinal === undefined || ordinal === null)
-      throw new Error("continuation project disappeared");
-    await client.query(
-      sql`INSERT INTO project_continuation
-       (tenant, project, continuation, kind, authorizing_seq, effect_position,
-        ticket, expected_ticket_version, expected_phase, task_set_generation)
-       VALUES (${partition.tenant},${partition.project},${continuation.continuation},
-               ${continuation.kind},${seq},${outcome.entry.rec.effects.length},
-               ${continuation.ticket},${continuation.expectedTicketVersion},
-               ${continuation.expectedPhase},${continuation.taskSetGeneration})`,
-    );
-    await client.query<{ published: string | null }>(
-      sql`SELECT publish_continuation(${partition.tenant},${partition.project},${ordinal}::bigint,${continuation.continuation})::text AS published`,
-    );
-  }
 }
 
 /**
@@ -537,7 +506,6 @@ async function decisionMaterialize(
   await decisionExecution(client, lease.partition, outcome, configuration);
   await decisionFinalization(client, lease.partition, outcome);
   await decisionActions(client, lease.partition, outcome);
-  await decisionContinuation(client, lease.partition, outcome);
 }
 
 async function publishNotification(
@@ -654,7 +622,7 @@ async function decisionAdvanceTicketIdentity(
   partition: Partition,
   outcome: Extract<DecisionOutcome, { outcome: "Journaled" }>,
 ): Promise<void> {
-  if (outcome.entry.event.type !== "CreateTicket") return;
+  if (outcome.entry.event.type !== "TicketCreated") return;
   await client.query(
     sql`UPDATE project SET ticket_next=greatest(ticket_next,${outcome.entry.event.value.id + 1})
       WHERE tenant=${partition.tenant} AND project=${partition.project}`,
@@ -720,15 +688,6 @@ async function decisionApply(
   draftRelease: Decision["draftRelease"],
 ): Promise<Decided> {
   switch (outcome.outcome) {
-    case "Stale":
-      await client.query(
-        sql`UPDATE decision_input SET state='Stale', terminal_at=now(),
-          settled_authority_kind=${projectTicketWriterAuthorityKind},
-          settled_authority_subject=${lease.owner}
-         WHERE tenant=${lease.partition.tenant} AND project=${lease.partition.project}
-           AND input_kind=${String(cause.kind)} AND input_id=${cause.id}`,
-      );
-      return { decided: "Stale" };
     case "Refused":
       await decisionSettle(
         client,

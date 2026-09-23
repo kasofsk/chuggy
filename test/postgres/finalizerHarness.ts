@@ -124,7 +124,6 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import { type ProjectMemory } from "../../src/interpreter/projectWriter.ts";
-import { plainDisposition } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   postgresHarnessDrain,
@@ -458,7 +457,6 @@ export function finalizerTaskDone(
     id(1),
     task,
     postgresHarnessReport(graph, task, verdict),
-    plainDisposition,
   );
 }
 

@@ -58,7 +58,6 @@ import {
   decisionSemanticsVersionCurrent,
   isDecisionSemanticsVersion,
 } from "../../actor/decisionSemantics.ts";
-import type { Config } from "../../domain/config.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
 import type {
   ConfigurationPin,
@@ -123,9 +122,7 @@ function storedJournalRowVerified(
   const cause: DecisionCause | undefined =
     row.cause_kind === "Operation"
       ? { kind: "Operation", id: asOperationId(row.cause_id) }
-      : row.cause_kind === "Continuation"
-        ? { kind: "Continuation", id: row.cause_id }
-        : undefined;
+      : undefined;
   const configuration =
     row.configuration_revision !== null && row.configuration_digest !== null
       ? {
@@ -207,7 +204,7 @@ export async function postgresJournalDispatchContracts(
           `postgres journal: dispatch contract entry is unreadable — ${parsed.why}`,
         );
       const event = parsed.value.event;
-      if (event.type === "CreateTicket") {
+      if (event.type === "TicketCreated") {
         contracts.set(event.value.id, {
           configurationRevision: stored.configuration_revision,
           configurationDigest: stored.configuration_digest,
@@ -408,7 +405,6 @@ async function postgresJournalPartitions(
  */
 export function postgresJournalLegality(
   pool: pg.Pool,
-  config: Config,
 ): RuntimeStoredJournalSource {
   return {
     scan: async (signal) => {
@@ -426,7 +422,7 @@ export function postgresJournalLegality(
         const why =
           stored.parsed === "Refused"
             ? stored.why
-            : storedJournalLegalOn(config, stored.value)
+            : storedJournalLegalOn(stored.value)
               ? undefined
               : "the stored history is not one this image could have decided";
         if (why !== undefined)

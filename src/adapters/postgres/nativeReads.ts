@@ -442,7 +442,7 @@ async function readTicketsByActivity(
              WHERE j.tenant=t.tenant AND j.project=t.project
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->>'type' END)
-                     IN ('ReleaseTicket','CreateTicket')
+                     = 'TicketCreated'
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
@@ -487,7 +487,7 @@ async function readTicketsByIdentity(
              WHERE j.tenant=t.tenant AND j.project=t.project
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->>'type' END)
-                     IN ('ReleaseTicket','CreateTicket')
+                     = 'TicketCreated'
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
@@ -535,7 +535,7 @@ async function readTicketRow(
              WHERE j.tenant=t.tenant AND j.project=t.project
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->>'type' END)
-                     IN ('ReleaseTicket','CreateTicket')
+                     = 'TicketCreated'
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true

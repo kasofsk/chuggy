@@ -52,7 +52,6 @@ export type DecisionMetricOutcome =
   | "Journaled"
   | "Refused"
   | "Answered"
-  | "Stale"
   | "Fenced"
   | "NotActive"
   | "StaleHead"
@@ -75,9 +74,11 @@ export interface TicketServiceMetrics {
   ): void;
   decision(outcome: DecisionMetricOutcome, milliseconds: number): void;
   quantumExhausted(reason: "Count" | "Time"): void;
-  continuation(
-    outcome: "Created" | "Journaled" | "Stale" | "Contradictory",
-  ): void;
+  /**
+   * A decision the writer found contradicting the state it replayed, which
+   * ends the writer's turn rather than landing anything.
+   */
+  contradiction(): void;
   focusedRequest(kind: "Execution" | "Finalization"): void;
   nativeAction(outcome: "Opened" | "Resolved" | "Withdrawn"): void;
 
@@ -99,7 +100,7 @@ export const silentTicketServiceMetrics: TicketServiceMetrics = {
   backpressure: () => undefined,
   decision: () => undefined,
   quantumExhausted: () => undefined,
-  continuation: () => undefined,
+  contradiction: () => undefined,
   focusedRequest: () => undefined,
   nativeAction: () => undefined,
   executionSourceDeferred: () => undefined,

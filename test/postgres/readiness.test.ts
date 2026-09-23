@@ -20,7 +20,7 @@ import {
   type NativeActionResolution,
 } from "../../src/interpreter/ticketCommand.ts";
 import { graphOf, id, producedReport, ticketOn } from "../domain/fixtures.ts";
-import { plainDisposition, refinementInstance } from "../actor/harness.ts";
+import { refinementInstance } from "../actor/harness.ts";
 import {
   postgresHarnessOpen,
   postgresHarnessProject,
@@ -48,12 +48,7 @@ async function completion(
     harness,
     partition,
     operation,
-    taskDoneEvent(
-      id(1),
-      workTaskOf(1, 1),
-      producedReport(workTaskOf(1, 1)),
-      plainDisposition,
-    ),
+    taskDoneEvent(id(1), workTaskOf(1, 1), producedReport(workTaskOf(1, 1))),
   );
   return operation;
 }

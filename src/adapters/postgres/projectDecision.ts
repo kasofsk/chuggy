@@ -72,21 +72,6 @@ export function postgresProjectDecision(
         repeat(materialization.withdrawActionsFor.length, () => {
           metrics.nativeAction("Withdrawn");
         });
-        if (materialization.continuation !== undefined) {
-          observe(() => {
-            metrics.continuation("Created");
-          });
-        }
-      }
-      if (decision.cause.kind === "Continuation") {
-        if (decided.decided === "Committed")
-          observe(() => {
-            metrics.continuation("Journaled");
-          });
-        if (decided.decided === "Stale")
-          observe(() => {
-            metrics.continuation("Stale");
-          });
       }
       return decided;
     },

@@ -17,7 +17,7 @@
  *
  * COMMANDS ARRIVE PARSED AND CLASSIFIED. Structural readability, admission and
  * priority belong to authenticated ingress; this writer alone decides whether
- * the requested domain transition is enabled at its serialized position.
+ * the requested domain command is enabled at its serialized position.
  *
  * THE DISPATCH OBSERVES BEFORE IT DECIDES, AND IT IS THE ONLY COMMAND THAT
  * OBSERVES. The source a dispatch pins is a fact about a remote rather than
@@ -56,26 +56,30 @@
 
 import type { Entry, StoredEntry } from "../actor/journal.ts";
 import { genesis, storedJournalLegalOn } from "../actor/journal.ts";
-import { ticketEquals } from "../actor/equality.ts";
+import { ticketEquals } from "../domain/equality.ts";
 import {
+  decide,
   decisionEventEnabled,
+  decisionEventSubject,
   dispatchEvent,
-  execDecisionEvent,
-  taskDoneEvent,
-  workReduceEvent,
 } from "../actor/decisionEvent.ts";
 import type { DecisionEvent } from "../actor/decisionEvent.ts";
 import type { Config } from "../domain/config.ts";
 import { ticketAt, ticketIds } from "../domain/ticketGraph.ts";
 import type {
   Escalation,
+  SuccessfulTicketDecision,
   TicketGraph,
 } from "../domain/generated/modelTypes.ts";
 import { dependableIn } from "../domain/enablement.ts";
-import { effectFromLabel } from "../domain/effect.ts";
+import {
+  alwaysPolicy,
+  type EvaluationFailurePolicy,
+} from "../domain/deciders.ts";
+import { decisionValid } from "../domain/decisionValid.ts";
+import { evolve } from "../domain/evolve.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
-import type { SchedulerCompletionEvent } from "./ticketCommand.ts";
 import type {
   DispatchSource,
   ExecutionSourceObservationPort,
@@ -146,7 +150,7 @@ export interface ProjectDecided {
 
 /**
  * What the fabric said about the wall one decision parks a ticket at. It
- * travels beside the transition rather than inside it: which escalation a
+ * travels beside the event rather than inside it: which escalation a
  * block is, is the phase it interrupted, and the label is the fabric's account
  * of the wall, which no decider reads and no entry carries.
  */
@@ -221,7 +225,7 @@ async function projectWriterJournal(
       `project writer: the journal could not be replayed — ${loaded.why}`,
     );
   }
-  if (!storedJournalLegalOn(writer.config, loaded.value)) {
+  if (!storedJournalLegalOn(loaded.value)) {
     throw new Error(
       "project writer: the stored journal is not a history this machine could have taken",
     );
@@ -243,7 +247,7 @@ export async function projectWriterLoad(
   const ticketVersions = new Map<number, number>();
   let graph: TicketGraph = genesis;
   for (const row of journal) {
-    const post = execDecisionEvent(graph, row.entry.event).post;
+    const post = evolve(graph, row.entry.event);
     for (const projection of projectionChanges(graph, post))
       ticketVersions.set(projection.ticket, row.entry.seq);
     graph = post;
@@ -276,24 +280,6 @@ export async function projectWriterLoad(
 interface ProjectPlan {
   readonly outcome: DecisionOutcome;
   readonly post: TicketGraph;
-}
-
-function continuationFenceOutcome(
-  memory: ProjectMemory,
-  source: Extract<DecisionInput["source"], { kind: "Continuation" }>,
-): DecisionOutcome | undefined {
-  const ticketId = source.reduction.ticket;
-  if (memory.ticketVersions.get(ticketId) !== source.expectedTicketVersion)
-    return { outcome: "Stale" };
-  const ticket = ticketAt(memory.graph, ticketId);
-  if (
-    ticket.phase !== source.expectedPhase ||
-    ticket.spawned !== source.taskSetGeneration
-  )
-    throw new IntegrityContradiction(
-      "continuation fences contradict authoritative ticket state",
-    );
-  return undefined;
 }
 
 function operationDispatchFence(
@@ -329,30 +315,63 @@ function operationDispatchFence(
     : { outcome: "Refused", code: "SelectionChanged" };
 }
 
+/**
+ * The policy a failing stage of this command's ticket is taken on: the
+ * deployment's rework cap over the ticket replayed to this position, which
+ * `decide` asks only of a completion that concludes a failing stage.
+ */
+function projectWriterFailurePolicy(
+  writer: ProjectTicketWriter,
+  memory: ProjectMemory,
+  command: DecisionEvent,
+): EvaluationFailurePolicy {
+  const held = memory.graph.tickets.get(decisionEventSubject(command));
+  return alwaysPolicy(
+    held === undefined
+      ? "EscalateEvaluationFailure"
+      : reworkDisposition(held, writer.rework.cyclesMax),
+  );
+}
+
+/**
+ * The one decision an enabled command earns at the state in hand, held to
+ * `decisionValid` because every obligation it owes is about to become a row.
+ */
+function projectWriterDecision(
+  writer: ProjectTicketWriter,
+  memory: ProjectMemory,
+  command: DecisionEvent,
+): SuccessfulTicketDecision {
+  const decision = decide(
+    memory.graph,
+    command,
+    projectWriterFailurePolicy(writer, memory, command),
+  );
+  if (!decisionValid(memory.graph, decision))
+    throw new Error(
+      "project writer: a decision owes what its event does not leave owed",
+    );
+  return decision;
+}
+
 function journaledPlan(
   memory: ProjectMemory,
   item: DecisionInput,
   command: DecisionEvent,
+  decision: SuccessfulTicketDecision,
   spawn: SpawnSources,
 ): ProjectPlan {
-  const decision = execDecisionEvent(memory.graph, command);
-  const entry: Entry = {
-    seq: memory.lease.head + 1,
-    event: command,
-    rec: decision.rec,
-  };
+  const post = evolve(memory.graph, decision.event);
+  const entry: Entry = { seq: memory.lease.head + 1, event: decision.event };
   const projection = projectionChanges(
     memory.graph,
-    decision.post,
-    projectWriterEscalationEvidence(item, command, decision.post),
+    post,
+    projectWriterEscalationEvidence(item, command, post),
   );
   const versions = new Map(memory.ticketVersions);
   for (const row of projection) versions.set(row.ticket, entry.seq);
   const contracts = new Map(memory.dispatchContracts ?? []);
-  if (
-    item.source.kind === "Operation" &&
-    item.source.draftRelease !== undefined
-  )
+  if (item.source.draftRelease !== undefined)
     contracts.set(item.source.draftRelease.ticket, {
       configurationRevision: item.source.draftRelease.configurationRevision,
       configurationDigest: item.source.draftRelease.configurationDigest,
@@ -360,10 +379,9 @@ function journaledPlan(
     });
   const materializeView =
     memory.dispatchContracts !== undefined ||
-    (item.source.kind === "Operation" &&
-      item.source.draftRelease !== undefined);
+    item.source.draftRelease !== undefined;
   const candidates = materializeView
-    ? deriveDispatchCandidates(decision.post, versions, contracts)
+    ? deriveDispatchCandidates(post, versions, contracts)
     : undefined;
   return {
     outcome: {
@@ -373,8 +391,9 @@ function journaledPlan(
       materialization: materializationOf(
         item,
         memory.graph,
-        decision.post,
+        post,
         entry,
+        decision.obligations,
         spawn,
       ),
       ...(candidates === undefined
@@ -386,33 +405,8 @@ function journaledPlan(
             },
           }),
     },
-    post: decision.post,
+    post,
   };
-}
-
-/**
- * The completion as this writer decides it: what the boundary settled, plus
- * the edge a failing stage would be taken on. THE PICK IS MADE HERE BECAUSE
- * THIS IS WHERE IT CAN BE — the cap is this service's configuration and the
- * count is read off the ticket replayed to this position, neither of which the
- * scheduler's boundary holds, and it rides every completion because the event
- * is one shape while only a stage that failed consults it.
- */
-function completionEvent(
-  writer: ProjectTicketWriter,
-  memory: ProjectMemory,
-  completion: SchedulerCompletionEvent,
-): DecisionEvent {
-  const ticket = asTicketId(completion.value.ticket);
-  const held = memory.graph.tickets.get(ticket);
-  return taskDoneEvent(
-    ticket,
-    completion.value.task,
-    completion.value.report,
-    held === undefined
-      ? "EscalateEvaluationFailure"
-      : reworkDisposition(held, writer.rework.cyclesMax),
-  );
 }
 
 /**
@@ -428,35 +422,21 @@ function projectWriterPreflight(
   | ProjectPlan
   | { readonly command: DecisionEvent }
   | { readonly dispatch: TicketId } {
-  if (item.source.kind === "Operation") {
-    const fence = operationDispatchFence(memory, item.source);
-    if (fence !== undefined) return { outcome: fence, post: memory.graph };
-    const dispatch = operationDispatchTicket(item);
-    if (dispatch !== undefined) return { dispatch };
-  }
-  if (item.source.kind === "Continuation") {
-    const fenceOutcome = continuationFenceOutcome(memory, item.source);
-    if (fenceOutcome !== undefined)
-      return { outcome: fenceOutcome, post: memory.graph };
-  }
-  const command =
-    item.source.kind === "Operation"
-      ? item.source.completion === undefined
-        ? item.source.resolvedEvent
-        : completionEvent(writer, memory, item.source.completion)
-      : workReduceEvent(item.source.reduction.ticket);
+  const fence = operationDispatchFence(memory, item.source);
+  if (fence !== undefined) return { outcome: fence, post: memory.graph };
+  const dispatch = operationDispatchTicket(item);
+  if (dispatch !== undefined) return { dispatch };
+  const command = item.source.resolvedEvent;
   if (
-    item.source.kind === "Operation" &&
-    (item.source.nativeAction?.open === false ||
-      item.source.finalizationRequest?.open === false)
+    item.source.nativeAction?.open === false ||
+    item.source.finalizationRequest?.open === false
   ) {
     return {
       outcome: { outcome: "Refused", code: "NotEnabled" },
       post: memory.graph,
     };
   }
-  const answer =
-    item.source.kind === "Operation" ? item.source.nativeAction : undefined;
+  const answer = item.source.nativeAction;
   if (command === undefined) {
     /**
      * A release whose draft and configuration contradict each other resolved
@@ -464,10 +444,7 @@ function projectWriterPreflight(
      * deciding transaction's to name behind the fence that retains the
      * revision; this is the refusal that one replaces.
      */
-    if (
-      item.source.kind === "Operation" &&
-      item.source.draftRelease !== undefined
-    )
+    if (item.source.draftRelease !== undefined)
       return {
         outcome: { outcome: "Refused", code: "ConfigurationInvalid" },
         post: memory.graph,
@@ -509,7 +486,6 @@ function executionSourceRefusalCode(evidence: GitEvidence): RefusalCode {
 
 /** The ticket a dispatch command names, absent for every other input. */
 function operationDispatchTicket(item: DecisionInput): TicketId | undefined {
-  if (item.source.kind !== "Operation") return undefined;
   const command = item.source.command;
   return command.command === "ManualDispatch" ||
     command.command === "ProposeDispatch"
@@ -584,24 +560,18 @@ function dispatchSpawnSources(
 async function projectWriterSpawnSources(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
-  command: DecisionEvent,
+  decision: SuccessfulTicketDecision,
 ): Promise<SpawnSources> {
-  const decision = execDecisionEvent(memory.graph, command);
-  const spawn = decision.rec.effects.find((label) => {
-    const effect = effectFromLabel(label);
-    return effect === "SpawnWorkTasks" || effect === "SpawnEvalTasks";
-  });
-  if (spawn === undefined) return {};
-  const spawned =
-    decision.rec.transitions[decision.rec.effects.indexOf(spawn)]?.ticket;
-  if (spawned === undefined)
-    throw new IntegrityContradiction("a spawn effect has no ticket transition");
-  const ticket = asTicketId(spawned);
+  const spawn = decision.obligations.find(
+    (obligation) => obligation.type === "ExecuteTask",
+  );
+  if (spawn?.type !== "ExecuteTask") return {};
+  const ticket = asTicketId(spawn.value.ticket);
   const source = await writer.executionSources.spawnSource({
     partition: memory.lease.partition,
     ticket,
-    source: ticketAt(decision.post, ticket).source,
-    kind: effectFromLabel(spawn) === "SpawnWorkTasks" ? "Work" : "Evaluation",
+    source: ticketAt(evolve(memory.graph, decision.event), ticket).source,
+    kind: spawn.value.task.task.type === "WorkTask" ? "Work" : "Evaluation",
   });
   return source === undefined ? {} : { source };
 }
@@ -647,7 +617,6 @@ function projectWriterEscalationEvidence(
   command: DecisionEvent,
   post: TicketGraph,
 ): TicketEscalationEvidence | undefined {
-  if (item.source.kind !== "Operation") return undefined;
   const source = item.source;
   if (command.type === "TaskDone") {
     const ticket = asTicketId(command.value.ticket);
@@ -671,7 +640,7 @@ function projectWriterEscalationEvidence(
 
 /**
  * The plan a dispatch earns: the source is read first, the event is built
- * around what was read, and only then is the transition weighed — so a client
+ * around what was read, and only then is the command weighed — so a client
  * whose source nobody could read is answered a code and this journal gains
  * nothing. A ticket the graph is not ready to dispatch is still refused
  * `NotEnabled`; the observation is a read of a remote and changes nothing
@@ -699,6 +668,7 @@ async function projectWriterDispatchPlan(
         memory,
         item,
         command,
+        projectWriterDecision(writer, memory, command),
         dispatchSpawnSources(ticket, observed.source),
       )
     : {
@@ -714,11 +684,13 @@ async function projectWriterPlan(
   item: DecisionInput,
   command: DecisionEvent,
 ): Promise<ProjectPlan> {
+  const decision = projectWriterDecision(writer, memory, command);
   return journaledPlan(
     memory,
     item,
     command,
-    await projectWriterSpawnSources(writer, memory, command),
+    decision,
+    await projectWriterSpawnSources(writer, memory, decision),
   );
 }
 
@@ -750,15 +722,11 @@ export async function projectWriterDecide(
     };
   const decided = await writer.decisions.decide({
     lease: memory.lease,
-    cause:
-      item.source.kind === "Operation"
-        ? { kind: "Operation", id: item.source.operation }
-        : { kind: "Continuation", id: item.source.continuation },
+    cause: { kind: "Operation", id: item.source.operation },
     outcome: plan.outcome,
-    ...(item.source.kind === "Operation" &&
-    item.source.draftRelease !== undefined
-      ? { draftRelease: item.source.draftRelease }
-      : {}),
+    ...(item.source.draftRelease === undefined
+      ? {}
+      : { draftRelease: item.source.draftRelease }),
   });
   if (decided.decided !== "Committed") return { memory, decided };
   const ticketVersions = new Map(memory.ticketVersions);
@@ -766,10 +734,7 @@ export async function projectWriterDecide(
   if (plan.outcome.outcome === "Journaled") {
     for (const row of plan.outcome.projection)
       ticketVersions.set(row.ticket, plan.outcome.entry.seq);
-    if (
-      item.source.kind === "Operation" &&
-      item.source.draftRelease !== undefined
-    )
+    if (item.source.draftRelease !== undefined)
       dispatchContracts.set(item.source.draftRelease.ticket, {
         configurationRevision: item.source.draftRelease.configurationRevision,
         configurationDigest: item.source.draftRelease.configurationDigest,
@@ -820,7 +785,7 @@ export async function projectTicketWriterRun(
     } catch (error: unknown) {
       if (error instanceof IntegrityContradiction) {
         observe(() => {
-          metrics.continuation("Contradictory");
+          metrics.contradiction();
         });
         return memory;
       }
@@ -836,8 +801,7 @@ export async function projectTicketWriterRun(
     if (
       result.decided.decided !== "Committed" &&
       result.decided.decided !== "Refused" &&
-      result.decided.decided !== "Answered" &&
-      result.decided.decided !== "Stale"
+      result.decided.decided !== "Answered"
     ) {
       return memory;
     }

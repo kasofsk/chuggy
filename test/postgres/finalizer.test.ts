@@ -411,7 +411,7 @@ test("each relation carries exactly the indexes its recovery and its identities 
       "input_bundle_reference_is_declared_once",
       "input_bundle_reference_pkey",
       "native_action_approves_an_attempt_once",
-      "native_action_effect_is_materialized_once",
+      "native_action_decision_opens_one_desk",
       "native_action_one_open",
       "native_action_pkey",
       "project_repository_is_exclusive",

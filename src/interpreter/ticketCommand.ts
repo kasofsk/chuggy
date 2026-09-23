@@ -38,11 +38,7 @@ export type OperationDecisionEvent = Exclude<
   DecisionEvent,
   {
     readonly type:
-      | "WorkReduce"
-      | "CreateTicket"
-      | "FinalizationResult"
-      | "TaskDone"
-      | "Dispatch";
+      "CreateTicket" | "FinalizationResult" | "TaskDone" | "Dispatch";
   }
 >;
 
@@ -120,7 +116,6 @@ export function asOperationDecisionEvent(
   event: DecisionEvent,
 ): OperationDecisionEvent {
   if (
-    event.type === "WorkReduce" ||
     event.type === "CreateTicket" ||
     event.type === "FinalizationResult" ||
     event.type === "Dispatch" ||
@@ -196,15 +191,11 @@ export interface FinalizationSubmission {
  * built it from the durable execution, attempt and result rows it had already
  * locked — the settled fact itself rather than a binding a writer would
  * resolve a second time, which is the one way this envelope differs from the
- * finalizer's above. THE DISPOSITION IS NOT HERE, because which edge a failed
- * stage is taken on is this deployment's rework cap over the replayed ticket
- * and the boundary holds neither of those, so it says what the task did and
- * leaves the pick to the actor that makes it.
+ * finalizer's above. Which edge a failed stage is taken on is not here: that
+ * is this deployment's rework cap over the replayed ticket, which the writer
+ * hands `decide` as its policy and the boundary holds neither half of.
  */
-export type SchedulerCompletionEvent = {
-  readonly type: "TaskDone";
-  readonly value: Omit<CompletionDecisionEvent["value"], "onFailure">;
-};
+export type SchedulerCompletionEvent = CompletionDecisionEvent;
 
 /** The execution scheduler's own submission, which only a writer reading its inbox reads. */
 export interface SchedulerCompletion {

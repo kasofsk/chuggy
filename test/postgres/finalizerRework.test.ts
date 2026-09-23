@@ -44,6 +44,7 @@ import { canonicalInputBundle } from "../../src/interpreter/finalizerPreparation
 import { postgresExecutionSourceHistory } from "../../src/adapters/postgres/executionSourceHistory.ts";
 import { executionSourceObservation } from "../../src/interpreter/executionSourceObservation.ts";
 import { postgresHarnessObservedCommit } from "./harness.ts";
+import { digestFold } from "../../src/interpreter/resultManifest.ts";
 import {
   finalizerDrain,
   finalizerExpireClaim,
@@ -214,6 +215,46 @@ function reworkReference(
   return named[0];
 }
 
+/**
+ * What a clean finalization left in the journal: work, its judgement and its
+ * finalization as one decision each, the result's evidence folded from the
+ * attempt it settled on, and no second decision anywhere to reduce a pass.
+ */
+async function reworkJournalSettledOn(
+  project: FinalizerProject,
+  attemptDigest: string,
+): Promise<void> {
+  const journalled = (await rig.harness.query(
+    `SELECT entry::jsonb AS entry FROM journal_entry
+      WHERE tenant=$1 AND project=$2 ORDER BY seq`,
+    [project.partition.tenant, project.partition.project],
+  )) as readonly {
+    entry: { event: { type: string; value: { evidence?: number } } };
+  }[];
+  assert.deepEqual(
+    journalled.map((row) => row.entry.event.type),
+    [
+      "TicketCreated",
+      "TicketDispatched",
+      "TicketWorkResultAccepted",
+      "TicketEvaluationPassed",
+      "TicketFinalizationSucceeded",
+    ],
+    "work, its judgement and its finalization are one decision each",
+  );
+  assert.equal(
+    journalled.at(-1)?.entry.event.value.evidence,
+    digestFold(attemptDigest),
+    "the result's evidence is the attempt it settled on",
+  );
+  assert.deepEqual(
+    await rig.harness.query(
+      "SELECT to_regclass('public.project_continuation')::text AS relation",
+    ),
+    [{ relation: null }],
+  );
+}
+
 test("a clean automatic integration concludes without spawning a rework", async () => {
   const { project, remote } = await finalizerSubject(rig, "clean", [
     { path: "one.txt", content: "one\n" },
@@ -235,10 +276,14 @@ test("a clean automatic integration concludes without spawning a rework", async 
     assert.equal(pass.holds, 0, round);
   }
   const attempt = (await rig.harness.query(
-    `SELECT candidate_commit, target_commit FROM finalization_attempt
+    `SELECT candidate_commit, target_commit, attempt_digest FROM finalization_attempt
       WHERE tenant=$1 AND project=$2`,
     [project.partition.tenant, project.partition.project],
-  )) as readonly { candidate_commit: string; target_commit: string }[];
+  )) as readonly {
+    candidate_commit: string;
+    target_commit: string;
+    attempt_digest: string;
+  }[];
   assert.equal(attempt.length, 1);
   assert.notEqual(attempt[0]?.candidate_commit, attempt[0]?.target_commit);
   assert.equal(
@@ -254,6 +299,7 @@ test("a clean automatic integration concludes without spawning a rework", async 
   assert.deepEqual(drained.decided, ["Committed"]);
   const decided = ticketAt(drained.memory.graph, asTicketId(project.ticket));
   assert.equal(decided.phase, "Done");
+  await reworkJournalSettledOn(project, attempt[0]?.attempt_digest ?? "");
   assert.equal(decided.completions, before.completions + 1);
   assert.equal(decided.spawned, before.spawned, "nothing further was spawned");
   assert.deepEqual(await reworkSpawnsOf(project), spawns);

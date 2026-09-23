@@ -1,6 +1,7 @@
 /**
- * Every durable consequence of one pure decision, derived from the journal
- * entry and the two `TicketGraph`s it stands between.
+ * Every durable consequence of one pure decision, derived from the event it
+ * journals, the obligations it owes and the two `TicketGraph`s it stands
+ * between.
  *
  * AN OPEN ACTION ADMITS THE ANSWERS THE ACTOR WILL ACCEPT, not a part of them.
  * `decisionEventEnabled` puts a resume through `retryableIn`, which is the
@@ -19,21 +20,17 @@
  */
 
 import type { Entry } from "../actor/journal.ts";
-import { assertNever } from "../domain/assertNever.ts";
-import { effectFromLabel } from "../domain/effect.ts";
+import { eventTicket } from "../domain/evolve.ts";
 import { ticketAt } from "../domain/ticketGraph.ts";
 import type {
   TicketGraph,
+  Obligation,
   Phase,
+  TaskIdentity,
   Ticket,
 } from "../domain/generated/modelTypes.ts";
-import { asTicketId, type TicketId } from "../domain/ids.ts";
-import {
-  currentInstance,
-  liveTasks,
-  runningStageIndex,
-} from "../domain/ticket.ts";
-import { reducibleWorkIn } from "../domain/enablement.ts";
+import type { TicketId } from "../domain/ids.ts";
+import { currentInstance, runningStageIndex } from "../domain/ticket.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
 import type { ExecutionSourceObservation } from "./executionSource.ts";
 import {
@@ -50,18 +47,49 @@ import {
   type TicketSourceRecord,
 } from "./projectDecision.ts";
 
-function identity(entry: Entry, effectPosition: number, kind: string): string {
-  return `${String(entry.seq)}:${String(effectPosition)}:${kind}`;
+/**
+ * A durable row's name: the decision's sequence, the index of the obligation
+ * the row answers, and that obligation's kind. Nothing parses one back.
+ */
+function identity(
+  entry: Entry,
+  index: number,
+  kind: Obligation["type"] | typeof inputBundleIdentityKind,
+): string {
+  return `${String(entry.seq)}:${String(index)}:${kind}`;
 }
 
-function subject(entry: Entry, effectPosition: number): TicketId {
-  const transition = entry.rec.transitions[effectPosition];
-  if (transition === undefined) {
-    throw new Error(
-      `decision plan: effect ${String(effectPosition)} has no transition`,
-    );
-  }
-  return asTicketId(transition.ticket);
+/**
+ * The obligations of one kind a decision owes, each at its index in the
+ * decision's list. A decision concerns the one ticket its event names, so an
+ * obligation naming another is a decision contradicting itself.
+ */
+function obligationsOf<Kind extends Obligation["type"]>(
+  entry: Entry,
+  obligations: readonly Obligation[],
+  kind: Kind,
+): readonly {
+  readonly index: number;
+  readonly obligation: Extract<Obligation, { readonly type: Kind }>;
+}[] {
+  const ticket = eventTicket(entry.event);
+  return obligations.flatMap((obligation, index) => {
+    if (obligation.value.ticket !== ticket)
+      throw new Error(
+        "decision plan: an obligation names a ticket its event does not",
+      );
+    return obligation.type === kind
+      ? [
+          {
+            index,
+            obligation: obligation as Extract<
+              Obligation,
+              { readonly type: Kind }
+            >,
+          },
+        ]
+      : [];
+  });
 }
 
 /**
@@ -94,42 +122,42 @@ function liveSlotRoster(ticket: Ticket): readonly number[] {
  * which `execution_names_one_logical_task` absorbs as a silent no-op insert
  * under `ON CONFLICT`.
  */
-function liveRequestTasks(ticket: Ticket): ExecutionRequestPlan["tasks"] {
+function requestTasks(
+  ticket: Ticket,
+  identities: readonly TaskIdentity[],
+): ExecutionRequestPlan["tasks"] {
   const roster = liveSlotRoster(ticket);
   const base = ticket.spawned - roster.length;
-  return liveTasks(ticket).map((identity) => {
+  return identities.map((identity) => {
     const slot =
       identity.type === "WorkTask"
         ? 0
         : roster.indexOf(identity.value.evaluator);
     if (slot < 0)
-      throw new Error("decision plan: a live task names no slot of its run");
+      throw new Error("decision plan: a task names no slot of its run");
     return { task: base + slot + 1, identity };
   });
 }
 
 /**
  * The bundle a spawn pins, carrying the evidence of the finalization that
- * caused it where one did, and a cancellation authorizes no work so it pins
- * none. A bundle built from evidence pins no source of its own, because the
- * evidence carries the failed attempt's whole bundle forward — target commit
- * and all — and a second one under that kind leaves a worker two answers to
- * what its work is based on.
+ * caused it where one did. A bundle built from evidence pins no source of its
+ * own, because the evidence carries the failed attempt's whole bundle forward
+ * — target commit and all — and a second one under that kind leaves a worker
+ * two answers to what its work is based on.
  */
 function executionRequestBundle(
   input: DecisionInput,
   entry: Entry,
-  effectPosition: number,
+  index: number,
   source: ExecutionSourceObservation | undefined,
 ): ExecutionRequestBundle {
   const evidence =
-    input.source.kind === "Operation" &&
-    entry.event.type === "FinalizationResult" &&
-    entry.event.value.out === "FinalizationNeedsWork"
+    entry.event.type === "TicketFinalizationNeedsWork"
       ? input.source.finalizationRequest?.evidence
       : undefined;
   return {
-    bundle: identity(entry, effectPosition, inputBundleIdentityKind),
+    bundle: identity(entry, index, inputBundleIdentityKind),
     ...(evidence === undefined ? {} : { evidence }),
     ...(source === undefined || evidence !== undefined
       ? {}
@@ -146,136 +174,122 @@ function executionRequestBundle(
   };
 }
 
-function executionRequest(
+/**
+ * A decision's `ExecuteTask`s as the one request they run as: one bundle, one
+ * capacity account, one configuration pin, numbered at the index of the first.
+ * The request's kind is the scheduler's own word for which phase the tasks
+ * run in, read off the identities they carry.
+ */
+function executeRequest(
   input: DecisionInput,
   entry: Entry,
-  effectPosition: number,
-  pre: TicketGraph,
+  obligations: readonly Obligation[],
   post: TicketGraph,
   source: ExecutionSourceObservation | undefined,
-): ExecutionRequestPlan {
-  const ticket = subject(entry, effectPosition);
-  const effect = effectFromLabel(entry.rec.effects[effectPosition] ?? "");
-  const before = pre.tickets.get(ticket);
-  const after = post.tickets.get(ticket);
-  if (after === undefined)
-    throw new Error("decision plan: effect has no post ticket");
-  switch (effect) {
-    case "SpawnWorkTasks":
-    case "SpawnEvalTasks": {
-      const created = liveRequestTasks(after);
-      const kind =
-        effect === "SpawnWorkTasks" ? "SpawnWork" : "SpawnEvaluation";
-      if (created.length === 0)
-        throw new Error(`decision plan: ${effect} created no tasks`);
-      return {
-        request: identity(entry, effectPosition, kind),
-        effectPosition,
-        ticket,
-        ticketVersion: entry.seq,
-        kind,
-        bundle: executionRequestBundle(input, entry, effectPosition, source),
-        tasks: created,
-      };
-    }
-    case "CancelTicketWork":
-      /**
-       * Everything the ticket was owed when the cancellation was decided. A
-       * retirement empties the work set and leaves an evaluation's obligations
-       * behind with the phase, so the tasks are read off the ticket as it
-       * stood rather than off the difference the two states show.
-       */
-      return {
-        request: identity(entry, effectPosition, effect),
-        effectPosition,
-        ticket,
-        ticketVersion: entry.seq,
-        kind: "CancelTicketWork",
-        tasks: before === undefined ? [] : liveRequestTasks(before),
-      };
-    case "RunFinalizer":
-    case "OpenHumanTask":
-      throw new Error(`decision plan: ${effect} is not an execution request`);
-  }
+): readonly ExecutionRequestPlan[] {
+  const run = obligationsOf(entry, obligations, "ExecuteTask");
+  const first = run[0];
+  if (first === undefined) return [];
+  const identities = run.map((each) => each.obligation.value.task.task);
+  const phase = first.obligation.value.task.task.type;
+  if (identities.some((task) => task.type !== phase))
+    throw new Error("decision plan: one decision owes tasks of two phases");
+  const ticket = eventTicket(entry.event);
+  return [
+    {
+      request: identity(entry, first.index, "ExecuteTask"),
+      effectPosition: first.index,
+      ticket,
+      ticketVersion: entry.seq,
+      kind: phase === "WorkTask" ? "SpawnWork" : "SpawnEvaluation",
+      bundle: executionRequestBundle(input, entry, first.index, source),
+      tasks: requestTasks(ticketAt(post, ticket), identities),
+    },
+  ];
 }
 
-function nativeAction(
+/**
+ * A decision's `CancelTask`s as the one request that retires them, numbered
+ * off the ticket as it stood before the decision, which is the spawn that
+ * minted them. A cancellation authorizes no work and pins no bundle.
+ */
+function cancelRequest(
   entry: Entry,
-  effectPosition: number,
-  post: TicketGraph,
-): NativeActionPlan {
-  const ticket = subject(entry, effectPosition);
-  const value = ticketAt(post, ticket);
-  if (value.phase !== "Escalated") {
-    throw new Error(
-      "decision plan: a native action requires an escalated ticket",
-    );
-  }
-  return {
-    action: identity(entry, effectPosition, "TicketEscalation"),
-    effectPosition,
-    ticket,
-    version: entry.seq,
-    kind: "TicketEscalation",
-    escalation: value.escalation,
-    capability: "ResolveTicket",
-    resolutions: ["Resume", "Revoke"],
-  };
-}
-
-function effectPlans(
-  input: DecisionInput,
-  entry: Entry,
+  obligations: readonly Obligation[],
   pre: TicketGraph,
+): readonly ExecutionRequestPlan[] {
+  const run = obligationsOf(entry, obligations, "CancelTask");
+  const first = run[0];
+  if (first === undefined) return [];
+  const ticket = eventTicket(entry.event);
+  return [
+    {
+      request: identity(entry, first.index, "CancelTask"),
+      effectPosition: first.index,
+      ticket,
+      ticketVersion: entry.seq,
+      kind: "CancelTicketWork",
+      tasks: requestTasks(
+        ticketAt(pre, ticket),
+        run.map((each) => each.obligation.value.task),
+      ),
+    },
+  ];
+}
+
+/** A decision's `FinalizeTicket`, as the request the finalizer claims. */
+function finalizationRequests(
+  entry: Entry,
+  obligations: readonly Obligation[],
   post: TicketGraph,
-  source: ExecutionSourceObservation | undefined,
-): {
-  readonly execution: readonly ExecutionRequestPlan[];
-  readonly actions: readonly NativeActionPlan[];
-  readonly finalization: DecisionMaterialization["finalization"];
-} {
-  const execution: ExecutionRequestPlan[] = [];
-  const actions: NativeActionPlan[] = [];
-  const finalization: Array<DecisionMaterialization["finalization"][number]> =
-    [];
-  entry.rec.effects.forEach((label, effectPosition) => {
-    const effect = effectFromLabel(label);
-    switch (effect) {
-      case "SpawnWorkTasks":
-      case "SpawnEvalTasks":
-      case "CancelTicketWork":
-        execution.push(
-          executionRequest(input, entry, effectPosition, pre, post, source),
+): DecisionMaterialization["finalization"] {
+  return obligationsOf(entry, obligations, "FinalizeTicket").map(
+    ({ index }) => {
+      const ticket = eventTicket(entry.event);
+      if (ticketAt(post, ticket).phase !== "Finalization")
+        throw new Error(
+          "decision plan: a finalization is owed by a ticket not finalizing",
         );
-        break;
-      case "OpenHumanTask":
-        actions.push(nativeAction(entry, effectPosition, post));
-        break;
-      case "RunFinalizer": {
-        const ticket = subject(entry, effectPosition);
-        if (
-          pre.tickets.get(ticket)?.phase === "Finalization" ||
-          ticketAt(post, ticket).phase !== "Finalization"
-        ) {
-          throw new Error(
-            `decision plan: ${effect} does not enter Finalization`,
-          );
-        }
-        finalization.push({
-          request: identity(entry, effectPosition, effect),
-          effectPosition,
-          ticket,
-          ticketVersion: entry.seq,
-          requestGeneration: entry.seq,
-          kind: effect,
-        });
-        break;
-      }
-      default:
-        assertNever(effect);
-    }
-  });
-  return { execution, actions, finalization };
+      return {
+        request: identity(entry, index, "FinalizeTicket"),
+        effectPosition: index,
+        ticket,
+        ticketVersion: entry.seq,
+        requestGeneration: entry.seq,
+        kind: "RunFinalizer" as const,
+      };
+    },
+  );
+}
+
+/**
+ * The desk a decision opens, which no obligation names: a ticket the decision
+ * moved into `Escalated` is asked of a person, and one decision escalates at
+ * most the one ticket it is about.
+ */
+function nativeActions(
+  entry: Entry,
+  pre: TicketGraph,
+  post: TicketGraph,
+): readonly NativeActionPlan[] {
+  const ticket = eventTicket(entry.event);
+  const after = ticketAt(post, ticket);
+  if (
+    pre.tickets.get(ticket)?.phase === "Escalated" ||
+    after.phase !== "Escalated"
+  )
+    return [];
+  return [
+    {
+      action: `${String(entry.seq)}:TicketEscalation`,
+      ticket,
+      version: entry.seq,
+      kind: "TicketEscalation",
+      escalation: after.escalation,
+      capability: "ResolveTicket",
+      resolutions: ["Resume", "Revoke"],
+    },
+  ];
 }
 
 /**
@@ -366,24 +380,16 @@ function materializationWithdrawals(
   pre: TicketGraph,
   post: TicketGraph,
 ): readonly TicketId[] {
-  if (
-    input.source.kind === "Operation" &&
-    input.source.nativeAction !== undefined
-  )
-    return [];
-  const moved = new Set(
-    entry.rec.transitions.map((transition) => transition.ticket),
-  );
-  return [...moved].map(asTicketId).filter((ticket) => {
-    const before = pre.tickets.get(ticket);
-    const after = post.tickets.get(ticket);
-    return (
-      before !== undefined &&
-      after !== undefined &&
-      materializationActionablePhases.includes(before.phase) &&
-      after.phase !== before.phase
-    );
-  });
+  if (input.source.nativeAction !== undefined) return [];
+  const ticket = eventTicket(entry.event);
+  const before = pre.tickets.get(ticket);
+  const after = post.tickets.get(ticket);
+  return before !== undefined &&
+    after !== undefined &&
+    materializationActionablePhases.includes(before.phase) &&
+    after.phase !== before.phase
+    ? [ticket]
+    : [];
 }
 
 /**
@@ -397,44 +403,41 @@ export interface SpawnSources {
   readonly pinned?: TicketSourceRecord;
 }
 
-/** Derives every durable consequence of one pure ticket decision. */
+/** The event arms a finalizer's result is journalled at, each of which fulfils the request it answered. */
+const finalizationAnsweredEvents: readonly Entry["event"]["type"][] = [
+  "TicketFinalizationSucceeded",
+  "TicketFinalizationNeedsWork",
+  "TicketFinalizationUnavailable",
+];
+
+/**
+ * Derives every durable consequence of one decision from the event it
+ * journals, the obligations it owes and the two graphs it stands between.
+ */
 export function materializationOf(
   input: DecisionInput,
   pre: TicketGraph,
   post: TicketGraph,
   entry: Entry,
+  obligations: readonly Obligation[],
   spawn: SpawnSources = {},
 ): DecisionMaterialization {
-  const effects = effectPlans(input, entry, pre, post, spawn.source);
-
-  const eventTicket =
-    entry.event.type === "TaskDone"
-      ? asTicketId(entry.event.value.ticket)
-      : undefined;
-  const continuation =
-    eventTicket !== undefined && reducibleWorkIn(post).includes(eventTicket)
-      ? {
-          continuation: identity(entry, entry.rec.effects.length, "ReduceWork"),
-          kind: "ReduceWork" as const,
-          ticket: eventTicket,
-          expectedTicketVersion: entry.seq,
-          expectedPhase: ticketAt(post, eventTicket).phase,
-          taskSetGeneration: ticketAt(post, eventTicket).spawned,
-        }
-      : undefined;
-
   return {
-    ...(continuation === undefined ? {} : { continuation }),
-    ...effects,
-    fulfillFinalizationFor:
-      entry.event.type === "FinalizationResult"
-        ? [asTicketId(entry.event.value.ticket)]
-        : [],
+    execution: [
+      ...executeRequest(input, entry, obligations, post, spawn.source),
+      ...cancelRequest(entry, obligations, pre),
+    ],
+    actions: nativeActions(entry, pre, post),
+    finalization: finalizationRequests(entry, obligations, post),
+    fulfillFinalizationFor: finalizationAnsweredEvents.includes(
+      entry.event.type,
+    )
+      ? [eventTicket(entry.event)]
+      : [],
     withdrawActionsFor: materializationWithdrawals(input, entry, pre, post),
-    ...(input.source.kind === "Operation" &&
-    input.source.nativeAction !== undefined
-      ? { resolveAction: input.source.nativeAction }
-      : {}),
+    ...(input.source.nativeAction === undefined
+      ? {}
+      : { resolveAction: input.source.nativeAction }),
     ...(spawn.pinned === undefined ? {} : { ticketSource: spawn.pinned }),
   };
 }

@@ -14,6 +14,8 @@ import { postgresReadHarness } from "./readHarness.ts";
 import type { TicketResource } from "../../src/interpreter/nativeWeb.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { id } from "../domain/fixtures.ts";
+import { encodeEntry } from "../../src/interpreter/wire.ts";
+import { plainDefinitionOf } from "../actor/harness.ts";
 
 const subject = postgresReadHarness();
 
@@ -85,30 +87,33 @@ async function seedEntry(
   await seeding.commit();
 }
 
-/** One entry of `type` naming `ticket`, as the encoder writes an event that has one. */
-function seededEvent(type: string, ticket: number): string {
-  const released = type === "CreateTicket" || type === "ReleaseTicket";
-  return JSON.stringify({
-    seq: ticket,
-    event: { type, value: released ? { id: ticket } : { ticket } },
-    rec: {},
+/** A dispatch of `ticket` journalled at `seq`, which names the ticket and is no release. */
+function seededDispatch(seq: number, ticket: number): string {
+  return encodeEntry({
+    seq,
+    event: { type: "TicketDispatched", value: { ticket, source: 1 } },
   });
 }
 
 /**
- * One release entry naming the dependencies it was released on, which is the
- * only place in the store those edges are written down, beside the empty plan
- * every release names.
+ * The release of `ticket` journalled at `seq`, naming its dependencies in the
+ * order given, which is the only place in the store those edges are written
+ * down. The order is set on the written bytes because the encoder writes a set
+ * in an order of its own.
  */
-function seededRelease(ticket: number, deps: readonly number[]): string {
-  return JSON.stringify({
-    seq: ticket,
-    event: {
-      type: "CreateTicket",
-      value: { id: ticket, dependencies: deps, evaluationPlan: { stages: [] } },
-    },
-    rec: {},
-  });
+function seededRelease(
+  seq: number,
+  ticket: number,
+  deps: readonly number[] = [],
+): string {
+  const written = JSON.parse(
+    encodeEntry({
+      seq,
+      event: { type: "TicketCreated", value: plainDefinitionOf(ticket) },
+    }),
+  ) as { event: { value: { dependencies: number[] } } };
+  written.event.value.dependencies = [...deps];
+  return JSON.stringify(written);
 }
 
 /** One ticket of each terminal shape, and one parked with the wall it hit. */
@@ -321,13 +326,13 @@ test("an earlier entry naming the ticket is not mistaken for its release", async
     partition,
     "native-release-kind-done",
     1,
-    seededEvent("TaskDone", 5),
+    seededDispatch(1, 5),
   );
   await seedEntry(
     partition,
     "native-release-kind-release",
     2,
-    seededEvent("CreateTicket", 5),
+    seededRelease(2, 5),
   );
   await subject.harness.query(
     `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
@@ -343,39 +348,6 @@ test("an earlier entry naming the ticket is not mistaken for its release", async
     seededEntryAt(2),
     "the release instant is the release entry's, not the earlier entry's",
   );
-});
-
-/**
- * A release a pre-006 writer stored, which the journal still holds under the
- * tag it was written at. Its bytes are what its digest attests and are never
- * rewritten, so the read that dates a release finds it under either tag or a
- * ticket released before the rename reports no release at all.
- */
-test("a release stored at the old tag is still the release the read dates", async () => {
-  const partition = await postgresHarnessProject(
-    subject.harness.store,
-    "native-release-old-tag",
-  );
-  await subject.harness.query(
-    "UPDATE project SET head=1 WHERE tenant=$1 AND project=$2",
-    [partition.tenant, partition.project],
-  );
-  await seedEntry(
-    partition,
-    "native-release-old-tag-entry",
-    1,
-    seededEvent("ReleaseTicket", 5),
-  );
-  await subject.harness.query(
-    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
-     VALUES ($1,$2,5,'Pending',1)`,
-    [partition.tenant, partition.project],
-  );
-  const released = await postgresNativeReads(subject.pool).ticket(
-    partition,
-    id(5),
-  );
-  assert.equal(Date.parse(released?.releasedAt ?? ""), seededEntryAt(1));
 });
 
 test("project reads filter before paging", async () => {
@@ -794,7 +766,7 @@ async function seedRevokedDependencies(label: string): Promise<Partition> {
       partition,
       `${label}-${String(ticket)}`,
       ticket,
-      seededRelease(ticket, deps),
+      seededRelease(ticket, ticket, deps),
     );
     await subject.harness.query(
       `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)

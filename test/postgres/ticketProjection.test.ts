@@ -30,7 +30,6 @@ import type {
 import type { TicketResource } from "../../src/interpreter/nativeWeb.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
-import { plainDisposition } from "../actor/harness.ts";
 import { escalationTags } from "../../src/domain/generated/modelTypes.ts";
 import { id, stoppedReport } from "../domain/fixtures.ts";
 import {
@@ -128,7 +127,7 @@ async function reportedWith(
     harness,
     partition,
     `operation-projection-${randomUUID()}`,
-    taskDoneEvent(subject, task, report, plainDisposition),
+    taskDoneEvent(subject, task, report),
   );
   const drained = await postgresHarnessDrain(harness, partition, memory);
   assert.deepEqual(

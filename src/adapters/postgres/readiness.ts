@@ -90,6 +90,7 @@ import {
   type FinalizationEvidence,
 } from "../../interpreter/finalizerPreparation.ts";
 import { finalizerRowValue } from "./finalizerRows.ts";
+import { digestFold } from "../../interpreter/resultManifest.ts";
 import {
   finalizationResultEvent,
   releaseTicketEvent,
@@ -131,11 +132,6 @@ interface InboxRow {
    * durable by the time this read can see the item.
    */
   readonly blocked_reason: string | null;
-  readonly continuation_kind: string | null;
-  readonly ticket: string | null;
-  readonly expected_ticket_version: string | null;
-  readonly expected_phase: string | null;
-  readonly task_set_generation: string | null;
 }
 
 function priorityOf(value: string): PriorityClass {
@@ -267,7 +263,7 @@ async function releaseDraftSource(
   };
 }
 
-/** One failed attempt's row, with the bundle the preparation it belongs to pinned. */
+/** The attempt a submission concluded on, with the bundle the preparation it belongs to pinned. */
 interface FinalizationAttemptRow {
   readonly attempt_digest: string;
   readonly target_commit: string;
@@ -276,25 +272,13 @@ interface FinalizationAttemptRow {
   readonly input_bundle: string;
 }
 
-/**
- * The immutable evidence a failed result concluded on, read from the attempt
- * the submission pinned rather than from the request's latest one. The other
- * two gather none and name no attempt, a failure always having prepared one: a
- * success spawns no work for evidence to be about, and an unavailable result
- * reached no attempt to read — what held it is recorded on the request, which
- * is where the desk reads it and not something a decision has to carry.
- */
-async function finalizationEvidenceOf(
+/** The attempt the submission pinned, read rather than the request's latest one. */
+async function finalizationAttemptOf(
   pool: pg.Pool,
   partition: Partition,
   command: FinalizationSubmission,
-): Promise<FinalizationEvidence | undefined> {
-  if (command.outcome !== "FinalizationNeedsWork") return undefined;
-  const attempted = command.attempt;
-  if (attempted === undefined)
-    throw new Error(
-      `finalization request ${command.request} failed on no attempt`,
-    );
+  attempted: string,
+): Promise<FinalizationAttemptRow> {
   const found = await pool.query<FinalizationAttemptRow>(
     sql`SELECT a.attempt_digest, a.target_commit, a.conflict_manifest,
             a.conflict_manifest_digest, a.input_bundle
@@ -307,6 +291,22 @@ async function finalizationEvidenceOf(
     throw new Error(
       `finalization attempt ${attempted} does not answer this request`,
     );
+  return attempt;
+}
+
+/**
+ * The immutable evidence a failed result concluded on, read from the attempt
+ * the submission pinned. The other two outcomes carry none: a success spawns
+ * no work for evidence to be about, and an unavailable result reached no
+ * attempt to read — what held it is recorded on the request, which is where
+ * the desk reads it and not something a decision has to carry.
+ */
+async function finalizationEvidenceOf(
+  pool: pg.Pool,
+  partition: Partition,
+  attempted: string,
+  attempt: FinalizationAttemptRow,
+): Promise<FinalizationEvidence> {
   const pinned = await pool.query<{
     reference_kind: string;
     reference_id: string;
@@ -343,6 +343,60 @@ async function finalizationEvidenceOf(
 }
 
 /**
+ * What a finalization result carries as its evidence reference: the fold of
+ * the digest of the attempt it settled on, and where it settled on none — a
+ * brief that lands nothing, or a finalization that reached no result — the
+ * generation of the request it answers, the one positive reference such a
+ * result names.
+ */
+function finalizationResultEvidence(
+  command: FinalizationSubmission,
+  attempt: FinalizationAttemptRow | undefined,
+): number {
+  return attempt === undefined
+    ? command.requestGeneration
+    : digestFold(attempt.attempt_digest);
+}
+
+/** The attempt a submission settled on, and what a failed one carries forward. */
+async function finalizationSettledOn(
+  pool: pg.Pool,
+  partition: Partition,
+  command: FinalizationSubmission,
+): Promise<{
+  readonly reference: number;
+  readonly evidence?: FinalizationEvidence;
+}> {
+  const attempted = command.attempt;
+  if (attempted === undefined) {
+    if (command.outcome === "FinalizationNeedsWork")
+      throw new Error(
+        `finalization request ${command.request} failed on no attempt`,
+      );
+    return { reference: finalizationResultEvidence(command, undefined) };
+  }
+  const attempt = await finalizationAttemptOf(
+    pool,
+    partition,
+    command,
+    attempted,
+  );
+  return {
+    reference: finalizationResultEvidence(command, attempt),
+    ...(command.outcome === "FinalizationNeedsWork"
+      ? {
+          evidence: await finalizationEvidenceOf(
+            pool,
+            partition,
+            attempted,
+            attempt,
+          ),
+        }
+      : {}),
+  };
+}
+
+/**
  * The `RunFinalizer` request a submitted result claims to answer, and whether it
  * is still the request that authorizes it. A result whose request has settled,
  * whose generation has moved or whose epoch a restore superseded is carried
@@ -373,12 +427,17 @@ async function finalizationRequestSource(
       `finalization request ${command.request} does not authorize this result`,
     );
   const ticket = projectRowCounter(request.ticket, "finalization ticket");
-  const evidence = await finalizationEvidenceOf(pool, partition, command);
+  const settled = await finalizationSettledOn(pool, partition, command);
+  const evidence = settled.evidence;
   return {
     kind: "Operation",
     operation: asOperationId(operation),
     command,
-    resolvedEvent: finalizationResultEvent(asTicketId(ticket), command.outcome),
+    resolvedEvent: finalizationResultEvent(
+      asTicketId(ticket),
+      command.outcome,
+      settled.reference,
+    ),
     finalizationRequest: {
       request: command.request,
       requestGeneration: command.requestGeneration,
@@ -480,7 +539,7 @@ async function operationSource(
       kind: "Operation",
       operation: asOperationId(row.input_id),
       command,
-      completion: command.event,
+      resolvedEvent: command.event,
       ...(row.blocked_reason === null
         ? {}
         : { executionBlockedBy: inboxBlockedReason(row.blocked_reason) }),
@@ -517,38 +576,6 @@ async function operationSource(
     };
   }
   return nativeActionSource(pool, partition, row.input_id, command);
-}
-
-function continuationSource(row: InboxRow): DecisionInput["source"] {
-  if (
-    row.continuation_kind === null ||
-    row.ticket === null ||
-    row.expected_ticket_version === null ||
-    row.expected_phase === null ||
-    row.task_set_generation === null
-  ) {
-    throw new Error(`continuation ${row.input_id} has incomplete fences`);
-  }
-  if (row.continuation_kind !== "ReduceWork") {
-    throw new Error(
-      `continuation ${row.input_id} reduces ${row.continuation_kind}, which this image does not schedule`,
-    );
-  }
-  const ticket = projectRowCounter(row.ticket, "continuation ticket");
-  return {
-    kind: "Continuation",
-    continuation: row.input_id,
-    reduction: { ticket: asTicketId(ticket) },
-    expectedTicketVersion: projectRowCounter(
-      row.expected_ticket_version,
-      "expected ticket version",
-    ),
-    expectedPhase: row.expected_phase,
-    taskSetGeneration: projectRowCounter(
-      row.task_set_generation,
-      "task-set generation",
-    ),
-  };
 }
 
 /** Refuses a bound a caller left open, because an unbounded page is an unbounded read. */
@@ -610,16 +637,12 @@ export async function postgresReadinessConsumable(
        ORDER BY d.base_priority, d.ordinal
      )
      SELECT h.ordinal, h.input_kind, h.input_id, h.base_priority,
-            o.command, x.blocked_reason,
-            c.kind AS continuation_kind, c.ticket::text,
-            c.expected_ticket_version::text, c.expected_phase,
-            c.task_set_generation::text
+            o.command, x.blocked_reason
        FROM heads h
        LEFT JOIN operation o ON h.input_kind='Operation' AND o.tenant=${partition.tenant} AND o.project=${partition.project} AND o.operation=h.input_id
        LEFT JOIN execution x ON h.input_kind='Operation' AND x.tenant=${partition.tenant} AND x.project=${partition.project} AND x.completion_operation=h.input_id
-       LEFT JOIN project_continuation c ON h.input_kind='Continuation' AND c.tenant=${partition.tenant} AND c.project=${partition.project} AND c.continuation=h.input_id
       ORDER BY greatest(0,
-        CASE h.base_priority WHEN 'Safety' THEN 0 WHEN 'Completion' THEN 1 WHEN 'Continuation' THEN 2 ELSE 3 END
+        CASE h.base_priority WHEN 'Safety' THEN 0 WHEN 'Completion' THEN 1 ELSE 3 END
         - floor(extract(epoch FROM (statement_timestamp()-h.created_at))/${agingIntervalSeconds})::integer), h.ordinal
       LIMIT 1`,
   );
@@ -645,14 +668,9 @@ export async function postgresReadinessConsumable(
     });
   }
   if (row === undefined) return undefined;
-  const source =
-    row.input_kind === "Operation"
-      ? await operationSource(pool, partition, row)
-      : row.input_kind === "Continuation"
-        ? continuationSource(row)
-        : undefined;
-  if (source === undefined)
+  if (row.input_kind !== "Operation")
     throw new Error(`decision input ${row.input_id} has unknown kind`);
+  const source = await operationSource(pool, partition, row);
   return {
     partition,
     ordinal: projectRowCounter(row.ordinal, "inbox ordinal"),

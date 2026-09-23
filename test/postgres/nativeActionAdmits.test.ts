@@ -31,7 +31,7 @@ import {
   type ProjectMemory,
 } from "../../src/interpreter/projectWriter.ts";
 import type { NativeActionResolution } from "../../src/interpreter/ticketCommand.ts";
-import { plainAuthoring, plainDisposition } from "../actor/harness.ts";
+import { plainAuthoring } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   postgresHarnessCompletion,
@@ -87,7 +87,6 @@ async function admitsReport(
       id(1),
       task,
       postgresHarnessReport(memory.graph, task, verdict),
-      plainDisposition,
     ),
   );
   return admitsDrain(partition, memory);

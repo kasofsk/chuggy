@@ -444,7 +444,7 @@ test("no principal may offer a finalization result as an ordinary command", asyn
     command: "Decide",
     event: {
       type: "FinalizationResult",
-      value: { ticket: 1, out: "FinalizationSucceeded" },
+      value: { ticket: 1, out: "FinalizationSucceeded", evidence: 1 },
     },
   });
   assert.deepEqual(
