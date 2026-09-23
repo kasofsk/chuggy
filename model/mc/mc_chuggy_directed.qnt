@@ -1,4 +1,4 @@
-/// A DIRECTED EMITTER for the labels a random walk does not reach in a
+/// A DIRECTED EMITTER for the events a random walk does not reach in a
 /// gate's sample budget.
 ///
 /// This is not an instance of the machine and it proves nothing. It is the
@@ -8,10 +8,10 @@
 /// Nothing here changes what the machine does on a step it takes. What
 /// changes is which steps the sampler is allowed to try.
 ///
-/// WHY IT EXISTS. Some declared step labels sit at the end of a long,
+/// WHY IT EXISTS. Some declared events sit at the end of a long,
 /// specific chain: a ticket must dispatch, work, evaluate, and reach the
 /// finalizer. Under the whole action roster the sampler spends its budget on
-/// arrivals, revokes and evaluator walls that end the chain, and the labels
+/// arrivals, revokes and evaluator walls that end the chain, and the events
 /// are not reached at a sample budget any gate can afford. They are
 /// reachable — the deterministic witness runs in
 /// tests/chuggy_witness_test.qnt walk straight to them — so the missing
@@ -33,8 +33,8 @@
 /// stop the fleet ever filling, and resumeTicket is how a parked ticket rejoins the
 /// chain, so both are part of the shape being aimed at rather than noise.
 ///
-/// A LABEL AIMED AT HERE IS STILL AIMED AT BY AN INVARIANT. The emitter asks
-/// quint to refute "this label never occurs" exactly as it does for the
+/// AN EVENT AIMED AT HERE IS STILL AIMED AT BY AN INVARIANT. The emitter asks
+/// quint to refute "this event never occurs" exactly as it does for the
 /// untargeted rows; the restriction only makes the refutation findable. The
 /// manifest row records the module, the step relation, the seed and the aim,
 /// so every golden reproduces from what is written beside it.
@@ -52,8 +52,8 @@ module mc_chuggy_directed {
   /// appears repeatedly so the sampler reaches the finalizer's own outcomes
   /// rather than spending its draws on the arrivals that precede them.
   /// THE AIM for the partial-resume golden (test/golden/manifest.json). A
-  /// label is not enough to name that shape: "ticket-resumed" is every
-  /// wall's resume, and what distinguishes this one is the STATE it lands
+  /// resumed event is not enough to name that shape: TicketEvaluationResumed
+  /// follows every blocked wall, and what distinguishes this one is the STATE it lands
   /// in — a ticket back in evaluation at a later generation of the stage it
   /// was already judging, still holding an answer an evaluator gave before
   /// the wall, and owing the one that was stopped. Nothing else in the
@@ -82,7 +82,6 @@ module mc_chuggy_directed {
     releaseTicket,
     dispatch,
     taskDone,
-    workReduce,
     finalizationResult,
     finalizationResult,
     finalizationResult,
