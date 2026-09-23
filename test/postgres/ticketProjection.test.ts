@@ -367,7 +367,9 @@ async function seedEntryAt(partition: Partition, seq: number): Promise<void> {
     `INSERT INTO journal_entry
        (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
         recovery_epoch,cause_kind,cause_id)
-     VALUES ($1,$2,$3,'{}',$4,'genesis','owner',1,$5,'Operation',$6)`,
+     VALUES ($1,$2,$3,jsonb_build_object('seq',$3::bigint,'event',
+               jsonb_build_object('type','TicketRevoked','value',1))::text,
+             $4,'genesis','owner',1,$5,'Operation',$6)`,
     [
       partition.tenant,
       partition.project,

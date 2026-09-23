@@ -35,7 +35,6 @@ export const selectorHostReadinessFunction = "set_selector_host_readiness";
 export const cancellationFunction = "cancel_pending_operation";
 export const acceptanceFunction = "accept_operation";
 export const dispatchAcceptanceFunction = "accept_dispatch_operation";
-export const continuationFunction = "publish_continuation";
 export const configurationCreateFunction = "create_configuration_revision";
 export const repositoryConfigurationImportFunction =
   "import_repository_configuration";
