@@ -1233,7 +1233,7 @@ module chuggy_domain {
   /// weak form: an artifact exists by the time a ticket is Done. The
   /// tempting stronger claim — that what was committed is what was
   /// evaluated — would be TRUE BY CONSTRUCTION, since the phase machine
-  /// forbids work between eval-passed and wrap-up, and an invariant that
+  /// forbids work between a passed judgement and finalization, and an invariant that
   /// cannot fail is the stuckSubsetCovered defect written on purpose.
   /// A Revoked ticket may hold NoArtifact: it may never have run.
   val artifactWellFormed: bool = liveTickets.forall(j =>

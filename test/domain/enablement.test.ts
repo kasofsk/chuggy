@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import {
   canReleaseIn,
   completableIn,
+  deliverableTasksIn,
   dependableIn,
   depArtifacts,
   depsDoneIn,
@@ -29,7 +30,6 @@ import {
   quietIn,
   readiesIn,
   releasableIdsIn,
-  reducibleWorkIn,
   retryableIn,
   retryablesIn,
   revocableIn,
@@ -43,7 +43,11 @@ import {
   releasedTicketValid,
 } from "../../src/domain/config.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import {
+  evaluationTaskOf,
+  taskIdentityEquals,
+  workTaskOf,
+} from "../../src/domain/task.ts";
 import type {
   ReleasedTicket,
   StageDefinition,
@@ -56,10 +60,10 @@ import {
   depsOf,
   id,
   judgedInstance,
+  rosterOf,
   runningInstance,
   ticketOn,
-  workOutstanding,
-  workTask,
+  workResultOf,
 } from "./fixtures.ts";
 
 const config = modelInstance;
@@ -150,10 +154,7 @@ test("a dependency that is not Done blocks, whatever else it is doing", () => {
   assert.deepEqual(readiesIn(blocked), []);
 
   const landed = graphOf([
-    ticketOn(config, {
-      phase: "Done",
-      artifact: produced(2),
-    }),
+    ticketOn(config, { phase: "Done" }),
     ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
   ]);
   assert.ok(isReadyIn(landed, id(2)));
@@ -168,14 +169,16 @@ test("what a ticket waits on is what its dependencies produced, read in id order
       1,
       ticketOn(config, {
         phase: "Done",
-        artifact: produced(2),
+        evaluations: [judgedInstance(1, 1, plan)],
+        workCyclesStarted: 1,
       }),
     ],
     [
       4,
       ticketOn(config, {
         phase: "Done",
-        artifact: produced(5),
+        evaluations: [judgedInstance(4, 1, plan)],
+        workCyclesStarted: 1,
       }),
     ],
     [
@@ -192,16 +195,15 @@ test("what a ticket waits on is what its dependencies produced, read in id order
   );
   assert.deepEqual(
     depArtifacts(graph, id(6)),
-    [produced(2), produced(5)],
+    [produced(workResultOf(1, 1)), produced(workResultOf(4, 1))],
     "the read is ordered by dependency id, so it does not inherit a set's iteration order",
   );
 });
 
-test("a completion lands on a ticket owing a task, and only a resolved work set reduces", () => {
+test("a completion lands on a ticket owing a task, and on nothing else", () => {
   const graph = graphOf([
     ticketOn(config, {
       phase: "Work",
-      tasks: new Set([workOutstanding(1, 1)]),
       workCyclesStarted: 1,
       spawned: 1,
     }),
@@ -213,8 +215,8 @@ test("a completion lands on a ticket owing a task, and only a resolved work set 
     }),
     ticketOn(config, { phase: "Finalization" }),
     ticketOn(config, {
-      phase: "Work",
-      tasks: new Set([workTask(4, 1, "Passed")]),
+      phase: "Escalated",
+      escalation: "WorkFailureEscalated",
       workCyclesStarted: 1,
       spawned: 1,
     }),
@@ -226,7 +228,11 @@ test("a completion lands on a ticket owing a task, and only a resolved work set 
     }),
   ]);
   assert.deepEqual(completableIn(graph), [id(1), id(2)]);
-  assert.deepEqual(reducibleWorkIn(graph), [id(4)]);
+  assert.deepEqual(
+    outstandingTasksIn(graph, id(4)),
+    [],
+    "a parked work cycle owes the fabric nothing",
+  );
   assert.deepEqual(
     outstandingTasksIn(graph, id(5)),
     [],
@@ -240,7 +246,6 @@ test("the phase holding the finalizer obligation is the only one a result resolv
     ticketOn(config, { phase: "Evaluation" }),
     ticketOn(config, {
       phase: "Done",
-      artifact: produced(2),
       completions: 1,
     }),
   ]);
@@ -415,13 +420,11 @@ test("the stutter is enabled exactly on a fully-released fleet of terminals", ()
   const settled = [
     ticketOn(config, {
       phase: "Done",
-      artifact: produced(2),
       completions: 1,
     }),
     ticketOn(config, { phase: "Revoked" }),
     ticketOn(config, {
       phase: "Done",
-      artifact: produced(2),
       completions: 1,
     }),
   ];
@@ -449,5 +452,35 @@ test("the stutter is enabled exactly on a fully-released fleet of terminals", ()
       ]),
     ),
     "a parked ticket is still revocable, so the desk can act",
+  );
+});
+
+test("every task a ticket was ever owed is deliverable, and the live ones among them", () => {
+  const graph = graphOf([
+    ticketOn(config, {
+      phase: "Evaluation",
+      evaluations: [
+        judgedInstance(1, 1, plan, () => "EvaluatorFail"),
+        runningInstance(1, 2, plan, new Set([1])),
+      ],
+      workCyclesStarted: 2,
+      spawned: 2 + 2 * rosterOf(plan),
+    }),
+  ]);
+  const deliverable = deliverableTasksIn(graph, id(1));
+  assert.deepEqual(deliverable.slice(0, 2), [
+    workTaskOf(1, 1),
+    workTaskOf(1, 2),
+  ]);
+  for (const live of outstandingTasksIn(graph, id(1)))
+    assert.ok(
+      deliverable.some((task) => taskIdentityEquals(task, live)),
+      "a live task is one the ticket was owed",
+    );
+  assert.ok(
+    deliverable.some((task) =>
+      taskIdentityEquals(task, evaluationTaskOf(1, 1, 1, 1, 1)),
+    ),
+    "the earlier cycle's evaluator is still named, which is what a stale event is built from",
   );
 });

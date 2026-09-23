@@ -2,10 +2,8 @@
  * The rosters `model/domain.qnt` declares, read out of the model at run time:
  * its invariant bundle, and the actions its `step` relation offers.
  *
- * IT IS THE MECHANISM `test/golden/corpus.ts` ALREADY USES for the step-label
- * and exemption-arm rosters, pointed at further declarations: the model is
- * the specification, so a list of its members maintained by hand here would go
- * stale the moment one was added there — silently, which is the failure a
+ * THE MODEL IS THE SPECIFICATION, so a list of its members maintained by hand
+ * here would go stale the moment one was added there — silently, which is the failure a
  * roster check exists to prevent. An invariant or an action added to the model
  * becomes a failure in this tree instead.
  *

@@ -1,7 +1,6 @@
 /**
- * One make-it-red demonstration per safety invariant: a state, or a step
- * record, carrying the defect that invariant names, and the invariant
- * rejecting it.
+ * One make-it-red demonstration per safety invariant: a state, or a decision,
+ * carrying the defect that invariant names, and the invariant rejecting it.
  *
  * AN UNVERIFIED CONTROL IS WORSE THAN NONE, because a control that reports
  * success is believed and then never checked again. A predicate that returns
@@ -30,7 +29,7 @@
 import type {
   EvaluationInstance,
   StageDefinition,
-  StepRecord,
+  SuccessfulTicketDecision,
   Ticket,
   TicketGraph,
 } from "../../src/domain/generated/modelTypes.ts";
@@ -38,7 +37,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { liveTickets, ticketAt } from "../../src/domain/ticketGraph.ts";
-import { decideRevoke } from "../../src/domain/deciders.ts";
+import { decideDispatch, decideRevoke } from "../../src/domain/deciders.ts";
+import { evolve } from "../../src/domain/evolve.ts";
 import {
   coveredSet,
   stuckSet,
@@ -47,27 +47,35 @@ import {
   visEdges,
 } from "../../src/domain/derived.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { evaluationTaskOf } from "../../src/domain/task.ts";
 import {
   artifactWellFormed,
   completionExclusive,
+  decisionsValid,
   depsAcyclic,
   deskConsistent,
   idsAccounted,
   evaluationsMonotone,
   evaluationsWellFormed,
   definitionsWellFormed,
+  eventsNeverIdentity,
+  finalizationGenerationHeld,
   sourcePinned,
   revokedNeverCompletes,
   stuckSubsetCovered,
   taskIdentitiesValid,
-  tasksWellFormed,
   terminalsAbsorbing,
   ticketIdsWellFormed,
   type StepView,
 } from "../../src/domain/invariants.ts";
-import { currentInstance, hasOpenHumanTask } from "../../src/domain/ticket.ts";
+import {
+  currentInstance,
+  hasOpenHumanTask,
+  workTaskObligation,
+} from "../../src/domain/ticket.ts";
 import { resumeBlocked } from "../../src/domain/evaluation.ts";
 import {
+  aDispatchSource,
   anAcceptedSource,
   defaultPlan,
   evaluatorOf,
@@ -77,7 +85,6 @@ import {
   blockedInstance,
   graphOf,
   depsOf,
-  evalOutstanding,
   fleetBut,
   healthyFleet,
   id,
@@ -86,7 +93,6 @@ import {
   runningInstance,
   rosterOf,
   ticketOn,
-  workOutstanding,
 } from "./fixtures.ts";
 
 const config = modelInstance;
@@ -95,21 +101,22 @@ const roster = rosterOf(plan);
 const fleet = healthyFleet(config);
 const healthy = initialView(graphOf(fleet));
 
-/** An artifact mark, as a ticket that ran carries one. */
-const produced = (value: number) =>
-  ({ type: "ProducedArtifact", value }) as const;
-
 /** A view of one state, for the invariants that read only the state. */
 const stateView = (post: TicketGraph): StepView => initialView(post);
 
-/** The mid-flight fleet under a record of the caller's, for the invariants that read one. */
-const stepView = (rec: StepRecord): StepView => ({ ...healthy, rec });
-
-/** A record naming a step, with the transitions the caller is demonstrating. */
-const recordOf = (rec: Partial<StepRecord>): StepRecord => ({
-  ...healthy.rec,
-  ...rec,
+/** A step from `pre` to `post`, for the invariants that read the state the last decision found. */
+const stepFrom = (pre: TicketGraph, post: TicketGraph): StepView => ({
+  pre,
+  last: "NoDecision",
+  post,
 });
+
+/** The view a decision taken at `pre` leaves, with `post` standing in where a defect needs its own. */
+const decidedAt = (
+  pre: TicketGraph,
+  decision: SuccessfulTicketDecision,
+  post: TicketGraph = evolve(pre, decision.event),
+): StepView => ({ pre, last: { type: "Decided", value: decision }, post });
 
 test("completionExclusive rejects a ledger that disagrees with the phase", () => {
   assert.ok(
@@ -153,7 +160,7 @@ test("artifactWellFormed rejects a completed ticket that produced nothing", () =
   assert.ok(
     !artifactWellFormed(
       config,
-      stateView(fleetBut(fleet, 0, { artifact: "NoArtifact" })),
+      stateView(fleetBut(fleet, 0, { evaluations: [] })),
     ),
   );
   const revoked = graphOf([ticketOn(config, { phase: "Revoked" })]);
@@ -163,29 +170,32 @@ test("artifactWellFormed rejects a completed ticket that produced nothing", () =
   );
 });
 
-test("terminalsAbsorbing rejects a transition out of a terminal", () => {
-  for (const from of ["Done", "Revoked"] as const) {
+test("terminalsAbsorbing rejects a ticket that left a terminal", () => {
+  for (const phase of ["Done", "Revoked"] as const) {
     assert.ok(
       !terminalsAbsorbing(
         config,
-        stepView(
-          recordOf({
-            label: "ticket-resumed",
-            transitions: [{ ticket: id(1), from, to: "Pending" }],
-          }),
+        stepFrom(
+          graphOf([ticketOn(config, { phase })]),
+          graphOf([ticketOn(config, { phase: "Pending" })]),
         ),
       ),
-      `${from} is absorbing, so no decider moves a ticket out of it`,
+      `${phase} is absorbing, so no event moves a ticket out of it`,
     );
   }
   assert.ok(
+    !terminalsAbsorbing(
+      config,
+      stepFrom(graphOf([ticketOn(config, { phase: "Done" })]), graphOf([])),
+    ),
+    "a terminal ticket is never dropped",
+  );
+  assert.ok(
     terminalsAbsorbing(
       config,
-      stepView(
-        recordOf({
-          label: "ticket-done",
-          transitions: [{ ticket: id(3), from: "Finalization", to: "Done" }],
-        }),
+      stepFrom(
+        graphOf([ticketOn(config, { phase: "Finalization" })]),
+        graphOf([ticketOn(config, { phase: "Done" })]),
       ),
     ),
   );
@@ -219,51 +229,6 @@ test("deskConsistent rejects a wall without a park and a park without a wall", (
   );
 });
 
-test("tasksWellFormed rejects a work set that is not the phase's anatomy", () => {
-  assert.ok(
-    !tasksWellFormed(
-      config,
-      stateView(
-        fleetBut(fleet, 1, {
-          tasks: new Set([workOutstanding(2, 1), workOutstanding(2, 2)]),
-        }),
-      ),
-    ),
-    "a work cycle is one task, and the live set is exactly that task",
-  );
-  assert.ok(
-    !tasksWellFormed(
-      config,
-      stateView(
-        fleetBut(fleet, 1, {
-          tasks: new Set([evalOutstanding(2, 1, 1, 1)]),
-        }),
-      ),
-    ),
-    "a work phase carries work tasks and nothing else",
-  );
-  assert.ok(
-    !tasksWellFormed(
-      config,
-      stateView(
-        fleetBut(fleet, 1, {
-          tasks: new Set([workOutstanding(2, 2)]),
-        }),
-      ),
-    ),
-    "the live work task names the cycle the counter says is running",
-  );
-  assert.ok(
-    !tasksWellFormed(
-      config,
-      stateView(
-        fleetBut(fleet, 0, { tasks: new Set([workOutstanding(1, 2)]) }),
-      ),
-    ),
-    "a settled ticket carries no live task state",
-  );
-});
-
 /** A ticket in Evaluation carrying `evaluations`, with the mint counter its history implies. */
 const judging = (
   evaluations: readonly ReturnType<typeof judgedInstance>[],
@@ -280,23 +245,34 @@ const judging = (
     }),
   ]);
 
-test("tasksWellFormed rejects a live task in a phase that runs none", () => {
+test("finalizationGenerationHeld rejects an attempt with no generation and a cycle carrying the last one's", () => {
+  assert.ok(finalizationGenerationHeld(config, healthy));
   assert.ok(
-    !tasksWellFormed(
+    !finalizationGenerationHeld(
+      config,
+      stateView(fleetBut(fleet, 2, { finalizationGeneration: 0 })),
+    ),
+    "a ticket finalizing is on some attempt",
+  );
+  assert.ok(
+    !finalizationGenerationHeld(
       config,
       stateView(
-        judging([runningInstance(1, 1, plan, new Set())], {
-          tasks: new Set([evalOutstanding(1, 1, 1, 1)]),
+        fleetBut(fleet, 2, {
+          phase: "Escalated",
+          escalation: "FinalizationUnavailableEscalated",
+          finalizationGeneration: 0,
         }),
       ),
     ),
-    "an evaluation owes its obligations through the running stage, not a task set",
+    "the finalization wall holds the attempt its resume follows",
   );
   assert.ok(
-    tasksWellFormed(
+    !finalizationGenerationHeld(
       config,
-      stateView(judging([runningInstance(1, 1, plan, new Set())])),
+      stateView(fleetBut(fleet, 1, { finalizationGeneration: 1 })),
     ),
+    "a work cycle has reached no finalization yet",
   );
 });
 
@@ -311,7 +287,7 @@ const settledJudging = (
       evaluations,
       workCyclesStarted: evaluations.length,
       spawned: evaluations.length * (1 + roster),
-      artifact: { type: "ProducedArtifact", value: 1 },
+      finalizationGeneration: 1,
       ...overrides,
     }),
   ]);
@@ -485,7 +461,7 @@ test("idsAccounted rejects a mint counter the ticket's own history does not impl
   ]);
   assert.ok(!idsAccounted(config, stateView(short)));
   assert.ok(
-    tasksWellFormed(config, stateView(short)),
+    deskConsistent(config, stateView(short)),
     "the surviving state is well-formed, which is why this needs its own invariant",
   );
   assert.ok(evaluationsWellFormed(config, stateView(short)));
@@ -545,7 +521,6 @@ test("taskIdentitiesValid rejects a live task whose identity counts from zero", 
   const zeroth = graphOf([
     ticketOn(config, {
       phase: "Work",
-      tasks: new Set([workOutstanding(1, 0)]),
       spawned: 1,
     }),
   ]);
@@ -738,7 +713,6 @@ test("stuckSubsetCovered goes red when one walk gets an edge kind the other lack
     ticketOn(config, {
       phase: "Done",
       dependencies: depsOf(1),
-      artifact: produced(1),
       completions: 1,
     }),
   ]);
@@ -755,10 +729,14 @@ test("a revoke leaves its dependents where they were, and depsAcyclic is what re
     ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
     ticketOn(config, { phase: "Pending", dependencies: depsOf(2) }),
   ]);
-  const revoked = decideRevoke(chain, id(1));
-  assert.equal(revoked.rec.transitions.length, 1);
+  const revoked = evolve(chain, decideRevoke(chain, id(1)).event);
+  assert.deepEqual(
+    [1, 2, 3].map((each) => ticketAt(revoked, id(each)).phase),
+    ["Revoked", "Pending", "Pending"],
+    "one ticket moves, the one the author named",
+  );
   for (const invariant of [deskConsistent, stuckSubsetCovered, depsAcyclic]) {
-    assert.ok(invariant(config, stateView(revoked.post)));
+    assert.ok(invariant(config, stateView(revoked)));
   }
   const cyclic = graphOf([
     ticketOn(config, { phase: "Pending", dependencies: depsOf(2) }),
@@ -812,4 +790,69 @@ test("evaluationsWellFormed holds a sparse stage to the keys it lists, not to a 
     !evaluationsWellFormed(config, stateView(judgingSparse(forged))),
     "a stage listing key two alone is not running key one",
   );
+});
+
+/** A fleet with one ticket ready to dispatch, which is the smallest state a decision moves. */
+const ready = graphOf([ticketOn(config, { phase: "Pending" })]);
+
+test("decisionsValid rejects an obligation the evolved state does not owe", () => {
+  const dispatched = decideDispatch(ready, id(1), aDispatchSource);
+  assert.ok(decisionsValid(config, decidedAt(ready, dispatched)));
+  assert.ok(
+    decisionsValid(config, initialView(ready)),
+    "no decision, nothing to hold",
+  );
+  const [owed] = dispatched.obligations;
+  assert.ok(owed);
+  assert.ok(
+    !decisionsValid(
+      config,
+      decidedAt(ready, { ...dispatched, obligations: [owed, owed] }),
+    ),
+    "no obligation is owed twice",
+  );
+  assert.ok(
+    !decisionsValid(
+      config,
+      decidedAt(ready, {
+        ...dispatched,
+        obligations: [
+          {
+            type: "CancelTask",
+            value: { ticket: 1, task: evaluationTaskOf(1, 1, 1, 1, 1) },
+          },
+        ],
+      }),
+    ),
+    "a cancellation names a task the prior state was running",
+  );
+  assert.ok(
+    !decisionsValid(
+      config,
+      decidedAt(ready, {
+        ...dispatched,
+        obligations: [
+          {
+            type: "ExecuteTask",
+            value: {
+              ticket: 2,
+              task: workTaskObligation(ticketAt(ready, id(1)), 1),
+            },
+          },
+        ],
+      }),
+    ),
+    "an obligation names its own ticket",
+  );
+});
+
+test("eventsNeverIdentity rejects a decided event that does not move the state it was taken at", () => {
+  const dispatched = decideDispatch(ready, id(1), aDispatchSource);
+  assert.ok(eventsNeverIdentity(config, decidedAt(ready, dispatched)));
+  const moved = evolve(ready, dispatched.event);
+  assert.ok(
+    !eventsNeverIdentity(config, decidedAt(moved, dispatched, moved)),
+    "a dispatch of a ticket already working is owed nothing and moves nothing",
+  );
+  assert.ok(eventsNeverIdentity(config, initialView(ready)));
 });
