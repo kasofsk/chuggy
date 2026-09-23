@@ -93,7 +93,7 @@ module chuggy_refinement_unit_test {
   /// an event that no longer moves the state it lands on — a replayed row,
   /// or one a later row has made stale. Nothing here restates evolve's
   /// guards: "moved" is the whole check, and eventsNeverIdentity is what
-  /// makes it exactly "owed".
+  /// keeps it from refusing a decided row.
   pure val accepted2 = decided(g2, workDone(g2, 2, workTaskOf(2, 1)))
   pure val e3: Entry = { seq: 3, event: accepted2.event }
   run journalRefusesWhatCouldNotHaveBeenDecidedTest = assert(and {

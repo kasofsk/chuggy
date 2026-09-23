@@ -10,9 +10,12 @@
  *
  * LEGALITY IS WHAT A ROW COULD NOT BE IF IT WAS DECIDED. Its seq is the next
  * one, its ticket stands (a release's must not), and its event moves the
- * prefix it lands on. The last is exact because a decided event is never the
- * identity (`eventsNeverIdentity`, proved by the model), so a replayed row, a
- * stale one and one for a task nothing owes are all refused by the same check.
+ * prefix it lands on. The last refuses no decided row, because a decided event
+ * is never the identity (`eventsNeverIdentity`, an invariant the model
+ * checks), and it refuses a replayed row, a stale one and one for a task
+ * nothing owes alike. It re-checks no decider's guard: a dispatch of a ticket
+ * whose dependency is not Done moves the state and passes, so the check
+ * trusts that every row was decided under its guard before it was written.
  *
  * A ROW CARRIES THE SEMANTICS IT WAS DECIDED UNDER, and this image has the
  * deciders for exactly one (`src/actor/decisionSemantics.ts`). A row declaring
@@ -72,9 +75,9 @@ export function eventTicketStands(
 }
 
 /**
- * Whether a stored history is one the machine could have decided: this
- * image's semantics on every row, dense seqs, every event's ticket standing
- * at its replayed prefix, and every event moving that prefix.
+ * Whether a stored history replays with no inert row: this image's semantics
+ * on every row, dense seqs, every event's ticket standing at its replayed
+ * prefix, and every event moving that prefix.
  */
 export function storedJournalLegalOn(stored: readonly StoredEntry[]): boolean {
   let replayed = genesis;

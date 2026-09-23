@@ -237,8 +237,8 @@ export const decisionsValid: Invariant = (_config, view) =>
 
 /**
  * A decided event is never the identity: the event the machine decides at a
- * state moves that state. It is what lets a journal's legality check accept
- * exactly the events the machine could have decided there.
+ * state moves that state. It is what lets a journal's legality check refuse
+ * an inert row without refusing one the machine decided.
  */
 export const eventsNeverIdentity: Invariant = (_config, view) =>
   view.last === "NoDecision" ||

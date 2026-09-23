@@ -128,17 +128,21 @@
 /// THE THEOREMS (the PR gate), as implemented
 /// ==========================================================================
 ///
-///   1. REFINEMENT (journalLegal): every journaled history is one the
-///      domain machine could have decided. Checked by replay: fold the
+///   1. REFINEMENT (journalLegal): every journaled history replays, and
+///      every row in it did something. Checked by replay: fold the
 ///      journal from the genesis TicketGraph; at each entry, (a) the
 ///      sequence number is the next in the monotone dense order, (b) the
 ///      ticket the event names stands at the replayed prefix state (a
 ///      TicketCreated's does not), and (c) the event MOVES that state —
-///      evolve(prefix, event) != prefix. (c) is sound because the domain
-///      proves a decided event is never the identity
-///      (domain.qnt eventsNeverIdentity) and evolve is the identity on
-///      every state that no longer owes an event, so "moved" is exactly
-///      "owed" and nothing here restates evolve's guards. With every
+///      evolve(prefix, event) != prefix. (c) refuses no row the machine
+///      decides, because a decided event is never the identity
+///      (domain.qnt eventsNeverIdentity, an invariant the model checks),
+///      and it refuses a row applied to a state that no longer owes it,
+///      because evolve is the identity there. It does NOT re-check a
+///      decider's guard: a TicketDispatched for a ticket whose dependency
+///      is not Done moves the state and passes. Every row is decided
+///      under its guard before it is journaled, so replay trusts that and
+///      restates none of evolve's or decide's conditions. With every
 ///      non-actor step leaving the domain vars untouched, the domain-visible
 ///      trace of any disciplined run IS the journal's event sequence.
 ///   2. NO DOUBLE-SPENT WORK / NO DUPLICATE CYCLE ACROSS CRASHES
@@ -347,8 +351,8 @@ module chuggy_refinement {
       | _ => c.tickets.keys().contains(eventTicket(fact))
     }
 
-  /// THEOREM 1's checker: the journaled history is one the machine could
-  /// have decided. One fold, three checks per entry at the replayed prefix
+  /// THEOREM 1's checker: the journaled history replays and no row of it
+  /// is inert (it does not re-check a decider's guard). One fold, three checks per entry at the replayed prefix
   /// state — dense monotone seq, the event's ticket standing, and the event
   /// moving the state — chaining the evolved state as the next prefix.
   pure def journalLegalOn(jl: List[Entry]): bool =

@@ -773,10 +773,15 @@ module chuggy_domain {
 
   /// ONE TICKET UNDER ONE EVENT, arm for arm the package's evolve over
   /// chuggy's record: each arm applies its event only to a ticket that still
-  /// owes it — the phase the event leaves, the work task the cycle is on
+  /// owes it — the phase the event leaves, the obligation the cycle is on
   /// (package workTaskObligation's match), the evaluator the run still awaits
   /// (reportAdmissible), the finalization attempt the ticket is on
   /// (finalizationCurrent) — and leaves any other ticket exactly as it is.
+  ///
+  /// THE TWO WORK-FAILURE ARMS ARE STRICTER THAN THE PACKAGE'S, which parks
+  /// any ticket in Work whatever task the failure names. Here the failure
+  /// must name the cycle the ticket is on, so a failure row for a cycle a
+  /// rework has since replaced is identity, and replay refuses it as inert.
   pure def evolveTicket(jb: Ticket, fact: TicketEvent): Ticket = match fact {
     | TicketCreated(_) => jb
     | TicketDispatched(dispatch) =>
@@ -1391,8 +1396,8 @@ module chuggy_domain {
 
   /// A DECIDED EVENT IS NEVER THE IDENTITY: the event the machine decides at
   /// a state moves that state. It is what lets a replay hold a journal row
-  /// to "the event moved the state" (refinement.qnt journalLegalOn) and
-  /// accept exactly the events the machine could have decided there.
+  /// to "the event moved the state" (refinement.qnt journalLegalOn) without
+  /// refusing a row the machine decided.
   val eventsNeverIdentity: bool = match lastStep {
     | Decided(d) => evolve(prevGraph, d.event) != prevGraph
     | NoDecision => true

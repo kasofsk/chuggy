@@ -12,6 +12,10 @@
  * exactly as it is. That identity is what a journal's legality check reads:
  * an event that does not move the state it lands on is one nothing decided
  * there.
+ *
+ * The two work-failure arms are the model's one strengthening over the
+ * package, whose arms park a ticket in Work whatever task the failure names;
+ * see `onCurrentWork`.
  */
 
 import type {
@@ -83,7 +87,11 @@ function enterWork(ticket: Ticket): Ticket {
   return { ...spawnWork(ticket), phase: "Work", escalation: "NoEscalation" };
 }
 
-/** The work walls: the event moves the ticket only while it is on the cycle the failure names. */
+/**
+ * The work walls: the event moves the ticket only while it is on the cycle the
+ * failure names. The package checks the phase alone; this guard is what makes
+ * a failure row for a replaced cycle inert on replay.
+ */
 function onCurrentWork(ticket: Ticket, failure: WorkFailureEvent): boolean {
   return (
     ticket.phase === "Work" &&
