@@ -322,7 +322,7 @@ test("the finalizer's own envelope is read only by the parse a writer reads its 
   const submitted = {
     version: 1,
     command: "SubmitFinalizationResult",
-    request: "6:0:RunFinalizer",
+    request: "6:0:FinalizeTicket",
     attempt: "attempt-1",
     requestGeneration: 6,
     recoveryEpoch: "epoch-1",
@@ -479,7 +479,7 @@ test("a submission carries its hold kind exactly when it reports one", () => {
   const held = {
     version: 1,
     command: "SubmitFinalizationResult",
-    request: "6:0:RunFinalizer",
+    request: "6:0:FinalizeTicket",
     requestGeneration: 6,
     recoveryEpoch: "epoch-1",
     outcome: "FinalizationResultUnavailable",

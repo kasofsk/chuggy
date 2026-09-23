@@ -490,7 +490,7 @@ async function finalizerSibling(
      VALUES ($1,$2,$3,'Work the sibling repository.',$4)`,
     [...keys, repository],
   );
-  const request = `${project.authorizingSeq}:1:RunFinalizer`;
+  const request = `${project.authorizingSeq}:1:FinalizeTicket`;
   await rig.harness.query(
     `INSERT INTO finalization_request
        (tenant,project,request,authorizing_seq,effect_position,ticket,

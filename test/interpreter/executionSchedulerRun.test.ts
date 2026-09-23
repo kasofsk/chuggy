@@ -90,7 +90,7 @@ const execution: LogicalExecution = {
   ticket: asTicketId(1),
   task: asTaskId(1),
   taskKind: "Work",
-  sourceRequest: "1:0:SpawnWork",
+  sourceRequest: "1:0:ExecuteTask",
   inputBundle: "1:0:InputBundle",
   inputBundleDigest: "b".repeat(64),
   sourceSeq: 1,
@@ -487,7 +487,7 @@ test("admission stops at the first refusal rather than spinning to its bound", a
 /** One claimed cancellation request, which is all the cancellation cases start from. */
 const cancelClaim: RequestClaim = {
   partition,
-  request: "2:0:CancelTicketWork",
+  request: "2:0:CancelTask",
   kind: "CancelTicketWork",
   ticket: asTicketId(1),
   authorizingSeq: 2,
@@ -774,7 +774,7 @@ test("registration claims only spawn kinds and counts what it created", async ()
       return Promise.resolve([
         {
           partition,
-          request: "1:0:SpawnWork",
+          request: "1:0:ExecuteTask",
           kind: "SpawnWork",
           ticket: asTicketId(1),
           authorizingSeq: 1,
