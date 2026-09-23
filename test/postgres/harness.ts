@@ -719,6 +719,7 @@ export async function postgresHarnessAccept(
   return {
     partition: submission.partition,
     ordinal: accepted.operation.ordinal,
+    deferredPasses: 0,
     priority: "Ordinary",
     source: {
       kind: "Operation",

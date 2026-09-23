@@ -18,6 +18,15 @@ export const ticketServiceDefaults: TicketServiceConfig = {
   backpressureRetryAfterSeconds: 1,
 };
 
+/**
+ * How many passes may defer one input on a source nobody could yet read before
+ * the input is refused instead. It is counted in passes rather than time for
+ * the reason the finalizer's `holdPassesMax` is, and it is what stops a remote
+ * that stays transient leaving its operation unanswered and its class head
+ * standing in front of everything behind it.
+ */
+export const sourceDeferralPassesMax = 10;
+
 export function checkedTicketServiceConfig(
   config: TicketServiceConfig,
 ): TicketServiceConfig {
@@ -52,6 +61,7 @@ export type DecisionMetricOutcome =
   | "Journaled"
   | "Refused"
   | "Answered"
+  | "Deferred"
   | "Fenced"
   | "NotActive"
   | "StaleHead"

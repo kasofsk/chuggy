@@ -35,6 +35,10 @@
  * which of the offered answers was given, and the head and the projection are
  * exactly as they were.
  *
+ * A DEFERRAL SETTLES NOTHING AND COUNTS ITSELF. The input stays pending and
+ * its deferred passes go up by one, so the writer that takes it next knows how
+ * many passes a transient source has already cost it.
+ *
  * A REFUSAL WRITES NO ENTRY. It settles the decision input
  * and moves nothing else, so the head, the projection and the journal are
  * exactly as they were — which is what makes a refusal replayable as an
@@ -258,7 +262,8 @@ export type DecisionOutcome =
       };
     }
   | { readonly outcome: "Refused"; readonly code: RefusalCode }
-  | { readonly outcome: "Answered"; readonly answer: NativeActionAnswer };
+  | { readonly outcome: "Answered"; readonly answer: NativeActionAnswer }
+  | { readonly outcome: "Deferred" };
 
 /** One decision offered for commit: what authorizes it, what caused it, and what it writes. */
 export interface Decision {
@@ -287,6 +292,7 @@ export type Decided =
   | { readonly decided: "Committed"; readonly lease: Lease }
   | { readonly decided: "Refused" }
   | { readonly decided: "Answered" }
+  | { readonly decided: "Deferred" }
   | {
       readonly decided: "AlreadyTerminal";
       readonly outcome: DecisionInputOutcome;

@@ -36,6 +36,10 @@
  * There is no third position, because an item invisible to the proof is an
  * uncommitted one whose transaction has still to pass through that lock.
  *
+ * AN INPUT WHOSE DEFERRALS ARE SPENT IS NOT PROMOTED BY AGE. The writer
+ * refuses it on its next pass whatever its class, so aging it past the classes
+ * above would only put a refusal in front of work that can be decided.
+ *
  * THE GENERATION IS FOR THE OBSERVATION TAKEN OUTSIDE THAT TRANSACTION. An
  * owner clears against a readiness it read at some earlier moment, and the
  * generation is what refuses a clear whose evidence predates an acceptance —
@@ -108,6 +112,7 @@ import { projectRowCounter } from "./rows.ts";
 import {
   observe,
   silentTicketServiceMetrics,
+  sourceDeferralPassesMax,
   type TicketServiceMetrics,
 } from "../../interpreter/ticketService.ts";
 
@@ -132,6 +137,7 @@ interface InboxRow {
    * durable by the time this read can see the item.
    */
   readonly blocked_reason: string | null;
+  readonly deferred_passes: number;
 }
 
 function priorityOf(value: string): PriorityClass {
@@ -631,19 +637,21 @@ export async function postgresReadinessConsumable(
   const found = await pool.query<InboxRow>(
     sql`WITH heads AS (
        SELECT DISTINCT ON (d.base_priority)
-         d.ordinal, d.input_kind, d.input_id, d.base_priority, d.created_at
+         d.ordinal, d.input_kind, d.input_id, d.base_priority, d.created_at,
+         d.deferred_passes
        FROM decision_input d
        WHERE d.tenant=${partition.tenant} AND d.project=${partition.project} AND d.state='Pending'
        ORDER BY d.base_priority, d.ordinal
      )
      SELECT h.ordinal, h.input_kind, h.input_id, h.base_priority,
-            o.command, x.blocked_reason
+            o.command, x.blocked_reason, h.deferred_passes
        FROM heads h
        LEFT JOIN operation o ON h.input_kind='Operation' AND o.tenant=${partition.tenant} AND o.project=${partition.project} AND o.operation=h.input_id
        LEFT JOIN execution x ON h.input_kind='Operation' AND x.tenant=${partition.tenant} AND x.project=${partition.project} AND x.completion_operation=h.input_id
       ORDER BY greatest(0,
         CASE h.base_priority WHEN 'Safety' THEN 0 WHEN 'Completion' THEN 1 ELSE 3 END
-        - floor(extract(epoch FROM (statement_timestamp()-h.created_at))/${agingIntervalSeconds})::integer), h.ordinal
+        - CASE WHEN h.deferred_passes >= ${sourceDeferralPassesMax} THEN 0
+               ELSE floor(extract(epoch FROM (statement_timestamp()-h.created_at))/${agingIntervalSeconds})::integer END), h.ordinal
       LIMIT 1`,
   );
   const row = found.rows[0];
@@ -675,6 +683,7 @@ export async function postgresReadinessConsumable(
     partition,
     ordinal: projectRowCounter(row.ordinal, "inbox ordinal"),
     priority: priorityOf(row.base_priority),
+    deferredPasses: row.deferred_passes,
     source,
   };
 }

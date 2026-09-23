@@ -184,6 +184,7 @@ function input(event: DecisionEvent): DecisionInput {
   return {
     partition,
     ordinal: 1,
+    deferredPasses: 0,
     priority: classifyCommand(command).priority,
     source: {
       kind: "Operation",
@@ -327,6 +328,7 @@ function plannedInput(event: DecisionEvent): DecisionInput | undefined {
     return {
       partition,
       ordinal: 1,
+      deferredPasses: 0,
       priority: "Completion",
       source: {
         kind: "Operation",
@@ -683,6 +685,7 @@ function finalizationInput(event: DecisionEvent): DecisionInput {
   return {
     partition,
     ordinal: 1,
+    deferredPasses: 0,
     priority: "Completion",
     source: {
       kind: "Operation",

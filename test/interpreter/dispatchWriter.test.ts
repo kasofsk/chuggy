@@ -57,6 +57,7 @@ import {
 } from "../../src/interpreter/projectWriter.ts";
 import {
   silentTicketServiceMetrics,
+  sourceDeferralPassesMax,
   ticketServiceDefaults,
 } from "../../src/interpreter/ticketService.ts";
 import type { ExecutionSourceObservationPort } from "../../src/interpreter/executionSource.ts";
@@ -147,6 +148,7 @@ function operationInput(command: TicketCommand): DecisionInput {
   return {
     partition,
     ordinal: 1,
+    deferredPasses: 0,
     priority: classifyCommand(command).priority,
     source: {
       kind: "Operation",
@@ -193,7 +195,11 @@ async function decidedWith(
   const decisions: ProjectDecision = {
     decide: (decision) => {
       offered = decision;
-      return Promise.resolve({ decided: "Refused" });
+      return Promise.resolve(
+        decision.outcome.outcome === "Deferred"
+          ? { decided: "Deferred" }
+          : { decided: "Refused" },
+      );
     },
   };
   const result = await projectWriterDecide(
@@ -505,6 +511,7 @@ function proposalInput(
   return {
     partition,
     ordinal: 1,
+    deferredPasses: 0,
     priority: classifyCommand(command).priority,
     source: {
       kind: "Operation",
@@ -676,6 +683,7 @@ function completionInput(
   return {
     partition,
     ordinal: 1,
+    deferredPasses: 0,
     priority: "Completion",
     source: {
       kind: "Operation",
@@ -867,9 +875,38 @@ test("a source that may read later defers the input rather than deciding it", as
       operationInput(manualDispatch),
       unreadableSources(evidence),
     );
-    assert.equal(offered, undefined);
+    assert.deepEqual(offered?.outcome, { outcome: "Deferred" });
     assert.equal(result.memory, memory);
     assert.deepEqual(result.decided, { decided: "Deferred", evidence });
+  }
+});
+
+/**
+ * The bound is on the passes an input has already been deferred, so the pass
+ * that finds them spent answers the client instead of deferring it again.
+ */
+test("a source still unreadable once its deferrals are spent is refused under its last evidence", async () => {
+  for (const evidence of transientEvidences) {
+    const spent = {
+      ...operationInput(manualDispatch),
+      deferredPasses: sourceDeferralPassesMax,
+    };
+    const { offered, result } = await decidedWith(
+      releasedMemory(),
+      spent,
+      unreadableSources(evidence),
+    );
+    assert.deepEqual(offered?.outcome, {
+      outcome: "Refused",
+      code: "ExecutionSourceUnreadable",
+    });
+    assert.equal(result.decided.decided, "Refused");
+    const lastDeferred = await decidedWith(
+      releasedMemory(),
+      { ...spent, deferredPasses: sourceDeferralPassesMax - 1 },
+      unreadableSources(evidence),
+    );
+    assert.deepEqual(lastDeferred.offered?.outcome, { outcome: "Deferred" });
   }
 });
 
@@ -933,6 +970,7 @@ function stoppedStageMemory(): ProjectMemory {
 const resumeInput: DecisionInput = {
   partition,
   ordinal: 1,
+  deferredPasses: 0,
   priority: "Ordinary",
   source: {
     kind: "Operation",
@@ -1129,8 +1167,10 @@ test("a deferred input ends the run it arrived in without clearing readiness", a
           }),
       } as unknown as ProjectStore,
       decisions: {
-        decide: () =>
-          Promise.reject(new Error("a deferred input offers no decision")),
+        decide: (decision) =>
+          decision.outcome.outcome === "Deferred"
+            ? Promise.resolve({ decided: "Deferred" })
+            : Promise.reject(new Error("a deferred input journals nothing")),
       },
       ticketBriefs: { brief: () => Promise.resolve(undefined) },
       executionSources: unreadableSources("RemoteUnreachable"),

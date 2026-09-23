@@ -108,6 +108,7 @@ import {
   checkedTicketServiceConfig,
   observe,
   silentTicketServiceMetrics,
+  sourceDeferralPassesMax,
   ticketServiceDefaults,
   type TicketServiceConfig,
   type TicketServiceMetrics,
@@ -578,17 +579,23 @@ async function projectWriterSpawnSources(
 
 /**
  * What a source nobody could read lands as: a transient evidence defers the
- * input so a later quantum retries it, and a durable one answers the client's
- * dispatch with a code. There is no third landing, because the dispatch is the
- * only command that observes and there is nothing of it to journal.
+ * input so a later quantum retries it, until the input has been deferred
+ * `sourceDeferralPassesMax` times, and then it and a durable evidence alike
+ * answer the client's dispatch with the code the last evidence earns. There is
+ * no third landing, because the dispatch is the only command that observes and
+ * there is nothing of it to journal.
  */
-function projectWriterUnreadableLanding(evidence: GitEvidence):
+function projectWriterUnreadableLanding(
+  evidence: GitEvidence,
+  deferredPasses: number,
+):
   | { readonly landing: "Deferred" }
   | {
       readonly landing: "Refused";
       readonly code: RefusalCode;
     } {
-  return transientGitEvidences.includes(evidence)
+  return transientGitEvidences.includes(evidence) &&
+    deferredPasses < sourceDeferralPassesMax
     ? { landing: "Deferred" }
     : { landing: "Refused", code: executionSourceRefusalCode(evidence) };
 }
@@ -654,7 +661,10 @@ async function projectWriterDispatchPlan(
 ): Promise<ProjectPlan | { readonly deferred: GitEvidence }> {
   const observed = await projectWriterDispatchSource(writer, memory, ticket);
   if (observed.observed !== "Source") {
-    const landing = projectWriterUnreadableLanding(observed.evidence);
+    const landing = projectWriterUnreadableLanding(
+      observed.evidence,
+      item.deferredPasses,
+    );
     return landing.landing === "Deferred"
       ? { deferred: observed.evidence }
       : {
@@ -715,19 +725,22 @@ export async function projectWriterDecide(
             preflight.dispatch,
           )
         : preflight;
-  if ("deferred" in plan)
-    return {
-      memory,
-      decided: { decided: "Deferred", evidence: plan.deferred },
-    };
   const decided = await writer.decisions.decide({
     lease: memory.lease,
     cause: { kind: "Operation", id: item.source.operation },
-    outcome: plan.outcome,
+    outcome: "deferred" in plan ? { outcome: "Deferred" } : plan.outcome,
     ...(item.source.draftRelease === undefined
       ? {}
       : { draftRelease: item.source.draftRelease }),
   });
+  if ("deferred" in plan)
+    return {
+      memory,
+      decided:
+        decided.decided === "Deferred"
+          ? { decided: "Deferred", evidence: plan.deferred }
+          : decided,
+    };
   if (decided.decided !== "Committed") return { memory, decided };
   const ticketVersions = new Map(memory.ticketVersions);
   const dispatchContracts = new Map(memory.dispatchContracts ?? []);

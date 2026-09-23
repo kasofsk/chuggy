@@ -66,6 +66,11 @@ export interface DecisionInput {
   readonly partition: Partition;
   readonly ordinal: number;
   readonly priority: PriorityClass;
+  /**
+   * How many passes have already deferred this input on a source nobody could
+   * yet read, which is what bounds a remote that stays transient.
+   */
+  readonly deferredPasses: number;
   readonly source: {
     readonly kind: "Operation";
     readonly operation: OperationId;
