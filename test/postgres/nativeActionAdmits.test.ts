@@ -50,7 +50,7 @@ const subject = postgresReadHarness();
 /** The most decisions one reported task can enqueue, which bounds every drain below. */
 const admitsDecisionsMax = 8;
 
-/** Decides everything the project's queue holds, which is how a continuation reaches its writer. */
+/** Decides everything the project's queue holds, which is how an admitted answer reaches its writer. */
 async function admitsDrain(
   partition: Partition,
   memory: ProjectMemory,

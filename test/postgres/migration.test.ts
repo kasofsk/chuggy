@@ -6541,6 +6541,38 @@ const eventsJournalled: readonly (readonly [string, unknown, boolean])[] = [
     false,
   ],
   [
+    "a finalization fact at no evidence",
+    {
+      type: "TicketFinalizationNeedsWork",
+      value: { ...eventsFinalization, evidence: 0 },
+    },
+    false,
+  ],
+  [
+    "a finalization fact with no evidence",
+    {
+      type: "TicketFinalizationUnavailable",
+      value: { ...eventsFinalization, evidence: undefined },
+    },
+    false,
+  ],
+  [
+    "a work failure at no evidence",
+    {
+      type: "TicketWorkProcessFailed",
+      value: { ticket: 1, task: releasedTask, evidence: 0 },
+    },
+    false,
+  ],
+  [
+    "a work failure with no evidence",
+    {
+      type: "TicketWorkExecutionUnavailable",
+      value: { ticket: 1, task: releasedTask },
+    },
+    false,
+  ],
+  [
     "a release with no work definition",
     ticketCreated({ ...releasedWhole, workConfiguration: undefined }),
     false,
@@ -6950,7 +6982,7 @@ test("a desk task is opened once per decision, whatever position it names", asyn
   });
 });
 
-test("a decision input counts the passes it was deferred and when it first was", async () => {
+test("a decision input counts the passes it was deferred", async () => {
   await migrationDatabase("events_deferral", async (subject) => {
     await postgresMigrate(subject);
     await subject.query(deletionPartition);
@@ -6974,10 +7006,10 @@ test("a decision input counts the passes it was deferred and when it first was",
     assert.deepEqual(
       (
         await subject.query(
-          "SELECT deferred_passes, deferred_since FROM decision_input",
+          "SELECT deferred_passes FROM decision_input",
         )
       ).rows,
-      [{ deferred_passes: 0, deferred_since: null }],
+      [{ deferred_passes: 0 }],
     );
     await assert.rejects(
       input(2, "Operation", -1),
@@ -6987,7 +7019,7 @@ test("a decision input counts the passes it was deferred and when it first was",
       input(3, "Continuation"),
       /decision_input_kind_is_known/u,
     );
-    for (const column of ["deferred_passes", "deferred_since"])
+    for (const column of ["deferred_passes"])
       assert.equal(
         (
           await subject.query<{ granted: boolean }>(

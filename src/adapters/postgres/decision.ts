@@ -691,8 +691,7 @@ async function decisionApply(
     case "Deferred":
       await client.query(
         sql`UPDATE decision_input
-            SET deferred_passes = deferred_passes + 1,
-                deferred_since = coalesce(deferred_since, now())
+            SET deferred_passes = deferred_passes + 1
           WHERE tenant=${lease.partition.tenant} AND project=${lease.partition.project}
             AND input_kind=${String(cause.kind)} AND input_id=${cause.id}`,
       );

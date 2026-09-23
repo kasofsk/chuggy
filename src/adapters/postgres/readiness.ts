@@ -36,9 +36,10 @@
  * There is no third position, because an item invisible to the proof is an
  * uncommitted one whose transaction has still to pass through that lock.
  *
- * AN INPUT WHOSE DEFERRALS ARE SPENT IS NOT PROMOTED BY AGE. The writer
- * refuses it on its next pass whatever its class, so aging it past the classes
- * above would only put a refusal in front of work that can be decided.
+ * AN INPUT WHOSE DEFERRALS ARE SPENT IS NOT PROMOTED BY AGE. Its next pass
+ * either decides it, if its source has become readable, or refuses it, so
+ * aging it past the classes above would only put that pass in front of work
+ * that can be decided.
  *
  * THE GENERATION IS FOR THE OBSERVATION TAKEN OUTSIDE THAT TRANSACTION. An
  * owner clears against a readiness it read at some earlier moment, and the

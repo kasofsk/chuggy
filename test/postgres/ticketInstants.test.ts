@@ -79,7 +79,7 @@ async function ticketRead(partition: Partition) {
 
 /**
  * Decides the input the last commit left behind and anything behind that, which
- * is how an answer that opens a continuation reaches the writer owing it.
+ * is how an answer reaches the writer owing it.
  */
 async function answered(
   partition: Partition,

@@ -34,6 +34,11 @@
 -- checkable: a relation that points at one of these and is not named here fails
 -- the statement instead of being emptied behind the operator's back.
 --
+-- BEFORE A MIGRATION, RUN THE SCRIPT THE PREVIOUS RELEASE SHIPPED. This one
+-- names the relations of the schema it ships with, so one a migration creates
+-- is not there yet to truncate, and one a migration drops still holds keys this
+-- list no longer names.
+--
 -- RUN IT AS THE OWNER, AGAINST THE TARGET DATABASE, WITH THE CHUGGY
 -- DEPLOYMENTS SCALED TO ZERO AND A DUMP TAKEN:
 --   psql "$CHUG_PG_URL" -v ON_ERROR_STOP=1 -f deploy/rig/wipe-tickets.sql

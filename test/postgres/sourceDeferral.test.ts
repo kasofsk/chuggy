@@ -78,7 +78,7 @@ test("a remote that stays transient is refused once its deferrals are spent, and
     "Refused",
   ]);
   const settled = await harness.query(
-    `SELECT state, outcome_code, deferred_passes, deferred_since IS NOT NULL AS since
+    `SELECT state, outcome_code, deferred_passes
        FROM decision_input WHERE tenant=$1 AND project=$2 AND input_id=$3`,
     [partition.tenant, partition.project, operation],
   );
@@ -87,7 +87,6 @@ test("a remote that stays transient is refused once its deferrals are spent, and
       state: "Refused",
       outcome_code: "ExecutionSourceUnreadable",
       deferred_passes: sourceDeferralPassesMax,
-      since: true,
     },
   ]);
   assert.deepEqual(

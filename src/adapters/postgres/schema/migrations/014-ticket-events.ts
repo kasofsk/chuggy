@@ -21,7 +21,9 @@ import {
  * entry whose bytes are what its digest attests cannot be rewritten into an
  * event, so a journal with rows in it comes up holding a ticket the actor
  * cannot replay. The guard refuses the migration instead and names
- * `deploy/rig/wipe-tickets.sql`, which is what empties the journal it needs.
+ * `deploy/rig/wipe-tickets.sql`. The script to run is the one the previous
+ * release shipped: this revision's no longer names `project_continuation`,
+ * which holds a key into the journal until this migration drops it.
  *
  * `decision_event_is_valid` IS THE JOURNAL'S NOW, AND THE JOURNAL CALLS IT. It
  * was the event half of the mailbox's grammar and no journal row was ever
@@ -54,9 +56,9 @@ import {
  * `effect_position` stays: `request_finalization_approval` still copies the
  * finalization request's into the approval it opens.
  *
- * A DEFERRED INPUT COUNTS ITS PASSES. `deferred_passes` and `deferred_since`
- * are what the settle that defers an unreadable source bumps, so a source that
- * stays transient is refused after a bound rather than deferred forever.
+ * A DEFERRED INPUT COUNTS ITS PASSES. `deferred_passes` is what the settle that
+ * defers an unreadable source bumps, so a source that stays transient is
+ * refused after a bound rather than deferred forever.
  *
  * THE RELEASE INDEX AND THE COMPLETION DOOR READ `TicketCreated`, the one tag
  * a release is journalled at. The door is rewritten whole for that and for the
@@ -157,10 +159,8 @@ export const migration014: Migration = {
        ADD CONSTRAINT decision_input_priority_is_known CHECK ((base_priority = ANY (ARRAY['Safety'::text, 'Completion'::text, 'Ordinary'::text]))),
        ADD CONSTRAINT decision_input_state_is_known CHECK ((state = ANY (ARRAY['Pending'::text, 'Journaled'::text, 'Answered'::text, 'Refused'::text, 'Cancelled'::text]))),
        ADD COLUMN deferred_passes integer DEFAULT 0 NOT NULL,
-       ADD COLUMN deferred_since timestamp with time zone,
        ADD CONSTRAINT decision_input_deferred_passes_are_counted CHECK ((deferred_passes >= 0))`,
     `GRANT UPDATE(deferred_passes) ON TABLE public.decision_input TO ${ticketServiceRole}`,
-    `GRANT UPDATE(deferred_since) ON TABLE public.decision_input TO ${ticketServiceRole}`,
     `DROP INDEX public.native_action_effect_is_materialized_once`,
     `CREATE UNIQUE INDEX native_action_decision_opens_one_desk ON public.native_action USING btree (tenant, project, authorizing_seq) WHERE (attempt IS NULL)`,
     `DROP INDEX public.journal_entry_release_ticket`,
