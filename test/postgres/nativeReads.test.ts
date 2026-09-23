@@ -55,7 +55,7 @@ async function seedEntry(
   partition: Partition,
   label: string,
   seq: number,
-  entry = "{}",
+  entry = JSON.stringify({ seq, event: { type: "TicketRevoked", value: 1 } }),
 ): Promise<void> {
   const submission = postgresHarnessSubmission(partition, label);
   await subject.harness.inbox.accept(submission);

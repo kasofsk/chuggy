@@ -563,7 +563,8 @@ async function finalizerUnboundTicket(
     `INSERT INTO journal_entry
        (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
         recovery_epoch,cause_kind,cause_id)
-     VALUES ($1,$2,1,'{}',$3,'genesis','owner',1,$4,'Operation',$5)`,
+     VALUES ($1,$2,1,'{"seq":1,"event":{"type":"TicketRevoked","value":1}}',$3,
+             'genesis','owner',1,$4,'Operation',$5)`,
     [
       partition.tenant,
       partition.project,

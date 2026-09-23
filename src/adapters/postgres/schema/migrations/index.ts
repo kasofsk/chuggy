@@ -11,6 +11,7 @@ import { migration010 } from "./010-task-identity.ts";
 import { migration011 } from "./011-evaluator-keys.ts";
 import { migration012 } from "./012-task-report.ts";
 import { migration013 } from "./013-released-ticket.ts";
+import { migration014 } from "./014-ticket-events.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -27,4 +28,5 @@ export const migrations: readonly Migration[] = [
   migration011,
   migration012,
   migration013,
+  migration014,
 ];

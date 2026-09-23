@@ -76,7 +76,6 @@ TRUNCATE TABLE
   public.native_action_resolution,
   public.operation,
   public.project_change,
-  public.project_continuation,
   public.project_notification,
   public.project_readiness,
   public.scheduler_incident,

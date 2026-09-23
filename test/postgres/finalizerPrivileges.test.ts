@@ -93,7 +93,6 @@ test("the finalizer holds no privilege at all on the relations a conclusion live
 test("the finalizer cannot reach a prior slice's own relations", async () => {
   for (const relation of [
     "project_notification",
-    "project_continuation",
     "execution_request",
     "execution_attempt",
     "scheduler_incident",

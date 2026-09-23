@@ -7,7 +7,6 @@ import {
   boundaryOwnerRole,
   cancellationFunction,
   configurationImporterRole,
-  continuationFunction,
   finalizerRole,
   notificationPublishFunction,
   poolPlaneRole,
@@ -255,7 +254,7 @@ test("runtime roles cannot construct decision inputs directly", async () => {
       role,
       `INSERT INTO decision_input
        (tenant,project,ordinal,input_kind,input_id,base_priority,lifecycle_generation)
-       VALUES ('tenant','project',1,'Continuation','input','Continuation',1)`,
+       VALUES ('tenant','project',1,'Operation','input','Ordinary',1)`,
     );
     assert.match(refusal ?? "", postgresHarnessDenial("decision_input"));
   }
@@ -832,7 +831,6 @@ test("the scheduler cannot write ticket state or append history", async () => {
     ["UPDATE project SET lifecycle='Suspended'", "project"],
     ["INSERT INTO execution_request DEFAULT VALUES", "execution_request"],
     ["INSERT INTO finalization_request DEFAULT VALUES", "finalization_request"],
-    ["INSERT INTO project_continuation DEFAULT VALUES", "project_continuation"],
     ["UPDATE native_action SET state='Resolved'", "native_action"],
     ["INSERT INTO ticket_source DEFAULT VALUES", "ticket_source"],
     ["INSERT INTO ticket_definition DEFAULT VALUES", "ticket_definition"],
@@ -868,7 +866,6 @@ test("the scheduler reaches the decision mailbox through one function and no oth
       `SELECT ${cancellationFunction}('t','p','o','User','s')`,
       cancellationFunction,
     ],
-    [`SELECT ${continuationFunction}('t','p',1,'c')`, continuationFunction],
     [
       `SELECT ${notificationPublishFunction}('t','p','Draft','1',NULL,1)`,
       notificationPublishFunction,
