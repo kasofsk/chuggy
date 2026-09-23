@@ -1,32 +1,45 @@
 /**
- * What the machine will accept, as pure predicates over an observed `TicketGraph`.
- *
- * EVERY GUARD IS STATED ONCE AND REFERENCED. The model hoisted these out of
- * its actions for a reason worth repeating here: a guard copied into a second
- * caller drifts silently, and the copy keeps claiming the machine accepts a
- * step the machine now refuses. So the replay checker, the deciders' callers
- * and the suites all read these, and none restates one.
+ * The draw sets: which commands the environment sends, as pure predicates
+ * over an observed `TicketGraph`. `decide` (`src/domain/deciders.ts`) is what
+ * accepts or refuses a command; these say only where the machine's actions,
+ * the actor's harness and the walks draw from, and each is the model's own
+ * form of the same name (`model/domain.qnt`). The release room is the one
+ * bound here no refusal names: it is the instance's `nTickets`, not the
+ * domain's.
  *
  * They are parameterised by a `TicketGraph` rather than reading ambient state,
- * because the journaled actor must re-check enablement at a REPLAYED prefix
- * state — a value, not a live variable.
+ * because a draw is taken at a state the caller holds — a value, not a live
+ * variable.
  */
 
-import { ticketIdUniverse, type Config } from "./config.ts";
+import {
+  aDispatchSource,
+  aFinalizationEvidence,
+  defaultPlan,
+  releasedTicketOf,
+  ticketIdUniverse,
+  type Config,
+} from "./config.ts";
 import { ticketAt, ticketIds } from "./ticketGraph.ts";
 import type {
   ArtifactMark,
-  TicketGraph,
-  FinalizationOutcome,
   TaskIdentity,
+  TaskTerminalReport,
+  TicketCommand,
+  TicketGraph,
 } from "./generated/modelTypes.ts";
 import {
   artifactOf,
   instanceTasks,
   hasOpenHumanTask,
   liveTasks,
-  owesTask,
+  taskRefOf,
 } from "./ticket.ts";
+import {
+  decide,
+  incompleteDependencies,
+  unaskedDisposition,
+} from "./deciders.ts";
 import type { TicketId } from "./ids.ts";
 import { revocationAllowed } from "./phase.ts";
 import { workTaskOf } from "./task.ts";
@@ -64,9 +77,7 @@ export function depArtifacts(
 }
 
 export function depsDoneIn(graph: TicketGraph, id: TicketId): boolean {
-  return [...waitsOn(graph, id)].every(
-    (k) => ticketAt(graph, k as TicketId).phase === "Done",
-  );
+  return incompleteDependencies(graph, ticketAt(graph, id)).size === 0;
 }
 
 /**
@@ -87,8 +98,10 @@ export function canReleaseIn(
 }
 
 /**
- * What a release may depend on: anything not revoked. A revoked ticket never
- * reaches Done, so depending on one is authoring a ticket that can never run.
+ * What a release draws its dependencies from: anything not revoked.
+ * `decideCreate` refuses no dependency that exists, but a revoked ticket
+ * never reaches Done, so the author the machine models never writes a ticket
+ * that can never run.
  */
 export function dependableIn(graph: TicketGraph): readonly TicketId[] {
   return ticketIds(graph).filter((k) => ticketAt(graph, k).phase !== "Revoked");
@@ -126,41 +139,6 @@ export function isBlockedIn(graph: TicketGraph, id: TicketId): boolean {
   return ticketAt(graph, id).phase === "Pending" && !depsDoneIn(graph, id);
 }
 
-/** The phase that holds the finalizer obligation, and so may take its result. */
-export function finalizableIn(graph: TicketGraph, id: TicketId): boolean {
-  return graph.tickets.has(id) && ticketAt(graph, id).phase === "Finalization";
-}
-
-export function finalizationOutcomeEnabled(
-  graph: TicketGraph,
-  id: TicketId,
-  outcome: FinalizationOutcome,
-): boolean {
-  const phase = ticketAt(graph, id).phase;
-  switch (outcome) {
-    case "FinalizationSucceeded":
-    case "FinalizationNeedsWork":
-    case "FinalizationResultUnavailable":
-      return phase === "Finalization";
-  }
-}
-
-/** Every result the finalizer service may report. */
-export const finalizationOutcomes: readonly FinalizationOutcome[] = [
-  "FinalizationSucceeded",
-  "FinalizationNeedsWork",
-  "FinalizationResultUnavailable",
-];
-
-/** Whether the task this identity names is one this ticket is currently owed. */
-export function outstandingTaskIn(
-  graph: TicketGraph,
-  id: TicketId,
-  task: TaskIdentity,
-): boolean {
-  return owesTask(ticketAt(graph, id), task);
-}
-
 /** The ids a release may still claim, which is what makes a fleet quiet or not. */
 export function releasableIdsIn(
   config: Config,
@@ -170,7 +148,7 @@ export function releasableIdsIn(
   return ticketIdUniverse(config).filter((j) => !graph.tickets.has(j));
 }
 
-/** Tickets running their finalizer, which is the phase a result may be reported for. */
+/** Tickets running their finalizer, which is who a finalizer's result is drawn for. */
 export function finalizingIn(graph: TicketGraph): readonly TicketId[] {
   return ticketIds(graph).filter(
     (j) => ticketAt(graph, j).phase === "Finalization",
@@ -218,4 +196,103 @@ export function deliverableTasksIn(
     workTaskOf(id, index + 1),
   );
   return [...work, ...ticket.evaluations.flatMap(instanceTasks)];
+}
+
+/** A process failure for a task of ticket `id`, at the evidence the suites derive for it. */
+export function failureReportOf(
+  id: number,
+  task: TaskIdentity,
+): TaskTerminalReport {
+  return {
+    type: "TerminalFailureReport",
+    value: {
+      ticket: id,
+      failure: { task, evidence: taskRefOf(task) },
+      kind: "ProcessFailure",
+    },
+  };
+}
+
+/** A finalizer's success for ticket `id`'s attempt (`workCycle`, `generation`). */
+export function finalizationReportOf(
+  id: number,
+  workCycle: number,
+  generation: number,
+): TicketCommand {
+  return {
+    type: "ReportFinalizationResult",
+    value: {
+      ticket: id,
+      workCycle,
+      generation,
+      result: { type: "FinalizationSucceeded", value: aFinalizationEvidence },
+    },
+  };
+}
+
+/**
+ * The commands an environment may send out of turn (the model's
+ * `commandProbesIn`, in its order): for every id the instance can name, a
+ * create that collides, names itself or names what does not exist, and a
+ * dispatch, a revoke and a resume; a failure for every task a ticket has ever
+ * been owed, and for the first work task of an id not released; and a
+ * finalizer's result for the attempt a ticket is on, the generation before it
+ * and the cycle before it. Every one is well-formed, so which of them `decide`
+ * refuses is the ticket's state and nothing else.
+ */
+export function commandProbesIn(
+  config: Config,
+  graph: TicketGraph,
+): readonly TicketCommand[] {
+  const universe = ticketIdUniverse(config);
+  const live = ticketIds(graph);
+  const absent = universe.filter((j) => !graph.tickets.has(j));
+  const plan = defaultPlan(config);
+  const perId = universe.flatMap((j): TicketCommand[] => [
+    { type: "CreateTicket", value: releasedTicketOf(j, new Set(), plan) },
+    { type: "CreateTicket", value: releasedTicketOf(j, new Set([j]), plan) },
+    {
+      type: "CreateTicket",
+      value: releasedTicketOf(j, new Set(absent.filter((k) => k !== j)), plan),
+    },
+    { type: "DispatchTicket", value: { ticket: j, source: aDispatchSource } },
+    { type: "RevokeTicket", value: j },
+    { type: "ResumeTicket", value: j },
+  ]);
+  const reports = [
+    ...live.flatMap((j) =>
+      deliverableTasksIn(graph, j).map((task) => failureReportOf(j, task)),
+    ),
+    ...absent.map((j) => failureReportOf(j, workTaskOf(j, 1))),
+  ].map((report): TicketCommand => ({
+    type: "ReportTaskTerminal",
+    value: report,
+  }));
+  const finalizations = [
+    ...live.flatMap((j) => {
+      const ticket = ticketAt(graph, j);
+      const cycle = Math.max(1, ticket.workCyclesStarted);
+      const generation = Math.max(1, ticket.finalizationGeneration);
+      return [
+        finalizationReportOf(j, cycle, generation),
+        ...(generation > 1
+          ? [finalizationReportOf(j, cycle, generation - 1)]
+          : []),
+        ...(cycle > 1 ? [finalizationReportOf(j, cycle - 1, generation)] : []),
+      ];
+    }),
+    ...absent.map((j) => finalizationReportOf(j, 1, 1)),
+  ];
+  return [...perId, ...reports, ...finalizations];
+}
+
+/** The probes `decide` refuses in this graph. No refusal asks the policy, so any one will do. */
+export function refusedCommandsIn(
+  config: Config,
+  graph: TicketGraph,
+): readonly TicketCommand[] {
+  return commandProbesIn(config, graph).filter(
+    (command) =>
+      decide(graph, command, () => unaskedDisposition).type === "TicketRefused",
+  );
 }

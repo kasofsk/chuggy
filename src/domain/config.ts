@@ -14,6 +14,7 @@
 
 import type {
   EvaluatorDefinition,
+  FinalizationResult,
   ReleasedTicket,
   StageDefinition,
   TaskDefinition,
@@ -184,3 +185,15 @@ export const finalizationEvidences: readonly number[] = [
   aFinalizationEvidence,
   aFinalizationEvidence + 1,
 ];
+
+/**
+ * What a finalizer may report: any of the three results, at any evidence it
+ * may return. The machine draws the result, never the cause.
+ */
+export const finalizationResults: readonly FinalizationResult[] = (
+  [
+    "FinalizationSucceeded",
+    "FinalizationNeedsWork",
+    "FinalizationResultUnavailable",
+  ] as const
+).flatMap((type) => finalizationEvidences.map((value) => ({ type, value })));

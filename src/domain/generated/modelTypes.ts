@@ -17,11 +17,11 @@ export const escalationTags = [
   "FinalizationUnavailableEscalated",
 ] as const;
 
-export type FinalizationOutcome =
-  | "FinalizationSucceeded"
-  | "FinalizationNeedsWork"
-  | "FinalizationResultUnavailable";
-export const finalizationOutcomeTags = [
+export type FinalizationResult =
+  | { readonly type: "FinalizationSucceeded"; readonly value: number }
+  | { readonly type: "FinalizationNeedsWork"; readonly value: number }
+  | { readonly type: "FinalizationResultUnavailable"; readonly value: number };
+export const finalizationResultTags = [
   "FinalizationSucceeded",
   "FinalizationNeedsWork",
   "FinalizationResultUnavailable",
@@ -30,6 +30,13 @@ export const finalizationOutcomeTags = [
 export type WorkTaskIdentity = {
   readonly ticket: number;
   readonly cycle: number;
+};
+
+export type FinalizationResultReport = {
+  readonly ticket: number;
+  readonly workCycle: number;
+  readonly generation: number;
+  readonly result: FinalizationResult;
 };
 
 export type ArtifactMark =
@@ -213,6 +220,7 @@ export type TaskTerminalReport =
   | {
       readonly type: "WorkResultReport";
       readonly value: {
+        readonly ticket: number;
         readonly result: ValidatedTaskResult;
         readonly acceptedSourceRef: number;
       };
@@ -220,6 +228,7 @@ export type TaskTerminalReport =
   | {
       readonly type: "EvaluationResultReport";
       readonly value: {
+        readonly ticket: number;
         readonly result: ValidatedTaskResult;
         readonly verdict: EvaluationVerdict;
       };
@@ -227,6 +236,7 @@ export type TaskTerminalReport =
   | {
       readonly type: "TerminalFailureReport";
       readonly value: {
+        readonly ticket: number;
         readonly failure: TaskFailure;
         readonly kind: FailureKind;
       };
@@ -377,43 +387,102 @@ export type SuccessfulTicketDecision = {
   readonly obligations: readonly Obligation[];
 };
 
-export type LastDecision =
-  | "NoDecision"
-  | { readonly type: "Decided"; readonly value: SuccessfulTicketDecision };
-export const lastDecisionTags = ["NoDecision", "Decided"] as const;
-
-export type DecisionEvent =
+export type TicketCommand =
   | { readonly type: "CreateTicket"; readonly value: ReleasedTicket }
-  | { readonly type: "Revoke"; readonly value: number }
   | {
-      readonly type: "Dispatch";
+      readonly type: "DispatchTicket";
       readonly value: { readonly ticket: number; readonly source: number };
     }
+  | { readonly type: "RevokeTicket"; readonly value: number }
+  | { readonly type: "ResumeTicket"; readonly value: number }
+  | { readonly type: "ReportTaskTerminal"; readonly value: TaskTerminalReport }
   | {
-      readonly type: "TaskDone";
-      readonly value: {
-        readonly ticket: number;
-        readonly task: TaskIdentity;
-        readonly report: TaskTerminalReport;
-      };
-    }
-  | {
-      readonly type: "FinalizationResult";
-      readonly value: {
-        readonly ticket: number;
-        readonly out: FinalizationOutcome;
-        readonly evidence: number;
-      };
-    }
-  | { readonly type: "ResumeTicket"; readonly value: number };
-export const decisionEventTags = [
+      readonly type: "ReportFinalizationResult";
+      readonly value: FinalizationResultReport;
+    };
+export const ticketCommandTags = [
   "CreateTicket",
-  "Revoke",
-  "Dispatch",
-  "TaskDone",
-  "FinalizationResult",
+  "DispatchTicket",
+  "RevokeTicket",
   "ResumeTicket",
+  "ReportTaskTerminal",
+  "ReportFinalizationResult",
 ] as const;
+
+export type IncompleteDependencies = {
+  readonly ticket: number;
+  readonly dependencies: ReadonlySet<number>;
+};
+
+export type CurrentTaskRefusal = {
+  readonly ticket: number;
+  readonly task: TaskIdentity;
+};
+
+export type CurrentFinalizationRefusal = {
+  readonly ticket: number;
+  readonly workCycle: number;
+  readonly generation: number;
+};
+
+export type StaleRevision = {
+  readonly ticket: number;
+  readonly expected: number;
+  readonly current: number;
+};
+
+export type TicketRefusal =
+  | { readonly type: "TicketAlreadyExists"; readonly value: number }
+  | {
+      readonly type: "DependenciesNotFound";
+      readonly value: IncompleteDependencies;
+    }
+  | { readonly type: "SelfDependency"; readonly value: number }
+  | { readonly type: "TicketNotFound"; readonly value: number }
+  | { readonly type: "TicketNotPending"; readonly value: number }
+  | { readonly type: "TicketIdentityMismatch"; readonly value: number }
+  | { readonly type: "TicketRevisionStale"; readonly value: StaleRevision }
+  | { readonly type: "TicketDependenciesChanged"; readonly value: number }
+  | {
+      readonly type: "DependenciesIncomplete";
+      readonly value: IncompleteDependencies;
+    }
+  | { readonly type: "TicketNotRevocable"; readonly value: number }
+  | { readonly type: "TicketNotResumable"; readonly value: number }
+  | { readonly type: "TaskNotCurrent"; readonly value: CurrentTaskRefusal }
+  | {
+      readonly type: "FinalizationNotCurrent";
+      readonly value: CurrentFinalizationRefusal;
+    };
+export const ticketRefusalTags = [
+  "TicketAlreadyExists",
+  "DependenciesNotFound",
+  "SelfDependency",
+  "TicketNotFound",
+  "TicketNotPending",
+  "TicketIdentityMismatch",
+  "TicketRevisionStale",
+  "TicketDependenciesChanged",
+  "DependenciesIncomplete",
+  "TicketNotRevocable",
+  "TicketNotResumable",
+  "TaskNotCurrent",
+  "FinalizationNotCurrent",
+] as const;
+
+export type TicketDecision =
+  | { readonly type: "TicketRefused"; readonly value: TicketRefusal }
+  | {
+      readonly type: "TicketDecided";
+      readonly value: SuccessfulTicketDecision;
+    };
+export const ticketDecisionTags = ["TicketRefused", "TicketDecided"] as const;
+
+export type LastDecision =
+  | "NoDecision"
+  | { readonly type: "Decided"; readonly value: SuccessfulTicketDecision }
+  | { readonly type: "Refused"; readonly value: TicketRefusal };
+export const lastDecisionTags = ["NoDecision", "Decided", "Refused"] as const;
 
 export type Entry = { readonly seq: number; readonly event: TicketEvent };
 

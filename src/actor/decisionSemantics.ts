@@ -19,10 +19,10 @@
  */
 
 /** Which deciders produced a row, as the row's own durable envelope declares it. */
-export type DecisionSemanticsVersion = 7;
+export type DecisionSemanticsVersion = 8;
 
 /** The semantics every new decision is taken under, and the one `model/` describes. */
-export const decisionSemanticsVersionCurrent: DecisionSemanticsVersion = 7;
+export const decisionSemanticsVersionCurrent: DecisionSemanticsVersion = 8;
 
 /** Whether a stored number names decision semantics this image knows how to replay. */
 export function isDecisionSemanticsVersion(

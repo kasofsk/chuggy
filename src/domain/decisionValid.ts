@@ -1,7 +1,8 @@
 /**
- * Whether a decision is one the machine may take where it was taken: every
- * obligation well-formed, owed once, and agreeing with the state its event
- * evolves to (`decisionValid` in `model/domain.qnt`, the package's own).
+ * Whether a decision is one the machine may take where it was taken: a
+ * refusal changes nothing, and an accepted command's every obligation is
+ * well-formed, owed once, and agrees with the state its event evolves to
+ * (`decisionValid` in `model/domain.qnt`, the package's own).
  *
  * The evolved state's own invariants are the bundle's, checked on the state
  * the step lands in; this reads only what the obligations claim beside it.
@@ -9,10 +10,11 @@
 
 import type {
   Obligation,
-  SuccessfulTicketDecision,
   TaskIdentity,
+  TicketDecision,
   TicketGraph,
 } from "./generated/modelTypes.ts";
+import { graphEquals } from "./equality.ts";
 import { evolve } from "./evolve.ts";
 import { asTicketId } from "./ids.ts";
 import {
@@ -147,17 +149,31 @@ export function obligationAgrees(
   }
 }
 
+/** The state a decision leaves: a refusal's is the one it found. */
+export function applyDecision(
+  graph: TicketGraph,
+  decision: TicketDecision,
+): TicketGraph {
+  return decision.type === "TicketRefused"
+    ? graph
+    : evolve(graph, decision.value.event);
+}
+
 /** The decision is valid at the state it was taken in. */
 export function decisionValid(
   graph: TicketGraph,
-  decision: SuccessfulTicketDecision,
+  decision: TicketDecision,
 ): boolean {
-  const evolved = evolve(graph, decision.event);
+  if (decision.type === "TicketRefused") {
+    return graphEquals(applyDecision(graph, decision), graph);
+  }
+  const { event, obligations } = decision.value;
+  const evolved = evolve(graph, event);
   return (
-    decision.obligations.every(
+    obligations.every(
       (obligation) =>
         obligationValid(obligation) &&
         obligationAgrees(graph, evolved, obligation),
-    ) && obligationsUnique(decision.obligations)
+    ) && obligationsUnique(obligations)
   );
 }

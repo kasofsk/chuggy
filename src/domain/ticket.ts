@@ -14,6 +14,7 @@ import type {
   Escalation,
   EvaluationInstance,
   FinalizationOperation,
+  FinalizationResult,
   Obligation,
   Resume,
   StageRun,
@@ -35,7 +36,6 @@ import { isSettled } from "./phase.ts";
 import {
   taskIdentityEquals,
   taskIdentityValid,
-  taskObligationEquals,
   taskObligationValid,
   workTaskOf,
 } from "./task.ts";
@@ -303,25 +303,6 @@ export function owesTask(ticket: Ticket, task: TaskIdentity): boolean {
 }
 
 /**
- * The exact-obligation rule: an obligation is current for a task when it names
- * that task and is, field for field, one this ticket owes right now. Naming an
- * owed task is not enough — the definition and the context reference are what
- * say which spawn the result answers.
- */
-export function obligationCurrent(
-  ticket: Ticket,
-  task: TaskIdentity,
-  obligation: TaskObligation,
-): boolean {
-  return (
-    taskIdentityEquals(obligation.task, task) &&
-    liveObligations(ticket).some((owed) =>
-      taskObligationEquals(owed, obligation),
-    )
-  );
-}
-
-/**
  * What a live task's result looks like to the machine: the obligation this
  * ticket owes for it and the reference `producedResultRef` derives. This is
  * the CORPUS's constructor and the only place a result reference is derived
@@ -364,6 +345,11 @@ export function producedResultRef(task: TaskIdentity): number {
     : task.value.evaluator;
 }
 
+/** The ticket a report is for, whichever arm it is. */
+export function reportTicket(report: TaskTerminalReport): number {
+  return report.value.ticket;
+}
+
 /** The task a report is about, whichever arm it is. */
 export function reportTask(report: TaskTerminalReport): TaskIdentity {
   switch (report.type) {
@@ -380,48 +366,29 @@ export function reportValid(report: TaskTerminalReport): boolean {
   switch (report.type) {
     case "WorkResultReport":
       return (
+        report.value.ticket > 0 &&
         taskObligationValid(report.value.result.obligation) &&
         report.value.result.resultRef > 0 &&
         report.value.acceptedSourceRef > 0
       );
     case "EvaluationResultReport":
       return (
+        report.value.ticket > 0 &&
         taskObligationValid(report.value.result.obligation) &&
         report.value.result.resultRef > 0
       );
     case "TerminalFailureReport":
       return (
+        report.value.ticket > 0 &&
         taskIdentityValid(report.value.failure.task) &&
         report.value.failure.evidence > 0
       );
   }
 }
 
-/**
- * Which reports a task can carry: a work task produces a work result and an
- * evaluator a verdict, each admitted only at the obligation it was spawned
- * under, while a failure is admitted when it names the task the completion
- * names, carrying no result to hold against an obligation.
- */
-export function reportMatchesTask(
-  ticket: Ticket,
-  task: TaskIdentity,
-  report: TaskTerminalReport,
-): boolean {
-  switch (report.type) {
-    case "WorkResultReport":
-      return (
-        task.type === "WorkTask" &&
-        obligationCurrent(ticket, task, report.value.result.obligation)
-      );
-    case "EvaluationResultReport":
-      return (
-        task.type === "EvaluationTask" &&
-        obligationCurrent(ticket, task, report.value.result.obligation)
-      );
-    case "TerminalFailureReport":
-      return taskIdentityEquals(report.value.failure.task, task);
-  }
+/** A finalizer's result is well-formed when its evidence is a real reference. */
+export function finalizationResultValid(result: FinalizationResult): boolean {
+  return result.value > 0;
 }
 
 /**

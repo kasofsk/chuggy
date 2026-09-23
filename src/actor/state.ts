@@ -20,25 +20,28 @@
  * seam exhaustive rather than a scheduling problem — the reason this slice is
  * pure and the single impure loop belongs to the interpreter's layer.
  *
- * Each step's guard is checked here and violation throws: the actor
- * structurally cannot journal a refused decision, and a driver that asks for
- * an impossible step has left the machine's step relation entirely.
+ * A REFUSED COMMAND IS A STEP THAT MOVES NOTHING. `journalStep` records the
+ * refusal as the last decision, with `pre` and `post` both the state it found,
+ * and appends no row: the actor structurally cannot journal what `decide`
+ * refused. A command outside `commandValid` is not one the machine takes at
+ * all, and a driver that sends one, or asks for any other impossible step, has
+ * left the step relation and is thrown at.
  */
 
 import type { Config } from "../domain/config.ts";
 import type {
-  SuccessfulTicketDecision,
+  TicketCommand,
+  TicketDecision,
   TicketEvent,
   TicketGraph,
 } from "../domain/generated/modelTypes.ts";
-import type { EvaluationFailurePolicy } from "../domain/deciders.ts";
+import {
+  commandValid,
+  decide,
+  type EvaluationFailurePolicy,
+} from "../domain/deciders.ts";
 import { evolve } from "../domain/evolve.ts";
 import type { StepView } from "../domain/invariants.ts";
-import {
-  decide,
-  decisionEventEnabled,
-  type DecisionEvent,
-} from "./decisionEvent.ts";
 import { genesis, replayGraph, type Entry } from "./journal.ts";
 
 /** The actor's whole state: the carried view, the journal, the executor cursor, and the world's ledger. */
@@ -66,50 +69,62 @@ export function actorInit(): ActorState {
   };
 }
 
-/** The refused-decision guard both decision-bearing steps share. */
-function decideEnabled(
+/** The decision both decision-bearing steps take, for a command the machine takes at all. */
+function decideValid(
   config: Config,
   state: ActorState,
-  event: DecisionEvent,
+  command: TicketCommand,
   failurePolicy: EvaluationFailurePolicy,
   step: string,
-): SuccessfulTicketDecision {
-  if (!decisionEventEnabled(config, memoryGraph(state), event)) {
+): TicketDecision {
+  if (!commandValid(config, command)) {
     throw new Error(
-      `${step}: ${event.type} is refused at this state; the actor journals no decision the machine would not take`,
+      `${step}: ${command.type} is not a well-formed command; the machine does not take it`,
     );
   }
-  return decide(memoryGraph(state), event, failurePolicy);
+  return decide(memoryGraph(state), command, failurePolicy);
 }
 
 /**
  * The actor's step: decide, journal the event, and evolve — atomically, the
  * decide-to-journal seam being unobservable, so there is no action between
- * them to crash in. No emission happens here; the executor cursor lags, which
- * is the journal-then-effect discipline itself.
+ * them to crash in. A refusal is answered and journals nothing. No emission
+ * happens here; the executor cursor lags, which is the journal-then-effect
+ * discipline itself.
  */
 export function journalStep(
   config: Config,
   state: ActorState,
-  event: DecisionEvent,
+  command: TicketCommand,
   failurePolicy: EvaluationFailurePolicy,
 ): ActorState {
-  const decision = decideEnabled(
+  const graph = memoryGraph(state);
+  const decision = decideValid(
     config,
     state,
-    event,
+    command,
     failurePolicy,
     "journalStep",
   );
+  if (decision.type === "TicketRefused") {
+    return {
+      ...state,
+      view: {
+        pre: graph,
+        last: { type: "Refused", value: decision.value },
+        post: graph,
+      },
+    };
+  }
   const entry: Entry = {
     seq: state.journal.length + 1,
-    event: decision.event,
+    event: decision.value.event,
   };
   return {
     view: {
-      pre: memoryGraph(state),
-      last: { type: "Decided", value: decision },
-      post: evolve(memoryGraph(state), decision.event),
+      pre: graph,
+      last: { type: "Decided", value: decision.value },
+      post: evolve(graph, decision.value.event),
     },
     journal: [...state.journal, entry],
     applied: state.applied,
@@ -164,19 +179,24 @@ export function crashRecoverTo(state: ActorState, cursor: number): ActorState {
 export function effectCrash(
   config: Config,
   state: ActorState,
-  event: DecisionEvent,
+  command: TicketCommand,
   failurePolicy: EvaluationFailurePolicy,
 ): ActorState {
-  const decision = decideEnabled(
+  const decision = decideValid(
     config,
     state,
-    event,
+    command,
     failurePolicy,
     "effectCrash",
   );
+  if (decision.type === "TicketRefused") {
+    throw new Error(
+      `effectCrash: ${command.type} is refused at this state; a refusal owes the world nothing to emit`,
+    );
+  }
   return {
     ...state,
     view: { ...state.view, post: replayGraph(state.journal) },
-    orphans: [...state.orphans, decision.event],
+    orphans: [...state.orphans, decision.value.event],
   };
 }

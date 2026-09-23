@@ -27,6 +27,7 @@ export interface Witness {
 export function stageAdvanceNever(_config: Config, view: StepView): boolean {
   return (
     view.last === "NoDecision" ||
+    view.last.type !== "Decided" ||
     view.last.value.event.type !== "TicketEvaluationProgressed" ||
     view.last.value.obligations.length === 0
   );
