@@ -1,16 +1,16 @@
 /**
  * Reads the committed corpus and its manifest, and says which decisions each
- * trace carries.
+ * trace carries: the events it accepted and the refusals it answered.
  *
- * The event roster is the generated `ticketEventTags`, read off
- * `model/api.qnt`, rather than listed here, so an event added to the model
- * turns up as a coverage failure instead of as silence.
+ * The rosters are the generated `ticketEventTags` and `ticketRefusalTags`,
+ * read off `model/api.qnt`, rather than listed here, so an event or a refusal
+ * added to the model turns up as a coverage failure instead of as silence.
  */
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import type { SuccessfulTicketDecision } from "../../src/domain/generated/modelTypes.ts";
+import type { LastDecision } from "../../src/domain/generated/modelTypes.ts";
 import { decodeTrace, stateValue } from "../itf/decode.ts";
 import { decodeLastDecision } from "../itf/vocabulary.ts";
 
@@ -30,8 +30,18 @@ export interface ManifestRow {
   readonly trace: unknown;
 }
 
+/** A decision a state records: an accepted command's or a refusal. */
+export type Decision = Exclude<LastDecision, "NoDecision">;
+
+/** The event an accepted decision took, or the refusal's own name. */
+export function decisionTag(decision: Decision): string {
+  return decision.type === "Decided"
+    ? decision.value.event.type
+    : decision.value.type;
+}
+
 /** Every decision a trace records, in order; the initial state records none. */
-function decisionsIn(row: ManifestRow): readonly SuccessfulTicketDecision[] {
+function decisionsIn(row: ManifestRow): readonly Decision[] {
   const trace = decodeTrace(row.trace);
   const lastStepVar = trace.vars.find((v) => v.endsWith("::lastStep"));
   if (lastStepVar === undefined) {
@@ -39,15 +49,15 @@ function decisionsIn(row: ManifestRow): readonly SuccessfulTicketDecision[] {
   }
   return trace.states.flatMap((state) => {
     const last = decodeLastDecision(stateValue(state, lastStepVar));
-    return last === "NoDecision" ? [] : [last.value];
+    return last === "NoDecision" ? [] : [last];
   });
 }
 
 export interface Corpus {
   readonly rows: readonly ManifestRow[];
   readonly filesOnDisk: readonly string[];
-  decisionsForRow(row: ManifestRow): readonly SuccessfulTicketDecision[];
-  decisionsAcross(): readonly SuccessfulTicketDecision[];
+  decisionsForRow(row: ManifestRow): readonly Decision[];
+  decisionsAcross(): readonly Decision[];
   firedForRow(row: ManifestRow): ReadonlySet<string>;
   firedAcross(): ReadonlySet<string>;
 }
@@ -88,21 +98,18 @@ export function loadCorpus(): Corpus {
     .filter((f) => f.endsWith(".itf.json"))
     .map((f) => f.slice(0, -".itf.json".length));
 
-  const cache = new Map<string, readonly SuccessfulTicketDecision[]>();
-  const decisionsForRow = (
-    row: ManifestRow,
-  ): readonly SuccessfulTicketDecision[] => {
+  const cache = new Map<string, readonly Decision[]>();
+  const decisionsForRow = (row: ManifestRow): readonly Decision[] => {
     const hit = cache.get(row.name);
     if (hit) return hit;
     const computed = decisionsIn(row);
     cache.set(row.name, computed);
     return computed;
   };
-  const decisionsAcross = (): readonly SuccessfulTicketDecision[] =>
+  const decisionsAcross = (): readonly Decision[] =>
     rows.filter((r) => r.trace).flatMap(decisionsForRow);
-  const tags = (
-    decisions: readonly SuccessfulTicketDecision[],
-  ): ReadonlySet<string> => new Set(decisions.map((d) => d.event.type));
+  const tags = (decisions: readonly Decision[]): ReadonlySet<string> =>
+    new Set(decisions.map(decisionTag));
 
   return {
     rows,

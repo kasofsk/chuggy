@@ -15,12 +15,15 @@ import {
 } from "../../src/domain/task.ts";
 import { asTaskId, asTicketId, asSafeInteger } from "../../src/domain/ids.ts";
 import { isSettled } from "../../src/domain/phase.ts";
-import { freshTicket } from "../../src/domain/deciders.ts";
+import {
+  alwaysPolicy,
+  decideTaskTerminal,
+  freshTicket,
+} from "../../src/domain/deciders.ts";
 import {
   evaluationFailureReworksStarted,
   liveTasks,
   owesTask,
-  reportMatchesTask,
   spawnWork,
   hasOpenHumanTask,
 } from "../../src/domain/ticket.ts";
@@ -39,6 +42,7 @@ import {
   type EvaluationVerdict,
   type Phase,
   type StageDefinition,
+  type TaskTerminalReport,
   type Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
 
@@ -198,23 +202,28 @@ test("the work a passed judgement is followed by is the finalizer's, and is unca
   );
 });
 
+/** Whether ticket one, standing alone, accepts the report rather than refusing it. */
+function reportCurrent(ticket: Ticket, report: TaskTerminalReport): boolean {
+  const graph = { tickets: new Map([[asTicketId(1), ticket]]) };
+  return (
+    decideTaskTerminal(graph, report, alwaysPolicy("ReworkEvaluationFailure"))
+      .type === "TicketDecided"
+  );
+}
+
 test("a report is matched to the obligation the ticket owes the task", () => {
   const working = spawnWork({ ...bare, phase: "Work" });
   const work = workTaskOf(1, 1);
   const judge = evaluationTaskOf(1, 1, 1, 1, 1);
-  assert.ok(reportMatchesTask(working, work, producedReport(work)));
-  assert.ok(!reportMatchesTask(working, judge, producedReport(work)));
+  assert.ok(reportCurrent(working, producedReport(work)));
+  assert.ok(!reportCurrent(working, judgedReport(judge, "EvaluatorPass")));
   assert.ok(
-    !reportMatchesTask(working, work, judgedReport(judge, "EvaluatorPass")),
-  );
-  const failed = stoppedReport(work, "ProcessFailure");
-  assert.ok(
-    reportMatchesTask(working, work, failed),
+    reportCurrent(working, stoppedReport(work, "ProcessFailure")),
     "a failure is matched by the task it names, there being no result to hold",
   );
   assert.ok(
-    !reportMatchesTask(working, judge, failed),
-    "a failure naming another task than the completion is refused",
+    !reportCurrent(working, stoppedReport(judge, "ProcessFailure")),
+    "a failure naming a task the ticket does not owe is refused",
   );
 });
 
@@ -239,13 +248,12 @@ test("a report naming an owed task at another obligation is refused", () => {
   for (const [ticket, task] of pairs) {
     const owed = obligationFor(task);
     assert.ok(
-      reportMatchesTask(ticket, task, carriedAt(task, owed)),
+      reportCurrent(ticket, carriedAt(task, owed)),
       `${task.type} at the obligation it was spawned under`,
     );
     assert.ok(
-      !reportMatchesTask(
+      !reportCurrent(
         ticket,
-        task,
         carriedAt(task, {
           ...owed,
           definition: {
@@ -257,9 +265,8 @@ test("a report naming an owed task at another obligation is refused", () => {
       `${task.type} under another definition than that one`,
     );
     assert.ok(
-      !reportMatchesTask(
+      !reportCurrent(
         ticket,
-        task,
         carriedAt(task, { ...owed, contextRef: owed.contextRef + 1 }),
       ),
       `${task.type} for another context than that one`,

@@ -42,10 +42,9 @@ const noPicks: Picks = {
   stages: undefined,
   source: undefined,
   onFailure: undefined,
-  task: undefined,
   report: undefined,
-  outcome: undefined,
-  evidence: undefined,
+  result: undefined,
+  command: undefined,
 };
 
 /** Why a call refused, or nothing when it returned. */

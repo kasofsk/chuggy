@@ -27,6 +27,7 @@ import type {
   EvaluatorStatus,
   FinalizationFact,
   FinalizationOperation,
+  FinalizationResult,
   LastDecision,
   Obligation,
   StageRun,
@@ -39,7 +40,9 @@ import type {
   EvaluationPlan,
   TaskTerminalReport,
   Ticket,
+  TicketCommand,
   TicketEvent,
+  TicketRefusal,
   WorkFailureEvent,
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
@@ -232,6 +235,7 @@ export function encodeTaskTerminalReport(report: TaskTerminalReport): ItfValue {
       return encodeVariant(
         "WorkResultReport",
         encodeRecord([
+          ["ticket", encodeInt(report.value.ticket)],
           ["result", encodeValidatedTaskResult(report.value.result)],
           ["acceptedSourceRef", encodeInt(report.value.acceptedSourceRef)],
         ]),
@@ -240,6 +244,7 @@ export function encodeTaskTerminalReport(report: TaskTerminalReport): ItfValue {
       return encodeVariant(
         "EvaluationResultReport",
         encodeRecord([
+          ["ticket", encodeInt(report.value.ticket)],
           ["result", encodeValidatedTaskResult(report.value.result)],
           ["verdict", encodeNullary(report.value.verdict)],
         ]),
@@ -248,6 +253,7 @@ export function encodeTaskTerminalReport(report: TaskTerminalReport): ItfValue {
       return encodeVariant(
         "TerminalFailureReport",
         encodeRecord([
+          ["ticket", encodeInt(report.value.ticket)],
           [
             "failure",
             encodeRecord([
@@ -256,6 +262,95 @@ export function encodeTaskTerminalReport(report: TaskTerminalReport): ItfValue {
             ]),
           ],
           ["kind", encodeNullary(report.value.kind)],
+        ]),
+      );
+  }
+}
+
+/** A finalizer's result: its arm, and the evidence it carries. */
+export function encodeFinalizationResult(result: FinalizationResult): ItfValue {
+  return encodeVariant(result.type, encodeInt(result.value));
+}
+
+/** A command, whichever of the six arms it is. */
+export function encodeTicketCommand(command: TicketCommand): ItfValue {
+  switch (command.type) {
+    case "CreateTicket":
+      return encodeVariant(command.type, encodeReleasedTicket(command.value));
+    case "DispatchTicket":
+      return encodeVariant(
+        command.type,
+        encodeRecord([
+          ["ticket", encodeInt(command.value.ticket)],
+          ["source", encodeInt(command.value.source)],
+        ]),
+      );
+    case "RevokeTicket":
+    case "ResumeTicket":
+      return encodeVariant(command.type, encodeInt(command.value));
+    case "ReportTaskTerminal":
+      return encodeVariant(
+        command.type,
+        encodeTaskTerminalReport(command.value),
+      );
+    case "ReportFinalizationResult":
+      return encodeVariant(
+        command.type,
+        encodeRecord([
+          ["ticket", encodeInt(command.value.ticket)],
+          ["workCycle", encodeInt(command.value.workCycle)],
+          ["generation", encodeInt(command.value.generation)],
+          ["result", encodeFinalizationResult(command.value.result)],
+        ]),
+      );
+  }
+}
+
+/** A refusal, whichever of the thirteen arms it is, with its payload. */
+export function encodeTicketRefusal(refusal: TicketRefusal): ItfValue {
+  switch (refusal.type) {
+    case "TicketAlreadyExists":
+    case "SelfDependency":
+    case "TicketNotFound":
+    case "TicketNotPending":
+    case "TicketIdentityMismatch":
+    case "TicketDependenciesChanged":
+    case "TicketNotRevocable":
+    case "TicketNotResumable":
+      return encodeVariant(refusal.type, encodeInt(refusal.value));
+    case "DependenciesNotFound":
+    case "DependenciesIncomplete":
+      return encodeVariant(
+        refusal.type,
+        encodeRecord([
+          ["ticket", encodeInt(refusal.value.ticket)],
+          ["dependencies", encodeDependencies(refusal.value.dependencies)],
+        ]),
+      );
+    case "TicketRevisionStale":
+      return encodeVariant(
+        refusal.type,
+        encodeRecord([
+          ["ticket", encodeInt(refusal.value.ticket)],
+          ["expected", encodeInt(refusal.value.expected)],
+          ["current", encodeInt(refusal.value.current)],
+        ]),
+      );
+    case "TaskNotCurrent":
+      return encodeVariant(
+        refusal.type,
+        encodeRecord([
+          ["ticket", encodeInt(refusal.value.ticket)],
+          ["task", encodeTaskIdentity(refusal.value.task)],
+        ]),
+      );
+    case "FinalizationNotCurrent":
+      return encodeVariant(
+        refusal.type,
+        encodeRecord([
+          ["ticket", encodeInt(refusal.value.ticket)],
+          ["workCycle", encodeInt(refusal.value.workCycle)],
+          ["generation", encodeInt(refusal.value.generation)],
         ]),
       );
   }
@@ -523,6 +618,8 @@ export function encodeObligation(obligation: Obligation): ItfValue {
 /** The last decision, written back as ITF holds one. */
 export function encodeLastDecision(last: LastDecision): ItfValue {
   if (last === "NoDecision") return encodeNullary("NoDecision");
+  if (last.type === "Refused")
+    return encodeVariant("Refused", encodeTicketRefusal(last.value));
   return encodeVariant(
     "Decided",
     encodeRecord([

@@ -1,5 +1,6 @@
 /**
- * The corpus carries every event the model declares, the decisions whose
+ * The corpus carries every event the model declares, every refusal its
+ * instances can reach, the decisions whose
  * obligations are the point of their event, and in each row what its manifest
  * row says it was aimed at.
  *
@@ -15,6 +16,7 @@ import { join } from "node:path";
 
 import {
   ticketEventTags,
+  ticketRefusalTags,
   type Obligation,
   type SuccessfulTicketDecision,
 } from "../../src/domain/generated/modelTypes.ts";
@@ -69,6 +71,35 @@ test("every event the model declares is carried somewhere in the corpus", () => 
   );
 });
 
+/**
+ * The refusals only an update reaches. The machine has no update command yet,
+ * so no instance can send one; `model/ticket.qnt` declares them unreachable
+ * where it declares them.
+ */
+const updateOnlyRefusals: readonly string[] = [
+  "TicketIdentityMismatch",
+  "TicketRevisionStale",
+  "TicketDependenciesChanged",
+];
+
+test("every refusal the machine can reach is carried somewhere in the corpus", () => {
+  const fired = corpus.firedAcross();
+  const missing = ticketRefusalTags.filter(
+    (tag) => !updateOnlyRefusals.includes(tag) && !fired.has(tag),
+  );
+  assert.deepEqual(
+    missing,
+    [],
+    `these refusals are in no golden, so nothing compares them: ${missing.join(", ")}`,
+  );
+  const unreachable = updateOnlyRefusals.filter((tag) => fired.has(tag));
+  assert.deepEqual(
+    unreachable,
+    [],
+    "a refusal only an update reaches was reached",
+  );
+});
+
 /** The obligation arms a decision owes, in order. */
 function owed(
   decision: SuccessfulTicketDecision,
@@ -83,7 +114,12 @@ function carries(
 ): boolean {
   return corpus
     .decisionsAcross()
-    .some((decision) => decision.event.type === event && holds(owed(decision)));
+    .some(
+      (decision) =>
+        decision.type === "Decided" &&
+        decision.value.event.type === event &&
+        holds(owed(decision.value)),
+    );
 }
 
 const someOf =
@@ -160,15 +196,18 @@ test("every golden's step count matches what its manifest row records", () => {
 });
 
 /**
- * An aim is either `lastEvent != "x"` or `not(lastEvent == "x" and ...)`; both
- * are refuted only by a decision taking event `x`, so a trace that reaches
- * neither has drifted from its row. Any other shape is refused rather than
+ * An aim is `lastEvent != "x"`, `not(lastEvent == "x" and ...)` or
+ * `lastRefusal != "x"`; each is refuted only by a decision taking event `x` or
+ * answering refusal `x`, so a trace that reaches neither has drifted from its
+ * row. Any other shape is refused rather than
  * skipped: an aim this test cannot read is an aim nothing checks.
  */
 test("an aimed golden actually contains what it was aimed at", () => {
   for (const row of corpus.rows) {
     if (row.invariant === "") continue;
-    const aimed = /lastEvent (?:!=|==) "([^"]+)"/.exec(row.invariant);
+    const aimed = /last(?:Event|Refusal) (?:!=|==) "([^"]+)"/.exec(
+      row.invariant,
+    );
     assert.ok(
       aimed?.[1],
       `${row.name} is aimed by an invariant this test cannot read: ${row.invariant}`,

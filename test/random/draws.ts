@@ -3,14 +3,14 @@
  * `model/domain.qnt`'s `step`, in its order.
  *
  * EACH ENTRY MIRRORS ONE ACTION'S NONDET SITES AND NOTHING ELSE. `enabledIn` is
- * the action's guard and `drawIn` makes the action's own draws in the model's
+ * the action's draw set being non-empty and `drawIn` makes the action's own draws in the model's
  * textual order, every one a uniform pick from the set the model's `oneOf`
  * ranges over — the powerset draw is a fair coin per member, which is the same
  * distribution. `permitsIn` is membership in those same sets, which is what
  * lets a shrunk candidate be checked as a machine trace rather than replayed on
  * faith. Every set is referenced from `src/domain/enablement.ts`, never copied:
- * a copied guard drifts, and then a walk's claim to have taken a machine step
- * outlives the machine's willingness to take it.
+ * a copied set drifts, and then a walk's claim to have taken a machine step
+ * outlives the machine's willingness to draw it.
  *
  * THE DRAWS TRAVEL AS THE CORPUS WIRES THEM. `drawnPicks` routes every pick
  * through the same ITF encoding a written counterexample carries and decodes it
@@ -19,22 +19,23 @@
  * each other on every step taken.
  */
 
+import { isDeepStrictEqual } from "node:util";
+
 import {
   dispatchSources,
-  finalizationEvidences,
+  finalizationResults,
   isValidPlan,
   stageChoices,
   type Config,
 } from "../../src/domain/config.ts";
 import {
   dependableIn,
-  finalizationOutcomes,
-  finalizationOutcomeEnabled,
   finalizingIn,
   outstandingTasksIn,
   completableIn,
   quietIn,
   readiesIn,
+  refusedCommandsIn,
   releasableIdsIn,
   retryablesIn,
   revocablesIn,
@@ -45,10 +46,11 @@ import {
   evaluationFailureDispositionTags,
   type TicketGraph,
   type EvaluationFailureDisposition,
-  type FinalizationOutcome,
+  type FinalizationResult,
   type StageDefinition,
   type TaskIdentity,
   type TaskTerminalReport,
+  type TicketCommand,
 } from "../../src/domain/generated/modelTypes.ts";
 import { taskIdentityEquals } from "../../src/domain/task.ts";
 import { type TicketId } from "../../src/domain/ids.ts";
@@ -56,11 +58,13 @@ import type { Picks } from "../conformance/dispatch.ts";
 import { decodeValue, encodeValue, type ItfValue } from "../itf/decode.ts";
 import {
   encodeDependencies,
+  encodeFinalizationResult,
   encodeInt,
   encodeNullaryTag,
   encodePlanStages,
   encodeTaskIdentity,
   encodeTaskTerminalReport,
+  encodeTicketCommand,
 } from "../itf/vocabulary.ts";
 import { pickFrom, subsetFrom, type Random } from "./random.ts";
 
@@ -73,8 +77,8 @@ export interface Drawn {
   readonly onFailure?: EvaluationFailureDisposition;
   readonly task?: TaskIdentity;
   readonly report?: TaskTerminalReport;
-  readonly outcome?: FinalizationOutcome;
-  readonly evidence?: number;
+  readonly result?: FinalizationResult;
+  readonly command?: TicketCommand;
 }
 
 /** One action of the machine, as the walk takes it. */
@@ -115,7 +119,7 @@ export function validPlansIn(
   return plans;
 }
 
-/** The shape most actions share: one ticket, drawn from one enablement set. */
+/** The shape most actions share: one ticket, drawn from one set. */
 function overTicketSet(
   action: string,
   setIn: (config: Config, graph: TicketGraph) => readonly TicketId[],
@@ -216,31 +220,43 @@ const taskDone: WalkAction = {
   },
 };
 
-/** The finalizer's report draws its outcome and then the evidence it returned, in the model's order. */
+/** The finalizer's report draws the ticket and then its result, in the model's order. */
 const finalizationResult: WalkAction = {
   action: "finalizationResult",
   enabledIn: (_config, graph) => finalizingIn(graph).length > 0,
-  drawIn: (_config, graph, random) => {
-    const ticket = pickFrom(random, finalizingIn(graph));
-    return {
-      ticket,
-      outcome: pickFrom(
-        random,
-        finalizationOutcomes.filter((outcome) =>
-          finalizationOutcomeEnabled(graph, ticket, outcome),
-        ),
-      ),
-      evidence: pickFrom(random, finalizationEvidences),
-    };
+  drawIn: (_config, graph, random) => ({
+    ticket: pickFrom(random, finalizingIn(graph)),
+    result: pickFrom(random, finalizationResults),
+  }),
+  permitsIn: (_config, graph, drawn) => {
+    const result = drawn.result;
+    return (
+      drawn.ticket !== undefined &&
+      result !== undefined &&
+      finalizingIn(graph).includes(drawn.ticket) &&
+      finalizationResults.some((drawable) =>
+        isDeepStrictEqual(drawable, result),
+      )
+    );
   },
-  permitsIn: (_config, graph, drawn) =>
-    drawn.ticket !== undefined &&
-    drawn.outcome !== undefined &&
-    drawn.evidence !== undefined &&
-    finalizingIn(graph).includes(drawn.ticket) &&
-    finalizationOutcomes.includes(drawn.outcome) &&
-    finalizationEvidences.includes(drawn.evidence) &&
-    finalizationOutcomeEnabled(graph, drawn.ticket, drawn.outcome),
+};
+
+/** The environment out of turn: a command `decide` refuses, drawn from the probes. */
+const refuse: WalkAction = {
+  action: "refuse",
+  enabledIn: (config, graph) => refusedCommandsIn(config, graph).length > 0,
+  drawIn: (config, graph, random) => ({
+    command: pickFrom(random, refusedCommandsIn(config, graph)),
+  }),
+  permitsIn: (config, graph, drawn) => {
+    const command = drawn.command;
+    return (
+      command !== undefined &&
+      refusedCommandsIn(config, graph).some((refused) =>
+        isDeepStrictEqual(refused, command),
+      )
+    );
+  },
 };
 
 const settle: WalkAction = {
@@ -258,6 +274,7 @@ export const walkActions: readonly WalkAction[] = [
   taskDone,
   finalizationResult,
   overTicketSet("resumeTicket", (_config, graph) => retryablesIn(graph)),
+  refuse,
   settle,
 ];
 
@@ -280,14 +297,14 @@ export function drawnWire(drawn: Drawn): Readonly<Record<string, unknown>> {
     encode: (inner: T) => unknown,
   ): unknown => (value === undefined ? undefined : encode(value));
   return {
+    command: opt(drawn.command, encodeTicketCommand),
     dependencies_: opt(drawn.dependencies, (ids) =>
       encodeDependencies(new Set(ids)),
     ),
-    evidence: opt(drawn.evidence, encodeInt),
     j: opt(drawn.ticket, encodeInt),
     onFailure: opt(drawn.onFailure, encodeNullaryTag),
-    out: opt(drawn.outcome, encodeNullaryTag),
     report: opt(drawn.report, encodeTaskTerminalReport),
+    result: opt(drawn.result, encodeFinalizationResult),
     source: opt(drawn.source, encodeInt),
     stages: opt(drawn.stages, encodePlanStages),
     task: opt(drawn.task, encodeTaskIdentity),
@@ -307,9 +324,8 @@ export function drawnPicks(drawn: Drawn): Picks {
     stages: itf(wire["stages"]),
     source: itf(wire["source"]),
     onFailure: itf(wire["onFailure"]),
-    task: itf(wire["task"]),
     report: itf(wire["report"]),
-    outcome: itf(wire["out"]),
-    evidence: itf(wire["evidence"]),
+    result: itf(wire["result"]),
+    command: itf(wire["command"]),
   };
 }

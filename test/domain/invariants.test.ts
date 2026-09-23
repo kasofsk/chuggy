@@ -82,6 +82,7 @@ import {
 } from "../../src/domain/config.ts";
 import { modelInstance } from "./configs.ts";
 import {
+  acceptedOf,
   blockedInstance,
   graphOf,
   depsOf,
@@ -729,7 +730,7 @@ test("a revoke leaves its dependents where they were, and depsAcyclic is what re
     ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
     ticketOn(config, { phase: "Pending", dependencies: depsOf(2) }),
   ]);
-  const revoked = evolve(chain, decideRevoke(chain, id(1)).event);
+  const revoked = evolve(chain, acceptedOf(decideRevoke(chain, 1)).event);
   assert.deepEqual(
     [1, 2, 3].map((each) => ticketAt(revoked, id(each)).phase),
     ["Revoked", "Pending", "Pending"],
@@ -795,8 +796,12 @@ test("evaluationsWellFormed holds a sparse stage to the keys it lists, not to a 
 /** A fleet with one ticket ready to dispatch, which is the smallest state a decision moves. */
 const ready = graphOf([ticketOn(config, { phase: "Pending" })]);
 
+/** The dispatch `ready` accepts. */
+const dispatchedAt = (): SuccessfulTicketDecision =>
+  acceptedOf(decideDispatch(ready, { ticket: 1, source: aDispatchSource }));
+
 test("decisionsValid rejects an obligation the evolved state does not owe", () => {
-  const dispatched = decideDispatch(ready, id(1), aDispatchSource);
+  const dispatched = dispatchedAt();
   assert.ok(decisionsValid(config, decidedAt(ready, dispatched)));
   assert.ok(
     decisionsValid(config, initialView(ready)),
@@ -846,8 +851,27 @@ test("decisionsValid rejects an obligation the evolved state does not owe", () =
   );
 });
 
+test("decisionsValid holds a refusal to the state it found", () => {
+  const refusal = decideDispatch(ready, { ticket: 2, source: aDispatchSource });
+  assert.ok(refusal.type === "TicketRefused");
+  const refused = (post: TicketGraph): StepView => ({
+    pre: ready,
+    last: { type: "Refused", value: refusal.value },
+    post,
+  });
+  assert.ok(decisionsValid(config, refused(ready)));
+  assert.ok(
+    eventsNeverIdentity(config, refused(ready)),
+    "a refusal decides no event",
+  );
+  assert.ok(
+    !decisionsValid(config, refused(evolve(ready, dispatchedAt().event))),
+    "a refusal that moved the state is not one",
+  );
+});
+
 test("eventsNeverIdentity rejects a decided event that does not move the state it was taken at", () => {
-  const dispatched = decideDispatch(ready, id(1), aDispatchSource);
+  const dispatched = dispatchedAt();
   assert.ok(eventsNeverIdentity(config, decidedAt(ready, dispatched)));
   const moved = evolve(ready, dispatched.event);
   assert.ok(

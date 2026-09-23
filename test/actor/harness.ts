@@ -18,11 +18,11 @@
 import assert from "node:assert/strict";
 
 import {
-  dispatchEvent,
-  releaseTicketEvent,
-  taskDoneEvent,
-  type DecisionEvent,
-} from "../../src/actor/decisionEvent.ts";
+  createTicketCommand,
+  dispatchTicketCommand,
+  reportTaskTerminalCommand,
+  type TicketCommand,
+} from "../../src/actor/command.ts";
 import {
   failedObligations,
   refinementInvariants,
@@ -93,12 +93,14 @@ export const plainDisposition = "ReworkEvaluationFailure" as const;
 export const plainPolicy: EvaluationFailurePolicy =
   alwaysPolicy(plainDisposition);
 
-/** The event the carried view's last decision took, by its constructor. */
+/** The event the carried view's last decision took, by its constructor; none for a refusal. */
 export function lastEventOf(
   state: ActorState,
 ): TicketEvent["type"] | undefined {
   const last = state.view.last;
-  return last === "NoDecision" ? undefined : last.value.event.type;
+  return last === "NoDecision" || last.type === "Refused"
+    ? undefined
+    : last.value.event.type;
 }
 
 /**
@@ -133,12 +135,12 @@ export function assertStep(
 export function stepEmit(
   config: Config,
   state: ActorState,
-  event: DecisionEvent,
+  command: TicketCommand,
   name: TicketEvent["type"],
   failed: readonly string[] = [],
   policy: EvaluationFailurePolicy = plainPolicy,
 ): ActorState {
-  const journaled = journalStep(config, state, event, policy);
+  const journaled = journalStep(config, state, command, policy);
   assert.equal(lastEventOf(journaled), name);
   assertStep(config, journaled, `${name} (journaled)`, failed);
   const emitted = emitNext(journaled);
@@ -158,26 +160,26 @@ export function walkToFirstJudgement(
   state = stepEmit(
     config,
     state,
-    releaseTicketEvent(plainDefinition),
+    createTicketCommand(plainDefinition),
     "TicketCreated",
   );
   state = stepEmit(
     config,
     state,
-    dispatchEvent(id(1), aDispatchSource),
+    dispatchTicketCommand(id(1), aDispatchSource),
     "TicketDispatched",
   );
   const work = workTaskOf(1, 1);
   return stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), work, producedReport(work)),
+    reportTaskTerminalCommand(producedReport(work)),
     "TicketWorkResultAccepted",
   );
 }
 
 /** That stage's one evaluator answering with `verdict`, which is the step that concludes it. */
-export function firstJudgement(verdict: EvaluationVerdict): DecisionEvent {
+export function firstJudgement(verdict: EvaluationVerdict): TicketCommand {
   const judge = evaluationTaskOf(1, 1, 1, 1, 1);
-  return taskDoneEvent(id(1), judge, judgedReport(judge, verdict));
+  return reportTaskTerminalCommand(judgedReport(judge, verdict));
 }

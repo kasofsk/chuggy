@@ -30,10 +30,12 @@ import type {
   EvaluationVerdict,
   FailureKind,
   StageDefinition,
+  SuccessfulTicketDecision,
   TaskIdentity,
   TaskObligation,
   TaskTerminalReport,
   Ticket,
+  TicketDecision,
   ValidatedTaskResult,
 } from "../../src/domain/generated/modelTypes.ts";
 import { freshTicket } from "../../src/domain/deciders.ts";
@@ -50,7 +52,7 @@ import {
   producedResultRef,
   taskRefOf,
 } from "../../src/domain/ticket.ts";
-import { workTaskOf } from "../../src/domain/task.ts";
+import { taskOwner, workTaskOf } from "../../src/domain/task.ts";
 
 /** The evaluator an obligation names, which is what a fixture answers by. */
 function evaluatorOf(task: TaskIdentity): number {
@@ -145,7 +147,7 @@ export function judgedInstance(
 
 /**
  * A judgement in flight: the named evaluators of the first stage have passed
- * and the rest still owe, which is the state a completion is enabled at.
+ * and the rest still owe, which is the state a completion is accepted at.
  */
 export function runningInstance(
   ticket: number,
@@ -194,6 +196,15 @@ export function rosterOf(stages: readonly StageDefinition[]): number {
   return stages[0]?.evaluators.length ?? 0;
 }
 
+/** The accepted decision, which a refusal would mean the fixture is wrong about. */
+export function acceptedOf(decision: TicketDecision): SuccessfulTicketDecision {
+  if (decision.type === "TicketRefused")
+    throw new Error(
+      `refused ${decision.value.type} where a decision was expected`,
+    );
+  return decision.value;
+}
+
 /** A ticket id, so a fixture reads the way the model's numbering does. */
 export const id = (value: number): TicketId => asTicketId(value);
 
@@ -204,7 +215,11 @@ export const depsOf = (...values: number[]): ReadonlySet<TicketId> =>
 /** What a work task comes back with when it produced its artifact, at the source it was accepted at. */
 export const producedReport = (task: TaskIdentity): TaskTerminalReport => ({
   type: "WorkResultReport",
-  value: { result: resultFor(task), acceptedSourceRef: anAcceptedSource },
+  value: {
+    ticket: taskOwner(task),
+    result: resultFor(task),
+    acceptedSourceRef: anAcceptedSource,
+  },
 });
 
 /** What an evaluator comes back with, carrying the verdict it reached. */
@@ -213,7 +228,7 @@ export const judgedReport = (
   verdict: EvaluationVerdict,
 ): TaskTerminalReport => ({
   type: "EvaluationResultReport",
-  value: { result: resultFor(task), verdict },
+  value: { ticket: taskOwner(task), result: resultFor(task), verdict },
 });
 
 /**
@@ -230,6 +245,7 @@ export const carriedAt = (
     ? {
         type: "WorkResultReport",
         value: {
+          ticket: taskOwner(task),
           result: { obligation, resultRef: producedResultRef(task) },
           acceptedSourceRef: anAcceptedSource,
         },
@@ -237,6 +253,7 @@ export const carriedAt = (
     : {
         type: "EvaluationResultReport",
         value: {
+          ticket: taskOwner(task),
           result: { obligation, resultRef: producedResultRef(task) },
           verdict: "EvaluatorPass",
         },
@@ -248,7 +265,11 @@ export const stoppedReport = (
   kind: FailureKind,
 ): TaskTerminalReport => ({
   type: "TerminalFailureReport",
-  value: { failure: { task, evidence: taskRefOf(task) }, kind },
+  value: {
+    ticket: taskOwner(task),
+    failure: { task, evidence: taskRefOf(task) },
+    kind,
+  },
 });
 
 /**

@@ -48,18 +48,22 @@ const instance = "mc_chuggy";
 /** The phantom completion: a revoke deciding its ticket's completion, which moves nothing. */
 const phantomCompletion: Decide = (walkConfig, graph, action, picks) => {
   const decision = decideViaTable(walkConfig, graph, action, picks);
-  if (action !== "revoke" || decision === undefined) return decision;
+  if (action !== "revoke" || decision?.type !== "TicketDecided")
+    return decision;
   return {
-    event: {
-      type: "TicketFinalizationSucceeded",
-      value: {
-        ticket: eventTicket(decision.event),
-        workCycle: 0,
-        generation: 0,
-        evidence: aFinalizationEvidence,
+    type: "TicketDecided",
+    value: {
+      event: {
+        type: "TicketFinalizationSucceeded",
+        value: {
+          ticket: eventTicket(decision.value.event),
+          workCycle: 0,
+          generation: 0,
+          evidence: aFinalizationEvidence,
+        },
       },
+      obligations: [],
     },
-    obligations: [],
   };
 };
 
@@ -202,6 +206,7 @@ test("under the true dispatch table the recorded decision diverges at the phanto
   assert.ok(last && same);
   assert.ok(
     same.view.last !== "NoDecision" &&
+      same.view.last.type === "Decided" &&
       same.view.last.value.event.type === "TicketRevoked",
     "the machine decides a revoke, and no completion, on the way out",
   );

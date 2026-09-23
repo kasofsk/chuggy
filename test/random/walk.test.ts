@@ -13,9 +13,9 @@
  *
  * WHAT A GREEN WALK MEANS is bounded the way the model gate's randomized stage
  * is bounded: sampled evidence, not a proof. What it adds over the conformance
- * replay is states no golden recorded — the deciders steered by the enablement
- * predicates rather than past them — and the one property no single state can
- * refute, exclusivity of the completion emission over the run.
+ * replay is states no golden recorded — the deciders steered by the draw sets
+ * rather than past them — and the one property no single state can refute,
+ * exclusivity of the completion emission over the run.
  */
 
 import type { LastDecision } from "../../src/domain/generated/modelTypes.ts";

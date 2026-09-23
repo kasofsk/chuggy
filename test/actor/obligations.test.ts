@@ -16,9 +16,9 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 
 import {
-  decisionEventTags,
-  releaseTicketEvent,
-} from "../../src/actor/decisionEvent.ts";
+  ticketCommandTags,
+  createTicketCommand,
+} from "../../src/actor/command.ts";
 import {
   failedObligations,
   obligationsHold,
@@ -34,7 +34,7 @@ import {
 import { ticketAt, withTicket } from "../../src/domain/ticketGraph.ts";
 import { id } from "../domain/fixtures.ts";
 import {
-  declaredDecisionEventConstructors,
+  declaredCommandConstructors,
   declaredRefinementBundle,
   declaredRefinementCore,
   declaredRefinementObligations,
@@ -53,7 +53,7 @@ function journaledRelease(): ActorState {
   return journalStep(
     config,
     actorInit(),
-    releaseTicketEvent(plainDefinitionOf(1)),
+    createTicketCommand(plainDefinitionOf(1)),
     plainPolicy,
   );
 }
@@ -85,10 +85,10 @@ test("the reader is reading the model rather than agreeing with itself", () => {
   );
 });
 
-test("the decision-event vocabulary is the model's DecisionEvent, constructor for constructor in order", () => {
+test("the command vocabulary is the model's TicketCommand, constructor for constructor in order", () => {
   assert.deepEqual(
-    [...decisionEventTags],
-    [...declaredDecisionEventConstructors(ROOT)],
+    [...ticketCommandTags],
+    [...declaredCommandConstructors(ROOT)],
   );
 });
 

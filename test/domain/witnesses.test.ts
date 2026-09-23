@@ -21,7 +21,7 @@ import { evaluatorOf, type Config } from "../../src/domain/config.ts";
 import {
   alwaysPolicy,
   decideRevoke,
-  decideTaskDone,
+  decideTaskTerminal,
 } from "../../src/domain/deciders.ts";
 import { evolve } from "../../src/domain/evolve.ts";
 import { evaluationTaskOf } from "../../src/domain/task.ts";
@@ -30,9 +30,9 @@ import type { StepView } from "../../src/domain/invariants.ts";
 import { stageAdvanceNever, witnesses } from "../../src/domain/witnesses.ts";
 import { modelInstance } from "./configs.ts";
 import {
+  acceptedOf,
   graphOf,
   depsOf,
-  id,
   judgedReport,
   runningInstance,
   ticketOn,
@@ -40,16 +40,14 @@ import {
 import type {
   TicketGraph,
   StageDefinition,
-  SuccessfulTicketDecision,
+  TicketDecision,
 } from "../../src/domain/generated/modelTypes.ts";
 
 const config = modelInstance;
 
 /** The view a decision produces, which is the shape a witness is read at. */
-function stepped(
-  pre: TicketGraph,
-  decision: SuccessfulTicketDecision,
-): StepView {
+function stepped(pre: TicketGraph, taken: TicketDecision): StepView {
+  const decision = acceptedOf(taken);
   return {
     pre,
     last: { type: "Decided", value: decision },
@@ -81,15 +79,13 @@ const revoked = ((): StepView => {
     ticketOn(config, { phase: "Pending" }),
     ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
   ]);
-  return stepped(pre, decideRevoke(pre, id(1)));
+  return stepped(pre, decideRevoke(pre, 1));
 })();
 
 const advance = stepped(
   midProgram,
-  decideTaskDone(
+  decideTaskTerminal(
     midProgram,
-    id(1),
-    judged,
     judgedReport(judged, "EvaluatorPass"),
     alwaysPolicy("ReworkEvaluationFailure"),
   ),
@@ -98,6 +94,7 @@ const advance = stepped(
 test("an eval stage advances, which is what keeps the stage advance exercised", () => {
   assert.ok(
     advance.last !== "NoDecision" &&
+      advance.last.type === "Decided" &&
       advance.last.value.event.type === "TicketEvaluationProgressed" &&
       advance.last.value.obligations.length > 0,
   );
