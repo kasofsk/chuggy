@@ -88,9 +88,9 @@ function decideValid(
 /**
  * The actor's step: decide, journal the event, and evolve — atomically, the
  * decide-to-journal seam being unobservable, so there is no action between
- * them to crash in. A refusal is answered and journals nothing. No emission
- * happens here; the executor cursor lags, which is the journal-then-effect
- * discipline itself.
+ * them to crash in, and a refusal is answered and journals nothing. No
+ * emission happens here; the executor cursor lags, which is the
+ * journal-then-effect discipline itself.
  */
 export function journalStep(
   config: Config,

@@ -200,7 +200,7 @@ export function freshTicket(definition: ReleasedTicket): Ticket {
  * Release: the ticket enters the fleet already Pending, carrying every value
  * that will affect its behaviour. Refused if the id is taken, if the ticket
  * names itself, or if it names a dependency that does not exist — in that
- * order. A dependency that exists is never refused, whatever its phase.
+ * order — and never for a dependency that exists, whatever its phase.
  */
 export function decideCreate(
   graph: TicketGraph,
@@ -324,13 +324,12 @@ function evaluationReportCurrent(
 }
 
 /**
- * A task completion, in either phase. It is accepted only for a task the
- * ticket owes, and a produced report only under the obligation that task was
- * spawned with; anything else is refused `TaskNotCurrent` — a failure naming
- * a cycle a rework replaced among them. There is no second decision behind
- * it: a work completion that produced opens the judgement in the same step,
- * and one that concludes a stage decides the stage, which is why the policy
- * is an argument here.
+ * A task completion, accepted only for a task the ticket owes, and a produced
+ * report only under the obligation that task was spawned with; anything else
+ * is refused `TaskNotCurrent` — a failure naming a cycle a rework replaced
+ * among them. There is no second decision behind it: a work completion that
+ * produced opens the judgement in the same step, and one that concludes a
+ * stage decides the stage, which is why the policy is an argument here.
  */
 export function decideTaskTerminal(
   graph: TicketGraph,
