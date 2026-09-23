@@ -1,22 +1,21 @@
 /**
- * Reads the committed corpus and its manifest, and says which step labels each
- * trace fires.
+ * Reads the committed corpus and its manifest, and says which decisions each
+ * trace carries.
  *
- * The label roster is derived from `model/domain.qnt` at run time rather than
- * listed here, so a label added to the model turns up as a coverage failure
- * instead of as silence.
+ * The event roster is the generated `ticketEventTags`, read off
+ * `model/api.qnt`, rather than listed here, so an event added to the model
+ * turns up as a coverage failure instead of as silence.
  */
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { decodeTrace, field, stateValue } from "../itf/decode.ts";
+import type { SuccessfulTicketDecision } from "../../src/domain/generated/modelTypes.ts";
+import { decodeTrace, stateValue } from "../itf/decode.ts";
+import { decodeLastDecision } from "../itf/vocabulary.ts";
 
 const GOLDEN_DIR = join(import.meta.dirname);
 const MANIFEST = join(GOLDEN_DIR, "manifest.json");
-
-/** The one label the model asserts unreachable: a guarded arm `retryableIn` refuses. */
-export const UNREACHABLE_LABEL = "ticket-resume-refused";
 
 export interface ManifestRow {
   readonly name: string;
@@ -31,50 +30,26 @@ export interface ManifestRow {
   readonly trace: unknown;
 }
 
-/**
- * Every step label the model declares, read out of `model/domain.qnt`.
- * Comment lines are excluded because the model argues in prose about the same
- * strings it emits, and a roster that included the prose would be unfalsifiable.
- */
-export function declaredLabels(root: string): ReadonlySet<string> {
-  const source = readFileSync(join(root, "model", "domain.qnt"), "utf8");
-  const labels = new Set<string>();
-  for (const line of source.split("\n")) {
-    if (/^\s*\/\/\//.test(line)) continue;
-    for (const match of line.matchAll(/"([a-z][a-z0-9_ -]*)"/g)) {
-      if (match[1] !== undefined) labels.add(match[1]);
-    }
-  }
-  return labels;
-}
-
-function firedIn(row: ManifestRow): ReadonlySet<string> {
+/** Every decision a trace records, in order; the initial state records none. */
+function decisionsIn(row: ManifestRow): readonly SuccessfulTicketDecision[] {
   const trace = decodeTrace(row.trace);
   const lastStepVar = trace.vars.find((v) => v.endsWith("::lastStep"));
   if (lastStepVar === undefined) {
     throw new Error(`corpus: ${row.name} has no lastStep variable`);
   }
-  const labels = new Set<string>();
-  for (const state of trace.states) {
-    const label = field(stateValue(state, lastStepVar), "label");
-    if (typeof label !== "string")
-      throw new Error(`corpus: ${row.name}: label is not a string`);
-    labels.add(label);
-  }
-  return labels;
+  return trace.states.flatMap((state) => {
+    const last = decodeLastDecision(stateValue(state, lastStepVar));
+    return last === "NoDecision" ? [] : [last.value];
+  });
 }
 
 export interface Corpus {
   readonly rows: readonly ManifestRow[];
   readonly filesOnDisk: readonly string[];
+  decisionsForRow(row: ManifestRow): readonly SuccessfulTicketDecision[];
+  decisionsAcross(): readonly SuccessfulTicketDecision[];
   firedForRow(row: ManifestRow): ReadonlySet<string>;
   firedAcross(): ReadonlySet<string>;
-}
-
-function union(parts: readonly ReadonlySet<string>[]): ReadonlySet<string> {
-  const labels = new Set<string>();
-  for (const part of parts) for (const l of part) labels.add(l);
-  return labels;
 }
 
 /** Loads every manifest row with the trace it names, and the files beside it. */
@@ -113,19 +88,28 @@ export function loadCorpus(): Corpus {
     .filter((f) => f.endsWith(".itf.json"))
     .map((f) => f.slice(0, -".itf.json".length));
 
-  const cache = new Map<string, ReadonlySet<string>>();
-  const firedForRow = (row: ManifestRow): ReadonlySet<string> => {
+  const cache = new Map<string, readonly SuccessfulTicketDecision[]>();
+  const decisionsForRow = (
+    row: ManifestRow,
+  ): readonly SuccessfulTicketDecision[] => {
     const hit = cache.get(row.name);
     if (hit) return hit;
-    const computed = firedIn(row);
+    const computed = decisionsIn(row);
     cache.set(row.name, computed);
     return computed;
   };
+  const decisionsAcross = (): readonly SuccessfulTicketDecision[] =>
+    rows.filter((r) => r.trace).flatMap(decisionsForRow);
+  const tags = (
+    decisions: readonly SuccessfulTicketDecision[],
+  ): ReadonlySet<string> => new Set(decisions.map((d) => d.event.type));
 
   return {
     rows,
     filesOnDisk,
-    firedForRow,
-    firedAcross: () => union(rows.filter((r) => r.trace).map(firedForRow)),
+    decisionsForRow,
+    decisionsAcross,
+    firedForRow: (row) => tags(decisionsForRow(row)),
+    firedAcross: () => tags(decisionsAcross()),
   };
 }

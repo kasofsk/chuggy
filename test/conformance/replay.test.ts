@@ -1,7 +1,8 @@
 /**
  * Every step of every committed golden, replayed through this implementation's
- * own deciders: the model's `StepRecord` and post-`TicketGraph` reproduced exactly,
- * and the whole invariant bundle evaluated on every state either side of it.
+ * own deciders: the model's decision — its event and obligations — and the
+ * post-`TicketGraph` that event evolves to reproduced exactly, and the whole
+ * invariant bundle evaluated on every state either side of it.
  *
  * REPRODUCTION IS EXACT EQUALITY ON THE WHOLE STATE, at the encode boundary,
  * because a spot check is how a dropped field survives. The bundle is the whole
@@ -59,7 +60,11 @@ import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import type { Config } from "../../src/domain/config.ts";
-import type { Decision } from "../../src/domain/ticketGraph.ts";
+import type {
+  LastDecision,
+  TicketGraph,
+} from "../../src/domain/generated/modelTypes.ts";
+import { evolve } from "../../src/domain/evolve.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
 import {
   decodeTrace,
@@ -77,10 +82,10 @@ import {
   type ItfVariant,
 } from "../itf/decode.ts";
 import {
+  decodeLastDecision,
   decodeTicketGraph,
-  decodeStepRecord,
+  encodeLastDecision,
   encodeTicketGraph,
-  encodeStepRecord,
 } from "../itf/vocabulary.ts";
 import { CONFIGS } from "../domain/configs.ts";
 import { replayStep, type Picks } from "./dispatch.ts";
@@ -108,6 +113,7 @@ interface Golden {
   readonly trace: ItfTrace;
   readonly ticketsVar: string;
   readonly stepVar: string;
+  readonly prevVar: string;
 }
 
 /**
@@ -152,12 +158,17 @@ function loadGolden(row: Row): Golden {
   const trace = decodeTrace(raw);
   const ticketsVar = trace.vars.find((v) => v.endsWith("::tickets"));
   const stepVar = trace.vars.find((v) => v.endsWith("::lastStep"));
-  if (ticketsVar === undefined || stepVar === undefined) {
+  const prevVar = trace.vars.find((v) => v.endsWith("::prevTickets"));
+  if (
+    ticketsVar === undefined ||
+    stepVar === undefined ||
+    prevVar === undefined
+  ) {
     throw new Error(
       `replay: ${row.name}: the state variables are not in this trace`,
     );
   }
-  return { row, raw, trace, ticketsVar, stepVar };
+  return { row, raw, trace, ticketsVar, stepVar, prevVar };
 }
 
 function stateAt(golden: Golden, index: number): ItfState {
@@ -226,21 +237,28 @@ function picksOf(state: ItfState): Picks {
     task: some("task"),
     report: some("report"),
     outcome: some("out"),
+    evidence: some("evidence"),
   };
 }
 
-/** The label a state's own record carries, read off the golden rather than replayed. */
-function labelAt(golden: Golden, index: number): string {
-  const label = field(
+/** The event a state's last decision took, by its tag, read off the golden rather than replayed. */
+function eventAt(golden: Golden, index: number): string | undefined {
+  const last = decodeLastDecision(
     stateValue(stateAt(golden, index), golden.stepVar),
-    "label",
   );
-  if (typeof label !== "string") {
-    throw new Error(
-      `replay: ${golden.row.name} state ${String(index)}: no label`,
-    );
-  }
-  return label;
+  return last === "NoDecision" ? undefined : last.value.event.type;
+}
+
+/** One state's decision and its ghost, read off the golden. */
+function ghostAt(
+  golden: Golden,
+  index: number,
+): { readonly last: LastDecision; readonly pre: TicketGraph } {
+  const state = stateAt(golden, index);
+  return {
+    last: decodeLastDecision(stateValue(state, golden.stepVar)),
+    pre: decodeTicketGraph(stateValue(state, golden.prevVar)),
+  };
 }
 
 /**
@@ -370,21 +388,24 @@ function siteOf(golden: Golden, index: number, action: string): string {
   return `${golden.row.name} state ${String(index)} (${action})`;
 }
 
-function recordFinding(
+function decisionFinding(
   golden: Golden,
   index: number,
   action: string,
-  decision: Decision,
+  last: LastDecision,
 ): readonly Finding[] {
-  const got = encodeValue(encodeStepRecord(decision.rec));
+  const got = encodeValue(encodeLastDecision(last));
   const want = rawAt(golden, index, golden.stepVar);
   if (isDeepStrictEqual(got, want)) return [];
   return [
     {
-      kind: "record",
+      kind: "decision",
       where: siteOf(golden, index, action),
-      what: "the step record diverged",
-      detail: fieldDiff("record", decodeValue(got), decodeValue(want)),
+      what: "the decision diverged",
+      detail: [
+        `  decision replayed: ${terse(got)}`,
+        `  decision golden  : ${terse(want)}`,
+      ],
     },
   ];
 }
@@ -393,9 +414,9 @@ function graphFinding(
   golden: Golden,
   index: number,
   action: string,
-  decision: Decision,
+  post: TicketGraph,
 ): readonly Finding[] {
-  const got = encodeValue(encodeTicketGraph(decision.post));
+  const got = encodeValue(encodeTicketGraph(post));
   const want = rawAt(golden, index, golden.ticketsVar);
   if (isDeepStrictEqual(got, want)) return [];
   return [
@@ -440,7 +461,7 @@ function bundleFinding(
       where: siteOf(golden, index, action),
       what: bundleWhat(verdict),
       detail: [
-        `  record: ${terse(encodeValue(encodeStepRecord(view.rec)))}`,
+        `  decision: ${terse(encodeValue(encodeLastDecision(view.last)))}`,
         ...graphLines("post", encodeValue(encodeTicketGraph(view.post))),
         index === 0
           ? "  pre is this same state, which is what an initial state means"
@@ -455,10 +476,10 @@ function checkInit(golden: Golden, config: Config, run: Run): void {
   const post = decodeTicketGraph(
     stateValue(stateAt(golden, 0), golden.ticketsVar),
   );
-  const rec = decodeStepRecord(stateValue(stateAt(golden, 0), golden.stepVar));
+  const { last, pre } = ghostAt(golden, 0);
   run.evaluated++;
   run.findings.push(
-    ...bundleFinding(golden, 0, "init", { pre: post, rec, post }, config),
+    ...bundleFinding(golden, 0, "init", { pre, last, post }, config),
   );
 }
 
@@ -475,21 +496,29 @@ function checkStep(
   );
   const decision = replayStep(pre, action, picksOf(after));
   run.steps++;
-  run.decided.add(decision.rec.label);
+  /** The stutter decides nothing, so the state and the ghost the step before kept stand. */
+  const view: StepView =
+    decision === undefined
+      ? { ...ghostAt(golden, index - 1), post: pre }
+      : {
+          pre,
+          last: { type: "Decided", value: decision },
+          post: evolve(pre, decision.event),
+        };
+  if (decision !== undefined) run.decided.add(decision.event.type);
   run.findings.push(
-    ...recordFinding(golden, index, action, decision),
-    ...graphFinding(golden, index, action, decision),
+    ...decisionFinding(golden, index, action, view.last),
+    ...graphFinding(golden, index, action, view.post),
   );
   run.evaluated++;
-  const view: StepView = { pre, rec: decision.rec, post: decision.post };
   run.findings.push(...bundleFinding(golden, index, action, view, config));
 }
 
 function replayGolden(golden: Golden, config: Config, run: Run): void {
   checkInit(golden, config, run);
-  run.carried.add(labelAt(golden, 0));
   for (let index = 1; index < golden.trace.states.length; index++) {
-    run.carried.add(labelAt(golden, index));
+    const carried = eventAt(golden, index);
+    if (carried !== undefined) run.carried.add(carried);
     checkStep(golden, config, index, run);
   }
 }
@@ -600,10 +629,11 @@ test("what the replay consumed is the whole corpus in the directory", () => {
   }
 });
 
-test("the deciders produced every label the corpus carries", () => {
-  const carried = new Set(corpusRun().carried);
-  carried.delete("init");
-  assert.deepEqual([...corpusRun().decided].sort(), [...carried].sort());
+test("the deciders produced every event the corpus carries", () => {
+  assert.deepEqual(
+    [...corpusRun().decided].sort(),
+    [...corpusRun().carried].sort(),
+  );
 });
 
 test("every golden's initial state is the one a fresh graph starts from", () => {

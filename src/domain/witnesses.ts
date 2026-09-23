@@ -23,9 +23,13 @@ export interface Witness {
   readonly claim: (config: Config, view: StepView) => boolean;
 }
 
-/** No eval stage ever advances. Violated by the interpreter's advance edge. */
+/** No eval stage ever advances: no progress owes a task. Violated by the interpreter's advance edge. */
 export function stageAdvanceNever(_config: Config, view: StepView): boolean {
-  return view.rec.label !== "eval-stage-passed";
+  return (
+    view.last === "NoDecision" ||
+    view.last.value.event.type !== "TicketEvaluationProgressed" ||
+    view.last.value.obligations.length === 0
+  );
 }
 
 /** The roster, so a suite iterates it rather than restating the list. */

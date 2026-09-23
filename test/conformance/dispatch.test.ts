@@ -15,15 +15,13 @@
  * function it describes and each would keep vouching for the other.
  *
  * THE LAST ARM HAS NO DECIDER, and its contract is therefore the only one a
- * comparison against a golden could not state on its own: `settle` returns the
- * state it was handed, unchanged and identical, under the label the model's own
- * `settle` action writes.
+ * comparison against a golden could not state on its own: `settle` decides
+ * nothing, so the replay keeps the state and the last decision it was handed.
  */
 
 import type { TicketGraph } from "../../src/domain/generated/modelTypes.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { declaredActions } from "../domain/declared.ts";
@@ -47,18 +45,8 @@ const noPicks: Picks = {
   task: undefined,
   report: undefined,
   outcome: undefined,
+  evidence: undefined,
 };
-
-/** The label the model's own `settle` action writes, read where it is written. */
-function settleLabel(): string {
-  const source = readFileSync(join(ROOT, "model", "domain.qnt"), "utf8");
-  const start = source.indexOf("\n  action settle = all {");
-  const found = /label: "([a-z][a-z0-9_ -]*)"/.exec(source.slice(start));
-  if (start < 0 || !found?.[1]) {
-    throw new Error("dispatch: model/domain.qnt's settle writes no label here");
-  }
-  return found[1];
-}
 
 /** Why a call refused, or nothing when it returned. */
 function refusal(action: string): string | undefined {
@@ -108,14 +96,10 @@ test("an action outside the roster is refused rather than routed to a neighbour"
   );
 });
 
-test("the arm with no decider returns the state it was handed, under the model's label", () => {
-  const decision = replayStep(emptyGraph, "settle", noPicks);
+test("the arm with no decider decides nothing", () => {
   assert.equal(
-    decision.post,
-    emptyGraph,
-    "the stutter rebuilt the state instead of keeping it",
+    replayStep(emptyGraph, "settle", noPicks),
+    undefined,
+    "the stutter took a decision, and the model's settle takes none",
   );
-  assert.equal(decision.rec.label, settleLabel());
-  assert.deepEqual(decision.rec.transitions, []);
-  assert.deepEqual(decision.rec.effects, []);
 });

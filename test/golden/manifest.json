@@ -68,7 +68,7 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 32,
-      "invariant": "stageAdvanceNever",
+      "invariant": "not(lastEvent == \"TicketEvaluationProgressed\" and lastObligations.length() > 0)",
       "steps": 9,
       "quintVersion": "0.32.0",
       "purpose": "The stage advance: a stage passes, the next one's evaluators are owed, and the ticket stays in Evaluation. It is the only progress that owes tasks."

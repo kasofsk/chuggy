@@ -50,7 +50,7 @@ test("a healthy state answers every leaf, and answers each of them yes", () => {
 });
 
 test("where nothing throws, the guarded evaluation is the bundle itself", () => {
-  const broke = initialView(fleetBut(fleet, 0, { artifact: "NoArtifact" }));
+  const broke = initialView(fleetBut(fleet, 0, { completions: 2 }));
   assert.ok(
     failedInvariants(config, broke).length > 0,
     "the broken view answers every leaf yes, so the two evaluations agree vacuously",

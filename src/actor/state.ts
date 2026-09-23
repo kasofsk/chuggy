@@ -4,15 +4,13 @@
  * discipline forbids.
  *
  * THE CARRIED VIEW IS THE CARRY RULE. `view.post` is the actor's in-memory
- * state; `view.pre` and `view.rec` are the state before the last domain
- * decision and that decision's record, which is what every domain invariant is
+ * state; `view.pre` and `view.last` are the state before the last domain
+ * decision and that decision, which is what every domain invariant is
  * evaluated against. Only `journalStep` advances the pair — the executor and
- * crash steps are not domain steps, so they carry `(pre, rec)` unchanged, the
- * same stale-ghost arrangement `installGraph` states in `model/domain.qnt` and
- * `src/domain/invariants.ts` explains: re-snapshotting `pre` on an emit would
- * present a step that decided nothing as the domain step `recordMonotone` and
- * the rest of the bundle are meant to check — a step the model proves
- * harmless only because it is never checked as one.
+ * crash steps are not domain steps, so they carry `(pre, last)` unchanged, the
+ * same stale-ghost arrangement `installGraph` states in `model/domain.qnt`:
+ * re-snapshotting `pre` on an emit would present a step that decided nothing
+ * as a domain step the bundle is meant to check.
  *
  * THE DISCIPLINE IS THE DELTA BETWEEN TWO STEP RELATIONS. The disciplined
  * machine is `journalStep`, `emitNext` and `crashRecoverTo`; the hazard
@@ -29,14 +27,16 @@
 
 import type { Config } from "../domain/config.ts";
 import type {
+  SuccessfulTicketDecision,
+  TicketEvent,
   TicketGraph,
-  StepRecord,
 } from "../domain/generated/modelTypes.ts";
-import { initRecord, type Decision } from "../domain/ticketGraph.ts";
+import type { EvaluationFailurePolicy } from "../domain/deciders.ts";
+import { evolve } from "../domain/evolve.ts";
 import type { StepView } from "../domain/invariants.ts";
 import {
+  decide,
   decisionEventEnabled,
-  execDecisionEvent,
   type DecisionEvent,
 } from "./decisionEvent.ts";
 import { genesis, replayGraph, type Entry } from "./journal.ts";
@@ -47,7 +47,7 @@ export interface ActorState {
   readonly journal: readonly Entry[];
   readonly applied: number;
   readonly worldEffects: ReadonlySet<number>;
-  readonly orphans: readonly StepRecord[];
+  readonly orphans: readonly TicketEvent[];
 }
 
 /** The actor's in-memory domain state, which is the carried view's post. */
@@ -58,7 +58,7 @@ export function memoryGraph(state: ActorState): TicketGraph {
 /** The initial state: an empty fleet, an empty journal, a world that has received nothing. */
 export function actorInit(): ActorState {
   return {
-    view: { pre: genesis, rec: initRecord, post: genesis },
+    view: { pre: genesis, last: "NoDecision", post: genesis },
     journal: [],
     applied: 0,
     worldEffects: new Set(),
@@ -71,35 +71,46 @@ function decideEnabled(
   config: Config,
   state: ActorState,
   event: DecisionEvent,
+  failurePolicy: EvaluationFailurePolicy,
   step: string,
-): Decision {
+): SuccessfulTicketDecision {
   if (!decisionEventEnabled(config, memoryGraph(state), event)) {
     throw new Error(
       `${step}: ${event.type} is refused at this state; the actor journals no decision the machine would not take`,
     );
   }
-  return execDecisionEvent(memoryGraph(state), event);
+  return decide(memoryGraph(state), event, failurePolicy);
 }
 
 /**
- * The actor's step: decide and journal, atomically — the decide-to-journal
- * seam is unobservable, so there is no action between them to crash in. No
- * emission happens here; the executor cursor lags, which is the
- * journal-then-effect discipline itself.
+ * The actor's step: decide, journal the event, and evolve — atomically, the
+ * decide-to-journal seam being unobservable, so there is no action between
+ * them to crash in. No emission happens here; the executor cursor lags, which
+ * is the journal-then-effect discipline itself.
  */
 export function journalStep(
   config: Config,
   state: ActorState,
   event: DecisionEvent,
+  failurePolicy: EvaluationFailurePolicy,
 ): ActorState {
-  const decision = decideEnabled(config, state, event, "journalStep");
+  const decision = decideEnabled(
+    config,
+    state,
+    event,
+    failurePolicy,
+    "journalStep",
+  );
   const entry: Entry = {
     seq: state.journal.length + 1,
-    event,
-    rec: decision.rec,
+    event: decision.event,
   };
   return {
-    view: { pre: memoryGraph(state), rec: decision.rec, post: decision.post },
+    view: {
+      pre: memoryGraph(state),
+      last: { type: "Decided", value: decision },
+      post: evolve(memoryGraph(state), decision.event),
+    },
     journal: [...state.journal, entry],
     applied: state.applied,
     worldEffects: state.worldEffects,
@@ -108,7 +119,7 @@ export function journalStep(
 }
 
 /**
- * The executor: emit the next unemitted entry's effects toward the world. The
+ * The executor: emit the next unemitted entry's obligations toward the world. The
  * received set is keyed by the decision's seq, so a re-emission after cursor
  * loss is absorbed — the world cannot be made to act twice on one decision.
  */
@@ -129,7 +140,7 @@ export function emitNext(state: ActorState): ActorState {
 /**
  * Crash and recover with the cursor regressed to `cursor`: memory becomes the
  * genuine replay of the journal, and the lost cursor suffix will re-emit. The
- * carried `(pre, rec)` does not move — recovery is not a domain decision.
+ * carried `(pre, last)` does not move — recovery is not a domain decision.
  */
 export function crashRecoverTo(state: ActorState, cursor: number): ActorState {
   if (!Number.isInteger(cursor) || cursor < 0 || cursor > state.applied) {
@@ -146,7 +157,7 @@ export function crashRecoverTo(state: ActorState, cursor: number): ActorState {
 
 /**
  * The hazard seam: decide, emit toward the world, die before the journal
- * write. The world keeps the record as an un-keyed orphan, recovery replays a
+ * write. The world keeps the event as an un-keyed orphan, recovery replays a
  * journal that never saw the decision, and the actor will legitimately
  * re-decide — which is the double-spend the discipline exists to forbid.
  */
@@ -154,11 +165,18 @@ export function effectCrash(
   config: Config,
   state: ActorState,
   event: DecisionEvent,
+  failurePolicy: EvaluationFailurePolicy,
 ): ActorState {
-  const decision = decideEnabled(config, state, event, "effectCrash");
+  const decision = decideEnabled(
+    config,
+    state,
+    event,
+    failurePolicy,
+    "effectCrash",
+  );
   return {
     ...state,
     view: { ...state.view, post: replayGraph(state.journal) },
-    orphans: [...state.orphans, decision.rec],
+    orphans: [...state.orphans, decision.event],
   };
 }

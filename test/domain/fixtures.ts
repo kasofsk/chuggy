@@ -4,10 +4,8 @@
  *
  * EVERY FIXTURE BUILT FROM THESE IS A SHAPE THE MACHINE COULD HAVE REACHED,
  * and `accountsFor` is what a suite asserts that with. `spawned` is bumped only
- * by a spawn, so a fixture that hands itself a task set or an instance while
- * leaving the fresh ticket's zero in place is a state no trace holds — and the
- * work reduce reads that counter to stamp the artifact it produced, so a short
- * one answers a question the machine would answer differently.
+ * by a spawn, so a fixture that hands itself a work cycle or an instance while
+ * leaving the fresh ticket's zero in place is a state no trace holds.
  *
  * AN INSTANCE IS BUILT BY THE PROTOCOL, never written out. A judgement's shape
  * is the protocol's own invariant, and a literal that satisfies it today is a
@@ -25,7 +23,6 @@ import {
   evaluatorTaskOf,
   releasedTicketOf,
 } from "../../src/domain/config.ts";
-import { initRecord } from "../../src/domain/ticketGraph.ts";
 import type {
   TicketGraph,
   EvaluationInput,
@@ -33,10 +30,8 @@ import type {
   EvaluationVerdict,
   FailureKind,
   StageDefinition,
-  Task,
   TaskIdentity,
   TaskObligation,
-  TaskOutcome,
   TaskTerminalReport,
   Ticket,
   ValidatedTaskResult,
@@ -55,12 +50,7 @@ import {
   producedResultRef,
   taskRefOf,
 } from "../../src/domain/ticket.ts";
-import {
-  evaluationTaskOf,
-  tsResolved,
-  tsOutstanding,
-  workTaskOf,
-} from "../../src/domain/task.ts";
+import { workTaskOf } from "../../src/domain/task.ts";
 
 /** The evaluator an obligation names, which is what a fixture answers by. */
 function evaluatorOf(task: TaskIdentity): number {
@@ -211,45 +201,6 @@ export const id = (value: number): TicketId => asTicketId(value);
 export const depsOf = (...values: number[]): ReadonlySet<TicketId> =>
   new Set(values.map(id));
 
-/** A resolved work task of `ticket`'s cycle. */
-export const workTask = (
-  ticket: number,
-  cycle: number,
-  outcome: TaskOutcome,
-): Task => ({
-  identity: workTaskOf(ticket, cycle),
-  state: tsResolved(outcome),
-});
-
-/** A resolved evaluator of `ticket`'s stage, both named by their keys, judging the named cycle. */
-export const evalTask = (
-  ticket: number,
-  cycle: number,
-  stage: number,
-  evaluator: number,
-  outcome: TaskOutcome,
-): Task => ({
-  identity: evaluationTaskOf(ticket, cycle, stage, 1, evaluator),
-  state: tsResolved(outcome),
-});
-
-/** A work task still outstanding, as a live set holds one. */
-export const workOutstanding = (ticket: number, cycle: number): Task => ({
-  identity: workTaskOf(ticket, cycle),
-  state: tsOutstanding,
-});
-
-/** An evaluator of `ticket`'s stage, both named by their keys, still outstanding. */
-export const evalOutstanding = (
-  ticket: number,
-  cycle: number,
-  stage: number,
-  evaluator: number,
-): Task => ({
-  identity: evaluationTaskOf(ticket, cycle, stage, 1, evaluator),
-  state: tsOutstanding,
-});
-
 /** What a work task comes back with when it produced its artifact, at the source it was accepted at. */
 export const producedReport = (task: TaskIdentity): TaskTerminalReport => ({
   type: "WorkResultReport",
@@ -297,7 +248,7 @@ export const stoppedReport = (
   kind: FailureKind,
 ): TaskTerminalReport => ({
   type: "TerminalFailureReport",
-  value: { evidence: taskRefOf(task), kind },
+  value: { failure: { task, evidence: taskRefOf(task) }, kind },
 });
 
 /**
@@ -368,7 +319,7 @@ export function graphOf(tickets: readonly Ticket[]): TicketGraph {
  * fleet, which is exactly what the model's two ghosts hold after `init`.
  */
 export function initialView(post: TicketGraph): StepView {
-  return { pre: graphOf([]), rec: initRecord, post };
+  return { pre: graphOf([]), last: "NoDecision", post };
 }
 
 /**
@@ -383,7 +334,6 @@ export function healthyFleet(config: Config): readonly Ticket[] {
     workCyclesStarted: 1,
     spawned: 1 + rosterOf(stages),
     source: anAcceptedSource,
-    artifact: { type: "ProducedArtifact", value: workResultOf(ticket, 1) },
   });
   return [
     ticketOn(config, {
@@ -395,13 +345,13 @@ export function healthyFleet(config: Config): readonly Ticket[] {
       phase: "Work",
       dependencies: new Set([1]),
       source: anAcceptedSource,
-      tasks: new Set<Task>([workOutstanding(2, 1)]),
       workCyclesStarted: 1,
       spawned: 1,
     }),
     ticketOn(config, {
       ...finished(3),
       phase: "Finalization",
+      finalizationGeneration: 1,
     }),
   ];
 }

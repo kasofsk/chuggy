@@ -2,40 +2,33 @@
  * Structural equality over the domain's observed vocabulary, one definition
  * per shape, each a conjunction over the shape's declared fields.
  *
- * The model compares records and states with its own `==`; here the replay
- * checker and the recovery obligation ask the same question, and the answer is
- * written out because `actor-sees-domain-only` in `.dependency-cruiser.cjs`
- * puts `node:util`'s deep compare outside this layer's graph. What is left is
- * a pure function of the domain's own types, which a reader can audit where a
- * serialization would not be.
+ * The model compares states with its own `==`; here `eventsNeverIdentity`,
+ * the journal's legality check and the recovery obligation ask the same
+ * question, and the answer is written out because `domain-is-pure` in
+ * `.dependency-cruiser.cjs` puts `node:util`'s deep compare outside this
+ * layer's graph. What is left is a pure function of the domain's own types,
+ * which a reader can audit where a serialization would not be.
  *
  * WHAT A CONJUNCTION CANNOT SAY IS THAT IT IS COMPLETE. A variant arm is total
  * by `assertNever` on its tag, but a product's conjunction compiles and
  * answers `true` on two values differing only in a field nobody conjoined —
  * which is `recoveryComplete` green on a state the journal cannot rebuild, and
- * `journalLegalOn` accepting a forged record. `test/actor/equality.test.ts`
+ * `journalLegalOn` accepting a row that moved nothing. `test/domain/equality.test.ts`
  * holds each product shape to a `Record<keyof Shape, ...>` roster, so a field
  * added to a domain type is a compile error there and an unread field in the
  * roster is a failing case.
  */
 
-import { ticketAt, ticketIds } from "../domain/ticketGraph.ts";
+import { ticketAt, ticketIds } from "./ticketGraph.ts";
 import type {
-  ArtifactMark,
   TicketGraph,
   EvaluationInstance,
   ReleasedTicket,
   StageDefinition,
-  StepRecord,
   Ticket,
-  Transition,
-} from "../domain/generated/modelTypes.ts";
-import {
-  taskDefinitionEquals,
-  tasksInEvaluatorKeyOrder,
-  taskEquals,
-} from "../domain/task.ts";
-import { instanceEquals, stageDefinitionEquals } from "../domain/evaluation.ts";
+} from "./generated/modelTypes.ts";
+import { taskDefinitionEquals } from "./task.ts";
+import { instanceEquals, stageDefinitionEquals } from "./evaluation.ts";
 
 /** Same length, and equal member by member in order. */
 function listEquals<Value>(
@@ -52,37 +45,12 @@ function listEquals<Value>(
   );
 }
 
-/** Identity on the primitives: the ids, the effects, the ranks. */
+/** Identity on the primitives: the ids and the ranks. */
 function sameValue<Value extends number | string>(
   left: Value,
   right: Value,
 ): boolean {
   return left === right;
-}
-
-function recordEqualsTransition(left: Transition, right: Transition): boolean {
-  return (
-    left.ticket === right.ticket &&
-    left.from === right.from &&
-    left.to === right.to
-  );
-}
-
-/** Whether two step records observe the same decision, field by field. */
-export function recordEquals(left: StepRecord, right: StepRecord): boolean {
-  return (
-    left.label === right.label &&
-    listEquals(left.transitions, right.transitions, recordEqualsTransition) &&
-    listEquals(left.effects, right.effects, sameValue)
-  );
-}
-
-function ticketEqualsArtifact(
-  left: ArtifactMark,
-  right: ArtifactMark,
-): boolean {
-  if (left === "NoArtifact") return right === "NoArtifact";
-  return right !== "NoArtifact" && right.value === left.value;
 }
 
 /** The dependency set as a list, ascending, so two sets compare member by member. */
@@ -140,15 +108,10 @@ export function ticketEquals(left: Ticket, right: Ticket): boolean {
     left.phase === right.phase &&
     ticketEqualsDefinition(left.definition, right.definition) &&
     left.source === right.source &&
-    ticketEqualsArtifact(left.artifact, right.artifact) &&
-    listEquals(
-      tasksInEvaluatorKeyOrder(left.tasks),
-      tasksInEvaluatorKeyOrder(right.tasks),
-      taskEquals,
-    ) &&
     listEquals(left.evaluations, right.evaluations, ticketEqualsInstance) &&
     left.workCyclesStarted === right.workCyclesStarted &&
     left.spawned === right.spawned &&
+    left.finalizationGeneration === right.finalizationGeneration &&
     left.escalation === right.escalation &&
     left.completions === right.completions
   );
