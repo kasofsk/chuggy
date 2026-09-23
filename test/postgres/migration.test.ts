@@ -7004,11 +7004,7 @@ test("a decision input counts the passes it was deferred", async () => {
           );
     await input(1, "Operation");
     assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT deferred_passes FROM decision_input",
-        )
-      ).rows,
+      (await subject.query("SELECT deferred_passes FROM decision_input")).rows,
       [{ deferred_passes: 0 }],
     );
     await assert.rejects(
