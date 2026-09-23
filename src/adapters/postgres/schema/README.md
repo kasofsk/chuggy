@@ -150,7 +150,9 @@ tranche deferred to the transaction that produces them. They are written by
 the project ticket writer alone, in the decision transaction, and neither is a
 duplicate of anything derivable: a client reads the sequence to read its own
 write, and a writer resolving an ambiguous commit reads whichever of them
-the recorded outcome carries.
+the recorded outcome carries. `decision_input.refusal` is the refusal a
+machine-decided code was refused with, in the codec's spelling, and is present
+exactly for those codes.
 
 `ticket_projection` — the project-primary projection, one row per ticket,
 carrying the sequence that produced it. Owned by the ticket-service role, which
@@ -220,12 +222,11 @@ advance it. Acquisition advances it, renewal continues one, release and
 fencing leave none — so the adapter is unchanged and the composed statement
 is refused.
 
-`FinalizationResult` IS NOT A COMMAND THE MAILBOX TAKES FROM A CALLER. The
-public grammar keeps the event out of a `Decide` the way it has always kept
-the release out, at `ReleaseTicket` and at the `CreateTicket` the rename gave
-it, and `submit_finalization_result` writes its own envelope
-naming the request, its generation and the epoch instead — so the event a
-writer journals is one it derives from durable rows rather than one anybody
+`ReportFinalizationResult` IS NOT A COMMAND THE MAILBOX TAKES FROM A CALLER.
+The public grammar keeps it out of a `Decide` the way it keeps `CreateTicket`
+out, and `submit_finalization_result` writes its own envelope
+naming the request, its generation and the epoch instead — so the command a
+writer decides is one it derives from durable rows rather than one anybody
 supplied. `public_ticket_command_is_valid` carries that public grammar under
 its own name, and the validator of that name is now the wrapper around it
 that both rules live in.
