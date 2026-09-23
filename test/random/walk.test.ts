@@ -18,7 +18,7 @@
  * refute, exclusivity of the completion emission over the run.
  */
 
-import type { StepRecord } from "../../src/domain/generated/modelTypes.ts";
+import type { LastDecision } from "../../src/domain/generated/modelTypes.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
@@ -178,14 +178,18 @@ test("the accumulator rebuilds the ghost and can go red in every direction", () 
   const done = graphOf([
     ticketOn(modelInstance, {
       phase: "Done",
-      artifact: { type: "ProducedArtifact", value: 1 },
       completions: 1,
     }),
   ]);
-  const completeRec: StepRecord = {
-    label: "ticket-done",
-    transitions: [{ ticket: id(1), from: "Finalization", to: "Done" }],
-    effects: [],
+  const completeRec: LastDecision = {
+    type: "Decided",
+    value: {
+      event: {
+        type: "TicketFinalizationSucceeded",
+        value: { ticket: 1, workCycle: 1, generation: 1, evidence: 15 },
+      },
+      obligations: [],
+    },
   };
   const counts: CompletionCounts = new Map();
   assert.deepEqual(creditCompletions(counts, id(1), completeRec), []);

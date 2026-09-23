@@ -4,7 +4,7 @@
  *
  * THE FILE IS A GOLDEN IN EVERY RESPECT THE REPLAYER CONSUMES: an ITF states
  * array carrying `mbt::actionTaken` and `mbt::nondetPicks` beside the instance's
- * `tickets` and `lastStep` variables, with a manifest row naming it, so
+ * `tickets`, `lastStep` and `prevTickets` variables, with a manifest row naming it, so
  * `test/conformance/` replays it exactly as it replays a committed row —
  * pointed at the directory with `CHUG_GOLDEN_DIR`, or committed as a new row if
  * the divergence it reproduces is real. The states are what this tree's own
@@ -21,14 +21,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Config } from "../../src/domain/config.ts";
-import { initRecord } from "../../src/domain/ticketGraph.ts";
+import type { StepView } from "../../src/domain/invariants.ts";
 import {
+  encodeLastDecision,
   encodeTicketGraph,
   encodeOption,
-  encodeStepRecord,
 } from "../itf/vocabulary.ts";
 import { encodeValue, type ItfValue } from "../itf/decode.ts";
 import { drawnWire, type Drawn } from "./draws.ts";
+import { initialView } from "../domain/fixtures.ts";
 import { shrinkSteps } from "./shrink.ts";
 import {
   walkInit,
@@ -67,22 +68,26 @@ export function counterexampleDocument(
 ): unknown {
   const ticketsVar = `${instance}::chuggy_domain::tickets`;
   const lastStepVar = `${instance}::chuggy_domain::lastStep`;
+  const prevVar = `${instance}::chuggy_domain::prevTickets`;
+  const variables = (view: StepView) => ({
+    [lastStepVar]: encodeValue(encodeLastDecision(view.last)),
+    [prevVar]: encodeValue(encodeTicketGraph(view.pre)),
+    [ticketsVar]: encodeValue(encodeTicketGraph(view.post)),
+  });
   const states: unknown[] = [
     {
       "#meta": { index: 0 },
       "mbt::actionTaken": "init",
       "mbt::nondetPicks": nondetPicksOf({}),
-      [lastStepVar]: encodeValue(encodeStepRecord(initRecord)),
-      [ticketsVar]: encodeValue(encodeTicketGraph(walkInit(config))),
+      ...variables(initialView(walkInit(config))),
     },
   ];
-  for (const { step, decision } of walkRecord(config, steps, decide)) {
+  for (const { step, view } of walkRecord(config, steps, decide)) {
     states.push({
       "#meta": { index: states.length },
       "mbt::actionTaken": step.action,
       "mbt::nondetPicks": nondetPicksOf(step.drawn),
-      [lastStepVar]: encodeValue(encodeStepRecord(decision.rec)),
-      [ticketsVar]: encodeValue(encodeTicketGraph(decision.post)),
+      ...variables(view),
     });
   }
   return {
@@ -93,7 +98,13 @@ export function counterexampleDocument(
       source: "test/random/walk.ts",
       status: "violation",
     },
-    vars: ["mbt::actionTaken", "mbt::nondetPicks", lastStepVar, ticketsVar],
+    vars: [
+      "mbt::actionTaken",
+      "mbt::nondetPicks",
+      lastStepVar,
+      prevVar,
+      ticketsVar,
+    ],
     states,
   };
 }

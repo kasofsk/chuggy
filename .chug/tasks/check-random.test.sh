@@ -3,17 +3,18 @@
 #
 # WHAT IT HAS TO PROVE IS THAT THE GATE BITES, and the defect it bites on
 # cannot live in an input file: the walk's subject is the deciders themselves.
-# So the biting case is a scratch copy of the tree with the duplicate-completion
-# decider broken to re-emit its completion — the mutant the accumulator exists
-# for, invisible to every single-state invariant — run at a pinned seed whose
-# budgeted walk draws that duplicate. The gate must go red, name the seed, and
-# write the shrunk counterexample as a corpus.
+# So the biting case is a scratch copy of the tree with the revoke decider
+# broken to decide a completion — the mutant the accumulator exists for,
+# invisible to every single-state invariant — run at a pinned seed whose
+# budgeted walk draws a revoke. The gate must go red, name the seed, and write
+# the shrunk counterexample as a corpus.
 #
 # AND THAT THE COUNTEREXAMPLE IS A CORPUS. The same scratch copy replays the
-# written directory through check-conformance.sh and must come back clean —
-# broken deciders reproduce their own trace — and after the mutant is restored
-# the same replay must go red at the recorded divergence. That pair is what
-# "the replayer can consume it" means, proved with the real gates.
+# written directory through check-conformance.sh: broken deciders reproduce
+# their own decisions, so the only finding is the step invariant that a
+# decided event moves its state. After the mutant is restored the same replay
+# must go red at the recorded divergence. That pair is what "the replayer can
+# consume it" means, proved with the real gates.
 #
 # The clean line's figures are asserted against a sweep whose size this suite
 # sets, so the line cannot count something other than what the run consumed.
@@ -30,8 +31,8 @@ trap 'rm -rf "$WORK"' EXIT
 
 R="$WORK/repo"
 
-# The seed is pinned to a run that draws a duplicate completion; a mutant that
-# no seed here draws is a case that passes by never reaching the defect.
+# The seed is pinned to a run that draws a revoke; a mutant that no seed here
+# draws is a case that passes by never reaching the defect.
 SEED=0x3
 
 run_gate() { # <dir> [env=value...]
@@ -90,11 +91,10 @@ check "the clean line counts the runs and steps the sweep consumed" 0 "$RC" \
 
 # --- The gate bites: a phantom completion in a scratch copy ------------------
 #
-# Completion emits no effect any more — entering Done IS the completion — so a
-# decider that claims one claims a transition. This mutant makes `task-done`
-# record a move to Done while leaving the state alone, which is the shape the
-# accumulator exists to catch: the ledger on the ticket never moves, so nothing
-# but the running count can tell.
+# A completion is the event TicketFinalizationSucceeded. This mutant makes a
+# revoke decide one while the state it lands on owes none, so evolve leaves the
+# state alone: the ledger on the ticket never moves, so no single state can
+# tell, and the running count does.
 
 fixture_tree
 node -e '
@@ -102,8 +102,8 @@ const fs = require("fs")
 const path = process.argv[1]
 const source = fs.readFileSync(path, "utf8")
 const broken = source.replace(
-  `rec: { label: "task-done", transitions: [], effects: [] },`,
-  `rec: { label: "task-done", transitions: [{ ticket: id, from: ticketAt(graph, id).phase, to: "Done" }], effects: [] },`,
+  `{ type: "TicketRevoked", value: id },`,
+  `{ type: "TicketFinalizationSucceeded", value: { ticket: id, workCycle: 0, generation: 0, evidence: 15 } },`,
 )
 if (broken === source) throw new Error("the mutant found nothing to break")
 fs.writeFileSync(path, broken)
@@ -124,7 +124,8 @@ set +e
 (cd "$R" && CHUG_GOLDEN_DIR="$R/found" "$CONFORMANCE") >"$OUT" 2>&1
 RC=$?
 set -e
-check "the broken tree replays its own counterexample clean" 0 "$RC" "replayed clean"
+check "the broken tree reproduces its own decisions, red only where they move nothing" 1 "$RC" \
+	"came back false: eventsNeverIdentity"
 
 # --- Restored, the fixture pins the divergence -------------------------------
 
@@ -135,7 +136,7 @@ set +e
 RC=$?
 set -e
 check "the restored tree replays the counterexample red at the divergence" 1 "$RC" \
-	"the step record diverged"
+	"the decision diverged"
 
 # --- The cap: an overrun is a could-not-run ----------------------------------
 #

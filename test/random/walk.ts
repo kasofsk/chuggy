@@ -14,15 +14,18 @@
  * arms. `settle` is drawn only when the model's `quiet` holds and stutters,
  * exactly as the model's `step` does.
  *
- * THE ACCUMULATOR IS THE MODEL'S `completions` GHOST REBUILT FROM THE EFFECT
+ * THE ACCUMULATOR IS THE MODEL'S `completions` GHOST REBUILT FROM THE EVENT
  * STREAM. `test/domain/invariants.test.ts` says why no single state this tree
  * can build refutes `completionExclusive`: the count is derived from the phase,
- * so the disagreement can only exist across time, in the emissions themselves.
- * Here every `Complete` effect is charged to the stepped ticket and the
- * per-ticket predicate is asked after every step, so a decider that emits a
- * second completion — or completes without emitting — goes red with the whole
- * bundle green, which no golden subsumes because no golden constrains a walk
- * nobody recorded.
+ * so the disagreement can only exist across time, in the decisions themselves.
+ * Here every `TicketFinalizationSucceeded` is charged to the stepped ticket and
+ * the per-ticket predicate is asked after every step, so a decider that decides
+ * a second completion — or completes without deciding one — goes red with the
+ * whole bundle green, which no golden subsumes because no golden constrains a
+ * walk nobody recorded.
+ *
+ * THE VIEW IS CARRIED AS THE MODEL CARRIES ITS GHOSTS: a decision moves
+ * `(pre, last)`, and the stutter decides nothing and leaves them standing.
  *
  * `walkInit` IS THE FIRST INIT OUTSIDE THE MODEL, and it refuses what the
  * model's `init` refuses: every well-formedness conjunct holds or there is
@@ -30,13 +33,15 @@
  */
 
 import type { Config } from "../../src/domain/config.ts";
-import type { Decision } from "../../src/domain/ticketGraph.ts";
 import { liveTickets, ticketAt } from "../../src/domain/ticketGraph.ts";
 import type {
+  LastDecision,
+  SuccessfulTicketDecision,
   TicketGraph,
-  StepRecord,
 } from "../../src/domain/generated/modelTypes.ts";
+import { evolve } from "../../src/domain/evolve.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
+import type { StepView } from "../../src/domain/invariants.ts";
 import { replayStep, type Picks } from "../conformance/dispatch.ts";
 import { bundleHolds, evaluateBundle } from "../conformance/evaluate.ts";
 import { initialView } from "../domain/fixtures.ts";
@@ -46,13 +51,13 @@ import { pickFrom, randomOf } from "./random.ts";
 /** The step bound every run takes in full, the same bound the model gate samples under. */
 export const walkStepsMax = 40;
 
-/** How a step becomes a decision; the seam a suite injects a broken decider through. */
+/** How a step becomes a decision, or none for the stutter; the seam a suite injects a broken decider through. */
 export type Decide = (
   config: Config,
   graph: TicketGraph,
   action: string,
   picks: Picks,
-) => Decision;
+) => SuccessfulTicketDecision | undefined;
 
 /** The default: the conformance dispatch table, exactly as a replayed golden routes. */
 export const decideViaTable: Decide = (_config, graph, action, picks) =>
@@ -106,29 +111,39 @@ export function walkInit(config: Config): TicketGraph {
   return { tickets: new Map() };
 }
 
-/** Completion emissions per ticket, accumulated across one run's record stream. */
+/** Completion emissions per ticket, accumulated across one run's decided events. */
 export type CompletionCounts = Map<TicketId, number>;
 
 /**
- * Charge a step's completions to the ticket the step was drawn for. Completion
- * emits no effect any more — entering Done is the completion — so what is
- * counted is the transition, and a completion on a step with no drawn ticket
- * has no subject to charge and is itself the finding.
+ * Charge a step's completion to the ticket the step was drawn for: the decided
+ * `TicketFinalizationSucceeded` is the completion. One on a step with no drawn
+ * ticket has no subject to charge and is itself the finding.
  */
 export function creditCompletions(
   counts: CompletionCounts,
   subject: TicketId | undefined,
-  rec: StepRecord,
+  last: LastDecision,
 ): readonly string[] {
-  const emitted = rec.transitions.filter((t) => t.to === "Done").length;
-  if (emitted === 0) return [];
+  if (last === "NoDecision") return [];
+  if (last.value.event.type !== "TicketFinalizationSucceeded") return [];
   if (subject === undefined) {
-    return [
-      `a completion on a "${rec.label}" step with no drawn ticket to charge it to`,
-    ];
+    return ["a completion on a step with no drawn ticket to charge it to"];
   }
-  counts.set(subject, (counts.get(subject) ?? 0) + emitted);
+  counts.set(subject, (counts.get(subject) ?? 0) + 1);
   return [];
+}
+
+/** The view after a step: a decision moves `(pre, last)` and evolves the state, and the stutter keeps all three. */
+export function viewAfter(
+  view: StepView,
+  decision: SuccessfulTicketDecision | undefined,
+): StepView {
+  if (decision === undefined) return view;
+  return {
+    pre: view.post,
+    last: { type: "Decided", value: decision },
+    post: evolve(view.post, decision.event),
+  };
 }
 
 /** The accumulator's verdict: the model's ghost conjunction, per live ticket, over the counted stream. */
@@ -158,21 +173,22 @@ type StepOutcome =
   | { readonly kind: "threw"; readonly why: string }
   | {
       readonly kind: "stepped";
-      readonly decision: Decision;
+      readonly view: StepView;
       readonly failure: StepFailure | undefined;
     };
 
 /**
  * One step applied: the guard and the draw membership first, then the decision,
- * then the accumulator and the whole bundle on `{pre, rec, post}`.
+ * then the accumulator and the whole bundle on `{pre, last, post}`.
  */
 function walkStepOutcome(
   config: Config,
-  graph: TicketGraph,
+  before: StepView,
   counts: CompletionCounts,
   step: WalkStep,
   decide: Decide,
 ): StepOutcome {
+  const graph = before.post;
   const acted = walkActionOf(step.action);
   if (!acted.enabledIn(config, graph)) {
     return { kind: "refused", why: `${step.action} is not enabled here` };
@@ -183,22 +199,22 @@ function walkStepOutcome(
       why: `${step.action} does not permit this draw here`,
     };
   }
-  let decision: Decision;
+  let view: StepView;
   try {
-    decision = decide(config, graph, step.action, drawnPicks(step.drawn));
+    view = viewAfter(
+      before,
+      decide(config, graph, step.action, drawnPicks(step.drawn)),
+    );
   } catch (error: unknown) {
     const why = error instanceof Error ? error.message : String(error);
     return { kind: "threw", why };
   }
+  const decided = view === before ? "NoDecision" : view.last;
   const emissions = [
-    ...creditCompletions(counts, step.drawn.ticket, decision.rec),
-    ...completionFindings(counts, decision.post),
+    ...creditCompletions(counts, step.drawn.ticket, decided),
+    ...completionFindings(counts, view.post),
   ];
-  const verdict = evaluateBundle(config, {
-    pre: graph,
-    rec: decision.rec,
-    post: decision.post,
-  });
+  const verdict = evaluateBundle(config, view);
   const failure =
     bundleHolds(verdict) && emissions.length === 0
       ? undefined
@@ -208,7 +224,7 @@ function walkStepOutcome(
           emissions,
           broke: undefined,
         };
-  return { kind: "stepped", decision, failure };
+  return { kind: "stepped", view, failure };
 }
 
 /**
@@ -223,8 +239,8 @@ export function walkRun(
   decide: Decide = decideViaTable,
 ): WalkOutcome {
   const random = randomOf(seed);
-  let graph = walkInit(config);
-  const opening = evaluateBundle(config, initialView(graph));
+  let view = initialView(walkInit(config));
+  const opening = evaluateBundle(config, view);
   if (!bundleHolds(opening)) {
     const failure = {
       failed: opening.failed,
@@ -237,6 +253,7 @@ export function walkRun(
   const counts: CompletionCounts = new Map();
   const steps: WalkStep[] = [];
   for (let index = 1; index <= stepsMax; index++) {
+    const graph = view.post;
     const enabled = walkActions.filter((entry) =>
       entry.enabledIn(config, graph),
     );
@@ -254,7 +271,7 @@ export function walkRun(
       drawn: acted.drawIn(config, graph, random),
     };
     steps.push(step);
-    const outcome = walkStepOutcome(config, graph, counts, step, decide);
+    const outcome = walkStepOutcome(config, view, counts, step, decide);
     if (outcome.kind !== "stepped") {
       const why =
         outcome.kind === "refused"
@@ -273,7 +290,7 @@ export function walkRun(
         finding: { step: index, action: step.action, failure: outcome.failure },
       };
     }
-    graph = outcome.decision.post;
+    view = outcome.view;
   }
   return { steps, finding: undefined };
 }
@@ -297,7 +314,7 @@ export function walkReplay(
   steps: readonly WalkStep[],
   decide: Decide = decideViaTable,
 ): ReplayOutcome {
-  let graph = walkInit(config);
+  let view = initialView(walkInit(config));
   const counts: CompletionCounts = new Map();
   for (let index = 0; index < steps.length; index++) {
     const step = steps[index];
@@ -305,7 +322,7 @@ export function walkReplay(
       throw new Error(`walk: no step ${String(index)} to replay`);
     }
     const at = index + 1;
-    const outcome = walkStepOutcome(config, graph, counts, step, decide);
+    const outcome = walkStepOutcome(config, view, counts, step, decide);
     if (outcome.kind === "refused") {
       return { kind: "invalid", at, why: outcome.why };
     }
@@ -325,15 +342,15 @@ export function walkReplay(
       };
       return { kind: "finding", at, finding };
     }
-    graph = outcome.decision.post;
+    view = outcome.view;
   }
   return { kind: "clean" };
 }
 
-/** A step with the decision it produced, which is what a written counterexample records. */
+/** A step with the view it produced, which is what a written counterexample records. */
 export interface RecordedStep {
   readonly step: WalkStep;
-  readonly decision: Decision;
+  readonly view: StepView;
 }
 
 /**
@@ -345,18 +362,18 @@ export function walkRecord(
   steps: readonly WalkStep[],
   decide: Decide = decideViaTable,
 ): readonly RecordedStep[] {
-  let graph = walkInit(config);
+  let view = initialView(walkInit(config));
   const counts: CompletionCounts = new Map();
   const recorded: RecordedStep[] = [];
   for (const step of steps) {
-    const outcome = walkStepOutcome(config, graph, counts, step, decide);
+    const outcome = walkStepOutcome(config, view, counts, step, decide);
     if (outcome.kind !== "stepped") {
       throw new Error(
         `walk: ${step.action} cannot be recorded here: ${outcome.why}`,
       );
     }
-    recorded.push({ step, decision: outcome.decision });
-    graph = outcome.decision.post;
+    recorded.push({ step, view: outcome.view });
+    view = outcome.view;
   }
   return recorded;
 }

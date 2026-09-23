@@ -161,7 +161,7 @@ cat > "$WORK/aimed/manifest.json" <<'JSON'
       "seed": "0x1",
       "maxSamples": 30,
       "maxSteps": 4,
-      "invariant": "lastStep.label != \"no-such-label-exists\"",
+      "invariant": "lastEvent != \"no-such-event-exists\"",
       "steps": 0,
       "quintVersion": "0.32.0",
       "purpose": "an aim that cannot be met"

@@ -2,21 +2,19 @@
  * The shrinker and the counterexample writer, proved against a deliberately
  * broken decider rather than against a defect nobody has.
  *
- * THE MUTANT IS THE ONE THE ACCUMULATOR EXISTS FOR: a revoke that records its
- * ticket reaching Done on the way out. It changes no state, so every leaf of the
- * bundle stays green on every state it builds — `revokedNeverCompletes`
- * included, because the ledger it reads is the one the revoke left alone — and
- * only the completions counted off the record stream see it. The injection is
- * the walk's `decide` seam, so the broken decider exists for the length of a
- * test and the tree is never touched; `.chug/tasks/check-random.test.sh` runs
- * the same defect through the real gates in a scratch copy and restores it,
- * which is the tier this file cannot express.
+ * THE MUTANT IS THE ONE THE ACCUMULATOR EXISTS FOR: a revoke that decides its
+ * ticket's completion instead. The event moves nothing, so the ledger on the
+ * ticket never changes — `revokedNeverCompletes` and `completionExclusive`
+ * stay green — and what sees it is the completion counted off the event
+ * stream, beside `eventsNeverIdentity`, which refuses a decided event that
+ * moves nothing. The injection is the walk's `decide` seam, so the broken
+ * decider exists for the length of a test and the tree is never touched.
  *
  * WHAT THE FIXTURE PROVES CUTS BOTH WAYS. Under the broken decider the written
  * states are exactly what replaying its own trace reproduces, which is what
  * makes the file a corpus the replayer consumes; under the true dispatch table
- * the recorded step diverges at the phantom completion, which is what makes it
- * pin the defect once fixed.
+ * the recorded decision diverges at the phantom completion, which is what makes
+ * it pin the defect once fixed.
  */
 
 import { test } from "node:test";
@@ -28,7 +26,9 @@ import { isDeepStrictEqual } from "node:util";
 
 import { modelInstance } from "../domain/configs.ts";
 import { decodeTrace, encodeValue } from "../itf/decode.ts";
-import { encodeTicketGraph, encodeStepRecord } from "../itf/vocabulary.ts";
+import { aFinalizationEvidence } from "../../src/domain/config.ts";
+import { eventTicket } from "../../src/domain/evolve.ts";
+import { encodeLastDecision, encodeTicketGraph } from "../itf/vocabulary.ts";
 import { seedLabel, writeCounterexample } from "./counterexample.ts";
 import { shrinkSteps } from "./shrink.ts";
 import {
@@ -45,21 +45,25 @@ import {
 const config = modelInstance;
 const instance = "mc_chuggy";
 
-/** The phantom completion: a revoke recording its ticket as having reached Done, state untouched. */
+/** The phantom completion: a revoke deciding its ticket's completion, which moves nothing. */
 const phantomCompletion: Decide = (walkConfig, graph, action, picks) => {
   const decision = decideViaTable(walkConfig, graph, action, picks);
-  const moved = decision.rec.transitions[0];
-  if (action !== "revoke" || moved === undefined) return decision;
+  if (action !== "revoke" || decision === undefined) return decision;
   return {
-    rec: {
-      ...decision.rec,
-      transitions: [...decision.rec.transitions, { ...moved, to: "Done" }],
+    event: {
+      type: "TicketFinalizationSucceeded",
+      value: {
+        ticket: eventTicket(decision.event),
+        workCycle: 0,
+        generation: 0,
+        evidence: aFinalizationEvidence,
+      },
     },
-    post: decision.post,
+    obligations: [],
   };
 };
 
-const seedPinned = 10975;
+const seedPinned = 1;
 const seedFallbackMax = 400;
 
 interface Found {
@@ -97,12 +101,16 @@ function found(): Found {
   );
 }
 
-test("the phantom completion is caught by the accumulator and by nothing structural", () => {
+test("the phantom completion is caught by the accumulator and by the event that moved nothing", () => {
   const { outcome } = found();
   assert.ok(outcome.finding);
   assert.equal(outcome.finding.action, "revoke");
   const failure = outcome.finding.failure;
-  assert.deepEqual(failure.failed, [], "every bundle leaf stays green");
+  assert.deepEqual(
+    failure.failed,
+    ["eventsNeverIdentity"],
+    "the ledger is untouched, so only the identity event goes red in the bundle",
+  );
   assert.deepEqual(failure.refused, [], "no leaf even refuses");
   assert.equal(failure.broke, undefined);
   assert.match(failure.emissions.join(" "), /1 completion\(s\) counted/);
@@ -151,23 +159,26 @@ test("the written counterexample is a corpus: its states are what its own steps 
   const ticketsVar = trace.vars.find((v) => v.endsWith("::tickets"));
   const lastStepVar = trace.vars.find((v) => v.endsWith("::lastStep"));
   assert.ok(ticketsVar, "the replayer looks the tickets variable up by suffix");
-  assert.ok(lastStepVar, "the replayer looks the record variable up by suffix");
+  assert.ok(
+    lastStepVar,
+    "the replayer looks the decision variable up by suffix",
+  );
   assert.equal(trace.states.length, shrunk.length + 1);
 
   const recorded = walkRecord(config, shrunk, phantomCompletion);
-  recorded.forEach(({ decision }, index) => {
+  recorded.forEach(({ view }, index) => {
     const state = raw.states[index + 1];
     assert.ok(state);
     assert.ok(
       isDeepStrictEqual(
         state[ticketsVar],
-        encodeValue(encodeTicketGraph(decision.post)),
+        encodeValue(encodeTicketGraph(view.post)),
       ),
     );
     assert.ok(
       isDeepStrictEqual(
         state[lastStepVar],
-        encodeValue(encodeStepRecord(decision.rec)),
+        encodeValue(encodeLastDecision(view.last)),
       ),
     );
   });
@@ -182,22 +193,22 @@ test("the written counterexample is a corpus: its states are what its own steps 
   assert.equal(row.name, `walk-${instance}-${seedLabel(seed)}`);
 });
 
-test("under the true dispatch table the recorded step diverges at the phantom completion", () => {
+test("under the true dispatch table the recorded decision diverges at the phantom completion", () => {
   const { shrunk } = found();
   const broken = walkRecord(config, shrunk, phantomCompletion);
   const fixed = walkRecord(config, shrunk, decideViaTable);
   const last = broken[broken.length - 1];
   const same = fixed[fixed.length - 1];
   assert.ok(last && same);
-  assert.equal(
-    same.decision.rec.transitions.filter((t) => t.to === "Done").length,
-    0,
-    "the machine records no completion on the way out of a revoke",
+  assert.ok(
+    same.view.last !== "NoDecision" &&
+      same.view.last.value.event.type === "TicketRevoked",
+    "the machine decides a revoke, and no completion, on the way out",
   );
   assert.ok(
     !isDeepStrictEqual(
-      encodeValue(encodeStepRecord(last.decision.rec)),
-      encodeValue(encodeStepRecord(same.decision.rec)),
+      encodeValue(encodeLastDecision(last.view.last)),
+      encodeValue(encodeLastDecision(same.view.last)),
     ),
     "the fixture pins exactly the divergence a fixed tree replays red",
   );

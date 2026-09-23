@@ -3,13 +3,19 @@ import { test } from "node:test";
 
 import {
   phaseTags,
+  type Entry,
   type EvaluatorDefinition,
   type EvaluationInstance,
+  type Obligation,
   type TicketGraph,
 } from "../../src/domain/generated/modelTypes.ts";
 import {
+  decodeEntry,
+  decodeObligation,
   decodeTicketGraph,
   decodeDecisionEvent,
+  encodeEntry,
+  encodeObligation,
   encodeTicketGraph,
 } from "../../src/generated/model-api.ts";
 
@@ -94,11 +100,10 @@ const graph: TicketGraph = {
         phase: "Pending",
         definition,
         source: 0,
-        artifact: "NoArtifact",
-        tasks: new Set(),
         evaluations: [instance],
         workCyclesStarted: 0,
         spawned: 0,
+        finalizationGeneration: 0,
         escalation: "NoEscalation",
         completions: 0,
       },
@@ -116,11 +121,10 @@ test("generated JSON codec round-trips nested lists, sets, maps and records", ()
           phase: "Pending",
           definition: wiredDefinition,
           source: 0,
-          artifact: "NoArtifact",
-          tasks: [],
           evaluations: [wiredInstance],
           workCyclesStarted: 0,
           spawned: 0,
+          finalizationGeneration: 0,
           escalation: "NoEscalation",
           completions: 0,
         },
@@ -163,4 +167,45 @@ test("generated constructor roster is the exhaustive model phase vocabulary", ()
     "Escalated",
     "Revoked",
   ]);
+});
+
+test("a journal row is the seq and the event, tagged as the model spells the constructor", () => {
+  const entry: Entry = {
+    seq: 3,
+    event: {
+      type: "TicketWorkProcessFailed",
+      value: {
+        ticket: 7,
+        task: { type: "WorkTask", value: { ticket: 7, cycle: 1 } },
+        evidence: 1,
+      },
+    },
+  };
+  const wire = encodeEntry(entry);
+  assert.deepEqual(wire, {
+    seq: 3,
+    event: {
+      type: "TicketWorkProcessFailed",
+      value: {
+        ticket: 7,
+        task: { type: "WorkTask", value: { ticket: 7, cycle: 1 } },
+        evidence: 1,
+      },
+    },
+  });
+  assert.deepEqual(decodeEntry(wire), entry);
+  assert.throws(() =>
+    decodeEntry({ seq: 3, event: { type: "WorkReduce", value: 7 } }),
+  );
+});
+
+test("an obligation round-trips under its own constructor", () => {
+  const cancel: Obligation = {
+    type: "CancelTask",
+    value: {
+      ticket: 7,
+      task: { type: "WorkTask", value: { ticket: 7, cycle: 2 } },
+    },
+  };
+  assert.deepEqual(decodeObligation(encodeObligation(cancel)), cancel);
 });

@@ -21,6 +21,7 @@
 
 import {
   dispatchSources,
+  finalizationEvidences,
   isValidPlan,
   stageChoices,
   type Config,
@@ -34,7 +35,6 @@ import {
   completableIn,
   quietIn,
   readiesIn,
-  reducibleWorkIn,
   releasableIdsIn,
   retryablesIn,
   revocablesIn,
@@ -74,6 +74,7 @@ export interface Drawn {
   readonly task?: TaskIdentity;
   readonly report?: TaskTerminalReport;
   readonly outcome?: FinalizationOutcome;
+  readonly evidence?: number;
 }
 
 /** One action of the machine, as the walk takes it. */
@@ -215,6 +216,7 @@ const taskDone: WalkAction = {
   },
 };
 
+/** The finalizer's report draws its outcome and then the evidence it returned, in the model's order. */
 const finalizationResult: WalkAction = {
   action: "finalizationResult",
   enabledIn: (_config, graph) => finalizingIn(graph).length > 0,
@@ -228,13 +230,16 @@ const finalizationResult: WalkAction = {
           finalizationOutcomeEnabled(graph, ticket, outcome),
         ),
       ),
+      evidence: pickFrom(random, finalizationEvidences),
     };
   },
   permitsIn: (_config, graph, drawn) =>
     drawn.ticket !== undefined &&
     drawn.outcome !== undefined &&
+    drawn.evidence !== undefined &&
     finalizingIn(graph).includes(drawn.ticket) &&
     finalizationOutcomes.includes(drawn.outcome) &&
+    finalizationEvidences.includes(drawn.evidence) &&
     finalizationOutcomeEnabled(graph, drawn.ticket, drawn.outcome),
 };
 
@@ -251,7 +256,6 @@ export const walkActions: readonly WalkAction[] = [
   overTicketSet("revoke", (_config, graph) => revocablesIn(graph)),
   dispatch,
   taskDone,
-  overTicketSet("workReduce", (_config, graph) => reducibleWorkIn(graph)),
   finalizationResult,
   overTicketSet("resumeTicket", (_config, graph) => retryablesIn(graph)),
   settle,
@@ -279,6 +283,7 @@ export function drawnWire(drawn: Drawn): Readonly<Record<string, unknown>> {
     dependencies_: opt(drawn.dependencies, (ids) =>
       encodeDependencies(new Set(ids)),
     ),
+    evidence: opt(drawn.evidence, encodeInt),
     j: opt(drawn.ticket, encodeInt),
     onFailure: opt(drawn.onFailure, encodeNullaryTag),
     out: opt(drawn.outcome, encodeNullaryTag),
@@ -305,5 +310,6 @@ export function drawnPicks(drawn: Drawn): Picks {
     task: itf(wire["task"]),
     report: itf(wire["report"]),
     outcome: itf(wire["out"]),
+    evidence: itf(wire["evidence"]),
   };
 }
