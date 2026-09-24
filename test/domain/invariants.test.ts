@@ -210,76 +210,78 @@ function attemptOf(state: TicketState): FinalizationOperation {
 /** The healthy fleet's attempt, which each finalization defect below edits one field of. */
 const attempt = attemptOf(finalizationState(finalizing));
 
+/** One payload defect per conjunct the package holds a state to, each named by the rule it breaks. */
+const payloadDefects: readonly (readonly [string, World])[] = [
+  [
+    "a work cycle runs at the source its dispatch pinned",
+    fleetBut(fleet, 1, { state: workState(ticketOn(config), 0) }),
+  ],
+  [
+    "a ticket working has started the cycle it is on",
+    fleetBut(fleet, 1, { workCyclesStarted: 0 }),
+  ],
+  [
+    "a work wall holds the source the cycle it stopped ran at",
+    fleetBut(fleet, 1, { state: workWall(0) }),
+  ],
+  [
+    "the evaluation-failure wall holds the source the judged result was accepted at",
+    fleetBut(fleet, 1, { state: evaluationFailureWall(0) }),
+  ],
+  [
+    "a ticket finalizing is on some attempt",
+    fleetBut(fleet, 2, { state: finalizationState(finalizing, 0) }),
+  ],
+  [
+    "an attempt finalizes at the source the judged result was accepted at",
+    fleetBut(fleet, 2, {
+      state: { type: "Finalization", value: { ...attempt, source: 0 } },
+    }),
+  ],
+  [
+    "the finalization wall holds the attempt its resume follows",
+    fleetBut(fleet, 2, {
+      state: finalizationWall({ ...attempt, generation: 0 }),
+    }),
+  ],
+  [
+    "the finalization wall holds the source its attempt ran at",
+    fleetBut(fleet, 2, {
+      state: finalizationWall({ ...attempt, source: 0 }),
+    }),
+  ],
+  [
+    "a judgement judges a result accepted at a source",
+    fleetBut(fleet, 1, {
+      state: evaluationState({
+        ...runningInstance(2, 1, plan, new Set()),
+        input: {
+          ...runningInstance(2, 1, plan, new Set()).input,
+          acceptedSourceRef: 0,
+        },
+      }),
+    }),
+  ],
+  [
+    "the content the release froze is a reference, and zero is no reference",
+    worldOf({
+      ...fleet,
+      tickets: fleet.tickets.map((ticket, at) =>
+        at === 1
+          ? { ...ticket, definition: { ...ticket.definition, content: 0 } }
+          : ticket,
+      ),
+    }),
+  ],
+  [
+    "a release lands the first revision, and nothing counts down from it",
+    fleetBut(fleet, 1, { revision: 0 }),
+  ],
+];
+
 test("graphWellFormed rejects a state whose payload the package's ticketInvariant refuses", () => {
   assert.ok(graphWellFormed(config, healthy));
-  const defects: readonly (readonly [string, World])[] = [
-    [
-      "a work cycle runs at the source its dispatch pinned",
-      fleetBut(fleet, 1, { state: workState(ticketOn(config), 0) }),
-    ],
-    [
-      "a ticket working has started the cycle it is on",
-      fleetBut(fleet, 1, { workCyclesStarted: 0 }),
-    ],
-    [
-      "a work wall holds the source the cycle it stopped ran at",
-      fleetBut(fleet, 1, { state: workWall(0) }),
-    ],
-    [
-      "the evaluation-failure wall holds the source the judged result was accepted at",
-      fleetBut(fleet, 1, { state: evaluationFailureWall(0) }),
-    ],
-    [
-      "a ticket finalizing is on some attempt",
-      fleetBut(fleet, 2, { state: finalizationState(finalizing, 0) }),
-    ],
-    [
-      "an attempt finalizes at the source the judged result was accepted at",
-      fleetBut(fleet, 2, {
-        state: { type: "Finalization", value: { ...attempt, source: 0 } },
-      }),
-    ],
-    [
-      "the finalization wall holds the attempt its resume follows",
-      fleetBut(fleet, 2, {
-        state: finalizationWall({ ...attempt, generation: 0 }),
-      }),
-    ],
-    [
-      "the finalization wall holds the source its attempt ran at",
-      fleetBut(fleet, 2, {
-        state: finalizationWall({ ...attempt, source: 0 }),
-      }),
-    ],
-    [
-      "a judgement judges a result accepted at a source",
-      fleetBut(fleet, 1, {
-        state: evaluationState({
-          ...runningInstance(2, 1, plan, new Set()),
-          input: {
-            ...runningInstance(2, 1, plan, new Set()).input,
-            acceptedSourceRef: 0,
-          },
-        }),
-      }),
-    ],
-    [
-      "the content the release froze is a reference, and zero is no reference",
-      worldOf({
-        ...fleet,
-        tickets: fleet.tickets.map((ticket, at) =>
-          at === 1
-            ? { ...ticket, definition: { ...ticket.definition, content: 0 } }
-            : ticket,
-        ),
-      }),
-    ],
-    [
-      "a release lands the first revision, and nothing counts down from it",
-      fleetBut(fleet, 1, { revision: 0 }),
-    ],
-  ];
-  for (const [defect, state] of defects) {
+  for (const [defect, state] of payloadDefects) {
     assert.ok(!graphWellFormed(config, worldView(state)), defect);
   }
   assert.ok(
@@ -950,12 +952,7 @@ test("decisionsValid rejects an obligation the evolved state does not owe", () =
             type: "ExecuteTask",
             value: {
               ticket: 2,
-              task: workTaskObligation(
-                held,
-                1,
-                aDispatchSource,
-                initialWorkInput(held.definition),
-              ),
+              task: workTaskObligation(held, 1),
             },
           },
         ],

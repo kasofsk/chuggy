@@ -20,9 +20,12 @@
  */
 
 import type {
+  EvaluationInstance,
+  EvaluationReworkEntry,
   Ticket,
   TicketEvent,
   TicketGraph,
+  TicketState,
   WorkInput,
 } from "./generated/modelTypes.ts";
 import { begin, resumeBlocked } from "./evaluation.ts";
@@ -93,8 +96,49 @@ function updateTicket(
   return withTicket(graph, asTicketId(id), ticket);
 }
 
+/** Events of the named arms. */
+type EventOf<Type extends TicketEvent["type"]> = Extract<
+  TicketEvent,
+  { readonly type: Type }
+>;
+
 /** The state after an event, arm for arm the package's. */
 export function evolve(graph: TicketGraph, event: TicketEvent): TicketGraph {
+  switch (event.type) {
+    case "TicketCreated":
+    case "TicketUpdated":
+    case "TicketDispatched":
+    case "TicketRevoked":
+      return evolveAuthoring(graph, event);
+    case "TicketWorkResumed":
+      return resumeWork(graph, event.value);
+    case "TicketEvaluationResumed":
+    case "TicketFinalizationResumed":
+      return evolveResume(graph, event);
+    case "TicketWorkResultAccepted":
+    case "TicketWorkProcessFailed":
+    case "TicketWorkExecutionUnavailable":
+      return evolveWork(graph, event);
+    case "TicketEvaluationProgressed":
+    case "TicketEvaluationPassed":
+    case "TicketEvaluationReworkStarted":
+    case "TicketEvaluationFailureEscalated":
+    case "TicketEvaluationBlocked":
+      return evolveJudgement(graph, event);
+    case "TicketFinalizationSucceeded":
+    case "TicketFinalizationNeedsWork":
+    case "TicketFinalizationUnavailable":
+      return evolveFinalization(graph, event);
+  }
+}
+
+/** The release, the update, the dispatch and the revoke. */
+function evolveAuthoring(
+  graph: TicketGraph,
+  event: EventOf<
+    "TicketCreated" | "TicketUpdated" | "TicketDispatched" | "TicketRevoked"
+  >,
+): TicketGraph {
   switch (event.type) {
     case "TicketCreated": {
       const definition = event.value;
@@ -137,32 +181,43 @@ export function evolve(graph: TicketGraph, event: TicketEvent): TicketGraph {
         ? updateTicket(graph, event.value, { ...ticket, state: "Revoked" })
         : graph;
     }
-    case "TicketWorkResumed": {
-      const ticket = ticketAt(graph, asTicketId(event.value));
-      const state = ticket.state;
-      if (typeof state === "string" || state.type !== "Escalated") return graph;
-      const wall = state.value;
-      switch (wall.type) {
-        case "WorkFailureEscalated":
-        case "WorkExecutionUnavailableEscalated":
-          return enterWorkCycle(
-            graph,
-            ticket,
-            wall.value.resumeInput,
-            wall.value.source,
-          );
-        case "EvaluationFailureEscalated":
-          return enterWorkCycle(
-            graph,
-            ticket,
-            evaluationReworkInput(ticket.definition, wall.value.evidence),
-            wall.value.source,
-          );
-        case "EvaluationBlockedEscalated":
-        case "FinalizationUnavailableEscalated":
-          return graph;
-      }
-    }
+  }
+}
+
+/** A work wall's resume: a new cycle at the input and source the wall kept. */
+function resumeWork(graph: TicketGraph, id: number): TicketGraph {
+  const ticket = ticketAt(graph, asTicketId(id));
+  const state = ticket.state;
+  if (typeof state === "string" || state.type !== "Escalated") return graph;
+  const wall = state.value;
+  switch (wall.type) {
+    case "WorkFailureEscalated":
+    case "WorkExecutionUnavailableEscalated":
+      return enterWorkCycle(
+        graph,
+        ticket,
+        wall.value.resumeInput,
+        wall.value.source,
+      );
+    case "EvaluationFailureEscalated":
+      return enterWorkCycle(
+        graph,
+        ticket,
+        evaluationReworkInput(ticket.definition, wall.value.evidence),
+        wall.value.source,
+      );
+    case "EvaluationBlockedEscalated":
+    case "FinalizationUnavailableEscalated":
+      return graph;
+  }
+}
+
+/** The evaluation and finalization resumes, each leaving the wall it answers. */
+function evolveResume(
+  graph: TicketGraph,
+  event: EventOf<"TicketEvaluationResumed" | "TicketFinalizationResumed">,
+): TicketGraph {
+  switch (event.type) {
     case "TicketEvaluationResumed": {
       const ticket = ticketAt(graph, asTicketId(event.value));
       const state = ticket.state;
@@ -194,6 +249,19 @@ export function evolve(graph: TicketGraph, event: TicketEvent): TicketGraph {
         },
       });
     }
+  }
+}
+
+/** A work cycle's result or failure, either only while the ticket is in Work. */
+function evolveWork(
+  graph: TicketGraph,
+  event: EventOf<
+    | "TicketWorkResultAccepted"
+    | "TicketWorkProcessFailed"
+    | "TicketWorkExecutionUnavailable"
+  >,
+): TicketGraph {
+  switch (event.type) {
     case "TicketWorkResultAccepted": {
       const accepted = event.value;
       const ticket = ticketAt(graph, asTicketId(accepted.ticket));
@@ -202,12 +270,7 @@ export function evolve(graph: TicketGraph, event: TicketEvent): TicketGraph {
       if (
         !taskObligationEquals(
           accepted.result.obligation,
-          workTaskObligation(
-            ticket,
-            ticket.workCyclesStarted,
-            state.value.source,
-            state.value.input,
-          ),
+          workTaskObligation(ticket, ticket.workCyclesStarted),
         )
       )
         return graph;
@@ -247,17 +310,31 @@ export function evolve(graph: TicketGraph, event: TicketEvent): TicketGraph {
         },
       });
     }
-    case "TicketEvaluationProgressed":
-    case "TicketEvaluationPassed":
-    case "TicketEvaluationReworkStarted":
-    case "TicketEvaluationFailureEscalated":
-    case "TicketEvaluationBlocked":
-      return evolveJudgement(graph, event);
-    case "TicketFinalizationSucceeded":
-    case "TicketFinalizationNeedsWork":
-    case "TicketFinalizationUnavailable":
-      return evolveFinalization(graph, event);
   }
+}
+
+/** The first finalization attempt of a judgement that passed. */
+function firstFinalization(evaluation: EvaluationInstance): TicketState {
+  return {
+    type: "Finalization",
+    value: {
+      workCycle: evaluation.workCycle,
+      generation: 1,
+      input: evaluation.input.workResult,
+      source: evaluation.input.acceptedSourceRef,
+    },
+  };
+}
+
+/** The wall a failed judgement escalates to, holding its evidence and source. */
+function evaluationFailureWall(
+  evidence: readonly EvaluationReworkEntry[],
+  source: number,
+): TicketState {
+  return {
+    type: "Escalated",
+    value: { type: "EvaluationFailureEscalated", value: { evidence, source } },
+  };
 }
 
 /** The five evaluation arms: the report goes to the running instance, and the event moves only the state it concluded. */
@@ -294,15 +371,7 @@ function evolveJudgement(
       return evaluation.state.type === "EvaluationPassed"
         ? updateTicket(graph, fact.ticket, {
             ...ticket,
-            state: {
-              type: "Finalization",
-              value: {
-                workCycle: evaluation.workCycle,
-                generation: 1,
-                input: evaluation.input.workResult,
-                source: evaluation.input.acceptedSourceRef,
-              },
-            },
+            state: firstFinalization(evaluation),
           })
         : graph;
     case "TicketEvaluationReworkStarted":
@@ -318,16 +387,10 @@ function evolveJudgement(
       return evaluation.state.type === "EvaluationFailed"
         ? updateTicket(graph, fact.ticket, {
             ...ticket,
-            state: {
-              type: "Escalated",
-              value: {
-                type: "EvaluationFailureEscalated",
-                value: {
-                  evidence: event.value.evidence,
-                  source: current.input.acceptedSourceRef,
-                },
-              },
-            },
+            state: evaluationFailureWall(
+              event.value.evidence,
+              current.input.acceptedSourceRef,
+            ),
           })
         : graph;
     case "TicketEvaluationBlocked":

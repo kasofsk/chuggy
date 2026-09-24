@@ -44,15 +44,12 @@ import {
 import {
   applyEvaluationReport,
   cancelLiveTasks,
-  evaluationReworkInput,
   executeEvaluationTasks,
   executeWork,
   finalizationCurrent,
   finalizationResultValid,
-  finalizationReworkInput,
   finalize,
   incompleteDependencies,
-  initialWorkInput,
   nextCycleNumber,
   producedResult,
   releasedTicketValid,
@@ -319,12 +316,7 @@ export function decideDispatch(
       value: { ticket: id, dependencies: incomplete },
     });
   return decided({ type: "TicketDispatched", value: dispatch }, [
-    executeWork(
-      ticket,
-      nextCycleNumber(ticket),
-      dispatch.source,
-      initialWorkInput(ticket.definition),
-    ),
+    executeWork(ticket, nextCycleNumber(ticket)),
   ]);
 }
 
@@ -369,21 +361,11 @@ export function decideResume(
     case "WorkFailureEscalated":
     case "WorkExecutionUnavailableEscalated":
       return decided({ type: "TicketWorkResumed", value: id }, [
-        executeWork(
-          ticket,
-          nextCycleNumber(ticket),
-          wall.value.source,
-          wall.value.resumeInput,
-        ),
+        executeWork(ticket, nextCycleNumber(ticket)),
       ]);
     case "EvaluationFailureEscalated":
       return decided({ type: "TicketWorkResumed", value: id }, [
-        executeWork(
-          ticket,
-          nextCycleNumber(ticket),
-          wall.value.source,
-          evaluationReworkInput(ticket.definition, wall.value.evidence),
-        ),
+        executeWork(ticket, nextCycleNumber(ticket)),
       ]);
     case "EvaluationBlockedEscalated":
       return decided(
@@ -500,12 +482,7 @@ function decideEvaluationTerminal(
       const rework = { ticket: id, report, evidence: entries };
       return failurePolicy(updated) === "ReworkEvaluationFailure"
         ? decided({ type: "TicketEvaluationReworkStarted", value: rework }, [
-            executeWork(
-              ticket,
-              nextCycleNumber(ticket),
-              updated.input.acceptedSourceRef,
-              evaluationReworkInput(ticket.definition, entries),
-            ),
+            executeWork(ticket, nextCycleNumber(ticket)),
           ])
         : decided(
             { type: "TicketEvaluationFailureEscalated", value: rework },
@@ -548,12 +525,7 @@ export function decideTaskTerminal(
         (report.type === "WorkResultReport"
           ? taskObligationEquals(
               report.value.result.obligation,
-              workTaskObligation(
-                ticket,
-                ticket.workCyclesStarted,
-                state.value.source,
-                state.value.input,
-              ),
+              workTaskObligation(ticket, ticket.workCyclesStarted),
             )
           : report.type === "TerminalFailureReport");
       return current ? decideWorkTerminal(ticket, report) : notCurrent;
@@ -613,12 +585,7 @@ export function decideFinalizationResult(
       return decided({ type: "TicketFinalizationSucceeded", value: fact }, []);
     case "FinalizationNeedsWork":
       return decided({ type: "TicketFinalizationNeedsWork", value: fact }, [
-        executeWork(
-          ticket,
-          nextCycleNumber(ticket),
-          state.value.source,
-          finalizationReworkInput(ticket.definition, report.result.value),
-        ),
+        executeWork(ticket, nextCycleNumber(ticket)),
       ]);
     case "FinalizationResultUnavailable":
       return decided(

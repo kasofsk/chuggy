@@ -153,21 +153,19 @@ export function failureTaskCurrent(
   graph: TicketGraph,
   event: TicketEvent,
 ): boolean {
-  switch (event.type) {
-    case "TicketWorkProcessFailed":
-    case "TicketWorkExecutionUnavailable": {
-      const { ticket, task } = event.value;
-      return taskIdentityEquals(
-        task,
-        workTaskIdentity(
-          ticket,
-          ticketAt(graph, asTicketId(ticket)).workCyclesStarted,
-        ),
-      );
-    }
-    default:
-      return true;
-  }
+  if (
+    event.type !== "TicketWorkProcessFailed" &&
+    event.type !== "TicketWorkExecutionUnavailable"
+  )
+    return true;
+  const { ticket, task } = event.value;
+  return taskIdentityEquals(
+    task,
+    workTaskIdentity(
+      ticket,
+      ticketAt(graph, asTicketId(ticket)).workCyclesStarted,
+    ),
+  );
 }
 
 /**

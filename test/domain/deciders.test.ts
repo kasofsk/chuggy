@@ -59,7 +59,6 @@ import {
   attemptGeneration,
   emptyLedger,
   heldInstances,
-  initialWorkInput,
   ledgerInstances,
   liveTasks,
   resumeOf,
@@ -183,12 +182,7 @@ const executeWorkOf = (graph: TicketGraph, cycle: number): Obligation => {
     type: "ExecuteTask",
     value: {
       ticket: 1,
-      task: workTaskObligation(
-        ticket,
-        cycle,
-        aDispatchSource,
-        initialWorkInput(ticket.definition),
-      ),
+      task: workTaskObligation(ticket, cycle),
     },
   };
 };

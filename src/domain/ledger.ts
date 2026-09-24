@@ -80,16 +80,13 @@ export function closedBy(
   event: TicketEvent,
 ): readonly EvaluationInstance[] {
   if (heldInstances(after.state).length > 0) return [];
-  return heldInstances(before.state).map((held) => {
-    switch (event.type) {
-      case "TicketEvaluationPassed":
-      case "TicketEvaluationReworkStarted":
-      case "TicketEvaluationFailureEscalated":
-        return applyEvaluationReport(held, event.value.report);
-      default:
-        return held;
-    }
-  });
+  return heldInstances(before.state).map((held) =>
+    event.type === "TicketEvaluationPassed" ||
+    event.type === "TicketEvaluationReworkStarted" ||
+    event.type === "TicketEvaluationFailureEscalated"
+      ? applyEvaluationReport(held, event.value.report)
+      : held,
+  );
 }
 
 /** The ledger after an event, from the ticket before it, the event and the ledger before it. */

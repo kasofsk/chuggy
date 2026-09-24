@@ -195,15 +195,13 @@ export function finalizationReworkInput(
 
 /**
  * The work obligation: the cycle's own identity, the definition the release
- * pinned for work, and the work cycle as the context reference. The package's
- * signature carries the cycle's source and input, which the obligation does
- * not read.
+ * pinned for work, and the work cycle as the context reference. The package
+ * also passes the cycle's source and input here and to `executeWork`, and
+ * neither reads them, so this mirror does not take them.
  */
 export function workTaskObligation(
   ticket: Ticket,
   cycleNumber: number,
-  _source: number,
-  _input: WorkInput,
 ): TaskObligation {
   return {
     task: workTaskIdentity(ticket.definition.id, cycleNumber),
@@ -213,17 +211,12 @@ export function workTaskObligation(
 }
 
 /** Run a work cycle's task, under the obligation the cycle owes. */
-export function executeWork(
-  ticket: Ticket,
-  cycleNumber: number,
-  source: number,
-  input: WorkInput,
-): Obligation {
+export function executeWork(ticket: Ticket, cycleNumber: number): Obligation {
   return {
     type: "ExecuteTask",
     value: {
       ticket: ticket.definition.id,
-      task: workTaskObligation(ticket, cycleNumber, source, input),
+      task: workTaskObligation(ticket, cycleNumber),
     },
   };
 }
@@ -501,14 +494,7 @@ export function liveObligations(ticket: Ticket): readonly TaskObligation[] {
   const state = ticket.state;
   if (typeof state === "string") return [];
   if (state.type === "Work")
-    return [
-      workTaskObligation(
-        ticket,
-        ticket.workCyclesStarted,
-        state.value.source,
-        state.value.input,
-      ),
-    ];
+    return [workTaskObligation(ticket, ticket.workCyclesStarted)];
   if (state.type === "Evaluation") return currentTaskObligations(state.value);
   return [];
 }
