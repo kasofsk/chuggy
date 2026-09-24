@@ -345,6 +345,44 @@ test("a dispatch over an undone dependency is refused naming it", async () => {
   });
 });
 
+test("the writer throws rather than journal a decision whose evolved graph holds a cycle", async () => {
+  let state = actorInit();
+  for (const each of [1, 2, 3])
+    state = stepped(
+      refinementInstance,
+      state,
+      createTicketCommand(plainDefinitionOf(each)),
+    );
+  const { graph, ledgers } = memoryOf(state);
+  const waitingOn = (ticket: number, dependency: number) => {
+    const held = ticketAt(graph, id(ticket));
+    return [
+      id(ticket),
+      {
+        ...held,
+        definition: { ...held.definition, dependencies: new Set([dependency]) },
+      },
+    ] as const;
+  };
+  await assert.rejects(
+    decidedWith(
+      {
+        ...releasedMemory(3),
+        graph: {
+          tickets: new Map([
+            ...graph.tickets,
+            waitingOn(2, 3),
+            waitingOn(3, 2),
+          ]),
+        },
+        ledgers,
+      },
+      operationInput(manualDispatch),
+    ),
+    /a decision owes what its event does not leave owed/,
+  );
+});
+
 test("proposal validity ignores an unrelated journal-head advance", async () => {
   const memory = releasedMemory(40);
   const candidates = deriveDispatchCandidates(

@@ -59,7 +59,7 @@ import {
   visEdges,
 } from "../../src/domain/derived.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import { evaluationTaskOf } from "../../src/domain/task.ts";
+import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import {
   artifactWellFormed,
   completionExclusive,
@@ -969,6 +969,173 @@ test("decisionsValid rejects an obligation the evolved state does not owe", () =
       }),
     ),
     "an obligation names its own ticket",
+  );
+});
+
+/** Ticket 1 finalizing, and ticket 2 ready, so a dispatch of 2 leaves 1's attempt standing. */
+const finalizingBeside = graphOf([
+  ticketOn(config, {
+    state: finalizationState(judgedInstance(1, 1, plan)),
+    workCyclesStarted: 1,
+  }),
+  ticketOn(config),
+]);
+
+/** Ticket 1 working its first cycle, and ticket 2 ready. */
+const workingBeside = graphOf([
+  ticketOn(config, {
+    state: workState(ticketOn(config)),
+    workCyclesStarted: 1,
+  }),
+  ticketOn(config),
+]);
+
+/** The dispatch of ticket 2 at `pre`, owing what it owes and `extra` beside it. */
+const dispatchOfSecond = (
+  pre: TicketGraph,
+  ...extra: SuccessfulTicketDecision["obligations"]
+): SuccessfulTicketDecision => {
+  const decided = acceptedOf(
+    decideDispatch(pre, { ticket: 2, source: aDispatchSource }),
+  );
+  return { ...decided, obligations: [...decided.obligations, ...extra] };
+};
+
+/** The attempt ticket 1 of `finalizingBeside` is on. */
+const standing = attemptOf(ticketAt(finalizingBeside, id(1)).state);
+
+/** A finalization owed for ticket `ticket`, on `finalization`, under `configuration`. */
+const finalizeOwed = (
+  ticket: number,
+  finalization: FinalizationOperation,
+  configuration = 1,
+): SuccessfulTicketDecision["obligations"][number] => ({
+  type: "FinalizeTicket",
+  value: { ticket, finalization, configuration },
+});
+
+test("decisionsValid refuses each obligation and each evolved graph the writer's guard exists to refuse", () => {
+  assert.ok(
+    decisionsValid(
+      config,
+      decidedAt(
+        finalizingBeside,
+        dispatchOfSecond(finalizingBeside, finalizeOwed(1, standing)),
+      ),
+    ),
+    "the attempt ticket 1 is on, owed where it stands, is valid",
+  );
+  const [owed] = dispatchOfSecond(finalizingBeside).obligations;
+  assert.ok(owed?.type === "ExecuteTask");
+  const zeroth = graphOf([
+    ticketOn(config, { state: workState(ticketOn(config)) }),
+  ]);
+  const revoke = acceptedOf(decideRevoke(zeroth, 1));
+  const cyclic = graphOf([
+    ticketOn(config, { dependencies: depsOf(2) }),
+    ticketOn(config, { dependencies: depsOf(3) }),
+    ticketOn(config, { dependencies: depsOf(1) }),
+    ticketOn(config),
+  ]);
+  const misKeyed: TicketGraph = {
+    tickets: new Map([...ready.tickets, [id(2), ticketAt(ready, id(1))]]),
+  };
+  const defects: readonly (readonly [
+    string,
+    TicketGraph,
+    SuccessfulTicketDecision,
+  ])[] = [
+    [
+      "a task to run is one the evolved ticket owes",
+      finalizingBeside,
+      dispatchOfSecond(finalizingBeside, {
+        type: "ExecuteTask",
+        value: {
+          ticket: 1,
+          task: workTaskObligation(ticketAt(finalizingBeside, id(1)), 1),
+        },
+      }),
+    ],
+    [
+      "a task to stop is one the evolved ticket no longer owes",
+      workingBeside,
+      dispatchOfSecond(workingBeside, {
+        type: "CancelTask",
+        value: { ticket: 1, task: workTaskIdentity(1, 1) },
+      }),
+    ],
+    [
+      "a finalization to attempt is the one the evolved ticket is on",
+      finalizingBeside,
+      dispatchOfSecond(
+        finalizingBeside,
+        finalizeOwed(1, { ...standing, generation: standing.generation + 1 }),
+      ),
+    ],
+    [
+      "a finalization names a ticket the graph holds",
+      finalizingBeside,
+      dispatchOfSecond(finalizingBeside, finalizeOwed(9, standing)),
+    ],
+    [
+      "a finalization runs under a configuration",
+      finalizingBeside,
+      dispatchOfSecond(finalizingBeside, finalizeOwed(1, standing, 0)),
+    ],
+    [
+      "a task runs under a definition naming a workload",
+      finalizingBeside,
+      {
+        ...dispatchOfSecond(finalizingBeside),
+        obligations: [
+          {
+            type: "ExecuteTask",
+            value: {
+              ...owed.value,
+              task: {
+                ...owed.value.task,
+                definition: { ...owed.value.task.definition, workload: 0 },
+              },
+            },
+          },
+        ],
+      },
+    ],
+    [
+      "a task to stop has an identity counting from one",
+      zeroth,
+      {
+        ...revoke,
+        obligations: [
+          {
+            type: "CancelTask",
+            value: { ticket: 1, task: workTaskIdentity(1, 0) },
+          },
+        ],
+      },
+    ],
+    [
+      "the evolved graph waits on no ticket through a cycle",
+      cyclic,
+      acceptedOf(
+        decideDispatch(cyclic, { ticket: 4, source: aDispatchSource }),
+      ),
+    ],
+    [
+      "the evolved graph keys every ticket by its own id",
+      misKeyed,
+      acceptedOf(
+        decideDispatch(misKeyed, { ticket: 1, source: aDispatchSource }),
+      ),
+    ],
+  ];
+  assert.deepEqual(
+    defects
+      .filter(([, pre, decision]) =>
+        decisionsValid(config, decidedAt(pre, decision)),
+      )
+      .map(([defect]) => defect),
+    [],
   );
 });
 
