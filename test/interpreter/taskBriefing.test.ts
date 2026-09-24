@@ -1139,7 +1139,12 @@ test("the provenance says how many of a stage's command lines the ticket added",
 });
 
 test("this tree's own configurations run their commanded check stage before any agent judges", () => {
-  for (const name of ["chuggy-development", "basic-coding"]) {
+  for (const name of [
+    "chuggy-development",
+    "chuggy-development-fable",
+    "chuggy-development-opus",
+    "basic-coding",
+  ]) {
     const document: unknown = JSON.parse(
       readFileSync(`.chug/configurations/${name}.json`, "utf8"),
     );
@@ -1152,6 +1157,37 @@ test("this tree's own configurations run their commanded check stage before any 
       { purpose: "Check", checks: [".chug/tasks/ci.sh"] },
       `${name}: the shell gate is the first stage, so a model never reviews a change the gates refuse`,
     );
+  }
+});
+
+test("a model variant of the development configuration differs from it only in its name and its model", () => {
+  const read = (name: string): Record<string, unknown> =>
+    JSON.parse(
+      readFileSync(`.chug/configurations/${name}.json`, "utf8"),
+    ) as Record<string, unknown>;
+  const base = read("chuggy-development");
+  const baseConfiguration = base["configuration"] as {
+    readonly worker: { readonly mode: { readonly arguments: string[] } };
+  };
+  for (const family of ["fable", "opus"]) {
+    const name = `chuggy-development-${family}`;
+    assert.deepEqual(read(name), {
+      ...base,
+      name,
+      configuration: {
+        ...baseConfiguration,
+        worker: {
+          ...baseConfiguration.worker,
+          mode: {
+            ...baseConfiguration.worker.mode,
+            arguments: [
+              ...baseConfiguration.worker.mode.arguments,
+              `--model=${family}`,
+            ],
+          },
+        },
+      },
+    });
   }
 });
 

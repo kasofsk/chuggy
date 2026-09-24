@@ -9,6 +9,10 @@ check:
 check-full:
     CHUG_CI_FULL=1 ./.chug/tasks/ci.sh
 
+# The worker image's Claude Code and Agent SDK, moved to npm's latest pair.
+bump-claude-code:
+    node --experimental-strip-types scripts/bump-claude-code.ts
+
 # The gates' own tests, without the sequencer.
 suites:
     #!/bin/sh
