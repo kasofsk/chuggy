@@ -19,10 +19,11 @@
  */
 
 import type { Config } from "../domain/config.ts";
-import { liveTickets, ticketAt } from "../domain/ticketGraph.ts";
-import { graphEquals } from "../domain/equality.ts";
-import { journalLegalOn, replayGraph } from "./journal.ts";
-import { memoryGraph, type ActorState } from "./state.ts";
+import { liveTickets } from "../domain/ticketGraph.ts";
+import { graphEquals, ledgersEqual } from "../domain/equality.ts";
+import { ledgerAt } from "../domain/ledger.ts";
+import { journalLegalOn, replayJournal } from "./journal.ts";
+import { memoryGraph, memoryLedgers, type ActorState } from "./state.ts";
 import {
   journalCompletions,
   journalSpawns,
@@ -46,9 +47,14 @@ export interface NamedObligation {
 export const journalLegal: RefinementObligation = (_config, state) =>
   journalLegalOn(state.journal);
 
-/** Recovery completeness: replay of the current journal is exactly the state the actor holds. */
-export const recoveryComplete: RefinementObligation = (_config, state) =>
-  graphEquals(replayGraph(state.journal), memoryGraph(state));
+/** Recovery completeness: replay of the current journal is exactly the graph and ledgers the actor holds. */
+export const recoveryComplete: RefinementObligation = (_config, state) => {
+  const replayed = replayJournal(state.journal);
+  return (
+    graphEquals(replayed.graph, memoryGraph(state)) &&
+    ledgersEqual(replayed.ledgers, memoryLedgers(state))
+  );
+};
 
 /**
  * The executor's bookkeeping is sound: the cursor stays inside the journal,
@@ -66,9 +72,8 @@ export const executorSound: RefinementObligation = (_config, state) => {
 };
 
 /**
- * The journal's completion count per ticket is the ledger the model stores on
- * the ticket. A corollary of legality plus recovery on any reachable state,
- * stated anyway so a mutant journal is caught by name.
+ * The journal's completion count per ticket is the ledger's completion ghost.
+ * A corollary of legality plus recovery, stated so a mutant journal is caught by name.
  */
 export const journalCompletionsMatchLedger: RefinementObligation = (
   _config,
@@ -77,7 +82,7 @@ export const journalCompletionsMatchLedger: RefinementObligation = (
   liveTickets(memoryGraph(state)).every(
     (ticket) =>
       journalCompletions(state, ticket) ===
-      ticketAt(memoryGraph(state), ticket).completions,
+      ledgerAt(memoryLedgers(state), ticket).completions,
   );
 
 /** Coverage: every effect the world ever received traces to a journaled decision — no orphans. */

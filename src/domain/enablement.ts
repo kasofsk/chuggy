@@ -35,23 +35,24 @@ import type {
 } from "./generated/modelTypes.ts";
 import {
   artifactOf,
-  instanceTasks,
+  attemptGeneration,
+  dependenciesComplete,
   hasOpenHumanTask,
+  instanceTasks,
+  isReady,
+  ledgerInstances,
   liveTasks,
   taskRefOf,
 } from "./ticket.ts";
-import {
-  decide,
-  incompleteDependencies,
-  unaskedDisposition,
-} from "./deciders.ts";
+import { decide, unaskedDisposition } from "./deciders.ts";
 import type { TicketId } from "./ids.ts";
-import { revocationAllowed } from "./phase.ts";
-import { workTaskOf } from "./task.ts";
+import { isPending, isTerminal, phaseOf, revocationAllowed } from "./phase.ts";
+import { workTaskIdentity } from "./task.ts";
+import { ledgerAt, type Ledgers } from "./ledger.ts";
 
 /** Anything not settled and not past the point of no return. */
 export function revocableIn(graph: TicketGraph, id: TicketId): boolean {
-  return revocationAllowed(ticketAt(graph, id).phase);
+  return revocationAllowed(ticketAt(graph, id).state);
 }
 
 /**
@@ -74,15 +75,18 @@ export function waitsOn(graph: TicketGraph, id: TicketId): ReadonlySet<number> {
  */
 export function depArtifacts(
   graph: TicketGraph,
+  ledgers: Ledgers,
   id: TicketId,
 ): readonly ArtifactMark[] {
   return [...waitsOn(graph, id)]
     .sort((a, b) => a - b)
-    .map((d) => artifactOf(ticketAt(graph, d as TicketId)));
+    .map((d) =>
+      artifactOf(ticketAt(graph, d as TicketId), ledgerAt(ledgers, d)),
+    );
 }
 
 export function depsDoneIn(graph: TicketGraph, id: TicketId): boolean {
-  return incompleteDependencies(graph, ticketAt(graph, id)).size === 0;
+  return dependenciesComplete(graph, ticketAt(graph, id));
 }
 
 /**
@@ -109,12 +113,12 @@ export function canReleaseIn(
  * that can never run.
  */
 export function dependableIn(graph: TicketGraph): readonly TicketId[] {
-  return ticketIds(graph).filter((k) => ticketAt(graph, k).phase !== "Revoked");
+  return ticketIds(graph).filter((k) => ticketAt(graph, k).state !== "Revoked");
 }
 
 /** Tickets an update may be drawn for: the Pending ones. */
 export function revisablesIn(graph: TicketGraph): readonly TicketId[] {
-  return ticketIds(graph).filter((j) => ticketAt(graph, j).phase === "Pending");
+  return ticketIds(graph).filter((j) => isPending(ticketAt(graph, j).state));
 }
 
 /**
@@ -147,7 +151,7 @@ export function revocablesIn(graph: TicketGraph): readonly TicketId[] {
 }
 
 export function readiesIn(graph: TicketGraph): readonly TicketId[] {
-  return ticketIds(graph).filter((j) => isReadyIn(graph, j));
+  return ticketIds(graph).filter((j) => isReady(graph, j));
 }
 
 /** Tickets the fabric is currently running a task for, which is who a completion can be delivered to. */
@@ -158,20 +162,16 @@ export function completableIn(graph: TicketGraph): readonly TicketId[] {
 }
 
 export function doneIn(graph: TicketGraph): readonly TicketId[] {
-  return ticketIds(graph).filter((j) => ticketAt(graph, j).phase === "Done");
+  return ticketIds(graph).filter((j) => ticketAt(graph, j).state === "Done");
 }
 
 export function retryablesIn(graph: TicketGraph): readonly TicketId[] {
   return ticketIds(graph).filter((j) => retryableIn(graph, j));
 }
 
-/** The derived waiting room: released, with every dependency Done. */
-export function isReadyIn(graph: TicketGraph, id: TicketId): boolean {
-  return ticketAt(graph, id).phase === "Pending" && depsDoneIn(graph, id);
-}
-
+/** The derived waiting room's other half: Pending behind a dependency not yet Done. */
 export function isBlockedIn(graph: TicketGraph, id: TicketId): boolean {
-  return ticketAt(graph, id).phase === "Pending" && !depsDoneIn(graph, id);
+  return isPending(ticketAt(graph, id).state) && !depsDoneIn(graph, id);
 }
 
 /** The ids a release may still claim, which is what makes a fleet quiet or not. */
@@ -186,7 +186,7 @@ export function releasableIdsIn(
 /** Tickets running their finalizer, which is who a finalizer's result is drawn for. */
 export function finalizingIn(graph: TicketGraph): readonly TicketId[] {
   return ticketIds(graph).filter(
-    (j) => ticketAt(graph, j).phase === "Finalization",
+    (j) => phaseOf(ticketAt(graph, j).state) === "Finalization",
   );
 }
 
@@ -198,10 +198,7 @@ export function finalizingIn(graph: TicketGraph): readonly TicketId[] {
 export function quietIn(config: Config, graph: TicketGraph): boolean {
   return (
     releasableIdsIn(config, graph).length === 0 &&
-    ticketIds(graph).every((j) => {
-      const phase = ticketAt(graph, j).phase;
-      return phase === "Done" || phase === "Revoked";
-    })
+    ticketIds(graph).every((j) => isTerminal(ticketAt(graph, j).state))
   );
 }
 
@@ -219,18 +216,22 @@ export function outstandingTasksIn(
 /**
  * Every task identity this ticket has ever been owed: one work task per cycle
  * it started, and every evaluator of every run its instances hold. A superset
- * of the live set, which is the point: an event about a settled task is built
- * from here to show `evolve` lets it fall through.
+ * of the live set, which is the point: a report about a settled task is built
+ * from here to show `decide` refuses it.
  */
 export function deliverableTasksIn(
   graph: TicketGraph,
+  ledgers: Ledgers,
   id: TicketId,
 ): readonly TaskIdentity[] {
   const ticket = ticketAt(graph, id);
   const work = Array.from({ length: ticket.workCyclesStarted }, (_, index) =>
-    workTaskOf(id, index + 1),
+    workTaskIdentity(id, index + 1),
   );
-  return [...work, ...ticket.evaluations.flatMap(instanceTasks)];
+  return [
+    ...work,
+    ...ledgerInstances(ticket, ledgerAt(ledgers, id)).flatMap(instanceTasks),
+  ];
 }
 
 /** A process failure for a task of ticket `id`, at the evidence the suites derive for it. */
@@ -328,6 +329,7 @@ export function updateProbesIn(
 export function commandProbesIn(
   config: Config,
   graph: TicketGraph,
+  ledgers: Ledgers,
 ): readonly TicketCommand[] {
   const universe = ticketIdUniverse(config);
   const live = ticketIds(graph);
@@ -347,9 +349,11 @@ export function commandProbesIn(
   ]);
   const reports = [
     ...live.flatMap((j) =>
-      deliverableTasksIn(graph, j).map((task) => failureReportOf(j, task)),
+      deliverableTasksIn(graph, ledgers, j).map((task) =>
+        failureReportOf(j, task),
+      ),
     ),
-    ...absent.map((j) => failureReportOf(j, workTaskOf(j, 1))),
+    ...absent.map((j) => failureReportOf(j, workTaskIdentity(j, 1))),
   ].map((report): TicketCommand => ({
     type: "ReportTaskTerminal",
     value: report,
@@ -358,7 +362,7 @@ export function commandProbesIn(
     ...live.flatMap((j) => {
       const ticket = ticketAt(graph, j);
       const cycle = Math.max(1, ticket.workCyclesStarted);
-      const generation = Math.max(1, ticket.finalizationGeneration);
+      const generation = Math.max(1, attemptGeneration(ticket));
       return [
         finalizationReportOf(j, cycle, generation),
         ...(generation > 1
@@ -376,8 +380,9 @@ export function commandProbesIn(
 export function refusedCommandsIn(
   config: Config,
   graph: TicketGraph,
+  ledgers: Ledgers,
 ): readonly TicketCommand[] {
-  return commandProbesIn(config, graph).filter(
+  return commandProbesIn(config, graph, ledgers).filter(
     (command) =>
       decide(graph, command, () => unaskedDisposition).type === "TicketRefused",
   );

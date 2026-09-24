@@ -20,8 +20,6 @@ import type {
   TaskDefinition,
 } from "./generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "./ids.ts";
-import { planValid } from "./evaluation.ts";
-import { taskDefinitionValid } from "./task.ts";
 
 /** One deployment's constants. */
 export interface Config {
@@ -163,23 +161,16 @@ export function releasedTicketOf(
 }
 
 /**
- * The release's validity rule: the contract's own claims, a plan the protocol
- * will run, and then this deployment's bounds. A definition outside it is
- * refused at authoring time rather than defended against mid-flight.
+ * This deployment's bounds on a release, beside the package's own rule
+ * (`releasedTicketValid` in `src/domain/ticket.ts`): the plan is one
+ * `isValidPlan` admits. A definition outside it is refused at authoring time
+ * rather than defended against mid-flight.
  */
-export function releasedTicketValid(
+export function releasedTicketBounded(
   config: Config,
   definition: ReleasedTicket,
 ): boolean {
-  return (
-    definition.id > 0 &&
-    definition.content > 0 &&
-    [...definition.dependencies].every((d) => d > 0) &&
-    taskDefinitionValid(definition.workConfiguration) &&
-    planValid(definition.evaluationPlan) &&
-    definition.finalizationConfiguration > 0 &&
-    isValidPlan(config, definition.evaluationPlan.stages)
-  );
+  return isValidPlan(config, definition.evaluationPlan.stages);
 }
 
 /**

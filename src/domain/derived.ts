@@ -23,6 +23,7 @@ import { liveTickets, ticketAt } from "./ticketGraph.ts";
 import type { TicketGraph } from "./generated/modelTypes.ts";
 import type { TicketId } from "./ids.ts";
 import { hasOpenHumanTask } from "./ticket.ts";
+import { isEscalated, isPending } from "./phase.ts";
 
 /** The walk's edge relation: the dependency edges, and only those. */
 export function visEdges(
@@ -67,17 +68,17 @@ export function sweep(
  */
 export function stuckSet(graph: TicketGraph): ReadonlySet<TicketId> {
   return sweep(graph, (c, id, stuck) => {
-    const phase = ticketAt(c, id).phase;
+    const state = ticketAt(c, id).state;
     return (
-      phase === "Escalated" ||
-      (phase === "Pending" && visEdges(c, id).some((d) => stuck.has(d)))
+      isEscalated(state) ||
+      (isPending(state) && visEdges(c, id).some((d) => stuck.has(d)))
     );
   });
 }
 
 /**
  * Tickets reachable from an open desk task by walking the same edges. Coverage
- * propagates through every phase, over the edge relation `stuckSet` walks, so
+ * propagates through every state, over the edge relation `stuckSet` walks, so
  * the containment between them is structural per pass.
  */
 export function coveredSet(graph: TicketGraph): ReadonlySet<TicketId> {

@@ -1,14 +1,41 @@
 /**
- * Where a ticket's lifecycle position sits: settled or still moving, and which
- * of the settled phases absorb.
+ * The ticket's lifecycle position by name: the tag of its `TicketState`, what
+ * the projection, the wire and the console call a phase.
  *
- * The phases themselves come from the model. Both predicates are exhaustive
- * switches over that vocabulary, so a phase added there is a compile error
- * here rather than a phase silently classified as moving.
+ * The model carries no phase of its own — the state's constructor is the
+ * phase — so the vocabulary here is the state's tags, in the order the
+ * projection has always listed them. `phaseOf` is total over the state and
+ * every predicate below is an exhaustive switch, so a state added in the model
+ * is a compile error here rather than a phase silently classified.
  */
 
 import { assertNever } from "./assertNever.ts";
-import { phaseTags, type Phase } from "./generated/modelTypes.ts";
+import type { TicketState } from "./generated/modelTypes.ts";
+
+/** A state's tag. */
+export type Phase = TicketState extends infer State
+  ? State extends string
+    ? State
+    : State extends { readonly type: infer Tag }
+      ? Tag
+      : never
+  : never;
+
+/** Every phase, in the projection's order. */
+export const phaseTags: readonly Phase[] = [
+  "Pending",
+  "Work",
+  "Evaluation",
+  "Finalization",
+  "Done",
+  "Escalated",
+  "Revoked",
+];
+
+/** The phase a state is in: its tag. */
+export function phaseOf(state: TicketState): Phase {
+  return typeof state === "string" ? state : state.type;
+}
 
 /** The settled tier: the phases no work follows from. */
 export function isSettled(phase: Phase): boolean {
@@ -37,7 +64,23 @@ export const nonTerminalPhaseTags: readonly Phase[] = phaseTags.filter(
   (phase) => !isTerminalPhase(phase),
 );
 
-/** Revocation stops before finalization and cannot rewrite a terminal outcome. */
-export function revocationAllowed(phase: Phase): boolean {
+/** The package's `isTerminal`: Done or Revoked. */
+export function isTerminal(state: TicketState): boolean {
+  return isTerminalPhase(phaseOf(state));
+}
+
+/** The package's `isPending`. */
+export function isPending(state: TicketState): boolean {
+  return state === "Pending";
+}
+
+/** The package's `isEscalated`. */
+export function isEscalated(state: TicketState): boolean {
+  return phaseOf(state) === "Escalated";
+}
+
+/** The package's `revocationAllowed`: anything short of Finalization and the terminals. */
+export function revocationAllowed(state: TicketState): boolean {
+  const phase = phaseOf(state);
   return phase !== "Done" && phase !== "Revoked" && phase !== "Finalization";
 }

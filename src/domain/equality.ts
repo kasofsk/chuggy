@@ -21,11 +21,19 @@
 
 import { ticketAt, ticketIds } from "./ticketGraph.ts";
 import type {
-  TicketGraph,
+  Escalation,
   EvaluationInstance,
+  EvaluationReworkEntry,
+  FinalizationOperation,
   ReleasedTicket,
   StageDefinition,
   Ticket,
+  TicketGraph,
+  TicketLedger,
+  TicketState,
+  WorkCause,
+  WorkEscalation,
+  WorkInput,
 } from "./generated/modelTypes.ts";
 import { taskDefinitionEquals } from "./task.ts";
 import { instanceEquals, stageDefinitionEquals } from "./evaluation.ts";
@@ -103,6 +111,19 @@ function ticketEqualsStage(
   return stageDefinitionEquals(left, right);
 }
 
+/** Structural equality on a finalization attempt, field for field. */
+export function finalizationOperationEquals(
+  left: FinalizationOperation,
+  right: FinalizationOperation,
+): boolean {
+  return (
+    left.workCycle === right.workCycle &&
+    left.generation === right.generation &&
+    left.input === right.input &&
+    left.source === right.source
+  );
+}
+
 function ticketEqualsInstance(
   left: EvaluationInstance,
   right: EvaluationInstance,
@@ -110,19 +131,157 @@ function ticketEqualsInstance(
   return instanceEquals(left, right);
 }
 
+/** Whether two rework accounts name the same evaluators and results, in order. */
+function reworkEntriesEqual(
+  left: readonly EvaluationReworkEntry[],
+  right: readonly EvaluationReworkEntry[],
+): boolean {
+  return listEquals(
+    left,
+    right,
+    (l, r) => l.evaluator === r.evaluator && l.resultRef === r.resultRef,
+  );
+}
+
+/** Whether two work causes are the same arm with the same payload. */
+export function workCauseEquals(left: WorkCause, right: WorkCause): boolean {
+  if (left === "InitialWork" || right === "InitialWork") return left === right;
+  switch (left.type) {
+    case "EvaluationRework":
+      return (
+        right.type === "EvaluationRework" &&
+        reworkEntriesEqual(left.value, right.value)
+      );
+    case "FinalizationRework":
+      return right.type === "FinalizationRework" && left.value === right.value;
+  }
+}
+
+/** Whether two work inputs carry the same content, cause and retry evidence. */
+export function workInputEquals(left: WorkInput, right: WorkInput): boolean {
+  return (
+    left.released === right.released &&
+    workCauseEquals(left.cause, right.cause) &&
+    listEquals(left.retryEvidence, right.retryEvidence, sameValue)
+  );
+}
+
+/** Whether two work walls carry the same resume input, source and evidence. */
+function workEscalationEquals(
+  left: WorkEscalation,
+  right: WorkEscalation,
+): boolean {
+  return (
+    workInputEquals(left.resumeInput, right.resumeInput) &&
+    left.source === right.source &&
+    left.evidence === right.evidence
+  );
+}
+
+/** Whether two walls are the same arm with the same payload. */
+export function escalationEquals(left: Escalation, right: Escalation): boolean {
+  switch (left.type) {
+    case "WorkFailureEscalated":
+      return (
+        right.type === "WorkFailureEscalated" &&
+        workEscalationEquals(left.value, right.value)
+      );
+    case "WorkExecutionUnavailableEscalated":
+      return (
+        right.type === "WorkExecutionUnavailableEscalated" &&
+        workEscalationEquals(left.value, right.value)
+      );
+    case "EvaluationFailureEscalated":
+      return (
+        right.type === "EvaluationFailureEscalated" &&
+        reworkEntriesEqual(left.value.evidence, right.value.evidence) &&
+        left.value.source === right.value.source
+      );
+    case "EvaluationBlockedEscalated":
+      return (
+        right.type === "EvaluationBlockedEscalated" &&
+        ticketEqualsInstance(left.value, right.value)
+      );
+    case "FinalizationUnavailableEscalated":
+      return (
+        right.type === "FinalizationUnavailableEscalated" &&
+        finalizationOperationEquals(
+          left.value.finalization,
+          right.value.finalization,
+        ) &&
+        left.value.evidence === right.value.evidence
+      );
+  }
+}
+
+/** Whether two states are the same arm with the same payload. */
+export function ticketStateEquals(
+  left: TicketState,
+  right: TicketState,
+): boolean {
+  if (typeof left === "string" || typeof right === "string")
+    return left === right;
+  switch (left.type) {
+    case "Work":
+      return (
+        right.type === "Work" &&
+        workInputEquals(left.value.input, right.value.input) &&
+        left.value.source === right.value.source
+      );
+    case "Evaluation":
+      return (
+        right.type === "Evaluation" &&
+        ticketEqualsInstance(left.value, right.value)
+      );
+    case "Finalization":
+      return (
+        right.type === "Finalization" &&
+        finalizationOperationEquals(left.value, right.value)
+      );
+    case "Escalated":
+      return (
+        right.type === "Escalated" && escalationEquals(left.value, right.value)
+      );
+  }
+}
+
 /** Whether two tickets carry the same record, every declared field compared. */
 export function ticketEquals(left: Ticket, right: Ticket): boolean {
   return (
-    left.phase === right.phase &&
     releasedTicketEquals(left.definition, right.definition) &&
     left.revision === right.revision &&
-    left.source === right.source &&
-    listEquals(left.evaluations, right.evaluations, ticketEqualsInstance) &&
     left.workCyclesStarted === right.workCyclesStarted &&
+    ticketStateEquals(left.state, right.state)
+  );
+}
+
+/** Whether two ledgers hold the same closed instances and counters. */
+export function ledgerEquals(left: TicketLedger, right: TicketLedger): boolean {
+  return (
+    listEquals(
+      left.closedEvaluations,
+      right.closedEvaluations,
+      ticketEqualsInstance,
+    ) &&
     left.spawned === right.spawned &&
-    left.finalizationGeneration === right.finalizationGeneration &&
-    left.escalation === right.escalation &&
     left.completions === right.completions
+  );
+}
+
+/** Whether two ledger maps hold the same ids and equal ledgers under each. */
+export function ledgersEqual(
+  left: ReadonlyMap<number, TicketLedger>,
+  right: ReadonlyMap<number, TicketLedger>,
+): boolean {
+  const leftIds = [...left.keys()].sort((a, b) => a - b);
+  const rightIds = [...right.keys()].sort((a, b) => a - b);
+  return (
+    listEquals(leftIds, rightIds, sameValue) &&
+    leftIds.every((id) => {
+      const l = left.get(id);
+      const r = right.get(id);
+      return l !== undefined && r !== undefined && ledgerEquals(l, r);
+    })
   );
 }
 

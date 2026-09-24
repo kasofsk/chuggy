@@ -4,12 +4,13 @@
  *
  * A decider takes an observed `TicketGraph` and the command's own payload and
  * returns a `TicketDecision`: the refusal it answers, or the event that
- * happened and the obligations it owes the world. Each checks in the model's
- * order (`model/domain.qnt`), so the first failing check names the refusal.
- * IT MOVES NO STATE — `evolve` (`src/domain/evolve.ts`) is the only thing that
- * does — and it performs nothing. That is what lets a golden trace be replayed
- * through these functions with no world to stub, and what lets the same
- * functions serve any runtime shape.
+ * happened and the obligations it owes the world. Each is the package's text
+ * (`model/domain.qnt`, between its markers), checking in its order, so the
+ * first failing check names the refusal. IT MOVES NO STATE — `evolve`
+ * (`src/domain/evolve.ts`) is the only thing that does — and it performs
+ * nothing. That is what lets a golden trace be replayed through these
+ * functions with no world to stub, and what lets the same functions serve any
+ * runtime shape.
  *
  * Everything a decision needs is already in the `TicketGraph` it is handed. A
  * decider that acquired a read would acquire an await, and then a mock, and
@@ -34,6 +35,7 @@ import type {
 } from "./generated/modelTypes.ts";
 import { asTicketId } from "./ids.ts";
 import {
+  begin,
   currentTaskObligations,
   resumeBlocked,
   reworkEntries,
@@ -41,31 +43,37 @@ import {
 } from "./evaluation.ts";
 import {
   applyEvaluationReport,
-  begunInstance,
   cancelLiveTasks,
-  currentInstance,
+  evaluationReworkInput,
   executeEvaluationTasks,
   executeWork,
   finalizationCurrent,
-  finalizationOperationOf,
   finalizationResultValid,
+  finalizationReworkInput,
   finalize,
+  incompleteDependencies,
+  initialWorkInput,
+  nextCycleNumber,
   producedResult,
+  releasedTicketValid,
   reportTask,
   reportTicket,
   reportValid,
-  resumeOf,
-  runningStageIndex,
+  resumedFinalization,
   taskRefOf,
   workTaskObligation,
 } from "./ticket.ts";
-import { acceptedSources, releasedTicketValid, type Config } from "./config.ts";
-import { revocationAllowed } from "./phase.ts";
+import {
+  acceptedSources,
+  releasedTicketBounded,
+  type Config,
+} from "./config.ts";
+import { isPending, revocationAllowed } from "./phase.ts";
 import { dependenciesEqual } from "./equality.ts";
 import {
   taskIdentityEquals,
   taskObligationEquals,
-  workTaskOf,
+  workTaskIdentity,
 } from "./task.ts";
 
 /**
@@ -153,20 +161,18 @@ export function refused(reason: TicketRefusal): TicketDecision {
 }
 
 /**
- * A command is well-formed: the release's own rule for a creation, and every
- * reference a report or a dispatch carries a real one. It is a shape guard
- * and not a refusal — it reads no ticket, and a command outside it is not one
- * the machine takes at all.
+ * The package's `commandValid`: the release's own rule for a creation or an
+ * update, and every reference a report or a dispatch carries a real one.
  */
-export function commandValid(config: Config, command: TicketCommand): boolean {
+export function commandValid(command: TicketCommand): boolean {
   switch (command.type) {
     case "CreateTicket":
-      return releasedTicketValid(config, command.value);
+      return releasedTicketValid(command.value);
     case "UpdateTicket":
       return (
         command.value.ticket > 0 &&
         command.value.expectedRevision > 0 &&
-        releasedTicketValid(config, command.value.definition)
+        releasedTicketValid(command.value.definition)
       );
     case "DispatchTicket":
       return command.value.ticket > 0 && command.value.source > 0;
@@ -185,30 +191,38 @@ export function commandValid(config: Config, command: TicketCommand): boolean {
   }
 }
 
-/**
- * A ticket as a release leaves it: Pending at the first revision, with nothing
- * yet spawned and no source, because nothing has been dispatched yet.
- */
-export function freshTicket(definition: ReleasedTicket): Ticket {
-  return {
-    phase: "Pending",
-    definition,
-    revision: 1,
-    source: 0,
-    evaluations: [],
-    workCyclesStarted: 0,
-    spawned: 0,
-    finalizationGeneration: 0,
-    escalation: "NoEscalation",
-    completions: 0,
-  };
+/** Every definition a command carries is inside this deployment's bounds. */
+export function commandBounded(
+  config: Config,
+  command: TicketCommand,
+): boolean {
+  switch (command.type) {
+    case "CreateTicket":
+      return releasedTicketBounded(config, command.value);
+    case "UpdateTicket":
+      return releasedTicketBounded(config, command.value.definition);
+    case "DispatchTicket":
+    case "RevokeTicket":
+    case "ResumeTicket":
+    case "ReportTaskTerminal":
+    case "ReportFinalizationResult":
+      return true;
+  }
 }
 
 /**
- * Release: the ticket enters the fleet already Pending, carrying every value
- * that will affect its behaviour. Refused if the id is taken, if the ticket
- * names itself, or if it names a dependency that does not exist — in that
- * order — and never for a dependency that exists, whatever its phase.
+ * A command the machine takes: the package's shape rule and this
+ * deployment's bounds. It is a shape guard and not a refusal — it reads no
+ * ticket, and a command outside it is not one the machine takes at all.
+ */
+export function commandTaken(config: Config, command: TicketCommand): boolean {
+  return commandValid(command) && commandBounded(config, command);
+}
+
+/**
+ * Release: refused if the id is taken, if the ticket names itself, or if it
+ * names a dependency that does not exist — in that order — and never for a
+ * dependency that exists, whatever its state.
  */
 export function decideCreate(
   graph: TicketGraph,
@@ -249,7 +263,7 @@ export function decideUpdate(
     return refused({ type: "TicketNotFound", value: update.ticket });
   const id = asTicketId(update.ticket);
   const ticket = ticketAt(graph, id);
-  if (ticket.phase !== "Pending")
+  if (!isPending(ticket.state))
     return refused({ type: "TicketNotPending", value: id });
   if (update.definition.id !== id)
     return refused({ type: "TicketIdentityMismatch", value: id });
@@ -283,36 +297,6 @@ export function decideUpdate(
 }
 
 /**
- * Revoke settles the ticket its author named, owing a cancellation for every
- * task the fabric is running for it. A dependent behind it stays Pending, and
- * its own author settles it the same way.
- */
-export function decideRevoke(
-  graph: TicketGraph,
-  ticketId: number,
-): TicketDecision {
-  if (!graph.tickets.has(ticketId))
-    return refused({ type: "TicketNotFound", value: ticketId });
-  const id = asTicketId(ticketId);
-  const ticket = ticketAt(graph, id);
-  if (!revocationAllowed(ticket.phase))
-    return refused({ type: "TicketNotRevocable", value: id });
-  return decided({ type: "TicketRevoked", value: id }, cancelLiveTasks(ticket));
-}
-
-/** The dependencies of this ticket that are not Done, which is what a refused dispatch names. */
-export function incompleteDependencies(
-  graph: TicketGraph,
-  ticket: Ticket,
-): ReadonlySet<number> {
-  return new Set(
-    [...ticket.definition.dependencies].filter(
-      (d) => ticketAt(graph, asTicketId(d)).phase !== "Done",
-    ),
-  );
-}
-
-/**
  * Ready to Work, at a source the caller names: which Ready ticket runs next
  * and what its work is done against are both agentic picks, so both arrive in
  * the command and the event IS the ticket writer's decision. Refused for a
@@ -326,7 +310,7 @@ export function decideDispatch(
     return refused({ type: "TicketNotFound", value: dispatch.ticket });
   const id = asTicketId(dispatch.ticket);
   const ticket = ticketAt(graph, id);
-  if (ticket.phase !== "Pending")
+  if (!isPending(ticket.state))
     return refused({ type: "TicketNotPending", value: id });
   const incomplete = incompleteDependencies(graph, ticket);
   if (incomplete.size > 0)
@@ -335,92 +319,88 @@ export function decideDispatch(
       value: { ticket: id, dependencies: incomplete },
     });
   return decided({ type: "TicketDispatched", value: dispatch }, [
-    executeWork(ticket, ticket.workCyclesStarted + 1),
+    executeWork(
+      ticket,
+      nextCycleNumber(ticket),
+      dispatch.source,
+      initialWorkInput(ticket.definition),
+    ),
   ]);
 }
 
-/** A report a ticket in Work owes: the cycle's own task, and a produced one under the obligation that cycle was spawned with. */
-function workReportCurrent(
-  ticket: Ticket,
-  report: TaskTerminalReport,
-): boolean {
-  if (
-    !taskIdentityEquals(
-      workTaskOf(ticket.definition.id, ticket.workCyclesStarted),
-      reportTask(report),
-    )
-  )
-    return false;
-  switch (report.type) {
-    case "WorkResultReport":
-      return taskObligationEquals(
-        report.value.result.obligation,
-        workTaskObligation(ticket, ticket.workCyclesStarted),
-      );
-    case "TerminalFailureReport":
-      return true;
-    case "EvaluationResultReport":
-      return false;
-  }
-}
-
-/** A report the current run owes: an evaluator it still awaits, and a produced one under an obligation the run still holds. */
-function evaluationReportCurrent(
-  instance: EvaluationInstance,
-  report: TaskTerminalReport,
-): boolean {
-  if (!taskCurrent(instance, reportTask(report))) return false;
-  switch (report.type) {
-    case "EvaluationResultReport": {
-      const obligation = report.value.result.obligation;
-      return currentTaskObligations(instance).some((owed) =>
-        taskObligationEquals(owed, obligation),
-      );
-    }
-    case "TerminalFailureReport":
-      return true;
-    case "WorkResultReport":
-      return false;
-  }
+/**
+ * Revoke settles the ticket its author named, owing a cancellation for every
+ * task the fabric is running for it. A dependent behind it stays Pending, and
+ * its own author settles it the same way.
+ */
+export function decideRevoke(
+  graph: TicketGraph,
+  ticketId: number,
+): TicketDecision {
+  if (!graph.tickets.has(ticketId))
+    return refused({ type: "TicketNotFound", value: ticketId });
+  const id = asTicketId(ticketId);
+  const ticket = ticketAt(graph, id);
+  if (!revocationAllowed(ticket.state))
+    return refused({ type: "TicketNotRevocable", value: id });
+  return decided({ type: "TicketRevoked", value: id }, cancelLiveTasks(ticket));
 }
 
 /**
- * A task completion, accepted only for a task the ticket owes, and a produced
- * report only under the obligation that task was spawned with; anything else
- * is refused `TaskNotCurrent` — a failure naming a cycle a rework replaced
- * among them. There is no second decision behind it: a work completion that
- * produced opens the judgement in the same step, and one that concludes a
- * stage decides the stage, which is why the policy is an argument here.
+ * A parked ticket resumes where its wall implies, and the event names which
+ * of the three: the work walls and the evaluation-failure wall owe a new work
+ * cycle over the input the wall carries, the blocked wall re-asks the
+ * evaluators it stopped, and the finalization wall owes the next attempt. A
+ * ticket at no wall is refused `TicketNotResumable`.
  */
-export function decideTaskTerminal(
+export function decideResume(
   graph: TicketGraph,
-  report: TaskTerminalReport,
-  failurePolicy: EvaluationFailurePolicy,
+  ticketId: number,
 ): TicketDecision {
-  if (!graph.tickets.has(reportTicket(report)))
-    return refused({ type: "TicketNotFound", value: reportTicket(report) });
-  const id = asTicketId(reportTicket(report));
+  if (!graph.tickets.has(ticketId))
+    return refused({ type: "TicketNotFound", value: ticketId });
+  const id = asTicketId(ticketId);
   const ticket = ticketAt(graph, id);
-  const notCurrent = refused({
-    type: "TaskNotCurrent",
-    value: { ticket: id, task: reportTask(report) },
-  });
-  if (ticket.phase === "Work")
-    return workReportCurrent(ticket, report)
-      ? decideWorkTerminal(ticket, report)
-      : notCurrent;
-  if (ticket.phase === "Evaluation")
-    return evaluationReportCurrent(currentInstance(ticket), report)
-      ? decideEvaluationTerminal(ticket, report, failurePolicy)
-      : notCurrent;
-  return notCurrent;
+  const state = ticket.state;
+  if (typeof state === "string" || state.type !== "Escalated")
+    return refused({ type: "TicketNotResumable", value: id });
+  const wall = state.value;
+  switch (wall.type) {
+    case "WorkFailureEscalated":
+    case "WorkExecutionUnavailableEscalated":
+      return decided({ type: "TicketWorkResumed", value: id }, [
+        executeWork(
+          ticket,
+          nextCycleNumber(ticket),
+          wall.value.source,
+          wall.value.resumeInput,
+        ),
+      ]);
+    case "EvaluationFailureEscalated":
+      return decided({ type: "TicketWorkResumed", value: id }, [
+        executeWork(
+          ticket,
+          nextCycleNumber(ticket),
+          wall.value.source,
+          evaluationReworkInput(ticket.definition, wall.value.evidence),
+        ),
+      ]);
+    case "EvaluationBlockedEscalated":
+      return decided(
+        { type: "TicketEvaluationResumed", value: id },
+        executeEvaluationTasks(id, resumeBlocked(wall.value)),
+      );
+    case "FinalizationUnavailableEscalated":
+      return decided({ type: "TicketFinalizationResumed", value: id }, [
+        finalize(ticket, resumedFinalization(wall.value.finalization)),
+      ]);
+  }
 }
 
 /**
  * A work completion: a produced result is ACCEPTED, opening the instance that
  * judges it and owing its first stage's evaluators, and a task that died or
- * that infrastructure could not run parks the ticket at its own wall. There is
- * no sibling to wait for, a work cycle being one task.
+ * that infrastructure could not run parks the ticket at its own wall.
  */
 function decideWorkTerminal(
   ticket: Ticket,
@@ -429,15 +409,21 @@ function decideWorkTerminal(
   switch (report.type) {
     case "WorkResultReport": {
       const { ticket: id, result, acceptedSourceRef } = report.value;
+      const evaluation = begin(
+        ticket.workCyclesStarted,
+        {
+          ticket: ticket.definition.id,
+          workResult: result.resultRef,
+          acceptedSourceRef,
+        },
+        ticket.definition.evaluationPlan,
+      );
       return decided(
         {
           type: "TicketWorkResultAccepted",
           value: { ticket: id, result, acceptedSourceRef },
         },
-        executeEvaluationTasks(
-          asTicketId(id),
-          begunInstance(ticket, result.resultRef, acceptedSourceRef),
-        ),
+        executeEvaluationTasks(id, evaluation),
       );
     }
     case "TerminalFailureReport": {
@@ -450,7 +436,6 @@ function decideWorkTerminal(
         ? decided({ type: "TicketWorkProcessFailed", value: fact }, [])
         : decided({ type: "TicketWorkExecutionUnavailable", value: fact }, []);
     }
-    /** A work task takes no evaluator's verdict; `decideTaskTerminal` never routes one here. */
     case "EvaluationResultReport":
       return refused({
         type: "TaskNotCurrent",
@@ -460,6 +445,13 @@ function decideWorkTerminal(
         },
       });
   }
+}
+
+/** Which stage an instance is running, as the index its run stores; -1 when it is not running one. */
+export function runningStageIndex(instance: EvaluationInstance): number {
+  return instance.state.type === "Running"
+    ? instance.state.value.stage.stageIndex
+    : -1;
 }
 
 /**
@@ -477,40 +469,43 @@ function decideWorkTerminal(
  */
 function decideEvaluationTerminal(
   ticket: Ticket,
+  evaluation: EvaluationInstance,
   report: TaskTerminalReport,
   failurePolicy: EvaluationFailurePolicy,
 ): TicketDecision {
-  const id = asTicketId(reportTicket(report));
-  const before = currentInstance(ticket);
-  const advanced = applyEvaluationReport(before, report);
+  const id = reportTicket(report);
+  const priorStage = runningStageIndex(evaluation);
+  const updated = applyEvaluationReport(evaluation, report);
   const fact = { ticket: id, report };
-  const state = advanced.state;
+  const state = updated.state;
   switch (state.type) {
     case "Running":
       return decided(
         { type: "TicketEvaluationProgressed", value: fact },
-        state.value.stage.stageIndex === runningStageIndex(before)
+        state.value.stage.stageIndex === priorStage
           ? []
-          : executeEvaluationTasks(id, advanced),
+          : executeEvaluationTasks(id, updated),
       );
     case "EvaluationPassed":
       return decided({ type: "TicketEvaluationPassed", value: fact }, [
         finalize(ticket, {
-          workCycle: advanced.workCycle,
+          workCycle: updated.workCycle,
           generation: 1,
-          input: advanced.input.workResult,
-          source: advanced.input.acceptedSourceRef,
+          input: updated.input.workResult,
+          source: updated.input.acceptedSourceRef,
         }),
       ]);
     case "EvaluationFailed": {
-      const rework = {
-        ticket: id,
-        report,
-        evidence: reworkEntries(advanced, state.value),
-      };
-      return failurePolicy(advanced) === "ReworkEvaluationFailure"
+      const entries = reworkEntries(updated, state.value);
+      const rework = { ticket: id, report, evidence: entries };
+      return failurePolicy(updated) === "ReworkEvaluationFailure"
         ? decided({ type: "TicketEvaluationReworkStarted", value: rework }, [
-            executeWork(ticket, ticket.workCyclesStarted + 1),
+            executeWork(
+              ticket,
+              nextCycleNumber(ticket),
+              updated.input.acceptedSourceRef,
+              evaluationReworkInput(ticket.definition, entries),
+            ),
           ])
         : decided(
             { type: "TicketEvaluationFailureEscalated", value: rework },
@@ -519,6 +514,66 @@ function decideEvaluationTerminal(
     }
     case "EvaluationBlocked":
       return decided({ type: "TicketEvaluationBlocked", value: fact }, []);
+  }
+}
+
+/**
+ * A task completion, accepted only for a task the ticket owes, and a produced
+ * report only under the obligation that task was spawned with; anything else
+ * is refused `TaskNotCurrent` — a failure naming a cycle a rework replaced
+ * among them.
+ */
+export function decideTaskTerminal(
+  graph: TicketGraph,
+  report: TaskTerminalReport,
+  failurePolicy: EvaluationFailurePolicy,
+): TicketDecision {
+  if (!graph.tickets.has(reportTicket(report)))
+    return refused({ type: "TicketNotFound", value: reportTicket(report) });
+  const ticket = ticketAt(graph, asTicketId(reportTicket(report)));
+  const task = reportTask(report);
+  const notCurrent = refused({
+    type: "TaskNotCurrent",
+    value: { ticket: reportTicket(report), task },
+  });
+  const state = ticket.state;
+  if (typeof state === "string") return notCurrent;
+  switch (state.type) {
+    case "Work": {
+      const current =
+        taskIdentityEquals(
+          workTaskIdentity(ticket.definition.id, ticket.workCyclesStarted),
+          task,
+        ) &&
+        (report.type === "WorkResultReport"
+          ? taskObligationEquals(
+              report.value.result.obligation,
+              workTaskObligation(
+                ticket,
+                ticket.workCyclesStarted,
+                state.value.source,
+                state.value.input,
+              ),
+            )
+          : report.type === "TerminalFailureReport");
+      return current ? decideWorkTerminal(ticket, report) : notCurrent;
+    }
+    case "Evaluation": {
+      const evaluation = state.value;
+      const current =
+        taskCurrent(evaluation, task) &&
+        (report.type === "EvaluationResultReport"
+          ? currentTaskObligations(evaluation).some((owed) =>
+              taskObligationEquals(owed, report.value.result.obligation),
+            )
+          : report.type === "TerminalFailureReport");
+      return current
+        ? decideEvaluationTerminal(ticket, evaluation, report, failurePolicy)
+        : notCurrent;
+    }
+    case "Finalization":
+    case "Escalated":
+      return notCurrent;
   }
 }
 
@@ -535,19 +590,20 @@ export function decideFinalizationResult(
 ): TicketDecision {
   if (!graph.tickets.has(report.ticket))
     return refused({ type: "TicketNotFound", value: report.ticket });
-  const id = asTicketId(report.ticket);
-  const ticket = ticketAt(graph, id);
+  const ticket = ticketAt(graph, asTicketId(report.ticket));
   const { workCycle, generation } = report;
+  const state = ticket.state;
   if (
-    ticket.phase !== "Finalization" ||
-    !finalizationCurrent(finalizationOperationOf(ticket), workCycle, generation)
+    typeof state === "string" ||
+    state.type !== "Finalization" ||
+    !finalizationCurrent(state.value, workCycle, generation)
   )
     return refused({
       type: "FinalizationNotCurrent",
-      value: { ticket: id, workCycle, generation },
+      value: { ticket: report.ticket, workCycle, generation },
     });
   const fact = {
-    ticket: id,
+    ticket: report.ticket,
     workCycle,
     generation,
     evidence: report.result.value,
@@ -557,53 +613,18 @@ export function decideFinalizationResult(
       return decided({ type: "TicketFinalizationSucceeded", value: fact }, []);
     case "FinalizationNeedsWork":
       return decided({ type: "TicketFinalizationNeedsWork", value: fact }, [
-        executeWork(ticket, ticket.workCyclesStarted + 1),
+        executeWork(
+          ticket,
+          nextCycleNumber(ticket),
+          state.value.source,
+          finalizationReworkInput(ticket.definition, report.result.value),
+        ),
       ]);
     case "FinalizationResultUnavailable":
       return decided(
         { type: "TicketFinalizationUnavailable", value: fact },
         [],
       );
-  }
-}
-
-/**
- * A parked ticket resumes where its wall implies (`resumeOf`), and the event
- * names which of the three: the work walls and the evaluation-failure wall
- * owe a new work cycle, the blocked wall re-asks the evaluators it stopped,
- * and the finalization wall owes the next attempt. A ticket at no wall is
- * refused `TicketNotResumable`.
- */
-export function decideResume(
-  graph: TicketGraph,
-  ticketId: number,
-): TicketDecision {
-  if (!graph.tickets.has(ticketId))
-    return refused({ type: "TicketNotFound", value: ticketId });
-  const id = asTicketId(ticketId);
-  const ticket = ticketAt(graph, id);
-  switch (resumeOf(ticket.escalation)) {
-    case "ResumeWork":
-    case "ResumeRework":
-      return decided({ type: "TicketWorkResumed", value: id }, [
-        executeWork(ticket, ticket.workCyclesStarted + 1),
-      ]);
-    case "ResumeEvaluation":
-      return decided(
-        { type: "TicketEvaluationResumed", value: id },
-        executeEvaluationTasks(id, resumeBlocked(currentInstance(ticket))),
-      );
-    case "ResumeFinalization": {
-      const operation = finalizationOperationOf(ticket);
-      return decided({ type: "TicketFinalizationResumed", value: id }, [
-        finalize(ticket, {
-          ...operation,
-          generation: operation.generation + 1,
-        }),
-      ]);
-    }
-    case "NoResume":
-      return refused({ type: "TicketNotResumable", value: id });
   }
 }
 
