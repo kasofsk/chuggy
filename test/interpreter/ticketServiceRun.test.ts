@@ -491,27 +491,24 @@ function completing(
   });
 }
 
-/** One project whose journal holds a dispatched ticket, and whose inbox hands over `inbox` in order. */
-function dispatchedProject(inbox: DecisionInput[]): {
-  projects: ProjectStore;
-  discovery: ProjectDiscovery;
-} {
-  const dispatched = [
-    createTicketCommand(plainDefinitionOf(1)),
-    dispatchTicketCommand(id(1), aDispatchSource),
-  ].reduce(
+/** One project whose journal holds what `commands` journal, and whose inbox hands over `inbox` in order. */
+function projectHolding(
+  commands: Parameters<typeof journalStep>[2][],
+  inbox: DecisionInput[],
+): { projects: ProjectStore; discovery: ProjectDiscovery } {
+  const journaled = commands.reduce(
     (state, command) =>
       journalStep(refinementInstance, state, command, plainPolicy),
     actorInit(),
   );
-  const loaded = { ...lease, head: dispatched.journal.length };
+  const loaded = { ...lease, head: journaled.journal.length };
   const projects = {
     acquire: () => Promise.resolve({ acquired: "Granted", lease: loaded }),
     release: () => Promise.resolve(),
     load: () =>
       Promise.resolve({
         parsed: "Ok",
-        value: storedAtCurrentSemantics(dispatched.journal),
+        value: storedAtCurrentSemantics(journaled.journal),
       }),
   } as unknown as ProjectStore;
   const discovery = {
@@ -520,6 +517,20 @@ function dispatchedProject(inbox: DecisionInput[]): {
     clearReadiness: () => Promise.resolve({ cleared: "Cleared" }),
   } as unknown as ProjectDiscovery;
   return { projects, discovery };
+}
+
+/** One project whose journal holds a dispatched ticket, and whose inbox hands over `inbox` in order. */
+function dispatchedProject(inbox: DecisionInput[]): {
+  projects: ProjectStore;
+  discovery: ProjectDiscovery;
+} {
+  return projectHolding(
+    [
+      createTicketCommand(plainDefinitionOf(1)),
+      dispatchTicketCommand(id(1), aDispatchSource),
+    ],
+    inbox,
+  );
 }
 
 /**
@@ -591,28 +602,7 @@ function releasedProject(inbox: DecisionInput[]): {
   projects: ProjectStore;
   discovery: ProjectDiscovery;
 } {
-  const released = journalStep(
-    refinementInstance,
-    actorInit(),
-    createTicketCommand(plainDefinitionOf(1)),
-    plainPolicy,
-  );
-  const loaded = { ...lease, head: released.journal.length };
-  const projects = {
-    acquire: () => Promise.resolve({ acquired: "Granted", lease: loaded }),
-    release: () => Promise.resolve(),
-    load: () =>
-      Promise.resolve({
-        parsed: "Ok",
-        value: storedAtCurrentSemantics(released.journal),
-      }),
-  } as unknown as ProjectStore;
-  const discovery = {
-    ready: () => Promise.resolve([{ partition, generation: 1 }]),
-    next: () => Promise.resolve(inbox.shift()),
-    clearReadiness: () => Promise.resolve({ cleared: "Cleared" }),
-  } as unknown as ProjectDiscovery;
-  return { projects, discovery };
+  return projectHolding([createTicketCommand(plainDefinitionOf(1))], inbox);
 }
 
 /** The ticket's second revision, which is what an update of it resolves. */
