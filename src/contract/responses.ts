@@ -677,8 +677,8 @@ const ticketRefusalValueSchemas = {
   TicketIdentityMismatch: ticketNumberSchema,
   TicketRevisionStale: z.strictObject({
     ticket: ticketNumberSchema,
-    expected: countSchema,
-    current: countSchema,
+    expected: ticketNumberSchema,
+    current: ticketNumberSchema,
   }),
   TicketDependenciesChanged: ticketNumberSchema,
   DependenciesIncomplete: z.strictObject({

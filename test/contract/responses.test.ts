@@ -885,6 +885,26 @@ test("a machine's code without its refusal, or with another's, is not a response
   );
 });
 
+test("a stale revision names two revisions the database would hold, and zero is none", () => {
+  const body = operationResponse(
+    refusedOperation(ticketRefusals.TicketRevisionStale),
+  ).body as Record<string, unknown>;
+  operationResponseSchema.parse(body);
+  for (const revisions of [
+    { expected: 0, current: 4 },
+    { expected: 2, current: 0 },
+  ])
+    assert.throws(() =>
+      operationResponseSchema.parse({
+        ...body,
+        refusal: {
+          type: "TicketRevisionStale",
+          value: { ticket: 3, ...revisions },
+        },
+      }),
+    );
+});
+
 test("a notification batch and a dispatch page parse as the server sends them", () => {
   const batch = notificationsResponseSchema.parse(
     notificationsResponse({
