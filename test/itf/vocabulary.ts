@@ -17,12 +17,15 @@
 import {
   decodeTicketGraph as decodeTicketGraphValue,
   decodeLastDecision as decodeLastDecisionValue,
+  decodeTicketLedger as decodeTicketLedgerValue,
 } from "../../src/generated/model-api.ts";
 import type {
   TicketGraph,
   EvaluationInstance,
   EvaluationProgress,
+  EvaluationReworkEntry,
   EvaluationReworkFact,
+  Escalation,
   EvaluationState,
   EvaluatorStatus,
   FinalizationFact,
@@ -43,9 +46,13 @@ import type {
   TicketCommand,
   TicketEvent,
   TicketRefusal,
+  TicketState,
+  WorkEscalation,
   WorkFailureEvent,
+  WorkInput,
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
+import type { Ledgers } from "../../src/domain/ledger.ts";
 import { describe, encodeValue, type ItfValue } from "./decode.ts";
 
 /**
@@ -466,19 +473,146 @@ export function encodeTaskIdentity(identity: TaskIdentity): ItfValue {
   }
 }
 
+function encodeReworkEvidence(
+  evidence: readonly EvaluationReworkEntry[],
+): ItfValue {
+  return evidence.map((entry) =>
+    encodeRecord([
+      ["evaluator", encodeInt(entry.evaluator)],
+      ["resultRef", encodeInt(entry.resultRef)],
+    ]),
+  );
+}
+
+function encodeWorkInput(input: WorkInput): ItfValue {
+  return encodeRecord([
+    ["released", encodeInt(input.released)],
+    [
+      "cause",
+      encodeSumValue<readonly EvaluationReworkEntry[] | number>(
+        input.cause,
+        (payload) =>
+          typeof payload === "number"
+            ? encodeInt(payload)
+            : encodeReworkEvidence(payload),
+      ),
+    ],
+    ["retryEvidence", input.retryEvidence.map(encodeInt)],
+  ]);
+}
+
+function encodeWorkEscalation(escalation: WorkEscalation): ItfValue {
+  return encodeRecord([
+    ["resumeInput", encodeWorkInput(escalation.resumeInput)],
+    ["source", encodeInt(escalation.source)],
+    ["evidence", encodeInt(escalation.evidence)],
+  ]);
+}
+
+function encodeEscalation(escalation: Escalation): ItfValue {
+  switch (escalation.type) {
+    case "WorkFailureEscalated":
+    case "WorkExecutionUnavailableEscalated":
+      return encodeVariant(
+        escalation.type,
+        encodeWorkEscalation(escalation.value),
+      );
+    case "EvaluationFailureEscalated":
+      return encodeVariant(
+        escalation.type,
+        encodeRecord([
+          ["evidence", encodeReworkEvidence(escalation.value.evidence)],
+          ["source", encodeInt(escalation.value.source)],
+        ]),
+      );
+    case "EvaluationBlockedEscalated":
+      return encodeVariant(
+        escalation.type,
+        encodeEvaluationInstance(escalation.value),
+      );
+    case "FinalizationUnavailableEscalated":
+      return encodeVariant(
+        escalation.type,
+        encodeRecord([
+          [
+            "finalization",
+            encodeFinalizationOperation(escalation.value.finalization),
+          ],
+          ["evidence", encodeInt(escalation.value.evidence)],
+        ]),
+      );
+  }
+}
+
+function encodeTicketState(state: TicketState): ItfValue {
+  if (typeof state === "string") return encodeNullary(state);
+  switch (state.type) {
+    case "Work":
+      return encodeVariant(
+        "Work",
+        encodeRecord([
+          ["input", encodeWorkInput(state.value.input)],
+          ["source", encodeInt(state.value.source)],
+        ]),
+      );
+    case "Evaluation":
+      return encodeVariant("Evaluation", encodeEvaluationInstance(state.value));
+    case "Finalization":
+      return encodeVariant(
+        "Finalization",
+        encodeFinalizationOperation(state.value),
+      );
+    case "Escalated":
+      return encodeVariant("Escalated", encodeEscalation(state.value));
+  }
+}
+
 function encodeTicket(ticket: Ticket): ItfValue {
   return encodeRecord([
-    ["phase", encodeNullary(ticket.phase)],
     ["definition", encodeReleasedTicket(ticket.definition)],
     ["revision", encodeInt(ticket.revision)],
-    ["source", encodeInt(ticket.source)],
-    ["evaluations", ticket.evaluations.map(encodeEvaluationInstance)],
     ["workCyclesStarted", encodeInt(ticket.workCyclesStarted)],
-    ["spawned", encodeInt(ticket.spawned)],
-    ["finalizationGeneration", encodeInt(ticket.finalizationGeneration)],
-    ["escalation", encodeNullary(ticket.escalation)],
-    ["completions", encodeInt(ticket.completions)],
+    ["state", encodeTicketState(ticket.state)],
   ]);
+}
+
+/** Every ticket's ledger, read through the model's own decoder. */
+export function decodeLedgers(value: ItfValue): Ledgers {
+  const wire = itfToWire(value);
+  if (!Array.isArray(wire))
+    throw new Error(`vocabulary: ledgers are not a map: ${describe(value)}`);
+  return new Map(
+    wire.map((entry: unknown) => {
+      if (!Array.isArray(entry) || entry.length !== 2)
+        throw new Error("vocabulary: a ledger entry is not a pair");
+      return [Number(entry[0]), decodeTicketLedgerValue(entry[1])] as const;
+    }),
+  );
+}
+
+/** Every ticket's ledger, written back as ITF holds the map. */
+export function encodeLedgers(ledgers: Ledgers): ItfValue {
+  return {
+    kind: "map",
+    entries: [...ledgers.keys()]
+      .sort((a, b) => a - b)
+      .map((id) => {
+        const ledger = ledgers.get(id);
+        if (ledger === undefined)
+          throw new Error(`vocabulary: no ledger ${String(id)} to encode`);
+        return [
+          encodeInt(id),
+          encodeRecord([
+            [
+              "closedEvaluations",
+              ledger.closedEvaluations.map(encodeEvaluationInstance),
+            ],
+            ["spawned", encodeInt(ledger.spawned)],
+            ["completions", encodeInt(ledger.completions)],
+          ]),
+        ] as const;
+      }),
+  };
 }
 
 /** The ticket map, written back as ITF holds one. */
@@ -507,15 +641,7 @@ function encodeEvaluationReworkFact(fact: EvaluationReworkFact): ItfValue {
   return encodeRecord([
     ["ticket", encodeInt(fact.ticket)],
     ["report", encodeTaskTerminalReport(fact.report)],
-    [
-      "evidence",
-      fact.evidence.map((entry) =>
-        encodeRecord([
-          ["evaluator", encodeInt(entry.evaluator)],
-          ["resultRef", encodeInt(entry.resultRef)],
-        ]),
-      ),
-    ],
+    ["evidence", encodeReworkEvidence(fact.evidence)],
   ]);
 }
 

@@ -36,6 +36,7 @@ import type {
 import { releasedTicketOf } from "../../src/domain/config.ts";
 import { updateOf } from "../../src/domain/enablement.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
+import { attemptGeneration } from "../../src/domain/ticket.ts";
 import {
   decodeEvaluationFailureDisposition,
   decodeFinalizationResult,
@@ -53,7 +54,7 @@ import { decodeTicketId, itfToWire } from "../itf/vocabulary.ts";
  */
 export const replayActions: readonly string[] = [
   "releaseTicket",
-  "updateTicket",
+  "updateDefinition",
   "revoke",
   "dispatch",
   "taskDone",
@@ -143,7 +144,7 @@ function finalizationCommand(
     value: {
       ticket,
       workCycle: held.workCyclesStarted,
-      generation: held.finalizationGeneration,
+      generation: attemptGeneration(held),
       result: decodeFinalizationResult(itfToWire(result)),
     },
   };
@@ -176,7 +177,7 @@ function commandOf(
           drawnStages(need(picks.stages, "stages")),
         ),
       });
-    case "updateTicket":
+    case "updateDefinition":
       return unasked(
         updateOf(ticketAt(pre, j()), drawnStages(need(picks.stages, "stages"))),
       );

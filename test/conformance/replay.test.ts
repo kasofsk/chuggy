@@ -1,7 +1,7 @@
 /**
  * Every step of every committed golden, replayed through this implementation's
  * own deciders: the model's decision — its event and obligations — and the
- * post-`TicketGraph` that event evolves to reproduced exactly, and the whole
+ * post-`TicketGraph` and ledgers that event folds to reproduced exactly, and the whole
  * invariant bundle evaluated on every state either side of it.
  *
  * REPRODUCTION IS EXACT EQUALITY ON THE WHOLE STATE, at the encode boundary,
@@ -64,8 +64,9 @@ import type {
   LastDecision,
   TicketGraph,
 } from "../../src/domain/generated/modelTypes.ts";
-import { evolve } from "../../src/domain/evolve.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
+import { evolve } from "../../src/domain/evolve.ts";
+import { evolveLedgers, type Ledgers } from "../../src/domain/ledger.ts";
 import {
   decodeTrace,
   decodeValue,
@@ -83,8 +84,10 @@ import {
 } from "../itf/decode.ts";
 import {
   decodeLastDecision,
+  decodeLedgers,
   decodeTicketGraph,
   encodeLastDecision,
+  encodeLedgers,
   encodeTicketGraph,
 } from "../itf/vocabulary.ts";
 import { CONFIGS } from "../domain/configs.ts";
@@ -114,6 +117,8 @@ interface Golden {
   readonly ticketsVar: string;
   readonly stepVar: string;
   readonly prevVar: string;
+  readonly ledgersVar: string;
+  readonly prevLedgersVar: string;
 }
 
 /**
@@ -159,16 +164,29 @@ function loadGolden(row: Row): Golden {
   const ticketsVar = trace.vars.find((v) => v.endsWith("::tickets"));
   const stepVar = trace.vars.find((v) => v.endsWith("::lastStep"));
   const prevVar = trace.vars.find((v) => v.endsWith("::prevTickets"));
+  const ledgersVar = trace.vars.find((v) => v.endsWith("::ledgers"));
+  const prevLedgersVar = trace.vars.find((v) => v.endsWith("::prevLedgers"));
   if (
     ticketsVar === undefined ||
     stepVar === undefined ||
-    prevVar === undefined
+    prevVar === undefined ||
+    ledgersVar === undefined ||
+    prevLedgersVar === undefined
   ) {
     throw new Error(
       `replay: ${row.name}: the state variables are not in this trace`,
     );
   }
-  return { row, raw, trace, ticketsVar, stepVar, prevVar };
+  return {
+    row,
+    raw,
+    trace,
+    ticketsVar,
+    stepVar,
+    prevVar,
+    ledgersVar,
+    prevLedgersVar,
+  };
 }
 
 function stateAt(golden: Golden, index: number): ItfState {
@@ -253,15 +271,20 @@ function decisionTag(last: LastDecision): string | undefined {
   return last.type === "Decided" ? last.value.event.type : last.value.type;
 }
 
-/** One state's decision and its ghost, read off the golden. */
+/** One state's decision and its ghosts, read off the golden. */
 function ghostAt(
   golden: Golden,
   index: number,
-): { readonly last: LastDecision; readonly pre: TicketGraph } {
+): {
+  readonly last: LastDecision;
+  readonly pre: TicketGraph;
+  readonly preLedgers: Ledgers;
+} {
   const state = stateAt(golden, index);
   return {
     last: decodeLastDecision(stateValue(state, golden.stepVar)),
     pre: decodeTicketGraph(stateValue(state, golden.prevVar)),
+    preLedgers: decodeLedgers(stateValue(state, golden.prevLedgersVar)),
   };
 }
 
@@ -418,18 +441,33 @@ function graphFinding(
   golden: Golden,
   index: number,
   action: string,
-  post: TicketGraph,
+  view: StepView,
 ): readonly Finding[] {
-  const got = encodeValue(encodeTicketGraph(post));
+  const got = encodeValue(encodeTicketGraph(view.post));
   const want = rawAt(golden, index, golden.ticketsVar);
-  if (isDeepStrictEqual(got, want)) return [];
+  const gotLedgers = encodeValue(encodeLedgers(view.postLedgers));
+  const wantLedgers = rawAt(golden, index, golden.ledgersVar);
   return [
-    {
-      kind: "post-state",
-      where: siteOf(golden, index, action),
-      what: "the post-state diverged",
-      detail: graphDiff(got, want),
-    },
+    ...(isDeepStrictEqual(got, want)
+      ? []
+      : [
+          {
+            kind: "post-state",
+            where: siteOf(golden, index, action),
+            what: "the post-state diverged",
+            detail: graphDiff(got, want),
+          },
+        ]),
+    ...(isDeepStrictEqual(gotLedgers, wantLedgers)
+      ? []
+      : [
+          {
+            kind: "ledgers",
+            where: siteOf(golden, index, action),
+            what: "the ledgers diverged",
+            detail: graphDiff(gotLedgers, wantLedgers),
+          },
+        ]),
   ];
 }
 
@@ -480,10 +518,18 @@ function checkInit(golden: Golden, config: Config, run: Run): void {
   const post = decodeTicketGraph(
     stateValue(stateAt(golden, 0), golden.ticketsVar),
   );
-  const { last, pre } = ghostAt(golden, 0);
+  const postLedgers = decodeLedgers(
+    stateValue(stateAt(golden, 0), golden.ledgersVar),
+  );
   run.evaluated++;
   run.findings.push(
-    ...bundleFinding(golden, 0, "init", { pre, last, post }, config),
+    ...bundleFinding(
+      golden,
+      0,
+      "init",
+      { ...ghostAt(golden, 0), post, postLedgers },
+      config,
+    ),
   );
 }
 
@@ -498,24 +544,37 @@ function checkStep(
   const pre = decodeTicketGraph(
     stateValue(stateAt(golden, index - 1), golden.ticketsVar),
   );
+  const preLedgers = decodeLedgers(
+    stateValue(stateAt(golden, index - 1), golden.ledgersVar),
+  );
   const decision = replayStep(pre, action, picksOf(after));
   run.steps++;
+  const moved =
+    decision?.type === "TicketDecided"
+      ? {
+          graph: evolve(pre, decision.value.event),
+          ledgers: evolveLedgers(pre, preLedgers, decision.value.event),
+        }
+      : { graph: pre, ledgers: preLedgers };
   /** The stutter decides nothing, so the state and the ghost the step before kept stand; a refusal moves nothing. */
   const view: StepView =
     decision === undefined
-      ? { ...ghostAt(golden, index - 1), post: pre }
-      : decision.type === "TicketRefused"
-        ? { pre, last: { type: "Refused", value: decision.value }, post: pre }
-        : {
-            pre,
-            last: { type: "Decided", value: decision.value },
-            post: evolve(pre, decision.value.event),
-          };
+      ? { ...ghostAt(golden, index - 1), post: pre, postLedgers: preLedgers }
+      : {
+          pre,
+          preLedgers,
+          last:
+            decision.type === "TicketRefused"
+              ? { type: "Refused", value: decision.value }
+              : { type: "Decided", value: decision.value },
+          post: moved.graph,
+          postLedgers: moved.ledgers,
+        };
   const tag = decisionTag(view.last);
   if (decision !== undefined && tag !== undefined) run.decided.add(tag);
   run.findings.push(
     ...decisionFinding(golden, index, action, view.last),
-    ...graphFinding(golden, index, action, view.post),
+    ...graphFinding(golden, index, action, view),
   );
   run.evaluated++;
   run.findings.push(...bundleFinding(golden, index, action, view, config));
