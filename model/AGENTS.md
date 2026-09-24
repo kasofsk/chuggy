@@ -12,6 +12,6 @@
   digests; `.chug/tasks/check-vendored.sh` holds the tree to it,
   `check-model` runs the package's own `ticket_tests.qnt`, and
   `test/conformance/package.test.ts` replays its traces through chuggy's
-  TypeScript. Chuggy's modules import it and restate none of it. Do not edit a vendored file: change chuggy
-  around it, and bump the pin by re-vendoring from a clone and regenerating the
-  manifest, never by hand.
+  TypeScript. Chuggy's modules import it and restate none of it. Do not edit
+  a vendored file: change chuggy around it, and bump the pin by re-vendoring
+  from a clone and regenerating the manifest, never by hand.

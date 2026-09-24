@@ -5,8 +5,9 @@
 # a copy of the package's own file at the pin, and `model/vendored.sha256` is
 # the pin: the package's repository, the commit, the command that produced the
 # digests in a clone at that commit, and one sha256 per file. A file whose
-# digest differs, a tracked file there the manifest does not list, and a listed
-# file that is not there are each a finding. A pin bump is a new manifest and a
+# digest differs, a tracked file there the manifest does not list, a listed file
+# that is not tracked, and a row outside those two directories are each a
+# finding. A pin bump is a new manifest and a
 # re-vendored tree, never a hand edit to either.
 #
 # WHAT IT CANNOT SEE is the upstream repository. It holds the tree to the
@@ -89,6 +90,18 @@ while read -r path; do
 	echo "ERROR $path: vendored and not in $manifest"
 	findings=$((findings + 1))
 done <"$work/unlisted"
+# A listed file only the working tree holds passes every check above and is
+# absent from the commit, so a clone of it fails where this checkout passed.
+comm -23 "$work/listed" "$work/tracked" >"$work/untracked"
+while read -r path; do
+	case "$path" in
+	model/task-contract/* | model/ticket-domain/*)
+		echo "ERROR $path: listed in $manifest and not tracked by git" ;;
+	*)
+		echo "ERROR $path: listed in $manifest outside the vendored directories" ;;
+	esac
+	findings=$((findings + 1))
+done <"$work/untracked"
 
 echo "check-vendored: $findings finding(s) across $listed pinned file(s)"
 [ "$findings" -eq 0 ]

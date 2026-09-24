@@ -80,8 +80,22 @@ run_in "$R"
 check "a listed file that is gone is a finding" 1 "$RC" \
 	"model/ticket-domain/traces/one.itf.json: listed in"
 
-# The gate reads git for what is vendored, so a stray working-tree file cannot
-# decide a verdict.
+vendored_repo
+git -C "$R" rm -q --cached model/ticket-domain/traces/one.itf.json
+run_in "$R"
+check "a listed file only the working tree holds is a finding" 1 "$RC" \
+	"model/ticket-domain/traces/one.itf.json: listed in model/vendored.sha256 and not tracked"
+
+vendored_repo
+printf 'mine\n' >"$R/model/mine.qnt"
+git -C "$R" add model/mine.qnt
+printf '%s  model/mine.qnt\n' "$(digest "$R/model/mine.qnt")" >>"$R/model/vendored.sha256"
+run_in "$R"
+check "a row outside the vendored directories is a finding" 1 "$RC" \
+	"model/mine.qnt: listed in model/vendored.sha256 outside the vendored directories"
+
+# The gate reads git for what is vendored, so a stray working-tree file the
+# manifest does not list cannot decide a verdict.
 vendored_repo
 printf 'stray\n' >"$R/model/ticket-domain/stray.qnt"
 run_in "$R"
