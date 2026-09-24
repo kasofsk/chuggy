@@ -1,0 +1,2110 @@
+{
+  "walk": [
+    [],
+    [],
+    [[3, "Pending", "NoEscalation", "NoResume", 0]],
+    [[3, "Pending", "NoEscalation", "NoResume", 0]],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0]
+    ]
+  ],
+  "work-execution-unavailable": [
+    [],
+    [],
+    [],
+    [],
+    [[6, "Pending", "NoEscalation", "NoResume", 0]],
+    [[6, "Pending", "NoEscalation", "NoResume", 0]],
+    [
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "WorkExecutionUnavailableEscalated", "ResumeWork", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ]
+  ],
+  "evaluation-blocked": [
+    [],
+    [[1, "Pending", "NoEscalation", "NoResume", 0]],
+    [[1, "Pending", "NoEscalation", "NoResume", 0]],
+    [[1, "Pending", "NoEscalation", "NoResume", 0]],
+    [[1, "Work", "NoEscalation", "NoResume", 0]],
+    [
+      [1, "Work", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Work", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Evaluation", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Evaluation", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Evaluation", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ]
+  ],
+  "evaluation-blocked-resume": [
+    [],
+    [[5, "Pending", "NoEscalation", "NoResume", 0]],
+    [[5, "Work", "NoEscalation", "NoResume", 0]],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 1]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 1]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 2]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        2
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Evaluation", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Evaluation", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Escalated", "EvaluationFailureEscalated", "ResumeRework", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Escalated", "EvaluationFailureEscalated", "ResumeRework", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Escalated", "WorkFailureEscalated", "ResumeWork", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Escalated", "WorkExecutionUnavailableEscalated", "ResumeWork", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Evaluation", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ]
+  ],
+  "eval-stage-passed": [
+    [],
+    [[6, "Pending", "NoEscalation", "NoResume", 0]],
+    [[6, "Pending", "NoEscalation", "NoResume", 0]],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Evaluation", "NoEscalation", "NoResume", 0]
+    ]
+  ],
+  "finalization-needs-work": [
+    [],
+    [[3, "Pending", "NoEscalation", "NoResume", 0]],
+    [[3, "Work", "NoEscalation", "NoResume", 0]],
+    [[3, "Evaluation", "NoEscalation", "NoResume", 0]],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Finalization", "NoEscalation", "NoResume", 1],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Finalization", "NoEscalation", "NoResume", 1],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Finalization", "NoEscalation", "NoResume", 1],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Finalization", "NoEscalation", "NoResume", 1],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Finalization", "NoEscalation", "NoResume", 1],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Finalization", "NoEscalation", "NoResume", 1],
+      [5, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Finalization", "NoEscalation", "NoResume", 1],
+      [5, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Revoked", "NoEscalation", "NoResume", 0]
+    ]
+  ],
+  "work-failure-escalated": [
+    [],
+    [[6, "Pending", "NoEscalation", "NoResume", 0]],
+    [[6, "Revoked", "NoEscalation", "NoResume", 0]],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Escalated", "WorkFailureEscalated", "ResumeWork", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ]
+  ],
+  "rework-started-eval-failure": [
+    [],
+    [[5, "Pending", "NoEscalation", "NoResume", 0]],
+    [[5, "Revoked", "NoEscalation", "NoResume", 0]],
+    [[5, "Revoked", "NoEscalation", "NoResume", 0]],
+    [
+      [4, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [4, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [4, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [4, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Evaluation", "NoEscalation", "NoResume", 0],
+      [4, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Evaluation", "NoEscalation", "NoResume", 0],
+      [4, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Evaluation", "NoEscalation", "NoResume", 0],
+      [4, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [4, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Revoked", "NoEscalation", "NoResume", 0]
+    ]
+  ],
+  "evaluation-failure-escalated": [
+    [],
+    [[5, "Pending", "NoEscalation", "NoResume", 0]],
+    [[5, "Work", "NoEscalation", "NoResume", 0]],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 1]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 1]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 2]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        2
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Evaluation", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Evaluation", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Escalated", "EvaluationFailureEscalated", "ResumeRework", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ]
+  ],
+  "rework-wall-resume": [
+    [],
+    [[5, "Pending", "NoEscalation", "NoResume", 0]],
+    [[5, "Work", "NoEscalation", "NoResume", 0]],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 1]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 1]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 2]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        2
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Evaluation", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Evaluation", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Escalated", "EvaluationFailureEscalated", "ResumeRework", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Escalated", "EvaluationFailureEscalated", "ResumeRework", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ]
+  ],
+  "finalization-succeeded": [
+    [],
+    [[5, "Pending", "NoEscalation", "NoResume", 0]],
+    [[5, "Work", "NoEscalation", "NoResume", 0]],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 1]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 1]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 2]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        2
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 3]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Done", "NoEscalation", "NoResume", 3]
+    ]
+  ],
+  "finalization-unavailable": [
+    [],
+    [[5, "Pending", "NoEscalation", "NoResume", 0]],
+    [[5, "Work", "NoEscalation", "NoResume", 0]],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 1]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Escalated", "WorkFailureEscalated", "ResumeWork", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Evaluation", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 1]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Escalated", "EvaluationBlockedEscalated", "ResumeEvaluation", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [
+        5,
+        "Escalated",
+        "FinalizationUnavailableEscalated",
+        "ResumeFinalization",
+        1
+      ]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Finalization", "NoEscalation", "NoResume", 2]
+    ]
+  ],
+  "revoke-cancels-tasks": [
+    [],
+    [],
+    [],
+    [],
+    [],
+    [[1, "Pending", "NoEscalation", "NoResume", 0]],
+    [[1, "Pending", "NoEscalation", "NoResume", 0]],
+    [[1, "Pending", "NoEscalation", "NoResume", 0]],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Work", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Evaluation", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ]
+  ],
+  "task-not-current": [
+    [],
+    [[6, "Pending", "NoEscalation", "NoResume", 0]],
+    [[6, "Revoked", "NoEscalation", "NoResume", 0]],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Escalated", "WorkFailureEscalated", "ResumeWork", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Escalated", "WorkFailureEscalated", "ResumeWork", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [2, "Escalated", "WorkFailureEscalated", "ResumeWork", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Escalated", "WorkFailureEscalated", "ResumeWork", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [2, "Revoked", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ]
+  ],
+  "dependencies-incomplete": [
+    [],
+    [[4, "Pending", "NoEscalation", "NoResume", 0]],
+    [[4, "Pending", "NoEscalation", "NoResume", 0]],
+    [[4, "Work", "NoEscalation", "NoResume", 0]],
+    [[4, "Evaluation", "NoEscalation", "NoResume", 0]],
+    [[4, "Revoked", "NoEscalation", "NoResume", 0]],
+    [
+      [4, "Revoked", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [4, "Revoked", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ]
+  ],
+  "ticket-updated-dispatch": [
+    [],
+    [[6, "Pending", "NoEscalation", "NoResume", 0]],
+    [[6, "Revoked", "NoEscalation", "NoResume", 0]],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [6, "Revoked", "NoEscalation", "NoResume", 0]
+    ]
+  ],
+  "update-revision-stale": [
+    [],
+    [[4, "Pending", "NoEscalation", "NoResume", 0]],
+    [[4, "Pending", "NoEscalation", "NoResume", 0]],
+    [[4, "Pending", "NoEscalation", "NoResume", 0]],
+    [[4, "Work", "NoEscalation", "NoResume", 0]],
+    [[4, "Evaluation", "NoEscalation", "NoResume", 0]],
+    [[4, "Evaluation", "NoEscalation", "NoResume", 0]],
+    [[4, "Evaluation", "NoEscalation", "NoResume", 0]],
+    [
+      [4, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [4, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [4, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [4, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [4, "Evaluation", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [4, "Finalization", "NoEscalation", "NoResume", 1],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [4, "Finalization", "NoEscalation", "NoResume", 1],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [4, "Finalization", "NoEscalation", "NoResume", 1],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [4, "Finalization", "NoEscalation", "NoResume", 1],
+      [5, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [4, "Finalization", "NoEscalation", "NoResume", 1],
+      [5, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [4, "Finalization", "NoEscalation", "NoResume", 1],
+      [5, "Pending", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ]
+  ],
+  "update-dependencies-changed": [
+    [],
+    [],
+    [[5, "Pending", "NoEscalation", "NoResume", 0]],
+    [
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Pending", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [1, "Revoked", "NoEscalation", "NoResume", 0],
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ]
+  ],
+  "update-identity-mismatch": [
+    [],
+    [],
+    [[5, "Pending", "NoEscalation", "NoResume", 0]],
+    [
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [3, "Pending", "NoEscalation", "NoResume", 0],
+      [5, "Pending", "NoEscalation", "NoResume", 0]
+    ]
+  ],
+  "update-not-pending": [
+    [],
+    [],
+    [[4, "Pending", "NoEscalation", "NoResume", 0]],
+    [[4, "Work", "NoEscalation", "NoResume", 0]],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [4, "Work", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [4, "Work", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [4, "Work", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [4, "Evaluation", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Pending", "NoEscalation", "NoResume", 0],
+      [4, "Evaluation", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Work", "NoEscalation", "NoResume", 0],
+      [4, "Evaluation", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Escalated", "WorkExecutionUnavailableEscalated", "ResumeWork", 0],
+      [4, "Evaluation", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Escalated", "WorkExecutionUnavailableEscalated", "ResumeWork", 0],
+      [4, "Evaluation", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Escalated", "WorkExecutionUnavailableEscalated", "ResumeWork", 0],
+      [4, "Evaluation", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ],
+    [
+      [2, "Escalated", "WorkExecutionUnavailableEscalated", "ResumeWork", 0],
+      [4, "Evaluation", "NoEscalation", "NoResume", 0],
+      [6, "Pending", "NoEscalation", "NoResume", 0]
+    ]
+  ]
+}
