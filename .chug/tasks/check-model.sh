@@ -1,7 +1,7 @@
 #!/bin/sh
 # The model gate. Typechecks every Quint module, runs the unit suite, the
-# deterministic witness modules, the refinement suites, and the randomized
-# invariant runs over each instance.
+# vendored package's own suite, the deterministic witness modules, the
+# refinement suites, and the randomized invariant runs over each instance.
 #
 # Quint is pinned in package.json, and the local binary wins over anything on
 # PATH: a verdict that depends on which version happens to be installed is not
@@ -115,6 +115,12 @@ run_suite "model/tests/chuggy_test.qnt" model/tests/chuggy_test.qnt
 run_suite "model/tests/capacity_test.qnt" model/tests/capacity_test.qnt
 run_suite "model/tests/runner_test.qnt" model/tests/runner_test.qnt
 run_suite "model/tests/execution_requirement_test.qnt" model/tests/execution_requirement_test.qnt
+
+# The package's text is vendored rather than written here, so its own suite is
+# what says a quint release still reads it the way the package does. A failing
+# case is a finding like any other: the text is this tree's model now.
+echo "--- package suite"
+run_suite "model/ticket-domain/ticket_tests.qnt" model/ticket-domain/ticket_tests.qnt
 
 # The witness modules prove each named shape reachable and assert every
 # invariant after every step.

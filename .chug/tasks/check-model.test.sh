@@ -46,6 +46,10 @@ if [ "\$1" = "--version" ]; then echo "$1"; exit 0; fi
 sub="\$1"
 eval "out=\\\${STUB_OUT_\$sub-}"
 eval "rc=\\\${STUB_RC_\$sub-0}"
+for arg in "\$@"; do last="\$arg"; done
+if [ "\$last" = model/ticket-domain/ticket_tests.qnt ] && [ -n "\${STUB_PKG_RC-}" ]; then
+	rc="\$STUB_PKG_RC"; out="\$STUB_PKG_OUT"
+fi
 if [ -n "\${FORCE_COLOR-}" ]; then out="\$(printf '\\033[32m')\$out"; fi
 if [ -n "\$out" ]; then echo "\$out"; fi
 exit "\$rc"
@@ -71,7 +75,7 @@ run_in_repo() {
 # the total the success line prints is a fixture size this suite knows.
 model_repo 0.32.0
 run_in_repo
-check "a clean model run exits 0" 0 "$RC" "0 failure(s), 13 test(s) run"
+check "a clean model run exits 0" 0 "$RC" "0 failure(s), 14 test(s) run"
 
 # A CALLER'S FORCE_COLOR MUST NOT REACH QUINT. Every verdict is read out of
 # Quint's own text, so a colour escape in front of the passing count reads as a
@@ -83,7 +87,7 @@ FORCE_COLOR=1
 export FORCE_COLOR
 run_in_repo
 unset FORCE_COLOR
-check "a caller's FORCE_COLOR does not hide a suite that ran" 0 "$RC" "13 test(s) run"
+check "a caller's FORCE_COLOR does not hide a suite that ran" 0 "$RC" "14 test(s) run"
 
 # A SUITE THAT SELECTED NOTHING IS NOT A SUITE THAT PASSED. Quint runs only the
 # names its match selects and exits 0 when that is none of them, so a renamed
@@ -104,6 +108,18 @@ STUB_OUT_test="  1 passing (1ms)
 run_in_repo
 check "a suite that ran and failed is a finding" 1 "$RC" "failure(s)"
 check "a failing suite prints what it said" 1 "$RC" "worth reading"
+
+# THE PACKAGE'S SUITE IS THIS TREE'S. Its text is vendored into the model, so a
+# case of it failing under the pinned quint is a finding here, not a stage that
+# could not run.
+model_repo 0.32.0
+STUB_PKG_RC=1
+STUB_PKG_OUT="  21 passing (1ms)
+  1 failed"
+export STUB_PKG_RC STUB_PKG_OUT
+run_in_repo
+unset STUB_PKG_RC STUB_PKG_OUT
+check "a failing package suite is a finding" 1 "$RC" "ticket_tests.qnt failed"
 
 # A VIOLATED INVARIANT IS A FINDING, and its seed reaches the reader, because
 # the whole value of a randomized refutation is reproducing it.

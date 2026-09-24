@@ -6,24 +6,12 @@
 - Change model tests with behavior and run `.chug/tasks/check-model.sh`.
 - Regenerate derived artifacts with their repository scripts; do not hand-edit
   generated APIs or golden traces.
-- `task-contract/task.qnt` is a VERBATIM copy of the package's file at pin
-  76c95a9, not a chuggy module: the package is not a dependency at this pin, so
-  a copy is the only way to speak its vocabulary, and an exact copy is the only
-  copy a `diff` can check for drift. Do not edit it — change chuggy around it.
-  `ticket.qnt` imports it for `TaskIdentity`, `TaskDefinition`,
-  `TaskObligation`, `ValidatedTaskResult` and `TaskTerminal`, and `domain.qnt`
-  calls `taskIdentityValid` and `taskDefinitionValid`.
-- `ticket-domain/evaluation/evaluation.qnt` is the same VERBATIM copy at the
-  package's own path, so its own import of the task contract resolves
-  unchanged. `diff` against the package is empty, and the same rule applies:
-  do not edit it — change chuggy around it. `ticket.qnt` imports it for the
-  instance and drives it with `begin`, `applyProduced`, `applyFailure`,
-  `concludeStage`, `resumeBlocked` and `currentTaskObligations`, and
-  `domain.qnt` calls `planValid` and `evaluatorKeys`; chuggy re-states none of
-  them.
-- The package's `ticket-domain/ticket.qnt` is not copied whole, because a
-  module importing it beside chuggy's would collide on every name they share.
-  Its text is instead held VERBATIM between the marker comments in `ticket.qnt`
-  (the types and helpers) and `domain.qnt` (the deciders, `evolve` and
-  `decisionValid`), at the same pin, and the same rule applies between the
-  markers: do not edit — change chuggy around it.
+- `task-contract/` and `ticket-domain/` are the ticket package
+  (github.com/kasofsk/chug-ticket-domain) vendored at its own paths, byte for
+  byte, at the pin `vendored.sha256` records with the command that produced its
+  digests; `.chug/tasks/check-vendored.sh` holds the tree to it,
+  `check-model` runs the package's own `ticket_tests.qnt`, and
+  `test/conformance/package.test.ts` replays its traces through chuggy's
+  TypeScript. Chuggy's modules import it and restate none of it. Do not edit
+  a vendored file: change chuggy around it, and bump the pin by re-vendoring
+  from a clone and regenerating the manifest, never by hand.

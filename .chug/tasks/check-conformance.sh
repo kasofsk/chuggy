@@ -8,6 +8,10 @@
 # is wrong. Reproduction is exact equality on the whole state rather than a spot
 # check, because a spot check is how a dropped field survives.
 #
+# The ticket package's own traces, vendored beside the model, replay here too
+# (`test/conformance/package.test.ts`), under the package's invariants alone:
+# their keys are the package's fixtures and lie outside this instance's bounds.
+#
 # IT NEVER REGENERATES, AND NOT AS A PROMISE. Emitting a golden needs quint at
 # the pinned release and the model beside it, and this gate locates neither,
 # runs neither, and has no flag, mode or variable that would.

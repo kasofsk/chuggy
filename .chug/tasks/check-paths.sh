@@ -26,6 +26,10 @@
 # a throwaway repo, so its code is full of paths that are real somewhere else;
 # what a suite says about THIS repo it says in its header.
 #
+# NOT SCANNED: a file `model/vendored.sha256` pins. It is the ticket package's
+# text byte for byte, so a path in it names the package's tree, and it cannot
+# be edited here to say otherwise; `check-vendored.sh` is what holds it.
+#
 # SKIPPED, deliberately: a glob or a placeholder, a token a glob character
 # immediately follows, a shell variable, a bracketed template, an absolute or
 # home-relative path, a URL, an elision, and any token whose first segment
@@ -77,9 +81,15 @@ if [ "$#" -eq 0 ]; then
 	set -- $tracked
 	unset IFS
 fi
+pinned="
+$(grep -v '^#' model/vendored.sha256 2>/dev/null | cut -c67- || true)
+"
 files=""
 for f in "$@"; do
 	[ -f "$f" ] || continue
+	case "$pinned" in *"
+$f
+"*) continue ;; esac
 	files="$files$f
 "
 done

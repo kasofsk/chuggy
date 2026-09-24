@@ -7,6 +7,7 @@
 /// open.
 module chuggy_witness_fixture {
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../ticket-domain/ticket"
   import chuggy_ticket.* from "../ticket"
 
   pure def stateName(jb: Ticket): str = match jb.state {
@@ -39,6 +40,7 @@ module chuggy_witness_fixture {
 module chuggy_witness_resume_test {
   import task_contract.* from "../task-contract/task"
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../ticket-domain/ticket"
   import chuggy_ticket.* from "../ticket"
   import chuggy_witness_fixture.*
   import chuggy_domain(N_TICKETS=2, N_TASKS=2, MAX_STAGES=2).* from "../domain"
@@ -181,6 +183,7 @@ module chuggy_witness_resume_test {
 module chuggy_witness_rework_test {
   import task_contract.* from "../task-contract/task"
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../ticket-domain/ticket"
   import chuggy_ticket.* from "../ticket"
   import chuggy_witness_fixture.*
   import chuggy_domain(N_TICKETS=2, N_TASKS=1, MAX_STAGES=1).* from "../domain"
@@ -242,6 +245,7 @@ module chuggy_witness_rework_test {
 module chuggy_witness_stage_test {
   import task_contract.* from "../task-contract/task"
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../ticket-domain/ticket"
   import chuggy_ticket.* from "../ticket"
   import chuggy_witness_fixture.*
   import chuggy_domain(N_TICKETS=1, N_TASKS=2, MAX_STAGES=2).* from "../domain"
@@ -282,6 +286,7 @@ module chuggy_witness_stage_test {
 module chuggy_witness_sparse_test {
   import task_contract.* from "../task-contract/task"
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../ticket-domain/ticket"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2, N_TASKS=2, MAX_STAGES=1).* from "../domain"
   pure val pNarrow = [{ key: 1, evaluators: [evaluatorOf(1)] }]
@@ -300,6 +305,7 @@ module chuggy_witness_sparse_test {
 module chuggy_witness_gate_test {
   import task_contract.* from "../task-contract/task"
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../ticket-domain/ticket"
   import chuggy_ticket.* from "../ticket"
   import chuggy_witness_fixture.*
   import chuggy_domain(N_TICKETS=2, N_TASKS=1, MAX_STAGES=1).* from "../domain"
@@ -456,6 +462,7 @@ module chuggy_witness_gate_test {
 /// Former release candidate-wait slot: dependency admission requires an already-existing id.
 module chuggy_witness_dependency_test {
   import task_contract.* from "../task-contract/task"
+  import ticket_domain.* from "../ticket-domain/ticket"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(N_TICKETS=2,N_TASKS=1,MAX_STAGES=1).* from "../domain"
   pure val p=[{key:1,evaluators:[evaluatorOf(1)]}]

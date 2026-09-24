@@ -144,6 +144,19 @@ cite 'A finding lives here: `.chug/tasks/missing.sh`.'
 run_in "$R" README.md
 check "an argument scans only that file" 0 "$RC" "in 1 file(s)"
 
+# A pinned vendored file is another repository's text, so its paths are that
+# repository's; an unpinned file beside it is still read.
+seeded_repo
+mkdir -p "$R/model"
+printf 'written by .chug/tasks/exporter.ts\n' > "$R/model/trace.json"
+printf '%064d  model/trace.json\n' 0 > "$R/model/vendored.sha256"
+cite 'The gate is `.chug/tasks/real.sh` and it runs.'
+run_in "$R"
+check "a pinned vendored file is not scanned" 0 "$RC" "0 finding(s)"
+printf '# none pinned\n' > "$R/model/vendored.sha256"
+run_in "$R"
+check "the same file unpinned is scanned" 1 "$RC" "model/trace.json:1: .chug/tasks/exporter.ts"
+
 run_in "$NOREPO"
 check "outside a git checkout exits 2, not 0" 2 "$RC" "LINTER ERROR"
 
