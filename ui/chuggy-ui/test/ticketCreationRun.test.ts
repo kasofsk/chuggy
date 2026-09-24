@@ -25,12 +25,9 @@ import {
   creationPartition,
   creationSummary,
 } from "./ticketCreationFixture.ts";
+import { answeringApi } from "./answeringApi.ts";
+import type { Answer, Sent } from "./answeringApi.ts";
 import { ticketInstants } from "./ticketInstants.ts";
-
-interface Answer {
-  readonly status: number;
-  readonly body: unknown;
-}
 
 const partitionBase = `${nativeHttpBasePath}/tenants/acme/projects/atlas`;
 
@@ -38,25 +35,19 @@ function ok(body: unknown): Answer {
   return { status: 200, body };
 }
 
+/** The double's traffic as the request lines each case compares, and the
+ * bodies beside them for the one that reads what was sent. */
 function answering(answer: (method: string, path: string) => Answer): {
   readonly ports: ApiPorts;
-  readonly calls: string[];
+  readonly calls: readonly string[];
+  readonly sent: readonly Sent[];
 } {
-  const calls: string[] = [];
+  const held = answeringApi(answer);
   return {
-    calls,
-    ports: {
-      fetch: (path, init) => {
-        calls.push(`${init.method} ${path}`);
-        const answered = answer(init.method, path);
-        return Promise.resolve({
-          status: answered.status,
-          headers: { get: () => null },
-          text: () => Promise.resolve(JSON.stringify(answered.body)),
-        } as unknown as Response);
-      },
-      bearer: () => Promise.resolve("token"),
-      sleepMs: () => Promise.resolve(),
+    ports: held.ports,
+    sent: held.sent,
+    get calls(): readonly string[] {
+      return held.sent.map((one) => `${one.method} ${one.path}`);
     },
   };
 }
@@ -347,7 +338,6 @@ function updateAnswers(
 }
 
 test("an edit revises the draft, then releases it against the revision read", async () => {
-  const sent: unknown[] = [];
   const held = answering(
     updateAnswers({
       operation: "op-3",
@@ -356,15 +346,8 @@ test("an edit revises the draft, then releases it against the revision read", as
       decidedSequence: 43,
     }),
   );
-  const fetch = held.ports.fetch;
   const updated = await reviseAndUpdateTicket(
-    {
-      ...held.ports,
-      fetch: (path, init) => {
-        if (init.body !== undefined) sent.push(JSON.parse(init.body));
-        return fetch(path, init);
-      },
-    },
+    held.ports,
     creationPartition,
     updateSubmission,
     () => undefined,
@@ -374,7 +357,7 @@ test("an edit revises the draft, then releases it against the revision read", as
     `PUT ${partitionBase}/drafts/12`,
     `POST ${partitionBase}/operations`,
   ]);
-  expect(sent).toStrictEqual([
+  expect(held.sent.slice(0, 2).map((one) => one.body)).toStrictEqual([
     updateSubmission.body,
     {
       operation: "op-3",

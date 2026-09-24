@@ -28,6 +28,8 @@ import {
   creationPartition,
   creationSummary,
 } from "./ticketCreationFixture.ts";
+import { answeringApi } from "./answeringApi.ts";
+import type { Answer, Sent } from "./answeringApi.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 
@@ -61,19 +63,12 @@ const draft: DraftResponse = {
   },
 };
 
-interface Sent {
-  readonly method: string;
-  readonly path: string;
-  readonly body: unknown;
-}
-
 /** What the door answers the revision with, and the settled operation after. */
-function api(revised: { readonly status: number; readonly body: unknown }): {
+function api(revised: Answer): {
   readonly ports: ApiPorts;
   readonly sent: Sent[];
 } {
-  const sent: Sent[] = [];
-  const answerOf = (method: string, path: string): unknown => {
+  return answeringApi((method, path) => {
     if (method === "PUT") return revised;
     if (method === "POST")
       return { status: 202, body: { operation: "op", state: "Pending" } };
@@ -95,30 +90,7 @@ function api(revised: { readonly status: number; readonly body: unknown }): {
         tickets: [{ ...ticket, sequence: 43, revision: 3 }],
       },
     };
-  };
-  return {
-    sent,
-    ports: {
-      fetch: (path, init) => {
-        sent.push({
-          method: init.method,
-          path,
-          body: init.body === undefined ? undefined : JSON.parse(init.body),
-        });
-        const answer = answerOf(init.method, path) as {
-          readonly status: number;
-          readonly body: unknown;
-        };
-        return Promise.resolve({
-          status: answer.status,
-          headers: { get: () => null },
-          text: () => Promise.resolve(JSON.stringify(answer.body)),
-        } as unknown as Response);
-      },
-      bearer: () => Promise.resolve("token"),
-      sleepMs: () => Promise.resolve(),
-    },
-  };
+  });
 }
 
 function draw(ports: ApiPorts, updated: string[]): void {
