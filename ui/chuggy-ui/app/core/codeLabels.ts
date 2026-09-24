@@ -18,7 +18,6 @@
 import {
   blockedReasons,
   gitEvidences,
-  operationRefusalCodes,
   type BlockedReason,
   type BriefFinalizationMode,
   type EscalationKind,
@@ -452,8 +451,32 @@ export function operationStateLabel(state: OperationState): string {
 /** Why the actor declined the mutation, as the fragment that goes after it. */
 export function operationRefusalLabel(code: OperationRefusalCode): string {
   switch (code) {
-    case "NotEnabled":
-      return "Not allowed in this phase";
+    case "TicketAlreadyExists":
+      return "Ticket already exists";
+    case "DependenciesNotFound":
+      return "Dependencies not found";
+    case "SelfDependency":
+      return "Depends on itself";
+    case "TicketNotFound":
+      return "Ticket not found";
+    case "TicketNotPending":
+      return "No longer pending";
+    case "TicketIdentityMismatch":
+      return "Different ticket";
+    case "TicketRevisionStale":
+      return "Revision out of date";
+    case "TicketDependenciesChanged":
+      return "Dependencies changed";
+    case "DependenciesIncomplete":
+      return "Dependencies not done";
+    case "TicketNotRevocable":
+      return "Not revocable";
+    case "TicketNotResumable":
+      return "Nothing to resume";
+    case "TaskNotCurrent":
+      return "Task not current";
+    case "FinalizationNotCurrent":
+      return "Finalization not current";
     case "AuthoringChanged":
       return "Authoring changed";
     case "ConfigurationInvalid":
@@ -462,8 +485,6 @@ export function operationRefusalLabel(code: OperationRefusalCode): string {
       return "Ticket changed";
     case "SelectionChanged":
       return "Dispatch selection changed";
-    case "CommandUnreadable":
-      return "Command unreadable";
     case "ExecutionSourceUnreadable":
       return "Source ref not on remote";
     case "ExecutionSourceDenied":
@@ -507,12 +528,6 @@ export function mutationDeferralLabel(code: string): string {
   }
 }
 
-function operationRefusalCodeOf(
-  code: string,
-): OperationRefusalCode | undefined {
-  return operationRefusalCodes.find((known) => known === code);
-}
-
 function mutationRefusalCodeOf(code: string): MutationRefusalCode | undefined {
   return mutationRefusalCodes.find((known) => known === code);
 }
@@ -533,8 +548,6 @@ export function operationFailureLabel(failure: ApiFailure): string {
     case "Conflict":
     case "Rejected":
     case "Fault": {
-      const refusal = operationRefusalCodeOf(failure.code);
-      if (refusal !== undefined) return operationRefusalLabel(refusal);
       const declined = mutationRefusalCodeOf(failure.code);
       if (declined !== undefined) return mutationRefusalLabel(declined);
       return `Refused (${failure.code})`;
@@ -578,9 +591,9 @@ export function operationStepLabel(
     case "Settled": {
       const state = operationStateLabel(step.state);
       const refusal =
-        step.refusalCode === undefined
+        step.refusal === undefined
           ? ""
-          : ` · ${operationRefusalLabel(step.refusalCode)}`;
+          : ` · ${operationRefusalLabel(step.refusal.type)}`;
       return {
         text: `${action} ${state.toLowerCase()}${refusal}`,
         settled: true,

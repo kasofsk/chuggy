@@ -311,7 +311,9 @@ test("a landing that moved under the write says so, and rebases onto what stands
 
 test("a refused write says so and leaves the edit open", async () => {
   await drawPage({
-    written: [answer({ error: { code: "NotEnabled", message: "no" } }, 403)],
+    written: [
+      answer({ error: { code: "RepositoryLocked", message: "no" } }, 403),
+    ],
   });
   await press("Edit");
   await turned(() => {
@@ -319,7 +321,7 @@ test("a refused write says so and leaves the edit open", async () => {
   });
   await press("Save changes");
   expect(
-    screen.getByText("Failed · the API rejected this read as NotEnabled"),
+    screen.getByText("Failed · the API rejected this read as RepositoryLocked"),
   ).toBeTruthy();
   expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();

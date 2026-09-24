@@ -284,9 +284,9 @@ function inboxStepSentence(step: OperationStep): string {
     case "Confirming":
       return "waiting for the project to catch up…";
     case "Settled":
-      return step.refusalCode === undefined
+      return step.refusal === undefined
         ? operationStateSentence(step.state)
-        : operationRefusalSentence(step.refusalCode);
+        : operationRefusalSentence(step.refusal);
     case "Abandoned":
       return step.reason;
   }

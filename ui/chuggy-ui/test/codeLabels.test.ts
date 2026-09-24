@@ -268,11 +268,19 @@ test("a deferral and a failure this console does not know name themselves", () =
   expect(
     operationFailureLabel({
       outcome: "Rejected",
-      code: "NotEnabled",
+      code: "OperationNotPending",
       status: 409,
       body: undefined,
     }),
-  ).toBe("Not allowed in this phase");
+  ).toBe("Already decided");
+  expect(
+    operationFailureLabel({
+      outcome: "Rejected",
+      code: "TicketChanged",
+      status: 409,
+      body: undefined,
+    }),
+  ).toBe("Refused (TicketChanged)");
   expect(
     operationFailureLabel({
       outcome: "Rejected",
@@ -298,7 +306,7 @@ test("every step of a follow draws one line, and only a settled one stops", () =
       step: "Settled",
       operation: "o",
       state: "Succeeded",
-      refusalCode: undefined,
+      refusal: undefined,
     },
     "Resume",
   );
@@ -312,7 +320,7 @@ test("every step of a follow draws one line, and only a settled one stops", () =
       step: "Settled",
       operation: "o",
       state: "Refused",
-      refusalCode: "TicketChanged",
+      refusal: { type: "TicketChanged" },
     },
     "Resume",
   );

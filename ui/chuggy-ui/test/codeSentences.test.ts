@@ -1,7 +1,7 @@
 /**
  * That every coded value the wire sends a person leaves as a sentence.
  *
- * The failure this catches is a screen printing `NotEnabled` at somebody: the
+ * The failure this catches is a screen printing `TicketChanged` at somebody: the
  * code is the API's word to another program, and there is nowhere for a reader
  * to look it up.
  */
@@ -10,7 +10,6 @@ import { expect, test } from "vitest";
 
 import {
   escalationKinds,
-  operationRefusalCodes,
   operationStates,
 } from "../../../src/contract/rosters.ts";
 import {
@@ -20,7 +19,6 @@ import {
   mutationRefusalCodes,
   mutationRefusalSentence,
   operationFailureSentence,
-  operationRefusalSentence,
   operationStateSentence,
 } from "../app/core/codeSentences.ts";
 
@@ -32,19 +30,6 @@ function sentences(said: readonly string[], roster: readonly string[]): void {
   }
   expect(new Set(said).size).toBe(said.length);
 }
-
-test("every refusal code reads as a distinct sentence and not as its code", () => {
-  sentences(
-    operationRefusalCodes.map(operationRefusalSentence),
-    operationRefusalCodes,
-  );
-});
-
-test("the refusal two release contradictions share names each of them", () => {
-  const said = operationRefusalSentence("ConfigurationInvalid");
-  expect(said).toContain("configuration");
-  expect(said).toContain("pull request");
-});
 
 test("every escalation kind reads as a distinct sentence and not as its code", () => {
   sentences(escalationKinds.map(escalationKindSentence), escalationKinds);
@@ -91,14 +76,16 @@ test("every refusal the two mutation routes answer with reaches a sentence", () 
     ).not.toContain(code);
 });
 
-test("a failure the actor named as a refusal reads as that refusal", () => {
-  expect(
-    operationFailureSentence({
-      outcome: "Conflict",
-      code: "NotEnabled",
-      body: undefined,
-    }),
-  ).toBe(operationRefusalSentence("NotEnabled"));
+/** The actor's refusals arrive on a settled operation, so a failure carrying
+ * one of their codes is not read as the refusal it would have been. */
+test("a failure carrying an actor's refusal code is named as unrecognised", () => {
+  const said = operationFailureSentence({
+    outcome: "Conflict",
+    code: "TicketChanged",
+    body: undefined,
+  });
+  expect(said).toContain("does not know");
+  expect(said).toContain("TicketChanged");
 });
 
 test("a failure the wire has no refusal for still says what it was", () => {

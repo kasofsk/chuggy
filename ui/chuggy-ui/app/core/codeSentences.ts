@@ -14,13 +14,16 @@
  * fallback, which is the only thing that makes its forward direction bite.
  */
 
-import {
-  operationRefusalCodes,
-  type EscalationKind,
-  type NativeActionKind,
-  type OperationRefusalCode,
-  type OperationState,
+import type {
+  EscalationKind,
+  NativeActionKind,
+  OperationBoundaryRefusalCode,
+  OperationState,
 } from "../../../../src/contract/rosters.ts";
+import type {
+  OperationResponse,
+  TaskIdentity,
+} from "../../../../src/contract/responses.ts";
 import type { ApiFailure } from "./apiRequest.ts";
 
 /** Which wall the ticket hit, in the person's own terms. */
@@ -65,11 +68,78 @@ export function operationStateSentence(state: OperationState): string {
   }
 }
 
+/**
+ * Why an operation was refused. The machine's refusal is the one the wire
+ * carries beside the code, which names the tickets, task or attempt it was
+ * refused over; the boundary's is its code alone.
+ */
+export type OperationRefusal =
+  | Extract<OperationResponse, { readonly refusal: unknown }>["refusal"]
+  | {
+      readonly [Code in OperationBoundaryRefusalCode]: { readonly type: Code };
+    }[OperationBoundaryRefusalCode];
+
+/** A ticket as the console writes its number everywhere else. */
+function operationRefusalTicket(ticket: number): string {
+  return `#${String(ticket)}`;
+}
+
+/** Several tickets as one phrase, in the order the wire gave them. */
+function operationRefusalTickets(tickets: readonly number[]): string {
+  const named = tickets.map(operationRefusalTicket);
+  const last = named.pop();
+  if (last === undefined) return "no ticket";
+  return named.length === 0 ? last : `${named.join(", ")} and ${last}`;
+}
+
+/** Which task a report was for, as its identity names it. */
+function operationRefusalTask(task: TaskIdentity): string {
+  switch (task.type) {
+    case "WorkTask":
+      return `the work of cycle ${String(task.value.cycle)}`;
+    case "EvaluationTask":
+      return `evaluator ${String(task.value.evaluator)} of stage ${String(task.value.stage)}, generation ${String(task.value.generation)}, in work cycle ${String(task.value.workCycle)}`;
+  }
+}
+
+/** Why the machine declined the command, naming what it declined over. */
+function operationRefusalTicketSentence(
+  refused: Extract<OperationRefusal, { readonly value: unknown }>,
+): string {
+  switch (refused.type) {
+    case "TicketAlreadyExists":
+      return `${operationRefusalTicket(refused.value)} already exists, so there is nothing left to release`;
+    case "DependenciesNotFound":
+      return `${operationRefusalTicket(refused.value.ticket)} depends on ${operationRefusalTickets(refused.value.dependencies)}, which the project has no ticket for`;
+    case "SelfDependency":
+      return `${operationRefusalTicket(refused.value)} names itself as a dependency; revise it to depend only on other tickets`;
+    case "TicketNotFound":
+      return `the project has no ticket ${operationRefusalTicket(refused.value)}`;
+    case "TicketNotPending":
+      return `${operationRefusalTicket(refused.value)} is no longer pending, and only a pending ticket accepts this`;
+    case "TicketIdentityMismatch":
+      return `what was submitted describes a different ticket from ${operationRefusalTicket(refused.value)}`;
+    case "TicketRevisionStale":
+      return `this was written against revision ${String(refused.value.expected)} of ${operationRefusalTicket(refused.value.ticket)}, which is at revision ${String(refused.value.current)} now`;
+    case "TicketDependenciesChanged":
+      return `what ${operationRefusalTicket(refused.value)} depends on cannot change once it is released`;
+    case "DependenciesIncomplete":
+      return `${operationRefusalTicket(refused.value.ticket)} waits on ${operationRefusalTickets(refused.value.dependencies)}, which ${refused.value.dependencies.length === 1 ? "is" : "are"} not done yet`;
+    case "TicketNotRevocable":
+      return `${operationRefusalTicket(refused.value)} is past the point where it can be revoked`;
+    case "TicketNotResumable":
+      return `${operationRefusalTicket(refused.value)} is not stopped at anything a resume can pick up`;
+    case "TaskNotCurrent":
+      return `the report was for ${operationRefusalTask(refused.value.task)} of ${operationRefusalTicket(refused.value.ticket)}, which is not the task the ticket is waiting on`;
+    case "FinalizationNotCurrent":
+      return `the finalization result was for work cycle ${String(refused.value.workCycle)}, generation ${String(refused.value.generation)} of ${operationRefusalTicket(refused.value.ticket)}, which is not the finalization the ticket is waiting on`;
+  }
+}
+
 /** Why the actor declined the submitted mutation, and what to do about it. */
-export function operationRefusalSentence(code: OperationRefusalCode): string {
-  switch (code) {
-    case "NotEnabled":
-      return "the machine does not accept that here — the ticket has moved since this screen read it";
+export function operationRefusalSentence(refused: OperationRefusal): string {
+  if ("value" in refused) return operationRefusalTicketSentence(refused);
+  switch (refused.type) {
     case "AuthoringChanged":
       return "the ticket's authoring changed after this was submitted";
     case "ConfigurationInvalid":
@@ -78,8 +148,6 @@ export function operationRefusalSentence(code: OperationRefusalCode): string {
       return "the ticket changed after this was submitted";
     case "SelectionChanged":
       return "the dispatch selection this answered is no longer the current one";
-    case "CommandUnreadable":
-      return "the API could not read the command this console submitted";
     case "ExecutionSourceUnreadable":
       return "the repository reference this ticket's work would start from is not on the remote";
     case "ExecutionSourceDenied":
@@ -138,12 +206,6 @@ export function mutationDeferralSentence(code: string): string {
   }
 }
 
-function operationRefusalCodeOf(
-  code: string,
-): OperationRefusalCode | undefined {
-  return operationRefusalCodes.find((known) => known === code);
-}
-
 function mutationRefusalCodeOf(code: string): MutationRefusalCode | undefined {
   return mutationRefusalCodes.find((known) => known === code);
 }
@@ -155,9 +217,10 @@ function mutationDeferralCodeOf(
 }
 
 /**
- * Why a submission did not get through. A coded reason is read from whichever
- * roster owns it; one belonging to neither is named as unrecognised rather than
- * offered to the reader as the explanation.
+ * Why a submission did not get through. A coded reason is read from the
+ * boundary's roster, since the actor's refusals arrive on a settled operation
+ * and never as a failure; a code outside it is named as unrecognised rather
+ * than offered to the reader as the explanation.
  */
 export function operationFailureSentence(failure: ApiFailure): string {
   switch (failure.outcome) {
@@ -174,8 +237,6 @@ export function operationFailureSentence(failure: ApiFailure): string {
     case "Conflict":
     case "Rejected":
     case "Fault": {
-      const refusal = operationRefusalCodeOf(failure.code);
-      if (refusal !== undefined) return operationRefusalSentence(refusal);
       const declined = mutationRefusalCodeOf(failure.code);
       if (declined !== undefined) return mutationRefusalSentence(declined);
       return `the API refused this, and named a reason this console does not know (${failure.code})`;
