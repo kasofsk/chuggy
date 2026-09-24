@@ -26,6 +26,7 @@ import {
 import { evolve } from "../../src/domain/evolve.ts";
 import { evaluationTaskOf } from "../../src/domain/task.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
+import { evolveLedgers } from "../../src/domain/ledger.ts";
 
 import { stageAdvanceNever, witnesses } from "../../src/domain/witnesses.ts";
 import { modelInstance } from "./configs.ts";
@@ -33,7 +34,9 @@ import {
   acceptedOf,
   graphOf,
   depsOf,
+  evaluationState,
   judgedReport,
+  ledgersOf,
   runningInstance,
   ticketOn,
 } from "./fixtures.ts";
@@ -48,10 +51,13 @@ const config = modelInstance;
 /** The view a decision produces, which is the shape a witness is read at. */
 function stepped(pre: TicketGraph, taken: TicketDecision): StepView {
   const decision = acceptedOf(taken);
+  const preLedgers = ledgersOf(pre);
   return {
     pre,
+    preLedgers,
     last: { type: "Decided", value: decision },
     post: evolve(pre, decision.event),
+    postLedgers: evolveLedgers(pre, preLedgers, decision.event),
   };
 }
 
@@ -63,11 +69,9 @@ const twoStage: readonly StageDefinition[] = [
 /** A ticket running the lowest of two stages, with its one evaluator still to answer. */
 const midProgram = graphOf([
   ticketOn(config, {
-    phase: "Evaluation",
     stages: twoStage,
-    evaluations: [runningInstance(1, 1, twoStage, new Set())],
+    state: evaluationState(runningInstance(1, 1, twoStage, new Set())),
     workCyclesStarted: 1,
-    spawned: 2,
   }),
 ]);
 
@@ -76,8 +80,8 @@ const judged = evaluationTaskOf(1, 1, 1, 1, 1);
 
 const revoked = ((): StepView => {
   const pre = graphOf([
-    ticketOn(config, { phase: "Pending" }),
-    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
+    ticketOn(config),
+    ticketOn(config, { dependencies: depsOf(1) }),
   ]);
   return stepped(pre, decideRevoke(pre, 1));
 })();

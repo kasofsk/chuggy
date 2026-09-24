@@ -3,16 +3,16 @@
  * happen to reach.
  *
  * EVERY FIXTURE BUILT FROM THESE IS A SHAPE THE MACHINE COULD HAVE REACHED,
- * and `accountsFor` is what a suite asserts that with. `spawned` is bumped only
- * by a spawn, so a fixture that hands itself a work cycle or an instance while
- * leaving the fresh ticket's zero in place is a state no trace holds.
+ * and `accountsFor` is what a suite asserts that with. A ledger's `spawned` is
+ * bumped only by a spawn, so `ledgerFor` derives it from the ticket and the
+ * instances it closed rather than taking the fresh ledger's zero.
  *
  * AN INSTANCE IS BUILT BY THE PROTOCOL, never written out. A judgement's shape
  * is the protocol's own invariant, and a literal that satisfies it today is a
  * literal nobody rechecks; driving `begin` and `applyProduced` cannot produce
  * a state the machine could not.
  *
- * The builders go through `freshTicket` rather than writing a ticket literal,
+ * The builders go through `bornTicket` rather than writing a ticket literal,
  * so a field added to the record reaches every fixture at once.
  */
 
@@ -36,9 +36,10 @@ import type {
   TaskTerminalReport,
   Ticket,
   TicketDecision,
+  TicketLedger,
+  TicketState,
   ValidatedTaskResult,
 } from "../../src/domain/generated/modelTypes.ts";
-import { freshTicket } from "../../src/domain/deciders.ts";
 import {
   applyFailure,
   applyProduced,
@@ -47,12 +48,16 @@ import {
 } from "../../src/domain/evaluation.ts";
 import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
+import { genesisLedgers, type Ledgers } from "../../src/domain/ledger.ts";
 import {
+  emptyLedger,
   evaluationSpawnTotal,
+  initialWorkInput,
+  ledgerInstances,
   producedResultRef,
   taskRefOf,
 } from "../../src/domain/ticket.ts";
-import { taskOwner, workTaskOf } from "../../src/domain/task.ts";
+import { taskOwner, workTaskIdentity } from "../../src/domain/task.ts";
 
 /** The evaluator an obligation names, which is what a fixture answers by. */
 function evaluatorOf(task: TaskIdentity): number {
@@ -86,7 +91,7 @@ export function obligationFor(task: TaskIdentity): TaskObligation {
 
 /** What the work cycle `cycle` of ticket `ticket` reported, at fixture scope. */
 export function workResultOf(ticket: number, cycle: number): number {
-  return producedResultRef(workTaskOf(ticket, cycle));
+  return producedResultRef(workTaskIdentity(ticket, cycle));
 }
 
 /** The result a task produced, at the obligation it was spawned under. */
@@ -301,13 +306,18 @@ export type TicketOverrides = Partial<Ticket> & {
   readonly stages?: readonly StageDefinition[];
 };
 
+/** A ticket as the package's `decideCreate` releases one. */
+function bornTicket(definition: Ticket["definition"]): Ticket {
+  return { definition, revision: 1, workCyclesStarted: 0, state: "Pending" };
+}
+
 /** A ticket as a release leaves it, with whatever the caller overrides. */
 export function ticketOn(
   config: Config,
   overrides: TicketOverrides = {},
 ): Ticket {
   const { dependencies, stages, ...rest } = overrides;
-  const born = freshTicket(
+  const born = bornTicket(
     releasedTicketOf(
       1,
       dependencies ?? new Set<number>(),
@@ -315,6 +325,77 @@ export function ticketOn(
     ),
   );
   return { ...born, ...rest };
+}
+
+/** A work cycle running from the released content, at the source it was dispatched or accepted at. */
+export function workState(
+  ticket: Ticket,
+  source: number = anAcceptedSource,
+): TicketState {
+  return {
+    type: "Work",
+    value: { input: initialWorkInput(ticket.definition), source },
+  };
+}
+
+/** The work wall a failed cycle parks on, resuming from the released content. */
+export function workEscalatedState(ticket: Ticket, evidence = 1): TicketState {
+  return {
+    type: "Escalated",
+    value: {
+      type: "WorkFailureEscalated",
+      value: {
+        resumeInput: initialWorkInput(ticket.definition),
+        source: anAcceptedSource,
+        evidence,
+      },
+    },
+  };
+}
+
+/** The finalization a passed judgement opens, at the generation named. */
+export function finalizationState(
+  instance: EvaluationInstance,
+  generation = 1,
+): TicketState {
+  return {
+    type: "Finalization",
+    value: {
+      workCycle: instance.workCycle,
+      generation,
+      input: instance.input.workResult,
+      source: instance.input.acceptedSourceRef,
+    },
+  };
+}
+
+/** A judgement the ticket holds open. */
+export function evaluationState(instance: EvaluationInstance): TicketState {
+  return { type: "Evaluation", value: instance };
+}
+
+/**
+ * A ticket's ledger as the fold would have kept it: the instances it closed,
+ * the one completion a Done ticket recorded, and every slot its cycles and
+ * runs claimed — with whatever the caller overrides on top.
+ */
+export function ledgerFor(
+  ticket: Ticket,
+  overrides: Partial<TicketLedger> = {},
+): TicketLedger {
+  const closedEvaluations =
+    overrides.closedEvaluations ?? emptyLedger.closedEvaluations;
+  const spawned =
+    ticket.workCyclesStarted +
+    evaluationSpawnTotal(
+      ledgerInstances(ticket, { ...emptyLedger, closedEvaluations }),
+    );
+  return {
+    closedEvaluations,
+    spawned,
+    completions: ticket.state === "Done" ? 1 : 0,
+    ...overrides,
+  };
 }
 
 /**
@@ -336,11 +417,65 @@ export function graphOf(tickets: readonly Ticket[]): TicketGraph {
 }
 
 /**
- * The view of a state no decision has reached. The previous TicketGraph is the empty
- * fleet, which is exactly what the model's two ghosts hold after `init`.
+ * Every ticket's ledger as `ledgerFor` derives it, with the overrides given
+ * for any ticket by its id.
  */
-export function initialView(post: TicketGraph): StepView {
-  return { pre: graphOf([]), last: "NoDecision", post };
+export function ledgersOf(
+  graph: TicketGraph,
+  overrides: ReadonlyMap<number, Partial<TicketLedger>> = new Map(),
+): Ledgers {
+  return new Map(
+    [...graph.tickets].map(([ticketId, ticket]) => [
+      ticketId,
+      ledgerFor(ticket, overrides.get(ticketId)),
+    ]),
+  );
+}
+
+/**
+ * The view of a state no decision has reached. The previous graph and ledgers
+ * are empty, which is exactly what the model's ghosts hold after `init`.
+ */
+export function initialView(
+  post: TicketGraph,
+  postLedgers: Ledgers = ledgersOf(post),
+): StepView {
+  return {
+    pre: graphOf([]),
+    preLedgers: genesisLedgers,
+    last: "NoDecision",
+    post,
+    postLedgers,
+  };
+}
+
+/** A graph and its ledgers, which is what one state of the machine is. */
+export interface World {
+  readonly graph: TicketGraph;
+  readonly ledgers: Ledgers;
+}
+
+/** A fleet: tickets in id order, and the ledger overrides each carries. */
+export interface Fleet {
+  readonly tickets: readonly Ticket[];
+  readonly closed: readonly (readonly EvaluationInstance[])[];
+}
+
+/** The fleet as one state. */
+export function worldOf(fleet: Fleet): World {
+  const graph = graphOf(fleet.tickets);
+  return {
+    graph,
+    ledgers: ledgersOf(
+      graph,
+      new Map(
+        fleet.closed.map((closedEvaluations, at) => [
+          at + 1,
+          { closedEvaluations },
+        ]),
+      ),
+    ),
+  };
 }
 
 /**
@@ -348,70 +483,89 @@ export function initialView(post: TicketGraph): StepView {
  * running its finalizer. Every safety invariant is green on it, so a defect
  * below is one edit away from a state that passes.
  */
-export function healthyFleet(config: Config): readonly Ticket[] {
+export function healthyFleet(config: Config): Fleet {
   const stages = defaultPlan(config);
-  const finished = (ticket: number): Partial<Ticket> => ({
-    evaluations: [judgedInstance(ticket, 1, stages)],
+  const done = judgedInstance(1, 1, stages);
+  const finalizing = judgedInstance(3, 1, stages);
+  const working = ticketOn(config, {
+    dependencies: new Set([1]),
     workCyclesStarted: 1,
-    spawned: 1 + rosterOf(stages),
-    source: anAcceptedSource,
   });
-  return [
-    ticketOn(config, {
-      ...finished(1),
-      phase: "Done",
-      completions: 1,
-    }),
-    ticketOn(config, {
-      phase: "Work",
-      dependencies: new Set([1]),
-      source: anAcceptedSource,
-      workCyclesStarted: 1,
-      spawned: 1,
-    }),
-    ticketOn(config, {
-      ...finished(3),
-      phase: "Finalization",
-      finalizationGeneration: 1,
-    }),
-  ];
+  return {
+    tickets: [
+      ticketOn(config, { workCyclesStarted: 1, state: "Done" }),
+      { ...working, state: workState(working) },
+      ticketOn(config, {
+        workCyclesStarted: 1,
+        state: finalizationState(finalizing),
+      }),
+    ],
+    closed: [[done], [], [finalizing]],
+  };
 }
 
-/** A fleet with one ticket replaced, which is how each defect stays a single edit. */
+/**
+ * A fleet with one ticket replaced, and optionally its ledger, which is how
+ * each defect stays a single edit.
+ */
 export function fleetBut(
-  fleet: readonly Ticket[],
+  fleet: Fleet,
   index: number,
   overrides: TicketOverrides,
-): TicketGraph {
+  ledger: Partial<TicketLedger> = {},
+): World {
   const { dependencies, stages, ...rest } = overrides;
-  return graphOf(
-    fleet.map((ticket, at) =>
-      at === index
-        ? {
-            ...ticket,
-            ...rest,
-            definition: {
-              ...ticket.definition,
-              ...(dependencies === undefined ? {} : { dependencies }),
-              ...(stages === undefined ? {} : { evaluationPlan: { stages } }),
-            },
-          }
-        : ticket,
-    ),
+  const tickets = fleet.tickets.map((ticket, at) =>
+    at === index
+      ? {
+          ...ticket,
+          ...rest,
+          definition: {
+            ...ticket.definition,
+            ...(dependencies === undefined ? {} : { dependencies }),
+            ...(stages === undefined ? {} : { evaluationPlan: { stages } }),
+          },
+        }
+      : ticket,
   );
+  const graph = graphOf(tickets);
+  const kept = worldOf({ tickets, closed: fleet.closed }).ledgers;
+  const target = id(index + 1);
+  const ticket = graph.tickets.get(target);
+  const base = kept.get(target);
+  if (ticket === undefined || base === undefined)
+    throw new Error("fixtures: fleetBut indexes outside the fleet");
+  return {
+    graph,
+    ledgers: new Map([
+      ...kept,
+      [
+        target,
+        ledgerFor(ticket, {
+          closedEvaluations: base.closedEvaluations,
+          ...ledger,
+        }),
+      ],
+    ]),
+  };
 }
 
 /**
  * The model's `idsAccounted` for one ticket: the mint counter is one slot per
  * work cycle started, plus what every run of every instance claimed.
  */
-export function accountsFor(ticket: Ticket): boolean {
+export function accountsFor(ticket: Ticket, ledger: TicketLedger): boolean {
   return (
-    ticket.spawned === ticket.workCyclesStarted + evaluationSpawnTotal(ticket)
+    ledger.spawned ===
+    ticket.workCyclesStarted +
+      evaluationSpawnTotal(ledgerInstances(ticket, ledger))
   );
 }
 
-/** The same over a whole graph: a fixture accounts for all of its ids or none of them. */
-export function accountsForAll(graph: TicketGraph): boolean {
-  return [...graph.tickets.values()].every(accountsFor);
+/** The same over a whole state: a fixture accounts for all of its ids or none of them. */
+export function accountsForAll(world: World): boolean {
+  return [...world.graph.tickets].every(([ticketId, ticket]) => {
+    const ledger = world.ledgers.get(ticketId);
+    return ledger !== undefined && accountsFor(ticket, ledger);
+  });
 }

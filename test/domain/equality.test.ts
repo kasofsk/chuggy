@@ -20,10 +20,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { ticketEquals } from "../../src/domain/equality.ts";
+import {
+  ledgerEquals,
+  ticketEquals,
+  ticketStateEquals,
+} from "../../src/domain/equality.ts";
 import { instanceEquals } from "../../src/domain/evaluation.ts";
-import { freshTicket } from "../../src/domain/deciders.ts";
-import { judgedInstance } from "./fixtures.ts";
+import { modelInstance } from "./configs.ts";
+import {
+  finalizationState,
+  judgedInstance,
+  ticketOn,
+  workEscalatedState,
+  workState,
+} from "./fixtures.ts";
 import {
   evaluatorOf,
   evaluatorTaskOf,
@@ -34,10 +44,16 @@ import type {
   EvaluationInstance,
   EvaluationProgress,
   EvaluatorDefinition,
+  FinalizationOperation,
   ReleasedTicket,
   StageDefinition,
   StageRun,
   Ticket,
+  TicketLedger,
+  TicketState,
+  WorkEscalation,
+  WorkExecution,
+  WorkInput,
 } from "../../src/domain/generated/modelTypes.ts";
 
 /** A one-stage plan with one evaluator, the smallest a release accepts. */
@@ -72,7 +88,9 @@ function assertDiscriminates<Shape>(
   }
 }
 
-const baseTicket: Ticket = freshTicket(plainDefinition);
+const baseTicket: Ticket = ticketOn(modelInstance, {
+  definition: plainDefinition,
+});
 
 /** A judgement of one cycle, which is the smallest instance a ticket can carry. */
 const judged: EvaluationInstance = judgedInstance(1, 1, flatPlan);
@@ -99,22 +117,86 @@ const definitionMutants: FieldMutants<ReleasedTicket> = {
 };
 
 const ticketMutants: FieldMutants<Ticket> = {
-  phase: (t) => ({ ...t, phase: "Done" }),
   definition: (t) => ({ ...t, definition: definitionMutants.id(t.definition) }),
   revision: (t) => ({ ...t, revision: t.revision + 1 }),
-  source: (t) => ({ ...t, source: t.source + 1 }),
-  evaluations: (t) => ({ ...t, evaluations: [judged] }),
   workCyclesStarted: (t) => ({
     ...t,
     workCyclesStarted: t.workCyclesStarted + 1,
   }),
-  spawned: (t) => ({ ...t, spawned: t.spawned + 1 }),
-  finalizationGeneration: (t) => ({
-    ...t,
-    finalizationGeneration: t.finalizationGeneration + 1,
+  state: (t) => ({ ...t, state: "Done" }),
+};
+
+const baseLedger: TicketLedger = {
+  closedEvaluations: [],
+  spawned: 0,
+  completions: 0,
+};
+
+const ledgerMutants: FieldMutants<TicketLedger> = {
+  closedEvaluations: (l) => ({ ...l, closedEvaluations: [judged] }),
+  spawned: (l) => ({ ...l, spawned: l.spawned + 1 }),
+  completions: (l) => ({ ...l, completions: l.completions + 1 }),
+};
+
+/** The work state a cycle runs in, which is where a work input is compared. */
+function workExecutionOf(state: TicketState): WorkExecution {
+  if (typeof state === "string" || state.type !== "Work")
+    throw new Error("equality: not a work state");
+  return state.value;
+}
+
+const baseExecution: WorkExecution = workExecutionOf(workState(baseTicket));
+
+const executionMutants: FieldMutants<WorkExecution> = {
+  input: (w) => ({
+    ...w,
+    input: { ...w.input, released: w.input.released + 1 },
   }),
-  escalation: (t) => ({ ...t, escalation: "WorkFailureEscalated" }),
-  completions: (t) => ({ ...t, completions: t.completions + 1 }),
+  source: (w) => ({ ...w, source: w.source + 1 }),
+};
+
+const workInputMutants: FieldMutants<WorkInput> = {
+  released: (w) => ({ ...w, released: w.released + 1 }),
+  cause: (w) => ({ ...w, cause: { type: "FinalizationRework", value: 1 } }),
+  retryEvidence: (w) => ({ ...w, retryEvidence: [1] }),
+};
+
+/** The work wall's payload, which is where a work escalation is compared. */
+function workWallOf(state: TicketState): WorkEscalation {
+  if (
+    typeof state === "string" ||
+    state.type !== "Escalated" ||
+    state.value.type !== "WorkFailureEscalated"
+  )
+    throw new Error("equality: not a work wall");
+  return state.value.value;
+}
+
+const baseWall: WorkEscalation = workWallOf(workEscalatedState(baseTicket));
+
+const wallMutants: FieldMutants<WorkEscalation> = {
+  resumeInput: (w) => ({
+    ...w,
+    resumeInput: { ...w.resumeInput, retryEvidence: [1] },
+  }),
+  source: (w) => ({ ...w, source: w.source + 1 }),
+  evidence: (w) => ({ ...w, evidence: w.evidence + 1 }),
+};
+
+/** The attempt a finalizing state runs, which is where an attempt is compared. */
+function attemptOf(state: TicketState): FinalizationOperation {
+  if (typeof state === "string" || state.type !== "Finalization")
+    throw new Error("equality: not a finalization state");
+  return state.value;
+}
+
+const baseAttempt: FinalizationOperation = attemptOf(finalizationState(judged));
+
+const attemptMutants: FieldMutants<FinalizationOperation> = {
+  workCycle: (f) => ({ ...f, workCycle: f.workCycle + 1 }),
+  generation: (f) => ({ ...f, generation: f.generation + 1 }),
+  input: (f) => ({ ...f, input: f.input + 1 }),
+  source: (f) => ({ ...f, source: f.source + 1 }),
 };
 
 const baseStage: StageDefinition = { key: 1, evaluators: [evaluatorOf(1)] };
@@ -179,6 +261,55 @@ function running(progress: EvaluationProgress): EvaluationInstance {
 
 test("ticketEquals reads every field Ticket declares", () => {
   assertDiscriminates(baseTicket, ticketEquals, ticketMutants);
+});
+
+test("ledgerEquals reads every field TicketLedger declares", () => {
+  assertDiscriminates(baseLedger, ledgerEquals, ledgerMutants);
+});
+
+test("the state comparison reads every field WorkExecution and WorkInput declare", () => {
+  const working = (value: WorkExecution): TicketState => ({
+    type: "Work",
+    value,
+  });
+  assertDiscriminates(
+    baseExecution,
+    (left, right) => ticketStateEquals(working(left), working(right)),
+    executionMutants,
+  );
+  assertDiscriminates(
+    baseExecution.input,
+    (left, right) =>
+      ticketStateEquals(
+        working({ ...baseExecution, input: left }),
+        working({ ...baseExecution, input: right }),
+      ),
+    workInputMutants,
+  );
+});
+
+test("the state comparison reads every field WorkEscalation declares", () => {
+  const parked = (value: WorkEscalation): TicketState => ({
+    type: "Escalated",
+    value: { type: "WorkFailureEscalated", value },
+  });
+  assertDiscriminates(
+    baseWall,
+    (left, right) => ticketStateEquals(parked(left), parked(right)),
+    wallMutants,
+  );
+});
+
+test("the state comparison reads every field FinalizationOperation declares", () => {
+  const finalizing = (value: FinalizationOperation): TicketState => ({
+    type: "Finalization",
+    value,
+  });
+  assertDiscriminates(
+    baseAttempt,
+    (left, right) => ticketStateEquals(finalizing(left), finalizing(right)),
+    attemptMutants,
+  );
 });
 
 test("the definition comparison reads every field ReleasedTicket declares", () => {

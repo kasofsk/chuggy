@@ -11,51 +11,62 @@ import {
   evaluationTaskOf,
   taskIdentityEquals,
   taskIdentityValid,
-  workTaskOf,
+  workTaskIdentity,
 } from "../../src/domain/task.ts";
 import { asTaskId, asTicketId, asSafeInteger } from "../../src/domain/ids.ts";
-import { isSettled } from "../../src/domain/phase.ts";
+import { isSettled, phaseTags } from "../../src/domain/phase.ts";
+import { alwaysPolicy, decideTaskTerminal } from "../../src/domain/deciders.ts";
 import {
-  alwaysPolicy,
-  decideTaskTerminal,
-  freshTicket,
-} from "../../src/domain/deciders.ts";
-import {
+  attemptGeneration,
   evaluationFailureReworksStarted,
   liveTasks,
   owesTask,
-  spawnWork,
   hasOpenHumanTask,
 } from "../../src/domain/ticket.ts";
-import { evaluatorOf, releasedTicketOf } from "../../src/domain/config.ts";
+import { ledgerStep, ticketAfter } from "../../src/domain/ledger.ts";
+import { anAcceptedSource, evaluatorOf } from "../../src/domain/config.ts";
+import { modelInstance } from "./configs.ts";
 import {
   carriedAt,
+  evaluationState,
+  finalizationState,
   judgedInstance,
   judgedReport,
+  ledgerFor,
   obligationFor,
   producedReport,
   runningInstance,
   stoppedReport,
+  ticketOn,
+  workEscalatedState,
+  workState,
 } from "./fixtures.ts";
-import {
-  phaseTags,
-  type EvaluationVerdict,
-  type Phase,
-  type StageDefinition,
-  type TaskTerminalReport,
-  type Ticket,
+import type {
+  EvaluationVerdict,
+  StageDefinition,
+  TaskTerminalReport,
+  Ticket,
+  TicketEvent,
+  TicketState,
 } from "../../src/domain/generated/modelTypes.ts";
 
 const flat: readonly StageDefinition[] = [
   { key: 1, evaluators: [evaluatorOf(1)] },
 ];
 
-const bare: Ticket = freshTicket(releasedTicketOf(1, new Set(), flat));
+const bare: Ticket = ticketOn(modelInstance, { stages: flat });
+
+/** The ticket running its first cycle, as a dispatch leaves it. */
+const working: Ticket = {
+  ...bare,
+  workCyclesStarted: 1,
+  state: workState(bare),
+};
 
 test("an identity is valid exactly while every counter it carries is positive", () => {
-  assert.ok(taskIdentityValid(workTaskOf(1, 1)));
-  assert.ok(!taskIdentityValid(workTaskOf(1, 0)));
-  assert.ok(!taskIdentityValid(workTaskOf(0, 1)));
+  assert.ok(taskIdentityValid(workTaskIdentity(1, 1)));
+  assert.ok(!taskIdentityValid(workTaskIdentity(1, 0)));
+  assert.ok(!taskIdentityValid(workTaskIdentity(0, 1)));
   assert.ok(taskIdentityValid(evaluationTaskOf(1, 1, 1, 1, 1)));
   assert.ok(!taskIdentityValid(evaluationTaskOf(0, 1, 1, 1, 1)));
   assert.ok(!taskIdentityValid(evaluationTaskOf(1, 0, 1, 1, 1)));
@@ -71,10 +82,15 @@ test("an identity is valid exactly while every counter it carries is positive", 
 });
 
 test("two identities are the same only on the same arm and the same fields", () => {
-  assert.ok(taskIdentityEquals(workTaskOf(2, 3), workTaskOf(2, 3)));
-  assert.ok(!taskIdentityEquals(workTaskOf(2, 3), workTaskOf(2, 4)));
+  assert.ok(taskIdentityEquals(workTaskIdentity(2, 3), workTaskIdentity(2, 3)));
   assert.ok(
-    !taskIdentityEquals(workTaskOf(2, 3), evaluationTaskOf(2, 3, 1, 1, 1)),
+    !taskIdentityEquals(workTaskIdentity(2, 3), workTaskIdentity(2, 4)),
+  );
+  assert.ok(
+    !taskIdentityEquals(
+      workTaskIdentity(2, 3),
+      evaluationTaskOf(2, 3, 1, 1, 1),
+    ),
   );
   assert.ok(
     !taskIdentityEquals(
@@ -86,43 +102,81 @@ test("two identities are the same only on the same arm and the same fields", () 
 });
 
 test("a work cycle is one task, and each spawn claims exactly one mint slot", () => {
-  const first: Ticket = { ...spawnWork(bare), phase: "Work" };
-  assert.deepEqual(liveTasks(first), [workTaskOf(1, 1)]);
-  assert.equal(first.workCyclesStarted, 1);
-  assert.equal(first.spawned, 1);
-  const second: Ticket = { ...spawnWork(first), phase: "Work" };
-  assert.deepEqual(liveTasks(second), [workTaskOf(1, 2)]);
-  assert.equal(second.spawned, 2, "the counter is a ghost and never restarts");
+  const events: readonly TicketEvent[] = [
+    {
+      type: "TicketDispatched",
+      value: { ticket: 1, source: anAcceptedSource },
+    },
+    {
+      type: "TicketWorkProcessFailed",
+      value: { ticket: 1, task: workTaskIdentity(1, 1), evidence: 1 },
+    },
+    { type: "TicketWorkResumed", value: 1 },
+  ];
+  let ticket = bare;
+  let ledger = ledgerFor(bare);
+  const seen: { tasks: unknown; cycles: number; spawned: number }[] = [];
+  for (const event of events) {
+    ledger = ledgerStep(ticket, event, ledger);
+    ticket = ticketAfter(ticket, event);
+    seen.push({
+      tasks: liveTasks(ticket),
+      cycles: ticket.workCyclesStarted,
+      spawned: ledger.spawned,
+    });
+  }
+  assert.deepEqual(seen, [
+    { tasks: [workTaskIdentity(1, 1)], cycles: 1, spawned: 1 },
+    { tasks: [], cycles: 1, spawned: 1 },
+    { tasks: [workTaskIdentity(1, 2)], cycles: 2, spawned: 2 },
+  ]);
 });
 
-test("a work spawn clears the finalization generation the last cycle reached", () => {
-  assert.equal(
-    spawnWork({ ...bare, finalizationGeneration: 2 }).finalizationGeneration,
-    0,
-  );
+test("a work spawn leaves behind the finalization generation the last cycle reached", () => {
+  const finalizing: Ticket = {
+    ...working,
+    state: finalizationState(judgedInstance(1, 1, flat), 2),
+  };
+  assert.equal(attemptGeneration(finalizing), 2);
+  const reworked = ticketAfter(finalizing, {
+    type: "TicketFinalizationNeedsWork",
+    value: { ticket: 1, workCycle: 1, generation: 2, evidence: 1 },
+  });
+  assert.equal(reworked.workCyclesStarted, 2);
+  assert.equal(attemptGeneration(reworked), 0);
 });
 
-test("the live task is derived from the phase, so leaving Work stops owing it", () => {
-  const working: Ticket = { ...spawnWork(bare), phase: "Work" };
-  assert.deepEqual(liveTasks(working), [workTaskOf(1, 1)]);
-  for (const phase of ["Escalated", "Revoked", "Pending"] as const) {
-    assert.deepEqual(liveTasks({ ...working, phase }), [], phase);
+test("the live task is derived from the state, so leaving Work stops owing it", () => {
+  assert.deepEqual(liveTasks(working), [workTaskIdentity(1, 1)]);
+  const elsewhere: readonly TicketState[] = [
+    workEscalatedState(working),
+    "Revoked",
+    "Pending",
+  ];
+  for (const state of elsewhere) {
+    assert.deepEqual(
+      liveTasks({ ...working, state }),
+      [],
+      typeof state === "string" ? state : state.type,
+    );
   }
 });
 
 test("a desk task is open exactly while the ticket is parked", () => {
-  const phases: readonly Phase[] = [
+  const judged = judgedInstance(1, 1, flat);
+  const states: readonly TicketState[] = [
     "Pending",
-    "Work",
-    "Evaluation",
-    "Finalization",
+    workState(bare),
+    evaluationState(runningInstance(1, 1, flat, new Set())),
+    finalizationState(judged),
     "Done",
-    "Escalated",
+    workEscalatedState(bare),
     "Revoked",
   ];
-  for (const phase of phases) {
+  for (const state of states) {
+    const phase = typeof state === "string" ? state : state.type;
     assert.equal(
-      hasOpenHumanTask({ ...bare, phase }),
+      hasOpenHumanTask({ ...bare, state }),
       phase === "Escalated",
       phase,
     );
@@ -148,40 +202,43 @@ test("an identifier outside the exactly representable range is refused, not trun
   assert.throws(() => asTaskId(0), /below the first id/);
 });
 
-/** A ticket that judged one cycle per verdict listed, having started `cycles` of them. */
+/**
+ * The reworks of a ticket that closed one judgement per verdict listed, having
+ * started `cycles` cycles.
+ */
 function judgedOver(
   verdicts: readonly EvaluationVerdict[],
   cycles: number,
-): Ticket {
-  return {
-    ...bare,
-    workCyclesStarted: cycles,
-    evaluations: verdicts.map((verdict, at) =>
-      judgedInstance(1, at + 1, flat, () => verdict),
-    ),
-  };
+): number {
+  const ticket: Ticket = { ...bare, workCyclesStarted: cycles };
+  return evaluationFailureReworksStarted(
+    ticket,
+    ledgerFor(ticket, {
+      closedEvaluations: verdicts.map((verdict, at) =>
+        judgedInstance(1, at + 1, flat, () => verdict),
+      ),
+    }),
+  );
 }
 
 test("a rework is a work cycle a failed judgement bought", () => {
   assert.equal(
-    evaluationFailureReworksStarted(bare),
+    evaluationFailureReworksStarted(bare, ledgerFor(bare)),
     0,
     "nothing judged has been reworked",
   );
   assert.equal(
-    evaluationFailureReworksStarted(judgedOver(["EvaluatorFail"], 1)),
+    judgedOver(["EvaluatorFail"], 1),
     0,
     "a failure with no cycle above it bought nothing yet",
   );
   assert.equal(
-    evaluationFailureReworksStarted(judgedOver(["EvaluatorFail"], 2)),
+    judgedOver(["EvaluatorFail"], 2),
     1,
     "the cycle above the failure is the first rework",
   );
   assert.equal(
-    evaluationFailureReworksStarted(
-      judgedOver(["EvaluatorFail", "EvaluatorFail"], 3),
-    ),
+    judgedOver(["EvaluatorFail", "EvaluatorFail"], 3),
     2,
     "and the cycle above the second failure is the second",
   );
@@ -189,14 +246,12 @@ test("a rework is a work cycle a failed judgement bought", () => {
 
 test("the work a passed judgement is followed by is the finalizer's, and is uncapped", () => {
   assert.equal(
-    evaluationFailureReworksStarted(judgedOver(["EvaluatorPass"], 2)),
+    judgedOver(["EvaluatorPass"], 2),
     0,
     "a finalization failure re-enters Work without spending the cap",
   );
   assert.equal(
-    evaluationFailureReworksStarted(
-      judgedOver(["EvaluatorPass", "EvaluatorFail"], 3),
-    ),
+    judgedOver(["EvaluatorPass", "EvaluatorFail"], 3),
     1,
     "and the evaluation failure between them still counts once",
   );
@@ -212,8 +267,7 @@ function reportCurrent(ticket: Ticket, report: TaskTerminalReport): boolean {
 }
 
 test("a report is matched to the obligation the ticket owes the task", () => {
-  const working = spawnWork({ ...bare, phase: "Work" });
-  const work = workTaskOf(1, 1);
+  const work = workTaskIdentity(1, 1);
   const judge = evaluationTaskOf(1, 1, 1, 1, 1);
   assert.ok(reportCurrent(working, producedReport(work)));
   assert.ok(!reportCurrent(working, judgedReport(judge, "EvaluatorPass")));
@@ -237,12 +291,11 @@ test("a report is matched to the obligation the ticket owes the task", () => {
 test("a report naming an owed task at another obligation is refused", () => {
   const judging: Ticket = {
     ...bare,
-    phase: "Evaluation",
-    evaluations: [runningInstance(1, 1, flat, new Set())],
+    state: evaluationState(runningInstance(1, 1, flat, new Set())),
     workCyclesStarted: 1,
   };
   const pairs = [
-    [spawnWork({ ...bare, phase: "Work" }), workTaskOf(1, 1)],
+    [working, workTaskIdentity(1, 1)],
     [judging, evaluationTaskOf(1, 1, 1, 1, 1)],
   ] as const;
   for (const [ticket, task] of pairs) {
@@ -275,13 +328,15 @@ test("a report naming an owed task at another obligation is refused", () => {
 });
 
 test("a ticket owes exactly the tasks it holds live", () => {
-  const working = spawnWork({ ...bare, phase: "Work" });
-  assert.ok(owesTask(working, workTaskOf(1, 1)));
-  assert.ok(!owesTask(working, workTaskOf(1, 2)));
+  assert.ok(owesTask(working, workTaskIdentity(1, 1)));
+  assert.ok(!owesTask(working, workTaskIdentity(1, 2)));
   assert.ok(!owesTask(working, evaluationTaskOf(1, 1, 1, 1, 1)));
-  assert.ok(!owesTask(bare, workTaskOf(1, 1)));
+  assert.ok(!owesTask(bare, workTaskIdentity(1, 1)));
   assert.ok(
-    !owesTask({ ...working, phase: "Escalated" }, workTaskOf(1, 1)),
+    !owesTask(
+      { ...working, state: workEscalatedState(working) },
+      workTaskIdentity(1, 1),
+    ),
     "a parked ticket owes the fabric nothing",
   );
 });

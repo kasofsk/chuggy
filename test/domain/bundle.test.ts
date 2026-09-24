@@ -26,12 +26,16 @@ import {
 import { witnesses } from "../../src/domain/witnesses.ts";
 import { modelInstance } from "./configs.ts";
 import { declaredBundle } from "./declared.ts";
-import { fleetBut, healthyFleet, initialView } from "./fixtures.ts";
+import { fleetBut, healthyFleet, initialView, type World } from "./fixtures.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const config = modelInstance;
 const fleet = healthyFleet(config);
-const healthy = initialView(fleetBut(fleet, 0, {}));
+
+/** A view of one world, graph and ledgers as given. */
+const worldView = (state: World) => initialView(state.graph, state.ledgers);
+
+const healthy = worldView(fleetBut(fleet, 0, {}));
 
 const bundleNames = invariantBundle.map((member) => member.invariant);
 const sorted = (names: readonly string[]): readonly string[] =>
@@ -78,8 +82,12 @@ test("no anti-vacuity witness is in the roster", () => {
 test("the bundle's verdict is exactly an empty list of failures", () => {
   const views = [
     healthy,
-    initialView(fleetBut(fleet, 1, { spawned: 99 })),
-    { ...healthy, pre: fleetBut(fleet, 0, {}) },
+    worldView(fleetBut(fleet, 1, {}, { spawned: 99 })),
+    {
+      ...healthy,
+      pre: healthy.post,
+      preLedgers: healthy.postLedgers,
+    },
   ];
   for (const view of views) {
     assert.equal(
@@ -95,9 +103,7 @@ test("the bundle is green on a fleet in mid-flight, so no red below is a member 
 });
 
 test("a failure names the members that failed rather than collapsing to one answer", () => {
-  const broke = initialView(
-    fleetBut(fleet, 0, { evaluations: [], spawned: 1 }),
-  );
+  const broke = worldView(fleetBut(fleet, 0, {}, { closedEvaluations: [] }));
   assert.deepEqual(failedInvariants(config, broke), ["artifactWellFormed"]);
   assert.ok(!allInvariants(config, broke));
 });
