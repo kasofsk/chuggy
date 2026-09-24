@@ -131,6 +131,12 @@ async function drawTicket(
     readonly cursor?: string;
     readonly withDraft?: boolean;
     readonly authoring?: TicketAuthoring;
+    /** The draft's versions where a case is about them: the current one, and
+     * the one the ticket's live revision was released from. */
+    readonly versions?: {
+      readonly authoringVersion: number;
+      readonly releasedAuthoringVersion: number;
+    };
   },
   options: { readonly shell?: boolean } = {},
 ): Promise<Drawn> {
@@ -159,6 +165,7 @@ async function drawTicket(
               configurationRevision: "r1",
               authoring: served.authoring ?? ticket21Authoring,
               brief: { intent: "Give the console a footer", links: [] },
+              ...served.versions,
             });
       return answer(served.ticket);
     },
@@ -837,4 +844,49 @@ test("nothing the ticket page draws is a runtime style element", async () => {
   expect(document.querySelectorAll("style").length).toBe(0);
   fireEvent.click(screen.getByRole("button", { name: "show canonical" }));
   expect(document.querySelectorAll("style").length).toBe(0);
+});
+
+const pendingTicket = {
+  ticket: 21,
+  phase: "Pending",
+  sequence: 12,
+  ...ticketInstants,
+  revision: 2,
+};
+
+/** An update is the edit screen's to write, so the page offers the way there
+ * and only where the ticket still admits one. The router is mocked, so the
+ * link is found as the anchor it draws rather than by a role its href gives. */
+test("a Pending ticket offers the edit screen, and a parked one does not", async () => {
+  await drawTicket({ shapes: [], ticket: pendingTicket });
+  expect(screen.getByText("Edit", { selector: "a" })).toBeDefined();
+  cleanup();
+  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
+  expect(screen.queryByText("Edit", { selector: "a" })).toBeNull();
+});
+
+test("the provenance names the live revision and a draft revised past it", async () => {
+  const { container } = await drawTicket({
+    shapes: [],
+    ticket: pendingTicket,
+    versions: { authoringVersion: 3, releasedAuthoringVersion: 2 },
+  });
+  expect(screen.getByText("live").nextElementSibling?.textContent).toBe(
+    "revision 2, from draft version 2",
+  );
+  expect(
+    screen.getAllByText("draft").at(-1)?.nextElementSibling?.textContent,
+  ).toBe("version 3 holds unreleased changes");
+  expect(drawnStringsOver(container)).toEqual([]);
+});
+
+test("the provenance says a draft at its release holds nothing unreleased", async () => {
+  await drawTicket({
+    shapes: [],
+    ticket: pendingTicket,
+    versions: { authoringVersion: 2, releasedAuthoringVersion: 2 },
+  });
+  expect(
+    screen.getAllByText("draft").at(-1)?.nextElementSibling?.textContent,
+  ).toBe("nothing unreleased");
 });

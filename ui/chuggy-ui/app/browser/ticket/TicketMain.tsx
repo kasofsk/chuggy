@@ -25,6 +25,8 @@ import { TicketUsage } from "./TicketUsage.tsx";
 export function TicketMain(props: {
   readonly partition: PartitionIdentity;
   readonly draftState: PanelState<DraftResponse>;
+  /** The ticket's live revision, absent until the ticket is read. */
+  readonly revision: number | undefined;
   readonly ledger: ReactNode;
   readonly totals: RunTotals | undefined;
   readonly page: ExecutionsResponse | undefined;
@@ -46,6 +48,7 @@ export function TicketMain(props: {
         <TicketProvenance
           partition={props.partition}
           state={props.draftState}
+          revision={props.revision}
         />
       </section>
     </div>

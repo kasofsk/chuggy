@@ -4,7 +4,8 @@
  *
  * What is checked is where each motion stops: the walk for a ready revision,
  * the conflict that sends a reader back to the form, and the settlements that
- * are and are not a ticket to navigate to.
+ * are and are not a ticket to navigate to — for a creation, and for an edit,
+ * whose revision and update are two requests in that order.
  */
 
 import { expect, test } from "vitest";
@@ -16,6 +17,7 @@ import {
   createAndReleaseTicket,
   creationContextSentence,
   readCreationContext,
+  reviseAndUpdateTicket,
 } from "../app/core/ticketCreationRun.ts";
 import {
   creationDraft,
@@ -296,4 +298,160 @@ test("a follow that never settles ends in a reason, not in a navigation", async 
   );
   expect(created.created).toBe("Refused");
   expect(steps.at(-1)).toBe("Abandoned");
+});
+
+/** A Pending ticket at its second revision, and the revision its edit sends. */
+const pendingTicket = {
+  ticket: 12,
+  phase: "Pending" as const,
+  sequence: 42,
+  ...ticketInstants,
+  revision: 2,
+};
+
+const updateSubmission = {
+  ticket: pendingTicket,
+  body: {
+    expectedVersion: 3,
+    configurationRevision: "r3",
+    authoring: creationInitialization.defaults,
+    brief: { intent: "ship it again", links: [] },
+  },
+  operation: "op-3",
+};
+
+const revisedDraft = {
+  ...creationDraft,
+  state: "Released",
+  authoringVersion: 4,
+  releasedAuthoringVersion: 3,
+};
+
+/** The door answers the revision, the operation route takes the update, and
+ * the poll answers whatever the case says the actor decided. */
+function updateAnswers(
+  decided: unknown,
+): (method: string, path: string) => Answer {
+  return (method, path) => {
+    if (method === "PUT") return ok(revisedDraft);
+    if (method === "POST")
+      return { status: 202, body: { operation: "op-3", state: "Pending" } };
+    return path.includes("/operations/")
+      ? ok(decided)
+      : ok({
+          partition: creationPartition,
+          sequence: 43,
+          tickets: [{ ...pendingTicket, sequence: 43, revision: 3 }],
+        });
+  };
+}
+
+test("an edit revises the draft, then releases it against the revision read", async () => {
+  const sent: unknown[] = [];
+  const held = answering(
+    updateAnswers({
+      operation: "op-3",
+      acceptedAt: "2026-08-26T00:00:00Z",
+      state: "Succeeded",
+      decidedSequence: 43,
+    }),
+  );
+  const fetch = held.ports.fetch;
+  const updated = await reviseAndUpdateTicket(
+    {
+      ...held.ports,
+      fetch: (path, init) => {
+        if (init.body !== undefined) sent.push(JSON.parse(init.body));
+        return fetch(path, init);
+      },
+    },
+    creationPartition,
+    updateSubmission,
+    () => undefined,
+  );
+  expect(updated).toStrictEqual({ created: "Created", ticket: 12 });
+  expect(held.calls.slice(0, 2)).toStrictEqual([
+    `PUT ${partitionBase}/drafts/12`,
+    `POST ${partitionBase}/operations`,
+  ]);
+  expect(sent).toStrictEqual([
+    updateSubmission.body,
+    {
+      operation: "op-3",
+      mutation: {
+        mutation: "UpdateTicket",
+        ticket: 12,
+        expectedRevision: 2,
+        authoringVersion: 4,
+        configurationRevision: "r3",
+      },
+    },
+  ]);
+});
+
+test("a revision that moves the dependencies is refused at the door, and nothing is released", async () => {
+  const held = answering(() => ({
+    status: 409,
+    body: {
+      error: {
+        code: "DependenciesLocked",
+        message: "A released ticket's dependencies cannot change.",
+      },
+    },
+  }));
+  const updated = await reviseAndUpdateTicket(
+    held.ports,
+    creationPartition,
+    updateSubmission,
+    () => undefined,
+  );
+  expect(updated).toStrictEqual({
+    created: "Refused",
+    reason: "what this ticket depends on cannot change once it is released",
+    draft: undefined,
+  });
+  expect(held.calls).toStrictEqual([`PUT ${partitionBase}/drafts/12`]);
+});
+
+test("a draft revised under the form is the stale ending, not a refusal", async () => {
+  const held = answering(() => ({
+    status: 409,
+    body: { error: { code: "DraftChanged" }, currentVersion: 4 },
+  }));
+  const updated = await reviseAndUpdateTicket(
+    held.ports,
+    creationPartition,
+    updateSubmission,
+    () => undefined,
+  );
+  expect(updated.created).toBe("Stale");
+});
+
+test("an update the machine refuses says which refusal, holding the revised draft", async () => {
+  const held = answering(
+    updateAnswers({
+      operation: "op-3",
+      acceptedAt: "2026-08-26T00:00:00Z",
+      state: "Refused",
+      code: "TicketRevisionStale",
+      refusedHead: 43,
+      refusedLifecycleGeneration: 1,
+      refusal: {
+        type: "TicketRevisionStale",
+        value: { ticket: 12, expected: 2, current: 3 },
+      },
+    }),
+  );
+  const updated = await reviseAndUpdateTicket(
+    held.ports,
+    creationPartition,
+    updateSubmission,
+    () => undefined,
+  );
+  expect(updated).toStrictEqual({
+    created: "Refused",
+    reason:
+      "this was written against revision 2 of #12, which is at revision 3 now",
+    draft: revisedDraft,
+  });
 });
