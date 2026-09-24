@@ -703,6 +703,16 @@ test("depsAcyclic rejects a dependency that points at nothing or back at itself"
     !depsAcyclic(config, stateView(cyclic)),
     "the closure is transitive, so a cycle of any length is caught",
   );
+  const longCycle = graphOf([
+    ticketOn(config, { dependencies: depsOf(2) }),
+    ticketOn(config, { dependencies: depsOf(3) }),
+    ticketOn(config, { dependencies: depsOf(4) }),
+    ticketOn(config, { dependencies: depsOf(1) }),
+  ]);
+  assert.ok(
+    !depsAcyclic(config, stateView(longCycle)),
+    "a cycle through four tickets is caught as surely as one through two",
+  );
   assert.ok(
     depsAcyclic(
       config,

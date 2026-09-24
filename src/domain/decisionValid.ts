@@ -140,23 +140,20 @@ export function ticketInvariant(ticket: Ticket): boolean {
 }
 
 /**
- * Everything this ticket transitively waits on, as a bounded fixpoint: the
- * fleet's own size is the bound, and a pass that changes anything adds an id.
+ * Everything this ticket transitively waits on: the package's bounded
+ * fixpoint, reached by visiting each dependency once, since the writer asks
+ * it of the whole project on every decision.
  */
 export function dependencyClosure(
   graph: TicketGraph,
   id: number,
 ): ReadonlySet<number> {
-  let found = new Set<number>(
-    ticketAt(graph, asTicketId(id)).definition.dependencies,
-  );
-  for (let pass = 0; pass < graph.tickets.size; pass++) {
-    const next = new Set(found);
-    for (const reached of found)
-      for (const further of ticketAt(graph, asTicketId(reached)).definition
-        .dependencies)
-        next.add(further);
-    found = next;
+  const found = new Set<number>();
+  const pending = [...ticketAt(graph, asTicketId(id)).definition.dependencies];
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    if (found.has(next)) continue;
+    found.add(next);
+    pending.push(...ticketAt(graph, asTicketId(next)).definition.dependencies);
   }
   return found;
 }
