@@ -31,6 +31,33 @@ module chuggy_refinement_fixture {
   pure val aDispatchSource: int = 9
   pure val anAcceptedSource: int = 11
   pure val aFinalizationEvidence: int = 15
+
+  /// WHAT THE SUITES READ OFF A TICKET'S STATE, by name: the state's own
+  /// constructor, the wall a parked ticket names ("" unparked), and the
+  /// instance it holds open (read only where it holds one).
+  pure def stateName(jb: Ticket): str = match jb.state {
+    | Pending => "Pending"
+    | Work(_) => "Work"
+    | Evaluation(_) => "Evaluation"
+    | Finalization(_) => "Finalization"
+    | Escalated(_) => "Escalated"
+    | Done => "Done"
+    | Revoked => "Revoked"
+  }
+  pure def wallName(jb: Ticket): str = match jb.state {
+    | Escalated(escalation) => match escalation {
+        | WorkFailureEscalated(_) => "WorkFailureEscalated"
+        | WorkExecutionUnavailableEscalated(_) =>
+          "WorkExecutionUnavailableEscalated"
+        | EvaluationFailureEscalated(_) => "EvaluationFailureEscalated"
+        | EvaluationBlockedEscalated(_) => "EvaluationBlockedEscalated"
+        | FinalizationUnavailableEscalated(_) =>
+          "FinalizationUnavailableEscalated"
+      }
+    | _ => ""
+  }
+  pure def openInstance(jb: Ticket): EvaluationInstance =
+    heldInstances(jb.state)[0]
 }
 
 module chuggy_refinement_unit_test {
@@ -39,23 +66,28 @@ module chuggy_refinement_unit_test {
   import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
   import chuggy_refinement_fixture.*
+  /// The refinement's own instance, for the ledger fold it does not
+  /// re-expose.
+  import chuggy_domain(
+    N_TICKETS = 2, N_TASKS = 1, MAX_STAGES = 1
+  ) as D from "../domain"
 
   /// Decide at a graph, under the rework edge a passing report never asks.
   /// Every command decided here is one the graph accepts; a refused one
   /// would come back as a placeholder no journal check accepts.
-  pure def decided(c: TicketGraph, command: TicketCommand): SuccessfulTicketDecision =
+  pure def acceptedAt(c: TicketGraph, command: TicketCommand): SuccessfulTicketDecision =
     match decideAt(c, command, ReworkEvaluationFailure) {
       | TicketDecided(d) => d
       | TicketRefused(_) => { event: TicketRevoked(0), obligations: [] }
     }
 
   pure val release10: TicketCommand = CreateTicket(released(2))
-  pure val d1 = decided(genesis, release10)
+  pure val d1 = acceptedAt(genesis, release10)
   pure val g1 = evolveGraph(genesis, d1.event)
   pure val e1: Entry = { seq: 1, event: d1.event }
   pure val dispatch10: TicketCommand =
     DispatchTicket({ ticket: 2, source: aDispatchSource })
-  pure val d2 = decided(g1, dispatch10)
+  pure val d2 = acceptedAt(g1, dispatch10)
   pure val g2 = evolveGraph(g1, d2.event)
   pure val e2: Entry = { seq: 2, event: d2.event }
   pure val goodJ: List[Entry] = [e1, e2]
@@ -81,8 +113,8 @@ module chuggy_refinement_unit_test {
     journalLegalOn(goodJ),
     replayGraph(goodJ) == g2,
     replayGraph(goodJ).tickets.keys() == Set(2),
-    replayGraph(goodJ).tickets.get(2).phase == Work,
-    liveTasks(replayGraph(goodJ).tickets.get(2)) == Set(workTaskOf(2, 1))
+    stateName(replayGraph(goodJ).tickets.get(2)) == "Work",
+    liveTasks(replayGraph(goodJ).tickets.get(2)) == Set(workTaskIdentity(2, 1))
   })
 
   run replayAppendAgreesTest = assert(and {
@@ -97,7 +129,7 @@ module chuggy_refinement_unit_test {
   /// or one a later row has made stale. Nothing here restates evolve's
   /// guards: "moved" is the whole check, and eventsNeverIdentity is what
   /// keeps it from refusing a decided row.
-  pure val accepted2 = decided(g2, workDone(g2, 2, workTaskOf(2, 1)))
+  pure val accepted2 = acceptedAt(g2, workDone(g2, 2, workTaskIdentity(2, 1)))
   pure val e3: Entry = { seq: 3, event: accepted2.event }
   run journalRefusesWhatCouldNotHaveBeenDecidedTest = assert(and {
     not(journalLegalOn([{ ...e1, seq: 2 }])),
@@ -111,7 +143,7 @@ module chuggy_refinement_unit_test {
     journalLegalOn([e1, e2, e3]),
     not(journalLegalOn([e1, e2, e3, { ...e3, seq: 4 }])),
     not(journalLegalOn([e1, e2, e3, { seq: 4,
-      event: TicketWorkProcessFailed({ ticket: 2, task: workTaskOf(2, 1),
+      event: TicketWorkProcessFailed({ ticket: 2, task: workTaskIdentity(2, 1),
         evidence: 1 }) }]))
   })
 
@@ -119,8 +151,8 @@ module chuggy_refinement_unit_test {
   /// command it is.
   run commandsForAbsentTicketsAreRefusedTest = assert(and {
     answerAt(genesis, dispatch10) == "TicketNotFound",
-    answerAt(genesis, workDone(g2, 2, workTaskOf(2, 1))) == "TicketNotFound",
-    answerAt(genesis, wallDone(2, workTaskOf(2, 1))) == "TicketNotFound",
+    answerAt(genesis, workDone(g2, 2, workTaskIdentity(2, 1))) == "TicketNotFound",
+    answerAt(genesis, wallDone(2, workTaskIdentity(2, 1))) == "TicketNotFound",
     answerAt(genesis, ReportFinalizationResult({ ticket: 2, workCycle: 1,
       generation: 1, result: FinalizationSucceeded(aFinalizationEvidence) }))
       == "TicketNotFound",
@@ -131,35 +163,35 @@ module chuggy_refinement_unit_test {
   /// A REPORT IS ACCEPTED ONLY FOR A TASK THE TICKET OWES, AT THE OBLIGATION
   /// IT OWES IT, and each way to miss is one no fabric playing by the rules
   /// produces. A reference at zero is not a report the actor takes at all
-  /// (commandValid: the wire integers are positive, so zero is a hole where
+  /// (commandTaken: the wire integers are positive, so zero is a hole where
   /// a result should be), and neither is a failure with no evidence. A
   /// verdict carried by a WORK task, which judges nothing, a failure naming
   /// a task the ticket does not owe, and — the exact-obligation rule — a
   /// result whose obligation is not the one this ticket owes for the task,
   /// which is a result for a spawn it never made, are refused TaskNotCurrent.
-  pure val owed2 = producedResult(g2.tickets.get(2), workTaskOf(2, 1))
+  pure val owed2 = producedResult(g2.tickets.get(2), workTaskIdentity(2, 1))
   run reportAdmissibilityRequiredTest = assert(and {
     answerAt(g2, ReportTaskTerminal(WorkResultReport({ ticket: 2,
       result: { ...owed2, resultRef: 0 },
       acceptedSourceRef: anAcceptedSource }))) == "",
     answerAt(g2, ReportTaskTerminal(TerminalFailureReport({ ticket: 2,
-      failure: { task: workTaskOf(2, 1), evidence: 0 },
+      failure: { task: workTaskIdentity(2, 1), evidence: 0 },
       kind: ProcessFailure }))) == "",
     answerAt(g2, ReportTaskTerminal(EvaluationResultReport({ ticket: 2,
       result: owed2, verdict: EvaluatorPass }))) == "TaskNotCurrent",
     answerAt(g2, ReportTaskTerminal(TerminalFailureReport({ ticket: 2,
-      failure: { task: workTaskOf(2, 2), evidence: 1 },
+      failure: { task: workTaskIdentity(2, 2), evidence: 1 },
       kind: ProcessFailure }))) == "TaskNotCurrent",
     answerAt(g2, ReportTaskTerminal(WorkResultReport({ ticket: 2,
       result: { ...owed2, obligation: { ...owed2.obligation,
         contextRef: owed2.obligation.contextRef + 1 } },
       acceptedSourceRef: anAcceptedSource }))) == "TaskNotCurrent",
-    answerAt(g2, workDone(g2, 2, workTaskOf(2, 1))) == "TicketWorkResultAccepted",
-    answerAt(g2, wallDone(2, workTaskOf(2, 1))) == "TicketWorkExecutionUnavailable"
+    answerAt(g2, workDone(g2, 2, workTaskIdentity(2, 1))) == "TicketWorkResultAccepted",
+    answerAt(g2, wallDone(2, workTaskIdentity(2, 1))) == "TicketWorkExecutionUnavailable"
   })
 
   /// THE RELEASE'S SHAPE RULE, CONJUNCT BY CONJUNCT. The released record is
-  /// authored input and commandValid is the only place its shape is
+  /// authored input and commandTaken is the only place its shape is
   /// weighed, so every conjunct of releasedTicketValid a payload can refute
   /// is refuted here: one a case does not reach is one the actor would go on
   /// taking if it were deleted. A dependency that does not exist is not a
@@ -244,21 +276,122 @@ module chuggy_refinement_unit_test {
   /// both to the same state, and the journal would then not be the
   /// authority on what the cycle produced.
   run taskCompletionPinsItsResultReferenceTest =
-    val realCommand = workDone(g2, 2, workTaskOf(2, 1))
+    val realCommand = workDone(g2, 2, workTaskIdentity(2, 1))
     val otherRef = ReportTaskTerminal(WorkResultReport({ ticket: 2,
       result: { ...owed2, resultRef: 99 },
       acceptedSourceRef: anAcceptedSource }))
-    val real = evolveGraph(g2, decided(g2, realCommand).event)
-    val other = evolveGraph(g2, decided(g2, otherRef).event)
+    val realEvent = acceptedAt(g2, realCommand).event
+    val otherEvent = acceptedAt(g2, otherRef).event
+    val real = evolveGraph(g2, realEvent)
+    val other = evolveGraph(g2, otherEvent)
+    val realLedger = D::evolveLedgers(g2, replayLedgers(goodJ), realEvent).get(2)
+    val otherLedger = D::evolveLedgers(g2, replayLedgers(goodJ), otherEvent).get(2)
     assert(and {
       answerAt(g2, realCommand) == "TicketWorkResultAccepted",
       answerAt(g2, otherRef) == "TicketWorkResultAccepted",
       realCommand != otherRef,
       real != other,
-      artifactOf(real.tickets.get(2)) == ProducedArtifact(owed2.resultRef),
-      artifactOf(other.tickets.get(2)) == ProducedArtifact(99),
-      real.tickets.get(2).phase == Evaluation
+      artifactOf(real.tickets.get(2), realLedger) ==
+        ProducedArtifact(owed2.resultRef),
+      artifactOf(other.tickets.get(2), otherLedger) == ProducedArtifact(99),
+      stateName(real.tickets.get(2)) == "Evaluation"
     })
+
+  /// A REWORKED TICKET, journaled: accepted work whose one evaluator fails
+  /// under the rework edge, so the ticket is in Work on its second cycle and
+  /// the first cycle's task is settled.
+  pure val g3 = evolveGraph(g2, accepted2.event)
+  pure val reworked3 = acceptedAt(g3, ReportTaskTerminal(EvaluationResultReport({
+    ticket: 2,
+    result: producedResult(g3.tickets.get(2), evaluatorTaskIdentity(2, 1, 1, 1, 1)),
+    verdict: EvaluatorFail })))
+  pure val e4: Entry = { seq: 4, event: reworked3.event }
+  pure val reworkJ: List[Entry] = [e1, e2, e3, e4]
+  pure val g4 = replayGraph(reworkJ)
+  pure def processFailedRow(cycle: int): Entry = { seq: 5,
+    event: TicketWorkProcessFailed({ ticket: 2,
+      task: workTaskIdentity(2, cycle), evidence: 1 }) }
+  pure def unavailableRow(cycle: int): Entry = { seq: 5,
+    event: TicketWorkExecutionUnavailable({ ticket: 2,
+      task: workTaskIdentity(2, cycle), evidence: 1 }) }
+
+  run reworkJournalReplaysToSecondCycleTest = assert(and {
+    eventNameOf(reworked3.event) == "TicketEvaluationReworkStarted",
+    journalLegalOn(reworkJ),
+    stateName(g4.tickets.get(2)) == "Work",
+    g4.tickets.get(2).workCyclesStarted == 2
+  })
+
+  /// A FORGED STALE WORK FAILURE IS REFUSED. evolve parks a ticket in Work
+  /// on any work failure without asking which task failed, so a row naming
+  /// the settled cycle's task moves the state like the current one's would;
+  /// only journalLegalOn's current-task check tells them apart.
+  run forgedStaleProcessFailureRowTest = assert(and {
+    evolveGraph(g4, processFailedRow(1).event) != g4,
+    not(journalLegalOn(reworkJ.append(processFailedRow(1)))),
+    journalLegalOn(reworkJ.append(processFailedRow(2)))
+  })
+
+  run forgedStaleExecutionUnavailableRowTest = assert(and {
+    evolveGraph(g4, unavailableRow(1).event) != g4,
+    not(journalLegalOn(reworkJ.append(unavailableRow(1)))),
+    journalLegalOn(reworkJ.append(unavailableRow(2)))
+  })
+
+  /// RECOVERY REBUILDS THE LEDGERS: replaying the journal is the ledger fold
+  /// taken one row at a time beside the graph, and the rebuilt ledger holds
+  /// the instance the rework closed.
+  run replayRebuildsLedgersTest =
+    val l1 = D::evolveLedgers(genesis, Map(), e1.event)
+    val l2 = D::evolveLedgers(g1, l1, e2.event)
+    val l3 = D::evolveLedgers(g2, l2, e3.event)
+    val l4 = D::evolveLedgers(g3, l3, e4.event)
+    assert(and {
+      replayLedgers([]) == Map(),
+      replayLedgers([e1]) == l1,
+      replayLedgers(goodJ) == l2,
+      replayLedgers([e1, e2, e3]) == l3,
+      replayLedgers(reworkJ) == l4,
+      l1.get(2) == emptyLedger,
+      l3.get(2).closedEvaluations == [],
+      l4.get(2).closedEvaluations.length() == 1,
+      l4.get(2).closedEvaluations[0].workCycle == 1,
+      match l4.get(2).closedEvaluations[0].state {
+        | EvaluationFailed(_) => true
+        | _ => false
+      },
+      l4.get(2).spawned == g4.tickets.get(2).workCyclesStarted +
+        evaluationSpawnTotal(ledgerInstances(g4.tickets.get(2), l4.get(2))),
+      l4.get(2).completions == 0
+    })
+
+  /// THE LEDGER'S COMPLETIONS GHOST IS WHAT journalCompletionsMatchLedger
+  /// HOLDS THE JOURNAL TO: before the finalizer's success both sides are
+  /// zero, and after it the journal's one completion is the ledger's.
+  pure val finalizationSucceeded2: TicketCommand =
+    ReportFinalizationResult({ ticket: 2, workCycle: 1, generation: 1,
+      result: FinalizationSucceeded(aFinalizationEvidence) })
+  run journalCompletionsMatchLedgerReadsTheLedgerTest =
+    rinit
+      .then(journalStep(release10, ReworkEvaluationFailure))
+      .then(journalStep(dispatch10, ReworkEvaluationFailure))
+      .then(journalStep(workDone(memGraph, 2, workTaskIdentity(2, 1)),
+        ReworkEvaluationFailure))
+      .then(journalStep(ReportTaskTerminal(EvaluationResultReport({ ticket: 2,
+        result: producedResult(memGraph.tickets.get(2),
+          evaluatorTaskIdentity(2, 1, 1, 1, 1)),
+        verdict: EvaluatorPass })), ReworkEvaluationFailure))
+      .expect(and {
+        memLedgers.get(2).completions == 0, journalCompletions(2) == 0,
+        journalCompletionsMatchLedger
+      })
+      .then(journalStep(finalizationSucceeded2, ReworkEvaluationFailure))
+      .expect(and {
+        memGraph.tickets.get(2).state == Done,
+        memLedgers.get(2).completions == 1, journalCompletions(2) == 1,
+        journalCompletionsMatchLedger,
+        replayLedgers(journal) == memLedgers
+      })
 }
 
 module chuggy_refinement_witness_test {
@@ -316,24 +449,22 @@ module chuggy_refinement_witness_test {
     rinit
       .then(stepEmit(release(2), "TicketCreated"))
       .then(stepEmit(dispatch2, "TicketDispatched"))
-      .then(journalStep(walled(2, workTaskOf(2, 1)), ReworkEvaluationFailure))
+      .then(journalStep(walled(2, workTaskIdentity(2, 1)), ReworkEvaluationFailure))
       .expect(and {
-        memGraph.tickets.get(2).phase == Escalated,
-        memGraph.tickets.get(2).escalation == WorkExecutionUnavailableEscalated,
+        wallName(memGraph.tickets.get(2)) == "WorkExecutionUnavailableEscalated",
         liveTasks(memGraph.tickets.get(2)) == Set(),
         allDomainInvariants, refinementInvariants
       })
       .then(crashRecoverTo(2))
       .expect(and {
-        memGraph.tickets.get(2).phase == Escalated,
+        isEscalated(memGraph.tickets.get(2).state),
         worldSpawns(2) == 1,
         allDomainInvariants, refinementInvariants
       })
       .then(emitNext)
       .then(stepEmit(ResumeTicket(2), "TicketWorkResumed"))
       .expect(and {
-        memGraph.tickets.get(2).phase == Work,
-        memGraph.tickets.get(2).escalation == NoEscalation,
+        stateName(memGraph.tickets.get(2)) == "Work",
         journalSpawns(2) == 2,
         worldSpawns(2) == 2,
         allDomainInvariants, refinementInvariants
@@ -348,30 +479,30 @@ module chuggy_refinement_witness_test {
     rinit
       .then(stepEmit(release(2), "TicketCreated"))
       .then(stepEmit(dispatch2, "TicketDispatched"))
-      .then(stepEmit(workDone(2, workTaskOf(2, 1)), "TicketWorkResultAccepted"))
+      .then(stepEmit(workDone(2, workTaskIdentity(2, 1)), "TicketWorkResultAccepted"))
       .then(journalStep(walled(2, evalTask(2, 1, 1)), ReworkEvaluationFailure))
       .expect(and {
-        memGraph.tickets.get(2).escalation == EvaluationBlockedEscalated,
-        instanceBlocked(currentInstance(memGraph.tickets.get(2))),
+        wallName(memGraph.tickets.get(2)) == "EvaluationBlockedEscalated",
+        instanceBlocked(openInstance(memGraph.tickets.get(2))),
         allDomainInvariants, refinementInvariants
       })
       .then(crashRecoverTo(0))
       .expect(and {
-        memGraph.tickets.get(2).escalation == EvaluationBlockedEscalated,
-        memGraph.tickets.get(2).evaluations.length() == 1,
-        instanceBlocked(currentInstance(memGraph.tickets.get(2))),
+        wallName(memGraph.tickets.get(2)) == "EvaluationBlockedEscalated",
+        ledgerInstances(memGraph.tickets.get(2), memLedgers.get(2)).length() == 1,
+        instanceBlocked(openInstance(memGraph.tickets.get(2))),
         allDomainInvariants, refinementInvariants
       })
       .then(4.reps(_ => emitNext))
       .then(stepEmit(ResumeTicket(2), "TicketEvaluationResumed"))
       .expect(and {
-        memGraph.tickets.get(2).phase == Evaluation,
+        stateName(memGraph.tickets.get(2)) == "Evaluation",
         liveTasks(memGraph.tickets.get(2)) == Set(evalTask(2, 1, 2)),
         allDomainInvariants, refinementInvariants
       })
       .then(stepEmit(judged(2, evalTask(2, 1, 2), EvaluatorPass), "TicketEvaluationPassed"))
       .expect(and {
-        memGraph.tickets.get(2).phase == Finalization,
+        stateName(memGraph.tickets.get(2)) == "Finalization",
         allDomainInvariants, refinementInvariants
       })
 
@@ -382,11 +513,11 @@ module chuggy_refinement_witness_test {
     rinit
       .then(stepEmit(release(2), "TicketCreated"))
       .then(stepEmit(dispatch2, "TicketDispatched"))
-      .then(stepEmit(workDone(2, workTaskOf(2, 1)), "TicketWorkResultAccepted"))
+      .then(stepEmit(workDone(2, workTaskIdentity(2, 1)), "TicketWorkResultAccepted"))
       .then(stepEmit(judged(2, evalTask(2, 1, 1), EvaluatorPass), "TicketEvaluationPassed"))
       .then(journalStep(succeeded, ReworkEvaluationFailure))
       .expect(and {
-        memGraph.tickets.get(2).phase == Done,
+        memGraph.tickets.get(2).state == Done,
         journalCompletions(2) == 1,
         worldCompletions(2) == 0,
         answerAt(memGraph, succeeded) == "FinalizationNotCurrent",
@@ -394,8 +525,8 @@ module chuggy_refinement_witness_test {
       })
       .then(crashRecoverTo(0))
       .expect(and {
-        memGraph.tickets.get(2).phase == Done,
-        memGraph.tickets.get(2).completions == 1,
+        memGraph.tickets.get(2).state == Done,
+        memLedgers.get(2).completions == 1,
         worldCompletions(2) == 0,
         allDomainInvariants, refinementInvariants
       })
@@ -410,15 +541,15 @@ module chuggy_refinement_witness_test {
     rinit
       .then(stepEmit(release(2), "TicketCreated"))
       .then(stepEmit(dispatch2, "TicketDispatched"))
-      .then(stepEmit(workDone(2, workTaskOf(2, 1)), "TicketWorkResultAccepted"))
+      .then(stepEmit(workDone(2, workTaskIdentity(2, 1)), "TicketWorkResultAccepted"))
       .then(stepEmit(judged(2, evalTask(2, 1, 1), EvaluatorPass), "TicketEvaluationPassed"))
       .then(stepEmit(finalizationOf(1,
         FinalizationNeedsWork(aFinalizationEvidence)),
         "TicketFinalizationNeedsWork"))
       .expect(and {
-        memGraph.tickets.get(2).phase == Work,
-        liveTasks(memGraph.tickets.get(2)) == Set(workTaskOf(2, 2)),
-        memGraph.tickets.get(2).completions == 0,
+        stateName(memGraph.tickets.get(2)) == "Work",
+        liveTasks(memGraph.tickets.get(2)) == Set(workTaskIdentity(2, 2)),
+        memLedgers.get(2).completions == 0,
         allDomainInvariants, refinementInvariants
       })
 
@@ -445,7 +576,7 @@ module chuggy_refinement_witness_test {
       })
       .then(crashRecoverTo(0))
       .expect(and {
-        memGraph.tickets.get(2).phase == Pending,
+        stateName(memGraph.tickets.get(2)) == "Pending",
         allDomainInvariants, refinementInvariants
       })
 }
@@ -491,7 +622,7 @@ module chuggy_refinement_hazard_test {
       .then(step(release10)).then(emitNext)
       .then(crash(dispatch2))
       .expect(and {
-        memGraph.tickets.get(2).phase == Pending,
+        stateName(memGraph.tickets.get(2)) == "Pending",
         worldSpawns(2) == 1, journalSpawns(2) == 0,
         not(journalCoversWorld), not(noDoubleSpentWork),
         journalLegal, recoveryComplete, allDomainInvariants
@@ -510,18 +641,18 @@ module chuggy_refinement_hazard_test {
     rinit
       .then(step(release10)).then(emitNext)
       .then(step(dispatch2)).then(emitNext)
-      .then(step(workDone(2, workTaskOf(2, 1)))).then(emitNext)
+      .then(step(workDone(2, workTaskIdentity(2, 1)))).then(emitNext)
             .then(step(judged(2, evalTask(2, 1), EvaluatorPass))).then(emitNext)
       .then(crash(succeeded))
       .expect(and {
-        memGraph.tickets.get(2).phase == Finalization,
+        stateName(memGraph.tickets.get(2)) == "Finalization",
         worldCompletions(2) == 1, journalCompletions(2) == 0,
         journalLegal, recoveryComplete, allDomainInvariants
       })
       .then(step(succeeded))
       .then(emitNext)
       .expect(and {
-        memGraph.tickets.get(2).phase == Done,
+        memGraph.tickets.get(2).state == Done,
         worldCompletions(2) == 2, journalCompletions(2) == 1,
         not(noDuplicateCycle), refinementCore, allDomainInvariants
       })
@@ -534,10 +665,10 @@ module chuggy_refinement_hazard_test {
     rinit
       .then(step(release10)).then(emitNext)
       .then(step(dispatch2)).then(emitNext)
-      .then(step(workDone(2, workTaskOf(2, 1)))).then(emitNext)
+      .then(step(workDone(2, workTaskIdentity(2, 1)))).then(emitNext)
             .then(crash(judged(2, evalTask(2, 1), EvaluatorFail)))
       .expect(and {
-        memGraph.tickets.get(2).phase == Evaluation,
+        stateName(memGraph.tickets.get(2)) == "Evaluation",
         worldSpawns(2) == 2, journalSpawns(2) == 1,
         not(noDoubleSpentWork), journalLegal, recoveryComplete,
         allDomainInvariants

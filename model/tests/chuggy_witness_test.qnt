@@ -2,10 +2,45 @@
 /// Every driver names the machine's nondeterministic choice and references
 /// the same exported guard/draw set used by the corresponding action.
 
+/// WHAT THE WITNESSES READ OFF A TICKET'S STATE, by name: the state's own
+/// constructor, the wall a parked ticket names, and the instance it holds
+/// open.
+module chuggy_witness_fixture {
+  import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
+  import chuggy_ticket.* from "../ticket"
+
+  pure def stateName(jb: Ticket): str = match jb.state {
+    | Pending => "Pending"
+    | Work(_) => "Work"
+    | Evaluation(_) => "Evaluation"
+    | Finalization(_) => "Finalization"
+    | Escalated(_) => "Escalated"
+    | Done => "Done"
+    | Revoked => "Revoked"
+  }
+  /// "" for a ticket that is not parked.
+  pure def wallName(jb: Ticket): str = match jb.state {
+    | Escalated(escalation) => match escalation {
+        | WorkFailureEscalated(_) => "WorkFailureEscalated"
+        | WorkExecutionUnavailableEscalated(_) =>
+          "WorkExecutionUnavailableEscalated"
+        | EvaluationFailureEscalated(_) => "EvaluationFailureEscalated"
+        | EvaluationBlockedEscalated(_) => "EvaluationBlockedEscalated"
+        | FinalizationUnavailableEscalated(_) =>
+          "FinalizationUnavailableEscalated"
+      }
+    | _ => ""
+  }
+  /// Read only where the state holds one (ticket.qnt heldInstances).
+  pure def openInstance(jb: Ticket): EvaluationInstance =
+    heldInstances(jb.state)[0]
+}
+
 module chuggy_witness_resume_test {
   import task_contract.* from "../task-contract/task"
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "../ticket"
+  import chuggy_witness_fixture.*
   import chuggy_domain(N_TICKETS=2, N_TASKS=2, MAX_STAGES=2).* from "../domain"
   /// ONE stage listing evaluator 2 ALONE. A roster is a set of authored
   /// keys rather than a width, so the spawn, the retirement and the
@@ -27,7 +62,7 @@ module chuggy_witness_resume_test {
       failure: { task: task, evidence: taskRefOf(task) },
       kind: ExecutionUnavailableFailure })
   pure def statusOf(jb: Ticket, evaluator: int): EvaluatorStatus =
-    match currentInstance(jb).state {
+    match openInstance(jb).state {
       | Running(progress) => progress.stage.evaluators.get(evaluator)
       | EvaluationBlocked(progress) => progress.stage.evaluators.get(evaluator)
       | EvaluationPassed(stages) =>
@@ -62,20 +97,18 @@ module chuggy_witness_resume_test {
   /// cycle is one task, so nothing is left to wait for. Its resume buys a
   /// new cycle.
   run executionBlockedResumeWitness = init
-    .then(release(4, Set(), p)).expect(and { tickets.get(4).phase == Pending, allInvariants })
-    .then(doDispatch(4)).expect(and { tickets.get(4).phase == Work, allInvariants })
-    .then(done(4, workTaskOf(4, 1), walled(workTaskOf(4, 1)))).expect(and {
-      tickets.get(4).phase == Escalated,
-      tickets.get(4).escalation == WorkExecutionUnavailableEscalated,
+    .then(release(4, Set(), p)).expect(and { isPending(tickets.get(4).state), allInvariants })
+    .then(doDispatch(4)).expect(and { stateName(tickets.get(4)) == "Work", allInvariants })
+    .then(done(4, workTaskIdentity(4, 1), walled(workTaskIdentity(4, 1)))).expect(and {
+      wallName(tickets.get(4)) == "WorkExecutionUnavailableEscalated",
       lastEvent == "TicketWorkExecutionUnavailable",
-      resumeOf(tickets.get(4).escalation) == ResumeWork,
+      resumeOf(tickets.get(4).state) == ResumeWork,
       liveTasks(tickets.get(4)) == Set(),
       // no judgement was reached, so there is no instance to keep
-      tickets.get(4).evaluations == [], allInvariants })
-    .then(resume(4)).expect(and { tickets.get(4).phase == Work,
-      tickets.get(4).escalation == NoEscalation,
+      ledgerInstances(tickets.get(4), ledgers.get(4)) == [], allInvariants })
+    .then(resume(4)).expect(and { stateName(tickets.get(4)) == "Work",
       lastEvent == "TicketWorkResumed",
-      liveTasks(tickets.get(4)) == Set(workTaskOf(4, 2)),
+      liveTasks(tickets.get(4)) == Set(workTaskIdentity(4, 2)),
       allInvariants })
 
   /// An interrupted EVALUATION parks at its OWN wall and resumes into
@@ -85,24 +118,25 @@ module chuggy_witness_resume_test {
   run evaluationResumeWitness = init
     .then(release(4, Set(), p)).expect(allInvariants)
     .then(doDispatch(4)).expect(allInvariants)
-    .then(doneProduced(4, workTaskOf(4, 1))).expect(and {
-      tickets.get(4).phase == Evaluation,
+    .then(doneProduced(4, workTaskIdentity(4, 1))).expect(and {
+      stateName(tickets.get(4)) == "Evaluation",
       lastEvent == "TicketWorkResultAccepted",
       liveTasks(tickets.get(4)) == Set(evaluatorTaskIdentity(4, 1, 1, 1, 2)),
       allInvariants })
     .then(done(4, evaluatorTaskIdentity(4, 1, 1, 1, 2),
         walled(evaluatorTaskIdentity(4, 1, 1, 1, 2)))).expect(and {
-      tickets.get(4).escalation == EvaluationBlockedEscalated,
+      wallName(tickets.get(4)) == "EvaluationBlockedEscalated",
       lastEvent == "TicketEvaluationBlocked",
-      resumeOf(tickets.get(4).escalation) == ResumeEvaluation,
-      // the instance is the provenance the resume re-asks from
-      tickets.get(4).evaluations.length() == 1,
-      currentInstance(tickets.get(4)).workCycle == 1,
-      instanceBlocked(currentInstance(tickets.get(4))),
+      resumeOf(tickets.get(4).state) == ResumeEvaluation,
+      // the wall holds the instance the resume re-asks from, still open
+      ledgers.get(4).closedEvaluations == [],
+      ledgerInstances(tickets.get(4), ledgers.get(4)).length() == 1,
+      openInstance(tickets.get(4)).workCycle == 1,
+      instanceBlocked(openInstance(tickets.get(4))),
       liveTasks(tickets.get(4)) == Set(),
       allInvariants })
     .then(resume(4)).expect(and {
-      tickets.get(4).phase == Evaluation,
+      stateName(tickets.get(4)) == "Evaluation",
       lastEvent == "TicketEvaluationResumed",
       liveTasks(tickets.get(4)) == Set(evaluatorTaskIdentity(4, 1, 1, 2, 2)),
       allInvariants })
@@ -114,20 +148,20 @@ module chuggy_witness_resume_test {
   run partialEvaluationResumeWitness = init
     .then(release(4, Set(), pWide)).expect(allInvariants)
     .then(doDispatch(4))
-    .then(doneProduced(4, workTaskOf(4, 1))).expect(and {
+    .then(doneProduced(4, workTaskIdentity(4, 1))).expect(and {
       liveTasks(tickets.get(4)) ==
         Set(evaluatorTaskIdentity(4, 1, 1, 1, 1), evaluatorTaskIdentity(4, 1, 1, 1, 2)),
       allInvariants })
     .then(done(4, evaluatorTaskIdentity(4, 1, 1, 1, 1),
         judged(4, evaluatorTaskIdentity(4, 1, 1, 1, 1), EvaluatorPass))).expect(and {
       // one answer does not conclude the stage
-      tickets.get(4).phase == Evaluation,
+      stateName(tickets.get(4)) == "Evaluation",
       lastEvent == "TicketEvaluationProgressed", lastObligations == [],
       liveTasks(tickets.get(4)) == Set(evaluatorTaskIdentity(4, 1, 1, 1, 2)),
       allInvariants })
     .then(done(4, evaluatorTaskIdentity(4, 1, 1, 1, 2),
         walled(evaluatorTaskIdentity(4, 1, 1, 1, 2)))).expect(and {
-      tickets.get(4).escalation == EvaluationBlockedEscalated, allInvariants })
+      wallName(tickets.get(4)) == "EvaluationBlockedEscalated", allInvariants })
     .then(resume(4)).expect(and {
       liveTasks(tickets.get(4)) == Set(evaluatorTaskIdentity(4, 1, 1, 2, 2)),
       statusOf(tickets.get(4), 1) == Produced(EvaluatorPassed(1)),
@@ -135,7 +169,7 @@ module chuggy_witness_resume_test {
       allInvariants })
     .then(done(4, evaluatorTaskIdentity(4, 1, 1, 2, 2),
         judged(4, evaluatorTaskIdentity(4, 1, 1, 2, 2), EvaluatorPass))).expect(and {
-      tickets.get(4).phase == Finalization,
+      stateName(tickets.get(4)) == "Finalization",
       lastEvent == "TicketEvaluationPassed", allInvariants })
 }
 
@@ -148,6 +182,7 @@ module chuggy_witness_rework_test {
   import task_contract.* from "../task-contract/task"
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "../ticket"
+  import chuggy_witness_fixture.*
   import chuggy_domain(N_TICKETS=2, N_TASKS=1, MAX_STAGES=1).* from "../domain"
   pure val p = [{ key: 1, evaluators: [evaluatorOf(1)] }]
   action release(j: int): bool = all {
@@ -179,37 +214,36 @@ module chuggy_witness_rework_test {
   run evaluationReworkWitness = init
     .then(release(4)).expect(allInvariants)
     .then(doDispatch(4)).expect(allInvariants)
-    .then(doneWork(4, workTaskOf(4, 1))).expect(and {
-      tickets.get(4).phase == Evaluation, allInvariants })
+    .then(doneWork(4, workTaskIdentity(4, 1))).expect(and {
+      stateName(tickets.get(4)) == "Evaluation", allInvariants })
     .then(judge(4, evaluatorTaskIdentity(4, 1, 1, 1, 1), EvaluatorFail,
         ReworkEvaluationFailure)).expect(and {
-      tickets.get(4).phase == Work,
+      stateName(tickets.get(4)) == "Work",
       lastEvent == "TicketEvaluationReworkStarted",
       lastObligations.length() == 1,
-      tickets.get(4).evaluations.length() == 1,
-      liveTasks(tickets.get(4)) == Set(workTaskOf(4, 2)), allInvariants })
+      ledgers.get(4).closedEvaluations.length() == 1,
+      liveTasks(tickets.get(4)) == Set(workTaskIdentity(4, 2)), allInvariants })
 
   /// Escalate: the same failure parks the ticket instead, and the desk's
   /// resume re-enters Work — the same rework, one human later.
   run evaluationEscalateWitness = init
     .then(release(4)).expect(allInvariants)
     .then(doDispatch(4)).expect(allInvariants)
-    .then(doneWork(4, workTaskOf(4, 1))).expect(allInvariants)
+    .then(doneWork(4, workTaskIdentity(4, 1))).expect(allInvariants)
     .then(judge(4, evaluatorTaskIdentity(4, 1, 1, 1, 1), EvaluatorFail,
         EscalateEvaluationFailure)).expect(and {
-      tickets.get(4).phase == Escalated,
-      tickets.get(4).escalation == EvaluationFailureEscalated,
-      resumeOf(tickets.get(4).escalation) == ResumeRework,
+      wallName(tickets.get(4)) == "EvaluationFailureEscalated",
+      resumeOf(tickets.get(4).state) == ResumeRework,
       retryableEscalated.contains(4), allInvariants })
     .then(resume(4)).expect(and {
-      tickets.get(4).phase == Work,
-      tickets.get(4).escalation == NoEscalation, allInvariants })
+      stateName(tickets.get(4)) == "Work", allInvariants })
 }
 
 module chuggy_witness_stage_test {
   import task_contract.* from "../task-contract/task"
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "../ticket"
+  import chuggy_witness_fixture.*
   import chuggy_domain(N_TICKETS=1, N_TASKS=2, MAX_STAGES=2).* from "../domain"
   pure val p = [{ key: 1, evaluators: [evaluatorOf(1)] },
                 { key: 2, evaluators: [evaluatorOf(1)] }]
@@ -232,15 +266,15 @@ module chuggy_witness_stage_test {
       result: producedResult(tickets.get(2), task),
       verdict: EvaluatorPass })), ReworkEvaluationFailure) }
   run stagedPlanWitness = init.then(release).then(doDispatch)
-    .then(doneWork(workTaskOf(2, 1)))
+    .then(doneWork(workTaskIdentity(2, 1)))
     .then(pass(evaluatorTaskIdentity(2, 1, 1, 1, 1)))
-    .expect(and { tickets.get(2).phase == Evaluation,
+    .expect(and { stateName(tickets.get(2)) == "Evaluation",
       lastEvent == "TicketEvaluationProgressed",
       lastObligations.length() == 1, not(stageAdvanceNever),
       liveTasks(tickets.get(2)) == Set(evaluatorTaskIdentity(2, 1, 2, 1, 1)),
       allInvariants })
     .then(pass(evaluatorTaskIdentity(2, 1, 2, 1, 1)))
-    .expect(and { tickets.get(2).phase == Finalization, allInvariants })
+    .expect(and { stateName(tickets.get(2)) == "Finalization", allInvariants })
 }
 
 /// Authored data is ticket-local and immutable: two tickets released into
@@ -267,6 +301,7 @@ module chuggy_witness_gate_test {
   import task_contract.* from "../task-contract/task"
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
   import chuggy_ticket.* from "../ticket"
+  import chuggy_witness_fixture.*
   import chuggy_domain(N_TICKETS=2, N_TASKS=1, MAX_STAGES=1).* from "../domain"
   pure val p=[{key:1,evaluators:[evaluatorOf(1)]}]
   action releaseOn(j:int,dependencies:Set[int]):bool=all{releasableIds.contains(j),
@@ -297,7 +332,7 @@ module chuggy_witness_gate_test {
     finalizerTickets.contains(j),
     take(ReportFinalizationResult({ticket: j,
         workCycle: tickets.get(j).workCyclesStarted,
-        generation: tickets.get(j).finalizationGeneration,
+        generation: attemptGeneration(tickets.get(j)),
         result: o(aFinalizationEvidence)}),
       unaskedDisposition)}
   /// A command out of turn, drawn where the machine's `refuse` draws it:
@@ -308,28 +343,32 @@ module chuggy_witness_gate_test {
   /// The step refused with exactly this, and left the tickets standing.
   def refusedWith(reason:TicketRefusal):bool=and{
     lastStep==Refused(reason), tickets==prevTickets, allInvariants}
-  run finalizationSuccessWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
-    .expect(and{tickets.get(1).phase==Finalization,lastEvent=="TicketEvaluationPassed",
-      lastObligations==[finalize(tickets.get(1),finalizationOperationOf(tickets.get(1)))],
+  /// The pass owes the finalizer the operation the ticket now runs.
+  run finalizationSuccessWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskIdentity(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
+    .expect(and{lastEvent=="TicketEvaluationPassed",
+      match tickets.get(1).state {
+        | Finalization(op) => lastObligations==[finalize(tickets.get(1),op)]
+        | _ => false
+      },
       not(revocableTickets.contains(1)),allInvariants})
-    .then(resolve(1,e => FinalizationSucceeded(e))).expect(and{tickets.get(1).phase==Done,allInvariants})
+    .then(resolve(1,e => FinalizationSucceeded(e))).expect(and{tickets.get(1).state==Done,allInvariants})
 
   /// A finalizer that reports failure sends the ticket back to work, every
   /// time: there is no wall on this edge. The second cycle's judgement is a
   /// SECOND instance, which is what makes the history a list.
-  run safeAbortReworkWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
-    .then(resolve(1,e => FinalizationNeedsWork(e))).expect(and{tickets.get(1).phase==Work,
+  run safeAbortReworkWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskIdentity(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
+    .then(resolve(1,e => FinalizationNeedsWork(e))).expect(and{stateName(tickets.get(1))=="Work",
       lastEvent=="TicketFinalizationNeedsWork",allInvariants})
     // A failure for the cycle the rework replaced names no task the ticket
     // owes.
-    .then(refuseWith(ReportTaskTerminal(failureReportOf(1,workTaskOf(1,1)))))
-    .expect(refusedWith(TaskNotCurrent({ticket:1,task:workTaskOf(1,1)})))
-    .then(td(1,workTaskOf(1,2))).then(pass(1,evaluatorTaskIdentity(1,2,1,1,1)))
-    .expect(and{tickets.get(1).evaluations.length()==2,allInvariants})
+    .then(refuseWith(ReportTaskTerminal(failureReportOf(1,workTaskIdentity(1,1)))))
+    .expect(refusedWith(TaskNotCurrent({ticket:1,task:workTaskIdentity(1,1)})))
+    .then(td(1,workTaskIdentity(1,2))).then(pass(1,evaluatorTaskIdentity(1,2,1,1,1)))
+    .expect(and{ledgers.get(1).closedEvaluations.length()==2,allInvariants})
     // A result for the first cycle's attempt is fenced by the cycle.
     .then(refuseWith(finalizationReportOf(1,1,1)))
     .expect(refusedWith(FinalizationNotCurrent({ticket:1,workCycle:1,generation:1})))
-    .then(resolve(1,e => FinalizationNeedsWork(e))).expect(and{tickets.get(1).phase==Work,
+    .then(resolve(1,e => FinalizationNeedsWork(e))).expect(and{stateName(tickets.get(1))=="Work",
       lastEvent=="TicketFinalizationNeedsWork",allInvariants})
 
   /// A finalizer that reaches NO result parks the ticket, and the desk's
@@ -339,22 +378,22 @@ module chuggy_witness_gate_test {
   /// there until the environment moved.
   action resume(j:int):bool=all{retryableEscalated.contains(j),
     take(ResumeTicket(j), unaskedDisposition)}
-  run finalizationUnavailableWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
-    .then(resolve(1,e => FinalizationResultUnavailable(e))).expect(and{tickets.get(1).phase==Escalated,
+  run finalizationUnavailableWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskIdentity(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
+    .then(resolve(1,e => FinalizationResultUnavailable(e))).expect(and{
       lastEvent=="TicketFinalizationUnavailable",
-      tickets.get(1).escalation==FinalizationUnavailableEscalated,
-      resumeOf(tickets.get(1).escalation)==ResumeFinalization,
+      wallName(tickets.get(1))=="FinalizationUnavailableEscalated",
+      resumeOf(tickets.get(1).state)==ResumeFinalization,
       retryableEscalated.contains(1),allInvariants})
-    .then(resume(1)).expect(and{tickets.get(1).phase==Finalization,
-      lastEvent=="TicketFinalizationResumed",tickets.get(1).finalizationGeneration==2,
-      tickets.get(1).escalation==NoEscalation,allInvariants})
+    .then(resume(1)).expect(and{stateName(tickets.get(1))=="Finalization",
+      lastEvent=="TicketFinalizationResumed",attemptGeneration(tickets.get(1))==2,
+      allInvariants})
     // A result for the attempt the resume superseded is fenced by the
     // generation.
     .then(refuseWith(finalizationReportOf(1,1,1)))
     .expect(refusedWith(FinalizationNotCurrent({ticket:1,workCycle:1,generation:1})))
-    .then(resolve(1,e => FinalizationSucceeded(e))).expect(and{tickets.get(1).phase==Done,allInvariants})
+    .then(resolve(1,e => FinalizationSucceeded(e))).expect(and{tickets.get(1).state==Done,allInvariants})
 
-  run revokeBoundaryWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskOf(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
+  run revokeBoundaryWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskIdentity(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
     .expect(and{not(revocableTickets.contains(1)),allInvariants})
     .then(refuseWith(RevokeTicket(1)))
     .expect(refusedWith(TicketNotRevocable(1)))
@@ -367,7 +406,7 @@ module chuggy_witness_gate_test {
       tickets.get(1).revision==2,
       tickets.get(1).definition==revisedTicketOf(1,2,Set(),p),allInvariants})
     .then(doDispatch(1))
-    .expect(and{lastObligations==[ExecuteTask({ticket:1,task:{task:workTaskOf(1,1),
+    .expect(and{lastObligations==[ExecuteTask({ticket:1,task:{task:workTaskIdentity(1,1),
         definition:revisedTicketOf(1,2,Set(),p).workConfiguration,contextRef:1}})],
       allInvariants})
 
@@ -407,9 +446,9 @@ module chuggy_witness_gate_test {
     .then(refuseWith(UpdateTicket({ticket:1,expectedRevision:1,
       definition:revisedTicketOf(1,3,Set(),defaultPlan)})))
     .expect(refusedWith(TicketNotPending(1)))
-    .then(td(1,workTaskOf(1,1)))
-    .then(refuseWith(ReportTaskTerminal(failureReportOf(1,workTaskOf(1,1)))))
-    .expect(refusedWith(TaskNotCurrent({ticket:1,task:workTaskOf(1,1)})))
+    .then(td(1,workTaskIdentity(1,1)))
+    .then(refuseWith(ReportTaskTerminal(failureReportOf(1,workTaskIdentity(1,1)))))
+    .expect(refusedWith(TaskNotCurrent({ticket:1,task:workTaskIdentity(1,1)})))
     .then(refuseWith(finalizationReportOf(1,1,1)))
     .expect(refusedWith(FinalizationNotCurrent({ticket:1,workCycle:1,generation:1})))
 }

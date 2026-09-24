@@ -29,7 +29,7 @@
 /// module emits; the instance in mc_chuggy.qnt is what the invariants are
 /// checked over, and it keeps the full roster.
 ///   revoke      — ends a ticket's life, and the chain needs it alive.
-///   updateTicket — gateLoopStep's chains run what the release pinned;
+///   updateDefinition — gateLoopStep's chains run what the release pinned;
 ///                 updateStep keeps it.
 ///   refuse      — gateLoopStep draws nothing out of turn; updateStep draws
 ///                 the update's refusals only (refuseUpdate), which is a
@@ -67,21 +67,22 @@ module mc_chuggy_directed {
   /// the roster the invariants are checked over.
   val partialEvaluationResumed: bool =
     tickets.keys().exists(j =>
-      val jb = tickets.get(j)
-      jb.phase == Evaluation and jb.evaluations.length() > 0 and
-        match currentInstance(jb).state {
-          | Running(progress) => and {
-              progress.stage.generation > 1,
-              progress.stage.evaluators.keys().exists(e =>
-                match progress.stage.evaluators.get(e) {
-                  | Produced(_) => true
-                  | _ => false
-                }),
-              progress.stage.evaluators.keys().exists(e =>
-                statusAwaiting(progress.stage.evaluators.get(e)))
-            }
-          | _ => false
-        })
+      match tickets.get(j).state {
+        | Evaluation(evaluation) => match evaluation.state {
+            | Running(progress) => and {
+                progress.stage.generation > 1,
+                progress.stage.evaluators.keys().exists(e =>
+                  match progress.stage.evaluators.get(e) {
+                    | Produced(_) => true
+                    | _ => false
+                  }),
+                progress.stage.evaluators.keys().exists(e =>
+                  statusAwaiting(progress.stage.evaluators.get(e)))
+              }
+            | _ => false
+          }
+        | _ => false
+      })
 
   /// THE UPDATE'S OWN REFUSALS, drawn where `refuse` draws them and from
   /// nowhere else: a refusal an update meets that a dispatch can meet too —
@@ -114,7 +115,7 @@ module mc_chuggy_directed {
   /// reports, with only the update's refusals drawn out of turn.
   action updateStep = any {
     releaseTicket,
-    updateTicket,
+    updateDefinition,
     dispatch,
     taskDone,
     refuseUpdate,

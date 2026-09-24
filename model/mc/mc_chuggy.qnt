@@ -6,7 +6,7 @@
 /// dependency chain can be revoked from underneath. Everything else is as
 /// small as it goes — the state space is the budget.
 ///
-/// The wrap-up path needs no const of its own: lease occupancy is a phase,
+/// The wrap-up path needs no const of its own: lease occupancy is a state,
 /// and which resource a ticket needs is authored data. Its nondet surface
 /// is two draws — the dequeue's invalidation choice, and the resolution's
 /// outcome from what that choice permits.
