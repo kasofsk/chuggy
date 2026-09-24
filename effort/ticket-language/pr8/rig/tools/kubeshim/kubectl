@@ -1,0 +1,14 @@
+#!/bin/bash
+# kubectl on the rig node over ssh; the local --context is dropped because the
+# node's own kubeconfig names the one cluster.
+args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --context) shift 2 ;;
+    --context=*) shift ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+# kustomize renders local files and talks to no cluster, so it stays here.
+if [ "${args[0]}" = "kustomize" ]; then exec /usr/local/bin/kubectl "${args[@]}"; fi
+exec ssh -o BatchMode=yes dev2@10.100.0.1 "kubectl $(printf '%q ' "${args[@]}")"

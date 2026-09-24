@@ -1,0 +1,17 @@
+# Task B (PR 8b) — report (filed by the orchestrator from the builder's hand-back)
+
+Tip cf829352 on `model/ticket-events` (c8581517, 6ffc4c88, cf829352 on 469425c8), hook clean, container removed.
+
+Interpreter: projectWriter decides once (`decide(graph, command, alwaysPolicy(reworkDisposition(held, cyclesMax)))`), checks `decisionValid`, evolves, journals `{seq, event}`; replay/legality A's, no config; speculative re-decide gone (spawn sources from obligations); continuation fence and `Stale` gone. decisionPlan rewritten over `entry.event` + obligations (`subject()`, effect strings, positional reads gone). projectDiscovery drops `Continuation`; completion arrives as `resolvedEvent`; operationInbox drops the priority class; ticketService `continuation` metric → `contradiction()`; ticketCommand/wire lose `WorkReduce`; stored-completion parse refuses any field but ticket/task/report. Adapters: readiness no continuation join, builds finalization evidence; decision.ts no continuation writer / Stale settle / decisionEventSubject, uses eventTicket, TicketCreated; journal.ts TicketCreated, no config, no Continuation cause; nativeReads matches TicketCreated.
+
+Deferral (6ffc4c88): `sourceDeferralPassesMax = 10` in ticketService.ts; `DecisionInput.deferredPasses` from decision_input; a transient observation settles as `Deferred`, bumping `deferred_passes` and `deferred_since = coalesce(…, now())`; spent → refused `executionSourceRefusalCode(lastEvidence)` (ExecutionSourceUnreadable), no journal row; aging zero for an exhausted input. Red-proof: bound lifted → 12/12 passes deferred, never answered; aging reverted → a spent input outranked a fresh revoke.
+
+Identities: `"<seq>:<i>:ExecuteTask"` (one request + bundle `"<seq>:<i>:InputBundle"` per decision, kind SpawnWork/SpawnEvaluation by variant); `"<seq>:<i>:CancelTask"` (CancelTicketWork); `"<seq>:<i>:FinalizeTicket"` (finalization_request.kind stays `RunFinalizer` by its CHECK); desk `"<seq>:TicketEscalation"`, effect_position 0 (NOT NULL, one-line comment). Nothing parses them (grep); pod golden carries `11:0:ExecuteTask`.
+
+014 unchanged; wire unchanged (src/contract, test/contract untouched). Finalization evidence: `digestFold(finalization_attempt.attempt_digest)` of the settled attempt (`finalizationSettledOn`, readiness.ts); with no prepared attempt (unavailable, or nothing to land) the request generation.
+
+Outside layers: src/roots/controlPlane.ts (`postgresJournalLegality(pool)`), test/ui/ticketActions.test.ts (Ticket fixture). Nothing in model/, src/domain, src/actor, src/generated, ui/.
+
+Gates at cf829352: check-source 1 (test/rig playwright only — baseline, see GOAL), boundaries 0, queries 0, postgres 0 (78 suites), conformance 0 (13), random 0, figures 0, comments 0, paths 0, duplication 0.
+
+GOAL/reports wrong or silent: (1) finalization_request.kind keeps RunFinalizer; (2) a revoke with no live tasks now writes no cancel request (was an empty CancelTicketWork); (3) continuation deletion also removed the Stale settle, Continuation cause arm, priority class, metric; Ordinary aging base kept at 3; (4) the bound is a ticket-service constant, not beside holdPassesMax (finalizer config the writer never sees; a deployment field would change the root's strict schema); (5) semantics 7 broke journal.test's "unsupported" value (now current − 1); (6) fixtures for scheduler/schedulerStore, finalizerQueue forged result (evidence), finalizer index roster followed; (7) S's effect_position reason holds.

@@ -1,0 +1,17 @@
+# Review round 1, machine half — PR 8c-1 "Commands and refusals" (tip 4afc1244, branch `model/ticket-commands`)
+
+Setup: `_review-setup-8c-1.md` beside this file (part of this brief). Your half: `model/`, `test/golden`, `src/generated`, `src/domain`, `src/actor`, their tests, and `.chug/tasks/{check-random,check-conformance,emit-goldens}.test.sh`. The boundary half is another reviewer's. Diff: `git diff e78a93ce..4afc1244 -- <your paths>`.
+
+Read first: `pr8/GOAL.md` §"PR 8c — split", §"PR 8c-1 — decisions" and every 8c-1 progress line, `pr8/survey.md` §1, §2 and surprises 4–6, `pr8/tasks/8c-1/{A,S,B,C}-report.md`, the package's `model/ticket-domain/ticket.qnt` 70–160, 230–300, 470–845, 1340–1363, `.chug/tasks/review-change.md`, `CLAUDE.md`.
+
+## What to check, each with a failure that actually happens
+
+1. **`decide` refuses as the package does.** For every decider, the order of checks and the refusal each yields, against the package line by line: a command that fails two checks must name the package's first. Payloads: `DependenciesNotFound`/`DependenciesIncomplete` carry exactly the missing / not-done set; `TaskNotCurrent` the report's task; `FinalizationNotCurrent` the report's cycle and generation. Name any input where chuggy's refusal (or acceptance) differs from the package's, other than 8b's named work-failure exception (confirm that one refuses `TaskNotCurrent`, not something else).
+2. **Nothing was lost with `decisionEventEnabled`.** Diff the old enablement conjunct by conjunct against what `decide` now checks. Each conjunct that vanished: is it the package's rule (accept — the revoked dependency at release is one; GOAL.md records it) or a chuggy guard with no package counterpart whose absence lets the writer journal something it could not before (finding)? `commandValid` is the package's plus chuggy's bounds — which bounds, and is each a draw bound or a real refusal the writer needs?
+3. **The refusal is a stutter and journals nothing.** In the model, `refuse` changes nothing but `lastStep`; the refinement's journal and replay never see a refusal; `decisionValid`'s refused arm is checked as an invariant. In TypeScript, `journalStep`/`decideValid`/`effectCrash`: a refused command cannot reach the journal through any path. Mutate the refused arm to journal and confirm something reddens.
+4. **Reports carry their ticket.** `TaskTerminalReport` verbatim; every event arm carrying one; replay legality — can a journalled report's `ticket` differ from the fact's without the TypeScript legality check noticing (S's SQL refuses it; does the actor)?
+5. **Goldens and conformance (decision 10).** Re-emitted, not hand-edited (`emit-goldens` byte for byte, manifest current); every reachable refusal compared model ↔ TypeScript where A says; `coverage.test.ts` actually fails when a refusal is dropped from the corpus (red-proof); the 14th golden `task-not-current` meaningful. `check-model`, `check-conformance`, `check-random`, `check-model-api` at the tip.
+6. **Names.** `git grep -n 'DecisionEvent\|decisionEventEnabled\|FinalizationOutcome\|NotEnabled' model src/domain src/actor src/generated test` — each hit justified. The three update-only refusals declared, unreachable, said so in one sentence.
+7. Comments and docs: true, in the tree's voice, no quantities, no stale path claims. `check-figures`, `check-comments`, `check-paths`, `check-duplication` at the tip.
+
+Verdict: APPROVE or CHANGES; each finding names file:line, the input and what goes wrong; under ~80 lines.
