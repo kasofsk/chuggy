@@ -9,6 +9,8 @@
     "mbt::actionTaken",
     "mbt::nondetPicks",
     "mc_chuggy::chuggy_domain::lastStep",
+    "mc_chuggy::chuggy_domain::ledgers",
+    "mc_chuggy::chuggy_domain::prevLedgers",
     "mc_chuggy::chuggy_domain::prevTickets",
     "mc_chuggy::chuggy_domain::tickets",
     "mbt::actionTaken",
@@ -81,6 +83,12 @@
         "value": {
           "#tup": []
         }
+      },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": []
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": []
       },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": []
@@ -332,6 +340,27 @@
           "obligations": []
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": []
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": []
       },
@@ -342,9 +371,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -448,30 +474,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -554,6 +564,42 @@
           "obligations": []
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -561,9 +607,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -667,30 +710,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -706,9 +733,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -812,30 +836,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -996,6 +1004,42 @@
           }
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -1003,9 +1047,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -1109,30 +1150,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -1148,9 +1173,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -1254,30 +1276,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -1492,6 +1498,56 @@
           "obligations": []
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -1499,9 +1555,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -1605,30 +1658,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -1644,9 +1681,6 @@
               "#bigint": "4"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "81"
@@ -1731,30 +1765,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -1766,9 +1784,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -1872,30 +1887,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -1983,6 +1982,70 @@
           }
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -1990,9 +2053,6 @@
               "#bigint": "4"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "81"
@@ -2077,30 +2137,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -2112,9 +2156,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -2218,30 +2259,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -2257,9 +2282,6 @@
               "#bigint": "4"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "81"
@@ -2344,30 +2366,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -2379,9 +2385,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -2485,30 +2488,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -2723,6 +2710,84 @@
           "obligations": []
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -2730,9 +2795,6 @@
               "#bigint": "4"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "81"
@@ -2817,30 +2879,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -2852,9 +2898,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -2958,30 +3001,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -2997,9 +3024,6 @@
               "#bigint": "2"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "41"
@@ -3084,30 +3108,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -3119,9 +3127,6 @@
               "#bigint": "4"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "81"
@@ -3206,30 +3211,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -3241,9 +3230,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -3347,30 +3333,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -3497,6 +3467,98 @@
           ]
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -3504,9 +3566,6 @@
               "#bigint": "2"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "41"
@@ -3591,30 +3650,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -3626,9 +3669,6 @@
               "#bigint": "4"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "81"
@@ -3713,30 +3753,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -3748,9 +3772,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -3854,30 +3875,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -3893,9 +3898,6 @@
               "#bigint": "2"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "41"
@@ -3980,30 +3982,28 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Work",
-                "value": {
-                  "#tup": []
-                }
-              },
               "revision": {
                 "#bigint": "1"
               },
-              "source": {
-                "#bigint": "10"
-              },
-              "spawned": {
-                "#bigint": "1"
+              "state": {
+                "tag": "Work",
+                "value": {
+                  "input": {
+                    "cause": {
+                      "tag": "InitialWork",
+                      "value": {
+                        "#tup": []
+                      }
+                    },
+                    "released": {
+                      "#bigint": "41"
+                    },
+                    "retryEvidence": []
+                  },
+                  "source": {
+                    "#bigint": "10"
+                  }
+                }
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -4015,9 +4015,6 @@
               "#bigint": "4"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "81"
@@ -4102,30 +4099,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -4137,9 +4118,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -4243,30 +4221,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -4491,6 +4453,98 @@
           ]
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "2"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -4498,9 +4552,6 @@
               "#bigint": "2"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "41"
@@ -4585,30 +4636,28 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Work",
-                "value": {
-                  "#tup": []
-                }
-              },
               "revision": {
                 "#bigint": "1"
               },
-              "source": {
-                "#bigint": "10"
-              },
-              "spawned": {
-                "#bigint": "1"
+              "state": {
+                "tag": "Work",
+                "value": {
+                  "input": {
+                    "cause": {
+                      "tag": "InitialWork",
+                      "value": {
+                        "#tup": []
+                      }
+                    },
+                    "released": {
+                      "#bigint": "41"
+                    },
+                    "retryEvidence": []
+                  },
+                  "source": {
+                    "#bigint": "10"
+                  }
+                }
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -4620,9 +4669,6 @@
               "#bigint": "4"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "81"
@@ -4707,30 +4753,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -4742,9 +4772,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -4848,30 +4875,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -4887,9 +4898,6 @@
               "#bigint": "2"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "41"
@@ -4974,14 +4982,12 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [
-                {
+              "state": {
+                "tag": "Evaluation",
+                "value": {
                   "input": {
                     "acceptedSourceRef": {
                       "#bigint": "11"
@@ -5082,24 +5088,6 @@
                     "#bigint": "1"
                   }
                 }
-              ],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Evaluation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "11"
-              },
-              "spawned": {
-                "#bigint": "2"
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -5111,9 +5099,6 @@
               "#bigint": "4"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "81"
@@ -5198,30 +5183,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -5233,9 +5202,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -5339,30 +5305,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -5376,7 +5326,7 @@
       "#meta": {
         "index": 9
       },
-      "mbt::actionTaken": "updateTicket",
+      "mbt::actionTaken": "updateDefinition",
       "mbt::nondetPicks": {
         "command": {
           "tag": "None",
@@ -5585,6 +5535,98 @@
           "obligations": []
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "2"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "2"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -5592,9 +5634,6 @@
               "#bigint": "2"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "41"
@@ -5679,14 +5718,12 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [
-                {
+              "state": {
+                "tag": "Evaluation",
+                "value": {
                   "input": {
                     "acceptedSourceRef": {
                       "#bigint": "11"
@@ -5787,24 +5824,6 @@
                     "#bigint": "1"
                   }
                 }
-              ],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Evaluation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "11"
-              },
-              "spawned": {
-                "#bigint": "2"
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -5816,9 +5835,6 @@
               "#bigint": "4"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "81"
@@ -5903,30 +5919,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -5938,9 +5938,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -6044,30 +6041,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -6083,9 +6064,6 @@
               "#bigint": "2"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "41"
@@ -6170,14 +6148,12 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [
-                {
+              "state": {
+                "tag": "Evaluation",
+                "value": {
                   "input": {
                     "acceptedSourceRef": {
                       "#bigint": "11"
@@ -6278,24 +6254,6 @@
                     "#bigint": "1"
                   }
                 }
-              ],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Evaluation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "11"
-              },
-              "spawned": {
-                "#bigint": "2"
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -6307,9 +6265,6 @@
               "#bigint": "4"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "1081"
@@ -6394,30 +6349,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "2"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -6429,9 +6368,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -6535,30 +6471,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -6646,6 +6566,98 @@
           }
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "2"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "2"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -6653,9 +6665,6 @@
               "#bigint": "2"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "41"
@@ -6740,14 +6749,12 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [
-                {
+              "state": {
+                "tag": "Evaluation",
+                "value": {
                   "input": {
                     "acceptedSourceRef": {
                       "#bigint": "11"
@@ -6848,24 +6855,6 @@
                     "#bigint": "1"
                   }
                 }
-              ],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Evaluation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "11"
-              },
-              "spawned": {
-                "#bigint": "2"
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -6877,9 +6866,6 @@
               "#bigint": "4"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "1081"
@@ -6964,30 +6950,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "2"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -6999,9 +6969,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -7105,30 +7072,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -7144,9 +7095,6 @@
               "#bigint": "2"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "41"
@@ -7231,14 +7179,12 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [
-                {
+              "state": {
+                "tag": "Evaluation",
+                "value": {
                   "input": {
                     "acceptedSourceRef": {
                       "#bigint": "11"
@@ -7339,24 +7285,6 @@
                     "#bigint": "1"
                   }
                 }
-              ],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Evaluation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "11"
-              },
-              "spawned": {
-                "#bigint": "2"
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -7368,9 +7296,6 @@
               "#bigint": "4"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "1081"
@@ -7455,30 +7380,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "2"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -7490,9 +7399,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -7596,30 +7502,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -7886,598 +7776,14 @@
           ]
         }
       },
-      "mc_chuggy::chuggy_domain::prevTickets": {
+      "mc_chuggy::chuggy_domain::ledgers": {
         "#map": [
           [
             {
               "#bigint": "2"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
-              "definition": {
-                "content": {
-                  "#bigint": "41"
-                },
-                "dependencies": {
-                  "#set": []
-                },
-                "evaluationPlan": {
-                  "stages": [
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    },
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "2"
-                      }
-                    }
-                  ]
-                },
-                "finalizationConfiguration": {
-                  "#bigint": "46"
-                },
-                "id": {
-                  "#bigint": "2"
-                },
-                "workConfiguration": {
-                  "executionRequirements": {
-                    "#bigint": "44"
-                  },
-                  "inputs": {
-                    "#bigint": "43"
-                  },
-                  "resultContract": {
-                    "#bigint": "45"
-                  },
-                  "workload": {
-                    "#bigint": "42"
-                  }
-                }
-              },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "evaluations": [
-                {
-                  "input": {
-                    "acceptedSourceRef": {
-                      "#bigint": "11"
-                    },
-                    "ticket": {
-                      "#bigint": "2"
-                    },
-                    "workResult": {
-                      "#bigint": "201"
-                    }
-                  },
-                  "plan": {
-                    "stages": [
-                      {
-                        "evaluators": [
-                          {
-                            "key": {
-                              "#bigint": "2"
-                            },
-                            "task": {
-                              "executionRequirements": {
-                                "#bigint": "7"
-                              },
-                              "inputs": {
-                                "#bigint": "6"
-                              },
-                              "resultContract": {
-                                "#bigint": "8"
-                              },
-                              "workload": {
-                                "#bigint": "5"
-                              }
-                            }
-                          }
-                        ],
-                        "key": {
-                          "#bigint": "1"
-                        }
-                      },
-                      {
-                        "evaluators": [
-                          {
-                            "key": {
-                              "#bigint": "1"
-                            },
-                            "task": {
-                              "executionRequirements": {
-                                "#bigint": "3"
-                              },
-                              "inputs": {
-                                "#bigint": "2"
-                              },
-                              "resultContract": {
-                                "#bigint": "4"
-                              },
-                              "workload": {
-                                "#bigint": "1"
-                              }
-                            }
-                          }
-                        ],
-                        "key": {
-                          "#bigint": "2"
-                        }
-                      }
-                    ]
-                  },
-                  "state": {
-                    "tag": "Running",
-                    "value": {
-                      "completedStages": [],
-                      "stage": {
-                        "evaluators": {
-                          "#map": [
-                            [
-                              {
-                                "#bigint": "2"
-                              },
-                              {
-                                "tag": "Awaiting",
-                                "value": {
-                                  "#tup": []
-                                }
-                              }
-                            ]
-                          ]
-                        },
-                        "generation": {
-                          "#bigint": "1"
-                        },
-                        "stageIndex": {
-                          "#bigint": "0"
-                        }
-                      }
-                    }
-                  },
-                  "workCycle": {
-                    "#bigint": "1"
-                  }
-                }
-              ],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Evaluation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "11"
-              },
-              "spawned": {
-                "#bigint": "2"
-              },
-              "workCyclesStarted": {
-                "#bigint": "1"
-              }
-            }
-          ],
-          [
-            {
-              "#bigint": "4"
-            },
-            {
-              "completions": {
-                "#bigint": "0"
-              },
-              "definition": {
-                "content": {
-                  "#bigint": "1081"
-                },
-                "dependencies": {
-                  "#set": []
-                },
-                "evaluationPlan": {
-                  "stages": [
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    },
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "2"
-                      }
-                    }
-                  ]
-                },
-                "finalizationConfiguration": {
-                  "#bigint": "1086"
-                },
-                "id": {
-                  "#bigint": "4"
-                },
-                "workConfiguration": {
-                  "executionRequirements": {
-                    "#bigint": "1084"
-                  },
-                  "inputs": {
-                    "#bigint": "1083"
-                  },
-                  "resultContract": {
-                    "#bigint": "1085"
-                  },
-                  "workload": {
-                    "#bigint": "1082"
-                  }
-                }
-              },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Pending",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
-              },
-              "workCyclesStarted": {
-                "#bigint": "0"
-              }
-            }
-          ],
-          [
-            {
-              "#bigint": "5"
-            },
-            {
-              "completions": {
-                "#bigint": "0"
-              },
-              "definition": {
-                "content": {
-                  "#bigint": "101"
-                },
-                "dependencies": {
-                  "#set": []
-                },
-                "evaluationPlan": {
-                  "stages": [
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    },
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "2"
-                      }
-                    }
-                  ]
-                },
-                "finalizationConfiguration": {
-                  "#bigint": "106"
-                },
-                "id": {
-                  "#bigint": "5"
-                },
-                "workConfiguration": {
-                  "executionRequirements": {
-                    "#bigint": "104"
-                  },
-                  "inputs": {
-                    "#bigint": "103"
-                  },
-                  "resultContract": {
-                    "#bigint": "105"
-                  },
-                  "workload": {
-                    "#bigint": "102"
-                  }
-                }
-              },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Revoked",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
-              },
-              "workCyclesStarted": {
-                "#bigint": "0"
-              }
-            }
-          ]
-        ]
-      },
-      "mc_chuggy::chuggy_domain::tickets": {
-        "#map": [
-          [
-            {
-              "#bigint": "2"
-            },
-            {
-              "completions": {
-                "#bigint": "0"
-              },
-              "definition": {
-                "content": {
-                  "#bigint": "41"
-                },
-                "dependencies": {
-                  "#set": []
-                },
-                "evaluationPlan": {
-                  "stages": [
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    },
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "2"
-                      }
-                    }
-                  ]
-                },
-                "finalizationConfiguration": {
-                  "#bigint": "46"
-                },
-                "id": {
-                  "#bigint": "2"
-                },
-                "workConfiguration": {
-                  "executionRequirements": {
-                    "#bigint": "44"
-                  },
-                  "inputs": {
-                    "#bigint": "43"
-                  },
-                  "resultContract": {
-                    "#bigint": "45"
-                  },
-                  "workload": {
-                    "#bigint": "42"
-                  }
-                }
-              },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "evaluations": [
+              "closedEvaluations": [
                 {
                   "input": {
                     "acceptedSourceRef": {
@@ -8582,25 +7888,56 @@
                   }
                 }
               ],
-              "finalizationGeneration": {
+              "completions": {
                 "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Work",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "11"
               },
               "spawned": {
                 "#bigint": "3"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
               },
-              "workCyclesStarted": {
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
                 "#bigint": "2"
               }
             }
@@ -8610,9 +7947,239 @@
               "#bigint": "4"
             },
             {
+              "closedEvaluations": [],
               "completions": {
                 "#bigint": "0"
               },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevTickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "definition": {
+                "content": {
+                  "#bigint": "41"
+                },
+                "dependencies": {
+                  "#set": []
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "1"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "3"
+                            },
+                            "inputs": {
+                              "#bigint": "2"
+                            },
+                            "resultContract": {
+                              "#bigint": "4"
+                            },
+                            "workload": {
+                              "#bigint": "1"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "46"
+                },
+                "id": {
+                  "#bigint": "2"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "44"
+                  },
+                  "inputs": {
+                    "#bigint": "43"
+                  },
+                  "resultContract": {
+                    "#bigint": "45"
+                  },
+                  "workload": {
+                    "#bigint": "42"
+                  }
+                }
+              },
+              "revision": {
+                "#bigint": "1"
+              },
+              "state": {
+                "tag": "Evaluation",
+                "value": {
+                  "input": {
+                    "acceptedSourceRef": {
+                      "#bigint": "11"
+                    },
+                    "ticket": {
+                      "#bigint": "2"
+                    },
+                    "workResult": {
+                      "#bigint": "201"
+                    }
+                  },
+                  "plan": {
+                    "stages": [
+                      {
+                        "evaluators": [
+                          {
+                            "key": {
+                              "#bigint": "2"
+                            },
+                            "task": {
+                              "executionRequirements": {
+                                "#bigint": "7"
+                              },
+                              "inputs": {
+                                "#bigint": "6"
+                              },
+                              "resultContract": {
+                                "#bigint": "8"
+                              },
+                              "workload": {
+                                "#bigint": "5"
+                              }
+                            }
+                          }
+                        ],
+                        "key": {
+                          "#bigint": "1"
+                        }
+                      },
+                      {
+                        "evaluators": [
+                          {
+                            "key": {
+                              "#bigint": "1"
+                            },
+                            "task": {
+                              "executionRequirements": {
+                                "#bigint": "3"
+                              },
+                              "inputs": {
+                                "#bigint": "2"
+                              },
+                              "resultContract": {
+                                "#bigint": "4"
+                              },
+                              "workload": {
+                                "#bigint": "1"
+                              }
+                            }
+                          }
+                        ],
+                        "key": {
+                          "#bigint": "2"
+                        }
+                      }
+                    ]
+                  },
+                  "state": {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
+                        "evaluators": {
+                          "#map": [
+                            [
+                              {
+                                "#bigint": "2"
+                              },
+                              {
+                                "tag": "Awaiting",
+                                "value": {
+                                  "#tup": []
+                                }
+                              }
+                            ]
+                          ]
+                        },
+                        "generation": {
+                          "#bigint": "1"
+                        },
+                        "stageIndex": {
+                          "#bigint": "0"
+                        }
+                      }
+                    }
+                  },
+                  "workCycle": {
+                    "#bigint": "1"
+                  }
+                }
+              },
+              "workCyclesStarted": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
               "definition": {
                 "content": {
                   "#bigint": "1081"
@@ -8697,30 +8264,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "2"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -8732,9 +8283,6 @@
               "#bigint": "5"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "101"
@@ -8838,30 +8386,367 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
               },
+              "workCyclesStarted": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "definition": {
+                "content": {
+                  "#bigint": "41"
+                },
+                "dependencies": {
+                  "#set": []
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "1"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "3"
+                            },
+                            "inputs": {
+                              "#bigint": "2"
+                            },
+                            "resultContract": {
+                              "#bigint": "4"
+                            },
+                            "workload": {
+                              "#bigint": "1"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "46"
+                },
+                "id": {
+                  "#bigint": "2"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "44"
+                  },
+                  "inputs": {
+                    "#bigint": "43"
+                  },
+                  "resultContract": {
+                    "#bigint": "45"
+                  },
+                  "workload": {
+                    "#bigint": "42"
+                  }
+                }
+              },
               "revision": {
                 "#bigint": "1"
               },
-              "source": {
-                "#bigint": "0"
+              "state": {
+                "tag": "Work",
+                "value": {
+                  "input": {
+                    "cause": {
+                      "tag": "EvaluationRework",
+                      "value": [
+                        {
+                          "evaluator": {
+                            "#bigint": "2"
+                          },
+                          "resultRef": {
+                            "#bigint": "2"
+                          }
+                        }
+                      ]
+                    },
+                    "released": {
+                      "#bigint": "41"
+                    },
+                    "retryEvidence": []
+                  },
+                  "source": {
+                    "#bigint": "11"
+                  }
+                }
               },
-              "spawned": {
+              "workCyclesStarted": {
+                "#bigint": "2"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "definition": {
+                "content": {
+                  "#bigint": "1081"
+                },
+                "dependencies": {
+                  "#set": []
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "1086"
+                },
+                "id": {
+                  "#bigint": "4"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "1084"
+                  },
+                  "inputs": {
+                    "#bigint": "1083"
+                  },
+                  "resultContract": {
+                    "#bigint": "1085"
+                  },
+                  "workload": {
+                    "#bigint": "1082"
+                  }
+                }
+              },
+              "revision": {
+                "#bigint": "2"
+              },
+              "state": {
+                "tag": "Pending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "workCyclesStarted": {
                 "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "definition": {
+                "content": {
+                  "#bigint": "101"
+                },
+                "dependencies": {
+                  "#set": []
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "1"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "3"
+                            },
+                            "inputs": {
+                              "#bigint": "2"
+                            },
+                            "resultContract": {
+                              "#bigint": "4"
+                            },
+                            "workload": {
+                              "#bigint": "1"
+                            }
+                          }
+                        },
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "106"
+                },
+                "id": {
+                  "#bigint": "5"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "104"
+                  },
+                  "inputs": {
+                    "#bigint": "103"
+                  },
+                  "resultContract": {
+                    "#bigint": "105"
+                  },
+                  "workload": {
+                    "#bigint": "102"
+                  }
+                }
+              },
+              "revision": {
+                "#bigint": "1"
+              },
+              "state": {
+                "tag": "Revoked",
+                "value": {
+                  "#tup": []
+                }
               },
               "workCyclesStarted": {
                 "#bigint": "0"

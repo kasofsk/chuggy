@@ -9,6 +9,8 @@
     "mbt::actionTaken",
     "mbt::nondetPicks",
     "mc_chuggy::chuggy_domain::lastStep",
+    "mc_chuggy::chuggy_domain::ledgers",
+    "mc_chuggy::chuggy_domain::prevLedgers",
     "mc_chuggy::chuggy_domain::prevTickets",
     "mc_chuggy::chuggy_domain::tickets",
     "mbt::actionTaken",
@@ -81,6 +83,12 @@
         "value": {
           "#tup": []
         }
+      },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": []
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": []
       },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": []
@@ -240,6 +248,12 @@
           }
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": []
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": []
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": []
       },
@@ -319,6 +333,12 @@
             "#bigint": "1"
           }
         }
+      },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": []
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": []
       },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": []
@@ -511,6 +531,12 @@
           }
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": []
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": []
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": []
       },
@@ -604,6 +630,12 @@
             "#bigint": "6"
           }
         }
+      },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": []
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": []
       },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": []
@@ -855,6 +887,27 @@
           "obligations": []
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": []
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": []
       },
@@ -865,9 +918,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "21"
@@ -971,30 +1021,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -1077,6 +1111,42 @@
           }
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -1084,9 +1154,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "21"
@@ -1190,30 +1257,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -1229,9 +1280,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "21"
@@ -1335,30 +1383,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -1372,7 +1404,7 @@
       "#meta": {
         "index": 7
       },
-      "mbt::actionTaken": "updateTicket",
+      "mbt::actionTaken": "updateDefinition",
       "mbt::nondetPicks": {
         "command": {
           "tag": "None",
@@ -1581,6 +1613,42 @@
           "obligations": []
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -1588,9 +1656,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "21"
@@ -1694,30 +1759,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -1733,9 +1782,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "1021"
@@ -1820,30 +1866,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "2"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -2096,6 +2126,56 @@
           "obligations": []
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -2103,9 +2183,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "1021"
@@ -2190,30 +2267,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "2"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -2229,9 +2290,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "1021"
@@ -2316,30 +2374,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "2"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -2351,9 +2393,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -2457,30 +2496,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -2563,6 +2586,70 @@
           "obligations": []
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -2570,9 +2657,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "1021"
@@ -2657,30 +2741,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "2"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -2692,9 +2760,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -2798,30 +2863,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -2837,9 +2886,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "1021"
@@ -2924,30 +2970,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "2"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -2959,9 +2989,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -3065,30 +3092,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -3193,6 +3204,70 @@
           }
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -3200,9 +3275,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "1021"
@@ -3287,30 +3359,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "2"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -3322,9 +3378,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -3428,30 +3481,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -3467,9 +3504,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "1021"
@@ -3554,30 +3588,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "2"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -3589,9 +3607,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -3695,30 +3710,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -3881,6 +3880,84 @@
           "obligations": []
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -3888,9 +3965,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "1021"
@@ -3975,30 +4049,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "2"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -4010,9 +4068,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -4116,30 +4171,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -4155,9 +4194,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "1021"
@@ -4242,30 +4278,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "2"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -4277,9 +4297,6 @@
               "#bigint": "3"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "61"
@@ -4338,30 +4355,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -4373,9 +4374,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -4479,30 +4477,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -4629,6 +4611,98 @@
           ]
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -4636,9 +4710,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "1021"
@@ -4723,30 +4794,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "2"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -4758,9 +4813,6 @@
               "#bigint": "3"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "61"
@@ -4819,30 +4871,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -4854,9 +4890,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -4960,30 +4993,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -4999,9 +5016,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "1021"
@@ -5086,30 +5100,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "2"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -5121,9 +5119,6 @@
               "#bigint": "3"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "61"
@@ -5182,30 +5177,28 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Work",
-                "value": {
-                  "#tup": []
-                }
-              },
               "revision": {
                 "#bigint": "1"
               },
-              "source": {
-                "#bigint": "10"
-              },
-              "spawned": {
-                "#bigint": "1"
+              "state": {
+                "tag": "Work",
+                "value": {
+                  "input": {
+                    "cause": {
+                      "tag": "InitialWork",
+                      "value": {
+                        "#tup": []
+                      }
+                    },
+                    "released": {
+                      "#bigint": "61"
+                    },
+                    "retryEvidence": []
+                  },
+                  "source": {
+                    "#bigint": "10"
+                  }
+                }
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -5217,9 +5210,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -5323,30 +5313,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -5360,7 +5334,7 @@
       "#meta": {
         "index": 13
       },
-      "mbt::actionTaken": "updateTicket",
+      "mbt::actionTaken": "updateDefinition",
       "mbt::nondetPicks": {
         "command": {
           "tag": "None",
@@ -5607,6 +5581,98 @@
           "obligations": []
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -5614,9 +5680,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "1021"
@@ -5701,30 +5764,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "2"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "2"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -5736,9 +5783,6 @@
               "#bigint": "3"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "61"
@@ -5797,30 +5841,28 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Work",
-                "value": {
-                  "#tup": []
-                }
-              },
               "revision": {
                 "#bigint": "1"
               },
-              "source": {
-                "#bigint": "10"
-              },
-              "spawned": {
-                "#bigint": "1"
+              "state": {
+                "tag": "Work",
+                "value": {
+                  "input": {
+                    "cause": {
+                      "tag": "InitialWork",
+                      "value": {
+                        "#tup": []
+                      }
+                    },
+                    "released": {
+                      "#bigint": "61"
+                    },
+                    "retryEvidence": []
+                  },
+                  "source": {
+                    "#bigint": "10"
+                  }
+                }
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -5832,9 +5874,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -5938,30 +5977,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -5977,9 +6000,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "2021"
@@ -6083,30 +6103,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "3"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "3"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -6118,9 +6122,6 @@
               "#bigint": "3"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "61"
@@ -6179,30 +6180,28 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Work",
-                "value": {
-                  "#tup": []
-                }
-              },
               "revision": {
                 "#bigint": "1"
               },
-              "source": {
-                "#bigint": "10"
-              },
-              "spawned": {
-                "#bigint": "1"
+              "state": {
+                "tag": "Work",
+                "value": {
+                  "input": {
+                    "cause": {
+                      "tag": "InitialWork",
+                      "value": {
+                        "#tup": []
+                      }
+                    },
+                    "released": {
+                      "#bigint": "61"
+                    },
+                    "retryEvidence": []
+                  },
+                  "source": {
+                    "#bigint": "10"
+                  }
+                }
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -6214,9 +6213,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -6320,30 +6316,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -6568,6 +6548,98 @@
           ]
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "2"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -6575,9 +6647,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "2021"
@@ -6681,30 +6750,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "3"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "3"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -6716,9 +6769,6 @@
               "#bigint": "3"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "61"
@@ -6777,30 +6827,28 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Work",
-                "value": {
-                  "#tup": []
-                }
-              },
               "revision": {
                 "#bigint": "1"
               },
-              "source": {
-                "#bigint": "10"
-              },
-              "spawned": {
-                "#bigint": "1"
+              "state": {
+                "tag": "Work",
+                "value": {
+                  "input": {
+                    "cause": {
+                      "tag": "InitialWork",
+                      "value": {
+                        "#tup": []
+                      }
+                    },
+                    "released": {
+                      "#bigint": "61"
+                    },
+                    "retryEvidence": []
+                  },
+                  "source": {
+                    "#bigint": "10"
+                  }
+                }
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -6812,9 +6860,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -6918,30 +6963,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -6957,9 +6986,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "2021"
@@ -7063,30 +7089,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "3"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "3"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -7098,9 +7108,6 @@
               "#bigint": "3"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "61"
@@ -7159,14 +7166,12 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [
-                {
+              "state": {
+                "tag": "Evaluation",
+                "value": {
                   "input": {
                     "acceptedSourceRef": {
                       "#bigint": "12"
@@ -7241,24 +7246,6 @@
                     "#bigint": "1"
                   }
                 }
-              ],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Evaluation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "12"
-              },
-              "spawned": {
-                "#bigint": "2"
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -7270,9 +7257,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -7376,30 +7360,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -7413,7 +7381,7 @@
       "#meta": {
         "index": 15
       },
-      "mbt::actionTaken": "updateTicket",
+      "mbt::actionTaken": "updateDefinition",
       "mbt::nondetPicks": {
         "command": {
           "tag": "None",
@@ -7622,6 +7590,98 @@
           "obligations": []
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "2"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "2"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -7629,9 +7689,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "2021"
@@ -7735,30 +7792,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "3"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "3"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -7770,9 +7811,6 @@
               "#bigint": "3"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "61"
@@ -7831,14 +7869,12 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [
-                {
+              "state": {
+                "tag": "Evaluation",
+                "value": {
                   "input": {
                     "acceptedSourceRef": {
                       "#bigint": "12"
@@ -7913,24 +7949,6 @@
                     "#bigint": "1"
                   }
                 }
-              ],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Evaluation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "12"
-              },
-              "spawned": {
-                "#bigint": "2"
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -7942,9 +7960,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -8048,30 +8063,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -8087,9 +8086,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "3021"
@@ -8174,30 +8170,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "4"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "4"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -8209,9 +8189,6 @@
               "#bigint": "3"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "61"
@@ -8270,14 +8247,12 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [
-                {
+              "state": {
+                "tag": "Evaluation",
+                "value": {
                   "input": {
                     "acceptedSourceRef": {
                       "#bigint": "12"
@@ -8352,24 +8327,6 @@
                     "#bigint": "1"
                   }
                 }
-              ],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Evaluation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "12"
-              },
-              "spawned": {
-                "#bigint": "2"
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -8381,9 +8338,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -8487,30 +8441,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -8598,6 +8536,98 @@
           }
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "2"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "2"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -8605,9 +8635,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "3021"
@@ -8692,30 +8719,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "4"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "4"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -8727,9 +8738,6 @@
               "#bigint": "3"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "61"
@@ -8788,14 +8796,12 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [
-                {
+              "state": {
+                "tag": "Evaluation",
+                "value": {
                   "input": {
                     "acceptedSourceRef": {
                       "#bigint": "12"
@@ -8870,24 +8876,6 @@
                     "#bigint": "1"
                   }
                 }
-              ],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Evaluation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "12"
-              },
-              "spawned": {
-                "#bigint": "2"
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -8899,9 +8887,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -9005,30 +8990,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -9044,9 +9013,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "3021"
@@ -9131,30 +9097,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "4"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "4"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -9166,9 +9116,6 @@
               "#bigint": "3"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "61"
@@ -9227,14 +9174,12 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [
-                {
+              "state": {
+                "tag": "Evaluation",
+                "value": {
                   "input": {
                     "acceptedSourceRef": {
                       "#bigint": "12"
@@ -9309,24 +9254,6 @@
                     "#bigint": "1"
                   }
                 }
-              ],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Evaluation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "12"
-              },
-              "spawned": {
-                "#bigint": "2"
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -9338,9 +9265,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -9444,30 +9368,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -9550,6 +9458,98 @@
           "obligations": []
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "2"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "2"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -9557,9 +9557,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "3021"
@@ -9644,30 +9641,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "4"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Pending",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "4"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -9679,9 +9660,6 @@
               "#bigint": "3"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "61"
@@ -9740,14 +9718,12 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [
-                {
+              "state": {
+                "tag": "Evaluation",
+                "value": {
                   "input": {
                     "acceptedSourceRef": {
                       "#bigint": "12"
@@ -9822,24 +9798,6 @@
                     "#bigint": "1"
                   }
                 }
-              ],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Evaluation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "12"
-              },
-              "spawned": {
-                "#bigint": "2"
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -9851,9 +9809,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -9957,30 +9912,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -9996,9 +9935,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "3021"
@@ -10083,30 +10019,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "4"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "4"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -10118,9 +10038,6 @@
               "#bigint": "3"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "61"
@@ -10179,14 +10096,12 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [
-                {
+              "state": {
+                "tag": "Evaluation",
+                "value": {
                   "input": {
                     "acceptedSourceRef": {
                       "#bigint": "12"
@@ -10261,24 +10176,6 @@
                     "#bigint": "1"
                   }
                 }
-              ],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Evaluation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "12"
-              },
-              "spawned": {
-                "#bigint": "2"
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -10290,9 +10187,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -10396,30 +10290,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -10531,6 +10409,174 @@
           ]
         }
       },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "closedEvaluations": [
+                {
+                  "input": {
+                    "acceptedSourceRef": {
+                      "#bigint": "12"
+                    },
+                    "ticket": {
+                      "#bigint": "3"
+                    },
+                    "workResult": {
+                      "#bigint": "301"
+                    }
+                  },
+                  "plan": {
+                    "stages": [
+                      {
+                        "evaluators": [
+                          {
+                            "key": {
+                              "#bigint": "2"
+                            },
+                            "task": {
+                              "executionRequirements": {
+                                "#bigint": "7"
+                              },
+                              "inputs": {
+                                "#bigint": "6"
+                              },
+                              "resultContract": {
+                                "#bigint": "8"
+                              },
+                              "workload": {
+                                "#bigint": "5"
+                              }
+                            }
+                          }
+                        ],
+                        "key": {
+                          "#bigint": "1"
+                        }
+                      }
+                    ]
+                  },
+                  "state": {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
+                        "evaluators": {
+                          "#map": [
+                            [
+                              {
+                                "#bigint": "2"
+                              },
+                              {
+                                "tag": "Awaiting",
+                                "value": {
+                                  "#tup": []
+                                }
+                              }
+                            ]
+                          ]
+                        },
+                        "generation": {
+                          "#bigint": "1"
+                        },
+                        "stageIndex": {
+                          "#bigint": "0"
+                        }
+                      }
+                    }
+                  },
+                  "workCycle": {
+                    "#bigint": "1"
+                  }
+                }
+              ],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "2"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "2"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "6"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
       "mc_chuggy::chuggy_domain::prevTickets": {
         "#map": [
           [
@@ -10538,9 +10584,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "3021"
@@ -10625,30 +10668,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "4"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "4"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -10660,9 +10687,6 @@
               "#bigint": "3"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "61"
@@ -10721,14 +10745,12 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [
-                {
+              "state": {
+                "tag": "Evaluation",
+                "value": {
                   "input": {
                     "acceptedSourceRef": {
                       "#bigint": "12"
@@ -10803,24 +10825,6 @@
                     "#bigint": "1"
                   }
                 }
-              ],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
-                "tag": "Evaluation",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "12"
-              },
-              "spawned": {
-                "#bigint": "2"
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -10832,9 +10836,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -10938,30 +10939,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -10977,9 +10962,6 @@
               "#bigint": "1"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "3021"
@@ -11064,30 +11046,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "4"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "4"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
@@ -11099,9 +11065,6 @@
               "#bigint": "3"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "61"
@@ -11160,106 +11123,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [
-                {
-                  "input": {
-                    "acceptedSourceRef": {
-                      "#bigint": "12"
-                    },
-                    "ticket": {
-                      "#bigint": "3"
-                    },
-                    "workResult": {
-                      "#bigint": "301"
-                    }
-                  },
-                  "plan": {
-                    "stages": [
-                      {
-                        "evaluators": [
-                          {
-                            "key": {
-                              "#bigint": "2"
-                            },
-                            "task": {
-                              "executionRequirements": {
-                                "#bigint": "7"
-                              },
-                              "inputs": {
-                                "#bigint": "6"
-                              },
-                              "resultContract": {
-                                "#bigint": "8"
-                              },
-                              "workload": {
-                                "#bigint": "5"
-                              }
-                            }
-                          }
-                        ],
-                        "key": {
-                          "#bigint": "1"
-                        }
-                      }
-                    ]
-                  },
-                  "state": {
-                    "tag": "Running",
-                    "value": {
-                      "completedStages": [],
-                      "stage": {
-                        "evaluators": {
-                          "#map": [
-                            [
-                              {
-                                "#bigint": "2"
-                              },
-                              {
-                                "tag": "Awaiting",
-                                "value": {
-                                  "#tup": []
-                                }
-                              }
-                            ]
-                          ]
-                        },
-                        "generation": {
-                          "#bigint": "1"
-                        },
-                        "stageIndex": {
-                          "#bigint": "0"
-                        }
-                      }
-                    }
-                  },
-                  "workCycle": {
-                    "#bigint": "1"
-                  }
-                }
-              ],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "12"
-              },
-              "spawned": {
-                "#bigint": "2"
               },
               "workCyclesStarted": {
                 "#bigint": "1"
@@ -11271,9 +11142,6 @@
               "#bigint": "6"
             },
             {
-              "completions": {
-                "#bigint": "0"
-              },
               "definition": {
                 "content": {
                   "#bigint": "121"
@@ -11377,30 +11245,14 @@
                   }
                 }
               },
-              "escalation": {
-                "tag": "NoEscalation",
-                "value": {
-                  "#tup": []
-                }
+              "revision": {
+                "#bigint": "1"
               },
-              "evaluations": [],
-              "finalizationGeneration": {
-                "#bigint": "0"
-              },
-              "phase": {
+              "state": {
                 "tag": "Revoked",
                 "value": {
                   "#tup": []
                 }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "source": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
               },
               "workCyclesStarted": {
                 "#bigint": "0"
