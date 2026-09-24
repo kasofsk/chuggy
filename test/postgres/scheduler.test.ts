@@ -805,7 +805,7 @@ test("a settlement cannot disagree with the manifest the attempt reported", asyn
   await harness.query(
     `INSERT INTO operation (tenant,project,operation,authority_kind,authority_subject,
        admission,key_version,key_digest,payload_digest,command,command_tag)
-     VALUES ($1,$2,$3,'ExecutionScheduler','subject','CorrectnessReducing','v1',$4,$5,'{}','TaskDone')`,
+     VALUES ($1,$2,$3,'ExecutionScheduler','subject','CorrectnessReducing','v1',$4,$5,'{}','ReportTaskTerminal')`,
     [
       fixture.partition.tenant,
       fixture.partition.project,
@@ -1118,7 +1118,7 @@ test("a verified result becomes exactly one completion input the ticket service 
       {
         authority_kind: "ExecutionScheduler",
         admission: "CorrectnessReducing",
-        command_tag: "TaskDone",
+        command_tag: "ReportTaskTerminal",
         base_priority: "Completion",
         state: "Pending",
         ordinal: submitted.ordinal,
@@ -1167,26 +1167,20 @@ test("the completion command carries the report its work task terminated under",
         command: {
           version: 1,
           command: "Decide",
-          event: {
-            type: "TaskDone",
+          ticketCommand: {
+            type: "ReportTaskTerminal",
             value: {
-              ticket: Number(fixture.ticket),
-              task: {
-                type: "WorkTask",
-                value: { ticket: Number(fixture.ticket), cycle: 1 },
-              },
-              report: {
-                type: "TerminalFailureReport",
-                value: {
-                  failure: {
-                    task: {
-                      type: "WorkTask",
-                      value: { ticket: Number(fixture.ticket), cycle: 1 },
-                    },
-                    evidence: 1,
+              type: "TerminalFailureReport",
+              value: {
+                ticket: Number(fixture.ticket),
+                failure: {
+                  task: {
+                    type: "WorkTask",
+                    value: { ticket: Number(fixture.ticket), cycle: 1 },
                   },
-                  kind: "ProcessFailure",
+                  evidence: 1,
                 },
+                kind: "ProcessFailure",
               },
             },
           },
@@ -1342,7 +1336,7 @@ test("a definitive inability blocks the execution at the wall and reports it una
     await harness.query(
       `SELECT e.status, e.outcome, e.blocked_reason, e.result_manifest,
               o.command_tag,
-              (o.command::jsonb#>'{event,value,report}') AS report
+              (o.command::jsonb#>'{ticketCommand,value}') AS report
          FROM execution e JOIN operation o
            ON o.tenant=e.tenant AND o.project=e.project AND o.operation=e.completion_operation
         WHERE e.tenant=$1 AND e.project=$2 AND e.execution=$3`,
@@ -1354,10 +1348,11 @@ test("a definitive inability blocks the execution at the wall and reports it una
         outcome: "Blocked",
         blocked_reason: "TicketConfigIncompatible",
         result_manifest: null,
-        command_tag: "TaskDone",
+        command_tag: "ReportTaskTerminal",
         report: {
           type: "TerminalFailureReport",
           value: {
+            ticket: Number(fixture.ticket),
             failure: {
               task: {
                 type: "WorkTask",

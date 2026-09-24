@@ -33,10 +33,10 @@
  * built, and those are exactly the states a walk over the dependency closure
  * falls over on.
  *
- * IT SAYS NOTHING ABOUT THE ENABLEMENT PREDICATES, and cannot. A replayer
- * routes on the action the trace recorded, because the golden's existence is
- * the guarantee that the action was enabled; no guard is ever consulted, so a
- * guard that drifted replays green on every step. Their evidence is
+ * IT SAYS NOTHING ABOUT THE DRAW SETS, and cannot. A replayer rebuilds the
+ * command the trace recorded and asks `decide`, so every refusal the corpus
+ * sends is compared; which commands the machine draws is never consulted, so
+ * a draw set that drifted replays green on every step. Their evidence is
  * `test/domain/enablement.test.ts`, and the decider arms no committed trace
  * reaches are `test/domain/deciders.test.ts`.
  *
@@ -234,19 +234,23 @@ function picksOf(state: ItfState): Picks {
     stages: some("stages"),
     source: some("source"),
     onFailure: some("onFailure"),
-    task: some("task"),
     report: some("report"),
-    outcome: some("out"),
-    evidence: some("evidence"),
+    result: some("result"),
+    command: some("command"),
   };
 }
 
-/** The event a state's last decision took, by its tag, read off the golden rather than replayed. */
+/** The event or refusal a state's last decision took, by its tag, read off the golden rather than replayed. */
 function eventAt(golden: Golden, index: number): string | undefined {
-  const last = decodeLastDecision(
-    stateValue(stateAt(golden, index), golden.stepVar),
+  return decisionTag(
+    decodeLastDecision(stateValue(stateAt(golden, index), golden.stepVar)),
   );
-  return last === "NoDecision" ? undefined : last.value.event.type;
+}
+
+/** An accepted decision's event tag, or a refusal's own. */
+function decisionTag(last: LastDecision): string | undefined {
+  if (last === "NoDecision") return undefined;
+  return last.type === "Decided" ? last.value.event.type : last.value.type;
 }
 
 /** One state's decision and its ghost, read off the golden. */
@@ -496,16 +500,19 @@ function checkStep(
   );
   const decision = replayStep(pre, action, picksOf(after));
   run.steps++;
-  /** The stutter decides nothing, so the state and the ghost the step before kept stand. */
+  /** The stutter decides nothing, so the state and the ghost the step before kept stand; a refusal moves nothing. */
   const view: StepView =
     decision === undefined
       ? { ...ghostAt(golden, index - 1), post: pre }
-      : {
-          pre,
-          last: { type: "Decided", value: decision },
-          post: evolve(pre, decision.event),
-        };
-  if (decision !== undefined) run.decided.add(decision.event.type);
+      : decision.type === "TicketRefused"
+        ? { pre, last: { type: "Refused", value: decision.value }, post: pre }
+        : {
+            pre,
+            last: { type: "Decided", value: decision.value },
+            post: evolve(pre, decision.value.event),
+          };
+  const tag = decisionTag(view.last);
+  if (decision !== undefined && tag !== undefined) run.decided.add(tag);
   run.findings.push(
     ...decisionFinding(golden, index, action, view.last),
     ...graphFinding(golden, index, action, view.post),
@@ -629,7 +636,7 @@ test("what the replay consumed is the whole corpus in the directory", () => {
   }
 });
 
-test("the deciders produced every event the corpus carries", () => {
+test("the deciders produced every event and every refusal the corpus carries", () => {
   assert.deepEqual(
     [...corpusRun().decided].sort(),
     [...corpusRun().carried].sort(),

@@ -4,12 +4,11 @@
  * between.
  *
  * AN OPEN ACTION ADMITS THE ANSWERS THE ACTOR WILL ACCEPT, not a part of them.
- * `decisionEventEnabled` puts a resume through `retryableIn`, which is the
- * ticket being parked and nothing else once the resume is derived from the
- * escalation: every wall the machine parks a ticket at has one. A raise is on
- * a parked ticket, so the resume and the revoke (`revocableIn`, the phase
- * alone) are both enabled at it, and offering fewer would hand a person a
- * shorter list than the actor accepts.
+ * `decide` refuses a resume only at a ticket parked at no wall, and every wall
+ * the machine parks a ticket at has a resume. A raise is on a parked ticket,
+ * so the resume and the revoke (refused only outside the phases a revocation
+ * is allowed in) are both accepted at it, and offering fewer would hand a
+ * person a shorter list than the actor accepts.
  *
  * THE SET IS DECIDED AT THE RAISE, AND THAT IS ENOUGH BECAUSE NOTHING A
  * PARKED TICKET ADMITS CAN MOVE WHILE IT IS PARKED. Both answers are enabled
@@ -244,7 +243,7 @@ function finalizationRequests(
   post: TicketGraph,
 ): DecisionMaterialization["finalization"] {
   return obligationsOf(entry, obligations, "FinalizeTicket").map(
-    ({ index }) => {
+    ({ index, obligation }) => {
       const ticket = eventTicket(entry.event);
       if (ticketAt(post, ticket).phase !== "Finalization")
         throw new Error(
@@ -256,6 +255,8 @@ function finalizationRequests(
         ticket,
         ticketVersion: entry.seq,
         requestGeneration: entry.seq,
+        workCycle: obligation.value.finalization.workCycle,
+        generation: obligation.value.finalization.generation,
         kind: "RunFinalizer" as const,
       };
     },

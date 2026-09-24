@@ -19,14 +19,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  decide,
-  dispatchEvent,
-  finalizationResultEvent,
-  releaseTicketEvent,
-  resumeTicketEvent,
-  taskDoneEvent,
-  type DecisionEvent,
-} from "../../src/actor/decisionEvent.ts";
+  createTicketCommand,
+  dispatchTicketCommand,
+  reportFinalizationResultCommand,
+  reportTaskTerminalCommand,
+  resumeTicketCommand,
+  type TicketCommand,
+} from "../../src/actor/command.ts";
+import { decide } from "../../src/domain/deciders.ts";
 import {
   aDispatchSource,
   aFinalizationEvidence,
@@ -48,6 +48,7 @@ import {
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import {
+  acceptedOf,
   id,
   judgedReport,
   producedReport,
@@ -56,10 +57,10 @@ import {
 import { plainDefinitionOf, plainPolicy } from "./harness.ts";
 
 /** A history the current deciders wrote, which is the only vintage this image holds. */
-function decided(events: readonly DecisionEvent[]): readonly Entry[] {
+function decided(events: readonly TicketCommand[]): readonly Entry[] {
   let graph = genesis;
   return events.map((command, at) => {
-    const decision = decide(graph, command, plainPolicy);
+    const decision = acceptedOf(decide(graph, command, plainPolicy));
     graph = evolve(graph, decision.event);
     return { seq: at + 1, event: decision.event };
   });
@@ -84,50 +85,44 @@ const stopped = evaluationTaskOf(1, 2, 1, 1, 1);
 const reasked = evaluationTaskOf(1, 2, 1, 2, 1);
 
 const walls = decided([
-  releaseTicketEvent(plainDefinitionOf(1)),
-  dispatchEvent(id(1), aDispatchSource),
-  taskDoneEvent(
-    id(1),
-    walled,
+  createTicketCommand(plainDefinitionOf(1)),
+  dispatchTicketCommand(id(1), aDispatchSource),
+  reportTaskTerminalCommand(
     stoppedReport(walled, "ExecutionUnavailableFailure"),
   ),
-  resumeTicketEvent(id(1)),
-  taskDoneEvent(id(1), reworked, producedReport(reworked)),
-  taskDoneEvent(
-    id(1),
-    stopped,
+  resumeTicketCommand(id(1)),
+  reportTaskTerminalCommand(producedReport(reworked)),
+  reportTaskTerminalCommand(
     stoppedReport(stopped, "ExecutionUnavailableFailure"),
   ),
-  resumeTicketEvent(id(1)),
-  taskDoneEvent(id(1), reasked, judgedReport(reasked, "EvaluatorPass")),
-  finalizationResultEvent(
-    id(1),
-    "FinalizationResultUnavailable",
-    aFinalizationEvidence,
-  ),
-  resumeTicketEvent(id(1)),
-  finalizationResultEvent(
-    id(1),
-    "FinalizationSucceeded",
-    aFinalizationEvidence,
-  ),
+  resumeTicketCommand(id(1)),
+  reportTaskTerminalCommand(judgedReport(reasked, "EvaluatorPass")),
+  reportFinalizationResultCommand(id(1), 2, 1, {
+    type: "FinalizationResultUnavailable",
+    value: aFinalizationEvidence,
+  }),
+  resumeTicketCommand(id(1)),
+  reportFinalizationResultCommand(id(1), 2, 2, {
+    type: "FinalizationSucceeded",
+    value: aFinalizationEvidence,
+  }),
 ]);
 
 test("this image knows one decision semantics and says which", () => {
-  assert.equal(decisionSemanticsVersionCurrent, 7);
-  assert.ok(isDecisionSemanticsVersion(7));
-  for (const older of [1, 2, 3, 4, 5, 6])
+  assert.equal(decisionSemanticsVersionCurrent, 8);
+  assert.ok(isDecisionSemanticsVersion(8));
+  for (const older of [1, 2, 3, 4, 5, 6, 7])
     assert.ok(
       !isDecisionSemanticsVersion(older),
       `${String(older)} names deciders this image does not have`,
     );
-  assert.ok(!isDecisionSemanticsVersion(8));
-  assert.ok(!isDecisionSemanticsVersion(6.5));
+  assert.ok(!isDecisionSemanticsVersion(9));
+  assert.ok(!isDecisionSemanticsVersion(7.5));
 });
 
 test("a row declaring another semantics is refused rather than replayed", () => {
-  assert.ok(storedJournalLegalOn(storedAt(walls, 7)));
-  for (const older of [1, 2, 3, 4, 5, 6])
+  assert.ok(storedJournalLegalOn(storedAt(walls, 8)));
+  for (const older of [1, 2, 3, 4, 5, 6, 7])
     assert.ok(
       !storedJournalLegalOn(storedAt(walls, older as DecisionSemanticsVersion)),
       `a history at ${String(older)} is not one this image decided`,
@@ -152,7 +147,7 @@ test("each wall names itself and its resume says which phase it re-enters", () =
     ],
   );
   const after = (at: number) =>
-    ticketAt(storedReplayGraph(storedAt(walls.slice(0, at), 7)), id(1));
+    ticketAt(storedReplayGraph(storedAt(walls.slice(0, at), 8)), id(1));
   assert.equal(after(3).escalation, "WorkExecutionUnavailableEscalated");
   assert.equal(after(4).phase, "Work");
   assert.equal(after(6).escalation, "EvaluationBlockedEscalated");
@@ -163,7 +158,7 @@ test("each wall names itself and its resume says which phase it re-enters", () =
 
 test("the whole history is legal as decisions this image took, and ends Done", () => {
   assert.ok(journalLegalOn(walls));
-  const settled = ticketAt(storedReplayGraph(storedAt(walls, 7)), id(1));
+  const settled = ticketAt(storedReplayGraph(storedAt(walls, 8)), id(1));
   assert.equal(settled.phase, "Done");
   assert.equal(settled.escalation, "NoEscalation");
 });

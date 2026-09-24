@@ -65,7 +65,10 @@ import {
   type CanonicalConfiguration,
 } from "../../interpreter/authoring.ts";
 import {
-  allRefusalCodes,
+  boundaryRefusal,
+  type BoundaryRefusalCode,
+} from "../../interpreter/refusal.ts";
+import {
   projectTicketWriterAuthorityKind,
   type Decided,
   type ConfigurationPin,
@@ -74,7 +77,6 @@ import {
   type DecisionOutcome,
   type DecisionInputOutcome,
   type NativeActionAnswer,
-  type RefusalCode,
   type TicketProjection,
 } from "../../interpreter/projectDecision.ts";
 import type { Lease, Partition } from "../../interpreter/projectStore.ts";
@@ -87,6 +89,10 @@ import {
   asRepositoryId,
 } from "../../interpreter/finalizer.ts";
 import { inputBundleReferencesOf } from "../../interpreter/decisionPlan.ts";
+import {
+  encodeRefusalText,
+  parseStoredRefusal,
+} from "../../interpreter/wire.ts";
 import {
   postgresInputBundleOf,
   postgresInputBundleWrite,
@@ -104,18 +110,8 @@ import { configurationRevisionDigest } from "./digest.ts";
 interface DecisionCauseRow {
   readonly state: string;
   readonly outcome_code: string | null;
+  readonly refusal: string | null;
   readonly decided_seq: string | null;
-}
-
-/** Narrows an outcome code column to the closed set, refusing a value no decision can have written. */
-function decisionRefusalCode(value: string): RefusalCode {
-  const found = allRefusalCodes.find((code) => code === value);
-  if (found === undefined) {
-    throw new Error(
-      `decision row: ${value} is not a refusal code this code knows`,
-    );
-  }
-  return found;
 }
 
 /** What a settled input says about itself, refusing a row whose state and outcome disagree. */
@@ -123,7 +119,10 @@ function decisionOutcomeOf(row: DecisionCauseRow): DecisionInputOutcome {
   if (row.state === "Cancelled") return { settled: "Cancelled" };
   if (row.state === "Answered") return { settled: "Answered" };
   if (row.state === "Refused" && row.outcome_code !== null) {
-    return { settled: "Refused", code: decisionRefusalCode(row.outcome_code) };
+    const refusal = parseStoredRefusal(row.outcome_code, row.refusal);
+    if (refusal.parsed === "Refused")
+      throw new Error(`decision row: ${refusal.why}`);
+    return { settled: "Refused", refusal: refusal.value };
   }
   if (row.state === "Journaled" && row.decided_seq !== null) {
     return {
@@ -143,7 +142,7 @@ async function decisionLockCause(
   cause: DecisionCause,
 ): Promise<DecisionCauseRow> {
   const found = await client.query<DecisionCauseRow>(
-    sql`SELECT state, outcome_code, decided_seq FROM decision_input
+    sql`SELECT state, outcome_code, refusal, decided_seq FROM decision_input
       WHERE tenant = ${partition.tenant} AND project = ${partition.project}
         AND input_kind = ${String(cause.kind)} AND input_id = ${cause.id}
       FOR UPDATE`,
@@ -176,7 +175,8 @@ async function decisionSettle(
             settled_authority_kind = ${projectTicketWriterAuthorityKind},
             settled_authority_subject = ${lease.owner},
             decided_seq = ${succeeded ? settled.seq : null},
-            outcome_code = ${settled.settled === "Refused" ? settled.code : null},
+            outcome_code = ${settled.settled === "Refused" ? settled.refusal.type : null},
+            refusal = ${settled.settled === "Refused" ? encodeRefusalText(settled.refusal) : null},
             refused_head = ${settled.settled === "Refused" ? (refusedAt?.head ?? null) : null},
             refused_lifecycle_generation = ${settled.settled === "Refused" ? (refusedAt?.lifecycleGeneration ?? null) : null}
       WHERE tenant = ${lease.partition.tenant} AND project = ${lease.partition.project}
@@ -390,10 +390,12 @@ async function decisionFinalization(
     await client.query(
       sql`INSERT INTO finalization_request
        (tenant, project, request, authorizing_seq, effect_position, ticket,
-        ticket_version, request_generation, kind)
+        ticket_version, request_generation, kind, work_cycle,
+        finalization_generation)
        VALUES (${partition.tenant},${partition.project},${request.request},${seq},
                ${request.effectPosition},${request.ticket},${request.ticketVersion},
-               ${request.requestGeneration},${request.kind})`,
+               ${request.requestGeneration},${request.kind},${request.workCycle},
+               ${request.generation})`,
     );
   }
 }
@@ -521,6 +523,11 @@ async function publishNotification(
   );
 }
 
+/** A release the deciding transaction refuses for a reason `decide` does not weigh. */
+function releaseRefused(code: BoundaryRefusalCode): DecisionOutcome {
+  return { outcome: "Refused", refusal: boundaryRefusal(code) };
+}
+
 async function decisionReleaseOutcome(
   client: pg.PoolClient,
   decision: Decision,
@@ -533,8 +540,7 @@ async function decisionReleaseOutcome(
     );
     return found.rows[0]?.matched === true;
   };
-  if (!(await releaseFence(false)))
-    return { outcome: "Refused", code: "AuthoringChanged" };
+  if (!(await releaseFence(false))) return releaseRefused("AuthoringChanged");
   const configuration = await client.query<{
     canonical: string;
     digest: string;
@@ -567,13 +573,11 @@ async function decisionReleaseOutcome(
       : asRepositoryId(revision.repository),
   );
   if (readiness.readiness === "Incomplete")
-    return {
-      outcome: "Refused",
-      code:
-        readiness.fault === "BriefNamesNoRepository"
-          ? "BriefNamesNoRepository"
-          : "ConfigurationInvalid",
-    };
+    return releaseRefused(
+      readiness.fault === "BriefNamesNoRepository"
+        ? "BriefNamesNoRepository"
+        : "ConfigurationInvalid",
+    );
   if (decision.outcome.outcome === "Journaled" && !(await releaseFence(true)))
     throw new Error(
       "release fence changed while held by its deciding transaction",
@@ -703,7 +707,7 @@ async function decisionApply(
         cause,
         {
           settled: "Refused",
-          code: outcome.code,
+          refusal: outcome.refusal,
         },
         {
           head: standing.head,

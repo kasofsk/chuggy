@@ -4,7 +4,7 @@
 /// This is not an instance of the machine and it proves nothing. It is the
 /// SAME instance as mc_chuggy — identical consts, named in the module below
 /// — under a RESTRICTED step relation: the same machine actions, drawn from
-/// the same enablement sets, with the derailing ones left out of the roster.
+/// the same draw sets, with the derailing ones left out of the roster.
 /// Nothing here changes what the machine does on a step it takes. What
 /// changes is which steps the sampler is allowed to try.
 ///

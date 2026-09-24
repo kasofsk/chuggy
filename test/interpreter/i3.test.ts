@@ -2,19 +2,19 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  dispatchEvent,
-  finalizationResultEvent,
-  releaseTicketEvent,
-  resumeTicketEvent,
-  revokeEvent,
-  taskDoneEvent,
-} from "../../src/actor/decisionEvent.ts";
+  createTicketCommand,
+  dispatchTicketCommand,
+  reportFinalizationResultCommand,
+  reportTaskTerminalCommand,
+  resumeTicketCommand,
+  revokeTicketCommand,
+  type TicketCommand,
+} from "../../src/actor/command.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import type { EvaluationFailurePolicy } from "../../src/domain/deciders.ts";
 import { retryableIn } from "../../src/domain/enablement.ts";
 import type { Config } from "../../src/domain/config.ts";
 import type {
-  DecisionEvent,
   FailureKind,
   Obligation,
   TaskIdentity,
@@ -39,25 +39,26 @@ import {
   asAuthorityKind,
   asAuthoritySubject,
   asIdempotencyKey,
-  asOperationDecisionEvent,
+  asOperationTicketCommand,
   asOperationId,
   classifyCommand,
   type Submission,
 } from "../../src/interpreter/operationInbox.ts";
 import { observe } from "../../src/interpreter/ticketService.ts";
+import { encodeTicketCommand } from "../../src/generated/model-api.ts";
 import {
   allNativeActionKinds,
   allNativeActionResolutions,
   isApprovalResolution,
-  isCompletionDecisionEvent,
+  isCompletionTicketCommand,
   nativeActionResolutions,
   safetyResolution,
-  type TicketCommand,
-} from "../../src/interpreter/ticketCommand.ts";
+  type ProjectCommand,
+} from "../../src/interpreter/projectCommand.ts";
 import {
-  encodeTicketCommand,
-  parseStoredTicketCommand,
-  parseTicketCommand,
+  encodeProjectCommand,
+  parseProjectCommand,
+  parseStoredProjectCommand,
 } from "../../src/interpreter/wire.ts";
 import {
   plainDefinitionOf,
@@ -98,7 +99,7 @@ const partition = {
 /** A work task settling with the artifact it produced, which is what a completion names. */
 function workDone(cycle: number) {
   const work = workTaskOf(1, cycle);
-  return taskDoneEvent(id(1), work, producedReport(work));
+  return reportTaskTerminalCommand(producedReport(work));
 }
 
 /** One evaluator of a stage answering. */
@@ -108,7 +109,7 @@ function judged(
   verdict: "EvaluatorPass" | "EvaluatorFail",
 ) {
   const judge = evaluationTaskOf(1, cycle, 1, 1, evaluator);
-  return taskDoneEvent(id(1), judge, judgedReport(judge, verdict));
+  return reportTaskTerminalCommand(judgedReport(judge, verdict));
 }
 
 /** One command decided and journalled: the graphs it stands between, its entry and what it owes. */
@@ -122,7 +123,7 @@ interface Decided {
 
 function decidedAt(
   state: ActorState,
-  event: DecisionEvent,
+  event: TicketCommand,
   config: Config = refinementInstance,
   policy: EvaluationFailurePolicy = plainPolicy,
 ): Decided {
@@ -130,7 +131,7 @@ function decidedAt(
   const entry = next.journal.at(-1);
   assert.ok(entry !== undefined);
   const last = next.view.last;
-  assert.ok(last !== "NoDecision");
+  assert.ok(last !== "NoDecision" && last.type === "Decided");
   return {
     state: next,
     before: memoryGraph(state),
@@ -142,7 +143,7 @@ function decidedAt(
 
 /** Every command of a history decided in turn, under the policy the suite is not steering. */
 function walked(
-  history: readonly DecisionEvent[],
+  history: readonly TicketCommand[],
   config: Config = refinementInstance,
 ): ActorState {
   return history.reduce(
@@ -163,13 +164,13 @@ function plannedAt(decided: Decided, input: DecisionInput) {
 }
 
 /**
- * One decision input naming the event, in the envelope that event actually
- * arrives in: a dispatch is asked for by name and carries no resolved event,
+ * One decision input naming the command, in the envelope that command actually
+ * arrives in: a dispatch is asked for by name and carries no resolved command,
  * every other public decision carrying its own.
  */
-function input(event: DecisionEvent): DecisionInput {
-  const command: TicketCommand =
-    event.type === "Dispatch"
+function input(event: TicketCommand): DecisionInput {
+  const command: ProjectCommand =
+    event.type === "DispatchTicket"
       ? {
           version: 1,
           command: "ManualDispatch",
@@ -179,7 +180,7 @@ function input(event: DecisionEvent): DecisionInput {
       : {
           version: 1,
           command: "Decide",
-          event: asOperationDecisionEvent(event),
+          ticketCommand: asOperationTicketCommand(event),
         };
   return {
     partition,
@@ -190,7 +191,9 @@ function input(event: DecisionEvent): DecisionInput {
       kind: "Operation",
       operation: asOperationId("operation"),
       command,
-      ...(command.command === "Decide" ? { resolvedEvent: command.event } : {}),
+      ...(command.command === "Decide"
+        ? { ticketCommand: command.ticketCommand }
+        : {}),
     },
   };
 }
@@ -199,16 +202,16 @@ test("typed commands round-trip and a release is not an operation command", () =
   const command = {
     version: 1,
     command: "Decide",
-    event: asOperationDecisionEvent(resumeTicketEvent(id(1))),
+    ticketCommand: asOperationTicketCommand(resumeTicketCommand(id(1))),
   } as const;
-  assert.deepEqual(parseTicketCommand(encodeTicketCommand(command)), {
+  assert.deepEqual(parseProjectCommand(encodeProjectCommand(command)), {
     parsed: "Ok",
     value: command,
   });
-  assert.equal(parseTicketCommand('{"version":2}').parsed, "Refused");
+  assert.equal(parseProjectCommand('{"version":2}').parsed, "Refused");
   assert.throws(
-    () => asOperationDecisionEvent(releaseTicketEvent(plainDefinitionOf(1))),
-    /not a public decision command/,
+    () => asOperationTicketCommand(createTicketCommand(plainDefinitionOf(1))),
+    /not a public ticket command/,
   );
 });
 
@@ -216,7 +219,10 @@ test("trusted classification reserves safety traffic", () => {
   const safety = {
     version: 1,
     command: "Decide",
-    event: asOperationDecisionEvent({ type: "Revoke", value: id(1) }),
+    ticketCommand: asOperationTicketCommand({
+      type: "RevokeTicket",
+      value: id(1),
+    }),
   } as const;
   assert.deepEqual(classifyCommand(safety), {
     admission: "CorrectnessReducing",
@@ -230,24 +236,20 @@ test("a completion is no command a principal may offer, and a writer still reads
     producedReport(work),
     stoppedReport(work, "ExecutionUnavailableFailure"),
   ]) {
-    const event = taskDoneEvent(id(1), work, report);
+    const event = reportTaskTerminalCommand(report);
     assert.throws(
-      () => asOperationDecisionEvent(event),
-      /not a public decision command/,
+      () => asOperationTicketCommand(event),
+      /not a public ticket command/,
     );
-    const submitted = {
-      type: "TaskDone",
-      value: { ticket: id(1), task: work, report },
-    } as const;
     const stored = JSON.stringify({
       version: 1,
       command: "Decide",
-      event: submitted,
+      ticketCommand: encodeTicketCommand(event),
     });
-    assert.equal(parseTicketCommand(stored).parsed, "Refused");
-    assert.deepEqual(parseStoredTicketCommand(stored), {
+    assert.equal(parseProjectCommand(stored).parsed, "Refused");
+    assert.deepEqual(parseStoredProjectCommand(stored), {
       parsed: "Ok",
-      value: { version: 1, command: "Decide", event: submitted },
+      value: { version: 1, command: "Decide", ticketCommand: event },
     });
   }
 });
@@ -282,7 +284,7 @@ test("every answer but the safety one is ordinary, and each belongs to one quest
     "allNativeActionResolutions",
   )) {
     const offered = { ...command, resolution };
-    assert.deepEqual(parseTicketCommand(encodeTicketCommand(offered)), {
+    assert.deepEqual(parseProjectCommand(encodeProjectCommand(offered)), {
       parsed: "Ok",
       value: offered,
     });
@@ -308,8 +310,8 @@ test("every answer but the safety one is ordinary, and each belongs to one quest
 });
 
 test("dispatch materializes exact logical work tasks from what it owes", () => {
-  const released = walked([releaseTicketEvent(plainDefinitionOf(1))]);
-  const dispatch = dispatchEvent(id(1), aDispatchSource);
+  const released = walked([createTicketCommand(plainDefinitionOf(1))]);
+  const dispatch = dispatchTicketCommand(id(1), aDispatchSource);
   const planned = plannedAt(decidedAt(released, dispatch), input(dispatch));
   assert.equal(planned.execution.length, 1);
   assert.equal(planned.execution[0]?.request, "2:0:ExecuteTask");
@@ -323,8 +325,8 @@ test("dispatch materializes exact logical work tasks from what it owes", () => {
  * operation, a public command on its own. A release is left out, because it
  * owes nothing.
  */
-function plannedInput(event: DecisionEvent): DecisionInput | undefined {
-  if (isCompletionDecisionEvent(event))
+function plannedInput(event: TicketCommand): DecisionInput | undefined {
+  if (isCompletionTicketCommand(event))
     return {
       partition,
       ordinal: 1,
@@ -333,15 +335,15 @@ function plannedInput(event: DecisionEvent): DecisionInput | undefined {
       source: {
         kind: "Operation",
         operation: asOperationId("completion"),
-        command: { version: 1, command: "Decide", event },
-        resolvedEvent: event,
+        command: { version: 1, command: "Decide", ticketCommand: event },
+        ticketCommand: event,
       },
     };
   return event.type === "CreateTicket" ? undefined : input(event);
 }
 
 /** The input a command arrives in, for a command that arrives in one. */
-function arrivedAs(event: DecisionEvent): DecisionInput {
+function arrivedAs(event: TicketCommand): DecisionInput {
   const arrived = plannedInput(event);
   assert.ok(arrived !== undefined);
   return arrived;
@@ -353,7 +355,10 @@ function arrivedAs(event: DecisionEvent): DecisionInput {
  */
 test("a work pass decides once and materializes its first stage under the obligation's identity", () => {
   const dispatched = walked(
-    [releaseTicketEvent(wideDefinition), dispatchEvent(id(1), aDispatchSource)],
+    [
+      createTicketCommand(wideDefinition),
+      dispatchTicketCommand(id(1), aDispatchSource),
+    ],
     { ...refinementInstance, nTasks: 3 },
   );
   const passed = decidedAt(dispatched, workDone(1), {
@@ -395,8 +400,8 @@ test("a work pass decides once and materializes its first stage under the obliga
  */
 test("a ticket's task numbers ascend over its whole history and never repeat", () => {
   const history = [
-    releaseTicketEvent(plainDefinitionOf(1)),
-    dispatchEvent(id(1), aDispatchSource),
+    createTicketCommand(plainDefinitionOf(1)),
+    dispatchTicketCommand(id(1), aDispatchSource),
     workDone(1),
     judged(1, 1, "EvaluatorFail"),
     workDone(2),
@@ -419,7 +424,7 @@ test("a ticket's task numbers ascend over its whole history and never repeat", (
  * spawns and the wire numbers the plan gave them.
  */
 function mintedUnder(
-  history: readonly DecisionEvent[],
+  history: readonly TicketCommand[],
   config: Config = { ...refinementInstance, nTasks: 3 },
 ): readonly { task: number; identity: TaskIdentity }[] {
   const minted: { task: number; identity: TaskIdentity }[] = [];
@@ -451,8 +456,8 @@ const sparseDefinition = releasedTicketOf(1, new Set<number>(), [
  */
 test("a sparse stage mints consecutive numbers and the set after it repeats none", () => {
   const minted = mintedUnder([
-    releaseTicketEvent(sparseDefinition),
-    dispatchEvent(id(1), aDispatchSource),
+    createTicketCommand(sparseDefinition),
+    dispatchTicketCommand(id(1), aDispatchSource),
     workDone(1),
     judged(1, 1, "EvaluatorFail"),
     judged(1, 3, "EvaluatorPass"),
@@ -480,7 +485,7 @@ const wideDefinition = releasedTicketOf(1, new Set<number>(), [
 /** One evaluator stopped rather than answering, which is what a resume comes back for. */
 function stopped(cycle: number, evaluator: number, kind: FailureKind) {
   const judge = evaluationTaskOf(1, cycle, 1, 1, evaluator);
-  return taskDoneEvent(id(1), judge, stoppedReport(judge, kind));
+  return reportTaskTerminalCommand(stoppedReport(judge, kind));
 }
 
 /**
@@ -491,13 +496,13 @@ function stopped(cycle: number, evaluator: number, kind: FailureKind) {
  */
 test("a resume re-asks the stopped evaluator alone, at a number the first pass never held", () => {
   const minted = mintedUnder([
-    releaseTicketEvent(wideDefinition),
-    dispatchEvent(id(1), aDispatchSource),
+    createTicketCommand(wideDefinition),
+    dispatchTicketCommand(id(1), aDispatchSource),
     workDone(1),
     judged(1, 1, "EvaluatorPass"),
     stopped(1, 2, "ProcessFailure"),
     judged(1, 3, "EvaluatorPass"),
-    resumeTicketEvent(id(1)),
+    resumeTicketCommand(id(1)),
   ]);
   assert.deepEqual(
     minted.map((each) => each.task),
@@ -513,11 +518,11 @@ test("a resume re-asks the stopped evaluator alone, at a number the first pass n
  */
 test("a cancellation names a retired task by the number its spawn minted", () => {
   const minted = mintedUnder([
-    releaseTicketEvent(sparseDefinition),
-    dispatchEvent(id(1), aDispatchSource),
+    createTicketCommand(sparseDefinition),
+    dispatchTicketCommand(id(1), aDispatchSource),
     workDone(1),
     judged(1, 1, "EvaluatorPass"),
-    revokeEvent(id(1)),
+    revokeTicketCommand(id(1)),
   ]);
   assert.deepEqual(minted.at(-1), {
     task: 3,
@@ -555,8 +560,8 @@ test("a spawn bundle pins its exact source and prior result manifests", () => {
  */
 test("a work pass carries its accepted source and its result into the judgement", () => {
   const passed = walked([
-    releaseTicketEvent(plainDefinitionOf(1)),
-    dispatchEvent(id(1), aDispatchSource),
+    createTicketCommand(plainDefinitionOf(1)),
+    dispatchTicketCommand(id(1), aDispatchSource),
     workDone(1),
   ]);
   const ticket = ticketAt(memoryGraph(passed), id(1));
@@ -586,15 +591,13 @@ test("a work pass carries its accepted source and its result into the judgement"
 
 test("a decision leaving escalation withdraws its open native action", () => {
   const escalated = walked([
-    releaseTicketEvent(plainDefinitionOf(1)),
-    dispatchEvent(id(1), aDispatchSource),
-    taskDoneEvent(
-      id(1),
-      workTaskOf(1, 1),
+    createTicketCommand(plainDefinitionOf(1)),
+    dispatchTicketCommand(id(1), aDispatchSource),
+    reportTaskTerminalCommand(
       stoppedReport(workTaskOf(1, 1), "ExecutionUnavailableFailure"),
     ),
   ]);
-  const revoke = revokeEvent(id(1));
+  const revoke = revokeTicketCommand(id(1));
   const planned = plannedAt(decidedAt(escalated, revoke), input(revoke));
   assert.deepEqual(planned.withdrawActionsFor, [id(1)]);
   assert.deepEqual(planned.execution, []);
@@ -605,13 +608,13 @@ test("a revoke cancels the ticket's live tasks as one request", () => {
   const config = { ...refinementInstance, nTasks: 3 };
   const judging = walked(
     [
-      releaseTicketEvent(sparseDefinition),
-      dispatchEvent(id(1), aDispatchSource),
+      createTicketCommand(sparseDefinition),
+      dispatchTicketCommand(id(1), aDispatchSource),
       workDone(1),
     ],
     config,
   );
-  const revoke = revokeEvent(id(1));
+  const revoke = revokeTicketCommand(id(1));
   const revoked = decidedAt(judging, revoke, config);
   assert.equal(revoked.entry.event.type, "TicketRevoked");
   assert.deepEqual(
@@ -642,8 +645,8 @@ test("a revoke cancels the ticket's live tasks as one request", () => {
 /** The state a ticket reaches by passing its whole program: one finalization awaiting a report. */
 function finalizing(): ActorState {
   return walked([
-    releaseTicketEvent(plainDefinitionOf(1)),
-    dispatchEvent(id(1), aDispatchSource),
+    createTicketCommand(plainDefinitionOf(1)),
+    dispatchTicketCommand(id(1), aDispatchSource),
     workDone(1),
     judged(1, 1, "EvaluatorPass"),
   ]);
@@ -652,8 +655,8 @@ function finalizing(): ActorState {
 /** A passing judgement owes the finalization, named for its obligation. */
 test("a passing judgement materializes the finalization it owes", () => {
   const judging = walked([
-    releaseTicketEvent(plainDefinitionOf(1)),
-    dispatchEvent(id(1), aDispatchSource),
+    createTicketCommand(plainDefinitionOf(1)),
+    dispatchTicketCommand(id(1), aDispatchSource),
     workDone(1),
   ]);
   const pass = judged(1, 1, "EvaluatorPass");
@@ -665,14 +668,37 @@ test("a passing judgement materializes the finalization it owes", () => {
       request.request,
       request.effectPosition,
       request.requestGeneration,
+      request.workCycle,
+      request.generation,
     ]),
-    [["4:0:FinalizeTicket", 0, 4]],
+    [["4:0:FinalizeTicket", 0, 4, 1, 1]],
   );
   assert.deepEqual(planned.execution, []);
 });
 
+/** A pass after a rework mints the finalization of the cycle that passed. */
+test("a pass in a later work cycle materializes that cycle's finalization", () => {
+  const reworked = walked([
+    createTicketCommand(plainDefinitionOf(1)),
+    dispatchTicketCommand(id(1), aDispatchSource),
+    workDone(1),
+    judged(1, 1, "EvaluatorFail"),
+    workDone(2),
+  ]);
+  const pass = judged(2, 1, "EvaluatorPass");
+  const passed = decidedAt(reworked, pass);
+  assert.equal(passed.entry.event.type, "TicketEvaluationPassed");
+  assert.deepEqual(
+    plannedAt(passed, arrivedAs(pass)).finalization.map((request) => [
+      request.workCycle,
+      request.generation,
+    ]),
+    [[2, 1]],
+  );
+});
+
 /** The input the one finalizer door mints, which carries no public command. */
-function finalizationInput(event: DecisionEvent): DecisionInput {
+function finalizationInput(event: TicketCommand): DecisionInput {
   const command = {
     version: 1,
     command: "SubmitFinalizationResult",
@@ -691,7 +717,7 @@ function finalizationInput(event: DecisionEvent): DecisionInput {
       kind: "Operation",
       operation: asOperationId("operation"),
       command,
-      resolvedEvent: event,
+      ticketCommand: event,
       finalizationRequest: {
         request: command.request,
         requestGeneration: command.requestGeneration,
@@ -703,7 +729,10 @@ function finalizationInput(event: DecisionEvent): DecisionInput {
 
 test("a decision leaving finalization withdraws the approval it left unanswered", () => {
   const before = finalizing();
-  const result = finalizationResultEvent(id(1), "FinalizationNeedsWork", 1);
+  const result = reportFinalizationResultCommand(id(1), 1, 1, {
+    type: "FinalizationNeedsWork",
+    value: 1,
+  });
   const planned = plannedAt(
     decidedAt(before, result),
     finalizationInput(result),
@@ -711,6 +740,29 @@ test("a decision leaving finalization withdraws the approval it left unanswered"
   assert.deepEqual(planned.withdrawActionsFor, [id(1)]);
   assert.deepEqual(planned.fulfillFinalizationFor, [id(1)]);
   assert.equal(planned.execution[0]?.request, "5:0:ExecuteTask");
+});
+
+/** One ticket end to end: every command decided, and the last one fulfilling the request it concludes and owing nothing more. */
+test("a ticket runs Work, Evaluation and Done, each step decided by its command", () => {
+  const dispatched = walked([
+    createTicketCommand(plainDefinitionOf(1)),
+    dispatchTicketCommand(id(1), aDispatchSource),
+  ]);
+  assert.equal(ticketAt(memoryGraph(dispatched), id(1)).phase, "Work");
+  const worked = decidedAt(dispatched, workDone(1));
+  assert.equal(ticketAt(worked.after, id(1)).phase, "Evaluation");
+  const passed = decidedAt(worked.state, judged(1, 1, "EvaluatorPass"));
+  assert.equal(ticketAt(passed.after, id(1)).phase, "Finalization");
+  const result = reportFinalizationResultCommand(id(1), 1, 1, {
+    type: "FinalizationSucceeded",
+    value: 1,
+  });
+  const done = decidedAt(passed.state, result);
+  assert.equal(ticketAt(done.after, id(1)).phase, "Done");
+  const planned = plannedAt(done, finalizationInput(result));
+  assert.deepEqual(planned.fulfillFinalizationFor, [id(1)]);
+  assert.deepEqual(planned.execution, []);
+  assert.deepEqual(planned.finalization, []);
 });
 
 /** A judgement that parked its ticket, which owes nothing and opens the desk. */
@@ -758,8 +810,8 @@ test("an open action admits exactly the answers the actor's enablement accepts",
 });
 
 test("a decision that leaves a ticket where it found it withdraws nothing", () => {
-  const released = walked([releaseTicketEvent(plainDefinitionOf(1))]);
-  const dispatch = dispatchEvent(id(1), aDispatchSource);
+  const released = walked([createTicketCommand(plainDefinitionOf(1))]);
+  const dispatch = dispatchTicketCommand(id(1), aDispatchSource);
   assert.deepEqual(
     plannedAt(decidedAt(released, dispatch), input(dispatch))
       .withdrawActionsFor,
@@ -787,7 +839,7 @@ test("submission exposes no caller-selected admission or priority", () => {
     command: {
       version: 1,
       command: "Decide",
-      event: asOperationDecisionEvent(resumeTicketEvent(id(1))),
+      ticketCommand: asOperationTicketCommand(resumeTicketCommand(id(1))),
     },
   };
   assert.equal("admission" in submission, false);

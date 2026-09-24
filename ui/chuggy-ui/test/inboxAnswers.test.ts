@@ -24,7 +24,7 @@ const settled: OperationStep = {
   step: "Settled",
   operation: "op-one",
   state: "Succeeded",
-  refusalCode: undefined,
+  refusal: undefined,
 };
 
 const abandoned: OperationStep = {

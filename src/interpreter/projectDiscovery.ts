@@ -26,22 +26,22 @@
  * its serialized position must refuse a submission whose authority moved
  * between acceptance and decision.
  *
- * A COMMAND NAMING NO DOMAIN EVENT CARRIES NO `resolvedEvent`. The two answers
- * a finalization approval admits change no `TicketGraph` state, so the source assembled
- * for one carries the answer alone and there is nothing for a decider to be
- * offered.
+ * AN ANSWER NAMING NO TICKET COMMAND CARRIES NO `ticketCommand`. The two
+ * answers a finalization approval admits change no `TicketGraph` state, so the
+ * source assembled for one carries the answer alone and there is nothing for a
+ * decider to be offered.
  *
  * EVERY REFUSAL IS A VALUE, as in `./projectStore.ts`. A generation another
  * acceptance superseded and a decision input the owner had not accounted for are
  * outcomes a caller must handle, not exceptions it may ignore.
  */
 
-import type { DecisionEvent } from "../actor/decisionEvent.ts";
+import type { TicketCommand } from "../actor/command.ts";
 import type { BlockedReason } from "../contract/rosters.ts";
 import type {
   OperationId,
   PriorityClass,
-  StoredTicketCommand,
+  StoredProjectCommand,
 } from "./operationInbox.ts";
 import type { FinalizationEvidence } from "./finalizerPreparation.ts";
 import type {
@@ -74,8 +74,9 @@ export interface DecisionInput {
   readonly source: {
     readonly kind: "Operation";
     readonly operation: OperationId;
-    readonly command: StoredTicketCommand;
-    readonly resolvedEvent?: DecisionEvent;
+    readonly command: StoredProjectCommand;
+    /** What the envelope asks `decide`, built by `./commandMap.ts` from the rows it names. */
+    readonly ticketCommand?: TicketCommand;
     /**
      * Which wall the execution a scheduler completion settles was blocked
      * at, read off that execution's own row. The report the boundary built

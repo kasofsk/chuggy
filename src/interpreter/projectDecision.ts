@@ -62,38 +62,12 @@ import {
   type OperationId,
 } from "./operationInbox.ts";
 import type { Lease, Lifecycle } from "./projectStore.ts";
+import type { Refusal } from "./refusal.ts";
 import type { DispatchCandidate } from "./dispatchView.ts";
 import type { FinalizationEvidence } from "./finalizerPreparation.ts";
-import type { NativeActionResolution } from "./ticketCommand.ts";
+import type { NativeActionResolution } from "./projectCommand.ts";
 import type { DraftBrief } from "./ticketBrief.ts";
 import type { TicketDefinitionMaterial } from "./ticketDefinition.ts";
-
-/**
- * The finite vocabulary a refused operation answers with. It is closed because
- * 006 requires a stable safe code, and an open one is a code a client cannot
- * branch on.
- */
-export type RefusalCode =
-  | "NotEnabled"
-  | "AuthoringChanged"
-  | "ConfigurationInvalid"
-  | "TicketChanged"
-  | "SelectionChanged"
-  | "ExecutionSourceUnreadable"
-  | "ExecutionSourceDenied"
-  | "BriefNamesNoRepository";
-
-/** Every refusal code, in the order this file declares them, so a suite and a CHECK can iterate rather than restate. */
-export const allRefusalCodes: readonly RefusalCode[] = [
-  "NotEnabled",
-  "AuthoringChanged",
-  "ConfigurationInvalid",
-  "TicketChanged",
-  "SelectionChanged",
-  "ExecutionSourceUnreadable",
-  "ExecutionSourceDenied",
-  "BriefNamesNoRepository",
-];
 
 /**
  * One source a ticket has run at, as the row keyed by the reference the
@@ -236,6 +210,12 @@ export interface DecisionMaterialization {
     readonly ticket: TicketId;
     readonly ticketVersion: number;
     readonly requestGeneration: number;
+    /**
+     * The attempt the obligation is for, which is what a result answering
+     * this request reports and what `decide` fences it by.
+     */
+    readonly workCycle: number;
+    readonly generation: number;
     readonly kind: "RunFinalizer";
   }[];
   readonly fulfillFinalizationFor: readonly TicketId[];
@@ -261,7 +241,7 @@ export type DecisionOutcome =
         readonly candidates: readonly DispatchCandidate[];
       };
     }
-  | { readonly outcome: "Refused"; readonly code: RefusalCode }
+  | { readonly outcome: "Refused"; readonly refusal: Refusal }
   | { readonly outcome: "Answered"; readonly answer: NativeActionAnswer }
   | { readonly outcome: "Deferred" };
 
@@ -280,7 +260,7 @@ export interface Decision {
  */
 export type DecisionInputOutcome =
   | { readonly settled: "Succeeded"; readonly seq: number }
-  | { readonly settled: "Refused"; readonly code: RefusalCode }
+  | { readonly settled: "Refused"; readonly refusal: Refusal }
   | { readonly settled: "Answered" }
   | { readonly settled: "Cancelled" };
 

@@ -352,7 +352,7 @@ test("a purpose-specific mutation becomes its one application command", () => {
       command: {
         version: 1,
         command: "Decide",
-        event: { type: "Revoke", value: 7 },
+        ticketCommand: { type: "RevokeTicket", value: 7 },
       },
     },
   );

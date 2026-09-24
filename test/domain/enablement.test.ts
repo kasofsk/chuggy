@@ -1,11 +1,11 @@
 /**
- * The enablement predicates, which the golden replay does not reach and cannot.
+ * The draw sets, which the golden replay does not reach and cannot.
  *
- * A replayer routes on the action the trace recorded and hands the decider its
- * picks; it never asks whether the action was enabled, because the golden's
- * existence is that guarantee. So every one of these predicates is unexercised
- * by the corpus, and the mutant they exist to catch — a guard that drifted from
- * the one the machine consults — is invisible to it. This suite is the whole of
+ * A replayer rebuilds the command the trace recorded and asks `decide`; it
+ * never asks which commands the machine would have drawn, because the golden's
+ * existence is that guarantee. So every one of these sets is unexercised by the
+ * corpus, and the mutant they exist to catch — a set that drifted from the one
+ * the machine draws from — is invisible to it. This suite is the whole of
  * their evidence.
  */
 
@@ -14,21 +14,20 @@ import assert from "node:assert/strict";
 
 import {
   canReleaseIn,
+  commandProbesIn,
   completableIn,
   deliverableTasksIn,
   dependableIn,
   depArtifacts,
   depsDoneIn,
   doneIn,
-  finalizableIn,
-  finalizationOutcomes,
   finalizingIn,
   isBlockedIn,
   isReadyIn,
   outstandingTasksIn,
-  outstandingTaskIn,
   quietIn,
   readiesIn,
+  refusedCommandsIn,
   releasableIdsIn,
   retryableIn,
   retryablesIn,
@@ -39,9 +38,12 @@ import {
 import {
   defaultPlan,
   evaluatorOf,
+  finalizationEvidences,
+  finalizationResults,
   releasedTicketOf,
   releasedTicketValid,
 } from "../../src/domain/config.ts";
+import { decide, unaskedDisposition } from "../../src/domain/deciders.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   evaluationTaskOf,
@@ -250,12 +252,6 @@ test("the phase holding the finalizer obligation is the only one a result resolv
     }),
   ]);
   assert.deepEqual(finalizingIn(graph), [id(1)]);
-  assert.ok(finalizableIn(graph, id(1)));
-  assert.ok(!finalizableIn(graph, id(2)));
-  assert.ok(
-    !finalizableIn(graph, asTicketId(9)),
-    "a result for a ticket the fleet never held is refused rather than looked up",
-  );
   assert.deepEqual(doneIn(graph), [id(3)]);
 });
 
@@ -272,15 +268,6 @@ test("the fabric may still report on exactly the tasks a ticket has outstanding"
   assert.deepEqual(outstandingTasksIn(graph, id(1)), [
     evaluationTaskOf(1, 1, 1, 1, 2),
   ]);
-  assert.ok(outstandingTaskIn(graph, id(1), evaluationTaskOf(1, 1, 1, 1, 2)));
-  assert.ok(
-    !outstandingTaskIn(graph, id(1), evaluationTaskOf(1, 1, 1, 1, 1)),
-    "a duplicate for a resolved task matches nothing outstanding",
-  );
-  assert.ok(
-    !outstandingTaskIn(graph, id(1), workTaskOf(1, 1)),
-    "a stale delivery names the work task the judgement was opened over",
-  );
   assert.deepEqual(outstandingTasksIn(graph, id(2)), []);
 });
 
@@ -305,12 +292,46 @@ test("a park is retryable, and only a park is", () => {
   assert.deepEqual(retryablesIn(parked), [id(1), id(2)]);
 });
 
-test("the finalizer reports every lifecycle result", () => {
-  assert.deepEqual(finalizationOutcomes, [
-    "FinalizationSucceeded",
-    "FinalizationNeedsWork",
-    "FinalizationResultUnavailable",
+test("the finalizer reports every lifecycle result, at every evidence it may return", () => {
+  assert.deepEqual(
+    [...new Set(finalizationResults.map((result) => result.type))],
+    [
+      "FinalizationSucceeded",
+      "FinalizationNeedsWork",
+      "FinalizationResultUnavailable",
+    ],
+  );
+  assert.equal(finalizationResults.length, 3 * finalizationEvidences.length);
+});
+
+test("the refused draw is exactly the probes decide refuses", () => {
+  const graph = graphOf([
+    ticketOn(config, {
+      phase: "Evaluation",
+      evaluations: [runningInstance(1, 1, plan, new Set([1]))],
+      workCyclesStarted: 1,
+      spawned: 3,
+    }),
+    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
   ]);
+  const refusedHere = (command: Parameters<typeof decide>[1]): boolean =>
+    decide(graph, command, () => unaskedDisposition).type === "TicketRefused";
+  const probes = commandProbesIn(config, graph);
+  const refused = refusedCommandsIn(config, graph);
+  assert.deepEqual(refused, probes.filter(refusedHere));
+  assert.ok(
+    refused.length < probes.length,
+    "some probe is accepted here, so the filter is doing something",
+  );
+  assert.ok(
+    refused.some(
+      (command) =>
+        command.type === "ReportTaskTerminal" &&
+        command.value.type === "TerminalFailureReport" &&
+        taskIdentityEquals(command.value.value.failure.task, workTaskOf(1, 1)),
+    ),
+    "a failure for the work task the judgement was opened over is refused",
+  );
 });
 
 /** A release of ticket one under the default plan, which each case below varies. */

@@ -321,7 +321,7 @@ function attemptCancelled(
             step: "Settled",
             operation,
             state: "Cancelled",
-            refusalCode: undefined,
+            refusal: undefined,
           },
         };
 }

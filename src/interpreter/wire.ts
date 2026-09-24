@@ -20,28 +20,37 @@
  * not decode are corrupt rather than old, and they are refused.
  */
 
+import { isDeepStrictEqual } from "node:util";
+
 import {
-  decodeDecisionEvent,
   decodeEntry,
-  decodeTaskIdentity,
-  decodeTaskTerminalReport,
-  encodeDecisionEvent,
+  decodeTicketCommand,
+  decodeTicketRefusal,
   encodeEntry as encodeEntryValue,
+  encodeTicketCommand,
+  encodeTicketRefusal,
 } from "../generated/model-api.ts";
 import {
-  finalizationOutcomeTags,
-  type DecisionEvent,
+  finalizationResultTags,
+  ticketRefusalTags,
   type Entry,
 } from "../domain/generated/modelTypes.ts";
 import {
   allNativeActionResolutions,
-  asOperationDecisionEvent,
-  completionEventTypes,
+  asOperationTicketCommand,
+  completionCommandTypes,
+  isCompletionTicketCommand,
   type FinalizationSubmission,
+  type ProjectCommand,
   type SchedulerCompletion,
-  type StoredTicketCommand,
-  type TicketCommand,
-} from "./ticketCommand.ts";
+  type StoredProjectCommand,
+} from "./projectCommand.ts";
+import {
+  allBoundaryRefusalCodes,
+  boundaryRefusal,
+  isTicketRefusal,
+  type Refusal,
+} from "./refusal.ts";
 import { checkedSelectorDecisionReference } from "./dispatchView.ts";
 import { finalizationUnavailableKinds } from "../contract/rosters.ts";
 import { dispatchViewSchemaVersion } from "../contract/http.ts";
@@ -76,34 +85,68 @@ export function parseEntry(raw: unknown): Parsed<Entry> {
   }
 }
 
-/** Writes one decision event as the text a command carries. */
-export function encodeDecisionEventText(event: DecisionEvent): string {
-  return JSON.stringify(encodeDecisionEvent(event));
+/**
+ * The refusal a refused input keeps beside its code, in the codec's spelling:
+ * the machine's own refusal, and nothing for a code the boundary decided,
+ * which carries no more than its name. A store keeps it as text and the
+ * operation resource as the value.
+ */
+export function encodeRefusalValue(refusal: Refusal): unknown {
+  return isTicketRefusal(refusal) ? encodeTicketRefusal(refusal) : undefined;
+}
+
+export function encodeRefusalText(refusal: Refusal): string | null {
+  return isTicketRefusal(refusal)
+    ? JSON.stringify(encodeTicketRefusal(refusal))
+    : null;
 }
 
 /**
- * Reads the text of one decision event, refusing anything the model does not
- * describe. The JSON layer is inside the refusal because a command is a
- * client's bytes, and unreadable bytes are an answer rather than a crash.
+ * Reads a code and the refusal beside it back, refusing a pair that
+ * disagrees: a boundary code with a refusal beside it, or a machine refusal
+ * whose tag is not its code.
  */
-export function parseDecisionEventText(text: string): Parsed<DecisionEvent> {
-  return parsedDecisionEvent(() => JSON.parse(text));
-}
-
-function parsedDecisionEvent(read: () => unknown): Parsed<DecisionEvent> {
+export function parseRefusalValue(
+  code: string,
+  value: unknown,
+): Parsed<Refusal> {
+  const boundary = allBoundaryRefusalCodes.find((known) => known === code);
+  if (boundary !== undefined)
+    return value === undefined
+      ? { parsed: "Ok", value: boundaryRefusal(boundary) }
+      : { parsed: "Refused", why: `${code} carries no refusal` };
+  if (!ticketRefusalTags.some((known) => known === code))
+    return { parsed: "Refused", why: `${code} is not a refusal code` };
+  if (value === undefined)
+    return { parsed: "Refused", why: `${code} has no refusal beside it` };
   try {
-    return { parsed: "Ok", value: decodeDecisionEvent(read()) };
+    const refusal = decodeTicketRefusal(value);
+    return refusal.type === code
+      ? { parsed: "Ok", value: refusal }
+      : { parsed: "Refused", why: `a ${refusal.type} is named ${code}` };
   } catch (error: unknown) {
     return { parsed: "Refused", why: parseRefusal(error) };
   }
 }
 
-export function encodeTicketCommand(command: TicketCommand): string {
+export function parseStoredRefusal(
+  code: string,
+  text: string | null,
+): Parsed<Refusal> {
+  if (text === null) return parseRefusalValue(code, undefined);
+  try {
+    return parseRefusalValue(code, JSON.parse(text));
+  } catch (error: unknown) {
+    return { parsed: "Refused", why: parseRefusal(error) };
+  }
+}
+
+export function encodeProjectCommand(command: ProjectCommand): string {
   if (command.command === "Decide") {
     return JSON.stringify({
       version: 1,
       command: "Decide",
-      event: encodeDecisionEvent(command.event),
+      ticketCommand: encodeTicketCommand(command.ticketCommand),
     });
   }
   return JSON.stringify(command);
@@ -111,7 +154,7 @@ export function encodeTicketCommand(command: TicketCommand): string {
 
 function parsedDispatchCommand(
   record: Record<string, unknown>,
-): TicketCommand | undefined {
+): ProjectCommand | undefined {
   const ticket = record["ticket"];
   const expectedTicketVersion = record["expectedTicketVersion"];
   if (
@@ -158,10 +201,10 @@ function parsedDispatchCommand(
   )
     throw new TypeError("proposal view token is invalid");
   checkedSelectorDecisionReference(reference);
-  return record as TicketCommand;
+  return record as ProjectCommand;
 }
 
-export function parseTicketCommand(text: string): Parsed<TicketCommand> {
+export function parseProjectCommand(text: string): Parsed<ProjectCommand> {
   try {
     const raw: unknown = JSON.parse(text);
     if (typeof raw !== "object" || raw === null) {
@@ -176,7 +219,9 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
         value: {
           version: 1,
           command: "Decide",
-          event: asOperationDecisionEvent(decodeDecisionEvent(record["event"])),
+          ticketCommand: asOperationTicketCommand(
+            decodeTicketCommand(record["ticketCommand"]),
+          ),
         },
       };
     }
@@ -193,7 +238,7 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
       typeof record["configurationRevision"] === "string" &&
       record["configurationRevision"].length > 0
     ) {
-      return { parsed: "Ok", value: record as TicketCommand };
+      return { parsed: "Ok", value: record as ProjectCommand };
     }
     if (
       record["command"] === "ResolveNativeAction" &&
@@ -206,7 +251,7 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
         (resolution) => resolution === record["resolution"],
       )
     ) {
-      return { parsed: "Ok", value: record as TicketCommand };
+      return { parsed: "Ok", value: record as ProjectCommand };
     }
     throw new TypeError("command tag or fields are invalid");
   } catch (error: unknown) {
@@ -239,7 +284,7 @@ function checkedFinalizationSubmission(
     generation < 1 ||
     typeof record["recoveryEpoch"] !== "string" ||
     record["recoveryEpoch"].length === 0 ||
-    !finalizationOutcomeTags.some((tag) => tag === outcome) ||
+    !finalizationResultTags.some((tag) => tag === outcome) ||
     (kind !== undefined) !== (outcome === "FinalizationResultUnavailable") ||
     (kind !== undefined &&
       !finalizationUnavailableKinds.some((known) => known === kind))
@@ -251,66 +296,62 @@ function checkedFinalizationSubmission(
 
 /**
  * Whether a stored envelope claims to be the scheduler's completion, read off
- * the undecoded event so an ordinary command is not decoded twice on the way
- * to the parser that owns it.
+ * the undecoded command so an ordinary one is not decoded twice on the way to
+ * the parser that owns it.
  */
 function claimsCompletion(
   record: Record<string, unknown> | undefined,
 ): boolean {
-  const event = record?.["event"];
-  if (record?.["command"] !== "Decide" || typeof event !== "object")
+  const command = record?.["ticketCommand"];
+  if (record?.["command"] !== "Decide" || typeof command !== "object")
     return false;
-  const type = (event as Record<string, unknown> | null)?.["type"];
-  return completionEventTypes.some((known) => known === type);
+  const type = (command as Record<string, unknown> | null)?.["type"];
+  return completionCommandTypes.some((known) => known === type);
 }
 
-/** The fields `submit_task_completion` writes into a completion, and the only ones. */
-const storedCompletionFields = ["ticket", "task", "report"] as const;
+/** The fields `submit_task_completion` writes into its envelope, and the only ones. */
+const storedCompletionFields = ["version", "command", "ticketCommand"] as const;
+
+/** Whether a record carries a field its writer does not write. */
+function carriesUnwrittenField(
+  record: Record<string, unknown>,
+  written: readonly string[],
+): boolean {
+  return Object.keys(record).some(
+    (field) => !written.some((known) => known === field),
+  );
+}
 
 /**
  * The scheduler boundary's stored envelope, refused by the ingress parser by
- * design and read here. The two model-typed fields go through the model's own
- * decoders, so what a completion may say about a task and its report is the
- * generated codec's answer and not a second one; the ticket is the one plain
- * integer left, and a field the boundary does not write is refused rather
- * than ignored.
+ * design and read here. The report goes through the model's own decoder, so
+ * what a completion may say about a task and its report is the generated
+ * codec's answer and not a second one, and a field the boundary does not
+ * write is refused rather than ignored: the decoder drops one, so a command
+ * that does not encode back to the bytes it was read from carried one.
  */
 function storedSchedulerCompletion(
   record: Record<string, unknown>,
 ): SchedulerCompletion {
   if (record["version"] !== 1)
     throw new TypeError("stored completion version is not 1");
-  const event = record["event"];
-  const value =
-    typeof event === "object" && event !== null
-      ? (event as Record<string, unknown>)["value"]
-      : undefined;
-  if (typeof value !== "object" || value === null)
-    throw new TypeError("stored completion carries no completion event");
-  const fields = value as Record<string, unknown>;
+  const inner = record["ticketCommand"];
   if (
-    Object.keys(fields).some(
-      (field) => !storedCompletionFields.some((known) => known === field),
-    )
+    typeof inner !== "object" ||
+    inner === null ||
+    carriesUnwrittenField(record, storedCompletionFields)
   )
     throw new TypeError(
       "stored completion carries a field its boundary does not write",
     );
-  const ticket = fields["ticket"];
-  if (typeof ticket !== "number" || !Number.isSafeInteger(ticket) || ticket < 1)
-    throw new TypeError("stored completion names no ticket");
-  return {
-    version: 1,
-    command: "Decide",
-    event: {
-      type: "TaskDone",
-      value: {
-        ticket,
-        task: decodeTaskIdentity(fields["task"]),
-        report: decodeTaskTerminalReport(fields["report"]),
-      },
-    },
-  };
+  const ticketCommand = decodeTicketCommand(inner);
+  if (!isDeepStrictEqual(encodeTicketCommand(ticketCommand), inner))
+    throw new TypeError(
+      "stored completion carries a field its boundary does not write",
+    );
+  if (!isCompletionTicketCommand(ticketCommand))
+    throw new TypeError("stored completion carries no task report");
+  return { version: 1, command: "Decide", ticketCommand };
 }
 
 /**
@@ -319,9 +360,9 @@ function storedSchedulerCompletion(
  * set alone, which is why the two boundary envelopes are readable here and
  * unspellable there.
  */
-export function parseStoredTicketCommand(
+export function parseStoredProjectCommand(
   text: string,
-): Parsed<StoredTicketCommand> {
+): Parsed<StoredProjectCommand> {
   let record: Record<string, unknown> | undefined;
   try {
     const raw: unknown = JSON.parse(text);
@@ -334,7 +375,7 @@ export function parseStoredTicketCommand(
     if (record !== undefined && claimsCompletion(record)) {
       return { parsed: "Ok", value: storedSchedulerCompletion(record) };
     }
-    return parseTicketCommand(text);
+    return parseProjectCommand(text);
   } catch (error: unknown) {
     return { parsed: "Refused", why: parseRefusal(error) };
   }

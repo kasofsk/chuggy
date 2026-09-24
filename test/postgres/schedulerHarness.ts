@@ -41,7 +41,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import type pg from "pg";
 
-import { revokeEvent } from "../../src/actor/decisionEvent.ts";
+import { revokeTicketCommand } from "../../src/actor/command.ts";
 import type { CanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import { postgresExecutionScheduler } from "../../src/adapters/postgres/scheduler.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
@@ -69,7 +69,7 @@ import {
   type CanonicalManifest,
 } from "../../src/interpreter/resultManifest.ts";
 import {
-  asOperationDecisionEvent,
+  asOperationTicketCommand,
   type Submission,
 } from "../../src/interpreter/operationInbox.ts";
 import type {
@@ -379,7 +379,9 @@ export async function schedulerRevoke(
     command: {
       version: 1,
       command: "Decide",
-      event: asOperationDecisionEvent(revokeEvent(id(project.ticket))),
+      ticketCommand: asOperationTicketCommand(
+        revokeTicketCommand(id(project.ticket)),
+      ),
     },
   });
   if (accepted.accepted !== "Accepted") {

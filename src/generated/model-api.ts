@@ -5,8 +5,9 @@ import * as z from "zod";
 
 import type {
   Escalation,
-  FinalizationOutcome,
+  FinalizationResult,
   WorkTaskIdentity,
+  FinalizationResultReport,
   ArtifactMark,
   ReleasedContent,
   TaskDefinition,
@@ -47,8 +48,14 @@ import type {
   TaskCancellation,
   Obligation,
   SuccessfulTicketDecision,
+  TicketCommand,
+  IncompleteDependencies,
+  CurrentTaskRefusal,
+  CurrentFinalizationRefusal,
+  StaleRevision,
+  TicketRefusal,
+  TicketDecision,
   LastDecision,
-  DecisionEvent,
   Entry,
   EvaluationFailureDisposition,
   Resume,
@@ -114,24 +121,51 @@ export function decodeEscalation(value: unknown): Escalation {
   return escalationSchemaWire.parse(value);
 }
 
-export const finalizationOutcomeSchema: z.ZodType<FinalizationOutcome> =
-  z.union([
-    z.literal("FinalizationSucceeded"),
-    z.literal("FinalizationNeedsWork"),
-    z.literal("FinalizationResultUnavailable"),
-  ]);
-const finalizationOutcomeSchemaWire: z.ZodType<FinalizationOutcome> = z.union([
-  z.literal("FinalizationSucceeded"),
-  z.literal("FinalizationNeedsWork"),
-  z.literal("FinalizationResultUnavailable"),
+export const finalizationResultSchema: z.ZodType<FinalizationResult> = z.union([
+  z
+    .object({
+      type: z.literal("FinalizationSucceeded"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("FinalizationNeedsWork"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("FinalizationResultUnavailable"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
 ]);
-export function encodeFinalizationOutcome(
-  value: FinalizationOutcome,
-): ModelJson {
+const finalizationResultSchemaWire: z.ZodType<FinalizationResult> = z.union([
+  z
+    .object({
+      type: z.literal("FinalizationSucceeded"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("FinalizationNeedsWork"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("FinalizationResultUnavailable"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+]);
+export function encodeFinalizationResult(value: FinalizationResult): ModelJson {
   return encodeJson(value);
 }
-export function decodeFinalizationOutcome(value: unknown): FinalizationOutcome {
-  return finalizationOutcomeSchemaWire.parse(value);
+export function decodeFinalizationResult(value: unknown): FinalizationResult {
+  return finalizationResultSchemaWire.parse(value);
 }
 
 export const workTaskIdentitySchema: z.ZodType<WorkTaskIdentity> = z
@@ -145,6 +179,35 @@ export function encodeWorkTaskIdentity(value: WorkTaskIdentity): ModelJson {
 }
 export function decodeWorkTaskIdentity(value: unknown): WorkTaskIdentity {
   return workTaskIdentitySchemaWire.parse(value);
+}
+
+export const finalizationResultReportSchema: z.ZodType<FinalizationResultReport> =
+  z
+    .object({
+      ticket: z.number().int().safe(),
+      workCycle: z.number().int().safe(),
+      generation: z.number().int().safe(),
+      result: finalizationResultSchema,
+    })
+    .readonly();
+const finalizationResultReportSchemaWire: z.ZodType<FinalizationResultReport> =
+  z
+    .object({
+      ticket: z.number().int().safe(),
+      workCycle: z.number().int().safe(),
+      generation: z.number().int().safe(),
+      result: finalizationResultSchemaWire,
+    })
+    .readonly();
+export function encodeFinalizationResultReport(
+  value: FinalizationResultReport,
+): ModelJson {
+  return encodeJson(value);
+}
+export function decodeFinalizationResultReport(
+  value: unknown,
+): FinalizationResultReport {
+  return finalizationResultReportSchemaWire.parse(value);
 }
 
 export const artifactMarkSchema: z.ZodType<ArtifactMark> = z.union([
@@ -791,6 +854,7 @@ export const taskTerminalReportSchema: z.ZodType<TaskTerminalReport> = z.union([
       type: z.literal("WorkResultReport"),
       value: z
         .object({
+          ticket: z.number().int().safe(),
           result: validatedTaskResultSchema,
           acceptedSourceRef: z.number().int().safe(),
         })
@@ -802,6 +866,7 @@ export const taskTerminalReportSchema: z.ZodType<TaskTerminalReport> = z.union([
       type: z.literal("EvaluationResultReport"),
       value: z
         .object({
+          ticket: z.number().int().safe(),
           result: validatedTaskResultSchema,
           verdict: evaluationVerdictSchema,
         })
@@ -812,7 +877,11 @@ export const taskTerminalReportSchema: z.ZodType<TaskTerminalReport> = z.union([
     .object({
       type: z.literal("TerminalFailureReport"),
       value: z
-        .object({ failure: taskFailureSchema, kind: failureKindSchema })
+        .object({
+          ticket: z.number().int().safe(),
+          failure: taskFailureSchema,
+          kind: failureKindSchema,
+        })
         .readonly(),
     })
     .readonly(),
@@ -823,6 +892,7 @@ const taskTerminalReportSchemaWire: z.ZodType<TaskTerminalReport> = z.union([
       type: z.literal("WorkResultReport"),
       value: z
         .object({
+          ticket: z.number().int().safe(),
           result: validatedTaskResultSchemaWire,
           acceptedSourceRef: z.number().int().safe(),
         })
@@ -834,6 +904,7 @@ const taskTerminalReportSchemaWire: z.ZodType<TaskTerminalReport> = z.union([
       type: z.literal("EvaluationResultReport"),
       value: z
         .object({
+          ticket: z.number().int().safe(),
           result: validatedTaskResultSchemaWire,
           verdict: evaluationVerdictSchemaWire,
         })
@@ -844,7 +915,11 @@ const taskTerminalReportSchemaWire: z.ZodType<TaskTerminalReport> = z.union([
     .object({
       type: z.literal("TerminalFailureReport"),
       value: z
-        .object({ failure: taskFailureSchemaWire, kind: failureKindSchemaWire })
+        .object({
+          ticket: z.number().int().safe(),
+          failure: taskFailureSchemaWire,
+          kind: failureKindSchemaWire,
+        })
         .readonly(),
     })
     .readonly(),
@@ -1336,6 +1411,370 @@ export function decodeSuccessfulTicketDecision(
   return successfulTicketDecisionSchemaWire.parse(value);
 }
 
+export const ticketCommandSchema: z.ZodType<TicketCommand> = z.union([
+  z
+    .object({ type: z.literal("CreateTicket"), value: releasedTicketSchema })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("DispatchTicket"),
+      value: z
+        .object({
+          ticket: z.number().int().safe(),
+          source: z.number().int().safe(),
+        })
+        .readonly(),
+    })
+    .readonly(),
+  z
+    .object({ type: z.literal("RevokeTicket"), value: z.number().int().safe() })
+    .readonly(),
+  z
+    .object({ type: z.literal("ResumeTicket"), value: z.number().int().safe() })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("ReportTaskTerminal"),
+      value: taskTerminalReportSchema,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("ReportFinalizationResult"),
+      value: finalizationResultReportSchema,
+    })
+    .readonly(),
+]);
+const ticketCommandSchemaWire: z.ZodType<TicketCommand> = z.union([
+  z
+    .object({
+      type: z.literal("CreateTicket"),
+      value: releasedTicketSchemaWire,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("DispatchTicket"),
+      value: z
+        .object({
+          ticket: z.number().int().safe(),
+          source: z.number().int().safe(),
+        })
+        .readonly(),
+    })
+    .readonly(),
+  z
+    .object({ type: z.literal("RevokeTicket"), value: z.number().int().safe() })
+    .readonly(),
+  z
+    .object({ type: z.literal("ResumeTicket"), value: z.number().int().safe() })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("ReportTaskTerminal"),
+      value: taskTerminalReportSchemaWire,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("ReportFinalizationResult"),
+      value: finalizationResultReportSchemaWire,
+    })
+    .readonly(),
+]);
+export function encodeTicketCommand(value: TicketCommand): ModelJson {
+  return encodeJson(value);
+}
+export function decodeTicketCommand(value: unknown): TicketCommand {
+  return ticketCommandSchemaWire.parse(value);
+}
+
+export const incompleteDependenciesSchema: z.ZodType<IncompleteDependencies> = z
+  .object({
+    ticket: z.number().int().safe(),
+    dependencies: z.set(z.number().int().safe()).readonly(),
+  })
+  .readonly();
+const incompleteDependenciesSchemaWire: z.ZodType<IncompleteDependencies> = z
+  .object({
+    ticket: z.number().int().safe(),
+    dependencies: z
+      .array(z.number().int().safe())
+      .refine(distinctJson, { message: "set contains a duplicate" })
+      .transform((items) => new Set(items)),
+  })
+  .readonly();
+export function encodeIncompleteDependencies(
+  value: IncompleteDependencies,
+): ModelJson {
+  return encodeJson(value);
+}
+export function decodeIncompleteDependencies(
+  value: unknown,
+): IncompleteDependencies {
+  return incompleteDependenciesSchemaWire.parse(value);
+}
+
+export const currentTaskRefusalSchema: z.ZodType<CurrentTaskRefusal> = z
+  .object({ ticket: z.number().int().safe(), task: taskIdentitySchema })
+  .readonly();
+const currentTaskRefusalSchemaWire: z.ZodType<CurrentTaskRefusal> = z
+  .object({ ticket: z.number().int().safe(), task: taskIdentitySchemaWire })
+  .readonly();
+export function encodeCurrentTaskRefusal(value: CurrentTaskRefusal): ModelJson {
+  return encodeJson(value);
+}
+export function decodeCurrentTaskRefusal(value: unknown): CurrentTaskRefusal {
+  return currentTaskRefusalSchemaWire.parse(value);
+}
+
+export const currentFinalizationRefusalSchema: z.ZodType<CurrentFinalizationRefusal> =
+  z
+    .object({
+      ticket: z.number().int().safe(),
+      workCycle: z.number().int().safe(),
+      generation: z.number().int().safe(),
+    })
+    .readonly();
+const currentFinalizationRefusalSchemaWire: z.ZodType<CurrentFinalizationRefusal> =
+  z
+    .object({
+      ticket: z.number().int().safe(),
+      workCycle: z.number().int().safe(),
+      generation: z.number().int().safe(),
+    })
+    .readonly();
+export function encodeCurrentFinalizationRefusal(
+  value: CurrentFinalizationRefusal,
+): ModelJson {
+  return encodeJson(value);
+}
+export function decodeCurrentFinalizationRefusal(
+  value: unknown,
+): CurrentFinalizationRefusal {
+  return currentFinalizationRefusalSchemaWire.parse(value);
+}
+
+export const staleRevisionSchema: z.ZodType<StaleRevision> = z
+  .object({
+    ticket: z.number().int().safe(),
+    expected: z.number().int().safe(),
+    current: z.number().int().safe(),
+  })
+  .readonly();
+const staleRevisionSchemaWire: z.ZodType<StaleRevision> = z
+  .object({
+    ticket: z.number().int().safe(),
+    expected: z.number().int().safe(),
+    current: z.number().int().safe(),
+  })
+  .readonly();
+export function encodeStaleRevision(value: StaleRevision): ModelJson {
+  return encodeJson(value);
+}
+export function decodeStaleRevision(value: unknown): StaleRevision {
+  return staleRevisionSchemaWire.parse(value);
+}
+
+export const ticketRefusalSchema: z.ZodType<TicketRefusal> = z.union([
+  z
+    .object({
+      type: z.literal("TicketAlreadyExists"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("DependenciesNotFound"),
+      value: incompleteDependenciesSchema,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("SelfDependency"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketNotFound"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketNotPending"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketIdentityMismatch"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketRevisionStale"),
+      value: staleRevisionSchema,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketDependenciesChanged"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("DependenciesIncomplete"),
+      value: incompleteDependenciesSchema,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketNotRevocable"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketNotResumable"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TaskNotCurrent"),
+      value: currentTaskRefusalSchema,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("FinalizationNotCurrent"),
+      value: currentFinalizationRefusalSchema,
+    })
+    .readonly(),
+]);
+const ticketRefusalSchemaWire: z.ZodType<TicketRefusal> = z.union([
+  z
+    .object({
+      type: z.literal("TicketAlreadyExists"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("DependenciesNotFound"),
+      value: incompleteDependenciesSchemaWire,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("SelfDependency"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketNotFound"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketNotPending"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketIdentityMismatch"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketRevisionStale"),
+      value: staleRevisionSchemaWire,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketDependenciesChanged"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("DependenciesIncomplete"),
+      value: incompleteDependenciesSchemaWire,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketNotRevocable"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketNotResumable"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TaskNotCurrent"),
+      value: currentTaskRefusalSchemaWire,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("FinalizationNotCurrent"),
+      value: currentFinalizationRefusalSchemaWire,
+    })
+    .readonly(),
+]);
+export function encodeTicketRefusal(value: TicketRefusal): ModelJson {
+  return encodeJson(value);
+}
+export function decodeTicketRefusal(value: unknown): TicketRefusal {
+  return ticketRefusalSchemaWire.parse(value);
+}
+
+export const ticketDecisionSchema: z.ZodType<TicketDecision> = z.union([
+  z
+    .object({ type: z.literal("TicketRefused"), value: ticketRefusalSchema })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketDecided"),
+      value: successfulTicketDecisionSchema,
+    })
+    .readonly(),
+]);
+const ticketDecisionSchemaWire: z.ZodType<TicketDecision> = z.union([
+  z
+    .object({
+      type: z.literal("TicketRefused"),
+      value: ticketRefusalSchemaWire,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketDecided"),
+      value: successfulTicketDecisionSchemaWire,
+    })
+    .readonly(),
+]);
+export function encodeTicketDecision(value: TicketDecision): ModelJson {
+  return encodeJson(value);
+}
+export function decodeTicketDecision(value: unknown): TicketDecision {
+  return ticketDecisionSchemaWire.parse(value);
+}
+
 export const lastDecisionSchema: z.ZodType<LastDecision> = z.union([
   z.literal("NoDecision"),
   z
@@ -1343,6 +1782,9 @@ export const lastDecisionSchema: z.ZodType<LastDecision> = z.union([
       type: z.literal("Decided"),
       value: successfulTicketDecisionSchema,
     })
+    .readonly(),
+  z
+    .object({ type: z.literal("Refused"), value: ticketRefusalSchema })
     .readonly(),
 ]);
 const lastDecisionSchemaWire: z.ZodType<LastDecision> = z.union([
@@ -1353,114 +1795,15 @@ const lastDecisionSchemaWire: z.ZodType<LastDecision> = z.union([
       value: successfulTicketDecisionSchemaWire,
     })
     .readonly(),
+  z
+    .object({ type: z.literal("Refused"), value: ticketRefusalSchemaWire })
+    .readonly(),
 ]);
 export function encodeLastDecision(value: LastDecision): ModelJson {
   return encodeJson(value);
 }
 export function decodeLastDecision(value: unknown): LastDecision {
   return lastDecisionSchemaWire.parse(value);
-}
-
-export const decisionEventSchema: z.ZodType<DecisionEvent> = z.union([
-  z
-    .object({ type: z.literal("CreateTicket"), value: releasedTicketSchema })
-    .readonly(),
-  z
-    .object({ type: z.literal("Revoke"), value: z.number().int().safe() })
-    .readonly(),
-  z
-    .object({
-      type: z.literal("Dispatch"),
-      value: z
-        .object({
-          ticket: z.number().int().safe(),
-          source: z.number().int().safe(),
-        })
-        .readonly(),
-    })
-    .readonly(),
-  z
-    .object({
-      type: z.literal("TaskDone"),
-      value: z
-        .object({
-          ticket: z.number().int().safe(),
-          task: taskIdentitySchema,
-          report: taskTerminalReportSchema,
-        })
-        .readonly(),
-    })
-    .readonly(),
-  z
-    .object({
-      type: z.literal("FinalizationResult"),
-      value: z
-        .object({
-          ticket: z.number().int().safe(),
-          out: finalizationOutcomeSchema,
-          evidence: z.number().int().safe(),
-        })
-        .readonly(),
-    })
-    .readonly(),
-  z
-    .object({ type: z.literal("ResumeTicket"), value: z.number().int().safe() })
-    .readonly(),
-]);
-const decisionEventSchemaWire: z.ZodType<DecisionEvent> = z.union([
-  z
-    .object({
-      type: z.literal("CreateTicket"),
-      value: releasedTicketSchemaWire,
-    })
-    .readonly(),
-  z
-    .object({ type: z.literal("Revoke"), value: z.number().int().safe() })
-    .readonly(),
-  z
-    .object({
-      type: z.literal("Dispatch"),
-      value: z
-        .object({
-          ticket: z.number().int().safe(),
-          source: z.number().int().safe(),
-        })
-        .readonly(),
-    })
-    .readonly(),
-  z
-    .object({
-      type: z.literal("TaskDone"),
-      value: z
-        .object({
-          ticket: z.number().int().safe(),
-          task: taskIdentitySchemaWire,
-          report: taskTerminalReportSchemaWire,
-        })
-        .readonly(),
-    })
-    .readonly(),
-  z
-    .object({
-      type: z.literal("FinalizationResult"),
-      value: z
-        .object({
-          ticket: z.number().int().safe(),
-          out: finalizationOutcomeSchemaWire,
-          evidence: z.number().int().safe(),
-        })
-        .readonly(),
-    })
-    .readonly(),
-  z
-    .object({ type: z.literal("ResumeTicket"), value: z.number().int().safe() })
-    .readonly(),
-]);
-export function encodeDecisionEvent(value: DecisionEvent): ModelJson {
-  return encodeJson(value);
-}
-export function decodeDecisionEvent(value: unknown): DecisionEvent {
-  return decisionEventSchemaWire.parse(value);
 }
 
 export const entrySchema: z.ZodType<Entry> = z

@@ -2,15 +2,12 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { postgresOperationInbox } from "../../src/adapters/postgres/operationInbox.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
-import { idempotencyPayloadDigest } from "../../src/adapters/postgres/keying.ts";
-import {
-  asOperationCommand,
-  asOperationId,
-} from "../../src/interpreter/operationInbox.ts";
-import { encodeDecisionEventText } from "../../src/interpreter/wire.ts";
+import { asOperationId } from "../../src/interpreter/operationInbox.ts";
+import { createTicketCommand } from "../../src/actor/command.ts";
+import { encodeTicketCommand } from "../../src/generated/model-api.ts";
+import { plainDefinitionOf } from "../actor/harness.ts";
 import {
   postgresHarnessKeying,
-  postgresHarnessEntry,
   postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessSubmission,
@@ -63,7 +60,7 @@ test("one key with a different typed command conflicts without allocating", asyn
     command: {
       version: 1,
       command: "Decide",
-      event: { type: "Revoke", value: 1 },
+      ticketCommand: { type: "RevokeTicket", value: 1 },
     },
   });
   assert.equal(conflict.accepted, "IdempotencyConflict");
@@ -74,32 +71,6 @@ test("one key with a different typed command conflicts without allocating", asyn
     ),
     [{ count: "1" }],
   );
-});
-
-test("a canonical retry recognizes the payload digest stored by I2", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "accept-legacy-payload",
-  );
-  const submission = postgresHarnessSubmission(
-    partition,
-    "accept-legacy-payload",
-  );
-  await harness.inbox.accept(submission);
-  assert.equal(submission.command.command, "Decide");
-  const keying = postgresHarnessKeying();
-  const legacyDigest = idempotencyPayloadDigest(
-    keying,
-    keying.current,
-    { partition, authorityKind: submission.authority.kind },
-    asOperationCommand(encodeDecisionEventText(submission.command.event)),
-  );
-  await harness.query(
-    `UPDATE operation SET payload_digest=$4
-     WHERE tenant=$1 AND project=$2 AND operation=$3`,
-    [partition.tenant, partition.project, submission.operation, legacyDigest],
-  );
-  assert.equal((await harness.inbox.accept(submission)).accepted, "Original");
 });
 
 test("ordinary work receives pre-acceptance backpressure at the soft bound", async () => {
@@ -202,7 +173,10 @@ test("durable command validation rejects a decision carrying a dispatch", async 
       JSON.stringify({
         version: 1,
         command: "Decide",
-        event: { type: "Dispatch", value: { ticket: 1, source: 9 } },
+        ticketCommand: {
+          type: "DispatchTicket",
+          value: { ticket: 1, source: 9 },
+        },
       }),
     ]),
     [{ valid: false }],
@@ -210,10 +184,12 @@ test("durable command validation rejects a decision carrying a dispatch", async 
 });
 
 test("durable command validation rejects a raw CreateTicket", async () => {
-  const release = postgresHarnessEntry(0).event;
+  const release = encodeTicketCommand(
+    createTicketCommand(plainDefinitionOf(1)),
+  );
   assert.deepEqual(
     await harness.query("SELECT ticket_command_is_valid($1::jsonb) AS valid", [
-      JSON.stringify({ version: 1, command: "Decide", event: release }),
+      JSON.stringify({ version: 1, command: "Decide", ticketCommand: release }),
     ]),
     [{ valid: false }],
   );

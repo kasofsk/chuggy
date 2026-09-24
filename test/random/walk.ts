@@ -1,6 +1,5 @@
 /**
- * The seeded walk: the machine driven by its own enablement predicates and the
- * model's own draw sets, with the whole invariant bundle and the per-ticket
+ * The seeded walk: the machine driven by the model's own draw sets, with the whole invariant bundle and the per-ticket
  * completion-emission accumulator asserted after every step.
  *
  * A RUN IS A PURE FUNCTION OF ITS SEED. Every choice — which enabled action,
@@ -25,7 +24,8 @@
  * walk nobody recorded.
  *
  * THE VIEW IS CARRIED AS THE MODEL CARRIES ITS GHOSTS: a decision moves
- * `(pre, last)`, and the stutter decides nothing and leaves them standing.
+ * `(pre, last)`, a refusal moves them and leaves the state, and the stutter
+ * decides nothing and leaves them standing.
  *
  * `walkInit` IS THE FIRST INIT OUTSIDE THE MODEL, and it refuses what the
  * model's `init` refuses: every well-formedness conjunct holds or there is
@@ -36,7 +36,7 @@ import type { Config } from "../../src/domain/config.ts";
 import { liveTickets, ticketAt } from "../../src/domain/ticketGraph.ts";
 import type {
   LastDecision,
-  SuccessfulTicketDecision,
+  TicketDecision,
   TicketGraph,
 } from "../../src/domain/generated/modelTypes.ts";
 import { evolve } from "../../src/domain/evolve.ts";
@@ -57,7 +57,7 @@ export type Decide = (
   graph: TicketGraph,
   action: string,
   picks: Picks,
-) => SuccessfulTicketDecision | undefined;
+) => TicketDecision | undefined;
 
 /** The default: the conformance dispatch table, exactly as a replayed golden routes. */
 export const decideViaTable: Decide = (_config, graph, action, picks) =>
@@ -124,7 +124,7 @@ export function creditCompletions(
   subject: TicketId | undefined,
   last: LastDecision,
 ): readonly string[] {
-  if (last === "NoDecision") return [];
+  if (last === "NoDecision" || last.type !== "Decided") return [];
   if (last.value.event.type !== "TicketFinalizationSucceeded") return [];
   if (subject === undefined) {
     return ["a completion on a step with no drawn ticket to charge it to"];
@@ -133,16 +133,27 @@ export function creditCompletions(
   return [];
 }
 
-/** The view after a step: a decision moves `(pre, last)` and evolves the state, and the stutter keeps all three. */
+/**
+ * The view after a step: a decision moves `(pre, last)` and evolves the state,
+ * a refusal moves `(pre, last)` and keeps the state, and the stutter keeps all
+ * three.
+ */
 export function viewAfter(
   view: StepView,
-  decision: SuccessfulTicketDecision | undefined,
+  decision: TicketDecision | undefined,
 ): StepView {
   if (decision === undefined) return view;
+  if (decision.type === "TicketRefused") {
+    return {
+      pre: view.post,
+      last: { type: "Refused", value: decision.value },
+      post: view.post,
+    };
+  }
   return {
     pre: view.post,
-    last: { type: "Decided", value: decision },
-    post: evolve(view.post, decision.event),
+    last: { type: "Decided", value: decision.value },
+    post: evolve(view.post, decision.value.event),
   };
 }
 
@@ -228,9 +239,9 @@ function walkStepOutcome(
 }
 
 /**
- * One seeded run of the machine: enabled actions from the enablement
- * predicates, the action and its picks drawn, the bundle and the accumulator
- * asserted after every step, the trace kept for shrinking.
+ * One seeded run of the machine: enabled actions from the draw sets, the
+ * action and its picks drawn, the bundle and the accumulator asserted after
+ * every step, the trace kept for shrinking.
  */
 export function walkRun(
   config: Config,

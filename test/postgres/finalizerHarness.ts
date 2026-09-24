@@ -55,8 +55,10 @@ import { tmpdir } from "node:os";
 
 import type pg from "pg";
 
-import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
-import type { DecisionEvent } from "../../src/domain/generated/modelTypes.ts";
+import {
+  reportTaskTerminalCommand,
+  type TicketCommand,
+} from "../../src/actor/command.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   accountIdentityFunction,
@@ -115,8 +117,8 @@ import {
   artifactDigestChars,
   asArtifactPath,
 } from "../../src/interpreter/resultManifest.ts";
-import { asOperationDecisionEvent } from "../../src/interpreter/operationInbox.ts";
-import { isCompletionDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
+import { asOperationTicketCommand } from "../../src/interpreter/operationInbox.ts";
+import { isCompletionTicketCommand } from "../../src/interpreter/projectCommand.ts";
 import { executionSchedulerAuthorityKind } from "../../src/interpreter/executionScheduler.ts";
 import {
   asRecoveryEpoch,
@@ -124,7 +126,6 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import { type ProjectMemory } from "../../src/interpreter/projectWriter.ts";
-import { id } from "../domain/fixtures.ts";
 import {
   postgresHarnessDrain,
   postgresHarnessHistory,
@@ -425,9 +426,9 @@ export async function finalizerAccept(
   harness: PostgresHarness,
   partition: Partition,
   label: string,
-  event: DecisionEvent,
+  event: TicketCommand,
 ): Promise<string> {
-  if (isCompletionDecisionEvent(event)) {
+  if (isCompletionTicketCommand(event)) {
     await postgresHarnessCompletion(
       harness,
       partition,
@@ -441,7 +442,7 @@ export async function finalizerAccept(
     command: {
       version: 1,
       command: "Decide",
-      event: asOperationDecisionEvent(event),
+      ticketCommand: asOperationTicketCommand(event),
     },
   });
   return accepted.accepted;
@@ -452,12 +453,8 @@ export function finalizerTaskDone(
   graph: TicketGraph,
   task: TaskIdentity,
   verdict: "Pass" | "Fail" = "Pass",
-): DecisionEvent {
-  return taskDoneEvent(
-    id(1),
-    task,
-    postgresHarnessReport(graph, task, verdict),
-  );
+): TicketCommand {
+  return reportTaskTerminalCommand(postgresHarnessReport(graph, task, verdict));
 }
 
 /** The lone evaluator of the first stage of one work cycle, which is the fixture's only stage. */
@@ -1089,7 +1086,7 @@ async function finalizerCompletion(
        (tenant, project, operation, authority_kind, authority_subject, admission,
         key_version, key_digest, payload_digest, command, command_tag)
      VALUES ($1,$2,$3,'${executionSchedulerAuthorityKind}','fixture',
-             'CorrectnessReducing','fixture-v1',$4,$4,'{}','TaskDone')`,
+             'CorrectnessReducing','fixture-v1',$4,$4,'{}','ReportTaskTerminal')`,
     [
       project.partition.tenant,
       project.partition.project,

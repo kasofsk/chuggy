@@ -35,8 +35,10 @@ import {
   notificationKinds,
   notificationResults,
   operatingSystems,
+  operationBoundaryRefusalCodes,
   operationRefusalCodes,
   operationStates,
+  operationTicketRefusalCodes,
   outputRenderers,
   phaseRoster,
   repositoryConfigurationFaults,
@@ -85,7 +87,11 @@ import { projectChangeKinds } from "../../src/contract/events.ts";
 import { inquiryObjectivesFixedChars } from "../../src/interpreter/inquiry.ts";
 import { leadObjectivesFixedChars } from "../../src/interpreter/leadTools.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
-import { allRefusalCodes } from "../../src/interpreter/projectDecision.ts";
+import {
+  allBoundaryRefusalCodes,
+  allRefusalCodes,
+  type RefusalCode,
+} from "../../src/interpreter/refusal.ts";
 import { allAgenticRefusalEvents } from "../../src/interpreter/agenticRefusal.ts";
 import { allThreadStandings } from "../../src/interpreter/thread.ts";
 import {
@@ -108,6 +114,7 @@ import {
   escalationTags,
   phaseTags,
   resumeTags,
+  ticketRefusalTags,
 } from "../../src/domain/generated/modelTypes.ts";
 import type { TaskIdentity as ModelTaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import {
@@ -144,12 +151,11 @@ import {
   allNativeActionKinds,
   allNativeActionResolutions,
   nativeActionResolutions as interpretedNativeActionResolutions,
-} from "../../src/interpreter/ticketCommand.ts";
+} from "../../src/interpreter/projectCommand.ts";
 import {
   nativeActionPageLimitMax,
   projectPageLimitMax,
 } from "../../src/interpreter/nativeWeb.ts";
-import type { OperationRefusalCode } from "../../src/interpreter/nativeWeb.ts";
 import {
   executionPageLimitMax,
   outputPreviewBytesMax,
@@ -413,16 +419,29 @@ test("the rosters with no runtime list are exhaustive over their unions", () => 
     Answered: true,
     Cancelled: true,
   };
-  const refusals: Record<OperationRefusalCode, true> = {
-    NotEnabled: true,
+  const refusals: Record<RefusalCode, true> = {
+    TicketAlreadyExists: true,
+    DependenciesNotFound: true,
+    SelfDependency: true,
+    TicketNotFound: true,
+    TicketNotPending: true,
+    TicketIdentityMismatch: true,
+    TicketRevisionStale: true,
+    TicketDependenciesChanged: true,
+    DependenciesIncomplete: true,
+    TicketNotRevocable: true,
+    TicketNotResumable: true,
+    TaskNotCurrent: true,
+    FinalizationNotCurrent: true,
     AuthoringChanged: true,
     ConfigurationInvalid: true,
     TicketChanged: true,
     SelectionChanged: true,
-    CommandUnreadable: true,
     ExecutionSourceUnreadable: true,
     ExecutionSourceDenied: true,
     BriefNamesNoRepository: true,
+    TicketCapacityReached: true,
+    FinalizationRequestClosed: true,
   };
   const freshness: Record<
     ProjectOperationalStatus["schedulerFreshness"],
@@ -531,10 +550,12 @@ test("every session and refusal roster restates the interpreter's own", () => {
     "a deferral the wire schema does not name is a bind answer nothing can parse",
   );
   assert.deepEqual(
-    sorted(operationRefusalCodes),
-    sorted([...allRefusalCodes, "CommandUnreadable"]),
-    "the decision narrows a stored code through its own roster and throws on a stranger; CommandUnreadable was written by migrations 005 and 007 alone",
+    operationRefusalCodes,
+    allRefusalCodes,
+    "the decision narrows a stored code through its own roster and throws on a stranger",
   );
+  assert.deepEqual(operationTicketRefusalCodes, ticketRefusalTags);
+  assert.deepEqual(operationBoundaryRefusalCodes, allBoundaryRefusalCodes);
 });
 
 /**

@@ -37,7 +37,8 @@ module chuggy_api {
   type ApiEvaluationFailureDisposition = EvaluationFailureDisposition
   type ApiResume = Resume
   type ApiEscalation = Escalation
-  type ApiFinalizationOutcome = FinalizationOutcome
+  type ApiFinalizationResult = FinalizationResult
+  type ApiFinalizationResultReport = FinalizationResultReport
   type ApiArtifactMark = ArtifactMark
   type ApiReleasedContent = ReleasedContent
   type ApiReleasedTicket = ReleasedTicket
@@ -60,9 +61,15 @@ module chuggy_api {
   type ApiTaskCancellation = TaskCancellation
   type ApiObligation = Obligation
   type ApiSuccessfulTicketDecision = SuccessfulTicketDecision
+  type ApiTicketCommand = TicketCommand
+  type ApiIncompleteDependencies = IncompleteDependencies
+  type ApiCurrentTaskRefusal = CurrentTaskRefusal
+  type ApiCurrentFinalizationRefusal = CurrentFinalizationRefusal
+  type ApiStaleRevision = StaleRevision
+  type ApiTicketRefusal = TicketRefusal
+  type ApiTicketDecision = TicketDecision
   type ApiLastDecision = LastDecision
 
-  type ApiDecisionEvent = DecisionEvent
   type ApiEntry = Entry
 
   // Quint's JSON compiler expects a runnable module. These private no-op

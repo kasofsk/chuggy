@@ -43,17 +43,16 @@ import type { SessionId } from "./agentSession.ts";
 import { asBoundedText } from "./boundedText.ts";
 import { principalCharsMax } from "./principal.ts";
 import type { Lifecycle, Partition } from "./projectStore.ts";
-import { safetyResolution, type TicketCommand } from "./ticketCommand.ts";
+import { safetyResolution, type ProjectCommand } from "./projectCommand.ts";
 export {
-  asOperationDecisionEvent,
+  asOperationTicketCommand,
   type FinalizationSubmission,
   type NativeActionKind,
   type NativeActionResolution,
-  type OperationDecisionEvent,
-  type SchedulerCompletionEvent,
-  type StoredTicketCommand,
-  type TicketCommand,
-} from "./ticketCommand.ts";
+  type OperationTicketCommand,
+  type ProjectCommand,
+  type StoredProjectCommand,
+} from "./projectCommand.ts";
 
 declare const operationIdBrand: unique symbol;
 declare const authorityKindBrand: unique symbol;
@@ -180,7 +179,7 @@ export const admissionLifecycles: Readonly<
 /**
  * An operation begins pending and ends succeeded, answered, refused or
  * cancelled; nothing else is public. `Answered` is the terminal state of a
- * command that named no domain event, so it carries no decided sequence.
+ * command that named no ticket command, so it carries no decided sequence.
  */
 export type OperationState =
   "Pending" | "Succeeded" | "Answered" | "Refused" | "Cancelled";
@@ -200,7 +199,7 @@ export interface Submission {
   readonly operation: OperationId;
   readonly authority: Authority;
   readonly key: IdempotencyKey;
-  readonly command: TicketCommand;
+  readonly command: ProjectCommand;
   /**
    * The session a command came through, recorded on the accepted row and read
    * by nothing else. It is not on `Authority`, so idempotency stays scoped by
@@ -224,7 +223,7 @@ export const allPriorityClasses: readonly PriorityClass[] = [
  * `Completion` is not among the ones reachable here: a settled logical task is
  * its boundary's to submit, so no envelope this takes carries one.
  */
-export function classifyCommand(command: TicketCommand): {
+export function classifyCommand(command: ProjectCommand): {
   readonly admission: AdmissionClass;
   readonly priority: Exclude<PriorityClass, "Completion">;
 } {
@@ -241,8 +240,8 @@ export function classifyCommand(command: TicketCommand): {
       priority: reducing ? "Safety" : "Ordinary",
     };
   }
-  switch (command.event.type) {
-    case "Revoke":
+  switch (command.ticketCommand.type) {
+    case "RevokeTicket":
       return { admission: "CorrectnessReducing", priority: "Safety" };
     case "ResumeTicket":
       return { admission: "Ordinary", priority: "Ordinary" };

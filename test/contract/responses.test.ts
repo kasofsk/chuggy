@@ -46,6 +46,7 @@ import {
   ticketNativeActionsResponse,
   ticketResponse,
 } from "../../src/adapters/http/outcomes.ts";
+import { operationResponseSchema as decodedOperationResponseSchema } from "../../src/adapters/http/codecs.ts";
 import {
   configurationResponseSchema,
   configurationsResponseSchema,
@@ -118,7 +119,6 @@ import {
   asForgeRepositoryName,
 } from "../../src/interpreter/forgeInstallation.ts";
 import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
-import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { ticketEscalationResource } from "../../src/interpreter/nativeWeb.ts";
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
 import {
@@ -143,10 +143,12 @@ import {
   requirement,
   instant,
   partition,
+  refusedOperation,
   selectorDefaults,
   selectorProjectSettings,
   revision,
   ticketCarried,
+  ticketRefusals,
   versionedConfiguration,
   versionedDispatchViewPage,
   versionedDraft,
@@ -799,19 +801,108 @@ test("an acceptance and an operation read parse as separate shapes", () => {
     "operation-one",
   );
   const refused = operationResponseSchema.parse(
-    operationResponse({
-      operation: asOperationId("operation-one"),
-      acceptedAt: asPublicInstant("2026-08-26T00:00:00Z"),
-      state: "Refused",
-      code: "TicketChanged",
-      refusedHead: 4,
-      refusedLifecycleGeneration: 1,
-    }).body,
+    operationResponse(refusedOperation({ type: "TicketChanged" })).body,
   );
   assert.equal(
     refused.state === "Refused" ? refused.code : undefined,
     "TicketChanged",
   );
+});
+
+test("a refusal the machine decided is answered with its refusal beside its code", () => {
+  for (const refusal of Object.values(ticketRefusals)) {
+    const body = operationResponse(refusedOperation(refusal)).body;
+    const wire = operationResponseSchema.parse(body);
+    assert.equal(
+      wire.state === "Refused" ? wire.code : undefined,
+      refusal.type,
+    );
+    assert.equal(
+      wire.state === "Refused" && "refusal" in wire
+        ? wire.refusal.type
+        : undefined,
+      refusal.type,
+    );
+    const read = decodedOperationResponseSchema.parse(body);
+    assert.deepEqual(
+      read.state === "Refused" ? read.refusal : undefined,
+      refusal,
+    );
+  }
+  assert.deepEqual(
+    operationResponse(refusedOperation(ticketRefusals.DependenciesIncomplete))
+      .body,
+    {
+      operation: "operation-one",
+      acceptedAt: "2026-08-26T00:00:00Z",
+      state: "Refused",
+      code: "DependenciesIncomplete",
+      refusal: {
+        type: "DependenciesIncomplete",
+        value: { ticket: 3, dependencies: [2] },
+      },
+      refusedHead: 4,
+      refusedLifecycleGeneration: 1,
+    },
+  );
+});
+
+test("a refusal the boundary decided carries no refusal", () => {
+  const body = operationResponse(
+    refusedOperation({ type: "SelectionChanged" }),
+  ).body;
+  assert.equal("refusal" in (body as object), false);
+  assert.throws(() =>
+    operationResponseSchema.parse({
+      ...(body as object),
+      refusal: { type: "SelectionChanged", value: 3 },
+    }),
+  );
+});
+
+test("a machine's code without its refusal, or with another's, is not a response", () => {
+  const body = operationResponse(
+    refusedOperation(ticketRefusals.TicketNotFound),
+  ).body as Record<string, unknown>;
+  assert.throws(() =>
+    operationResponseSchema.parse({ ...body, refusal: undefined }),
+  );
+  assert.throws(() =>
+    operationResponseSchema.parse({
+      ...body,
+      refusal: { type: "TicketNotResumable", value: 3 },
+    }),
+  );
+  assert.throws(() =>
+    operationResponseSchema.parse({
+      ...body,
+      code: "DependenciesIncomplete",
+      refusal: {
+        type: "DependenciesIncomplete",
+        value: { ticket: 3, dependencies: [] },
+      },
+    }),
+  );
+});
+
+test("a stale revision names two revisions the database would hold, and zero is none", () => {
+  const body = operationResponse(
+    refusedOperation(ticketRefusals.TicketRevisionStale),
+  ).body as Record<string, unknown>;
+  operationResponseSchema.parse(body);
+  for (const revisions of [
+    { expected: 0, current: 4 },
+    { expected: 2, current: 0 },
+  ])
+    assert.throws(() =>
+      operationResponseSchema.parse({
+        ...body,
+        refusal: {
+          type: "TicketRevisionStale",
+          value: { ticket: 3, ...revisions },
+        },
+      }),
+    );
 });
 
 test("a notification batch and a dispatch page parse as the server sends them", () => {

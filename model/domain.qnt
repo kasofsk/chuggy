@@ -96,6 +96,11 @@ module chuggy_domain {
   pure val dispositionChoices: Set[EvaluationFailureDisposition] =
     Set(ReworkEvaluationFailure, EscalateEvaluationFailure)
 
+  /// The disposition a command that concludes no stage is taken under.
+  /// `decide` never asks it, so which one it is decides nothing.
+  pure val unaskedDisposition: EvaluationFailureDisposition =
+    ReworkEvaluationFailure
+
   /// THE SOURCE REFERENCES the application may observe, at model scope.
   /// Opaque and positive: what the machine claims about one is that a
   /// dispatched ticket has it and that what the ticket carries afterwards is
@@ -132,25 +137,38 @@ module chuggy_domain {
   pure val finalizationEvidences: Set[int] =
     Set(aFinalizationEvidence, aFinalizationEvidence + 1)
 
+  /// WHAT A FINALIZER MAY REPORT: any of the three results, at any evidence
+  /// it may return. Queueing, preparation, approval, permits and
+  /// reconciliation are durable operational records the machine never
+  /// learns, and which conditions a finalizer calls unreachable is the same
+  /// kind of detail: the machine draws the result, never the cause.
+  pure val finalizationResults: Set[FinalizationResult] =
+    finalizationEvidences.map(evidence => FinalizationSucceeded(evidence))
+      .union(finalizationEvidences.map(evidence =>
+        FinalizationNeedsWork(evidence)))
+      .union(finalizationEvidences.map(evidence =>
+        FinalizationResultUnavailable(evidence)))
+
   /// WHAT A TASK CAN COME BACK WITH, as the environment may produce it: a
   /// work task produced its artifact at a source the application accepted,
   /// or reached no result at all; an evaluator judged either way or reached
   /// no result. A produced report carries the obligation the ticket owes for
   /// the task (ticket.qnt producedResult), which is the only obligation the
-  /// completion's enablement admits; callers draw the task from liveTasks.
+  /// completion accepts; callers draw the task from liveTasks.
   pure def reportChoices(
       jb: Ticket, task: TaskIdentity): Set[TaskTerminalReport] =
+    val j = jb.definition.id
     val failures = Set(ProcessFailure, ExecutionUnavailableFailure)
-      .map(kind => TerminalFailureReport({
+      .map(kind => TerminalFailureReport({ ticket: j,
         failure: { task: task, evidence: taskRefOf(task) }, kind: kind }))
     match task {
       | WorkTask(_) => failures.union(acceptedSources.map(accepted =>
-          WorkResultReport({ result: producedResult(jb, task),
+          WorkResultReport({ ticket: j, result: producedResult(jb, task),
             acceptedSourceRef: accepted })))
       | EvaluationTask(_) => failures.union(
           Set(EvaluatorPass, EvaluatorFail).map(verdict =>
-            EvaluationResultReport({ result: producedResult(jb, task),
-              verdict: verdict })))
+            EvaluationResultReport({ ticket: j,
+              result: producedResult(jb, task), verdict: verdict })))
     }
 
   /// THE DEFINITION AN EVALUATOR RUNS UNDER, at model scope: a distinct
@@ -251,10 +269,10 @@ module chuggy_domain {
   /// no plan reads the index back out of the key. Evaluator keys are NOT
   /// positional.
   ///
-  /// This IS the release-refusal rule — a definition outside it is refused at
-  /// authoring time (refinement.qnt decisionEventEnabled) rather than
-  /// defended against mid-flight, which is what makes definitionsWellFormed
-  /// hold in every reachable state.
+  /// This IS the release's shape rule — a definition outside it is not a
+  /// command the machine takes (commandValid below) rather than one defended
+  /// against mid-flight, which is what makes definitionsWellFormed hold in
+  /// every reachable state.
   pure def releasedTicketValid(definition: ReleasedTicket): bool = and {
     definition.id > 0,
     releasedContentValid(definition.content),
@@ -269,6 +287,22 @@ module chuggy_domain {
         stage.key == i + 1,
         evaluatorKeys(stage).forall(k => k >= 1 and k <= N_TASKS)
       })
+  }
+
+  /// A COMMAND IS WELL-FORMED — the package's commandValid, at chuggy's
+  /// release rule (releasedTicketValid, which carries this instance's bounds).
+  /// It is a SHAPE guard and not a refusal: it reads no ticket, a command
+  /// outside it is not one the machine takes at all, and every command the
+  /// machine draws is inside it by construction.
+  pure def commandValid(command: TicketCommand): bool = match command {
+    | CreateTicket(definition) => releasedTicketValid(definition)
+    | DispatchTicket(dispatch) => dispatch.ticket > 0 and dispatch.source > 0
+    | ReportTaskTerminal(report) => reportValid(report)
+    | ReportFinalizationResult(report) => report.ticket > 0
+        and report.workCycle > 0
+        and report.generation > 0
+        and finalizationResultValid(report.result)
+    | _ => true
   }
 
   /// The ticket-construction seam, now CLOSED: every ticket the machine holds
@@ -292,74 +326,81 @@ module chuggy_domain {
   // ==========================================================================
   // === Pure deciders ========================================================
   // ==========================================================================
-  // decide(view, command) -> { event, obligations }, never an effect; every
-  // runtime shape reuses these unchanged, and evolve (below) is the only
-  // thing that moves a view.
+  // decide(view, command) -> a refusal, or { event, obligations }; never an
+  // effect. Every runtime shape reuses these unchanged, and evolve (below) is
+  // the only thing that moves a view.
 
   pure def withTicket(c: TicketGraph, j: int, jb: Ticket): TicketGraph =
     { ...c, tickets: c.tickets.set(j, jb) }
 
-  /// A decision: the event, and what it owes (the package's `decided`).
+  /// An accepted command: the event, and what it owes (the package's
+  /// `decided`).
   pure def decided(
-      event: TicketEvent,
-      obligations: List[Obligation]): SuccessfulTicketDecision =
-    { event: event, obligations: obligations }
+      event: TicketEvent, obligations: List[Obligation]): TicketDecision =
+    TicketDecided({ event: event, obligations: obligations })
+
+  /// A refused command (the package's `refused`).
+  pure def refused(reason: TicketRefusal): TicketDecision =
+    TicketRefused(reason)
 
   // --- Release and revoke ---------------------------------------------------
 
   /// A ticket IS RELEASED as a Pending — the environment (an author) creates it.
   /// A ticket does not exist in TicketGraph before this decision. Its
-  /// externally allocated id may be sparse. Dependencies may point only at
-  /// already released tickets, and never at a tombstone: a Revoked ticket never
-  /// becomes Done, so an edge to one is an edge that blocks its dependent
-  /// for good, and refusing it at authoring time is what keeps an author
-  /// from writing that ticket rather than discovering it afterwards.
-  /// Callers guarantee dependencies_ ⊆ dependable ids (see `dependableTickets`).
+  /// externally allocated id may be sparse, and it is refused if the id is
+  /// taken, if the ticket names itself, or if it names a dependency that does
+  /// not exist — in that order, so the first failing check names the refusal.
   ///
-  /// The release carries the whole DEFINITION, validated the same structural
-  /// way — callers guarantee it satisfies releasedTicketValid, so an empty
-  /// plan, an empty roster, a key past N_TASKS or named twice, an
-  /// off-position stage key, an overlong plan or a reference at zero is
-  /// REFUSED at authoring time: no reachable state holds one
-  /// (definitionsWellFormed), rather than the interpreter defending against
-  /// one mid-flight. The definition is immutable after release.
+  /// The release carries the whole DEFINITION, and its shape is not a
+  /// refusal: a definition outside releasedTicketValid is not a command the
+  /// machine takes at all (commandValid), so no reachable state holds one
+  /// (definitionsWellFormed). The definition is immutable after release.
   ///
   /// Dynamic-DAG boundary: releases are author actions — only
-  /// the environment action `release` calls this decider, and no ticket-event
-  /// decider creates tickets, so the ticket set grows only by authoring, never by
-  /// tickets spawning tickets. Author commands (release/revoke) are also guarded
-  /// by enablement: authors are command sources, not the at-least-once fabric.
-  ///
-  /// The first domain decision for a ticket. The id is allocated by native
-  /// release candidate authoring, may be sparse, and is never minted or
-  /// ordered by TicketGraph.
-  pure def decideReleaseTicket(
-      c: TicketGraph, definition: ReleasedTicket): SuccessfulTicketDecision =
-    decided(TicketCreated(definition), [])
+  /// the environment action `releaseTicket` asks this decider, and no event
+  /// creates tickets but TicketCreated, so the ticket set grows only by
+  /// authoring, never by tickets spawning tickets.
+  pure def decideCreate(
+      c: TicketGraph, definition: ReleasedTicket): TicketDecision =
+    if (c.tickets.keys().contains(definition.id))
+      refused(TicketAlreadyExists(definition.id))
+    else if (definition.dependencies.contains(definition.id))
+      refused(SelfDependency(definition.id))
+    else {
+      val missing = definition.dependencies.filter(dependency =>
+        not(c.tickets.keys().contains(dependency)))
+      if (missing != Set())
+        refused(DependenciesNotFound({ ticket: definition.id,
+          dependencies: missing }))
+      else decided(TicketCreated(definition), [])
+    }
 
   /// REVOKE — the author settles one ticket. Every non-terminal phase short
-  /// of Finalization may be revoked (the caller's guard, revocableIn), and
-  /// the terminals are absorbing, so nothing ever moves a ticket OUT of
-  /// Revoked (invariant terminalsAbsorbing). The world is told to cancel
-  /// every task the fabric is running for it, while the evaluation instances
-  /// are KEPT exactly as they stood — provenance survives the author's
-  /// settlement, "Revoked runs nothing" is not "Revoked remembers nothing",
-  /// and leaving the phase is already enough to stop a run's obligations
-  /// being owed (ticket.qnt liveObligations) — and the escalation is
-  /// cleared: Revoked opens NO human task (hasOpenHumanTask excludes it;
-  /// revocation is the author's settled choice, like Done).
+  /// of Finalization may be revoked (revocationAllowed), and the terminals
+  /// are absorbing, so nothing ever moves a ticket OUT of Revoked (invariant
+  /// terminalsAbsorbing). The world is told to cancel every task the fabric
+  /// is running for it, while the evaluation instances are KEPT exactly as
+  /// they stood — provenance survives the author's settlement, "Revoked runs
+  /// nothing" is not "Revoked remembers nothing", and leaving the phase is
+  /// already enough to stop a run's obligations being owed (ticket.qnt
+  /// liveObligations) — and the escalation is cleared: Revoked opens NO human
+  /// task (hasOpenHumanTask excludes it; revocation is the author's settled
+  /// choice, like Done).
   ///
   /// ONE TICKET MOVES, the one the author named. A dependent behind it is
-  /// left where it is: it stays Pending, depsDoneIn never admits it (a dep
-  /// that is not Done blocks, and Revoked never becomes Done), and revoke
-  /// stays offered on it (revocablesIn admits Pending), so its own author
-  /// settles it the same way this one was settled. Revoking it here would
-  /// destroy another author's ticket with no human deciding it, and parking
-  /// it here would open a desk task for a decision only its author can take.
-  pure def decideRevoke(c: TicketGraph, j: int): SuccessfulTicketDecision =
-    decided(TicketRevoked(j), cancelLiveTasks(c.tickets.get(j)))
+  /// left where it is: it stays Pending, a dispatch of it is refused while a
+  /// dependency is not Done (and Revoked never becomes Done), and revoke
+  /// stays open to it, so its own author settles it the same way this one
+  /// was settled. Revoking it here would destroy another author's ticket with
+  /// no human deciding it, and parking it here would open a desk task for a
+  /// decision only its author can take.
+  pure def decideRevoke(c: TicketGraph, j: int): TicketDecision =
+    if (not(c.tickets.keys().contains(j))) refused(TicketNotFound(j))
+    else if (not(revocationAllowed(c.tickets.get(j).phase)))
+      refused(TicketNotRevocable(j))
+    else decided(TicketRevoked(j), cancelLiveTasks(c.tickets.get(j)))
 
-  // --- Pure guard predicates ------
+  // --- Pure predicates the deciders and the draws share ------------------
 
   /// Revocation stops before finalization and cannot rewrite a terminal
   /// outcome (the package's revocationAllowed, over chuggy's phase).
@@ -395,14 +436,22 @@ module chuggy_domain {
   pure def depArtifacts(c: TicketGraph, j: int): Set[ArtifactMark] =
     waitsOn(c, j).map(d => artifactOf(c.tickets.get(d)))
 
-  pure def depsDoneIn(c: TicketGraph, j: int): bool =
-    waitsOn(c, j).forall(k => c.tickets.get(k).phase == Done)
+  /// The dependencies of this ticket that are not Done (the package's
+  /// incompleteDependencies), which is what a refused dispatch names.
+  pure def incompleteDependencies(c: TicketGraph, jb: Ticket): Set[int] =
+    jb.definition.dependencies.filter(k => c.tickets.get(k).phase != Done)
 
-  // --- TicketGraph-parameterized enablement: the machine's actions and the
-  // refinement's decide step (model/refinement.qnt, decisionEventEnabled)
-  // read the SAME definitions, because a copied guard drifts. Each
-  // enablement val below (the state section) is a one-line reference to its
-  // pure TicketGraph form here.
+  pure def depsDoneIn(c: TicketGraph, j: int): bool =
+    incompleteDependencies(c, c.tickets.get(j)) == Set()
+
+  // --- The draw sets, over a TicketGraph: which commands the environment
+  // sends. `decide` is what accepts or refuses one; these say only where the
+  // machine's actions, the refinement's actors and the witness drivers draw
+  // from, and each val below (the state section) is a one-line reference to
+  // its pure form here. The release room is the one bound among them that
+  // `decide` does not refuse over: it is this instance's N_TICKETS, not the
+  // package's, and an implementation's boundary refuses a release outside it
+  // before `decide` is asked.
 
   /// Room for one more release (the N_TICKETS release bound).
   pure def canReleaseIn(c: TicketGraph, j: int): bool = and {
@@ -411,8 +460,10 @@ module chuggy_domain {
     not(c.tickets.keys().contains(j))
   }
 
-  /// Tickets a release may depend on: anything but a tombstone, because a
-  /// Revoked ticket never becomes Done (decideReleaseTicket).
+  /// Tickets a release draws its dependencies from: anything but a tombstone.
+  /// decideCreate refuses no dependency that exists — the package names no
+  /// refusal for a Revoked one — but a Revoked ticket never becomes Done, so
+  /// the author the machine models never writes a ticket that can never run.
   pure def dependableIn(c: TicketGraph): Set[int] =
     c.tickets.keys().filter(k => c.tickets.get(k).phase != Revoked)
 
@@ -459,35 +510,44 @@ module chuggy_domain {
 
   // --- Work, judgement and the finalizer -----------------------------------
 
-  /// Ready -> Work: launch a cycle for the ticket THE SELECTOR PROPOSED.
-  /// Work is ONE task phase (one work task per cycle; Work is not
-  /// staged), and the cycle counter — with the run's own generation for an
-  /// evaluation — is what makes each identity a ticket names one no earlier
-  /// task of it ever carried.
+  /// Ready -> Work: launch a cycle for the ticket THE SELECTOR PROPOSED, at
+  /// the source the application observed. Refused if the ticket does not
+  /// exist, is not Pending, or waits on a dependency that is not Done — the
+  /// last naming every such dependency. Work is ONE task phase (one work task
+  /// per cycle; Work is not staged), and the cycle counter — with the run's
+  /// own generation for an evaluation — is what makes each identity a ticket
+  /// names one no earlier task of it ever carried.
   ///
   /// THE AGENTIC SELECTOR: this decider makes the accepted dispatch
-  /// proposal first-class — j
-  /// is the CHOICE, and the chooser is the `dispatch` action's nondet pick
-  /// among readyTickets. That pick is not incidental scheduler noise to be
-  /// refined away: the selector is itself agentic rather than a FIFO pop,
-  /// so its choice is a genuine nondet outcome and ANY
-  /// Ready ticket may be chosen next, and the TicketDispatched event in the
-  /// trace IS the ticket writer's decision — an implementation
-  /// conforms with any policy (LLM-driven, priority, whatever) because
-  /// every policy refines unrestricted choice among Ready tickets. No
+  /// proposal first-class — the ticket is the CHOICE, and the chooser is the
+  /// `dispatch` action's nondet pick among readyTickets. That pick is not
+  /// incidental scheduler noise to be refined away: the selector is itself
+  /// agentic rather than a FIFO pop, so its choice is a genuine nondet
+  /// outcome and ANY Ready ticket may be chosen next, and the
+  /// TicketDispatched event in the trace IS the ticket writer's decision — an
+  /// implementation conforms with any policy (LLM-driven, priority, whatever)
+  /// because every policy refines unrestricted choice among Ready tickets. No
   /// policy-hook parameter is introduced: with exactly one honest default
   /// (unrestricted nondet) a const would have one branch and nothing to
   /// compare — it enters only when a real competing policy needs modeling.
   /// No queue, no fairness — standing non-goals.
   ///
   /// THE SOURCE IS OBSERVED HERE AND NOWHERE ELSE (ticket.qnt Ticket.source):
-  /// the dispatch is the one edge that looks at what the ticket's repository
-  /// is at, so it is an argument to this decider and to no other.
+  /// the dispatch is the one command that carries what the ticket's
+  /// repository is at.
   pure def decideDispatch(
-      c: TicketGraph, j: int, source_: int): SuccessfulTicketDecision =
-    val jb = c.tickets.get(j)
-    decided(TicketDispatched({ ticket: j, source: source_ }),
-      [executeWork(jb, jb.workCyclesStarted + 1)])
+      c: TicketGraph, dispatch: { ticket: int, source: int }): TicketDecision =
+    val j = dispatch.ticket
+    if (not(c.tickets.keys().contains(j))) refused(TicketNotFound(j))
+    else {
+      val jb = c.tickets.get(j)
+      val incomplete = incompleteDependencies(c, jb)
+      if (jb.phase != Pending) refused(TicketNotPending(j))
+      else if (incomplete != Set())
+        refused(DependenciesIncomplete({ ticket: j, dependencies: incomplete }))
+      else decided(TicketDispatched(dispatch),
+        [executeWork(jb, jb.workCyclesStarted + 1)])
+    }
 
   /// THE COMPLETION — one decider for every task this machine ever asks
   /// for, in either phase, carrying what came back (ticket.qnt
@@ -496,11 +556,11 @@ module chuggy_domain {
   /// completion that concludes a stage decides the stage, which is why the
   /// evaluation-failure policy is an argument here.
   ///
-  /// It is guarded by enablement (refinement.qnt decisionEventEnabled): the
-  /// task is one the ticket owes and the report is one it can carry. A
-  /// completion for a task nothing owes is refused before it is decided;
-  /// the event it would have been falls through evolve by identity, which
-  /// is what a duplicate that slipped past the door would meet.
+  /// It is accepted only for a task the ticket owes, and a produced report
+  /// only under the obligation that task was spawned with; anything else is
+  /// refused TaskNotCurrent. In Work that is the cycle's own task, so a
+  /// failure naming a cycle a rework replaced is refused too; in Evaluation
+  /// it is an evaluator the run still awaits; in any other phase, nothing.
   ///
   /// A WALL IS NOT A VERDICT, and the two phases answer it differently. An
   /// evaluator that infrastructure could not run marks that evaluator and
@@ -508,13 +568,52 @@ module chuggy_domain {
   /// ticket parks is the stage's decision once they finish (evaluation.qnt
   /// concludeStage). A work task's wall parks the ticket at once, because a
   /// work cycle is one task and there is nothing left of it to wait for.
-  pure def decideTaskDone(
-      c: TicketGraph, j: int, task: TaskIdentity,
-      report: TaskTerminalReport,
-      failurePolicy: EvaluationFailurePolicy): SuccessfulTicketDecision =
-    val jb = c.tickets.get(j)
-    if (jb.phase == Work) decideWorkTaskDone(jb, j, report)
-    else decideEvalTaskDone(jb, j, report, failurePolicy)
+  pure def decideTaskTerminal(
+      c: TicketGraph, report: TaskTerminalReport,
+      failurePolicy: EvaluationFailurePolicy): TicketDecision =
+    val j = reportTicket(report)
+    if (not(c.tickets.keys().contains(j))) refused(TicketNotFound(j))
+    else {
+      val jb = c.tickets.get(j)
+      val task = reportTask(report)
+      val notCurrent = refused(TaskNotCurrent({ ticket: j, task: task }))
+      if (jb.phase == Work)
+        if (workReportCurrent(jb, report)) decideWorkTerminal(jb, report)
+        else notCurrent
+      else if (jb.phase == Evaluation)
+        if (evaluationReportCurrent(currentInstance(jb), report))
+          decideEvaluationTerminal(jb, report, failurePolicy)
+        else notCurrent
+      else notCurrent
+    }
+
+  /// A report a ticket in Work owes: the cycle's own task, and a produced
+  /// one under the obligation that cycle was spawned with.
+  pure def workReportCurrent(jb: Ticket, report: TaskTerminalReport): bool =
+    and {
+      workTaskOf(jb.definition.id, jb.workCyclesStarted) == reportTask(report),
+      match report {
+        | WorkResultReport(produced) => produced.result.obligation ==
+            workTaskObligation(jb, jb.workCyclesStarted)
+        | TerminalFailureReport(_) => true
+        | EvaluationResultReport(_) => false
+      }
+    }
+
+  /// A report the current run owes: an evaluator it still awaits, and a
+  /// produced one under an obligation the run still holds.
+  pure def evaluationReportCurrent(
+      evaluation: EvaluationInstance, report: TaskTerminalReport): bool =
+    and {
+      taskCurrent(evaluation, reportTask(report)),
+      match report {
+        | EvaluationResultReport(produced) =>
+          currentTaskObligations(evaluation).select(owed =>
+            owed == produced.result.obligation).length() > 0
+        | TerminalFailureReport(_) => true
+        | WorkResultReport(_) => false
+      }
+    }
 
   /// A WORK completion. The cycle's one task has come back: a produced
   /// result is ACCEPTED, which opens the instance that judges it and asks
@@ -529,16 +628,17 @@ module chuggy_domain {
   /// attempts of our own is a standing non-goal. Infrastructure that could
   /// not run it at all parks it at its own wall: there is no sibling to wait
   /// for and no judgement to preserve.
-  pure def decideWorkTaskDone(
-      jb: Ticket, j: int, report: TaskTerminalReport): SuccessfulTicketDecision =
+  pure def decideWorkTerminal(
+      jb: Ticket, report: TaskTerminalReport): TicketDecision =
     match report {
       | WorkResultReport(produced) =>
-        decided(TicketWorkResultAccepted({ ticket: j, result: produced.result,
+        decided(TicketWorkResultAccepted({ ticket: produced.ticket,
+            result: produced.result,
             acceptedSourceRef: produced.acceptedSourceRef }),
-          executeEvaluationTasks(j, begunInstance(jb, produced.result.resultRef,
-            produced.acceptedSourceRef)))
+          executeEvaluationTasks(produced.ticket, begunInstance(jb,
+            produced.result.resultRef, produced.acceptedSourceRef)))
       | TerminalFailureReport(failed) => {
-        val fact = { ticket: j, task: failed.failure.task,
+        val fact = { ticket: failed.ticket, task: failed.failure.task,
           evidence: failed.failure.evidence }
         match failed.kind {
           | ProcessFailure => decided(TicketWorkProcessFailed(fact), [])
@@ -546,11 +646,11 @@ module chuggy_domain {
             decided(TicketWorkExecutionUnavailable(fact), [])
         }
       }
-      // Unreachable: a work task takes no evaluator's verdict
-      // (ticket.qnt reportMatchesTask is the completion's enablement), and
-      // evolve lets this event fall through a ticket in Work.
-      | EvaluationResultReport(_) =>
-        decided(TicketEvaluationProgressed({ ticket: j, report: report }), [])
+      // A work task takes no evaluator's verdict. decideTaskTerminal never
+      // routes one here; the arm answers as the package's does.
+      | EvaluationResultReport(judged) =>
+        refused(TaskNotCurrent({ ticket: judged.ticket,
+          task: judged.result.obligation.task }))
     }
 
   /// AN EVALUATION completion, which is also THE EVALUATION-PLAN INTERPRETER:
@@ -574,10 +674,11 @@ module chuggy_domain {
   ///   - BLOCKED -> every evaluator has answered and at least one of them
   ///     was a wall, so the judgement is intact and unmade: park at the
   ///     blocked wall, whose resume re-asks exactly those evaluators at the
-  ///     next generation (decideResumeTicket).
-  pure def decideEvalTaskDone(
-      jb: Ticket, j: int, report: TaskTerminalReport,
-      failurePolicy: EvaluationFailurePolicy): SuccessfulTicketDecision =
+  ///     next generation (decideResume).
+  pure def decideEvaluationTerminal(
+      jb: Ticket, report: TaskTerminalReport,
+      failurePolicy: EvaluationFailurePolicy): TicketDecision =
+    val j = reportTicket(report)
     val before = currentInstance(jb)
     val advanced = applyEvaluationReport(before, report)
     val fact = { ticket: j, report: report }
@@ -606,23 +707,6 @@ module chuggy_domain {
       | EvaluationBlocked(_) => decided(TicketEvaluationBlocked(fact), [])
     }
 
-  /// A finalizer reports only a domain outcome. Queueing,
-  /// preparation, approval, permits and reconciliation are focused durable
-  /// operational records; TicketGraph does not learn a finalizer
-  /// implementation. Which conditions a finalizer calls unreachable is the
-  /// same kind of detail: the machine draws the outcome, never the cause.
-  pure def finalizationOutcomes: Set[FinalizationOutcome] =
-    Set(FinalizationSucceeded, FinalizationNeedsWork,
-      FinalizationResultUnavailable)
-
-  pure def finalizationOutcomeEnabled(
-      c: TicketGraph, j: int, out: FinalizationOutcome): bool =
-    match out {
-      | FinalizationSucceeded => c.tickets.get(j).phase == Finalization
-      | FinalizationNeedsWork => c.tickets.get(j).phase == Finalization
-      | FinalizationResultUnavailable => c.tickets.get(j).phase == Finalization
-    }
-
   /// Is this the attempt the ticket is on? (the package's
   /// finalizationCurrent) A result for an attempt a resume superseded names
   /// one nothing owes.
@@ -631,33 +715,49 @@ module chuggy_domain {
       generation: int): bool =
     operation.workCycle == workCycle and operation.generation == generation
 
-  /// A result resolves only from Finalization, and answers the attempt the
-  /// ticket is on — the command names the ticket and the finalizer's
-  /// evidence, and the decider names the attempt. A success is the ticket's
-  /// single completion (ghost `completions` counts it, one per ticket). A
-  /// failure re-enters Work as a new cycle: it did not commit the artifact,
-  /// and the only way on for a failed commit is new work — there is no wall
-  /// here, because how many times a finalizer may report failure is the
-  /// finalizer's own business, below this grain. No result at all parks the
-  /// ticket at ResumeFinalization, which is the only wall whose resume
-  /// re-runs the very step it interrupted — nothing about the ticket has to
-  /// change for the next attempt to differ, because what stood in the way
-  /// was never the ticket. Without this edge a finalizer that cannot reach a
-  /// result leaves the ticket in Finalization, which is neither revocable
-  /// (revocableIn) nor retryable (retryableIn), until the environment changes
-  /// under it.
+  /// A finalizer's result resolves only from Finalization, and only for the
+  /// attempt the ticket is on — the work cycle AND the generation the report
+  /// names; anything else is refused FinalizationNotCurrent with the attempt
+  /// it named. The machine draws the result, never its cause: which
+  /// conditions a finalizer calls unreachable is its own detail. A success
+  /// is the ticket's single completion (ghost `completions` counts it, one
+  /// per ticket). A failure re-enters Work as a new cycle: it did not commit
+  /// the artifact, and the only way on for a failed commit is new work —
+  /// there is no wall here, because how many times a finalizer may report
+  /// failure is the finalizer's own business, below this grain. No result at
+  /// all parks the ticket at ResumeFinalization, which is the only wall
+  /// whose resume re-runs the very step it interrupted — nothing about the
+  /// ticket has to change for the next attempt to differ, because what stood
+  /// in the way was never the ticket. Without this edge a finalizer that
+  /// cannot reach a result leaves the ticket in Finalization, which is
+  /// neither revocable nor resumable, until the environment changes under it.
   pure def decideFinalizationResult(
-      c: TicketGraph, j: int, out: FinalizationOutcome,
-      evidence: int): SuccessfulTicketDecision =
-    val jb = c.tickets.get(j)
-    val fact = { ticket: j, workCycle: jb.workCyclesStarted,
-      generation: jb.finalizationGeneration, evidence: evidence }
-    match out {
-      | FinalizationSucceeded => decided(TicketFinalizationSucceeded(fact), [])
-      | FinalizationNeedsWork => decided(TicketFinalizationNeedsWork(fact),
-          [executeWork(jb, jb.workCyclesStarted + 1)])
-      | FinalizationResultUnavailable =>
-        decided(TicketFinalizationUnavailable(fact), [])
+      c: TicketGraph, report: FinalizationResultReport): TicketDecision =
+    val j = report.ticket
+    if (not(c.tickets.keys().contains(j))) refused(TicketNotFound(j))
+    else {
+      val jb = c.tickets.get(j)
+      if (jb.phase != Finalization or not(finalizationCurrent(
+          finalizationOperationOf(jb), report.workCycle, report.generation)))
+        refused(FinalizationNotCurrent({ ticket: j,
+          workCycle: report.workCycle, generation: report.generation }))
+      else match report.result {
+        | FinalizationSucceeded(evidence) =>
+          decided(TicketFinalizationSucceeded(
+            { ticket: j, workCycle: report.workCycle,
+              generation: report.generation, evidence: evidence }),
+            [])
+        | FinalizationNeedsWork(evidence) =>
+          decided(TicketFinalizationNeedsWork(
+            { ticket: j, workCycle: report.workCycle,
+              generation: report.generation, evidence: evidence }),
+            [executeWork(jb, jb.workCyclesStarted + 1)])
+        | FinalizationResultUnavailable(evidence) =>
+          decided(TicketFinalizationUnavailable(
+            { ticket: j, workCycle: report.workCycle,
+              generation: report.generation, evidence: evidence }),
+            [])
+      }
     }
 
   /// Operator Retry on a parked ticket: resume at the point its wall implies
@@ -675,26 +775,45 @@ module chuggy_domain {
   ///     from the interrupted attempt names one nothing is waiting on.
   ///   ResumeFinalization: TicketFinalizationResumed — the next generation of
   ///     the cycle's finalization is owed.
-  pure def decideResumeTicket(c: TicketGraph, j: int): SuccessfulTicketDecision =
-    val jb = c.tickets.get(j)
-    val workResume =
-      decided(TicketWorkResumed(j), [executeWork(jb, jb.workCyclesStarted + 1)])
-    match resumeOf(jb.escalation) {
-      | ResumeWork => workResume
-      | ResumeRework => workResume
-      | ResumeEvaluation =>
-        decided(TicketEvaluationResumed(j),
-          executeEvaluationTasks(j, resumeBlocked(currentInstance(jb))))
-      | ResumeFinalization => {
-        val operation = finalizationOperationOf(jb)
-        decided(TicketFinalizationResumed(j),
-          [finalize(jb, { ...operation, generation: operation.generation + 1 })])
+  /// A ticket at no wall is refused TicketNotResumable: deskConsistent holds
+  /// that NoEscalation is exactly the ticket that is not parked.
+  pure def decideResume(c: TicketGraph, j: int): TicketDecision =
+    if (not(c.tickets.keys().contains(j))) refused(TicketNotFound(j))
+    else {
+      val jb = c.tickets.get(j)
+      val workResume =
+        decided(TicketWorkResumed(j), [executeWork(jb, jb.workCyclesStarted + 1)])
+      match resumeOf(jb.escalation) {
+        | ResumeWork => workResume
+        | ResumeRework => workResume
+        | ResumeEvaluation =>
+          decided(TicketEvaluationResumed(j),
+            executeEvaluationTasks(j, resumeBlocked(currentInstance(jb))))
+        | ResumeFinalization => {
+          val operation = finalizationOperationOf(jb)
+          decided(TicketFinalizationResumed(j),
+            [finalize(jb, { ...operation, generation: operation.generation + 1 })])
+        }
+        | NoResume => refused(TicketNotResumable(j))
       }
-      // Unreachable: retryableIn refuses an unparked ticket, and
-      // deskConsistent holds that an unparked ticket is at NoEscalation,
-      // which is the only escalation resumeOf answers NoResume for; evolve
-      // lets this event fall through a ticket that is not parked.
-      | NoResume => decided(TicketWorkResumed(j), [])
+    }
+
+  /// THE DECISION (the package's `decide`): each command to its decider.
+  /// The policy is asked only by a completion that concludes a failing
+  /// stage, and the event names the edge it took, so nothing after this
+  /// asks it again.
+  pure def decide(
+      c: TicketGraph, command: TicketCommand,
+      failurePolicy: EvaluationFailurePolicy): TicketDecision =
+    match command {
+      | CreateTicket(definition) => decideCreate(c, definition)
+      | DispatchTicket(dispatch) => decideDispatch(c, dispatch)
+      | RevokeTicket(j) => decideRevoke(c, j)
+      | ResumeTicket(j) => decideResume(c, j)
+      | ReportTaskTerminal(report) =>
+        decideTaskTerminal(c, report, failurePolicy)
+      | ReportFinalizationResult(report) =>
+        decideFinalizationResult(c, report)
     }
 
   // ==========================================================================
@@ -944,19 +1063,112 @@ module chuggy_domain {
             == finalization.finalization
     }
 
-  /// A DECISION IS VALID at the state it was taken in when every obligation
-  /// is well-formed and agrees with the state its event evolves to, and no
-  /// obligation is owed twice. The evolved state's own invariants are the
-  /// machine's (allInvariants), checked on the state the step lands in.
-  pure def decisionValid(
-      c: TicketGraph, decision: SuccessfulTicketDecision): bool =
-    val evolved = evolve(c, decision.event)
-    and {
-      decision.obligations.indices().forall(index =>
-        obligationValid(decision.obligations[index])
-          and obligationAgrees(c, evolved, decision.obligations[index])),
-      obligationsUnique(decision.obligations)
+  /// THE STATE A DECISION LEAVES (the package's applyDecision): a refusal
+  /// leaves the graph as it found it, and an accepted command is its event
+  /// evolved in.
+  pure def applyDecision(c: TicketGraph, decision: TicketDecision): TicketGraph =
+    match decision {
+      | TicketRefused(_) => c
+      | TicketDecided(d) => evolve(c, d.event)
     }
+
+  /// A DECISION IS VALID at the state it was taken in when a refusal changes
+  /// nothing, and an accepted command's every obligation is well-formed and
+  /// agrees with the state its event evolves to, and no obligation is owed
+  /// twice. The evolved state's own invariants are the machine's
+  /// (allInvariants), checked on the state the step lands in.
+  pure def decisionValid(c: TicketGraph, decision: TicketDecision): bool =
+    match decision {
+      | TicketRefused(_) => applyDecision(c, decision) == c
+      | TicketDecided(d) => {
+        val evolved = evolve(c, d.event)
+        and {
+          d.obligations.indices().forall(index =>
+            obligationValid(d.obligations[index])
+              and obligationAgrees(c, evolved, d.obligations[index])),
+          obligationsUnique(d.obligations)
+        }
+      }
+    }
+
+  // ==========================================================================
+  // === Refusals the environment may send ====================================
+  // ==========================================================================
+
+  /// THE REFUSAL'S NAME, for the golden aims (lastRefusal) and the suites.
+  pure def refusalName(reason: TicketRefusal): str = match reason {
+    | TicketAlreadyExists(_) => "TicketAlreadyExists"
+    | DependenciesNotFound(_) => "DependenciesNotFound"
+    | SelfDependency(_) => "SelfDependency"
+    | TicketNotFound(_) => "TicketNotFound"
+    | TicketNotPending(_) => "TicketNotPending"
+    | TicketIdentityMismatch(_) => "TicketIdentityMismatch"
+    | TicketRevisionStale(_) => "TicketRevisionStale"
+    | TicketDependenciesChanged(_) => "TicketDependenciesChanged"
+    | DependenciesIncomplete(_) => "DependenciesIncomplete"
+    | TicketNotRevocable(_) => "TicketNotRevocable"
+    | TicketNotResumable(_) => "TicketNotResumable"
+    | TaskNotCurrent(_) => "TaskNotCurrent"
+    | FinalizationNotCurrent(_) => "FinalizationNotCurrent"
+  }
+
+  /// A failure report for a task of ticket j, at the evidence the suites
+  /// derive for it.
+  pure def failureReportOf(j: int, task: TaskIdentity): TaskTerminalReport =
+    TerminalFailureReport({ ticket: j,
+      failure: { task: task, evidence: taskRefOf(task) },
+      kind: ProcessFailure })
+
+  /// A success report for ticket j's finalization attempt (cycle, gen).
+  pure def finalizationReportOf(
+      j: int, cycle: int, gen: int): TicketCommand =
+    ReportFinalizationResult({ ticket: j, workCycle: cycle, generation: gen,
+      result: FinalizationSucceeded(aFinalizationEvidence) })
+
+  /// THE COMMANDS AN ENVIRONMENT MAY SEND OUT OF TURN, over a TicketGraph:
+  /// for every id the instance can name, a create that collides, names
+  /// itself or names what does not exist, and a dispatch, a revoke and a
+  /// resume; a failure for every task a ticket has ever been owed, and for
+  /// the first work task of an id not released; and a finalizer's result
+  /// for the attempt a ticket is on, the generation before it and the cycle
+  /// before it. Every one is well-formed (commandValid), so which of them
+  /// `decide` refuses is the ticket's state and nothing else.
+  pure def commandProbesIn(c: TicketGraph): Set[TicketCommand] =
+    val live = c.tickets.keys()
+    val absent = ticketIdUniverse.exclude(live)
+    val perId = ticketIdUniverse.map(j => Set(
+      CreateTicket(releasedTicketOf(j, Set(), defaultPlan)),
+      CreateTicket(releasedTicketOf(j, Set(j), defaultPlan)),
+      CreateTicket(releasedTicketOf(j, absent.exclude(Set(j)), defaultPlan)),
+      DispatchTicket({ ticket: j, source: aDispatchSource }),
+      RevokeTicket(j),
+      ResumeTicket(j))).flatten()
+    val reports = live.map(j => deliverableTasksIn(c, j).map(task =>
+        ReportTaskTerminal(failureReportOf(j, task)))).flatten()
+      .union(absent.map(j =>
+        ReportTaskTerminal(failureReportOf(j, workTaskOf(j, 1)))))
+    val finalizations = live.map(j => {
+        val jb = c.tickets.get(j)
+        val cycle = if (jb.workCyclesStarted > 1) jb.workCyclesStarted else 1
+        val gen =
+          if (jb.finalizationGeneration > 1) jb.finalizationGeneration else 1
+        Set(finalizationReportOf(j, cycle, gen))
+          .union(if (gen > 1) Set(finalizationReportOf(j, cycle, gen - 1))
+            else Set())
+          .union(if (cycle > 1) Set(finalizationReportOf(j, cycle - 1, gen))
+            else Set())
+      }).flatten()
+      .union(absent.map(j => finalizationReportOf(j, 1, 1)))
+    perId.union(reports).union(finalizations)
+
+  /// The probes `decide` refuses in this graph. No refusal asks the policy,
+  /// so any one will do.
+  pure def refusedCommandsIn(c: TicketGraph): Set[TicketCommand] =
+    commandProbesIn(c).filter(command =>
+      match decide(c, command, _ => unaskedDisposition) {
+        | TicketRefused(_) => true
+        | TicketDecided(_) => false
+      })
 
   // ==========================================================================
   // === State + actions ======================================================
@@ -976,16 +1188,32 @@ module chuggy_domain {
   /// Released ticket identities. Ordering has no semantic meaning.
   val liveTickets: Set[int] = tickets.keys()
 
-  /// THE MACHINE'S STEP: decide, then evolve. The state is what the event
-  /// evolves it to, and the decision is what the trace records.
-  action apply(d: SuccessfulTicketDecision): bool = all {
-    tickets' = evolve(graph, d.event).tickets,
-    lastStep' = Decided(d),
-    prevTickets' = tickets
-  }
+  /// THE MACHINE'S STEP: decide, then evolve. An accepted command's state
+  /// is what its event evolves the graph to; a refused one leaves the graph
+  /// as it was and records only its refusal, which is what the runtime does
+  /// with it — answers it, and journals nothing. Either way the decision is
+  /// what the trace records. A command outside commandValid is not one the
+  /// machine takes at all.
+  action take(
+      command: TicketCommand, onFailure: EvaluationFailureDisposition): bool =
+    all {
+      commandValid(command),
+      match decide(graph, command, _ => onFailure) {
+        | TicketDecided(d) => all {
+          tickets' = evolve(graph, d.event).tickets,
+          lastStep' = Decided(d),
+          prevTickets' = tickets
+        }
+        | TicketRefused(reason) => all {
+          tickets' = tickets,
+          lastStep' = Refused(reason),
+          prevTickets' = tickets
+        }
+      }
+    }
 
   /// REFINEMENT-LAYER SEAM (the state-shaped counterpart of the
-  /// TicketGraph-parameterized enablement exports above): install an
+  /// TicketGraph-parameterized draw sets above): install an
   /// externally reconstructed TicketGraph WITHOUT taking a domain step. The
   /// refinement module's executor/crash actions (refinement.qnt emitNext /
   /// crashRecover / effectCrash) are NOT domain steps — the domain trace
@@ -1026,13 +1254,13 @@ module chuggy_domain {
 
   def isBlocked(j: int): bool = isBlockedIn(graph, j)
 
-  // --- Enablement sets ------------------------------------------------------
+  // --- Draw sets ------------------------------------------------------------
 
-  // Each enablement val below REFERENCES its pure TicketGraph form: one
-  // definition, consumed by the machine's actions, the witness drivers, and
-  // the refinement's decide step alike.
+  // Each draw set below REFERENCES its pure TicketGraph form: one
+  // definition, drawn from by the machine's actions, the witness drivers, and
+  // the refinement's actors alike.
 
-  /// Room for one more release (the N_TICKETS release bound keeps the state
+  /// Room for one more release (the N_TICKETS release bound).
   val releasableIds: Set[int] = ticketIdUniverse.filter(j => canReleaseIn(graph, j))
   /// Tickets a new release may depend on: no tombstones (dependableIn).
   val dependableTickets: Set[int] = dependableIn(graph)
@@ -1046,9 +1274,11 @@ module chuggy_domain {
   val doneTickets: Set[int] = doneIn(graph)
   /// Parked tickets the operator may Retry (retryableIn).
   val retryableEscalated: Set[int] = retryablesIn(graph)
+  /// Commands `decide` refuses here (refusedCommandsIn).
+  val refusedCommands: Set[TicketCommand] = refusedCommandsIn(graph)
 
   /// No machine, operator, or author action can move anything. Revoke is
-  /// enabled on EVERY non-terminal short of Finalization, so a Pending chain
+  /// drawn for EVERY non-terminal short of Finalization, so a Pending chain
   /// stranded behind a revoked dep is still actionable by its author — the
   /// only true dead end is a
   /// fully-released fleet in which every ticket is settled in a terminal
@@ -1059,20 +1289,24 @@ module chuggy_domain {
     liveTickets.forall(j => Set(Done, Revoked).contains(tickets.get(j).phase))
   }
 
-  /// THE LAST EVENT'S NAME, ITS TICKET AND ITS OBLIGATIONS — what the golden
-  /// aims (test/golden/manifest.json) read, and nothing else. Empty before
-  /// the first decision.
+  /// THE LAST EVENT'S NAME, ITS TICKET AND ITS OBLIGATIONS, and the last
+  /// refusal's name — what the golden aims (test/golden/manifest.json) read,
+  /// and nothing else. Empty where the last step was not of that kind.
   val lastEvent: str = match lastStep {
     | Decided(d) => eventName(d.event)
-    | NoDecision => ""
+    | _ => ""
   }
   val lastEventTicket: int = match lastStep {
     | Decided(d) => eventTicket(d.event)
-    | NoDecision => 0
+    | _ => 0
   }
   val lastObligations: List[Obligation] = match lastStep {
     | Decided(d) => d.obligations
-    | NoDecision => []
+    | _ => []
+  }
+  val lastRefusal: str = match lastStep {
+    | Refused(reason) => refusalName(reason)
+    | _ => ""
   }
 
   // --- init -----------------------------------------------------------------
@@ -1105,7 +1339,8 @@ module chuggy_domain {
     nondet j = releasableIds.oneOf()
     nondet dependencies_ = dependableTickets.powerset().oneOf()
     nondet stages = validPlans.oneOf()
-    apply(decideReleaseTicket(graph, releasedTicketOf(j, dependencies_, stages)))
+    take(CreateTicket(releasedTicketOf(j, dependencies_, stages)),
+      unaskedDisposition)
   }
 
   /// Author revokes any non-terminal ticket, and that ticket alone
@@ -1113,7 +1348,7 @@ module chuggy_domain {
   action revoke = all {
     revocableTickets.size() > 0,
     nondet j = revocableTickets.oneOf()
-    apply(decideRevoke(graph, j))
+    take(RevokeTicket(j), unaskedDisposition)
   }
 
   /// Ready -> Work: THE AGENTIC SELECTOR'S PICK. The
@@ -1128,18 +1363,19 @@ module chuggy_domain {
     readyTickets.size() > 0,
     nondet j = readyTickets.oneOf()
     nondet source = dispatchSources.oneOf()
-    apply(decideDispatch(graph, j, source))
+    take(DispatchTicket({ ticket: j, source: source }),
+      unaskedDisposition)
   }
 
   /// A task-completion is delivered for a task the ticket is currently
   /// running, and the report it carries is drawn: produced, judged either
   /// way, or reached no result. One action models all of it, and the
   /// DISPOSITION is drawn here too, because the completion that concludes a
-  /// failing stage is where the policy is consulted (decideTaskDone).
+  /// failing stage is where the policy is consulted (decideTaskTerminal).
   ///
-  /// Duplicate-adversary SCOPE: this action draws from what is live, because
-  /// a completion for anything else is refused by enablement before it is
-  /// decided. What such a completion's event would do to the state is
+  /// Duplicate-adversary SCOPE: this action draws from what is live; a
+  /// completion for anything else is one `decide` refuses, and `refuse`
+  /// sends it. What such a completion's event would do to the state is
   /// evolve's, and the suites build it from deliverableTasksIn — every
   /// identity the ticket's history names — and show it falls through.
   /// Identities are unique within the ticket and never reused, so an event
@@ -1148,9 +1384,9 @@ module chuggy_domain {
   /// absorbing. A sharper corner: a ticket revoked OUT of Finalization could
   /// race an in-flight merge in the real system — in-model
   /// revokedNeverCompletes holds structurally (a revoked ticket leaves
-  /// finalizerTickets, so no wrap-up action can resolve it, and the revoke
-  /// frees the slot by phase); the real revoke/merge race — the candidate
-  /// already advancing when the revoke lands — is record-vs-effect
+  /// Finalization, so every finalizer's result for it is refused, and the
+  /// revoke frees the slot by phase); the real revoke/merge race — the
+  /// candidate already advancing when the revoke lands — is record-vs-effect
   /// atomicity, the §4 refinement layer.
   action taskDone = all {
     completableTickets.size() > 0,
@@ -1158,28 +1394,37 @@ module chuggy_domain {
     nondet task = liveTasks(tickets.get(j)).oneOf()
     nondet report = reportChoices(tickets.get(j), task).oneOf()
     nondet onFailure = dispositionChoices.oneOf()
-    apply(decideTaskDone(graph, j, task, report, _ => onFailure))
+    take(ReportTaskTerminal(report), onFailure)
   }
 
-  /// The external finalizer returns one domain result and its evidence.
-  /// Queueing, approval, permits and implementation are durable operational
-  /// state.
+  /// The external finalizer returns one domain result, with its evidence,
+  /// for the attempt the ticket is on. Queueing, approval, permits and
+  /// implementation are durable operational state.
   action finalizationResult = all {
     finalizerTickets.size() > 0,
     nondet j = finalizerTickets.oneOf()
-    nondet out = finalizationOutcomes.oneOf()
-    nondet evidence = finalizationEvidences.oneOf()
-    all {
-      finalizationOutcomeEnabled(graph, j, out),
-      apply(decideFinalizationResult(graph, j, out, evidence))
-    }
+    nondet result = finalizationResults.oneOf()
+    take(ReportFinalizationResult({ ticket: j,
+        workCycle: tickets.get(j).workCyclesStarted,
+        generation: tickets.get(j).finalizationGeneration,
+        result: result }),
+      unaskedDisposition)
   }
 
   /// One resume action for every retryable park.
   action resumeTicket = all {
     retryableEscalated.size() > 0,
     nondet j = retryableEscalated.oneOf()
-    apply(decideResumeTicket(graph, j))
+    take(ResumeTicket(j), unaskedDisposition)
+  }
+
+  /// THE ENVIRONMENT OUT OF TURN: a command `decide` refuses, drawn from the
+  /// probes (commandProbesIn). The machine answers it and moves nothing, so
+  /// the step records the refusal and the tickets stand.
+  action refuse = all {
+    refusedCommands.size() > 0,
+    nondet command = refusedCommands.oneOf()
+    take(command, unaskedDisposition)
   }
 
   /// The dead-end stutter (STUTTER set): keeps quiet states from
@@ -1199,6 +1444,7 @@ module chuggy_domain {
     taskDone,
     finalizationResult,
     resumeTicket,
+    refuse,
     settle
   }
 
@@ -1386,11 +1632,14 @@ module chuggy_domain {
         jb.finalizationGeneration == 0
     })
 
-  /// EVERY DECISION IS VALID where it was taken (decisionValid): its
-  /// obligations are well-formed, owed once, and agree with the state its
-  /// event evolved the one it found into.
+  /// EVERY DECISION IS VALID where it was taken (decisionValid): an
+  /// accepted command's obligations are well-formed, owed once, and agree
+  /// with the state its event evolved the one it found into, and a refused
+  /// one left the tickets as it found them.
   val decisionsValid: bool = match lastStep {
-    | Decided(d) => decisionValid(prevGraph, d)
+    | Decided(d) => decisionValid(prevGraph, TicketDecided(d))
+    | Refused(reason) =>
+      decisionValid(prevGraph, TicketRefused(reason)) and graph == prevGraph
     | NoDecision => true
   }
 
@@ -1400,7 +1649,7 @@ module chuggy_domain {
   /// refusing a row the machine decided.
   val eventsNeverIdentity: bool = match lastStep {
     | Decided(d) => evolve(prevGraph, d.event) != prevGraph
-    | NoDecision => true
+    | _ => true
   }
 
   def dependencyClosure(j: int): Set[int] =

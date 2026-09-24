@@ -229,16 +229,47 @@ export const operationStates = [
 ] as const;
 export type OperationState = (typeof operationStates)[number];
 
-export const operationRefusalCodes = [
-  "NotEnabled",
+/**
+ * The refusals the machine decides, in the model's spelling. Each arrives with
+ * the refusal itself beside its code, which is what names the dependency, task
+ * or attempt it was refused over.
+ */
+export const operationTicketRefusalCodes = [
+  "TicketAlreadyExists",
+  "DependenciesNotFound",
+  "SelfDependency",
+  "TicketNotFound",
+  "TicketNotPending",
+  "TicketIdentityMismatch",
+  "TicketRevisionStale",
+  "TicketDependenciesChanged",
+  "DependenciesIncomplete",
+  "TicketNotRevocable",
+  "TicketNotResumable",
+  "TaskNotCurrent",
+  "FinalizationNotCurrent",
+] as const;
+export type OperationTicketRefusalCode =
+  (typeof operationTicketRefusalCodes)[number];
+
+/** The refusals the boundary decides about rows or a remote, which carry no more than their code. */
+export const operationBoundaryRefusalCodes = [
   "AuthoringChanged",
   "ConfigurationInvalid",
   "TicketChanged",
   "SelectionChanged",
-  "CommandUnreadable",
   "ExecutionSourceUnreadable",
   "ExecutionSourceDenied",
   "BriefNamesNoRepository",
+  "TicketCapacityReached",
+  "FinalizationRequestClosed",
+] as const;
+export type OperationBoundaryRefusalCode =
+  (typeof operationBoundaryRefusalCodes)[number];
+
+export const operationRefusalCodes = [
+  ...operationTicketRefusalCodes,
+  ...operationBoundaryRefusalCodes,
 ] as const;
 export type OperationRefusalCode = (typeof operationRefusalCodes)[number];
 

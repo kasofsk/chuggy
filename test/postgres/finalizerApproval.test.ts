@@ -37,7 +37,7 @@ import type {
   FinalizationClaim,
   FinalizerStore,
 } from "../../src/interpreter/finalizer.ts";
-import type { NativeActionResolution } from "../../src/interpreter/ticketCommand.ts";
+import type { NativeActionResolution } from "../../src/interpreter/projectCommand.ts";
 import { liveTasks } from "../../src/domain/ticket.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import { asTicketId } from "../../src/domain/ids.ts";

@@ -218,9 +218,9 @@ function releasedTicket(
   return {
     created: "Refused",
     reason:
-      step.refusalCode === undefined
+      step.refusal === undefined
         ? operationStateSentence(step.state)
-        : operationRefusalSentence(step.refusalCode),
+        : operationRefusalSentence(step.refusal),
     draft,
   };
 }

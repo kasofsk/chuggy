@@ -16,7 +16,7 @@ import {
   asOperationId,
   type Authority,
   type OperationId,
-  type TicketCommand,
+  type ProjectCommand,
 } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import {
@@ -74,7 +74,7 @@ export interface SelectorProposedDispatch {
   readonly ticket: DispatchCandidate["ticket"];
   readonly operation: OperationId;
   readonly command: Extract<
-    TicketCommand,
+    ProjectCommand,
     { readonly command: "ProposeDispatch" }
   >;
 }
@@ -85,7 +85,7 @@ export interface SelectorDelivery {
   readonly partition: Partition;
   readonly operation: OperationId;
   readonly command: Extract<
-    TicketCommand,
+    ProjectCommand,
     { readonly command: "ProposeDispatch" }
   >;
   readonly attempts: number;
@@ -1927,7 +1927,7 @@ export function proposalCommand(input: {
   readonly ticket: DispatchCandidate;
   readonly token: DispatchViewToken;
   readonly selectorDecisionReference: string;
-}): Extract<TicketCommand, { readonly command: "ProposeDispatch" }> {
+}): Extract<ProjectCommand, { readonly command: "ProposeDispatch" }> {
   return {
     version: 1,
     command: "ProposeDispatch",

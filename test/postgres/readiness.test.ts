@@ -3,24 +3,21 @@ import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
-  decisionEventEnabled,
-  decisionEventSubject,
-  taskDoneEvent,
-  type DecisionEvent,
-} from "../../src/actor/decisionEvent.ts";
-import {
-  decisionEventTags,
-  type TicketGraph,
-} from "../../src/domain/generated/modelTypes.ts";
+  commandSubject,
+  reportTaskTerminalCommand,
+  type TicketCommand,
+} from "../../src/actor/command.ts";
+import { decide } from "../../src/domain/deciders.ts";
+import type { TicketGraph } from "../../src/domain/generated/modelTypes.ts";
 import { workTaskOf } from "../../src/domain/task.ts";
 import {
   allNativeActionResolutions,
   isApprovalResolution,
   type ApprovalResolution,
   type NativeActionResolution,
-} from "../../src/interpreter/ticketCommand.ts";
-import { graphOf, id, producedReport, ticketOn } from "../domain/fixtures.ts";
-import { refinementInstance } from "../actor/harness.ts";
+} from "../../src/interpreter/projectCommand.ts";
+import { graphOf, producedReport, ticketOn } from "../domain/fixtures.ts";
+import { plainPolicy, refinementInstance } from "../actor/harness.ts";
 import {
   postgresHarnessOpen,
   postgresHarnessProject,
@@ -48,7 +45,7 @@ async function completion(
     harness,
     partition,
     operation,
-    taskDoneEvent(id(1), workTaskOf(1, 1), producedReport(workTaskOf(1, 1))),
+    reportTaskTerminalCommand(producedReport(workTaskOf(1, 1))),
   );
   return operation;
 }
@@ -146,43 +143,42 @@ function parkedGraph(action: SeededAction): TicketGraph {
 
 /**
  * The command one answer names, decided by the answer alone. A settle answer
- * has a decider of its own — `decideRevoke` — so its name is one of the
- * machine's event tags; every other answer routes to `decideResumeTicket`
- * (`model/domain.qnt`).
+ * revokes the ticket; every other answer resumes it (`model/domain.qnt`).
  */
 function answerNames(
   resolution: Exclude<NativeActionResolution, ApprovalResolution>,
-): DecisionEvent["type"] {
-  return decisionEventTags.find((tag) => tag === resolution) ?? "ResumeTicket";
+): TicketCommand["type"] {
+  return resolution === "Revoke" ? "RevokeTicket" : "ResumeTicket";
 }
 
 /**
  * What the mapping may not get wrong. The expectation is read off the answer
- * rather than off the event under test, so a settle answer degraded into a
- * resume is compared against the command it should have named, and enablement
+ * rather than off the command under test, so a settle answer degraded into a
+ * resume is compared against the command it should have named, and `decide`
  * stands behind it refusing a command the park does not offer.
  */
 function assertAnswerNames(
   resolution: Exclude<NativeActionResolution, ApprovalResolution>,
   action: SeededAction,
-  event: DecisionEvent,
+  command: TicketCommand,
 ): void {
-  assert.equal(decisionEventSubject(event), action.ticket, resolution);
-  assert.equal(event.type, answerNames(resolution), resolution);
-  assert.ok(
-    decisionEventEnabled(refinementInstance, parkedGraph(action), event),
-    `${resolution} named ${event.type}, which its park does not enable`,
+  assert.equal(commandSubject(command), action.ticket, resolution);
+  assert.equal(command.type, answerNames(resolution), resolution);
+  assert.equal(
+    decide(parkedGraph(action), command, plainPolicy).type,
+    "TicketDecided",
+    `${resolution} named ${command.type}, which its park refuses`,
   );
 }
 
-/** The event discovery resolved an accepted answer into, from the one consumable item. */
+/** The command discovery resolved an accepted answer into, from the one consumable item. */
 async function resolvedAnswer(
   partition: Parameters<typeof postgresHarnessSubmission>[0],
-): Promise<DecisionEvent | undefined> {
+): Promise<TicketCommand | undefined> {
   const item = await harness.discovery.next(partition, 300);
   if (item === undefined || item.source.kind !== "Operation")
     throw new Error("readiness case: the answer was not discoverable");
-  return item.source.resolvedEvent;
+  return item.source.ticketCommand;
 }
 
 test("every answer a desk task admits becomes the domain command it names", async () => {
@@ -214,19 +210,19 @@ test("every answer a desk task admits becomes the domain command it names", asyn
       },
     });
     assert.equal(accepted.accepted, "Accepted", resolution);
-    const event = await resolvedAnswer(partition);
-    assert.ok(event !== undefined, resolution);
-    assertAnswerNames(resolution, seeded, event);
+    const command = await resolvedAnswer(partition);
+    assert.ok(command !== undefined, resolution);
+    assertAnswerNames(resolution, seeded, command);
   }
 });
 
 /**
- * A command whose event this machine no longer has. `ReleaseTicket` became
+ * A command this machine no longer has. `ReleaseTicket` became
  * `CreateTicket`, and an undecided operation can outlive the rename still
  * naming it, so discovery is where it is caught — refused at decode, under a
  * message naming the operation.
  */
-test("an operation carrying an event this machine lost is refused by name", async () => {
+test("an operation carrying a command this machine lost is refused by name", async () => {
   const partition = await postgresHarnessProject(harness.store, "lost-event");
   const submission = postgresHarnessSubmission(partition, "lost-event");
   assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
@@ -240,7 +236,7 @@ test("an operation carrying an event this machine lost is refused by name", asyn
       JSON.stringify({
         version: 1,
         command: "Decide",
-        event: {
+        ticketCommand: {
           type: "ReleaseTicket",
           value: { ticket: 1, deps: [], prog: [] },
         },

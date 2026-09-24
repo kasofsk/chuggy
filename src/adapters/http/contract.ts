@@ -9,7 +9,10 @@
 import { z } from "zod";
 import { nativeHttpEndpoints } from "../../contract/endpoints.ts";
 
-import { revokeEvent, resumeTicketEvent } from "../../actor/decisionEvent.ts";
+import {
+  resumeTicketCommand,
+  revokeTicketCommand,
+} from "../../actor/command.ts";
 import type { ReleaseAuthoring } from "../../interpreter/authoring.ts";
 import {
   nativeHttpCursorCharsMax,
@@ -75,11 +78,11 @@ import type {
 import type { ExecutionPageCursor } from "../../interpreter/operationsView.ts";
 import {
   asIdempotencyKey,
-  asOperationDecisionEvent,
   asOperationId,
+  asOperationTicketCommand,
   type IdempotencyKey,
   type OperationId,
-  type TicketCommand,
+  type ProjectCommand,
 } from "../../interpreter/operationInbox.ts";
 import {
   asProjectId,
@@ -374,7 +377,7 @@ export function parseDraftRevision(body: unknown): ParsedDraftRevision {
 export interface ParsedSubmission {
   readonly operation: OperationId;
   readonly key: IdempotencyKey;
-  readonly command: TicketCommand;
+  readonly command: ProjectCommand;
 }
 
 /** Encodes only the fields selected by a cursor's payload projection. */
@@ -507,22 +510,22 @@ export function parsePartition(tenant: string, project: string): Partition {
   return { tenant: asTenantId(tenant), project: asProjectId(project) };
 }
 
-function publicMutationCommand(mutation: PublicMutation): TicketCommand {
+function publicMutationCommand(mutation: PublicMutation): ProjectCommand {
   switch (mutation.mutation) {
     case "RevokeTicket":
       return {
         version: 1,
         command: "Decide",
-        event: asOperationDecisionEvent(
-          revokeEvent(asTicketId(mutation.ticket)),
+        ticketCommand: asOperationTicketCommand(
+          revokeTicketCommand(asTicketId(mutation.ticket)),
         ),
       };
     case "ResumeTicket":
       return {
         version: 1,
         command: "Decide",
-        event: asOperationDecisionEvent(
-          resumeTicketEvent(asTicketId(mutation.ticket)),
+        ticketCommand: asOperationTicketCommand(
+          resumeTicketCommand(asTicketId(mutation.ticket)),
         ),
       };
     case "ReleaseDraft":

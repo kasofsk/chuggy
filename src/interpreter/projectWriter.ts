@@ -16,12 +16,13 @@
  * commit, and nothing installs a plan the commit refused.
  *
  * COMMANDS ARRIVE PARSED AND CLASSIFIED. Structural readability, admission and
- * priority belong to authenticated ingress; this writer alone decides whether
- * the requested domain command is enabled at its serialized position.
+ * priority belong to authenticated ingress; this writer alone asks `decide`
+ * for the requested ticket command at its serialized position, and settles
+ * the refusal it names.
  *
  * THE DISPATCH OBSERVES BEFORE IT DECIDES, AND IT IS THE ONLY COMMAND THAT
  * OBSERVES. The source a dispatch pins is a fact about a remote rather than
- * about this journal, so it is read before the event exists and the event
+ * about this journal, so it is read before the command exists and the command
  * carries what was read. Every later spawn runs at the source the ticket
  * already holds, which is a row this partition wrote.
  *
@@ -57,23 +58,20 @@
 import type { Entry, StoredEntry } from "../actor/journal.ts";
 import { genesis, storedJournalLegalOn } from "../actor/journal.ts";
 import { ticketEquals } from "../domain/equality.ts";
-import {
-  decide,
-  decisionEventEnabled,
-  decisionEventSubject,
-  dispatchEvent,
-} from "../actor/decisionEvent.ts";
-import type { DecisionEvent } from "../actor/decisionEvent.ts";
+import { commandSubject, type TicketCommand } from "../actor/command.ts";
 import type { Config } from "../domain/config.ts";
 import { ticketAt, ticketIds } from "../domain/ticketGraph.ts";
 import type {
   Escalation,
   SuccessfulTicketDecision,
+  TicketDecision,
   TicketGraph,
 } from "../domain/generated/modelTypes.ts";
-import { dependableIn } from "../domain/enablement.ts";
+import { canReleaseIn, dependableIn } from "../domain/enablement.ts";
 import {
   alwaysPolicy,
+  commandValid,
+  decide,
   type EvaluationFailurePolicy,
 } from "../domain/deciders.ts";
 import { decisionValid } from "../domain/decisionValid.ts";
@@ -90,10 +88,15 @@ import type {
   Decided,
   DecisionOutcome,
   ProjectDecision,
-  RefusalCode,
   TicketProjection,
   TicketSourceRecord,
 } from "./projectDecision.ts";
+import {
+  boundaryRefusal,
+  type BoundaryRefusalCode,
+  type Refusal,
+} from "./refusal.ts";
+import { ticketCommandOf } from "./commandMap.ts";
 import type { Lease, ProjectStore } from "./projectStore.ts";
 import { reworkDisposition, type ReworkCap } from "./reworkCap.ts";
 import { materializationOf, type SpawnSources } from "./decisionPlan.ts";
@@ -283,15 +286,20 @@ interface ProjectPlan {
   readonly post: TicketGraph;
 }
 
+/** The plan a refusal earns: the refusal settled, and nothing else moved. */
+function refusedPlan(memory: ProjectMemory, refusal: Refusal): ProjectPlan {
+  return { outcome: { outcome: "Refused", refusal }, post: memory.graph };
+}
+
 function operationDispatchFence(
   memory: ProjectMemory,
   source: Extract<DecisionInput["source"], { kind: "Operation" }>,
-): DecisionOutcome | undefined {
+): BoundaryRefusalCode | undefined {
   if (source.command.command === "ManualDispatch")
     return memory.ticketVersions.get(source.command.ticket) ===
       source.command.expectedTicketVersion
       ? undefined
-      : { outcome: "Refused", code: "TicketChanged" };
+      : "TicketChanged";
   if (source.command.command !== "ProposeDispatch") return undefined;
   if (memory.dispatchContracts === undefined)
     throw new Error(
@@ -313,7 +321,7 @@ function operationDispatchFence(
     token.schemaVersion === dispatchViewSchemaVersion &&
     selected?.ticketVersion === proposal.expectedTicketVersion
     ? undefined
-    : { outcome: "Refused", code: "SelectionChanged" };
+    : "SelectionChanged";
 }
 
 /**
@@ -324,9 +332,9 @@ function operationDispatchFence(
 function projectWriterFailurePolicy(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
-  command: DecisionEvent,
+  command: TicketCommand,
 ): EvaluationFailurePolicy {
-  const held = memory.graph.tickets.get(decisionEventSubject(command));
+  const held = memory.graph.tickets.get(commandSubject(command));
   return alwaysPolicy(
     held === undefined
       ? "EscalateEvaluationFailure"
@@ -335,14 +343,36 @@ function projectWriterFailurePolicy(
 }
 
 /**
- * The one decision an enabled command earns at the state in hand, held to
- * `decisionValid` because every obligation it owes is about to become a row.
+ * What `decide` answers a command at the state in hand, an accepted one held
+ * to `decisionValid` because every obligation it owes is about to become a
+ * row. Outside `commandValid` a release is refused as the configuration it
+ * does not fit, and outside the deployment's release room as the bound
+ * `decide` does not know, while any other command outside `commandValid` is
+ * this layer and the database disagreeing about what the mailbox may admit.
  */
 function projectWriterDecision(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
-  command: DecisionEvent,
-): SuccessfulTicketDecision {
+  command: TicketCommand,
+):
+  | TicketDecision
+  | {
+      readonly type: "Boundary";
+      readonly code: "ConfigurationInvalid" | "TicketCapacityReached";
+    } {
+  if (!commandValid(writer.config, command)) {
+    if (command.type === "CreateTicket")
+      return { type: "Boundary", code: "ConfigurationInvalid" };
+    throw new IntegrityContradiction(
+      `project writer: a stored ${command.type} is not a command the machine takes`,
+    );
+  }
+  if (
+    command.type === "CreateTicket" &&
+    !memory.graph.tickets.has(command.value.id) &&
+    !canReleaseIn(writer.config, memory.graph, asTicketId(command.value.id))
+  )
+    return { type: "Boundary", code: "TicketCapacityReached" };
   const decision = decide(
     memory.graph,
     command,
@@ -358,7 +388,7 @@ function projectWriterDecision(
 function journaledPlan(
   memory: ProjectMemory,
   item: DecisionInput,
-  command: DecisionEvent,
+  command: TicketCommand,
   decision: SuccessfulTicketDecision,
   spawn: SpawnSources,
 ): ProjectPlan {
@@ -411,8 +441,29 @@ function journaledPlan(
 }
 
 /**
- * What one inbox item asks of the state in hand: a decision the machine would
- * take, the ticket a dispatch must be observed at before there is one, or the
+ * What a submission whose authorizing row closed between acceptance and
+ * decision is refused with: the refusal `decide` names if it names one,
+ * because that says what the ticket no longer admits. Where `decide` would
+ * take it the closed row still stands between them — an answer to a ticket
+ * parked again at a new wall, or a result from before a restore — so an
+ * answer is refused `TicketChanged` and a finalization result
+ * `FinalizationRequestClosed`.
+ */
+function projectWriterClosedRefusal(
+  command: TicketCommand,
+  decision: TicketDecision,
+): Refusal {
+  if (decision.type === "TicketRefused") return decision.value;
+  return boundaryRefusal(
+    command.type === "ReportFinalizationResult"
+      ? "FinalizationRequestClosed"
+      : "TicketChanged",
+  );
+}
+
+/**
+ * What one inbox item asks of the state in hand: the decision the machine
+ * takes, the ticket a dispatch must be observed at before there is one, or the
  * refusal it earns. Nothing here reaches the world.
  */
 function projectWriterPreflight(
@@ -421,50 +472,46 @@ function projectWriterPreflight(
   item: DecisionInput,
 ):
   | ProjectPlan
-  | { readonly command: DecisionEvent }
+  | {
+      readonly command: TicketCommand;
+      readonly decision: SuccessfulTicketDecision;
+    }
   | { readonly dispatch: TicketId } {
   const fence = operationDispatchFence(memory, item.source);
-  if (fence !== undefined) return { outcome: fence, post: memory.graph };
+  if (fence !== undefined) return refusedPlan(memory, boundaryRefusal(fence));
   const dispatch = operationDispatchTicket(item);
   if (dispatch !== undefined) return { dispatch };
-  const command = item.source.resolvedEvent;
-  if (
+  const command = item.source.ticketCommand;
+  const closed =
     item.source.nativeAction?.open === false ||
-    item.source.finalizationRequest?.open === false
-  ) {
-    return {
-      outcome: { outcome: "Refused", code: "NotEnabled" },
-      post: memory.graph,
-    };
-  }
+    item.source.finalizationRequest?.open === false;
   const answer = item.source.nativeAction;
   if (command === undefined) {
     /**
      * A release whose draft and configuration contradict each other resolved
-     * no definition, so there is no event to weigh. Which fault it is, is the
+     * no definition, so there is no command to weigh. Which fault it is, is the
      * deciding transaction's to name behind the fence that retains the
      * revision; this is the refusal that one replaces.
      */
     if (item.source.draftRelease !== undefined)
-      return {
-        outcome: { outcome: "Refused", code: "ConfigurationInvalid" },
-        post: memory.graph,
-      };
+      return refusedPlan(memory, boundaryRefusal("ConfigurationInvalid"));
     if (answer === undefined)
       throw new Error(
-        "project writer: an input names neither event nor answer",
+        "project writer: an input names neither command nor answer",
       );
-    return { outcome: { outcome: "Answered", answer }, post: memory.graph };
+    return closed
+      ? refusedPlan(memory, boundaryRefusal("TicketChanged"))
+      : { outcome: { outcome: "Answered", answer }, post: memory.graph };
   }
-  if (!decisionEventEnabled(writer.config, memory.graph, command)) {
-    return {
-      outcome: { outcome: "Refused", code: "NotEnabled" },
-      post: memory.graph,
-    };
-  }
-  return { command };
+  const decision = projectWriterDecision(writer, memory, command);
+  if (decision.type === "Boundary")
+    return refusedPlan(memory, boundaryRefusal(decision.code));
+  if (closed)
+    return refusedPlan(memory, projectWriterClosedRefusal(command, decision));
+  return decision.type === "TicketRefused"
+    ? refusedPlan(memory, decision.value)
+    : { command, decision: decision.value };
 }
-
 /**
  * The evidence a later observation may find readable, because each names a
  * moment at the remote rather than a fact about what it holds.
@@ -479,7 +526,9 @@ const transientGitEvidences: readonly GitEvidence[] = [
  * declined is the project's to mend, and every other evidence is the reference
  * the work was to be based on.
  */
-function executionSourceRefusalCode(evidence: GitEvidence): RefusalCode {
+function executionSourceRefusalCode(
+  evidence: GitEvidence,
+): BoundaryRefusalCode {
   return evidence === "RemoteDenied"
     ? "ExecutionSourceDenied"
     : "ExecutionSourceUnreadable";
@@ -592,7 +641,7 @@ function projectWriterUnreadableLanding(
   | { readonly landing: "Deferred" }
   | {
       readonly landing: "Refused";
-      readonly code: RefusalCode;
+      readonly code: BoundaryRefusalCode;
     } {
   return transientGitEvidences.includes(evidence) &&
     deferredPasses < sourceDeferralPassesMax
@@ -621,37 +670,37 @@ const executionWallEscalations: readonly Escalation[] = [
  */
 function projectWriterEscalationEvidence(
   item: DecisionInput,
-  command: DecisionEvent,
+  command: TicketCommand,
   post: TicketGraph,
 ): TicketEscalationEvidence | undefined {
   const source = item.source;
-  if (command.type === "TaskDone") {
-    const ticket = asTicketId(command.value.ticket);
+  if (command.type === "ReportTaskTerminal") {
+    const ticket = commandSubject(command);
     return source.executionBlockedBy === undefined ||
       !executionWallEscalations.includes(ticketAt(post, ticket).escalation)
       ? undefined
       : { ticket, evidence: source.executionBlockedBy };
   }
   if (
-    command.type !== "FinalizationResult" ||
-    command.value.out !== "FinalizationResultUnavailable" ||
+    command.type !== "ReportFinalizationResult" ||
+    command.value.result.type !== "FinalizationResultUnavailable" ||
     source.command.command !== "SubmitFinalizationResult" ||
     source.command.kind === undefined
   )
     return undefined;
   return {
-    ticket: asTicketId(command.value.ticket),
+    ticket: commandSubject(command),
     evidence: source.command.kind,
   };
 }
 
 /**
- * The plan a dispatch earns: the source is read first, the event is built
- * around what was read, and only then is the command weighed — so a client
- * whose source nobody could read is answered a code and this journal gains
- * nothing. A ticket the graph is not ready to dispatch is still refused
- * `NotEnabled`; the observation is a read of a remote and changes nothing
- * there, so taking it first costs the refusal only its latency.
+ * The plan a dispatch earns: the source is read first, the command is built
+ * around what was read, and only then is it decided — so a client whose
+ * source nobody could read is answered a code and this journal gains nothing.
+ * A ticket the graph cannot dispatch is still refused with what `decide`
+ * names; the observation is a read of a remote and changes nothing there, so
+ * taking it first costs the refusal only its latency.
  */
 async function projectWriterDispatchPlan(
   writer: ProjectTicketWriter,
@@ -667,24 +716,27 @@ async function projectWriterDispatchPlan(
     );
     return landing.landing === "Deferred"
       ? { deferred: observed.evidence }
-      : {
-          outcome: { outcome: "Refused", code: landing.code },
-          post: memory.graph,
-        };
+      : refusedPlan(memory, boundaryRefusal(landing.code));
   }
-  const command = dispatchEvent(ticket, observed.source.reference);
-  return decisionEventEnabled(writer.config, memory.graph, command)
-    ? journaledPlan(
+  const command = ticketCommandOf({
+    envelope: "Dispatch",
+    ticket,
+    source: observed.source.reference,
+  });
+  const decision = projectWriterDecision(writer, memory, command);
+  if (decision.type === "Boundary")
+    throw new IntegrityContradiction(
+      "project writer: an observed source is not one a dispatch may carry",
+    );
+  return decision.type === "TicketRefused"
+    ? refusedPlan(memory, decision.value)
+    : journaledPlan(
         memory,
         item,
         command,
-        projectWriterDecision(writer, memory, command),
+        decision.value,
         dispatchSpawnSources(ticket, observed.source),
-      )
-    : {
-        outcome: { outcome: "Refused", code: "NotEnabled" },
-        post: memory.graph,
-      };
+      );
 }
 
 /** The plan an accepted command earns, at the source its spawns already run on. */
@@ -692,9 +744,9 @@ async function projectWriterPlan(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   item: DecisionInput,
-  command: DecisionEvent,
+  command: TicketCommand,
+  decision: SuccessfulTicketDecision,
 ): Promise<ProjectPlan> {
-  const decision = projectWriterDecision(writer, memory, command);
   return journaledPlan(
     memory,
     item,
@@ -716,7 +768,13 @@ export async function projectWriterDecide(
   const preflight = projectWriterPreflight(writer, memory, item);
   const plan =
     "command" in preflight
-      ? await projectWriterPlan(writer, memory, item, preflight.command)
+      ? await projectWriterPlan(
+          writer,
+          memory,
+          item,
+          preflight.command,
+          preflight.decision,
+        )
       : "dispatch" in preflight
         ? await projectWriterDispatchPlan(
             writer,

@@ -91,7 +91,7 @@ import {
 } from "../../interpreter/finalizer.ts";
 import type { FinalizerProposalStore } from "../../interpreter/finalizationProposal.ts";
 import type { FinalizerPreparationStore } from "../../interpreter/finalizerPreparation.ts";
-import { nativeActionResolutions } from "../../interpreter/ticketCommand.ts";
+import { nativeActionResolutions } from "../../interpreter/projectCommand.ts";
 import {
   allLifecycles,
   asProjectId,

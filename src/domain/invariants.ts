@@ -231,9 +231,22 @@ export const finalizationGenerationHeld: Invariant = (_config, view) =>
     );
   });
 
-/** The last decision is valid where it was taken (`decisionValid`). */
-export const decisionsValid: Invariant = (_config, view) =>
-  view.last === "NoDecision" || decisionValid(view.pre, view.last.value);
+/** The last decision is valid where it was taken (`decisionValid`), and a refusal moved nothing. */
+export const decisionsValid: Invariant = (_config, view) => {
+  if (view.last === "NoDecision") return true;
+  if (view.last.type === "Refused") {
+    return (
+      decisionValid(view.pre, {
+        type: "TicketRefused",
+        value: view.last.value,
+      }) && graphEquals(view.post, view.pre)
+    );
+  }
+  return decisionValid(view.pre, {
+    type: "TicketDecided",
+    value: view.last.value,
+  });
+};
 
 /**
  * A decided event is never the identity: the event the machine decides at a
@@ -242,6 +255,7 @@ export const decisionsValid: Invariant = (_config, view) =>
  */
 export const eventsNeverIdentity: Invariant = (_config, view) =>
   view.last === "NoDecision" ||
+  view.last.type !== "Decided" ||
   !graphEquals(evolve(view.pre, view.last.value.event), view.pre);
 
 /**

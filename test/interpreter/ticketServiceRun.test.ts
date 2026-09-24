@@ -1,10 +1,35 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import {
+  createTicketCommand,
+  dispatchTicketCommand,
+  reportFinalizationResultCommand,
+  reportTaskTerminalCommand,
+  type TicketCommand,
+} from "../../src/actor/command.ts";
+import { storedAtCurrentSemantics } from "../../src/actor/journal.ts";
+import { actorInit, journalStep } from "../../src/actor/state.ts";
+import { aDispatchSource } from "../../src/domain/config.ts";
+import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import type { TaskTerminalReport } from "../../src/domain/generated/modelTypes.ts";
 import type {
+  Decision,
+  ProjectDecision,
+} from "../../src/interpreter/projectDecision.ts";
+import type {
+  DecisionInput,
   ProjectDiscovery,
   Readiness,
 } from "../../src/interpreter/projectDiscovery.ts";
+import { asOperationId } from "../../src/interpreter/operationInbox.ts";
+import type { StoredProjectCommand } from "../../src/interpreter/projectCommand.ts";
+import {
+  plainDefinitionOf,
+  plainPolicy,
+  refinementInstance,
+} from "../actor/harness.ts";
+import { id, judgedReport, producedReport } from "../domain/fixtures.ts";
 import {
   asOwnerId,
   asProjectId,
@@ -408,4 +433,141 @@ test("projects that fail every pass cannot hold the discovery window against a h
   );
   assert.deepEqual(activated, ["c-healthy"]);
   assert.equal(second.resumeAfter, undefined);
+});
+
+/** An input as the inbox hands one over: the envelope, and the command the map built from it. */
+function arriving(
+  ordinal: number,
+  ticketCommand: TicketCommand,
+  command: StoredProjectCommand,
+): DecisionInput {
+  return {
+    partition,
+    ordinal,
+    deferredPasses: 0,
+    priority: "Completion",
+    source: {
+      kind: "Operation",
+      operation: asOperationId(`operation-${String(ordinal)}`),
+      command,
+      ticketCommand,
+      ...(command.command === "SubmitFinalizationResult"
+        ? {
+            finalizationRequest: {
+              request: command.request,
+              requestGeneration: command.requestGeneration,
+              open: true,
+            },
+          }
+        : {}),
+    },
+  };
+}
+
+/** A scheduler completion, whose envelope carries the report it builds. */
+function completing(
+  ordinal: number,
+  report: TaskTerminalReport,
+): DecisionInput {
+  const ticketCommand = { type: "ReportTaskTerminal", value: report } as const;
+  return arriving(ordinal, reportTaskTerminalCommand(report), {
+    version: 1,
+    command: "Decide",
+    ticketCommand,
+  });
+}
+
+/** One project whose journal holds a dispatched ticket, and whose inbox hands over `inbox` in order. */
+function dispatchedProject(inbox: DecisionInput[]): {
+  projects: ProjectStore;
+  discovery: ProjectDiscovery;
+} {
+  const dispatched = [
+    createTicketCommand(plainDefinitionOf(1)),
+    dispatchTicketCommand(id(1), aDispatchSource),
+  ].reduce(
+    (state, command) =>
+      journalStep(refinementInstance, state, command, plainPolicy),
+    actorInit(),
+  );
+  const loaded = { ...lease, head: dispatched.journal.length };
+  const projects = {
+    acquire: () => Promise.resolve({ acquired: "Granted", lease: loaded }),
+    release: () => Promise.resolve(),
+    load: () =>
+      Promise.resolve({
+        parsed: "Ok",
+        value: storedAtCurrentSemantics(dispatched.journal),
+      }),
+  } as unknown as ProjectStore;
+  const discovery = {
+    ready: () => Promise.resolve([{ partition, generation: 1 }]),
+    next: () => Promise.resolve(inbox.shift()),
+    clearReadiness: () => Promise.resolve({ cleared: "Cleared" }),
+  } as unknown as ProjectDiscovery;
+  return { projects, discovery };
+}
+
+/**
+ * One pass carries a dispatched ticket through Work and Evaluation to Done:
+ * every input the inbox hands over is decided and committed, and each commit
+ * moves the ticket to the next phase.
+ */
+test("one pass carries a dispatched ticket from Work through Evaluation to Done", async () => {
+  const { projects, discovery } = dispatchedProject([
+    completing(1, producedReport(workTaskOf(1, 1))),
+    completing(
+      2,
+      judgedReport(evaluationTaskOf(1, 1, 1, 1, 1), "EvaluatorPass"),
+    ),
+    arriving(
+      3,
+      reportFinalizationResultCommand(id(1), 1, 1, {
+        type: "FinalizationSucceeded",
+        value: 1,
+      }),
+      {
+        version: 1,
+        command: "SubmitFinalizationResult",
+        request: "request",
+        attempt: "attempt",
+        requestGeneration: 1,
+        recoveryEpoch: "epoch",
+        outcome: "FinalizationSucceeded",
+      },
+    ),
+  ]);
+  const committed: Decision[] = [];
+  const decisions: ProjectDecision = {
+    decide: (decision) => {
+      committed.push(decision);
+      return Promise.resolve({
+        decided: "Committed",
+        lease: { ...decision.lease, head: decision.lease.head + 1 },
+      });
+    },
+  };
+  assert.deepEqual(
+    await ticketServiceRunOnce(
+      {
+        ...passService(projects, discovery),
+        domain: refinementInstance,
+        decisions,
+        executionSources: {
+          ...executionSources,
+          spawnSource: () => Promise.resolve(undefined),
+        },
+      },
+      { projectsPerPassMax: 4, projectLeaseSeconds: 10 },
+    ),
+    { discovered: 1, activated: 1, failed: 0, failures: [] },
+  );
+  assert.deepEqual(
+    committed.map((decision) =>
+      decision.outcome.outcome === "Journaled"
+        ? decision.outcome.projection.map((row) => row.phase)
+        : decision.outcome.outcome,
+    ),
+    [["Evaluation"], ["Finalization"], ["Done"]],
+  );
 });

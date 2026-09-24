@@ -8,8 +8,8 @@
  * asks what comes back.
  *
  * The constructor rosters are walked against `ticketEventTags` and
- * `decisionEventTags` rather than against lists written here, because an event
- * with no schema arm is exactly the drift a hand-written roster hides.
+ * `ticketCommandTags` rather than against lists written here, because an event
+ * or a command with no schema arm is exactly the drift a hand-written roster hides.
  *
  * THE ROUND TRIP IS THE ENCODE DIRECTION'S ONLY CHECK. The codec is generated
  * from the model, so nothing in this tree states the schema twice; what a
@@ -22,19 +22,19 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  decisionEventTags,
-  dispatchEvent,
-  finalizationResultEvent,
-  releaseTicketEvent,
-  resumeTicketEvent,
-  revokeEvent,
-  taskDoneEvent,
-  type DecisionEvent,
-} from "../../src/actor/decisionEvent.ts";
+  createTicketCommand,
+  dispatchTicketCommand,
+  reportFinalizationResultCommand,
+  reportTaskTerminalCommand,
+  resumeTicketCommand,
+  revokeTicketCommand,
+  ticketCommandTags,
+  type TicketCommand,
+} from "../../src/actor/command.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
-import { encodeDecisionEvent } from "../../src/generated/model-api.ts";
+import { encodeTicketCommand } from "../../src/generated/model-api.ts";
 import {
   ticketEventTags,
   type TicketEvent,
@@ -43,11 +43,11 @@ import {
   encodeEntry,
   parseEntry,
   parseJournal,
-  parseStoredTicketCommand,
-  parseTicketCommand,
+  parseProjectCommand,
+  parseStoredProjectCommand,
   type Parsed,
 } from "../../src/interpreter/wire.ts";
-import { asOperationDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
+import { asOperationTicketCommand } from "../../src/interpreter/projectCommand.ts";
 import {
   plainDefinitionOf,
   plainPolicy,
@@ -63,22 +63,19 @@ import {
 
 const config = refinementInstance;
 
-/** One decision event per constructor, keyed by its own tag so the roster can be checked against the vocabulary. */
-const oneOfEach: Readonly<Record<DecisionEvent["type"], DecisionEvent>> = {
-  CreateTicket: releaseTicketEvent(plainDefinitionOf(1, new Set([2]))),
-  Revoke: revokeEvent(id(1)),
-  Dispatch: dispatchEvent(id(1), aDispatchSource),
-  TaskDone: taskDoneEvent(
-    id(1),
-    evaluationTaskOf(1, 1, 1, 1, 1),
+/** One ticket command per constructor, keyed by its own tag so the roster can be checked against the vocabulary. */
+const oneOfEach: Readonly<Record<TicketCommand["type"], TicketCommand>> = {
+  CreateTicket: createTicketCommand(plainDefinitionOf(1, new Set([2]))),
+  RevokeTicket: revokeTicketCommand(id(1)),
+  DispatchTicket: dispatchTicketCommand(id(1), aDispatchSource),
+  ReportTaskTerminal: reportTaskTerminalCommand(
     judgedReport(evaluationTaskOf(1, 1, 1, 1, 1), "EvaluatorFail"),
   ),
-  FinalizationResult: finalizationResultEvent(
-    id(1),
-    "FinalizationNeedsWork",
-    1,
-  ),
-  ResumeTicket: resumeTicketEvent(id(1)),
+  ReportFinalizationResult: reportFinalizationResultCommand(id(1), 1, 1, {
+    type: "FinalizationNeedsWork",
+    value: 1,
+  }),
+  ResumeTicket: resumeTicketCommand(id(1)),
 };
 
 const judge = evaluationTaskOf(1, 1, 1, 1, 1);
@@ -176,7 +173,7 @@ function journaledRelease(): Entry {
   const state = journalStep(
     config,
     actorInit(),
-    releaseTicketEvent(plainDefinitionOf(1)),
+    createTicketCommand(plainDefinitionOf(1)),
     plainPolicy,
   );
   const written = state.journal[0];
@@ -200,10 +197,10 @@ test("every ticket event this machine declares has a schema arm, and the roster 
   }
 });
 
-test("every decision event this machine declares is spelled in a command", () => {
+test("every ticket command this machine declares is spelled here", () => {
   assert.deepEqual(
     [...Object.keys(oneOfEach)].sort(),
-    [...decisionEventTags].sort(),
+    [...ticketCommandTags].sort(),
   );
 });
 
@@ -255,7 +252,7 @@ test("a row is refused, with the field named, for each way the wire can lie", ()
     ],
     [
       "a command where an event belongs",
-      { seq: 1, event: oneOfEach.Dispatch },
+      { seq: 1, event: oneOfEach.DispatchTicket },
       /"event"/,
     ],
     [
@@ -295,24 +292,24 @@ test("a whole journal is refused when it is not a list of rows, and by the index
 
 test("a decide carrying a dispatch is refused, as a finalization result, a completion and a release are", () => {
   for (const closed of [
-    oneOfEach.FinalizationResult,
-    oneOfEach.TaskDone,
+    oneOfEach.ReportFinalizationResult,
+    oneOfEach.ReportTaskTerminal,
     oneOfEach.CreateTicket,
-    oneOfEach.Dispatch,
+    oneOfEach.DispatchTicket,
   ]) {
-    const refused = parseTicketCommand(
+    const refused = parseProjectCommand(
       JSON.stringify({
         version: 1,
         command: "Decide",
-        event: encodeDecisionEvent(closed),
+        ticketCommand: encodeTicketCommand(closed),
       }),
     );
     assert.equal(refused.parsed, "Refused", closed.type);
     assert.ok(refused.parsed === "Refused");
-    assert.match(refused.why, /not a public decision command/);
+    assert.match(refused.why, /not a public ticket command/);
     assert.throws(
-      () => asOperationDecisionEvent(closed),
-      /not a public decision command/,
+      () => asOperationTicketCommand(closed),
+      /not a public ticket command/,
       closed.type,
     );
   }
@@ -329,11 +326,11 @@ test("the finalizer's own envelope is read only by the parse a writer reads its 
     outcome: "FinalizationSucceeded",
   };
   const text = JSON.stringify(submitted);
-  assert.deepEqual(parseStoredTicketCommand(text), {
+  assert.deepEqual(parseStoredProjectCommand(text), {
     parsed: "Ok",
     value: submitted,
   });
-  assert.equal(parseTicketCommand(text).parsed, "Refused");
+  assert.equal(parseProjectCommand(text).parsed, "Refused");
   for (const broken of [
     { ...submitted, version: 2 },
     { ...submitted, request: "" },
@@ -343,130 +340,142 @@ test("the finalizer's own envelope is read only by the parse a writer reads its 
     { ...submitted, recoveryEpoch: "" },
     { ...submitted, outcome: "FinalizationHeld" },
   ]) {
-    const refused = parseStoredTicketCommand(JSON.stringify(broken));
+    const refused = parseStoredProjectCommand(JSON.stringify(broken));
     assert.equal(refused.parsed, "Refused", JSON.stringify(broken));
     assert.ok(refused.parsed === "Refused");
     assert.match(refused.why, /finalization submission fields are invalid/);
   }
 });
 
-/** The evaluation task and the report a stored completion of one carries. */
+/** The evaluation task a stored completion's report names, and the report. */
 const storedTask = {
   type: "EvaluationTask",
   value: { ticket: 1, workCycle: 1, stage: 1, generation: 1, evaluator: 1 },
 };
 const storedReport = {
   type: "TerminalFailureReport",
-  value: { failure: { task: storedTask, evidence: 4 }, kind: "ProcessFailure" },
+  value: {
+    ticket: 1,
+    failure: { task: storedTask, evidence: 4 },
+    kind: "ProcessFailure",
+  },
 };
 
-/** The scheduler's envelope around one completion value, as the store holds it. */
-function storedCompletion(value: unknown): string {
+/** The scheduler's envelope around one report, as the store holds it. */
+function storedCompletion(report: unknown): string {
   return JSON.stringify({
     version: 1,
     command: "Decide",
-    event: { type: "TaskDone", value },
+    ticketCommand: { type: "ReportTaskTerminal", value: report },
   });
 }
 
 /**
- * The scheduler's own envelope: `submit_task_completion` names the task it
- * settled and the report it terminated under, and the two model-typed fields
- * come back as the generated decoders read them.
+ * The scheduler's own envelope: `submit_task_completion` writes the report
+ * the task terminated under, and it comes back as the generated decoder reads
+ * it, its ticket in the arm.
  */
-test("a stored completion names its task and the report it terminated under", () => {
-  const text = storedCompletion({
-    ticket: 1,
-    task: storedTask,
-    report: storedReport,
-  });
-  assert.deepEqual(parseStoredTicketCommand(text), {
+test("a stored completion carries the report it terminated under", () => {
+  const task = {
+    type: "EvaluationTask",
+    value: {
+      ticket: id(1),
+      workCycle: 1,
+      stage: 1,
+      generation: 1,
+      evaluator: 1,
+    },
+  };
+  const text = storedCompletion(storedReport);
+  assert.deepEqual(parseStoredProjectCommand(text), {
     parsed: "Ok",
     value: {
       version: 1,
       command: "Decide",
-      event: {
-        type: "TaskDone",
+      ticketCommand: {
+        type: "ReportTaskTerminal",
         value: {
-          ticket: 1,
-          task: {
-            type: "EvaluationTask",
-            value: {
-              ticket: id(1),
-              workCycle: 1,
-              stage: 1,
-              generation: 1,
-              evaluator: 1,
-            },
-          },
-          report: {
-            type: "TerminalFailureReport",
-            value: {
-              failure: {
-                task: {
-                  type: "EvaluationTask",
-                  value: {
-                    ticket: id(1),
-                    workCycle: 1,
-                    stage: 1,
-                    generation: 1,
-                    evaluator: 1,
-                  },
-                },
-                evidence: 4,
-              },
-              kind: "ProcessFailure",
-            },
+          type: "TerminalFailureReport",
+          value: {
+            ticket: 1,
+            failure: { task, evidence: 4 },
+            kind: "ProcessFailure",
           },
         },
       },
     },
   });
-  assert.equal(parseTicketCommand(text).parsed, "Refused");
+  assert.equal(parseProjectCommand(text).parsed, "Refused");
 });
 
-/** The boundary writes the ticket, the task and the report, so bytes carrying more were not written by it. */
+/** The boundary writes the envelope and the report, so bytes carrying more were not written by it. */
 test("a stored completion is refused for every field the boundary cannot have written", () => {
-  for (const [why, value] of [
+  for (const [why, text] of [
     [
-      "a field beside the ones the boundary writes",
-      {
-        ticket: 1,
-        task: storedTask,
-        report: storedReport,
-        edge: "ReworkEvaluationFailure",
-      },
+      "a field beside the report",
+      storedCompletion({
+        ...storedReport,
+        value: { ...storedReport.value, edge: "ReworkEvaluationFailure" },
+      }),
     ],
-    ["no ticket at all", { task: storedTask, report: storedReport }],
+    [
+      "a field beside the command",
+      JSON.stringify({
+        version: 1,
+        command: "Decide",
+        ticketCommand: {
+          type: "ReportTaskTerminal",
+          value: storedReport,
+          ticket: 1,
+        },
+      }),
+    ],
+    [
+      "a field beside the envelope",
+      JSON.stringify({
+        version: 1,
+        command: "Decide",
+        ticketCommand: { type: "ReportTaskTerminal", value: storedReport },
+        event: { type: "TaskDone", value: storedReport },
+      }),
+    ],
+    [
+      "a report naming no ticket",
+      storedCompletion({
+        type: "TerminalFailureReport",
+        value: { failure: storedReport.value.failure, kind: "ProcessFailure" },
+      }),
+    ],
     [
       "a ticket named by text",
-      { ticket: "1", task: storedTask, report: storedReport },
+      storedCompletion({
+        type: "TerminalFailureReport",
+        value: { ...storedReport.value, ticket: "1" },
+      }),
     ],
     [
       "a task at no constructor of this machine",
-      {
-        ticket: 1,
-        task: { type: "FinalizerTask", value: { ticket: 1 } },
-        report: storedReport,
-      },
+      storedCompletion({
+        type: "TerminalFailureReport",
+        value: {
+          ...storedReport.value,
+          failure: {
+            task: { type: "FinalizerTask", value: { ticket: 1 } },
+            evidence: 4,
+          },
+        },
+      }),
     ],
     [
-      "a report still naming its ticket",
-      {
-        ticket: 1,
-        task: storedTask,
-        report: {
-          type: "TerminalFailureReport",
-          value: { ticket: 1, kind: "ProcessFailure" },
-        },
-      },
+      "the envelope's former field",
+      JSON.stringify({
+        version: 1,
+        command: "Decide",
+        event: { type: "ReportTaskTerminal", value: storedReport },
+      }),
     ],
   ] as const) {
-    assert.equal(
-      parseStoredTicketCommand(storedCompletion(value)).parsed,
-      "Refused",
-      why,
-    );
+    assert.equal(parseStoredProjectCommand(text).parsed, "Refused", why);
   }
 });
 
@@ -485,7 +494,7 @@ test("a submission carries its hold kind exactly when it reports one", () => {
     outcome: "FinalizationResultUnavailable",
     kind: "RepositoryUnbound",
   };
-  assert.deepEqual(parseStoredTicketCommand(JSON.stringify(held)), {
+  assert.deepEqual(parseStoredProjectCommand(JSON.stringify(held)), {
     parsed: "Ok",
     value: held,
   });
@@ -494,7 +503,7 @@ test("a submission carries its hold kind exactly when it reports one", () => {
     { ...held, kind: undefined },
     { ...held, outcome: "FinalizationNeedsWork", attempt: "attempt-1" },
   ]) {
-    const refused = parseStoredTicketCommand(JSON.stringify(broken));
+    const refused = parseStoredProjectCommand(JSON.stringify(broken));
     assert.equal(refused.parsed, "Refused", JSON.stringify(broken));
     assert.ok(refused.parsed === "Refused");
     assert.match(refused.why, /finalization submission fields are invalid/);

@@ -14,16 +14,16 @@
  * clearing has to prove the inbox empty and why a repair scan is optional
  * rather than load-bearing.
  *
- * A SUBMISSION IS FENCED BEFORE A SEMANTIC EVENT IS BUILT. A native-action
+ * A SUBMISSION IS FENCED BEFORE ITS TICKET COMMAND IS BUILT. A native-action
  * resolution and a finalization result each name a durable row that authorized
  * them, so the source for one is assembled from that row rather than from the
  * command's own claims, and a row that has settled, whose generation has moved
  * or whose epoch a restore superseded is carried closed for the writer to
  * refuse.
  *
- * AN APPROVAL ANSWER RESOLVES TO NO EVENT. `Approve` and `Decline` name no
+ * AN APPROVAL ANSWER RESOLVES TO NO COMMAND. `Approve` and `Decline` name no
  * domain command, so the source built for one carries the answer and no
- * `resolvedEvent`, and the join onto the offered resolutions is what proves the
+ * `ticketCommand`, and the join onto the offered resolutions is what proves the
  * action asked that question rather than the other one.
  *
  * NO WAKE-UP IS ERASED, AND THE READINESS ROW LOCK IS WHAT ORDERS THE TWO
@@ -64,24 +64,20 @@ import type {
   ReadinessCleared,
 } from "../../interpreter/projectDiscovery.ts";
 import { blockedReasons, type BlockedReason } from "../../contract/rosters.ts";
-import { parseStoredTicketCommand } from "../../interpreter/wire.ts";
+import { parseStoredProjectCommand } from "../../interpreter/wire.ts";
 import {
   isApprovalResolution,
   isSchedulerCompletion,
-  type ApprovalResolution,
   type FinalizationSubmission,
-  type NativeActionResolution,
-  type TicketCommand,
-} from "../../interpreter/ticketCommand.ts";
+  type ProjectCommand,
+} from "../../interpreter/projectCommand.ts";
+import { ticketCommandOf } from "../../interpreter/commandMap.ts";
 import {
   asCanonicalConfiguration,
   draftReleaseReadiness,
   parseDraftAuthoring,
 } from "../../interpreter/authoring.ts";
-import {
-  releasedTicketDefinition,
-  ticketDefinitionMaterial,
-} from "../../interpreter/ticketDefinition.ts";
+import { ticketDefinitionMaterial } from "../../interpreter/ticketDefinition.ts";
 import { draftBriefOf } from "./ticketBrief.ts";
 import {
   allInputBundleReferenceKinds,
@@ -96,12 +92,6 @@ import {
 } from "../../interpreter/finalizerPreparation.ts";
 import { finalizerRowValue } from "./finalizerRows.ts";
 import { digestFold } from "../../interpreter/resultManifest.ts";
-import {
-  finalizationResultEvent,
-  releaseTicketEvent,
-  type DecisionEvent,
-} from "../../actor/decisionEvent.ts";
-import { assertNever } from "../../domain/assertNever.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import {
   asProjectId,
@@ -180,7 +170,7 @@ interface ReleaseDraftRow {
 async function releaseDraftRow(
   pool: pg.Pool,
   partition: Partition,
-  command: Extract<TicketCommand, { readonly command: "ReleaseDraft" }>,
+  command: Extract<ProjectCommand, { readonly command: "ReleaseDraft" }>,
 ): Promise<ReleaseDraftRow> {
   const revision = await pool.query<ReleaseDraftRow>(
     sql`SELECT r.authoring,c.digest,c.canonical,p.repository AS provenance_repository,
@@ -214,16 +204,16 @@ async function releaseDraftRow(
  * The release's own resolution, from the draft's authoring, the configuration
  * revision the command pinned, the brief as it stands and the provenance the
  * pair is weighed against — resolved HERE AND NOWHERE ELSE, so the material is
- * computed once, carried into the transaction that journals the event, and
+ * computed once, carried into the transaction that journals its event, and
  * stored beside it. A pair that contradicts itself resolves nothing and carries
- * no event, because the deciding transaction re-reads the same revision behind
+ * no command, because the deciding transaction re-reads the same revision behind
  * the same fence and names the precise fault this refusal only stands in for.
  */
 async function releaseDraftSource(
   pool: pg.Pool,
   partition: Partition,
   operation: string,
-  command: Extract<TicketCommand, { readonly command: "ReleaseDraft" }>,
+  command: Extract<ProjectCommand, { readonly command: "ReleaseDraft" }>,
 ): Promise<DecisionInput["source"]> {
   const found = await releaseDraftRow(pool, partition, command);
   const brief = draftBriefOf(found);
@@ -250,13 +240,12 @@ async function releaseDraftSource(
     ...(material === undefined
       ? {}
       : {
-          resolvedEvent: releaseTicketEvent(
-            releasedTicketDefinition(
-              asTicketId(command.ticket),
-              authoring,
-              material,
-            ),
-          ),
+          ticketCommand: ticketCommandOf({
+            envelope: "ReleaseDraft",
+            ticket: asTicketId(command.ticket),
+            authoring,
+            material,
+          }),
         }),
     draftRelease: {
       ticket: command.ticket,
@@ -419,9 +408,12 @@ async function finalizationRequestSource(
     ticket: string;
     state: string;
     request_generation: string;
+    work_cycle: string;
+    finalization_generation: string;
     epoch_is_current: boolean | null;
   }>(
     sql`SELECT f.ticket::text, f.state, f.request_generation::text,
+            f.work_cycle::text, f.finalization_generation::text,
             (${command.recoveryEpoch} = (SELECT e.epoch FROM recovery_epoch e
                     ORDER BY e.ordinal DESC LIMIT 1)) AS epoch_is_current
        FROM finalization_request f
@@ -440,11 +432,17 @@ async function finalizationRequestSource(
     kind: "Operation",
     operation: asOperationId(operation),
     command,
-    resolvedEvent: finalizationResultEvent(
-      asTicketId(ticket),
-      command.outcome,
-      settled.reference,
-    ),
+    ticketCommand: ticketCommandOf({
+      envelope: "SubmitFinalizationResult",
+      ticket: asTicketId(ticket),
+      workCycle: projectRowCounter(request.work_cycle, "finalization cycle"),
+      generation: projectRowCounter(
+        request.finalization_generation,
+        "finalization generation",
+      ),
+      outcome: command.outcome,
+      evidence: settled.reference,
+    }),
     finalizationRequest: {
       request: command.request,
       requestGeneration: command.requestGeneration,
@@ -460,30 +458,11 @@ async function finalizationRequestSource(
   };
 }
 
-/**
- * The domain command one answer names, exhaustive over the answers that name
- * one. A resolution added to the roster is a compile error here rather than an
- * answer that silently becomes a revocation.
- */
-function nativeActionResolvedEvent(
-  resolution: Exclude<NativeActionResolution, ApprovalResolution>,
-  ticket: number,
-): DecisionEvent {
-  switch (resolution) {
-    case "Resume":
-      return { type: "ResumeTicket", value: ticket };
-    case "Revoke":
-      return { type: "Revoke", value: ticket };
-    default:
-      return assertNever(resolution);
-  }
-}
-
 async function nativeActionSource(
   pool: pg.Pool,
   partition: Partition,
   operation: string,
-  command: Extract<TicketCommand, { readonly command: "ResolveNativeAction" }>,
+  command: Extract<ProjectCommand, { readonly command: "ResolveNativeAction" }>,
 ): Promise<DecisionInput["source"]> {
   const action = await pool.query<{ ticket: string; state: string }>(
     sql`SELECT a.ticket::text, a.state FROM native_action a
@@ -514,7 +493,11 @@ async function nativeActionSource(
   if (isApprovalResolution(resolution)) return answered;
   return {
     ...answered,
-    resolvedEvent: nativeActionResolvedEvent(resolution, ticket),
+    ticketCommand: ticketCommandOf({
+      envelope: "ResolveNativeAction",
+      ticket: asTicketId(ticket),
+      resolution,
+    }),
   };
 }
 
@@ -525,7 +508,7 @@ async function operationSource(
 ): Promise<DecisionInput["source"]> {
   if (row.command === null)
     throw new Error(`operation ${row.input_id} has no command`);
-  const parsed = parseStoredTicketCommand(row.command);
+  const parsed = parseStoredProjectCommand(row.command);
   if (parsed.parsed === "Refused")
     throw new Error(
       `stored operation ${row.input_id} is unreadable: ${parsed.why}`,
@@ -546,7 +529,7 @@ async function operationSource(
       kind: "Operation",
       operation: asOperationId(row.input_id),
       command,
-      resolvedEvent: command.event,
+      ticketCommand: ticketCommandOf({ envelope: "Decide", command }),
       ...(row.blocked_reason === null
         ? {}
         : { executionBlockedBy: inboxBlockedReason(row.blocked_reason) }),
@@ -554,14 +537,14 @@ async function operationSource(
   }
   if (command.command === "Decide") {
     /**
-     * Every other `Decide` is a public command whose event is what its
-     * principal offered, so there is nothing to resolve it against.
+     * Every other `Decide` is a public command its principal offered whole,
+     * so there is nothing to resolve it against.
      */
     return {
       kind: "Operation",
       operation: asOperationId(row.input_id),
       command,
-      resolvedEvent: command.event,
+      ticketCommand: ticketCommandOf({ envelope: "Decide", command }),
     };
   }
   if (command.command === "ReleaseDraft") {
@@ -572,7 +555,7 @@ async function operationSource(
     command.command === "ProposeDispatch"
   ) {
     /**
-     * A dispatch resolves to no event here. The source it carries is read at
+     * A dispatch resolves to no command here. The source it carries is read at
      * the remote by the writer, which is the only place that reads one, so the
      * command reaches the writer naming its ticket and nothing else.
      */

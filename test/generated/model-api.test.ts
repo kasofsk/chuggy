@@ -8,15 +8,18 @@ import {
   type EvaluationInstance,
   type Obligation,
   type TicketGraph,
+  type TicketRefusal,
 } from "../../src/domain/generated/modelTypes.ts";
 import {
   decodeEntry,
   decodeObligation,
   decodeTicketGraph,
-  decodeDecisionEvent,
+  decodeTicketCommand,
+  decodeTicketRefusal,
   encodeEntry,
   encodeObligation,
   encodeTicketGraph,
+  encodeTicketRefusal,
 } from "../../src/generated/model-api.ts";
 
 /** The one evaluator every shape here is judged by, and the task it was given. */
@@ -150,11 +153,25 @@ test("generated codecs refuse duplicates that JSON could otherwise collapse", ()
     }),
   );
   assert.throws(() =>
-    decodeDecisionEvent({
+    decodeTicketCommand({
       type: "CreateTicket",
       value: { ...wiredDefinition, dependencies: [3, 3] },
     }),
   );
+});
+
+test("a refusal is its name and its payload, a set of tickets written as a list", () => {
+  const refusal: TicketRefusal = {
+    type: "DependenciesIncomplete",
+    value: { ticket: 7, dependencies: new Set([3, 5]) },
+  };
+  const wire = encodeTicketRefusal(refusal);
+  assert.deepEqual(wire, {
+    type: "DependenciesIncomplete",
+    value: { ticket: 7, dependencies: [3, 5] },
+  });
+  assert.deepEqual(decodeTicketRefusal(wire), refusal);
+  assert.throws(() => decodeTicketRefusal({ type: "NotEnabled", value: 7 }));
 });
 
 test("generated constructor roster is the exhaustive model phase vocabulary", () => {

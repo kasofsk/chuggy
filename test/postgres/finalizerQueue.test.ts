@@ -131,7 +131,7 @@ async function submissionInput(
   project: FinalizerProject,
 ): Promise<Record<string, unknown>> {
   const rows = await rig.harness.query(
-    `SELECT d.state, d.outcome_code FROM decision_input d
+    `SELECT d.state, d.outcome_code, d.refusal::jsonb AS refusal FROM decision_input d
        JOIN operation o ON o.tenant=d.tenant AND o.project=d.project
             AND o.operation=d.input_id
       WHERE d.tenant=$1 AND d.project=$2 AND d.input_kind='Operation'
@@ -205,6 +205,29 @@ test("a claim registers one request, stamped with its owner, epoch and generatio
   );
 });
 
+test("a minted request names the work cycle and generation it finalizes", async () => {
+  for (const [reworks, workCycle] of [
+    [0, "1"],
+    [1, "2"],
+  ] as const) {
+    const project = await finalizerProject(
+      rig,
+      `attempt-${String(reworks)}`,
+      undefined,
+      reworks,
+    );
+    assert.deepEqual(
+      await rig.harness.query(
+        `SELECT work_cycle::text AS work_cycle,
+                finalization_generation::text AS generation
+           FROM finalization_request WHERE tenant=$1 AND project=$2 AND request=$3`,
+        [project.partition.tenant, project.partition.project, project.request],
+      ),
+      [{ work_cycle: workCycle, generation: "1" }],
+    );
+  }
+});
+
 test("the queue is drawn oldest first and one pass takes only what it is bounded to", async () => {
   await store.claimRequests(
     asFinalizerOwnerId(finalizerIdentity("owner-claim-drain")),
@@ -217,8 +240,9 @@ test("the queue is drawn oldest first and one pass takes only what it is bounded
   await rig.harness.query(
     `INSERT INTO finalization_request
        (tenant, project, request, authorizing_seq, effect_position, ticket,
-        ticket_version, request_generation, kind)
-     VALUES ($1,$2,$3,1,7,$4,1,1,'RunFinalizer')`,
+        ticket_version, request_generation, kind, work_cycle,
+        finalization_generation)
+     VALUES ($1,$2,$3,1,7,$4,1,1,'RunFinalizer',1,1)`,
     [
       project.partition.tenant,
       project.partition.project,
@@ -432,7 +456,11 @@ test("a result whose request has moved is refused and writes no journal entry", 
     assert.equal(await entries(project), before, label);
     assert.deepEqual(
       await submissionInput(project),
-      { state: "Refused", outcome_code: "NotEnabled" },
+      {
+        state: "Refused",
+        outcome_code: "FinalizationRequestClosed",
+        refusal: null,
+      },
       label,
     );
   }
@@ -442,9 +470,14 @@ test("no principal may offer a finalization result as an ordinary command", asyn
   const forged = JSON.stringify({
     version: 1,
     command: "Decide",
-    event: {
-      type: "FinalizationResult",
-      value: { ticket: 1, out: "FinalizationSucceeded", evidence: 1 },
+    ticketCommand: {
+      type: "ReportFinalizationResult",
+      value: {
+        ticket: 1,
+        workCycle: 1,
+        generation: 1,
+        result: { type: "FinalizationSucceeded", value: 1 },
+      },
     },
   });
   assert.deepEqual(

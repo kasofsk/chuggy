@@ -94,11 +94,41 @@ test("a success is not settled until the projection has caught up", () => {
     step: "Settled",
     operation: "op-1",
     state: "Succeeded",
-    refusalCode: undefined,
+    refusal: undefined,
   });
 });
 
-test("a refusal settles carrying the code that explains it", () => {
+test("a refusal settles carrying the code and the refusal that explain it", () => {
+  const following = operationAdvanced(operationSubmitting(), {
+    event: "Accepted",
+    operation: "op-1",
+  });
+  const refusal = {
+    type: "DependenciesIncomplete" as const,
+    value: { ticket: 3, dependencies: [2] },
+  };
+  expect(
+    operationAdvanced(following, {
+      event: "Polled",
+      operation: {
+        operation: "op-1",
+        acceptedAt,
+        state: "Refused",
+        code: "DependenciesIncomplete",
+        refusal,
+        refusedHead: 4,
+        refusedLifecycleGeneration: 1,
+      },
+    }),
+  ).toEqual({
+    step: "Settled",
+    operation: "op-1",
+    state: "Refused",
+    refusal,
+  });
+});
+
+test("a refusal the boundary decided settles carrying its code alone", () => {
   const following = operationAdvanced(operationSubmitting(), {
     event: "Accepted",
     operation: "op-1",
@@ -110,7 +140,7 @@ test("a refusal settles carrying the code that explains it", () => {
         operation: "op-1",
         acceptedAt,
         state: "Refused",
-        code: "NotEnabled",
+        code: "TicketChanged",
         refusedHead: 4,
         refusedLifecycleGeneration: 1,
       },
@@ -119,7 +149,7 @@ test("a refusal settles carrying the code that explains it", () => {
     step: "Settled",
     operation: "op-1",
     state: "Refused",
-    refusalCode: "NotEnabled",
+    refusal: { type: "TicketChanged" },
   });
 });
 
@@ -135,7 +165,7 @@ function answered(state: OperationState): OperationResponse {
       return {
         ...identity,
         state,
-        code: "NotEnabled",
+        code: "TicketChanged",
         refusedHead: 4,
         refusedLifecycleGeneration: 1,
       };
@@ -174,7 +204,7 @@ test("a cancelled operation settles as cancelled and asks for nothing more", () 
     step: "Settled",
     operation: "op-1",
     state: "Cancelled",
-    refusalCode: undefined,
+    refusal: undefined,
   });
   expect(operationRequest(step)).toBeUndefined();
 });

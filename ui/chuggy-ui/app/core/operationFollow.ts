@@ -13,10 +13,7 @@
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type {
-  OperationRefusalCode,
-  OperationState,
-} from "../../../../src/contract/rosters.ts";
+import type { OperationState } from "../../../../src/contract/rosters.ts";
 import type { submissionSchema } from "../../../../src/contract/requests.ts";
 import type {
   OperationResponse,
@@ -28,6 +25,7 @@ import { apiOperation, apiProject, apiSubmitOperation } from "./apiRoutes.ts";
 import type { ProjectPage } from "./apiRoutes.ts";
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
 import { operationFailureSentence } from "./codeSentences.ts";
+import type { OperationRefusal } from "./codeSentences.ts";
 
 /** How much entropy an operation identity is drawn with. It is also the
  * idempotency key the route refuses a submission without, so every screen that
@@ -65,7 +63,7 @@ export type OperationStep =
       readonly step: "Settled";
       readonly operation: string;
       readonly state: OperationState;
-      readonly refusalCode: OperationRefusalCode | undefined;
+      readonly refusal: OperationRefusal | undefined;
     }
   | {
       readonly step: "Abandoned";
@@ -185,6 +183,13 @@ export function operationAnswered(step: OperationStep): boolean {
   return step.step === "Abandoned" && step.refused;
 }
 
+/** The machine's refusal where the wire carries one, else the boundary's code. */
+function operationSettledRefusal(
+  answered: Extract<OperationResponse, { readonly state: "Refused" }>,
+): OperationRefusal {
+  return "refusal" in answered ? answered.refusal : { type: answered.code };
+}
+
 function operationSettled(
   operation: string,
   answered: OperationResponse,
@@ -193,7 +198,10 @@ function operationSettled(
     step: "Settled",
     operation,
     state: answered.state,
-    refusalCode: answered.state === "Refused" ? answered.code : undefined,
+    refusal:
+      answered.state === "Refused"
+        ? operationSettledRefusal(answered)
+        : undefined,
   };
 }
 
@@ -297,7 +305,7 @@ function operationConfirmed(step: OperationStep): OperationStep {
     step: "Settled",
     operation: step.operation,
     state: "Succeeded",
-    refusalCode: undefined,
+    refusal: undefined,
   };
 }
 

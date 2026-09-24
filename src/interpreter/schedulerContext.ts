@@ -47,7 +47,7 @@
  * spawns work tasks too and 006 still pauses dispatch alone, so a criterion
  * reading "asks for new execution work" would have to classify resume and
  * native-action resumption the other way from the way this file does. A
- * `Decide` is never one of them: the dispatch is not an event a principal may
+ * `Decide` is never one of them: the dispatch is not a command a principal may
  * offer, so the two spellings above are the whole of what arrives.
  *
  * EVERY REFUSAL IS A VALUE, as elsewhere in this layer. A backlogged project is
@@ -68,7 +68,7 @@ import {
 } from "./executionScheduler.ts";
 export { allBacklogScopes, type BacklogScope } from "./executionScheduler.ts";
 import type { Partition } from "./projectStore.ts";
-import type { TicketCommand } from "./ticketCommand.ts";
+import type { ProjectCommand } from "./projectCommand.ts";
 
 /** The named project's own unfinished logical work, by the status that owns a slot or waits for one. */
 export interface ProjectActiveWork {
@@ -197,7 +197,7 @@ export interface ExecutionBacklogGuard {
  * dispatch arrives as at this boundary.
  */
 export function dispatchNeedsExecutionHeadroom(
-  command: TicketCommand,
+  command: ProjectCommand,
 ): boolean {
   switch (command.command) {
     case "ManualDispatch":

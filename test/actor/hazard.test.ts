@@ -19,11 +19,11 @@ import {
   aFinalizationEvidence,
 } from "../../src/domain/config.ts";
 import {
-  dispatchEvent,
-  finalizationResultEvent,
-  releaseTicketEvent,
-  taskDoneEvent,
-} from "../../src/actor/decisionEvent.ts";
+  dispatchTicketCommand,
+  reportFinalizationResultCommand,
+  createTicketCommand,
+  reportTaskTerminalCommand,
+} from "../../src/actor/command.ts";
 import {
   obligationsHold,
   refinementCore,
@@ -67,13 +67,13 @@ function phaseDispatchDoubleSpend(): ActorState {
   state = stepEmit(
     config,
     state,
-    releaseTicketEvent(plainDefinitionOf(1)),
+    createTicketCommand(plainDefinitionOf(1)),
     "TicketCreated",
   );
   state = effectCrash(
     config,
     state,
-    dispatchEvent(id(1), aDispatchSource),
+    dispatchTicketCommand(id(1), aDispatchSource),
     plainPolicy,
   );
   assert.equal(state.orphans.length, 1);
@@ -85,7 +85,7 @@ function phaseDispatchDoubleSpend(): ActorState {
   state = journalStep(
     config,
     state,
-    dispatchEvent(id(1), aDispatchSource),
+    dispatchTicketCommand(id(1), aDispatchSource),
     plainPolicy,
   );
   assertStep(config, state, "the orphan against the re-decided step", [
@@ -113,7 +113,7 @@ function phaseDuplicateCycle(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), workTaskOf(1, 1), producedReport(workTaskOf(1, 1))),
+    reportTaskTerminalCommand(producedReport(workTaskOf(1, 1))),
     "TicketWorkResultAccepted",
     spentWorld,
   );
@@ -125,11 +125,10 @@ function phaseDuplicateCycle(state: ActorState): void {
     spentWorld,
   );
   assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Finalization");
-  const succeeded = finalizationResultEvent(
-    id(1),
-    "FinalizationSucceeded",
-    aFinalizationEvidence,
-  );
+  const succeeded = reportFinalizationResultCommand(id(1), 1, 1, {
+    type: "FinalizationSucceeded",
+    value: aFinalizationEvidence,
+  });
   state = effectCrash(config, state, succeeded, plainPolicy);
   assert.equal(state.orphans.length, 2);
   assert.equal(worldCompletions(state, id(1)), 1);

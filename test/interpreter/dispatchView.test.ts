@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { releaseTicketEvent } from "../../src/actor/decisionEvent.ts";
+import { createTicketCommand } from "../../src/actor/command.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 import {
   decodeDispatchProgram,
@@ -21,13 +21,13 @@ function pendingCandidates() {
   const one = journalStep(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(plainDefinitionOf(1)),
+    createTicketCommand(plainDefinitionOf(1)),
     plainPolicy,
   );
   const two = journalStep(
     refinementInstance,
     one,
-    releaseTicketEvent(plainDefinitionOf(2)),
+    createTicketCommand(plainDefinitionOf(2)),
     plainPolicy,
   );
   return deriveDispatchCandidates(

@@ -18,12 +18,12 @@ import {
   aFinalizationEvidence,
 } from "../../src/domain/config.ts";
 import {
-  decisionEventEnabled,
-  dispatchEvent,
-  finalizationResultEvent,
-  releaseTicketEvent,
-  taskDoneEvent,
-} from "../../src/actor/decisionEvent.ts";
+  createTicketCommand,
+  dispatchTicketCommand,
+  reportFinalizationResultCommand,
+  reportTaskTerminalCommand,
+} from "../../src/actor/command.ts";
+import { decide } from "../../src/domain/deciders.ts";
 import {
   actorInit,
   crashRecoverTo,
@@ -57,7 +57,7 @@ function phaseDispatchSurvives(): ActorState {
   let state = journalStep(
     config,
     actorInit(),
-    releaseTicketEvent(plainDefinitionOf(1)),
+    createTicketCommand(plainDefinitionOf(1)),
     plainPolicy,
   );
   assert.equal(state.journal.length, 1);
@@ -73,7 +73,7 @@ function phaseDispatchSurvives(): ActorState {
   state = journalStep(
     config,
     state,
-    dispatchEvent(id(1), aDispatchSource),
+    dispatchTicketCommand(id(1), aDispatchSource),
     plainPolicy,
   );
   assert.equal(journalSpawns(state, id(1)), 1);
@@ -96,26 +96,30 @@ function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), work, producedReport(work)),
+    reportTaskTerminalCommand(producedReport(work)),
     "TicketWorkResultAccepted",
   );
-  assert.throws(
-    () =>
-      journalStep(
-        config,
-        state,
-        taskDoneEvent(id(1), work, producedReport(work)),
-        plainPolicy,
-      ),
-    /TaskDone is refused/,
+  const again = journalStep(
+    config,
+    state,
+    reportTaskTerminalCommand(producedReport(work)),
+    plainPolicy,
+  );
+  assert.deepEqual(
+    again.view.last,
+    {
+      type: "Refused",
+      value: { type: "TaskNotCurrent", value: { ticket: 1, task: work } },
+    },
     "a task already accepted is no longer owed, so a second report is refused",
   );
-  assert.equal(state.journal.length, 3);
+  assert.equal(again.journal.length, 3, "and a refusal journals nothing");
+  assertStep(config, again, "the second report (refused)");
   const dissenter = evaluationTaskOf(1, 1, 1, 1, 1);
   state = journalStep(
     config,
     state,
-    taskDoneEvent(id(1), dissenter, judgedReport(dissenter, "EvaluatorFail")),
+    reportTaskTerminalCommand(judgedReport(dissenter, "EvaluatorFail")),
     plainPolicy,
   );
   assert.equal(lastEventOf(state), "TicketEvaluationReworkStarted");
@@ -151,31 +155,35 @@ function phaseCompletionLandsOnce(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), rework, producedReport(rework)),
+    reportTaskTerminalCommand(producedReport(rework)),
     "TicketWorkResultAccepted",
   );
   const judge = evaluationTaskOf(1, 2, 1, 1, 1);
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), judge, judgedReport(judge, "EvaluatorPass")),
+    reportTaskTerminalCommand(judgedReport(judge, "EvaluatorPass")),
     "TicketEvaluationPassed",
   );
-  const succeeded = finalizationResultEvent(
-    id(1),
-    "FinalizationSucceeded",
-    aFinalizationEvidence,
-  );
+  const succeeded = reportFinalizationResultCommand(id(1), 2, 1, {
+    type: "FinalizationSucceeded",
+    value: aFinalizationEvidence,
+  });
   state = journalStep(config, state, succeeded, plainPolicy);
   assert.equal(lastEventOf(state), "TicketFinalizationSucceeded");
   assert.deepEqual(
-    state.view.last === "NoDecision" ? [] : state.view.last.value.obligations,
+    state.view.last === "NoDecision" || state.view.last.type === "Refused"
+      ? []
+      : state.view.last.value.obligations,
     [],
   );
   assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Done");
   assert.equal(journalCompletions(state, id(1)), 1);
   assert.equal(worldCompletions(state, id(1)), 0);
-  assert.ok(!decisionEventEnabled(config, memoryGraph(state), succeeded));
+  assert.equal(
+    decide(memoryGraph(state), succeeded, plainPolicy).type,
+    "TicketRefused",
+  );
   assertStep(config, state, "completion (journaled, untold)");
   state = crashRecoverTo(state, 6);
   assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Done");

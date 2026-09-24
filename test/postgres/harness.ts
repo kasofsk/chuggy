@@ -32,9 +32,11 @@ import {
   type ReleaseAuthoring,
 } from "../../src/interpreter/authoring.ts";
 import {
-  dispatchEvent,
-  releaseTicketEvent,
-} from "../../src/actor/decisionEvent.ts";
+  createTicketCommand,
+  dispatchTicketCommand,
+  type TicketCommand,
+} from "../../src/actor/command.ts";
+import { encodeTicketCommand } from "../../src/generated/model-api.ts";
 import { aDispatchSource } from "../../src/domain/config.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
@@ -87,15 +89,14 @@ import {
   type MemoryProjectAccess,
 } from "./projectAccessMemory.ts";
 import { executionSchedulerAuthorityKind } from "../../src/interpreter/executionScheduler.ts";
-import { isCompletionDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
-import type { DecisionEvent } from "../../src/domain/generated/modelTypes.ts";
+import { isCompletionTicketCommand } from "../../src/interpreter/projectCommand.ts";
 import type { RepositoryConfigurationStore } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
   asIdempotencyKey,
   asOperationId,
-  asOperationDecisionEvent,
+  asOperationTicketCommand,
   type OperationInbox,
   type OperationId,
   type Submission,
@@ -527,7 +528,10 @@ export function postgresHarnessSubmission(
     command: {
       version: 1,
       command: "Decide",
-      event: asOperationDecisionEvent({ type: "ResumeTicket", value: id(1) }),
+      ticketCommand: asOperationTicketCommand({
+        type: "ResumeTicket",
+        value: id(1),
+      }),
     },
   };
 }
@@ -543,21 +547,14 @@ export async function postgresHarnessCompletion(
   harness: PostgresHarness,
   partition: Partition,
   operation: string,
-  event: DecisionEvent,
+  completion: TicketCommand,
 ): Promise<void> {
-  if (!isCompletionDecisionEvent(event))
-    throw new Error("postgres harness: that event is not a completion");
+  if (!isCompletionTicketCommand(completion))
+    throw new Error("postgres harness: that command is not a completion");
   const command = JSON.stringify({
     version: 1,
     command: "Decide",
-    event: {
-      type: "TaskDone",
-      value: {
-        ticket: event.value.ticket,
-        task: event.value.task,
-        report: event.value.report,
-      },
-    },
+    ticketCommand: encodeTicketCommand(completion),
   });
   await harness.query(
     `WITH claimed AS (
@@ -591,7 +588,7 @@ export async function postgresHarnessCompletion(
       operation,
       executionSchedulerAuthorityKind,
       command,
-      event.type,
+      completion.type,
     ],
   );
 }
@@ -605,13 +602,13 @@ export function postgresHarnessJournal(): readonly Entry[] {
   const released = journalStep(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(plainDefinitionOf(1)),
+    createTicketCommand(plainDefinitionOf(1)),
     plainPolicy,
   );
   return journalStep(
     refinementInstance,
     released,
-    dispatchEvent(id(1), aDispatchSource),
+    dispatchTicketCommand(id(1), aDispatchSource),
     plainPolicy,
   ).journal;
 }
@@ -725,10 +722,10 @@ export async function postgresHarnessAccept(
       kind: "Operation",
       operation: submission.operation,
       command: submission.command,
-      resolvedEvent:
+      ticketCommand:
         submission.command.command === "Decide"
-          ? submission.command.event
-          : releaseTicketEvent(plainDefinitionOf(1)),
+          ? submission.command.ticketCommand
+          : createTicketCommand(plainDefinitionOf(1)),
     },
   };
 }
