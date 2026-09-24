@@ -194,6 +194,26 @@ set -e
 check "a model change selects Quint" 0 "$RC" "stub check-model"
 check "a model change selects model API generation" 0 "$RC" "stub check-model-api"
 
+# The vendored package is the model's text and the corpus the harness replays,
+# so a change to it reaches the replay gates and the pin, not only Quint.
+stub_repo 0
+mkdir -p "$R/model/ticket-domain/evaluation"
+printf 'module before {}\n' > "$R/model/ticket-domain/evaluation/evaluation.qnt"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf 'module after {}\n' > "$R/model/ticket-domain/evaluation/evaluation.qnt"
+git -C "$R" add -A
+git -C "$R" commit -qm vendored
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "a vendored change selects the pin" 0 "$RC" "stub check-vendored"
+check "a vendored change selects conformance" 0 "$RC" "stub check-conformance"
+check "a vendored change selects the random replay" 0 "$RC" "stub check-random"
+
 # An unresolvable base fails open to complete coverage, never to no coverage.
 stub_repo 0
 OUT="$WORK/.out"

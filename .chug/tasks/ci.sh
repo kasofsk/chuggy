@@ -88,6 +88,7 @@ run_selected_gate check-gates "check-gates" ./.chug/tasks/check-gates.sh
 run_selected_gate check-comments "check-comments" ./.chug/tasks/check-comments.sh
 run_selected_gate check-knowledge "check-knowledge" ./.chug/tasks/check-knowledge.sh
 run_selected_gate check-roster "check-roster" ./.chug/tasks/check-roster.sh
+run_selected_gate check-vendored "check-vendored" ./.chug/tasks/check-vendored.sh
 
 if [ "${CHUG_CI_SHELL_SUITES:-1}" = "0" ]; then
 	printf '\n--- shell suites: SKIPPED (CHUG_CI_SHELL_SUITES=0)\n'
