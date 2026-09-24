@@ -172,6 +172,7 @@ const boundaryRefusals = [
   "ExecutionSourceUnreadable",
   "ExecutionSourceDenied",
   "BriefNamesNoRepository",
+  "TicketCapacityReached",
 ];
 
 /** The predicates 013 and 014 stated, and the ones this states beside them. */

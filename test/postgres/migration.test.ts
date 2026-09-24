@@ -7695,6 +7695,7 @@ const commandsBoundaryRefusals = [
   "ExecutionSourceUnreadable",
   "ExecutionSourceDenied",
   "BriefNamesNoRepository",
+  "TicketCapacityReached",
 ];
 
 const commandsKnown = "decision_input_outcome_is_known";

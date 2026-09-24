@@ -67,7 +67,7 @@ import type {
   TicketDecision,
   TicketGraph,
 } from "../domain/generated/modelTypes.ts";
-import { dependableIn } from "../domain/enablement.ts";
+import { canReleaseIn, dependableIn } from "../domain/enablement.ts";
 import {
   alwaysPolicy,
   commandValid,
@@ -346,20 +346,33 @@ function projectWriterFailurePolicy(
  * What `decide` answers a command at the state in hand, an accepted one held
  * to `decisionValid` because every obligation it owes is about to become a
  * row. Outside `commandValid` a release is refused as the configuration it
- * does not fit, and any other command is this layer and the database
- * disagreeing about what the mailbox may admit.
+ * does not fit, and outside the deployment's release room as the bound
+ * `decide` does not know, while any other command outside `commandValid` is
+ * this layer and the database disagreeing about what the mailbox may admit.
  */
 function projectWriterDecision(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   command: TicketCommand,
-): TicketDecision | { readonly type: "Invalid" } {
+):
+  | TicketDecision
+  | {
+      readonly type: "Boundary";
+      readonly code: "ConfigurationInvalid" | "TicketCapacityReached";
+    } {
   if (!commandValid(writer.config, command)) {
-    if (command.type === "CreateTicket") return { type: "Invalid" };
+    if (command.type === "CreateTicket")
+      return { type: "Boundary", code: "ConfigurationInvalid" };
     throw new IntegrityContradiction(
       `project writer: a stored ${command.type} is not a command the machine takes`,
     );
   }
+  if (
+    command.type === "CreateTicket" &&
+    !memory.graph.tickets.has(command.value.id) &&
+    !canReleaseIn(writer.config, memory.graph, asTicketId(command.value.id))
+  )
+    return { type: "Boundary", code: "TicketCapacityReached" };
   const decision = decide(
     memory.graph,
     command,
@@ -496,8 +509,8 @@ function projectWriterPreflight(
       : { outcome: { outcome: "Answered", answer }, post: memory.graph };
   }
   const decision = projectWriterDecision(writer, memory, command);
-  if (decision.type === "Invalid")
-    return refusedPlan(memory, boundaryRefusal("ConfigurationInvalid"));
+  if (decision.type === "Boundary")
+    return refusedPlan(memory, boundaryRefusal(decision.code));
   if (closed)
     return refusedPlan(memory, projectWriterClosedRefusal(command, decision));
   return decision.type === "TicketRefused"
@@ -716,7 +729,7 @@ async function projectWriterDispatchPlan(
     source: observed.source.reference,
   });
   const decision = projectWriterDecision(writer, memory, command);
-  if (decision.type === "Invalid")
+  if (decision.type === "Boundary")
     throw new IntegrityContradiction(
       "project writer: an observed source is not one a dispatch may carry",
     );

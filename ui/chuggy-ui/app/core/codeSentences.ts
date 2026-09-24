@@ -154,6 +154,8 @@ export function operationRefusalSentence(refused: OperationRefusal): string {
       return "the remote declined the credential this project holds for the repository";
     case "BriefNamesNoRepository":
       return "the brief names no repository; revise it to name one the project binds";
+    case "TicketCapacityReached":
+      return "the project has no room for this ticket: it holds as many as its configuration allows, or the number is past the ones it offers";
   }
 }
 

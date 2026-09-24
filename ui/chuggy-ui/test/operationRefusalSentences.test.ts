@@ -70,6 +70,7 @@ const samples: {
   ExecutionSourceUnreadable: { type: "ExecutionSourceUnreadable" },
   ExecutionSourceDenied: { type: "ExecutionSourceDenied" },
   BriefNamesNoRepository: { type: "BriefNamesNoRepository" },
+  TicketCapacityReached: { type: "TicketCapacityReached" },
 };
 
 const said = operationRefusalCodes.map((code) =>

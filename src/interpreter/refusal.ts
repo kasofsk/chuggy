@@ -10,9 +10,10 @@ import {
 
 /**
  * The refusals the boundary decides before `decide` is asked anything: a
- * release whose revision or configuration moved, a dispatch whose fence did,
- * and a source nobody could read. Each is a fact about rows or a remote rather
- * than about the ticket, so it carries no payload.
+ * release whose revision or configuration moved or that the deployment has no
+ * room for, a dispatch whose fence did, and a source nobody could read. Each
+ * is a fact about rows, a remote or the deployment rather than about the
+ * ticket, so it carries no payload.
  */
 export type BoundaryRefusalCode =
   | "AuthoringChanged"
@@ -21,7 +22,8 @@ export type BoundaryRefusalCode =
   | "SelectionChanged"
   | "ExecutionSourceUnreadable"
   | "ExecutionSourceDenied"
-  | "BriefNamesNoRepository";
+  | "BriefNamesNoRepository"
+  | "TicketCapacityReached";
 
 /** Every boundary refusal, in the order this file declares them, so a suite and a CHECK can iterate rather than restate. */
 export const allBoundaryRefusalCodes: readonly BoundaryRefusalCode[] = [
@@ -32,6 +34,7 @@ export const allBoundaryRefusalCodes: readonly BoundaryRefusalCode[] = [
   "ExecutionSourceUnreadable",
   "ExecutionSourceDenied",
   "BriefNamesNoRepository",
+  "TicketCapacityReached",
 ];
 
 /**

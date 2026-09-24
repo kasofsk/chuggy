@@ -4,8 +4,9 @@
  * accepts or refuses a command; these say only where the machine's actions,
  * the actor's harness and the walks draw from, and each is the model's own
  * form of the same name (`model/domain.qnt`). The release room is the one
- * bound here no refusal names: it is the instance's `nTickets`, not the
- * domain's.
+ * bound here `decide` does not refuse over: it is the deployment's `nTickets`,
+ * not the package's, and the writer refuses a release outside it before
+ * `decide` is asked.
  *
  * They are parameterised by a `TicketGraph` rather than reading ambient state,
  * because a draw is taken at a state the caller holds — a value, not a live

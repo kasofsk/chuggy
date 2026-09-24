@@ -250,7 +250,7 @@ test("a command about a ticket the fleet does not hold is refused, naming it", (
   assert.equal(answerAt(genesis, resumeTicketCommand(id(1))), "TicketNotFound");
 });
 
-test("the id universe bounds what the machine draws, and no refusal names it", () => {
+test("the actor takes a release outside the id universe, because the release room is the writer's to refuse", () => {
   assert.equal(
     answerAt(genesis, createTicketCommand(plainDefinitionOf(99))),
     "Accepted",

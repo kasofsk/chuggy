@@ -1104,6 +1104,61 @@ test("a stale completion is refused TaskNotCurrent with its task and no journal 
   });
 });
 
+/** A release as the writer is offered it, the definition already resolved from its draft. */
+function releaseInput(ticket: number): DecisionInput {
+  const input = operationInput({
+    version: 1,
+    command: "ReleaseDraft",
+    ticket: id(ticket),
+    authoringVersion: 1,
+    configurationRevision: "revision",
+  });
+  return {
+    ...input,
+    source: {
+      ...input.source,
+      ticketCommand: createTicketCommand(plainDefinitionOf(ticket)),
+    },
+  };
+}
+
+/**
+ * The deployment's release room is the writer's to refuse, since `decide`
+ * does not know it: a full fleet, or an id past the universe, is refused
+ * before `decide` and journals nothing, while a held id is still `decide`'s.
+ */
+test("a release outside the room is refused TicketCapacityReached and journals nothing", async () => {
+  const full = { config: { ...refinementInstance, nTickets: 1 } };
+  const past = refinementInstance.nTickets * 2 + 1;
+  for (const [ticket, policy] of [
+    [2, full],
+    [past, {}],
+  ] as const) {
+    const { offered } = await decidedWith(
+      releasedMemory(),
+      releaseInput(ticket),
+      readableSources,
+      unbriefedTickets,
+      policy,
+    );
+    assert.deepEqual(offered?.outcome, {
+      outcome: "Refused",
+      refusal: { type: "TicketCapacityReached" },
+    });
+  }
+  const { offered } = await decidedWith(
+    releasedMemory(),
+    releaseInput(1),
+    readableSources,
+    unbriefedTickets,
+    full,
+  );
+  assert.deepEqual(offered?.outcome, {
+    outcome: "Refused",
+    refusal: { type: "TicketAlreadyExists", value: 1 },
+  });
+});
+
 /** A ticket parked at its work wall, which a resume returns to work. */
 function workWalledMemory(): ProjectMemory {
   const work = workTaskOf(1, 1);
