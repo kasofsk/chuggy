@@ -1286,8 +1286,12 @@ test("a resume decides the event its wall implies and owes what that event names
   assert.equal(finalization.entry.event.type, "TicketFinalizationResumed");
   assert.deepEqual(finalization.materialization.execution, []);
   assert.deepEqual(
-    finalization.materialization.finalization.map((request) => request.request),
-    ["2:0:FinalizeTicket"],
+    finalization.materialization.finalization.map((request) => [
+      request.request,
+      request.workCycle,
+      request.generation,
+    ]),
+    [["2:0:FinalizeTicket", 1, 2]],
   );
 });
 

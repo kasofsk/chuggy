@@ -668,10 +668,33 @@ test("a passing judgement materializes the finalization it owes", () => {
       request.request,
       request.effectPosition,
       request.requestGeneration,
+      request.workCycle,
+      request.generation,
     ]),
-    [["4:0:FinalizeTicket", 0, 4]],
+    [["4:0:FinalizeTicket", 0, 4, 1, 1]],
   );
   assert.deepEqual(planned.execution, []);
+});
+
+/** A pass after a rework mints the finalization of the cycle that passed. */
+test("a pass in a later work cycle materializes that cycle's finalization", () => {
+  const reworked = walked([
+    createTicketCommand(plainDefinitionOf(1)),
+    dispatchTicketCommand(id(1), aDispatchSource),
+    workDone(1),
+    judged(1, 1, "EvaluatorFail"),
+    workDone(2),
+  ]);
+  const pass = judged(2, 1, "EvaluatorPass");
+  const passed = decidedAt(reworked, pass);
+  assert.equal(passed.entry.event.type, "TicketEvaluationPassed");
+  assert.deepEqual(
+    plannedAt(passed, arrivedAs(pass)).finalization.map((request) => [
+      request.workCycle,
+      request.generation,
+    ]),
+    [[2, 1]],
+  );
 });
 
 /** The input the one finalizer door mints, which carries no public command. */

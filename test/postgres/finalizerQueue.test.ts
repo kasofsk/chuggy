@@ -205,6 +205,29 @@ test("a claim registers one request, stamped with its owner, epoch and generatio
   );
 });
 
+test("a minted request names the work cycle and generation it finalizes", async () => {
+  for (const [reworks, workCycle] of [
+    [0, "1"],
+    [1, "2"],
+  ] as const) {
+    const project = await finalizerProject(
+      rig,
+      `attempt-${String(reworks)}`,
+      undefined,
+      reworks,
+    );
+    assert.deepEqual(
+      await rig.harness.query(
+        `SELECT work_cycle::text AS work_cycle,
+                finalization_generation::text AS generation
+           FROM finalization_request WHERE tenant=$1 AND project=$2 AND request=$3`,
+        [project.partition.tenant, project.partition.project, project.request],
+      ),
+      [{ work_cycle: workCycle, generation: "1" }],
+    );
+  }
+});
+
 test("the queue is drawn oldest first and one pass takes only what it is bounded to", async () => {
   await store.claimRequests(
     asFinalizerOwnerId(finalizerIdentity("owner-claim-drain")),
