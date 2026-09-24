@@ -124,6 +124,13 @@ function ShellAroundPage(): ReactNode {
   );
 }
 
+/** What ticket 21 was released with, which its draft holds too unless a case
+ * has revised the draft past it. */
+const released = {
+  brief: { intent: "Give the console a footer", links: [] },
+  configurationRevision: "r1",
+};
+
 async function drawTicket(
   served: {
     readonly shapes: readonly ExecutionShape[];
@@ -136,6 +143,11 @@ async function drawTicket(
     readonly versions?: {
       readonly authoringVersion: number;
       readonly releasedAuthoringVersion: number;
+    };
+    /** What the draft holds where a case has it differ from what was released. */
+    readonly draft?: {
+      readonly brief: { readonly intent: string; readonly links: [] };
+      readonly configurationRevision: string;
     };
   },
   options: { readonly shell?: boolean } = {},
@@ -162,9 +174,9 @@ async function drawTicket(
               ticket: 21,
               authoringVersion: 1,
               state: "Released",
-              configurationRevision: "r1",
               authoring: served.authoring ?? ticket21Authoring,
-              brief: { intent: "Give the console a footer", links: [] },
+              ...released,
+              ...served.draft,
               ...served.versions,
             });
       return answer(served.ticket);
@@ -189,6 +201,7 @@ const parkedTicket = {
   phase: "Escalated",
   sequence: 167,
   ...ticketInstants,
+  ...released,
   escalation: { kind: "EvaluationFailureEscalated", resumeAt: "ResumeRework" },
   runTotals: ticketTotals,
 };
@@ -198,6 +211,7 @@ const resumedTicket = {
   phase: "Evaluation",
   sequence: 169,
   ...ticketInstants,
+  ...released,
   runTotals: ticketTotals,
 };
 
@@ -851,6 +865,7 @@ const pendingTicket = {
   phase: "Pending",
   sequence: 12,
   ...ticketInstants,
+  ...released,
   revision: 2,
 };
 
@@ -889,4 +904,28 @@ test("the provenance says a draft at its release holds nothing unreleased", asyn
   expect(
     screen.getAllByText("draft").at(-1)?.nextElementSibling?.textContent,
   ).toBe("nothing unreleased");
+});
+
+/** A Pending ticket's author may revise its draft without releasing it, and
+ * the page is about what the ticket runs: the brief, its head and the
+ * configuration it was released under are the ticket's, not the draft's. */
+test("a ticket whose draft is ahead draws the brief and configuration it was released with", async () => {
+  await drawTicket({
+    shapes: [],
+    ticket: pendingTicket,
+    versions: { authoringVersion: 3, releasedAuthoringVersion: 2 },
+    draft: {
+      brief: { intent: "A rewrite nobody has released", links: [] },
+      configurationRevision: "r2",
+    },
+  });
+  expect(screen.getAllByText("Give the console a footer").length).toBe(2);
+  expect(screen.queryByText("A rewrite nobody has released")).toBeNull();
+  expect(
+    screen.getByText("released under").nextElementSibling?.textContent,
+  ).toBe("r1");
+  expect(screen.queryByText("r2")).toBeNull();
+  expect(
+    screen.getAllByText("draft").at(-1)?.nextElementSibling?.textContent,
+  ).toBe("version 3 holds unreleased changes");
 });

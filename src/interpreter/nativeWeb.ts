@@ -80,6 +80,7 @@ import {
 } from "./authoring.ts";
 import { firstCommandedCheckStage } from "./taskConfiguration.ts";
 import type { DraftBrief } from "./ticketBrief.ts";
+import type { ConfigurationVersion } from "./repositoryConfigurationIdentity.ts";
 import {
   dispatchNeedsExecutionHeadroom,
   type BacklogScope,
@@ -299,6 +300,9 @@ export interface TicketResource {
    */
   readonly revokedDependencies: readonly TicketId[];
   readonly brief?: DraftBrief;
+  /** The configuration the ticket's last release or update pinned, which is what it runs under. */
+  readonly configurationRevision?: ConfigurationRevisionId;
+  readonly configurationVersion?: ConfigurationVersion;
   readonly runTotals?: RunTotals;
 }
 

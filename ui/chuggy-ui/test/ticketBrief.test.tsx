@@ -1,5 +1,5 @@
 /**
- * The brief panel, on the one decision it makes: whether the draft carries a
+ * The brief panel, on the one decision it makes: whether the ticket carries a
  * brief at all.
  *
  * A ticket released before briefs were kept has none, and the panel that drew
@@ -12,41 +12,37 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
 import {
-  draftResponseSchema,
-  type DraftResponse,
+  ticketResponseSchema,
+  type TicketResponse,
 } from "../../../src/contract/responses.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import { TicketBrief } from "../app/browser/TicketProvenance.tsx";
+import { ticketInstants } from "./ticketInstants.ts";
 
 /** The runner has no globals, so the tree one case rendered is torn down here
  * rather than by the library's own hook. */
 afterEach(cleanup);
 
-const authoring: DraftResponse["authoring"] = {
-  dependencies: [],
-  program: [],
-};
-
-function draft(brief?: DraftResponse["brief"]): PanelState<DraftResponse> {
+/** Ticket 7 as its own read answers it, with the brief it was released with. */
+function released(brief?: TicketResponse["brief"]): PanelState<TicketResponse> {
   return {
     state: "Ready",
     observedAtMs: 0,
-    value: {
-      partition: { tenant: "acme", project: "atlas" },
+    value: ticketResponseSchema.parse({
       ticket: 7,
-      authoringVersion: 1,
-      state: "Released",
+      phase: "Pending",
+      sequence: 1,
+      ...ticketInstants,
       configurationRevision: "r1",
-      authoring,
       ...(brief === undefined ? {} : { brief }),
-    },
+    }),
   };
 }
 
 test("a brief is drawn as its intent, its links and its branch", () => {
   render(
     <TicketBrief
-      state={draft({
+      state={released({
         intent: "make the console show a ticket",
         links: ["https://example.test/one", "https://example.test/two"],
         branch: "refs/heads/rt/console-ticket-page",
@@ -65,7 +61,7 @@ test("a brief is drawn as its intent, its links and its branch", () => {
 test("a link this console did not write cannot reach back through what it opens", () => {
   render(
     <TicketBrief
-      state={draft({
+      state={released({
         intent: "an intent",
         links: ["https://example.test/one"],
       })}
@@ -78,7 +74,7 @@ test("a link this console did not write cannot reach back through what it opens"
 test("the check lines a brief appends are drawn one per line, in order", () => {
   render(
     <TicketBrief
-      state={draft({
+      state={released({
         intent: "an intent",
         links: [],
         checks: ["npm run lint", "npm test"],
@@ -97,12 +93,10 @@ test("the check lines a brief appends are drawn one per line, in order", () => {
  */
 test("the lines a brief appends survive the wire's own parse into the panel", () => {
   const body: unknown = {
-    partition: { tenant: "acme", project: "atlas" },
     ticket: 7,
-    authoringVersion: 1,
-    state: "Released",
-    configurationRevision: "r1",
-    authoring,
+    phase: "Pending",
+    sequence: 1,
+    ...ticketInstants,
     brief: {
       intent: "an intent",
       links: [],
@@ -114,7 +108,7 @@ test("the lines a brief appends survive the wire's own parse into the panel", ()
       state={{
         state: "Ready",
         observedAtMs: 0,
-        value: draftResponseSchema.parse(body),
+        value: ticketResponseSchema.parse(body),
       }}
     />,
   );
@@ -125,14 +119,14 @@ test("the lines a brief appends survive the wire's own parse into the panel", ()
 });
 
 test("a brief appending no check lines says so rather than drawing an empty list", () => {
-  render(<TicketBrief state={draft({ intent: "an intent", links: [] })} />);
+  render(<TicketBrief state={released({ intent: "an intent", links: [] })} />);
   expect(screen.getByText("checks").nextElementSibling?.textContent).toBe(
     "none",
   );
 });
 
 test("a brief with no branch says so rather than drawing an empty field", () => {
-  render(<TicketBrief state={draft({ intent: "an intent", links: [] })} />);
+  render(<TicketBrief state={released({ intent: "an intent", links: [] })} />);
   expect(screen.queryAllByRole("link")).toEqual([]);
   expect(screen.getByText("branch").nextElementSibling?.textContent).toBe(
     "none",
@@ -148,7 +142,7 @@ function landingLine(): string | undefined {
 test("a brief that names where its work lands draws that reference too", () => {
   render(
     <TicketBrief
-      state={draft({
+      state={released({
         intent: "an intent",
         links: [],
         branch: "refs/heads/rt/console-ticket-page",
@@ -164,7 +158,7 @@ test("a brief that names where its work lands draws that reference too", () => {
 test("a brief proposing its work into a reference does not say it lands there", () => {
   render(
     <TicketBrief
-      state={draft({
+      state={released({
         intent: "an intent",
         links: [],
         branch: "refs/heads/rt/console-ticket-page",
@@ -181,7 +175,7 @@ test("a brief proposing its work into a reference does not say it lands there", 
 test("a brief carrying no finalization draws no landing at all", () => {
   render(
     <TicketBrief
-      state={draft({
+      state={released({
         intent: "an intent",
         links: [],
         branch: "refs/heads/rt/console-ticket-page",
@@ -196,7 +190,7 @@ test("a brief carrying no finalization draws no landing at all", () => {
 test("a finalization naming no reference is still read back as its mode", () => {
   render(
     <TicketBrief
-      state={draft({
+      state={released({
         intent: "an intent",
         links: [],
         branch: "refs/heads/rt/console-ticket-page",
@@ -208,7 +202,7 @@ test("a finalization naming no reference is still read back as its mode", () => 
 });
 
 test("a ticket with no brief says why, and draws no empty intent", () => {
-  render(<TicketBrief state={draft()} />);
+  render(<TicketBrief state={released()} />);
   expect(screen.getByText(/released before a brief was kept/u)).toBeDefined();
   expect(screen.queryByText("intent")).toBeNull();
   expect(screen.queryAllByRole("link")).toEqual([]);

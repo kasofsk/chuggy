@@ -16,6 +16,7 @@ import type {
   DraftResponse,
   ExecutionsResponse,
   RunTotals,
+  TicketResponse,
 } from "../../../../../src/contract/responses.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { TicketBrief, TicketProvenance } from "../TicketProvenance.tsx";
@@ -24,9 +25,8 @@ import { TicketUsage } from "./TicketUsage.tsx";
 
 export function TicketMain(props: {
   readonly partition: PartitionIdentity;
+  readonly ticketState: PanelState<TicketResponse>;
   readonly draftState: PanelState<DraftResponse>;
-  /** The ticket's live revision, absent until the ticket is read. */
-  readonly revision: number | undefined;
   readonly ledger: ReactNode;
   readonly totals: RunTotals | undefined;
   readonly page: ExecutionsResponse | undefined;
@@ -42,13 +42,17 @@ export function TicketMain(props: {
         </Panel>
       </section>
       <section id="brief" className="scroll-mt-4">
-        <TicketBrief state={props.draftState} />
+        <TicketBrief state={props.ticketState} />
       </section>
       <section id="provenance" className="scroll-mt-4">
         <TicketProvenance
           partition={props.partition}
           state={props.draftState}
-          revision={props.revision}
+          ticket={
+            props.ticketState.state === "Ready"
+              ? props.ticketState.value
+              : undefined
+          }
         />
       </section>
     </div>

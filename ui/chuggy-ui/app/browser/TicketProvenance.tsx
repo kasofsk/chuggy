@@ -1,13 +1,11 @@
 /**
- * Where this ticket came from: the brief a person wrote, the authoring the
- * retained draft holds, and the configuration it was released under, which is
- * named where the wire names it and drawn as its revision where it is not.
- * The live revision is named with the draft version it was released from, and
- * a draft revised since says it holds changes no update has released.
- *
- * The draft is the record of what was released, so a ticket whose draft the
- * API will not show reads as an absence with its reason rather than as a page
- * with two empty panels.
+ * Where this ticket came from: the brief it runs and the configuration it was
+ * released under, both read off the ticket itself, and the authoring the
+ * retained draft holds. A configuration is named where the wire names it and
+ * drawn as its revision where it is not. The live revision is named with the
+ * draft version it was released from, and a draft revised since says it holds
+ * changes no update has released, which is why the brief is never drawn from
+ * the draft: a Pending ticket's draft may be ahead of what the ticket runs.
  */
 
 import { useState } from "react";
@@ -15,7 +13,10 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketBriefBody } from "../../../../src/contract/brief.ts";
-import type { DraftResponse } from "../../../../src/contract/responses.ts";
+import type {
+  DraftResponse,
+  TicketResponse,
+} from "../../../../src/contract/responses.ts";
 import { apiConfiguration } from "../core/apiRoutes.ts";
 import { briefLandingLine } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
@@ -88,38 +89,43 @@ function Brief(props: { readonly brief: TicketBriefBody }): ReactNode {
   );
 }
 
+/** The configuration the ticket's last release or update pinned, as a label
+ * that keeps the revision on hover. */
+function ReleasedUnder(props: { readonly ticket: TicketResponse }): ReactNode {
+  const revision = props.ticket.configurationRevision;
+  if (revision === undefined) return null;
+  const released = configurationLabel(
+    revision,
+    props.ticket.configurationVersion,
+  );
+  return (
+    <Field name="released under">
+      <Tooltip text={released.title}>
+        <span>{released.text}</span>
+      </Tooltip>
+    </Field>
+  );
+}
+
 export function TicketBrief(props: {
-  readonly state: PanelState<DraftResponse>;
+  readonly state: PanelState<TicketResponse>;
 }): ReactNode {
   return (
     <DataPanel title="brief" state={props.state}>
-      {(draft) => {
-        const released = configurationLabel(
-          draft.configurationRevision,
-          draft.configurationVersion,
-        );
-        return (
-          <dl className="legacy-fields">
-            {draft.brief === undefined ? (
-              <Field name="brief">
-                <span className="panel-absent">
-                  this ticket was released before a brief was kept for one
-                </span>
-              </Field>
-            ) : (
-              <Brief brief={draft.brief} />
-            )}
-            <Field name="released under">
-              <Tooltip text={released.title}>
-                <span>{released.text}</span>
-              </Tooltip>
+      {(ticket) => (
+        <dl className="legacy-fields">
+          {ticket.brief === undefined ? (
+            <Field name="brief">
+              <span className="panel-absent">
+                this ticket was released before a brief was kept for one
+              </span>
             </Field>
-            <Field name="draft">
-              {draft.state} at version {draft.authoringVersion}
-            </Field>
-          </dl>
-        );
-      }}
+          ) : (
+            <Brief brief={ticket.brief} />
+          )}
+          <ReleasedUnder ticket={ticket} />
+        </dl>
+      )}
     </DataPanel>
   );
 }
@@ -156,7 +162,7 @@ function Authoring(props: {
 function TicketConfiguration(props: {
   readonly partition: PartitionIdentity;
   readonly revision: string;
-  readonly version: DraftResponse["configurationVersion"];
+  readonly version: TicketResponse["configurationVersion"];
 }): ReactNode {
   const [open, setOpen] = useState(false);
   const label = configurationLabel(props.revision, props.version);
@@ -197,20 +203,24 @@ function TicketConfiguration(props: {
 export function TicketProvenance(props: {
   readonly partition: PartitionIdentity;
   readonly state: PanelState<DraftResponse>;
-  readonly revision: number | undefined;
+  /** The ticket, absent until it is read. */
+  readonly ticket: TicketResponse | undefined;
 }): ReactNode {
+  const released = props.ticket?.configurationRevision;
   return (
     <>
       <DataPanel title="provenance" state={props.state}>
-        {(draft) => <Authoring draft={draft} revision={props.revision} />}
+        {(draft) => (
+          <Authoring draft={draft} revision={props.ticket?.revision} />
+        )}
       </DataPanel>
-      {props.state.state === "Ready" ? (
+      {released === undefined ? null : (
         <TicketConfiguration
           partition={props.partition}
-          revision={props.state.value.configurationRevision}
-          version={props.state.value.configurationVersion}
+          revision={released}
+          version={props.ticket?.configurationVersion}
         />
-      ) : null}
+      )}
     </>
   );
 }

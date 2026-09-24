@@ -250,6 +250,8 @@ test("a ticket read emits exactly the keys the contract names", () => {
       "ExecutionPolicyDenied",
     ),
     brief,
+    configurationRevision: revision,
+    configurationVersion,
     runTotals,
     ...ticketCarried,
   }).body as Record<string, unknown>;

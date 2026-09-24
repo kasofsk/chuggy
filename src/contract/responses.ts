@@ -213,6 +213,15 @@ export const ticketEscalationSchema = z.object({
 export type TicketEscalation = z.infer<typeof ticketEscalationSchema>;
 
 /**
+ * A repository-imported configuration's label. Absent means no label is known,
+ * which is what an authored revision carries.
+ */
+export const configurationVersionSchema = z.strictObject({
+  name: identitySchema,
+  number: ticketNumberSchema,
+});
+
+/**
  * A ticket as the project table and its own read both carry it. The title is
  * the one field of the brief the table carries, because a table of documents
  * needs a heading; the rest of the brief is the ticket's own read alone, an
@@ -251,6 +260,12 @@ export const ticketResponseSchema = z.object({
    */
   revokedDependencies: page(ticketNumberSchema),
   brief: briefResponseSchema.optional(),
+  /**
+   * The configuration the ticket's last release or update pinned, which is
+   * what it runs under. Like the brief, only the ticket's own read carries it.
+   */
+  configurationRevision: identitySchema.optional(),
+  configurationVersion: configurationVersionSchema.optional(),
   runTotals: runTotalsSchema.optional(),
 });
 export type TicketResponse = z.infer<typeof ticketResponseSchema>;
@@ -455,15 +470,6 @@ export const executionRequirementSchema = z.discriminatedUnion("mode", [
     sdkVersionMin: ticketNumberSchema,
   }),
 ]);
-
-/**
- * A repository-imported configuration's label. Absent means no label is known,
- * which is what an authored revision carries.
- */
-export const configurationVersionSchema = z.strictObject({
-  name: identitySchema,
-  number: ticketNumberSchema,
-});
 
 /**
  * The label the catalog holds for an admitted image. It sits beside the

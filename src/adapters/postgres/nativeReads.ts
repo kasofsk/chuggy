@@ -41,6 +41,11 @@ import {
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { Refusal } from "../../interpreter/refusal.ts";
 import { parseStoredRefusal } from "../../interpreter/wire.ts";
+import { asConfigurationRevisionId } from "../../interpreter/authoring.ts";
+import {
+  configurationVersionOf,
+  type ConfigurationVersionRow,
+} from "./configurationVersion.ts";
 import { projectRowCounter } from "./rows.ts";
 import { postgresTicketRunTotals } from "./runEvidence.ts";
 import { releasedBriefOf } from "./ticketBrief.ts";
@@ -88,9 +93,14 @@ interface TicketProjectionRow {
   readonly revoked_dependencies: string[] | null;
 }
 
-/** The brief a ticket's last release or update stored, as its text. */
-interface ReleasedBriefRow {
+/**
+ * What a ticket's last release or update stored: the brief as its text, and
+ * the configuration revision the projection pins, with the label its version
+ * join adds.
+ */
+interface ReleasedBriefRow extends ConfigurationVersionRow {
   readonly brief: string | null;
+  readonly configuration_revision: string | null;
 }
 
 /** One open action, or a ticket that has none: every column is then null. */
@@ -510,7 +520,7 @@ async function readTicketsByIdentity(
   return found.rows;
 }
 
-/** One ticket's projection with the brief it was last released with. */
+/** One ticket's projection with the brief and the configuration it was last released with. */
 async function readTicketRow(
   pool: pg.Pool,
   partition: Partition,
@@ -522,6 +532,8 @@ async function readTicketRow(
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
                b.brief::text AS brief,
+               t.configuration_revision,
+               v.name AS version_name,v.number::text AS version_number,
                r.committed_at::text AS released_at,
                c.committed_at::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
@@ -547,6 +559,12 @@ async function readTicketRow(
              ORDER BY j.seq LIMIT 1) r ON true
           LEFT JOIN ticket_definition b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
+          LEFT JOIN repository_configuration_provenance p
+            ON p.tenant=t.tenant AND p.project=t.project
+           AND p.revision=t.configuration_revision
+          LEFT JOIN repository_configuration_version v
+            ON v.tenant=t.tenant AND v.project=t.project
+           AND v.name=p.name AND v.digest=p.digest
          WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
            AND t.ticket=${ticket}`,
   );
@@ -562,10 +580,19 @@ async function readTicket(
   const row = await readTicketRow(pool, partition, ticket);
   if (row === undefined) return undefined;
   const brief = releasedBriefOf(row.brief);
+  const configurationVersion = configurationVersionOf(row);
   const runTotals = await postgresTicketRunTotals(pool, partition, ticket);
   return {
     ...ticketResource(row),
     ...(brief === undefined ? {} : { brief }),
+    ...(row.configuration_revision === null
+      ? {}
+      : {
+          configurationRevision: asConfigurationRevisionId(
+            row.configuration_revision,
+          ),
+        }),
+    ...(configurationVersion === undefined ? {} : { configurationVersion }),
     ...(runTotals === undefined ? {} : { runTotals }),
   };
 }

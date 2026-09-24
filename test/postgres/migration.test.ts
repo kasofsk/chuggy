@@ -7964,6 +7964,8 @@ async function updateInstalledPrivileges(subject: pg.Pool): Promise<void> {
     ["ticket_projection", "revision", apiRole, "SELECT", true],
     ["ticket_projection", "revision", apiRole, "UPDATE", false],
     ["ticket_projection", "revision", ticketServiceRole, "UPDATE", true],
+    ["ticket_projection", "configuration_revision", apiRole, "SELECT", true],
+    ["ticket_projection", "configuration_digest", apiRole, "SELECT", false],
     ["ticket_definition", "definition", ticketServiceRole, "UPDATE", true],
     ["ticket_definition", "digest", ticketServiceRole, "UPDATE", true],
     ["ticket_definition", "ticket", ticketServiceRole, "UPDATE", false],

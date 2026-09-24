@@ -11,7 +11,10 @@ import { postgresProjectDecision } from "../../src/adapters/postgres/projectDeci
 import { postgresProjectDiscovery } from "../../src/adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
 import { postgresProjectRepositoryRetirement } from "../../src/adapters/postgres/repositoryBinding.ts";
-import { ticketServiceRole } from "../../src/adapters/postgres/schema.ts";
+import {
+  apiRole,
+  ticketServiceRole,
+} from "../../src/adapters/postgres/schema.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import {
   briefChecksMax,
@@ -2007,59 +2010,41 @@ async function decidedBy(
   return projectWriterDecide(postgresHarnessWriter(harness), memory, input);
 }
 
-test("an update at another configuration revision re-pins what its dispatch runs under, across a restart", async () => {
-  const fixture = await draftFixture();
-  const moved = asConfigurationRevisionId(`config-${randomUUID()}`);
-  const movedCanonical = canonicalConfigurationOf({
+/**
+ * A second configuration in the fixture's project, differing from the first in
+ * its image, and the pin each place a dispatch reads it from holds once a
+ * ticket runs under it.
+ */
+async function movedConfiguration(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+) {
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  const canonical = canonicalConfigurationOf({
     ...(JSON.parse(postgresHarnessConfiguration) as Record<string, unknown>),
     image: "worker:v2",
   });
   await fixture.store.createConfiguration({
     partition: fixture.partition,
     authority,
-    revision: moved,
-    canonical: movedCanonical,
+    revision,
+    canonical,
   });
-  const load = async (label: string) =>
-    projectWriterLoad(
-      postgresHarnessWriter(harness),
-      await postgresHarnessHeld(harness.store, fixture.partition, label),
-    );
-  const released = await decidedBy(
-    await load("update-repin"),
-    releaseSubmission(fixture),
-  );
-  assert.equal(released.decided.decided, "Committed");
-  const brief = postgresHarnessBriefIn(fixture.repository);
-  assert.equal(
-    (await reviseReleased(fixture, 1, brief, moved)).revised,
-    "Revised",
-  );
-  const updated = await decidedBy(
-    released.memory,
-    updateSubmission(fixture, 1, 2, moved),
-  );
-  assert.equal(updated.decided.decided, "Committed");
-  await harness.store.release(updated.memory.lease);
+  const digest = createHash("sha256").update(canonical).digest("hex");
+  return {
+    revision,
+    pin: [{ configuration_revision: revision, configuration_digest: digest }],
+  };
+}
 
-  const restarted = await load("update-repin-restarted");
-  const pin = [
-    {
-      configuration_revision: moved,
-      configuration_digest: createHash("sha256")
-        .update(movedCanonical)
-        .digest("hex"),
-    },
-  ];
-  assert.deepEqual(
-    await dispatchPins(fixture),
-    { projection: pin, candidate: pin, spawn: [] },
-    "the rebuilt dispatch view offers the ticket under the revision its update pinned",
-  );
-  const version = restarted.ticketVersions.get(fixture.draft.ticket);
+/** A manual dispatch of the fixture's ticket at the version its writer holds. */
+function manualDispatch(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+  memory: ProjectMemory,
+): Submission {
+  const version = memory.ticketVersions.get(fixture.draft.ticket);
   assert.ok(version !== undefined);
   const unique = randomUUID();
-  const dispatched = await decidedBy(restarted, {
+  return {
     partition: fixture.partition,
     operation: asOperationId(`dispatch-${unique}`),
     authority,
@@ -2070,12 +2055,61 @@ test("an update at another configuration revision re-pins what its dispatch runs
       ticket: fixture.draft.ticket,
       expectedTicketVersion: version,
     },
-  });
+  };
+}
+
+test("an update at another configuration revision re-pins what its dispatch runs under, across a restart", async (t) => {
+  const fixture = await draftFixture();
+  const moved = await movedConfiguration(fixture);
+  const load = async (label: string) =>
+    projectWriterLoad(
+      postgresHarnessWriter(harness),
+      await postgresHarnessHeld(harness.store, fixture.partition, label),
+    );
+  const asApi = postgresHarnessRolePool(apiRole);
+  t.after(() => asApi.end());
+  const releasedUnder = async () =>
+    (
+      await postgresNativeReads(asApi).ticket(
+        fixture.partition,
+        fixture.draft.ticket,
+      )
+    )?.configurationRevision;
+
+  const released = await decidedBy(
+    await load("update-repin"),
+    releaseSubmission(fixture),
+  );
+  assert.equal(released.decided.decided, "Committed");
+  assert.equal(await releasedUnder(), fixture.revision);
+  const brief = postgresHarnessBriefIn(fixture.repository);
+  assert.equal(
+    (await reviseReleased(fixture, 1, brief, moved.revision)).revised,
+    "Revised",
+  );
+  const updated = await decidedBy(
+    released.memory,
+    updateSubmission(fixture, 1, 2, moved.revision),
+  );
+  assert.equal(updated.decided.decided, "Committed");
+  assert.equal(await releasedUnder(), moved.revision);
+  await harness.store.release(updated.memory.lease);
+
+  const restarted = await load("update-repin-restarted");
+  assert.deepEqual(
+    await dispatchPins(fixture),
+    { projection: moved.pin, candidate: moved.pin, spawn: [] },
+    "the rebuilt dispatch view offers the ticket under the revision its update pinned",
+  );
+  const dispatched = await decidedBy(
+    restarted,
+    manualDispatch(fixture, restarted),
+  );
   assert.equal(dispatched.decided.decided, "Committed");
   assert.deepEqual(await dispatchPins(fixture), {
-    projection: pin,
+    projection: moved.pin,
     candidate: [],
-    spawn: pin,
+    spawn: moved.pin,
   });
 });
 

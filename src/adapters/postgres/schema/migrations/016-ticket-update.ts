@@ -70,7 +70,8 @@ import {
  * released one is the only brief they can reach. `submit_finalization_result`
  * is rewritten whole to read its landing off the released definition for the
  * same reason. The API reads the released brief too, and of the row only the
- * brief and its key, so a ticket's page shows what the ticket runs.
+ * brief and its key, and the configuration revision the projection pins, so a
+ * ticket's page shows what the ticket runs and what it was released under.
  *
  * The names below are the ones this adds. What 013–015 named, the bodies spell
  * as those installed it.
@@ -524,6 +525,7 @@ export const migration016: Migration = {
        ADD COLUMN revision bigint DEFAULT 1 NOT NULL,
        ADD CONSTRAINT ticket_projection_revision_is_positive CHECK ((revision >= 1))`,
     `GRANT SELECT(revision) ON TABLE public.ticket_projection TO ${apiRole}`,
+    `GRANT SELECT(configuration_revision) ON TABLE public.ticket_projection TO ${apiRole}`,
     `GRANT UPDATE(revision) ON TABLE public.ticket_projection TO ${ticketServiceRole}`,
     `GRANT UPDATE(definition) ON TABLE public.ticket_definition TO ${ticketServiceRole}`,
     `GRANT UPDATE(digest) ON TABLE public.ticket_definition TO ${ticketServiceRole}`,

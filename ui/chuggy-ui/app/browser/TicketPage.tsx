@@ -3,8 +3,10 @@
  * what all of that cost.
  *
  * The draft is read once here and handed to everything that needs it, so the
- * brief, the authoring the ledger groups by and the provenance are one
- * observation rather than three that can disagree on screen. The situation
+ * authoring the ledger groups by and the provenance are one observation rather
+ * than two that can disagree on screen. The brief and the configuration are
+ * the ticket's own, which is what it runs, and not the draft's, which a
+ * Pending ticket's author may have revised past it. The situation
  * column is short and the detail is in the main body under the ledger, reached
  * by anchors rather than tabs: the ledger is the page, and a tab would hide it.
  * One clock ticks the whole page, so a running row, a cycle's open span and a
@@ -174,7 +176,7 @@ function TicketBody(props: {
       {ticket === undefined ? null : (
         <TicketHead
           ticket={ticket}
-          intent={draft?.brief?.intent}
+          intent={ticket.brief?.intent}
           page={page}
           truncated={facts.truncated}
           nowMs={props.nowMs}
@@ -192,8 +194,8 @@ function TicketBody(props: {
         />
         <TicketMain
           partition={props.partition}
+          ticketState={props.reads.ticketState}
           draftState={props.reads.draftState}
-          revision={ticket?.revision}
           ledger={
             <TicketLedgerPanel
               partition={props.partition}
