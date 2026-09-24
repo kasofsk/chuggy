@@ -2,12 +2,14 @@
  * The command map: which ticket command one stored envelope asks the writer
  * to decide, given what was read for it.
  *
- * IT IS PURE AND IT IS THE ONLY ONE. The adapter reads the rows an envelope
- * names — the retained revision a release pins, the escalation an answer
- * resolves, the request a finalizer's result answers — and the writer reads
- * the source a dispatch pins; both hand what they read here, and nothing else
- * spells a `TicketCommand`. So what an envelope means is stated once, beside
- * the envelopes, and never in a transaction.
+ * IT IS PURE AND IT IS THE ONLY ONE FOR AN ENVELOPE THAT NAMES ROWS. The
+ * adapter reads the rows an envelope names — the retained revision a release
+ * pins, the escalation an answer resolves, the request a finalizer's result
+ * answers — and the writer reads the source a dispatch pins; both hand what
+ * they read here, and nothing else turns such an envelope into a
+ * `TicketCommand`. So what it means is stated once, beside the envelopes, and
+ * never in a transaction. A public revoke or resume carries its command
+ * whole, built by the actor's constructors in `src/adapters/http/contract.ts`.
  *
  * A COMMAND IS NOT A DECISION. Every arm below builds what was asked for and
  * weighs nothing: whether the ticket can take it is `decide`'s answer, which
