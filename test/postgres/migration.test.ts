@@ -74,6 +74,10 @@ import {
   sessionTurnResultCharsMax,
 } from "../../src/contract/http.ts";
 import { briefFinalizationDefault } from "../../src/interpreter/ticketBrief.ts";
+import {
+  materialDigest,
+  releasedTicketBrief,
+} from "../../src/interpreter/ticketDefinition.ts";
 import { allSessionCapabilities } from "../../src/interpreter/agentSession.ts";
 import { allSessionTurnFailures } from "../../src/interpreter/agentSession.ts";
 import { allSessionAttemptEvidences } from "../../src/interpreter/sessionScheduler.ts";
@@ -242,8 +246,11 @@ test("the baseline opens the brief's doors to the roles that reach it and no oth
       [apiRole, "draft_brief_link", "INSERT", false],
       [ticketServiceRole, "draft_brief", "SELECT", true],
       [ticketServiceRole, "draft_brief", "UPDATE", false],
-      [schedulerRole, "draft_brief", "SELECT", true],
-      [schedulerRole, "draft_brief_link", "SELECT", true],
+      [schedulerRole, "draft_brief", "SELECT", false],
+      [schedulerRole, "draft_brief_link", "SELECT", false],
+      [schedulerRole, "ticket_definition", "SELECT", true],
+      [finalizerRole, "draft_brief", "SELECT", false],
+      [finalizerRole, "ticket_definition", "SELECT", true],
       [boundaryOwnerRole, "draft_brief", "INSERT", true],
       [boundaryOwnerRole, "draft_brief_link", "DELETE", true],
     ] as const)
@@ -7989,6 +7996,39 @@ test("a fresh install records the update arriving, the revision a ticket is at a
       ).rows,
       [{ owner: boundaryOwnerRole, writer: true, api: false, anyone: false }],
     );
+  });
+});
+
+test("an applied 016 stores each released ticket's brief as the one its content digest names", async () => {
+  await migrationDatabase("update_brief_backfill", async (subject) => {
+    await installationBefore(subject, migration016.version);
+    await seedProposingBinding(subject);
+    assert.deepEqual(
+      await createdProposingDraft(subject, "refs/heads/branch-91"),
+      [{ result: "Created", ticket: "1" }],
+    );
+    const brief = {
+      intent: "Land it.",
+      links: [],
+      checks: [],
+      branch: "refs/heads/branch-91",
+      repository: "bound-91",
+      finalization: { mode: "PullRequest" },
+    };
+    await subject.query(
+      `INSERT INTO ticket_definition (tenant,project,ticket,definition,digest)
+       VALUES('tenant-91','project-91',1,$1::jsonb,'digest-definition-91')`,
+      [JSON.stringify({ content: { digest: materialDigest(brief) } })],
+    );
+    await postgresMigrate(subject);
+    const [row] = (
+      await subject.query<{ brief: unknown; content: string }>(
+        `SELECT brief,definition->'content'->>'digest' AS content
+           FROM ticket_definition WHERE tenant='tenant-91'`,
+      )
+    ).rows;
+    assert.ok(row !== undefined);
+    assert.deepEqual(releasedTicketBrief(row.brief, row.content), brief);
   });
 });
 

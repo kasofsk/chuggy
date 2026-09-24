@@ -28,6 +28,7 @@ import {
   reportTaskTerminalCommand,
   resumeTicketCommand,
   revokeTicketCommand,
+  updateTicketCommand,
   ticketCommandTags,
   type TicketCommand,
 } from "../../src/actor/command.ts";
@@ -66,6 +67,11 @@ const config = refinementInstance;
 /** One ticket command per constructor, keyed by its own tag so the roster can be checked against the vocabulary. */
 const oneOfEach: Readonly<Record<TicketCommand["type"], TicketCommand>> = {
   CreateTicket: createTicketCommand(plainDefinitionOf(1, new Set([2]))),
+  UpdateTicket: updateTicketCommand(
+    id(1),
+    1,
+    plainDefinitionOf(1, new Set([2])),
+  ),
   RevokeTicket: revokeTicketCommand(id(1)),
   DispatchTicket: dispatchTicketCommand(id(1), aDispatchSource),
   ReportTaskTerminal: reportTaskTerminalCommand(
@@ -94,6 +100,10 @@ const finalized = { ticket: 1, workCycle: 1, generation: 1, evidence: 1 };
 /** One ticket event per constructor, which is every arm a journal row can carry. */
 const eventOfEach: Readonly<Record<TicketEvent["type"], TicketEvent>> = {
   TicketCreated: { type: "TicketCreated", value: plainDefinitionOf(1) },
+  TicketUpdated: {
+    type: "TicketUpdated",
+    value: { ticket: 1, revision: 2, definition: plainDefinitionOf(1) },
+  },
   TicketDispatched: {
     type: "TicketDispatched",
     value: { ticket: 1, source: aDispatchSource },

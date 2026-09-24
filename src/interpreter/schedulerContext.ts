@@ -205,6 +205,7 @@ export function dispatchNeedsExecutionHeadroom(
       return true;
     case "Decide":
     case "ReleaseDraft":
+    case "UpdateTicket":
     case "ResolveNativeAction":
       return false;
   }

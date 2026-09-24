@@ -13,6 +13,7 @@ import { after, before, test } from "node:test";
 
 import { finalizationFunction } from "../../src/adapters/postgres/schema.ts";
 import {
+  finalizerBriefLandsNothing,
   finalizerClaim,
   finalizerCommit,
   finalizerGrantPermit,
@@ -155,11 +156,7 @@ test("a request whose brief lands nothing concludes on no attempt at all", async
     "a brief that lands somewhere concludes on the attempt it landed",
   );
   assert.deepEqual(await mailbox(project), before);
-  await rig.harness.query(
-    `UPDATE draft_brief SET finalization_mode='None', finalization_target=NULL
-      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
-    [project.partition.tenant, project.partition.project, project.ticket],
-  );
+  await finalizerBriefLandsNothing(rig, project.partition, project.ticket);
   assert.equal(
     await submit(project, null, "FinalizationNeedsWork", "MergeConflict"),
     "BindingMismatch",

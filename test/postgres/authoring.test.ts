@@ -304,6 +304,7 @@ test("draft creation rejects a stale initialization fence", async () => {
 
 function releaseSubmission(
   fixture: Awaited<ReturnType<typeof draftFixture>>,
+  authoringVersion = fixture.draft.authoringVersion,
 ): Submission {
   const unique = randomUUID();
   return {
@@ -315,7 +316,7 @@ function releaseSubmission(
       version: 1,
       command: "ReleaseDraft",
       ticket: fixture.draft.ticket,
-      authoringVersion: fixture.draft.authoringVersion,
+      authoringVersion,
       configurationRevision: fixture.revision,
     },
   };
@@ -1539,18 +1540,19 @@ function briefAsStored(brief: DraftBrief): DraftBrief {
 }
 
 test("the brief is written with the draft, replaced with it, and read back beside it", async () => {
-  const { partition, store, revision, repository, draft } =
-    await draftFixture();
+  const fixture = await draftFixture();
+  const { partition, store, revision, repository, draft } = fixture;
   assert.deepEqual(
     draft.brief,
     briefAsStored(postgresHarnessBriefIn(repository)),
   );
-  const later = briefAsStored(
-    asDraftBrief({
+  const later = briefAsStored({
+    ...asDraftBrief({
       intent: "Serve it on the ticket too.\nAnd on the draft.",
       links: ["https://example.test/one", "https://example.test/two"],
     }),
-  );
+    repository,
+  });
   const revised = await store.reviseDraft({
     partition,
     authority,
@@ -1565,10 +1567,7 @@ test("the brief is written with the draft, replaced with it, and read back besid
     later,
   );
   assert.deepEqual((await store.draft(partition, draft.ticket))?.brief, later);
-  assert.deepEqual(
-    await postgresTicketBrief(pool).brief(partition, draft.ticket),
-    later,
-  );
+  assert.deepEqual(await briefReleasedAt(fixture, 2, "brief-replaced"), later);
 });
 
 test("a page of drafts answers each one's repository, undefined for a brief naming none", async () => {
@@ -1600,7 +1599,8 @@ test("a page of drafts answers each one's repository, undefined for a brief nami
 });
 
 test("where a brief lands is written, replaced and read back apart from where it works", async () => {
-  const { partition, store, revision, draft } = await draftFixture();
+  const fixture = await draftFixture();
+  const { partition, store, revision, repository, draft } = fixture;
   assert.deepEqual(
     draft.brief?.finalization,
     briefFinalizationDefault,
@@ -1629,10 +1629,6 @@ test("where a brief lands is written, replaced and read back apart from where it
     (await store.draft(partition, draft.ticket))?.brief,
     landing,
   );
-  assert.deepEqual(
-    await postgresTicketBrief(pool).brief(partition, draft.ticket),
-    landing,
-  );
 
   const cleared = await store.reviseDraft({
     partition,
@@ -1641,16 +1637,16 @@ test("where a brief lands is written, replaced and read back apart from where it
     expectedVersion: 2,
     configurationRevision: revision,
     authoring: plainAuthoring,
-    brief: postgresHarnessBrief,
+    brief: postgresHarnessBriefIn(repository),
   });
   assert.deepEqual(
     cleared.revised === "Revised" ? cleared.draft.brief : undefined,
-    briefAsStored(postgresHarnessBrief),
+    briefAsStored(postgresHarnessBriefIn(repository)),
     "a revision naming no finalization lands the work where it happens again",
   );
   assert.deepEqual(
-    await postgresTicketBrief(pool).brief(partition, draft.ticket),
-    briefAsStored(postgresHarnessBrief),
+    await briefReleasedAt(fixture, 3, "brief-landing"),
+    briefAsStored(postgresHarnessBriefIn(repository)),
   );
 });
 
@@ -1661,23 +1657,27 @@ const appendingBrief = asDraftBrief({
 });
 
 test("a draft is created with the check lines its brief appends", async () => {
-  const { partition, repository, draft } = await draftFixture(
-    postgresHarnessConfiguration,
+  const fixture = await draftFixture(
+    commandedCheckConfiguration,
     appendingBrief,
   );
-  const appending = briefAsStored({ ...appendingBrief, repository });
-  assert.deepEqual(draft.brief, appending);
+  const appending = briefAsStored({
+    ...appendingBrief,
+    repository: fixture.repository,
+  });
+  assert.deepEqual(fixture.draft.brief, appending);
   assert.deepEqual(
-    await postgresTicketBrief(pool).brief(partition, draft.ticket),
+    await briefReleasedAt(fixture, 1, "brief-checks-created"),
     appending,
     "the scheduler's own read carries the lines in the order they were created",
   );
 });
 
 test("the check lines a brief appends are written, ordered, replaced and read back", async () => {
-  const { partition, store, revision, draft } = await draftFixture();
+  const fixture = await draftFixture(commandedCheckConfiguration);
+  const { partition, store, revision, repository, draft } = fixture;
   assert.deepEqual(draft.brief?.checks, []);
-  const appending = briefAsStored(appendingBrief);
+  const appending = briefAsStored({ ...appendingBrief, repository });
   const revised = await store.reviseDraft({
     partition,
     authority,
@@ -1696,7 +1696,7 @@ test("the check lines a brief appends are written, ordered, replaced and read ba
     appending,
   );
   assert.deepEqual(
-    await postgresTicketBrief(pool).brief(partition, draft.ticket),
+    await briefReleasedAt(fixture, 2, "brief-checks"),
     appending,
     "the scheduler's own read carries the lines in the order they were written",
   );
@@ -1708,7 +1708,7 @@ test("the check lines a brief appends are written, ordered, replaced and read ba
     expectedVersion: 2,
     configurationRevision: revision,
     authoring: plainAuthoring,
-    brief: postgresHarnessBrief,
+    brief: postgresHarnessBriefIn(repository),
   });
   assert.deepEqual(
     cleared.revised === "Revised" ? cleared.draft.brief?.checks : undefined,
@@ -1717,7 +1717,8 @@ test("the check lines a brief appends are written, ordered, replaced and read ba
   );
   assert.deepEqual(
     await postgresTicketBrief(pool).brief(partition, draft.ticket),
-    briefAsStored(postgresHarnessBrief),
+    appending,
+    "the reopened draft's revision is not what the released ticket runs",
   );
 });
 
@@ -1759,10 +1760,6 @@ test("a draft authored before a brief existed reads back without one", async () 
     [partition.tenant, partition.project, draft.ticket],
   );
   assert.equal((await store.draft(partition, draft.ticket))?.brief, undefined);
-  assert.equal(
-    await postgresTicketBrief(pool).brief(partition, draft.ticket),
-    undefined,
-  );
 });
 
 test("the server refuses a brief that reached it around the interpreter's rules", async () => {
@@ -1797,28 +1794,121 @@ test("the server refuses a brief that reached it around the interpreter's rules"
   );
 });
 
+/**
+ * The fixture project's writer, held once: each submission handed to it is
+ * accepted, decided, and answered with how it was decided.
+ */
+async function fixtureWriter(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+  label: string,
+) {
+  const writer = postgresHarnessWriter(harness);
+  let memory = await projectWriterLoad(
+    writer,
+    await postgresHarnessHeld(harness.store, fixture.partition, label),
+  );
+  return async function fixtureWriterDecide(
+    submission: Submission,
+  ): Promise<string> {
+    assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
+    const input = await harness.discovery.next(fixture.partition);
+    assert.ok(input !== undefined);
+    const decision = await projectWriterDecide(writer, memory, input);
+    memory = decision.memory;
+    return decision.decided.decided;
+  };
+}
+
 /** Releases a fixture's draft through the writer, which is what freezes its brief. */
 async function releaseFixtureDraft(
   fixture: Awaited<ReturnType<typeof draftFixture>>,
   label: string,
+  authoringVersion = fixture.draft.authoringVersion,
 ): Promise<void> {
-  const submission = releaseSubmission(fixture);
-  assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
-  const input = await harness.discovery.next(fixture.partition);
-  assert.ok(input !== undefined);
-  const writer = postgresHarnessWriter(harness);
-  const decided = await projectWriterDecide(
-    writer,
-    await projectWriterLoad(
-      writer,
-      await postgresHarnessHeld(harness.store, fixture.partition, label),
-    ),
-    input,
+  const decide = await fixtureWriter(fixture, label);
+  assert.equal(
+    await decide(releaseSubmission(fixture, authoringVersion)),
+    "Committed",
   );
-  assert.equal(decided.decided.decided, "Committed");
 }
 
-test("a released ticket's brief no longer moves, which is what lets a retry read it", async () => {
+/** Releases the fixture's draft at `authoringVersion` and answers the brief every dispatch then reads. */
+async function briefReleasedAt(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+  authoringVersion: number,
+  label: string,
+): Promise<DraftBrief | undefined> {
+  await releaseFixtureDraft(fixture, label, authoringVersion);
+  return postgresTicketBrief(pool).brief(
+    fixture.partition,
+    fixture.draft.ticket,
+  );
+}
+
+/** An update of the fixture's ticket to the draft revision `authoringVersion`, against `expectedRevision`. */
+function updateSubmission(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+  expectedRevision: number,
+  authoringVersion: number,
+): Submission {
+  const unique = randomUUID();
+  return {
+    partition: fixture.partition,
+    operation: asOperationId(`update-${unique}`),
+    authority,
+    key: asIdempotencyKey(`update-${unique}`),
+    command: {
+      version: 1,
+      command: "UpdateTicket",
+      ticket: fixture.draft.ticket,
+      expectedRevision,
+      authoringVersion,
+      configurationRevision: fixture.revision,
+    },
+  };
+}
+
+/** A revision of the fixture's released draft, keeping its dependencies, to `brief`. */
+function reviseReleased(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+  expectedVersion: number,
+  brief: DraftBrief,
+) {
+  return fixture.store.reviseDraft({
+    partition: fixture.partition,
+    authority,
+    ticket: fixture.draft.ticket,
+    expectedVersion,
+    configurationRevision: fixture.revision,
+    authoring: plainAuthoring,
+    brief,
+  });
+}
+
+/** What a dispatch or a retry of the fixture's ticket reads: its released definition, digest and brief. */
+async function releasedMaterial(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+): Promise<unknown> {
+  return harness.query(
+    `SELECT definition,digest,brief FROM ticket_definition
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [fixture.partition.tenant, fixture.partition.project, fixture.draft.ticket],
+  );
+}
+
+/** A brief no release has named, which is what a Pending ticket's author may revise to. */
+function forgedBrief(repository: RepositoryId): DraftBrief {
+  return briefAsStored({
+    ...asDraftBrief({
+      intent: "FORGED intent nobody has released.",
+      links: ["https://example.test/forged"],
+      branch: "refs/heads/forged",
+    }),
+    repository,
+  });
+}
+
+test("an unreleased revision of a Pending ticket's draft moves nothing a dispatch or retry reads", async () => {
   const fixture = await draftFixture();
   await releaseFixtureDraft(fixture, "brief-freeze");
   const reader = postgresTicketBrief(pool);
@@ -1827,25 +1917,126 @@ test("a released ticket's brief no longer moves, which is what lets a retry read
     released,
     briefAsStored(postgresHarnessBriefIn(fixture.repository)),
   );
+  const material = await releasedMaterial(fixture);
+  const revised = await reviseReleased(
+    fixture,
+    fixture.draft.authoringVersion,
+    forgedBrief(fixture.repository),
+  );
+  assert.equal(revised.revised, "Revised");
+  assert.deepEqual(
+    await reader.brief(fixture.partition, fixture.draft.ticket),
+    released,
+  );
+  assert.deepEqual(await releasedMaterial(fixture), material);
+});
+
+test("a released update moves what the next dispatch reads, and the revision it is read at", async () => {
+  const fixture = await draftFixture();
+  const decide = await fixtureWriter(fixture, "update-moves");
+  assert.equal(await decide(releaseSubmission(fixture)), "Committed");
+  const forged = forgedBrief(fixture.repository);
+  assert.equal((await reviseReleased(fixture, 1, forged)).revised, "Revised");
+  assert.equal(await decide(updateSubmission(fixture, 1, 2)), "Committed");
+  assert.deepEqual(
+    await postgresTicketBrief(pool).brief(
+      fixture.partition,
+      fixture.draft.ticket,
+    ),
+    forged,
+  );
+  assert.deepEqual(
+    await harness.query(
+      `SELECT revision FROM ticket_projection
+        WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+      [
+        fixture.partition.tenant,
+        fixture.partition.project,
+        fixture.draft.ticket,
+      ],
+    ),
+    [{ revision: "2" }],
+  );
+  const read = await fixture.store.draft(
+    fixture.partition,
+    fixture.draft.ticket,
+  );
+  assert.equal(read?.releasedAuthoringVersion, 2);
+  assert.equal(read?.authoringVersion, 2);
+});
+
+test("an update against a revision another update moved past is refused with both numbers", async () => {
+  const fixture = await draftFixture();
+  const decide = await fixtureWriter(fixture, "update-stale");
+  assert.equal(await decide(releaseSubmission(fixture)), "Committed");
+  assert.equal(
+    (await reviseReleased(fixture, 1, forgedBrief(fixture.repository))).revised,
+    "Revised",
+  );
+  assert.equal(await decide(updateSubmission(fixture, 1, 2)), "Committed");
+  const stale = updateSubmission(fixture, 1, 2);
+  assert.equal(await decide(stale), "Refused");
+  assert.deepEqual(
+    await harness.query(
+      "SELECT outcome_code,refusal::jsonb->'value' AS refusal FROM decision_input WHERE input_id=$1",
+      [stale.operation],
+    ),
+    [
+      {
+        outcome_code: "TicketRevisionStale",
+        refusal: { ticket: fixture.draft.ticket, expected: 1, current: 2 },
+      },
+    ],
+  );
+  const read = await postgresNativeReads(pool).operation(
+    fixture.partition,
+    stale.operation,
+  );
+  assert.deepEqual(read?.state === "Refused" ? read.refusal : undefined, {
+    type: "TicketRevisionStale",
+    value: { ticket: fixture.draft.ticket, expected: 1, current: 2 },
+  });
+});
+
+test("an update naming a draft revision its author has since moved past is refused as authoring that changed", async () => {
+  const fixture = await draftFixture();
+  const decide = await fixtureWriter(fixture, "update-authoring");
+  assert.equal(await decide(releaseSubmission(fixture)), "Committed");
+  const material = await releasedMaterial(fixture);
+  const forged = forgedBrief(fixture.repository);
+  assert.equal((await reviseReleased(fixture, 1, forged)).revised, "Revised");
+  assert.equal((await reviseReleased(fixture, 2, forged)).revised, "Revised");
+  const moved = updateSubmission(fixture, 1, 2);
+  assert.equal(await decide(moved), "Refused");
+  assert.deepEqual(
+    await harness.query(
+      "SELECT outcome_code FROM decision_input WHERE input_id=$1",
+      [moved.operation],
+    ),
+    [{ outcome_code: "AuthoringChanged" }],
+  );
+  assert.deepEqual(await releasedMaterial(fixture), material);
+  assert.equal(
+    (await fixture.store.draft(fixture.partition, fixture.draft.ticket))
+      ?.releasedAuthoringVersion,
+    1,
+  );
+});
+
+test("a released draft's dependencies are locked at the door", async () => {
+  const fixture = await draftFixture();
+  await releaseFixtureDraft(fixture, "dependencies-locked");
   assert.deepEqual(
     await fixture.store.reviseDraft({
       partition: fixture.partition,
       authority,
       ticket: fixture.draft.ticket,
-      expectedVersion: fixture.draft.authoringVersion,
+      expectedVersion: 1,
       configurationRevision: fixture.revision,
-      authoring: plainAuthoring,
-      brief: asDraftBrief({
-        intent: "FORGED intent under a running execution.",
-        links: ["https://example.test/forged"],
-        branch: "refs/heads/forged",
-      }),
+      authoring: { ...plainAuthoring, deps: new Set([7]) },
+      brief: postgresHarnessBriefIn(fixture.repository),
     }),
-    { revised: "NotDraft", state: "Released" },
-  );
-  assert.deepEqual(
-    await reader.brief(fixture.partition, fixture.draft.ticket),
-    released,
+    { revised: "DependenciesLocked" },
   );
 });
 
@@ -2215,12 +2406,8 @@ test("a repository that lands nothing lands its drafts nowhere", async () => {
   );
   assert.deepEqual(created.draft.brief?.finalization, { mode: "None" });
   assert.deepEqual(
-    (
-      await postgresTicketBrief(pool).brief(
-        landless.partition,
-        created.draft.ticket,
-      )
-    )?.finalization,
+    (await landless.store.draft(landless.partition, created.draft.ticket))
+      ?.brief?.finalization,
     { mode: "None" },
   );
 });
@@ -2233,10 +2420,9 @@ test("a ticket that lands nothing is revised with the brief it just read back", 
   });
   if (created.created !== "Created")
     throw new Error(`the landless draft was ${created.created}`);
-  const read = await postgresTicketBrief(pool).brief(
-    landless.partition,
-    created.draft.ticket,
-  );
+  const read = (
+    await landless.store.draft(landless.partition, created.draft.ticket)
+  )?.brief;
   assert.ok(read !== undefined);
   const revised = await landless.store.reviseDraft({
     partition: landless.partition,

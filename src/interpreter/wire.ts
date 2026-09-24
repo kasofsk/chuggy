@@ -204,6 +204,28 @@ function parsedDispatchCommand(
   return record as ProjectCommand;
 }
 
+/** Whether a count field is a positive safe integer, which every counter an envelope names is. */
+function parsedDraftCommandCount(value: unknown): boolean {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+}
+
+/**
+ * Whether a record is a release or an update of a draft: the draft revision
+ * both pin, and for an update the ticket revision its author read.
+ */
+function parsedDraftCommand(record: Record<string, unknown>): boolean {
+  const revision = record["configurationRevision"];
+  return (
+    (record["command"] === "ReleaseDraft" ||
+      (record["command"] === "UpdateTicket" &&
+        parsedDraftCommandCount(record["expectedRevision"]))) &&
+    parsedDraftCommandCount(record["ticket"]) &&
+    parsedDraftCommandCount(record["authoringVersion"]) &&
+    typeof revision === "string" &&
+    revision.length > 0
+  );
+}
+
 export function parseProjectCommand(text: string): Parsed<ProjectCommand> {
   try {
     const raw: unknown = JSON.parse(text);
@@ -227,19 +249,8 @@ export function parseProjectCommand(text: string): Parsed<ProjectCommand> {
     }
     const dispatch = parsedDispatchCommand(record);
     if (dispatch !== undefined) return { parsed: "Ok", value: dispatch };
-    if (
-      record["command"] === "ReleaseDraft" &&
-      typeof record["ticket"] === "number" &&
-      Number.isSafeInteger(record["ticket"]) &&
-      record["ticket"] >= 1 &&
-      typeof record["authoringVersion"] === "number" &&
-      Number.isSafeInteger(record["authoringVersion"]) &&
-      record["authoringVersion"] >= 1 &&
-      typeof record["configurationRevision"] === "string" &&
-      record["configurationRevision"].length > 0
-    ) {
+    if (parsedDraftCommand(record))
       return { parsed: "Ok", value: record as ProjectCommand };
-    }
     if (
       record["command"] === "ResolveNativeAction" &&
       typeof record["action"] === "string" &&

@@ -135,6 +135,7 @@ test("a decision reports exactly the tickets whose complete state changed", () =
     [
       {
         ticket: id(1),
+        revision: 1,
         phase: "Work",
         dependable: true,
         escalation: "NoEscalation",
@@ -156,6 +157,7 @@ test("a decision reports exactly the tickets whose complete state changed", () =
     [
       {
         ticket: id(1),
+        revision: 1,
         phase: "Evaluation",
         dependable: true,
         escalation: "NoEscalation",
@@ -175,6 +177,7 @@ test("a release is a change although it leaves no phase", () => {
   assert.deepEqual(projectionChanges(genesis, released.view.post), [
     {
       ticket: id(1),
+      revision: 1,
       phase: "Pending",
       dependable: true,
       escalation: "NoEscalation",
@@ -265,6 +268,7 @@ test("a decision's evidence lands on the ticket it escalated and no other", () =
     [
       {
         ticket: id(1),
+        revision: 1,
         phase: "Escalated",
         dependable: true,
         escalation: "EvaluationFailureEscalated",
@@ -272,6 +276,7 @@ test("a decision's evidence lands on the ticket it escalated and no other", () =
       },
       {
         ticket: id(2),
+        revision: 1,
         phase: ticketAt(graph, id(2)).phase,
         dependable: true,
         escalation: "NoEscalation",

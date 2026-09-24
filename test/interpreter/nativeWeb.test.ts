@@ -103,6 +103,7 @@ function ticketRead(calls: string[]): NativeReadStore["ticket"] {
       sequence: 1,
       releasedAt: asPublicInstant("2026-01-01T00:00:00Z"),
       changedAt: asPublicInstant("2026-01-01T00:00:01Z"),
+      revision: 1,
       revokedDependencies: [],
     });
   };

@@ -119,6 +119,7 @@ import {
   asForgeRepositoryName,
 } from "../../src/interpreter/forgeInstallation.ts";
 import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
+import type { Refusal } from "../../src/interpreter/refusal.ts";
 import { ticketEscalationResource } from "../../src/interpreter/nativeWeb.ts";
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
 import {
@@ -144,6 +145,7 @@ import {
   instant,
   partition,
   refusedOperation,
+  reopenedDraft,
   selectorDefaults,
   selectorProjectSettings,
   revision,
@@ -181,6 +183,7 @@ test("a project read and a ticket read parse as the contract names them", () => 
     sequence: 9,
     releasedAt: ticketCarried.releasedAt,
     changedAt: ticketCarried.changedAt,
+    revision: 1,
     revokedDependencies: [],
   });
   assert.equal(
@@ -214,6 +217,7 @@ test("a ticket is always dated by its change and may be undated by its release",
         phase: "Done",
         sequence: 4,
         changedAt: ticketCarried.changedAt,
+        revision: 1,
         revokedDependencies: [],
       }).body,
     ).releasedAt,
@@ -883,6 +887,32 @@ test("a machine's code without its refusal, or with another's, is not a response
       },
     }),
   );
+});
+
+test("every refusal an update earns is answered on the wire, the machine's with its payload", () => {
+  const refusals: readonly Refusal[] = [
+    ticketRefusals.TicketNotPending,
+    ticketRefusals.TicketIdentityMismatch,
+    ticketRefusals.TicketRevisionStale,
+    ticketRefusals.TicketDependenciesChanged,
+    { type: "AuthoringChanged" },
+    { type: "ConfigurationInvalid" },
+    { type: "BriefNamesNoRepository" },
+  ];
+  for (const refusal of refusals) {
+    const body = operationResponse(refusedOperation(refusal)).body;
+    const wire = operationResponseSchema.parse(body);
+    assert.equal(
+      wire.state === "Refused" ? wire.code : undefined,
+      refusal.type,
+    );
+    const read = decodedOperationResponseSchema.parse(body);
+    assert.deepEqual(
+      read.state === "Refused" ? read.refusal : undefined,
+      refusal,
+      refusal.type,
+    );
+  }
 });
 
 test("a stale revision names two revisions the database would hold, and zero is none", () => {
@@ -1939,4 +1969,32 @@ test("each way a creation is refused is its own status and never a creation", ()
       true,
     );
   }
+});
+
+test("a reopened draft names the version its ticket runs beside the one it stands at", () => {
+  const read = draftResponseSchema.parse(draftResponse(reopenedDraft).body);
+  assert.deepEqual(
+    [read.state, read.authoringVersion, read.releasedAuthoringVersion],
+    ["Released", 3, 2],
+  );
+});
+
+test("a ticket is read at the revision an update is written against, and zero is none", () => {
+  const pending = {
+    ticket: asTicketId(3),
+    phase: "Pending",
+    sequence: 2,
+    ...ticketCarried,
+    revision: 2,
+  } as const;
+  assert.equal(
+    ticketResponseSchema.parse(ticketResponse(pending).body).revision,
+    2,
+  );
+  assert.throws(() =>
+    ticketResponseSchema.parse({
+      ...(ticketResponse(pending).body as object),
+      revision: 0,
+    }),
+  );
 });

@@ -52,6 +52,7 @@ interface DraftRow extends ConfigurationVersionRow {
   readonly ticket: string;
   readonly authoring_version: string;
   readonly state: string;
+  readonly released_authoring_version: string | null;
   readonly configuration_revision: string;
   readonly authoring: string;
   readonly title: string | null;
@@ -186,7 +187,8 @@ async function readDraft(
   ticket: number,
 ): Promise<DraftResource | undefined> {
   const found = await pool.query<DraftRow>(
-    sql`SELECT d.ticket,d.authoring_version,d.state,d.configuration_revision,r.authoring,
+    sql`SELECT d.ticket,d.authoring_version,d.state,d.released_authoring_version,
+              d.configuration_revision,r.authoring,
               b.title,b.intent,b.branch,b.repository,
               b.finalization_mode,b.finalization_target,
               v.name AS version_name,v.number::text AS version_number,
@@ -222,6 +224,14 @@ function draftResourceOf(partition: Partition, row: DraftRow): DraftResource {
       "authoring version",
     ),
     state: draftState(row.state),
+    ...(row.released_authoring_version === null
+      ? {}
+      : {
+          releasedAuthoringVersion: projectRowCounter(
+            row.released_authoring_version,
+            "released authoring version",
+          ),
+        }),
     configurationRevision: asConfigurationRevisionId(
       row.configuration_revision,
     ),
@@ -258,9 +268,11 @@ function draftPageColumn(value: string | null, what: string): string {
   return value;
 }
 
+/** A page row as a draft row. A page holds only open drafts, and an open draft was never released. */
 function draftPageRow(row: DraftPageRow): DraftRow {
   return {
     ...row,
+    released_authoring_version: null,
     ticket: draftPageColumn(row.ticket, "ticket"),
     authoring_version: draftPageColumn(row.authoring_version, "version"),
     state: draftPageColumn(row.state, "state"),
@@ -595,6 +607,8 @@ async function reviseDraft(
     return { revised: "RepositoryNotBound" };
   if (row.result === "LandingUnbranched")
     return { revised: "LandingUnbranched" };
+  if (row.result === "DependenciesLocked")
+    return { revised: "DependenciesLocked" };
   if (row.result === "Stale") {
     if (row.authoring_version === null)
       throw new Error("draft revision returned Stale with no current version");

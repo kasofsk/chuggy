@@ -173,11 +173,15 @@ and a replay is the projection being wrong.
 `ticket_definition` — the material a released ticket's references name: the
 image, the requirement per kind and stage, the blocks a briefing composes and
 the finalization binding, resolved in the transaction that journals the release
-or an update so every cycle runs the revision the latest of them pinned. Owned
-by the ticket-service role, which is granted INSERT and SELECT, and UPDATE on
-the definition and its digest
-because an update re-resolves them; the boundary owner reads it, and the
-scheduler reads it for the requirement each execution is created at. Its
+or an update so every cycle runs the revision the latest of them pinned; and
+the brief that revision was taken from, held to the digest its content
+reference folds, because a Pending ticket's draft is revised in place and is
+not what the ticket runs. Owned by the ticket-service role, which is granted
+INSERT and SELECT, and UPDATE on the definition, its digest and the brief
+because an update re-resolves them; the boundary owner reads it, the scheduler
+reads it for the requirement each execution is created at, and the finalizer
+reads the brief a landing is bound by. Neither of the last two reads the draft's
+brief. Its
 composite key is `(tenant, project)` and its identity is `(tenant, project,
 ticket)`. It is written by the release and by each update, in the transaction
 that journals it, so unfinished work does not exist for it.

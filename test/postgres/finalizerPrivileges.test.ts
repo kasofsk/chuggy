@@ -211,20 +211,29 @@ test("the ticket service reaches only the finalizer relations its boundary needs
 });
 
 test("the finalizer reads the brief its target is narrowed by and writes none of it", async () => {
-  for (const relation of ["draft_brief", "draft_brief_link"]) {
-    const [read, ...written] = await everyVerb(relation);
-    assert.equal(
-      await harness.attemptAs(finalizerRole, read ?? ""),
-      undefined,
+  const [read, ...written] = await everyVerb("ticket_definition");
+  assert.equal(await harness.attemptAs(finalizerRole, read ?? ""), undefined);
+  for (const statement of written) {
+    assert.match(
+      (await harness.attemptAs(finalizerRole, statement)) ?? "",
+      postgresHarnessDenial("ticket_definition"),
+      statement,
+    );
+  }
+});
+
+test("the finalizer reads no draft, whose brief may hold a revision nobody released", async () => {
+  for (const relation of [
+    "draft_brief",
+    "draft_brief_link",
+    "draft_brief_check",
+  ]) {
+    const [read] = await everyVerb(relation);
+    assert.match(
+      (await harness.attemptAs(finalizerRole, read ?? "")) ?? "",
+      postgresHarnessDenial(relation),
       relation,
     );
-    for (const statement of written) {
-      assert.match(
-        (await harness.attemptAs(finalizerRole, statement)) ?? "",
-        postgresHarnessDenial(relation),
-        statement,
-      );
-    }
   }
 });
 
@@ -386,9 +395,6 @@ test("the finalizer's read surface is exactly the relations its view is gathered
     [
       "commit_permit",
       "configuration_revision",
-      "draft_brief",
-      "draft_brief_check",
-      "draft_brief_link",
       "execution",
       "execution_request_task",
       "execution_result",
@@ -407,6 +413,7 @@ test("the finalizer's read surface is exactly the relations its view is gathered
       "project_repository",
       "recovery_epoch",
       "schema_migration",
+      "ticket_definition",
     ],
   );
 });

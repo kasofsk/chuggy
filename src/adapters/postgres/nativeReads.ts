@@ -68,6 +68,7 @@ interface TicketProjectionRow {
    * none; empty where neither names anything.
    */
   readonly ticket_title: string;
+  readonly revision: string;
   readonly phase: string;
   readonly seq: string;
   readonly escalation: string;
@@ -269,6 +270,7 @@ function ticketResource(row: TicketProjectionRow): TicketResource {
   return {
     ticket: asTicketId(projectRowCounter(row.ticket, "ticket identity")),
     ...(row.ticket_title === "" ? {} : { title: row.ticket_title }),
+    revision: projectRowCounter(row.revision, "ticket revision"),
     phase: projectionPhase(row.phase),
     sequence: projectRowCounter(row.seq, "ticket projection sequence"),
     changedAt: ticketResourceChangedAt(row.changed_at),
@@ -419,7 +421,7 @@ async function readTicketsByActivity(
   query: ProjectReadQuery,
 ): Promise<readonly TicketProjectionRow[]> {
   const found = await client.query<TicketProjectionRow>(
-    sql`SELECT t.ticket,t.phase,t.seq,t.escalation,t.escalation_evidence,
+    sql`SELECT t.ticket,t.revision,t.phase,t.seq,t.escalation,t.escalation_evidence,
                  coalesce(b.title,left(substring(b.intent from
                    '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                    AS ticket_title,
@@ -464,7 +466,7 @@ async function readTicketsByIdentity(
   query: ProjectReadQuery,
 ): Promise<readonly TicketProjectionRow[]> {
   const found = await client.query<TicketProjectionRow>(
-    sql`SELECT t.ticket,t.phase,t.seq,t.escalation,t.escalation_evidence,
+    sql`SELECT t.ticket,t.revision,t.phase,t.seq,t.escalation,t.escalation_evidence,
                coalesce(b.title,left(substring(b.intent from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
@@ -508,7 +510,7 @@ async function readTicketRow(
   ticket: TicketId,
 ): Promise<(TicketProjectionRow & DraftBriefRow) | undefined> {
   const found = await pool.query<TicketProjectionRow & DraftBriefRow>(
-    sql`SELECT t.ticket,t.phase,t.seq,t.escalation,t.escalation_evidence,
+    sql`SELECT t.ticket,t.revision,t.phase,t.seq,t.escalation,t.escalation_evidence,
                coalesce(b.title,left(substring(b.intent from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,

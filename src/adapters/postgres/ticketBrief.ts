@@ -1,10 +1,12 @@
 /**
- * PostgreSQL reads of the brief a ticket carries.
+ * PostgreSQL reads of the brief a draft carries, and of the one its ticket was
+ * released with.
  *
- * The brief lives beside the draft, and a released draft is retained, so the
- * ticket and the draft reach the same row by the same key and nothing is
- * copied forward at release. A ticket authored before a draft carried one has
- * no row, which is what an absent brief is.
+ * THEY ARE TWO BRIEFS ONCE A DRAFT REOPENS. The draft's brief is one row its
+ * author revises in place, and a Pending ticket's draft takes revisions nobody
+ * has released; so what a ticket runs is the brief its last release or update
+ * stored beside its definition, and the port every dispatch, briefing and
+ * finalization reads through answers that one and never the draft's.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -24,6 +26,7 @@ import {
   type ReleaseBrief,
   type TicketBriefPort,
 } from "../../interpreter/ticketBrief.ts";
+import { releasedTicketBrief } from "../../interpreter/ticketDefinition.ts";
 
 /** The pair of columns a brief's finalization is read from, wherever a query selected them. */
 export interface DraftBriefFinalizationRow {
@@ -103,32 +106,34 @@ export function draftBriefOf(row: DraftBriefRow): DraftBrief | undefined {
   };
 }
 
-/** Answers the brief port through the reader's own credential. */
+/**
+ * Answers the brief port through the reader's own credential, from what the
+ * ticket's last release or update stored. A ticket that was never released has
+ * no brief to run with, which the port answers as none.
+ */
 export function postgresTicketBrief(pool: pg.Pool): TicketBriefPort {
   return {
     brief: async (partition: Partition, ticket: number) => {
       const found = await pool.query<{
-        title: string | null;
-        intent: string;
-        branch: string | null;
-        repository: string | null;
-        finalization_mode: string | null;
-        finalization_target: string | null;
-        links: string[] | null;
-        checks: string[] | null;
+        brief: string | null;
+        content_digest: string | null;
       }>(
-        sql`SELECT b.title,b.intent,b.branch,b.repository,
-                   b.finalization_mode,b.finalization_target,
-                   (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
-                     WHERE k.tenant=b.tenant AND k.project=b.project AND k.ticket=b.ticket) AS links,
-                   (SELECT array_agg(c.command ORDER BY c.ordinal) FROM draft_brief_check c
-                     WHERE c.tenant=b.tenant AND c.project=b.project AND c.ticket=b.ticket) AS checks
-              FROM draft_brief b
-             WHERE b.tenant=${partition.tenant} AND b.project=${partition.project}
-               AND b.ticket=${ticket}`,
+        sql`SELECT d.brief::text AS brief,
+                   d.definition->'content'->>'digest' AS content_digest
+              FROM ticket_definition d
+             WHERE d.tenant=${partition.tenant} AND d.project=${partition.project}
+               AND d.ticket=${ticket}`,
       );
       const row = found.rows[0];
-      return row === undefined ? undefined : draftBriefOf(row);
+      if (row === undefined) return undefined;
+      if (row.content_digest === null)
+        throw new Error(
+          `ticket ${String(ticket)}: the released definition names no content digest`,
+        );
+      return releasedTicketBrief(
+        row.brief === null ? undefined : (JSON.parse(row.brief) as unknown),
+        row.content_digest,
+      );
     },
   };
 }

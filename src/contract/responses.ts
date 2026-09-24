@@ -225,6 +225,8 @@ export const ticketResponseSchema = z.object({
    * of its intent where the brief named none.
    */
   title: z.string().max(briefTitleCharsMax).optional(),
+  /** Which revision of its definition the ticket is at, which an update names as the one it expects. */
+  revision: ticketNumberSchema,
   phase: z.enum(phaseRoster),
   sequence: countSchema,
   /**
@@ -893,6 +895,12 @@ export const draftResponseSchema = z.object({
   ticket: ticketNumberSchema,
   authoringVersion: countSchema,
   state: z.enum(draftStates),
+  /**
+   * The authoring version the ticket's live revision was released from,
+   * present exactly on a released draft; where it is behind `authoringVersion`
+   * the draft holds changes an update has still to release.
+   */
+  releasedAuthoringVersion: countSchema.optional(),
   configurationRevision: identitySchema,
   configurationVersion: configurationVersionSchema.optional(),
   authoring: authoringResponseSchema,

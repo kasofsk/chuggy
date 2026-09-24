@@ -66,6 +66,7 @@ export const instant = asPublicInstant("2026-08-26T00:00:00Z");
  * still pass, and the revoked dependencies only a blocked ticket has any of.
  */
 export const ticketCarried = {
+  revision: 1,
   releasedAt: instant,
   changedAt: asPublicInstant("2026-08-27T00:00:00Z"),
   revokedDependencies: [],
@@ -115,6 +116,14 @@ export const draft: DraftResource = {
 };
 
 export const briefedDraft: DraftResource = { ...draft, brief };
+
+/** A released draft revised past the version its ticket was last released at. */
+export const reopenedDraft: DraftResource = {
+  ...draft,
+  state: "Released",
+  authoringVersion: 3,
+  releasedAuthoringVersion: 2,
+};
 
 export const operation: OperationResource = {
   operation: asOperationId("operation-one"),

@@ -166,11 +166,17 @@ interface ReleaseDraftRow {
   readonly checks: string[] | null;
 }
 
-/** The row one release command names, refusing a command whose revision was not retained. */
+/** A release of a draft or an update of the ticket it released: both name the draft revision they pin. */
+type DraftReleaseCommand = Extract<
+  ProjectCommand,
+  { readonly command: "ReleaseDraft" | "UpdateTicket" }
+>;
+
+/** The row one release or update names, refusing a command whose revision was not retained. */
 async function releaseDraftRow(
   pool: pg.Pool,
   partition: Partition,
-  command: Extract<ProjectCommand, { readonly command: "ReleaseDraft" }>,
+  command: DraftReleaseCommand,
 ): Promise<ReleaseDraftRow> {
   const revision = await pool.query<ReleaseDraftRow>(
     sql`SELECT r.authoring,c.digest,c.canonical,p.repository AS provenance_repository,
@@ -207,13 +213,15 @@ async function releaseDraftRow(
  * computed once, carried into the transaction that journals its event, and
  * stored beside it. A pair that contradicts itself resolves nothing and carries
  * no command, because the deciding transaction re-reads the same revision behind
- * the same fence and names the precise fault this refusal only stands in for.
+ * the same fence and names the precise fault this refusal only stands in for;
+ * an update is resolved by the same path, so what it freezes is what releasing
+ * its revision first would have.
  */
 async function releaseDraftSource(
   pool: pg.Pool,
   partition: Partition,
   operation: string,
-  command: Extract<ProjectCommand, { readonly command: "ReleaseDraft" }>,
+  command: DraftReleaseCommand,
 ): Promise<DecisionInput["source"]> {
   const found = await releaseDraftRow(pool, partition, command);
   const brief = draftBriefOf(found);
@@ -240,14 +248,25 @@ async function releaseDraftSource(
     ...(material === undefined
       ? {}
       : {
-          ticketCommand: ticketCommandOf({
-            envelope: "ReleaseDraft",
-            ticket: asTicketId(command.ticket),
-            authoring,
-            material,
-          }),
+          ticketCommand: ticketCommandOf(
+            command.command === "UpdateTicket"
+              ? {
+                  envelope: "UpdateTicket",
+                  ticket: asTicketId(command.ticket),
+                  expectedRevision: command.expectedRevision,
+                  authoring,
+                  material,
+                }
+              : {
+                  envelope: "ReleaseDraft",
+                  ticket: asTicketId(command.ticket),
+                  authoring,
+                  material,
+                },
+          ),
         }),
     draftRelease: {
+      release: command.command === "UpdateTicket" ? "Update" : "Release",
       ticket: command.ticket,
       authoringVersion: command.authoringVersion,
       configurationRevision: command.configurationRevision,
@@ -547,7 +566,10 @@ async function operationSource(
       ticketCommand: ticketCommandOf({ envelope: "Decide", command }),
     };
   }
-  if (command.command === "ReleaseDraft") {
+  if (
+    command.command === "ReleaseDraft" ||
+    command.command === "UpdateTicket"
+  ) {
     return releaseDraftSource(pool, partition, row.input_id, command);
   }
   if (

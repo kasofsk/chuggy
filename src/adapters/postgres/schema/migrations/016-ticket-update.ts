@@ -1,6 +1,8 @@
 import {
   apiRole,
   boundaryOwnerRole,
+  finalizerRole,
+  schedulerRole,
   sourceUnrecordedResult,
   ticketServiceRole,
   workResultUnrecordedResult,
@@ -57,7 +59,25 @@ import {
  *
  * AND `ticket_definition` IS WRITTEN AGAIN BY AN UPDATE, which re-resolves the
  * definition in the transaction that journals it.
+ *
+ * WHAT A TICKET RUNS IS WHAT WAS RELEASED, NEVER THE LIVE DRAFT. The brief is
+ * one row per draft and a reopened draft revises it in place, so a revision
+ * nobody released would reach a dispatch, a briefing or a finalization that
+ * read it there. Each release and update stores the brief it resolved beside
+ * the definition, the rows stored before now take the brief their draft still
+ * holds — nothing could revise a released draft until this migration — and the
+ * scheduler and the finalizer lose their read of the draft's brief, so the
+ * released one is the only brief they can reach. `submit_finalization_result`
+ * is rewritten whole to read its landing off the released definition for the
+ * same reason.
  */
+
+/** The longest released brief the column admits, as its text. */
+const releasedBriefCharsMax = 65_536;
+
+/** The released definition's finalization binding, and the landing it names. */
+const releasedFinalizationField = "finalization";
+const landingModeField = "mode";
 
 /** The ticket command and the journal's event an update is, as the codec spells them. */
 const updateTag = "UpdateTicket";
@@ -772,6 +792,144 @@ export const migration016: Migration = {
               result_manifest = in_manifest, completion_operation = in_operation,
               terminal_at = now()
         WHERE tenant = in_tenant AND project = in_project AND execution = in_execution;
+       RETURN QUERY SELECT 'Submitted'::text, in_operation, next_ordinal;
+     END $$`,
+    `ALTER TABLE public.ticket_definition
+       ADD COLUMN brief jsonb,
+       ADD CONSTRAINT ticket_definition_brief_is_bounded CHECK (((brief IS NULL) OR ((jsonb_typeof(brief) = 'object'::text) AND (length((brief)::text) <= ${String(releasedBriefCharsMax)}))))`,
+    `UPDATE public.ticket_definition d
+        SET brief = jsonb_strip_nulls(jsonb_build_object(
+          'title', b.title, 'intent', b.intent,
+          'links', coalesce((SELECT jsonb_agg(l.url ORDER BY l.ordinal) FROM public.draft_brief_link l
+                              WHERE l.tenant = b.tenant AND l.project = b.project AND l.ticket = b.ticket),
+                            '[]'::jsonb),
+          'checks', coalesce((SELECT jsonb_agg(k.command ORDER BY k.ordinal) FROM public.draft_brief_check k
+                               WHERE k.tenant = b.tenant AND k.project = b.project AND k.ticket = b.ticket),
+                             '[]'::jsonb),
+          'repository', b.repository, 'branch', b.branch,
+          'finalization', CASE WHEN b.finalization_mode IS NULL THEN NULL
+            ELSE jsonb_build_object('mode', b.finalization_mode, 'target', b.finalization_target) END))
+       FROM public.draft_brief b
+      WHERE b.tenant = d.tenant AND b.project = d.project AND b.ticket = d.ticket`,
+    `GRANT UPDATE(brief) ON TABLE public.ticket_definition TO ${ticketServiceRole}`,
+    `GRANT SELECT ON TABLE public.ticket_definition TO ${finalizerRole}`,
+    `REVOKE SELECT ON TABLE public.draft_brief, public.draft_brief_link, public.draft_brief_check FROM ${schedulerRole}, ${finalizerRole}`,
+    `CREATE OR REPLACE FUNCTION public.submit_finalization_result(in_tenant text, in_project text, in_request text, in_attempt text, in_outcome text, in_failure_kind text, in_request_generation bigint, in_recovery_epoch text, in_operation text, in_authority_subject text) RETURNS TABLE(result text, operation text, ordinal bigint)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+     DECLARE bound record; project_lifecycle text; project_generation bigint;
+       next_ordinal bigint; command_value jsonb; current_epoch text;
+       scoped_digest text; settled text;
+     BEGIN
+       IF in_outcome NOT IN ('FinalizationSucceeded', 'FinalizationFailed',
+           'FinalizationNeedsWork', 'FinalizationResultUnavailable') THEN
+         RAISE EXCEPTION 'finalization outcome % is not one this boundary submits', in_outcome
+           USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       scoped_digest := encode(sha256(convert_to('finalization:' || in_request, 'UTF8')), 'hex');
+       SELECT f.ticket, f.state, f.request_generation, f.recovery_epoch, f.kind,
+              f.hold_kind,
+              a.attempt, a.outcome AS attempt_outcome, a.failure_kind,
+              p.state AS permit_state, r.verdict,
+              w.definition->'${releasedFinalizationField}'->>'${landingModeField}' AS landing
+         INTO bound
+         FROM finalization_request f
+         LEFT JOIN ticket_definition w
+           ON w.tenant = f.tenant AND w.project = f.project AND w.ticket = f.ticket
+         LEFT JOIN finalization_attempt a
+           ON a.tenant = f.tenant AND a.project = f.project
+              AND a.request = f.request AND a.attempt = in_attempt
+         LEFT JOIN commit_permit p
+           ON p.tenant = a.tenant AND p.project = a.project AND p.attempt = a.attempt
+         LEFT JOIN finalization_reconciliation r
+           ON r.tenant = p.tenant AND r.project = p.project AND r.permit = p.permit
+        WHERE f.tenant = in_tenant AND f.project = in_project AND f.request = in_request
+        FOR UPDATE OF f;
+       IF NOT FOUND THEN
+         RETURN QUERY SELECT 'UnknownRequest'::text, NULL::text, NULL::bigint; RETURN;
+       END IF;
+       SELECT o.operation INTO settled FROM operation o
+        WHERE o.tenant = in_tenant AND o.project = in_project
+          AND o.authority_kind = 'Finalizer' AND o.key_digest = scoped_digest;
+       IF FOUND THEN
+         RETURN QUERY SELECT 'AlreadySubmitted'::text, settled,
+           (SELECT d.ordinal FROM decision_input d
+             WHERE d.tenant = in_tenant AND d.project = in_project
+               AND d.input_kind = 'Operation' AND d.input_id = settled);
+         RETURN;
+       END IF;
+       SELECT e.epoch INTO current_epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1;
+       IF bound.state NOT IN ('Open', 'Registered')
+          OR bound.request_generation <> in_request_generation
+          OR bound.recovery_epoch IS DISTINCT FROM in_recovery_epoch
+          OR current_epoch IS DISTINCT FROM in_recovery_epoch
+          OR (bound.attempt IS NULL
+            AND in_outcome <> 'FinalizationResultUnavailable'
+            AND NOT (in_attempt IS NULL
+              AND bound.landing IS NOT DISTINCT FROM 'None'))
+          OR NOT (
+            (in_outcome IN ('FinalizationFailed', 'FinalizationNeedsWork')
+              AND bound.kind = 'RunFinalizer'
+              AND bound.attempt_outcome = 'Failed'
+              AND bound.failure_kind IS NOT DISTINCT FROM in_failure_kind)
+            OR (in_outcome = 'FinalizationSucceeded'
+              AND bound.kind = 'RunFinalizer'
+              AND in_failure_kind IS NULL
+              AND bound.attempt_outcome = 'Prepared'
+              AND bound.permit_state IS NOT DISTINCT FROM 'Concluded'
+              AND bound.verdict IS NOT DISTINCT FROM 'Promoted')
+            OR (in_outcome = 'FinalizationSucceeded'
+              AND bound.kind = 'RunFinalizer'
+              AND in_failure_kind IS NULL
+              AND in_attempt IS NULL
+              AND bound.landing IS NOT DISTINCT FROM 'None')
+            OR (in_outcome = 'FinalizationResultUnavailable'
+              AND bound.kind = 'RunFinalizer'
+              AND in_attempt IS NULL
+              AND bound.hold_kind IS NOT NULL
+              AND bound.hold_kind IS NOT DISTINCT FROM in_failure_kind))
+       THEN
+         RETURN QUERY SELECT 'BindingMismatch'::text, NULL::text, NULL::bigint; RETURN;
+       END IF;
+       SELECT p.lifecycle, p.lifecycle_generation
+         INTO STRICT project_lifecycle, project_generation
+         FROM project p WHERE p.tenant = in_tenant AND p.project = in_project FOR UPDATE;
+       IF project_lifecycle = 'Retention' THEN
+         RETURN QUERY SELECT 'NotAdmitted'::text, NULL::text, NULL::bigint; RETURN;
+       END IF;
+       command_value := jsonb_build_object('version', 1,
+         'command', 'SubmitFinalizationResult', 'request', in_request,
+         'requestGeneration', in_request_generation,
+         'recoveryEpoch', in_recovery_epoch, 'outcome', in_outcome)
+         || CASE WHEN in_attempt IS NULL THEN '{}'::jsonb
+                 ELSE jsonb_build_object('attempt', in_attempt) END
+         || CASE WHEN in_outcome = 'FinalizationResultUnavailable'
+                 THEN jsonb_build_object('kind', in_failure_kind)
+                 ELSE '{}'::jsonb END;
+       IF ticket_command_is_valid(command_value) IS NOT TRUE THEN
+         RAISE EXCEPTION 'the finalization result this boundary built is not one the mailbox admits'
+           USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       UPDATE project p SET ingress_next = p.ingress_next + 1
+        WHERE p.tenant = in_tenant AND p.project = in_project
+        RETURNING p.ingress_next - 1 INTO next_ordinal;
+       INSERT INTO operation
+         (tenant, project, operation, authority_kind, authority_subject, admission,
+          key_version, key_digest, payload_digest, command, command_tag)
+       VALUES (in_tenant, in_project, in_operation, 'Finalizer',
+          in_authority_subject, 'CorrectnessReducing', 'finalizer-v1',
+          scoped_digest,
+          encode(sha256(convert_to(command_value::text, 'UTF8')), 'hex'),
+          command_value::text, '${finalizationTag}');
+       INSERT INTO decision_input
+         (tenant, project, ordinal, input_kind, input_id, base_priority, lifecycle_generation)
+       VALUES (in_tenant, in_project, next_ordinal, 'Operation', in_operation,
+          'Completion', project_generation);
+       INSERT INTO project_readiness (tenant, project, ready, generation)
+       VALUES (in_tenant, in_project, true, 1)
+       ON CONFLICT (tenant, project) DO UPDATE
+         SET ready = true, generation = project_readiness.generation + 1;
        RETURN QUERY SELECT 'Submitted'::text, in_operation, next_ordinal;
      END $$`,
   ],

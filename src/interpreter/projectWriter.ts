@@ -51,7 +51,8 @@
  * against. What the digest covered of the named candidate, its version covers
  * alone: every field `canonicalCandidate` digests is either a ticket field
  * `ticketEquals` compares — so changing it stamps a new version — or a contract
- * pin written once when the ticket is released and never rewritten. The
+ * pin written when the ticket is released and rewritten only by an update,
+ * which moves the ticket's revision and so stamps a new version too. The
  * token's digest stays on the command as provenance: which page the author saw.
  */
 
@@ -186,6 +187,7 @@ export function projectionOf(
     const value = ticketAt(graph, ticket);
     return {
       ticket,
+      revision: value.revision,
       phase: value.phase,
       dependable: dependable.has(ticket),
       escalation: value.escalation,
@@ -345,8 +347,8 @@ function projectWriterFailurePolicy(
 /**
  * What `decide` answers a command at the state in hand, an accepted one held
  * to `decisionValid` because every obligation it owes is about to become a
- * row. Outside `commandValid` a release is refused as the configuration it
- * does not fit, and outside the deployment's release room as the bound
+ * row. Outside `commandValid` a release or an update is refused as the
+ * configuration it does not fit, and a release outside the deployment's release room as the bound
  * `decide` does not know, while any other command outside `commandValid` is
  * this layer and the database disagreeing about what the mailbox may admit.
  */
@@ -361,7 +363,7 @@ function projectWriterDecision(
       readonly code: "ConfigurationInvalid" | "TicketCapacityReached";
     } {
   if (!commandValid(writer.config, command)) {
-    if (command.type === "CreateTicket")
+    if (command.type === "CreateTicket" || command.type === "UpdateTicket")
       return { type: "Boundary", code: "ConfigurationInvalid" };
     throw new IntegrityContradiction(
       `project writer: a stored ${command.type} is not a command the machine takes`,

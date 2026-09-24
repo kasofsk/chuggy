@@ -21,11 +21,13 @@ import {
 import { digestFold } from "../../src/interpreter/resultManifest.ts";
 import {
   materialDigest,
+  releasedTicketBrief,
   releasedTicketDefinition,
   ticketDefinitionMaterial,
   ticketTaskMaterialAt,
 } from "../../src/interpreter/ticketDefinition.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
 
 /** A configuration briefing its two evaluation stages from blocks that differ. */
 const configuration: ReleaseConfiguration = (() => {
@@ -110,4 +112,34 @@ test("every evaluator of a stage runs that stage's definition, and no other stag
     digestFold(materialDigest(configuration.work)),
   );
   assert.notDeepEqual(released.workConfiguration, one?.task);
+});
+
+test("a stored brief is read back only as the one its release's content digest names", () => {
+  const brief = asDraftBrief({ intent: "Do the one thing.", links: [] });
+  const released = ticketDefinitionMaterial({
+    authoring,
+    configuration,
+    brief,
+  });
+  assert.deepEqual(
+    releasedTicketBrief(
+      JSON.parse(JSON.stringify(brief)) as unknown,
+      released.content.digest,
+    ),
+    brief,
+  );
+  assert.throws(
+    () =>
+      releasedTicketBrief(
+        { ...brief, intent: "Do another thing." },
+        released.content.digest,
+      ),
+    /not the one the released content names/,
+  );
+  const briefless = ticketDefinitionMaterial({ authoring, configuration });
+  assert.equal(
+    releasedTicketBrief(undefined, briefless.content.digest),
+    undefined,
+  );
+  assert.throws(() => releasedTicketBrief(undefined, released.content.digest));
 });

@@ -283,6 +283,8 @@ export function ticketEscalationResource(
 export interface TicketResource {
   readonly ticket: TicketId;
   readonly title?: string;
+  /** Which revision of its definition the ticket is at: one at release, one more per update. */
+  readonly revision: number;
   readonly phase: Phase;
   readonly sequence: number;
   readonly changedAt: PublicInstant;

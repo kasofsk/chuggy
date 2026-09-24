@@ -262,6 +262,7 @@ function representation(
 
 /** What else a ticket body carries, none of which any case here is about. */
 export const streamTicketCarried = {
+  revision: 1,
   releasedAt: "2026-01-01T00:00:00Z",
   changedAt: "2026-01-01T00:00:01Z",
   revokedDependencies: [],

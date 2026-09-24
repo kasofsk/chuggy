@@ -88,6 +88,7 @@ function fakeTicket(calls: string[]): NativeWeb["ticket"] {
       sequence: 4,
       releasedAt: asPublicInstant("2026-01-01T00:00:00Z"),
       changedAt: asPublicInstant("2026-01-01T00:00:04Z"),
+      revision: 1,
       revokedDependencies: [],
     });
   };
@@ -978,6 +979,7 @@ test("ticket phase filters and detail are parsed before NativeWeb", async () => 
     sequence: 4,
     releasedAt: "2026-01-01T00:00:00Z",
     changedAt: "2026-01-01T00:00:04Z",
+    revision: 1,
     revokedDependencies: [],
   });
   assert.equal(

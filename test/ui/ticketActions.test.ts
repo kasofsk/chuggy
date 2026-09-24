@@ -80,6 +80,7 @@ test("what the console offers is what the two predicates enable", () => {
         sequence: 1,
         releasedAt: "2026-08-26T00:00:00Z",
         changedAt: "2026-08-27T00:00:00Z",
+        revision: 1,
         revokedDependencies: [],
       }).map((one) => one.action),
     );
