@@ -29,7 +29,7 @@ import { isValidPlan, stageChoices } from "../../src/domain/config.ts";
 
 import { declaredActions } from "../domain/declared.ts";
 import { CONFIGS, modelInstance } from "../domain/configs.ts";
-import { graphOf, id, ticketOn } from "../domain/fixtures.ts";
+import { graphOf, id, ledgersOf, ticketOn } from "../domain/fixtures.ts";
 import {
   validPlansIn,
   walkActionOf,
@@ -149,6 +149,7 @@ test("the release's plan draw ranges over exactly the well-formed set", () => {
 
 test("the release's permit refuses the dependency named twice", () => {
   const graph = graphOf([ticketOn(modelInstance)]);
+  const ledgers = ledgersOf(graph);
   const stages = validPlansIn(modelInstance)[0];
   assert.ok(stages);
   const drawn: Drawn = {
@@ -157,9 +158,9 @@ test("the release's permit refuses the dependency named twice", () => {
     stages,
   };
   const release = walkActionOf("releaseTicket");
-  assert.equal(release.permitsIn(modelInstance, graph, drawn), false);
+  assert.equal(release.permitsIn(modelInstance, graph, ledgers, drawn), false);
   assert.equal(
-    release.permitsIn(modelInstance, graph, {
+    release.permitsIn(modelInstance, graph, ledgers, {
       ...drawn,
       dependencies: [id(1)],
     }),
@@ -175,12 +176,8 @@ test("a run is a pure function of its seed", () => {
 });
 
 test("the accumulator rebuilds the ghost and can go red in every direction", () => {
-  const done = graphOf([
-    ticketOn(modelInstance, {
-      phase: "Done",
-      completions: 1,
-    }),
-  ]);
+  const done = graphOf([ticketOn(modelInstance, { state: "Done" })]);
+  const doneLedgers = ledgersOf(done);
   const completeRec: LastDecision = {
     type: "Decided",
     value: {
@@ -193,18 +190,18 @@ test("the accumulator rebuilds the ghost and can go red in every direction", () 
   };
   const counts: CompletionCounts = new Map();
   assert.deepEqual(creditCompletions(counts, id(1), completeRec), []);
-  assert.deepEqual(completionFindings(counts, done), []);
+  assert.deepEqual(completionFindings(counts, done, doneLedgers), []);
 
   creditCompletions(counts, id(1), completeRec);
   assert.match(
-    completionFindings(counts, done).join(" "),
+    completionFindings(counts, done, doneLedgers).join(" "),
     /2 completion\(s\) counted/,
     "a second completion for a completed ticket is the accumulator's whole reason",
   );
 
   const silent: CompletionCounts = new Map();
   assert.match(
-    completionFindings(silent, done).join(" "),
+    completionFindings(silent, done, doneLedgers).join(" "),
     /0 completion\(s\) counted/,
     "a ticket Done with nothing counted is the other half of the iff",
   );
@@ -212,7 +209,10 @@ test("the accumulator rebuilds the ghost and can go red in every direction", () 
   const working = graphOf([ticketOn(modelInstance)]);
   const early: CompletionCounts = new Map();
   creditCompletions(early, id(1), completeRec);
-  assert.match(completionFindings(early, working).join(" "), /phase Pending/);
+  assert.match(
+    completionFindings(early, working, ledgersOf(working)).join(" "),
+    /state Pending/,
+  );
 
   assert.match(
     creditCompletions(new Map(), undefined, completeRec).join(" "),
