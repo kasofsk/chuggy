@@ -298,7 +298,7 @@ test("a released or deleted draft is not one of a project's open drafts", async 
   });
   assert.equal(gone.deleted, "Deleted");
   await harness.query(
-    `UPDATE draft SET state='Released'
+    `UPDATE draft SET state='Released',released_authoring_version=authoring_version
       WHERE tenant=$1 AND project=$2 AND ticket=$3`,
     [partition.tenant, partition.project, released.ticket],
   );
