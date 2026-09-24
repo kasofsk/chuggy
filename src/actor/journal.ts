@@ -9,7 +9,8 @@
  * because nothing else ever entered one.
  *
  * LEGALITY IS WHAT A ROW COULD NOT BE IF IT WAS DECIDED. Its seq is the next
- * one, its ticket stands (a release's must not), and its event moves the
+ * one, its ticket stands (a release's must not) and is the one any report it
+ * carries is about, and its event moves the
  * prefix it lands on. The last refuses no decided row, because a decided event
  * is never the identity (`eventsNeverIdentity`, an invariant the model
  * checks), and it refuses a replayed row, a stale one and one for a task
@@ -29,6 +30,7 @@ import type {
 } from "../domain/generated/modelTypes.ts";
 import { eventTicket, evolve } from "../domain/evolve.ts";
 import { graphEquals } from "../domain/equality.ts";
+import { reportTicket } from "../domain/ticket.ts";
 import {
   decisionSemanticsVersionCurrent,
   type DecisionSemanticsVersion,
@@ -74,10 +76,36 @@ export function eventTicketStands(
   return event.type === "TicketCreated" ? !exists : exists;
 }
 
+/** Whether the report an event carries is about the ticket the event moves, which holds of every event carrying none. */
+export function eventReportTicketAgrees(event: TicketEvent): boolean {
+  switch (event.type) {
+    case "TicketEvaluationProgressed":
+    case "TicketEvaluationPassed":
+    case "TicketEvaluationBlocked":
+    case "TicketEvaluationReworkStarted":
+    case "TicketEvaluationFailureEscalated":
+      return reportTicket(event.value.report) === eventTicket(event);
+    case "TicketCreated":
+    case "TicketDispatched":
+    case "TicketRevoked":
+    case "TicketWorkResumed":
+    case "TicketEvaluationResumed":
+    case "TicketFinalizationResumed":
+    case "TicketWorkResultAccepted":
+    case "TicketWorkProcessFailed":
+    case "TicketWorkExecutionUnavailable":
+    case "TicketFinalizationSucceeded":
+    case "TicketFinalizationNeedsWork":
+    case "TicketFinalizationUnavailable":
+      return true;
+  }
+}
+
 /**
  * Whether a stored history replays with no inert row: this image's semantics
  * on every row, dense seqs, every event's ticket standing at its replayed
- * prefix, and every event moving that prefix.
+ * prefix and named by the report it carries, and every event moving that
+ * prefix.
  */
 export function storedJournalLegalOn(stored: readonly StoredEntry[]): boolean {
   let replayed = genesis;
@@ -86,7 +114,8 @@ export function storedJournalLegalOn(stored: readonly StoredEntry[]): boolean {
     if (
       row.semantics !== decisionSemanticsVersionCurrent ||
       row.entry.seq !== next ||
-      !eventTicketStands(replayed, row.entry.event)
+      !eventTicketStands(replayed, row.entry.event) ||
+      !eventReportTicketAgrees(row.entry.event)
     ) {
       return false;
     }

@@ -34,6 +34,7 @@ import {
 import { graphEquals } from "../../src/domain/equality.ts";
 import { evolve } from "../../src/domain/evolve.ts";
 import {
+  eventReportTicketAgrees,
   genesis,
   journalLegalOn,
   replayGraph,
@@ -79,6 +80,7 @@ import type {
   SuccessfulTicketDecision,
   TaskTerminalReport,
   TicketDecision,
+  TicketEvent,
   TicketGraph,
   TicketRefusal,
 } from "../../src/domain/generated/modelTypes.ts";
@@ -255,6 +257,41 @@ test("the actor takes a release outside the id universe, because the release roo
     answerAt(genesis, createTicketCommand(plainDefinitionOf(99))),
     "Accepted",
   );
+});
+
+/** A report about ticket one's judge, retold as about another ticket. */
+const judgedElsewhere = ((): TaskTerminalReport => {
+  const report = judgedReport(judge, "EvaluatorPass");
+  assert.ok(report.type === "EvaluationResultReport");
+  return { type: report.type, value: { ...report.value, ticket: 7 } };
+})();
+
+test("a row whose report is about another ticket is refused, in every arm that carries one", () => {
+  const g3 = evolve(g2, d3.event);
+  const passed = decideAt(g3, completion(judgedReport(judge, "EvaluatorPass")));
+  assert.equal(passed.event.type, "TicketEvaluationPassed");
+  const e4: Entry = { seq: 4, event: passed.event };
+  assert.ok(journalLegalOn([e1, e2, e3, e4]));
+  const forged: Entry = {
+    seq: 4,
+    event: {
+      type: "TicketEvaluationPassed",
+      value: { ticket: 1, report: judgedElsewhere },
+    },
+  };
+  assert.ok(!journalLegalOn([e1, e2, e3, forged]));
+  const fact = { ticket: 1, report: judgedElsewhere };
+  const rework = { ...fact, evidence: [] };
+  const arms: readonly TicketEvent[] = [
+    { type: "TicketEvaluationProgressed", value: fact },
+    { type: "TicketEvaluationPassed", value: fact },
+    { type: "TicketEvaluationBlocked", value: fact },
+    { type: "TicketEvaluationReworkStarted", value: rework },
+    { type: "TicketEvaluationFailureEscalated", value: rework },
+  ];
+  for (const event of arms)
+    assert.ok(!eventReportTicketAgrees(event), event.type);
+  assert.ok(eventReportTicketAgrees(passed.event));
 });
 
 test("the world arithmetic: emission closes the gap to the book, an orphan pushes past it", () => {
