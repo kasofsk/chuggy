@@ -5,6 +5,7 @@
 module chuggy_test {
   import task_contract.* from "../task-contract/task"
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../ticket-domain/ticket"
   import chuggy_ticket.* from "../ticket"
 
   // The reference instance. Plans up to 2 stages, so the
@@ -42,7 +43,7 @@ module chuggy_test {
   type World = { tickets: int -> Ticket, ledgers: int -> TicketLedger }
   pure def graphOf(w: World): TicketGraph = { tickets: w.tickets }
   pure def evolveBoth(w: World, e: TicketEvent): World =
-    { tickets: D::evolve(graphOf(w), e).tickets,
+    { tickets: evolve(graphOf(w), e).tickets,
       ledgers: D::evolveLedgers(graphOf(w), w.ledgers, e) }
   pure def ledgerOf(w: World, j: int): TicketLedger = w.ledgers.get(j)
   /// Ticket j alone, with its ledger.
@@ -125,7 +126,7 @@ module chuggy_test {
   /// report's own; a call site names them so it reads as the delivery it is.
   pure def doneAt(c: World, j: int, task: TaskIdentity,
       report: TaskTerminalReport, d: EvaluationFailureDisposition): Stepped =
-    stepped(c, D::decide(graphOf(c), ReportTaskTerminal(report), _ => d))
+    stepped(c, decide(graphOf(c), ReportTaskTerminal(report), _ => d))
   pure def done(c: World, j: int, task: TaskIdentity,
       report: TaskTerminalReport): Stepped =
     doneAt(c, j, task, report, ReworkEvaluationFailure)
@@ -161,13 +162,13 @@ module chuggy_test {
 
   /// The finalizer's result for the attempt ticket j is on.
   pure def finalized(c: World, j: int, result: FinalizationResult): Stepped =
-    stepped(c, D::decideFinalizationResult(graphOf(c), { ticket: j,
+    stepped(c, decideFinalizationResult(graphOf(c), { ticket: j,
       workCycle: c.tickets.get(j).workCyclesStarted,
       generation: D::attemptGeneration(c.tickets.get(j)), result: result }))
   pure def resumed(c: World, j: int): Stepped =
-    stepped(c, D::decideResume(graphOf(c), j))
+    stepped(c, decideResume(graphOf(c), j))
   pure def dispatched(c: World, j: int): Stepped =
-    stepped(c, D::decideDispatch(graphOf(c), { ticket: j, source: srcDispatch }))
+    stepped(c, decideDispatch(graphOf(c), { ticket: j, source: srcDispatch }))
 
   // Reading an instance back: every instance ticket j has opened, the latest
   // of them, the run its judgement stands at, and the status one evaluator
@@ -220,7 +221,7 @@ module chuggy_test {
       workCyclesStarted: 0, state: Pending }
 
   pure def release(c: World, j: int, dependencies: Set[int], stages: List[StageDefinition]): Stepped =
-    stepped(c, D::decideCreate(graphOf(c), D::releasedTicketOf(j, dependencies, stages)))
+    stepped(c, decideCreate(graphOf(c), D::releasedTicketOf(j, dependencies, stages)))
 
   run defaultPlanIsUnanimousSingleStageTest = assert(and {
     D::defaultPlan == planU2,
@@ -355,18 +356,18 @@ module chuggy_test {
   /// eventsNeverIdentity) — pinned here on the exact decisions, where the
   /// machine checks them on every reachable one.
   run happyPathDecisionsValidTest = assert(and {
-    D::decisionValid(graphOf(cEmpty), D::decideCreate(graphOf(cEmpty),
+    decisionValid(graphOf(cEmpty), decideCreate(graphOf(cEmpty),
       D::releasedTicketOf(1, Set(), D::defaultPlan))),
-    D::decisionValid(graphOf(c0),
-      D::decideDispatch(graphOf(c0), { ticket: 1, source: srcDispatch })),
+    decisionValid(graphOf(c0),
+      decideDispatch(graphOf(c0), { ticket: 1, source: srcDispatch })),
     c1 != c0, c3 != c1, c4 != c3, c5 != c4, c6 != c5,
-    D::decisionValid(graphOf(c1),
+    decisionValid(graphOf(c1),
       TicketDecided({ event: dWork1.event, obligations: dWork1.obligations })),
-    D::decisionValid(graphOf(c3),
+    decisionValid(graphOf(c3),
       TicketDecided({ event: dEval1.event, obligations: dEval1.obligations })),
-    D::decisionValid(graphOf(c4),
+    decisionValid(graphOf(c4),
       TicketDecided({ event: dEval2.event, obligations: dEval2.obligations })),
-    D::decisionValid(graphOf(c5), TicketDecided({ event: dComplete.event,
+    decisionValid(graphOf(c5), TicketDecided({ event: dComplete.event,
       obligations: dComplete.obligations }))
   })
 
@@ -380,7 +381,7 @@ module chuggy_test {
   pure def updateAt(
       c: World, j: int, expected: int,
       definition: ReleasedTicket): Stepped =
-    stepped(c, D::decideUpdate(graphOf(c),
+    stepped(c, decideUpdate(graphOf(c),
       { ticket: j, expectedRevision: expected, definition: definition }))
   pure val dUpdate = updateAt(c0, 1, 1, defRevised)
 
@@ -393,7 +394,7 @@ module chuggy_test {
     dUpdate.post.tickets.get(1).revision == 2,
     dUpdate.post.tickets.get(3) == c0.tickets.get(3),
     dUpdate.post.ledgers == c0.ledgers,
-    D::decisionValid(graphOf(c0), D::decideUpdate(graphOf(c0),
+    decisionValid(graphOf(c0), decideUpdate(graphOf(c0),
       { ticket: 1, expectedRevision: 1, definition: defRevised })),
     dispatched(dUpdate.post, 1).obligations == [ExecuteTask({ ticket: 1,
       task: { task: workOf(1), definition: defRevised.workConfiguration,
@@ -413,7 +414,7 @@ module chuggy_test {
       == "TicketNotFound",
     named(updateAt(c1, 1, 1, defRevised)) == "TicketNotPending",
     named(updateAt(c0, 1, 5, badDefinition)) == "TicketIdentityMismatch",
-    D::decideUpdate(graphOf(c0), { ticket: 1, expectedRevision: 5,
+    decideUpdate(graphOf(c0), { ticket: 1, expectedRevision: 5,
       definition: D::revisedTicketOf(1, 2, Set(3), D::defaultPlan) })
       == TicketRefused(TicketRevisionStale({ ticket: 1, expected: 5,
         current: 1 })),
@@ -1074,7 +1075,7 @@ module chuggy_test {
   pure val wParkPre: World = only(dWorkWall.post, 1)
 
   pure def revokeOne(w: World): Stepped =
-    stepped(w, D::decideRevoke(graphOf(w), 1))
+    stepped(w, decideRevoke(graphOf(w), 1))
 
   /// A revoke owes one CancelTask per task the fabric was running for the
   /// ticket, and nothing else — no desk task for the revoked ticket.
@@ -1102,7 +1103,7 @@ module chuggy_test {
       [CancelTask({ ticket: 1, task: evalOf(1, 0, 2) })],
     revokeOne(wPend).obligations == [],
     revokeOne(wEsc).obligations == [],
-    D::decisionValid(graphOf(wEval), D::decideRevoke(graphOf(wEval), 1))
+    decisionValid(graphOf(wEval), decideRevoke(graphOf(wEval), 1))
   })
 
   /// Revoke RETAINS the judgement history — "Revoked runs nothing" is about
@@ -1144,7 +1145,7 @@ module chuggy_test {
       3 -> fresh(3, Set(2), planU2)),
     ledgers: Map(1 -> emptyLedger, 2 -> emptyLedger, 3 -> emptyLedger)
   }
-  pure val dChainRevoke = stepped(cChain, D::decideRevoke(graphOf(cChain), 1))
+  pure val dChainRevoke = stepped(cChain, decideRevoke(graphOf(cChain), 1))
   pure val cStranded = dChainRevoke.post
 
   run revokeMovesOnlyItsOwnTicketTest = assert(and {

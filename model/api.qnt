@@ -8,6 +8,7 @@
 module chuggy_api {
   import task_contract.* from "./task-contract/task"
   import evaluation_protocol.* from "./ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "./ticket-domain/ticket"
   import chuggy_ticket.* from "./ticket"
   import chuggy_refinement.* from "./refinement"
   import chuggy_identity.* from "./identity"

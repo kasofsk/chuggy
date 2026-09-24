@@ -46,6 +46,7 @@
 
 module mc_chuggy_directed {
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../ticket-domain/ticket"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(
     N_TICKETS = 3,

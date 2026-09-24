@@ -12,6 +12,7 @@
 module chuggy_refinement_fixture {
   import task_contract.* from "../task-contract/task"
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../ticket-domain/ticket"
   import chuggy_ticket.* from "../ticket"
 
   pure def defOf(slot: int): TaskDefinition = {
@@ -63,6 +64,7 @@ module chuggy_refinement_fixture {
 module chuggy_refinement_unit_test {
   import task_contract.* from "../task-contract/task"
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../ticket-domain/ticket"
   import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
   import chuggy_refinement_fixture.*
@@ -426,6 +428,7 @@ module chuggy_refinement_unit_test {
 module chuggy_refinement_witness_test {
   import task_contract.* from "../task-contract/task"
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../ticket-domain/ticket"
   import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
   import chuggy_refinement_fixture.*
@@ -613,6 +616,7 @@ module chuggy_refinement_witness_test {
 module chuggy_refinement_hazard_test {
   import task_contract.* from "../task-contract/task"
   import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../ticket-domain/ticket"
   import chuggy_ticket.* from "../ticket"
   import chuggy_refinement.* from "../refinement"
   import chuggy_refinement_fixture.*

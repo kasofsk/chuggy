@@ -1,6 +1,7 @@
 /**
  * What a ticket does with its own record, and the ledger chuggy keeps beside
- * it: `model/ticket.qnt`, the package's part first and chuggy's after it.
+ * it: the package's `model/ticket-domain/ticket.qnt`, and chuggy's
+ * `model/ticket.qnt` beside it.
  *
  * The record is the package's four fields and nothing else. What it forgets
  * and chuggy still reads — the instances that have closed, the mint counter,

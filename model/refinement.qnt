@@ -246,6 +246,7 @@
 module chuggy_refinement {
   import task_contract.* from "./task-contract/task"
   import evaluation_protocol.* from "./ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "./ticket-domain/ticket"
   import chuggy_ticket.* from "./ticket"
 
   /// The embedded domain machine — the actor's in-memory state IS this
