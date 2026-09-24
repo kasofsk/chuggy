@@ -80,6 +80,10 @@ import { postgresProjectDecision } from "../../src/adapters/postgres/projectDeci
 import { postgresProjectDiscovery } from "../../src/adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
 import {
+  apiRole,
+  ticketServiceRole,
+} from "../../src/adapters/postgres/schema/shared.ts";
+import {
   asGitObjectId,
   asRepositoryId,
   type RepositoryId,
@@ -198,9 +202,18 @@ export interface PostgresTransaction {
   readonly rollback: () => Promise<void>;
 }
 
-/** One opened subject: the store, the two inbox ports, the pool beneath them, and the way to give it back. */
+/**
+ * One opened subject: the store, the two inbox ports, the pools beneath them,
+ * and the way to give it back.
+ *
+ * Discovery, decisions and the lease and journal calls of `store` run as the
+ * ticket service's role and the inbox as the api's, since `pool` holds every
+ * grant and a port run on it answers for no privilege; provisioning, epochs,
+ * fencing, `authoring` and `query` stay on `pool`.
+ */
 export interface PostgresHarness {
   readonly pool: pg.Pool;
+  readonly writerPool: pg.Pool;
   readonly store: ProjectStore;
   readonly inbox: OperationInbox;
   readonly discovery: ProjectDiscovery;
@@ -227,7 +240,16 @@ export interface PostgresHarness {
 /** Opens a store over the schema prepared by the PostgreSQL gate, establishing its first recovery epoch. */
 export async function postgresHarnessOpen(): Promise<PostgresHarness> {
   const pool = postgresPool(postgresHarnessUrl());
-  const store = postgresProjectStore(pool);
+  const writerPool = postgresHarnessRolePool(ticketServiceRole);
+  const apiPool = postgresHarnessRolePool(apiRole);
+  const provisioning = postgresProjectStore(pool);
+  const store: ProjectStore = {
+    ...postgresProjectStore(writerPool),
+    establishRecoveryEpoch: (epoch) =>
+      provisioning.establishRecoveryEpoch(epoch),
+    createProject: (partition) => provisioning.createProject(partition),
+    fence: (partition, lifecycle) => provisioning.fence(partition, lifecycle),
+  };
   await postgresHarnessEpoch(store);
   if (
     (
@@ -240,10 +262,11 @@ export async function postgresHarnessOpen(): Promise<PostgresHarness> {
     throw new Error("postgres harness: domain configuration was refused");
   return {
     pool,
+    writerPool,
     store,
-    inbox: postgresOperationInbox(pool, postgresHarnessKeying()),
-    discovery: postgresProjectDiscovery(pool),
-    decisions: postgresProjectDecision(pool),
+    inbox: postgresOperationInbox(apiPool, postgresHarnessKeying()),
+    discovery: postgresProjectDiscovery(writerPool),
+    decisions: postgresProjectDecision(writerPool),
     authoring: postgresAuthoring(pool),
     access: memoryProjectAccess(),
     query: async (sql, values) =>
@@ -251,7 +274,11 @@ export async function postgresHarnessOpen(): Promise<PostgresHarness> {
         .rows as readonly Record<string, unknown>[],
     attemptAs: (role, sql) => postgresHarnessAttemptAs(pool, role, sql),
     begin: () => postgresHarnessBegin(pool),
-    close: () => pool.end(),
+    close: async () => {
+      await apiPool.end();
+      await writerPool.end();
+      await pool.end();
+    },
   };
 }
 
@@ -865,10 +892,10 @@ export function postgresHarnessWriter(
               throw new Error("postgres harness: a spawn reads no remote");
             },
           },
-          postgresExecutionSourceHistory(harness.pool),
+          postgresExecutionSourceHistory(harness.writerPool),
         ).spawnSource(request),
     },
-    ticketBriefs: postgresTicketBrief(harness.pool),
+    ticketBriefs: postgresTicketBrief(harness.writerPool),
   };
 }
 
