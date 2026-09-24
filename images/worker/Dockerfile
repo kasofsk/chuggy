@@ -26,7 +26,7 @@ FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599
 # shipped inside the SDK as `@anthropic-ai/claude-agent-sdk-linux-x64` and named
 # by the SDK's `manifest.json`. Nothing makes those two agree, so the probe
 # below reads both versions off the built image and fails the build when they
-# differ. Bump the two ARGs together.
+# differ. `just bump-claude-code` moves the two ARGs together.
 #
 # THE SDK'S `zod` PEER IS INSTALLED HERE FOR THE SAME REASON. A global install
 # resolves no peers, so the SDK alone leaves `zod` absent and the session mode
@@ -34,9 +34,9 @@ FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599
 # and fails the build where this pin no longer satisfies it. The version is the
 # one `package-lock.json` resolves, so the tool shapes the suites validate are
 # validated by the same zod the image runs.
-ARG CLAUDE_CODE_VERSION=2.1.258
+ARG CLAUDE_CODE_VERSION=2.1.282
 ARG CODEX_VERSION=0.151.0
-ARG AGENT_SDK_VERSION=0.3.258
+ARG AGENT_SDK_VERSION=0.3.282
 ARG ZOD_VERSION=4.4.3
 
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
