@@ -7954,50 +7954,49 @@ test("a fresh install records the update arriving, the revision a ticket is at a
         },
       ],
     );
-    for (const [relation, column, role, privilege, granted] of [
-      ["ticket_projection", "revision", apiRole, "SELECT", true],
-      ["ticket_projection", "revision", apiRole, "UPDATE", false],
-      ["ticket_projection", "revision", ticketServiceRole, "UPDATE", true],
-      ["ticket_definition", "definition", ticketServiceRole, "UPDATE", true],
-      ["ticket_definition", "digest", ticketServiceRole, "UPDATE", true],
-      ["ticket_definition", "ticket", ticketServiceRole, "UPDATE", false],
-      ["draft", "released_authoring_version", apiRole, "SELECT", true],
-      ["draft", "released_authoring_version", apiRole, "UPDATE", false],
-      [
-        "draft",
-        "released_authoring_version",
-        boundaryOwnerRole,
-        "UPDATE",
-        true,
-      ],
-    ] as const)
-      assert.equal(
-        (
-          await subject.query<{ held: boolean }>(
-            "SELECT has_column_privilege($1,$2,$3,$4) AS held",
-            [role, `public.${relation}`, column, privilege],
-          )
-        ).rows[0]?.held,
-        granted,
-        `${role} ${privilege} on ${relation}.${column}`,
-      );
-    const fence =
-      "public.update_draft_fenced(text,text,bigint,bigint,text,text,boolean)";
-    assert.deepEqual(
+    await updateInstalledPrivileges(subject);
+  });
+});
+
+/** Who may read and write what 016 adds, and who may commit an update through its fence. */
+async function updateInstalledPrivileges(subject: pg.Pool): Promise<void> {
+  for (const [relation, column, role, privilege, granted] of [
+    ["ticket_projection", "revision", apiRole, "SELECT", true],
+    ["ticket_projection", "revision", apiRole, "UPDATE", false],
+    ["ticket_projection", "revision", ticketServiceRole, "UPDATE", true],
+    ["ticket_definition", "definition", ticketServiceRole, "UPDATE", true],
+    ["ticket_definition", "digest", ticketServiceRole, "UPDATE", true],
+    ["ticket_definition", "ticket", ticketServiceRole, "UPDATE", false],
+    ["draft", "released_authoring_version", apiRole, "SELECT", true],
+    ["draft", "released_authoring_version", apiRole, "UPDATE", false],
+    ["draft", "released_authoring_version", boundaryOwnerRole, "UPDATE", true],
+  ] as const)
+    assert.equal(
       (
-        await subject.query(
-          `SELECT pg_get_userbyid(proowner) AS owner,
+        await subject.query<{ held: boolean }>(
+          "SELECT has_column_privilege($1,$2,$3,$4) AS held",
+          [role, `public.${relation}`, column, privilege],
+        )
+      ).rows[0]?.held,
+      granted,
+      `${role} ${privilege} on ${relation}.${column}`,
+    );
+  const fence =
+    "public.update_draft_fenced(text,text,bigint,bigint,text,text,boolean)";
+  assert.deepEqual(
+    (
+      await subject.query(
+        `SELECT pg_get_userbyid(proowner) AS owner,
                   has_function_privilege($2,$1,'EXECUTE') AS writer,
                   has_function_privilege($3,$1,'EXECUTE') AS api,
                   has_function_privilege('public',$1,'EXECUTE') AS anyone
              FROM pg_proc WHERE oid=$1::regprocedure`,
-          [fence, ticketServiceRole, apiRole],
-        )
-      ).rows,
-      [{ owner: boundaryOwnerRole, writer: true, api: false, anyone: false }],
-    );
-  });
-});
+        [fence, ticketServiceRole, apiRole],
+      )
+    ).rows,
+    [{ owner: boundaryOwnerRole, writer: true, api: false, anyone: false }],
+  );
+}
 
 test("an applied 016 stores each released ticket's brief as the one its content digest names", async () => {
   await migrationDatabase("update_brief_backfill", async (subject) => {
@@ -8034,6 +8033,22 @@ test("an applied 016 stores each released ticket's brief as the one its content 
 
 /** What 015 left behind on a project that ran: a journal, an inbox, refusals, drafts and a projection. */
 async function updatePopulated(subject: pg.Pool): Promise<void> {
+  await updatePopulatedJournal(subject);
+  await updatePopulatedInbox(subject);
+  await seedProposingBinding(subject);
+  for (const ticket of ["1", "2"])
+    assert.deepEqual(
+      await createdProposingDraft(subject, "refs/heads/branch-91"),
+      [{ result: "Created", ticket }],
+    );
+  assert.equal(
+    await updateFenced(subject, draftReleaseFunction, 1, true),
+    true,
+  );
+}
+
+/** A ticket's journal from its release to its finalization, and the projection it left. */
+async function updatePopulatedJournal(subject: pg.Pool): Promise<void> {
   await subject.query(deletionPartition);
   const journal = [
     ticketCreated(releasedWhole),
@@ -8065,6 +8080,10 @@ async function updatePopulated(subject: pg.Pool): Promise<void> {
      INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
      VALUES('tenant-5','project-5',1,'Done',5)`,
   );
+}
+
+/** An inbox holding a pending command of each kind 015 stores, and the refusals it kept. */
+async function updatePopulatedInbox(subject: pg.Pool): Promise<void> {
   assert.deepEqual(
     await commandsAccepted(
       subject,
@@ -8112,16 +8131,6 @@ async function updatePopulated(subject: pg.Pool): Promise<void> {
     [52, "AuthoringChanged", null],
   ] as const)
     assert.equal(await commandsRefuse(subject, ordinal, code, refusal), null);
-  await seedProposingBinding(subject);
-  for (const ticket of ["1", "2"])
-    assert.deepEqual(
-      await createdProposingDraft(subject, "refs/heads/branch-91"),
-      [{ result: "Created", ticket }],
-    );
-  assert.equal(
-    await updateFenced(subject, draftReleaseFunction, 1, true),
-    true,
-  );
 }
 
 test("a journal and an inbox 015 wrote migrate to the update with every row still standing", async () => {
@@ -8426,6 +8435,30 @@ async function updateFenced(
   ).rows[0]?.matched;
 }
 
+const updateFence = "update_draft_fenced";
+
+/** Draft 1, revised once past its release: only the update fence commits it, and only at the version it is at. */
+async function updateDraftCommitted(subject: pg.Pool): Promise<void> {
+  assert.deepEqual(await updateReleasedAt(subject), { released: 1 });
+  assert.equal(
+    await updateFenced(subject, draftReleaseFunction, 2),
+    false,
+    "a release of a draft already released",
+  );
+  assert.equal(
+    await updateFenced(subject, updateFence, 1),
+    false,
+    "a stale update",
+  );
+  assert.equal(await updateFenced(subject, updateFence, 2, true), true);
+  assert.deepEqual(await updateReleasedAt(subject), { released: 2 });
+  assert.equal(
+    await updateFenced(subject, updateFence, 1, false, 2),
+    false,
+    "an update of a draft never released",
+  );
+}
+
 async function updateReleasedAt(subject: pg.Pool): Promise<unknown> {
   return (
     await subject.query(
@@ -8449,9 +8482,8 @@ test("a released draft reopens while its ticket is pending, at the dependencies 
       ...plainAuthoring,
       deps: new Set([2]),
     });
-    const update = "update_draft_fenced";
     assert.equal(
-      await updateFenced(subject, update, 1),
+      await updateFenced(subject, updateFence, 1),
       false,
       "an unreleased draft",
     );
@@ -8487,24 +8519,7 @@ test("a released draft reopens while its ticket is pending, at the dependencies 
     assert.deepEqual(await updateRevised(subject, 1, same), [
       { result: "Stale", version: 2, state: "Released" },
     ]);
-    assert.deepEqual(await updateReleasedAt(subject), { released: 1 });
-    assert.equal(
-      await updateFenced(subject, draftReleaseFunction, 2),
-      false,
-      "a release of a draft already released",
-    );
-    assert.equal(
-      await updateFenced(subject, update, 1),
-      false,
-      "a stale update",
-    );
-    assert.equal(await updateFenced(subject, update, 2, true), true);
-    assert.deepEqual(await updateReleasedAt(subject), { released: 2 });
-    assert.equal(
-      await updateFenced(subject, update, 1, false, 2),
-      false,
-      "an update of a draft never released",
-    );
+    await updateDraftCommitted(subject);
     await subject.query(
       `UPDATE ticket_projection SET phase='Work'
         WHERE tenant='tenant-91' AND project='project-91' AND ticket=1`,
