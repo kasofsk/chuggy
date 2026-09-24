@@ -329,13 +329,42 @@ module chuggy_refinement_unit_test {
   run forgedStaleProcessFailureRowTest = assert(and {
     evolveGraph(g4, processFailedRow(1).event) != g4,
     not(journalLegalOn(reworkJ.append(processFailedRow(1)))),
+    not(journalLegalOn(reworkJ.append(processFailedRow(3)))),
     journalLegalOn(reworkJ.append(processFailedRow(2)))
   })
 
   run forgedStaleExecutionUnavailableRowTest = assert(and {
     evolveGraph(g4, unavailableRow(1).event) != g4,
     not(journalLegalOn(reworkJ.append(unavailableRow(1)))),
+    not(journalLegalOn(reworkJ.append(unavailableRow(3)))),
     journalLegalOn(reworkJ.append(unavailableRow(2)))
+  })
+
+  /// A WORK FAILURE NAMING ANOTHER TICKET'S RUNNING TASK IS REFUSED, though
+  /// both tickets run the same cycle, so only the task's ticket tells the
+  /// forged row from an honest one.
+  pure val d3b = acceptedAt(g2, CreateTicket(released(1)))
+  pure val g3b = evolveGraph(g2, d3b.event)
+  pure val d4b = acceptedAt(g3b, DispatchTicket({ ticket: 1, source: aDispatchSource }))
+  pure val bothJ: List[Entry] =
+    [e1, e2, { seq: 3, event: d3b.event }, { seq: 4, event: d4b.event }]
+  pure val g4b = replayGraph(bothJ)
+  pure def failureOfFirstNaming(owner: int): Entry = { seq: 5,
+    event: TicketWorkProcessFailed({ ticket: 1,
+      task: workTaskIdentity(owner, 1), evidence: 1 }) }
+  pure def unavailableOfFirstNaming(owner: int): Entry = { seq: 5,
+    event: TicketWorkExecutionUnavailable({ ticket: 1,
+      task: workTaskIdentity(owner, 1), evidence: 1 }) }
+
+  run forgedOtherTicketFailureRowTest = assert(and {
+    journalLegalOn(bothJ),
+    g4b.tickets.get(1).workCyclesStarted == 1,
+    g4b.tickets.get(2).workCyclesStarted == 1,
+    evolveGraph(g4b, failureOfFirstNaming(2).event) != g4b,
+    not(journalLegalOn(bothJ.append(failureOfFirstNaming(2)))),
+    journalLegalOn(bothJ.append(failureOfFirstNaming(1))),
+    not(journalLegalOn(bothJ.append(unavailableOfFirstNaming(2)))),
+    journalLegalOn(bothJ.append(unavailableOfFirstNaming(1)))
   })
 
   /// RECOVERY REBUILDS THE LEDGERS: replaying the journal is the ledger fold

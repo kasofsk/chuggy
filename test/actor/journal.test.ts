@@ -756,8 +756,44 @@ test("a work failure naming a work task the ticket has left is refused, though e
       `${type}: a row for the cycle before is one nothing decided`,
     );
     assert.ok(
+      !journalLegalOn([...history, row(3)]),
+      `${type}: a row for a cycle not yet started is one nothing decided`,
+    );
+    assert.ok(
       journalLegalOn([...history, row(2)]),
       `${type}: the same row for the cycle running is legal`,
+    );
+  }
+});
+
+test("a work failure naming another ticket's running work task is refused, though both run the same cycle", () => {
+  const history = journalOf([
+    event1,
+    createTicketCommand(plainDefinitionOf(2)),
+    event2,
+    dispatchTicketCommand(id(2), aDispatchSource),
+  ]);
+  const both = replayGraph(history);
+  assert.equal(ticketAt(both, id(1)).workCyclesStarted, 1);
+  assert.equal(ticketAt(both, id(2)).workCyclesStarted, 1);
+  for (const type of [
+    "TicketWorkProcessFailed",
+    "TicketWorkExecutionUnavailable",
+  ] as const) {
+    const row = (task: number): Entry => ({
+      seq: history.length + 1,
+      event: {
+        type,
+        value: { ticket: 1, task: workTaskIdentity(task, 1), evidence: 1 },
+      },
+    });
+    assert.ok(
+      !journalLegalOn([...history, row(2)]),
+      `${type}: a row for ticket 1 naming ticket 2's task is one nothing decided`,
+    );
+    assert.ok(
+      journalLegalOn([...history, row(1)]),
+      `${type}: the row naming ticket 1's own task is legal`,
     );
   }
 });
