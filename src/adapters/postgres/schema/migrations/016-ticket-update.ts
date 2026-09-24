@@ -70,6 +70,9 @@ import {
  * released one is the only brief they can reach. `submit_finalization_result`
  * is rewritten whole to read its landing off the released definition for the
  * same reason.
+ *
+ * The names below are the ones this adds. What 013–015 named, the bodies spell
+ * as those installed it.
  */
 
 /** The longest released brief the column admits, as its text. */
@@ -91,88 +94,12 @@ const expectedRevisionField = "expectedRevision";
 const revisionField = "revision";
 const definitionField = "definition";
 
-/** The tags a ticket command is at, which 015 named. */
-const createTag = "CreateTicket";
-const dispatchTag = "DispatchTicket";
-const revokeTag = "RevokeTicket";
-const resumeTag = "ResumeTicket";
-const reportTag = "ReportTaskTerminal";
-const finalizationTag = "ReportFinalizationResult";
-
-/** The field of a `Decide` envelope the ticket command is under. */
-const decideField = "ticketCommand";
-
-/** The journal's tags, which 014 and 015 named. */
-const createdTag = "TicketCreated";
-const dispatchedTag = "TicketDispatched";
-const revokedTag = "TicketRevoked";
-const workResumedTag = "TicketWorkResumed";
-const evaluationResumedTag = "TicketEvaluationResumed";
-const finalizationResumedTag = "TicketFinalizationResumed";
-const workAcceptedTag = "TicketWorkResultAccepted";
-const workFailedTag = "TicketWorkProcessFailed";
-const workUnavailableTag = "TicketWorkExecutionUnavailable";
-const evaluationProgressedTag = "TicketEvaluationProgressed";
-const evaluationPassedTag = "TicketEvaluationPassed";
-const evaluationBlockedTag = "TicketEvaluationBlocked";
-const reworkStartedTag = "TicketEvaluationReworkStarted";
-const failureEscalatedTag = "TicketEvaluationFailureEscalated";
-const finalizationSucceededTag = "TicketFinalizationSucceeded";
-const finalizationNeedsWorkTag = "TicketFinalizationNeedsWork";
-const finalizationUnavailableTag = "TicketFinalizationUnavailable";
-
-/** The arms of a finalization result. */
-const finalizationResults = [
-  "FinalizationSucceeded",
-  "FinalizationNeedsWork",
-  "FinalizationResultUnavailable",
-];
-
-/** The fields those records carry, as the codec spells them. */
-const ticketField = "ticket";
-const sourceField = "source";
-const resultField = "result";
-const acceptedSourceField = "acceptedSourceRef";
-const taskField = "task";
-const evidenceField = "evidence";
-const reportField = "report";
-const failureField = "failure";
-const workCycleField = "workCycle";
-const generationField = "generation";
-const reworkEvaluatorField = "evaluator";
-const resultReferenceField = "resultRef";
-const obligationField = "obligation";
-const obligationDefinitionField = "definition";
-const obligationContextField = "contextRef";
-
-/** The released ticket's fields the door reads, which 013 named. */
-const releasedIdField = "id";
-const releasedWorkField = "workConfiguration";
-const releasedPlanField = "evaluationPlan";
-const releasedStagesField = "stages";
-const stageKeyField = "key";
-const stageEvaluatorsField = "evaluators";
-const evaluatorKeyField = "key";
-const evaluatorTaskField = "task";
-
 /** The field of a draft's authoring its dependencies are under. */
 const authoringDependenciesField = "dependencies";
-
-/** The predicates 013–015 stated. */
-const referencePredicate = "command_reference";
-const releasedPredicate = "released_ticket_is_valid";
-const identityPredicate = "task_identity_is_valid";
-const validatedResultPredicate = "validated_task_result_is_valid";
-const reportPredicate = "task_report_is_valid";
-const commandValidator = "decision_command_is_valid";
 
 /** The fence an update commits through, beside the release's. */
 const updateFence = "update_draft_fenced";
 const fenceSignature = `(in_tenant text, in_project text, in_ticket bigint, in_expected bigint, in_configuration text, in_digest text, in_commit boolean)`;
-
-function textList(values: readonly string[]): string {
-  return values.map((value) => `'${value}'`).join(", ");
-}
 
 export const migration016: Migration = {
   version: 16,
@@ -188,69 +115,69 @@ export const migration016: Migration = {
          RETURN false;
        END IF;
        tag := event->>'type'; value := event->'value';
-       IF tag = '${createdTag}' THEN
-         RETURN ${releasedPredicate}(value);
+       IF tag = 'TicketCreated' THEN
+         RETURN released_ticket_is_valid(value);
        END IF;
-       IF tag IN ('${revokedTag}', '${workResumedTag}', '${evaluationResumedTag}',
-                  '${finalizationResumedTag}') THEN
-         RETURN ${referencePredicate}(value);
+       IF tag IN ('TicketRevoked', 'TicketWorkResumed', 'TicketEvaluationResumed',
+                  'TicketFinalizationResumed') THEN
+         RETURN command_reference(value);
        END IF;
        IF jsonb_typeof(value) IS DISTINCT FROM 'object'
-          OR NOT ${referencePredicate}(value->'${ticketField}') THEN
+          OR NOT command_reference(value->'ticket') THEN
          RETURN false;
        END IF;
        IF tag = '${updatedTag}' THEN
-         RETURN ${referencePredicate}(value->'${revisionField}')
+         RETURN command_reference(value->'${revisionField}')
            AND value->'${revisionField}' > to_jsonb(1)
-           AND ${releasedPredicate}(value->'${definitionField}')
-           AND value->'${definitionField}'->'${releasedIdField}' = value->'${ticketField}';
+           AND released_ticket_is_valid(value->'${definitionField}')
+           AND value->'${definitionField}'->'id' = value->'ticket';
        END IF;
-       IF tag = '${dispatchedTag}' THEN
-         RETURN ${referencePredicate}(value->'${sourceField}');
+       IF tag = 'TicketDispatched' THEN
+         RETURN command_reference(value->'source');
        END IF;
-       IF tag = '${workAcceptedTag}' THEN
-         RETURN ${validatedResultPredicate}(value->'${resultField}')
-           AND ${referencePredicate}(value->'${acceptedSourceField}');
+       IF tag = 'TicketWorkResultAccepted' THEN
+         RETURN validated_task_result_is_valid(value->'result')
+           AND command_reference(value->'acceptedSourceRef');
        END IF;
-       IF tag IN ('${workFailedTag}', '${workUnavailableTag}') THEN
-         RETURN ${identityPredicate}(value->'${taskField}')
-           AND ${referencePredicate}(value->'${evidenceField}');
+       IF tag IN ('TicketWorkProcessFailed', 'TicketWorkExecutionUnavailable') THEN
+         RETURN task_identity_is_valid(value->'task')
+           AND command_reference(value->'evidence');
        END IF;
-       IF tag IN ('${evaluationProgressedTag}', '${evaluationPassedTag}',
-                  '${evaluationBlockedTag}', '${reworkStartedTag}',
-                  '${failureEscalatedTag}')
-          AND (NOT ${reportPredicate}(value->'${reportField}')
-               OR value->'${reportField}'->'value'->'${ticketField}'
-                  IS DISTINCT FROM value->'${ticketField}') THEN
+       IF tag IN ('TicketEvaluationProgressed', 'TicketEvaluationPassed',
+                  'TicketEvaluationBlocked', 'TicketEvaluationReworkStarted',
+                  'TicketEvaluationFailureEscalated')
+          AND (NOT task_report_is_valid(value->'report')
+               OR value->'report'->'value'->'ticket'
+                  IS DISTINCT FROM value->'ticket') THEN
          RETURN false;
        END IF;
-       IF tag IN ('${evaluationProgressedTag}', '${evaluationPassedTag}',
-                  '${evaluationBlockedTag}') THEN
+       IF tag IN ('TicketEvaluationProgressed', 'TicketEvaluationPassed',
+                  'TicketEvaluationBlocked') THEN
          RETURN true;
        END IF;
-       IF tag IN ('${reworkStartedTag}', '${failureEscalatedTag}') THEN
-         IF jsonb_typeof(value->'${evidenceField}') IS DISTINCT FROM 'array'
-            OR jsonb_array_length(value->'${evidenceField}') < 1 THEN
+       IF tag IN ('TicketEvaluationReworkStarted', 'TicketEvaluationFailureEscalated') THEN
+         IF jsonb_typeof(value->'evidence') IS DISTINCT FROM 'array'
+            OR jsonb_array_length(value->'evidence') < 1 THEN
            RETURN false;
          END IF;
          FOR item IN SELECT element
-               FROM jsonb_array_elements(value->'${evidenceField}') AS elements(element) LOOP
-           IF NOT ${referencePredicate}(item->'${reworkEvaluatorField}')
-              OR NOT ${referencePredicate}(item->'${resultReferenceField}') THEN
+               FROM jsonb_array_elements(value->'evidence') AS elements(element) LOOP
+           IF NOT command_reference(item->'evaluator')
+              OR NOT command_reference(item->'resultRef') THEN
              RETURN false;
            END IF;
          END LOOP;
          RETURN true;
        END IF;
-       IF tag IN ('${finalizationSucceededTag}', '${finalizationNeedsWorkTag}',
-                  '${finalizationUnavailableTag}') THEN
-         RETURN ${referencePredicate}(value->'${workCycleField}')
-           AND ${referencePredicate}(value->'${generationField}')
-           AND ${referencePredicate}(value->'${evidenceField}');
+       IF tag IN ('TicketFinalizationSucceeded', 'TicketFinalizationNeedsWork',
+                  'TicketFinalizationUnavailable') THEN
+         RETURN command_reference(value->'workCycle')
+           AND command_reference(value->'generation')
+           AND command_reference(value->'evidence');
        END IF;
        RETURN false;
      END $$`,
-    `CREATE OR REPLACE FUNCTION public.${commandValidator}(command jsonb) RETURNS boolean
+    `CREATE OR REPLACE FUNCTION public.decision_command_is_valid(command jsonb) RETURNS boolean
     LANGUAGE plpgsql IMMUTABLE
     AS $$
      DECLARE tag text; value jsonb;
@@ -260,34 +187,34 @@ export const migration016: Migration = {
          RETURN false;
        END IF;
        tag := command->>'type'; value := command->'value';
-       IF tag = '${createTag}' THEN
+       IF tag = 'CreateTicket' THEN
          RETURN NOT (value ? 'deps' OR value ? 'prog')
-           AND ${releasedPredicate}(value);
+           AND released_ticket_is_valid(value);
        END IF;
-       IF tag IN ('${revokeTag}', '${resumeTag}') THEN
-         RETURN ${referencePredicate}(value);
+       IF tag IN ('RevokeTicket', 'ResumeTicket') THEN
+         RETURN command_reference(value);
        END IF;
-       IF tag = '${reportTag}' THEN
-         RETURN ${reportPredicate}(value);
+       IF tag = 'ReportTaskTerminal' THEN
+         RETURN task_report_is_valid(value);
        END IF;
        IF jsonb_typeof(value) IS DISTINCT FROM 'object'
-          OR NOT ${referencePredicate}(value->'${ticketField}') THEN
+          OR NOT command_reference(value->'ticket') THEN
          RETURN false;
        END IF;
        IF tag = '${updateTag}' THEN
-         RETURN ${referencePredicate}(value->'${expectedRevisionField}')
+         RETURN command_reference(value->'${expectedRevisionField}')
            AND NOT (value->'${definitionField}' ? 'deps' OR value->'${definitionField}' ? 'prog')
-           AND ${releasedPredicate}(value->'${definitionField}');
+           AND released_ticket_is_valid(value->'${definitionField}');
        END IF;
-       IF tag = '${dispatchTag}' THEN
-         RETURN ${referencePredicate}(value->'${sourceField}');
+       IF tag = 'DispatchTicket' THEN
+         RETURN command_reference(value->'source');
        END IF;
-       IF tag = '${finalizationTag}' THEN
-         RETURN ${referencePredicate}(value->'${workCycleField}')
-           AND ${referencePredicate}(value->'${generationField}')
-           AND COALESCE(value->'${resultField}'->>'type', '')
-             IN (${textList(finalizationResults)})
-           AND ${referencePredicate}(value->'${resultField}'->'value');
+       IF tag = 'ReportFinalizationResult' THEN
+         RETURN command_reference(value->'workCycle')
+           AND command_reference(value->'generation')
+           AND COALESCE(value->'result'->>'type', '')
+             IN ('FinalizationSucceeded', 'FinalizationNeedsWork', 'FinalizationResultUnavailable')
+           AND command_reference(value->'result'->'value');
        END IF;
        RETURN false;
      END $$`,
@@ -302,8 +229,8 @@ export const migration016: Migration = {
        END IF;
        IF command->>'command' = 'Decide' THEN
          RETURN NOT command ? 'event'
-           AND ${commandValidator}(command->'${decideField}')
-           AND command->'${decideField}'->>'type' NOT IN ('${createTag}', '${updateTag}');
+           AND decision_command_is_valid(command->'ticketCommand')
+           AND command->'ticketCommand'->>'type' NOT IN ('CreateTicket', '${updateTag}');
        END IF;
        IF command->>'command' = 'ReleaseDraft' THEN
          RETURN command_integer(command->'ticket') AND (command->>'ticket')::numeric >= 1
@@ -352,8 +279,8 @@ export const migration016: Migration = {
          RETURN;
        END IF;
        IF command_value->>'command' = 'Decide'
-          AND jsonb_typeof(command_value->'${decideField}') = 'object' THEN
-         command_tag := command_value->'${decideField}'->>'type';
+          AND jsonb_typeof(command_value->'ticketCommand') = 'object' THEN
+         command_tag := command_value->'ticketCommand'->>'type';
        ELSIF command_value->>'command' IN ('ReleaseDraft', '${updateEnvelope}') THEN
          command_tag := command_value->>'command';
        ELSIF command_value->>'command' = 'ResolveNativeAction'
@@ -378,10 +305,10 @@ export const migration016: Migration = {
          RETURN;
        END IF;
 
-       IF command_tag = '${revokeTag}' OR
+       IF command_tag = 'RevokeTicket' OR
           (command_tag = 'ResolveNativeAction' AND action_resolution = 'Revoke') THEN
          priority := 'Safety'; admission_class := 'CorrectnessReducing';
-       ELSIF command_tag IN ('ReleaseDraft', '${updateEnvelope}', '${resumeTag}') OR
+       ELSIF command_tag IN ('ReleaseDraft', '${updateEnvelope}', 'ResumeTicket') OR
              (command_tag = 'ResolveNativeAction' AND action_resolution IN ('Resume', 'Approve', 'Decline')) THEN
          priority := 'Ordinary'; admission_class := 'Ordinary';
        ELSE
@@ -667,19 +594,19 @@ export const migration016: Migration = {
              'stage', bound.stage, 'generation', bound.generation,
              'evaluator', bound.evaluator));
        END IF;
-       failure := jsonb_build_object('${taskField}', identity,
-         '${evidenceField}', bound.task);
+       failure := jsonb_build_object('task', identity,
+         'evidence', bound.task);
        IF in_outcome = 'Blocked' THEN
          report := jsonb_build_object('type', 'TerminalFailureReport', 'value',
-           jsonb_build_object('${ticketField}', bound.ticket,
-             '${failureField}', failure, 'kind', 'ExecutionUnavailableFailure'));
+           jsonb_build_object('ticket', bound.ticket,
+             'failure', failure, 'kind', 'ExecutionUnavailableFailure'));
        ELSIF in_outcome = 'ProcessFailed'
           OR (bound.task_kind = 'Work' AND bound.verdict <> 'Pass') THEN
          report := jsonb_build_object('type', 'TerminalFailureReport', 'value',
-           jsonb_build_object('${ticketField}', bound.ticket,
-             '${failureField}', failure, 'kind', 'ProcessFailure'));
+           jsonb_build_object('ticket', bound.ticket,
+             'failure', failure, 'kind', 'ProcessFailure'));
        ELSE
-         SELECT CASE WHEN journalled.entry->'event'->>'type' = '${createdTag}'
+         SELECT CASE WHEN journalled.entry->'event'->>'type' = 'TicketCreated'
                      THEN journalled.entry->'event'->'value'
                      ELSE journalled.entry->'event'->'value'->'${definitionField}' END
            INTO released
@@ -687,23 +614,23 @@ export const migration016: Migration = {
            CROSS JOIN LATERAL (SELECT CASE WHEN j.entry IS JSON OBJECT
                                            THEN j.entry::jsonb END AS entry) AS journalled
           WHERE j.tenant = in_tenant AND j.project = in_project
-            AND ((journalled.entry->'event'->>'type' = '${createdTag}'
-                  AND journalled.entry->'event'->'value'->'${releasedIdField}' = to_jsonb(bound.ticket))
+            AND ((journalled.entry->'event'->>'type' = 'TicketCreated'
+                  AND journalled.entry->'event'->'value'->'id' = to_jsonb(bound.ticket))
               OR (journalled.entry->'event'->>'type' = '${updatedTag}'
-                  AND journalled.entry->'event'->'value'->'${ticketField}' = to_jsonb(bound.ticket)))
+                  AND journalled.entry->'event'->'value'->'ticket' = to_jsonb(bound.ticket)))
           ORDER BY journalled.entry->'seq' DESC
           LIMIT 1;
          IF bound.task_kind = 'Work' THEN
-           definition := released->'${releasedWorkField}';
+           definition := released->'workConfiguration';
            context_reference := bound.cycle;
          ELSE
-           SELECT evaluators.evaluator->'${evaluatorTaskField}' INTO definition
-             FROM jsonb_array_elements(released->'${releasedPlanField}'->'${releasedStagesField}')
+           SELECT evaluators.evaluator->'task' INTO definition
+             FROM jsonb_array_elements(released->'evaluationPlan'->'stages')
                     AS stages(stage),
-                  jsonb_array_elements(stages.stage->'${stageEvaluatorsField}')
+                  jsonb_array_elements(stages.stage->'evaluators')
                     AS evaluators(evaluator)
-            WHERE (stages.stage->>'${stageKeyField}')::bigint = bound.stage
-              AND (evaluators.evaluator->>'${evaluatorKeyField}')::bigint = bound.evaluator;
+            WHERE (stages.stage->>'key')::bigint = bound.stage
+              AND (evaluators.evaluator->>'key')::bigint = bound.evaluator;
            SELECT result_digest_fold(w.digest) INTO context_reference
              FROM execution e2
              JOIN execution_request_task t2
@@ -723,14 +650,14 @@ export const migration016: Migration = {
            END IF;
          END IF;
          obligation := jsonb_build_object(
-           '${taskField}', identity,
-           '${obligationDefinitionField}', definition,
-           '${obligationContextField}', context_reference);
-         produced := jsonb_build_object('${obligationField}', obligation,
-           '${resultReferenceField}', result_digest_fold(bound.digest));
+           'task', identity,
+           'definition', definition,
+           'contextRef', context_reference);
+         produced := jsonb_build_object('obligation', obligation,
+           'resultRef', result_digest_fold(bound.digest));
          IF bound.task_kind = 'Evaluation' THEN
            report := jsonb_build_object('type', 'EvaluationResultReport', 'value',
-             jsonb_build_object('${ticketField}', bound.ticket, 'result', produced,
+             jsonb_build_object('ticket', bound.ticket, 'result', produced,
                'verdict', CASE WHEN bound.verdict = 'Pass'
                  THEN 'EvaluatorPass' ELSE 'EvaluatorFail' END));
          ELSE
@@ -756,12 +683,12 @@ export const migration016: Migration = {
                 AND t.ticket = bound.ticket LIMIT 1;
            END IF;
            report := jsonb_build_object('type', 'WorkResultReport', 'value',
-             jsonb_build_object('${ticketField}', bound.ticket, 'result', produced,
-               '${acceptedSourceField}', accepted));
+             jsonb_build_object('ticket', bound.ticket, 'result', produced,
+               'acceptedSourceRef', accepted));
          END IF;
        END IF;
        command_value := jsonb_build_object('version', 1, 'command', 'Decide',
-         '${decideField}', jsonb_build_object('type', '${reportTag}', 'value', report));
+         'ticketCommand', jsonb_build_object('type', 'ReportTaskTerminal', 'value', report));
        IF ticket_command_is_valid(command_value) IS NOT TRUE THEN
          RAISE EXCEPTION 'the completion this boundary built is not one the mailbox admits'
            USING ERRCODE = 'integrity_constraint_violation';
@@ -776,7 +703,7 @@ export const migration016: Migration = {
           in_authority_subject, 'CorrectnessReducing', 'scheduler-v1',
           encode(sha256(convert_to('execution:' || in_execution, 'UTF8')), 'hex'),
           encode(sha256(convert_to(command_value::text, 'UTF8')), 'hex'),
-          command_value::text, '${reportTag}');
+          command_value::text, 'ReportTaskTerminal');
        INSERT INTO decision_input
          (tenant, project, ordinal, input_kind, input_id, base_priority, lifecycle_generation)
        VALUES (in_tenant, in_project, next_ordinal, 'Operation', in_operation,
@@ -921,7 +848,7 @@ export const migration016: Migration = {
           in_authority_subject, 'CorrectnessReducing', 'finalizer-v1',
           scoped_digest,
           encode(sha256(convert_to(command_value::text, 'UTF8')), 'hex'),
-          command_value::text, '${finalizationTag}');
+          command_value::text, 'ReportFinalizationResult');
        INSERT INTO decision_input
          (tenant, project, ordinal, input_kind, input_id, base_priority, lifecycle_generation)
        VALUES (in_tenant, in_project, next_ordinal, 'Operation', in_operation,
