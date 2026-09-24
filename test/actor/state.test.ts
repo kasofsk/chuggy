@@ -25,6 +25,7 @@ import {
   emitNext,
   journalStep,
   memoryGraph,
+  memoryLedgers,
 } from "../../src/actor/state.ts";
 import { acceptedOf, id } from "../domain/fixtures.ts";
 import {
@@ -69,8 +70,10 @@ test("journalStep answers a refused command, moves nothing and journals nothing"
   const after = journalStep(config, before, dispatch, plainPolicy);
   assert.deepEqual(after.view, {
     pre: memoryGraph(before),
+    preLedgers: memoryLedgers(before),
     last: { type: "Refused", value: { type: "TicketNotFound", value: 1 } },
     post: memoryGraph(before),
+    postLedgers: memoryLedgers(before),
   });
   assert.equal(after.journal, before.journal);
   assert.equal(after.applied, before.applied);

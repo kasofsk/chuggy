@@ -30,6 +30,7 @@ import {
   emitNext,
   journalStep,
   memoryGraph,
+  memoryLedgers,
   type ActorState,
 } from "../../src/actor/state.ts";
 import {
@@ -39,7 +40,9 @@ import {
   worldSpawns,
 } from "../../src/actor/world.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
-import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import { phaseOf } from "../../src/domain/phase.ts";
+import { ledgerAt } from "../../src/domain/ledger.ts";
+import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import { id, judgedReport, producedReport } from "../domain/fixtures.ts";
 import {
   assertStep,
@@ -63,7 +66,7 @@ function phaseDispatchSurvives(): ActorState {
   assert.equal(state.journal.length, 1);
   assertStep(config, state, "release (journaled)");
   state = crashRecoverTo(state, 0);
-  assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Pending");
+  assert.equal(phaseOf(ticketAt(memoryGraph(state), id(1)).state), "Pending");
   assert.equal(state.applied, 0);
   assert.equal(state.journal.length, 1);
   assertStep(config, state, "crash before the first emission");
@@ -92,7 +95,7 @@ function phaseDispatchSurvives(): ActorState {
 
 /** The rework survives total cursor loss, and the whole re-emitted prefix absorbs. */
 function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
-  const work = workTaskOf(1, 1);
+  const work = workTaskIdentity(1, 1);
   state = stepEmit(
     config,
     state,
@@ -151,7 +154,7 @@ function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
 
 /** The completion decision is durable before it is told, and the ticket lands exactly once. */
 function phaseCompletionLandsOnce(state: ActorState): void {
-  const rework = workTaskOf(1, 2);
+  const rework = workTaskIdentity(1, 2);
   state = stepEmit(
     config,
     state,
@@ -177,7 +180,7 @@ function phaseCompletionLandsOnce(state: ActorState): void {
       : state.view.last.value.obligations,
     [],
   );
-  assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Done");
+  assert.equal(phaseOf(ticketAt(memoryGraph(state), id(1)).state), "Done");
   assert.equal(journalCompletions(state, id(1)), 1);
   assert.equal(worldCompletions(state, id(1)), 0);
   assert.equal(
@@ -186,15 +189,15 @@ function phaseCompletionLandsOnce(state: ActorState): void {
   );
   assertStep(config, state, "completion (journaled, untold)");
   state = crashRecoverTo(state, 6);
-  assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Done");
-  assert.equal(ticketAt(memoryGraph(state), id(1)).completions, 1);
+  assert.equal(phaseOf(ticketAt(memoryGraph(state), id(1)).state), "Done");
+  assert.equal(ledgerAt(memoryLedgers(state), 1).completions, 1);
   assert.equal(worldCompletions(state, id(1)), 0);
   assertStep(config, state, "crash at the completion seam");
   state = emitNext(state);
   assert.equal(worldCompletions(state, id(1)), 1);
   assertStep(config, state, "the completion reaches the world");
   state = crashRecoverTo(state, 0);
-  assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Done");
+  assert.equal(phaseOf(ticketAt(memoryGraph(state), id(1)).state), "Done");
   assert.equal(state.journal.length, 7);
   while (state.applied < state.journal.length) state = emitNext(state);
   assert.equal(worldCompletions(state, id(1)), 1);

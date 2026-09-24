@@ -42,7 +42,7 @@ import {
   alwaysPolicy,
   type EvaluationFailurePolicy,
 } from "../../src/domain/deciders.ts";
-import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import type {
   EvaluationVerdict,
   TicketEvent,
@@ -169,7 +169,7 @@ export function walkToFirstJudgement(
     dispatchTicketCommand(id(1), aDispatchSource),
     "TicketDispatched",
   );
-  const work = workTaskOf(1, 1);
+  const work = workTaskIdentity(1, 1);
   return stepEmit(
     config,
     state,
