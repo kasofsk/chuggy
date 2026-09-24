@@ -53,6 +53,18 @@ export const publicMutationSchema = z.discriminatedUnion("mutation", [
     authoringVersion: countSchema,
     configurationRevision: z.string(),
   }),
+  /**
+   * A Pending ticket's released draft, revised and released again: the draft
+   * revision it pins, as a release names one, and the ticket revision its
+   * author read.
+   */
+  z.strictObject({
+    mutation: z.literal("UpdateTicket"),
+    ticket: ticketNumberSchema,
+    expectedRevision: ticketNumberSchema,
+    authoringVersion: countSchema,
+    configurationRevision: z.string(),
+  }),
   z.strictObject({
     mutation: z.literal("ResolveNativeAction"),
     action: z.string(),
