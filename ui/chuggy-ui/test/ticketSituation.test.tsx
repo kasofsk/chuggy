@@ -15,15 +15,14 @@ import { ticketInstants } from "./ticketInstants.ts";
 import {
   evalIdentity,
   ledgerPage,
-  ticket21Authoring,
+  ticket21Program,
   ticket21Parked,
   workIdentity,
 } from "./ticketLedgerFixture.ts";
 
 afterEach(cleanup);
 
-const authoring = { dependencies: [], program: [] };
-const facts = ticketLedger(ledgerPage([]), authoring);
+const facts = ticketLedger(ledgerPage([]), []);
 
 function ticket(over: Partial<TicketResponse> = {}): TicketResponse {
   return {
@@ -119,13 +118,10 @@ function twoResumedStages(
         ...lastRow,
       },
     ]),
-    {
-      dependencies: [],
-      program: [
-        { key: 1, evaluators: [{ key: 1 }] },
-        { key: 2, evaluators: [{ key: 1 }] },
-      ],
-    },
+    [
+      { key: 1, evaluators: [{ key: 1 }] },
+      { key: 2, evaluators: [{ key: 1 }] },
+    ],
   );
 }
 
@@ -156,7 +152,7 @@ test("with nothing running, resumedFrom names the highest-numbered stage a resum
 test("a ticket never resumed draws no resume line", () => {
   const neverResumed = ticketLedger(
     ledgerPage(ticket21Parked),
-    ticket21Authoring,
+    ticket21Program,
   );
   render(
     <SituationNotice

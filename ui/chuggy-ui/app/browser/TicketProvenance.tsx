@@ -1,11 +1,12 @@
 /**
- * Where this ticket came from: the brief it runs and the configuration it was
- * released under, both read off the ticket itself, and the authoring the
- * retained draft holds. A configuration is named where the wire names it and
- * drawn as its revision where it is not. The live revision is named with the
- * draft version it was released from, and a draft revised since says it holds
- * changes no update has released, which is why the brief is never drawn from
- * the draft: a Pending ticket's draft may be ahead of what the ticket runs.
+ * Where this ticket came from: the brief and the evaluation stages it runs and
+ * the configuration it was released under, all read off the ticket itself, and
+ * the dependencies the retained draft holds, which a release locks. A
+ * configuration is named where the wire names it and drawn as its revision
+ * where it is not. The live revision is named with the draft version it was
+ * released from, and a draft revised since says it holds changes no update has
+ * released, which is why nothing the ticket runs is drawn from the draft: a
+ * Pending ticket's draft may be ahead of it.
  */
 
 import { useState } from "react";
@@ -130,17 +131,23 @@ export function TicketBrief(props: {
   );
 }
 
-/** The revision field waits on the ticket read, which carries the revision. */
+/**
+ * The revision and the evaluation stages wait on the ticket read, which
+ * carries both: the stages are the program the ticket was released with, not
+ * the draft's, which may hold a revision no update has released.
+ */
 function Authoring(props: {
   readonly draft: DraftResponse;
-  readonly revision: number | undefined;
+  readonly ticket: TicketResponse | undefined;
 }): ReactNode {
   const authoring = props.draft.authoring;
   const release = draftReleaseOf(props.draft);
+  const revision = props.ticket?.revision;
+  const program = props.ticket?.program;
   return (
     <dl className="legacy-fields">
-      {props.revision === undefined ? null : (
-        <Field name="live">{ticketRevisionLine(props.revision, release)}</Field>
+      {revision === undefined ? null : (
+        <Field name="live">{ticketRevisionLine(revision, release)}</Field>
       )}
       <Field name="draft">{draftReleaseLine(release)}</Field>
       <Field name="dependencies">
@@ -148,13 +155,15 @@ function Authoring(props: {
           ? "none"
           : authoring.dependencies.join(", ")}
       </Field>
-      <Field name="evaluation stages">
-        {authoring.program.length === 0
-          ? "none"
-          : authoring.program
-              .map((stage) => `${String(stage.evaluators.length)}×`)
-              .join(" then ")}
-      </Field>
+      {program === undefined ? null : (
+        <Field name="evaluation stages">
+          {program.length === 0
+            ? "none"
+            : program
+                .map((stage) => `${String(stage.evaluators.length)}×`)
+                .join(" then ")}
+        </Field>
+      )}
     </dl>
   );
 }
@@ -210,9 +219,7 @@ export function TicketProvenance(props: {
   return (
     <>
       <DataPanel title="provenance" state={props.state}>
-        {(draft) => (
-          <Authoring draft={draft} revision={props.ticket?.revision} />
-        )}
+        {(draft) => <Authoring draft={draft} ticket={props.ticket} />}
       </DataPanel>
       {released === undefined ? null : (
         <TicketConfiguration

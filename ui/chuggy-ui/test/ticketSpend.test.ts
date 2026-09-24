@@ -17,7 +17,7 @@ import {
   evalIdentity,
   ledgerExecution,
   ledgerPage,
-  ticket21Authoring,
+  ticket21Program,
   ticket21Parked,
   ticket21Resumed,
   workIdentity,
@@ -25,7 +25,7 @@ import {
 } from "./ticketLedgerFixture.ts";
 
 function ledgerOf(shapes: readonly ExecutionShape[], cursor?: string): Ledger {
-  return ticketLedger(ledgerPage(shapes, cursor), ticket21Authoring);
+  return ticketLedger(ledgerPage(shapes, cursor), ticket21Program);
 }
 
 function cycleAt(ledger: Ledger, at: number): Cycle {
@@ -80,10 +80,7 @@ test("a fan-out one of whose tasks has ended has not ended", () => {
         status: "Running",
       },
     ]),
-    {
-      ...ticket21Authoring,
-      program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
-    },
+    [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
   );
   const row = cycleAt(half, 0).stages[0];
   expect(row?.kind === "Ran" ? row.span : undefined).toEqual({
@@ -114,10 +111,7 @@ function spanOfPair(
         ...second,
       },
     ]),
-    {
-      ...ticket21Authoring,
-      program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
-    },
+    [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
   );
   const row = cycleAt(paired, 0).stages[0];
   return row?.kind === "Ran" ? row.span : undefined;
@@ -476,10 +470,7 @@ test("a set short of the fan-out its stage was authored with is not complete", (
         outcome: "Passed",
       },
     ]),
-    {
-      ...ticket21Authoring,
-      program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
-    },
+    [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
   );
   expect(cycleAt(fanned, 0).complete).toBe(false);
 });

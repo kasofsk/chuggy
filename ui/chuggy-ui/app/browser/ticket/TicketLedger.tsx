@@ -38,7 +38,7 @@ import type {
   RanStage,
   StageRow,
   TaskSet,
-  TicketAuthoring,
+  TicketProgram,
 } from "../../core/ticketLedger.ts";
 import {
   cycleLabel,
@@ -429,8 +429,8 @@ function ungroupedLabel(summary: ExecutionSummary): string {
 }
 
 /**
- * The page in task order when the draft has not arrived. Without the authoring
- * there is no program to group by, so the rows say they are ungrouped rather
+ * The page in task order when the ticket's read carries no program. Without
+ * one there is nothing to group by, so the rows say they are ungrouped rather
  * than being drawn in a structure nothing supports.
  */
 export function UngroupedRows(props: {
@@ -486,7 +486,7 @@ export function useTicketExecutions(
 function TicketRows(props: {
   readonly partition: PartitionIdentity;
   readonly page: ExecutionsResponse;
-  readonly authoring: TicketAuthoring | undefined;
+  readonly program: TicketProgram | undefined;
   readonly nowMs: number;
 }): ReactNode {
   const [opened, setOpened] = useState<string | undefined>(undefined);
@@ -498,14 +498,14 @@ function TicketRows(props: {
       setOpened(opened === execution ? undefined : execution);
     },
   };
-  const authoring = props.authoring;
-  if (authoring === undefined)
+  const program = props.program;
+  if (program === undefined)
     return <UngroupedRows chrome={chrome} page={props.page} />;
   return (
     <TicketCycles
       chrome={chrome}
-      facts={ticketLedger(props.page, authoring)}
-      stageCount={authoring.program.length}
+      facts={ticketLedger(props.page, program)}
+      stageCount={program.length}
     />
   );
 }
@@ -513,7 +513,7 @@ function TicketRows(props: {
 export function TicketLedgerPanel(props: {
   readonly partition: PartitionIdentity;
   readonly page: ReturnType<typeof usePanelList<ExecutionsResponse>>;
-  readonly authoring: TicketAuthoring | undefined;
+  readonly program: TicketProgram | undefined;
   readonly nowMs: number;
 }): ReactNode {
   return (
@@ -522,7 +522,7 @@ export function TicketLedgerPanel(props: {
         <TicketRows
           partition={props.partition}
           page={page}
-          authoring={props.authoring}
+          program={props.program}
           nowMs={props.nowMs}
         />
       )}
