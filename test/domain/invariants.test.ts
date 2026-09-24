@@ -653,6 +653,13 @@ test("evaluationsWellFormed rejects a judgement that is not this ticket's", () =
     "the instances stand in the order their cycles ran",
   );
   assert.ok(
+    !evaluationsWellFormed(
+      config,
+      settled([judgedInstance(1, 1, plan), judgedInstance(1, 1, plan)], 1),
+    ),
+    "no cycle is judged twice",
+  );
+  assert.ok(
     evaluationsWellFormed(
       config,
       settled([judgedInstance(1, 1, plan), judgedInstance(1, 2, plan)]),
@@ -864,6 +871,11 @@ test("revisionsAccounted rejects a definition that moved without its revision", 
       pending,
       but(updated, {}, new Set([2])),
     ],
+    [
+      "a revision that moved under a definition that did not",
+      but(pending, working),
+      but(pending, { ...working, revision: 2 }),
+    ],
   ];
   for (const [defect, pre, post] of defects) {
     assert.ok(!revisionsAccounted(config, stepFrom(pre, post)), defect);
@@ -943,6 +955,16 @@ test("ticketIdsWellFormed rejects an id off the universe, a fleet past its bound
       ),
     ),
     "and no ledger is held for a ticket never released",
+  );
+  assert.ok(
+    !ticketIdsWellFormed(
+      config,
+      initialView(
+        world.graph,
+        new Map([...[...world.ledgers].slice(0, 2), [id(4), emptyLedger]]),
+      ),
+    ),
+    "each ledger is the one its ticket's id keys, however many there are",
   );
   const sparse: TicketGraph = {
     tickets: new Map([
