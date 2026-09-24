@@ -47,6 +47,7 @@ import {
 import {
   projectWriterDecide,
   projectWriterLoad,
+  type ProjectMemory,
 } from "../../src/interpreter/projectWriter.ts";
 import {
   repositoryConfigurationImportReadiness,
@@ -1850,6 +1851,7 @@ function updateSubmission(
   fixture: Awaited<ReturnType<typeof draftFixture>>,
   expectedRevision: number,
   authoringVersion: number,
+  configurationRevision: ConfigurationRevisionId = fixture.revision,
 ): Submission {
   const unique = randomUUID();
   return {
@@ -1863,7 +1865,7 @@ function updateSubmission(
       ticket: fixture.draft.ticket,
       expectedRevision,
       authoringVersion,
-      configurationRevision: fixture.revision,
+      configurationRevision,
     },
   };
 }
@@ -1873,13 +1875,14 @@ function reviseReleased(
   fixture: Awaited<ReturnType<typeof draftFixture>>,
   expectedVersion: number,
   brief: DraftBrief,
+  configurationRevision: ConfigurationRevisionId = fixture.revision,
 ) {
   return fixture.store.reviseDraft({
     partition: fixture.partition,
     authority,
     ticket: fixture.draft.ticket,
     expectedVersion,
-    configurationRevision: fixture.revision,
+    configurationRevision,
     authoring: plainAuthoring,
     brief,
   });
@@ -1963,6 +1966,117 @@ test("a released update moves what the next dispatch reads, and the revision it 
   );
   assert.equal(read?.releasedAuthoringVersion, 2);
   assert.equal(read?.authoringVersion, 2);
+});
+
+/** The configuration each place a dispatch reads it from holds for the fixture's ticket. */
+async function dispatchPins(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+): Promise<Record<string, unknown>> {
+  const at = [
+    fixture.partition.tenant,
+    fixture.partition.project,
+    fixture.draft.ticket,
+  ];
+  return {
+    projection: await harness.query(
+      `SELECT configuration_revision,configuration_digest FROM ticket_projection
+        WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+      at,
+    ),
+    candidate: await harness.query(
+      `SELECT configuration_revision,configuration_digest FROM dispatch_candidate
+        WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+      at,
+    ),
+    spawn: await harness.query(
+      `SELECT configuration_revision,configuration_digest FROM execution_request
+        WHERE tenant=$1 AND project=$2 AND ticket=$3 AND kind='SpawnWork'`,
+      at,
+    ),
+  };
+}
+
+/** Accepts a submission and has the writer holding `memory` decide it. */
+async function decidedBy(
+  memory: ProjectMemory,
+  submission: Submission,
+): Promise<Awaited<ReturnType<typeof projectWriterDecide>>> {
+  assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
+  const input = await harness.discovery.next(submission.partition);
+  assert.ok(input !== undefined);
+  return projectWriterDecide(postgresHarnessWriter(harness), memory, input);
+}
+
+test("an update at another configuration revision re-pins what its dispatch runs under, across a restart", async () => {
+  const fixture = await draftFixture();
+  const moved = asConfigurationRevisionId(`config-${randomUUID()}`);
+  const movedCanonical = canonicalConfigurationOf({
+    ...(JSON.parse(postgresHarnessConfiguration) as Record<string, unknown>),
+    image: "worker:v2",
+  });
+  await fixture.store.createConfiguration({
+    partition: fixture.partition,
+    authority,
+    revision: moved,
+    canonical: movedCanonical,
+  });
+  const load = async (label: string) =>
+    projectWriterLoad(
+      postgresHarnessWriter(harness),
+      await postgresHarnessHeld(harness.store, fixture.partition, label),
+    );
+  const released = await decidedBy(
+    await load("update-repin"),
+    releaseSubmission(fixture),
+  );
+  assert.equal(released.decided.decided, "Committed");
+  const brief = postgresHarnessBriefIn(fixture.repository);
+  assert.equal(
+    (await reviseReleased(fixture, 1, brief, moved)).revised,
+    "Revised",
+  );
+  const updated = await decidedBy(
+    released.memory,
+    updateSubmission(fixture, 1, 2, moved),
+  );
+  assert.equal(updated.decided.decided, "Committed");
+  await harness.store.release(updated.memory.lease);
+
+  const restarted = await load("update-repin-restarted");
+  const pin = [
+    {
+      configuration_revision: moved,
+      configuration_digest: createHash("sha256")
+        .update(movedCanonical)
+        .digest("hex"),
+    },
+  ];
+  assert.deepEqual(
+    await dispatchPins(fixture),
+    { projection: pin, candidate: pin, spawn: [] },
+    "the rebuilt dispatch view offers the ticket under the revision its update pinned",
+  );
+  const version = restarted.ticketVersions.get(fixture.draft.ticket);
+  assert.ok(version !== undefined);
+  const unique = randomUUID();
+  const dispatched = await decidedBy(restarted, {
+    partition: fixture.partition,
+    operation: asOperationId(`dispatch-${unique}`),
+    authority,
+    key: asIdempotencyKey(`dispatch-${unique}`),
+    command: {
+      version: 1,
+      command: "ManualDispatch",
+      ticket: fixture.draft.ticket,
+      expectedTicketVersion: version,
+    },
+  });
+  assert.equal(dispatched.decided.decided, "Committed");
+  assert.deepEqual(await dispatchPins(fixture), {
+    projection: pin,
+    candidate: [],
+    spawn: pin,
+  });
 });
 
 test("an update against a revision another update moved past is refused with both numbers", async () => {
