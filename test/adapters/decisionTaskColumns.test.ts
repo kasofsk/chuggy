@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { decisionTaskColumns } from "../../src/adapters/postgres/decision.ts";
-import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 
 test("an evaluation's four counters each reach their own column", () => {
   assert.deepEqual(decisionTaskColumns(evaluationTaskOf(7, 2, 3, 4, 5)), {
@@ -22,7 +22,7 @@ test("an evaluation's four counters each reach their own column", () => {
 });
 
 test("a work task names its cycle and spells the evaluation columns null", () => {
-  assert.deepEqual(decisionTaskColumns(workTaskOf(7, 3)), {
+  assert.deepEqual(decisionTaskColumns(workTaskIdentity(7, 3)), {
     kind: "Work",
     cycle: 3,
     stage: null,

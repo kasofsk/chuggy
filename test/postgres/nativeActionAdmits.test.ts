@@ -22,11 +22,13 @@ import { test } from "node:test";
 import { reportTaskTerminalCommand } from "../../src/actor/command.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
+import { phaseOf } from "../../src/domain/phase.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
-import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
+  projectedEscalationOf,
   projectWriterDecide,
   type ProjectMemory,
 } from "../../src/interpreter/projectWriter.ts";
@@ -165,7 +167,7 @@ test("a park offers the desk its answers and a waiting ticket is asked none", as
       partition,
       memory,
       `${label}-work-${String(cycle)}`,
-      workTaskOf(1, cycle),
+      workTaskIdentity(1, cycle),
       "Pass",
     );
     memory = await admitsReport(
@@ -178,8 +180,11 @@ test("a park offers the desk its answers and a waiting ticket is asked none", as
   }
 
   const walled = ticketAt(memory.graph, id(1));
-  assert.equal(walled.phase, "Escalated");
-  assert.equal(walled.escalation, "EvaluationFailureEscalated");
+  assert.equal(phaseOf(walled.state), "Escalated");
+  assert.equal(
+    projectedEscalationOf(walled.state),
+    "EvaluationFailureEscalated",
+  );
   assert.deepEqual(await admitsOffered(partition, id(1)), [
     ["Resume", "Revoke"],
   ]);
@@ -188,7 +193,7 @@ test("a park offers the desk its answers and a waiting ticket is asked none", as
   memory = await admitsResolve(partition, memory, `${label}-revoke`, "Revoke");
 
   const stranded = ticketAt(memory.graph, id(2));
-  assert.equal(stranded.phase, "Pending");
-  assert.equal(stranded.escalation, "NoEscalation");
+  assert.equal(phaseOf(stranded.state), "Pending");
+  assert.equal(projectedEscalationOf(stranded.state), "NoEscalation");
   assert.deepEqual(await admitsOffered(partition, id(2)), []);
 });

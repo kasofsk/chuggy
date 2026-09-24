@@ -18,18 +18,19 @@
  * the stored row back is sound.
  */
 
-import type { Entry } from "../actor/journal.ts";
+import type { Entry, Replayed } from "../actor/journal.ts";
+import { runningStageIndex } from "../domain/deciders.ts";
 import { eventTicket } from "../domain/evolve.ts";
+import { ledgerAt } from "../domain/ledger.ts";
+import { phaseOf, type Phase } from "../domain/phase.ts";
 import { ticketAt } from "../domain/ticketGraph.ts";
 import type {
   TicketGraph,
   Obligation,
-  Phase,
   TaskIdentity,
   Ticket,
 } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
-import { currentInstance, runningStageIndex } from "../domain/ticket.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
 import type { ExecutionSourceObservation } from "./executionSource.ts";
 import {
@@ -95,14 +96,13 @@ function obligationsOf<Kind extends Obligation["type"]>(
  * The slots the ticket's newest spawn claimed, and the position each of them
  * is numbered at. A work cycle claims one; an evaluation run claims the whole
  * roster of the stage it is running, whether or not every evaluator in it was
- * asked, which is what keeps `spawned` a function of the instance alone.
+ * asked, which is what the ledger's `slotsClaimed` counts.
  */
 function liveSlotRoster(ticket: Ticket): readonly number[] {
-  if (ticket.phase !== "Evaluation") return [0];
+  const state = ticket.state;
+  if (typeof state === "string" || state.type !== "Evaluation") return [0];
   const stage =
-    ticket.definition.evaluationPlan.stages[
-      runningStageIndex(currentInstance(ticket))
-    ];
+    ticket.definition.evaluationPlan.stages[runningStageIndex(state.value)];
   if (stage === undefined)
     throw new Error("decision plan: the running stage is outside the plan");
   return stage.evaluators.map((entry) => entry.key);
@@ -122,11 +122,12 @@ function liveSlotRoster(ticket: Ticket): readonly number[] {
  * under `ON CONFLICT`.
  */
 function requestTasks(
-  ticket: Ticket,
+  at: Replayed,
+  ticket: TicketId,
   identities: readonly TaskIdentity[],
 ): ExecutionRequestPlan["tasks"] {
-  const roster = liveSlotRoster(ticket);
-  const base = ticket.spawned - roster.length;
+  const roster = liveSlotRoster(ticketAt(at.graph, ticket));
+  const base = ledgerAt(at.ledgers, ticket).spawned - roster.length;
   return identities.map((identity) => {
     const slot =
       identity.type === "WorkTask"
@@ -183,7 +184,7 @@ function executeRequest(
   input: DecisionInput,
   entry: Entry,
   obligations: readonly Obligation[],
-  post: TicketGraph,
+  post: Replayed,
   source: ExecutionSourceObservation | undefined,
 ): readonly ExecutionRequestPlan[] {
   const run = obligationsOf(entry, obligations, "ExecuteTask");
@@ -202,7 +203,7 @@ function executeRequest(
       ticketVersion: entry.seq,
       kind: phase === "WorkTask" ? "SpawnWork" : "SpawnEvaluation",
       bundle: executionRequestBundle(input, entry, first.index, source),
-      tasks: requestTasks(ticketAt(post, ticket), identities),
+      tasks: requestTasks(post, ticket, identities),
     },
   ];
 }
@@ -215,7 +216,7 @@ function executeRequest(
 function cancelRequest(
   entry: Entry,
   obligations: readonly Obligation[],
-  pre: TicketGraph,
+  pre: Replayed,
 ): readonly ExecutionRequestPlan[] {
   const run = obligationsOf(entry, obligations, "CancelTask");
   const first = run[0];
@@ -229,7 +230,8 @@ function cancelRequest(
       ticketVersion: entry.seq,
       kind: "CancelTicketWork",
       tasks: requestTasks(
-        ticketAt(pre, ticket),
+        pre,
+        ticket,
         run.map((each) => each.obligation.value.task),
       ),
     },
@@ -245,7 +247,7 @@ function finalizationRequests(
   return obligationsOf(entry, obligations, "FinalizeTicket").map(
     ({ index, obligation }) => {
       const ticket = eventTicket(entry.event);
-      if (ticketAt(post, ticket).phase !== "Finalization")
+      if (phaseOf(ticketAt(post, ticket).state) !== "Finalization")
         throw new Error(
           "decision plan: a finalization is owed by a ticket not finalizing",
         );
@@ -274,10 +276,12 @@ function nativeActions(
   post: TicketGraph,
 ): readonly NativeActionPlan[] {
   const ticket = eventTicket(entry.event);
-  const after = ticketAt(post, ticket);
+  const before = pre.tickets.get(ticket);
+  const after = ticketAt(post, ticket).state;
   if (
-    pre.tickets.get(ticket)?.phase === "Escalated" ||
-    after.phase !== "Escalated"
+    (before !== undefined && phaseOf(before.state) === "Escalated") ||
+    typeof after === "string" ||
+    after.type !== "Escalated"
   )
     return [];
   return [
@@ -286,7 +290,7 @@ function nativeActions(
       ticket,
       version: entry.seq,
       kind: "TicketEscalation",
-      escalation: after.escalation,
+      escalation: after.value.type,
       capability: "ResolveTicket",
       resolutions: ["Resume", "Revoke"],
     },
@@ -387,8 +391,8 @@ function materializationWithdrawals(
   const after = post.tickets.get(ticket);
   return before !== undefined &&
     after !== undefined &&
-    materializationActionablePhases.includes(before.phase) &&
-    after.phase !== before.phase
+    materializationActionablePhases.includes(phaseOf(before.state)) &&
+    phaseOf(after.state) !== phaseOf(before.state)
     ? [ticket]
     : [];
 }
@@ -413,12 +417,13 @@ const finalizationAnsweredEvents: readonly Entry["event"]["type"][] = [
 
 /**
  * Derives every durable consequence of one decision from the event it
- * journals, the obligations it owes and the two graphs it stands between.
+ * journals, the obligations it owes and the two replayed states, graphs and
+ * ledgers, it stands between.
  */
 export function materializationOf(
   input: DecisionInput,
-  pre: TicketGraph,
-  post: TicketGraph,
+  pre: Replayed,
+  post: Replayed,
   entry: Entry,
   obligations: readonly Obligation[],
   spawn: SpawnSources = {},
@@ -428,14 +433,19 @@ export function materializationOf(
       ...executeRequest(input, entry, obligations, post, spawn.source),
       ...cancelRequest(entry, obligations, pre),
     ],
-    actions: nativeActions(entry, pre, post),
-    finalization: finalizationRequests(entry, obligations, post),
+    actions: nativeActions(entry, pre.graph, post.graph),
+    finalization: finalizationRequests(entry, obligations, post.graph),
     fulfillFinalizationFor: finalizationAnsweredEvents.includes(
       entry.event.type,
     )
       ? [eventTicket(entry.event)]
       : [],
-    withdrawActionsFor: materializationWithdrawals(input, entry, pre, post),
+    withdrawActionsFor: materializationWithdrawals(
+      input,
+      entry,
+      pre.graph,
+      post.graph,
+    ),
     ...(input.source.nativeAction === undefined
       ? {}
       : { resolveAction: input.source.nativeAction }),

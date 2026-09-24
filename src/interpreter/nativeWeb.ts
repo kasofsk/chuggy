@@ -26,8 +26,8 @@ export type { AuthorizedResult } from "./authorizedProject.ts";
 import type { Principal } from "./principal.ts";
 import type { ReleaseAuthoringProgram } from "../contract/authoring.ts";
 import type { EscalationKind, ResumePoint } from "../contract/rosters.ts";
-import { phaseTags, type Phase } from "../domain/generated/modelTypes.ts";
-import { resumeOf } from "../domain/ticket.ts";
+import { assertNever } from "../domain/assertNever.ts";
+import { phaseTags, type Phase } from "../domain/phase.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type {
   Accepted,
@@ -255,18 +255,31 @@ export interface TicketEscalationResource {
 }
 
 /**
- * The escalation the desk offers for one wall. `resumeOf` is total on the sum
- * and answers `NoResume` for the absent member alone, which is not a kind this
- * roster holds — so a point the wire does not name is this layer and the model
- * disagreeing, and it raises rather than answering a ticket with no offer.
+ * Where a resume at this wall re-enters: the domain's `resumeOf` of every
+ * state parked at it, which the stored row names by its kind alone.
  */
+export function ticketEscalationResumeAt(kind: EscalationKind): ResumePoint {
+  switch (kind) {
+    case "WorkFailureEscalated":
+    case "WorkExecutionUnavailableEscalated":
+      return "ResumeWork";
+    case "EvaluationFailureEscalated":
+      return "ResumeRework";
+    case "EvaluationBlockedEscalated":
+      return "ResumeEvaluation";
+    case "FinalizationUnavailableEscalated":
+      return "ResumeFinalization";
+    default:
+      return assertNever(kind);
+  }
+}
+
+/** The escalation the desk offers for one wall. */
 export function ticketEscalationResource(
   kind: EscalationKind,
   evidence?: string,
 ): TicketEscalationResource {
-  const resumeAt = resumeOf(kind);
-  if (resumeAt === "NoResume")
-    throw new Error(`native web: escalation ${kind} re-enters nowhere`);
+  const resumeAt = ticketEscalationResumeAt(kind);
   return {
     kind,
     ...(evidence === undefined ? {} : { evidence }),

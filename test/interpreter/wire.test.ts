@@ -34,7 +34,7 @@ import {
 } from "../../src/actor/command.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
-import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import { encodeTicketCommand } from "../../src/generated/model-api.ts";
 import {
   ticketEventTags,
@@ -92,7 +92,7 @@ const reworked = {
 };
 const workFailure = {
   ticket: 1,
-  task: workTaskOf(1, 1),
+  task: workTaskIdentity(1, 1),
   evidence: 1,
 };
 const finalized = { ticket: 1, workCycle: 1, generation: 1, evidence: 1 };
@@ -116,7 +116,7 @@ const eventOfEach: Readonly<Record<TicketEvent["type"], TicketEvent>> = {
     type: "TicketWorkResultAccepted",
     value: {
       ticket: 1,
-      result: resultFor(workTaskOf(1, 1)),
+      result: resultFor(workTaskIdentity(1, 1)),
       acceptedSourceRef: aDispatchSource,
     },
   },

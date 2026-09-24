@@ -52,9 +52,9 @@
 import type { Entry } from "../actor/journal.ts";
 import type {
   Escalation,
-  Phase,
   TaskIdentity,
 } from "../domain/generated/modelTypes.ts";
+import type { Phase } from "../domain/phase.ts";
 import type { TicketId } from "../domain/ids.ts";
 import {
   asAuthorityKind,
@@ -128,10 +128,11 @@ export interface DecisionCause {
 
 /**
  * One row of the primary projection: where a ticket currently stands, whether
- * anything may depend on it, and which wall parked it — where a resume re-enters
- * being `resumeOf` of that wall, which the row does not carry. The evidence is
- * what the fabric said about the wall, which the machine does not hold, so a
- * decision that escalates carries it beside the entry.
+ * anything may depend on it, and which wall parked it — where a resume
+ * re-enters being `ticketEscalationResumeAt` of that wall, which the row does
+ * not carry. The evidence is what the fabric said about the wall, which the
+ * machine does not hold, so a decision that escalates carries it beside the
+ * entry.
  */
 export interface TicketProjection {
   readonly ticket: TicketId;
@@ -139,9 +140,16 @@ export interface TicketProjection {
   readonly revision: number;
   readonly phase: Phase;
   readonly dependable: boolean;
-  readonly escalation: Escalation;
+  readonly escalation: ProjectedEscalation;
   readonly escalationEvidence?: string;
 }
+
+/**
+ * The projection's name for a ticket's wall: its `Escalation`'s tag, or
+ * `NoEscalation` for a ticket parked at none, which the machine has no value
+ * for and the column does.
+ */
+export type ProjectedEscalation = "NoEscalation" | Escalation["type"];
 
 /**
  * The bundle a spawn request pins, minted from the same journal position the
@@ -192,7 +200,7 @@ export interface NativeActionPlan {
   readonly ticket: TicketId;
   readonly version: number;
   readonly kind: "TicketEscalation";
-  readonly escalation: Escalation;
+  readonly escalation: Escalation["type"];
   readonly capability: "ResolveTicket";
   readonly resolutions: readonly NativeActionResolution[];
 }

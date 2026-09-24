@@ -32,6 +32,7 @@ import {
 import { interactionsReadSignature } from "../../src/adapters/postgres/schema/lead.ts";
 import { decisionSemanticsVersionCurrent } from "../../src/actor/decisionSemantics.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
+import { phaseOf } from "../../src/domain/phase.ts";
 import {
   projectWriterDecide,
   type ProjectMemory,
@@ -419,7 +420,7 @@ test("a refused proposal moves the project its lead's next turn waits on", async
       "and it names the operation the proposal was submitted under",
     );
     assert.equal(
-      ticketAt(decided.memory.graph, candidate.ticket).phase,
+      phaseOf(ticketAt(decided.memory.graph, candidate.ticket).state),
       "Pending",
       "a refused dispatch leaves its ticket where the lead will see it again",
     );
@@ -555,8 +556,8 @@ test("one decision's proposals over the same observed page each dispatch", async
       journaled.push(memory.lease.head);
     }
     assert.deepEqual(
-      page.candidates.map(
-        (candidate) => ticketAt(memory.graph, candidate.ticket).phase,
+      page.candidates.map((candidate) =>
+        phaseOf(ticketAt(memory.graph, candidate.ticket).state),
       ),
       ["Work", "Work"],
     );

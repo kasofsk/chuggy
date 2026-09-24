@@ -33,8 +33,17 @@ import {
 } from "../../src/adapters/artifacts/artifactKey.ts";
 import { finalizerRowValue } from "../../src/adapters/postgres/finalizerRows.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
-import type { Ticket } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  Ticket,
+  TicketLedger,
+} from "../../src/domain/generated/modelTypes.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { ledgerAt } from "../../src/domain/ledger.ts";
+import { phaseOf } from "../../src/domain/phase.ts";
+import {
+  projectWriterSpawnSourceRef,
+  type ProjectMemory,
+} from "../../src/interpreter/projectWriter.ts";
 import {
   allInputBundleReferenceKinds,
   asInputBundleId,
@@ -153,7 +162,7 @@ async function reworked(label: string): Promise<{
   remote: FinalizerRemote;
   attempt: ReworkAttempt;
   bundle: ReworkBundle;
-  decided: Ticket;
+  decided: ReworkStanding;
 }> {
   const { project, remote } = await finalizerSubject(rig, label, [
     { path: "base.txt", content: "candidate\n" },
@@ -182,13 +191,30 @@ async function reworked(label: string): Promise<{
     remote,
     attempt: await reworkAttemptOf(project),
     bundle: await reworkBundleOf(project),
-    decided: ticketAt(drained.memory.graph, asTicketId(project.ticket)),
+    decided: reworkStandingIn(drained.memory, project.ticket),
+  };
+}
+
+/** A ticket and its ledger, as a writer's memory holds them. */
+interface ReworkStanding {
+  readonly ticket: Ticket;
+  readonly ledger: TicketLedger;
+}
+
+/** The project's ticket and its ledger in this memory. */
+function reworkStandingIn(
+  memory: ProjectMemory,
+  ticket: number,
+): ReworkStanding {
+  return {
+    ticket: ticketAt(memory.graph, asTicketId(ticket)),
+    ledger: ledgerAt(memory.ledgers, ticket),
   };
 }
 
 /** The ticket the project's history released, as it stood before any finalization. */
-function reworkTicketBefore(project: FinalizerProject): Ticket {
-  return ticketAt(project.memory.graph, asTicketId(project.ticket));
+function reworkTicketBefore(project: FinalizerProject): ReworkStanding {
+  return reworkStandingIn(project.memory, project.ticket);
 }
 
 /** The spawn registrations this project holds, which is what a rework adds one to. */
@@ -297,11 +323,15 @@ test("a clean automatic integration concludes without spawning a rework", async 
     project.memory,
   );
   assert.deepEqual(drained.decided, ["Committed"]);
-  const decided = ticketAt(drained.memory.graph, asTicketId(project.ticket));
-  assert.equal(decided.phase, "Done");
+  const decided = reworkStandingIn(drained.memory, project.ticket);
+  assert.equal(phaseOf(decided.ticket.state), "Done");
   await reworkJournalSettledOn(project, attempt[0]?.attempt_digest ?? "");
-  assert.equal(decided.completions, before.completions + 1);
-  assert.equal(decided.spawned, before.spawned, "nothing further was spawned");
+  assert.equal(decided.ledger.completions, before.ledger.completions + 1);
+  assert.equal(
+    decided.ledger.spawned,
+    before.ledger.spawned,
+    "nothing further was spawned",
+  );
   assert.deepEqual(await reworkSpawnsOf(project), spawns);
   assert.deepEqual(
     await rig.harness.query(
@@ -317,8 +347,15 @@ test("a clean automatic integration concludes without spawning a rework", async 
 test("a concluded merge conflict returns the ticket to work with a bundle naming its evidence", async () => {
   const { project, attempt, bundle, decided } = await reworked("rework");
   const before = reworkTicketBefore(project);
-  assert.equal(decided.completions, before.completions, "nothing completed");
-  assert.ok(decided.spawned > before.spawned, "a fresh work set was spawned");
+  assert.equal(
+    decided.ledger.completions,
+    before.ledger.completions,
+    "nothing completed",
+  );
+  assert.ok(
+    decided.ledger.spawned > before.ledger.spawned,
+    "a fresh work set was spawned",
+  );
   assert.equal(await reworkPhaseOf(project), "Work");
   assert.deepEqual(reworkReference(bundle, "FinalizationAttempt"), {
     reference_kind: "FinalizationAttempt",
@@ -459,7 +496,7 @@ test("a rework runs at the accepted source with no observation", async () => {
   ).spawnSource({
     partition: project.partition,
     ticket: project.ticket,
-    source: decided.source,
+    source: projectWriterSpawnSourceRef(decided.ticket.state),
     kind: "Work",
   });
   assert.deepEqual(sourced, {

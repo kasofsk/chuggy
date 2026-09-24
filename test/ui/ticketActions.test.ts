@@ -27,9 +27,12 @@ import {
 import type {
   Ticket,
   TicketGraph,
+  TicketState,
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { initialWorkInput } from "../../src/domain/ticket.ts";
 import { plainDefinitionOf } from "../actor/harness.ts";
+import { runningInstance, workEscalatedState } from "../domain/fixtures.ts";
 import {
   actionsFor,
   ticketResumable,
@@ -39,20 +42,47 @@ import {
 
 const id = asTicketId(7);
 
-function ticketIn(phase: TicketPhase, over: Partial<Ticket> = {}): Ticket {
-  return {
-    phase,
+/** A state in this phase, one cycle in where the phase has run one. */
+function stateIn(ticket: Ticket, phase: TicketPhase): TicketState {
+  const definition = ticket.definition;
+  switch (phase) {
+    case "Pending":
+    case "Done":
+    case "Revoked":
+      return phase;
+    case "Work":
+      return {
+        type: "Work",
+        value: { input: initialWorkInput(definition), source: 1 },
+      };
+    case "Evaluation":
+      return {
+        type: "Evaluation",
+        value: runningInstance(
+          7,
+          1,
+          definition.evaluationPlan.stages,
+          new Set(),
+        ),
+      };
+    case "Finalization":
+      return {
+        type: "Finalization",
+        value: { workCycle: 1, generation: 1, input: 1, source: 1 },
+      };
+    case "Escalated":
+      return workEscalatedState(ticket);
+  }
+}
+
+function ticketIn(phase: TicketPhase): Ticket {
+  const released: Ticket = {
     definition: plainDefinitionOf(7),
     revision: 1,
-    source: 0,
-    evaluations: [],
-    workCyclesStarted: 0,
-    spawned: 0,
-    finalizationGeneration: 0,
-    escalation: "NoEscalation",
-    completions: 0,
-    ...over,
+    workCyclesStarted: phase === "Pending" ? 0 : 1,
+    state: "Pending",
   };
+  return { ...released, state: stateIn(released, phase) };
 }
 
 function graphWith(ticket: Ticket): TicketGraph {

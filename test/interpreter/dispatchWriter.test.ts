@@ -10,7 +10,8 @@ import {
   type TicketCommand,
 } from "../../src/actor/command.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
-import { finalizationOperationOf } from "../../src/domain/ticket.ts";
+import { finalizationOf } from "../../src/domain/ticket.ts";
+import { phaseOf } from "../../src/domain/phase.ts";
 import type { Config } from "../../src/domain/config.ts";
 import type { EvaluationFailurePolicy } from "../../src/domain/deciders.ts";
 import {
@@ -21,6 +22,7 @@ import {
   actorInit,
   journalStep,
   memoryGraph,
+  memoryLedgers,
   type ActorState,
 } from "../../src/actor/state.ts";
 import { storedAtCurrentSemantics } from "../../src/actor/journal.ts";
@@ -77,7 +79,7 @@ import {
   digestFold,
 } from "../../src/interpreter/resultManifest.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
-import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import {
   plainDefinitionOf,
@@ -125,6 +127,11 @@ const contracts = new Map([
   ],
 ]);
 
+/** The graph and ledgers an actor state holds, which is what a writer's memory carries. */
+function memoryOf(state: ActorState): Pick<ProjectMemory, "graph" | "ledgers"> {
+  return { graph: memoryGraph(state), ledgers: memoryLedgers(state) };
+}
+
 function releasedMemory(head = 1): ProjectMemory {
   const released = stepped(
     refinementInstance,
@@ -139,7 +146,7 @@ function releasedMemory(head = 1): ProjectMemory {
       recoveryEpoch: asRecoveryEpoch("epoch"),
       head,
     },
-    graph: memoryGraph(released),
+    ...memoryOf(released),
     ticketVersions: new Map([[id(1), 1]]),
     dispatchContracts: contracts,
   };
@@ -320,7 +327,7 @@ test("a dispatch over an undone dependency is refused naming it", async () => {
   const decision = await planned(
     {
       ...releasedMemory(2),
-      graph: memoryGraph(state),
+      ...memoryOf(state),
       ticketVersions: new Map([
         [id(1), 1],
         [id(2), 2],
@@ -501,7 +508,7 @@ function twoReleasedMemory(): ProjectMemory {
       recoveryEpoch: asRecoveryEpoch("epoch"),
       head: tickets.length,
     },
-    graph: memoryGraph(state),
+    ...memoryOf(state),
     ticketVersions,
     dispatchContracts: twoContracts,
   };
@@ -582,7 +589,9 @@ test("both dispatches of one decision land, though the first changed the view", 
   );
   assert.equal(second.decided.decided, "Committed");
   assert.deepEqual(
-    [id(1), id(2)].map((ticket) => ticketAt(second.memory.graph, ticket).phase),
+    [id(1), id(2)].map((ticket) =>
+      phaseOf(ticketAt(second.memory.graph, ticket).state),
+    ),
     ["Work", "Work"],
   );
 });
@@ -697,7 +706,7 @@ function workPassedState(): ReturnType<typeof journalStep> {
 
 /** The work task's result, which is the completion that spawns the evaluation under test. */
 const workCompletion = reportTaskTerminalCommand(
-  producedReport(workTaskOf(1, 1)),
+  producedReport(workTaskIdentity(1, 1)),
 );
 
 /** A completion as the inbox assembles one: the settled fact, with the wall read off its execution where it had one. */
@@ -761,13 +770,13 @@ function dispatchedState(): ActorState {
 }
 
 function dispatchedMemory(): ProjectMemory {
-  return { ...releasedMemory(), graph: memoryGraph(dispatchedState()) };
+  return { ...releasedMemory(), ...memoryOf(dispatchedState()) };
 }
 
 /** The completion of a task that stopped at a wall, with the wall read off its execution. */
 function blockedCompletionInput(
   blockedBy: BlockedReason,
-  task: TaskIdentity = workTaskOf(1, 1),
+  task: TaskIdentity = workTaskIdentity(1, 1),
 ): DecisionInput {
   return completionInput(
     reportTaskTerminalCommand(
@@ -811,7 +820,7 @@ const pairedDefinition = releasedTicketOf(1, new Set<number>(), [
  * answer, which is the stage a walled sibling concludes.
  */
 function failedStageState(): ReturnType<typeof journalStep> {
-  const work = workTaskOf(1, 1);
+  const work = workTaskIdentity(1, 1);
   const failing = evaluationTaskOf(1, 1, 1, 1, 1);
   return [
     dispatchTicketCommand(id(1), aDispatchSource),
@@ -830,7 +839,7 @@ function failedStageState(): ReturnType<typeof journalStep> {
  */
 test("a stage that failed beside a walled evaluator parks carrying no wall", async () => {
   const { offered } = await decidedWith(
-    { ...releasedMemory(), graph: memoryGraph(failedStageState()) },
+    { ...releasedMemory(), ...memoryOf(failedStageState()) },
     blockedCompletionInput(
       "ExecutionProfileUnavailable",
       evaluationTaskOf(1, 1, 1, 1, 2),
@@ -943,7 +952,7 @@ test("a source still unreadable once its deferrals are spent is refused under it
  * completion that spawns: a rework re-enters work off the same decision.
  */
 function judgementMemory(): ProjectMemory {
-  return { ...releasedMemory(), graph: memoryGraph(workPassedState()) };
+  return { ...releasedMemory(), ...memoryOf(workPassedState()) };
 }
 
 /** The failing judgement as the inbox assembles it, which reworks and so spawns. */
@@ -980,7 +989,7 @@ function stoppedStageMemory(): ProjectMemory {
   const stopping = evaluationTaskOf(1, 1, 1, 1, 2);
   const state = [
     dispatchTicketCommand(id(1), aDispatchSource),
-    reportTaskTerminalCommand(producedReport(workTaskOf(1, 1))),
+    reportTaskTerminalCommand(producedReport(workTaskIdentity(1, 1))),
     reportTaskTerminalCommand(
       judgedReport(evaluationTaskOf(1, 1, 1, 1, 1), "EvaluatorPass"),
     ),
@@ -989,7 +998,7 @@ function stoppedStageMemory(): ProjectMemory {
     (each, event) => stepped(pairedConfig, each, event),
     stepped(pairedConfig, actorInit(), createTicketCommand(pairedDefinition)),
   );
-  return { ...releasedMemory(), graph: memoryGraph(state) };
+  return { ...releasedMemory(), ...memoryOf(state) };
 }
 
 /** A resume as a principal offers one, which re-asks the evaluator that stopped. */
@@ -1099,7 +1108,7 @@ test("a stale completion is refused TaskNotCurrent with its task and no journal 
     outcome: "Refused",
     refusal: {
       type: "TaskNotCurrent",
-      value: { ticket: 1, task: workTaskOf(1, 1) },
+      value: { ticket: 1, task: workTaskIdentity(1, 1) },
     },
   });
 });
@@ -1161,7 +1170,7 @@ test("a release outside the room is refused TicketCapacityReached and journals n
 
 /** A ticket parked at its work wall, which a resume returns to work. */
 function workWalledMemory(): ProjectMemory {
-  const work = workTaskOf(1, 1);
+  const work = workTaskIdentity(1, 1);
   const state = stepped(
     refinementInstance,
     dispatchedState(),
@@ -1169,7 +1178,7 @@ function workWalledMemory(): ProjectMemory {
       stoppedReport(work, "ExecutionUnavailableFailure"),
     ),
   );
-  return { ...releasedMemory(), graph: memoryGraph(state) };
+  return { ...releasedMemory(), ...memoryOf(state) };
 }
 
 /** A ticket parked because its finalization reached no result, which a resume finalizes again. */
@@ -1185,7 +1194,7 @@ function finalizationWalledMemory(): ProjectMemory {
     (each, event) => stepped(refinementInstance, each, event),
     workPassedState(),
   );
-  return { ...releasedMemory(), graph: memoryGraph(state) };
+  return { ...releasedMemory(), ...memoryOf(state) };
 }
 
 /** A ticket awaiting finalization (1,1), and the same ticket once a resume moved it to (1,2). */
@@ -1206,7 +1215,7 @@ function finalizingGraphs() {
     (each, command) => stepped(refinementInstance, each, command),
     awaiting,
   );
-  return { awaiting: memoryGraph(awaiting), resumed: memoryGraph(resumed) };
+  return { awaiting: memoryOf(awaiting), resumed: memoryOf(resumed) };
 }
 
 /** The finalizer's success for attempt (1,1), arriving under a request that is `open` or not. */
@@ -1250,12 +1259,13 @@ const staleFinalization = {
 /** A result for the attempt a resume replaced is refused naming that attempt, and nothing is journalled for it. */
 test("an old-generation finalization result is refused FinalizationNotCurrent with its cycle and generation", async () => {
   const { resumed } = finalizingGraphs();
-  const { workCycle, generation } = finalizationOperationOf(
-    ticketAt(resumed, id(1)),
+  const operation = finalizationOf(ticketAt(resumed.graph, id(1)));
+  assert.deepEqual(
+    { workCycle: operation?.workCycle, generation: operation?.generation },
+    { workCycle: 1, generation: 2 },
   );
-  assert.deepEqual({ workCycle, generation }, { workCycle: 1, generation: 2 });
   const { offered } = await decidedWith(
-    { ...releasedMemory(), graph: resumed },
+    { ...releasedMemory(), ...resumed },
     finalizationResultInput(true),
   );
   assert.deepEqual(offered?.outcome, {
@@ -1271,12 +1281,12 @@ test("an old-generation finalization result is refused FinalizationNotCurrent wi
  */
 test("a result under a closed request is FinalizationRequestClosed unless decide refused it", async () => {
   const { awaiting, resumed } = finalizingGraphs();
-  for (const [graph, refusal] of [
+  for (const [held, refusal] of [
     [awaiting, { type: "FinalizationRequestClosed" }],
     [resumed, staleFinalization],
   ] as const) {
     const { offered } = await decidedWith(
-      { ...releasedMemory(), graph },
+      { ...releasedMemory(), ...held },
       finalizationResultInput(false),
     );
     assert.deepEqual(offered?.outcome, { outcome: "Refused", refusal });

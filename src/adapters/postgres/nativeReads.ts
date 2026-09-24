@@ -11,8 +11,11 @@ import {
   gitEvidences,
   type EscalationKind,
 } from "../../contract/rosters.ts";
-import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
-import { nonTerminalPhaseTags } from "../../domain/phase.ts";
+import {
+  nonTerminalPhaseTags,
+  phaseTags,
+  type Phase,
+} from "../../domain/phase.ts";
 import { asTicketId, type TicketId } from "../../domain/ids.ts";
 import {
   asPublicInstant,

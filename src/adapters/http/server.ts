@@ -20,7 +20,7 @@ import {
   type SessionId,
 } from "../../interpreter/agentSession.ts";
 import type { InstallationAuthorityRead } from "../../interpreter/installationAuthority.ts";
-import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
+import { phaseTags, type Phase } from "../../domain/phase.ts";
 import {
   allExecutionStatuses,
   type ExecutionStatus,

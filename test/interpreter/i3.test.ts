@@ -10,21 +10,26 @@ import {
   revokeTicketCommand,
   type TicketCommand,
 } from "../../src/actor/command.ts";
-import type { Entry } from "../../src/actor/journal.ts";
+import type { Entry, Replayed } from "../../src/actor/journal.ts";
+import { assertNever } from "../../src/domain/assertNever.ts";
 import type { EvaluationFailurePolicy } from "../../src/domain/deciders.ts";
 import { retryableIn } from "../../src/domain/enablement.ts";
 import type { Config } from "../../src/domain/config.ts";
 import type {
+  Escalation,
   FailureKind,
   Obligation,
   TaskIdentity,
-  TicketGraph,
+  Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
 import { escalationTags } from "../../src/domain/generated/modelTypes.ts";
+import { genesisLedgers, ledgerAt } from "../../src/domain/ledger.ts";
+import { phaseOf } from "../../src/domain/phase.ts";
 import {
   actorInit,
   journalStep,
   memoryGraph,
+  memoryLedgers,
   type ActorState,
 } from "../../src/actor/state.ts";
 import { materializationOf } from "../../src/interpreter/decisionPlan.ts";
@@ -66,16 +71,19 @@ import {
   refinementInstance,
 } from "../actor/harness.ts";
 import {
+  blockedInstance,
   graphOf,
   id,
+  judgedInstance,
   judgedReport,
+  ledgersOf,
   producedReport,
   resultFor,
   stoppedReport,
   ticketOn,
 } from "../domain/fixtures.ts";
 import { populated } from "./roster.ts";
-import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import {
   aDispatchSource,
   anAcceptedSource,
@@ -84,6 +92,7 @@ import {
 } from "../../src/domain/config.ts";
 import {
   artifactOf,
+  initialWorkInput,
   liveObligations,
   taskRefOf,
 } from "../../src/domain/ticket.ts";
@@ -98,7 +107,7 @@ const partition = {
 
 /** A work task settling with the artifact it produced, which is what a completion names. */
 function workDone(cycle: number) {
-  const work = workTaskOf(1, cycle);
+  const work = workTaskIdentity(1, cycle);
   return reportTaskTerminalCommand(producedReport(work));
 }
 
@@ -112,11 +121,11 @@ function judged(
   return reportTaskTerminalCommand(judgedReport(judge, verdict));
 }
 
-/** One command decided and journalled: the graphs it stands between, its entry and what it owes. */
+/** One command decided and journalled: the states it stands between, its entry and what it owes. */
 interface Decided {
   readonly state: ActorState;
-  readonly before: TicketGraph;
-  readonly after: TicketGraph;
+  readonly before: Replayed;
+  readonly after: Replayed;
   readonly entry: Entry;
   readonly obligations: readonly Obligation[];
 }
@@ -134,8 +143,8 @@ function decidedAt(
   assert.ok(last !== "NoDecision" && last.type === "Decided");
   return {
     state: next,
-    before: memoryGraph(state),
-    after: memoryGraph(next),
+    before: { graph: memoryGraph(state), ledgers: memoryLedgers(state) },
+    after: { graph: memoryGraph(next), ledgers: memoryLedgers(next) },
     entry,
     obligations: last.value.obligations,
   };
@@ -231,7 +240,7 @@ test("trusted classification reserves safety traffic", () => {
 });
 
 test("a completion is no command a principal may offer, and a writer still reads one", () => {
-  const work = workTaskOf(1, 1);
+  const work = workTaskIdentity(1, 1);
   for (const report of [
     producedReport(work),
     stoppedReport(work, "ExecutionUnavailableFailure"),
@@ -415,7 +424,7 @@ test("a ticket's task numbers ascend over its whole history and never repeat", (
     minted.map((each) => each.identity.type),
     ["WorkTask", "EvaluationTask", "WorkTask", "EvaluationTask"],
   );
-  assert.deepEqual(minted[2]?.identity, workTaskOf(1, 2));
+  assert.deepEqual(minted[2]?.identity, workTaskIdentity(1, 2));
   assert.deepEqual(minted[3]?.identity, evaluationTaskOf(1, 2, 1, 1, 1));
 });
 
@@ -469,10 +478,10 @@ test("a sparse stage mints consecutive numbers and the set after it repeats none
   assert.deepEqual(
     minted.map((each) => each.identity),
     [
-      workTaskOf(1, 1),
+      workTaskIdentity(1, 1),
       evaluationTaskOf(1, 1, 1, 1, 1),
       evaluationTaskOf(1, 1, 1, 1, 3),
-      workTaskOf(1, 2),
+      workTaskIdentity(1, 2),
     ],
   );
 });
@@ -565,16 +574,17 @@ test("a work pass carries its accepted source and its result into the judgement"
     workDone(1),
   ]);
   const ticket = ticketAt(memoryGraph(passed), id(1));
-  assert.equal(ticket.source, anAcceptedSource);
-  const instance = ticket.evaluations.at(-1);
-  assert.ok(instance !== undefined);
-  const reported = resultFor(workTaskOf(1, 1)).resultRef;
+  const state = ticket.state;
+  assert.ok(typeof state !== "string" && state.type === "Evaluation");
+  const instance = state.value;
+  assert.equal(instance.input.acceptedSourceRef, anAcceptedSource);
+  const reported = resultFor(workTaskIdentity(1, 1)).resultRef;
   assert.deepEqual(instance.input, {
     ticket: 1,
     workResult: reported,
     acceptedSourceRef: anAcceptedSource,
   });
-  assert.deepEqual(artifactOf(ticket), {
+  assert.deepEqual(artifactOf(ticket, ledgerAt(memoryLedgers(passed), 1)), {
     type: "ProducedArtifact",
     value: reported,
   });
@@ -584,7 +594,7 @@ test("a work pass carries its accepted source and its result into the judgement"
   );
   assert.notEqual(
     reported,
-    taskRefOf(workTaskOf(1, 1)),
+    taskRefOf(workTaskIdentity(1, 1)),
     "the judgement's context is the reported reference, not the cycle",
   );
 });
@@ -594,7 +604,7 @@ test("a decision leaving escalation withdraws its open native action", () => {
     createTicketCommand(plainDefinitionOf(1)),
     dispatchTicketCommand(id(1), aDispatchSource),
     reportTaskTerminalCommand(
-      stoppedReport(workTaskOf(1, 1), "ExecutionUnavailableFailure"),
+      stoppedReport(workTaskIdentity(1, 1), "ExecutionUnavailableFailure"),
     ),
   ]);
   const revoke = revokeTicketCommand(id(1));
@@ -748,17 +758,23 @@ test("a ticket runs Work, Evaluation and Done, each step decided by its command"
     createTicketCommand(plainDefinitionOf(1)),
     dispatchTicketCommand(id(1), aDispatchSource),
   ]);
-  assert.equal(ticketAt(memoryGraph(dispatched), id(1)).phase, "Work");
+  assert.equal(phaseOf(ticketAt(memoryGraph(dispatched), id(1)).state), "Work");
   const worked = decidedAt(dispatched, workDone(1));
-  assert.equal(ticketAt(worked.after, id(1)).phase, "Evaluation");
+  assert.equal(
+    phaseOf(ticketAt(worked.after.graph, id(1)).state),
+    "Evaluation",
+  );
   const passed = decidedAt(worked.state, judged(1, 1, "EvaluatorPass"));
-  assert.equal(ticketAt(passed.after, id(1)).phase, "Finalization");
+  assert.equal(
+    phaseOf(ticketAt(passed.after.graph, id(1)).state),
+    "Finalization",
+  );
   const result = reportFinalizationResultCommand(id(1), 1, 1, {
     type: "FinalizationSucceeded",
     value: 1,
   });
   const done = decidedAt(passed.state, result);
-  assert.equal(ticketAt(done.after, id(1)).phase, "Done");
+  assert.equal(phaseOf(ticketAt(done.after.graph, id(1)).state), "Done");
   const planned = plannedAt(done, finalizationInput(result));
   assert.deepEqual(planned.fulfillFinalizationFor, [id(1)]);
   assert.deepEqual(planned.execution, []);
@@ -781,20 +797,62 @@ function parkEntry(): Entry {
   };
 }
 
+/** A ticket one cycle in, parked at the wall named, carrying what that wall carries. */
+function parkedAt(kind: Escalation["type"]): Ticket {
+  const released = ticketOn(refinementInstance, { workCyclesStarted: 1 });
+  const stages = released.definition.evaluationPlan.stages;
+  const judged = judgedInstance(1, 1, stages);
+  const work = {
+    resumeInput: initialWorkInput(released.definition),
+    source: anAcceptedSource,
+    evidence: 1,
+  };
+  const wall = ((): Escalation => {
+    switch (kind) {
+      case "WorkFailureEscalated":
+      case "WorkExecutionUnavailableEscalated":
+        return { type: kind, value: work };
+      case "EvaluationFailureEscalated":
+        return {
+          type: kind,
+          value: { evidence: [], source: anAcceptedSource },
+        };
+      case "EvaluationBlockedEscalated":
+        return {
+          type: kind,
+          value: blockedInstance(1, 1, stages, new Set([1])),
+        };
+      case "FinalizationUnavailableEscalated":
+        return {
+          type: kind,
+          value: {
+            finalization: {
+              workCycle: 1,
+              generation: 1,
+              input: judged.input.workResult,
+              source: judged.input.acceptedSourceRef,
+            },
+            evidence: 1,
+          },
+        };
+      default:
+        return assertNever(kind);
+    }
+  })();
+  return { ...released, state: { type: "Escalated", value: wall } };
+}
+
 /**
  * Every wall derives a resume, so enablement accepts both answers at every one
  * of them and an action offering fewer would be short of what the actor takes.
  */
 test("an open action admits exactly the answers the actor's enablement accepts", () => {
   for (const escalation of escalationTags) {
-    if (escalation === "NoEscalation") continue;
-    const post = graphOf([
-      ticketOn(refinementInstance, { phase: "Escalated", escalation }),
-    ]);
+    const post = graphOf([parkedAt(escalation)]);
     const planned = materializationOf(
       arrivedAs(judged(1, 1, "EvaluatorFail")),
-      graphOf([]),
-      post,
+      { graph: graphOf([]), ledgers: genesisLedgers },
+      { graph: post, ledgers: ledgersOf(post) },
       parkEntry(),
       [],
     );

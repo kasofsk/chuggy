@@ -71,7 +71,7 @@ import {
   artifactProjectDirectory,
 } from "../../src/adapters/artifacts/artifactKey.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import type {
   TaskIdentity,
   TicketGraph,
@@ -571,7 +571,7 @@ export async function finalizerEntering(
       partition,
       first,
       label,
-      workTaskOf(1, 1),
+      workTaskIdentity(1, 1),
     ),
   };
 }
@@ -604,7 +604,7 @@ async function finalizerReworkCycle(
     partition,
     failed,
     `${label}-rework-work-${String(cycle)}`,
-    workTaskOf(1, cycle + 1),
+    workTaskIdentity(1, cycle + 1),
   );
 }
 
