@@ -330,7 +330,9 @@ module chuggy_ticket {
   ///
   /// It is STORED rather than re-resolved per request: a cycle that
   /// re-resolved its configuration would run a revision the release never
-  /// pinned, and two cycles of one ticket could then run different ones.
+  /// pinned, and two cycles of one ticket could then run different ones. An
+  /// update replaces it whole, and only while the ticket is Pending, so every
+  /// cycle a ticket runs runs the definition it was dispatched under.
   type ReleasedTicket = {
     id: int,
     content: ReleasedContent,
@@ -356,12 +358,19 @@ module chuggy_ticket {
   /// One ticket's record.
   type Ticket = {
     phase: Phase,
-    // WHAT THE RELEASE FROZE (above), immutable after it and read by every
-    // decider that asks what this ticket IS, where the package carries the
-    // same record on its own ReleasedTicket.
+    // WHAT THE RELEASE FROZE (above), read by every decider that asks what
+    // this ticket IS, where the package carries the same record on its own
+    // ReleasedTicket. An update replaces it while the ticket is Pending and
+    // nothing else touches it.
     // The dependencies are acyclic by construction (domain.qnt depsAcyclic)
-    // and project-local, because TicketGraph is project-scoped.
+    // and project-local, because TicketGraph is project-scoped; an update
+    // keeps them.
     definition: ReleasedTicket,
+    // THE DEFINITION'S REVISION, as the package holds it: 1 at the release,
+    // and one more for each update. An update names the revision it was
+    // written against, so one written against a definition another update
+    // has since replaced is refused rather than landed on it.
+    revision: int,
     // THE SOURCE THIS TICKET'S WORK RUNS AT — opaque, positive once the
     // ticket has been dispatched and 0 before (domain.qnt sourcePinned),
     // where the package hangs the same value off WorkExecution, its three
@@ -472,13 +481,21 @@ module chuggy_ticket {
     evidence: int
   }
 
+  /// An accepted update: the ticket, the revision it lands as, and the
+  /// definition that replaces the one before it.
+  type TicketUpdate = {
+    ticket: int,
+    revision: int,
+    definition: ReleasedTicket
+  }
+
   /// WHAT HAPPENED — the journal's row, and the only thing evolve reads. One
-  /// arm per fact the package names but `TicketUpdated`, which arrives with
-  /// the command that decides it. A fact carries what a replay needs and no
-  /// more: which edge a failing stage took is its arm, so the policy that
+  /// arm per fact the package names. A fact carries what a replay needs and
+  /// no more: which edge a failing stage took is its arm, so the policy that
   /// chose it is never consulted again.
   type TicketEvent =
     TicketCreated(ReleasedTicket)
+    | TicketUpdated(TicketUpdate)
     | TicketDispatched({ ticket: int, source: int })
     | TicketRevoked(int)
     | TicketWorkResumed(int)
@@ -529,14 +546,19 @@ module chuggy_ticket {
   // === Commands, refusals and the decision (the package's, verbatim) =======
 
   /// WHAT THE MACHINE IS ASKED — the decider's input, one arm per thing a
-  /// principal or the fabric can ask of a ticket: release one, dispatch it at
-  /// the source the application observed, revoke or resume it, report what a
-  /// task came back with, report what a finalizer did. The package's
-  /// `UpdateTicket` arrives with the ticket's revision. A command is never
-  /// journaled: `decide` turns it into the event the journal keeps, or into
-  /// a refusal nothing keeps.
+  /// principal or the fabric can ask of a ticket: release one, replace its
+  /// definition at the revision the author read, dispatch it at the source
+  /// the application observed, revoke or resume it, report what a task came
+  /// back with, report what a finalizer did. A command is never journaled:
+  /// `decide` turns it into the event the journal keeps, or into a refusal
+  /// nothing keeps.
   type TicketCommand =
     CreateTicket(ReleasedTicket)
+    | UpdateTicket({
+        ticket: int,
+        expectedRevision: int,
+        definition: ReleasedTicket
+      })
     | DispatchTicket({ ticket: int, source: int })
     | RevokeTicket(int)
     | ResumeTicket(int)
@@ -573,9 +595,6 @@ module chuggy_ticket {
   /// WHY THE MACHINE WOULD NOT — one arm per check a decider makes, each
   /// carrying the numbers it found. The first check that fails names the
   /// refusal, so each decider's order is the package's.
-  /// TicketIdentityMismatch, TicketRevisionStale and
-  /// TicketDependenciesChanged are declared for the package's UpdateTicket,
-  /// which no command here carries, so nothing reaches them yet.
   type TicketRefusal =
     TicketAlreadyExists(int)
     | DependenciesNotFound(IncompleteDependencies)

@@ -55,6 +55,7 @@ module chuggy_api {
   type ApiWorkResultAcceptedEvent = WorkResultAcceptedEvent
   type ApiWorkFailureEvent = WorkFailureEvent
   type ApiFinalizationFact = FinalizationFact
+  type ApiTicketUpdate = TicketUpdate
   type ApiTicketEvent = TicketEvent
   type ApiTicketTaskObligation = TicketTaskObligation
   type ApiFinalizationObligation = FinalizationObligation
