@@ -1006,6 +1006,24 @@ test("an event nothing owes any more falls through evolve", () => {
   );
 });
 
+test("an event that leaves a ticket where it stood leaves its ledger there too", () => {
+  const done = finalized(finalizing(), "FinalizationSucceeded");
+  assert.equal(ledgerOne(done).completions, 1);
+  assert.deepEqual(
+    evolveLedgers(done.post, done.ledgers, done.decision.event),
+    done.ledgers,
+    "a success landing on a Done ticket completes nothing a second time",
+  );
+  assert.deepEqual(
+    evolveLedgers(done.post, done.ledgers, {
+      type: "TicketCreated",
+      value: ticketAt(done.post, id(1)).definition,
+    }),
+    done.ledgers,
+    "a release of an id the fleet holds keeps the ledger that id has",
+  );
+});
+
 test("every fixture this suite builds is a shape the machine could have reached", () => {
   const worlds: readonly World[] = [
     { graph: chain, ledgers: ledgersOf(chain) },
