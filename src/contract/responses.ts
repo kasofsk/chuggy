@@ -266,6 +266,12 @@ export const ticketResponseSchema = z.object({
    */
   configurationRevision: identitySchema.optional(),
   configurationVersion: configurationVersionSchema.optional(),
+  /**
+   * The evaluation program the ticket's last release or update was resolved
+   * from, which its draft may since have been revised past. Only the ticket's
+   * own read carries it, and only where a draft revision records it.
+   */
+  program: authoringResponseSchema.shape.program.optional(),
   runTotals: runTotalsSchema.optional(),
 });
 export type TicketResponse = z.infer<typeof ticketResponseSchema>;

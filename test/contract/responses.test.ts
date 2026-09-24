@@ -252,6 +252,7 @@ test("a ticket read emits exactly the keys the contract names", () => {
     brief,
     configurationRevision: revision,
     configurationVersion,
+    program: [{ key: 1, evaluators: [{ key: 1 }] }],
     runTotals,
     ...ticketCarried,
   }).body as Record<string, unknown>;

@@ -24,6 +24,7 @@ import {
 export type { AuthorizedResult } from "./authorizedProject.ts";
 
 import type { Principal } from "./principal.ts";
+import type { ReleaseAuthoringProgram } from "../contract/authoring.ts";
 import type { EscalationKind, ResumePoint } from "../contract/rosters.ts";
 import { phaseTags, type Phase } from "../domain/generated/modelTypes.ts";
 import { resumeOf } from "../domain/ticket.ts";
@@ -303,6 +304,11 @@ export interface TicketResource {
   /** The configuration the ticket's last release or update pinned, which is what it runs under. */
   readonly configurationRevision?: ConfigurationRevisionId;
   readonly configurationVersion?: ConfigurationVersion;
+  /**
+   * The evaluation program the ticket's last release or update was resolved
+   * from, which is what its evaluation runs; its draft may since hold another.
+   */
+  readonly program?: ReleaseAuthoringProgram;
   readonly runTotals?: RunTotals;
 }
 

@@ -41,7 +41,10 @@ import {
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { Refusal } from "../../interpreter/refusal.ts";
 import { parseStoredRefusal } from "../../interpreter/wire.ts";
-import { asConfigurationRevisionId } from "../../interpreter/authoring.ts";
+import {
+  asConfigurationRevisionId,
+  parseDraftAuthoring,
+} from "../../interpreter/authoring.ts";
 import {
   configurationVersionOf,
   type ConfigurationVersionRow,
@@ -94,13 +97,15 @@ interface TicketProjectionRow {
 }
 
 /**
- * What a ticket's last release or update stored: the brief as its text, and
- * the configuration revision the projection pins, with the label its version
- * join adds.
+ * What a ticket's last release or update stored: the brief as its text, the
+ * configuration revision the projection pins, with the label its version join
+ * adds, and the authoring its draft held at the version that release or update
+ * named, which a revision since cannot move.
  */
 interface ReleasedBriefRow extends ConfigurationVersionRow {
   readonly brief: string | null;
   readonly configuration_revision: string | null;
+  readonly released_authoring: string | null;
 }
 
 /** One open action, or a ticket that has none: every column is then null. */
@@ -520,7 +525,7 @@ async function readTicketsByIdentity(
   return found.rows;
 }
 
-/** One ticket's projection with the brief and the configuration it was last released with. */
+/** One ticket's projection with the brief, the configuration and the authoring it was last released with. */
 async function readTicketRow(
   pool: pg.Pool,
   partition: Partition,
@@ -534,6 +539,7 @@ async function readTicketRow(
                b.brief::text AS brief,
                t.configuration_revision,
                v.name AS version_name,v.number::text AS version_number,
+               a.authoring AS released_authoring,
                r.committed_at::text AS released_at,
                c.committed_at::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
@@ -565,6 +571,11 @@ async function readTicketRow(
           LEFT JOIN repository_configuration_version v
             ON v.tenant=t.tenant AND v.project=t.project
            AND v.name=p.name AND v.digest=p.digest
+          LEFT JOIN draft e
+            ON e.tenant=t.tenant AND e.project=t.project AND e.ticket=t.ticket
+          LEFT JOIN draft_revision a
+            ON a.tenant=e.tenant AND a.project=e.project AND a.ticket=e.ticket
+           AND a.authoring_version=e.released_authoring_version
          WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
            AND t.ticket=${ticket}`,
   );
@@ -593,6 +604,9 @@ async function readTicket(
           ),
         }),
     ...(configurationVersion === undefined ? {} : { configurationVersion }),
+    ...(row.released_authoring === null
+      ? {}
+      : { program: parseDraftAuthoring(row.released_authoring).prog }),
     ...(runTotals === undefined ? {} : { runTotals }),
   };
 }

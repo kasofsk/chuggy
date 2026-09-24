@@ -28,6 +28,7 @@ import {
   asConfigurationRevisionId,
   canonicalConfigurationOf,
   type ConfigurationRevisionId,
+  type ReleaseAuthoring,
 } from "../../src/interpreter/authoring.ts";
 import {
   asGitObjectId,
@@ -1879,6 +1880,7 @@ function reviseReleased(
   expectedVersion: number,
   brief: DraftBrief,
   configurationRevision: ConfigurationRevisionId = fixture.revision,
+  authoring: ReleaseAuthoring = plainAuthoring,
 ) {
   return fixture.store.reviseDraft({
     partition: fixture.partition,
@@ -1886,7 +1888,7 @@ function reviseReleased(
     ticket: fixture.draft.ticket,
     expectedVersion,
     configurationRevision,
-    authoring: plainAuthoring,
+    authoring,
     brief,
   });
 }
@@ -1969,6 +1971,42 @@ test("a released update moves what the next dispatch reads, and the revision it 
   );
   assert.equal(read?.releasedAuthoringVersion, 2);
   assert.equal(read?.authoringVersion, 2);
+});
+
+/**
+ * The harness's domain admits one evaluator in one stage, so a revision wider
+ * than that is one the door takes and no update can release: the read must
+ * keep the program the release ran from while the draft holds it.
+ */
+test("a ticket read carries the program it was released with, not one its draft was revised to", async (t) => {
+  const fixture = await draftFixture();
+  const decide = await fixtureWriter(fixture, "update-program");
+  const asApi = postgresHarnessRolePool(apiRole);
+  t.after(() => asApi.end());
+  const program = async () =>
+    (
+      await postgresNativeReads(asApi).ticket(
+        fixture.partition,
+        fixture.draft.ticket,
+      )
+    )?.program;
+  assert.equal(await decide(releaseSubmission(fixture)), "Committed");
+  assert.deepEqual(await program(), plainAuthoring.prog);
+  const widened: ReleaseAuthoring = {
+    ...plainAuthoring,
+    prog: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
+  };
+  const revised = await reviseReleased(
+    fixture,
+    1,
+    postgresHarnessBriefIn(fixture.repository),
+    fixture.revision,
+    widened,
+  );
+  assert.equal(revised.revised, "Revised");
+  assert.deepEqual(await program(), plainAuthoring.prog);
+  assert.equal(await decide(updateSubmission(fixture, 1, 2)), "Refused");
+  assert.deepEqual(await program(), plainAuthoring.prog);
 });
 
 /** The configuration each place a dispatch reads it from holds for the fixture's ticket. */
