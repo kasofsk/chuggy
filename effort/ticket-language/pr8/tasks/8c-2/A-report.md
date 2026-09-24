@@ -1,0 +1,15 @@
+# A report (8c-2) — filed by the orchestrator from the builder's hand-back
+
+Tip dea8951a (8444d057 model, 9a5f7251 domain/actor, dea8951a corpus), `--no-verify` (check-source waits on B).
+
+- model: ticket.qnt types verbatim; domain.qnt decideUpdate (NotFound, NotPending, IdentityMismatch, RevisionStale, DependenciesChanged; owes []), evolve arm + freshTicket revision 1, commandValid package's + bounds; action updateTicket, updateProbesIn (all four refusals; release room does not gate an update); definitionsWellFormed revision > 0; step invariant revisionsAccounted. refinement actorUpdateTicket; api ApiTicketUpdate; mc_chuggy_directed refuseUpdate, updateStep, staleUpdateRefused. Unit tests updateLandsNextRevisionTest, updateRefusalOrderTest, updateNotOwedIsIdentityTest; witnesses updateThenDispatchWitness, refusalsWitness extended.
+- src/domain: decideUpdate, evolveUpdate, revisedTicketOf/revisionRef (config.ts), revisablesIn/updateOf/updateProbesIn, revisionsAccounted; ticketEquals compares revision; dependenciesEqual, releasedTicketEquals exported.
+- src/actor: updateTicketCommand(ticket, expectedRevision, definition); commandSubject; eventReportTicketAgrees → eventPayloadTicketAgrees (+ TicketUpdated definition.id === ticket); world.isSpawnFor.
+- Tests: itf vocabulary, dispatch table (updateTicket; emitterActions ["refuseUpdate"] via directedActions() in test/domain/declared.ts), random walk, journal.test (six answer rows, accepted update, forged row), invariants.test, equality mutant, codec fixture; check-conformance.test.sh tampers the first decided release wherever it falls.
+- Codec: {type:"UpdateTicket", value:{ticket, expectedRevision, definition}}; {type:"TicketUpdated", value:{ticket, revision, definition}}; Ticket.revision after definition.
+- No-wipe proof: test/actor/storedBeforeUpdate.test.ts replays test/actor/journal-before-update.itf.json (= origin/main evaluation-blocked-resume golden, 58 rows, all 17 pre-update arms): legal, semantics 8, every prefix = old map + revision 1.
+- Goldens: 20 (430 steps): ticket-updated-dispatch, update-revision-stale, update-dependencies-changed, update-not-pending, update-identity-mismatch, dependencies-incomplete (new aimed row; the walk moved off it). coverage asserts all thirteen fire + "an update owing nothing".
+- B must change: src/interpreter/projectCommand.ts:44-50 (OperationTicketCommand Exclude) and :127 (asOperationTicketCommand) — exclude UpdateTicket; operationInbox.ts:226 TS2366, :243 lint; test/interpreter/wire.test.ts :67 oneOfEach, :95 eventOfEach, :189/:200 rosters.
+- Outside layers: test/ui/ticketActions.test.ts fixture revision: 1.
+- Gates: check-model 0 (128), conformance 0 (20/430), random 0, model-api 0, figures 0, comments 0, paths 0, duplication 0; check-source 1 (B's + test/rig). Shell suites green. 220 unit pass in A's layers.
+- GOAL wrong: TicketNotPending was already reachable (dispatch) — needed directed refuseUpdate; identity mismatch drawable; package evolve does not check definition.id (TS legality and 016 do).

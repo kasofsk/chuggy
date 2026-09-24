@@ -325,6 +325,9 @@ obligation carries a definition); (c) last needs no wipe. Decisions in
 `pr8/GOAL.md`.
 
 **Landed: PR 8a #732 (main 5c15a8b7, migration 013, 2026-09-22)** — A/S/B/D build, round 1 machine + boundary (two equality conjuncts, the door's stage conjunct), sweep APPROVE with six gaps pinned by E; released to the rig with the wipe 2026-09-22 (with the #733 test-race fix, main 02bd9572; sanity ticket Done).
+- PR 8b #734 "Events and obligations" → main e78a93ce (2026-09-23); migration 014 with the wipe; `TicketEvent` and `evolve`, the journal row carries the event, the reduce steps gone. Effort dir `pr8/`.
+- PR 8c-1 #735 "Commands and refusals" → main b6e5b4fb (2026-09-24); migration 015 with the wipe; `TicketCommand` in, the thirteen refusals on the wire and in the console, reports verbatim.
+- PR 8c-2 #736 "Update" → main ccbf0c38 (2026-09-24); migration 016, no wipe; `UpdateTicket`/`TicketUpdated`/`Ticket.revision`, the draft reopens while Pending, a ticket runs and reads what was released. The release wedged the partition on the first update (016 missed the writer's re-pin grant); hotfixed on the rig, then #737 → main f8998a22, migration 017, and the durable suites now decide as the writer's role.
 
 ## PR 7 split (orchestrator, 2026-09-22)
 

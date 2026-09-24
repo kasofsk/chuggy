@@ -1,0 +1,23 @@
+# Task S (PR 8c-2) — migration 016: updates reach the journal, the draft reopens while its ticket is pending
+
+Branch `schema/ticket-update` off `origin/main` b6e5b4fb. Setup: `_setup.md` beside this file (read it first; it is part of this brief). Own postgres: `docker run -d --name chuggy-check-postgres-8c2-s -e POSTGRES_PASSWORD=chuggy-check -p 55445:5432 postgres:18-alpine`, `CHUG_PG_URL` on 55445; remove the container when done.
+
+Read first: `/Users/david/chuggy-effort/ticket-language/pr8/GOAL.md` §"PR 8c-2 — decisions" (4, 5, 6 and 8 are yours; 2 and 3 say what the rows carry), the 8c-1 decisions and progress lines above them, `pr8/survey.md` §4 and surprise 7, the package's `model/ticket-domain/ticket.qnt` 70–115 and 150–200, `pr8/tasks/8c-1/S.md`, `S-report.md` and `F-report.md`, `src/adapters/postgres/schema/migrations/{005,013,014,015}-*.ts` whole (005 holds `revise_draft`'s head; find `release_draft_fenced`'s), `baseline/relations.ts` for `draft`, `draft_revision`, `ticket_projection`, the notes `migrations-render-literals.md` and `migrations-edited-in-place.md` (see `_setup.md`), `CLAUDE.md`, `.chug/tasks/review-change.md`.
+
+## Scope
+
+`src/adapters/postgres/schema/migrations/016-*.ts` and `index.ts`, `test/postgres/migration.test.ts` and any postgres fixture that spells what 016 changes, the schema README if it describes what the rows carry. `deploy/rig/wipe-tickets.sql` only if 016 adds a table (say so either way).
+
+- **No guard, no wipe (decision 3).** 016 applies over a populated journal and inbox: every stored row stays valid under the rebuilt validators. Test it: a database at 015 holding a journal (release, dispatch, completion rows in 8c-1's spelling), operations and refusals migrates to 016 and every row still passes its CHECK/trigger.
+- **Spellings.** A runs in parallel: spell `UpdateTicket` and `TicketUpdated` from the package's types in the codec's `{"type","value"}` idiom as 015 does, in consts at the top; B aligns when A lands.
+- **Validators (decision 8).** `decision_event_is_valid` gains `TicketUpdated { ticket, revision > 1, definition }` with the definition checked as `TicketCreated`'s and its `id` equal to `ticket`; `decision_command_is_valid` gains `UpdateTicket { ticket, expectedRevision > 0, definition }`. Everything else as 015 admits it. The public admission: a public `Decide` does not carry `UpdateTicket` (it arrives as its own envelope, decision 4); the new envelope arm is admitted from a principal, classified Ordinary, and its authority is the API's — follow how `ReleaseDraft`'s envelope is admitted, fenced and classified, and say exactly which functions and constraints you touched.
+- **The projection.** `ticket_projection.revision bigint NOT NULL DEFAULT 1 CHECK (revision >= 1)`, grants as the table's other columns.
+- **The draft door (decision 5).** `revise_draft` admits a `Released` draft whose ticket's projection phase is `Pending`, refuses there a dependency change with `DependenciesLocked`, answers `NotDraft` past `Pending`; the draft gains the authoring version each release (first or update) was minted from (a column on `draft`, written by the release path B drives — say which function writes it; if a SQL function mints the release, 016 writes it there). `DependenciesLocked` added wherever the draft door's results are enumerated (CHECKs, return types).
+- Landed migrations are not edited. Render-diff of 001–015 main vs branch empty (`pr8/scratch/S/render.mjs`).
+- `test/postgres/migration.test.ts`: fresh install records 016; the populated upgrade above; journal rows (`TicketUpdated` admitted; revision 1 refused; id ≠ ticket refused); commands (`UpdateTicket` admitted; `expectedRevision` 0 refused); the public admission of the new envelope; `revise_draft` on a Pending released draft (admitted; dependency change `DependenciesLocked`; past Pending `NotDraft`); the projection column. Red-proof each new case against a fresh prepare; name each mutation.
+
+Single-suite recipe: `node --experimental-strip-types .chug/tasks/postgres-databases.ts prepare postgres://postgres:chuggy-check@127.0.0.1:55445/postgres <db>`, then `CHUG_PG_URL=postgres://postgres:chuggy-check@127.0.0.1:55445/<db> node --experimental-strip-types --test --test-name-pattern='…' test/postgres/migration.test.ts`; drop the database after. Run the whole `check-postgres` on your tip and report which suites are red and why they are B's.
+
+## Report
+
+Tip; 016's shape; the spellings each validator admits; the new envelope's admission, fence and classification (functions and constraints named); `revise_draft`'s new head; the populated-upgrade test; render-diff; red-proofs; red suites and why; anything GOAL.md got wrong. Under ~50 lines.
