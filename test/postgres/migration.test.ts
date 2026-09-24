@@ -25,6 +25,7 @@ import { migration013 } from "../../src/adapters/postgres/schema/migrations/013-
 import { migration014 } from "../../src/adapters/postgres/schema/migrations/014-ticket-events.ts";
 import { migration015 } from "../../src/adapters/postgres/schema/migrations/015-ticket-commands.ts";
 import { migration016 } from "../../src/adapters/postgres/schema/migrations/016-ticket-update.ts";
+import { migration017 } from "../../src/adapters/postgres/schema/migrations/017-ticket-repin.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -8614,5 +8615,53 @@ test("the door reports the work obligation of the ticket's latest definition", a
       journalled.value.value.result.obligation.definition,
       releasedSecondDefinition,
     );
+  });
+});
+
+/**
+ * Whether the writer may move a ticket's configuration pin, and that the api
+ * role may move neither column of it nor read the digest.
+ */
+async function repinPrivileges(
+  subject: pg.Pool,
+  writer: boolean,
+): Promise<void> {
+  for (const [column, role, privilege, granted] of [
+    ["configuration_revision", ticketServiceRole, "UPDATE", writer],
+    ["configuration_digest", ticketServiceRole, "UPDATE", writer],
+    ["configuration_revision", apiRole, "UPDATE", false],
+    ["configuration_digest", apiRole, "UPDATE", false],
+    ["configuration_digest", apiRole, "SELECT", false],
+  ] as const)
+    assert.equal(
+      (
+        await subject.query<{ held: boolean }>(
+          "SELECT has_column_privilege($1,'public.ticket_projection',$2,$3) AS held",
+          [role, column, privilege],
+        )
+      ).rows[0]?.held,
+      granted,
+      `${role} ${privilege} on ticket_projection.${column}`,
+    );
+}
+
+test("017 lets the writer re-pin a ticket's configuration, which 016 did not", async () => {
+  await migrationDatabase("repin_install", async (subject) => {
+    await installationBefore(subject, migration017.version);
+    await repinPrivileges(subject, false);
+    assert.ok((await postgresMigrate(subject)).includes(migration017.version));
+    await repinPrivileges(subject, true);
+  });
+});
+
+test("017 migrates a database already holding its grant", async () => {
+  await migrationDatabase("repin_granted", async (subject) => {
+    await installationBefore(subject, migration017.version);
+    await subject.query(
+      `GRANT UPDATE(configuration_revision, configuration_digest)
+         ON TABLE public.ticket_projection TO ${ticketServiceRole}`,
+    );
+    assert.ok((await postgresMigrate(subject)).includes(migration017.version));
+    await repinPrivileges(subject, true);
   });
 });
