@@ -91,7 +91,7 @@ import {
   allBoundaryRefusalCodes,
   allRefusalCodes,
   type RefusalCode,
-} from "../../src/interpreter/projectDecision.ts";
+} from "../../src/interpreter/refusal.ts";
 import { allAgenticRefusalEvents } from "../../src/interpreter/agenticRefusal.ts";
 import { allThreadStandings } from "../../src/interpreter/thread.ts";
 import {

@@ -90,7 +90,7 @@ import { encodeDraftAuthoring } from "../../src/interpreter/authoring.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
 import type { ProjectRead } from "../../src/interpreter/nativeWeb.ts";
-import { allRefusalCodes } from "../../src/interpreter/projectDecision.ts";
+import { allRefusalCodes } from "../../src/interpreter/refusal.ts";
 
 function databaseUrl(database: string): string {
   const url = new URL(postgresHarnessUrl());

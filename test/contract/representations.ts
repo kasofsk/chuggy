@@ -32,7 +32,7 @@ import type {
 } from "../../src/interpreter/runEvidence.ts";
 import { workSummaryOutput } from "../../src/interpreter/operationsView.ts";
 import type { OperationResource } from "../../src/interpreter/nativeWeb.ts";
-import type { Refusal } from "../../src/interpreter/projectDecision.ts";
+import type { Refusal } from "../../src/interpreter/refusal.ts";
 import type { TicketRefusal } from "../../src/domain/generated/modelTypes.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";

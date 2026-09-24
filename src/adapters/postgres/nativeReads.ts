@@ -39,7 +39,7 @@ import {
   type OperationState,
 } from "../../interpreter/operationInbox.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
-import type { Refusal } from "../../interpreter/projectDecision.ts";
+import type { Refusal } from "../../interpreter/refusal.ts";
 import { parseStoredRefusal } from "../../interpreter/wire.ts";
 import { projectRowCounter } from "./rows.ts";
 import { postgresTicketRunTotals } from "./runEvidence.ts";

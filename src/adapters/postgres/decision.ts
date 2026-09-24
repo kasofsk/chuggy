@@ -66,8 +66,10 @@ import {
 } from "../../interpreter/authoring.ts";
 import {
   boundaryRefusal,
-  projectTicketWriterAuthorityKind,
   type BoundaryRefusalCode,
+} from "../../interpreter/refusal.ts";
+import {
+  projectTicketWriterAuthorityKind,
   type Decided,
   type ConfigurationPin,
   type Decision,

@@ -28,7 +28,7 @@ import type {
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
-import type { Refusal } from "../../interpreter/projectDecision.ts";
+import type { Refusal } from "../../interpreter/refusal.ts";
 import {
   encodeRefusalValue,
   parseRefusalValue,

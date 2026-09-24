@@ -54,7 +54,7 @@ import type {
   NativeActionResolution,
   ProjectCommand,
 } from "./projectCommand.ts";
-import type { Refusal } from "./projectDecision.ts";
+import type { Refusal } from "./refusal.ts";
 import type {
   AuthoringStore,
   CanonicalConfiguration,

@@ -84,16 +84,18 @@ import type {
 } from "./executionSource.ts";
 import type { GitEvidence } from "./finalizer.ts";
 import type { ProjectDiscovery, Readiness } from "./projectDiscovery.ts";
+import type {
+  Decided,
+  DecisionOutcome,
+  ProjectDecision,
+  TicketProjection,
+  TicketSourceRecord,
+} from "./projectDecision.ts";
 import {
   boundaryRefusal,
   type BoundaryRefusalCode,
-  type Decided,
-  type DecisionOutcome,
-  type ProjectDecision,
   type Refusal,
-  type TicketProjection,
-  type TicketSourceRecord,
-} from "./projectDecision.ts";
+} from "./refusal.ts";
 import { ticketCommandOf } from "./commandMap.ts";
 import type { Lease, ProjectStore } from "./projectStore.ts";
 import { reworkDisposition, type ReworkCap } from "./reworkCap.ts";
