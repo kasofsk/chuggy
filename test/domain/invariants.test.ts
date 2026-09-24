@@ -40,6 +40,7 @@ import type {
   TicketGraph,
   TicketLedger,
   TicketState,
+  WorkInput,
 } from "../../src/domain/generated/modelTypes.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -81,6 +82,9 @@ import {
 } from "../../src/domain/invariants.ts";
 import {
   emptyLedger,
+  evaluationReworkInput,
+  finalizationReworkInput,
+  retryWorkInput,
   hasOpenHumanTask,
   initialWorkInput,
   workTaskObligation,
@@ -210,6 +214,43 @@ function attemptOf(state: TicketState): FinalizationOperation {
 /** The healthy fleet's attempt, which each finalization defect below edits one field of. */
 const attempt = attemptOf(finalizationState(finalizing));
 
+/** A cycle's input over content the ticket did not release. */
+const otherContent: WorkInput = {
+  ...initialWorkInput(released),
+  released: released.content + 1,
+};
+
+/** One defect per term `workInputValid` and `workInputMatchesTicket` hold an input to. */
+const workInputDefects: readonly (readonly [string, WorkInput])[] = [
+  ["it runs over the content the ticket released", otherContent],
+  [
+    "each retry names the evidence it retries on",
+    retryWorkInput(initialWorkInput(released), 0),
+  ],
+  [
+    "a rework names at least one dissenter",
+    evaluationReworkInput(released, []),
+  ],
+  [
+    "a dissenter is an evaluator",
+    evaluationReworkInput(released, [{ evaluator: 0, resultRef: 1 }]),
+  ],
+  [
+    "a dissenter's result is a reference",
+    evaluationReworkInput(released, [{ evaluator: 1, resultRef: 0 }]),
+  ],
+  [
+    "a finalizer's rework names its evidence",
+    finalizationReworkInput(released, 0),
+  ],
+];
+
+/** The same judgement, of no produced result. */
+const withoutResult = (instance: EvaluationInstance): EvaluationInstance => ({
+  ...instance,
+  input: { ...instance.input, workResult: 0 },
+});
+
 /** One payload defect per conjunct the package holds a state to, each named by the rule it breaks. */
 const payloadDefects: readonly (readonly [string, World])[] = [
   [
@@ -277,13 +318,162 @@ const payloadDefects: readonly (readonly [string, World])[] = [
     "a release lands the first revision, and nothing counts down from it",
     fleetBut(fleet, 1, { revision: 0 }),
   ],
+  [
+    "a settled ticket still holds a release the package could have carried",
+    worldOf({
+      ...fleet,
+      tickets: fleet.tickets.map((ticket, at) =>
+        at === 0
+          ? {
+              ...ticket,
+              definition: {
+                ...ticket.definition,
+                finalizationConfiguration: 0,
+              },
+            }
+          : ticket,
+      ),
+    }),
+  ],
+  [
+    "no ticket has started fewer than no cycles",
+    fleetBut(fleet, 0, { workCyclesStarted: -1 }),
+  ],
+  [
+    "a pending ticket has started no cycle",
+    fleetBut(fleet, 1, { state: "Pending" }),
+  ],
+  ...workInputDefects.map(
+    ([defect, input]) =>
+      [
+        `a cycle's input: ${defect}`,
+        fleetBut(fleet, 1, {
+          state: { type: "Work", value: { input, source: anAcceptedSource } },
+        }),
+      ] as const,
+  ),
+  [
+    "a work wall resumes over the content the ticket released",
+    fleetBut(fleet, 1, {
+      state: {
+        type: "Escalated",
+        value: {
+          type: "WorkFailureEscalated",
+          value: {
+            resumeInput: otherContent,
+            source: anAcceptedSource,
+            evidence: 1,
+          },
+        },
+      },
+    }),
+  ],
+  [
+    "a work wall holds the evidence that parked it",
+    fleetBut(fleet, 1, {
+      state: {
+        type: "Escalated",
+        value: {
+          type: "WorkExecutionUnavailableEscalated",
+          value: {
+            resumeInput: initialWorkInput(released),
+            source: anAcceptedSource,
+            evidence: 0,
+          },
+        },
+      },
+    }),
+  ],
+  [
+    "the evaluation-failure wall holds a dissenter's evidence",
+    fleetBut(fleet, 1, {
+      state: {
+        type: "Escalated",
+        value: {
+          type: "EvaluationFailureEscalated",
+          value: { evidence: [], source: anAcceptedSource },
+        },
+      },
+    }),
+  ],
+  [
+    "a judgement judges a produced result",
+    fleetBut(fleet, 1, {
+      state: evaluationState(
+        withoutResult(runningInstance(2, 1, plan, new Set())),
+      ),
+    }),
+  ],
+  [
+    "a judgement is of the ticket that holds it",
+    fleetBut(fleet, 1, {
+      state: evaluationState(runningInstance(3, 1, plan, new Set())),
+    }),
+  ],
+  [
+    "the blocked wall holds a judgement of a produced result",
+    fleetBut(fleet, 1, {
+      state: blockedWall(
+        withoutResult(blockedInstance(2, 1, plan, new Set([1]))),
+      ),
+    }),
+  ],
+  [
+    "the blocked wall holds a judgement of the ticket parked at it",
+    fleetBut(fleet, 1, {
+      state: blockedWall(blockedInstance(3, 1, plan, new Set([1]))),
+    }),
+  ],
+  [
+    "the blocked wall holds a judgement of the cycle the ticket is on",
+    fleetBut(fleet, 1, {
+      state: blockedWall(blockedInstance(2, 2, plan, new Set([1]))),
+    }),
+  ],
+  [
+    "an attempt finalizes the cycle the ticket is on",
+    fleetBut(fleet, 2, {
+      state: { type: "Finalization", value: { ...attempt, workCycle: 2 } },
+    }),
+  ],
+  [
+    "an attempt finalizes a produced result",
+    fleetBut(fleet, 2, {
+      state: { type: "Finalization", value: { ...attempt, input: 0 } },
+    }),
+  ],
+  [
+    "the finalization wall holds an attempt of the cycle the ticket is on",
+    fleetBut(fleet, 2, {
+      state: finalizationWall({ ...attempt, workCycle: 2 }),
+    }),
+  ],
+  [
+    "the finalization wall holds an attempt of a produced result",
+    fleetBut(fleet, 2, { state: finalizationWall({ ...attempt, input: 0 }) }),
+  ],
+  [
+    "the finalization wall holds the evidence that parked it",
+    fleetBut(fleet, 2, {
+      state: {
+        type: "Escalated",
+        value: {
+          type: "FinalizationUnavailableEscalated",
+          value: { finalization: attempt, evidence: 0 },
+        },
+      },
+    }),
+  ],
 ];
 
 test("graphWellFormed rejects a state whose payload the package's ticketInvariant refuses", () => {
   assert.ok(graphWellFormed(config, healthy));
-  for (const [defect, state] of payloadDefects) {
-    assert.ok(!graphWellFormed(config, worldView(state)), defect);
-  }
+  assert.deepEqual(
+    payloadDefects
+      .filter(([, state]) => graphWellFormed(config, worldView(state)))
+      .map(([defect]) => defect),
+    [],
+  );
   assert.ok(
     graphWellFormed(
       config,
