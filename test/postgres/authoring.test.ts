@@ -2099,6 +2099,31 @@ test("an untitled brief is called by the first line of its intent that says anyt
   );
 });
 
+test("a ticket's read shows the brief it runs, which an unreleased revision does not move and an update does", async () => {
+  const fixture = await draftFixture();
+  const decide = await fixtureWriter(fixture, "update-read");
+  assert.equal(await decide(releaseSubmission(fixture)), "Committed");
+  const reads = postgresNativeReads(pool);
+  const released = await reads.ticket(fixture.partition, fixture.draft.ticket);
+  assert.deepEqual(
+    released?.brief,
+    briefAsStored(postgresHarnessBriefIn(fixture.repository)),
+  );
+  const listed = await listedTitle(fixture);
+  const forged = forgedBrief(fixture.repository);
+  assert.equal((await reviseReleased(fixture, 1, forged)).revised, "Revised");
+  assert.deepEqual(
+    await reads.ticket(fixture.partition, fixture.draft.ticket),
+    released,
+  );
+  assert.equal(await listedTitle(fixture), listed);
+  assert.equal(await decide(updateSubmission(fixture, 1, 2)), "Committed");
+  const updated = await reads.ticket(fixture.partition, fixture.draft.ticket);
+  assert.deepEqual(updated?.brief, forged);
+  assert.equal(updated?.title, forged.intent);
+  assert.equal(await listedTitle(fixture), forged.intent);
+});
+
 test("the server refuses a title that reached it around the interpreter's rules", async () => {
   const { partition, draft } = await draftFixture();
   for (const value of [

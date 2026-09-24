@@ -69,7 +69,8 @@ import {
  * scheduler and the finalizer lose their read of the draft's brief, so the
  * released one is the only brief they can reach. `submit_finalization_result`
  * is rewritten whole to read its landing off the released definition for the
- * same reason.
+ * same reason. The API reads the released brief too, and of the row only the
+ * brief and its key, so a ticket's page shows what the ticket runs.
  *
  * The names below are the ones this adds. What 013–015 named, the bodies spell
  * as those installed it.
@@ -740,6 +741,7 @@ export const migration016: Migration = {
       WHERE b.tenant = d.tenant AND b.project = d.project AND b.ticket = d.ticket`,
     `GRANT UPDATE(brief) ON TABLE public.ticket_definition TO ${ticketServiceRole}`,
     `GRANT SELECT ON TABLE public.ticket_definition TO ${finalizerRole}`,
+    `GRANT SELECT(tenant, project, ticket, brief) ON TABLE public.ticket_definition TO ${apiRole}`,
     `REVOKE SELECT ON TABLE public.draft_brief, public.draft_brief_link, public.draft_brief_check FROM ${schedulerRole}, ${finalizerRole}`,
     `CREATE OR REPLACE FUNCTION public.submit_finalization_result(in_tenant text, in_project text, in_request text, in_attempt text, in_outcome text, in_failure_kind text, in_request_generation bigint, in_recovery_epoch text, in_operation text, in_authority_subject text) RETURNS TABLE(result text, operation text, ordinal bigint)
     LANGUAGE plpgsql SECURITY DEFINER

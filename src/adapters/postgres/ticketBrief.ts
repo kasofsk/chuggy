@@ -16,6 +16,7 @@ import { asRepositoryId } from "../../interpreter/finalizer.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import {
   asBriefBranch,
+  asDraftBrief,
   asBriefCheckLine,
   asBriefFinalization,
   asBriefIntent,
@@ -104,6 +105,18 @@ export function draftBriefOf(row: DraftBriefRow): DraftBrief | undefined {
       : { repository: asRepositoryId(row.repository) }),
     ...(finalization === undefined ? {} : { finalization }),
   };
+}
+
+/**
+ * The brief a ticket's last release or update stored, as a read shows it, or
+ * none where nothing was stored. The API credential reads the brief column and
+ * not the definition beside it, so this holds the brief to the brief's own
+ * rules and leaves the digest to the port below, which every run reads through.
+ */
+export function releasedBriefOf(stored: string | null): DraftBrief | undefined {
+  return stored === null
+    ? undefined
+    : asDraftBrief(JSON.parse(stored) as Parameters<typeof asDraftBrief>[0]);
 }
 
 /**

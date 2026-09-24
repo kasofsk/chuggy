@@ -43,7 +43,7 @@ import type { Refusal } from "../../interpreter/refusal.ts";
 import { parseStoredRefusal } from "../../interpreter/wire.ts";
 import { projectRowCounter } from "./rows.ts";
 import { postgresTicketRunTotals } from "./runEvidence.ts";
-import { draftBriefOf, type DraftBriefRow } from "./ticketBrief.ts";
+import { releasedBriefOf } from "./ticketBrief.ts";
 
 interface PublicOperationRow {
   readonly operation: string;
@@ -63,9 +63,11 @@ interface PublicOperationRow {
 interface TicketProjectionRow {
   readonly ticket: string;
   /**
-   * What the ticket is called: its brief's title, or the first line of its
-   * intent that says anything, cut to the title's bound, where the brief names
-   * none; empty where neither names anything.
+   * What the ticket is called: its released brief's title, or the first line
+   * of its intent that says anything, cut to the title's bound, where the brief
+   * names none; empty where neither names anything. It is the released brief
+   * and not the draft's, which a Pending ticket's author may have revised past
+   * what the ticket runs.
    */
   readonly ticket_title: string;
   readonly revision: string;
@@ -84,6 +86,11 @@ interface TicketProjectionRow {
    * names none.
    */
   readonly revoked_dependencies: string[] | null;
+}
+
+/** The brief a ticket's last release or update stored, as its text. */
+interface ReleasedBriefRow {
+  readonly brief: string | null;
 }
 
 /** One open action, or a ticket that has none: every column is then null. */
@@ -422,7 +429,7 @@ async function readTicketsByActivity(
 ): Promise<readonly TicketProjectionRow[]> {
   const found = await client.query<TicketProjectionRow>(
     sql`SELECT t.ticket,t.revision,t.phase,t.seq,t.escalation,t.escalation_evidence,
-                 coalesce(b.title,left(substring(b.intent from
+                 coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                    '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                    AS ticket_title,
                  r.committed_at::text AS released_at,
@@ -434,7 +441,7 @@ async function readTicketsByActivity(
                      AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
                    AS revoked_dependencies
           FROM ticket_projection t
-          LEFT JOIN draft_brief b
+          LEFT JOIN ticket_definition b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
@@ -467,7 +474,7 @@ async function readTicketsByIdentity(
 ): Promise<readonly TicketProjectionRow[]> {
   const found = await client.query<TicketProjectionRow>(
     sql`SELECT t.ticket,t.revision,t.phase,t.seq,t.escalation,t.escalation_evidence,
-               coalesce(b.title,left(substring(b.intent from
+               coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
                r.committed_at::text AS released_at,
@@ -479,7 +486,7 @@ async function readTicketsByIdentity(
                    AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
                  AS revoked_dependencies
           FROM ticket_projection t
-          LEFT JOIN draft_brief b
+          LEFT JOIN ticket_definition b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
@@ -503,19 +510,18 @@ async function readTicketsByIdentity(
   return found.rows;
 }
 
-/** One ticket's projection with the brief it was authored from. */
+/** One ticket's projection with the brief it was last released with. */
 async function readTicketRow(
   pool: pg.Pool,
   partition: Partition,
   ticket: TicketId,
-): Promise<(TicketProjectionRow & DraftBriefRow) | undefined> {
-  const found = await pool.query<TicketProjectionRow & DraftBriefRow>(
+): Promise<(TicketProjectionRow & ReleasedBriefRow) | undefined> {
+  const found = await pool.query<TicketProjectionRow & ReleasedBriefRow>(
     sql`SELECT t.ticket,t.revision,t.phase,t.seq,t.escalation,t.escalation_evidence,
-               coalesce(b.title,left(substring(b.intent from
+               coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
-               b.title,b.intent,b.branch,b.repository,
-               b.finalization_mode,b.finalization_target,
+               b.brief::text AS brief,
                r.committed_at::text AS released_at,
                c.committed_at::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
@@ -523,11 +529,7 @@ async function readTicketRow(
                  WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                    AND d.phase='Revoked'
                    AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
-                 AS revoked_dependencies,
-               (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
-                 WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS links,
-               (SELECT array_agg(k.command ORDER BY k.ordinal) FROM draft_brief_check k
-                 WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS checks
+                 AS revoked_dependencies
           FROM ticket_projection t
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
@@ -543,7 +545,7 @@ async function readTicketRow(
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
-          LEFT JOIN draft_brief b
+          LEFT JOIN ticket_definition b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
          WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
            AND t.ticket=${ticket}`,
@@ -559,7 +561,7 @@ async function readTicket(
 ): Promise<TicketResource | undefined> {
   const row = await readTicketRow(pool, partition, ticket);
   if (row === undefined) return undefined;
-  const brief = draftBriefOf(row);
+  const brief = releasedBriefOf(row.brief);
   const runTotals = await postgresTicketRunTotals(pool, partition, ticket);
   return {
     ...ticketResource(row),
