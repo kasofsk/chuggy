@@ -6,6 +6,7 @@
  * ticket but a Pending one blocked on a revoked dependency reads.
  */
 export const ticketInstants = {
+  revision: 1,
   releasedAt: "2026-08-26T00:00:00Z",
   changedAt: "2026-08-27T00:00:00Z",
   revokedDependencies: [],

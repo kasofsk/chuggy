@@ -1,15 +1,17 @@
 /**
  * The console's copy of the model's action enablement, held against the model.
  *
- * `ui/chuggy-ui/app/core/ticketActions.ts` restates `revocableIn` and
- * `retryableIn` because a browser reaches only `src/contract/`, and this is the
- * arrangement `no-console-sees-another` names for a value two trees both need:
- * the copy is written twice and a suite outside both holds them equal. Order is
- * not part of the claim — the offers are compared as an enablement per phase.
+ * `ui/chuggy-ui/app/core/ticketActions.ts` restates `revocableIn`,
+ * `retryableIn` and `revisablesIn` because a browser reaches only
+ * `src/contract/`, and this is the arrangement `no-console-sees-another` names
+ * for a value two trees both need: the copy is written twice and a suite
+ * outside both holds them equal. Order is not part of the claim — the offers
+ * are compared as an enablement per phase.
  *
  * `retryableIn` is `hasOpenHumanTask`, free on the sum's every variant
  * (`resumeOf` is total), so the console sees exactly what the model does here:
- * a phase is the whole of what either predicate needs.
+ * a phase is the whole of what either predicate needs, and `revisablesIn` is a
+ * phase alone.
  */
 
 import assert from "node:assert/strict";
@@ -17,7 +19,11 @@ import test from "node:test";
 
 import { phaseRoster } from "../../src/contract/rosters.ts";
 import type { TicketPhase } from "../../src/contract/rosters.ts";
-import { retryableIn, revocableIn } from "../../src/domain/enablement.ts";
+import {
+  retryableIn,
+  revisablesIn,
+  revocableIn,
+} from "../../src/domain/enablement.ts";
 import type {
   Ticket,
   TicketGraph,
@@ -27,6 +33,7 @@ import { plainDefinitionOf } from "../actor/harness.ts";
 import {
   actionsFor,
   ticketResumable,
+  ticketRevisable,
   ticketRevocable,
 } from "../../ui/chuggy-ui/app/core/ticketActions.ts";
 
@@ -67,6 +74,15 @@ test("the console's resumable phases are the model's, phase by phase", () => {
       ticketResumable(phase),
       retryableIn(graphWith(ticketIn(phase)), id),
       `resumable disagreed at ${phase}`,
+    );
+});
+
+test("the console's revisable phases are the model's, phase by phase", () => {
+  for (const phase of phaseRoster)
+    assert.equal(
+      ticketRevisable(phase),
+      revisablesIn(graphWith(ticketIn(phase))).includes(id),
+      `revisable disagreed at ${phase}`,
     );
 });
 

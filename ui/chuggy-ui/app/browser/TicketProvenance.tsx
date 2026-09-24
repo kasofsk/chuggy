@@ -2,6 +2,8 @@
  * Where this ticket came from: the brief a person wrote, the authoring the
  * retained draft holds, and the configuration it was released under, which is
  * named where the wire names it and drawn as its revision where it is not.
+ * The live revision is named with the draft version it was released from, and
+ * a draft revised since says it holds changes no update has released.
  *
  * The draft is the record of what was released, so a ticket whose draft the
  * API will not show reads as an absence with its reason rather than as a page
@@ -18,6 +20,11 @@ import { apiConfiguration } from "../core/apiRoutes.ts";
 import { briefLandingLine } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { configurationLabel } from "../core/labels.ts";
+import {
+  draftReleaseLine,
+  draftReleaseOf,
+  ticketRevisionLine,
+} from "../core/ticketEdit.ts";
 import { usePanelResource } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
@@ -117,10 +124,19 @@ export function TicketBrief(props: {
   );
 }
 
-function Authoring(props: { readonly draft: DraftResponse }): ReactNode {
+/** The revision field waits on the ticket read, which carries the revision. */
+function Authoring(props: {
+  readonly draft: DraftResponse;
+  readonly revision: number | undefined;
+}): ReactNode {
   const authoring = props.draft.authoring;
+  const release = draftReleaseOf(props.draft);
   return (
     <dl className="legacy-fields">
+      {props.revision === undefined ? null : (
+        <Field name="live">{ticketRevisionLine(props.revision, release)}</Field>
+      )}
+      <Field name="draft">{draftReleaseLine(release)}</Field>
       <Field name="dependencies">
         {authoring.dependencies.length === 0
           ? "none"
@@ -181,11 +197,12 @@ function TicketConfiguration(props: {
 export function TicketProvenance(props: {
   readonly partition: PartitionIdentity;
   readonly state: PanelState<DraftResponse>;
+  readonly revision: number | undefined;
 }): ReactNode {
   return (
     <>
       <DataPanel title="provenance" state={props.state}>
-        {(draft) => <Authoring draft={draft} />}
+        {(draft) => <Authoring draft={draft} revision={props.revision} />}
       </DataPanel>
       {props.state.state === "Ready" ? (
         <TicketConfiguration

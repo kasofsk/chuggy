@@ -193,6 +193,7 @@ function TicketBody(props: {
         <TicketMain
           partition={props.partition}
           draftState={props.reads.draftState}
+          revision={ticket?.revision}
           ledger={
             <TicketLedgerPanel
               partition={props.partition}

@@ -9,6 +9,7 @@
 import { expect, test } from "vitest";
 
 import type { TicketNativeActionsResponse } from "../../../src/contract/responses.ts";
+import { phaseRoster } from "../../../src/contract/rosters.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import type { TicketAction } from "../app/core/ticketActions.ts";
 import { ticketOffers } from "../app/core/ticketOffers.ts";
@@ -60,6 +61,17 @@ test("an open action's admitted answers replace the phase's guess at them", () =
       ]),
     ),
   ).toEqual(["Revoke"]);
+});
+
+/** The edit screen is an update's only way in, and only a Pending ticket
+ * admits one. */
+test("the edit screen is offered to a Pending ticket and to no other", () => {
+  for (const phase of phaseRoster) {
+    const drawn = ticketOffers(ready([]), { ...parked, phase }, undefined);
+    expect(drawn.offers === "Actions" && drawn.editable).toBe(
+      phase === "Pending",
+    );
+  }
 });
 
 test("a read that has not answered offers nothing, whatever the phase enables", () => {

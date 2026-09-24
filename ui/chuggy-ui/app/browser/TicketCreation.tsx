@@ -47,6 +47,7 @@ import {
 import type {
   CreationFault,
   CreationField,
+  CreationMotion,
   TicketCreationForm,
 } from "../core/ticketCreation.ts";
 import {
@@ -69,7 +70,7 @@ import { Picker } from "./ui/Picker.tsx";
 import { RadioGroup } from "./ui/RadioGroup.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
-type Attempt =
+export type Attempt =
   | { readonly attempt: "Idle" }
   | { readonly attempt: "Running"; readonly step: OperationStep }
   | {
@@ -315,29 +316,50 @@ function Landing(props: FormEdit): ReactNode {
   );
 }
 
-function AttemptNote(props: { readonly attempt: Attempt }): ReactNode {
+/** What a failed submit left in the draft, which only a submit that got as far
+ * as the draft has anything to say about. */
+function attemptHeldDraft(
+  draft: DraftResponse | undefined,
+  motion: CreationMotion,
+): string {
+  if (draft === undefined) return "";
+  switch (motion) {
+    case "Release":
+      return ` — draft ${String(draft.ticket)} was created and not released; submitting again releases that draft`;
+    case "Update":
+      return ` — the draft holds this revision at version ${String(draft.authoringVersion)}, not released`;
+  }
+}
+
+export function AttemptNote(props: {
+  readonly attempt: Attempt;
+  readonly motion?: CreationMotion;
+}): ReactNode {
   const attempt = props.attempt;
+  const motion = props.motion ?? "Release";
   switch (attempt.attempt) {
     case "Idle":
       return null;
     case "Running":
-      return <p className="panel-note">{creationStepSentence(attempt.step)}</p>;
+      return (
+        <p className="panel-note">
+          {creationStepSentence(attempt.step, motion)}
+        </p>
+      );
     case "Stale":
       return <p className="panel-absent">{attempt.reason}</p>;
     case "Failed":
       return (
         <p className="panel-failed">
           {attempt.reason}
-          {attempt.draft === undefined
-            ? ""
-            : ` — draft ${String(attempt.draft.ticket)} was created and not released; submitting again releases that draft`}
+          {attemptHeldDraft(attempt.draft, motion)}
         </p>
       );
   }
 }
 
 /** A submit that outlived its screen has nowhere to report, so it stops there. */
-function useMounted(): { readonly current: boolean } {
+export function useMounted(): { readonly current: boolean } {
   const mounted = useRef(true);
   useEffect(
     () => () => {
@@ -348,12 +370,33 @@ function useMounted(): { readonly current: boolean } {
   return mounted;
 }
 
-function CreationFields(
+/** A released ticket's dependencies, drawn and not offered, because an update
+ * that moved them would be refused. */
+function LockedDependencies(props: {
+  readonly dependencies: readonly number[];
+}): ReactNode {
+  return (
+    <div className="creation-row">
+      <span>dependencies</span>
+      <p>
+        {props.dependencies.length === 0
+          ? "none"
+          : props.dependencies.map((held) => `#${String(held)}`).join(", ")}
+      </p>
+      <span className="col-start-2 -col-end-1 text-ink-3 text-xs">
+        fixed once the ticket was released
+      </span>
+    </div>
+  );
+}
+
+export function CreationFields(
   props: FormEdit & {
     readonly faults: readonly CreationFault[];
     readonly configuration: ConfigurationSummary;
     readonly initialization: DraftInitializationResponse;
     readonly repositories: readonly ProjectRepositoryResponse[];
+    readonly dependenciesLocked?: boolean;
   },
 ): ReactNode {
   const { faults, form, initialization, onChange } = props;
@@ -391,10 +434,14 @@ function CreationFields(
           <Fault field="target" faults={faults} />
         </>
       )}
+      {props.dependenciesLocked === true ? (
+        <LockedDependencies dependencies={form.dependencies} />
+      ) : null}
       <TicketCreationAdvanced
         form={form}
         onChange={onChange}
         initialization={initialization}
+        dependenciesLocked={props.dependenciesLocked === true}
       />
       <Fault field="authoring" faults={faults} />
       <Fault field="fence" faults={faults} />

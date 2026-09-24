@@ -2,9 +2,10 @@
  * Which public mutations a ticket's phase enables, as a pure function of the
  * ticket the wire answers with.
  *
- * The two predicates are the model's `revocableIn` and `retryableIn`, restated
- * because a browser reaches only `src/contract/`, and held phase by phase
- * against `src/domain/enablement.ts` by `test/ui/ticketActions.test.ts` — the
+ * The predicates are the model's `revocableIn`, `retryableIn` and
+ * `revisablesIn`, restated because a browser reaches only `src/contract/`, and
+ * held phase by phase against `src/domain/enablement.ts` by
+ * `test/ui/ticketActions.test.ts` — the
  * arrangement `no-console-sees-another` names for a value two trees both need.
  * A phase is less than the model checks: a resume also needs a modeled
  * resumption, and the wire does not carry that, so this offers what the phase
@@ -53,6 +54,12 @@ export function ticketRevocable(phase: TicketPhase): boolean {
 
 export function ticketResumable(phase: TicketPhase): boolean {
   return ticketResumablePhases.includes(phase);
+}
+
+/** Whether an update is admitted, which only a Pending ticket's is. It is not a
+ * `TicketAction`: what it submits is written on the edit screen, not here. */
+export function ticketRevisable(phase: TicketPhase): boolean {
+  return phase === "Pending";
 }
 
 /** Resume before revoke, because the destructive answer is never the first one. */

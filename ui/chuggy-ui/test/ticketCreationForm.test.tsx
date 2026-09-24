@@ -31,6 +31,8 @@ import {
   creationInitialization,
   creationPartition,
 } from "./ticketCreationFixture.ts";
+import { answeringApi } from "./answeringApi.ts";
+import type { Sent } from "./answeringApi.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 
@@ -41,12 +43,6 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-
-interface Sent {
-  readonly method: string;
-  readonly path: string;
-  readonly body: unknown;
-}
 
 interface Api {
   readonly ports: ApiPorts;
@@ -81,39 +77,21 @@ function api(options: {
   readonly state: string;
   readonly draftStatus?: number;
 }): Api {
-  const sent: Sent[] = [];
-  return {
-    sent,
-    ports: {
-      fetch: (path, init) => {
-        const body: unknown =
-          init.body === undefined ? undefined : JSON.parse(init.body);
-        sent.push({ method: init.method, path, body });
-        const answer = ((): { status: number; body: unknown } => {
-          if (init.method === "POST" && path.endsWith("/drafts"))
-            return {
-              status: options.draftStatus ?? 201,
-              body:
-                (options.draftStatus ?? 201) === 201
-                  ? creationDraft
-                  : { error: { code: "DraftInitializationStale" } },
-            };
-          if (init.method === "POST" && path.endsWith("/operations"))
-            return { status: 202, body: { operation: "op", state: "Pending" } };
-          if (path.includes("/operations/"))
-            return { status: 200, body: operationBody(options.state) };
-          return { status: 200, body: projectBody };
-        })();
-        return Promise.resolve({
-          status: answer.status,
-          headers: { get: () => null },
-          text: () => Promise.resolve(JSON.stringify(answer.body)),
-        } as unknown as Response);
-      },
-      bearer: () => Promise.resolve("token"),
-      sleepMs: () => Promise.resolve(),
-    },
-  };
+  return answeringApi((method, path) => {
+    if (method === "POST" && path.endsWith("/drafts"))
+      return {
+        status: options.draftStatus ?? 201,
+        body:
+          (options.draftStatus ?? 201) === 201
+            ? creationDraft
+            : { error: { code: "DraftInitializationStale" } },
+      };
+    if (method === "POST" && path.endsWith("/operations"))
+      return { status: 202, body: { operation: "op", state: "Pending" } };
+    if (path.includes("/operations/"))
+      return { status: 200, body: operationBody(options.state) };
+    return { status: 200, body: projectBody };
+  });
 }
 
 const queryKey = creationContextList(creationPartition).key;

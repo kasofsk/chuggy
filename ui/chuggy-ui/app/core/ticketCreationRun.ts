@@ -1,6 +1,7 @@
 /**
- * The two motions a creation screen makes: reading what a ticket would be
- * created against, and creating and releasing one in a single submit.
+ * The motions a creation screen makes: reading what a ticket would be created
+ * against, creating and releasing one in a single submit, and — for a Pending
+ * ticket's edit — revising its draft and releasing the update in one.
  *
  * The configuration is not asked for, so it is walked to here — newest first,
  * for a bounded number of pages, until one is ready — and the initialization it
@@ -19,8 +20,12 @@ import type {
   DraftInitializationResponse,
   DraftResponse,
   ProjectRepositoryResponse,
+  TicketResponse,
 } from "../../../../src/contract/responses.ts";
-import type { draftCreationSchema } from "../../../../src/contract/requests.ts";
+import type {
+  draftCreationSchema,
+  draftRevisionSchema,
+} from "../../../../src/contract/requests.ts";
 import type { z } from "zod";
 
 import {
@@ -28,10 +33,13 @@ import {
   apiCreateDraft,
   apiDraftInitialization,
   apiProjectRepositories,
+  apiReviseDraft,
   configurationPagesMax,
 } from "./apiRoutes.ts";
 import type { ApiPorts, ApiResult } from "./apiRequest.ts";
 import {
+  draftRevisionFailureSentence,
+  draftRevisionRefusalSentence,
   operationFailureSentence,
   operationRefusalSentence,
   operationStateSentence,
@@ -44,6 +52,7 @@ import {
   creationReleaseMutation,
   latestReadyConfiguration,
 } from "./ticketCreation.ts";
+import { ticketUpdateMutation } from "./ticketEdit.ts";
 
 export type CreationContext =
   | {
@@ -248,4 +257,49 @@ export async function createAndReleaseTicket(
     onStep,
   );
   return releasedTicket(followed.step, created);
+}
+
+export interface TicketUpdateRequest {
+  /** The ticket as read, whose revision is the one the update is written against. */
+  readonly ticket: TicketResponse;
+  readonly body: z.infer<typeof draftRevisionSchema>;
+  readonly operation: string;
+}
+
+/**
+ * One edit: the draft revised, and the revision released as the ticket's update
+ * and followed to settlement, a refusal handing back the draft that holds it.
+ * Each submit revises again under a fresh operation, which `TicketRevisionStale`
+ * makes safe against a ticket an earlier one already moved.
+ */
+export async function reviseAndUpdateTicket(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  request: TicketUpdateRequest,
+  onStep: (step: OperationStep) => void,
+): Promise<TicketCreated> {
+  const ticket = request.ticket.ticket;
+  const revised = await apiReviseDraft(ports, partition, ticket, request.body);
+  if (revised.outcome !== "Ok")
+    return revised.outcome === "Conflict" && revised.code === "DraftChanged"
+      ? {
+          created: "Stale",
+          reason: draftRevisionRefusalSentence("DraftChanged"),
+        }
+      : {
+          created: "Refused",
+          reason: draftRevisionFailureSentence(revised),
+          draft: undefined,
+        };
+  const followed = await followOperation(
+    ports,
+    partition,
+    {
+      operation: request.operation,
+      mutation: ticketUpdateMutation(request.ticket, revised.value),
+    },
+    ticket,
+    onStep,
+  );
+  return releasedTicket(followed.step, revised.value);
 }
