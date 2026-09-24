@@ -24,6 +24,7 @@ import { migration012 } from "../../src/adapters/postgres/schema/migrations/012-
 import { migration013 } from "../../src/adapters/postgres/schema/migrations/013-released-ticket.ts";
 import { migration014 } from "../../src/adapters/postgres/schema/migrations/014-ticket-events.ts";
 import { migration015 } from "../../src/adapters/postgres/schema/migrations/015-ticket-commands.ts";
+import { migration016 } from "../../src/adapters/postgres/schema/migrations/016-ticket-update.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -7899,5 +7900,658 @@ test("the command validator rebuilt whole stays the boundary owner's and nobody'
     await predicatesClosed(subject, [
       "public.decision_command_is_valid(jsonb)",
     ]);
+  });
+});
+
+test("a fresh install records the update arriving, the revision a ticket is at and the version its draft was released from", async () => {
+  await migrationDatabase("update_install", async (subject) => {
+    assert.ok((await postgresMigrate(subject)).includes(migration016.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT version,name FROM schema_migration WHERE version=$1",
+          [migration016.version],
+        )
+      ).rows,
+      [
+        {
+          version: migration016.version,
+          name: "a pending ticket takes an update, and its draft reopens for one",
+        },
+      ],
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT table_name, column_name, data_type, is_nullable, column_default
+             FROM information_schema.columns
+            WHERE (table_name, column_name) IN
+                  (('ticket_projection','revision'), ('draft','released_authoring_version'))
+            ORDER BY table_name`,
+        )
+      ).rows,
+      [
+        {
+          table_name: "draft",
+          column_name: "released_authoring_version",
+          data_type: "bigint",
+          is_nullable: "YES",
+          column_default: null,
+        },
+        {
+          table_name: "ticket_projection",
+          column_name: "revision",
+          data_type: "bigint",
+          is_nullable: "NO",
+          column_default: "1",
+        },
+      ],
+    );
+    for (const [relation, column, role, privilege, granted] of [
+      ["ticket_projection", "revision", apiRole, "SELECT", true],
+      ["ticket_projection", "revision", apiRole, "UPDATE", false],
+      ["ticket_projection", "revision", ticketServiceRole, "UPDATE", true],
+      ["ticket_definition", "definition", ticketServiceRole, "UPDATE", true],
+      ["ticket_definition", "digest", ticketServiceRole, "UPDATE", true],
+      ["ticket_definition", "ticket", ticketServiceRole, "UPDATE", false],
+      ["draft", "released_authoring_version", apiRole, "SELECT", true],
+      ["draft", "released_authoring_version", apiRole, "UPDATE", false],
+      [
+        "draft",
+        "released_authoring_version",
+        boundaryOwnerRole,
+        "UPDATE",
+        true,
+      ],
+    ] as const)
+      assert.equal(
+        (
+          await subject.query<{ held: boolean }>(
+            "SELECT has_column_privilege($1,$2,$3,$4) AS held",
+            [role, `public.${relation}`, column, privilege],
+          )
+        ).rows[0]?.held,
+        granted,
+        `${role} ${privilege} on ${relation}.${column}`,
+      );
+    const fence =
+      "public.update_draft_fenced(text,text,bigint,bigint,text,text,boolean)";
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT pg_get_userbyid(proowner) AS owner,
+                  has_function_privilege($2,$1,'EXECUTE') AS writer,
+                  has_function_privilege($3,$1,'EXECUTE') AS api,
+                  has_function_privilege('public',$1,'EXECUTE') AS anyone
+             FROM pg_proc WHERE oid=$1::regprocedure`,
+          [fence, ticketServiceRole, apiRole],
+        )
+      ).rows,
+      [{ owner: boundaryOwnerRole, writer: true, api: false, anyone: false }],
+    );
+  });
+});
+
+/** What 015 left behind on a project that ran: a journal, an inbox, refusals, drafts and a projection. */
+async function updatePopulated(subject: pg.Pool): Promise<void> {
+  await subject.query(deletionPartition);
+  const journal = [
+    ticketCreated(releasedWhole),
+    { type: "TicketDispatched", value: { ticket: 1, source: 7 } },
+    {
+      type: "TicketWorkResultAccepted",
+      value: {
+        ticket: 1,
+        result: { obligation: releasedObligation, resultRef: 5 },
+        acceptedSourceRef: 7,
+      },
+    },
+    {
+      type: "TicketEvaluationPassed",
+      value: {
+        ticket: 1,
+        report: commandsReport(commandsEvaluationReport, 1),
+      },
+    },
+    { type: "TicketFinalizationSucceeded", value: eventsFinalization },
+  ];
+  for (const [index, event] of journal.entries())
+    await subject.query(
+      deletionJournalRow(index + 1, JSON.stringify({ seq: index + 1, event })),
+    );
+  await subject.query(
+    `UPDATE project SET head=5, ingress_next=6
+      WHERE tenant='tenant-5' AND project='project-5';
+     INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
+     VALUES('tenant-5','project-5',1,'Done',5)`,
+  );
+  assert.deepEqual(
+    await commandsAccepted(
+      subject,
+      "accept_operation",
+      "operation-revoke",
+      commandsDecide({ type: "RevokeTicket", value: 1 }),
+    ),
+    { result: "Accepted" },
+  );
+  await subject.query(
+    `INSERT INTO operation
+       (tenant,project,operation,authority_kind,authority_subject,admission,
+        key_version,key_digest,payload_digest,command,command_tag)
+     VALUES('tenant-5','project-5','operation-report','ExecutionScheduler','scheduler',
+            'CorrectnessReducing','scheduler-v1','key-report','payload-report',$1,
+            'ReportTaskTerminal'),
+           ('tenant-5','project-5','operation-finalized','Finalizer','finalizer',
+            'CorrectnessReducing','finalizer-v1','key-finalized','payload-finalized',$2,
+            'ReportFinalizationResult')`,
+    [
+      commandsDecide({
+        type: "ReportTaskTerminal",
+        value: commandsReport(commandsWorkReport, 1),
+      }),
+      JSON.stringify({
+        version: 1,
+        command: "SubmitFinalizationResult",
+        request: "request-5",
+        requestGeneration: 1,
+        recoveryEpoch: "epoch-5",
+        outcome: "FinalizationSucceeded",
+      }),
+    ],
+  );
+  for (const [ordinal, code, refusal] of [
+    [50, "TicketNotFound", commandsRefusal("TicketNotFound", 2)],
+    [
+      51,
+      "DependenciesIncomplete",
+      commandsRefusal("DependenciesIncomplete", {
+        ticket: 1,
+        dependencies: [2],
+      }),
+    ],
+    [52, "AuthoringChanged", null],
+  ] as const)
+    assert.equal(await commandsRefuse(subject, ordinal, code, refusal), null);
+  await seedProposingBinding(subject);
+  for (const ticket of ["1", "2"])
+    assert.deepEqual(
+      await createdProposingDraft(subject, "refs/heads/branch-91"),
+      [{ result: "Created", ticket }],
+    );
+  assert.equal(
+    await updateFenced(subject, draftReleaseFunction, 1, true),
+    true,
+  );
+}
+
+test("a journal and an inbox 015 wrote migrate to the update with every row still standing", async () => {
+  await migrationDatabase("update_populated", async (subject) => {
+    await installationBefore(subject, migration016.version);
+    await updatePopulated(subject);
+    assert.ok((await postgresMigrate(subject)).includes(migration016.version));
+    const client = await subject.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-6','project-5','Active');
+         CREATE TEMP TABLE inputs ON COMMIT DROP AS
+           SELECT * FROM decision_input WHERE decided_seq IS NOT NULL;
+         CREATE TEMP TABLE held ON COMMIT DROP AS SELECT * FROM journal_entry;
+         UPDATE inputs SET tenant='tenant-6';
+         UPDATE held SET tenant='tenant-6';
+         INSERT INTO decision_input SELECT * FROM inputs;
+         INSERT INTO journal_entry SELECT * FROM held;
+         UPDATE decision_input SET state=state;
+         UPDATE operation SET command=command;
+         UPDATE draft SET state=state;
+         UPDATE ticket_projection SET phase=phase`,
+      );
+      assert.deepEqual(
+        (await client.query("SELECT count(*)::int AS held FROM held")).rows,
+        [{ held: 5 }],
+        "every journalled event passes the journal's check again",
+      );
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT operation FROM operation
+            WHERE ticket_command_is_valid(command::jsonb) IS NOT TRUE`,
+        )
+      ).rows,
+      [],
+      "every stored command is still one the mailbox admits",
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT ticket::int AS ticket, state, released_authoring_version::int AS released
+             FROM draft ORDER BY ticket`,
+        )
+      ).rows,
+      [
+        { ticket: 1, state: "Released", released: 1 },
+        { ticket: 2, state: "Draft", released: null },
+      ],
+      "a released draft was released from the version it is at",
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT revision::int AS revision FROM ticket_projection",
+        )
+      ).rows,
+      [{ revision: 1 }],
+      "a released ticket is at the release's revision",
+    );
+  });
+});
+
+/** An update of a ticket to the released ticket given, at a revision. */
+function updateJournalled(
+  revision: unknown,
+  definition: unknown,
+  ticket = 1,
+): string {
+  return JSON.stringify({
+    seq: 1,
+    event: { type: "TicketUpdated", value: { ticket, revision, definition } },
+  });
+}
+
+test("the journal takes an update past the release's revision, about the ticket its definition names", async () => {
+  await migrationDatabase("update_journal", async (subject) => {
+    await postgresMigrate(subject);
+    await subject.query(deletionPartition);
+    const contentless: Record<string, unknown> = { ...releasedWhole };
+    delete contentless["content"];
+    for (const [label, entry, admitted] of [
+      [
+        "an update at the second revision",
+        updateJournalled(2, releasedWhole),
+        true,
+      ],
+      [
+        "an update at a later revision",
+        updateJournalled(7, releasedWhole),
+        true,
+      ],
+      [
+        "an update at the release's revision",
+        updateJournalled(1, releasedWhole),
+        false,
+      ],
+      ["an update at no revision", updateJournalled(0, releasedWhole), false],
+      [
+        "an update naming no revision",
+        updateJournalled(undefined, releasedWhole),
+        false,
+      ],
+      [
+        "an update at a revision that is text",
+        updateJournalled("2", releasedWhole),
+        false,
+      ],
+      [
+        "an update about another ticket than its definition names",
+        updateJournalled(2, releasedWhole, 2),
+        false,
+      ],
+      [
+        "an update to a definition naming another ticket",
+        updateJournalled(2, { ...releasedWhole, id: 2 }),
+        false,
+      ],
+      [
+        "an update to a definition that is not a released ticket",
+        updateJournalled(2, contentless),
+        false,
+      ],
+    ] as const)
+      assert.equal(await eventsAdmitted(subject, entry), admitted, label);
+  });
+});
+
+/** An update command, varied one field at a time. */
+function updateCommand(value: Record<string, unknown>): unknown {
+  return {
+    type: "UpdateTicket",
+    value: {
+      ticket: 1,
+      expectedRevision: 1,
+      definition: releasedWhole,
+      ...value,
+    },
+  };
+}
+
+test("the inbox's grammar takes an update at a revision it expects, and no Decide carries one", async () => {
+  await migrationDatabase("update_grammar", async (subject) => {
+    await postgresMigrate(subject);
+    for (const [label, command, grammar] of [
+      ["an update", updateCommand({}), true],
+      [
+        "an update expecting a later revision",
+        updateCommand({ expectedRevision: 4 }),
+        true,
+      ],
+      [
+        "an update whose definition names another ticket",
+        updateCommand({ definition: { ...releasedWhole, id: 2 } }),
+        true,
+      ],
+      [
+        "an update expecting no revision",
+        updateCommand({ expectedRevision: 0 }),
+        false,
+      ],
+      [
+        "an update naming no expected revision",
+        updateCommand({ expectedRevision: undefined }),
+        false,
+      ],
+      ["an update of no ticket", updateCommand({ ticket: 0 }), false],
+      [
+        "an update in the spelling the release left",
+        updateCommand({ definition: { ...releasedWhole, deps: [2] } }),
+        false,
+      ],
+      [
+        "an update to no definition",
+        updateCommand({ definition: undefined }),
+        false,
+      ],
+    ] as const)
+      assert.deepEqual(
+        (
+          await subject.query<{ grammar: boolean; mailbox: boolean }>(
+            `SELECT decision_command_is_valid($1::jsonb) AS grammar,
+                    ticket_command_is_valid($2::jsonb) AS mailbox`,
+            [JSON.stringify(command), commandsDecide(command)],
+          )
+        ).rows,
+        [{ grammar, mailbox: false }],
+        label,
+      );
+  });
+});
+
+/** The envelope a principal offers an update of draft 1 under, varied one field at a time. */
+function updateEnvelope(value: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    version: 1,
+    command: "UpdateTicket",
+    ticket: 1,
+    expectedRevision: 1,
+    authoringVersion: 1,
+    configurationRevision: "revision-91",
+    ...value,
+  });
+}
+
+/** What the mailbox answered a user's command with, on the project the drafts are in. */
+async function updateAccepted(
+  subject: pg.Pool,
+  operation: string,
+  command: string,
+): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT result FROM accept_operation('tenant-91','project-91',$1,'User','subject',
+         'v1',$1,$1,ARRAY[$1]::text[],ARRAY[$1]::text[],$2,1000,2000,NULL)`,
+      [operation, command],
+    )
+  ).rows[0];
+}
+
+test("a principal offers an update as its own envelope, classified ordinary against a draft revision that exists", async () => {
+  await migrationDatabase("update_accept", async (subject) => {
+    await postgresMigrate(subject);
+    await seedProposingBinding(subject);
+    assert.deepEqual(
+      await createdProposingDraft(subject, "refs/heads/branch-91"),
+      [{ result: "Created", ticket: "1" }],
+    );
+    assert.deepEqual(
+      await updateAccepted(subject, "operation-update", updateEnvelope()),
+      { result: "Accepted" },
+    );
+    assert.deepEqual(await commandsClassified(subject, "operation-update"), [
+      {
+        command_tag: "UpdateTicket",
+        admission: "Ordinary",
+        base_priority: "Ordinary",
+      },
+    ]);
+    for (const [label, command] of [
+      [
+        "an update expecting no revision",
+        updateEnvelope({ expectedRevision: 0 }),
+      ],
+      [
+        "an update naming no expected revision",
+        updateEnvelope({ expectedRevision: undefined }),
+      ],
+      [
+        "an update at an authoring version the draft never had",
+        updateEnvelope({ authoringVersion: 2 }),
+      ],
+      [
+        "an update at a configuration the draft was not revised to",
+        updateEnvelope({ configurationRevision: "revision-92" }),
+      ],
+      ["an update as a Decide", commandsDecide(updateCommand({}))],
+    ] as const)
+      assert.deepEqual(
+        await updateAccepted(subject, `operation-${label}`, command),
+        { result: "InvalidCommand" },
+        label,
+      );
+  });
+});
+
+/** Revises draft 1 at the version expected, to the authoring given. */
+async function updateRevised(
+  subject: pg.Pool,
+  expected: number,
+  authoring: string,
+): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT result, authoring_version::int AS version, state FROM ${draftReviseFunction}(
+         'tenant-91','project-91',1,$1,'revision-91',$2,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'refs/heads/branch-91',
+         NULL,NULL,'bound-91','User','author')`,
+      [expected, authoring],
+    )
+  ).rows;
+}
+
+/** Asks one fence about a draft at the version given, committing when told to. */
+async function updateFenced(
+  subject: pg.Pool,
+  fence: string,
+  expected: number,
+  commit = false,
+  ticket = 1,
+): Promise<unknown> {
+  return (
+    await subject.query<{ matched: boolean }>(
+      `SELECT ${fence}('tenant-91','project-91',$1,$2,'revision-91','digest-91',$3) AS matched`,
+      [ticket, expected, commit],
+    )
+  ).rows[0]?.matched;
+}
+
+async function updateReleasedAt(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT released_authoring_version::int AS released FROM draft
+        WHERE tenant='tenant-91' AND project='project-91' AND ticket=1`,
+    )
+  ).rows[0];
+}
+
+test("a released draft reopens while its ticket is pending, at the dependencies it was released with", async () => {
+  await migrationDatabase("update_draft", async (subject) => {
+    await postgresMigrate(subject);
+    await seedProposingBinding(subject);
+    for (const ticket of ["1", "2"])
+      assert.deepEqual(
+        await createdProposingDraft(subject, "refs/heads/branch-91"),
+        [{ result: "Created", ticket }],
+      );
+    const same = encodeDraftAuthoring(plainAuthoring);
+    const moved = encodeDraftAuthoring({
+      ...plainAuthoring,
+      deps: new Set([2]),
+    });
+    const update = "update_draft_fenced";
+    assert.equal(
+      await updateFenced(subject, update, 1),
+      false,
+      "an unreleased draft",
+    );
+    assert.equal(
+      await updateFenced(subject, draftReleaseFunction, 1, true),
+      true,
+    );
+    assert.deepEqual(await updateReleasedAt(subject), { released: 1 });
+    assert.deepEqual(
+      await updateRevised(subject, 1, same),
+      [{ result: "NotDraft", version: 1, state: "Released" }],
+      "a released draft whose ticket nothing has projected",
+    );
+    await subject.query(
+      `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
+       VALUES('tenant-91','project-91',1,'Pending',1)`,
+    );
+    assert.deepEqual(
+      await updateRevised(subject, 1, moved),
+      [{ result: "DependenciesLocked", version: 1, state: "Released" }],
+      "a revision that moves the dependencies",
+    );
+    assert.deepEqual(
+      await updateRevised(subject, 1, "not json"),
+      [{ result: "DependenciesLocked", version: 1, state: "Released" }],
+      "a revision naming no dependencies",
+    );
+    assert.deepEqual(
+      await updateRevised(subject, 1, same),
+      [{ result: "Revised", version: 2, state: "Released" }],
+      "a revision at the dependencies it was released with",
+    );
+    assert.deepEqual(await updateRevised(subject, 1, same), [
+      { result: "Stale", version: 2, state: "Released" },
+    ]);
+    assert.deepEqual(await updateReleasedAt(subject), { released: 1 });
+    assert.equal(
+      await updateFenced(subject, draftReleaseFunction, 2),
+      false,
+      "a release of a draft already released",
+    );
+    assert.equal(
+      await updateFenced(subject, update, 1),
+      false,
+      "a stale update",
+    );
+    assert.equal(await updateFenced(subject, update, 2, true), true);
+    assert.deepEqual(await updateReleasedAt(subject), { released: 2 });
+    assert.equal(
+      await updateFenced(subject, update, 1, false, 2),
+      false,
+      "an update of a draft never released",
+    );
+    await subject.query(
+      `UPDATE ticket_projection SET phase='Work'
+        WHERE tenant='tenant-91' AND project='project-91' AND ticket=1`,
+    );
+    assert.deepEqual(
+      await updateRevised(subject, 2, same),
+      [{ result: "NotDraft", version: 2, state: "Released" }],
+      "a released draft whose ticket has left Pending",
+    );
+  });
+});
+
+test("the draft's released version is one it has, and only a released draft has one", async () => {
+  await migrationDatabase("update_draft_check", async (subject) => {
+    await postgresMigrate(subject);
+    await seedProposingBinding(subject);
+    assert.deepEqual(
+      await createdProposingDraft(subject, "refs/heads/branch-91"),
+      [{ result: "Created", ticket: "1" }],
+    );
+    for (const [label, change] of [
+      ["a draft released from no version", "state='Released'"],
+      ["an unreleased draft naming a version", "released_authoring_version=1"],
+      [
+        "a released draft naming a version it never reached",
+        "state='Released', released_authoring_version=2",
+      ],
+    ] as const)
+      await assert.rejects(
+        subject.query(`UPDATE draft SET ${change}`),
+        /draft_release_names_its_version/u,
+        label,
+      );
+  });
+});
+
+test("the door reports the work obligation of the ticket's latest definition", async () => {
+  await migrationDatabase("update_door", async (subject) => {
+    await postgresMigrate(subject);
+    await releasedSeeded(subject);
+    await subject.query(
+      `${deletionJournalRow(
+        2,
+        JSON.stringify({
+          seq: 2,
+          event: {
+            type: "TicketUpdated",
+            value: {
+              ticket: 1,
+              revision: 2,
+              definition: {
+                ...releasedWhole,
+                workConfiguration: releasedSecondDefinition,
+              },
+            },
+          },
+        }),
+      )};
+       UPDATE project SET ingress_next=3 WHERE tenant='tenant-5' AND project='project-5'`,
+    );
+    await subject.query(
+      identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3"),
+    );
+    await subject.query(
+      `INSERT INTO execution_result_source
+         (tenant,project,manifest,repository,ref,commit,base,expected_base)
+       VALUES('tenant-5','project-5','manifest-1','${releasedRepository}','${releasedRef}',
+              '${releasedCommit}',repeat('e',40),repeat('e',40))`,
+    );
+    assert.deepEqual((await subject.query(releasedSubmission(1))).rows, [
+      { result: "Submitted", operation: "operation-released-1" },
+    ]);
+    const journalled = (await releasedJournalled(
+      subject,
+      "operation-released-1",
+    )) as {
+      readonly value: {
+        readonly value: {
+          readonly result: {
+            readonly obligation: { readonly definition: unknown };
+          };
+        };
+      };
+    };
+    assert.deepEqual(
+      journalled.value.value.result.obligation.definition,
+      releasedSecondDefinition,
+    );
   });
 });

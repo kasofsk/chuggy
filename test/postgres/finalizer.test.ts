@@ -481,8 +481,8 @@ async function finalizerSibling(
   const ticket = project.ticket + 1;
   const keys = [project.partition.tenant, project.partition.project, ticket];
   await rig.harness.query(
-    `INSERT INTO draft (tenant,project,ticket,authoring_version,state,configuration_revision)
-     VALUES ($1,$2,$3,1,'Released',$4)`,
+    `INSERT INTO draft (tenant,project,ticket,authoring_version,state,configuration_revision,released_authoring_version)
+     VALUES ($1,$2,$3,1,'Released',$4,1)`,
     [...keys, project.configurationRevision],
   );
   await rig.harness.query(
@@ -591,8 +591,8 @@ async function finalizerUnboundTicket(
     ],
   );
   await seeding.query(
-    `INSERT INTO draft (tenant,project,ticket,authoring_version,state,configuration_revision)
-     VALUES ($1,$2,$3,1,'Released',$4)`,
+    `INSERT INTO draft (tenant,project,ticket,authoring_version,state,configuration_revision,released_authoring_version)
+     VALUES ($1,$2,$3,1,'Released',$4,1)`,
     [partition.tenant, partition.project, ticket, `revision-${label}`],
   );
   if (options.brief !== false) {

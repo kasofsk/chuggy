@@ -155,7 +155,7 @@ machine-decided code was refused with, in the codec's spelling, and is present
 exactly for those codes.
 
 `ticket_projection` — the project-primary projection, one row per ticket,
-carrying the sequence that produced it. Owned by the ticket-service role, which
+carrying the sequence that produced it and the revision the ticket is at. Owned by the ticket-service role, which
 is granted INSERT and UPDATE on the phase and the sequence and not on the
 key. Its composite key is `(tenant, project)` and its identity is
 `(tenant, project, ticket)`. It is changed by the decision transaction and
@@ -172,14 +172,15 @@ and a replay is the projection being wrong.
 
 `ticket_definition` — the material a released ticket's references name: the
 image, the requirement per kind and stage, the blocks a briefing composes and
-the finalization binding, resolved once in the release transaction so every
-cycle runs the revision the release pinned. Owned by the ticket-service role,
-which is granted INSERT and SELECT and not UPDATE, because a released ticket is
-not re-resolved; the boundary owner reads it, and the scheduler reads it for
-the requirement each execution is created at. Its composite key is
-`(tenant, project)` and its identity is `(tenant, project, ticket)`. It is
-written by the release and by nothing else, in the transaction that journals
-that release, so unfinished work does not exist for it.
+the finalization binding, resolved in the transaction that journals the release
+or an update so every cycle runs the revision the latest of them pinned. Owned
+by the ticket-service role, which is granted INSERT and SELECT, and UPDATE on
+the definition and its digest
+because an update re-resolves them; the boundary owner reads it, and the
+scheduler reads it for the requirement each execution is created at. Its
+composite key is `(tenant, project)` and its identity is `(tenant, project,
+ticket)`. It is written by the release and by each update, in the transaction
+that journals it, so unfinished work does not exist for it.
 
 WHY IT IS NOT A SECOND COPY OF THE REFERENCES. The references are in the entry
 the release journalled and are read back from there; this relation holds only
