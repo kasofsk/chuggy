@@ -4,13 +4,13 @@
  * update needs no wipe and no new decision semantics.
  *
  * THE ROWS ARE THE PREVIOUS IMAGE'S, NOT REBUILT BY THIS ONE.
- * `journal-before-update.itf.json` is `test/golden/evaluation-blocked-resume`
- * byte for byte as the image before the update emitted it. Each row is the
- * decided event its state records, written as the text a store keeps without
- * passing through this image's encoder, and read back through this image's
- * decoder. The graph each prefix must replay to is that state's own ticket map,
- * which has no revision field, so the field is added at 1 and nothing else
- * changes.
+ * `journal-before-update.itf.json` is
+ * `test/golden/evaluation-blocked-resume.itf.json` byte for byte as the image
+ * before the update emitted it. Each row is the decided event its state
+ * records, written as the text a store keeps without passing through this
+ * image's encoder, and read back through this image's decoder. The graph each
+ * prefix must replay to is that state's own ticket map, which has no revision
+ * field, so the field is added at 1 and nothing else changes.
  */
 
 import assert from "node:assert/strict";
