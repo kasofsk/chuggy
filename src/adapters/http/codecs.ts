@@ -28,6 +28,11 @@ import type {
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
+import type { Refusal } from "../../interpreter/projectDecision.ts";
+import {
+  encodeRefusalValue,
+  parseRefusalValue,
+} from "../../interpreter/wire.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import { asConfigurationVersion } from "../../interpreter/repositoryConfigurationIdentity.ts";
 import { parseInventoryCursor } from "./contract.ts";
@@ -93,6 +98,23 @@ function dispatchViewPage(value: DispatchViewResponse): DispatchViewPage {
 export const dispatchViewResponseSchema =
   dispatchViewWireSchema.transform(dispatchViewPage);
 
+/**
+ * The refusal a refused operation's wire carries, read back through the
+ * model's codec. The contract has already held the pair to its shape, so a
+ * refusal the codec will not read is the two statements of it disagreeing.
+ */
+function operationRefusal(
+  value: Extract<OperationResponse, { readonly state: "Refused" }>,
+): Refusal {
+  const refusal = parseRefusalValue(
+    value.code,
+    "refusal" in value ? value.refusal : undefined,
+  );
+  if (refusal.parsed === "Refused")
+    throw new Error(`operation response: ${refusal.why}`);
+  return refusal.value;
+}
+
 function operationResource(value: OperationResponse): OperationResource {
   const identity = {
     operation: asOperationId(value.operation),
@@ -109,7 +131,7 @@ function operationResource(value: OperationResponse): OperationResource {
       return {
         ...identity,
         state: "Refused",
-        code: value.code,
+        refusal: operationRefusal(value),
         refusedHead: value.refusedHead,
         refusedLifecycleGeneration: value.refusedLifecycleGeneration,
       };
@@ -142,7 +164,14 @@ export function encodeDispatchViewResponse(value: DispatchViewPage): unknown {
 }
 
 export function encodeOperationResponse(value: OperationResource): unknown {
-  return operationWireSchema.parse(value);
+  if (value.state !== "Refused") return operationWireSchema.parse(value);
+  const { refusal, ...refused } = value;
+  const payload = encodeRefusalValue(refusal);
+  return operationWireSchema.parse({
+    ...refused,
+    code: refusal.type,
+    ...(payload === undefined ? {} : { refusal: payload }),
+  });
 }
 
 export function encodeProposalSubmissionResponse(value: unknown): unknown {

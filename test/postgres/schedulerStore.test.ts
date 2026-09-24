@@ -681,7 +681,7 @@ test("an attempt is opened, placed and settles the logical task exactly once", a
     authority_kind: "ExecutionScheduler",
     authority_subject: schedulerRole,
     admission: "CorrectnessReducing",
-    command_tag: "TaskDone",
+    command_tag: "ReportTaskTerminal",
     base_priority: "Completion",
   });
   assert.deepEqual(
@@ -711,7 +711,7 @@ test("an identical redelivery is absorbed and submits no second completion", asy
   });
   assert.deepEqual(
     await rig.harness.query(
-      "SELECT count(*)::text AS count FROM operation WHERE tenant=$1 AND project=$2 AND command_tag='TaskDone'",
+      "SELECT count(*)::text AS count FROM operation WHERE tenant=$1 AND project=$2 AND command_tag='ReportTaskTerminal'",
       [project.partition.tenant, project.partition.project],
     ),
     [{ count: "1" }],
@@ -901,7 +901,7 @@ test("an evaluator whose budget ran out reports a dead process, not a verdict", 
   assert.equal(settled.outcome, "ProcessFailed");
   assert.deepEqual(
     await rig.harness.query(
-      `SELECT e.outcome, (o.command::jsonb#>'{event,value,report}') AS report
+      `SELECT e.outcome, (o.command::jsonb#>'{ticketCommand,value}') AS report
          FROM execution e JOIN operation o
            ON o.tenant=e.tenant AND o.project=e.project
           AND o.operation=e.completion_operation
@@ -914,6 +914,7 @@ test("an evaluator whose budget ran out reports a dead process, not a verdict", 
         report: {
           type: "TerminalFailureReport",
           value: {
+            ticket: 1,
             failure: {
               task: {
                 type: "EvaluationTask",
@@ -955,7 +956,7 @@ test("a definitive inability blocks one execution and releases its slot", async 
   assert.equal(execution?.resultManifest, undefined);
   assert.equal(
     (await completionOf(project, blocked.operation))?.["command_tag"],
-    "TaskDone",
+    "ReportTaskTerminal",
   );
   assert.deepEqual(
     await rig.store.blockExecution(

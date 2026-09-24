@@ -36,9 +36,9 @@
  * redelivery finds the operation already recorded and yields that same one, a
  * late report for retired or revoked work leaves the domain alone, and a
  * contradictory terminal claim leaves the first outcome standing and raises a
- * scheduler integrity incident. `decideTaskDone` no-ops by identity, and
- * nothing here leans on it: a no-op never reaches the journal because it never
- * becomes a second completion.
+ * scheduler integrity incident. `decide` refuses a report of a task
+ * no longer current, and nothing here leans on it: the refusal is never asked
+ * for, because a redelivery never becomes a second completion.
  */
 
 import {

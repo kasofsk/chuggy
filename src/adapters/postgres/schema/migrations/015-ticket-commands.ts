@@ -58,6 +58,13 @@ import {
  * code is the machine's: `decision_refusal_is_valid` weighs it against the
  * code. The ticket service may execute it, because the check runs on every
  * write the service makes to the row.
+ *
+ * A FINALIZATION REQUEST NAMES THE ATTEMPT IT WAS MATERIALIZED FOR. The
+ * command a finalizer's result becomes carries the work cycle and the
+ * generation of the finalization it concludes, and the row is where the
+ * reader finds them: the submission carries its own claims about neither. A
+ * request names the journal entry that authorized it, so the guard above has
+ * emptied the relation too, and the columns arrive without a default.
  */
 
 /** The tags a ticket command is at, as the generated codec spells them. */
@@ -955,5 +962,9 @@ CASE
 END))`,
     `GRANT UPDATE(refusal) ON TABLE public.decision_input TO ${ticketServiceRole}`,
     `GRANT SELECT(refusal) ON TABLE public.decision_input TO ${apiRole}`,
+    `ALTER TABLE public.finalization_request
+       ADD COLUMN work_cycle bigint NOT NULL,
+       ADD COLUMN finalization_generation bigint NOT NULL,
+       ADD CONSTRAINT finalization_request_attempt_is_named CHECK (((work_cycle >= 1) AND (finalization_generation >= 1)))`,
   ],
 };

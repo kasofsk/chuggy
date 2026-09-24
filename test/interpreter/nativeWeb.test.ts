@@ -49,13 +49,13 @@ import {
 } from "../../src/interpreter/schedulerContext.ts";
 import {
   asIdempotencyKey,
-  asOperationDecisionEvent,
-  type TicketCommand,
+  asOperationTicketCommand,
+  type ProjectCommand,
 } from "../../src/interpreter/operationInbox.ts";
 import {
-  resumeTicketEvent,
-  revokeEvent,
-} from "../../src/actor/decisionEvent.ts";
+  resumeTicketCommand,
+  revokeTicketCommand,
+} from "../../src/actor/command.ts";
 import {
   asAttemptId,
   asExecutionId,
@@ -439,7 +439,7 @@ const backloggedGuard: ExecutionBacklogGuard = {
 };
 
 /** One submission carrying the named command, which is all these cases vary. */
-function submissionOf(command: TicketCommand): NativeSubmission {
+function submissionOf(command: ProjectCommand): NativeSubmission {
   return { partition, operation, key: asIdempotencyKey("key"), command };
 }
 
@@ -747,14 +747,14 @@ test("authoring reads conceal inaccessible resources", async () => {
 });
 
 /** A decision the stub inbox refuses, which is what the case below is about. */
-const refusedDecision: TicketCommand = {
+const refusedDecision: ProjectCommand = {
   version: 1,
   command: "Decide",
-  event: asOperationDecisionEvent(resumeTicketEvent(id(1))),
+  ticketCommand: asOperationTicketCommand(resumeTicketCommand(id(1))),
 };
 
 /** Dispatch as it actually arrives, which is what the guard is consulted for. */
-const manualDispatch: TicketCommand = {
+const manualDispatch: ProjectCommand = {
   version: 1,
   command: "ManualDispatch",
   ticket: id(1),
@@ -781,7 +781,7 @@ test("a command that is not a dispatch is answered the same way backlogged or no
 });
 
 test("the guard stops the two ingress spellings dispatch actually arrives as", async () => {
-  const spellings: readonly (readonly [TicketCommand, string])[] = [
+  const spellings: readonly (readonly [ProjectCommand, string])[] = [
     [manualDispatch, "authorize:DispatchTicket"],
     [
       {
@@ -822,7 +822,7 @@ test("the execution backlog guard leaves correctness-reducing submission admissi
         submissionOf({
           version: 1,
           command: "Decide",
-          event: asOperationDecisionEvent(revokeEvent(id(1))),
+          ticketCommand: asOperationTicketCommand(revokeTicketCommand(id(1))),
         }),
       )
     ).result,

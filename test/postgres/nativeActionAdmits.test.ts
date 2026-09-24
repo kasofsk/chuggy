@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 
-import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
+import { reportTaskTerminalCommand } from "../../src/actor/command.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
@@ -30,7 +30,7 @@ import {
   projectWriterDecide,
   type ProjectMemory,
 } from "../../src/interpreter/projectWriter.ts";
-import type { NativeActionResolution } from "../../src/interpreter/ticketCommand.ts";
+import type { NativeActionResolution } from "../../src/interpreter/projectCommand.ts";
 import { plainAuthoring } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 import {
@@ -83,9 +83,7 @@ async function admitsReport(
     subject.harness,
     partition,
     `operation-${label}-${randomUUID()}`,
-    taskDoneEvent(
-      id(1),
-      task,
+    reportTaskTerminalCommand(
       postgresHarnessReport(memory.graph, task, verdict),
     ),
   );

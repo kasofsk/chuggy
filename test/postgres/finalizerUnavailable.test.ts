@@ -240,9 +240,9 @@ async function laterRequestHeldAt(
     `INSERT INTO finalization_request
        (tenant,project,request,authorizing_seq,effect_position,ticket,
         ticket_version,request_generation,state,kind,
-        hold_kind,hold_passes,held_since)
+        hold_kind,hold_passes,held_since,work_cycle,finalization_generation)
      SELECT tenant,project,$3,max(seq),0,$4,max(seq),2,'Fulfilled','RunFinalizer',
-            $5,1,now()
+            $5,1,now(),1,1
        FROM journal_entry WHERE tenant=$1 AND project=$2
       GROUP BY tenant,project`,
     [

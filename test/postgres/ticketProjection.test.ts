@@ -18,7 +18,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
-import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
+import { reportTaskTerminalCommand } from "../../src/actor/command.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
@@ -111,7 +111,6 @@ async function reported(
   return reportedWith(
     partition,
     memory,
-    task,
     postgresHarnessReport(memory.graph, task, verdict),
   );
 }
@@ -120,14 +119,13 @@ async function reported(
 async function reportedWith(
   partition: Partition,
   memory: ProjectMemory,
-  task: TaskIdentity,
   report: TaskTerminalReport,
 ): Promise<ProjectMemory> {
   await postgresHarnessCompletion(
     harness,
     partition,
     `operation-projection-${randomUUID()}`,
-    taskDoneEvent(subject, task, report),
+    reportTaskTerminalCommand(report),
   );
   const drained = await postgresHarnessDrain(harness, partition, memory);
   assert.deepEqual(
@@ -311,7 +309,6 @@ test("a stopped evaluator parks the ticket and its resume re-asks that evaluator
   memory = await reportedWith(
     partition,
     memory,
-    judge,
     stoppedReport(judge, "ProcessFailure"),
   );
   assert.deepEqual(await projected(partition), {

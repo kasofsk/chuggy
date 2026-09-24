@@ -126,7 +126,7 @@ test("a succeeded result the durable rows support is submitted exactly once", as
         authority_kind: "Finalizer",
         admission: "CorrectnessReducing",
         key_version: "finalizer-v1",
-        command_tag: "FinalizationResult",
+        command_tag: "ReportFinalizationResult",
         base_priority: "Completion",
       },
     ],

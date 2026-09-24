@@ -50,10 +50,12 @@
  */
 
 import type { Entry } from "../actor/journal.ts";
-import type {
-  Escalation,
-  Phase,
-  TaskIdentity,
+import {
+  ticketRefusalTags,
+  type Escalation,
+  type Phase,
+  type TaskIdentity,
+  type TicketRefusal,
 } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import {
@@ -64,17 +66,17 @@ import {
 import type { Lease, Lifecycle } from "./projectStore.ts";
 import type { DispatchCandidate } from "./dispatchView.ts";
 import type { FinalizationEvidence } from "./finalizerPreparation.ts";
-import type { NativeActionResolution } from "./ticketCommand.ts";
+import type { NativeActionResolution } from "./projectCommand.ts";
 import type { DraftBrief } from "./ticketBrief.ts";
 import type { TicketDefinitionMaterial } from "./ticketDefinition.ts";
 
 /**
- * The finite vocabulary a refused operation answers with. It is closed because
- * 006 requires a stable safe code, and an open one is a code a client cannot
- * branch on.
+ * The refusals the boundary decides before `decide` is asked anything: a
+ * release whose revision or configuration moved, a dispatch whose fence did,
+ * and a source nobody could read. Each is a fact about rows or a remote rather
+ * than about the ticket, so it carries no payload.
  */
-export type RefusalCode =
-  | "NotEnabled"
+export type BoundaryRefusalCode =
   | "AuthoringChanged"
   | "ConfigurationInvalid"
   | "TicketChanged"
@@ -83,9 +85,8 @@ export type RefusalCode =
   | "ExecutionSourceDenied"
   | "BriefNamesNoRepository";
 
-/** Every refusal code, in the order this file declares them, so a suite and a CHECK can iterate rather than restate. */
-export const allRefusalCodes: readonly RefusalCode[] = [
-  "NotEnabled",
+/** Every boundary refusal, in the order this file declares them, so a suite and a CHECK can iterate rather than restate. */
+export const allBoundaryRefusalCodes: readonly BoundaryRefusalCode[] = [
   "AuthoringChanged",
   "ConfigurationInvalid",
   "TicketChanged",
@@ -94,6 +95,35 @@ export const allRefusalCodes: readonly RefusalCode[] = [
   "ExecutionSourceDenied",
   "BriefNamesNoRepository",
 ];
+
+/**
+ * The finite vocabulary a refused operation answers with: the machine's
+ * refusals and the boundary's. It is closed because 006 requires a stable
+ * safe code, and an open one is a code a client cannot branch on.
+ */
+export type RefusalCode = TicketRefusal["type"] | BoundaryRefusalCode;
+
+/** Every refusal code, the machine's first, so a suite and a CHECK can iterate rather than restate. */
+export const allRefusalCodes: readonly RefusalCode[] = [
+  ...ticketRefusalTags,
+  ...allBoundaryRefusalCodes,
+];
+
+/**
+ * A refusal as the writer settles it. The machine's carries what `decide`
+ * refused with, and its tag is the code; the boundary's is the code alone.
+ */
+export type Refusal = TicketRefusal | { readonly type: BoundaryRefusalCode };
+
+/** Whether a refusal is the machine's, and so carries its payload. */
+export function isTicketRefusal(refusal: Refusal): refusal is TicketRefusal {
+  return ticketRefusalTags.some((tag) => tag === refusal.type);
+}
+
+/** A boundary refusal, spelled as the writer settles it. */
+export function boundaryRefusal(code: BoundaryRefusalCode): Refusal {
+  return { type: code };
+}
 
 /**
  * One source a ticket has run at, as the row keyed by the reference the
@@ -236,6 +266,12 @@ export interface DecisionMaterialization {
     readonly ticket: TicketId;
     readonly ticketVersion: number;
     readonly requestGeneration: number;
+    /**
+     * The attempt the obligation is for, which is what a result answering
+     * this request reports and what `decide` fences it by.
+     */
+    readonly workCycle: number;
+    readonly generation: number;
     readonly kind: "RunFinalizer";
   }[];
   readonly fulfillFinalizationFor: readonly TicketId[];
@@ -261,7 +297,7 @@ export type DecisionOutcome =
         readonly candidates: readonly DispatchCandidate[];
       };
     }
-  | { readonly outcome: "Refused"; readonly code: RefusalCode }
+  | { readonly outcome: "Refused"; readonly refusal: Refusal }
   | { readonly outcome: "Answered"; readonly answer: NativeActionAnswer }
   | { readonly outcome: "Deferred" };
 
@@ -280,7 +316,7 @@ export interface Decision {
  */
 export type DecisionInputOutcome =
   | { readonly settled: "Succeeded"; readonly seq: number }
-  | { readonly settled: "Refused"; readonly code: RefusalCode }
+  | { readonly settled: "Refused"; readonly refusal: Refusal }
   | { readonly settled: "Answered" }
   | { readonly settled: "Cancelled" };
 

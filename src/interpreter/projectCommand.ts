@@ -1,63 +1,72 @@
 /**
- * The command envelopes a project operation carries, and the one of them no
- * principal may offer.
+ * The command envelopes a project operation carries, and the ticket commands
+ * no principal may offer inside one.
  *
- * `FinalizationResult` IS NOT A PUBLIC DECISION COMMAND. Only the finalizer
- * service may conclude a finalizing ticket, so the event is excluded from
- * `OperationDecisionEvent` and the finalizer's own envelope is excluded from
- * `TicketCommand` — a `Decide` carrying one and a submission offering one are
- * both unspellable rather than merely refused. `CreateTicket` has been kept
- * out this way since I3, and this is the same device at a second seam.
+ * AN ENVELOPE IS NOT A TICKET COMMAND. `ProjectCommand` is what a principal
+ * submits and the inbox stores; the `TicketCommand` the writer hands `decide`
+ * (`src/actor/command.ts`) is built from an envelope and the rows it names by
+ * `./commandMap.ts`, and only a `Decide` carries one outright.
  *
- * `Dispatch` IS THE FOURTH SEAM, AND IT IS THE SOURCE THAT CLOSES IT. A
+ * `ReportFinalizationResult` IS NOT A PUBLIC TICKET COMMAND. Only the
+ * finalizer service may conclude a finalizing ticket, so the command is
+ * excluded from `OperationTicketCommand` and the finalizer's own envelope is
+ * excluded from `ProjectCommand` — a `Decide` carrying one and a submission
+ * offering one are both unspellable rather than merely refused. `CreateTicket`
+ * has been kept out this way since I3, and this is the same device at a second
+ * seam.
+ *
+ * `DispatchTicket` IS THE FOURTH SEAM, AND IT IS THE SOURCE THAT CLOSES IT. A
  * dispatch carries the commit its work is observed at, and nobody outside the
- * writer observes one: a principal offering the event would be authoring the
+ * writer observes one: a principal offering the command would be authoring the
  * source, and a source the world did not answer with is a ticket whose work
  * runs at a commit nobody read. So a dispatch is asked for by
  * `ManualDispatch` and `ProposeDispatch`, which name a ticket and no source,
- * and the event itself is unspellable in a `Decide`.
+ * and the command itself is unspellable in a `Decide`.
  *
- * `TaskDone` IS THE THIRD SEAM. Only the execution scheduler settles a logical
- * task, and settling one is not a decision a principal holding `Mutate` may
- * offer: a forged completion would conclude work that never ran, or mark an
- * evaluator stopped that no infrastructure refused. So it leaves
- * `OperationDecisionEvent` for the same reason the finalizer's event did, and
- * `SchedulerCompletion` below is the envelope the scheduler's own boundary
- * writes. It arrives at a writer through `parseStoredTicketCommand` and never
+ * `ReportTaskTerminal` IS THE THIRD SEAM. Only the execution scheduler settles
+ * a logical task, and settling one is not a decision a principal holding
+ * `Mutate` may offer: a forged completion would conclude work that never ran,
+ * or mark an evaluator stopped that no infrastructure refused. So it leaves
+ * `OperationTicketCommand` for the same reason the finalizer's command did,
+ * and `SchedulerCompletion` below is the envelope the scheduler's own boundary
+ * writes. It arrives at a writer through `parseStoredProjectCommand` and never
  * through the ingress parser, which is what makes the exclusion a shape rather
  * than a check that could be skipped.
  */
 
-import type { DecisionEvent } from "../actor/decisionEvent.ts";
+import type { TicketCommand } from "../actor/command.ts";
 import type { FinalizationUnavailableKind } from "../contract/rosters.ts";
-import type { FinalizationOutcome } from "../domain/generated/modelTypes.ts";
+import type { FinalizationResult } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type { DispatchViewToken } from "./dispatchView.ts";
 
-export type OperationDecisionEvent = Exclude<
-  DecisionEvent,
+export type OperationTicketCommand = Exclude<
+  TicketCommand,
   {
     readonly type:
-      "CreateTicket" | "FinalizationResult" | "TaskDone" | "Dispatch";
+      | "CreateTicket"
+      | "ReportFinalizationResult"
+      | "ReportTaskTerminal"
+      | "DispatchTicket";
   }
 >;
 
-/** The one event only the execution scheduler's own boundary submits. */
-export type CompletionDecisionEvent = Extract<
-  DecisionEvent,
-  { readonly type: "TaskDone" }
+/** The one ticket command only the execution scheduler's own boundary submits. */
+export type CompletionTicketCommand = Extract<
+  TicketCommand,
+  { readonly type: "ReportTaskTerminal" }
 >;
 
-/** Every event kind a `Decide` envelope may carry that no principal may offer. */
-export const completionEventTypes = [
-  "TaskDone",
-] as const satisfies readonly CompletionDecisionEvent["type"][];
+/** Every ticket command a `Decide` envelope may carry that no principal may offer. */
+export const completionCommandTypes = [
+  "ReportTaskTerminal",
+] as const satisfies readonly CompletionTicketCommand["type"][];
 
-/** Whether one decision event is a completion the scheduler alone may submit. */
-export function isCompletionDecisionEvent(
-  event: DecisionEvent,
-): event is CompletionDecisionEvent {
-  return completionEventTypes.some((type) => type === event.type);
+/** Whether one ticket command is a completion the scheduler alone may submit. */
+export function isCompletionTicketCommand(
+  command: TicketCommand,
+): command is CompletionTicketCommand {
+  return completionCommandTypes.some((type) => type === command.type);
 }
 
 /**
@@ -78,13 +87,13 @@ export const allNativeActionKinds = Object.keys(
   nativeActionResolutions,
 ) as readonly NativeActionKind[];
 
-/** The two answers an escalation admits, each of which names a domain command. */
+/** The two answers an escalation admits, each of which names a ticket command. */
 export type EscalationResolution =
   (typeof nativeActionResolutions)["TicketEscalation"][number];
 
 /**
  * The two answers a finalization approval admits, and the only resolutions that
- * name no domain command at all. Answering one settles its operation and
+ * name no ticket command at all. Answering one settles its operation and
  * journals nothing, because approval is operational protocol and not `TicketGraph` state.
  */
 export type ApprovalResolution =
@@ -103,7 +112,7 @@ export const allNativeActionResolutions: readonly NativeActionResolution[] =
  */
 export const safetyResolution: NativeActionResolution = "Revoke";
 
-/** Whether an answer is one of the two that name no domain command. */
+/** Whether an answer is one of the two that name no ticket command. */
 export function isApprovalResolution(
   resolution: NativeActionResolution,
 ): resolution is ApprovalResolution {
@@ -112,25 +121,25 @@ export function isApprovalResolution(
   );
 }
 
-export function asOperationDecisionEvent(
-  event: DecisionEvent,
-): OperationDecisionEvent {
+export function asOperationTicketCommand(
+  command: TicketCommand,
+): OperationTicketCommand {
   if (
-    event.type === "CreateTicket" ||
-    event.type === "FinalizationResult" ||
-    event.type === "Dispatch" ||
-    isCompletionDecisionEvent(event)
+    command.type === "CreateTicket" ||
+    command.type === "ReportFinalizationResult" ||
+    command.type === "DispatchTicket" ||
+    isCompletionTicketCommand(command)
   ) {
-    throw new RangeError("event is not a public decision command");
+    throw new RangeError("command is not a public ticket command");
   }
-  return event;
+  return command;
 }
 
-export type TicketCommand =
+export type ProjectCommand =
   | {
       readonly version: 1;
       readonly command: "Decide";
-      readonly event: OperationDecisionEvent;
+      readonly ticketCommand: OperationTicketCommand;
     }
   | {
       readonly version: 1;
@@ -161,13 +170,16 @@ export type TicketCommand =
       readonly selectorDecisionReference: string;
     };
 
+/** Which way a finalizer's pass concluded, as its submission names it: a finalization result's arm. */
+export type FinalizationOutcome = FinalizationResult["type"];
+
 /**
  * The finalizer's own submission, which its authenticated boundary builds from
  * durable rows. It names the request it answers, the request generation and the
  * epoch it was made under, and the attempt it concluded on except where none
  * was prepared — a brief that lands nothing, or a finalization that reached no
  * result at all — so a writer can fence it and find its evidence before
- * constructing an event.
+ * constructing a command.
  */
 export interface FinalizationSubmission {
   readonly version: 1;
@@ -179,42 +191,43 @@ export interface FinalizationSubmission {
   readonly outcome: FinalizationOutcome;
   /**
    * Which hold the pass could not get past, carried exactly when the outcome is
-   * the one it explains. The event the writer journals names the outcome alone,
-   * so this is the evidence the escalation records and the only account of it
-   * that leaves the boundary.
+   * the one it explains. The command the writer decides names the outcome
+   * alone, so this is the evidence the escalation records and the only account
+   * of it that leaves the boundary.
    */
   readonly kind?: FinalizationUnavailableKind;
 }
 
 /**
- * What one settled logical task came back with, as `submit_task_completion`
- * built it from the durable execution, attempt and result rows it had already
- * locked — the settled fact itself rather than a binding a writer would
- * resolve a second time, which is the one way this envelope differs from the
- * finalizer's above. Which edge a failed stage is taken on is not here: that
- * is this deployment's rework cap over the replayed ticket, which the writer
- * hands `decide` as its policy and the boundary holds neither half of.
+ * The execution scheduler's own submission, which only a writer reading its
+ * inbox reads: the report `submit_task_completion` built from the durable
+ * execution, attempt and result rows it had already locked — the settled fact
+ * itself rather than a binding a writer would resolve a second time, which is
+ * the one way this envelope differs from the finalizer's above. Which edge a
+ * failed stage is taken on is not here: that is this deployment's rework cap
+ * over the replayed ticket, which the writer hands `decide` as its policy and
+ * the boundary holds neither half of.
  */
-export type SchedulerCompletionEvent = CompletionDecisionEvent;
-
-/** The execution scheduler's own submission, which only a writer reading its inbox reads. */
 export interface SchedulerCompletion {
   readonly version: 1;
   readonly command: "Decide";
-  readonly event: SchedulerCompletionEvent;
+  readonly ticketCommand: CompletionTicketCommand;
 }
 
 /** What a stored operation may carry: a public command, or one of the two envelopes only a boundary writes. */
-export type StoredTicketCommand =
-  TicketCommand | FinalizationSubmission | SchedulerCompletion;
+export type StoredProjectCommand =
+  ProjectCommand | FinalizationSubmission | SchedulerCompletion;
 
 /**
- * Whether a stored envelope is the scheduler's completion, which its event's
+ * Whether a stored envelope is the scheduler's completion, which its command's
  * tag decides on its own: no public `Decide` may carry one, so a `Decide` that
  * does was written by the boundary.
  */
 export function isSchedulerCompletion(
-  command: StoredTicketCommand,
+  command: StoredProjectCommand,
 ): command is SchedulerCompletion {
-  return command.command === "Decide" && command.event.type === "TaskDone";
+  return (
+    command.command === "Decide" &&
+    isCompletionTicketCommand(command.ticketCommand)
+  );
 }

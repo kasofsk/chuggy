@@ -13,8 +13,8 @@ import {
 } from "../../src/interpreter/projectWriter.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { sourceDeferralPassesMax } from "../../src/interpreter/ticketService.ts";
-import { asOperationDecisionEvent } from "../../src/interpreter/operationInbox.ts";
-import { revokeEvent } from "../../src/actor/decisionEvent.ts";
+import { asOperationTicketCommand } from "../../src/interpreter/operationInbox.ts";
+import { revokeTicketCommand } from "../../src/actor/command.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   postgresHarnessDecisionSubmission,
@@ -126,7 +126,7 @@ test("an input whose deferrals are spent is not promoted by age", async () => {
           command: {
             version: 1,
             command: "Decide",
-            event: asOperationDecisionEvent(revokeEvent(id(1))),
+            ticketCommand: asOperationTicketCommand(revokeTicketCommand(id(1))),
           },
         })
       ).accepted,

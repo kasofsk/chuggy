@@ -53,7 +53,7 @@ import {
 import { notificationSchema } from "../../contract/responses.ts";
 import { selectorDeliveryStates } from "../../contract/rosters.ts";
 import type { ProjectNotification } from "../../interpreter/notifications.ts";
-import { parseTicketCommand } from "../../interpreter/wire.ts";
+import { parseProjectCommand } from "../../interpreter/wire.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
 import { sessionRowText } from "./sessionRows.ts";
@@ -411,7 +411,7 @@ function deliveryOf(row: DeliveryRow): SelectorDelivery {
     row.attempts === null
   )
     throw new Error("selector delivery row is incomplete");
-  const parsed = parseTicketCommand(row.command);
+  const parsed = parseProjectCommand(row.command);
   if (parsed.parsed === "Refused" || parsed.value.command !== "ProposeDispatch")
     throw new Error("selector delivery contains an unreadable proposal");
   if (Number(row.ticket) !== parsed.value.ticket)

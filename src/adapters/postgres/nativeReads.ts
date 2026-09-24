@@ -9,7 +9,6 @@ import {
   escalationKinds,
   finalizationUnavailableKinds,
   gitEvidences,
-  operationRefusalCodes,
   type EscalationKind,
 } from "../../contract/rosters.ts";
 import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
@@ -19,7 +18,6 @@ import {
   asPublicInstant,
   type NativeActionPage,
   type NativeReadStore,
-  type OperationRefusalCode,
   type OperationResource,
   type ProjectRead,
   type ProjectReadQuery,
@@ -34,13 +32,15 @@ import {
   nativeActionResolutions,
   type NativeActionKind,
   type NativeActionResolution,
-} from "../../interpreter/ticketCommand.ts";
+} from "../../interpreter/projectCommand.ts";
 import {
   allOperationStates,
   asOperationId,
   type OperationState,
 } from "../../interpreter/operationInbox.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
+import type { Refusal } from "../../interpreter/projectDecision.ts";
+import { parseStoredRefusal } from "../../interpreter/wire.ts";
 import { projectRowCounter } from "./rows.ts";
 import { postgresTicketRunTotals } from "./runEvidence.ts";
 import { draftBriefOf, type DraftBriefRow } from "./ticketBrief.ts";
@@ -51,6 +51,7 @@ interface PublicOperationRow {
   readonly state: string;
   readonly decided_seq: string | null;
   readonly outcome_code: string | null;
+  readonly refusal: string | null;
   readonly refused_head: string | null;
   readonly refused_lifecycle_generation: string | null;
 }
@@ -109,11 +110,12 @@ function operationState(value: string): OperationState {
   return state;
 }
 
-function refusalCode(value: string): OperationRefusalCode {
-  const code = operationRefusalCodes.find((candidate) => candidate === value);
-  if (code === undefined)
-    throw new Error(`native read: ${value} is not a public refusal code`);
-  return code;
+/** The refusal a refused input stored, refusing a code and refusal that disagree. */
+function storedRefusal(code: string, text: string | null): Refusal {
+  const refusal = parseStoredRefusal(code, text);
+  if (refusal.parsed === "Refused")
+    throw new Error(`native read: ${refusal.why}`);
+  return refusal.value;
 }
 
 function requiredCounter(value: string | null, what: string): number {
@@ -157,7 +159,7 @@ export function publicOperation(row: PublicOperationRow): OperationResource {
       return {
         ...base,
         state,
-        code: refusalCode(row.outcome_code),
+        refusal: storedRefusal(row.outcome_code, row.refusal),
         refusedHead: requiredCounter(row.refused_head, "refused head"),
         refusedLifecycleGeneration: requiredCounter(
           row.refused_lifecycle_generation,
@@ -572,7 +574,7 @@ function nativeReadsResources(
     operation: async (partition, operation) => {
       const found = await pool.query<PublicOperationRow>(
         sql`SELECT o.operation,o.accepted_at::text AS accepted_at,
-                d.state,d.decided_seq,d.outcome_code,
+                d.state,d.decided_seq,d.outcome_code,d.refusal,
                 d.refused_head,d.refused_lifecycle_generation
            FROM operation o JOIN decision_input d
              ON d.tenant=o.tenant AND d.project=o.project

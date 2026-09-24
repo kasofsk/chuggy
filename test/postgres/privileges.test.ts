@@ -312,11 +312,11 @@ test("the API acceptance boundary rejects malformed command bytes", async () => 
     ["non-json", "garbage"],
     [
       "missing-value",
-      '{"version":1,"command":"Decide","event":{"type":"Dispatch"}}',
+      '{"version":1,"command":"Decide","ticketCommand":{"type":"DispatchTicket"}}',
     ],
     [
       "missing-enum",
-      '{"version":1,"command":"Decide","event":{"type":"TaskDone","value":{"ticket":1,"task":{"type":"WorkTask","value":{"ticket":1,"cycle":1}},"result":{"manifest":1,"digest":1,"schema":1}}}}',
+      '{"version":1,"command":"Decide","ticketCommand":{"type":"ReportTaskTerminal","value":{"type":"TerminalFailureReport","value":{"ticket":1,"failure":{"task":{"type":"WorkTask","value":{"ticket":1,"cycle":1}},"evidence":1},"kind":"NoSuchFailure"}}}}',
     ],
   ]) {
     const failure = await harness.attemptAs(
@@ -349,7 +349,7 @@ test("a well-formed completion is refused whatever authority it claims", async (
    * case is about is the one that reads the tag, and a stale literal would
    * pass the case without ever reaching it.
    */
-  const command = `{"version":1,"command":"Decide","event":{"type":"TaskDone","value":{"ticket":1,"task":{"type":"WorkTask","value":{"ticket":1,"cycle":1}},"report":{"type":"WorkResultReport","value":{"result":{"manifest":1,"digest":1,"schema":1}}}}}}`;
+  const command = `{"version":1,"command":"Decide","ticketCommand":{"type":"ReportTaskTerminal","value":{"type":"TerminalFailureReport","value":{"ticket":1,"failure":{"task":{"type":"WorkTask","value":{"ticket":1,"cycle":1}},"evidence":1},"kind":"ProcessFailure"}}}}`;
   /**
    * The claimed kind is the caller's own text and acceptance compares it to
    * nothing, so the boundary's own kind has to be refused exactly as a

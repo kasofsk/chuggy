@@ -25,7 +25,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { revokeEvent } from "../../src/actor/decisionEvent.ts";
+import { revokeTicketCommand } from "../../src/actor/command.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   asGitObjectId,
@@ -91,7 +91,7 @@ async function ordinalsOf(
        FROM decision_input d
        JOIN operation o ON o.tenant=d.tenant AND o.project=d.project
             AND o.operation=d.input_id
-      WHERE d.tenant=$1 AND d.project=$2 AND o.command_tag IN ('Revoke','TaskDone')
+      WHERE d.tenant=$1 AND d.project=$2 AND o.command_tag IN ('RevokeTicket','ReportTaskTerminal')
       ORDER BY d.ordinal`,
     [partition.tenant, partition.project],
   )) as readonly { command_tag: string; ordinal: string }[];
@@ -168,13 +168,13 @@ test("a revocation in the mailbox wins the entry, whichever of the two was accep
       rig.harness,
       partition,
       "revoke",
-      revokeEvent(subjectTicket),
+      revokeTicketCommand(subjectTicket),
     ),
     "Accepted",
   );
   const ordinals = await ordinalsOf(partition);
   assert.ok(
-    (ordinals["Revoke"] ?? 0) > (ordinals["TaskDone"] ?? 0),
+    (ordinals["RevokeTicket"] ?? 0) > (ordinals["ReportTaskTerminal"] ?? 0),
     "the revocation was accepted second",
   );
   const drained = await finalizerDrain(rig.harness, partition, memory);
@@ -194,7 +194,7 @@ test("a revocation offered after entry is refused and the finalizer's request st
       rig.harness,
       partition,
       "revoke-late",
-      revokeEvent(subjectTicket),
+      revokeTicketCommand(subjectTicket),
     ),
     "Accepted",
   );
@@ -225,7 +225,7 @@ test("a boundary write and an acceptance racing on the project row are still res
           rig.harness,
           partition,
           "race-revoke",
-          revokeEvent(subjectTicket),
+          revokeTicketCommand(subjectTicket),
         ),
       ]),
     );
@@ -248,9 +248,13 @@ test("a boundary write and an acceptance racing on the project row are still res
   if (typeof accepted === "string") assert.fail(accepted);
   assert.deepEqual([...accepted], ["Accepted", "Accepted"]);
   const ordinals = await ordinalsOf(partition);
-  const raced = `revoke at ${String(ordinals["Revoke"])}, done at ${String(ordinals["TaskDone"])}`;
+  const raced = `revoke at ${String(ordinals["RevokeTicket"])}, done at ${String(ordinals["ReportTaskTerminal"])}`;
   assert.equal(Object.keys(ordinals).length, 2, raced);
-  assert.notEqual(ordinals["Revoke"], ordinals["TaskDone"], raced);
+  assert.notEqual(
+    ordinals["RevokeTicket"],
+    ordinals["ReportTaskTerminal"],
+    raced,
+  );
   const drained = await finalizerDrain(rig.harness, partition, memory);
   assert.deepEqual(drained.decided, ["Committed", "Refused"], raced);
   assert.equal(await finalizerPhase(rig, partition), "Revoked", raced);
@@ -286,7 +290,7 @@ test("a closing project aborts an unpermitted attempt without touching the remot
   const concluded = await finalizerPassOnce(rig, project, port, "abort-third");
   assert.equal(concluded.conclusions, 1);
   assert.deepEqual(await submittedOf(project), {
-    command_tag: "FinalizationResult",
+    command_tag: "ReportFinalizationResult",
     outcome: "FinalizationNeedsWork",
   });
   assert.equal(await finalizerPhase(rig, project.partition), "Finalization");

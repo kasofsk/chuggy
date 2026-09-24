@@ -90,6 +90,7 @@ import { encodeDraftAuthoring } from "../../src/interpreter/authoring.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
 import type { ProjectRead } from "../../src/interpreter/nativeWeb.ts";
+import { allRefusalCodes } from "../../src/interpreter/projectDecision.ts";
 
 function databaseUrl(database: string): string {
   const url = new URL(postgresHarnessUrl());
@@ -2611,9 +2612,9 @@ function renamedFinalization(attempt: string): string {
   INSERT INTO finalization_request
     (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
      request_generation,state,claim_owner,claim_generation,claim_expires_at,
-     recovery_epoch,kind)
+     recovery_epoch,kind,work_cycle,finalization_generation)
   VALUES('tenant-5','project-5','request-5',1,0,1,1,1,'Open','owner',1,now(),
-         'epoch-5','RunFinalizer');
+         'epoch-5','RunFinalizer',1,1);
   INSERT INTO finalization_attempt
     (tenant,project,attempt,request,ticket,repository,input_bundle,input_bundle_digest,
      target_ref,target_commit,strategy,configuration_revision,configuration_digest,
@@ -2698,9 +2699,9 @@ const heldRequest = `${deletionJournalRow(1, journalledRevocation)};
   INSERT INTO finalization_request
     (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
      request_generation,state,claim_owner,claim_generation,claim_expires_at,
-     recovery_epoch,kind)
+     recovery_epoch,kind,work_cycle,finalization_generation)
   VALUES('tenant-5','project-5','request-5',1,0,1,1,1,'Registered','owner-5',1,
-         now()+make_interval(secs=>60),'epoch-5','RunFinalizer')`;
+         now()+make_interval(secs=>60),'epoch-5','RunFinalizer',1,1)`;
 
 /** The hold door, by the signature a privilege is asked about. */
 const heldFunction =
@@ -7120,6 +7121,49 @@ test("a fresh install records the ticket commands arriving and the refusal colum
       ).rows,
       [{ data_type: "text" }],
     );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT column_name, data_type, is_nullable
+             FROM information_schema.columns
+            WHERE table_name='finalization_request'
+              AND column_name IN ('work_cycle','finalization_generation')
+            ORDER BY column_name`,
+        )
+      ).rows,
+      [
+        {
+          column_name: "finalization_generation",
+          data_type: "bigint",
+          is_nullable: "NO",
+        },
+        { column_name: "work_cycle", data_type: "bigint", is_nullable: "NO" },
+      ],
+    );
+  });
+});
+
+/**
+ * The codes a refused input may carry are the writer's, read off the check
+ * itself, so a code the writer gains or loses is a finding here before it is a
+ * refused settlement.
+ */
+test("the refusal codes the inbox admits are exactly the ones the writer decides", async () => {
+  await migrationDatabase("commands_codes", async (subject) => {
+    await postgresMigrate(subject);
+    const [row] = (
+      await subject.query<{ definition: string }>(
+        `SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+          WHERE conname='decision_input_outcome_is_known'`,
+      )
+    ).rows;
+    assert.ok(row !== undefined);
+    assert.deepEqual(
+      [...row.definition.matchAll(/'([A-Za-z]+)'::text/gu)]
+        .map((match) => match[1])
+        .sort(),
+      [...allRefusalCodes].sort(),
+    );
   });
 });
 
@@ -7463,30 +7507,44 @@ test("the inbox's grammar is the ticket commands, and both exclusions hold at th
   });
 });
 
+/** What one acceptance door answered a user's command with. */
+async function commandsAccepted(
+  subject: pg.Pool,
+  door: string,
+  operation: string,
+  command: string,
+): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT result FROM ${door}('tenant-5','project-5',$1,'User','subject',
+         'v1',$1,$1,ARRAY[$1]::text[],ARRAY[$1]::text[],$2,1000,2000,NULL)`,
+      [operation, command],
+    )
+  ).rows[0];
+}
+
+/** How the mailbox classified one accepted operation. */
+async function commandsClassified(
+  subject: pg.Pool,
+  operation: string,
+): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT o.command_tag, o.admission, d.base_priority FROM operation o
+         JOIN decision_input d ON d.input_id=o.operation WHERE o.operation=$1`,
+      [operation],
+    )
+  ).rows;
+}
+
 test("the mailbox classifies at the new tags and a revocation keeps its priority", async () => {
   await migrationDatabase("commands_accept", async (subject) => {
     await postgresMigrate(subject);
     await subject.query(deletionPartition);
-    const accepted = async (
-      door: string,
-      operation: string,
-      command: string,
-    ): Promise<unknown> =>
-      (
-        await subject.query(
-          `SELECT result FROM ${door}('tenant-5','project-5',$1,'User','subject',
-             'v1',$1,$1,ARRAY[$1]::text[],ARRAY[$1]::text[],$2,1000,2000,NULL)`,
-          [operation, command],
-        )
-      ).rows[0];
-    const classified = async (operation: string): Promise<unknown> =>
-      (
-        await subject.query(
-          `SELECT o.command_tag, o.admission, d.base_priority FROM operation o
-             JOIN decision_input d ON d.input_id=o.operation WHERE o.operation=$1`,
-          [operation],
-        )
-      ).rows;
+    const accepted = (door: string, operation: string, command: string) =>
+      commandsAccepted(subject, door, operation, command);
+    const classified = (operation: string) =>
+      commandsClassified(subject, operation);
     for (const [operation, tag, priority, admission] of [
       ["operation-revoke", "RevokeTicket", "Safety", "CorrectnessReducing"],
       ["operation-resume", "ResumeTicket", "Ordinary", "Ordinary"],

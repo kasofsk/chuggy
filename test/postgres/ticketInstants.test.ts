@@ -20,7 +20,7 @@ import { test } from "node:test";
 
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { apiRole } from "../../src/adapters/postgres/schema.ts";
-import { asOperationDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
+import { asOperationTicketCommand } from "../../src/interpreter/projectCommand.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
 import { projectWriterDecide } from "../../src/interpreter/projectWriter.ts";
@@ -108,7 +108,10 @@ async function revoked(
     command: {
       version: 1,
       command: "Decide",
-      event: asOperationDecisionEvent({ type: "Revoke", value: subject }),
+      ticketCommand: asOperationTicketCommand({
+        type: "RevokeTicket",
+        value: subject,
+      }),
     },
   });
   assert.equal(accepted.accepted, "Accepted");

@@ -131,7 +131,7 @@ async function submissionInput(
   project: FinalizerProject,
 ): Promise<Record<string, unknown>> {
   const rows = await rig.harness.query(
-    `SELECT d.state, d.outcome_code FROM decision_input d
+    `SELECT d.state, d.outcome_code, d.refusal::jsonb AS refusal FROM decision_input d
        JOIN operation o ON o.tenant=d.tenant AND o.project=d.project
             AND o.operation=d.input_id
       WHERE d.tenant=$1 AND d.project=$2 AND d.input_kind='Operation'
@@ -217,8 +217,9 @@ test("the queue is drawn oldest first and one pass takes only what it is bounded
   await rig.harness.query(
     `INSERT INTO finalization_request
        (tenant, project, request, authorizing_seq, effect_position, ticket,
-        ticket_version, request_generation, kind)
-     VALUES ($1,$2,$3,1,7,$4,1,1,'RunFinalizer')`,
+        ticket_version, request_generation, kind, work_cycle,
+        finalization_generation)
+     VALUES ($1,$2,$3,1,7,$4,1,1,'RunFinalizer',1,1)`,
     [
       project.partition.tenant,
       project.partition.project,
@@ -432,7 +433,18 @@ test("a result whose request has moved is refused and writes no journal entry", 
     assert.equal(await entries(project), before, label);
     assert.deepEqual(
       await submissionInput(project),
-      { state: "Refused", outcome_code: "NotEnabled" },
+      {
+        state: "Refused",
+        outcome_code: "FinalizationNotCurrent",
+        refusal: {
+          type: "FinalizationNotCurrent",
+          value: {
+            ticket: Number(project.ticket),
+            workCycle: 1,
+            generation: 1,
+          },
+        },
+      },
       label,
     );
   }
@@ -442,9 +454,14 @@ test("no principal may offer a finalization result as an ordinary command", asyn
   const forged = JSON.stringify({
     version: 1,
     command: "Decide",
-    event: {
-      type: "FinalizationResult",
-      value: { ticket: 1, out: "FinalizationSucceeded", evidence: 1 },
+    ticketCommand: {
+      type: "ReportFinalizationResult",
+      value: {
+        ticket: 1,
+        workCycle: 1,
+        generation: 1,
+        result: { type: "FinalizationSucceeded", value: 1 },
+      },
     },
   });
   assert.deepEqual(

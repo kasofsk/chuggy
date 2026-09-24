@@ -4,7 +4,7 @@
  * own durable rows through, and the pure pass that says what a claimed request
  * may do next.
  *
- * NOTHING HERE DECIDES A TICKET. The finalizer submits `FinalizationResult`
+ * NOTHING HERE DECIDES A TICKET. The finalizer submits `SubmitFinalizationResult`
  * through one narrow authenticated boundary and cannot append a journal entry,
  * settle an operation or move a ticket projection. `model/domain.qnt` has a
  * finalizer report one domain outcome and nothing else, so queueing,
@@ -75,10 +75,12 @@ import {
   type BriefFinalizationMode,
   type FinalizationUnavailableKind,
 } from "../contract/rosters.ts";
-import type { FinalizationOutcome } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import { asBoundedText } from "./boundedText.ts";
-import type { ApprovalResolution } from "./ticketCommand.ts";
+import type {
+  ApprovalResolution,
+  FinalizationOutcome,
+} from "./projectCommand.ts";
 import type { Lifecycle, Partition, RecoveryEpoch } from "./projectStore.ts";
 
 declare const finalizationAttemptIdBrand: unique symbol;

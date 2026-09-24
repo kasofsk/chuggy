@@ -28,7 +28,7 @@ import type {
   FinalizationSubmitted,
   ReconciliationVerdict,
 } from "./finalizer.ts";
-import type { FinalizationOutcome } from "../domain/generated/modelTypes.ts";
+import type { FinalizationOutcome } from "./projectCommand.ts";
 import { observe } from "./ticketService.ts";
 
 /** Which sweep gave a claim back, both of which a pass runs before it draws work. */

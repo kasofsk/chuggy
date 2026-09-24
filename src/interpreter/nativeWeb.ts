@@ -52,8 +52,9 @@ import type { Partition } from "./projectStore.ts";
 import type {
   NativeActionKind,
   NativeActionResolution,
-  TicketCommand,
-} from "./ticketCommand.ts";
+  ProjectCommand,
+} from "./projectCommand.ts";
+import type { Refusal } from "./projectDecision.ts";
 import type {
   AuthoringStore,
   CanonicalConfiguration,
@@ -216,17 +217,6 @@ export interface ProjectInventoryPage {
   readonly nextAfter?: Partition;
 }
 
-export type OperationRefusalCode =
-  | "NotEnabled"
-  | "AuthoringChanged"
-  | "ConfigurationInvalid"
-  | "TicketChanged"
-  | "SelectionChanged"
-  | "CommandUnreadable"
-  | "ExecutionSourceUnreadable"
-  | "ExecutionSourceDenied"
-  | "BriefNamesNoRepository";
-
 interface OperationResourceBase {
   readonly operation: OperationId;
   readonly acceptedAt: PublicInstant;
@@ -242,7 +232,8 @@ export type OperationResource =
     })
   | (OperationResourceBase & {
       readonly state: "Refused";
-      readonly code: OperationRefusalCode;
+      /** What refused it: the machine's refusal whole, or the boundary's code. */
+      readonly refusal: Refusal;
       readonly refusedHead: number;
       readonly refusedLifecycleGeneration: number;
     })
@@ -477,7 +468,7 @@ export interface NativeSubmission {
   readonly partition: Partition;
   readonly operation: OperationId;
   readonly key: IdempotencyKey;
-  readonly command: TicketCommand;
+  readonly command: ProjectCommand;
   /** The session a command came through, where a session bearer is what carried it. */
   readonly viaSession?: SessionId;
 }
@@ -743,7 +734,7 @@ export interface NativeWeb {
   ): Promise<LeadInquiryAsked>;
 }
 
-function submissionAccess(command: TicketCommand): ProjectAccessKind {
+function submissionAccess(command: ProjectCommand): ProjectAccessKind {
   if (command.command === "ManualDispatch") return "DispatchTicket";
   if (command.command === "ProposeDispatch") return "ProposeDispatch";
   return "Mutate";

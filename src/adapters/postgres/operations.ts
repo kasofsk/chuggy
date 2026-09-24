@@ -59,10 +59,7 @@ import {
   type OperationState,
   type Submission,
 } from "../../interpreter/operationInbox.ts";
-import {
-  encodeDecisionEventText,
-  encodeTicketCommand,
-} from "../../interpreter/wire.ts";
+import { encodeProjectCommand } from "../../interpreter/wire.ts";
 import {
   asProjectId,
   asTenantId,
@@ -158,17 +155,6 @@ function operationsRetainedOffering(
       throw new Error(`idempotency key version ${version} has no digest`);
     keys.push(keyDigest);
     payloads.push(idempotencyPayloadDigest(keying, version, scope, command));
-    if (submission.command.command === "Decide") {
-      keys.push(keyDigest);
-      payloads.push(
-        idempotencyPayloadDigest(
-          keying,
-          version,
-          scope,
-          asOperationCommand(encodeDecisionEventText(submission.command.event)),
-        ),
-      );
-    }
   }
   return { keys, payloads };
 }
@@ -311,7 +297,9 @@ export async function postgresOperationsAccept(
       submission.partition,
       submission.authority.kind,
     );
-    const command = asOperationCommand(encodeTicketCommand(submission.command));
+    const command = asOperationCommand(
+      encodeProjectCommand(submission.command),
+    );
     const classified = classifyCommand(submission.command);
     const retained = operationsRetainedOffering(
       keying,

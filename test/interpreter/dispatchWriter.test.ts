@@ -2,14 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  dispatchEvent,
-  finalizationResultEvent,
-  releaseTicketEvent,
-  resumeTicketEvent,
-  taskDoneEvent,
-  ticketAt,
-  type DecisionEvent,
-} from "../../src/actor/decisionEvent.ts";
+  dispatchTicketCommand,
+  reportFinalizationResultCommand,
+  createTicketCommand,
+  resumeTicketCommand,
+  reportTaskTerminalCommand,
+  type TicketCommand,
+} from "../../src/actor/command.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
+import { finalizationOperationOf } from "../../src/domain/ticket.ts";
 import type { Config } from "../../src/domain/config.ts";
 import type { EvaluationFailurePolicy } from "../../src/domain/deciders.ts";
 import {
@@ -24,7 +25,7 @@ import {
 } from "../../src/actor/state.ts";
 import { storedAtCurrentSemantics } from "../../src/actor/journal.ts";
 import {
-  asOperationDecisionEvent,
+  asOperationTicketCommand,
   asOperationId,
   classifyCommand,
 } from "../../src/interpreter/operationInbox.ts";
@@ -69,7 +70,7 @@ import {
   deriveDispatchCandidates,
   dispatchViewDigest,
 } from "../../src/interpreter/dispatchView.ts";
-import type { TicketCommand } from "../../src/interpreter/ticketCommand.ts";
+import type { ProjectCommand } from "../../src/interpreter/projectCommand.ts";
 import { executionSourceObservation } from "../../src/interpreter/executionSourceObservation.ts";
 import {
   asResultManifestId,
@@ -100,7 +101,7 @@ import {
 function stepped(
   config: Config,
   state: ActorState,
-  event: DecisionEvent,
+  event: TicketCommand,
   policy: EvaluationFailurePolicy = plainPolicy,
 ): ActorState {
   return journalStep(config, state, event, policy);
@@ -128,7 +129,7 @@ function releasedMemory(head = 1): ProjectMemory {
   const released = stepped(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(plainDefinitionOf(1)),
+    createTicketCommand(plainDefinitionOf(1)),
   );
   return {
     lease: {
@@ -144,7 +145,7 @@ function releasedMemory(head = 1): ProjectMemory {
   };
 }
 
-function operationInput(command: TicketCommand): DecisionInput {
+function operationInput(command: ProjectCommand): DecisionInput {
   return {
     partition,
     ordinal: 1,
@@ -220,7 +221,7 @@ async function decidedWith(
 
 async function planned(
   memory: ProjectMemory,
-  command: TicketCommand,
+  command: ProjectCommand,
   executionSources?: ExecutionSourceObservationPort,
   ticketBriefs?: TicketBriefPort,
 ): Promise<Decision> {
@@ -258,7 +259,7 @@ function recordingSources(
   };
 }
 
-const manualDispatch: TicketCommand = {
+const manualDispatch: ProjectCommand = {
   version: 1,
   command: "ManualDispatch",
   ticket: id(1),
@@ -305,7 +306,35 @@ test("manual dispatch distinguishes a stale ticket from a disabled ticket", asyn
   );
   assert.deepEqual(decision.outcome, {
     outcome: "Refused",
-    code: "TicketChanged",
+    refusal: { type: "TicketChanged" },
+  });
+});
+
+test("a dispatch over an undone dependency is refused naming it", async () => {
+  let state = actorInit();
+  for (const definition of [
+    plainDefinitionOf(1),
+    plainDefinitionOf(2, new Set([1])),
+  ])
+    state = stepped(refinementInstance, state, createTicketCommand(definition));
+  const decision = await planned(
+    {
+      ...releasedMemory(2),
+      graph: memoryGraph(state),
+      ticketVersions: new Map([
+        [id(1), 1],
+        [id(2), 2],
+      ]),
+      dispatchContracts: twoContracts,
+    },
+    { ...manualDispatch, ticket: id(2), expectedTicketVersion: 2 },
+  );
+  assert.deepEqual(decision.outcome, {
+    outcome: "Refused",
+    refusal: {
+      type: "DependenciesIncomplete",
+      value: { ticket: 2, dependencies: new Set([1]) },
+    },
   });
 });
 
@@ -359,7 +388,7 @@ test("a proposal observed against another view identity is SelectionChanged", as
     });
     assert.deepEqual(decision.outcome, {
       outcome: "Refused",
-      code: "SelectionChanged",
+      refusal: { type: "SelectionChanged" },
     });
   }
 });
@@ -428,7 +457,7 @@ for (const claim of [
     });
     assert.deepEqual(decision.outcome, {
       outcome: "Refused",
-      code: "SelectionChanged",
+      refusal: { type: "SelectionChanged" },
     });
   });
 }
@@ -459,7 +488,7 @@ function twoReleasedMemory(): ProjectMemory {
     state = stepped(
       refinementInstance,
       state,
-      releaseTicketEvent(plainDefinitionOf(ticket)),
+      createTicketCommand(plainDefinitionOf(ticket)),
     );
     for (const row of projectionChanges(before, memoryGraph(state)))
       ticketVersions.set(row.ticket, index + 1);
@@ -493,7 +522,7 @@ function proposalOf(
   ticket: TicketId,
   expectedTicketVersion: number,
   observedViewToken: ReturnType<typeof observedTokenOf>,
-): TicketCommand {
+): ProjectCommand {
   return {
     version: 1,
     command: "ProposeDispatch",
@@ -506,7 +535,7 @@ function proposalOf(
 
 function proposalInput(
   ticket: TicketId,
-  command: TicketCommand,
+  command: ProjectCommand,
 ): DecisionInput {
   return {
     partition,
@@ -573,7 +602,7 @@ test("a proposal for a ticket another author already dispatched is SelectionChan
   );
   assert.deepEqual(offered?.outcome, {
     outcome: "Refused",
-    code: "SelectionChanged",
+    refusal: { type: "SelectionChanged" },
   });
 });
 
@@ -667,19 +696,17 @@ function workPassedState(): ReturnType<typeof journalStep> {
 }
 
 /** The work task's result, which is the completion that spawns the evaluation under test. */
-const workCompletion = taskDoneEvent(
-  id(1),
-  workTaskOf(1, 1),
+const workCompletion = reportTaskTerminalCommand(
   producedReport(workTaskOf(1, 1)),
 );
 
 /** A completion as the inbox assembles one: the settled fact, with the wall read off its execution where it had one. */
 function completionInput(
-  event: DecisionEvent,
+  event: TicketCommand,
   blockedBy?: BlockedReason,
 ): DecisionInput {
-  if (event.type !== "TaskDone")
-    throw new Error("dispatch writer case: that event is not a completion");
+  if (event.type !== "ReportTaskTerminal")
+    throw new Error("dispatch writer case: that command is not a completion");
   return {
     partition,
     ordinal: 1,
@@ -688,8 +715,8 @@ function completionInput(
     source: {
       kind: "Operation",
       operation: asOperationId("completion"),
-      command: { version: 1, command: "Decide", event },
-      resolvedEvent: event,
+      command: { version: 1, command: "Decide", ticketCommand: event },
+      ticketCommand: event,
       ...(blockedBy === undefined ? {} : { executionBlockedBy: blockedBy }),
     },
   };
@@ -728,8 +755,8 @@ function dispatchedState(): ActorState {
   const config = refinementInstance;
   return stepped(
     config,
-    stepped(config, actorInit(), releaseTicketEvent(plainDefinitionOf(1))),
-    dispatchEvent(id(1), aDispatchSource),
+    stepped(config, actorInit(), createTicketCommand(plainDefinitionOf(1))),
+    dispatchTicketCommand(id(1), aDispatchSource),
   );
 }
 
@@ -743,9 +770,7 @@ function blockedCompletionInput(
   task: TaskIdentity = workTaskOf(1, 1),
 ): DecisionInput {
   return completionInput(
-    taskDoneEvent(
-      id(1),
-      task,
+    reportTaskTerminalCommand(
       stoppedReport(task, "ExecutionUnavailableFailure"),
     ),
     blockedBy,
@@ -789,12 +814,12 @@ function failedStageState(): ReturnType<typeof journalStep> {
   const work = workTaskOf(1, 1);
   const failing = evaluationTaskOf(1, 1, 1, 1, 1);
   return [
-    dispatchEvent(id(1), aDispatchSource),
-    taskDoneEvent(id(1), work, producedReport(work)),
-    taskDoneEvent(id(1), failing, judgedReport(failing, "EvaluatorFail")),
+    dispatchTicketCommand(id(1), aDispatchSource),
+    reportTaskTerminalCommand(producedReport(work)),
+    reportTaskTerminalCommand(judgedReport(failing, "EvaluatorFail")),
   ].reduce(
     (state, event) => stepped(pairedConfig, state, event),
-    stepped(pairedConfig, actorInit(), releaseTicketEvent(pairedDefinition)),
+    stepped(pairedConfig, actorInit(), createTicketCommand(pairedDefinition)),
   );
 }
 
@@ -861,7 +886,10 @@ test("a source no dispatch can read is refused under the evidence that named it"
       operationInput(manualDispatch),
       unreadableSources(evidence),
     );
-    assert.deepEqual(offered?.outcome, { outcome: "Refused", code });
+    assert.deepEqual(offered?.outcome, {
+      outcome: "Refused",
+      refusal: { type: code },
+    });
     assert.equal(result.memory, memory);
     assert.equal(result.decided.decided, "Refused");
   }
@@ -898,7 +926,7 @@ test("a source still unreadable once its deferrals are spent is refused under it
     );
     assert.deepEqual(offered?.outcome, {
       outcome: "Refused",
-      code: "ExecutionSourceUnreadable",
+      refusal: { type: "ExecutionSourceUnreadable" },
     });
     assert.equal(result.decided.decided, "Refused");
     const lastDeferred = await decidedWith(
@@ -922,7 +950,7 @@ function judgementMemory(): ProjectMemory {
 function reworkCompletionInput(): DecisionInput {
   const judge = evaluationTaskOf(1, 1, 1, 1, 1);
   return completionInput(
-    taskDoneEvent(id(1), judge, judgedReport(judge, "EvaluatorFail")),
+    reportTaskTerminalCommand(judgedReport(judge, "EvaluatorFail")),
   );
 }
 
@@ -951,17 +979,15 @@ test("a rework spawns at the accepted source, asking no remote", async () => {
 function stoppedStageMemory(): ProjectMemory {
   const stopping = evaluationTaskOf(1, 1, 1, 1, 2);
   const state = [
-    dispatchEvent(id(1), aDispatchSource),
-    taskDoneEvent(id(1), workTaskOf(1, 1), producedReport(workTaskOf(1, 1))),
-    taskDoneEvent(
-      id(1),
-      evaluationTaskOf(1, 1, 1, 1, 1),
+    dispatchTicketCommand(id(1), aDispatchSource),
+    reportTaskTerminalCommand(producedReport(workTaskOf(1, 1))),
+    reportTaskTerminalCommand(
       judgedReport(evaluationTaskOf(1, 1, 1, 1, 1), "EvaluatorPass"),
     ),
-    taskDoneEvent(id(1), stopping, stoppedReport(stopping, "ProcessFailure")),
+    reportTaskTerminalCommand(stoppedReport(stopping, "ProcessFailure")),
   ].reduce(
     (each, event) => stepped(pairedConfig, each, event),
-    stepped(pairedConfig, actorInit(), releaseTicketEvent(pairedDefinition)),
+    stepped(pairedConfig, actorInit(), createTicketCommand(pairedDefinition)),
   );
   return { ...releasedMemory(), graph: memoryGraph(state) };
 }
@@ -978,9 +1004,9 @@ const resumeInput: DecisionInput = {
     command: {
       version: 1,
       command: "Decide",
-      event: asOperationDecisionEvent(resumeTicketEvent(id(1))),
+      ticketCommand: asOperationTicketCommand(resumeTicketCommand(id(1))),
     },
-    resolvedEvent: resumeTicketEvent(id(1)),
+    ticketCommand: resumeTicketCommand(id(1)),
   },
 };
 
@@ -1063,15 +1089,18 @@ test("a failing stage takes the edge the cap picks, and the event names it", asy
   );
 });
 
-/** A completion for a task the ticket no longer owes is refused, and nothing is journalled for it. */
-test("a stale completion is refused with no journal row", async () => {
+/** A completion for a task the ticket no longer owes is refused naming that task, and nothing is journalled for it. */
+test("a stale completion is refused TaskNotCurrent with its task and no journal row", async () => {
   const { offered } = await decidedWith(
     judgementMemory(),
     completionInput(workCompletion),
   );
   assert.deepEqual(offered?.outcome, {
     outcome: "Refused",
-    code: "NotEnabled",
+    refusal: {
+      type: "TaskNotCurrent",
+      value: { ticket: 1, task: workTaskOf(1, 1) },
+    },
   });
 });
 
@@ -1081,9 +1110,7 @@ function workWalledMemory(): ProjectMemory {
   const state = stepped(
     refinementInstance,
     dispatchedState(),
-    taskDoneEvent(
-      id(1),
-      work,
+    reportTaskTerminalCommand(
       stoppedReport(work, "ExecutionUnavailableFailure"),
     ),
   );
@@ -1094,14 +1121,77 @@ function workWalledMemory(): ProjectMemory {
 function finalizationWalledMemory(): ProjectMemory {
   const judge = evaluationTaskOf(1, 1, 1, 1, 1);
   const state = [
-    taskDoneEvent(id(1), judge, judgedReport(judge, "EvaluatorPass")),
-    finalizationResultEvent(id(1), "FinalizationResultUnavailable", 1),
+    reportTaskTerminalCommand(judgedReport(judge, "EvaluatorPass")),
+    reportFinalizationResultCommand(id(1), 1, 1, {
+      type: "FinalizationResultUnavailable",
+      value: 1,
+    }),
   ].reduce(
     (each, event) => stepped(refinementInstance, each, event),
     workPassedState(),
   );
   return { ...releasedMemory(), graph: memoryGraph(state) };
 }
+
+/** A result for the attempt a resume replaced is refused naming that attempt, and nothing is journalled for it. */
+test("an old-generation finalization result is refused FinalizationNotCurrent with its cycle and generation", async () => {
+  const judge = evaluationTaskOf(1, 1, 1, 1, 1);
+  const state = [
+    reportTaskTerminalCommand(judgedReport(judge, "EvaluatorPass")),
+    reportFinalizationResultCommand(id(1), 1, 1, {
+      type: "FinalizationResultUnavailable",
+      value: 1,
+    }),
+    resumeTicketCommand(id(1)),
+  ].reduce(
+    (each, command) => stepped(refinementInstance, each, command),
+    workPassedState(),
+  );
+  const graph = memoryGraph(state);
+  const { workCycle, generation } = finalizationOperationOf(
+    ticketAt(graph, id(1)),
+  );
+  assert.deepEqual({ workCycle, generation }, { workCycle: 1, generation: 2 });
+  const stale = reportFinalizationResultCommand(id(1), 1, 1, {
+    type: "FinalizationSucceeded",
+    value: 1,
+  });
+  const { offered } = await decidedWith(
+    { ...releasedMemory(), graph },
+    {
+      partition,
+      ordinal: 1,
+      deferredPasses: 0,
+      priority: "Completion",
+      source: {
+        kind: "Operation",
+        operation: asOperationId("finalization"),
+        command: {
+          version: 1,
+          command: "SubmitFinalizationResult",
+          request: "request",
+          attempt: "attempt",
+          requestGeneration: 1,
+          recoveryEpoch: "epoch",
+          outcome: "FinalizationSucceeded",
+        },
+        ticketCommand: stale,
+        finalizationRequest: {
+          request: "request",
+          requestGeneration: 1,
+          open: true,
+        },
+      },
+    },
+  );
+  assert.deepEqual(offered?.outcome, {
+    outcome: "Refused",
+    refusal: {
+      type: "FinalizationNotCurrent",
+      value: { ticket: 1, workCycle: 1, generation: 1 },
+    },
+  });
+});
 
 /**
  * One command resumes every wall, and the event says which of three things it
@@ -1150,7 +1240,7 @@ test("a deferred input ends the run it arrived in without clearing readiness", a
   const journal = stepped(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(plainDefinitionOf(1)),
+    createTicketCommand(plainDefinitionOf(1)),
   ).journal;
   const taken: number[] = [];
   let deferred = 0;

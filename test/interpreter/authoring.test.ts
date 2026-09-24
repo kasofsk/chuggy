@@ -18,12 +18,18 @@ import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { approvalRequiredField } from "../../src/interpreter/finalizerPreparation.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
-import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
+import {
+  plainAuthoring,
+  plainDefinitionOf,
+  refinementInstance,
+} from "../actor/harness.ts";
+import { createTicketCommand } from "../../src/actor/command.ts";
+import { encodeTicketCommand } from "../../src/generated/model-api.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { nativeHttpPageItemsMax } from "../../src/contract/http.ts";
 import {
-  encodeTicketCommand,
-  parseTicketCommand,
+  encodeProjectCommand,
+  parseProjectCommand,
 } from "../../src/interpreter/wire.ts";
 
 const readyConfiguration = asCanonicalConfiguration(
@@ -422,8 +428,14 @@ test("a summary answers what its revision decides about finishing and evaluating
 });
 
 test("a raw CreateTicket is not a public Decide command", () => {
-  const raw = `{"version":1,"command":"Decide","event":${encodeDraftAuthoring(plainAuthoring)}}`;
-  assert.equal(parseTicketCommand(raw).parsed, "Refused");
+  const raw = JSON.stringify({
+    version: 1,
+    command: "Decide",
+    ticketCommand: encodeTicketCommand(
+      createTicketCommand(plainDefinitionOf(7)),
+    ),
+  });
+  assert.equal(parseProjectCommand(raw).parsed, "Refused");
 });
 
 test("ReleaseDraft round-trips as a revision-fenced public command", () => {
@@ -434,7 +446,7 @@ test("ReleaseDraft round-trips as a revision-fenced public command", () => {
     authoringVersion: 3,
     configurationRevision: asConfigurationRevisionId("config-3"),
   };
-  assert.deepEqual(parseTicketCommand(encodeTicketCommand(command)), {
+  assert.deepEqual(parseProjectCommand(encodeProjectCommand(command)), {
     parsed: "Ok",
     value: command,
   });

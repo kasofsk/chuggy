@@ -15,7 +15,7 @@
 
 import type { Escalation } from "../../src/domain/generated/modelTypes.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import type { NativeActionResolution } from "../../src/interpreter/ticketCommand.ts";
+import type { NativeActionResolution } from "../../src/interpreter/projectCommand.ts";
 import {
   postgresHarnessSubmission,
   type PostgresHarness,

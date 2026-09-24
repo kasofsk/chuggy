@@ -12,18 +12,20 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  decide,
-  dispatchEvent,
-  finalizationResultEvent,
-  releaseTicketEvent,
-  taskDoneEvent,
-  type DecisionEvent,
-} from "../../src/actor/decisionEvent.ts";
+  createTicketCommand,
+  dispatchTicketCommand,
+  reportFinalizationResultCommand,
+  reportTaskTerminalCommand,
+  type TicketCommand,
+} from "../../src/actor/command.ts";
 import { genesis } from "../../src/actor/journal.ts";
-import { alwaysPolicy } from "../../src/domain/deciders.ts";
+import { alwaysPolicy, decide } from "../../src/domain/deciders.ts";
 import { evolve } from "../../src/domain/evolve.ts";
 import { currentTaskObligations } from "../../src/domain/evaluation.ts";
-import { currentInstance } from "../../src/domain/ticket.ts";
+import {
+  currentInstance,
+  finalizationOperationOf,
+} from "../../src/domain/ticket.ts";
 import { workTaskOf } from "../../src/domain/task.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type { TicketGraph } from "../../src/domain/generated/modelTypes.ts";
@@ -34,7 +36,12 @@ import {
 } from "../../src/interpreter/reworkCap.ts";
 import { plainDefinitionOf, plainPolicy } from "../actor/harness.ts";
 import { aDispatchSource } from "../../src/domain/config.ts";
-import { id, judgedReport, producedReport } from "../domain/fixtures.ts";
+import {
+  acceptedOf,
+  id,
+  judgedReport,
+  producedReport,
+} from "../domain/fixtures.ts";
 
 /** The one task a single-width ticket owes, which is what a completion names. */
 function owed(graph: TicketGraph): TaskIdentity {
@@ -58,25 +65,33 @@ function dispositionsUnder(
   finalizationFailures = 0,
 ): readonly string[] {
   let graph: TicketGraph = genesis;
-  const step = (event: DecisionEvent, policy = plainPolicy) => {
-    graph = evolve(graph, decide(graph, event, policy).event);
+  const step = (command: TicketCommand, policy = plainPolicy) => {
+    graph = evolve(graph, acceptedOf(decide(graph, command, policy)).event);
   };
   const evaluated = (verdict: "EvaluatorPass" | "EvaluatorFail") => {
     const work = owed(graph);
-    step(taskDoneEvent(id(1), work, producedReport(work)));
+    step(reportTaskTerminalCommand(producedReport(work)));
     const judge = owed(graph);
     const disposition = reworkDisposition(ticketAt(graph, id(1)), cyclesMax);
     step(
-      taskDoneEvent(id(1), judge, judgedReport(judge, verdict)),
+      reportTaskTerminalCommand(judgedReport(judge, verdict)),
       alwaysPolicy(disposition),
     );
     return disposition;
   };
-  step(releaseTicketEvent(plainDefinitionOf(1)));
-  step(dispatchEvent(id(1), aDispatchSource));
+  step(createTicketCommand(plainDefinitionOf(1)));
+  step(dispatchTicketCommand(id(1), aDispatchSource));
   for (let failure = 0; failure < finalizationFailures; failure++) {
     evaluated("EvaluatorPass");
-    step(finalizationResultEvent(id(1), "FinalizationNeedsWork", 1));
+    const { workCycle, generation } = finalizationOperationOf(
+      ticketAt(graph, id(1)),
+    );
+    step(
+      reportFinalizationResultCommand(id(1), workCycle, generation, {
+        type: "FinalizationNeedsWork",
+        value: 1,
+      }),
+    );
   }
   const picked: string[] = [];
   for (let round = 0; round <= cyclesMax + 1; round++) {

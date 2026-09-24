@@ -20,15 +20,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  decide,
-  dispatchEvent,
-  releaseTicketEvent,
-  resumeTicketEvent,
-  taskDoneEvent,
-  type DecisionEvent,
-} from "../../src/actor/decisionEvent.ts";
+  createTicketCommand,
+  dispatchTicketCommand,
+  reportFinalizationResultCommand,
+  reportTaskTerminalCommand,
+  resumeTicketCommand,
+  type TicketCommand,
+} from "../../src/actor/command.ts";
 import {
   alwaysPolicy,
+  decide,
   type EvaluationFailurePolicy,
 } from "../../src/domain/deciders.ts";
 import { evolve } from "../../src/domain/evolve.ts";
@@ -39,7 +40,7 @@ import type {
   TicketGraph,
   Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
-import { workTaskOf } from "../../src/domain/task.ts";
+import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
 import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import { currentTaskObligations } from "../../src/domain/evaluation.ts";
 import { currentInstance, resumeOf } from "../../src/domain/ticket.ts";
@@ -55,22 +56,34 @@ import {
   refinementInstance,
 } from "../actor/harness.ts";
 import { aDispatchSource } from "../../src/domain/config.ts";
-import { id, judgedReport, producedReport } from "../domain/fixtures.ts";
+import {
+  acceptedOf,
+  id,
+  judgedReport,
+  producedReport,
+} from "../domain/fixtures.ts";
 
-/** A history long enough to release a ticket, move it, and then change its task ledger. */
-const history: readonly DecisionEvent[] = [
-  releaseTicketEvent(plainDefinitionOf(1)),
-  dispatchEvent(id(1), aDispatchSource),
-  taskDoneEvent(id(1), workTaskOf(1, 1), producedReport(workTaskOf(1, 1))),
+/** One ticket released, dispatched, and carried through Work and Evaluation to Done. */
+const history: readonly TicketCommand[] = [
+  createTicketCommand(plainDefinitionOf(1)),
+  dispatchTicketCommand(id(1), aDispatchSource),
+  reportTaskTerminalCommand(producedReport(workTaskOf(1, 1))),
+  reportTaskTerminalCommand(
+    judgedReport(evaluationTaskOf(1, 1, 1, 1, 1), "EvaluatorPass"),
+  ),
+  reportFinalizationResultCommand(id(1), 1, 1, {
+    type: "FinalizationSucceeded",
+    value: 1,
+  }),
 ];
 
 /** The graph one command leaves, decided under `policy` and evolved by what it decided. */
 function decidedOn(
   graph: TicketGraph,
-  event: DecisionEvent,
+  command: TicketCommand,
   policy: EvaluationFailurePolicy = plainPolicy,
 ): TicketGraph {
-  return evolve(graph, decide(graph, event, policy).event);
+  return evolve(graph, acceptedOf(decide(graph, command, policy)).event);
 }
 
 /** The journal that history writes, which is what a rebuild reads. */
@@ -101,20 +114,20 @@ test("folding what each decision changed reaches the table a rebuild reads", () 
     projectionOf(replayGraph(journalOf())).map((row) => [row.ticket, row]),
   );
   assert.deepEqual(folded(), rebuilt);
-  assert.equal(rebuilt.get(id(1))?.phase, "Evaluation");
+  assert.equal(rebuilt.get(id(1))?.phase, "Done");
 });
 
 test("a decision reports exactly the tickets whose complete state changed", () => {
   const released = journalStep(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(plainDefinitionOf(1)),
+    createTicketCommand(plainDefinitionOf(1)),
     plainPolicy,
   );
   const dispatched = journalStep(
     refinementInstance,
     released,
-    dispatchEvent(id(1), aDispatchSource),
+    dispatchTicketCommand(id(1), aDispatchSource),
     plainPolicy,
   );
   assert.deepEqual(
@@ -135,7 +148,7 @@ test("a decision reports exactly the tickets whose complete state changed", () =
   const completed = journalStep(
     refinementInstance,
     dispatched,
-    taskDoneEvent(id(1), workTaskOf(1, 1), producedReport(workTaskOf(1, 1))),
+    reportTaskTerminalCommand(producedReport(workTaskOf(1, 1))),
     plainPolicy,
   );
   assert.deepEqual(
@@ -155,7 +168,7 @@ test("a release is a change although it leaves no phase", () => {
   const released = journalStep(
     refinementInstance,
     actorInit(),
-    releaseTicketEvent(plainDefinitionOf(1)),
+    createTicketCommand(plainDefinitionOf(1)),
     plainPolicy,
   );
   assert.equal(released.journal.at(-1)?.event.type, "TicketCreated");
@@ -185,28 +198,28 @@ function owedTask(graph: TicketGraph): TaskIdentity {
  * the only ones where it is anything but the absent value.
  */
 function walledHistory(): readonly (readonly [
-  DecisionEvent,
+  TicketCommand,
   EvaluationFailurePolicy,
 ])[] {
-  const steps: (readonly [DecisionEvent, EvaluationFailurePolicy])[] = [];
+  const steps: (readonly [TicketCommand, EvaluationFailurePolicy])[] = [];
   let graph: TicketGraph = genesis;
-  const step = (event: DecisionEvent, policy = plainPolicy) => {
+  const step = (event: TicketCommand, policy = plainPolicy) => {
     steps.push([event, policy]);
     graph = decidedOn(graph, event, policy);
   };
-  step(releaseTicketEvent(plainDefinitionOf(1)));
-  step(dispatchEvent(id(1), aDispatchSource));
+  step(createTicketCommand(plainDefinitionOf(1)));
+  step(dispatchTicketCommand(id(1), aDispatchSource));
   for (const cycle of [0, 1]) {
     const work = owedTask(graph);
-    step(taskDoneEvent(id(1), work, producedReport(work)));
+    step(reportTaskTerminalCommand(producedReport(work)));
     const judge = owedTask(graph);
     step(
-      taskDoneEvent(id(1), judge, judgedReport(judge, "EvaluatorFail")),
+      reportTaskTerminalCommand(judgedReport(judge, "EvaluatorFail")),
       alwaysPolicy(
         cycle === 1 ? "EscalateEvaluationFailure" : "ReworkEvaluationFailure",
       ),
     );
-    if (cycle === 1) step(resumeTicketEvent(id(1)));
+    if (cycle === 1) step(resumeTicketCommand(id(1)));
   }
   return steps;
 }
@@ -240,7 +253,7 @@ test("every projected row is the graph the step it names left behind", () => {
  */
 test("a decision's evidence lands on the ticket it escalated and no other", () => {
   const graph = [
-    [releaseTicketEvent(plainDefinitionOf(2)), plainPolicy] as const,
+    [createTicketCommand(plainDefinitionOf(2)), plainPolicy] as const,
     ...walledHistory().slice(0, -1),
   ].reduce(
     (state, [event, policy]) => decidedOn(state, event, policy),
@@ -265,7 +278,7 @@ test("a decision's evidence lands on the ticket it escalated and no other", () =
       },
     ],
   );
-  const resumed = decidedOn(graph, resumeTicketEvent(id(1)));
+  const resumed = decidedOn(graph, resumeTicketCommand(id(1)));
   assert.throws(
     () => projectionOf(resumed, { ticket: id(1), evidence: "RefUnreadable" }),
     IntegrityContradiction,

@@ -17,12 +17,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  resumeTicketEvent,
-  revokeEvent,
-} from "../../src/actor/decisionEvent.ts";
+  resumeTicketCommand,
+  revokeTicketCommand,
+} from "../../src/actor/command.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import type { Entitlement } from "../../src/interpreter/executionScheduler.ts";
-import { asOperationDecisionEvent } from "../../src/interpreter/operationInbox.ts";
+import { asOperationTicketCommand } from "../../src/interpreter/operationInbox.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   allBacklogScopes,
@@ -37,7 +37,7 @@ import {
 } from "../../src/interpreter/schedulerContext.ts";
 import { schedulerTelemetry } from "../../src/interpreter/executionScheduler.ts";
 import { recordingMetrics, throwingMetrics } from "./schedulerSinks.ts";
-import type { TicketCommand } from "../../src/interpreter/ticketCommand.ts";
+import type { ProjectCommand } from "../../src/interpreter/projectCommand.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -192,7 +192,7 @@ test("an account no policy revision covers is refused rather than assumed", () =
 });
 
 /** One command of each shape the guard classifies. */
-const resume: TicketCommand = {
+const resume: ProjectCommand = {
   version: 1,
   command: "ResolveNativeAction",
   action: "action-one",
@@ -200,7 +200,7 @@ const resume: TicketCommand = {
   resolution: "Resume",
 };
 
-const release: TicketCommand = {
+const release: ProjectCommand = {
   version: 1,
   command: "ReleaseDraft",
   ticket: asTicketId(1),
@@ -208,14 +208,14 @@ const release: TicketCommand = {
   configurationRevision: "revision",
 };
 
-const manualDispatch: TicketCommand = {
+const manualDispatch: ProjectCommand = {
   version: 1,
   command: "ManualDispatch",
   ticket: asTicketId(1),
   expectedTicketVersion: 1,
 };
 
-const proposeDispatch: TicketCommand = {
+const proposeDispatch: ProjectCommand = {
   version: 1,
   command: "ProposeDispatch",
   ticket: asTicketId(1),
@@ -241,7 +241,9 @@ test("no decision is gated, dispatch not being one a decision can carry", () => 
     dispatchNeedsExecutionHeadroom({
       version: 1,
       command: "Decide",
-      event: asOperationDecisionEvent(revokeEvent(asTicketId(1))),
+      ticketCommand: asOperationTicketCommand(
+        revokeTicketCommand(asTicketId(1)),
+      ),
     }),
     false,
   );
@@ -249,7 +251,9 @@ test("no decision is gated, dispatch not being one a decision can carry", () => 
     dispatchNeedsExecutionHeadroom({
       version: 1,
       command: "Decide",
-      event: asOperationDecisionEvent(resumeTicketEvent(asTicketId(1))),
+      ticketCommand: asOperationTicketCommand(
+        resumeTicketCommand(asTicketId(1)),
+      ),
     }),
     false,
   );

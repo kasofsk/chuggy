@@ -583,7 +583,7 @@ test("an advanced ref concludes the finalization through the one door", async ()
     [project.partition.tenant, project.partition.project],
   )) as readonly { command_tag: string }[];
   assert.equal(submitted.length, 1);
-  assert.equal(submitted[0]?.command_tag, "FinalizationResult");
+  assert.equal(submitted[0]?.command_tag, "ReportFinalizationResult");
 
   await finalizerDrain(rig.harness, project.partition, project.memory);
   await finalizerExpireClaim(rig, project);

@@ -78,7 +78,8 @@ import {
   type NativeActionKind,
   type NativeActionResolution,
   operatingSystems,
-  operationRefusalCodes,
+  operationBoundaryRefusalCodes,
+  type OperationTicketRefusalCode,
   operationStates,
   outputRenderers,
   phaseRoster,
@@ -659,6 +660,90 @@ const operationIdentitySchema = {
   acceptedAt: z.iso.datetime({ offset: true }),
 };
 
+/**
+ * What each refusal the machine decides carries, as the model's codec spells
+ * it: the code again under `type` and the record under `value`. A set of
+ * dependencies is an array of distinct tickets, as the codec writes a set.
+ */
+const ticketRefusalValueSchemas = {
+  TicketAlreadyExists: ticketNumberSchema,
+  DependenciesNotFound: z.strictObject({
+    ticket: ticketNumberSchema,
+    dependencies: page(ticketNumberSchema).min(1),
+  }),
+  SelfDependency: ticketNumberSchema,
+  TicketNotFound: ticketNumberSchema,
+  TicketNotPending: ticketNumberSchema,
+  TicketIdentityMismatch: ticketNumberSchema,
+  TicketRevisionStale: z.strictObject({
+    ticket: ticketNumberSchema,
+    expected: countSchema,
+    current: countSchema,
+  }),
+  TicketDependenciesChanged: ticketNumberSchema,
+  DependenciesIncomplete: z.strictObject({
+    ticket: ticketNumberSchema,
+    dependencies: page(ticketNumberSchema).min(1),
+  }),
+  TicketNotRevocable: ticketNumberSchema,
+  TicketNotResumable: ticketNumberSchema,
+  TaskNotCurrent: z.strictObject({
+    ticket: ticketNumberSchema,
+    task: taskIdentitySchema,
+  }),
+  FinalizationNotCurrent: z.strictObject({
+    ticket: ticketNumberSchema,
+    workCycle: ticketNumberSchema,
+    generation: ticketNumberSchema,
+  }),
+} satisfies Record<OperationTicketRefusalCode, z.ZodType>;
+
+const operationRefusedSchema = {
+  ...operationIdentitySchema,
+  state: z.literal("Refused"),
+  refusedHead: countSchema,
+  refusedLifecycleGeneration: countSchema,
+};
+
+/** A refusal the machine decided, with the refusal beside its code. */
+function operationTicketRefusedSchema<Code extends OperationTicketRefusalCode>(
+  code: Code,
+) {
+  return z.strictObject({
+    ...operationRefusedSchema,
+    code: z.literal(code),
+    refusal: z.strictObject({
+      type: z.literal(code),
+      value: ticketRefusalValueSchemas[code],
+    }),
+  });
+}
+
+/**
+ * A refused operation: a code the machine decided carries its `refusal`, and
+ * one the boundary decided carries none, because it names no more than rows
+ * or a remote that moved.
+ */
+const operationRefusedResponseSchema = z.discriminatedUnion("code", [
+  operationTicketRefusedSchema("TicketAlreadyExists"),
+  operationTicketRefusedSchema("DependenciesNotFound"),
+  operationTicketRefusedSchema("SelfDependency"),
+  operationTicketRefusedSchema("TicketNotFound"),
+  operationTicketRefusedSchema("TicketNotPending"),
+  operationTicketRefusedSchema("TicketIdentityMismatch"),
+  operationTicketRefusedSchema("TicketRevisionStale"),
+  operationTicketRefusedSchema("TicketDependenciesChanged"),
+  operationTicketRefusedSchema("DependenciesIncomplete"),
+  operationTicketRefusedSchema("TicketNotRevocable"),
+  operationTicketRefusedSchema("TicketNotResumable"),
+  operationTicketRefusedSchema("TaskNotCurrent"),
+  operationTicketRefusedSchema("FinalizationNotCurrent"),
+  z.strictObject({
+    ...operationRefusedSchema,
+    code: z.enum(operationBoundaryRefusalCodes),
+  }),
+]);
+
 export const operationResponseSchema = z.discriminatedUnion("state", [
   z.strictObject({ ...operationIdentitySchema, state: z.literal("Pending") }),
   z.strictObject({
@@ -666,13 +751,7 @@ export const operationResponseSchema = z.discriminatedUnion("state", [
     state: z.literal("Succeeded"),
     decidedSequence: countSchema,
   }),
-  z.strictObject({
-    ...operationIdentitySchema,
-    state: z.literal("Refused"),
-    code: z.enum(operationRefusalCodes),
-    refusedHead: countSchema,
-    refusedLifecycleGeneration: countSchema,
-  }),
+  operationRefusedResponseSchema,
   z.strictObject({ ...operationIdentitySchema, state: z.literal("Answered") }),
   z.strictObject({ ...operationIdentitySchema, state: z.literal("Cancelled") }),
 ]);

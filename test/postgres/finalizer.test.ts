@@ -494,8 +494,9 @@ async function finalizerSibling(
   await rig.harness.query(
     `INSERT INTO finalization_request
        (tenant,project,request,authorizing_seq,effect_position,ticket,
-        ticket_version,request_generation,kind)
-     VALUES ($1,$2,$4,$5,1,$3,$5,1,'RunFinalizer')`,
+        ticket_version,request_generation,kind,work_cycle,
+        finalization_generation)
+     VALUES ($1,$2,$4,$5,1,$3,$5,1,'RunFinalizer',1,1)`,
     [...keys, request, project.authorizingSeq],
   );
   return { ...project, ticket, request };
@@ -604,8 +605,9 @@ async function finalizerUnboundTicket(
   await seeding.query(
     `INSERT INTO finalization_request
        (tenant,project,request,authorizing_seq,effect_position,ticket,
-        ticket_version,request_generation,kind)
-     VALUES ($1,$2,$3,1,0,$4,1,1,'RunFinalizer')`,
+        ticket_version,request_generation,kind,work_cycle,
+        finalization_generation)
+     VALUES ($1,$2,$3,1,0,$4,1,1,'RunFinalizer',1,1)`,
     [partition.tenant, partition.project, request, ticket],
   );
   await seeding.commit();

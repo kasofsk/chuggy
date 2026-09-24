@@ -28,7 +28,7 @@
  * fenced attempt, a conflicting result and a cluster with no headroom are
  * outcomes a caller must handle, not exceptions it may ignore.
  *
- * NOTHING HERE DECIDES A TICKET. The scheduler submits `TaskDone` through the
+ * NOTHING HERE DECIDES A TICKET. The scheduler submits `ReportTaskTerminal` through the
  * narrow completion boundary and cannot append a journal entry, settle an
  * operation or move a ticket projection.
  *

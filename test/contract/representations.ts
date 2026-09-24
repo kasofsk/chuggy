@@ -32,6 +32,8 @@ import type {
 } from "../../src/interpreter/runEvidence.ts";
 import { workSummaryOutput } from "../../src/interpreter/operationsView.ts";
 import type { OperationResource } from "../../src/interpreter/nativeWeb.ts";
+import type { Refusal } from "../../src/interpreter/projectDecision.ts";
+import type { TicketRefusal } from "../../src/domain/generated/modelTypes.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
@@ -119,6 +121,54 @@ export const operation: OperationResource = {
   acceptedAt: instant,
   state: "Pending",
 };
+
+/** One refusal of every kind the machine decides, each with a payload of its own shape. */
+export const ticketRefusals: Readonly<
+  Record<TicketRefusal["type"], TicketRefusal>
+> = {
+  TicketAlreadyExists: { type: "TicketAlreadyExists", value: 3 },
+  DependenciesNotFound: {
+    type: "DependenciesNotFound",
+    value: { ticket: 3, dependencies: new Set([7, 5]) },
+  },
+  SelfDependency: { type: "SelfDependency", value: 3 },
+  TicketNotFound: { type: "TicketNotFound", value: 3 },
+  TicketNotPending: { type: "TicketNotPending", value: 3 },
+  TicketIdentityMismatch: { type: "TicketIdentityMismatch", value: 3 },
+  TicketRevisionStale: {
+    type: "TicketRevisionStale",
+    value: { ticket: 3, expected: 2, current: 4 },
+  },
+  TicketDependenciesChanged: { type: "TicketDependenciesChanged", value: 3 },
+  DependenciesIncomplete: {
+    type: "DependenciesIncomplete",
+    value: { ticket: 3, dependencies: new Set([2]) },
+  },
+  TicketNotRevocable: { type: "TicketNotRevocable", value: 3 },
+  TicketNotResumable: { type: "TicketNotResumable", value: 3 },
+  TaskNotCurrent: {
+    type: "TaskNotCurrent",
+    value: {
+      ticket: 3,
+      task: { type: "WorkTask", value: { ticket: 3, cycle: 1 } },
+    },
+  },
+  FinalizationNotCurrent: {
+    type: "FinalizationNotCurrent",
+    value: { ticket: 3, workCycle: 2, generation: 1 },
+  },
+};
+
+/** The operation a refusal settled, at the head and lifecycle it was refused at. */
+export function refusedOperation(refusal: Refusal): OperationResource {
+  return {
+    ...operation,
+    state: "Refused",
+    refusal,
+    refusedHead: 4,
+    refusedLifecycleGeneration: 1,
+  };
+}
 
 export const configuration: ConfigurationRevisionResource = {
   partition,
