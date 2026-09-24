@@ -8,8 +8,8 @@
  * at the writer and recorded on the event, and replay re-performs it rather
  * than re-taking it.
  *
- * THE COUNT IS DERIVED FROM THE JUDGEMENTS THE TICKET KEEPS. Nothing on the
- * ticket stores how much rework it has had, so a cap changed between one
+ * THE COUNT IS DERIVED FROM THE JUDGEMENTS THE TICKET'S LEDGER KEEPS. Nothing
+ * stores how much rework a ticket has had, so a cap changed between one
  * release and the next applies to the ticket in flight instead of to whatever
  * a release froze onto it.
  *
@@ -23,9 +23,14 @@
  * evaluator's re-ask also shows in.
  */
 
+import {
+  alwaysPolicy,
+  type EvaluationFailurePolicy,
+} from "../domain/deciders.ts";
 import type {
   EvaluationFailureDisposition,
   Ticket,
+  TicketLedger,
 } from "../domain/generated/modelTypes.ts";
 import { evaluationFailureReworksStarted } from "../domain/ticket.ts";
 
@@ -53,9 +58,19 @@ export function checkedReworkCap(cap: ReworkCap): ReworkCap {
  */
 export function reworkDisposition(
   ticket: Ticket,
+  ledger: TicketLedger,
   cyclesMax: number,
 ): EvaluationFailureDisposition {
-  return evaluationFailureReworksStarted(ticket) >= cyclesMax
+  return evaluationFailureReworksStarted(ticket, ledger) >= cyclesMax
     ? "EscalateEvaluationFailure"
     : "ReworkEvaluationFailure";
+}
+
+/** The policy `decide` is handed for this ticket: the disposition its count earns, whatever instance failed. */
+export function reworkPolicy(
+  ticket: Ticket,
+  ledger: TicketLedger,
+  cyclesMax: number,
+): EvaluationFailurePolicy {
+  return alwaysPolicy(reworkDisposition(ticket, ledger, cyclesMax));
 }

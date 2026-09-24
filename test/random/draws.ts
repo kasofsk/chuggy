@@ -55,6 +55,7 @@ import {
 } from "../../src/domain/generated/modelTypes.ts";
 import { taskIdentityEquals } from "../../src/domain/task.ts";
 import { type TicketId } from "../../src/domain/ids.ts";
+import type { Ledgers } from "../../src/domain/ledger.ts";
 import type { Picks } from "../conformance/dispatch.ts";
 import { decodeValue, encodeValue, type ItfValue } from "../itf/decode.ts";
 import {
@@ -85,15 +86,21 @@ export interface Drawn {
 /** One action of the machine, as the walk takes it. */
 export interface WalkAction {
   readonly action: string;
-  readonly enabledIn: (config: Config, graph: TicketGraph) => boolean;
+  readonly enabledIn: (
+    config: Config,
+    graph: TicketGraph,
+    ledgers: Ledgers,
+  ) => boolean;
   readonly drawIn: (
     config: Config,
     graph: TicketGraph,
+    ledgers: Ledgers,
     random: Random,
   ) => Drawn;
   readonly permitsIn: (
     config: Config,
     graph: TicketGraph,
+    ledgers: Ledgers,
     drawn: Drawn,
   ) => boolean;
 }
@@ -128,10 +135,10 @@ function overTicketSet(
   return {
     action,
     enabledIn: (config, graph) => setIn(config, graph).length > 0,
-    drawIn: (config, graph, random) => ({
+    drawIn: (config, graph, _ledgers, random) => ({
       ticket: pickFrom(random, setIn(config, graph)),
     }),
-    permitsIn: (config, graph, drawn) =>
+    permitsIn: (config, graph, _ledgers, drawn) =>
       drawn.ticket !== undefined && setIn(config, graph).includes(drawn.ticket),
   };
 }
@@ -144,12 +151,12 @@ function overTicketSet(
 const releaseTicket: WalkAction = {
   action: "releaseTicket",
   enabledIn: (config, graph) => releasableIdsIn(config, graph).length > 0,
-  drawIn: (config, graph, random) => ({
+  drawIn: (config, graph, _ledgers, random) => ({
     ticket: pickFrom(random, releasableIdsIn(config, graph)),
     dependencies: subsetFrom(random, dependableIn(graph)),
     stages: pickFrom(random, validPlansIn(config)),
   }),
-  permitsIn: (config, graph, drawn) => {
+  permitsIn: (config, graph, _ledgers, drawn) => {
     const { ticket, dependencies, stages } = drawn;
     if (
       ticket === undefined ||
@@ -168,14 +175,14 @@ const releaseTicket: WalkAction = {
 };
 
 /** The update draws a Pending ticket and then the plan it replaces the old one with. */
-const updateTicket: WalkAction = {
-  action: "updateTicket",
+const updateDefinition: WalkAction = {
+  action: "updateDefinition",
   enabledIn: (_config, graph) => revisablesIn(graph).length > 0,
-  drawIn: (config, graph, random) => ({
+  drawIn: (config, graph, _ledgers, random) => ({
     ticket: pickFrom(random, revisablesIn(graph)),
     stages: pickFrom(random, validPlansIn(config)),
   }),
-  permitsIn: (config, graph, drawn) =>
+  permitsIn: (config, graph, _ledgers, drawn) =>
     drawn.ticket !== undefined &&
     drawn.stages !== undefined &&
     revisablesIn(graph).includes(drawn.ticket) &&
@@ -190,11 +197,11 @@ const updateTicket: WalkAction = {
 const dispatch: WalkAction = {
   action: "dispatch",
   enabledIn: (_config, graph) => readiesIn(graph).length > 0,
-  drawIn: (_config, graph, random) => ({
+  drawIn: (_config, graph, _ledgers, random) => ({
     ticket: pickFrom(random, readiesIn(graph)),
     source: pickFrom(random, dispatchSources),
   }),
-  permitsIn: (_config, graph, drawn) =>
+  permitsIn: (_config, graph, _ledgers, drawn) =>
     drawn.ticket !== undefined &&
     drawn.source !== undefined &&
     readiesIn(graph).includes(drawn.ticket) &&
@@ -210,7 +217,7 @@ const dispatch: WalkAction = {
 const taskDone: WalkAction = {
   action: "taskDone",
   enabledIn: (_config, graph) => completableIn(graph).length > 0,
-  drawIn: (_config, graph, random) => {
+  drawIn: (_config, graph, _ledgers, random) => {
     const ticket = pickFrom(random, completableIn(graph));
     const task = pickFrom(random, outstandingTasksIn(graph, ticket));
     return {
@@ -220,7 +227,7 @@ const taskDone: WalkAction = {
       onFailure: pickFrom(random, evaluationFailureDispositionTags),
     };
   },
-  permitsIn: (_config, graph, drawn) => {
+  permitsIn: (_config, graph, _ledgers, drawn) => {
     const task = drawn.task;
     return (
       drawn.ticket !== undefined &&
@@ -240,11 +247,11 @@ const taskDone: WalkAction = {
 const finalizationResult: WalkAction = {
   action: "finalizationResult",
   enabledIn: (_config, graph) => finalizingIn(graph).length > 0,
-  drawIn: (_config, graph, random) => ({
+  drawIn: (_config, graph, _ledgers, random) => ({
     ticket: pickFrom(random, finalizingIn(graph)),
     result: pickFrom(random, finalizationResults),
   }),
-  permitsIn: (_config, graph, drawn) => {
+  permitsIn: (_config, graph, _ledgers, drawn) => {
     const result = drawn.result;
     return (
       drawn.ticket !== undefined &&
@@ -260,15 +267,16 @@ const finalizationResult: WalkAction = {
 /** The environment out of turn: a command `decide` refuses, drawn from the probes. */
 const refuse: WalkAction = {
   action: "refuse",
-  enabledIn: (config, graph) => refusedCommandsIn(config, graph).length > 0,
-  drawIn: (config, graph, random) => ({
-    command: pickFrom(random, refusedCommandsIn(config, graph)),
+  enabledIn: (config, graph, ledgers) =>
+    refusedCommandsIn(config, graph, ledgers).length > 0,
+  drawIn: (config, graph, ledgers, random) => ({
+    command: pickFrom(random, refusedCommandsIn(config, graph, ledgers)),
   }),
-  permitsIn: (config, graph, drawn) => {
+  permitsIn: (config, graph, ledgers, drawn) => {
     const command = drawn.command;
     return (
       command !== undefined &&
-      refusedCommandsIn(config, graph).some((refused) =>
+      refusedCommandsIn(config, graph, ledgers).some((refused) =>
         isDeepStrictEqual(refused, command),
       )
     );
@@ -285,7 +293,7 @@ const settle: WalkAction = {
 /** The roster, in `step`'s order; the suite holds it against the model's own. */
 export const walkActions: readonly WalkAction[] = [
   releaseTicket,
-  updateTicket,
+  updateDefinition,
   overTicketSet("revoke", (_config, graph) => revocablesIn(graph)),
   dispatch,
   taskDone,

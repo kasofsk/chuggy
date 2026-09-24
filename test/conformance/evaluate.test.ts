@@ -35,7 +35,8 @@ import { bundleHolds, evaluateBundle } from "./evaluate.ts";
 
 const config = modelInstance;
 const fleet = healthyFleet(config);
-const healthy = initialView(fleetBut(fleet, 0, {}));
+const unchanged = fleetBut(fleet, 0, {});
+const healthy = initialView(unchanged.graph, unchanged.ledgers);
 
 /** A ticket whose dependency is not in the map, which is where a derived walk falls over. */
 const dangling = initialView(
@@ -50,7 +51,8 @@ test("a healthy state answers every leaf, and answers each of them yes", () => {
 });
 
 test("where nothing throws, the guarded evaluation is the bundle itself", () => {
-  const broke = initialView(fleetBut(fleet, 0, { completions: 2 }));
+  const twice = fleetBut(fleet, 0, {}, { completions: 2 });
+  const broke = initialView(twice.graph, twice.ledgers);
   assert.ok(
     failedInvariants(config, broke).length > 0,
     "the broken view answers every leaf yes, so the two evaluations agree vacuously",
@@ -62,9 +64,9 @@ test("where nothing throws, the guarded evaluation is the bundle itself", () => 
   }
 });
 
-test("a malformed state fails the leaf that names it, and answers every other", () => {
+test("a malformed state fails the leaves that name it, and answers every other", () => {
   const verdict = evaluateBundle(config, dangling);
-  assert.deepEqual(verdict.failed, ["depsAcyclic"]);
+  assert.deepEqual(verdict.failed, ["graphWellFormed", "depsAcyclic"]);
   assert.deepEqual(
     verdict.refused,
     [],
@@ -78,7 +80,7 @@ test("a leaf that cannot be asked is named rather than taking the run down", () 
     invariant: "readsADanglingDep",
     holds: (_config, view) =>
       [...ticketAt(view.post, id(1)).definition.dependencies].every(
-        (d) => ticketAt(view.post, d as TicketId).phase !== "Revoked",
+        (d) => ticketAt(view.post, d as TicketId).state !== "Revoked",
       ),
   };
   assert.throws(() => partial.holds(config, dangling), /no ticket 9/);
@@ -86,7 +88,7 @@ test("a leaf that cannot be asked is named rather than taking the run down", () 
     ...invariantBundle,
     partial,
   ]);
-  assert.deepEqual(verdict.failed, ["depsAcyclic"]);
+  assert.deepEqual(verdict.failed, ["graphWellFormed", "depsAcyclic"]);
   assert.deepEqual(verdict.refused, [
     "readsADanglingDep (graph: no ticket 9; a decider was called on a state that refuses it)",
   ]);

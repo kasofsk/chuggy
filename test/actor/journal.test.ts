@@ -47,8 +47,9 @@ import {
   worldSpawnsOn,
 } from "../../src/actor/world.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
+import { phaseOf } from "../../src/domain/phase.ts";
 import {
-  commandValid,
+  commandTaken,
   decide,
   decideFinalizationResult,
   decideResume,
@@ -60,8 +61,8 @@ import {
   aFinalizationEvidence,
   anAcceptedSource,
 } from "../../src/domain/config.ts";
-import { artifactOf } from "../../src/domain/ticket.ts";
-import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import { artifactOf, emptyLedger } from "../../src/domain/ticket.ts";
+import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import {
   acceptedOf,
   id,
@@ -106,13 +107,13 @@ function decideAt(
 
 /**
  * How the machine answers a command at a state: not taken at all when it is
- * outside `commandValid`, else refused by name, else accepted.
+ * outside `commandTaken`, else refused by name, else accepted.
  */
 function answerAt(
   graph: TicketGraph,
   command: TicketCommand,
 ): "NotTaken" | "Accepted" | TicketRefusal["type"] {
-  if (!commandValid(config, command)) return "NotTaken";
+  if (!commandTaken(config, command)) return "NotTaken";
   const decision = decisionAt(graph, command);
   return decision.type === "TicketRefused" ? decision.value.type : "Accepted";
 }
@@ -140,7 +141,7 @@ const g2 = evolve(g1, d2.event);
 const e2: Entry = { seq: 2, event: d2.event };
 const goodJournal: readonly Entry[] = [e1, e2];
 
-const work = workTaskOf(1, 1);
+const work = workTaskIdentity(1, 1);
 const judge = evaluationTaskOf(1, 1, 1, 1, 1);
 
 /** A completion carrying `report`. */
@@ -199,7 +200,7 @@ test("an honest history is legal, and replay reconstructs what the decisions evo
   const replayed = replayGraph(goodJournal);
   assert.ok(graphEquals(replayed, g2));
   assert.deepEqual([...replayed.tickets.keys()], [1]);
-  assert.equal(ticketAt(replayed, id(1)).phase, "Work");
+  assert.equal(phaseOf(ticketAt(replayed, id(1)).state), "Work");
 });
 
 test("replay is a fold of evolve: one more row is the shorter replay evolved once", () => {
@@ -349,11 +350,11 @@ test("the task result reference is part of the event: the acceptance carries it 
     !graphEquals(takenPost, shiftedPost),
     "a machine deriving the reference would replay both to the same state",
   );
-  assert.deepEqual(artifactOf(ticketAt(takenPost, id(1))), {
+  assert.deepEqual(artifactOf(ticketAt(takenPost, id(1)), emptyLedger), {
     type: "ProducedArtifact",
     value: resultFor(work).resultRef,
   });
-  assert.deepEqual(artifactOf(ticketAt(shiftedPost, id(1))), {
+  assert.deepEqual(artifactOf(ticketAt(shiftedPost, id(1)), emptyLedger), {
     type: "ProducedArtifact",
     value: 2,
   });
@@ -428,7 +429,7 @@ interface Answer {
 
 const answers: readonly Answer[] = [
   {
-    check: "CreateTicket/commandValid/plan",
+    check: "CreateTicket/commandBounded/plan",
     at: genesis,
     command: createTicketCommand({
       ...plainDefinitionOf(1),
@@ -572,13 +573,15 @@ const answers: readonly Answer[] = [
   {
     check: "ReportTaskTerminal/owed",
     at: working,
-    command: completion(producedReport(workTaskOf(1, 9))),
+    command: completion(producedReport(workTaskIdentity(1, 9))),
     answer: "TaskNotCurrent",
   },
   {
     check: "ReportTaskTerminal/cycle",
     at: working,
-    command: completion(stoppedReport(workTaskOf(1, 2), "ProcessFailure")),
+    command: completion(
+      stoppedReport(workTaskIdentity(1, 2), "ProcessFailure"),
+    ),
     answer: "TaskNotCurrent",
   },
   {
@@ -725,6 +728,72 @@ test("each otherwise-undriven arm journals legally and decides what the domain d
     assert.ok(
       graphEquals(replayGraph(journal), evolve(at, acceptedOf(decided).event)),
       `${arm}: replay does not reach the decided state`,
+    );
+  }
+});
+
+test("a work failure naming a work task the ticket has left is refused, though evolve would apply it", () => {
+  const history = journalOf([...toEscalated, resumeTicketCommand(id(1))]);
+  const resumed = replayGraph(history);
+  assert.equal(ticketAt(resumed, id(1)).workCyclesStarted, 2);
+  for (const type of [
+    "TicketWorkProcessFailed",
+    "TicketWorkExecutionUnavailable",
+  ] as const) {
+    const row = (cycle: number): Entry => ({
+      seq: history.length + 1,
+      event: {
+        type,
+        value: { ticket: 1, task: workTaskIdentity(1, cycle), evidence: 1 },
+      },
+    });
+    assert.ok(
+      !graphEquals(evolve(resumed, row(1).event), resumed),
+      `${type}: the package's evolve applies a failure for any task in Work`,
+    );
+    assert.ok(
+      !journalLegalOn([...history, row(1)]),
+      `${type}: a row for the cycle before is one nothing decided`,
+    );
+    assert.ok(
+      !journalLegalOn([...history, row(3)]),
+      `${type}: a row for a cycle not yet started is one nothing decided`,
+    );
+    assert.ok(
+      journalLegalOn([...history, row(2)]),
+      `${type}: the same row for the cycle running is legal`,
+    );
+  }
+});
+
+test("a work failure naming another ticket's running work task is refused, though both run the same cycle", () => {
+  const history = journalOf([
+    event1,
+    createTicketCommand(plainDefinitionOf(2)),
+    event2,
+    dispatchTicketCommand(id(2), aDispatchSource),
+  ]);
+  const both = replayGraph(history);
+  assert.equal(ticketAt(both, id(1)).workCyclesStarted, 1);
+  assert.equal(ticketAt(both, id(2)).workCyclesStarted, 1);
+  for (const type of [
+    "TicketWorkProcessFailed",
+    "TicketWorkExecutionUnavailable",
+  ] as const) {
+    const row = (task: number): Entry => ({
+      seq: history.length + 1,
+      event: {
+        type,
+        value: { ticket: 1, task: workTaskIdentity(task, 1), evidence: 1 },
+      },
+    });
+    assert.ok(
+      !journalLegalOn([...history, row(2)]),
+      `${type}: a row for ticket 1 naming ticket 2's task is one nothing decided`,
+    );
+    assert.ok(
+      journalLegalOn([...history, row(1)]),
+      `${type}: the row naming ticket 1's own task is legal`,
     );
   }
 });

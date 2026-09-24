@@ -27,6 +27,7 @@ import {
   type TicketCommand,
 } from "../../src/actor/command.ts";
 import { decide } from "../../src/domain/deciders.ts";
+import type { TicketState } from "../../src/domain/generated/modelTypes.ts";
 import {
   aDispatchSource,
   aFinalizationEvidence,
@@ -45,8 +46,9 @@ import {
   isDecisionSemanticsVersion,
   type DecisionSemanticsVersion,
 } from "../../src/actor/decisionSemantics.ts";
-import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
+import { phaseOf } from "../../src/domain/phase.ts";
 import {
   acceptedOf,
   id,
@@ -55,6 +57,13 @@ import {
   stoppedReport,
 } from "../domain/fixtures.ts";
 import { plainDefinitionOf, plainPolicy } from "./harness.ts";
+
+/** The wall a state stands at, by its escalation's tag, or none. */
+function wallOf(state: TicketState): string | undefined {
+  return typeof state !== "string" && state.type === "Escalated"
+    ? state.value.type
+    : undefined;
+}
 
 /** A history the current deciders wrote, which is the only vintage this image holds. */
 function decided(events: readonly TicketCommand[]): readonly Entry[] {
@@ -79,8 +88,8 @@ function storedAt(
  * blocked and resumed, then an evaluation set blocked and resumed, then the
  * finalizer reaching no result and resuming into a success.
  */
-const walled = workTaskOf(1, 1);
-const reworked = workTaskOf(1, 2);
+const walled = workTaskIdentity(1, 1);
+const reworked = workTaskIdentity(1, 2);
 const stopped = evaluationTaskOf(1, 2, 1, 1, 1);
 const reasked = evaluationTaskOf(1, 2, 1, 2, 1);
 
@@ -147,18 +156,17 @@ test("each wall names itself and its resume says which phase it re-enters", () =
     ],
   );
   const after = (at: number) =>
-    ticketAt(storedReplayGraph(storedAt(walls.slice(0, at), 8)), id(1));
-  assert.equal(after(3).escalation, "WorkExecutionUnavailableEscalated");
-  assert.equal(after(4).phase, "Work");
-  assert.equal(after(6).escalation, "EvaluationBlockedEscalated");
-  assert.equal(after(7).phase, "Evaluation");
-  assert.equal(after(9).escalation, "FinalizationUnavailableEscalated");
-  assert.equal(after(10).phase, "Finalization");
+    ticketAt(storedReplayGraph(storedAt(walls.slice(0, at), 8)), id(1)).state;
+  assert.equal(wallOf(after(3)), "WorkExecutionUnavailableEscalated");
+  assert.equal(phaseOf(after(4)), "Work");
+  assert.equal(wallOf(after(6)), "EvaluationBlockedEscalated");
+  assert.equal(phaseOf(after(7)), "Evaluation");
+  assert.equal(wallOf(after(9)), "FinalizationUnavailableEscalated");
+  assert.equal(phaseOf(after(10)), "Finalization");
 });
 
 test("the whole history is legal as decisions this image took, and ends Done", () => {
   assert.ok(journalLegalOn(walls));
   const settled = ticketAt(storedReplayGraph(storedAt(walls, 8)), id(1));
-  assert.equal(settled.phase, "Done");
-  assert.equal(settled.escalation, "NoEscalation");
+  assert.equal(settled.state, "Done");
 });

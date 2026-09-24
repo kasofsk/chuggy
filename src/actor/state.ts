@@ -3,11 +3,11 @@
  * decide-and-journal, emit, crash-and-recover, and the effect-first hazard the
  * discipline forbids.
  *
- * THE CARRIED VIEW IS THE CARRY RULE. `view.post` is the actor's in-memory
- * state; `view.pre` and `view.last` are the state before the last domain
- * decision and that decision, which is what every domain invariant is
+ * THE CARRIED VIEW IS THE CARRY RULE. `view.post` and `view.postLedgers` are
+ * the actor's in-memory state; `view.pre`, `view.preLedgers` and `view.last`
+ * are the state before the last domain decision and that decision, which is what every domain invariant is
  * evaluated against. Only `journalStep` advances the pair — the executor and
- * crash steps are not domain steps, so they carry `(pre, last)` unchanged, the
+ * crash steps are not domain steps, so they carry the pre-state and `last` unchanged, the
  * same stale-ghost arrangement `installGraph` states in `model/domain.qnt`:
  * re-snapshotting `pre` on an emit would present a step that decided nothing
  * as a domain step the bundle is meant to check.
@@ -23,7 +23,7 @@
  * A REFUSED COMMAND IS A STEP THAT MOVES NOTHING. `journalStep` records the
  * refusal as the last decision, with `pre` and `post` both the state it found,
  * and appends no row: the actor structurally cannot journal what `decide`
- * refused. A command outside `commandValid` is not one the machine takes at
+ * refused. A command outside `commandTaken` is not one the machine takes at
  * all, and a driver that sends one, or asks for any other impossible step, has
  * left the step relation and is thrown at.
  */
@@ -36,13 +36,13 @@ import type {
   TicketGraph,
 } from "../domain/generated/modelTypes.ts";
 import {
-  commandValid,
+  commandTaken,
   decide,
   type EvaluationFailurePolicy,
 } from "../domain/deciders.ts";
-import { evolve } from "../domain/evolve.ts";
 import type { StepView } from "../domain/invariants.ts";
-import { genesis, replayGraph, type Entry } from "./journal.ts";
+import { genesisLedgers, type Ledgers } from "../domain/ledger.ts";
+import { genesis, replayJournal, replayStep, type Entry } from "./journal.ts";
 
 /** The actor's whole state: the carried view, the journal, the executor cursor, and the world's ledger. */
 export interface ActorState {
@@ -58,10 +58,21 @@ export function memoryGraph(state: ActorState): TicketGraph {
   return state.view.post;
 }
 
+/** The actor's in-memory ledgers, beside the graph. */
+export function memoryLedgers(state: ActorState): Ledgers {
+  return state.view.postLedgers;
+}
+
 /** The initial state: an empty fleet, an empty journal, a world that has received nothing. */
 export function actorInit(): ActorState {
   return {
-    view: { pre: genesis, last: "NoDecision", post: genesis },
+    view: {
+      pre: genesis,
+      preLedgers: genesisLedgers,
+      last: "NoDecision",
+      post: genesis,
+      postLedgers: genesisLedgers,
+    },
     journal: [],
     applied: 0,
     worldEffects: new Set(),
@@ -77,7 +88,7 @@ function decideValid(
   failurePolicy: EvaluationFailurePolicy,
   step: string,
 ): TicketDecision {
-  if (!commandValid(config, command)) {
+  if (!commandTaken(config, command)) {
     throw new Error(
       `${step}: ${command.type} is not a well-formed command; the machine does not take it`,
     );
@@ -99,6 +110,7 @@ export function journalStep(
   failurePolicy: EvaluationFailurePolicy,
 ): ActorState {
   const graph = memoryGraph(state);
+  const ledgers = memoryLedgers(state);
   const decision = decideValid(
     config,
     state,
@@ -111,8 +123,10 @@ export function journalStep(
       ...state,
       view: {
         pre: graph,
+        preLedgers: ledgers,
         last: { type: "Refused", value: decision.value },
         post: graph,
+        postLedgers: ledgers,
       },
     };
   }
@@ -120,11 +134,14 @@ export function journalStep(
     seq: state.journal.length + 1,
     event: decision.value.event,
   };
+  const after = replayStep({ graph, ledgers }, decision.value.event);
   return {
     view: {
       pre: graph,
+      preLedgers: ledgers,
       last: { type: "Decided", value: decision.value },
-      post: evolve(graph, decision.value.event),
+      post: after.graph,
+      postLedgers: after.ledgers,
     },
     journal: [...state.journal, entry],
     applied: state.applied,
@@ -155,7 +172,7 @@ export function emitNext(state: ActorState): ActorState {
 /**
  * Crash and recover with the cursor regressed to `cursor`: memory becomes the
  * genuine replay of the journal, and the lost cursor suffix will re-emit. The
- * carried `(pre, last)` does not move — recovery is not a domain decision.
+ * carried pre-state and `last` do not move — recovery is not a domain decision.
  */
 export function crashRecoverTo(state: ActorState, cursor: number): ActorState {
   if (!Number.isInteger(cursor) || cursor < 0 || cursor > state.applied) {
@@ -163,9 +180,14 @@ export function crashRecoverTo(state: ActorState, cursor: number): ActorState {
       `crashRecoverTo: ${String(cursor)} is not a checkpoint this run could have written`,
     );
   }
+  const replayed = replayJournal(state.journal);
   return {
     ...state,
-    view: { ...state.view, post: replayGraph(state.journal) },
+    view: {
+      ...state.view,
+      post: replayed.graph,
+      postLedgers: replayed.ledgers,
+    },
     applied: cursor,
   };
 }
@@ -194,9 +216,14 @@ export function effectCrash(
       `effectCrash: ${command.type} is refused at this state; a refusal owes the world nothing to emit`,
     );
   }
+  const replayed = replayJournal(state.journal);
   return {
     ...state,
-    view: { ...state.view, post: replayGraph(state.journal) },
+    view: {
+      ...state.view,
+      post: replayed.graph,
+      postLedgers: replayed.ledgers,
+    },
     orphans: [...state.orphans, decision.value.event],
   };
 }

@@ -113,6 +113,7 @@ import type { ProjectDecision } from "../../src/interpreter/projectDecision.ts";
 import {
   projectWriterDecide,
   projectWriterLoad,
+  projectWriterSpawnSourceRef,
   type ProjectMemory,
   type ProjectTicketWriter,
 } from "../../src/interpreter/projectWriter.ts";
@@ -836,7 +837,7 @@ export function postgresHarnessReport(
     value: {
       ...report.value,
       ...(report.type === "WorkResultReport"
-        ? { acceptedSourceRef: ticket.source }
+        ? { acceptedSourceRef: projectWriterSpawnSourceRef(ticket.state) }
         : {}),
       result: { ...report.value.result, obligation: owed },
     },

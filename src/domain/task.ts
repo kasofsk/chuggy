@@ -2,7 +2,7 @@
  * What the machine does with a task's identity and obligation: name one,
  * compare two, and hold each to the contract's own validity claim.
  *
- * The ticket keeps no task set. What it is running is derived from its phase
+ * The ticket keeps no task set. What it is running is derived from its state
  * and its current run (`liveObligations` in `src/domain/ticket.ts`), so
  * nothing here resolves or retires a task.
  */
@@ -14,7 +14,7 @@ import type {
 } from "./generated/modelTypes.ts";
 
 /** The work task of one cycle — the only task a work cycle runs. */
-export function workTaskOf(ticket: number, cycle: number): TaskIdentity {
+export function workTaskIdentity(ticket: number, cycle: number): TaskIdentity {
   return { type: "WorkTask", value: { ticket, cycle } };
 }
 

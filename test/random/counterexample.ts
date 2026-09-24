@@ -4,7 +4,8 @@
  *
  * THE FILE IS A GOLDEN IN EVERY RESPECT THE REPLAYER CONSUMES: an ITF states
  * array carrying `mbt::actionTaken` and `mbt::nondetPicks` beside the instance's
- * `tickets`, `lastStep` and `prevTickets` variables, with a manifest row naming it, so
+ * `tickets`, `ledgers`, `lastStep`, `prevTickets` and `prevLedgers` variables,
+ * with a manifest row naming it, so
  * `test/conformance/` replays it exactly as it replays a committed row —
  * pointed at the directory with `CHUG_GOLDEN_DIR`, or committed as a new row if
  * the divergence it reproduces is real. The states are what this tree's own
@@ -24,9 +25,11 @@ import type { Config } from "../../src/domain/config.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
 import {
   encodeLastDecision,
+  encodeLedgers,
   encodeTicketGraph,
   encodeOption,
 } from "../itf/vocabulary.ts";
+import { genesisLedgers } from "../../src/domain/ledger.ts";
 import { encodeValue, type ItfValue } from "../itf/decode.ts";
 import { drawnWire, type Drawn } from "./draws.ts";
 import { initialView } from "../domain/fixtures.ts";
@@ -69,8 +72,12 @@ export function counterexampleDocument(
   const ticketsVar = `${instance}::chuggy_domain::tickets`;
   const lastStepVar = `${instance}::chuggy_domain::lastStep`;
   const prevVar = `${instance}::chuggy_domain::prevTickets`;
+  const ledgersVar = `${instance}::chuggy_domain::ledgers`;
+  const prevLedgersVar = `${instance}::chuggy_domain::prevLedgers`;
   const variables = (view: StepView) => ({
     [lastStepVar]: encodeValue(encodeLastDecision(view.last)),
+    [ledgersVar]: encodeValue(encodeLedgers(view.postLedgers)),
+    [prevLedgersVar]: encodeValue(encodeLedgers(view.preLedgers)),
     [prevVar]: encodeValue(encodeTicketGraph(view.pre)),
     [ticketsVar]: encodeValue(encodeTicketGraph(view.post)),
   });
@@ -79,7 +86,7 @@ export function counterexampleDocument(
       "#meta": { index: 0 },
       "mbt::actionTaken": "init",
       "mbt::nondetPicks": nondetPicksOf({}),
-      ...variables(initialView(walkInit(config))),
+      ...variables(initialView(walkInit(config), genesisLedgers)),
     },
   ];
   for (const { step, view } of walkRecord(config, steps, decide)) {
@@ -102,6 +109,8 @@ export function counterexampleDocument(
       "mbt::actionTaken",
       "mbt::nondetPicks",
       lastStepVar,
+      ledgersVar,
+      prevLedgersVar,
       prevVar,
       ticketsVar,
     ],

@@ -39,8 +39,8 @@
 /// ==========================================================================
 ///
 /// STATE. The actor's in-memory view of the domain ("mem") is the
-/// EMBEDDED DOMAIN INSTANCE's own vars — tickets, lastStep and the
-/// step-history ghost, imported below — so every domain invariant
+/// EMBEDDED DOMAIN INSTANCE's own vars — tickets, their ledgers, lastStep and
+/// the step-history ghosts, imported below — so every domain invariant
 /// (allInvariants) is checked against the actor's memory at every step
 /// of every run in this file's harness. On top of it, this module's own
 /// vars:
@@ -48,8 +48,8 @@
 ///   journal      : List[Entry] — THE DURABLE DECISION LOG, the only
 ///                  thing that survives a crash. An Entry is the EVENT the
 ///                  decision took plus a monotone sequence number. The
-///                  event is what makes replay possible — evolve is pure and
-///                  reads nothing else, so a replay re-decides nothing and
+///                  event is what makes replay possible — evolve and the
+///                  ledger's fold are pure and read nothing else, so a replay re-decides nothing and
 ///                  consults no policy — and it is what conformance replays:
 ///                  journal rows are golden-trace steps (standing rule 4).
 ///   applied      : int — THE EXECUTOR CURSOR: how many journal entries'
@@ -282,11 +282,21 @@ module chuggy_refinement {
       | TicketRefused(_) => []
     }
 
+  /// What a replay rebuilds: the graph and every ticket's ledger.
+  type Replayed = { graph: TicketGraph, ledgers: int -> TicketLedger }
+
   /// RECOVERY: replay the journal into a fresh in-memory state by folding
-  /// evolve over its events. Deterministic by purity (evolve is a pure
-  /// function; the fold has one result) — theorem 3's mechanism.
-  pure def replayGraph(jl: List[Entry]): TicketGraph =
-    jl.foldl(genesis, (c, e) => evolve(c, e.event))
+  /// evolve over its events, and the ledgers' fold beside it over the same
+  /// rows. Deterministic by purity (both are pure functions; the fold has one
+  /// result) — theorem 3's mechanism.
+  pure def replayJournal(jl: List[Entry]): Replayed =
+    jl.foldl({ graph: genesis, ledgers: Map() }, (r, e) =>
+      { graph: evolve(r.graph, e.event),
+        ledgers: evolveLedgers(r.graph, r.ledgers, e.event) })
+
+  pure def replayGraph(jl: List[Entry]): TicketGraph = replayJournal(jl).graph
+  pure def replayLedgers(jl: List[Entry]): int -> TicketLedger =
+    replayJournal(jl).ledgers
 
   /// Does the ticket an event names stand where the event would apply? A
   /// release names one that must not exist yet; every other event names one
@@ -297,10 +307,27 @@ module chuggy_refinement {
       | _ => c.tickets.keys().contains(eventTicket(fact))
     }
 
+  /// Does a work failure name the work task the ticket owes at c? The
+  /// package's evolve parks a ticket in Work on any work failure without
+  /// asking which task failed, so a row about an earlier cycle's task would
+  /// move the state; only the current cycle's task may. Every other event is
+  /// held by its own arm.
+  pure def failureTaskCurrent(c: TicketGraph, fact: TicketEvent): bool =
+    match fact {
+      | TicketWorkProcessFailed(failure) => failure.task ==
+        workTaskIdentity(failure.ticket,
+          c.tickets.get(failure.ticket).workCyclesStarted)
+      | TicketWorkExecutionUnavailable(failure) => failure.task ==
+        workTaskIdentity(failure.ticket,
+          c.tickets.get(failure.ticket).workCyclesStarted)
+      | _ => true
+    }
+
   /// THEOREM 1's checker: the journaled history replays and no row of it
-  /// is inert (it does not re-check a decider's guard). One fold, three checks per entry at the replayed prefix
-  /// state — dense monotone seq, the event's ticket standing, and the event
-  /// moving the state — chaining the evolved state as the next prefix.
+  /// is inert (it does not re-check a decider's guard). One fold checks each
+  /// entry at the replayed prefix state — dense monotone seq, the event's
+  /// ticket standing, a work failure naming the current work task, and the
+  /// event moving the state — chaining the evolved state as the next prefix.
   pure def journalLegalOn(jl: List[Entry]): bool =
     jl.foldl({ ok: true, st: genesis, n: 0 }, (acc, e) =>
       if (not(acc.ok) or e.seq != acc.n + 1 or
@@ -308,7 +335,8 @@ module chuggy_refinement {
         { ok: false, st: acc.st, n: acc.n + 1 }
       else
         val evolved = evolve(acc.st, e.event)
-        { ok: evolved != acc.st, st: evolved, n: acc.n + 1 })
+        { ok: evolved != acc.st and failureTaskCurrent(acc.st, e.event),
+          st: evolved, n: acc.n + 1 })
     .ok
 
   // ==========================================================================
@@ -420,7 +448,7 @@ module chuggy_refinement {
   /// ghost exactly in place.
   action emitNext = all {
     applied < journal.length(),
-    installGraph(graph),
+    installGraph(graph, ledgers),
     journal' = journal,
     applied' = applied + 1,
     worldEffects' = worldEffects.union(Set(applied + 1)),
@@ -439,7 +467,7 @@ module chuggy_refinement {
   action crashRecoverTo(a: int): bool = all {
     a >= 0,
     a <= applied,
-    installGraph(replayGraph(journal)),
+    installGraph(replayGraph(journal), replayLedgers(journal)),
     journal' = journal,
     applied' = a,
     worldEffects' = worldEffects,
@@ -470,9 +498,9 @@ module chuggy_refinement {
       command: TicketCommand, onFailure: EvaluationFailureDisposition): bool =
     val decision = decide(graph, command, _ => onFailure)
     all {
-      commandValid(command),
+      commandTaken(command),
       decidedEvents(decision) != [],
-      installGraph(replayGraph(journal)),
+      installGraph(replayGraph(journal), replayLedgers(journal)),
       journal' = journal,
       applied' = applied,
       worldEffects' = worldEffects,
@@ -530,7 +558,7 @@ module chuggy_refinement {
     nondet result = finalizationResults.oneOf()
     journalStep(ReportFinalizationResult({ ticket: j,
       workCycle: graph.tickets.get(j).workCyclesStarted,
-      generation: graph.tickets.get(j).finalizationGeneration,
+      generation: attemptGeneration(graph.tickets.get(j)),
       result: result }), unaskedDisposition)
   }
 
@@ -578,7 +606,7 @@ module chuggy_refinement {
     nondet result = finalizationResults.oneOf()
     effectCrash(ReportFinalizationResult({ ticket: j,
       workCycle: graph.tickets.get(j).workCyclesStarted,
-      generation: graph.tickets.get(j).finalizationGeneration,
+      generation: attemptGeneration(graph.tickets.get(j)),
       result: result }), unaskedDisposition)
   }
 
@@ -614,7 +642,8 @@ module chuggy_refinement {
   /// for every prefix of every run). The crash actions genuinely install
   /// the replay; this invariant is what makes that installation a no-op
   /// on the domain vars.
-  val recoveryComplete: bool = replayGraph(journal) == graph
+  val recoveryComplete: bool = replayJournal(journal) ==
+    { graph: graph, ledgers: ledgers }
 
   /// The executor's bookkeeping is sound: the cursor stays inside the
   /// journal, and the world's received-seq set is exactly the emitted
@@ -654,7 +683,7 @@ module chuggy_refinement {
   /// journalLegal + recoveryComplete — the same stated-corollary
   /// treatment as revokedNeverCompletes.)
   val journalCompletionsMatchLedger: bool = liveTickets.forall(j =>
-    journalCompletions(j) == tickets.get(j).completions)
+    journalCompletions(j) == ledgers.get(j).completions)
 
   /// The discipline-INDEPENDENT core: holds under rstep AND rstepHazard
   /// (the hazard corrupts the world, never the journal or the replay).
@@ -685,6 +714,8 @@ module chuggy_refinement {
   val allDomainInvariants: bool = allInvariants
   /// The actor's in-memory view (the embedded instance's TicketGraph).
   val memGraph: TicketGraph = graph
+  /// The actor's in-memory ledgers.
+  val memLedgers: int -> TicketLedger = ledgers
   /// The embedded machine's evolve, for the suites that replay by hand.
   pure def evolveGraph(c: TicketGraph, event: TicketEvent): TicketGraph =
     evolve(c, event)
@@ -697,9 +728,9 @@ module chuggy_refinement {
     decide(c, command, _ => onFailure)
   /// What the actor answers a command with at an explicit graph, by name:
   /// the event it decides, or the refusal it answers — and "" for a command
-  /// outside commandValid, which the actor does not take at all.
+  /// outside commandTaken, which the actor does not take at all.
   pure def answerAt(c: TicketGraph, command: TicketCommand): str =
-    if (not(commandValid(command))) ""
+    if (not(commandTaken(command))) ""
     else match decideAt(c, command, unaskedDisposition) {
       | TicketDecided(d) => eventName(d.event)
       | TicketRefused(reason) => refusalName(reason)

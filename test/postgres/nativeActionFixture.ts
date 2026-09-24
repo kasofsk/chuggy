@@ -13,7 +13,7 @@
  * refuse is refused here too.
  */
 
-import type { Escalation } from "../../src/domain/generated/modelTypes.ts";
+import type { EscalationKind } from "../../src/contract/rosters.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { NativeActionResolution } from "../../src/interpreter/projectCommand.ts";
 import {
@@ -26,7 +26,7 @@ import {
 export interface SeededAction {
   readonly ticket: number;
   readonly sequence: number;
-  readonly escalation: Escalation;
+  readonly escalation: EscalationKind;
   readonly offers: readonly NativeActionResolution[];
 }
 

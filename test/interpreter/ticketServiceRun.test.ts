@@ -16,7 +16,7 @@ import {
   anAcceptedSource,
   revisedTicketOf,
 } from "../../src/domain/config.ts";
-import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import type {
   TaskDefinition,
   TaskTerminalReport,
@@ -540,7 +540,7 @@ function dispatchedProject(inbox: DecisionInput[]): {
  */
 test("one pass carries a dispatched ticket from Work through Evaluation to Done", async () => {
   const { projects, discovery } = dispatchedProject([
-    completing(1, producedReport(workTaskOf(1, 1))),
+    completing(1, producedReport(workTaskIdentity(1, 1))),
     completing(
       2,
       judgedReport(evaluationTaskOf(1, 1, 1, 1, 1), "EvaluatorPass"),
@@ -641,7 +641,7 @@ function updating(ordinal: number): DecisionInput {
 
 /** A work result carried at the task definition `definition` rather than the one the fixture releases. */
 function workedAt(definition: TaskDefinition): TaskTerminalReport {
-  const task = workTaskOf(1, 1);
+  const task = workTaskIdentity(1, 1);
   return {
     type: "WorkResultReport",
     value: {
@@ -687,7 +687,7 @@ test("an update then a dispatch runs the updated definition", async () => {
       ticket: id(1),
       expectedTicketVersion: 2,
     }),
-    completing(3, producedReport(workTaskOf(1, 1))),
+    completing(3, producedReport(workTaskIdentity(1, 1))),
     completing(4, workedAt(updated.workConfiguration)),
   ]);
   const committed: Decision[] = [];

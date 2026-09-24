@@ -18,15 +18,12 @@ import {
   reportTaskTerminalCommand,
   type TicketCommand,
 } from "../../src/actor/command.ts";
-import { genesis } from "../../src/actor/journal.ts";
+import { genesis, replayStep, type Replayed } from "../../src/actor/journal.ts";
 import { alwaysPolicy, decide } from "../../src/domain/deciders.ts";
-import { evolve } from "../../src/domain/evolve.ts";
 import { currentTaskObligations } from "../../src/domain/evaluation.ts";
-import {
-  currentInstance,
-  finalizationOperationOf,
-} from "../../src/domain/ticket.ts";
-import { workTaskOf } from "../../src/domain/task.ts";
+import { genesisLedgers, ledgerAt } from "../../src/domain/ledger.ts";
+import { finalizationOf } from "../../src/domain/ticket.ts";
+import { workTaskIdentity } from "../../src/domain/task.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type { TicketGraph } from "../../src/domain/generated/modelTypes.ts";
 import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
@@ -46,8 +43,10 @@ import {
 /** The one task a single-width ticket owes, which is what a completion names. */
 function owed(graph: TicketGraph): TaskIdentity {
   const ticket = ticketAt(graph, id(1));
-  if (ticket.phase === "Work") return workTaskOf(1, ticket.workCyclesStarted);
-  const [obligation] = currentTaskObligations(currentInstance(ticket));
+  const state = ticket.state;
+  if (typeof state === "string" || state.type !== "Evaluation")
+    return workTaskIdentity(1, ticket.workCyclesStarted);
+  const [obligation] = currentTaskObligations(state.value);
   if (obligation === undefined)
     throw new Error("rework cap case: the ticket owes no task");
   return obligation.task;
@@ -64,15 +63,22 @@ function dispositionsUnder(
   cyclesMax: number,
   finalizationFailures = 0,
 ): readonly string[] {
-  let graph: TicketGraph = genesis;
+  let held: Replayed = { graph: genesis, ledgers: genesisLedgers };
   const step = (command: TicketCommand, policy = plainPolicy) => {
-    graph = evolve(graph, acceptedOf(decide(graph, command, policy)).event);
+    held = replayStep(
+      held,
+      acceptedOf(decide(held.graph, command, policy)).event,
+    );
   };
   const evaluated = (verdict: "EvaluatorPass" | "EvaluatorFail") => {
-    const work = owed(graph);
+    const work = owed(held.graph);
     step(reportTaskTerminalCommand(producedReport(work)));
-    const judge = owed(graph);
-    const disposition = reworkDisposition(ticketAt(graph, id(1)), cyclesMax);
+    const judge = owed(held.graph);
+    const disposition = reworkDisposition(
+      ticketAt(held.graph, id(1)),
+      ledgerAt(held.ledgers, 1),
+      cyclesMax,
+    );
     step(
       reportTaskTerminalCommand(judgedReport(judge, verdict)),
       alwaysPolicy(disposition),
@@ -83,14 +89,15 @@ function dispositionsUnder(
   step(dispatchTicketCommand(id(1), aDispatchSource));
   for (let failure = 0; failure < finalizationFailures; failure++) {
     evaluated("EvaluatorPass");
-    const { workCycle, generation } = finalizationOperationOf(
-      ticketAt(graph, id(1)),
-    );
+    const finalization = finalizationOf(ticketAt(held.graph, id(1)));
+    assert.ok(finalization !== undefined);
     step(
-      reportFinalizationResultCommand(id(1), workCycle, generation, {
-        type: "FinalizationNeedsWork",
-        value: 1,
-      }),
+      reportFinalizationResultCommand(
+        id(1),
+        finalization.workCycle,
+        finalization.generation,
+        { type: "FinalizationNeedsWork", value: 1 },
+      ),
     );
   }
   const picked: string[] = [];

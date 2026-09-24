@@ -112,10 +112,10 @@ import {
 } from "../../src/interpreter/selector.ts";
 import {
   escalationTags,
-  phaseTags,
   resumeTags,
   ticketRefusalTags,
 } from "../../src/domain/generated/modelTypes.ts";
+import { phaseTags } from "../../src/domain/phase.ts";
 import type { TaskIdentity as ModelTaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import {
   taskIdentitySchema,
@@ -186,11 +186,8 @@ function keysOf(record: Readonly<Record<string, true>>): readonly string[] {
 
 const sorted = (values: readonly string[]) => [...values].sort();
 
-test("the escalation kinds are the model's, less the absent one", () => {
-  assert.deepEqual(
-    [...escalationKinds],
-    escalationTags.filter((tag) => tag !== "NoEscalation"),
-  );
+test("the escalation kinds are the model's", () => {
+  assert.deepEqual([...escalationKinds], [...escalationTags]);
 });
 
 /**

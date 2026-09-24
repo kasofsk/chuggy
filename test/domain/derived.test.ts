@@ -27,9 +27,17 @@ import {
   visEdges,
 } from "../../src/domain/derived.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
+import { isEscalated } from "../../src/domain/phase.ts";
 
 import { modelInstance } from "./configs.ts";
-import { graphOf, depsOf, id, ticketOn } from "./fixtures.ts";
+import {
+  graphOf,
+  depsOf,
+  id,
+  ticketOn,
+  workEscalatedState,
+  workState,
+} from "./fixtures.ts";
 import type {
   TicketGraph,
   Ticket,
@@ -50,11 +58,22 @@ function builtBackwards(tickets: readonly Ticket[]): TicketGraph {
 const ordered = (set: ReadonlySet<TicketId>): readonly number[] =>
   [...set].sort((a, b) => a - b);
 
+/** A ticket parked at the work wall. */
+const parked = ticketOn(config, {
+  state: workEscalatedState(ticketOn(config)),
+});
+
+/** A ticket running its first cycle, behind the ids given. */
+const working = (...deps: number[]): Ticket => {
+  const ticket = ticketOn(config, { dependencies: depsOf(...deps) });
+  return { ...ticket, workCyclesStarted: 1, state: workState(ticket) };
+};
+
 /** A revoked ticket with a chain of dependents hanging off it, the shape the closure walks. */
 const chain: readonly Ticket[] = [
-  ticketOn(config, { phase: "Revoked" }),
-  ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
-  ticketOn(config, { phase: "Pending", dependencies: depsOf(2) }),
+  ticketOn(config, { state: "Revoked" }),
+  ticketOn(config, { dependencies: depsOf(1) }),
+  ticketOn(config, { dependencies: depsOf(2) }),
 ];
 
 test("a sweep repeats once per live ticket, which is the whole of the termination argument", () => {
@@ -80,13 +99,12 @@ test("a sweep repeats once per live ticket, which is the whole of the terminatio
 
 test("a sweep reaches a closure an ascending fold would not, which is why the shape is kept", () => {
   const fleet = graphOf([
-    ticketOn(config, { phase: "Pending" }),
-    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
-    ticketOn(config, {
-      phase: "Escalated",
-      escalation: "WorkFailureEscalated",
-      dependencies: depsOf(2),
-    }),
+    ticketOn(config),
+    ticketOn(config, { dependencies: depsOf(1) }),
+    {
+      ...parked,
+      definition: { ...parked.definition, dependencies: depsOf(2) },
+    },
   ]);
   /** An edge kind pointing upward: a ticket is admitted when one of its dependents is. */
   const upward = (
@@ -94,7 +112,7 @@ test("a sweep reaches a closure an ascending fold would not, which is why the sh
     each: TicketId,
     admitted: ReadonlySet<TicketId>,
   ) =>
-    ticketAt(graph, each).phase === "Escalated" ||
+    isEscalated(ticketAt(graph, each).state) ||
     liveTickets(graph).some(
       (other) => visEdges(graph, other).includes(each) && admitted.has(other),
     );
@@ -118,13 +136,10 @@ test("the walk's edges are the dependency edges and only those", () => {
 
 test("stuckness grows from the desk and coverage grows from the same edges", () => {
   const fleet = graphOf([
-    ticketOn(config, {
-      phase: "Escalated",
-      escalation: "WorkFailureEscalated",
-    }),
-    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
-    ticketOn(config, { phase: "Pending", dependencies: depsOf(2) }),
-    ticketOn(config, { phase: "Work", dependencies: depsOf(1) }),
+    parked,
+    ticketOn(config, { dependencies: depsOf(1) }),
+    ticketOn(config, { dependencies: depsOf(2) }),
+    working(1),
   ]);
   assert.deepEqual(ordered(stuckSet(fleet)), [1, 2, 3]);
   assert.deepEqual(
@@ -134,8 +149,8 @@ test("stuckness grows from the desk and coverage grows from the same edges", () 
   );
   assert.ok(subsetOf(stuckSet(fleet), coveredSet(fleet)));
   const healthyBlocked = graphOf([
-    ticketOn(config, { phase: "Work" }),
-    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
+    working(),
+    ticketOn(config, { dependencies: depsOf(1) }),
   ]);
   assert.deepEqual(
     ordered(stuckSet(healthyBlocked)),
@@ -146,12 +161,9 @@ test("stuckness grows from the desk and coverage grows from the same edges", () 
 
 test("every sweep agrees with itself whatever order the map was built in", () => {
   const fleet: readonly Ticket[] = [
-    ticketOn(config, {
-      phase: "Escalated",
-      escalation: "WorkFailureEscalated",
-    }),
-    ticketOn(config, { phase: "Pending", dependencies: depsOf(1) }),
-    ticketOn(config, { phase: "Done", dependencies: depsOf(1) }),
+    parked,
+    ticketOn(config, { dependencies: depsOf(1) }),
+    ticketOn(config, { state: "Done", dependencies: depsOf(1) }),
   ];
   const ascending = graphOf(fleet);
   const descending = builtBackwards(fleet);

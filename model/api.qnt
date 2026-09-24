@@ -12,7 +12,6 @@ module chuggy_api {
   import chuggy_refinement.* from "./refinement"
   import chuggy_identity.* from "./identity"
 
-  type ApiPhase = Phase
   type ApiWorkTaskIdentity = WorkTaskIdentity
   type ApiEvaluationTaskIdentity = EvaluationTaskIdentity
   type ApiTaskIdentity = TaskIdentity
@@ -36,13 +35,21 @@ module chuggy_api {
   type ApiEvaluationInstance = EvaluationInstance
   type ApiEvaluationFailureDisposition = EvaluationFailureDisposition
   type ApiResume = Resume
+  type ApiWorkCause = WorkCause
+  type ApiWorkInput = WorkInput
+  type ApiWorkExecution = WorkExecution
+  type ApiWorkEscalation = WorkEscalation
+  type ApiEvaluationFailureEscalation = EvaluationFailureEscalation
+  type ApiFinalizationEscalation = FinalizationEscalation
   type ApiEscalation = Escalation
   type ApiFinalizationResult = FinalizationResult
   type ApiFinalizationResultReport = FinalizationResultReport
   type ApiArtifactMark = ArtifactMark
   type ApiReleasedContent = ReleasedContent
   type ApiReleasedTicket = ReleasedTicket
+  type ApiTicketState = TicketState
   type ApiTicket = Ticket
+  type ApiTicketLedger = TicketLedger
   type ApiInstallationId = InstallationId
   type ApiTicketRef = TicketRef
   // `TicketGraph` is exposed only to model-facing tooling. Product code

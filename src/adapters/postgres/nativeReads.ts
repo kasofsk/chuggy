@@ -11,8 +11,11 @@ import {
   gitEvidences,
   type EscalationKind,
 } from "../../contract/rosters.ts";
-import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
-import { nonTerminalPhaseTags } from "../../domain/phase.ts";
+import {
+  nonTerminalPhaseTags,
+  phaseTags,
+  type Phase,
+} from "../../domain/phase.ts";
 import { asTicketId, type TicketId } from "../../domain/ids.ts";
 import {
   asPublicInstant,
@@ -246,7 +249,7 @@ function selectedPhases(
     : filter.phases;
 }
 
-/** The stored `NoEscalation` is the machine's absent value, which the wire omits. */
+/** The stored `NoEscalation` is the projection's value for a ticket at no wall, which the wire omits. */
 function projectionEscalation(value: string): EscalationKind | undefined {
   if (value === "NoEscalation") return undefined;
   const kind = escalationKinds.find((candidate) => candidate === value);

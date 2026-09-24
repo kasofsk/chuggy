@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  phaseTags,
+  ticketStateTags,
   type Entry,
   type EvaluatorDefinition,
   type EvaluationInstance,
@@ -100,16 +100,10 @@ const graph: TicketGraph = {
     [
       7,
       {
-        phase: "Pending",
         definition,
         revision: 1,
-        source: 0,
-        evaluations: [instance],
-        workCyclesStarted: 0,
-        spawned: 0,
-        finalizationGeneration: 0,
-        escalation: "NoEscalation",
-        completions: 0,
+        workCyclesStarted: 1,
+        state: { type: "Evaluation", value: instance },
       },
     ],
   ]),
@@ -122,16 +116,10 @@ test("generated JSON codec round-trips nested lists, sets, maps and records", ()
       [
         7,
         {
-          phase: "Pending",
           definition: wiredDefinition,
           revision: 1,
-          source: 0,
-          evaluations: [wiredInstance],
-          workCyclesStarted: 0,
-          spawned: 0,
-          finalizationGeneration: 0,
-          escalation: "NoEscalation",
-          completions: 0,
+          workCyclesStarted: 1,
+          state: { type: "Evaluation", value: wiredInstance },
         },
       ],
     ],
@@ -176,14 +164,14 @@ test("a refusal is its name and its payload, a set of tickets written as a list"
   assert.throws(() => decodeTicketRefusal({ type: "NotEnabled", value: 7 }));
 });
 
-test("generated constructor roster is the exhaustive model phase vocabulary", () => {
-  assert.deepEqual(phaseTags, [
+test("generated constructor roster is the exhaustive model state vocabulary", () => {
+  assert.deepEqual(ticketStateTags, [
     "Pending",
     "Work",
     "Evaluation",
     "Finalization",
-    "Done",
     "Escalated",
+    "Done",
     "Revoked",
   ]);
 });

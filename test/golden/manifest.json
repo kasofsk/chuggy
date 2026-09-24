@@ -138,7 +138,7 @@
       "seed": "0x1",
       "maxSamples": 20000,
       "maxSteps": 60,
-      "invariant": "not(lastEvent == \"TicketWorkResumed\" and tickets.get(lastEventTicket).evaluations.length() > 0 and match currentInstance(tickets.get(lastEventTicket)).state { | EvaluationFailed(_) => true | _ => false })",
+      "invariant": "not(lastEvent == \"TicketWorkResumed\" and ledgers.get(lastEventTicket).closedEvaluations.length() > 0 and match ledgers.get(lastEventTicket).closedEvaluations[ledgers.get(lastEventTicket).closedEvaluations.length() - 1].state { | EvaluationFailed(_) => true | _ => false })",
       "steps": 47,
       "quintVersion": "0.32.0",
       "purpose": "The desk sends an escalated ticket back: the judgement it last reached is a failed one, so this is the evaluation wall's exit, and it re-enters Work with a fresh work task rather than a second opinion on the old artifact."

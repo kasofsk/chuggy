@@ -9,14 +9,19 @@ import {
 } from "../../src/actor/command.ts";
 import { decide } from "../../src/domain/deciders.ts";
 import type { TicketGraph } from "../../src/domain/generated/modelTypes.ts";
-import { workTaskOf } from "../../src/domain/task.ts";
+import { workTaskIdentity } from "../../src/domain/task.ts";
 import {
   allNativeActionResolutions,
   isApprovalResolution,
   type ApprovalResolution,
   type NativeActionResolution,
 } from "../../src/interpreter/projectCommand.ts";
-import { graphOf, producedReport, ticketOn } from "../domain/fixtures.ts";
+import {
+  graphOf,
+  producedReport,
+  ticketOn,
+  workEscalatedState,
+} from "../domain/fixtures.ts";
 import { plainPolicy, refinementInstance } from "../actor/harness.ts";
 import {
   postgresHarnessOpen,
@@ -45,7 +50,7 @@ async function completion(
     harness,
     partition,
     operation,
-    reportTaskTerminalCommand(producedReport(workTaskOf(1, 1))),
+    reportTaskTerminalCommand(producedReport(workTaskIdentity(1, 1))),
   );
   return operation;
 }
@@ -130,15 +135,13 @@ test("ready resumes strictly after the cursor it is given", async () => {
 /**
  * The park a seeded escalation stands on, as a `TicketGraph`. The wall is the
  * seed's own and the resume follows from it, so a park this suite could offer
- * an answer no point re-enters is not a state the machine has.
+ * an answer no point re-enters is not a state the machine has — and this
+ * suite seeds the work wall alone, so that is the one payload built.
  */
 function parkedGraph(action: SeededAction): TicketGraph {
-  return graphOf([
-    ticketOn(refinementInstance, {
-      phase: "Escalated",
-      escalation: action.escalation,
-    }),
-  ]);
+  assert.equal(action.escalation, "WorkFailureEscalated");
+  const released = ticketOn(refinementInstance, { workCyclesStarted: 1 });
+  return graphOf([{ ...released, state: workEscalatedState(released) }]);
 }
 
 /**

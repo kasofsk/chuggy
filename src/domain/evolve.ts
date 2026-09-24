@@ -1,56 +1,50 @@
 /**
- * The state after an event: arm for arm the model's `evolve`
- * (`model/domain.qnt`), which is the package's over chuggy's record.
+ * The state after an event: arm for arm the package's `evolve`
+ * (`model/domain.qnt`, between its markers).
  *
  * THIS IS THE ONLY THING THAT MOVES A TICKET. A decider returns the event and
  * what it owes; the machine's step, a replay and the actor all fold this over
  * the events, so a journal row is re-applied rather than re-decided.
  *
- * EACH ARM CHECKS THAT THE TICKET STILL OWES ITS EVENT — the phase the event
- * leaves, the work task the cycle is on, the evaluator the run still awaits,
- * the finalization attempt the ticket is on — and leaves any other ticket
- * exactly as it is. That identity is what a journal's legality check reads:
- * an event that does not move the state it lands on is one nothing decided
- * there.
+ * EACH ARM CHECKS THAT THE TICKET STILL OWES ITS EVENT — the state the event
+ * leaves, the evaluator the run still awaits, the finalization attempt the
+ * ticket is on — and leaves the graph exactly as it is otherwise. That
+ * identity is what a journal's legality check reads: an event that does not
+ * move the state it lands on is one nothing decided there.
  *
- * The two work-failure arms are the model's one strengthening over the
- * package, whose arms park a ticket in Work whatever task the failure names;
- * see `onCurrentWork`.
+ * The two work-failure arms ask only that the ticket is in Work, not which
+ * task failed; the journal's legality check holds a failure row to the
+ * current work task instead (`src/actor/journal.ts`). Every arm but a
+ * release reads the ticket its event names, and a graph without it is a
+ * caller's error, as it is the model's.
  */
 
 import type {
   EvaluationInstance,
-  TaskTerminalReport,
+  EvaluationReworkEntry,
   Ticket,
   TicketEvent,
   TicketGraph,
-  TicketUpdate,
-  WorkFailureEvent,
+  TicketState,
+  WorkInput,
 } from "./generated/modelTypes.ts";
-import { resumeBlocked } from "./evaluation.ts";
+import { begin, resumeBlocked } from "./evaluation.ts";
 import { asTicketId, type TicketId } from "./ids.ts";
-import {
-  taskIdentityEquals,
-  taskObligationEquals,
-  workTaskOf,
-} from "./task.ts";
-import { freshTicket } from "./deciders.ts";
+import { taskObligationEquals } from "./task.ts";
 import {
   applyEvaluationReport,
-  begunInstance,
-  currentInstance,
+  evaluationReworkInput,
   finalizationCurrent,
-  finalizationOperationOf,
-  instanceBlocked,
+  finalizationReworkInput,
+  initialWorkInput,
+  nextCycleNumber,
   reportAdmissible,
-  runningStageIndex,
-  spawnEvalRun,
-  spawnWork,
-  withInstance,
+  resumedFinalization,
+  retryWorkInput,
   workTaskObligation,
 } from "./ticket.ts";
-import { withTicket } from "./ticketGraph.ts";
-import { revocationAllowed } from "./phase.ts";
+import { ticketAt, withTicket } from "./ticketGraph.ts";
+import { isPending, revocationAllowed } from "./phase.ts";
 
 /** The ticket an event is about, whichever arm it is. */
 export function eventTicket(event: TicketEvent): TicketId {
@@ -79,120 +73,273 @@ export function eventTicket(event: TicketEvent): TicketId {
   }
 }
 
-/**
- * An update, which lands only on a ticket still Pending and only as the
- * revision after the one it holds; the definition it carries replaces the
- * ticket's whole.
- */
-function evolveUpdate(ticket: Ticket, update: TicketUpdate): Ticket {
-  return ticket.phase === "Pending" && update.revision === ticket.revision + 1
-    ? { ...ticket, definition: update.definition, revision: update.revision }
-    : ticket;
-}
-
-/** Park on the desk, naming the wall; where Retry resumes is the wall's own (`resumeOf`). */
-function park(ticket: Ticket, wall: Ticket["escalation"]): Ticket {
-  return { ...ticket, phase: "Escalated", escalation: wall };
-}
-
-/** Enter a new work cycle, from wherever the event says the ticket was. */
-function enterWork(ticket: Ticket): Ticket {
-  return { ...spawnWork(ticket), phase: "Work", escalation: "NoEscalation" };
-}
-
-/**
- * The work walls: the event moves the ticket only while it is on the cycle the
- * failure names. The package checks the phase alone; this guard is what makes
- * a failure row for a replaced cycle inert on replay.
- */
-function onCurrentWork(ticket: Ticket, failure: WorkFailureEvent): boolean {
-  return (
-    ticket.phase === "Work" &&
-    taskIdentityEquals(
-      failure.task,
-      workTaskOf(ticket.definition.id, ticket.workCyclesStarted),
-    )
-  );
-}
-
-/**
- * The evaluation events' shared shape: the report goes to the current
- * instance, and the event moves the ticket only while the instance still owes
- * the reported task and concludes as the event says it did.
- */
-function evolveEvaluation(
+/** The package's `enterWorkCycle`: the next cycle, in Work, over this input at this source. */
+function enterWorkCycle(
+  graph: TicketGraph,
   ticket: Ticket,
-  report: TaskTerminalReport,
-  concluded: (advanced: EvaluationInstance) => boolean,
-  moved: (advanced: EvaluationInstance) => Ticket,
-): Ticket {
-  if (ticket.phase !== "Evaluation") return ticket;
-  if (!reportAdmissible(currentInstance(ticket), report)) return ticket;
-  const advanced = applyEvaluationReport(currentInstance(ticket), report);
-  return concluded(advanced) ? moved(advanced) : ticket;
+  input: WorkInput,
+  source: number,
+): TicketGraph {
+  return withTicket(graph, asTicketId(ticket.definition.id), {
+    ...ticket,
+    workCyclesStarted: nextCycleNumber(ticket),
+    state: { type: "Work", value: { input, source } },
+  });
 }
 
-/** Whether the finalization event answers the attempt this ticket is on. */
-function onCurrentAttempt(
+/** The graph with one ticket's record replaced. */
+function updateTicket(
+  graph: TicketGraph,
+  id: number,
   ticket: Ticket,
-  fact: { readonly workCycle: number; readonly generation: number },
-): boolean {
-  return (
-    ticket.phase === "Finalization" &&
-    finalizationCurrent(
-      finalizationOperationOf(ticket),
-      fact.workCycle,
-      fact.generation,
-    )
-  );
+): TicketGraph {
+  return withTicket(graph, asTicketId(id), ticket);
 }
 
-/** A resume, which moves only a ticket parked at a wall that resumes this way. */
-function evolveResume(
-  ticket: Ticket,
-  event: Extract<
-    TicketEvent,
-    {
-      readonly type:
-        | "TicketWorkResumed"
-        | "TicketEvaluationResumed"
-        | "TicketFinalizationResumed";
-    }
-  >,
-): Ticket {
+/** Events of the named arms. */
+type EventOf<Type extends TicketEvent["type"]> = Extract<
+  TicketEvent,
+  { readonly type: Type }
+>;
+
+/** The state after an event, arm for arm the package's. */
+export function evolve(graph: TicketGraph, event: TicketEvent): TicketGraph {
   switch (event.type) {
+    case "TicketCreated":
+    case "TicketUpdated":
+    case "TicketDispatched":
+    case "TicketRevoked":
+      return evolveAuthoring(graph, event);
     case "TicketWorkResumed":
-      return ticket.phase === "Escalated" &&
-        (ticket.escalation === "WorkFailureEscalated" ||
-          ticket.escalation === "WorkExecutionUnavailableEscalated" ||
-          ticket.escalation === "EvaluationFailureEscalated")
-        ? enterWork(ticket)
-        : ticket;
+      return resumeWork(graph, event.value);
     case "TicketEvaluationResumed":
-      return ticket.phase === "Escalated" &&
-        ticket.escalation === "EvaluationBlockedEscalated"
-        ? spawnEvalRun({
-            ...withInstance(ticket, resumeBlocked(currentInstance(ticket))),
-            phase: "Evaluation",
-            escalation: "NoEscalation",
-          })
-        : ticket;
     case "TicketFinalizationResumed":
-      return ticket.phase === "Escalated" &&
-        ticket.escalation === "FinalizationUnavailableEscalated"
-        ? {
-            ...ticket,
-            phase: "Finalization",
-            escalation: "NoEscalation",
-            finalizationGeneration: ticket.finalizationGeneration + 1,
-          }
-        : ticket;
+      return evolveResume(graph, event);
+    case "TicketWorkResultAccepted":
+    case "TicketWorkProcessFailed":
+    case "TicketWorkExecutionUnavailable":
+      return evolveWork(graph, event);
+    case "TicketEvaluationProgressed":
+    case "TicketEvaluationPassed":
+    case "TicketEvaluationReworkStarted":
+    case "TicketEvaluationFailureEscalated":
+    case "TicketEvaluationBlocked":
+      return evolveJudgement(graph, event);
+    case "TicketFinalizationSucceeded":
+    case "TicketFinalizationNeedsWork":
+    case "TicketFinalizationUnavailable":
+      return evolveFinalization(graph, event);
   }
 }
 
-/** A judgement's report, which moves only an instance still awaiting the reported task. */
+/** The release, the update, the dispatch and the revoke. */
+function evolveAuthoring(
+  graph: TicketGraph,
+  event: EventOf<
+    "TicketCreated" | "TicketUpdated" | "TicketDispatched" | "TicketRevoked"
+  >,
+): TicketGraph {
+  switch (event.type) {
+    case "TicketCreated": {
+      const definition = event.value;
+      if (graph.tickets.has(definition.id)) return graph;
+      const tickets = new Map(graph.tickets);
+      tickets.set(asTicketId(definition.id), {
+        definition,
+        revision: 1,
+        workCyclesStarted: 0,
+        state: "Pending",
+      });
+      return { tickets };
+    }
+    case "TicketUpdated": {
+      const update = event.value;
+      const ticket = graph.tickets.get(update.ticket);
+      if (ticket === undefined) return graph;
+      if (!isPending(ticket.state)) return graph;
+      if (update.revision !== ticket.revision + 1) return graph;
+      return updateTicket(graph, update.ticket, {
+        ...ticket,
+        definition: update.definition,
+        revision: update.revision,
+      });
+    }
+    case "TicketDispatched": {
+      const ticket = ticketAt(graph, asTicketId(event.value.ticket));
+      return ticket.state === "Pending"
+        ? enterWorkCycle(
+            graph,
+            ticket,
+            initialWorkInput(ticket.definition),
+            event.value.source,
+          )
+        : graph;
+    }
+    case "TicketRevoked": {
+      const ticket = ticketAt(graph, asTicketId(event.value));
+      return revocationAllowed(ticket.state)
+        ? updateTicket(graph, event.value, { ...ticket, state: "Revoked" })
+        : graph;
+    }
+  }
+}
+
+/** A work wall's resume: a new cycle at the input and source the wall kept. */
+function resumeWork(graph: TicketGraph, id: number): TicketGraph {
+  const ticket = ticketAt(graph, asTicketId(id));
+  const state = ticket.state;
+  if (typeof state === "string" || state.type !== "Escalated") return graph;
+  const wall = state.value;
+  switch (wall.type) {
+    case "WorkFailureEscalated":
+    case "WorkExecutionUnavailableEscalated":
+      return enterWorkCycle(
+        graph,
+        ticket,
+        wall.value.resumeInput,
+        wall.value.source,
+      );
+    case "EvaluationFailureEscalated":
+      return enterWorkCycle(
+        graph,
+        ticket,
+        evaluationReworkInput(ticket.definition, wall.value.evidence),
+        wall.value.source,
+      );
+    case "EvaluationBlockedEscalated":
+    case "FinalizationUnavailableEscalated":
+      return graph;
+  }
+}
+
+/** The evaluation and finalization resumes, each leaving the wall it answers. */
+function evolveResume(
+  graph: TicketGraph,
+  event: EventOf<"TicketEvaluationResumed" | "TicketFinalizationResumed">,
+): TicketGraph {
+  switch (event.type) {
+    case "TicketEvaluationResumed": {
+      const ticket = ticketAt(graph, asTicketId(event.value));
+      const state = ticket.state;
+      if (
+        typeof state === "string" ||
+        state.type !== "Escalated" ||
+        state.value.type !== "EvaluationBlockedEscalated"
+      )
+        return graph;
+      return updateTicket(graph, event.value, {
+        ...ticket,
+        state: { type: "Evaluation", value: resumeBlocked(state.value.value) },
+      });
+    }
+    case "TicketFinalizationResumed": {
+      const ticket = ticketAt(graph, asTicketId(event.value));
+      const state = ticket.state;
+      if (
+        typeof state === "string" ||
+        state.type !== "Escalated" ||
+        state.value.type !== "FinalizationUnavailableEscalated"
+      )
+        return graph;
+      return updateTicket(graph, event.value, {
+        ...ticket,
+        state: {
+          type: "Finalization",
+          value: resumedFinalization(state.value.value.finalization),
+        },
+      });
+    }
+  }
+}
+
+/** A work cycle's result or failure, either only while the ticket is in Work. */
+function evolveWork(
+  graph: TicketGraph,
+  event: EventOf<
+    | "TicketWorkResultAccepted"
+    | "TicketWorkProcessFailed"
+    | "TicketWorkExecutionUnavailable"
+  >,
+): TicketGraph {
+  switch (event.type) {
+    case "TicketWorkResultAccepted": {
+      const accepted = event.value;
+      const ticket = ticketAt(graph, asTicketId(accepted.ticket));
+      const state = ticket.state;
+      if (typeof state === "string" || state.type !== "Work") return graph;
+      if (
+        !taskObligationEquals(
+          accepted.result.obligation,
+          workTaskObligation(ticket, ticket.workCyclesStarted),
+        )
+      )
+        return graph;
+      const evaluation = begin(
+        ticket.workCyclesStarted,
+        {
+          ticket: accepted.ticket,
+          workResult: accepted.result.resultRef,
+          acceptedSourceRef: accepted.acceptedSourceRef,
+        },
+        ticket.definition.evaluationPlan,
+      );
+      return updateTicket(graph, accepted.ticket, {
+        ...ticket,
+        state: { type: "Evaluation", value: evaluation },
+      });
+    }
+    case "TicketWorkProcessFailed":
+    case "TicketWorkExecutionUnavailable": {
+      const failure = event.value;
+      const ticket = ticketAt(graph, asTicketId(failure.ticket));
+      const state = ticket.state;
+      if (typeof state === "string" || state.type !== "Work") return graph;
+      const wall = {
+        resumeInput: retryWorkInput(state.value.input, failure.evidence),
+        source: state.value.source,
+        evidence: failure.evidence,
+      };
+      return updateTicket(graph, failure.ticket, {
+        ...ticket,
+        state: {
+          type: "Escalated",
+          value:
+            event.type === "TicketWorkProcessFailed"
+              ? { type: "WorkFailureEscalated", value: wall }
+              : { type: "WorkExecutionUnavailableEscalated", value: wall },
+        },
+      });
+    }
+  }
+}
+
+/** The first finalization attempt of a judgement that passed. */
+function firstFinalization(evaluation: EvaluationInstance): TicketState {
+  return {
+    type: "Finalization",
+    value: {
+      workCycle: evaluation.workCycle,
+      generation: 1,
+      input: evaluation.input.workResult,
+      source: evaluation.input.acceptedSourceRef,
+    },
+  };
+}
+
+/** The wall a failed judgement escalates to, holding its evidence and source. */
+function evaluationFailureWall(
+  evidence: readonly EvaluationReworkEntry[],
+  source: number,
+): TicketState {
+  return {
+    type: "Escalated",
+    value: { type: "EvaluationFailureEscalated", value: { evidence, source } },
+  };
+}
+
+/** The five evaluation arms: the report goes to the running instance, and the event moves only the state it concluded. */
 function evolveJudgement(
-  ticket: Ticket,
+  graph: TicketGraph,
   event: Extract<
     TicketEvent,
     {
@@ -204,59 +351,64 @@ function evolveJudgement(
         | "TicketEvaluationBlocked";
     }
   >,
-): Ticket {
+): TicketGraph {
+  const fact = event.value;
+  const ticket = ticketAt(graph, asTicketId(fact.ticket));
+  const state = ticket.state;
+  if (typeof state === "string" || state.type !== "Evaluation") return graph;
+  const current = state.value;
+  if (!reportAdmissible(current, fact.report)) return graph;
+  const evaluation = applyEvaluationReport(current, fact.report);
   switch (event.type) {
     case "TicketEvaluationProgressed":
-      return evolveEvaluation(
-        ticket,
-        event.value.report,
-        (advanced) => runningStageIndex(advanced) >= 0,
-        (advanced) =>
-          runningStageIndex(advanced) ===
-          runningStageIndex(currentInstance(ticket))
-            ? withInstance(ticket, advanced)
-            : spawnEvalRun(withInstance(ticket, advanced)),
-      );
+      return evaluation.state.type === "Running"
+        ? updateTicket(graph, fact.ticket, {
+            ...ticket,
+            state: { type: "Evaluation", value: evaluation },
+          })
+        : graph;
     case "TicketEvaluationPassed":
-      return evolveEvaluation(
-        ticket,
-        event.value.report,
-        (advanced) => advanced.state.type === "EvaluationPassed",
-        (advanced) => ({
-          ...withInstance(ticket, advanced),
-          phase: "Finalization",
-          finalizationGeneration: 1,
-        }),
-      );
+      return evaluation.state.type === "EvaluationPassed"
+        ? updateTicket(graph, fact.ticket, {
+            ...ticket,
+            state: firstFinalization(evaluation),
+          })
+        : graph;
     case "TicketEvaluationReworkStarted":
-      return evolveEvaluation(
-        ticket,
-        event.value.report,
-        (advanced) => advanced.state.type === "EvaluationFailed",
-        (advanced) => enterWork(withInstance(ticket, advanced)),
-      );
+      return evaluation.state.type === "EvaluationFailed"
+        ? enterWorkCycle(
+            graph,
+            ticket,
+            evaluationReworkInput(ticket.definition, event.value.evidence),
+            current.input.acceptedSourceRef,
+          )
+        : graph;
     case "TicketEvaluationFailureEscalated":
-      return evolveEvaluation(
-        ticket,
-        event.value.report,
-        (advanced) => advanced.state.type === "EvaluationFailed",
-        (advanced) =>
-          park(withInstance(ticket, advanced), "EvaluationFailureEscalated"),
-      );
+      return evaluation.state.type === "EvaluationFailed"
+        ? updateTicket(graph, fact.ticket, {
+            ...ticket,
+            state: evaluationFailureWall(
+              event.value.evidence,
+              current.input.acceptedSourceRef,
+            ),
+          })
+        : graph;
     case "TicketEvaluationBlocked":
-      return evolveEvaluation(
-        ticket,
-        event.value.report,
-        instanceBlocked,
-        (advanced) =>
-          park(withInstance(ticket, advanced), "EvaluationBlockedEscalated"),
-      );
+      return evaluation.state.type === "EvaluationBlocked"
+        ? updateTicket(graph, fact.ticket, {
+            ...ticket,
+            state: {
+              type: "Escalated",
+              value: { type: "EvaluationBlockedEscalated", value: evaluation },
+            },
+          })
+        : graph;
   }
 }
 
-/** A finalizer's report, which moves only the attempt the ticket is on. */
+/** The three finalization arms, each moving only the attempt the ticket is on. */
 function evolveFinalization(
-  ticket: Ticket,
+  graph: TicketGraph,
   event: Extract<
     TicketEvent,
     {
@@ -266,102 +418,34 @@ function evolveFinalization(
         | "TicketFinalizationUnavailable";
     }
   >,
-): Ticket {
+): TicketGraph {
+  const fact = event.value;
+  const ticket = ticketAt(graph, asTicketId(fact.ticket));
+  const state = ticket.state;
+  if (typeof state === "string" || state.type !== "Finalization") return graph;
+  const finalization = state.value;
+  if (!finalizationCurrent(finalization, fact.workCycle, fact.generation))
+    return graph;
   switch (event.type) {
     case "TicketFinalizationSucceeded":
-      return onCurrentAttempt(ticket, event.value)
-        ? { ...ticket, phase: "Done", completions: ticket.completions + 1 }
-        : ticket;
+      return updateTicket(graph, fact.ticket, { ...ticket, state: "Done" });
     case "TicketFinalizationNeedsWork":
-      return onCurrentAttempt(ticket, event.value) ? enterWork(ticket) : ticket;
+      return enterWorkCycle(
+        graph,
+        ticket,
+        finalizationReworkInput(ticket.definition, fact.evidence),
+        finalization.source,
+      );
     case "TicketFinalizationUnavailable":
-      return onCurrentAttempt(ticket, event.value)
-        ? park(ticket, "FinalizationUnavailableEscalated")
-        : ticket;
-  }
-}
-
-/** One ticket under one event, each arm applying only to a ticket that still owes it. */
-export function evolveTicket(ticket: Ticket, event: TicketEvent): Ticket {
-  switch (event.type) {
-    case "TicketCreated":
-      return ticket;
-    case "TicketUpdated":
-      return evolveUpdate(ticket, event.value);
-    case "TicketDispatched":
-      return ticket.phase === "Pending"
-        ? { ...enterWork(ticket), source: event.value.source }
-        : ticket;
-    case "TicketRevoked":
-      return revocationAllowed(ticket.phase)
-        ? { ...ticket, phase: "Revoked", escalation: "NoEscalation" }
-        : ticket;
-    case "TicketWorkResumed":
-    case "TicketEvaluationResumed":
-    case "TicketFinalizationResumed":
-      return evolveResume(ticket, event);
-    case "TicketWorkResultAccepted": {
-      const accepted = event.value;
-      if (
-        ticket.phase !== "Work" ||
-        !taskObligationEquals(
-          accepted.result.obligation,
-          workTaskObligation(ticket, ticket.workCyclesStarted),
-        )
-      )
-        return ticket;
-      return spawnEvalRun({
+      return updateTicket(graph, fact.ticket, {
         ...ticket,
-        phase: "Evaluation",
-        source: accepted.acceptedSourceRef,
-        evaluations: [
-          ...ticket.evaluations,
-          begunInstance(
-            ticket,
-            accepted.result.resultRef,
-            accepted.acceptedSourceRef,
-          ),
-        ],
+        state: {
+          type: "Escalated",
+          value: {
+            type: "FinalizationUnavailableEscalated",
+            value: { finalization, evidence: fact.evidence },
+          },
+        },
       });
-    }
-    case "TicketWorkProcessFailed":
-      return onCurrentWork(ticket, event.value)
-        ? park(ticket, "WorkFailureEscalated")
-        : ticket;
-    case "TicketWorkExecutionUnavailable":
-      return onCurrentWork(ticket, event.value)
-        ? park(ticket, "WorkExecutionUnavailableEscalated")
-        : ticket;
-    case "TicketEvaluationProgressed":
-    case "TicketEvaluationPassed":
-    case "TicketEvaluationReworkStarted":
-    case "TicketEvaluationFailureEscalated":
-    case "TicketEvaluationBlocked":
-      return evolveJudgement(ticket, event);
-    case "TicketFinalizationSucceeded":
-    case "TicketFinalizationNeedsWork":
-    case "TicketFinalizationUnavailable":
-      return evolveFinalization(ticket, event);
   }
-}
-
-/**
- * The state after an event, applied only to a state that still owes it and
- * the identity on every other. The package states the same at its `evolve`,
- * through the `reportAdmissible` and `finalizationCurrent` guards each arm
- * reads.
- */
-export function evolve(graph: TicketGraph, event: TicketEvent): TicketGraph {
-  if (event.type === "TicketCreated") {
-    const id = asTicketId(event.value.id);
-    if (graph.tickets.has(id)) return graph;
-    const tickets = new Map(graph.tickets);
-    tickets.set(id, freshTicket(event.value));
-    return { tickets };
-  }
-  const id = eventTicket(event);
-  const ticket = graph.tickets.get(id);
-  if (ticket === undefined) return graph;
-  const evolved = evolveTicket(ticket, event);
-  return evolved === ticket ? graph : withTicket(graph, id, evolved);
 }

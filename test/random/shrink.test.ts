@@ -3,8 +3,8 @@
  * broken decider rather than against a defect nobody has.
  *
  * THE MUTANT IS THE ONE THE ACCUMULATOR EXISTS FOR: a revoke that decides its
- * ticket's completion instead. The event moves nothing, so the ledger on the
- * ticket never changes — `revokedNeverCompletes` and `completionExclusive`
+ * ticket's completion instead. The event moves nothing, so the ticket's ledger
+ * never changes — `revokedNeverCompletes` and `completionExclusive`
  * stay green — and what sees it is the completion counted off the event
  * stream, beside `eventsNeverIdentity`, which refuses a decided event that
  * moves nothing. The injection is the walk's `decide` seam, so the broken
@@ -28,7 +28,11 @@ import { modelInstance } from "../domain/configs.ts";
 import { decodeTrace, encodeValue } from "../itf/decode.ts";
 import { aFinalizationEvidence } from "../../src/domain/config.ts";
 import { eventTicket } from "../../src/domain/evolve.ts";
-import { encodeLastDecision, encodeTicketGraph } from "../itf/vocabulary.ts";
+import {
+  encodeLastDecision,
+  encodeLedgers,
+  encodeTicketGraph,
+} from "../itf/vocabulary.ts";
 import { seedLabel, writeCounterexample } from "./counterexample.ts";
 import { shrinkSteps } from "./shrink.ts";
 import {
@@ -162,7 +166,13 @@ test("the written counterexample is a corpus: its states are what its own steps 
   const trace = decodeTrace(raw);
   const ticketsVar = trace.vars.find((v) => v.endsWith("::tickets"));
   const lastStepVar = trace.vars.find((v) => v.endsWith("::lastStep"));
+  const ledgersVar = trace.vars.find((v) => v.endsWith("::ledgers"));
+  const prevLedgersVar = trace.vars.find((v) => v.endsWith("::prevLedgers"));
   assert.ok(ticketsVar, "the replayer looks the tickets variable up by suffix");
+  assert.ok(
+    ledgersVar && prevLedgersVar,
+    "the replayer looks both ledger variables up by suffix",
+  );
   assert.ok(
     lastStepVar,
     "the replayer looks the decision variable up by suffix",
@@ -183,6 +193,18 @@ test("the written counterexample is a corpus: its states are what its own steps 
       isDeepStrictEqual(
         state[lastStepVar],
         encodeValue(encodeLastDecision(view.last)),
+      ),
+    );
+    assert.ok(
+      isDeepStrictEqual(
+        state[ledgersVar],
+        encodeValue(encodeLedgers(view.postLedgers)),
+      ),
+    );
+    assert.ok(
+      isDeepStrictEqual(
+        state[prevLedgersVar],
+        encodeValue(encodeLedgers(view.preLedgers)),
       ),
     );
   });

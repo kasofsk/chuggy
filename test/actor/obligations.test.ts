@@ -29,9 +29,11 @@ import {
   actorInit,
   journalStep,
   memoryGraph,
+  memoryLedgers,
   type ActorState,
 } from "../../src/actor/state.ts";
 import { ticketAt, withTicket } from "../../src/domain/ticketGraph.ts";
+import { ledgerAt } from "../../src/domain/ledger.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   declaredCommandConstructors,
@@ -135,10 +137,16 @@ test("a Done ticket the journal never completed fails the ledger bridge, with th
   const ticket = ticketAt(memoryGraph(state), id(1));
   const forged = withTicket(memoryGraph(state), id(1), {
     ...ticket,
-    phase: "Done",
-    completions: 1,
+    state: "Done",
   });
-  const disagreeing = { ...state, view: { ...state.view, post: forged } };
+  const completed = new Map([
+    ...memoryLedgers(state),
+    [id(1), { ...ledgerAt(memoryLedgers(state), 1), completions: 1 }],
+  ]);
+  const disagreeing = {
+    ...state,
+    view: { ...state.view, post: forged, postLedgers: completed },
+  };
   assert.deepEqual(
     failedObligations(config, disagreeing, refinementInvariants),
     ["recoveryComplete", "journalCompletionsMatchLedger"],

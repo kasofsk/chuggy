@@ -22,14 +22,18 @@ import { reportTaskTerminalCommand } from "../../src/actor/command.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
-import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import { phaseOf } from "../../src/domain/phase.ts";
+import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import type {
   TaskIdentity,
   TaskTerminalReport,
 } from "../../src/domain/generated/modelTypes.ts";
 import type { TicketResource } from "../../src/interpreter/nativeWeb.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
+import {
+  projectedEscalationOf,
+  type ProjectMemory,
+} from "../../src/interpreter/projectWriter.ts";
 import { escalationTags } from "../../src/domain/generated/modelTypes.ts";
 import { id, stoppedReport } from "../domain/fixtures.ts";
 import {
@@ -81,7 +85,10 @@ async function projected(partition: Partition): Promise<ProjectedRow> {
 /** The same facts read off the replayed graph, which is what the row must equal. */
 function carried(memory: ProjectMemory): ProjectedRow {
   const ticket = ticketAt(memory.graph, subject);
-  return { phase: ticket.phase, escalation: ticket.escalation };
+  return {
+    phase: phaseOf(ticket.state),
+    escalation: projectedEscalationOf(ticket.state),
+  };
 }
 
 /** The subject as the project table lists it, in the order the case names. */
@@ -171,7 +178,12 @@ async function walled(
   );
   assert.deepEqual(await projected(partition), carried(memory));
   for (const cycle of [1, 2]) {
-    memory = await reported(partition, memory, workTaskOf(1, cycle), "Pass");
+    memory = await reported(
+      partition,
+      memory,
+      workTaskIdentity(1, cycle),
+      "Pass",
+    );
     memory = await reported(
       partition,
       memory,
@@ -179,7 +191,7 @@ async function walled(
       "Fail",
     );
   }
-  memory = await reported(partition, memory, workTaskOf(1, 3), "Pass");
+  memory = await reported(partition, memory, workTaskIdentity(1, 3), "Pass");
   return reported(partition, memory, evaluationTaskOf(1, 3, 1, 1, 1), "Fail");
 }
 
@@ -304,7 +316,7 @@ test("a stopped evaluator parks the ticket and its resume re-asks that evaluator
     "projection-stopped",
     postgresHarnessJournal().length,
   );
-  memory = await reported(partition, memory, workTaskOf(1, 1), "Pass");
+  memory = await reported(partition, memory, workTaskIdentity(1, 1), "Pass");
   const judge = evaluationTaskOf(1, 1, 1, 1, 1);
   memory = await reportedWith(
     partition,

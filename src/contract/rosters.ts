@@ -26,9 +26,7 @@ export type TicketPhase = (typeof phaseRoster)[number];
 
 /**
  * Which wall a parked ticket is escalated at, in the order the model declares
- * them. The model's `NoEscalation` is not among them: the machine holds an
- * escalation exactly when a ticket is escalated, so the wire omits the whole
- * object instead of naming that member.
+ * them. The wire omits the whole object for a ticket that is not escalated.
  */
 export const escalationKinds = [
   "WorkFailureEscalated",

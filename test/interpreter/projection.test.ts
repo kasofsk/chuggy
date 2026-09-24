@@ -40,10 +40,11 @@ import type {
   TicketGraph,
   Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
-import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import { currentTaskObligations } from "../../src/domain/evaluation.ts";
-import { currentInstance, resumeOf } from "../../src/domain/ticket.ts";
+import { phaseOf } from "../../src/domain/phase.ts";
+import { resumeOf } from "../../src/domain/ticket.ts";
 import {
   IntegrityContradiction,
   projectionChanges,
@@ -67,7 +68,7 @@ import {
 const history: readonly TicketCommand[] = [
   createTicketCommand(plainDefinitionOf(1)),
   dispatchTicketCommand(id(1), aDispatchSource),
-  reportTaskTerminalCommand(producedReport(workTaskOf(1, 1))),
+  reportTaskTerminalCommand(producedReport(workTaskIdentity(1, 1))),
   reportTaskTerminalCommand(
     judgedReport(evaluationTaskOf(1, 1, 1, 1, 1), "EvaluatorPass"),
   ),
@@ -149,7 +150,7 @@ test("a decision reports exactly the tickets whose complete state changed", () =
   const completed = journalStep(
     refinementInstance,
     dispatched,
-    reportTaskTerminalCommand(producedReport(workTaskOf(1, 1))),
+    reportTaskTerminalCommand(producedReport(workTaskIdentity(1, 1))),
     plainPolicy,
   );
   assert.deepEqual(
@@ -188,8 +189,10 @@ test("a release is a change although it leaves no phase", () => {
 /** The one task a single-width ticket owes, which is what a completion names. */
 function owedTask(graph: TicketGraph): TaskIdentity {
   const ticket = ticketAt(graph, id(1));
-  if (ticket.phase === "Work") return workTaskOf(1, ticket.workCyclesStarted);
-  const [obligation] = currentTaskObligations(currentInstance(ticket));
+  const state = ticket.state;
+  if (typeof state === "string" || state.type !== "Evaluation")
+    return workTaskIdentity(1, ticket.workCyclesStarted);
+  const [obligation] = currentTaskObligations(state.value);
   if (obligation === undefined)
     throw new Error("projection case: the ticket owes no task");
   return obligation.task;
@@ -227,9 +230,16 @@ function walledHistory(): readonly (readonly [
   return steps;
 }
 
-/** What the row claims about the ticket, read off the ticket itself. */
+/** What the row claims about the ticket, read off the ticket's state itself. */
 function ticketFacts(ticket: Ticket) {
-  return { phase: ticket.phase, escalation: ticket.escalation };
+  const state = ticket.state;
+  return {
+    phase: typeof state === "string" ? state : state.type,
+    escalation:
+      typeof state !== "string" && state.type === "Escalated"
+        ? state.value.type
+        : "NoEscalation",
+  };
 }
 
 test("every projected row is the graph the step it names left behind", () => {
@@ -243,7 +253,7 @@ test("every projected row is the graph the step it names left behind", () => {
       phase: row.phase,
       escalation: row.escalation,
     });
-    seen.push(`${row.phase}/${resumeOf(row.escalation)}`);
+    seen.push(`${row.phase}/${resumeOf(ticketAt(graph, id(1)).state)}`);
   }
   assert.ok(seen.includes("Escalated/ResumeRework"));
   assert.equal(seen.at(-1), "Work/NoResume");
@@ -262,7 +272,10 @@ test("a decision's evidence lands on the ticket it escalated and no other", () =
     (state, [event, policy]) => decidedOn(state, event, policy),
     genesis,
   );
-  assert.equal(ticketAt(graph, id(1)).escalation, "EvaluationFailureEscalated");
+  assert.equal(
+    ticketFacts(ticketAt(graph, id(1))).escalation,
+    "EvaluationFailureEscalated",
+  );
   assert.deepEqual(
     projectionOf(graph, { ticket: id(1), evidence: "RefUnreadable" }),
     [
@@ -277,7 +290,7 @@ test("a decision's evidence lands on the ticket it escalated and no other", () =
       {
         ticket: id(2),
         revision: 1,
-        phase: ticketAt(graph, id(2)).phase,
+        phase: phaseOf(ticketAt(graph, id(2)).state),
         dependable: true,
         escalation: "NoEscalation",
       },

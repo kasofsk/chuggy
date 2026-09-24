@@ -223,7 +223,13 @@ test("a decoded state carries the ghosts the replayer reads", () => {
   const trace = decodeTrace(row.trace);
   const first = trace.states[0];
   assert.ok(first, `${row.name}: no states`);
-  for (const suffix of ["::prevTickets", "::tickets", "::lastStep"]) {
+  for (const suffix of [
+    "::prevTickets",
+    "::tickets",
+    "::prevLedgers",
+    "::ledgers",
+    "::lastStep",
+  ]) {
     const name = trace.vars.find((v) => v.endsWith(suffix));
     assert.ok(
       name,

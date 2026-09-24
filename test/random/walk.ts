@@ -13,19 +13,20 @@
  * arms. `settle` is drawn only when the model's `quiet` holds and stutters,
  * exactly as the model's `step` does.
  *
- * THE ACCUMULATOR IS THE MODEL'S `completions` GHOST REBUILT FROM THE EVENT
- * STREAM. `test/domain/invariants.test.ts` says why no single state this tree
- * can build refutes `completionExclusive`: the count is derived from the phase,
- * so the disagreement can only exist across time, in the decisions themselves.
- * Here every `TicketFinalizationSucceeded` is charged to the stepped ticket and
- * the per-ticket predicate is asked after every step, so a decider that decides
- * a second completion — or completes without deciding one — goes red with the
+ * THE ACCUMULATOR REBUILDS THE LEDGER'S `completions` GHOST FROM THE EVENT
+ * STREAM. The ledger counts the steps that enter Done, so a decided completion
+ * that moves nothing leaves it standing, and the disagreement exists only
+ * across time, in the decisions themselves. Here every
+ * `TicketFinalizationSucceeded` is charged to the stepped ticket and the
+ * per-ticket predicate is asked after every step, so a decider that decides a
+ * second completion — or completes without deciding one — goes red with the
  * whole bundle green, which no golden subsumes because no golden constrains a
  * walk nobody recorded.
  *
- * THE VIEW IS CARRIED AS THE MODEL CARRIES ITS GHOSTS: a decision moves
- * `(pre, last)`, a refusal moves them and leaves the state, and the stutter
- * decides nothing and leaves them standing.
+ * THE VIEW IS CARRIED AS THE MODEL CARRIES ITS GHOSTS: the ledgers ride beside
+ * the graph and fold from the same event, a decision moves `(pre, last)`, a
+ * refusal moves them and leaves the state, and the stutter decides nothing and
+ * leaves them standing.
  *
  * `walkInit` IS THE FIRST INIT OUTSIDE THE MODEL, and it refuses what the
  * model's `init` refuses: every well-formedness conjunct holds or there is
@@ -41,6 +42,13 @@ import type {
 } from "../../src/domain/generated/modelTypes.ts";
 import { evolve } from "../../src/domain/evolve.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
+import {
+  evolveLedgers,
+  genesisLedgers,
+  ledgerAt,
+  type Ledgers,
+} from "../../src/domain/ledger.ts";
+import { phaseOf } from "../../src/domain/phase.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
 import { replayStep, type Picks } from "../conformance/dispatch.ts";
 import { bundleHolds, evaluateBundle } from "../conformance/evaluate.ts";
@@ -146,14 +154,22 @@ export function viewAfter(
   if (decision.type === "TicketRefused") {
     return {
       pre: view.post,
+      preLedgers: view.postLedgers,
       last: { type: "Refused", value: decision.value },
       post: view.post,
+      postLedgers: view.postLedgers,
     };
   }
   return {
     pre: view.post,
+    preLedgers: view.postLedgers,
     last: { type: "Decided", value: decision.value },
     post: evolve(view.post, decision.value.event),
+    postLedgers: evolveLedgers(
+      view.post,
+      view.postLedgers,
+      decision.value.event,
+    ),
   };
 }
 
@@ -161,15 +177,16 @@ export function viewAfter(
 export function completionFindings(
   counts: CompletionCounts,
   graph: TicketGraph,
+  ledgers: Ledgers,
 ): readonly string[] {
   return liveTickets(graph).flatMap((id) => {
     const emitted = counts.get(id) ?? 0;
-    const phase = ticketAt(graph, id).phase;
-    const stored = ticketAt(graph, id).completions;
-    return emitted === stored && (stored === 1) === (phase === "Done")
+    const state = ticketAt(graph, id).state;
+    const stored = ledgerAt(ledgers, id).completions;
+    return emitted === stored && (stored === 1) === (state === "Done")
       ? []
       : [
-          `ticket ${String(id)}: ${String(emitted)} completion(s) counted, ${String(stored)} stored, phase ${phase}`,
+          `ticket ${String(id)}: ${String(emitted)} completion(s) counted, ${String(stored)} in the ledger, state ${phaseOf(state)}`,
         ];
   });
 }
@@ -200,11 +217,12 @@ function walkStepOutcome(
   decide: Decide,
 ): StepOutcome {
   const graph = before.post;
+  const ledgers = before.postLedgers;
   const acted = walkActionOf(step.action);
-  if (!acted.enabledIn(config, graph)) {
+  if (!acted.enabledIn(config, graph, ledgers)) {
     return { kind: "refused", why: `${step.action} is not enabled here` };
   }
-  if (!acted.permitsIn(config, graph, step.drawn)) {
+  if (!acted.permitsIn(config, graph, ledgers, step.drawn)) {
     return {
       kind: "refused",
       why: `${step.action} does not permit this draw here`,
@@ -223,7 +241,7 @@ function walkStepOutcome(
   const decided = view === before ? "NoDecision" : view.last;
   const emissions = [
     ...creditCompletions(counts, step.drawn.ticket, decided),
-    ...completionFindings(counts, view.post),
+    ...completionFindings(counts, view.post, view.postLedgers),
   ];
   const verdict = evaluateBundle(config, view);
   const failure =
@@ -250,7 +268,7 @@ export function walkRun(
   decide: Decide = decideViaTable,
 ): WalkOutcome {
   const random = randomOf(seed);
-  let view = initialView(walkInit(config));
+  let view = initialView(walkInit(config), genesisLedgers);
   const opening = evaluateBundle(config, view);
   if (!bundleHolds(opening)) {
     const failure = {
@@ -265,8 +283,9 @@ export function walkRun(
   const steps: WalkStep[] = [];
   for (let index = 1; index <= stepsMax; index++) {
     const graph = view.post;
+    const ledgers = view.postLedgers;
     const enabled = walkActions.filter((entry) =>
-      entry.enabledIn(config, graph),
+      entry.enabledIn(config, graph, ledgers),
     );
     if (enabled.length === 0) {
       const why =
@@ -279,7 +298,7 @@ export function walkRun(
     const acted = pickFrom(random, enabled);
     const step: WalkStep = {
       action: acted.action,
-      drawn: acted.drawIn(config, graph, random),
+      drawn: acted.drawIn(config, graph, ledgers, random),
     };
     steps.push(step);
     const outcome = walkStepOutcome(config, view, counts, step, decide);
@@ -325,7 +344,7 @@ export function walkReplay(
   steps: readonly WalkStep[],
   decide: Decide = decideViaTable,
 ): ReplayOutcome {
-  let view = initialView(walkInit(config));
+  let view = initialView(walkInit(config), genesisLedgers);
   const counts: CompletionCounts = new Map();
   for (let index = 0; index < steps.length; index++) {
     const step = steps[index];
@@ -373,7 +392,7 @@ export function walkRecord(
   steps: readonly WalkStep[],
   decide: Decide = decideViaTable,
 ): readonly RecordedStep[] {
-  let view = initialView(walkInit(config));
+  let view = initialView(walkInit(config), genesisLedgers);
   const counts: CompletionCounts = new Map();
   const recorded: RecordedStep[] = [];
   for (const step of steps) {

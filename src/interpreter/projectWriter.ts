@@ -56,8 +56,8 @@
  * token's digest stays on the command as provenance: which page the author saw.
  */
 
-import type { Entry, StoredEntry } from "../actor/journal.ts";
-import { genesis, storedJournalLegalOn } from "../actor/journal.ts";
+import type { Entry, Replayed, StoredEntry } from "../actor/journal.ts";
+import { genesis, replayStep, storedJournalLegalOn } from "../actor/journal.ts";
 import { ticketEquals } from "../domain/equality.ts";
 import { commandSubject, type TicketCommand } from "../actor/command.ts";
 import type { Config } from "../domain/config.ts";
@@ -67,17 +67,20 @@ import type {
   SuccessfulTicketDecision,
   TicketDecision,
   TicketGraph,
+  TicketState,
 } from "../domain/generated/modelTypes.ts";
 import { canReleaseIn, dependableIn } from "../domain/enablement.ts";
 import {
   alwaysPolicy,
-  commandValid,
+  commandTaken,
   decide,
   type EvaluationFailurePolicy,
 } from "../domain/deciders.ts";
 import { decisionValid } from "../domain/decisionValid.ts";
 import { evolve } from "../domain/evolve.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
+import { genesisLedgers, ledgerAt, type Ledgers } from "../domain/ledger.ts";
+import { phaseOf } from "../domain/phase.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
 import type {
   DispatchSource,
@@ -89,6 +92,7 @@ import type {
   Decided,
   DecisionOutcome,
   ProjectDecision,
+  ProjectedEscalation,
   TicketProjection,
   TicketSourceRecord,
 } from "./projectDecision.ts";
@@ -99,7 +103,7 @@ import {
 } from "./refusal.ts";
 import { ticketCommandOf } from "./commandMap.ts";
 import type { Lease, ProjectStore } from "./projectStore.ts";
-import { reworkDisposition, type ReworkCap } from "./reworkCap.ts";
+import { reworkPolicy, type ReworkCap } from "./reworkCap.ts";
 import { materializationOf, type SpawnSources } from "./decisionPlan.ts";
 import {
   deriveDispatchCandidates,
@@ -133,6 +137,7 @@ export interface ProjectTicketWriter {
 export interface ProjectMemory {
   readonly lease: Lease;
   readonly graph: TicketGraph;
+  readonly ledgers: Ledgers;
   readonly ticketVersions: ReadonlyMap<number, number>;
   readonly dispatchContracts?: ReadonlyMap<number, DispatchContractPin>;
 }
@@ -164,6 +169,13 @@ export interface TicketEscalationEvidence {
   readonly evidence: string;
 }
 
+/** A ticket's wall as the projection names it. */
+export function projectedEscalationOf(state: TicketState): ProjectedEscalation {
+  return typeof state !== "string" && state.type === "Escalated"
+    ? state.value.type
+    : "NoEscalation";
+}
+
 /**
  * Every ticket's current standing, which is the whole projection and the
  * rebuild of it. Every field is read off the same `TicketGraph` this decision left
@@ -178,7 +190,8 @@ export function projectionOf(
   const dependable = new Set(dependableIn(graph));
   if (
     escalated !== undefined &&
-    ticketAt(graph, escalated.ticket).escalation === "NoEscalation"
+    projectedEscalationOf(ticketAt(graph, escalated.ticket).state) ===
+      "NoEscalation"
   )
     throw new IntegrityContradiction(
       "a decision carries evidence for a ticket it did not escalate",
@@ -188,9 +201,9 @@ export function projectionOf(
     return {
       ticket,
       revision: value.revision,
-      phase: value.phase,
+      phase: phaseOf(value.state),
       dependable: dependable.has(ticket),
-      escalation: value.escalation,
+      escalation: projectedEscalationOf(value.state),
       ...(escalated?.ticket === ticket
         ? { escalationEvidence: escalated.evidence }
         : {}),
@@ -251,17 +264,19 @@ export async function projectWriterLoad(
 ): Promise<ProjectMemory> {
   const journal = await projectWriterJournal(writer, lease);
   const ticketVersions = new Map<number, number>();
-  let graph: TicketGraph = genesis;
+  let replayed: Replayed = { graph: genesis, ledgers: genesisLedgers };
   for (const row of journal) {
-    const post = evolve(graph, row.entry.event);
-    for (const projection of projectionChanges(graph, post))
+    const post = replayStep(replayed, row.entry.event);
+    for (const projection of projectionChanges(replayed.graph, post.graph))
       ticketVersions.set(projection.ticket, row.entry.seq);
-    graph = post;
+    replayed = post;
   }
+  const { graph, ledgers } = replayed;
   const dispatchContracts = await writer.store.loadDispatchContracts?.(lease);
   const memory = {
     lease,
     graph,
+    ledgers,
     ticketVersions,
     ...(dispatchContracts === undefined ? {} : { dispatchContracts }),
   };
@@ -285,12 +300,20 @@ export async function projectWriterLoad(
 /** A decision offered for commit, and the state it would install if it committed. */
 interface ProjectPlan {
   readonly outcome: DecisionOutcome;
-  readonly post: TicketGraph;
+  readonly post: Replayed;
+}
+
+/** The state in hand, graph and ledgers, as a replay holds it. */
+function projectWriterReplayed(memory: ProjectMemory): Replayed {
+  return { graph: memory.graph, ledgers: memory.ledgers };
 }
 
 /** The plan a refusal earns: the refusal settled, and nothing else moved. */
 function refusedPlan(memory: ProjectMemory, refusal: Refusal): ProjectPlan {
-  return { outcome: { outcome: "Refused", refusal }, post: memory.graph };
+  return {
+    outcome: { outcome: "Refused", refusal },
+    post: projectWriterReplayed(memory),
+  };
 }
 
 function operationDispatchFence(
@@ -328,28 +351,32 @@ function operationDispatchFence(
 
 /**
  * The policy a failing stage of this command's ticket is taken on: the
- * deployment's rework cap over the ticket replayed to this position, which
- * `decide` asks only of a completion that concludes a failing stage.
+ * deployment's rework cap over the ticket and its ledger replayed to this
+ * position, which `decide` asks only of a completion that concludes a failing
+ * stage.
  */
 function projectWriterFailurePolicy(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   command: TicketCommand,
 ): EvaluationFailurePolicy {
-  const held = memory.graph.tickets.get(commandSubject(command));
-  return alwaysPolicy(
-    held === undefined
-      ? "EscalateEvaluationFailure"
-      : reworkDisposition(held, writer.rework.cyclesMax),
-  );
+  const subject = commandSubject(command);
+  const held = memory.graph.tickets.get(subject);
+  return held === undefined
+    ? alwaysPolicy("EscalateEvaluationFailure")
+    : reworkPolicy(
+        held,
+        ledgerAt(memory.ledgers, subject),
+        writer.rework.cyclesMax,
+      );
 }
 
 /**
  * What `decide` answers a command at the state in hand, an accepted one held
  * to `decisionValid` because every obligation it owes is about to become a
- * row. Outside `commandValid` a release or an update is refused as the
+ * row. Outside `commandTaken` a release or an update is refused as the
  * configuration it does not fit, and a release outside the deployment's release room as the bound
- * `decide` does not know, while any other command outside `commandValid` is
+ * `decide` does not know, while any other command outside `commandTaken` is
  * this layer and the database disagreeing about what the mailbox may admit.
  */
 function projectWriterDecision(
@@ -362,7 +389,7 @@ function projectWriterDecision(
       readonly type: "Boundary";
       readonly code: "ConfigurationInvalid" | "TicketCapacityReached";
     } {
-  if (!commandValid(writer.config, command)) {
+  if (!commandTaken(writer.config, command)) {
     if (command.type === "CreateTicket" || command.type === "UpdateTicket")
       return { type: "Boundary", code: "ConfigurationInvalid" };
     throw new IntegrityContradiction(
@@ -394,12 +421,13 @@ function journaledPlan(
   decision: SuccessfulTicketDecision,
   spawn: SpawnSources,
 ): ProjectPlan {
-  const post = evolve(memory.graph, decision.event);
+  const pre = projectWriterReplayed(memory);
+  const post = replayStep(pre, decision.event);
   const entry: Entry = { seq: memory.lease.head + 1, event: decision.event };
   const projection = projectionChanges(
     memory.graph,
-    post,
-    projectWriterEscalationEvidence(item, command, post),
+    post.graph,
+    projectWriterEscalationEvidence(item, command, post.graph),
   );
   const versions = new Map(memory.ticketVersions);
   for (const row of projection) versions.set(row.ticket, entry.seq);
@@ -414,7 +442,7 @@ function journaledPlan(
     memory.dispatchContracts !== undefined ||
     item.source.draftRelease !== undefined;
   const candidates = materializeView
-    ? deriveDispatchCandidates(post, versions, contracts)
+    ? deriveDispatchCandidates(post.graph, versions, contracts)
     : undefined;
   return {
     outcome: {
@@ -423,7 +451,7 @@ function journaledPlan(
       projection,
       materialization: materializationOf(
         item,
-        memory.graph,
+        pre,
         post,
         entry,
         decision.obligations,
@@ -503,7 +531,10 @@ function projectWriterPreflight(
       );
     return closed
       ? refusedPlan(memory, boundaryRefusal("TicketChanged"))
-      : { outcome: { outcome: "Answered", answer }, post: memory.graph };
+      : {
+          outcome: { outcome: "Answered", answer },
+          post: projectWriterReplayed(memory),
+        };
   }
   const decision = projectWriterDecision(writer, memory, command);
   if (decision.type === "Boundary")
@@ -603,6 +634,20 @@ function dispatchSpawnSources(
 }
 
 /**
+ * The source a spawn runs at, which the state it spawned into pins: a work
+ * cycle's own, or the one the result an evaluation judges was accepted at.
+ */
+export function projectWriterSpawnSourceRef(state: TicketState): number {
+  if (typeof state !== "string") {
+    if (state.type === "Work") return state.value.source;
+    if (state.type === "Evaluation") return state.value.input.acceptedSourceRef;
+  }
+  throw new Error(
+    "project writer: a spawn left its ticket neither working nor evaluating",
+  );
+}
+
+/**
  * What a decision that is not a dispatch spawns against: the source the ticket
  * already carries, read out of this partition's own rows. NOTHING HERE ASKS A
  * REMOTE — a rework runs at the commit its work was judged at, and an
@@ -622,7 +667,9 @@ async function projectWriterSpawnSources(
   const source = await writer.executionSources.spawnSource({
     partition: memory.lease.partition,
     ticket,
-    source: ticketAt(evolve(memory.graph, decision.event), ticket).source,
+    source: projectWriterSpawnSourceRef(
+      ticketAt(evolve(memory.graph, decision.event), ticket).state,
+    ),
     kind: spawn.value.task.task.type === "WorkTask" ? "Work" : "Evaluation",
   });
   return source === undefined ? {} : { source };
@@ -658,7 +705,7 @@ function projectWriterUnreadableLanding(
  * judgement's, so the wall the walled sibling carried explains nothing about
  * it.
  */
-const executionWallEscalations: readonly Escalation[] = [
+const executionWallEscalations: readonly Escalation["type"][] = [
   "WorkExecutionUnavailableEscalated",
   "EvaluationBlockedEscalated",
 ];
@@ -678,8 +725,10 @@ function projectWriterEscalationEvidence(
   const source = item.source;
   if (command.type === "ReportTaskTerminal") {
     const ticket = commandSubject(command);
+    const escalation = projectedEscalationOf(ticketAt(post, ticket).state);
     return source.executionBlockedBy === undefined ||
-      !executionWallEscalations.includes(ticketAt(post, ticket).escalation)
+      escalation === "NoEscalation" ||
+      !executionWallEscalations.includes(escalation)
       ? undefined
       : { ticket, evidence: source.executionBlockedBy };
   }
@@ -817,7 +866,8 @@ export async function projectWriterDecide(
   return {
     memory: {
       lease: decided.lease,
-      graph: plan.post,
+      graph: plan.post.graph,
+      ledgers: plan.post.ledgers,
       ticketVersions,
       dispatchContracts,
     },

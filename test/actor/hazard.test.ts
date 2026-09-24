@@ -34,6 +34,7 @@ import {
   emitNext,
   journalStep,
   memoryGraph,
+  memoryLedgers,
   type ActorState,
 } from "../../src/actor/state.ts";
 import {
@@ -43,7 +44,9 @@ import {
   worldSpawns,
 } from "../../src/actor/world.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
-import { workTaskOf } from "../../src/domain/task.ts";
+import { phaseOf } from "../../src/domain/phase.ts";
+import { ledgerAt } from "../../src/domain/ledger.ts";
+import { workTaskIdentity } from "../../src/domain/task.ts";
 import { id, producedReport } from "../domain/fixtures.ts";
 import {
   assertStep,
@@ -77,7 +80,7 @@ function phaseDispatchDoubleSpend(): ActorState {
     plainPolicy,
   );
   assert.equal(state.orphans.length, 1);
-  assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Pending");
+  assert.equal(phaseOf(ticketAt(memoryGraph(state), id(1)).state), "Pending");
   assert.equal(worldSpawns(state, id(1)), 1);
   assert.equal(journalSpawns(state, id(1)), 0);
   assertStep(config, state, "a work set the journal never decided", spentWorld);
@@ -113,7 +116,7 @@ function phaseDuplicateCycle(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    reportTaskTerminalCommand(producedReport(workTaskOf(1, 1))),
+    reportTaskTerminalCommand(producedReport(workTaskIdentity(1, 1))),
     "TicketWorkResultAccepted",
     spentWorld,
   );
@@ -124,7 +127,10 @@ function phaseDuplicateCycle(state: ActorState): void {
     "TicketEvaluationPassed",
     spentWorld,
   );
-  assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Finalization");
+  assert.equal(
+    phaseOf(ticketAt(memoryGraph(state), id(1)).state),
+    "Finalization",
+  );
   const succeeded = reportFinalizationResultCommand(id(1), 1, 1, {
     type: "FinalizationSucceeded",
     value: aFinalizationEvidence,
@@ -133,8 +139,11 @@ function phaseDuplicateCycle(state: ActorState): void {
   assert.equal(state.orphans.length, 2);
   assert.equal(worldCompletions(state, id(1)), 1);
   assert.equal(journalCompletions(state, id(1)), 0);
-  assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Finalization");
-  assert.equal(ticketAt(memoryGraph(state), id(1)).completions, 0);
+  assert.equal(
+    phaseOf(ticketAt(memoryGraph(state), id(1)).state),
+    "Finalization",
+  );
+  assert.equal(ledgerAt(memoryLedgers(state), 1).completions, 0);
   assertStep(
     config,
     state,
@@ -144,10 +153,10 @@ function phaseDuplicateCycle(state: ActorState): void {
   assert.ok(obligationsHold(config, state, refinementCore));
   state = journalStep(config, state, succeeded, plainPolicy);
   state = emitNext(state);
-  assert.equal(ticketAt(memoryGraph(state), id(1)).phase, "Done");
+  assert.equal(phaseOf(ticketAt(memoryGraph(state), id(1)).state), "Done");
   assert.equal(worldCompletions(state, id(1)), 2);
   assert.equal(journalCompletions(state, id(1)), 1);
-  assert.equal(ticketAt(memoryGraph(state), id(1)).completions, 1);
+  assert.equal(ledgerAt(memoryLedgers(state), 1).completions, 1);
   assertStep(config, state, "one ticket landed twice on one clean completion", [
     ...spentWorld,
     "noDuplicateCycle",
@@ -165,7 +174,7 @@ test("the rework crash: the fan-out launches and the step dies with the crash", 
   state = effectCrash(config, state, dissenting, plainPolicy);
   assert.equal(state.orphans.length, 1);
   const recovered = ticketAt(memoryGraph(state), id(1));
-  assert.equal(recovered.phase, "Evaluation");
+  assert.equal(phaseOf(recovered.state), "Evaluation");
   assert.equal(worldSpawns(state, id(1)), 2);
   assert.equal(journalSpawns(state, id(1)), 1);
   assertStep(

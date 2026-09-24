@@ -15,15 +15,19 @@
 import type {
   Escalation,
   EvaluationFailureDisposition,
+  EvaluationInstance,
+  FailureKind,
   FinalizationResult,
   Obligation,
   ReleasedTicket,
   SuccessfulTicketDecision,
   TaskIdentity,
   TaskTerminalReport,
+  Ticket,
   TicketDecision,
   TicketEvent,
   TicketGraph,
+  TicketLedger,
 } from "../../src/domain/generated/modelTypes.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -46,30 +50,43 @@ import {
   decideRevoke,
   decideTaskTerminal,
   decideUpdate,
-  freshTicket,
 } from "../../src/domain/deciders.ts";
 import { evolve } from "../../src/domain/evolve.ts";
 import { graphEquals } from "../../src/domain/equality.ts";
 import { retryableIn } from "../../src/domain/enablement.ts";
 import {
   artifactOf,
+  attemptGeneration,
+  emptyLedger,
+  heldInstances,
+  ledgerInstances,
   liveTasks,
   resumeOf,
   workTaskObligation,
 } from "../../src/domain/ticket.ts";
 import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
-import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
+import {
+  evolveLedgers,
+  genesisLedgers,
+  ledgerAt,
+  type Ledgers,
+} from "../../src/domain/ledger.ts";
+import { failedInvariants } from "../../src/domain/invariants.ts";
+import { phaseOf } from "../../src/domain/phase.ts";
+import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import { modelInstance } from "./configs.ts";
 import {
   acceptedOf,
-  accountsForAll,
-  blockedInstance,
   carriedAt,
+  evaluationState,
+  finalizationState,
   graphOf,
   depsOf,
   id,
+  initialView,
   judgedInstance,
   judgedReport,
+  ledgersOf,
   obligationFor,
   producedReport,
   runningInstance,
@@ -77,27 +94,57 @@ import {
   rosterOf,
   ticketOn,
   workResultOf,
+  workState,
+  type World,
 } from "./fixtures.ts";
 
 const config = modelInstance;
 const plan = defaultPlan(config);
 const roster = rosterOf(plan);
 
-/** A decision and the state its event evolves the graph it was taken at into. */
+/** A decision, and the state and ledgers its event evolves the ones it was taken at into. */
 interface Taken {
   readonly decision: SuccessfulTicketDecision;
   readonly post: TicketGraph;
+  readonly ledgers: Ledgers;
 }
 
-/** Decide, then evolve: the machine's step. */
-function take(pre: TicketGraph, decision: TicketDecision): Taken {
+/** Decide, then evolve: the machine's step, the ledgers folded beside it. */
+function take(
+  pre: TicketGraph,
+  decision: TicketDecision,
+  preLedgers: Ledgers = ledgersOf(pre),
+): Taken {
   const taken = acceptedOf(decision);
-  return { decision: taken, post: evolve(pre, taken.event) };
+  return {
+    decision: taken,
+    post: evolve(pre, taken.event),
+    ledgers: evolveLedgers(pre, preLedgers, taken.event),
+  };
 }
+
+/** The state a step left, as a world the next step is taken at. */
+const worldAfter = (taken: Taken): World => ({
+  graph: taken.post,
+  ledgers: taken.ledgers,
+});
+
+/** Ticket one's ledger after a step. */
+const ledgerOne = (taken: Taken): TicketLedger => ledgerAt(taken.ledgers, 1);
 
 /** What the ticket is owed, which is exactly what a completion may name. */
 const owed = (graph: TicketGraph, at: TicketId): readonly TaskIdentity[] =>
   liveTasks(ticketAt(graph, at));
+
+/** The phase ticket `at` is in. */
+const phaseAt = (graph: TicketGraph, at: TicketId) =>
+  phaseOf(ticketAt(graph, at).state);
+
+/** The wall a ticket is parked at, if it is parked. */
+const wallOf = (ticket: Ticket): Escalation["type"] | undefined =>
+  typeof ticket.state !== "string" && ticket.state.type === "Escalated"
+    ? ticket.state.value.type
+    : undefined;
 
 /** The arms a decision owes, in order. */
 const arms = (taken: Taken): readonly Obligation["type"][] =>
@@ -117,8 +164,9 @@ function completed(
   pre: TicketGraph,
   report: TaskTerminalReport,
   disposition: EvaluationFailureDisposition = "ReworkEvaluationFailure",
+  preLedgers: Ledgers = ledgersOf(pre),
 ): Taken {
-  return take(pre, reported(pre, report, disposition));
+  return take(pre, reported(pre, report, disposition), preLedgers);
 }
 
 /** The refusal a report for `task` meets on ticket 1 when nothing owes it. */
@@ -128,27 +176,31 @@ const notCurrent = (task: TaskIdentity): TicketDecision => ({
 });
 
 /** The work obligation the ticket's `cycle` is asked under, as an ExecuteTask. */
-const executeWorkOf = (graph: TicketGraph, cycle: number): Obligation => ({
-  type: "ExecuteTask",
-  value: {
-    ticket: 1,
-    task: workTaskObligation(ticketAt(graph, id(1)), cycle),
-  },
-});
+const executeWorkOf = (graph: TicketGraph, cycle: number): Obligation => {
+  const ticket = ticketAt(graph, id(1));
+  return {
+    type: "ExecuteTask",
+    value: {
+      ticket: 1,
+      task: workTaskObligation(ticket, cycle),
+    },
+  };
+};
 
 /** The definition a release freezes, every value on it drawn from a universe. */
 const definition = releasedTicketOf(5, depsOf(), defaultPlan(config));
 
 test("a release arrives already Pending, having spawned nothing", () => {
-  const born = freshTicket(definition);
-  assert.equal(born.phase, "Pending");
-  assert.equal(born.spawned, 0);
-  assert.equal(born.completions, 0);
-  assert.equal(born.finalizationGeneration, 0);
-  assert.equal(artifactOf(born), "NoArtifact");
-  assert.equal(born.escalation, "NoEscalation");
+  const created: TicketEvent = { type: "TicketCreated", value: definition };
+  const empty = graphOf([]);
+  const born = ticketAt(evolve(empty, created), id(5));
+  const ledger = ledgerAt(evolveLedgers(empty, genesisLedgers, created), 5);
+  assert.equal(born.state, "Pending");
+  assert.equal(born.workCyclesStarted, 0);
+  assert.deepEqual(ledger, emptyLedger);
+  assert.equal(attemptGeneration(born), 0);
+  assert.equal(artifactOf(born, ledger), "NoArtifact");
   assert.deepEqual(liveTasks(born), []);
-  assert.deepEqual(born.evaluations, []);
 });
 
 test("the release owes nothing, and takes the sparse id it was handed", () => {
@@ -167,7 +219,7 @@ test("the release owes nothing, and takes the sparse id it was handed", () => {
 });
 
 test("a dispatch owes the cycle's one work task, at the source it observed", () => {
-  const ready = graphOf([ticketOn(config, { phase: "Pending" })]);
+  const ready = graphOf([ticketOn(config)]);
   const dispatched = take(
     ready,
     decideDispatch(ready, { ticket: 1, source: aDispatchSource }),
@@ -178,21 +230,17 @@ test("a dispatch owes the cycle's one work task, at the source it observed", () 
   });
   assert.deepEqual(dispatched.decision.obligations, [executeWorkOf(ready, 1)]);
   const ticket = ticketAt(dispatched.post, id(1));
-  assert.equal(ticket.phase, "Work");
-  assert.equal(ticket.spawned, 1);
-  assert.equal(ticket.source, aDispatchSource);
-  assert.deepEqual(owed(dispatched.post, id(1)), [workTaskOf(1, 1)]);
+  assert.deepEqual(ticket.state, workState(ticket, aDispatchSource));
+  assert.equal(ledgerOne(dispatched).spawned, 1);
+  assert.deepEqual(owed(dispatched.post, id(1)), [workTaskIdentity(1, 1)]);
 });
 
 /** A ticket judging its first cycle, no evaluator yet answered. */
 const judgingFirst = (): TicketGraph =>
   graphOf([
     ticketOn(config, {
-      phase: "Evaluation",
-      source: anAcceptedSource,
-      evaluations: [runningInstance(1, 1, plan, new Set())],
+      state: evaluationState(runningInstance(1, 1, plan, new Set())),
       workCyclesStarted: 1,
-      spawned: 1 + roster,
     }),
   ]);
 
@@ -213,8 +261,8 @@ test("first write wins, and an identity nothing is waiting on moves nothing", ()
     "a duplicate delivery for an evaluator that answered is refused",
   );
   assert.deepEqual(
-    reported(first.post, producedReport(workTaskOf(1, 1))),
-    notCurrent(workTaskOf(1, 1)),
+    reported(first.post, producedReport(workTaskIdentity(1, 1))),
+    notCurrent(workTaskIdentity(1, 1)),
     "an identity from an earlier phase is owed by nothing, so it is refused",
   );
   const owedJudge = obligationFor(judging);
@@ -232,19 +280,21 @@ test("first write wins, and an identity nothing is waiting on moves nothing", ()
 });
 
 /** A ticket working its first cycle, dispatched at a source. */
-const workingFirst = (): TicketGraph =>
-  graphOf([
-    ticketOn(config, {
-      phase: "Work",
-      workCyclesStarted: 1,
-      spawned: 1,
-      source: aDispatchSource,
-    }),
-  ]);
+const workingFirst = (): TicketGraph => {
+  const ticket = ticketOn(config, { workCyclesStarted: 1 });
+  return graphOf([{ ...ticket, state: workState(ticket, aDispatchSource) }]);
+};
+
+/** The instance a state holds open, which a step that opens one must have. */
+function heldBy(ticket: Ticket): EvaluationInstance {
+  const [held] = heldInstances(ticket.state);
+  if (held === undefined) throw new Error("the ticket holds no judgement");
+  return held;
+}
 
 test("a produced work result is accepted in one step, owing the first stage's evaluators", () => {
   const working = workingFirst();
-  const report = producedReport(workTaskOf(1, 1));
+  const report = producedReport(workTaskIdentity(1, 1));
   assert.equal(report.type, "WorkResultReport");
   const accepted = completed(working, report);
   assert.deepEqual(accepted.decision.event, {
@@ -268,8 +318,8 @@ test("a produced work result is accepted in one step, owing the first stage's ev
       "an evaluator is asked under the result it judges",
     );
   const evaluating = ticketAt(accepted.post, id(1));
-  assert.equal(evaluating.phase, "Evaluation");
-  assert.deepEqual(artifactOf(evaluating), {
+  assert.equal(phaseOf(evaluating.state), "Evaluation");
+  assert.deepEqual(artifactOf(evaluating, ledgerOne(accepted)), {
     type: "ProducedArtifact",
     value: workResultOf(1, 1),
   });
@@ -278,13 +328,17 @@ test("a produced work result is accepted in one step, owing the first stage's ev
     1,
     "the reported reference is not the cycle, so a derivation cannot pass for it",
   );
+  const judgement = heldBy(evaluating);
   assert.equal(
-    evaluating.evaluations[0]?.input.workResult,
+    judgement.input.workResult,
     workResultOf(1, 1),
     "the judgement is opened over the result, not over the cycle",
   );
-  assert.equal(evaluating.source, report.value.acceptedSourceRef);
-  assert.equal(evaluating.spawned, 1 + roster);
+  assert.equal(
+    judgement.input.acceptedSourceRef,
+    report.value.acceptedSourceRef,
+  );
+  assert.equal(ledgerOne(accepted).spawned, 1 + roster);
   assert.deepEqual(owed(accepted.post, id(1)), [
     evaluationTaskOf(1, 1, 1, 1, 1),
     evaluationTaskOf(1, 1, 1, 1, 2),
@@ -293,7 +347,7 @@ test("a produced work result is accepted in one step, owing the first stage's ev
 
 test("a failed work task parks resumable at Work in the same step", () => {
   const working = workingFirst();
-  const work = workTaskOf(1, 1);
+  const work = workTaskIdentity(1, 1);
   const failed = completed(working, stoppedReport(work, "ProcessFailure"));
   assert.deepEqual(failed.decision.event, {
     type: "TicketWorkProcessFailed",
@@ -301,16 +355,65 @@ test("a failed work task parks resumable at Work in the same step", () => {
   });
   assert.deepEqual(failed.decision.obligations, []);
   const parked = ticketAt(failed.post, id(1));
-  assert.equal(parked.phase, "Escalated");
-  assert.equal(parked.escalation, "WorkFailureEscalated");
+  assert.equal(wallOf(parked), "WorkFailureEscalated");
+  assert.equal(resumeOf(parked.state), "ResumeWork");
   assert.deepEqual(owed(failed.post, id(1)), []);
   assert.deepEqual(
-    parked.evaluations,
+    ledgerInstances(parked, ledgerOne(failed)),
     [],
     "a cycle that produced nothing opens no judgement",
   );
-  assert.equal(parked.spawned, 1);
-  assert.equal(artifactOf(parked), "NoArtifact");
+  assert.equal(ledgerOne(failed).spawned, 1);
+  assert.equal(artifactOf(parked, ledgerOne(failed)), "NoArtifact");
+});
+
+/**
+ * THE PACKAGE'S `evolve` DOES NOT ASK WHICH TASK FAILED, only that the ticket
+ * is in Work, so a failure naming a cycle a resume replaced would park the
+ * current one. The decider's refusal is what keeps it out of the journal.
+ */
+test("a work failure naming a cycle before the current one is refused, whatever its kind", () => {
+  const failed = completed(
+    workingFirst(),
+    stoppedReport(workTaskIdentity(1, 1), "ProcessFailure"),
+  );
+  const second = take(
+    failed.post,
+    decideResume(failed.post, 1),
+    failed.ledgers,
+  ).post;
+  assert.equal(phaseAt(second, id(1)), "Work");
+  assert.deepEqual(owed(second, id(1)), [workTaskIdentity(1, 2)]);
+  const stale = workTaskIdentity(1, 1);
+  const kinds: readonly FailureKind[] = [
+    "ProcessFailure",
+    "ExecutionUnavailableFailure",
+  ];
+  for (const kind of kinds) {
+    assert.deepEqual(
+      reported(second, stoppedReport(stale, kind)),
+      notCurrent(stale),
+      kind,
+    );
+    assert.ok(
+      reported(second, stoppedReport(workTaskIdentity(1, 2), kind)).type ===
+        "TicketDecided",
+      `${kind} for the current cycle is accepted, so the refusal is the cycle's`,
+    );
+    assert.ok(
+      !graphEquals(
+        evolve(second, {
+          type:
+            kind === "ProcessFailure"
+              ? "TicketWorkProcessFailed"
+              : "TicketWorkExecutionUnavailable",
+          value: { ticket: 1, task: stale, evidence: 1 },
+        }),
+        second,
+      ),
+      `${kind}: evolve alone would apply the stale failure`,
+    );
+  }
 });
 
 /** A ticket whose stage has heard from evaluator one and still owes evaluator two. */
@@ -337,8 +440,8 @@ test("a stage passes only when every evaluator in it did, so one dissent sinks i
   );
   assert.equal(passed.decision.event.type, "TicketEvaluationPassed");
   assert.deepEqual(arms(passed), ["FinalizeTicket"]);
-  assert.equal(ticketAt(passed.post, id(1)).phase, "Finalization");
-  assert.equal(ticketAt(passed.post, id(1)).finalizationGeneration, 1);
+  assert.equal(phaseAt(passed.post, id(1)), "Finalization");
+  assert.equal(attemptGeneration(ticketAt(passed.post, id(1))), 1);
   assert.equal(
     concluding(
       halfJudged("EvaluatorPass"),
@@ -374,10 +477,10 @@ test("one failing stage, two edges, and the policy is the whole difference", () 
     [1, 2],
     "the rework carries every failed evaluator's result as its cause",
   );
-  assert.equal(ticketAt(reworked.post, id(1)).phase, "Work");
+  assert.equal(phaseAt(reworked.post, id(1)), "Work");
   assert.deepEqual(
     owed(reworked.post, id(1)),
-    [workTaskOf(1, 2)],
+    [workTaskIdentity(1, 2)],
     "the rework cycle's work task names the cycle after the one that failed",
   );
 
@@ -392,11 +495,15 @@ test("one failing stage, two edges, and the policy is the whole difference", () 
   );
   assert.deepEqual(escalated.decision.obligations, []);
   const parked = ticketAt(escalated.post, id(1));
-  assert.equal(parked.escalation, "EvaluationFailureEscalated");
+  assert.equal(wallOf(parked), "EvaluationFailureEscalated");
   assert.deepEqual(owed(escalated.post, id(1)), []);
   assert.ok(retryableIn(escalated.post, id(1)));
 
-  const revoked = take(escalated.post, decideRevoke(escalated.post, 1));
+  const revoked = take(
+    escalated.post,
+    decideRevoke(escalated.post, 1),
+    escalated.ledgers,
+  );
   assert.deepEqual(revoked.decision.event, {
     type: "TicketRevoked",
     value: 1,
@@ -406,9 +513,7 @@ test("one failing stage, two edges, and the policy is the whole difference", () 
     [],
     "a parked ticket runs nothing, so there is nothing to cancel",
   );
-  const settled = ticketAt(revoked.post, id(1));
-  assert.equal(settled.phase, "Revoked");
-  assert.equal(settled.escalation, "NoEscalation");
+  assert.equal(phaseAt(revoked.post, id(1)), "Revoked");
   assert.equal(
     retryableIn(revoked.post, id(1)),
     false,
@@ -417,32 +522,27 @@ test("one failing stage, two edges, and the policy is the whole difference", () 
 });
 
 /** A ticket running its finalizer, its judgement passed, on its first attempt. */
-const finalizing = (): TicketGraph =>
-  graphOf([
-    ticketOn(config, {
-      phase: "Finalization",
-      source: anAcceptedSource,
-      evaluations: [judgedInstance(1, 1, plan)],
-      workCyclesStarted: 1,
-      spawned: 1 + roster,
-      finalizationGeneration: 1,
-    }),
-  ]);
+const finalizing = (): World =>
+  worldAfter(
+    concluding(
+      halfJudged("EvaluatorPass"),
+      "EvaluatorPass",
+      "ReworkEvaluationFailure",
+    ),
+  );
 
 /** The finalizer's report on the attempt the ticket is on. */
-const finalized = (
-  pre: TicketGraph,
-  result: FinalizationResult["type"],
-): Taken => {
-  const ticket = ticketAt(pre, id(1));
+const finalized = (pre: World, result: FinalizationResult["type"]): Taken => {
+  const ticket = ticketAt(pre.graph, id(1));
   return take(
-    pre,
-    decideFinalizationResult(pre, {
+    pre.graph,
+    decideFinalizationResult(pre.graph, {
       ticket: 1,
       workCycle: ticket.workCyclesStarted,
-      generation: ticket.finalizationGeneration,
+      generation: attemptGeneration(ticket),
       result: { type: result, value: aFinalizationEvidence },
     }),
+    pre.ledgers,
   );
 };
 
@@ -458,35 +558,48 @@ test("a successful finalization is the ticket's one completion", () => {
     },
   });
   assert.deepEqual(done.decision.obligations, []);
-  assert.equal(ticketAt(done.post, id(1)).phase, "Done");
-  assert.equal(ticketAt(done.post, id(1)).completions, 1);
+  assert.equal(phaseAt(done.post, id(1)), "Done");
+  assert.equal(ledgerOne(done).completions, 1);
 });
 
 test("a failed finalization owes a new work cycle, and does so every time", () => {
   const first = finalized(finalizing(), "FinalizationNeedsWork");
   assert.equal(first.decision.event.type, "TicketFinalizationNeedsWork");
   assert.deepEqual(first.decision.obligations, [
-    executeWorkOf(finalizing(), 2),
+    executeWorkOf(finalizing().graph, 2),
   ]);
-  assert.equal(ticketAt(first.post, id(1)).phase, "Work");
-  assert.equal(ticketAt(first.post, id(1)).finalizationGeneration, 0);
+  assert.equal(phaseAt(first.post, id(1)), "Work");
+  assert.equal(attemptGeneration(ticketAt(first.post, id(1))), 0);
   assert.deepEqual(
     owed(first.post, id(1)),
-    [workTaskOf(1, 2)],
+    [workTaskIdentity(1, 2)],
     "the wrap-up rework is a fresh cycle, named as one",
   );
 
+  const secondCycle = graphOf([
+    ticketOn(config, {
+      state: finalizationState(judgedInstance(1, 2, plan)),
+      workCyclesStarted: 2,
+    }),
+  ]);
   const again = finalized(
-    graphOf([
-      ticketOn(config, {
-        phase: "Finalization",
-        source: anAcceptedSource,
-        evaluations: [judgedInstance(1, 1, plan), judgedInstance(1, 2, plan)],
-        workCyclesStarted: 2,
-        spawned: 2 * (1 + roster),
-        finalizationGeneration: 1,
-      }),
-    ]),
+    {
+      graph: secondCycle,
+      ledgers: ledgersOf(
+        secondCycle,
+        new Map([
+          [
+            1,
+            {
+              closedEvaluations: [
+                judgedInstance(1, 1, plan),
+                judgedInstance(1, 2, plan),
+              ],
+            },
+          ],
+        ]),
+      ),
+    },
     "FinalizationNeedsWork",
   );
   assert.equal(
@@ -494,7 +607,7 @@ test("a failed finalization owes a new work cycle, and does so every time", () =
     "TicketFinalizationNeedsWork",
     "there is no wall on this edge: a finalizer that keeps failing keeps buying cycles",
   );
-  assert.equal(ticketAt(again.post, id(1)).phase, "Work");
+  assert.equal(phaseAt(again.post, id(1)), "Work");
 });
 
 test("a finalization that reached no result parks, and its resume owes the next attempt", () => {
@@ -503,16 +616,19 @@ test("a finalization that reached no result parks, and its resume owes the next 
   assert.equal(walled.decision.event.type, "TicketFinalizationUnavailable");
   assert.deepEqual(walled.decision.obligations, []);
   const parked = ticketAt(walled.post, id(1));
-  assert.equal(parked.phase, "Escalated");
-  assert.equal(parked.escalation, "FinalizationUnavailableEscalated");
+  assert.equal(wallOf(parked), "FinalizationUnavailableEscalated");
   assert.deepEqual(
-    artifactOf(parked),
-    artifactOf(ticketAt(before, id(1))),
+    artifactOf(parked, ledgerOne(walled)),
+    artifactOf(ticketAt(before.graph, id(1)), ledgerAt(before.ledgers, 1)),
     "the artifact the finalizer could not commit is untouched: it was never the obstacle",
   );
   assert.deepEqual(owed(walled.post, id(1)), []);
 
-  const resumed = take(walled.post, decideResume(walled.post, 1));
+  const resumed = take(
+    walled.post,
+    decideResume(walled.post, 1),
+    walled.ledgers,
+  );
   assert.deepEqual(resumed.decision.event, {
     type: "TicketFinalizationResumed",
     value: 1,
@@ -528,17 +644,17 @@ test("a finalization that reached no result parks, and its resume owes the next 
           input: workResultOf(1, 1),
           source: anAcceptedSource,
         },
-        configuration: ticketAt(before, id(1)).definition
+        configuration: ticketAt(before.graph, id(1)).definition
           .finalizationConfiguration,
       },
     },
   ]);
-  assert.equal(ticketAt(resumed.post, id(1)).phase, "Finalization");
-  assert.equal(ticketAt(resumed.post, id(1)).finalizationGeneration, 2);
+  assert.equal(phaseAt(resumed.post, id(1)), "Finalization");
+  assert.equal(attemptGeneration(ticketAt(resumed.post, id(1))), 2);
 });
 
 test("a work task infrastructure never ran parks at once, there being no sibling to wait for", () => {
-  const work = workTaskOf(1, 1);
+  const work = workTaskIdentity(1, 1);
   const blocked = completed(
     workingFirst(),
     stoppedReport(work, "ExecutionUnavailableFailure"),
@@ -546,9 +662,19 @@ test("a work task infrastructure never ran parks at once, there being no sibling
   assert.equal(blocked.decision.event.type, "TicketWorkExecutionUnavailable");
   assert.deepEqual(blocked.decision.obligations, []);
   const parked = ticketAt(blocked.post, id(1));
-  assert.equal(parked.escalation, "WorkExecutionUnavailableEscalated");
+  assert.equal(wallOf(parked), "WorkExecutionUnavailableEscalated");
   assert.deepEqual(owed(blocked.post, id(1)), []);
 });
+
+/** The first stage with its first evaluator stopped and its second passed: parked at the blocked wall. */
+const blockedFirst = (): Taken => {
+  const stopped = evaluationTaskOf(1, 1, 1, 1, 1);
+  const walled = completed(
+    judgingFirst(),
+    stoppedReport(stopped, "ExecutionUnavailableFailure"),
+  );
+  return concluding(walled.post, "EvaluatorPass", "ReworkEvaluationFailure");
+};
 
 test("a stopped evaluator leaves the stage running, and the stage parks once it concludes", () => {
   const stopped = evaluationTaskOf(1, 1, 1, 1, 1);
@@ -562,17 +688,17 @@ test("a stopped evaluator leaves the stage running, and the stage parks once it 
     "a wall is not a verdict, and its siblings are still judging",
   );
   assert.deepEqual(owed(walled.post, id(1)), [evaluationTaskOf(1, 1, 1, 1, 2)]);
-  const blocked = concluding(
-    walled.post,
-    "EvaluatorPass",
-    "ReworkEvaluationFailure",
-  );
+  const blocked = blockedFirst();
   assert.equal(blocked.decision.event.type, "TicketEvaluationBlocked");
   assert.deepEqual(blocked.decision.obligations, []);
   const parked = ticketAt(blocked.post, id(1));
-  assert.equal(parked.escalation, "EvaluationBlockedEscalated");
-  assert.equal(resumeOf(parked.escalation), "ResumeEvaluation");
-  const resumed = take(blocked.post, decideResume(blocked.post, 1));
+  assert.equal(wallOf(parked), "EvaluationBlockedEscalated");
+  assert.equal(resumeOf(parked.state), "ResumeEvaluation");
+  const resumed = take(
+    blocked.post,
+    decideResume(blocked.post, 1),
+    blocked.ledgers,
+  );
   assert.equal(resumed.decision.event.type, "TicketEvaluationResumed");
   assert.deepEqual(
     resumed.decision.obligations.map((obligation) =>
@@ -581,38 +707,41 @@ test("a stopped evaluator leaves the stage running, and the stage parks once it 
     [evaluationTaskOf(1, 1, 1, 2, 1)],
     "the resume re-asks the stopped evaluator alone, at the next generation",
   );
-  assert.equal(ticketAt(resumed.post, id(1)).phase, "Evaluation");
+  assert.equal(phaseAt(resumed.post, id(1)), "Evaluation");
   assert.deepEqual(owed(resumed.post, id(1)), [
     evaluationTaskOf(1, 1, 1, 2, 1),
   ]);
   assert.equal(
-    ticketAt(resumed.post, id(1)).spawned,
+    ledgerOne(resumed).spawned,
     1 + 2 * roster,
     "and claims the stage's whole roster for the generation it opened",
   );
 });
 
 test("every resume re-enters where its wall implies, and the event names which", () => {
-  const parkedAt = (wall: Escalation): TicketGraph =>
-    graphOf([
-      ticketOn(config, {
-        phase: "Escalated",
-        escalation: wall,
-        source: anAcceptedSource,
-        evaluations:
-          wall === "EvaluationBlockedEscalated"
-            ? [blockedInstance(1, 1, plan, new Set([1]))]
-            : wall === "FinalizationUnavailableEscalated"
-              ? [judgedInstance(1, 1, plan)]
-              : [],
-        workCyclesStarted: 1,
-        spawned: wall === "WorkExecutionUnavailableEscalated" ? 1 : 1 + roster,
-        finalizationGeneration:
-          wall === "FinalizationUnavailableEscalated" ? 1 : 0,
-      }),
-    ]);
+  const walls: Readonly<Record<Escalation["type"], () => Taken>> = {
+    WorkFailureEscalated: () =>
+      completed(
+        workingFirst(),
+        stoppedReport(workTaskIdentity(1, 1), "ProcessFailure"),
+      ),
+    WorkExecutionUnavailableEscalated: () =>
+      completed(
+        workingFirst(),
+        stoppedReport(workTaskIdentity(1, 1), "ExecutionUnavailableFailure"),
+      ),
+    EvaluationFailureEscalated: () =>
+      concluding(
+        halfJudged("EvaluatorFail"),
+        "EvaluatorFail",
+        "EscalateEvaluationFailure",
+      ),
+    EvaluationBlockedEscalated: blockedFirst,
+    FinalizationUnavailableEscalated: () =>
+      finalized(finalizing(), "FinalizationResultUnavailable"),
+  };
   const expected: readonly (readonly [
-    Escalation,
+    Escalation["type"],
     TicketEvent["type"],
     readonly Obligation["type"][],
     string,
@@ -644,47 +773,51 @@ test("every resume re-enters where its wall implies, and the event names which",
     ],
   ];
   for (const [wall, event, owes, phase] of expected) {
-    const parked = parkedAt(wall);
-    const resumed = take(parked, decideResume(parked, 1));
+    const parked = walls[wall]();
+    assert.equal(wallOf(ticketAt(parked.post, id(1))), wall, wall);
+    const resumed = take(
+      parked.post,
+      decideResume(parked.post, 1),
+      parked.ledgers,
+    );
     assert.equal(resumed.decision.event.type, event, wall);
     assert.deepEqual(arms(resumed), owes, wall);
-    assert.equal(ticketAt(resumed.post, id(1)).phase, phase, wall);
-    assert.equal(
-      ticketAt(resumed.post, id(1)).escalation,
-      "NoEscalation",
-      wall,
-    );
+    assert.equal(phaseAt(resumed.post, id(1)), phase, wall);
   }
 });
 
 test("the evaluation wall's resume buys a work cycle above an intact history", () => {
-  const walled = graphOf([
-    ticketOn(config, {
-      phase: "Escalated",
-      escalation: "EvaluationFailureEscalated",
-      source: anAcceptedSource,
-      evaluations: [judgedInstance(1, 1, plan, () => "EvaluatorFail")],
-      workCyclesStarted: 1,
-      spawned: 1 + roster,
-    }),
-  ]);
-  const resumed = take(walled, decideResume(walled, 1));
+  const walled = concluding(
+    halfJudged("EvaluatorFail"),
+    "EvaluatorFail",
+    "EscalateEvaluationFailure",
+  );
+  const resumed = take(
+    walled.post,
+    decideResume(walled.post, 1),
+    walled.ledgers,
+  );
   assert.deepEqual(resumed.decision.event, {
     type: "TicketWorkResumed",
     value: 1,
   });
-  assert.deepEqual(resumed.decision.obligations, [executeWorkOf(walled, 2)]);
-  const post = ticketAt(resumed.post, id(1));
+  assert.deepEqual(resumed.decision.obligations, [
+    executeWorkOf(walled.post, 2),
+  ]);
   assert.deepEqual(
     owed(resumed.post, id(1)),
-    [workTaskOf(1, 2)],
+    [workTaskIdentity(1, 2)],
     "a fresh work cycle above an intact record",
   );
-  assert.deepEqual(post.evaluations, ticketAt(walled, id(1)).evaluations);
+  assert.equal(ledgerOne(walled).closedEvaluations.length, 1);
+  assert.deepEqual(
+    ledgerOne(resumed).closedEvaluations,
+    ledgerOne(walled).closedEvaluations,
+  );
 });
 
 test("a resume of a ticket that was never parked is refused, naming the ticket", () => {
-  const pending = graphOf([ticketOn(config, { phase: "Pending" })]);
+  const pending = graphOf([ticketOn(config)]);
   assert.deepEqual(decideResume(pending, 1), {
     type: "TicketRefused",
     value: { type: "TicketNotResumable", value: 1 },
@@ -692,10 +825,7 @@ test("a resume of a ticket that was never parked is refused, naming the ticket",
 });
 
 /** Pending tickets side by side, each at its first revision and depending on nothing. */
-const twoPending: TicketGraph = graphOf([
-  ticketOn(config, { phase: "Pending" }),
-  ticketOn(config, { phase: "Pending" }),
-]);
+const twoPending: TicketGraph = graphOf([ticketOn(config), ticketOn(config)]);
 
 /**
  * THE UPDATE'S REFUSALS COME IN THE PACKAGE'S ORDER. Each command fails every
@@ -753,13 +883,12 @@ test("a revoke owes a cancellation for every task that was running", () => {
   const working = workingFirst();
   const fromWork = take(working, decideRevoke(working, 1));
   assert.deepEqual(fromWork.decision.obligations, [
-    { type: "CancelTask", value: { ticket: 1, task: workTaskOf(1, 1) } },
+    { type: "CancelTask", value: { ticket: 1, task: workTaskIdentity(1, 1) } },
   ]);
   const settled = ticketAt(fromWork.post, id(1));
-  assert.equal(settled.phase, "Revoked");
-  assert.equal(settled.completions, 0);
-  assert.equal(settled.escalation, "NoEscalation");
-  assert.deepEqual(settled.evaluations, []);
+  assert.equal(settled.state, "Revoked");
+  assert.equal(ledgerOne(fromWork).completions, 0);
+  assert.deepEqual(ledgerInstances(settled, ledgerOne(fromWork)), []);
   assert.deepEqual(owed(fromWork.post, id(1)), []);
 
   const judging = judgingFirst();
@@ -772,19 +901,29 @@ test("a revoke owes a cancellation for every task that was running", () => {
     "every evaluator the stage still owes is stopped",
   );
   assert.deepEqual(
-    ticketAt(fromEvaluation.post, id(1)).evaluations,
-    ticketAt(judging, id(1)).evaluations,
+    ledgerOne(fromEvaluation).closedEvaluations,
+    heldInstances(ticketAt(judging, id(1)).state),
     "the judgement is kept as it stood: provenance survives the settlement",
   );
 });
 
 /** A chain 1 <- 2 <- 3 under sparse, numerically reversed ids, which the corpus never builds. */
 const chain: TicketGraph = {
-  tickets: new Map([
-    [id(6), ticketOn(config, { phase: "Pending" })],
-    [id(4), ticketOn(config, { phase: "Pending", dependencies: depsOf(6) })],
-    [id(1), ticketOn(config, { phase: "Pending", dependencies: depsOf(4) })],
-  ]),
+  tickets: new Map(
+    (
+      [
+        [6, depsOf()],
+        [4, depsOf(6)],
+        [1, depsOf(4)],
+      ] as const
+    ).map(([at, dependencies]) => {
+      const ticket = ticketOn(config, { dependencies });
+      return [
+        id(at),
+        { ...ticket, definition: { ...ticket.definition, id: at } },
+      ];
+    }),
+  ),
 };
 const stranded = evolve(chain, acceptedOf(decideRevoke(chain, 6)).event);
 
@@ -792,18 +931,15 @@ test("a revoke deep in a chain moves its own ticket and nobody else", () => {
   const decision = acceptedOf(decideRevoke(chain, 6));
   assert.deepEqual(decision.event, { type: "TicketRevoked", value: 6 });
   assert.deepEqual(decision.obligations, []);
-  assert.equal(ticketAt(stranded, id(6)).phase, "Revoked");
-  for (const waiting of [id(1), id(4)]) {
-    assert.equal(ticketAt(stranded, waiting).phase, "Pending");
-    assert.equal(ticketAt(stranded, waiting).escalation, "NoEscalation");
-  }
-  assert.equal(ticketAt(stranded, id(6)).escalation, "NoEscalation");
+  assert.equal(ticketAt(stranded, id(6)).state, "Revoked");
+  for (const waiting of [id(1), id(4)])
+    assert.equal(ticketAt(stranded, waiting).state, "Pending");
 });
 
 test("a revoke of the ticket in the middle leaves the one behind it waiting", () => {
   const settled = take(stranded, decideRevoke(stranded, 4));
-  assert.equal(ticketAt(settled.post, id(4)).phase, "Revoked");
-  assert.equal(ticketAt(settled.post, id(1)).phase, "Pending");
+  assert.equal(ticketAt(settled.post, id(4)).state, "Revoked");
+  assert.equal(ticketAt(settled.post, id(1)).state, "Pending");
 });
 
 /**
@@ -814,7 +950,7 @@ test("a revoke of the ticket in the middle leaves the one behind it waiting", ()
  */
 test("an event nothing owes any more falls through evolve", () => {
   const working = workingFirst();
-  const work = workTaskOf(1, 1);
+  const work = workTaskIdentity(1, 1);
   const accepted = completed(working, producedReport(work));
   assert.ok(
     graphEquals(evolve(accepted.post, accepted.decision.event), accepted.post),
@@ -842,17 +978,6 @@ test("an event nothing owes any more falls through evolve", () => {
     "a finalization result for the generation a resume superseded",
   );
 
-  const reworked = finalized(finalizing(), "FinalizationNeedsWork");
-  const earlier: TicketEvent = {
-    type: "TicketWorkProcessFailed",
-    value: { ticket: 1, task: workTaskOf(1, 1), evidence: 1 },
-  };
-  assert.equal(ticketAt(reworked.post, id(1)).workCyclesStarted, 2);
-  assert.ok(
-    graphEquals(evolve(reworked.post, earlier), reworked.post),
-    "a work failure for a cycle the ticket has moved past",
-  );
-
   assert.ok(
     graphEquals(
       evolve(working, {
@@ -874,10 +999,6 @@ test("an event nothing owes any more falls through evolve", () => {
     ),
     "a release of an id the fleet already holds",
   );
-  assert.ok(
-    graphEquals(evolve(working, { type: "TicketRevoked", value: 9 }), working),
-    "an event about a ticket the fleet does not hold",
-  );
   const done = finalized(finalizing(), "FinalizationSucceeded").post;
   assert.ok(
     graphEquals(evolve(done, { type: "TicketRevoked", value: 1 }), done),
@@ -885,18 +1006,36 @@ test("an event nothing owes any more falls through evolve", () => {
   );
 });
 
+test("an event that leaves a ticket where it stood leaves its ledger there too", () => {
+  const done = finalized(finalizing(), "FinalizationSucceeded");
+  assert.equal(ledgerOne(done).completions, 1);
+  assert.deepEqual(
+    evolveLedgers(done.post, done.ledgers, done.decision.event),
+    done.ledgers,
+    "a success landing on a Done ticket completes nothing a second time",
+  );
+  assert.deepEqual(
+    evolveLedgers(done.post, done.ledgers, {
+      type: "TicketCreated",
+      value: ticketAt(done.post, id(1)).definition,
+    }),
+    done.ledgers,
+    "a release of an id the fleet holds keeps the ledger that id has",
+  );
+});
+
 test("every fixture this suite builds is a shape the machine could have reached", () => {
-  for (const graph of [
-    chain,
-    stranded,
-    twoPending,
-    workingFirst(),
-    judgingFirst(),
+  const worlds: readonly World[] = [
+    { graph: chain, ledgers: ledgersOf(chain) },
+    { graph: stranded, ledgers: ledgersOf(stranded) },
+    { graph: twoPending, ledgers: ledgersOf(twoPending) },
+    { graph: workingFirst(), ledgers: ledgersOf(workingFirst()) },
+    { graph: judgingFirst(), ledgers: ledgersOf(judgingFirst()) },
     finalizing(),
-  ]) {
-    assert.ok(
-      accountsForAll(graph),
-      "a fixture accounts for all of its ids or none",
+  ];
+  for (const world of worlds)
+    assert.deepEqual(
+      failedInvariants(config, initialView(world.graph, world.ledgers)),
+      [],
     );
-  }
 });

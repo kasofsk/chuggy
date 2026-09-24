@@ -20,6 +20,10 @@
   instance and drives it with `begin`, `applyProduced`, `applyFailure`,
   `concludeStage`, `resumeBlocked` and `currentTaskObligations`, and
   `domain.qnt` calls `planValid` and `evaluatorKeys`; chuggy re-states none of
-  them. `Escalation.EvaluationBlockedEscalated` staying nullary where the
-  package's carries the instance is chuggy's own divergence, argued at the sum
-  in `ticket.qnt` and left to PR 9.
+  them.
+- The package's `ticket-domain/ticket.qnt` is not copied whole, because a
+  module importing it beside chuggy's would collide on every name they share.
+  Its text is instead held VERBATIM between the marker comments in `ticket.qnt`
+  (the types and helpers) and `domain.qnt` (the deciders, `evolve` and
+  `decisionValid`), at the same pin, and the same rule applies between the
+  markers: do not edit — change chuggy around it.
