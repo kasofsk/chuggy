@@ -6,7 +6,8 @@ import { ticketServiceRole, type Migration } from "../shared.ts";
  * the update its revision and not the pin, so every update's decision raised
  * `permission denied` and the partition could not be decided again.
  *
- * The api role keeps what 016 left it: the revision, and never the digest.
+ * The api role is untouched: it reads the pin's revision, never its digest, and
+ * updates neither.
  *
  * NO GUARD, BECAUSE NOTHING STORED MOVES. A grant held already is granted again
  * as a no-op, so a database given this grant by hand migrates the same.
