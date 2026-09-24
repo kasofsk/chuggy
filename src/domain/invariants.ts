@@ -35,7 +35,11 @@ import {
 } from "./ticket.ts";
 import { decisionValid } from "./decisionValid.ts";
 import { evolve } from "./evolve.ts";
-import { graphEquals } from "./equality.ts";
+import {
+  dependenciesEqual,
+  graphEquals,
+  releasedTicketEquals,
+} from "./equality.ts";
 import { isTerminalPhase } from "./phase.ts";
 
 /**
@@ -194,15 +198,44 @@ export const taskIdentitiesValid: Invariant = (_config, view) =>
 
 /**
  * The released definition is well-formed, in every reachable state: the ticket
- * is the one its definition names, and the definition satisfies the release's
- * own rule. Holding everywhere is what makes that rule a refusal.
+ * is the one its definition names, the definition satisfies the release's own
+ * rule — by the release and by every update alike — and the revision is
+ * positive. Holding everywhere is what makes that rule a refusal.
  */
 export const definitionsWellFormed: Invariant = (config, view) =>
   everyLiveTicket(
     view.post,
     (t, id) =>
-      t.definition.id === id && releasedTicketValid(config, t.definition),
+      t.definition.id === id &&
+      releasedTicketValid(config, t.definition) &&
+      t.revision > 0,
   );
+
+/**
+ * A definition moves only with its revision: against the state the last
+ * decision found, a ticket holds the definition and the revision it held, or
+ * it was Pending, still is, and holds the next revision under the same
+ * dependencies; a ticket the decision released is at the first. It goes red on
+ * an update that skipped a revision or landed on a dispatched ticket, and on
+ * any other event that touched the definition.
+ */
+export const revisionsAccounted: Invariant = (_config, view) =>
+  everyLiveTicket(view.post, (t, id) => {
+    const before = view.pre.tickets.get(id);
+    if (before === undefined) return t.revision === 1;
+    const kept =
+      releasedTicketEquals(t.definition, before.definition) &&
+      t.revision === before.revision;
+    const updated =
+      before.phase === "Pending" &&
+      t.phase === "Pending" &&
+      t.revision === before.revision + 1 &&
+      dependenciesEqual(
+        t.definition.dependencies,
+        before.definition.dependencies,
+      );
+    return kept || updated;
+  });
 
 /**
  * The source is pinned by the dispatch and by nothing else: a ticket carries
@@ -321,6 +354,7 @@ export const invariantBundle: readonly NamedInvariant[] = [
   { invariant: "idsAccounted", holds: idsAccounted },
   { invariant: "taskIdentitiesValid", holds: taskIdentitiesValid },
   { invariant: "definitionsWellFormed", holds: definitionsWellFormed },
+  { invariant: "revisionsAccounted", holds: revisionsAccounted },
   { invariant: "sourcePinned", holds: sourcePinned },
   {
     invariant: "finalizationGenerationHeld",

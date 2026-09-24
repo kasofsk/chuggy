@@ -102,6 +102,7 @@ const graph: TicketGraph = {
       {
         phase: "Pending",
         definition,
+        revision: 1,
         source: 0,
         evaluations: [instance],
         workCyclesStarted: 0,
@@ -123,6 +124,7 @@ test("generated JSON codec round-trips nested lists, sets, maps and records", ()
         {
           phase: "Pending",
           definition: wiredDefinition,
+          revision: 1,
           source: 0,
           evaluations: [wiredInstance],
           workCyclesStarted: 0,

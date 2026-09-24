@@ -36,6 +36,7 @@ function ticketIn(phase: TicketPhase, over: Partial<Ticket> = {}): Ticket {
   return {
     phase,
     definition: plainDefinitionOf(7),
+    revision: 1,
     source: 0,
     evaluations: [],
     workCyclesStarted: 0,

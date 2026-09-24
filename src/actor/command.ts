@@ -29,6 +29,22 @@ export function createTicketCommand(definition: ReleasedTicket): TicketCommand {
   return { type: "CreateTicket", value: definition };
 }
 
+/**
+ * An update replaces a Pending ticket's whole definition, written against the
+ * revision its author read; the definition names the ticket as a release's
+ * does, and `decide` refuses the two disagreeing.
+ */
+export function updateTicketCommand(
+  ticket: TicketId,
+  expectedRevision: number,
+  definition: ReleasedTicket,
+): TicketCommand {
+  return {
+    type: "UpdateTicket",
+    value: { ticket, expectedRevision, definition },
+  };
+}
+
 export function revokeTicketCommand(ticket: TicketId): TicketCommand {
   return { type: "RevokeTicket", value: ticket };
 }
@@ -73,6 +89,7 @@ export function commandSubject(command: TicketCommand): TicketId {
   switch (command.type) {
     case "CreateTicket":
       return asTicketId(command.value.id);
+    case "UpdateTicket":
     case "DispatchTicket":
     case "ReportFinalizationResult":
       return asTicketId(command.value.ticket);

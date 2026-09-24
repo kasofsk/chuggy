@@ -9,8 +9,8 @@
  * because nothing else ever entered one.
  *
  * LEGALITY IS WHAT A ROW COULD NOT BE IF IT WAS DECIDED. Its seq is the next
- * one, its ticket stands (a release's must not) and is the one any report it
- * carries is about, and its event moves the
+ * one, its ticket stands (a release's must not) and is the one any report or
+ * definition it carries names, and its event moves the
  * prefix it lands on. The last refuses no decided row, because a decided event
  * is never the identity (`eventsNeverIdentity`, an invariant the model
  * checks), and it refuses a replayed row, a stale one and one for a task
@@ -76,9 +76,14 @@ export function eventTicketStands(
   return event.type === "TicketCreated" ? !exists : exists;
 }
 
-/** Whether the report an event carries is about the ticket the event moves, which holds of every event carrying none. */
-export function eventReportTicketAgrees(event: TicketEvent): boolean {
+/**
+ * Whether the report or the definition an event carries names the ticket the
+ * event moves, which holds of every event carrying neither.
+ */
+export function eventPayloadTicketAgrees(event: TicketEvent): boolean {
   switch (event.type) {
+    case "TicketUpdated":
+      return event.value.definition.id === event.value.ticket;
     case "TicketEvaluationProgressed":
     case "TicketEvaluationPassed":
     case "TicketEvaluationBlocked":
@@ -104,8 +109,8 @@ export function eventReportTicketAgrees(event: TicketEvent): boolean {
 /**
  * Whether a stored history replays with no inert row: this image's semantics
  * on every row, dense seqs, every event's ticket standing at its replayed
- * prefix and named by the report it carries, and every event moving that
- * prefix.
+ * prefix and named by the report or definition it carries, and every event
+ * moving that prefix.
  */
 export function storedJournalLegalOn(stored: readonly StoredEntry[]): boolean {
   let replayed = genesis;
@@ -115,7 +120,7 @@ export function storedJournalLegalOn(stored: readonly StoredEntry[]): boolean {
       row.semantics !== decisionSemanticsVersionCurrent ||
       row.entry.seq !== next ||
       !eventTicketStands(replayed, row.entry.event) ||
-      !eventReportTicketAgrees(row.entry.event)
+      !eventPayloadTicketAgrees(row.entry.event)
     ) {
       return false;
     }

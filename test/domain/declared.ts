@@ -1,6 +1,7 @@
 /**
  * The rosters `model/domain.qnt` declares, read out of the model at run time:
- * its invariant bundle, and the actions its `step` relation offers.
+ * its invariant bundle, and the actions its `step` relation offers; and the
+ * actions the directed emitter's step relations offer beyond those.
  *
  * THE MODEL IS THE SPECIFICATION, so a list of its members maintained by hand
  * here would go stale the moment one was added there — silently, which is the failure a
@@ -90,4 +91,31 @@ export function declaredActions(root: string): readonly string[] {
     );
   }
   return names;
+}
+
+/**
+ * The actions `model/mc/mc_chuggy_directed.qnt`'s step relations offer that
+ * the model's own `step` does not, in the order they first appear. A golden it
+ * emits records these names, so a replayer's dispatch table has to cover them
+ * too.
+ */
+export function directedActions(root: string): readonly string[] {
+  const source = readFileSync(
+    join(root, "model", "mc", "mc_chuggy_directed.qnt"),
+    "utf8",
+  );
+  const machine = new Set(declaredActions(root));
+  const offered: string[] = [];
+  for (const relation of source.matchAll(/\n {2}action (\w+) = any \{/g)) {
+    const names = bareNames(blockBody(source, relation[0]) ?? "");
+    if (names === undefined) {
+      throw new Error(
+        `declared: mc_chuggy_directed's ${String(relation[1])} is not the choice of names this reader expects`,
+      );
+    }
+    for (const name of names) {
+      if (!machine.has(name) && !offered.includes(name)) offered.push(name);
+    }
+  }
+  return offered;
 }

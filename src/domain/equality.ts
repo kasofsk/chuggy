@@ -60,19 +60,27 @@ function dependenciesInOrder(
   return [...dependencies].sort((a, b) => a - b);
 }
 
+/** Whether two dependency sets name the same tickets. */
+export function dependenciesEqual(
+  left: ReadonlySet<number>,
+  right: ReadonlySet<number>,
+): boolean {
+  return listEquals(
+    dependenciesInOrder(left),
+    dependenciesInOrder(right),
+    sameValue,
+  );
+}
+
 /** Whether two releases froze the same record, every declared field compared. */
-function ticketEqualsDefinition(
+export function releasedTicketEquals(
   left: ReleasedTicket,
   right: ReleasedTicket,
 ): boolean {
   return (
     left.id === right.id &&
     left.content === right.content &&
-    listEquals(
-      dependenciesInOrder(left.dependencies),
-      dependenciesInOrder(right.dependencies),
-      sameValue,
-    ) &&
+    dependenciesEqual(left.dependencies, right.dependencies) &&
     taskDefinitionEquals(left.workConfiguration, right.workConfiguration) &&
     listEquals(
       left.evaluationPlan.stages,
@@ -106,7 +114,8 @@ function ticketEqualsInstance(
 export function ticketEquals(left: Ticket, right: Ticket): boolean {
   return (
     left.phase === right.phase &&
-    ticketEqualsDefinition(left.definition, right.definition) &&
+    releasedTicketEquals(left.definition, right.definition) &&
+    left.revision === right.revision &&
     left.source === right.source &&
     listEquals(left.evaluations, right.evaluations, ticketEqualsInstance) &&
     left.workCyclesStarted === right.workCyclesStarted &&

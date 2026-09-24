@@ -119,25 +119,47 @@ export function releaseRef(id: number, slot: number): number {
   return 20 * id + slot;
 }
 
-/** The definition a release of this ticket carries, over the dependencies and the plan the author drew. */
-export function releasedTicketOf(
+/** The band each revision's references are shifted by, so a number says which revision pinned it. */
+export const revisionBand = 1000;
+
+/** The references an update to `revision` pins: the release's, shifted into that revision's band. */
+export function revisionRef(
   id: number,
+  revision: number,
+  slot: number,
+): number {
+  return releaseRef(id, slot) + revisionBand * (revision - 1);
+}
+
+/** The definition this revision of this ticket carries, over the dependencies and the plan the author drew. */
+export function revisedTicketOf(
+  id: number,
+  revision: number,
   dependencies: ReadonlySet<number>,
   stages: readonly StageDefinition[],
 ): ReleasedTicket {
   return {
     id,
-    content: releaseRef(id, 1),
+    content: revisionRef(id, revision, 1),
     dependencies,
     workConfiguration: {
-      workload: releaseRef(id, 2),
-      inputs: releaseRef(id, 3),
-      executionRequirements: releaseRef(id, 4),
-      resultContract: releaseRef(id, 5),
+      workload: revisionRef(id, revision, 2),
+      inputs: revisionRef(id, revision, 3),
+      executionRequirements: revisionRef(id, revision, 4),
+      resultContract: revisionRef(id, revision, 5),
     },
     evaluationPlan: { stages },
-    finalizationConfiguration: releaseRef(id, 6),
+    finalizationConfiguration: revisionRef(id, revision, 6),
   };
+}
+
+/** The definition a release of this ticket carries: its first revision. */
+export function releasedTicketOf(
+  id: number,
+  dependencies: ReadonlySet<number>,
+  stages: readonly StageDefinition[],
+): ReleasedTicket {
+  return revisedTicketOf(id, 1, dependencies, stages);
 }
 
 /**
