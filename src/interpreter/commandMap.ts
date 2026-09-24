@@ -4,7 +4,7 @@
  *
  * IT IS PURE AND IT IS THE ONLY ONE FOR AN ENVELOPE THAT NAMES ROWS. The
  * adapter reads the rows an envelope names — the retained revision a release
- * pins, the escalation an answer resolves, the request a finalizer's result
+ * or an update pins, the escalation an answer resolves, the request a finalizer's result
  * answers — and the writer reads the source a dispatch pins; both hand what
  * they read here, and nothing else turns such an envelope into a
  * `TicketCommand`. So what it means is stated once, beside the envelopes, and
@@ -22,6 +22,7 @@ import {
   reportFinalizationResultCommand,
   resumeTicketCommand,
   revokeTicketCommand,
+  updateTicketCommand,
   type TicketCommand,
 } from "../actor/command.ts";
 import { assertNever } from "../domain/assertNever.ts";
@@ -50,6 +51,14 @@ export type CommandMaterials =
   | {
       readonly envelope: "ReleaseDraft";
       readonly ticket: TicketId;
+      readonly authoring: ReleaseAuthoring;
+      readonly material: TicketDefinitionMaterial;
+    }
+  | {
+      /** An update resolves its definition exactly as the first release does. */
+      readonly envelope: "UpdateTicket";
+      readonly ticket: TicketId;
+      readonly expectedRevision: number;
       readonly authoring: ReleaseAuthoring;
       readonly material: TicketDefinitionMaterial;
     }
@@ -97,6 +106,16 @@ export function ticketCommandOf(materials: CommandMaterials): TicketCommand {
       return materials.command.ticketCommand;
     case "ReleaseDraft":
       return createTicketCommand(
+        releasedTicketDefinition(
+          materials.ticket,
+          materials.authoring,
+          materials.material,
+        ),
+      );
+    case "UpdateTicket":
+      return updateTicketCommand(
+        materials.ticket,
+        materials.expectedRevision,
         releasedTicketDefinition(
           materials.ticket,
           materials.authoring,

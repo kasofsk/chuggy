@@ -101,6 +101,7 @@ const definitionMutants: FieldMutants<ReleasedTicket> = {
 const ticketMutants: FieldMutants<Ticket> = {
   phase: (t) => ({ ...t, phase: "Done" }),
   definition: (t) => ({ ...t, definition: definitionMutants.id(t.definition) }),
+  revision: (t) => ({ ...t, revision: t.revision + 1 }),
   source: (t) => ({ ...t, source: t.source + 1 }),
   evaluations: (t) => ({ ...t, evaluations: [judged] }),
   workCyclesStarted: (t) => ({

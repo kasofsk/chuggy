@@ -34,6 +34,7 @@ import type {
   TicketGraph,
 } from "../../src/domain/generated/modelTypes.ts";
 import { releasedTicketOf } from "../../src/domain/config.ts";
+import { updateOf } from "../../src/domain/enablement.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import {
   decodeEvaluationFailureDisposition,
@@ -52,6 +53,7 @@ import { decodeTicketId, itfToWire } from "../itf/vocabulary.ts";
  */
 export const replayActions: readonly string[] = [
   "releaseTicket",
+  "updateTicket",
   "revoke",
   "dispatch",
   "taskDone",
@@ -60,6 +62,13 @@ export const replayActions: readonly string[] = [
   "refuse",
   "settle",
 ];
+
+/**
+ * The actions the directed emitter's step relations offer beyond the model's,
+ * each drawing and sending what a machine action does from a narrower set. It
+ * is checked against `model/mc/mc_chuggy_directed.qnt` rather than trusted.
+ */
+export const emitterActions: readonly string[] = ["refuseUpdate"];
 
 /** What `replayStep` throws when a trace names an action this table has no arm for. */
 export const unknownActionMessage = "is not an action of this machine";
@@ -167,6 +176,10 @@ function commandOf(
           drawnStages(need(picks.stages, "stages")),
         ),
       });
+    case "updateTicket":
+      return unasked(
+        updateOf(ticketAt(pre, j()), drawnStages(need(picks.stages, "stages"))),
+      );
     case "revoke":
       return unasked({ type: "RevokeTicket", value: j() });
     case "dispatch":
@@ -196,6 +209,7 @@ function commandOf(
     case "resumeTicket":
       return unasked({ type: "ResumeTicket", value: j() });
     case "refuse":
+    case "refuseUpdate":
       return unasked(
         decodeTicketCommand(itfToWire(need(picks.command, "command"))),
       );

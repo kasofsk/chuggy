@@ -36,6 +36,7 @@ import { SelectorSettingsPage } from "./SelectorSettingsPage.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
 import { TicketCreation } from "./TicketCreation.tsx";
+import { TicketEdit } from "./TicketEdit.tsx";
 import { TicketPage } from "./TicketPage.tsx";
 
 export function Landing(): ReactNode {
@@ -174,6 +175,12 @@ const ticketRoute = createRoute({
   component: TicketPage,
 });
 
+const ticketEditRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/tickets/$ticket/edit",
+  component: TicketEdit,
+});
+
 const routeTree = rootRoute.addChildren([
   landingRoute,
   forgeSetupRoute,
@@ -186,6 +193,7 @@ const routeTree = rootRoute.addChildren([
     repositoryRoute,
     ticketCreationRoute,
     ticketRoute,
+    ticketEditRoute,
   ]),
 ]);
 

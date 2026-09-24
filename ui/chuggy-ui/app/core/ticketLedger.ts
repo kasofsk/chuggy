@@ -37,7 +37,7 @@
  * neighbour.
  *
  * EVERY LOOP IS BOUNDED BY SOMETHING DECLARED. A cycle draws one row per
- * stage the authoring declares and one per stage the page holds beyond it,
+ * stage the program declares and one per stage the page holds beyond it,
  * bounded by `nativeHttpDraftStagesMax` and by the page; within a stage, one
  * row per evaluator per generation the page holds for it, bounded by the
  * page. A task's `stage`, `generation` and
@@ -54,20 +54,24 @@
  * A ROLLUP SAYS HOW MUCH OF ITSELF IT COULD SEE. `complete` is false wherever
  * the page cannot have held every execution of a cycle — a short page, a work
  * run cut off it, a stage row with no evaluators, a stage short of the roster
- * it was authored with — so a sum is never read as the ticket's own.
+ * it was released with — so a sum is never read as the ticket's own.
  */
 
 import type {
-  DraftResponse,
   ExecutionSummary,
   ExecutionsResponse,
+  TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import type { ExecutionTaskKind } from "../../../../src/contract/rosters.ts";
 import { identityCycle, runSpanOf, runSpendOf } from "./runTotals.ts";
 import type { RunSpan, RunSpend } from "./runTotals.ts";
 
-/** The authoring the ledger reads, which is the draft read's own record. */
-export type TicketAuthoring = DraftResponse["authoring"];
+/**
+ * The evaluation program the ledger groups by: the one the ticket's own read
+ * says it was last released with, which is what its cycles ran, and never the
+ * draft's, which a Pending ticket's author may have revised past it.
+ */
+export type TicketProgram = NonNullable<TicketResponse["program"]>;
 
 /** How a fan-out set settled, once every task in it is accounted for. */
 export type SetVerdict =
@@ -235,16 +239,16 @@ function cycleBucketsOf(page: ExecutionsResponse): Map<number, CycleBucket> {
 }
 
 /**
- * The width an evaluation stage was expected to hold: the authoring's own
+ * The width an evaluation stage was expected to hold: the program's own
  * evaluator count, or the page's own count where the stage is outside the
- * program the ticket was authored with.
+ * program the ticket was released with.
  */
 function stageExpected(
   stage: number,
   evaluators: number,
-  authoring: TicketAuthoring,
+  program: TicketProgram,
 ): number {
-  return authoring.program[stage - 1]?.evaluators.length ?? evaluators;
+  return program[stage - 1]?.evaluators.length ?? evaluators;
 }
 
 interface StageAggregate {
@@ -285,7 +289,7 @@ function evaluatorRowsOf(
  */
 function stageAggregatesOf(
   rows: readonly ExecutionSummary[],
-  authoring: TicketAuthoring,
+  program: TicketProgram,
 ): Map<number, StageAggregate> {
   const byStage = new Map<number, Map<number, Map<number, ExecutionSummary>>>();
   for (const row of rows) {
@@ -309,7 +313,7 @@ function stageAggregatesOf(
     aggregates.set(stage, {
       stage,
       evaluators,
-      expected: stageExpected(stage, current.length, authoring),
+      expected: stageExpected(stage, current.length, program),
       verdict: setVerdict(executions),
       span: runSpanOf(executions),
     });
@@ -334,7 +338,7 @@ function stageStopped(verdict: SetVerdict): boolean {
   return verdict === "Failed" || verdict === "Cancelled";
 }
 
-/** What a stage the authoring declares holds: an aggregate, a gap, or a reason nothing ran. */
+/** What a stage the program declares holds: an aggregate, a gap, or a reason nothing ran. */
 function programStageRow(
   stage: number,
   aggregates: ReadonlyMap<number, StageAggregate>,
@@ -350,7 +354,7 @@ function programStageRow(
 }
 
 /**
- * One row per stage the authoring declares and one per stage this cycle holds
+ * One row per stage the program declares and one per stage this cycle holds
  * beyond it, so a stage outside the program is drawn without its own stage
  * number ever becoming a count of rows.
  */
@@ -396,15 +400,15 @@ function cycleComplete(
 
 function cycleFacts(
   bucket: CycleBucket,
-  authoring: TicketAuthoring,
+  program: TicketProgram,
   standing: CycleStanding,
   page: ExecutionsResponse,
 ): Omit<Cycle, "ordinal"> {
   const work =
     bucket.work === undefined ? undefined : taskSetOf(bucket.work, 1);
   const stages = stageRowsOf(
-    stageAggregatesOf(bucket.evaluations, authoring),
-    authoring.program.length,
+    stageAggregatesOf(bucket.evaluations, program),
+    program.length,
   );
   const held = [...(bucket.work ?? []), ...bucket.evaluations];
   return {
@@ -425,7 +429,7 @@ function cycleFacts(
  */
 export function ticketLedger(
   page: ExecutionsResponse,
-  authoring: TicketAuthoring,
+  program: TicketProgram,
 ): Ledger {
   const buckets = [...cycleBucketsOf(page).entries()].sort(
     ([left], [right]) => left - right,
@@ -435,7 +439,7 @@ export function ticketLedger(
     ordinal: cycle,
     ...cycleFacts(
       bucket,
-      authoring,
+      program,
       index === buckets.length - 1 ? "Current" : "Superseded",
       page,
     ),

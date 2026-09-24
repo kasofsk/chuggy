@@ -189,6 +189,45 @@ export function mutationRefusalSentence(code: MutationRefusalCode): string {
   }
 }
 
+/**
+ * The conflicts the draft door answers a revision with. `DraftChanged` is the
+ * version fence and `DraftNotEditable` a draft whose ticket has left Pending;
+ * `DependenciesLocked` is a revision of a released draft that moves what its
+ * ticket depends on, which the update it would release is refused for anyway.
+ */
+export const draftRevisionRefusalCodes = [
+  "DraftChanged",
+  "DraftNotEditable",
+  "DependenciesLocked",
+] as const;
+export type DraftRevisionRefusalCode =
+  (typeof draftRevisionRefusalCodes)[number];
+
+export function draftRevisionRefusalSentence(
+  code: DraftRevisionRefusalCode,
+): string {
+  switch (code) {
+    case "DraftChanged":
+      return "the draft changed while this form was open — it has been read again, so submitting now revises the current one";
+    case "DraftNotEditable":
+      return "the draft is closed to revision: only a pending ticket's draft can be revised";
+    case "DependenciesLocked":
+      return "what this ticket depends on cannot change once it is released";
+  }
+}
+
+/** Why a revision did not get through: the door's own conflict where it named
+ * one, and a failure read as any submission's otherwise. */
+export function draftRevisionFailureSentence(failure: ApiFailure): string {
+  const code =
+    failure.outcome === "Conflict"
+      ? draftRevisionRefusalCodes.find((known) => known === failure.code)
+      : undefined;
+  return code === undefined
+    ? operationFailureSentence(failure)
+    : draftRevisionRefusalSentence(code);
+}
+
 /** The coded deferrals the same two routes answer with, each meaning try again. */
 export const mutationDeferralCodes = [
   "DispatchBacklog",

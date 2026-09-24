@@ -2,9 +2,10 @@
  * One ticket: where it is, what may be done to it, what has run for it and
  * what all of that cost.
  *
- * The draft is read once here and handed to everything that needs it, so the
- * brief, the authoring the ledger groups by and the provenance are one
- * observation rather than three that can disagree on screen. The situation
+ * The brief, the configuration and the program the ledger groups by are the
+ * ticket's own, which is what it runs, and not the draft's, which a Pending
+ * ticket's author may have revised past it; the draft is read for the
+ * provenance alone. The situation
  * column is short and the detail is in the main body under the ledger, reached
  * by anchors rather than tabs: the ledger is the page, and a tab would hide it.
  * One clock ticks the whole page, so a running row, a cycle's open span and a
@@ -150,9 +151,8 @@ function TicketBody(props: {
   readonly nowMs: number;
 }): ReactNode {
   const ticket = readValue(props.reads.ticketState);
-  const draft = readValue(props.reads.draftState);
   const page = readValue(props.reads.pageState);
-  const facts = ticketPageFacts(ticket, draft, page);
+  const facts = ticketPageFacts(ticket, page);
   const twoColumn = useViewportAtLeastEm(viewportTwoColumnEm);
   const actions = (
     <TicketActions
@@ -174,7 +174,7 @@ function TicketBody(props: {
       {ticket === undefined ? null : (
         <TicketHead
           ticket={ticket}
-          intent={draft?.brief?.intent}
+          intent={ticket.brief?.intent}
           page={page}
           truncated={facts.truncated}
           nowMs={props.nowMs}
@@ -192,12 +192,13 @@ function TicketBody(props: {
         />
         <TicketMain
           partition={props.partition}
+          ticketState={props.reads.ticketState}
           draftState={props.reads.draftState}
           ledger={
             <TicketLedgerPanel
               partition={props.partition}
               page={props.reads.pageState}
-              authoring={facts.authoring}
+              program={facts.program}
               nowMs={props.nowMs}
             />
           }

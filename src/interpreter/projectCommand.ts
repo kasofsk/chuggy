@@ -32,6 +32,12 @@
  * writes. It arrives at a writer through `parseStoredProjectCommand` and never
  * through the ingress parser, which is what makes the exclusion a shape rather
  * than a check that could be skipped.
+ *
+ * `UpdateTicket` IS KEPT OUT FOR `CreateTicket`'S REASON. Its definition is
+ * what a release resolves from the draft and the configuration revision the
+ * draft pins, which no principal authors; the `UpdateTicket` envelope names
+ * that draft revision and the ticket revision it was written against, and the
+ * writer resolves the definition as the first release does.
  */
 
 import type { TicketCommand } from "../actor/command.ts";
@@ -45,6 +51,7 @@ export type OperationTicketCommand = Exclude<
   {
     readonly type:
       | "CreateTicket"
+      | "UpdateTicket"
       | "ReportFinalizationResult"
       | "ReportTaskTerminal"
       | "DispatchTicket";
@@ -126,6 +133,7 @@ export function asOperationTicketCommand(
 ): OperationTicketCommand {
   if (
     command.type === "CreateTicket" ||
+    command.type === "UpdateTicket" ||
     command.type === "ReportFinalizationResult" ||
     command.type === "DispatchTicket" ||
     isCompletionTicketCommand(command)
@@ -152,6 +160,15 @@ export type ProjectCommand =
       readonly version: 1;
       readonly command: "ReleaseDraft";
       readonly ticket: TicketId;
+      readonly authoringVersion: number;
+      readonly configurationRevision: string;
+    }
+  | {
+      readonly version: 1;
+      readonly command: "UpdateTicket";
+      readonly ticket: TicketId;
+      /** The ticket revision the author read, which `decide` refuses once it has moved. */
+      readonly expectedRevision: number;
       readonly authoringVersion: number;
       readonly configurationRevision: string;
     }

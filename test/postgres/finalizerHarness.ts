@@ -80,6 +80,7 @@ import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
 import type { ChangeProposalForges } from "../../src/interpreter/changeProposal.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
+import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import { gitPromotion } from "../../src/adapters/git/gitPromotion.ts";
 import {
   finalizerPass,
@@ -671,6 +672,93 @@ export async function finalizerProject(
   };
 }
 
+/** A brief as its release stored it, which is the shape `ticket_definition.brief` holds. */
+type StoredBrief = Readonly<Record<string, unknown>>;
+
+/**
+ * The material a release stores beside `brief`: the content digest the brief
+ * is held to and the landing it froze, over `rest` for everything else.
+ */
+function finalizerReleasedMaterial(
+  brief: StoredBrief,
+  rest: Readonly<Record<string, unknown>> = { tasks: [] },
+): { definition: string; digest: string } {
+  const finalization = brief["finalization"] as StoredBrief | undefined;
+  const material = {
+    ...rest,
+    content: { digest: materialDigest(brief) },
+    finalization: {
+      ...finalization,
+      digest: materialDigest(finalization ?? {}),
+    },
+  };
+  return {
+    definition: JSON.stringify(material),
+    digest: materialDigest(material),
+  };
+}
+
+/**
+ * Stores `brief` as the one `keys`' ticket was released with, as a fixture
+ * that writes its ticket by hand rather than releasing it has to.
+ */
+export async function finalizerStoreReleasedBrief(
+  query: (sql: string, values: readonly unknown[]) => Promise<unknown>,
+  keys: readonly unknown[],
+  brief: StoredBrief,
+): Promise<void> {
+  const released = finalizerReleasedMaterial(brief);
+  await query(
+    `INSERT INTO ticket_definition (tenant,project,ticket,definition,digest,brief)
+     VALUES ($1,$2,$3,$4::jsonb,$5,$6::jsonb)`,
+    [...keys, released.definition, released.digest, JSON.stringify(brief)],
+  );
+}
+
+/**
+ * Rewrites the brief a released ticket runs with, as a case about a brief its
+ * release did not carry has to: a ticket runs what its release stored, so the
+ * draft is not where such a case can put it.
+ */
+async function finalizerReleasedBrief(
+  rig: FinalizerRig,
+  partition: Partition,
+  ticket: number,
+  edit: (brief: StoredBrief) => StoredBrief,
+): Promise<void> {
+  const keys = [partition.tenant, partition.project, ticket];
+  const [row] = await rig.harness.query(
+    `SELECT brief,definition FROM ticket_definition
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    keys,
+  );
+  const brief = row?.["brief"] as StoredBrief | null | undefined;
+  if (row === undefined || brief === null || brief === undefined)
+    throw new Error("finalizer harness: the ticket was released with no brief");
+  const edited = edit(brief);
+  const released = finalizerReleasedMaterial(
+    edited,
+    row["definition"] as StoredBrief,
+  );
+  await rig.harness.query(
+    `UPDATE ticket_definition SET brief=$4::jsonb,definition=$5::jsonb,digest=$6
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [...keys, JSON.stringify(edited), released.definition, released.digest],
+  );
+}
+
+/** `brief` with `field` set to `value`, or without it where `value` is null. */
+function briefWith(
+  brief: StoredBrief,
+  field: string,
+  value: unknown,
+): StoredBrief {
+  const rest = Object.fromEntries(
+    Object.entries(brief).filter(([key]) => key !== field),
+  );
+  return value === null ? rest : { ...rest, [field]: value };
+}
+
 /**
  * The branch this project's ticket names, or none. Every harness draft carries
  * a brief naming one and a finalization's target is narrowed by it, so a
@@ -683,14 +771,9 @@ export async function finalizerBriefBranch(
   ticket: number,
   branch: string | null,
 ): Promise<void> {
-  const updated = await rig.harness.query(
-    `UPDATE draft_brief SET branch=$4
-      WHERE tenant=$1 AND project=$2 AND ticket=$3 RETURNING ticket`,
-    [partition.tenant, partition.project, ticket, branch],
+  await finalizerReleasedBrief(rig, partition, ticket, (brief) =>
+    briefWith(brief, "branch", branch),
   );
-  if (updated.length !== 1) {
-    throw new Error("finalizer harness: the ticket carries no brief");
-  }
 }
 
 /**
@@ -705,14 +788,20 @@ export async function finalizerBriefFinalizationTarget(
   target: string,
   mode: BriefFinalizationMode = "Push",
 ): Promise<void> {
-  const updated = await rig.harness.query(
-    `UPDATE draft_brief SET finalization_target=$4, finalization_mode=$5
-      WHERE tenant=$1 AND project=$2 AND ticket=$3 RETURNING ticket`,
-    [partition.tenant, partition.project, ticket, target, mode],
+  await finalizerReleasedBrief(rig, partition, ticket, (brief) =>
+    briefWith(brief, "finalization", { mode, target }),
   );
-  if (updated.length !== 1) {
-    throw new Error("finalizer harness: the ticket carries no brief");
-  }
+}
+
+/** The landing this project's ticket concludes under, set to one that lands nothing. */
+export async function finalizerBriefLandsNothing(
+  rig: FinalizerRig,
+  partition: Partition,
+  ticket: number,
+): Promise<void> {
+  await finalizerReleasedBrief(rig, partition, ticket, (brief) =>
+    briefWith(brief, "finalization", { mode: "None" }),
+  );
 }
 
 /** Hexadecimal no other call has produced, at least as long as the widest identity a case needs. */

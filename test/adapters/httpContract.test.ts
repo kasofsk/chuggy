@@ -358,6 +358,35 @@ test("a purpose-specific mutation becomes its one application command", () => {
   );
 });
 
+test("an update names the draft revision it pins and the ticket revision its author read", () => {
+  const update = {
+    mutation: "UpdateTicket",
+    ticket: 7,
+    expectedRevision: 2,
+    authoringVersion: 3,
+    configurationRevision: "revision",
+  };
+  assert.deepEqual(parseSubmission("operation", "Key", update).command, {
+    version: 1,
+    command: "UpdateTicket",
+    ticket: 7,
+    expectedRevision: 2,
+    authoringVersion: 3,
+    configurationRevision: "revision",
+  });
+  assert.throws(() =>
+    parseSubmission("operation", "Key", { ...update, expectedRevision: 0 }),
+  );
+  assert.throws(() =>
+    parseSubmission("operation", "Key", {
+      mutation: "UpdateTicket",
+      ticket: 7,
+      authoringVersion: 3,
+      configurationRevision: "revision",
+    }),
+  );
+});
+
 test("the public mutation union rejects internal commands and unknown fields", () => {
   assert.throws(() =>
     parseSubmission("operation", "key", {

@@ -207,6 +207,7 @@ test("recent ticket pages expose only an opaque continuation cursor", () => {
           sequence: 7,
           releasedAt: asPublicInstant("2026-01-01T00:00:00Z"),
           changedAt: asPublicInstant("2026-01-01T00:00:07Z"),
+          revision: 1,
           revokedDependencies: [],
         },
       ],
@@ -489,6 +490,7 @@ test("draft revision and deletion map every closed result", () => {
     { value: { revised: "ConfigurationNotFound" }, status: 404 },
     { value: { revised: "RepositoryNotBound" }, status: 404 },
     { value: { revised: "LandingUnbranched" }, status: 422 },
+    { value: { revised: "DependenciesLocked" }, status: 409 },
   ] as const;
   for (const each of populated(revisions, "draft revision outcomes")) {
     assert.equal(
@@ -508,6 +510,35 @@ test("draft revision and deletion map every closed result", () => {
       each.status,
     );
   }
+});
+
+test("a released draft's dependencies are refused by their own code", () => {
+  assert.deepEqual(
+    draftRevisionResponse({
+      result: "Authorized",
+      value: { revised: "DependenciesLocked" },
+    }).body,
+    {
+      error: {
+        code: "DependenciesLocked",
+        message: "A released ticket's dependencies cannot change.",
+      },
+    },
+  );
+});
+
+test("a reopened draft is read beside the version its ticket was last released at", () => {
+  const body = draftResponse({ ...draft, releasedAuthoringVersion: 2 })
+    .body as { releasedAuthoringVersion?: unknown };
+  assert.equal(body.releasedAuthoringVersion, 2);
+  assert.equal(
+    Object.hasOwn(
+      draftResponse(draft).body as object,
+      "releasedAuthoringVersion",
+    ),
+    false,
+    "a draft never released names no released version",
+  );
 });
 
 test("dispatch view authorization preserves reset and page outcomes", () => {

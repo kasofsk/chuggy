@@ -24,6 +24,7 @@ import type {
   Ticket,
   TicketEvent,
   TicketGraph,
+  TicketUpdate,
   WorkFailureEvent,
 } from "./generated/modelTypes.ts";
 import { resumeBlocked } from "./evaluation.ts";
@@ -61,6 +62,7 @@ export function eventTicket(event: TicketEvent): TicketId {
     case "TicketEvaluationResumed":
     case "TicketFinalizationResumed":
       return asTicketId(event.value);
+    case "TicketUpdated":
     case "TicketDispatched":
     case "TicketWorkResultAccepted":
     case "TicketWorkProcessFailed":
@@ -75,6 +77,17 @@ export function eventTicket(event: TicketEvent): TicketId {
     case "TicketFinalizationUnavailable":
       return asTicketId(event.value.ticket);
   }
+}
+
+/**
+ * An update, which lands only on a ticket still Pending and only as the
+ * revision after the one it holds; the definition it carries replaces the
+ * ticket's whole.
+ */
+function evolveUpdate(ticket: Ticket, update: TicketUpdate): Ticket {
+  return ticket.phase === "Pending" && update.revision === ticket.revision + 1
+    ? { ...ticket, definition: update.definition, revision: update.revision }
+    : ticket;
 }
 
 /** Park on the desk, naming the wall; where Retry resumes is the wall's own (`resumeOf`). */
@@ -273,6 +286,8 @@ export function evolveTicket(ticket: Ticket, event: TicketEvent): Ticket {
   switch (event.type) {
     case "TicketCreated":
       return ticket;
+    case "TicketUpdated":
+      return evolveUpdate(ticket, event.value);
     case "TicketDispatched":
       return ticket.phase === "Pending"
         ? { ...enterWork(ticket), source: event.value.source }

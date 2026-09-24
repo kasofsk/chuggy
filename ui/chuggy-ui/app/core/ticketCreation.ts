@@ -515,20 +515,49 @@ export function creationOffered<T>(
     : [chosen, ...offered];
 }
 
+/** What one submit releases: a new ticket, or a Pending one's next revision. */
+export type CreationMotion = "Release" | "Update";
+
+/** The motion's own words: what it is called, and what it is once settled. */
+function creationMotionWords(motion: CreationMotion): {
+  readonly noun: string;
+  readonly done: string;
+  readonly submitting: string;
+} {
+  switch (motion) {
+    case "Release":
+      return {
+        noun: "release",
+        done: "released",
+        submitting: "creating the draft and releasing it…",
+      };
+    case "Update":
+      return {
+        noun: "update",
+        done: "updated",
+        submitting: "revising the draft and releasing the update…",
+      };
+  }
+}
+
 /** Where one submit has got to, for a screen that draws a line and not a log. */
-export function creationStepSentence(step: OperationStep): string {
+export function creationStepSentence(
+  step: OperationStep,
+  motion: CreationMotion = "Release",
+): string {
+  const words = creationMotionWords(motion);
   switch (step.step) {
     case "Submitting":
-      return "creating the draft and releasing it…";
+      return words.submitting;
     case "Backlogged":
       return `the API is deferring this; trying again in ${String(step.retryAfterSeconds)}s`;
     case "Following":
-      return "waiting for the actor to decide the release…";
+      return `waiting for the actor to decide the ${words.noun}…`;
     case "Confirming":
-      return "waiting for the project to catch up with the release…";
+      return `waiting for the project to catch up with the ${words.noun}…`;
     case "Settled":
       return step.state === "Succeeded"
-        ? "released"
+        ? words.done
         : operationStateSentence(step.state);
     case "Abandoned":
       return step.reason;

@@ -102,18 +102,26 @@ chmod -R u+w "$WORK/readonly"
 check "a corpus it cannot write to still replays clean" 0 "$RC" "replayed clean"
 
 # --- A decision the model never took ------------------------------------------
+#
+# The first release the golden decides is the one tampered with, wherever in
+# the trace it falls: a golden may open on a refusal.
 
 fixture "$WORK/tampered"
-node -e '
+TAMPERED="$(node -e '
 const fs = require("fs")
 const doc = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
 const lastStep = doc.vars.find((v) => v.endsWith("::lastStep"))
-doc.states[1][lastStep].value.event.value.content = { "#bigint": "999999" }
+const at = doc.states.findIndex(
+	(s) => s[lastStep].tag === "Decided" && s[lastStep].value.event.tag === "TicketCreated",
+)
+if (at < 0) throw new Error("the golden decides no release")
+doc.states[at][lastStep].value.event.value.content = { "#bigint": "999999" }
 fs.writeFileSync(process.argv[1], JSON.stringify(doc, null, 2) + "\n")
-' "$WORK/tampered/$GOLDEN.itf.json"
+process.stdout.write(String(at))
+' "$WORK/tampered/$GOLDEN.itf.json")"
 run_gate "$WORK/tampered"
 check "a decision that is not the model's is a finding" 1 "$RC" "the decision diverged"
-grep -qF "$GOLDEN state 1" "$OUT" || {
+grep -qF "$GOLDEN state $TAMPERED" "$OUT" || {
 	echo "FAIL - the finding did not name the golden and the state a reader has to open"
 	fail=$((fail + 1))
 }
@@ -130,7 +138,7 @@ const fs = require("fs")
 const path = process.argv[1]
 const doc = JSON.parse(fs.readFileSync(path, "utf8"))
 const tickets = doc.vars.find((v) => v.endsWith("::tickets"))
-const [[, ticket]] = doc.states[1][tickets]["#map"]
+const [[, ticket]] = doc.states.find((s) => s[tickets]["#map"].length > 0)[tickets]["#map"]
 doc.states[0][tickets] = { "#map": [[{ "#bigint": "99" }, ticket]] }
 fs.writeFileSync(path, JSON.stringify(doc, null, 2) + "\n")
 ' "$WORK/refused/$GOLDEN.itf.json"

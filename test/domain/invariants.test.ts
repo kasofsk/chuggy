@@ -37,7 +37,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { liveTickets, ticketAt } from "../../src/domain/ticketGraph.ts";
-import { decideDispatch, decideRevoke } from "../../src/domain/deciders.ts";
+import {
+  decideDispatch,
+  decideRevoke,
+  decideUpdate,
+} from "../../src/domain/deciders.ts";
 import { evolve } from "../../src/domain/evolve.ts";
 import {
   coveredSet,
@@ -58,6 +62,7 @@ import {
   evaluationsMonotone,
   evaluationsWellFormed,
   definitionsWellFormed,
+  revisionsAccounted,
   eventsNeverIdentity,
   finalizationGenerationHeld,
   sourcePinned,
@@ -566,7 +571,82 @@ test("definitionsWellFormed rejects a definition no release could have carried",
     ),
     "the content the release froze is a reference, and zero is no reference",
   );
+  assert.ok(
+    !definitionsWellFormed(
+      config,
+      stateView(fleetBut(fleet, 1, { revision: 0 })),
+    ),
+    "a release lands the first revision, and nothing counts down from it",
+  );
   assert.ok(definitionsWellFormed(config, healthy));
+});
+
+test("revisionsAccounted rejects a definition that moved without its revision", () => {
+  const pending = graphOf([ticketOn(config)]);
+  const held = ticketAt(pending, id(1));
+  const replan: readonly StageDefinition[] = [
+    { key: 1, evaluators: [evaluatorOf(2)] },
+  ];
+  const update = decideUpdate(pending, {
+    ticket: id(1),
+    expectedRevision: 1,
+    definition: { ...held.definition, evaluationPlan: { stages: replan } },
+  });
+  assert.equal(update.type, "TicketDecided");
+  const updated = evolve(pending, update.value.event);
+  assert.ok(revisionsAccounted(config, stepFrom(pending, updated)));
+  const but = (
+    graph: TicketGraph,
+    edit: Partial<Ticket>,
+    dependencies?: ReadonlySet<number>,
+  ): TicketGraph => {
+    const ticket = ticketAt(graph, id(1));
+    return graphOf([
+      {
+        ...ticket,
+        ...edit,
+        definition: {
+          ...ticket.definition,
+          ...(dependencies === undefined ? {} : { dependencies }),
+        },
+      },
+    ]);
+  };
+  const defects: readonly (readonly [string, TicketGraph, TicketGraph])[] = [
+    [
+      "a release lands the first revision",
+      { tickets: new Map() },
+      but(pending, { revision: 2 }),
+    ],
+    [
+      "a definition replaced under the revision it held",
+      pending,
+      but(updated, { revision: 1 }),
+    ],
+    [
+      "an update that skipped a revision",
+      pending,
+      but(updated, { revision: 3 }),
+    ],
+    [
+      "an update landing as the ticket dispatches",
+      pending,
+      but(updated, { phase: "Work" }),
+    ],
+    [
+      "an update landing on a ticket that had left Pending",
+      but(pending, { phase: "Work" }),
+      updated,
+    ],
+    [
+      "an update that changed the dependencies",
+      pending,
+      but(updated, {}, new Set([2])),
+    ],
+  ];
+  for (const [defect, pre, post] of defects) {
+    assert.ok(!revisionsAccounted(config, stepFrom(pre, post)), defect);
+  }
 });
 
 test("sourcePinned holds a source to the dispatch that pinned it", () => {

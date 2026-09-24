@@ -21,6 +21,7 @@ import {
   finalizerIdentity,
   finalizerPrepare,
   finalizerProject,
+  finalizerStoreReleasedBrief,
   finalizerRigOpen,
   type FinalizerProject,
   type FinalizerRig,
@@ -481,15 +482,16 @@ async function finalizerSibling(
   const ticket = project.ticket + 1;
   const keys = [project.partition.tenant, project.partition.project, ticket];
   await rig.harness.query(
-    `INSERT INTO draft (tenant,project,ticket,authoring_version,state,configuration_revision)
-     VALUES ($1,$2,$3,1,'Released',$4)`,
+    `INSERT INTO draft (tenant,project,ticket,authoring_version,state,configuration_revision,released_authoring_version)
+     VALUES ($1,$2,$3,1,'Released',$4,1)`,
     [...keys, project.configurationRevision],
   );
-  await rig.harness.query(
-    `INSERT INTO draft_brief (tenant,project,ticket,intent,repository)
-     VALUES ($1,$2,$3,'Work the sibling repository.',$4)`,
-    [...keys, repository],
-  );
+  await finalizerStoreReleasedBrief(rig.harness.query, keys, {
+    intent: "Work the sibling repository.",
+    links: [],
+    checks: [],
+    repository,
+  });
   const request = `${project.authorizingSeq}:1:FinalizeTicket`;
   await rig.harness.query(
     `INSERT INTO finalization_request
@@ -546,8 +548,8 @@ test("two tickets of one project each finalize in the repository their brief nam
  * project binds nothing, written by hand because the release door refuses that
  * shape today. The journal entry is fabricated rather than replayed, as
  * `nativeActionFixture.ts` already does for a desk task's own fence, and
- * `brief: false` omits the brief row entirely, for the shape a ticket released
- * before migration 42 created `draft_brief` still carries.
+ * `brief: false` stores no released brief at all, for the shape a ticket
+ * released before migration 42 created `draft_brief` still carries.
  */
 async function finalizerUnboundTicket(
   label: string,
@@ -591,17 +593,20 @@ async function finalizerUnboundTicket(
     ],
   );
   await seeding.query(
-    `INSERT INTO draft (tenant,project,ticket,authoring_version,state,configuration_revision)
-     VALUES ($1,$2,$3,1,'Released',$4)`,
+    `INSERT INTO draft (tenant,project,ticket,authoring_version,state,configuration_revision,released_authoring_version)
+     VALUES ($1,$2,$3,1,'Released',$4,1)`,
     [partition.tenant, partition.project, ticket, `revision-${label}`],
   );
-  if (options.brief !== false) {
-    await seeding.query(
-      `INSERT INTO draft_brief (tenant,project,ticket,intent)
-       VALUES ($1,$2,$3,'a ticket released before this project ever bound a repository')`,
+  if (options.brief !== false)
+    await finalizerStoreReleasedBrief(
+      (sql, values) => seeding.query(sql, values),
       [partition.tenant, partition.project, ticket],
+      {
+        intent: "a ticket released before this project ever bound a repository",
+        links: [],
+        checks: [],
+      },
     );
-  }
   await seeding.query(
     `INSERT INTO finalization_request
        (tenant,project,request,authorizing_seq,effect_position,ticket,

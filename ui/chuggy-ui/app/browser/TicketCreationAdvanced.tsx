@@ -185,18 +185,21 @@ function Program(
 export function TicketCreationAdvanced(
   props: FormEdit & {
     readonly initialization: DraftInitializationResponse;
+    readonly dependenciesLocked?: boolean;
   },
 ): ReactNode {
   const { form, initialization, onChange } = props;
   return (
     <Panel title="Advanced" collapsible={{ open: false }}>
       <div className="grid gap-2">
-        <Dependencies
-          form={form}
-          onChange={onChange}
-          candidates={initialization.dependencyCandidates}
-          truncated={initialization.dependencyCandidatesTruncated}
-        />
+        {props.dependenciesLocked === true ? null : (
+          <Dependencies
+            form={form}
+            onChange={onChange}
+            candidates={initialization.dependencyCandidates}
+            truncated={initialization.dependencyCandidatesTruncated}
+          />
+        )}
         <Program
           form={form}
           onChange={onChange}

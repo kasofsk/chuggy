@@ -66,6 +66,7 @@ import {
 } from "./ticketAttemptHeld.ts";
 import { DataPanel, PanelUnready } from "./DataPanel.tsx";
 import { drawBytes } from "./ports.ts";
+import { TicketEditOffer } from "./ticket/TicketEditOffer.tsx";
 import { OfferedAction } from "./ui/OfferedAction.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Button } from "./ui/Button.tsx";
@@ -490,12 +491,20 @@ function TicketActionsPanel(props: TicketActionsProps): ReactNode {
             {offers.offers === "Unread" ? (
               <PanelUnready state={props.openState} />
             ) : (
-              <ActionButtons
-                actions={offers.actions}
-                busy={busy}
-                resume={props.resume}
-                onChoose={submitting.submit}
-              />
+              <>
+                <ActionButtons
+                  actions={offers.actions}
+                  busy={busy}
+                  resume={props.resume}
+                  onChoose={submitting.submit}
+                />
+                {offers.editable ? (
+                  <TicketEditOffer
+                    partition={props.partition}
+                    ticket={props.ticket}
+                  />
+                ) : null}
+              </>
             )}
             {props.dispatchState.state === "Failed" ? (
               <Notice

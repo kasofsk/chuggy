@@ -692,6 +692,9 @@ function draftBody(draft: DraftResource): unknown {
     ticket: draft.ticket,
     authoringVersion: draft.authoringVersion,
     state: draft.state,
+    ...(draft.releasedAuthoringVersion === undefined
+      ? {}
+      : { releasedAuthoringVersion: draft.releasedAuthoringVersion }),
     configurationRevision: draft.configurationRevision,
     ...(draft.configurationVersion === undefined
       ? {}
@@ -1352,6 +1355,14 @@ function draftRevised(value: DraftRevised): NativeHttpResponse {
         ...nativeHttpError("DraftNotEditable", "The draft is not editable."),
         state: value.state,
       });
+    case "DependenciesLocked":
+      return response(
+        409,
+        nativeHttpError(
+          "DependenciesLocked",
+          "A released ticket's dependencies cannot change.",
+        ),
+      );
   }
 }
 

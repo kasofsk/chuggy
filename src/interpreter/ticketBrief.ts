@@ -316,7 +316,11 @@ export function asDraftBrief(value: {
   return brief;
 }
 
-/** The brief a ticket carries, behind a typed port, absent for a ticket authored without one. */
+/**
+ * The brief a ticket was last released or updated with, behind a typed port,
+ * absent for a ticket released without one. It is never the draft's own brief,
+ * which a Pending ticket's author may have revised since.
+ */
 export interface TicketBriefPort {
   brief(partition: Partition, ticket: number): Promise<DraftBrief | undefined>;
 }

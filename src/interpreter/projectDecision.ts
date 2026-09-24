@@ -88,6 +88,12 @@ export interface ConfigurationPin {
 }
 
 export interface DraftReleaseFence extends ConfigurationPin {
+  /**
+   * Whether this is the draft's first release or an update of the ticket it
+   * released: the fence an update commits through admits only a released
+   * draft, and its definition replaces the one the ticket was running.
+   */
+  readonly release: "Release" | "Update";
   readonly ticket: number;
   readonly authoringVersion: number;
   readonly configurationCanonical: string;
@@ -129,6 +135,8 @@ export interface DecisionCause {
  */
 export interface TicketProjection {
   readonly ticket: TicketId;
+  /** The ticket's revision, which an update is written against. */
+  readonly revision: number;
   readonly phase: Phase;
   readonly dependable: boolean;
   readonly escalation: Escalation;

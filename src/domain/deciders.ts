@@ -61,6 +61,7 @@ import {
 } from "./ticket.ts";
 import { acceptedSources, releasedTicketValid, type Config } from "./config.ts";
 import { revocationAllowed } from "./phase.ts";
+import { dependenciesEqual } from "./equality.ts";
 import {
   taskIdentityEquals,
   taskObligationEquals,
@@ -161,6 +162,12 @@ export function commandValid(config: Config, command: TicketCommand): boolean {
   switch (command.type) {
     case "CreateTicket":
       return releasedTicketValid(config, command.value);
+    case "UpdateTicket":
+      return (
+        command.value.ticket > 0 &&
+        command.value.expectedRevision > 0 &&
+        releasedTicketValid(config, command.value.definition)
+      );
     case "DispatchTicket":
       return command.value.ticket > 0 && command.value.source > 0;
     case "ReportTaskTerminal":
@@ -179,13 +186,14 @@ export function commandValid(config: Config, command: TicketCommand): boolean {
 }
 
 /**
- * A ticket as a release leaves it: Pending, with nothing yet spawned and no
- * source, because nothing has been dispatched yet.
+ * A ticket as a release leaves it: Pending at the first revision, with nothing
+ * yet spawned and no source, because nothing has been dispatched yet.
  */
 export function freshTicket(definition: ReleasedTicket): Ticket {
   return {
     phase: "Pending",
     definition,
+    revision: 1,
     source: 0,
     evaluations: [],
     workCyclesStarted: 0,
@@ -219,6 +227,59 @@ export function decideCreate(
       value: { ticket: definition.id, dependencies: missing },
     });
   return decided({ type: "TicketCreated", value: definition }, []);
+}
+
+/** What an update carries: the ticket, the revision its author read, and the definition that replaces it. */
+export type TicketUpdateRequest = Extract<
+  TicketCommand,
+  { type: "UpdateTicket" }
+>["value"];
+
+/**
+ * Update: the author replaces a Pending ticket's definition as its next
+ * revision, owing nothing. Refused, in this order, if the ticket does not
+ * exist, is no longer Pending, is not the one the definition names, is at
+ * another revision than the one expected, or would change its dependencies.
+ */
+export function decideUpdate(
+  graph: TicketGraph,
+  update: TicketUpdateRequest,
+): TicketDecision {
+  if (!graph.tickets.has(update.ticket))
+    return refused({ type: "TicketNotFound", value: update.ticket });
+  const id = asTicketId(update.ticket);
+  const ticket = ticketAt(graph, id);
+  if (ticket.phase !== "Pending")
+    return refused({ type: "TicketNotPending", value: id });
+  if (update.definition.id !== id)
+    return refused({ type: "TicketIdentityMismatch", value: id });
+  if (update.expectedRevision !== ticket.revision)
+    return refused({
+      type: "TicketRevisionStale",
+      value: {
+        ticket: id,
+        expected: update.expectedRevision,
+        current: ticket.revision,
+      },
+    });
+  if (
+    !dependenciesEqual(
+      update.definition.dependencies,
+      ticket.definition.dependencies,
+    )
+  )
+    return refused({ type: "TicketDependenciesChanged", value: id });
+  return decided(
+    {
+      type: "TicketUpdated",
+      value: {
+        ticket: id,
+        revision: ticket.revision + 1,
+        definition: update.definition,
+      },
+    },
+    [],
+  );
 }
 
 /**
@@ -559,6 +620,8 @@ export function decide(
   switch (command.type) {
     case "CreateTicket":
       return decideCreate(graph, command.value);
+    case "UpdateTicket":
+      return decideUpdate(graph, command.value);
     case "DispatchTicket":
       return decideDispatch(graph, command.value);
     case "RevokeTicket":

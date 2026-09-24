@@ -29,6 +29,11 @@
 /// module emits; the instance in mc_chuggy.qnt is what the invariants are
 /// checked over, and it keeps the full roster.
 ///   revoke      — ends a ticket's life, and the chain needs it alive.
+///   updateTicket — gateLoopStep's chains run what the release pinned;
+///                 updateStep keeps it.
+///   refuse      — gateLoopStep draws nothing out of turn; updateStep draws
+///                 the update's refusals only (refuseUpdate), which is a
+///                 subset of what `refuse` draws.
 /// Everything else stays, INCLUDING release and resumeTicket: dropping release would
 /// stop the fleet ever filling, and resumeTicket is how a parked ticket rejoins the
 /// chain, so both are part of the shape being aimed at rather than noise.
@@ -77,6 +82,44 @@ module mc_chuggy_directed {
             }
           | _ => false
         })
+
+  /// THE UPDATE'S OWN REFUSALS, drawn where `refuse` draws them and from
+  /// nowhere else: a refusal an update meets that a dispatch can meet too —
+  /// TicketNotPending — names its command only when no other command is
+  /// drawn out of turn.
+  val refusedUpdates: Set[TicketCommand] = refusedCommands.filter(command =>
+    match command {
+      | UpdateTicket(_) => true
+      | _ => false
+    })
+
+  action refuseUpdate = all {
+    refusedUpdates.size() > 0,
+    nondet command = refusedUpdates.oneOf()
+    take(command, unaskedDisposition)
+  }
+
+  /// THE AIM for the stale-update golden: an update written against a
+  /// revision another update has since replaced, which is the staleness an
+  /// author meets — a revision behind, not one ahead.
+  val staleUpdateRefused: bool = match lastStep {
+    | Refused(reason) => match reason {
+        | TicketRevisionStale(stale) => stale.expected < stale.current
+        | _ => false
+      }
+    | _ => false
+  }
+
+  /// THE UPDATE'S STEP RELATION: release, update, dispatch and the fabric's
+  /// reports, with only the update's refusals drawn out of turn.
+  action updateStep = any {
+    releaseTicket,
+    updateTicket,
+    dispatch,
+    taskDone,
+    refuseUpdate,
+    settle
+  }
 
   action gateLoopStep = any {
     releaseTicket,

@@ -536,6 +536,15 @@ function publicMutationCommand(mutation: PublicMutation): ProjectCommand {
         authoringVersion: mutation.authoringVersion,
         configurationRevision: mutation.configurationRevision,
       };
+    case "UpdateTicket":
+      return {
+        version: 1,
+        command: "UpdateTicket",
+        ticket: asTicketId(mutation.ticket),
+        expectedRevision: mutation.expectedRevision,
+        authoringVersion: mutation.authoringVersion,
+        configurationRevision: mutation.configurationRevision,
+      };
     case "ResolveNativeAction":
       return {
         version: 1,

@@ -24,6 +24,7 @@ import {
 export type { AuthorizedResult } from "./authorizedProject.ts";
 
 import type { Principal } from "./principal.ts";
+import type { ReleaseAuthoringProgram } from "../contract/authoring.ts";
 import type { EscalationKind, ResumePoint } from "../contract/rosters.ts";
 import { phaseTags, type Phase } from "../domain/generated/modelTypes.ts";
 import { resumeOf } from "../domain/ticket.ts";
@@ -80,6 +81,7 @@ import {
 } from "./authoring.ts";
 import { firstCommandedCheckStage } from "./taskConfiguration.ts";
 import type { DraftBrief } from "./ticketBrief.ts";
+import type { ConfigurationVersion } from "./repositoryConfigurationIdentity.ts";
 import {
   dispatchNeedsExecutionHeadroom,
   type BacklogScope,
@@ -283,6 +285,8 @@ export function ticketEscalationResource(
 export interface TicketResource {
   readonly ticket: TicketId;
   readonly title?: string;
+  /** Which revision of its definition the ticket is at: one at release, one more per update. */
+  readonly revision: number;
   readonly phase: Phase;
   readonly sequence: number;
   readonly changedAt: PublicInstant;
@@ -297,6 +301,14 @@ export interface TicketResource {
    */
   readonly revokedDependencies: readonly TicketId[];
   readonly brief?: DraftBrief;
+  /** The configuration the ticket's last release or update pinned, which is what it runs under. */
+  readonly configurationRevision?: ConfigurationRevisionId;
+  readonly configurationVersion?: ConfigurationVersion;
+  /**
+   * The evaluation program the ticket's last release or update was resolved
+   * from, which is what its evaluation runs; its draft may since hold another.
+   */
+  readonly program?: ReleaseAuthoringProgram;
   readonly runTotals?: RunTotals;
 }
 

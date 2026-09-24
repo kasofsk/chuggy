@@ -1,5 +1,5 @@
 /// Pure decider and evolve tests for direct ticket release, sparse
-/// project-local identity, immutable ticket policy, the evaluation instance,
+/// project-local identity, ticket policy and its update, the evaluation instance,
 /// revoke, evaluator walls and their resume, the finalization protocol, and
 /// the events a state no longer owes.
 module chuggy_test {
@@ -314,6 +314,67 @@ module chuggy_test {
     D::decisionValid(c4, TicketDecided({ event: dEval2.event, obligations: dEval2.obligations })),
     D::decisionValid(c5, TicketDecided({ event: dComplete.event,
       obligations: dComplete.obligations }))
+  })
+
+  // === Update while Pending ================================================
+
+  /// AN UPDATE REPLACES A PENDING TICKET'S DEFINITION AS ITS NEXT REVISION,
+  /// owes nothing, and the dispatch after it runs the definition it
+  /// replaced the release's with.
+  pure val defRevised: ReleasedTicket =
+    D::revisedTicketOf(1, 2, Set(), D::defaultPlan)
+  pure def updateAt(
+      c: TicketGraph, j: int, expected: int,
+      definition: ReleasedTicket): Stepped =
+    stepped(c, D::decideUpdate(c,
+      { ticket: j, expectedRevision: expected, definition: definition }))
+  pure val dUpdate = updateAt(c0, 1, 1, defRevised)
+
+  run updateLandsNextRevisionTest = assert(and {
+    c0.tickets.get(1).revision == 1,
+    dUpdate.event == TicketUpdated({ ticket: 1, revision: 2,
+      definition: defRevised }),
+    dUpdate.obligations == [],
+    dUpdate.post.tickets.get(1).definition == defRevised,
+    dUpdate.post.tickets.get(1).revision == 2,
+    dUpdate.post.tickets.get(3) == c0.tickets.get(3),
+    D::decisionValid(c0, D::decideUpdate(c0,
+      { ticket: 1, expectedRevision: 1, definition: defRevised })),
+    dispatched(dUpdate.post, 1).obligations == [ExecuteTask({ ticket: 1,
+      task: { task: workOf(1), definition: defRevised.workConfiguration,
+        contextRef: 1 } })],
+    updateAt(dUpdate.post, 1, 2,
+      D::revisedTicketOf(1, 3, Set(), D::defaultPlan)).post
+      .tickets.get(1).revision == 3
+  })
+
+  /// THE UPDATE'S REFUSALS, in the package's order: each command below
+  /// fails every check after the one it is named for as well, so the first
+  /// failing check is what names it.
+  pure val badDefinition: ReleasedTicket =
+    D::revisedTicketOf(2, 2, Set(3), D::defaultPlan)
+  run updateRefusalOrderTest = assert(and {
+    named(updateAt(c0, 2, 1, D::releasedTicketOf(2, Set(), D::defaultPlan)))
+      == "TicketNotFound",
+    named(updateAt(c1, 1, 1, defRevised)) == "TicketNotPending",
+    named(updateAt(c0, 1, 5, badDefinition)) == "TicketIdentityMismatch",
+    D::decideUpdate(c0, { ticket: 1, expectedRevision: 5,
+      definition: D::revisedTicketOf(1, 2, Set(3), D::defaultPlan) })
+      == TicketRefused(TicketRevisionStale({ ticket: 1, expected: 5,
+        current: 1 })),
+    named(updateAt(c0, 1, 1, D::revisedTicketOf(1, 2, Set(3),
+      D::defaultPlan))) == "TicketDependenciesChanged",
+    named(updateAt(c0, 3, 1, D::revisedTicketOf(3, 2, Set(), D::defaultPlan)))
+      == "TicketDependenciesChanged"
+  })
+
+  /// AN UPDATE A STATE DOES NOT OWE IS THE IDENTITY: one landing on a
+  /// dispatched ticket, and one whose revision is not the next.
+  run updateNotOwedIsIdentityTest = assert(and {
+    D::evolve(c1, dUpdate.event) == c1,
+    D::evolve(dUpdate.post, dUpdate.event) == dUpdate.post,
+    D::evolve(c0, TicketUpdated({ ticket: 1, revision: 3,
+      definition: defRevised })) == c0
   })
 
   /// A PASSING STAGE IGNORES THE DISPOSITION: it is consulted only where a

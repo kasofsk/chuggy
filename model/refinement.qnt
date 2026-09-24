@@ -498,6 +498,12 @@ module chuggy_refinement {
     journalStep(CreateTicket(releasedTicketOf(j, dependencies_, stages)),
       unaskedDisposition)
   }
+  action actorUpdateTicket = all {
+    revisableTickets.size() > 0,
+    nondet j = revisableTickets.oneOf()
+    nondet stages = validPlans.oneOf()
+    journalStep(updateOf(graph.tickets.get(j), stages), unaskedDisposition)
+  }
   action actorRevoke = all {
     revocableTickets.size() > 0,
     nondet j = revocableTickets.oneOf()
@@ -579,7 +585,7 @@ module chuggy_refinement {
   /// THE DISCIPLINED MACHINE (journal-then-effect): decisions journal
   /// before anything reaches the world; crashes at any instant.
   action rstep = any {
-    actorReleaseTicket, actorRevoke, actorDispatch,
+    actorReleaseTicket, actorUpdateTicket, actorRevoke, actorDispatch,
     actorTaskDone, actorFinalizationResult,
     actorResumeTicket, actorRefuse,
     emitNext, crashRecover

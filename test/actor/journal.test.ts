@@ -29,12 +29,13 @@ import {
   resumeTicketCommand,
   revokeTicketCommand,
   ticketCommandTags,
+  updateTicketCommand,
   type TicketCommand,
 } from "../../src/actor/command.ts";
 import { graphEquals } from "../../src/domain/equality.ts";
 import { evolve } from "../../src/domain/evolve.ts";
 import {
-  eventReportTicketAgrees,
+  eventPayloadTicketAgrees,
   genesis,
   journalLegalOn,
   replayGraph,
@@ -290,8 +291,23 @@ test("a row whose report is about another ticket is refused, in every arm that c
     { type: "TicketEvaluationFailureEscalated", value: rework },
   ];
   for (const event of arms)
-    assert.ok(!eventReportTicketAgrees(event), event.type);
-  assert.ok(eventReportTicketAgrees(passed.event));
+    assert.ok(!eventPayloadTicketAgrees(event), event.type);
+  assert.ok(eventPayloadTicketAgrees(passed.event));
+});
+
+test("an update row whose definition names another ticket is refused", () => {
+  const updated = decideAt(
+    g1,
+    updateTicketCommand(id(1), 1, plainDefinitionOf(1)),
+  );
+  assert.equal(updated.event.type, "TicketUpdated");
+  assert.ok(journalLegalOn([e1, { seq: 2, event: updated.event }]));
+  const forged: TicketEvent = {
+    type: "TicketUpdated",
+    value: { ticket: 1, revision: 2, definition: plainDefinitionOf(2) },
+  };
+  assert.ok(!eventPayloadTicketAgrees(forged));
+  assert.ok(!journalLegalOn([e1, { seq: 2, event: forged }]));
 });
 
 test("the world arithmetic: emission closes the gap to the book, an orphan pushes past it", () => {
@@ -451,6 +467,42 @@ const answers: readonly Answer[] = [
     answer: "TicketNotRevocable",
   },
   {
+    check: "UpdateTicket/commandValid/revision",
+    at: pending,
+    command: updateTicketCommand(id(1), 0, plainDefinitionOf(1)),
+    answer: "NotTaken",
+  },
+  {
+    check: "UpdateTicket/found",
+    at: pending,
+    command: updateTicketCommand(id(2), 1, plainDefinitionOf(2)),
+    answer: "TicketNotFound",
+  },
+  {
+    check: "UpdateTicket/pending",
+    at: working,
+    command: updateTicketCommand(id(1), 1, plainDefinitionOf(1)),
+    answer: "TicketNotPending",
+  },
+  {
+    check: "UpdateTicket/identity",
+    at: dependent,
+    command: updateTicketCommand(id(1), 1, plainDefinitionOf(2)),
+    answer: "TicketIdentityMismatch",
+  },
+  {
+    check: "UpdateTicket/revision",
+    at: pending,
+    command: updateTicketCommand(id(1), 2, plainDefinitionOf(1)),
+    answer: "TicketRevisionStale",
+  },
+  {
+    check: "UpdateTicket/dependencies",
+    at: dependent,
+    command: updateTicketCommand(id(2), 1, plainDefinitionOf(2)),
+    answer: "TicketDependenciesChanged",
+  },
+  {
     check: "DispatchTicket/commandValid/source",
     at: pending,
     command: dispatchTicketCommand(id(1), 0),
@@ -578,6 +630,16 @@ test("every check of every command answers on a state that fails it alone", () =
 test("a release naming a dependency that exists is accepted", () => {
   assert.equal(
     answerAt(pending, createTicketCommand(plainDefinitionOf(2, new Set([1])))),
+    "Accepted",
+  );
+});
+
+test("an update at the revision held, keeping its dependencies, is accepted", () => {
+  assert.equal(
+    answerAt(
+      dependent,
+      updateTicketCommand(id(2), 1, plainDefinitionOf(2, new Set([1]))),
+    ),
     "Accepted",
   );
 });

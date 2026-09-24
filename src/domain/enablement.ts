@@ -18,14 +18,18 @@ import {
   aFinalizationEvidence,
   defaultPlan,
   releasedTicketOf,
+  revisedTicketOf,
   ticketIdUniverse,
   type Config,
 } from "./config.ts";
 import { ticketAt, ticketIds } from "./ticketGraph.ts";
 import type {
   ArtifactMark,
+  ReleasedTicket,
+  StageDefinition,
   TaskIdentity,
   TaskTerminalReport,
+  Ticket,
   TicketCommand,
   TicketGraph,
 } from "./generated/modelTypes.ts";
@@ -106,6 +110,36 @@ export function canReleaseIn(
  */
 export function dependableIn(graph: TicketGraph): readonly TicketId[] {
   return ticketIds(graph).filter((k) => ticketAt(graph, k).phase !== "Revoked");
+}
+
+/** Tickets an update may be drawn for: the Pending ones. */
+export function revisablesIn(graph: TicketGraph): readonly TicketId[] {
+  return ticketIds(graph).filter((j) => ticketAt(graph, j).phase === "Pending");
+}
+
+/**
+ * The update an author sends for a ticket: its next revision, written against
+ * the revision it holds, keeping its dependencies, over the plan the author
+ * drew.
+ */
+export function updateOf(
+  ticket: Ticket,
+  stages: readonly StageDefinition[],
+): TicketCommand {
+  const id = ticket.definition.id;
+  return {
+    type: "UpdateTicket",
+    value: {
+      ticket: id,
+      expectedRevision: ticket.revision,
+      definition: revisedTicketOf(
+        id,
+        ticket.revision + 1,
+        ticket.definition.dependencies,
+        stages,
+      ),
+    },
+  };
 }
 
 export function revocablesIn(graph: TicketGraph): readonly TicketId[] {
@@ -231,11 +265,61 @@ export function finalizationReportOf(
   };
 }
 
+/** An id the instance can name that is not `id`: the universe holds 1 and 2 whenever it holds a ticket. */
+export function otherIdOf(id: number): number {
+  return id === 1 ? 2 : 1;
+}
+
+/**
+ * The updates an environment may send out of turn for ticket `id` (the
+ * model's `updateProbesIn`): one at a revision the ticket is not at (the one
+ * before it where there is one), one whose definition names another ticket,
+ * and one that changes the dependencies — each wrong in that one way only —
+ * and, for an id not released, the first revision.
+ */
+export function updateProbesIn(
+  config: Config,
+  graph: TicketGraph,
+  id: TicketId,
+): readonly TicketCommand[] {
+  const plan = defaultPlan(config);
+  const ticket = graph.tickets.get(id);
+  if (ticket === undefined) {
+    const definition = releasedTicketOf(id, new Set(), plan);
+    return [
+      {
+        type: "UpdateTicket",
+        value: { ticket: id, expectedRevision: 1, definition },
+      },
+    ];
+  }
+  const dependencies = ticket.definition.dependencies;
+  const next = ticket.revision + 1;
+  const stale = ticket.revision > 1 ? ticket.revision - 1 : next;
+  const changed: ReadonlySet<number> =
+    dependencies.size === 0 ? new Set([otherIdOf(id)]) : new Set();
+  const update = (
+    expectedRevision: number,
+    definition: ReleasedTicket,
+  ): TicketCommand => ({
+    type: "UpdateTicket",
+    value: { ticket: id, expectedRevision, definition },
+  });
+  return [
+    update(stale, revisedTicketOf(id, next, dependencies, plan)),
+    update(
+      ticket.revision,
+      revisedTicketOf(otherIdOf(id), next, dependencies, plan),
+    ),
+    update(ticket.revision, revisedTicketOf(id, next, changed, plan)),
+  ];
+}
+
 /**
  * The commands an environment may send out of turn (the model's
  * `commandProbesIn`, in its order): for every id the instance can name, a
- * create that collides, names itself or names what does not exist, and a
- * dispatch, a revoke and a resume; a failure for every task a ticket has ever
+ * create that collides, names itself or names what does not exist, the
+ * updates `updateProbesIn` names, and a dispatch, a revoke and a resume; a failure for every task a ticket has ever
  * been owed, and for the first work task of an id not released; and a
  * finalizer's result for the attempt a ticket is on, the generation before it
  * and the cycle before it. Every one is well-formed, so which of them `decide`
@@ -259,6 +343,7 @@ export function commandProbesIn(
     { type: "DispatchTicket", value: { ticket: j, source: aDispatchSource } },
     { type: "RevokeTicket", value: j },
     { type: "ResumeTicket", value: j },
+    ...updateProbesIn(config, graph, j),
   ]);
   const reports = [
     ...live.flatMap((j) =>

@@ -200,17 +200,39 @@ async function decisionProject(
   for (const row of projection) {
     await client.query(
       sql`INSERT INTO ticket_projection
-       (tenant, project, ticket, phase, seq, dependable, escalation, escalation_evidence,
+       (tenant, project, ticket, revision, phase, seq, dependable, escalation, escalation_evidence,
         configuration_revision, configuration_digest)
-       VALUES (${partition.tenant}, ${partition.project}, ${row.ticket}, ${row.phase}, ${seq}, ${row.dependable},
+       VALUES (${partition.tenant}, ${partition.project}, ${row.ticket}, ${row.revision}, ${row.phase}, ${seq}, ${row.dependable},
                ${row.escalation}, ${row.escalationEvidence ?? null},
                ${configuration.configurationRevision}, ${configuration.configurationDigest})
        ON CONFLICT (tenant, project, ticket)
-       DO UPDATE SET phase = EXCLUDED.phase, seq = EXCLUDED.seq, dependable = EXCLUDED.dependable,
+       DO UPDATE SET revision = EXCLUDED.revision, phase = EXCLUDED.phase, seq = EXCLUDED.seq,
+                     dependable = EXCLUDED.dependable,
                      escalation = EXCLUDED.escalation,
                      escalation_evidence = EXCLUDED.escalation_evidence`,
     );
   }
+}
+
+/**
+ * The configuration an update re-pinned, moved onto the ticket's row: an
+ * update is resolved at the revision its draft names, which may not be the one
+ * the ticket was released at, and every later decision about the ticket reads
+ * its pin from here.
+ */
+async function decisionRepin(
+  client: pg.PoolClient,
+  partition: Partition,
+  draftRelease: Decision["draftRelease"],
+): Promise<void> {
+  if (draftRelease?.release !== "Update") return;
+  await client.query(
+    sql`UPDATE ticket_projection
+        SET configuration_revision = ${draftRelease.configurationRevision},
+            configuration_digest = ${draftRelease.configurationDigest}
+      WHERE tenant = ${partition.tenant} AND project = ${partition.project}
+        AND ticket = ${draftRelease.ticket}`,
+  );
 }
 
 async function replaceDispatchView(
@@ -481,8 +503,10 @@ async function decisionTicketSource(
 
 /**
  * What the release resolved, written beside the entry that journalled the
- * references folded from it. One row per ticket: a release happens once, and a
- * ticket runs at what that release froze.
+ * references folded from it, with the brief it resolved from. One row per
+ * ticket: a release writes it and an update replaces it, and a ticket runs at
+ * what the last of them froze — never at the draft, which a Pending ticket's
+ * author may already have revised again.
  */
 async function decisionTicketDefinition(
   client: pg.PoolClient,
@@ -491,11 +515,28 @@ async function decisionTicketDefinition(
 ): Promise<void> {
   const material = draftRelease?.definition;
   if (draftRelease === undefined || material === undefined) return;
-  await client.query(
-    sql`INSERT INTO ticket_definition (tenant,project,ticket,definition,digest)
-       VALUES (${partition.tenant},${partition.project},${draftRelease.ticket},
-               ${JSON.stringify(material)}::jsonb,${materialDigest(material)})`,
+  const definition = JSON.stringify(material);
+  const digest = materialDigest(material);
+  const brief =
+    draftRelease.brief === undefined
+      ? null
+      : JSON.stringify(draftRelease.brief);
+  if (draftRelease.release === "Release") {
+    await client.query(
+      sql`INSERT INTO ticket_definition (tenant,project,ticket,definition,digest,brief)
+         VALUES (${partition.tenant},${partition.project},${draftRelease.ticket},
+                 ${definition}::jsonb,${digest},${brief}::jsonb)`,
+    );
+    return;
+  }
+  const replaced = await client.query(
+    sql`UPDATE ticket_definition SET definition=${definition}::jsonb,digest=${digest},
+           brief=${brief}::jsonb
+     WHERE tenant=${partition.tenant} AND project=${partition.project}
+       AND ticket=${draftRelease.ticket}`,
   );
+  if (replaced.rowCount !== 1)
+    throw new Error("an update replaced no released definition");
 }
 
 async function decisionMaterialize(
@@ -528,18 +569,37 @@ function releaseRefused(code: BoundaryRefusalCode): DecisionOutcome {
   return { outcome: "Refused", refusal: boundaryRefusal(code) };
 }
 
+/**
+ * Whether the draft is still at the version the release or update read, and
+ * with `commit` whether it is now marked as released there. An update's door
+ * is the reopened draft's, which is why the two are distinct functions.
+ */
+async function draftFenceHolds(
+  client: pg.PoolClient,
+  partition: Partition,
+  fence: NonNullable<Decision["draftRelease"]>,
+  commit: boolean,
+): Promise<boolean> {
+  const { tenant, project } = partition;
+  const found =
+    fence.release === "Release"
+      ? await client.query<{ matched: boolean | null }>(
+          sql`SELECT release_draft_fenced(${tenant},${project},${fence.ticket},${fence.authoringVersion},${fence.configurationRevision},${fence.configurationDigest},${commit})::boolean AS matched`,
+        )
+      : await client.query<{ matched: boolean | null }>(
+          sql`SELECT update_draft_fenced(${tenant},${project},${fence.ticket},${fence.authoringVersion},${fence.configurationRevision},${fence.configurationDigest},${commit})::boolean AS matched`,
+        );
+  return found.rows[0]?.matched === true;
+}
+
 async function decisionReleaseOutcome(
   client: pg.PoolClient,
   decision: Decision,
 ): Promise<DecisionOutcome> {
   const fence = decision.draftRelease;
   if (fence === undefined) return decision.outcome;
-  const releaseFence = async (commit: boolean): Promise<boolean> => {
-    const found = await client.query<{ matched: boolean | null }>(
-      sql`SELECT release_draft_fenced(${decision.lease.partition.tenant},${decision.lease.partition.project},${fence.ticket},${fence.authoringVersion},${fence.configurationRevision},${fence.configurationDigest},${commit})::boolean AS matched`,
-    );
-    return found.rows[0]?.matched === true;
-  };
+  const releaseFence = (commit: boolean) =>
+    draftFenceHolds(client, decision.lease.partition, fence, commit);
   if (!(await releaseFence(false))) return releaseRefused("AuthoringChanged");
   const configuration = await client.query<{
     canonical: string;
@@ -670,6 +730,7 @@ async function decisionApplyJournaled(
     outcome.projection,
     configuration,
   );
+  await decisionRepin(client, lease.partition, draftRelease);
   if (outcome.dispatchView !== undefined)
     await replaceDispatchView(
       client,

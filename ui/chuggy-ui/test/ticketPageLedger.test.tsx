@@ -23,14 +23,14 @@ import {
 import {
   evalIdentity,
   ledgerPage,
-  ticket21Authoring,
+  ticket21Program,
   ticket21Parked,
   ticket21Resumed,
   workIdentity,
 } from "./ticketLedgerFixture.ts";
 import type { ExecutionShape } from "./ticketLedgerFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
-import type { TicketAuthoring } from "../app/core/ticketLedger.ts";
+import type { TicketProgram } from "../app/core/ticketLedger.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { viewportAtEm } from "./viewport.ts";
@@ -124,14 +124,41 @@ function ShellAroundPage(): ReactNode {
   );
 }
 
+/** What ticket 21 was released with, which its draft holds too unless a case
+ * has revised the draft past it. */
+const released = {
+  brief: { intent: "Give the console a footer", links: [] },
+  configurationRevision: "r1",
+};
+
+/** What the page is served: the ticket's read, its runs and its draft. */
+interface Served {
+  readonly shapes: readonly ExecutionShape[];
+  readonly ticket: Record<string, unknown>;
+  readonly cursor?: string;
+  readonly withDraft?: boolean;
+  /** The program the ticket was released with, which its draft holds too;
+   * ticket 21's where a case names none. */
+  readonly program?: TicketProgram;
+  /** The draft's versions where a case is about them: the current one, and
+   * the one the ticket's live revision was released from. */
+  readonly versions?: {
+    readonly authoringVersion: number;
+    readonly releasedAuthoringVersion: number;
+  };
+  /** What the draft holds where a case has it differ from what was released. */
+  readonly draft?: {
+    readonly brief?: { readonly intent: string; readonly links: [] };
+    readonly configurationRevision?: string;
+    readonly authoring?: {
+      readonly dependencies: [];
+      readonly program: TicketProgram;
+    };
+  };
+}
+
 async function drawTicket(
-  served: {
-    readonly shapes: readonly ExecutionShape[];
-    readonly ticket: Record<string, unknown>;
-    readonly cursor?: string;
-    readonly withDraft?: boolean;
-    readonly authoring?: TicketAuthoring;
-  },
+  served: Served,
   options: { readonly shell?: boolean } = {},
 ): Promise<Drawn> {
   const api = apiDouble({
@@ -156,11 +183,19 @@ async function drawTicket(
               ticket: 21,
               authoringVersion: 1,
               state: "Released",
-              configurationRevision: "r1",
-              authoring: served.authoring ?? ticket21Authoring,
-              brief: { intent: "Give the console a footer", links: [] },
+              ...released,
+              authoring: {
+                dependencies: [],
+                program: served.program ?? ticket21Program,
+              },
+              ...served.draft,
+              ...served.versions,
             });
-      return answer(served.ticket);
+      return answer({
+        program: ticket21Program,
+        ...served.ticket,
+        ...(served.program === undefined ? {} : { program: served.program }),
+      });
     },
   });
   vi.stubGlobal("fetch", api.fetch);
@@ -182,6 +217,7 @@ const parkedTicket = {
   phase: "Escalated",
   sequence: 167,
   ...ticketInstants,
+  ...released,
   escalation: { kind: "EvaluationFailureEscalated", resumeAt: "ResumeRework" },
   runTotals: ticketTotals,
 };
@@ -191,6 +227,7 @@ const resumedTicket = {
   phase: "Evaluation",
   sequence: 169,
   ...ticketInstants,
+  ...released,
   runTotals: ticketTotals,
 };
 
@@ -465,11 +502,19 @@ test("a short page says so, and no cycle on it claims to be whole", async () => 
   ).toBeGreaterThan(0);
 });
 
-test("without the draft the rows are ungrouped and say why", async () => {
+test("without the draft the rows still group by the program the ticket was released with", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
     withDraft: false,
+  });
+  expect(groups(container)).toHaveLength(3);
+});
+
+test("a ticket read carrying no program leaves the rows ungrouped and says why", async () => {
+  const { container } = await drawTicket({
+    shapes: ticket21Parked,
+    ticket: { ...parkedTicket, program: undefined },
   });
   expect(screen.getByText("Ungrouped · program not loaded")).toBeDefined();
   expect(groups(container)).toHaveLength(0);
@@ -676,13 +721,10 @@ test("provenance draws each stage as its evaluator count", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
-    authoring: {
-      dependencies: [],
-      program: [
-        { key: 1, evaluators: [{ key: 1 }, { key: 2 }, { key: 3 }] },
-        { key: 2, evaluators: [{ key: 1 }, { key: 3 }] },
-      ],
-    },
+    program: [
+      { key: 1, evaluators: [{ key: 1 }, { key: 2 }, { key: 3 }] },
+      { key: 2, evaluators: [{ key: 1 }, { key: 3 }] },
+    ],
   });
   expect(container.textContent).toContain("3× then 2×");
 });
@@ -750,10 +792,9 @@ test("the by-stage table is work first and then the program's own order", async 
 
 /** A stage authored three evaluators wide, two of them on the page and both
  * relaunched, its cycle superseded by the work that ran after it. */
-const fanoutAuthoring: TicketAuthoring = {
-  dependencies: [],
-  program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }, { key: 3 }] }],
-};
+const fanoutProgram: TicketProgram = [
+  { key: 1, evaluators: [{ key: 1 }, { key: 2 }, { key: 3 }] },
+];
 
 const fanoutShapes: readonly ExecutionShape[] = [
   {
@@ -785,7 +826,7 @@ async function drawFanout(): Promise<Drawn> {
   return drawTicket({
     shapes: fanoutShapes,
     ticket: parkedTicket,
-    authoring: fanoutAuthoring,
+    program: fanoutProgram,
   });
 }
 
@@ -837,4 +878,104 @@ test("nothing the ticket page draws is a runtime style element", async () => {
   expect(document.querySelectorAll("style").length).toBe(0);
   fireEvent.click(screen.getByRole("button", { name: "show canonical" }));
   expect(document.querySelectorAll("style").length).toBe(0);
+});
+
+const pendingTicket = {
+  ticket: 21,
+  phase: "Pending",
+  sequence: 12,
+  ...ticketInstants,
+  ...released,
+  revision: 2,
+};
+
+/** An update is the edit screen's to write, so the page offers the way there
+ * and only where the ticket still admits one. The router is mocked, so the
+ * link is found as the anchor it draws rather than by a role its href gives. */
+test("a Pending ticket offers the edit screen, and a parked one does not", async () => {
+  await drawTicket({ shapes: [], ticket: pendingTicket });
+  expect(screen.getByText("Edit", { selector: "a" })).toBeDefined();
+  cleanup();
+  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
+  expect(screen.queryByText("Edit", { selector: "a" })).toBeNull();
+});
+
+test("the provenance names the live revision and a draft revised past it", async () => {
+  const { container } = await drawTicket({
+    shapes: [],
+    ticket: pendingTicket,
+    versions: { authoringVersion: 3, releasedAuthoringVersion: 2 },
+  });
+  expect(screen.getByText("live").nextElementSibling?.textContent).toBe(
+    "revision 2, from draft version 2",
+  );
+  expect(
+    screen.getAllByText("draft").at(-1)?.nextElementSibling?.textContent,
+  ).toBe("version 3 holds unreleased changes");
+  expect(drawnStringsOver(container)).toEqual([]);
+});
+
+test("the provenance says a draft at its release holds nothing unreleased", async () => {
+  await drawTicket({
+    shapes: [],
+    ticket: pendingTicket,
+    versions: { authoringVersion: 2, releasedAuthoringVersion: 2 },
+  });
+  expect(
+    screen.getAllByText("draft").at(-1)?.nextElementSibling?.textContent,
+  ).toBe("nothing unreleased");
+});
+
+/** A Pending ticket's author may revise its draft without releasing it, and
+ * the page is about what the ticket runs: the brief, its head and the
+ * configuration it was released under are the ticket's, not the draft's. */
+test("a ticket whose draft is ahead draws the brief and configuration it was released with", async () => {
+  await drawTicket({
+    shapes: [],
+    ticket: pendingTicket,
+    versions: { authoringVersion: 3, releasedAuthoringVersion: 2 },
+    draft: {
+      brief: { intent: "A rewrite nobody has released", links: [] },
+      configurationRevision: "r2",
+    },
+  });
+  expect(screen.getAllByText("Give the console a footer").length).toBe(2);
+  expect(screen.queryByText("A rewrite nobody has released")).toBeNull();
+  expect(
+    screen.getByText("released under").nextElementSibling?.textContent,
+  ).toBe("r1");
+  expect(screen.queryByText("r2")).toBeNull();
+  expect(
+    screen.getAllByText("draft").at(-1)?.nextElementSibling?.textContent,
+  ).toBe("version 3 holds unreleased changes");
+});
+
+/** A draft revised while its ticket was Pending and never released holds a
+ * program the ticket does not run, so the ledger, the wall and the provenance
+ * are drawn from the program the ticket was released with. */
+test("a ticket whose draft's program is ahead draws the stages it ran", async () => {
+  const { container } = await drawTicket({
+    shapes: ticket21Parked,
+    ticket: parkedTicket,
+    versions: { authoringVersion: 3, releasedAuthoringVersion: 2 },
+    draft: {
+      authoring: {
+        dependencies: [],
+        program: [
+          ...ticket21Program,
+          { key: 3, evaluators: [{ key: 1 }, { key: 2 }] },
+        ],
+      },
+    },
+  });
+  const current = groups(container)[0];
+  expect(stageRows(current)).toHaveLength(2);
+  expect(rowsOf(current ?? container)[1]).toContain("Stage 1 of 2");
+  expect(container.textContent).not.toContain("of 3");
+  expect(container.querySelector(".notice-parked")?.textContent).toContain(
+    "Stage 1 of 2 failed",
+  );
+  expect(
+    screen.getByText("evaluation stages").nextElementSibling?.textContent,
+  ).toBe("1× then 1×");
 });

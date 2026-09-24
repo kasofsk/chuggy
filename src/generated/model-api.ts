@@ -42,6 +42,7 @@ import type {
   WorkResultAcceptedEvent,
   WorkFailureEvent,
   FinalizationFact,
+  TicketUpdate,
   TicketEvent,
   TicketTaskObligation,
   FinalizationObligation,
@@ -601,6 +602,7 @@ export const ticketSchema: z.ZodType<Ticket> = z
   .object({
     phase: phaseSchema,
     definition: releasedTicketSchema,
+    revision: z.number().int().safe(),
     source: z.number().int().safe(),
     evaluations: z.array(evaluationInstanceSchema).readonly(),
     workCyclesStarted: z.number().int().safe(),
@@ -614,6 +616,7 @@ const ticketSchemaWire: z.ZodType<Ticket> = z
   .object({
     phase: phaseSchemaWire,
     definition: releasedTicketSchemaWire,
+    revision: z.number().int().safe(),
     source: z.number().int().safe(),
     evaluations: z.array(evaluationInstanceSchemaWire).readonly(),
     workCyclesStarted: z.number().int().safe(),
@@ -1065,9 +1068,33 @@ export function decodeFinalizationFact(value: unknown): FinalizationFact {
   return finalizationFactSchemaWire.parse(value);
 }
 
+export const ticketUpdateSchema: z.ZodType<TicketUpdate> = z
+  .object({
+    ticket: z.number().int().safe(),
+    revision: z.number().int().safe(),
+    definition: releasedTicketSchema,
+  })
+  .readonly();
+const ticketUpdateSchemaWire: z.ZodType<TicketUpdate> = z
+  .object({
+    ticket: z.number().int().safe(),
+    revision: z.number().int().safe(),
+    definition: releasedTicketSchemaWire,
+  })
+  .readonly();
+export function encodeTicketUpdate(value: TicketUpdate): ModelJson {
+  return encodeJson(value);
+}
+export function decodeTicketUpdate(value: unknown): TicketUpdate {
+  return ticketUpdateSchemaWire.parse(value);
+}
+
 export const ticketEventSchema: z.ZodType<TicketEvent> = z.union([
   z
     .object({ type: z.literal("TicketCreated"), value: releasedTicketSchema })
+    .readonly(),
+  z
+    .object({ type: z.literal("TicketUpdated"), value: ticketUpdateSchema })
     .readonly(),
   z
     .object({
@@ -1177,6 +1204,9 @@ const ticketEventSchemaWire: z.ZodType<TicketEvent> = z.union([
       type: z.literal("TicketCreated"),
       value: releasedTicketSchemaWire,
     })
+    .readonly(),
+  z
+    .object({ type: z.literal("TicketUpdated"), value: ticketUpdateSchemaWire })
     .readonly(),
   z
     .object({
@@ -1417,6 +1447,18 @@ export const ticketCommandSchema: z.ZodType<TicketCommand> = z.union([
     .readonly(),
   z
     .object({
+      type: z.literal("UpdateTicket"),
+      value: z
+        .object({
+          ticket: z.number().int().safe(),
+          expectedRevision: z.number().int().safe(),
+          definition: releasedTicketSchema,
+        })
+        .readonly(),
+    })
+    .readonly(),
+  z
+    .object({
       type: z.literal("DispatchTicket"),
       value: z
         .object({
@@ -1450,6 +1492,18 @@ const ticketCommandSchemaWire: z.ZodType<TicketCommand> = z.union([
     .object({
       type: z.literal("CreateTicket"),
       value: releasedTicketSchemaWire,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("UpdateTicket"),
+      value: z
+        .object({
+          ticket: z.number().int().safe(),
+          expectedRevision: z.number().int().safe(),
+          definition: releasedTicketSchemaWire,
+        })
+        .readonly(),
     })
     .readonly(),
   z

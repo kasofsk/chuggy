@@ -20,7 +20,9 @@
  * are the pinned revision's own text and the ticket names that revision — a
  * second copy would be a stored duplicate of a derivable fact. What is kept for
  * them is the digest, which is what the journalled reference folds and which
- * folding does not give back.
+ * folding does not give back. The brief is stored, beside the material, for the
+ * requirement's reason: the draft it was resolved from is revised in place
+ * while its ticket is Pending, so nothing else recovers the one a release took.
  */
 
 import { createHash } from "node:crypto";
@@ -39,7 +41,7 @@ import {
   type MaterializedExecutionRequirement,
 } from "./executionRequirement.ts";
 import { digestFold, resultManifestSchemaVersion } from "./resultManifest.ts";
-import type { DraftBrief } from "./ticketBrief.ts";
+import { asDraftBrief, type DraftBrief } from "./ticketBrief.ts";
 import type { StageBlock } from "./taskConfiguration.ts";
 
 /** What one resolved task definition names, in the order the model's record spells it. */
@@ -233,6 +235,26 @@ export function ticketTaskRequirement(
     platformDefaultVersion,
     digest,
   };
+}
+
+/**
+ * The brief a ticket was released with, read back out of what its release
+ * stored and held to the digest its `content` reference folds: a stored brief
+ * that is not the one the journal names is not a brief the ticket runs.
+ */
+export function releasedTicketBrief(
+  stored: unknown,
+  contentDigest: string,
+): DraftBrief | undefined {
+  const brief =
+    stored === undefined
+      ? undefined
+      : asDraftBrief(stored as Parameters<typeof asDraftBrief>[0]);
+  if (materialDigest(brief ?? {}) !== contentDigest)
+    throw new Error(
+      "ticket definition: the stored brief is not the one the released content names",
+    );
+  return brief;
 }
 
 /** The four references one resolved task definition is, each a fold of its own digest. */

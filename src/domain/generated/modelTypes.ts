@@ -150,6 +150,7 @@ export type EvaluationInstance = {
 export type Ticket = {
   readonly phase: Phase;
   readonly definition: ReleasedTicket;
+  readonly revision: number;
   readonly source: number;
   readonly evaluations: readonly EvaluationInstance[];
   readonly workCyclesStarted: number;
@@ -282,8 +283,15 @@ export type FinalizationFact = {
   readonly evidence: number;
 };
 
+export type TicketUpdate = {
+  readonly ticket: number;
+  readonly revision: number;
+  readonly definition: ReleasedTicket;
+};
+
 export type TicketEvent =
   | { readonly type: "TicketCreated"; readonly value: ReleasedTicket }
+  | { readonly type: "TicketUpdated"; readonly value: TicketUpdate }
   | {
       readonly type: "TicketDispatched";
       readonly value: { readonly ticket: number; readonly source: number };
@@ -338,6 +346,7 @@ export type TicketEvent =
     };
 export const ticketEventTags = [
   "TicketCreated",
+  "TicketUpdated",
   "TicketDispatched",
   "TicketRevoked",
   "TicketWorkResumed",
@@ -390,6 +399,14 @@ export type SuccessfulTicketDecision = {
 export type TicketCommand =
   | { readonly type: "CreateTicket"; readonly value: ReleasedTicket }
   | {
+      readonly type: "UpdateTicket";
+      readonly value: {
+        readonly ticket: number;
+        readonly expectedRevision: number;
+        readonly definition: ReleasedTicket;
+      };
+    }
+  | {
       readonly type: "DispatchTicket";
       readonly value: { readonly ticket: number; readonly source: number };
     }
@@ -402,6 +419,7 @@ export type TicketCommand =
     };
 export const ticketCommandTags = [
   "CreateTicket",
+  "UpdateTicket",
   "DispatchTicket",
   "RevokeTicket",
   "ResumeTicket",

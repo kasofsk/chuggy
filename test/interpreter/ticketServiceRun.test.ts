@@ -6,13 +6,21 @@ import {
   dispatchTicketCommand,
   reportFinalizationResultCommand,
   reportTaskTerminalCommand,
+  updateTicketCommand,
   type TicketCommand,
 } from "../../src/actor/command.ts";
 import { storedAtCurrentSemantics } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
-import { aDispatchSource } from "../../src/domain/config.ts";
+import {
+  aDispatchSource,
+  anAcceptedSource,
+  revisedTicketOf,
+} from "../../src/domain/config.ts";
 import { evaluationTaskOf, workTaskOf } from "../../src/domain/task.ts";
-import type { TaskTerminalReport } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  TaskDefinition,
+  TaskTerminalReport,
+} from "../../src/domain/generated/modelTypes.ts";
 import type {
   Decision,
   ProjectDecision,
@@ -29,7 +37,13 @@ import {
   plainPolicy,
   refinementInstance,
 } from "../actor/harness.ts";
-import { id, judgedReport, producedReport } from "../domain/fixtures.ts";
+import {
+  id,
+  judgedReport,
+  obligationFor,
+  producedReport,
+  resultFor,
+} from "../domain/fixtures.ts";
 import {
   asOwnerId,
   asProjectId,
@@ -477,27 +491,24 @@ function completing(
   });
 }
 
-/** One project whose journal holds a dispatched ticket, and whose inbox hands over `inbox` in order. */
-function dispatchedProject(inbox: DecisionInput[]): {
-  projects: ProjectStore;
-  discovery: ProjectDiscovery;
-} {
-  const dispatched = [
-    createTicketCommand(plainDefinitionOf(1)),
-    dispatchTicketCommand(id(1), aDispatchSource),
-  ].reduce(
+/** One project whose journal holds what `commands` journal, and whose inbox hands over `inbox` in order. */
+function projectHolding(
+  commands: Parameters<typeof journalStep>[2][],
+  inbox: DecisionInput[],
+): { projects: ProjectStore; discovery: ProjectDiscovery } {
+  const journaled = commands.reduce(
     (state, command) =>
       journalStep(refinementInstance, state, command, plainPolicy),
     actorInit(),
   );
-  const loaded = { ...lease, head: dispatched.journal.length };
+  const loaded = { ...lease, head: journaled.journal.length };
   const projects = {
     acquire: () => Promise.resolve({ acquired: "Granted", lease: loaded }),
     release: () => Promise.resolve(),
     load: () =>
       Promise.resolve({
         parsed: "Ok",
-        value: storedAtCurrentSemantics(dispatched.journal),
+        value: storedAtCurrentSemantics(journaled.journal),
       }),
   } as unknown as ProjectStore;
   const discovery = {
@@ -506,6 +517,20 @@ function dispatchedProject(inbox: DecisionInput[]): {
     clearReadiness: () => Promise.resolve({ cleared: "Cleared" }),
   } as unknown as ProjectDiscovery;
   return { projects, discovery };
+}
+
+/** One project whose journal holds a dispatched ticket, and whose inbox hands over `inbox` in order. */
+function dispatchedProject(inbox: DecisionInput[]): {
+  projects: ProjectStore;
+  discovery: ProjectDiscovery;
+} {
+  return projectHolding(
+    [
+      createTicketCommand(plainDefinitionOf(1)),
+      dispatchTicketCommand(id(1), aDispatchSource),
+    ],
+    inbox,
+  );
 }
 
 /**
@@ -569,5 +594,148 @@ test("one pass carries a dispatched ticket from Work through Evaluation to Done"
         : decision.outcome.outcome,
     ),
     [["Evaluation"], ["Finalization"], ["Done"]],
+  );
+});
+
+/** One project whose journal holds `ticket` released and Pending, and whose inbox hands over `inbox` in order. */
+function releasedProject(inbox: DecisionInput[]): {
+  projects: ProjectStore;
+  discovery: ProjectDiscovery;
+} {
+  return projectHolding([createTicketCommand(plainDefinitionOf(1))], inbox);
+}
+
+/** The ticket's second revision, which is what an update of it resolves. */
+const updated = revisedTicketOf(
+  1,
+  2,
+  plainDefinitionOf(1).dependencies,
+  plainDefinitionOf(1).evaluationPlan.stages,
+);
+
+/** An update of ticket 1 from its first revision to `updated`, through the fence its draft reopened at. */
+function updating(ordinal: number): DecisionInput {
+  const input = arriving(ordinal, updateTicketCommand(id(1), 1, updated), {
+    version: 1,
+    command: "UpdateTicket",
+    ticket: id(1),
+    expectedRevision: 1,
+    authoringVersion: 2,
+    configurationRevision: "revision-updated",
+  });
+  return {
+    ...input,
+    source: {
+      ...input.source,
+      draftRelease: {
+        release: "Update",
+        ticket: 1,
+        authoringVersion: 2,
+        configurationRevision: "revision-updated",
+        configurationDigest: "digest-updated",
+        configurationCanonical: "{}",
+      },
+    },
+  };
+}
+
+/** A work result carried at the task definition `definition` rather than the one the fixture releases. */
+function workedAt(definition: TaskDefinition): TaskTerminalReport {
+  const task = workTaskOf(1, 1);
+  return {
+    type: "WorkResultReport",
+    value: {
+      ticket: 1,
+      result: {
+        ...resultFor(task),
+        obligation: { ...obligationFor(task), definition },
+      },
+      acceptedSourceRef: anAcceptedSource,
+    },
+  };
+}
+
+/** A store that commits what journals and refuses what does not, recording each decision it is handed. */
+function recordedDecisions(committed: Decision[]): ProjectDecision {
+  return {
+    decide: (decision) => {
+      committed.push(decision);
+      return Promise.resolve(
+        decision.outcome.outcome === "Journaled"
+          ? {
+              decided: "Committed",
+              lease: { ...decision.lease, head: decision.lease.head + 1 },
+            }
+          : { decided: "Refused" },
+      );
+    },
+  };
+}
+
+/**
+ * An update then a dispatch runs what the update released: the ticket moves to
+ * its next revision under the configuration the update pinned, and the work it
+ * is dispatched to is owed at the updated definition, so a result carried at
+ * the one it was first released with is not the work it owes.
+ */
+test("an update then a dispatch runs the updated definition", async () => {
+  const { projects, discovery } = releasedProject([
+    updating(1),
+    arriving(2, dispatchTicketCommand(id(1), aDispatchSource), {
+      version: 1,
+      command: "ManualDispatch",
+      ticket: id(1),
+      expectedTicketVersion: 2,
+    }),
+    completing(3, producedReport(workTaskOf(1, 1))),
+    completing(4, workedAt(updated.workConfiguration)),
+  ]);
+  const committed: Decision[] = [];
+  assert.deepEqual(
+    await ticketServiceRunOnce(
+      {
+        ...passService(projects, discovery),
+        domain: refinementInstance,
+        decisions: recordedDecisions(committed),
+        executionSources: {
+          observe: () =>
+            Promise.resolve({
+              observed: "Source",
+              source: { reference: aDispatchSource },
+            }),
+          spawnSource: () => Promise.resolve(undefined),
+        },
+      },
+      { projectsPerPassMax: 4, projectLeaseSeconds: 10 },
+    ),
+    { discovered: 1, activated: 1, failed: 0, failures: [] },
+  );
+  assert.deepEqual(
+    committed.map((decision) =>
+      decision.outcome.outcome === "Journaled"
+        ? [
+            decision.outcome.entry.event.type,
+            decision.outcome.projection.map(
+              (row) => `${row.phase}@${String(row.revision)}`,
+            ),
+          ]
+        : decision.outcome.outcome,
+    ),
+    [
+      ["TicketUpdated", ["Pending@2"]],
+      ["TicketDispatched", ["Work@2"]],
+      "Refused",
+      ["TicketWorkResultAccepted", ["Evaluation@2"]],
+    ],
+  );
+  const [update] = committed;
+  assert.deepEqual(
+    update?.outcome.outcome === "Journaled"
+      ? update.outcome.dispatchView?.candidates.map(
+          (candidate) => candidate.configurationRevision,
+        )
+      : undefined,
+    ["revision-updated"],
+    "the update re-pins the configuration its next dispatch runs at",
   );
 });

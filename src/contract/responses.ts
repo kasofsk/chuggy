@@ -213,6 +213,15 @@ export const ticketEscalationSchema = z.object({
 export type TicketEscalation = z.infer<typeof ticketEscalationSchema>;
 
 /**
+ * A repository-imported configuration's label. Absent means no label is known,
+ * which is what an authored revision carries.
+ */
+export const configurationVersionSchema = z.strictObject({
+  name: identitySchema,
+  number: ticketNumberSchema,
+});
+
+/**
  * A ticket as the project table and its own read both carry it. The title is
  * the one field of the brief the table carries, because a table of documents
  * needs a heading; the rest of the brief is the ticket's own read alone, an
@@ -225,6 +234,8 @@ export const ticketResponseSchema = z.object({
    * of its intent where the brief named none.
    */
   title: z.string().max(briefTitleCharsMax).optional(),
+  /** Which revision of its definition the ticket is at, which an update names as the one it expects. */
+  revision: ticketNumberSchema,
   phase: z.enum(phaseRoster),
   sequence: countSchema,
   /**
@@ -249,6 +260,18 @@ export const ticketResponseSchema = z.object({
    */
   revokedDependencies: page(ticketNumberSchema),
   brief: briefResponseSchema.optional(),
+  /**
+   * The configuration the ticket's last release or update pinned, which is
+   * what it runs under. Like the brief, only the ticket's own read carries it.
+   */
+  configurationRevision: identitySchema.optional(),
+  configurationVersion: configurationVersionSchema.optional(),
+  /**
+   * The evaluation program the ticket's last release or update was resolved
+   * from, which its draft may since have been revised past. Only the ticket's
+   * own read carries it, and only where a draft revision records it.
+   */
+  program: authoringResponseSchema.shape.program.optional(),
   runTotals: runTotalsSchema.optional(),
 });
 export type TicketResponse = z.infer<typeof ticketResponseSchema>;
@@ -453,15 +476,6 @@ export const executionRequirementSchema = z.discriminatedUnion("mode", [
     sdkVersionMin: ticketNumberSchema,
   }),
 ]);
-
-/**
- * A repository-imported configuration's label. Absent means no label is known,
- * which is what an authored revision carries.
- */
-export const configurationVersionSchema = z.strictObject({
-  name: identitySchema,
-  number: ticketNumberSchema,
-});
 
 /**
  * The label the catalog holds for an admitted image. It sits beside the
@@ -893,6 +907,12 @@ export const draftResponseSchema = z.object({
   ticket: ticketNumberSchema,
   authoringVersion: countSchema,
   state: z.enum(draftStates),
+  /**
+   * The authoring version the ticket's live revision was released from,
+   * present exactly on a released draft; where it is behind `authoringVersion`
+   * the draft holds changes an update has still to release.
+   */
+  releasedAuthoringVersion: countSchema.optional(),
   configurationRevision: identitySchema,
   configurationVersion: configurationVersionSchema.optional(),
   authoring: authoringResponseSchema,

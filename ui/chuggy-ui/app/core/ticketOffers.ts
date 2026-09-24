@@ -16,12 +16,17 @@ import type { TicketResponse } from "../../../../src/contract/responses.ts";
 
 import type { PanelState } from "./freshness.ts";
 import { nativeActionsAnswers } from "./nativeActionAnswers.ts";
-import { actionsFor } from "./ticketActions.ts";
+import { actionsFor, ticketRevisable } from "./ticketActions.ts";
 import type { TicketAction } from "./ticketActions.ts";
 
-/** The buttons to draw, or the read whose state is drawn in their place. */
+/** The buttons to draw and whether the edit screen is offered beside them, or
+ * the read whose state is drawn in their place. */
 export type TicketOffers =
-  | { readonly offers: "Actions"; readonly actions: readonly TicketAction[] }
+  | {
+      readonly offers: "Actions";
+      readonly actions: readonly TicketAction[];
+      readonly editable: boolean;
+    }
   | { readonly offers: "Unread" };
 
 export function ticketOffers(
@@ -36,10 +41,16 @@ export function ticketOffers(
       return { offers: "Unread" };
     case "Ready": {
       const open = openState.value.actions;
+      const editable = ticketRevisable(ticket.phase);
       if (open.length > 0)
-        return { offers: "Actions", actions: nativeActionsAnswers(open) };
+        return {
+          offers: "Actions",
+          actions: nativeActionsAnswers(open),
+          editable,
+        };
       return {
         offers: "Actions",
+        editable,
         actions: [
           ...(dispatch === undefined ? [] : [dispatch]),
           ...actionsFor(ticket),

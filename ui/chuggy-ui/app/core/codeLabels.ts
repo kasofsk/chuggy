@@ -408,6 +408,9 @@ export function resumeActionEffect(
   }
 }
 
+/** What the edit screen does, which is revise the draft and release it again. */
+export const ticketEditEffect = "Revises the draft · releases a new revision";
+
 /**
  * What answering the action does to the ticket. A resume is named by the point
  * the machine stamped, which is why it takes the offer rather than the word

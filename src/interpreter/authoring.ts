@@ -257,6 +257,13 @@ export interface DraftResource {
   readonly ticket: TicketId;
   readonly authoringVersion: number;
   readonly state: DraftState;
+  /**
+   * The authoring version the ticket's live revision was released from,
+   * carried exactly when the draft is released. A released draft whose ticket
+   * is still Pending takes revisions again, so this and `authoringVersion`
+   * differ exactly when the draft holds changes nobody has released.
+   */
+  readonly releasedAuthoringVersion?: number;
   readonly configurationRevision: ConfigurationRevisionId;
   readonly configurationVersion?: ConfigurationVersion;
   readonly authoring: ReleaseAuthoring;
@@ -529,7 +536,12 @@ export function draftInitializationPolicy(
   };
 }
 
-/** `RepositoryNotBound` and `LandingUnbranched` are the refusals `DraftCreated` documents. */
+/**
+ * `RepositoryNotBound` and `LandingUnbranched` are the refusals `DraftCreated`
+ * documents. A released draft is revisable while its ticket is Pending — past
+ * it `NotDraft` — and one moving its dependencies is `DependenciesLocked`,
+ * because the update releasing it would be refused `TicketDependenciesChanged`.
+ */
 export type DraftRevised =
   | { readonly revised: "Revised"; readonly draft: DraftResource }
   | { readonly revised: "NotFound" }
@@ -538,6 +550,7 @@ export type DraftRevised =
       readonly revised: "NotDraft";
       readonly state: Exclude<DraftState, "Draft">;
     }
+  | { readonly revised: "DependenciesLocked" }
   | { readonly revised: "ConfigurationNotFound" }
   | { readonly revised: "RepositoryNotBound" }
   | { readonly revised: "LandingUnbranched" };

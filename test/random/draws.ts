@@ -38,6 +38,7 @@ import {
   refusedCommandsIn,
   releasableIdsIn,
   retryablesIn,
+  revisablesIn,
   revocablesIn,
 } from "../../src/domain/enablement.ts";
 import { reportChoices } from "../../src/domain/deciders.ts";
@@ -166,6 +167,21 @@ const releaseTicket: WalkAction = {
   },
 };
 
+/** The update draws a Pending ticket and then the plan it replaces the old one with. */
+const updateTicket: WalkAction = {
+  action: "updateTicket",
+  enabledIn: (_config, graph) => revisablesIn(graph).length > 0,
+  drawIn: (config, graph, random) => ({
+    ticket: pickFrom(random, revisablesIn(graph)),
+    stages: pickFrom(random, validPlansIn(config)),
+  }),
+  permitsIn: (config, graph, drawn) =>
+    drawn.ticket !== undefined &&
+    drawn.stages !== undefined &&
+    revisablesIn(graph).includes(drawn.ticket) &&
+    isValidPlan(config, drawn.stages),
+};
+
 /**
  * The dispatch draws the ticket and the source the work is to be done at:
  * the source is the selector's own choice, so the walk chooses it as freely as
@@ -269,6 +285,7 @@ const settle: WalkAction = {
 /** The roster, in `step`'s order; the suite holds it against the model's own. */
 export const walkActions: readonly WalkAction[] = [
   releaseTicket,
+  updateTicket,
   overTicketSet("revoke", (_config, graph) => revocablesIn(graph)),
   dispatch,
   taskDone,

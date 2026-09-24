@@ -41,9 +41,17 @@ import {
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { Refusal } from "../../interpreter/refusal.ts";
 import { parseStoredRefusal } from "../../interpreter/wire.ts";
+import {
+  asConfigurationRevisionId,
+  parseDraftAuthoring,
+} from "../../interpreter/authoring.ts";
+import {
+  configurationVersionOf,
+  type ConfigurationVersionRow,
+} from "./configurationVersion.ts";
 import { projectRowCounter } from "./rows.ts";
 import { postgresTicketRunTotals } from "./runEvidence.ts";
-import { draftBriefOf, type DraftBriefRow } from "./ticketBrief.ts";
+import { releasedBriefOf } from "./ticketBrief.ts";
 
 interface PublicOperationRow {
   readonly operation: string;
@@ -63,11 +71,14 @@ interface PublicOperationRow {
 interface TicketProjectionRow {
   readonly ticket: string;
   /**
-   * What the ticket is called: its brief's title, or the first line of its
-   * intent that says anything, cut to the title's bound, where the brief names
-   * none; empty where neither names anything.
+   * What the ticket is called: its released brief's title, or the first line
+   * of its intent that says anything, cut to the title's bound, where the brief
+   * names none; empty where neither names anything. It is the released brief
+   * and not the draft's, which a Pending ticket's author may have revised past
+   * what the ticket runs.
    */
   readonly ticket_title: string;
+  readonly revision: string;
   readonly phase: string;
   readonly seq: string;
   readonly escalation: string;
@@ -83,6 +94,18 @@ interface TicketProjectionRow {
    * names none.
    */
   readonly revoked_dependencies: string[] | null;
+}
+
+/**
+ * What a ticket's last release or update stored: the brief as its text, the
+ * configuration revision the projection pins, with the label its version join
+ * adds, and the authoring its draft held at the version that release or update
+ * named, which a revision since cannot move.
+ */
+interface ReleasedBriefRow extends ConfigurationVersionRow {
+  readonly brief: string | null;
+  readonly configuration_revision: string | null;
+  readonly released_authoring: string | null;
 }
 
 /** One open action, or a ticket that has none: every column is then null. */
@@ -269,6 +292,7 @@ function ticketResource(row: TicketProjectionRow): TicketResource {
   return {
     ticket: asTicketId(projectRowCounter(row.ticket, "ticket identity")),
     ...(row.ticket_title === "" ? {} : { title: row.ticket_title }),
+    revision: projectRowCounter(row.revision, "ticket revision"),
     phase: projectionPhase(row.phase),
     sequence: projectRowCounter(row.seq, "ticket projection sequence"),
     changedAt: ticketResourceChangedAt(row.changed_at),
@@ -419,8 +443,8 @@ async function readTicketsByActivity(
   query: ProjectReadQuery,
 ): Promise<readonly TicketProjectionRow[]> {
   const found = await client.query<TicketProjectionRow>(
-    sql`SELECT t.ticket,t.phase,t.seq,t.escalation,t.escalation_evidence,
-                 coalesce(b.title,left(substring(b.intent from
+    sql`SELECT t.ticket,t.revision,t.phase,t.seq,t.escalation,t.escalation_evidence,
+                 coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                    '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                    AS ticket_title,
                  r.committed_at::text AS released_at,
@@ -432,7 +456,7 @@ async function readTicketsByActivity(
                      AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
                    AS revoked_dependencies
           FROM ticket_projection t
-          LEFT JOIN draft_brief b
+          LEFT JOIN ticket_definition b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
@@ -464,8 +488,8 @@ async function readTicketsByIdentity(
   query: ProjectReadQuery,
 ): Promise<readonly TicketProjectionRow[]> {
   const found = await client.query<TicketProjectionRow>(
-    sql`SELECT t.ticket,t.phase,t.seq,t.escalation,t.escalation_evidence,
-               coalesce(b.title,left(substring(b.intent from
+    sql`SELECT t.ticket,t.revision,t.phase,t.seq,t.escalation,t.escalation_evidence,
+               coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
                r.committed_at::text AS released_at,
@@ -477,7 +501,7 @@ async function readTicketsByIdentity(
                    AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
                  AS revoked_dependencies
           FROM ticket_projection t
-          LEFT JOIN draft_brief b
+          LEFT JOIN ticket_definition b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
@@ -501,19 +525,21 @@ async function readTicketsByIdentity(
   return found.rows;
 }
 
-/** One ticket's projection with the brief it was authored from. */
+/** One ticket's projection with the brief, the configuration and the authoring it was last released with. */
 async function readTicketRow(
   pool: pg.Pool,
   partition: Partition,
   ticket: TicketId,
-): Promise<(TicketProjectionRow & DraftBriefRow) | undefined> {
-  const found = await pool.query<TicketProjectionRow & DraftBriefRow>(
-    sql`SELECT t.ticket,t.phase,t.seq,t.escalation,t.escalation_evidence,
-               coalesce(b.title,left(substring(b.intent from
+): Promise<(TicketProjectionRow & ReleasedBriefRow) | undefined> {
+  const found = await pool.query<TicketProjectionRow & ReleasedBriefRow>(
+    sql`SELECT t.ticket,t.revision,t.phase,t.seq,t.escalation,t.escalation_evidence,
+               coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
-               b.title,b.intent,b.branch,b.repository,
-               b.finalization_mode,b.finalization_target,
+               b.brief::text AS brief,
+               t.configuration_revision,
+               v.name AS version_name,v.number::text AS version_number,
+               a.authoring AS released_authoring,
                r.committed_at::text AS released_at,
                c.committed_at::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
@@ -521,11 +547,7 @@ async function readTicketRow(
                  WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                    AND d.phase='Revoked'
                    AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
-                 AS revoked_dependencies,
-               (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
-                 WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS links,
-               (SELECT array_agg(k.command ORDER BY k.ordinal) FROM draft_brief_check k
-                 WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS checks
+                 AS revoked_dependencies
           FROM ticket_projection t
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
@@ -541,8 +563,19 @@ async function readTicketRow(
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
-          LEFT JOIN draft_brief b
+          LEFT JOIN ticket_definition b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
+          LEFT JOIN repository_configuration_provenance p
+            ON p.tenant=t.tenant AND p.project=t.project
+           AND p.revision=t.configuration_revision
+          LEFT JOIN repository_configuration_version v
+            ON v.tenant=t.tenant AND v.project=t.project
+           AND v.name=p.name AND v.digest=p.digest
+          LEFT JOIN draft e
+            ON e.tenant=t.tenant AND e.project=t.project AND e.ticket=t.ticket
+          LEFT JOIN draft_revision a
+            ON a.tenant=e.tenant AND a.project=e.project AND a.ticket=e.ticket
+           AND a.authoring_version=e.released_authoring_version
          WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
            AND t.ticket=${ticket}`,
   );
@@ -557,11 +590,23 @@ async function readTicket(
 ): Promise<TicketResource | undefined> {
   const row = await readTicketRow(pool, partition, ticket);
   if (row === undefined) return undefined;
-  const brief = draftBriefOf(row);
+  const brief = releasedBriefOf(row.brief);
+  const configurationVersion = configurationVersionOf(row);
   const runTotals = await postgresTicketRunTotals(pool, partition, ticket);
   return {
     ...ticketResource(row),
     ...(brief === undefined ? {} : { brief }),
+    ...(row.configuration_revision === null
+      ? {}
+      : {
+          configurationRevision: asConfigurationRevisionId(
+            row.configuration_revision,
+          ),
+        }),
+    ...(configurationVersion === undefined ? {} : { configurationVersion }),
+    ...(row.released_authoring === null
+      ? {}
+      : { program: parseDraftAuthoring(row.released_authoring).prog }),
     ...(runTotals === undefined ? {} : { runTotals }),
   };
 }

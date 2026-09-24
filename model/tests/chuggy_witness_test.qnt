@@ -273,6 +273,9 @@ module chuggy_witness_gate_test {
     dependencies.subseteq(dependableTickets),
     take(CreateTicket(releasedTicketOf(j, dependencies, p)), unaskedDisposition)}
   action release(j:int):bool=releaseOn(j, Set())
+  action update(j:int,stages:List[StageDefinition]):bool=all{
+    revisableTickets.contains(j), validPlans.contains(stages),
+    take(updateOf(tickets.get(j), stages), unaskedDisposition)}
   action doDispatch(j:int):bool=
     nondet source = dispatchSources.oneOf()
     all{readyTickets.contains(j),
@@ -356,11 +359,35 @@ module chuggy_witness_gate_test {
     .then(refuseWith(RevokeTicket(1)))
     .expect(refusedWith(TicketNotRevocable(1)))
 
+  /// AN UPDATED TICKET RUNS WHAT IT WAS UPDATED TO: the update owes
+  /// nothing, and the dispatch after it owes the work the second revision
+  /// pinned.
+  run updateThenDispatchWitness=init.then(release(1)).then(update(1,p))
+    .expect(and{lastEvent=="TicketUpdated",lastObligations==[],
+      tickets.get(1).revision==2,
+      tickets.get(1).definition==revisedTicketOf(1,2,Set(),p),allInvariants})
+    .then(doDispatch(1))
+    .expect(and{lastObligations==[ExecuteTask({ticket:1,task:{task:workTaskOf(1,1),
+        definition:revisedTicketOf(1,2,Set(),p).workConfiguration,contextRef:1}})],
+      allInvariants})
+
   /// EVERY REFUSAL THIS INSTANCE CAN REACH, each drawn where `refuse` draws
   /// it (commandProbesIn), each answered with its own payload and nothing
-  /// moved. The three that only an update can meet are declared and not
-  /// reachable (ticket.qnt TicketRefusal).
+  /// moved.
   run refusalsWitness=init.then(release(1))
+    .then(refuseWith(UpdateTicket({ticket:2,expectedRevision:1,
+      definition:releasedTicketOf(2,Set(),defaultPlan)})))
+    .expect(refusedWith(TicketNotFound(2)))
+    .then(update(1,p))
+    .then(refuseWith(UpdateTicket({ticket:1,expectedRevision:1,
+      definition:revisedTicketOf(1,3,Set(),defaultPlan)})))
+    .expect(refusedWith(TicketRevisionStale({ticket:1,expected:1,current:2})))
+    .then(refuseWith(UpdateTicket({ticket:1,expectedRevision:2,
+      definition:revisedTicketOf(2,3,Set(),defaultPlan)})))
+    .expect(refusedWith(TicketIdentityMismatch(1)))
+    .then(refuseWith(UpdateTicket({ticket:1,expectedRevision:2,
+      definition:revisedTicketOf(1,3,Set(2),defaultPlan)})))
+    .expect(refusedWith(TicketDependenciesChanged(1)))
     .then(refuseWith(CreateTicket(releasedTicketOf(1,Set(),defaultPlan))))
     .expect(refusedWith(TicketAlreadyExists(1)))
     .then(refuseWith(CreateTicket(releasedTicketOf(2,Set(2),defaultPlan))))
@@ -376,6 +403,9 @@ module chuggy_witness_gate_test {
     .expect(refusedWith(DependenciesIncomplete({ticket:2,dependencies:Set(1)})))
     .then(doDispatch(1))
     .then(refuseWith(DispatchTicket({ticket:1,source:aDispatchSource})))
+    .expect(refusedWith(TicketNotPending(1)))
+    .then(refuseWith(UpdateTicket({ticket:1,expectedRevision:1,
+      definition:revisedTicketOf(1,3,Set(),defaultPlan)})))
     .expect(refusedWith(TicketNotPending(1)))
     .then(td(1,workTaskOf(1,1)))
     .then(refuseWith(ReportTaskTerminal(failureReportOf(1,workTaskOf(1,1)))))

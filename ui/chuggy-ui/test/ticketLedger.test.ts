@@ -23,7 +23,7 @@ import {
 import {
   evalIdentity,
   ledgerPage,
-  ticket21Authoring,
+  ticket21Program,
   ticket21Parked,
   ticket21Resumed,
   workIdentity,
@@ -52,18 +52,17 @@ function stagesOf(stages: readonly StageRow[]): readonly string[] {
 }
 
 function cycleAt(shapes: readonly ExecutionShape[], at: number): Cycle {
-  const cycle = ticketLedger(ledgerPage(shapes), ticket21Authoring).cycles[at];
+  const cycle = ticketLedger(ledgerPage(shapes), ticket21Program).cycles[at];
   if (cycle === undefined) throw new Error(`no cycle at ${String(at)}`);
   return cycle;
 }
 
-const singleStage: typeof ticket21Authoring = {
-  ...ticket21Authoring,
-  program: [{ key: 1, evaluators: [{ key: 1 }] }],
-};
+const singleStage: typeof ticket21Program = [
+  { key: 1, evaluators: [{ key: 1 }] },
+];
 
 test("a ticket's page becomes one cycle per work run, newest last", () => {
-  const ledger = ticketLedger(ledgerPage(ticket21Parked), ticket21Authoring);
+  const ledger = ticketLedger(ledgerPage(ticket21Parked), ticket21Program);
   expect(ledger.cycles.map((cycle) => cycle.ordinal)).toEqual([1, 2, 3]);
   expect(ledger.cycles.map((cycle) => tasksOf(cycle.work))).toEqual([
     [1],
@@ -73,7 +72,7 @@ test("a ticket's page becomes one cycle per work run, newest last", () => {
 });
 
 test("the work runs are ordered by task and not by the identity they are held in", () => {
-  const ledger = ticketLedger(ledgerPage(ticket21Parked), ticket21Authoring);
+  const ledger = ticketLedger(ledgerPage(ticket21Parked), ticket21Program);
   const evaluated = ledger.cycles.flatMap((cycle) => stagesOf(cycle.stages));
   expect(evaluated).toEqual([
     "1 Failed 2",
@@ -110,10 +109,9 @@ test("a resume re-asks only the evaluator its stage blocked, at the next generat
 });
 
 test("a stage blocked at generation 1 draws its resumed evaluator beside the pass it kept, and keeps its blocked generation as a row of its own", () => {
-  const twoEvaluatorStage: typeof ticket21Authoring = {
-    ...ticket21Authoring,
-    program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
-  };
+  const twoEvaluatorStage: typeof ticket21Program = [
+    { key: 1, evaluators: [{ key: 1 }, { key: 2 }] },
+  ];
   const ledger = ticketLedger(
     ledgerPage([
       {
@@ -169,7 +167,7 @@ test("a stage blocked at generation 1 draws its resumed evaluator beside the pas
 });
 
 test("only the last cycle stands as current", () => {
-  const ledger = ticketLedger(ledgerPage(ticket21Resumed), ticket21Authoring);
+  const ledger = ticketLedger(ledgerPage(ticket21Resumed), ticket21Program);
   expect(ledger.cycles.map((cycle) => cycle.standing)).toEqual([
     "Superseded",
     "Superseded",
@@ -212,10 +210,9 @@ test("a work run still running has no artifact and no evaluation yet", () => {
 
 /** A one-stage program keyed 1 and 3, after the evaluators named have passed. */
 function sparseStage(evaluators: readonly number[]): StageRow | undefined {
-  const sparse: typeof ticket21Authoring = {
-    ...ticket21Authoring,
-    program: [{ key: 1, evaluators: [{ key: 1 }, { key: 3 }] }],
-  };
+  const sparse: typeof ticket21Program = [
+    { key: 1, evaluators: [{ key: 1 }, { key: 3 }] },
+  ];
   const ledger = ticketLedger(
     ledgerPage([
       {
@@ -281,7 +278,7 @@ test("an evaluator whose process died is a stop, and a work task's is a failure"
         outcome: "ProcessFailed",
       },
     ]),
-    ticket21Authoring,
+    ticket21Program,
   );
   expect(stagesOf(stopped.cycles[0]?.stages ?? [])).toEqual([
     "1 Blocked 2",
@@ -296,7 +293,7 @@ test("an evaluator whose process died is a stop, and a work task's is a failure"
         outcome: "ProcessFailed",
       },
     ]),
-    ticket21Authoring,
+    ticket21Program,
   );
   expect(died.cycles[0]?.work?.verdict).toBe("Failed");
 });
@@ -311,7 +308,7 @@ test("a stage that was blocked leaves the stages after it queued, not skipped", 
         outcome: "Blocked",
       },
     ]),
-    ticket21Authoring,
+    ticket21Program,
   );
   expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual([
     "1 Blocked 1",
@@ -329,7 +326,7 @@ test("a stage that was cancelled skips the stages after it, as a failed one does
         status: "Cancelled",
       },
     ]),
-    ticket21Authoring,
+    ticket21Program,
   );
   expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual([
     "1 Cancelled 1",
@@ -347,7 +344,7 @@ test("a stage that is still running leaves the stages after it queued", () => {
         status: "Running",
       },
     ]),
-    ticket21Authoring,
+    ticket21Program,
   );
   expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual([
     "1 Running 1",
@@ -371,7 +368,7 @@ test("two stages of one generation are two rows, not one merged row", () => {
         outcome: "Failed",
       },
     ]),
-    ticket21Authoring,
+    ticket21Program,
   );
   expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual([
     "1 Passed 1",
@@ -435,13 +432,10 @@ test("a single-stage program draws one row and no stage after it", () => {
 });
 
 test("a page the route has more of says so", () => {
-  const short = ticketLedger(
-    ledgerPage([], "execution-zz-9"),
-    ticket21Authoring,
-  );
+  const short = ticketLedger(ledgerPage([], "execution-zz-9"), ticket21Program);
   expect(short.cycles).toEqual([]);
   expect(short.truncated).toBe(true);
-  expect(ticketLedger(ledgerPage([]), ticket21Authoring).truncated).toBe(false);
+  expect(ticketLedger(ledgerPage([]), ticket21Program).truncated).toBe(false);
 });
 
 test("the page's cursor reaches the ledger and every cycle under it", () => {
@@ -453,20 +447,19 @@ test("the page's cursor reaches the ledger and every cycle under it", () => {
       outcome: "Passed",
     },
   ];
-  const whole = ticketLedger(ledgerPage(rows), ticket21Authoring);
+  const whole = ticketLedger(ledgerPage(rows), ticket21Program);
   expect([whole.truncated, whole.cycles[0]?.complete]).toEqual([false, true]);
   const short = ticketLedger(
     ledgerPage(rows, "execution-zz-9"),
-    ticket21Authoring,
+    ticket21Program,
   );
   expect([short.truncated, short.cycles[0]?.complete]).toEqual([true, false]);
 });
 
 test("a superseded generation does not stand in for an evaluator the page lacks", () => {
-  const twoEvaluatorStage: typeof ticket21Authoring = {
-    ...ticket21Authoring,
-    program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
-  };
+  const twoEvaluatorStage: typeof ticket21Program = [
+    { key: 1, evaluators: [{ key: 1 }, { key: 2 }] },
+  ];
   const ledger = ticketLedger(
     ledgerPage([
       {
@@ -528,7 +521,7 @@ test("a stage the page holds no set for is missing rather than skipped", () => {
         outcome: "Failed",
       },
     ]),
-    ticket21Authoring,
+    ticket21Program,
   );
   expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual([
     "1 Missing",
@@ -562,7 +555,7 @@ test("a stage number in the millions draws rows, not that many rows", () => {
         outcome: "Failed",
       },
     ]),
-    ticket21Authoring,
+    ticket21Program,
   );
   expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual([
     "1 Missing",

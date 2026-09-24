@@ -2,20 +2,24 @@
  * Everything the ticket page derives from the reads it already holds: the
  * ledger and what a resume would do.
  *
- * It is a plain function of the three reads rather than a hook, so the whole of
+ * It is a plain function of the two reads rather than a hook, so the whole of
  * what the page decides is reachable from a suite with no renderer, and a part
  * of the page is handed facts instead of a query. Every field is absent while
  * the read it needs is, so a half-read page draws what it has rather than a
  * guess at the rest.
  *
- * A RESUME IS ANSWERED FROM THE WIRE BEFORE THE DRAFT ARRIVES. `resumeAt` is
+ * A RESUME IS ANSWERED FROM THE WIRE ALONE. `resumeAt` is
  * the machine's own answer, read straight off the ticket's `escalation` and
- * needing no authoring or ledger to read, so a ticket read that carries one
+ * needing no program or ledger to read, so a ticket read that carries one
  * offers its resume on a cold load.
+ *
+ * THE LEDGER GROUPS BY WHAT WAS RELEASED. The program is the ticket's own, the
+ * one its last release or update ran from, and never the draft's: a Pending
+ * ticket's draft may be revised without an update, and a ledger grouped by it
+ * would draw stages that will never run.
  */
 
 import type {
-  DraftResponse,
   ExecutionsResponse,
   TicketResponse,
 } from "../../../../../src/contract/responses.ts";
@@ -24,7 +28,7 @@ import type { ResumePoint } from "../../../../../src/contract/rosters.ts";
 import { ticketLedger } from "../../core/ticketLedger.ts";
 import type {
   Ledger as LedgerFacts,
-  TicketAuthoring,
+  TicketProgram,
 } from "../../core/ticketLedger.ts";
 
 /**
@@ -65,7 +69,7 @@ export function phaseIsRunning(phase: TicketResponse["phase"]): boolean {
 }
 
 export interface TicketPageFacts {
-  readonly authoring: TicketAuthoring | undefined;
+  readonly program: TicketProgram | undefined;
   readonly stageCount: number;
   readonly ledger: LedgerFacts | undefined;
   readonly resume: ResumeOffer;
@@ -78,15 +82,14 @@ function resumeOfferOf(point: ResumePoint | undefined): ResumeOffer {
 
 export function ticketPageFacts(
   ticket: TicketResponse | undefined,
-  draft: DraftResponse | undefined,
   page: ExecutionsResponse | undefined,
 ): TicketPageFacts {
-  const authoring = draft?.authoring;
-  const stageCount = authoring?.program.length ?? 0;
+  const program = ticket?.program;
+  const stageCount = program?.length ?? 0;
   const truncated = page?.nextCursor !== undefined;
   const resume = resumeOfferOf(ticket?.escalation?.resumeAt);
-  if (authoring === undefined || page === undefined || ticket === undefined)
-    return { authoring, stageCount, ledger: undefined, resume, truncated };
-  const ledger = ticketLedger(page, authoring);
-  return { authoring, stageCount, ledger, resume, truncated };
+  if (program === undefined || page === undefined)
+    return { program, stageCount, ledger: undefined, resume, truncated };
+  const ledger = ticketLedger(page, program);
+  return { program, stageCount, ledger, resume, truncated };
 }

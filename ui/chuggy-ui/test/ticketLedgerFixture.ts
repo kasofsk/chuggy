@@ -22,7 +22,7 @@ import type {
   ExecutionStatus,
   RunCostBasis,
 } from "../../../src/contract/rosters.ts";
-import type { TicketAuthoring } from "../app/core/ticketLedger.ts";
+import type { TicketProgram } from "../app/core/ticketLedger.ts";
 
 /** What a case wants of a run's figures; everything else about them is filled in. */
 export interface TotalsShape {
@@ -159,13 +159,10 @@ export function ledgerPage(
 }
 
 /** Two evaluation stages, one work task each, two reworks. */
-export const ticket21Authoring: TicketAuthoring = {
-  dependencies: [],
-  program: [
-    { key: 1, evaluators: [{ key: 1 }] },
-    { key: 2, evaluators: [{ key: 1 }] },
-  ],
-};
+export const ticket21Program: TicketProgram = [
+  { key: 1, evaluators: [{ key: 1 }] },
+  { key: 2, evaluators: [{ key: 1 }] },
+];
 
 /** The seven executions the ticket held while it was parked. */
 export const ticket21Parked: readonly ExecutionShape[] = [

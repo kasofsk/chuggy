@@ -58,6 +58,7 @@ import {
   decisionSemanticsVersionCurrent,
   isDecisionSemanticsVersion,
 } from "../../actor/decisionSemantics.ts";
+import { eventTicket } from "../../domain/evolve.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
 import type {
   ConfigurationPin,
@@ -204,8 +205,8 @@ export async function postgresJournalDispatchContracts(
           `postgres journal: dispatch contract entry is unreadable — ${parsed.why}`,
         );
       const event = parsed.value.event;
-      if (event.type === "TicketCreated") {
-        contracts.set(event.value.id, {
+      if (event.type === "TicketCreated" || event.type === "TicketUpdated") {
+        contracts.set(eventTicket(event), {
           configurationRevision: stored.configuration_revision,
           configurationDigest: stored.configuration_digest,
           configurationCanonical: stored.configuration_canonical,

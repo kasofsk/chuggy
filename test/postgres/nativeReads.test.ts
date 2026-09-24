@@ -252,6 +252,7 @@ test("project reads page by ticket identity and enforce a minimum sequence", asy
       phase: "Pending",
       sequence: 3,
       changedAt: seededEntryAt(3),
+      revision: 1,
       revokedDependencies: [],
     },
   ]);
@@ -368,6 +369,7 @@ test("project reads filter before paging", async () => {
       phase: "Pending",
       sequence: 2,
       changedAt: seededEntryAt(2),
+      revision: 1,
       revokedDependencies: [],
     },
   ]);
@@ -390,6 +392,7 @@ test("project reads filter before paging", async () => {
         resumeAt: "ResumeRework",
       },
       changedAt: seededEntryAt(4),
+      revision: 1,
       revokedDependencies: [],
     },
     {
@@ -402,6 +405,7 @@ test("project reads filter before paging", async () => {
         resumeAt: "ResumeWork",
       },
       changedAt: seededEntryAt(5),
+      revision: 1,
       revokedDependencies: [],
     },
   ]);
@@ -423,6 +427,7 @@ test("a selected-phase filter answers the terminal tickets alone", async () => {
       phase: "Done",
       sequence: 1,
       changedAt: seededEntryAt(1),
+      revision: 1,
       revokedDependencies: [],
     },
     {
@@ -430,6 +435,7 @@ test("a selected-phase filter answers the terminal tickets alone", async () => {
       phase: "Revoked",
       sequence: 3,
       changedAt: seededEntryAt(3),
+      revision: 1,
       revokedDependencies: [],
     },
   ]);
@@ -450,6 +456,7 @@ test("a ticket read carries the detail its project page carries", async () => {
       resumeAt: "ResumeRework",
     },
     changedAt: seededEntryAt(4),
+    revision: 1,
     revokedDependencies: [],
   });
   const walled = await reads.ticket(partition, id(5));

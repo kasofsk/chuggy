@@ -272,11 +272,20 @@ export function encodeFinalizationResult(result: FinalizationResult): ItfValue {
   return encodeVariant(result.type, encodeInt(result.value));
 }
 
-/** A command, whichever of the six arms it is. */
+/** A command, whichever arm it is. */
 export function encodeTicketCommand(command: TicketCommand): ItfValue {
   switch (command.type) {
     case "CreateTicket":
       return encodeVariant(command.type, encodeReleasedTicket(command.value));
+    case "UpdateTicket":
+      return encodeVariant(
+        command.type,
+        encodeRecord([
+          ["ticket", encodeInt(command.value.ticket)],
+          ["expectedRevision", encodeInt(command.value.expectedRevision)],
+          ["definition", encodeReleasedTicket(command.value.definition)],
+        ]),
+      );
     case "DispatchTicket":
       return encodeVariant(
         command.type,
@@ -461,6 +470,7 @@ function encodeTicket(ticket: Ticket): ItfValue {
   return encodeRecord([
     ["phase", encodeNullary(ticket.phase)],
     ["definition", encodeReleasedTicket(ticket.definition)],
+    ["revision", encodeInt(ticket.revision)],
     ["source", encodeInt(ticket.source)],
     ["evaluations", ticket.evaluations.map(encodeEvaluationInstance)],
     ["workCyclesStarted", encodeInt(ticket.workCyclesStarted)],
@@ -526,11 +536,20 @@ function encodeFinalizationFact(fact: FinalizationFact): ItfValue {
   ]);
 }
 
-/** What happened, whichever of the seventeen arms it is. */
+/** What happened, whichever arm it is. */
 export function encodeTicketEvent(event: TicketEvent): ItfValue {
   switch (event.type) {
     case "TicketCreated":
       return encodeVariant(event.type, encodeReleasedTicket(event.value));
+    case "TicketUpdated":
+      return encodeVariant(
+        event.type,
+        encodeRecord([
+          ["ticket", encodeInt(event.value.ticket)],
+          ["revision", encodeInt(event.value.revision)],
+          ["definition", encodeReleasedTicket(event.value.definition)],
+        ]),
+      );
     case "TicketDispatched":
       return encodeVariant(
         event.type,

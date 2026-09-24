@@ -122,23 +122,27 @@ async function drawTicket(named: Named): Promise<void> {
           digest: "c".repeat(64),
           ...(named.version === undefined ? {} : { version: named.version }),
         });
+      const pinned = {
+        configurationRevision: revision,
+        ...(named.version === undefined
+          ? {}
+          : { configurationVersion: named.version }),
+      };
       if (url.includes("/drafts/"))
         return answer({
           partition: atlas,
           ticket: 11,
           authoringVersion: 1,
           state: "Released",
-          configurationRevision: revision,
           authoring,
-          ...(named.version === undefined
-            ? {}
-            : { configurationVersion: named.version }),
+          ...pinned,
         });
       return answer({
         ticket: 11,
         phase: "Work",
         sequence: 7,
         ...ticketInstants,
+        ...pinned,
       });
     },
   });
