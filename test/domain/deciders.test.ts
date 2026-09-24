@@ -17,6 +17,7 @@ import type {
   EvaluationFailureDisposition,
   FinalizationResult,
   Obligation,
+  ReleasedTicket,
   SuccessfulTicketDecision,
   TaskIdentity,
   TaskTerminalReport,
@@ -33,6 +34,7 @@ import {
   anAcceptedSource,
   defaultPlan,
   releasedTicketOf,
+  revisedTicketOf,
 } from "../../src/domain/config.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import {
@@ -43,6 +45,7 @@ import {
   decideResume,
   decideRevoke,
   decideTaskTerminal,
+  decideUpdate,
   freshTicket,
 } from "../../src/domain/deciders.ts";
 import { evolve } from "../../src/domain/evolve.ts";
@@ -688,6 +691,64 @@ test("a resume of a ticket that was never parked is refused, naming the ticket",
   });
 });
 
+/** Pending tickets side by side, each at its first revision and depending on nothing. */
+const twoPending: TicketGraph = graphOf([
+  ticketOn(config, { phase: "Pending" }),
+  ticketOn(config, { phase: "Pending" }),
+]);
+
+/**
+ * THE UPDATE'S REFUSALS COME IN THE PACKAGE'S ORDER. Each command fails every
+ * check after the one it is named for as well, so only the order decides which
+ * refusal it meets; a trace carries one fault per command and cannot see it.
+ */
+test("an update failing several checks is refused by the first of them", () => {
+  const wrongEverything = revisedTicketOf(2, 2, depsOf(2), plan);
+  const staleAndRewired = revisedTicketOf(1, 2, depsOf(2), plan);
+  const refusal = (
+    graph: TicketGraph,
+    ticket: number,
+    expectedRevision: number,
+    revised: ReleasedTicket,
+  ): TicketDecision =>
+    decideUpdate(graph, { ticket, expectedRevision, definition: revised });
+  const cases: readonly [TicketDecision, TicketDecision][] = [
+    [
+      refusal(twoPending, 9, 5, revisedTicketOf(9, 2, depsOf(2), plan)),
+      { type: "TicketRefused", value: { type: "TicketNotFound", value: 9 } },
+    ],
+    [
+      refusal(workingFirst(), 1, 5, wrongEverything),
+      { type: "TicketRefused", value: { type: "TicketNotPending", value: 1 } },
+    ],
+    [
+      refusal(twoPending, 1, 5, wrongEverything),
+      {
+        type: "TicketRefused",
+        value: { type: "TicketIdentityMismatch", value: 1 },
+      },
+    ],
+    [
+      refusal(twoPending, 1, 5, staleAndRewired),
+      {
+        type: "TicketRefused",
+        value: {
+          type: "TicketRevisionStale",
+          value: { ticket: 1, expected: 5, current: 1 },
+        },
+      },
+    ],
+    [
+      refusal(twoPending, 1, 1, staleAndRewired),
+      {
+        type: "TicketRefused",
+        value: { type: "TicketDependenciesChanged", value: 1 },
+      },
+    ],
+  ];
+  for (const [decided, expected] of cases) assert.deepEqual(decided, expected);
+});
+
 test("a revoke owes a cancellation for every task that was running", () => {
   const working = workingFirst();
   const fromWork = take(working, decideRevoke(working, 1));
@@ -828,6 +889,7 @@ test("every fixture this suite builds is a shape the machine could have reached"
   for (const graph of [
     chain,
     stranded,
+    twoPending,
     workingFirst(),
     judgingFirst(),
     finalizing(),
