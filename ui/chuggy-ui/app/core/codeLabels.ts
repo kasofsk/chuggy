@@ -493,6 +493,8 @@ export function operationRefusalLabel(code: OperationRefusalCode): string {
       return "Brief names no repository";
     case "TicketCapacityReached":
       return "Ticket capacity reached";
+    case "FinalizationRequestClosed":
+      return "Finalization request closed";
   }
 }
 

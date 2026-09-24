@@ -71,6 +71,7 @@ const samples: {
   ExecutionSourceDenied: { type: "ExecutionSourceDenied" },
   BriefNamesNoRepository: { type: "BriefNamesNoRepository" },
   TicketCapacityReached: { type: "TicketCapacityReached" },
+  FinalizationRequestClosed: { type: "FinalizationRequestClosed" },
 };
 
 const said = operationRefusalCodes.map((code) =>

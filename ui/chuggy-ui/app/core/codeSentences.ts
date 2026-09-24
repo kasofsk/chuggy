@@ -156,6 +156,8 @@ export function operationRefusalSentence(refused: OperationRefusal): string {
       return "the brief names no repository; revise it to name one the project binds";
     case "TicketCapacityReached":
       return "the project has no room for this ticket: it holds as many as its configuration allows, or the number is past the ones it offers";
+    case "FinalizationRequestClosed":
+      return "the finalization request this result answered had closed before the result was decided, though the ticket still waits on that finalization";
   }
 }
 

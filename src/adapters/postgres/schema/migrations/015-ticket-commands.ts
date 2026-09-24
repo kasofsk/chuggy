@@ -173,6 +173,7 @@ const boundaryRefusals = [
   "ExecutionSourceDenied",
   "BriefNamesNoRepository",
   "TicketCapacityReached",
+  "FinalizationRequestClosed",
 ];
 
 /** The predicates 013 and 014 stated, and the ones this states beside them. */

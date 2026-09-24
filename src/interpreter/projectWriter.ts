@@ -447,23 +447,18 @@ function journaledPlan(
  * take it the closed row still stands between them — an answer to a ticket
  * parked again at a new wall, or a result from before a restore — so an
  * answer is refused `TicketChanged` and a finalization result
- * `FinalizationNotCurrent` for the attempt its request was for.
+ * `FinalizationRequestClosed`.
  */
 function projectWriterClosedRefusal(
   command: TicketCommand,
   decision: TicketDecision,
 ): Refusal {
   if (decision.type === "TicketRefused") return decision.value;
-  return command.type === "ReportFinalizationResult"
-    ? {
-        type: "FinalizationNotCurrent",
-        value: {
-          ticket: command.value.ticket,
-          workCycle: command.value.workCycle,
-          generation: command.value.generation,
-        },
-      }
-    : boundaryRefusal("TicketChanged");
+  return boundaryRefusal(
+    command.type === "ReportFinalizationResult"
+      ? "FinalizationRequestClosed"
+      : "TicketChanged",
+  );
 }
 
 /**

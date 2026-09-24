@@ -9,11 +9,11 @@ import {
 } from "../domain/generated/modelTypes.ts";
 
 /**
- * The refusals the boundary decides before `decide` is asked anything: a
- * release whose revision or configuration moved or that the deployment has no
- * room for, a dispatch whose fence did, and a source nobody could read. Each
- * is a fact about rows, a remote or the deployment rather than about the
- * ticket, so it carries no payload.
+ * The refusals the boundary decides rather than `decide`: a release whose
+ * revision or configuration moved or that the deployment has no room for, a
+ * dispatch whose fence did, a submission whose authorizing row closed, and a
+ * source nobody could read. Each is a fact about rows, a remote or the
+ * deployment rather than about the ticket, so it carries no payload.
  */
 export type BoundaryRefusalCode =
   | "AuthoringChanged"
@@ -23,7 +23,8 @@ export type BoundaryRefusalCode =
   | "ExecutionSourceUnreadable"
   | "ExecutionSourceDenied"
   | "BriefNamesNoRepository"
-  | "TicketCapacityReached";
+  | "TicketCapacityReached"
+  | "FinalizationRequestClosed";
 
 /** Every boundary refusal, in the order this file declares them, so a suite and a CHECK can iterate rather than restate. */
 export const allBoundaryRefusalCodes: readonly BoundaryRefusalCode[] = [
@@ -35,6 +36,7 @@ export const allBoundaryRefusalCodes: readonly BoundaryRefusalCode[] = [
   "ExecutionSourceDenied",
   "BriefNamesNoRepository",
   "TicketCapacityReached",
+  "FinalizationRequestClosed",
 ];
 
 /**

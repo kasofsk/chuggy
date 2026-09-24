@@ -1188,11 +1188,15 @@ function finalizationWalledMemory(): ProjectMemory {
   return { ...releasedMemory(), graph: memoryGraph(state) };
 }
 
-/** A result for the attempt a resume replaced is refused naming that attempt, and nothing is journalled for it. */
-test("an old-generation finalization result is refused FinalizationNotCurrent with its cycle and generation", async () => {
+/** A ticket awaiting finalization (1,1), and the same ticket once a resume moved it to (1,2). */
+function finalizingGraphs() {
   const judge = evaluationTaskOf(1, 1, 1, 1, 1);
-  const state = [
+  const awaiting = stepped(
+    refinementInstance,
+    workPassedState(),
     reportTaskTerminalCommand(judgedReport(judge, "EvaluatorPass")),
+  );
+  const resumed = [
     reportFinalizationResultCommand(id(1), 1, 1, {
       type: "FinalizationResultUnavailable",
       value: 1,
@@ -1200,52 +1204,83 @@ test("an old-generation finalization result is refused FinalizationNotCurrent wi
     resumeTicketCommand(id(1)),
   ].reduce(
     (each, command) => stepped(refinementInstance, each, command),
-    workPassedState(),
+    awaiting,
   );
-  const graph = memoryGraph(state);
-  const { workCycle, generation } = finalizationOperationOf(
-    ticketAt(graph, id(1)),
-  );
-  assert.deepEqual({ workCycle, generation }, { workCycle: 1, generation: 2 });
-  const stale = reportFinalizationResultCommand(id(1), 1, 1, {
-    type: "FinalizationSucceeded",
-    value: 1,
-  });
-  const { offered } = await decidedWith(
-    { ...releasedMemory(), graph },
-    {
-      partition,
-      ordinal: 1,
-      deferredPasses: 0,
-      priority: "Completion",
-      source: {
-        kind: "Operation",
-        operation: asOperationId("finalization"),
-        command: {
-          version: 1,
-          command: "SubmitFinalizationResult",
-          request: "request",
-          attempt: "attempt",
-          requestGeneration: 1,
-          recoveryEpoch: "epoch",
-          outcome: "FinalizationSucceeded",
-        },
-        ticketCommand: stale,
-        finalizationRequest: {
-          request: "request",
-          requestGeneration: 1,
-          open: true,
-        },
+  return { awaiting: memoryGraph(awaiting), resumed: memoryGraph(resumed) };
+}
+
+/** The finalizer's success for attempt (1,1), arriving under a request that is `open` or not. */
+function finalizationResultInput(open: boolean): DecisionInput {
+  return {
+    partition,
+    ordinal: 1,
+    deferredPasses: 0,
+    priority: "Completion",
+    source: {
+      kind: "Operation",
+      operation: asOperationId("finalization"),
+      command: {
+        version: 1,
+        command: "SubmitFinalizationResult",
+        request: "request",
+        attempt: "attempt",
+        requestGeneration: 1,
+        recoveryEpoch: "epoch",
+        outcome: "FinalizationSucceeded",
+      },
+      ticketCommand: reportFinalizationResultCommand(id(1), 1, 1, {
+        type: "FinalizationSucceeded",
+        value: 1,
+      }),
+      finalizationRequest: {
+        request: "request",
+        requestGeneration: 1,
+        open,
       },
     },
+  };
+}
+
+/** The refusal `decide` names for a result for the attempt a resume replaced. */
+const staleFinalization = {
+  type: "FinalizationNotCurrent",
+  value: { ticket: 1, workCycle: 1, generation: 1 },
+} as const;
+
+/** A result for the attempt a resume replaced is refused naming that attempt, and nothing is journalled for it. */
+test("an old-generation finalization result is refused FinalizationNotCurrent with its cycle and generation", async () => {
+  const { resumed } = finalizingGraphs();
+  const { workCycle, generation } = finalizationOperationOf(
+    ticketAt(resumed, id(1)),
+  );
+  assert.deepEqual({ workCycle, generation }, { workCycle: 1, generation: 2 });
+  const { offered } = await decidedWith(
+    { ...releasedMemory(), graph: resumed },
+    finalizationResultInput(true),
   );
   assert.deepEqual(offered?.outcome, {
     outcome: "Refused",
-    refusal: {
-      type: "FinalizationNotCurrent",
-      value: { ticket: 1, workCycle: 1, generation: 1 },
-    },
+    refusal: staleFinalization,
   });
+});
+
+/**
+ * A result whose request closed is refused `FinalizationRequestClosed` where
+ * the ticket still awaits its attempt, and with `decide`'s own refusal where
+ * it does not, so `FinalizationNotCurrent` is stored only when `decide` said it.
+ */
+test("a result under a closed request is FinalizationRequestClosed unless decide refused it", async () => {
+  const { awaiting, resumed } = finalizingGraphs();
+  for (const [graph, refusal] of [
+    [awaiting, { type: "FinalizationRequestClosed" }],
+    [resumed, staleFinalization],
+  ] as const) {
+    const { offered } = await decidedWith(
+      { ...releasedMemory(), graph },
+      finalizationResultInput(false),
+    );
+    assert.deepEqual(offered?.outcome, { outcome: "Refused", refusal });
+  }
 });
 
 /**

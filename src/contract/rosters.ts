@@ -262,6 +262,7 @@ export const operationBoundaryRefusalCodes = [
   "ExecutionSourceDenied",
   "BriefNamesNoRepository",
   "TicketCapacityReached",
+  "FinalizationRequestClosed",
 ] as const;
 export type OperationBoundaryRefusalCode =
   (typeof operationBoundaryRefusalCodes)[number];

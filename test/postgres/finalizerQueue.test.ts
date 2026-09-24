@@ -458,15 +458,8 @@ test("a result whose request has moved is refused and writes no journal entry", 
       await submissionInput(project),
       {
         state: "Refused",
-        outcome_code: "FinalizationNotCurrent",
-        refusal: {
-          type: "FinalizationNotCurrent",
-          value: {
-            ticket: Number(project.ticket),
-            workCycle: 1,
-            generation: 1,
-          },
-        },
+        outcome_code: "FinalizationRequestClosed",
+        refusal: null,
       },
       label,
     );
