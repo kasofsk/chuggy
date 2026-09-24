@@ -15,7 +15,7 @@
       "invariant": "",
       "steps": 30,
       "quintVersion": "0.32.0",
-      "purpose": "The unaimed walk. It is where the ordinary events come from \u2014 created, dispatched and the desk-only revoke \u2014 and most of the refusals, the environment sending commands out of turn, without any of them being asked for."
+      "purpose": "The unaimed walk. It is where the ordinary events come from \u2014 created and the desk-only revoke \u2014 and most of the refusals, the environment sending commands out of turn, without any of them being asked for."
     },
     {
       "name": "work-execution-unavailable",
@@ -27,7 +27,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastEvent != \"TicketWorkExecutionUnavailable\"",
-      "steps": 8,
+      "steps": 11,
       "quintVersion": "0.32.0",
       "purpose": "Infrastructure refuses to run an intact contract. It is not failed work: the set retires as cancelled and the wall names its own reason."
     },
@@ -41,7 +41,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastEvent != \"TicketEvaluationBlocked\"",
-      "steps": 11,
+      "steps": 10,
       "quintVersion": "0.32.0",
       "purpose": "The same infrastructure refusal against an evaluation set, which is its own wall: the judgement is intact and unmade, so this is the only park whose resume re-enters evaluation. Its pair is work-execution-unavailable, the same refusal one phase earlier."
     },
@@ -69,7 +69,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "not(lastEvent == \"TicketEvaluationProgressed\" and lastObligations.length() > 0)",
-      "steps": 13,
+      "steps": 18,
       "quintVersion": "0.32.0",
       "purpose": "The stage advance: a stage passes, the next one's evaluators are owed, and the ticket stays in Evaluation. It is the only progress that owes tasks."
     },
@@ -83,7 +83,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastEvent != \"TicketFinalizationNeedsWork\"",
-      "steps": 9,
+      "steps": 13,
       "quintVersion": "0.32.0",
       "purpose": "A finalizer reports failure and the ticket re-enters work. There is no wall on this edge: the finalizer that keeps failing keeps buying cycles."
     },
@@ -181,7 +181,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "not(lastEvent == \"TicketRevoked\" and lastObligations.length() > 0)",
-      "steps": 8,
+      "steps": 18,
       "quintVersion": "0.32.0",
       "purpose": "A revoke of a ticket with tasks running: the event owes a CancelTask for each live task, which no other event does. The walk revokes only tickets with nothing running."
     },
@@ -195,9 +195,93 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastRefusal != \"TaskNotCurrent\"",
-      "steps": 22,
+      "steps": 30,
       "quintVersion": "0.32.0",
       "purpose": "A task report nothing owes any more is answered, not taken: the refusal names the ticket and the task, and the tickets stand."
+    },
+    {
+      "name": "dependencies-incomplete",
+      "instance": "mc_chuggy",
+      "module": "mc_chuggy",
+      "source": "model/mc/mc_chuggy.qnt",
+      "step": "step",
+      "seed": "0x1",
+      "maxSamples": 60000,
+      "maxSteps": 32,
+      "invariant": "lastRefusal != \"DependenciesIncomplete\"",
+      "steps": 8,
+      "quintVersion": "0.32.0",
+      "purpose": "A dispatch of a ticket waiting on a dependency that is not Done is refused, naming every such dependency."
+    },
+    {
+      "name": "ticket-updated-dispatch",
+      "instance": "mc_chuggy",
+      "module": "mc_chuggy",
+      "source": "model/mc/mc_chuggy.qnt",
+      "step": "step",
+      "seed": "0x1",
+      "maxSamples": 60000,
+      "maxSteps": 32,
+      "invariant": "not(lastEvent == \"TicketDispatched\" and tickets.get(lastEventTicket).revision > 1)",
+      "steps": 5,
+      "quintVersion": "0.32.0",
+      "purpose": "An update while Pending, then the dispatch that runs it: the work the dispatch owes is the definition the update landed, not the one the release pinned, and the update itself owes nothing."
+    },
+    {
+      "name": "update-revision-stale",
+      "instance": "mc_chuggy",
+      "module": "mc_chuggy_directed",
+      "source": "model/mc/mc_chuggy_directed.qnt",
+      "step": "updateStep",
+      "seed": "0x1",
+      "maxSamples": 20000,
+      "maxSteps": 40,
+      "invariant": "not(lastRefusal == \"TicketRevisionStale\" and staleUpdateRefused)",
+      "steps": 18,
+      "quintVersion": "0.32.0",
+      "purpose": "An update written against a revision another update has since replaced is refused with both revisions, and the definition stands (mc_chuggy_directed staleUpdateRefused: a revision behind, which is the staleness an author meets)."
+    },
+    {
+      "name": "update-dependencies-changed",
+      "instance": "mc_chuggy",
+      "module": "mc_chuggy",
+      "source": "model/mc/mc_chuggy.qnt",
+      "step": "step",
+      "seed": "0x1",
+      "maxSamples": 60000,
+      "maxSteps": 32,
+      "invariant": "lastRefusal != \"TicketDependenciesChanged\"",
+      "steps": 9,
+      "quintVersion": "0.32.0",
+      "purpose": "An update that would change a ticket's dependencies is refused: the dependencies are fixed at release."
+    },
+    {
+      "name": "update-identity-mismatch",
+      "instance": "mc_chuggy",
+      "module": "mc_chuggy",
+      "source": "model/mc/mc_chuggy.qnt",
+      "step": "step",
+      "seed": "0x1",
+      "maxSamples": 60000,
+      "maxSteps": 32,
+      "invariant": "lastRefusal != \"TicketIdentityMismatch\"",
+      "steps": 5,
+      "quintVersion": "0.32.0",
+      "purpose": "An update whose definition names another ticket is refused before its revision is read."
+    },
+    {
+      "name": "update-not-pending",
+      "instance": "mc_chuggy",
+      "module": "mc_chuggy_directed",
+      "source": "model/mc/mc_chuggy_directed.qnt",
+      "step": "updateStep",
+      "seed": "0x1",
+      "maxSamples": 20000,
+      "maxSteps": 40,
+      "invariant": "lastRefusal != \"TicketNotPending\"",
+      "steps": 13,
+      "quintVersion": "0.32.0",
+      "purpose": "An update to a ticket that has left Pending is refused: a dispatched ticket runs the definition it was dispatched under. The step relation draws only the update's refusals out of turn, so this refusal is an update's (mc_chuggy_directed updateStep)."
     }
   ]
 }

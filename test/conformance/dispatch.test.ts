@@ -24,8 +24,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 
-import { declaredActions } from "../domain/declared.ts";
+import { declaredActions, directedActions } from "../domain/declared.ts";
 import {
+  emitterActions,
   replayActions,
   replayStep,
   unknownActionMessage,
@@ -77,8 +78,16 @@ test("the reader is reading the model rather than agreeing with the table", () =
   );
 });
 
+test("the emitter's own actions are the directed emitter's, in its order", () => {
+  assert.deepEqual(
+    [...emitterActions],
+    [...directedActions(ROOT)],
+    "the dispatch table and model/mc/mc_chuggy_directed.qnt's step relations offer different actions",
+  );
+});
+
 test("every action in the roster reaches an arm, and none falls through", () => {
-  for (const action of replayActions) {
+  for (const action of [...replayActions, ...emitterActions]) {
     const why = refusal(action);
     assert.ok(
       why === undefined || !why.includes(unknownActionMessage),

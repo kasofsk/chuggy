@@ -1,8 +1,7 @@
 /**
- * The corpus carries every event the model declares, every refusal its
- * instances can reach, the decisions whose
- * obligations are the point of their event, and in each row what its manifest
- * row says it was aimed at.
+ * The corpus carries every event and every refusal the model declares, the
+ * decisions whose obligations are the point of their event, and in each row
+ * what its manifest row says it was aimed at.
  *
  * This fails the corpus rather than reporting on it. An event no golden
  * carries is an edge of the machine nothing replays, which is the same as an
@@ -71,32 +70,13 @@ test("every event the model declares is carried somewhere in the corpus", () => 
   );
 });
 
-/**
- * The refusals only an update reaches. The machine has no update command yet,
- * so no instance can send one; `model/ticket.qnt` declares them unreachable
- * where it declares them.
- */
-const updateOnlyRefusals: readonly string[] = [
-  "TicketIdentityMismatch",
-  "TicketRevisionStale",
-  "TicketDependenciesChanged",
-];
-
-test("every refusal the machine can reach is carried somewhere in the corpus", () => {
+test("every refusal the model declares is carried somewhere in the corpus", () => {
   const fired = corpus.firedAcross();
-  const missing = ticketRefusalTags.filter(
-    (tag) => !updateOnlyRefusals.includes(tag) && !fired.has(tag),
-  );
+  const missing = ticketRefusalTags.filter((tag) => !fired.has(tag));
   assert.deepEqual(
     missing,
     [],
     `these refusals are in no golden, so nothing compares them: ${missing.join(", ")}`,
-  );
-  const unreachable = updateOnlyRefusals.filter((tag) => fired.has(tag));
-  assert.deepEqual(
-    unreachable,
-    [],
-    "a refusal only an update reaches was reached",
   );
 });
 
@@ -143,6 +123,10 @@ test("the decisions whose obligations are the point of their event are carried",
     [
       "an escalated evaluation failure owing nothing",
       carries("TicketEvaluationFailureEscalated", (arms) => arms.length === 0),
+    ],
+    [
+      "an update owing nothing",
+      carries("TicketUpdated", (arms) => arms.length === 0),
     ],
     [
       "a work resume owing its work task",
