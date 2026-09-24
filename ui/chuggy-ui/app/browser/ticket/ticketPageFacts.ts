@@ -8,7 +8,7 @@
  * the read it needs is, so a half-read page draws what it has rather than a
  * guess at the rest.
  *
- * A RESUME IS ANSWERED FROM THE WIRE BEFORE THE DRAFT ARRIVES. `resumeAt` is
+ * A RESUME IS ANSWERED FROM THE WIRE ALONE. `resumeAt` is
  * the machine's own answer, read straight off the ticket's `escalation` and
  * needing no program or ledger to read, so a ticket read that carries one
  * offers its resume on a cold load.
