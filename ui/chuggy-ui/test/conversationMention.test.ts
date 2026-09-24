@@ -26,6 +26,7 @@ function ticketOf(ticket: number, title: string | undefined): TicketResponse {
   return {
     ticket,
     title,
+    revision: 1,
     phase: "Work",
     sequence: 1,
     changedAt: "2026-09-11T00:00:00.000Z",
