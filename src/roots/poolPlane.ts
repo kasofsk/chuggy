@@ -16,8 +16,8 @@
  * cannot be reached refuses the start rather than serving refusals.
  */
 import { pathToFileURL } from "node:url";
-import { randomBytes } from "node:crypto";
 
+import { poolBearerMint } from "../adapters/crypto/poolBearerMint.ts";
 import { createPoolPlaneApp } from "../adapters/http/poolPlaneServer.ts";
 import { oidcAuthentication } from "../adapters/http/oidc.ts";
 import { ketoProjectAccess } from "../adapters/keto/projectAccess.ts";
@@ -86,7 +86,7 @@ async function main(): Promise<void> {
     ),
     registry: postgresWorkerPoolRegistry(pool),
     assignments: postgresWorkerPoolAssignments(pool),
-    mint: () => randomBytes(32).toString("base64url"),
+    mint: poolBearerMint,
     settings: {
       leaseSecs: planeEnvironmentPositive("CHUG_POOL_PLANE_LEASE_SECS", 300),
       assignmentsPerPollMax: planeEnvironmentPositive(
