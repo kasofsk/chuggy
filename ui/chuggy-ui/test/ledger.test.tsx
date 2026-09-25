@@ -10,6 +10,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 
 import type { Figure as FigureValue, Spend } from "../app/core/figures.ts";
@@ -74,6 +75,43 @@ test("both standings draw a group that is a disclosure, open where it is told", 
     expect(container.querySelector("[style]")).toBeNull();
     cleanup();
   }
+});
+
+/** A lazy group's rows read on mount, so they mount at the first open and are
+ * kept through every close after it rather than read again. */
+test("a lazy group mounts its rows at the first open and keeps them through a close", () => {
+  const mounted = vi.fn();
+  function Counted(): ReactNode {
+    useEffect(mounted, []);
+    return <LedgerRow label="Work" pill={{ tone: "pass", text: "Passed" }} />;
+  }
+  const { container } = render(
+    <LedgerGroup
+      title="Cycle 2"
+      standing="Superseded"
+      summary="Work passed"
+      open={false}
+      lazy
+    >
+      <LedgerBlock>
+        <Counted />
+      </LedgerBlock>
+    </LedgerGroup>,
+  );
+  const group = container.querySelector("details");
+  if (group === null) throw new Error("no group drawn");
+  const turned = (open: boolean): void => {
+    group.open = open;
+    fireEvent(group, new Event("toggle"));
+  };
+  expect(screen.queryByText("Work")).toBeNull();
+  turned(true);
+  expect(screen.getByText("Work")).toBeDefined();
+  turned(false);
+  expect(screen.getByText("Work")).toBeDefined();
+  turned(true);
+  expect(screen.getByText("Work")).toBeDefined();
+  expect(mounted).toHaveBeenCalledTimes(1);
 });
 
 test("a row draws its label, its status, its window and its spend", async () => {

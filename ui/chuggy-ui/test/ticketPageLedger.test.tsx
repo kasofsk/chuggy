@@ -428,8 +428,10 @@ test("every section of the page has an anchor pointing at it", async () => {
     (link) => link.getAttribute("href"),
   );
   expect(anchors).toEqual(["#cycles", "#brief", "#usage", "#provenance"]);
-  for (const anchor of anchors)
-    expect(container.querySelector(`section${String(anchor)}`)).not.toBeNull();
+  const drawn = [...container.querySelectorAll("section[id]")]
+    .map((section) => `#${section.id}`)
+    .filter((id) => anchors.includes(id));
+  expect(drawn).toEqual(anchors);
   expect(screen.getByText("3 · 7 runs")).toBeDefined();
 });
 
@@ -795,10 +797,6 @@ test("a running ticket says when it started, from its release", async () => {
   );
 });
 
-/**
- * §5.2's waiting reading: a row whose first attempt the wire dates says how
- * much of its window was the queue, and one it does not reads as before.
- */
 /** A row reads its run to learn whether it has a conversation, so a cycle
  * the page draws closed reads its runs only once a reader opens it. */
 test("a closed cycle reads none of its runs until it is opened", async () => {
@@ -806,14 +804,25 @@ test("a closed cycle reads none of its runs until it is opened", async () => {
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  const runReads = (): number =>
-    routed.filter((url) => /\/executions\/[^/?]+$/u.test(url)).length;
-  const onLoad = runReads();
-  expect(onLoad).toBeGreaterThan(0);
+  const runsRead = (): readonly string[] =>
+    [
+      ...new Set(
+        routed.flatMap(
+          (url) => /\/executions\/([^/?]+)$/u.exec(url)?.slice(1) ?? [],
+        ),
+      ),
+    ].sort();
+  expect(runsRead()).toEqual(["execution-b8bdfdd4-7", "execution-c004a1fa-6"]);
   await cyclesOpened(container);
-  expect(runReads()).toBeGreaterThan(onLoad);
+  expect(runsRead()).toEqual(
+    ticket21Parked.map((shape) => shape.execution).sort(),
+  );
 });
 
+/**
+ * §5.2's waiting reading: a row whose first attempt the wire dates says how
+ * much of its window was the queue, and one it does not reads as before.
+ */
 test("a row separates its wait from its run where the wire dates the start", async () => {
   const started: readonly ExecutionShape[] = ticket21Parked.map((shape) =>
     shape.task === 1 ? { ...shape, startedAt: "2026-08-26T00:11:00Z" } : shape,

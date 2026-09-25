@@ -188,8 +188,8 @@ test("a Codex mode's model is read from its own field, as named", () => {
 });
 
 /** The briefing's own rule: a role that runs commands is briefed with no
- * practices, a role naming its own is briefed with those, and any other with
- * the configuration's. */
+ * practices, and any other with the configuration's, even where its block
+ * names some, since a role's block keeps no practices of its own. */
 test("each role shows the practices it is briefed with", () => {
   const view = configurationViewOf(
     JSON.stringify({
@@ -206,7 +206,7 @@ test("each role shows the practices it is briefed with", () => {
       work: { instructions: ["Build it."], practices: ["Layering"] },
     }),
   );
-  expect(own.work.practices).toStrictEqual(["Layering"]);
+  expect(own.work.practices).toStrictEqual(["RegressionCoverage"]);
 });
 
 test("a practice identity is drawn as the words it names", () => {

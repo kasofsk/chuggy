@@ -63,7 +63,6 @@ const purposeSchema = z
   .looseObject({
     instructions: optionalStrings(),
     commands: optionalStrings(),
-    practices: optionalStrings(),
   })
   .optional()
   .catch(undefined);
@@ -258,8 +257,8 @@ export interface ConfigurationRole {
 }
 
 /** The practices a role is briefed with, by the briefing's own rule: none for
- * a role that runs commands, its own where it names them, and otherwise the
- * configuration's. */
+ * a role that runs commands, and otherwise the configuration's, a role's block
+ * having no practices of its own. */
 function configurationRoleOf(
   purpose: ConfigurationDocument["work"],
   practices: readonly string[] | undefined,
@@ -271,7 +270,7 @@ function configurationRoleOf(
       purpose === undefined
         ? undefined
         : purpose.commands === undefined
-          ? (purpose.practices ?? practices)
+          ? practices
           : [],
   };
 }
