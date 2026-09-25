@@ -67,3 +67,28 @@ export function DataPanel<T>(props: {
     </Panel>
   );
 }
+
+/**
+ * A read's not-ready states and, once ready, its freshness and its value —
+ * with no title of its own, for a body whose heading is the accordion row it
+ * opens under.
+ */
+export function DataSection<T>(props: {
+  readonly state: PanelState<T>;
+  readonly children: (value: T) => ReactNode;
+}): ReactNode {
+  const state = props.state;
+  return (
+    <div className="grid gap-3">
+      <PanelUnready state={state} />
+      {state.state === "Ready" ? (
+        <>
+          <div className="flex justify-end">
+            <Freshness observedAtMs={state.observedAtMs} />
+          </div>
+          {props.children(state.value)}
+        </>
+      ) : null}
+    </div>
+  );
+}

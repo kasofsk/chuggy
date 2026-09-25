@@ -131,6 +131,7 @@ export function TicketSections(props: {
   readonly page: ExecutionsResponse | undefined;
   readonly open: readonly string[];
   readonly onOpenChange: (open: readonly string[]) => void;
+  readonly nowMs: number;
 }): ReactNode {
   const ticket =
     props.ticketState.state === "Ready" ? props.ticketState.value : undefined;
@@ -158,6 +159,7 @@ export function TicketSections(props: {
           partition={props.partition}
           state={props.draftState}
           ticket={ticket}
+          nowMs={props.nowMs}
         />
       </SectionRow>
     </Accordion.Root>

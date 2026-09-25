@@ -130,28 +130,15 @@ export function draftReleaseOf(draft: DraftResponse): DraftRelease {
     : { release: "Current", released };
 }
 
-/** The live revision, and the draft version it was released from. */
-export function ticketRevisionLine(
-  revision: number,
-  release: DraftRelease,
-): string {
+/** The same standing as one short phrase, a count rather than a sentence, for
+ * a summary grid cell. */
+export function draftUnreleasedLabel(release: DraftRelease): string {
   switch (release.release) {
     case "Unrecorded":
-      return `revision ${String(revision)}`;
+      return "Not recorded";
     case "Current":
+      return "Nothing unreleased";
     case "Ahead":
-      return `revision ${String(revision)}, from draft version ${String(release.released)}`;
-  }
-}
-
-/** Whether the draft holds anything the live revision does not. */
-export function draftReleaseLine(release: DraftRelease): string {
-  switch (release.release) {
-    case "Unrecorded":
-      return "not recorded which version is live";
-    case "Current":
-      return "nothing unreleased";
-    case "Ahead":
-      return `version ${String(release.current)} holds unreleased changes`;
+      return `${String(release.current - release.released)} unreleased`;
   }
 }

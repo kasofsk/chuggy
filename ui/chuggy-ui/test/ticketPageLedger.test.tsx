@@ -420,7 +420,7 @@ test("the rows under the ledger are closed, and following an anchor opens its ro
     { shapes: ticket21Parked, ticket: parkedTicket },
     { shell: true },
   );
-  expect(screen.queryByText("1× then 1×")).toBeNull();
+  expect(screen.queryByText("Dependencies")).toBeNull();
   fireEvent.click(
     screen.getByRole("button", { name: "Details", pressed: false }),
   );
@@ -430,7 +430,7 @@ test("the rows under the ledger are closed, and following an anchor opens its ro
     anchor.click();
   });
   await settled();
-  expect(screen.getByText("1× then 1×")).toBeDefined();
+  expect(screen.getByText("Dependencies")).toBeDefined();
   expect(
     screen
       .getByRole("button", { name: /^Provenance/u })
@@ -485,10 +485,10 @@ test("the top bar's breadcrumb returns to the project's overview", async () => {
   expect(crumb.tagName).toBe("A");
 });
 
-test("the canonical configuration is closed until asked for, and its trigger names what it opens", async () => {
+test("the canonical JSON is closed until asked for, and its trigger controls it", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
   await sectionOpened("Provenance");
-  const trigger = screen.getByRole("button", { name: "show canonical" });
+  const trigger = screen.getByRole("button", { name: "Canonical JSON" });
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByText("{}")).toBeNull();
   await turned(() => {
@@ -497,7 +497,6 @@ test("the canonical configuration is closed until asked for, and its trigger nam
   const body = screen.getByText("{}");
   expect(trigger.getAttribute("aria-expanded")).toBe("true");
   expect(trigger.getAttribute("aria-controls")).toBe(body.id);
-  expect(screen.getByRole("button", { name: "hide canonical" })).toBe(trigger);
   await turned(() => {
     trigger.click();
   });
@@ -804,20 +803,6 @@ test("a ticket the machine is working on now keeps its open span", async () => {
   expect(line?.textContent).toMatch(/^started .+ ago$/u);
 });
 
-/** The provenance panel draws a stage as its evaluator count, never its key. */
-test("provenance draws each stage as its evaluator count", async () => {
-  const { container } = await drawTicket({
-    shapes: ticket21Parked,
-    ticket: parkedTicket,
-    program: [
-      { key: 1, evaluators: [{ key: 1 }, { key: 2 }, { key: 3 }] },
-      { key: 2, evaluators: [{ key: 1 }, { key: 3 }] },
-    ],
-  });
-  await sectionOpened("Provenance");
-  expect(container.textContent).toContain("3× then 2×");
-});
-
 /** A cancelled run has stopped, so it is not one of the runs still going. */
 test("a cancelled run is counted but is not counted as running", async () => {
   const cancelled: readonly ExecutionShape[] = ticket21Parked.map((shape) => {
@@ -970,7 +955,7 @@ test("nothing the ticket page draws is a runtime style element", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
   expect(document.querySelectorAll("style").length).toBe(0);
   await sectionOpened("Provenance");
-  fireEvent.click(screen.getByRole("button", { name: "show canonical" }));
+  fireEvent.click(screen.getByRole("button", { name: "Canonical JSON" }));
   expect(document.querySelectorAll("style").length).toBe(0);
 });
 
@@ -1001,12 +986,12 @@ test("the provenance names the live revision and a draft revised past it", async
     versions: { authoringVersion: 3, releasedAuthoringVersion: 2 },
   });
   await sectionOpened("Provenance");
-  expect(screen.getByText("live").nextElementSibling?.textContent).toBe(
-    "revision 2, from draft version 2",
+  expect(screen.getByText("Live").nextElementSibling?.textContent).toBe(
+    "Revision 2",
   );
   expect(
-    screen.getAllByText("draft").at(-1)?.nextElementSibling?.textContent,
-  ).toBe("version 3 holds unreleased changes");
+    screen.getAllByText("Draft").at(-1)?.nextElementSibling?.textContent,
+  ).toBe("1 unreleased");
   expect(drawnStringsOver(container)).toEqual([]);
 });
 
@@ -1018,8 +1003,8 @@ test("the provenance says a draft at its release holds nothing unreleased", asyn
   });
   await sectionOpened("Provenance");
   expect(
-    screen.getAllByText("draft").at(-1)?.nextElementSibling?.textContent,
-  ).toBe("nothing unreleased");
+    screen.getAllByText("Draft").at(-1)?.nextElementSibling?.textContent,
+  ).toBe("Nothing unreleased");
 });
 
 /** A Pending ticket's author may revise its draft without releasing it, and
@@ -1044,13 +1029,13 @@ test("a ticket whose draft is ahead draws the brief and configuration it was rel
   ).toBe("r1");
   expect(screen.queryByText("r2")).toBeNull();
   expect(
-    screen.getAllByText("draft").at(-1)?.nextElementSibling?.textContent,
-  ).toBe("version 3 holds unreleased changes");
+    screen.getAllByText("Draft").at(-1)?.nextElementSibling?.textContent,
+  ).toBe("1 unreleased");
 });
 
 /** A draft revised while its ticket was Pending and never released holds a
- * program the ticket does not run, so the ledger, the wall and the provenance
- * are drawn from the program the ticket was released with. */
+ * program the ticket does not run, so the ledger and the wall are drawn from
+ * the program the ticket was released with. */
 test("a ticket whose draft's program is ahead draws the stages it ran", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
@@ -1073,8 +1058,4 @@ test("a ticket whose draft's program is ahead draws the stages it ran", async ()
   expect(
     screen.getByRole("status", { name: "Needs you" }).textContent,
   ).toContain("Stage 1 of 2 failed");
-  await sectionOpened("Provenance");
-  expect(
-    screen.getByText("evaluation stages").nextElementSibling?.textContent,
-  ).toBe("1× then 1×");
 });

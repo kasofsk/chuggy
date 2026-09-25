@@ -189,7 +189,7 @@ test("the revision a ticket was released under stays reachable from its name", a
 test("the configuration panel keeps the revision its heading no longer shows", async () => {
   await drawTicket(named);
   expect(
-    screen.getByRole("heading", { name: /configuration chuggy #12/u }),
+    screen.getByRole("heading", { name: /Configuration chuggy #12/u }),
   ).toBeDefined();
   expect(screen.getByText("revision").nextElementSibling?.textContent).toBe(
     revision,
