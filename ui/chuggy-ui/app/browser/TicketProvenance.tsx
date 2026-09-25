@@ -304,36 +304,43 @@ function ConfigurationRoleBody(props: {
   );
 }
 
-const instructionTabs = ["Work", "Review"] as const;
-
+/** A Review tab only where a review run is briefed from the review block; the
+ * evaluation stages are the review otherwise. */
 function ConfigurationInstructions(props: {
   readonly brief: ConfigurationBrief;
   readonly work: ConfigurationRole;
-  readonly review: ConfigurationRole;
+  readonly review: ConfigurationRole | undefined;
 }): ReactNode {
+  const review = props.review;
+  const tabs = review === undefined ? ["Work"] : ["Work", "Review"];
   return (
     <Tabs.Root className="ticket-config-instructions" defaultValue="Work">
       <div className="ticket-config-instructions-bar">
         <span className="panel-title">Instructions</span>
-        <Tabs.List className="ticket-config-tabs" aria-label="Instructions for">
-          {instructionTabs.map((tab) => (
-            <Tabs.Trigger key={tab} value={tab} className="ticket-config-tab">
-              {tab}
-            </Tabs.Trigger>
-          ))}
-        </Tabs.List>
+        {tabs.length < 2 ? null : (
+          <Tabs.List
+            className="ticket-config-tabs"
+            aria-label="Instructions for"
+          >
+            {tabs.map((tab) => (
+              <Tabs.Trigger key={tab} value={tab} className="ticket-config-tab">
+                {tab}
+              </Tabs.Trigger>
+            ))}
+          </Tabs.List>
+        )}
         <span className="ticket-config-instructions-caption">
           As configured · a run's exact prompt is in its conversation
         </span>
       </div>
-      {instructionTabs.map((tab) => (
-        <Tabs.Content key={tab} value={tab}>
-          <ConfigurationRoleBody
-            brief={props.brief}
-            role={tab === "Work" ? props.work : props.review}
-          />
+      <Tabs.Content value="Work">
+        <ConfigurationRoleBody brief={props.brief} role={props.work} />
+      </Tabs.Content>
+      {review === undefined ? null : (
+        <Tabs.Content value="Review">
+          <ConfigurationRoleBody brief={props.brief} role={review} />
         </Tabs.Content>
-      ))}
+      )}
     </Tabs.Root>
   );
 }

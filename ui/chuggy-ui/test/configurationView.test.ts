@@ -187,19 +187,23 @@ test("a Codex mode's model is read from its own field, as named", () => {
   });
 });
 
-/** The briefing's own rule: a role that runs commands is briefed with no
- * practices, and any other with the configuration's, even where its block
- * names some, since a role's block keeps no practices of its own. */
+/** The briefing's own rule: work that runs commands is briefed with no
+ * practices, and any other role with the configuration's, even where its block
+ * names some or, for review, commands, since neither is kept on it. */
 test("each role shows the practices it is briefed with", () => {
   const view = configurationViewOf(
     JSON.stringify({
       practices: ["RegressionCoverage"],
       work: { commands: ["just build"] },
-      review: { instructions: ["Review it."] },
+      review: { instructions: ["Review it."], commands: ["just lint"] },
     }),
   );
   expect(view.work.practices).toStrictEqual([]);
-  expect(view.review.practices).toStrictEqual(["RegressionCoverage"]);
+  expect(view.review).toStrictEqual({
+    instructions: ["Review it."],
+    commands: undefined,
+    practices: ["RegressionCoverage"],
+  });
   const own = configurationViewOf(
     JSON.stringify({
       practices: ["RegressionCoverage"],
@@ -207,6 +211,14 @@ test("each role shows the practices it is briefed with", () => {
     }),
   );
   expect(own.work.practices).toStrictEqual(["RegressionCoverage"]);
+});
+
+/** A review run is briefed from its stage where stages are declared, so the
+ * review block reaches no run and is not drawn as if it did. */
+test("the review block is no role where evaluation stages are declared", () => {
+  const view = configurationViewOf(declaredConfiguration("chuggy-development"));
+  expect(view.evaluations.length).toBeGreaterThan(0);
+  expect(view.review).toBeUndefined();
 });
 
 test("a practice identity is drawn as the words it names", () => {

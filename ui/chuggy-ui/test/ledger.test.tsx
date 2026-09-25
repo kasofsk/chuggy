@@ -114,6 +114,33 @@ test("a lazy group mounts its rows at the first open and keeps them through a cl
   expect(mounted).toHaveBeenCalledTimes(1);
 });
 
+/** A cycle the page closes itself, once superseded, keeps its rows as well. */
+test("a lazy group told to close keeps the rows it mounted open", () => {
+  const mounted = vi.fn();
+  function Counted(): ReactNode {
+    useEffect(mounted, []);
+    return <LedgerRow label="Work" pill={{ tone: "pass", text: "Passed" }} />;
+  }
+  const group = (open: boolean): ReactNode => (
+    <LedgerGroup
+      title="Cycle 2"
+      standing={open ? "Current" : "Superseded"}
+      summary="Work passed"
+      open={open}
+      lazy
+    >
+      <LedgerBlock>
+        <Counted />
+      </LedgerBlock>
+    </LedgerGroup>
+  );
+  const { container, rerender } = render(group(true));
+  rerender(group(false));
+  expect(container.querySelector("details")?.open).toBe(false);
+  expect(screen.getByText("Work")).toBeDefined();
+  expect(mounted).toHaveBeenCalledTimes(1);
+});
+
 test("a row draws its label, its status, its window and its spend", async () => {
   const { container } = render(
     <LedgerBlock eyebrow="Evaluation" pill={{ tone: "live", text: "Current" }}>

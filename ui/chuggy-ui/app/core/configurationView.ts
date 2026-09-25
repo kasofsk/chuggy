@@ -256,22 +256,37 @@ export interface ConfigurationRole {
   readonly practices: readonly string[] | undefined;
 }
 
-/** The practices a role is briefed with, by the briefing's own rule: none for
- * a role that runs commands, and otherwise the configuration's, a role's block
- * having no practices of its own. */
-function configurationRoleOf(
-  purpose: ConfigurationDocument["work"],
-  practices: readonly string[] | undefined,
+/** Work is briefed with no practices where it runs commands, and otherwise
+ * with the configuration's, its block keeping none of its own. */
+function configurationWorkOf(
+  document: ConfigurationDocument,
 ): ConfigurationRole {
+  const work = document.work;
   return {
-    instructions: purpose?.instructions,
-    commands: purpose?.commands,
+    instructions: work?.instructions,
+    commands: work?.commands,
     practices:
-      purpose === undefined
+      work === undefined
         ? undefined
-        : purpose.commands === undefined
-          ? practices
+        : work.commands === undefined
+          ? document.practices
           : [],
+  };
+}
+
+/** The review block is briefed only where no evaluation stages are declared,
+ * each stage otherwise briefing from its own; it runs no commands and keeps no
+ * practices of its own, so its run is given the configuration's. */
+function configurationReviewOf(
+  document: ConfigurationDocument,
+): ConfigurationRole | undefined {
+  const review = document.review;
+  if (review === undefined || document.evaluations !== undefined)
+    return undefined;
+  return {
+    instructions: review.instructions,
+    commands: undefined,
+    practices: document.practices,
   };
 }
 
@@ -299,7 +314,8 @@ export interface ConfigurationView {
   readonly settings: ConfigurationSettings;
   readonly brief: ConfigurationBrief;
   readonly work: ConfigurationRole;
-  readonly review: ConfigurationRole;
+  /** Absent where the evaluation stages brief the review instead. */
+  readonly review: ConfigurationRole | undefined;
   readonly evaluations: readonly ConfigurationEvaluation[];
 }
 
@@ -308,8 +324,8 @@ export function configurationViewOf(canonical: string): ConfigurationView {
   return {
     settings: configurationSettingsOf(document),
     brief: configurationBriefOf(document.brief),
-    work: configurationRoleOf(document.work, document.practices),
-    review: configurationRoleOf(document.review, document.practices),
+    work: configurationWorkOf(document),
+    review: configurationReviewOf(document),
     evaluations: configurationEvaluationsOf(document.evaluations),
   };
 }

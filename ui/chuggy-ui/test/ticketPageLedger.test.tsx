@@ -428,9 +428,9 @@ test("every section of the page has an anchor pointing at it", async () => {
     (link) => link.getAttribute("href"),
   );
   expect(anchors).toEqual(["#cycles", "#brief", "#usage", "#provenance"]);
-  const drawn = [...container.querySelectorAll("section[id]")]
-    .map((section) => `#${section.id}`)
-    .filter((id) => anchors.includes(id));
+  const drawn = [...container.querySelectorAll("section[id]")].map(
+    (section) => `#${section.id}`,
+  );
   expect(drawn).toEqual(anchors);
   expect(screen.getByText("3 · 7 runs")).toBeDefined();
 });

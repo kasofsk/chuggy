@@ -82,7 +82,7 @@ const revision = "r-opus-1";
 const version = { name: "chuggy-development-opus", number: 1 };
 const digest = "d".repeat(64);
 
-async function drawTicket(): Promise<void> {
+async function drawTicket(served: string = canonical): Promise<void> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
@@ -93,7 +93,7 @@ async function drawTicket(): Promise<void> {
         return answer({
           partition: atlas,
           revision,
-          canonical,
+          canonical: served,
           digest,
           version,
         });
@@ -172,6 +172,11 @@ test("the settings grid reads the model off its own flag and the tools off the a
 
 /** The Instructions block alone, since the Evaluation section below it can
  * carry the very same sentence as a stage's own instructions. */
+const workText =
+  "Implement the requested change, add focused regression coverage, and run the checks relevant to the files changed.";
+const reviewText =
+  "Read .chug/tasks/review-change.md and review the change exactly as that brief requires.";
+
 function instructions(): HTMLElement {
   const region = document.querySelector(".ticket-config-instructions");
   if (!(region instanceof HTMLElement))
@@ -179,13 +184,9 @@ function instructions(): HTMLElement {
   return region;
 }
 
-test("the Instructions tabs draw the shared brief and each role's own words, Work first", async () => {
+test("the Instructions draw the shared brief and the work's own words, and no Review where stages brief the review", async () => {
   await drawTicket();
   await sectionOpened("Provenance");
-  const workText =
-    "Implement the requested change, add focused regression coverage, and run the checks relevant to the files changed.";
-  const reviewText =
-    "Read .chug/tasks/review-change.md and review the change exactly as that brief requires.";
   expect(
     within(instructions()).getByText(
       /Develop Chuggy itself in the same repository-native/u,
@@ -193,6 +194,18 @@ test("the Instructions tabs draw the shared brief and each role's own words, Wor
   ).toBeDefined();
   expect(within(instructions()).getByText(workText)).toBeDefined();
   expect(within(instructions()).getByText("Regression coverage")).toBeDefined();
+  expect(within(instructions()).queryByRole("tab")).toBeNull();
+  expect(within(instructions()).queryByText(reviewText)).toBeNull();
+});
+
+test("a configuration with no stages draws a Review tab, Work first", async () => {
+  const unstaged = Object.fromEntries(
+    Object.entries(JSON.parse(canonical) as Record<string, unknown>).filter(
+      ([key]) => key !== "evaluations",
+    ),
+  );
+  await drawTicket(JSON.stringify(unstaged));
+  await sectionOpened("Provenance");
   expect(within(instructions()).queryByText(reviewText)).toBeNull();
   await turned(() => {
     /** Radix selects a tab on `mousedown`, not `click`, and jsdom's own
@@ -202,6 +215,7 @@ test("the Instructions tabs draw the shared brief and each role's own words, Wor
     );
   });
   expect(within(instructions()).getByText(reviewText)).toBeDefined();
+  expect(within(instructions()).getByText("Regression coverage")).toBeDefined();
   expect(within(instructions()).queryByText(workText)).toBeNull();
 });
 
