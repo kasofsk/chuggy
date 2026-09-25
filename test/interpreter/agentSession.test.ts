@@ -25,12 +25,14 @@ import {
   asSessionId,
   asSessionStoreStream,
   asSessionTurnId,
-  sessionBearerPattern,
-  sessionBearerPrefix,
   sessionCapabilitiesMax,
   sessionIdentityCharsMax,
 } from "../../src/interpreter/agentSession.ts";
 import { sessionStoreStreamCharsMax } from "../../src/contract/http.ts";
+import {
+  sessionBearerPattern,
+  sessionBearerPrefix,
+} from "../../src/contract/sessionPlane.ts";
 import { populated } from "./roster.ts";
 
 /** Every brander, beside the subject its refusal has to name. */

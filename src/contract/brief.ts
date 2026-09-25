@@ -13,7 +13,7 @@
 
 import { z } from "zod";
 
-import { textCodePointsCount } from "./http.ts";
+import { repositoryIdentityCharsMax, textCodePointsCount } from "./http.ts";
 import { briefFinalizationProposes } from "./rosters.ts";
 
 /**
@@ -49,11 +49,8 @@ export const briefChecksMax = 8;
 /** The longest branch one brief names, a branch being a stored reference name. */
 export const briefBranchCharsMax = 256;
 
-/**
- * The longest repository one brief names, a repository being the same opaque
- * identity the binding stores and the finalizer lands in.
- */
-export const briefRepositoryCharsMax = 256;
+/** The longest repository one brief names, which is the longest repository identity. */
+export const briefRepositoryCharsMax = repositoryIdentityCharsMax;
 
 /** The one scheme a brief's links are read over. */
 export const briefLinkScheme = "https://";

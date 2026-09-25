@@ -58,6 +58,10 @@ import {
   sessionTurnInputKinds,
   projectRepositoryConfigurationDeferrals,
   sessionTurnStates,
+  sessionKinds,
+  sessionCapabilities,
+  agentReportedTurnFailures,
+  runEndedEvidences,
 } from "../../src/contract/rosters.ts";
 import { allForgeCredentialPermissionSets } from "../../src/interpreter/forgeInstallation.ts";
 import { allProjectRepositoryConfigurationsDeferrals } from "../../src/interpreter/repositoryOnboarding.ts";
@@ -69,19 +73,20 @@ import {
   leadObjectivesFixedCharsMax,
   nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
-  resultReportCharsMax,
+  repositoryIdentityCharsMax,
   resultReportSchemaVersionMin,
   runConfigurationBytesMax,
+  sessionCapabilitiesMax,
   sessionKindCharsMax,
   sessionTurnInputCharsMax,
   sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
 } from "../../src/contract/http.ts";
+import { resultManifestSchemaVersion } from "../../src/contract/workerDocuments.ts";
 import {
-  resultReportCharsMax as interpretedReportCharsMax,
-  resultManifestSchemaVersion,
-} from "../../src/interpreter/resultManifest.ts";
-import { runTurnsPageLimitMax } from "../../src/interpreter/runEvidence.ts";
+  runEndedEvidences as interpretedRunEndedEvidences,
+  runTurnsPageLimitMax,
+} from "../../src/interpreter/runEvidence.ts";
 import type { RunTotals } from "../../src/interpreter/runEvidence.ts";
 import { projectChangeKinds } from "../../src/contract/events.ts";
 import { inquiryObjectivesFixedChars } from "../../src/interpreter/inquiry.ts";
@@ -97,11 +102,13 @@ import { allThreadStandings } from "../../src/interpreter/thread.ts";
 import {
   allAgentReportedTurnFailures,
   allPlatformTurnFailures,
+  allSessionCapabilities,
   allSessionKinds,
   allSessionStates,
   allSessionTurnFailures,
   allSessionTurnInputKinds,
   allSessionTurnStates,
+  sessionCapabilitiesMax as interpretedSessionCapabilitiesMax,
   sessionIdentityCharsMax,
 } from "../../src/interpreter/agentSession.ts";
 import type { SelectorProjectState } from "../../src/interpreter/selector.ts";
@@ -132,6 +139,7 @@ import type { ExecutionTaskKind } from "../../src/interpreter/executionScheduler
 import {
   allFinalizationHoldKinds,
   allGitEvidence,
+  finalizerIdentityCharsMax,
   type FinalizationHoldKind,
 } from "../../src/interpreter/finalizer.ts";
 import type {
@@ -369,6 +377,7 @@ test("the wire has an arm, and its keys, for every requirement the interpreter m
 
 test("the wire's evidence labels are the interpreter's own list", () => {
   assert.deepEqual([...attemptEvidences], [...allAttemptEvidence]);
+  assert.deepEqual(runEndedEvidences, interpretedRunEndedEvidences);
 });
 
 test("the cost basis roster is exhaustive over the union it induces", () => {
@@ -378,7 +387,6 @@ test("the cost basis roster is exhaustive over the union it induces", () => {
 
 test("a run's read bounds are the ones the layers beneath them hold", () => {
   assert.equal(runConfigurationBytesMax, outputPreviewBytesMax);
-  assert.equal(resultReportCharsMax, interpretedReportCharsMax);
   assert.equal(nativeHttpPageItemsMax, runTurnsPageLimitMax);
 });
 
@@ -527,6 +535,9 @@ test("the stream carries every polled kind and the four polling omits", () => {
 
 test("every session and refusal roster restates the interpreter's own", () => {
   assert.deepEqual(agenticRefusalEvents, allAgenticRefusalEvents);
+  assert.deepEqual(sessionKinds, allSessionKinds);
+  assert.deepEqual(sessionCapabilities, allSessionCapabilities);
+  assert.deepEqual(agentReportedTurnFailures, allAgentReportedTurnFailures);
   assert.deepEqual(sessionStates, allSessionStates);
   assert.deepEqual(sessionTurnInputKinds, allSessionTurnInputKinds);
   assert.deepEqual(sessionTurnStates, allSessionTurnStates);
@@ -570,6 +581,8 @@ test("the attention roster is the union the selector's own state carries", () =>
 });
 
 test("every bound the wire restates holds the value its source does", () => {
+  assert.equal(sessionCapabilitiesMax, interpretedSessionCapabilitiesMax);
+  assert.equal(repositoryIdentityCharsMax, finalizerIdentityCharsMax);
   assert.equal(sessionTurnModelCharsMax, sessionIdentityCharsMax);
   assert.equal(leadRefusalsObservedMax, dispatchViewPageLimitMax);
   assert.equal(leadObservationBytesMax, sessionTurnInputCharsMax);

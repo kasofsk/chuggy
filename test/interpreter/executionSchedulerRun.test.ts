@@ -45,10 +45,8 @@ import {
   executionSchedulerRegister,
   type ExecutionSchedulerService,
 } from "../../src/interpreter/executionSchedulerRun.ts";
-import {
-  asResultManifestId,
-  resultReportCharsMax,
-} from "../../src/interpreter/resultManifest.ts";
+import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
+import { resultReportCharsMax } from "../../src/contract/http.ts";
 import {
   blessedPracticeCatalog,
   type ConfigurationRead,

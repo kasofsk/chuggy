@@ -8,9 +8,9 @@
  * project actor nor owns a database transaction.
  */
 
+import { isSessionStoreStream } from "../contract/sessionPlane.ts";
 import {
   asSessionStoreStream,
-  isSessionStoreStream,
   type SessionId,
   type SessionStoreStream,
   type SessionTurnId,

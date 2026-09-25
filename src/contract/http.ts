@@ -14,6 +14,51 @@ export function textCodePointsCount(text: string): number {
   return [...text].length;
 }
 
+/**
+ * A lone surrogate, which a `u` pattern reads as a code point of its own and a
+ * pair never is. It is `isWellFormed` negated, which the browser library the
+ * contract is checked against does not have.
+ */
+const unpairedSurrogate = /\p{Cs}/u;
+
+/** Why one string is not text a bounded column holds, or nothing where it is. */
+export type BoundedTextRefusal =
+  | { readonly refused: "Empty" }
+  | { readonly refused: "Unpaired" }
+  | { readonly refused: "Nul" }
+  | { readonly refused: "TooLong"; readonly chars: number };
+
+/**
+ * The whole rule, asked once so the door and the brand cannot answer it
+ * differently: an opaque string with no cap is an unbounded row, one carrying
+ * an unpaired surrogate is a value every UTF-8 encoding of it folds to the
+ * replacement character, so two such strings share one digest and one stored
+ * row, and one carrying a NUL is a value no PostgreSQL text or `jsonb` holds at
+ * all — a row refused by the cast that discovers it rather than by the door
+ * that took it.
+ */
+export function boundedTextRefusal(
+  value: string,
+  charsMax: number,
+): BoundedTextRefusal | undefined {
+  if (value.length === 0) return { refused: "Empty" };
+  if (unpairedSurrogate.test(value)) return { refused: "Unpaired" };
+  if (value.includes("\u0000")) return { refused: "Nul" };
+  const chars = textCodePointsCount(value);
+  return chars > charsMax ? { refused: "TooLong", chars } : undefined;
+}
+
+/**
+ * Whether text is one a bounded column holds, which is `asBoundedText`'s own
+ * question without its raise. A route reading a caller's body needs the answer
+ * rather than the refusal: a value a stored row could not hold is a status to
+ * answer with, where a raise crossing a route is an internal message in a body
+ * the caller has no arm for.
+ */
+export function isBoundedText(value: string, charsMax: number): boolean {
+  return boundedTextRefusal(value, charsMax) === undefined;
+}
+
 /** What one character weighs once JSON escapes it, which a control character does. */
 const jsonEscapedCharChars = 6;
 
@@ -203,7 +248,7 @@ export const inquiriesOpenPerMemberMax = 2;
 /** How many of a lead's inquiries one listing answers with, newest first. */
 export const inquiriesAnsweredMax = 32;
 
-/** The longest summary a result carries, restating what the manifest reader accepts. */
+/** The longest summary a result carries, which the manifest reader accepts and a later evaluation retains. */
 export const resultReportCharsMax = 8_192;
 
 /**
@@ -368,6 +413,12 @@ export const sessionIdentityCharsMax = 256;
 
 /** The longest label a session kind may be, which its own roster is inside. */
 export const sessionKindCharsMax = 16;
+
+/** The most capabilities one session's roster carries, which is a bound and not a policy. */
+export const sessionCapabilitiesMax = 16;
+
+/** The longest repository identity, the same opaque identity the binding stores and the finalizer lands in. */
+export const repositoryIdentityCharsMax = 256;
 
 /**
  * What one JSON object weighs as `jsonb::text` renders it, which is the only

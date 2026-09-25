@@ -39,10 +39,8 @@ import {
   gitRefNameCharsMax,
   gitRefNamePrefix,
 } from "../../src/interpreter/finalizer.ts";
-import {
-  briefingLineCharsMax,
-  briefingLinesMax,
-} from "../../src/interpreter/taskConfiguration.ts";
+import { briefingLinesMax } from "../../src/interpreter/taskConfiguration.ts";
+import { briefingLineCharsMax } from "../../src/contract/workerTask.ts";
 import {
   asBriefCheckLine,
   asBriefIntent,

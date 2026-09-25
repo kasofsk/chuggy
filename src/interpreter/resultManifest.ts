@@ -50,8 +50,18 @@
  * materializer is the one that earns the rule.
  */
 
-import { artifactDigestChars, textCodePointsCount } from "../contract/http.ts";
+import {
+  artifactDigestChars,
+  resultReportCharsMax,
+  textCodePointsCount,
+} from "../contract/http.ts";
 import type { ResultVerdict } from "../contract/rosters.ts";
+import {
+  resultManifestSchemaVersion,
+  resultManifestSchemaVersionsAccepted,
+  resultManifestTextCharsMax,
+  type ResultManifestSchemaVersion,
+} from "../contract/workerDocuments.ts";
 import {
   asGitObjectId,
   asGitRefName,
@@ -85,16 +95,6 @@ export type CanonicalManifest = string & {
   readonly [canonicalManifestBrand]: true;
 };
 
-/** The schema version workers author now; retained version-one manifests remain readable. */
-export const resultManifestSchemaVersion = 3;
-
-/** The schema versions retained manifests may carry. */
-export type ResultManifestSchemaVersion =
-  1 | 2 | typeof resultManifestSchemaVersion;
-
-/** The largest structured worker summary retained for a later evaluation. */
-export const resultReportCharsMax = 8_192;
-
 /** The longest artifact path a stored row carries, which an object key must still hold. */
 export const artifactPathCharsMax = 256;
 
@@ -122,9 +122,6 @@ export const artifactBytesMax = 1_073_741_824;
 
 /** The largest total one manifest may declare, which is what bounds project storage growth. */
 export const manifestBytesMax = 5_368_709_120;
-
-/** The longest report text this module will parse, checked before parsing rather than after. */
-export const resultManifestTextCharsMax = 131_072;
 
 /**
  * How much of a stored digest the model-grain fold reads. Thirteen hexadecimal
@@ -568,7 +565,7 @@ function manifestEnvelope(
   const record = manifestRecord(parsed);
   if (record === undefined) return manifestRejected("TextUnreadable");
   const version = record["version"];
-  if (version !== 1 && version !== 2 && version !== resultManifestSchemaVersion)
+  if (!resultManifestSchemaVersionsAccepted.some((known) => known === version))
     return manifestRejected("UnsupportedSchemaVersion");
   const required =
     version === resultManifestSchemaVersion

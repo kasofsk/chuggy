@@ -15,12 +15,14 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import test from "node:test";
 
-import { workerPlaneUploadBytesMax } from "../../src/contract/http.ts";
-import { resultReportCharsMax } from "../../src/interpreter/resultManifest.ts";
+import {
+  resultReportCharsMax,
+  workerPlaneUploadBytesMax,
+} from "../../src/contract/http.ts";
 import {
   briefingLineCharsMax,
   commandLinesMax,
-} from "../../src/interpreter/taskConfiguration.ts";
+} from "../../src/contract/workerTask.ts";
 import { credentialScrub } from "./runEvidence.mjs";
 import {
   runChecks,

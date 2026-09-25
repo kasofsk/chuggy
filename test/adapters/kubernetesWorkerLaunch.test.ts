@@ -63,7 +63,6 @@ import type { PolicyAuthorityGrant } from "../../src/interpreter/taskAuthority.t
 import {
   allPracticeIds,
   blessedPracticeCatalog,
-  briefingLineCharsMax,
   briefingLinesMax,
   composeTaskInvocation,
   priorWorkReportsMax,
@@ -73,7 +72,8 @@ import {
   type PinnedTaskConfiguration,
   type TaskInvocation,
 } from "../../src/interpreter/taskBriefing.ts";
-import { resultReportCharsMax } from "../../src/interpreter/resultManifest.ts";
+import { resultReportCharsMax } from "../../src/contract/http.ts";
+import { briefingLineCharsMax } from "../../src/contract/workerTask.ts";
 import { populated } from "../interpreter/roster.ts";
 
 const root = mkdtempSync(join(tmpdir(), "chuggy-cluster-"));

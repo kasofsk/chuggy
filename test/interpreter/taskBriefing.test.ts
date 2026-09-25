@@ -32,14 +32,16 @@ import {
   type TaskPurpose,
 } from "../../src/interpreter/briefingTemplate.ts";
 import { briefChecksMax } from "../../src/contract/brief.ts";
-import { resultReportCharsMax } from "../../src/interpreter/resultManifest.ts";
+import { resultReportCharsMax } from "../../src/contract/http.ts";
+import {
+  briefingLineCharsMax,
+  commandLinesMax,
+} from "../../src/contract/workerTask.ts";
 import {
   allBriefingFaults,
   allPracticeIds,
   blessedPracticeCatalog,
-  briefingLineCharsMax,
   briefingLinesMax,
-  commandLinesMax,
   stageCommandsMax,
   authoredTaskConfigurationReadiness,
   composeTaskInvocation,

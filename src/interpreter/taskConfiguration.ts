@@ -24,6 +24,10 @@
 import { z } from "zod";
 
 import { textCodePointsCount } from "../contract/http.ts";
+import {
+  briefingLineCharsMax,
+  commandLinesMax,
+} from "../contract/workerTask.ts";
 
 /** The claim a ticket makes about itself, which both roles are briefed with unchanged. */
 export type TicketBrief = TaskConfigurationReadonly<
@@ -150,16 +154,10 @@ export const allPracticeIds: readonly PracticeId[] = [
   "AcceptanceCriteria",
 ];
 
-/** The longest single briefing line, which is one criterion, constraint or instruction. */
-export const briefingLineCharsMax = 512;
-
 /** The most lines one authored list may carry. */
 export const briefingLinesMax = 8;
 
 export const evaluationBlocksMax = 64;
-
-/** The most command lines one stage may name, whichever stage it is. */
-export const commandLinesMax = 8;
 
 /** Why an authored document cannot supply the briefing contract. */
 export type TaskConfigurationFault =

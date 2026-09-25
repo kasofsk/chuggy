@@ -42,6 +42,7 @@
  */
 
 import { leadSeedingDecisionsMax } from "../contract/http.ts";
+import { leadTurnDocumentVersion } from "../contract/workerDocuments.ts";
 import {
   asSessionTurnId,
   type SessionTurnId,
@@ -59,7 +60,6 @@ import { leadSystemPrompt } from "./leadTools.ts";
 import {
   leadObservationText,
   leadObservedRefusals,
-  leadTurnDocumentVersion,
   parseLeadDecision,
   type LeadObservationDocument,
   type LeadObservedRefusal,

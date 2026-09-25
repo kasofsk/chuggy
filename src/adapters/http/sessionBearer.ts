@@ -38,9 +38,11 @@
  */
 
 import {
-  asSessionBearerSecret,
   sessionBearerPattern,
   sessionBearerPrefix,
+} from "../../contract/sessionPlane.ts";
+import {
+  asSessionBearerSecret,
   type SessionBearerAuthority,
   type SessionBearerIdentity,
 } from "../../interpreter/agentSession.ts";

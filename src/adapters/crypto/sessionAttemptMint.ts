@@ -19,11 +19,11 @@
 
 import { createHash, randomUUID } from "node:crypto";
 
+import { sessionBearerPrefix } from "../../contract/sessionPlane.ts";
 import {
   asSessionAttemptId,
   asSessionBearerId,
   asSessionBearerSecret,
-  sessionBearerPrefix,
 } from "../../interpreter/agentSession.ts";
 import type {
   SessionAttemptMint,

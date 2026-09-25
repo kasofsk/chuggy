@@ -60,10 +60,8 @@ import {
 } from "../../src/interpreter/finalizer.ts";
 import { unreadableLeadReads } from "./leadReadFixtures.ts";
 import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
-import {
-  asSessionId,
-  sessionBearerPrefix,
-} from "../../src/interpreter/agentSession.ts";
+import { asSessionId } from "../../src/interpreter/agentSession.ts";
+import { sessionBearerPrefix } from "../../src/contract/sessionPlane.ts";
 import { unservedLeadInquiries, unservedThreads } from "./threadFixtures.ts";
 import type { WorkerPoolRegistrationService } from "../../src/interpreter/workerPoolRegistrationToken.ts";
 

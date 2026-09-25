@@ -5,10 +5,12 @@ import { test } from "node:test";
 import { SignJWT, generateKeyPair } from "jose";
 
 import {
-  asSessionId,
-  asSessionBearerSecret,
   sessionBearerPattern,
   sessionBearerPrefix,
+} from "../../src/contract/sessionPlane.ts";
+import {
+  asSessionId,
+  asSessionBearerSecret,
   type SessionBearerAuthority,
   type SessionBearerIdentity,
   type SessionBearerSecret,

@@ -10,6 +10,7 @@ import {
   textCodePointsCount,
 } from "../contract/http.ts";
 import type { SelectorDeliveryState } from "../contract/rosters.ts";
+import { leadRefusalsPerDecisionMax } from "../contract/sessionTools.ts";
 import { resolvedThreadStandingRules } from "../contract/threadSeeding.ts";
 import type { DispatchCandidate, DispatchViewToken } from "./dispatchView.ts";
 import {
@@ -431,9 +432,6 @@ export { leadDispatchesMax };
  * the migration that adds the key.
  */
 export const dispatchesPerDecisionUnstated = 1;
-
-/** How many tickets one decision may refuse, and how many it may lift. */
-export const leadRefusalsPerDecisionMax = 16;
 
 /**
  * How many standing refusals one observation carries, which is one per
