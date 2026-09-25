@@ -357,8 +357,12 @@ test("the ticket's total is the figure the ticket read answered with", async () 
     transcripts: [transcript([1, 2], true)],
   });
   expect(
-    rendered.container.querySelector(".fields-inline")?.textContent,
+    rendered.container.querySelector(".ticket-status")?.textContent,
   ).toContain("$9.99");
+  const usage = screen.getByRole("button", { name: /^Usage/u });
+  await turned(() => {
+    usage.click();
+  });
   expect(rendered.container.querySelector("#usage")?.textContent).toContain(
     "$0.30",
   );
@@ -409,7 +413,7 @@ test("a run from a worker that wrote no evidence says so", async () => {
     rendered.container.querySelector('[data-attempt="a1"]')?.textContent,
   ).toContain("recorded no run evidence");
   expect(
-    rendered.container.querySelector(".fields-inline")?.textContent,
+    rendered.container.querySelector(".ticket-status")?.textContent,
   ).toContain("—");
   expect(transcriptReads(rendered.reads)).toEqual([]);
 });

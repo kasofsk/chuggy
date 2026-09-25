@@ -21,15 +21,16 @@
  * `costAmountFigure`'s bare amount is the one exception, legitimate because
  * the line it sits on already names the turn it belongs to.
  *
- * AN INSTANT IS ABSOLUTE AND AN AGO IS RELATIVE. A ledger is compared row to
- * row, so its column stays the clock face with the full ISO on hover; where a
- * reader is scanning for what moved last, `Ago` draws the relative reading
- * instead, takes `nowMs` fresh from its caller rather than holding one so it
- * ages on the page's own clock, and always carries the full local date and
- * clock on hover — a bare clock face would not say which day. `Freshness`
- * still answers "never observed" for a panel with no reading at all, taking
- * the rounding that reads an elapsed time from here so it is done in one
- * place.
+ * AN INSTANT IS ABSOLUTE AND AN AGO IS RELATIVE. A table compared row to row
+ * keeps the clock face with the full ISO on hover; where a reader is scanning
+ * for what moved last, `Ago` draws the relative reading instead, takes `nowMs`
+ * fresh from its caller rather than holding one so it ages on the page's own
+ * clock, and always carries the full local date and clock on hover — a bare
+ * clock face would not say which day. The ticket page reads every instant as
+ * an ago in two units, so its spans and windows are built that way here and
+ * nowhere else draws them. `Freshness` still answers "never observed" for a
+ * panel with no reading at all, taking the rounding that reads an elapsed time
+ * from here so it is done in one place.
  */
 
 import type { RunTotals } from "../../../../src/contract/responses.ts";
@@ -61,9 +62,7 @@ export type Figure =
   | { readonly kind: "Ago"; readonly text: string; readonly full: string }
   | {
       readonly kind: "Span";
-      readonly start: string;
-      readonly end?: string;
-      readonly length: string;
+      readonly parts: readonly string[];
       readonly open: boolean;
       readonly title: string;
     }
@@ -370,55 +369,87 @@ export function agoFigure(stated: string, nowMs: number): Figure {
   };
 }
 
-interface SpanParts {
-  readonly startMs: number;
-  readonly start: string;
-  readonly startIso: string;
+/** The whole local date and clock to the second, which is what the ticket
+ * page's ago hovers: a reading in seconds needs its instant in them too. */
+export function instantExactText(at: Date): string {
+  return `${instantFullText(at)}:${padded(at.getSeconds())}`;
 }
 
-function spanStart(
-  stated: string | undefined,
-  nowMs: number,
-): SpanParts | undefined {
+function parsedMs(stated: string | undefined): number | undefined {
   if (stated === undefined) return undefined;
-  const startMs = Date.parse(stated);
-  if (!Number.isFinite(startMs)) return undefined;
-  const drawn = instantFigure(stated, nowMs);
-  if (drawn.kind !== "Instant") return undefined;
-  return { startMs, start: drawn.text, startIso: drawn.iso };
+  const at = Date.parse(stated);
+  return Number.isFinite(at) ? at : undefined;
 }
 
-/**
- * A cycle's or a ticket's window: where it started, where it ended or that it
- * has not, and how long that is. `from` overrides the set's own first
- * registration for a span the journal dates itself — the ticket's, which begins
- * at its release and not at whatever ran first.
- */
-export function spanFigure(
-  span: RunSpan,
+function sinceText(
   nowMs: number,
-  from?: string,
+  atMs: number,
+  happened: string | undefined,
+): string {
+  const ago = `${durationText(nowMs - atMs)} ago`;
+  return happened === undefined ? ago : `${happened} ${ago}`;
+}
+
+function spanTitle(startMs: number, endMs: number | undefined): string {
+  const start = instantExactText(new Date(startMs));
+  return endMs === undefined
+    ? start
+    : `${start} → ${instantExactText(new Date(endMs))}`;
+}
+
+/** How long ago in two units, the ticket page's reading of an instant, with
+ * what happened then named in front where the caller says. */
+export function sinceFigure(
+  stated: string,
+  nowMs: number,
+  happened?: string,
 ): Figure {
-  const opened = spanStart(from ?? span.from, nowMs);
-  if (opened === undefined)
+  const atMs = parsedMs(stated);
+  if (atMs === undefined) return { kind: "Absent", why: "No instant" };
+  return {
+    kind: "Ago",
+    text: sinceText(nowMs, atMs, happened),
+    full: instantExactText(new Date(atMs)),
+  };
+}
+
+/** A cycle's window: when it started and, once it has ended, how long it ran. */
+export function spanFigure(span: RunSpan, nowMs: number): Figure {
+  const startMs = parsedMs(span.from);
+  if (startMs === undefined)
     return { kind: "Absent", why: "No run figures yet" };
-  const ended = spanStart(span.to, nowMs);
-  if (ended === undefined)
-    return {
-      kind: "Span",
-      start: opened.start,
-      end: "running",
-      length: `${durationText(nowMs - opened.startMs)} so far`,
-      open: true,
-      title: `${opened.startIso} → running`,
-    };
+  const endMs = parsedMs(span.to);
+  const started = sinceText(nowMs, startMs, "started");
   return {
     kind: "Span",
-    start: opened.start,
-    end: ended.start,
-    length: durationText(ended.startMs - opened.startMs),
+    parts:
+      endMs === undefined
+        ? [started]
+        : [started, `ran ${durationText(endMs - startMs)}`],
+    open: endMs === undefined,
+    title: spanTitle(startMs, endMs),
+  };
+}
+
+/** A window read from the instant it last moved, and how long it ran where it
+ * ran at all, for a ticket the machine is not working on. */
+export function settledFigure(
+  changedAt: string,
+  ran: RunSpan,
+  nowMs: number,
+): Figure {
+  const atMs = parsedMs(changedAt);
+  if (atMs === undefined) return { kind: "Absent", why: "No instant" };
+  const fromMs = parsedMs(ran.from);
+  const toMs = parsedMs(ran.to) ?? atMs;
+  return {
+    kind: "Span",
+    parts: [
+      sinceText(nowMs, atMs, undefined),
+      ...(fromMs === undefined ? [] : [`ran ${durationText(toMs - fromMs)}`]),
+    ],
     open: false,
-    title: `${opened.startIso} → ${ended.startIso}`,
+    title: instantExactText(new Date(atMs)),
   };
 }
 
@@ -430,49 +461,28 @@ export interface RunWindow {
 }
 
 /**
- * The elapsed half of a row's window: how long it has been waiting where it has
- * not started, and how long it has been running where it has. A row whose start
- * the wire does not carry is timed from its registration, which is what it was
- * before the field existed.
- */
-function whenElapsed(
-  window: RunWindow,
-  openedMs: number,
-  nowMs: number,
-): string {
-  const started = spanStart(window.startedAt, nowMs);
-  if (started === undefined) return `running ${durationText(nowMs - openedMs)}`;
-  return `waited ${durationText(started.startMs - openedMs)} · running ${durationText(nowMs - started.startMs)}`;
-}
-
-/**
- * One row's window: where it started, how long it has taken, and where the wire
- * carries the first attempt's opening, how much of that was the queue. A row
- * the wire has reported no end for is still running and says how long for.
+ * One row's window: when it started, how long it queued where the wire dates
+ * its start, and how long it ran once it ended. A row the wire carries no start
+ * for is timed from its registration, which is what it was before the field
+ * existed.
  */
 export function whenFigure(window: RunWindow, nowMs: number): Figure {
-  const opened = spanStart(window.registeredAt, nowMs);
-  if (opened === undefined) return { kind: "Absent", why: "No instant" };
-  const ended = spanStart(window.terminalAt, nowMs);
-  if (ended === undefined)
-    return {
-      kind: "Span",
-      start: opened.start,
-      length: whenElapsed(window, opened.startMs, nowMs),
-      open: true,
-      title: `${opened.startIso} → running`,
-    };
-  const started = spanStart(window.startedAt, nowMs);
-  const ran =
-    started === undefined
-      ? durationText(ended.startMs - opened.startMs)
-      : `waited ${durationText(started.startMs - opened.startMs)} · ran ${durationText(ended.startMs - started.startMs)}`;
+  const registeredMs = parsedMs(window.registeredAt);
+  if (registeredMs === undefined) return { kind: "Absent", why: "No instant" };
+  const startedMs = parsedMs(window.startedAt);
+  const fromMs = startedMs ?? registeredMs;
+  const endMs = parsedMs(window.terminalAt);
   return {
     kind: "Span",
-    start: opened.start,
-    length: ran,
-    open: false,
-    title: `${opened.startIso} → ${ended.startIso}`,
+    parts: [
+      sinceText(nowMs, fromMs, "started"),
+      ...(startedMs === undefined
+        ? []
+        : [`waited ${durationText(startedMs - registeredMs)}`]),
+      ...(endMs === undefined ? [] : [`ran ${durationText(endMs - fromMs)}`]),
+    ],
+    open: endMs === undefined,
+    title: spanTitle(fromMs, endMs),
   };
 }
 

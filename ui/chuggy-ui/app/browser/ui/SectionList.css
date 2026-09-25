@@ -1,4 +1,4 @@
-/* SectionList: the aside's table of contents, one line per main-body section. */
+/* SectionList: a page's table of contents, one line per section. */
 
 @layer ui {
   .sections {
