@@ -38,6 +38,7 @@ import { drawBytes } from "../ports.ts";
 import { Button } from "../ui/Button.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { Notice } from "../ui/Notice.tsx";
+import { SearchableRoster } from "../ui/SearchableRoster.tsx";
 
 /** No frame names either read, so the partition's own refetch is what reaches
  * them: a bind raises none, so the bindings key is invalidated by the bind. */
@@ -84,7 +85,7 @@ function RepositoryChoiceRow(props: {
 }): ReactNode {
   const choice = props.choice;
   return (
-    <li className="flex items-center gap-2">
+    <span className="flex items-center gap-2">
       <Button
         size="sm"
         variant="quiet"
@@ -96,7 +97,7 @@ function RepositoryChoiceRow(props: {
         {choice.repository.fullName}
       </Button>
       {choice.bound ? <span className="text-sm text-ink-3">Bound</span> : null}
-    </li>
+    </span>
   );
 }
 
@@ -158,18 +159,19 @@ function AddRepositoryBody(props: {
     <>
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
-        <ul className="grid gap-1">
-          {repositoryChoices(state.value.repositories, props.bound).map(
-            (choice) => (
-              <RepositoryChoiceRow
-                key={choice.repository.url}
-                choice={choice}
-                busy={binding.busy}
-                onChoose={binding.bind}
-              />
-            ),
+        <SearchableRoster
+          label="Search"
+          rows={repositoryChoices(state.value.repositories, props.bound)}
+          textOf={(choice) => choice.repository.fullName}
+          keyOf={(choice) => choice.repository.url}
+          renderRow={(choice) => (
+            <RepositoryChoiceRow
+              choice={choice}
+              busy={binding.busy}
+              onChoose={binding.bind}
+            />
           )}
-        </ul>
+        />
       ) : null}
       {state.state === "Ready" && state.value.truncated ? (
         <Notice tone="parked" inline detail={repositoriesTruncated} />
