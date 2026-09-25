@@ -37,6 +37,7 @@ const workerModeSchema = z
     type: optionalString(),
     agent: optionalString(),
     arguments: optionalStrings(),
+    model: optionalString(),
   })
   .optional()
   .catch(undefined);
@@ -62,6 +63,7 @@ const purposeSchema = z
   .looseObject({
     instructions: optionalStrings(),
     commands: optionalStrings(),
+    practices: optionalStrings(),
   })
   .optional()
   .catch(undefined);
@@ -110,10 +112,16 @@ function capitalized(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+/** A Codex mode names its model as a field the worker passes itself; a Claude
+ * mode names it, if at all, as a flag among its arguments. */
 function configurationModelOf(
-  args: readonly string[] | undefined,
+  mode: z.infer<typeof workerModeSchema> | undefined,
 ): ConfigurationModel {
-  const argument = args?.find((arg) => arg.startsWith(modelArgumentPrefix));
+  if (mode?.model !== undefined && mode.model.length > 0)
+    return { label: mode.model, argument: undefined };
+  const argument = mode?.arguments?.find((arg) =>
+    arg.startsWith(modelArgumentPrefix),
+  );
   if (argument === undefined)
     return { label: modelDefaultLabel, argument: undefined };
   return {
@@ -213,7 +221,7 @@ function configurationSettingsOf(
   const mode = document.worker?.mode;
   const authority = document.authority;
   return {
-    model: configurationModelOf(mode?.arguments),
+    model: configurationModelOf(mode),
     agent: configurationAgentLabel(mode?.agent),
     agentDetail: configurationAgentDetail(mode?.type),
     worker: configurationWorkerOf(document.image),
@@ -249,6 +257,9 @@ export interface ConfigurationRole {
   readonly practices: readonly string[] | undefined;
 }
 
+/** The practices a role is briefed with, by the briefing's own rule: none for
+ * a role that runs commands, its own where it names them, and otherwise the
+ * configuration's. */
 function configurationRoleOf(
   purpose: ConfigurationDocument["work"],
   practices: readonly string[] | undefined,
@@ -256,7 +267,12 @@ function configurationRoleOf(
   return {
     instructions: purpose?.instructions,
     commands: purpose?.commands,
-    practices,
+    practices:
+      purpose === undefined
+        ? undefined
+        : purpose.commands === undefined
+          ? (purpose.practices ?? practices)
+          : [],
   };
 }
 
@@ -294,7 +310,7 @@ export function configurationViewOf(canonical: string): ConfigurationView {
     settings: configurationSettingsOf(document),
     brief: configurationBriefOf(document.brief),
     work: configurationRoleOf(document.work, document.practices),
-    review: configurationRoleOf(document.review, undefined),
+    review: configurationRoleOf(document.review, document.practices),
     evaluations: configurationEvaluationsOf(document.evaluations),
   };
 }

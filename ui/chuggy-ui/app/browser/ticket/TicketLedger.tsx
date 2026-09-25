@@ -422,6 +422,7 @@ function CycleGroup(props: {
       summary={cycleSummary(cycle, props.stageCount)}
       rollup={<CycleRollup cycle={cycle} nowMs={props.chrome.nowMs} />}
       open={cycle.standing === "Current"}
+      lazy
     >
       <LedgerBlock>
         {cycle.work === undefined ? (

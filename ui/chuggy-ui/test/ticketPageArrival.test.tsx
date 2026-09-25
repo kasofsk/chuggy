@@ -141,7 +141,7 @@ function cyclesDrawn(): number {
 /** Opens the Brief row, which the page draws closed, and counts the brief. */
 async function briefOpened(): Promise<number> {
   await turned(() => {
-    screen.getByRole("button", { name: "Brief" }).click();
+    screen.getByRole("button", { name: /^Brief/u }).click();
   });
   return screen.getAllByText(intent).length;
 }

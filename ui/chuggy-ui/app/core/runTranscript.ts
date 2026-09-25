@@ -396,7 +396,7 @@ export function runTranscriptRead(
       item: "Marker",
       marker: {
         marker: "Capped",
-        sentence: `${runCountLabel(batchesBefore)} earlier batches not held`,
+        sentence: "Earlier conversation not held",
       },
     });
   const items = lines

@@ -160,7 +160,7 @@ test("a pane at its ceiling offers no earlier read and says what it does not hol
   expect(reading.earlier).toBeUndefined();
   expect(reading.items[0]).toEqual({
     item: "Marker",
-    marker: { marker: "Capped", sentence: "9 earlier batches not held" },
+    marker: { marker: "Capped", sentence: "Earlier conversation not held" },
   });
 });
 

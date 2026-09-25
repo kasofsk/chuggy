@@ -165,13 +165,18 @@ interface Served {
   };
 }
 
+/** Every route the last drawn page asked for, in order. */
+let routed: string[] = [];
+
 async function drawTicket(
   served: Served,
   options: { readonly shell?: boolean } = {},
 ): Promise<Drawn> {
+  routed = [];
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
+      routed.push(url);
       if (url.includes("/dispatch-view")) return answer({ result: "Reset" });
       if (url.includes("/native-actions")) return answer({ actions: [] });
       if (url.includes("/executions"))
@@ -241,6 +246,17 @@ const resumedTicket = {
 
 function groups(container: HTMLElement): readonly HTMLElement[] {
   return [...container.querySelectorAll<HTMLElement>(".ledger-group")];
+}
+
+/** Opens every cycle, since a closed one draws no rows until it is opened. */
+async function cyclesOpened(container: HTMLElement): Promise<void> {
+  await turned(() => {
+    for (const group of groups(container)) {
+      (group as HTMLDetailsElement).open = true;
+      group.dispatchEvent(new Event("toggle"));
+    }
+  });
+  await settled();
 }
 
 /** Every row an evaluated stage drew, picked out from the work row that
@@ -366,6 +382,7 @@ test("a superseded cycle says which cycle replaced its artifact", async () => {
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
+  await cyclesOpened(container);
   const superseded = groups(container)[1];
   expect(superseded).toBeDefined();
   if (superseded === undefined) throw new Error("no superseded cycle");
@@ -384,6 +401,7 @@ test("a page that does not start at cycle 1 names the cycle that superseded one"
     shapes: [workedIn(2), workedIn(3)],
     ticket: parkedTicket,
   });
+  await cyclesOpened(container);
   const superseded = groups(container)[1];
   if (superseded === undefined) throw new Error("no superseded cycle");
   expect(superseded.querySelector("h3")?.textContent).toBe("Cycle 2");
@@ -409,7 +427,7 @@ test("every section of the page has an anchor pointing at it", async () => {
   const anchors = [...container.querySelectorAll("nav.sections a")].map(
     (link) => link.getAttribute("href"),
   );
-  expect(anchors).toEqual(["#cycles", "#usage", "#brief", "#provenance"]);
+  expect(anchors).toEqual(["#cycles", "#brief", "#usage", "#provenance"]);
   for (const anchor of anchors)
     expect(container.querySelector(`section${String(anchor)}`)).not.toBeNull();
   expect(screen.getByText("3 · 7 runs")).toBeDefined();
@@ -445,12 +463,32 @@ test("the rows under the ledger are closed, and following an anchor opens its ro
 
 test("each closed row says what it holds on the right", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
+  expect(screen.getByRole("button", { name: /^Brief/u }).textContent).toContain(
+    "Intent only",
+  );
   expect(screen.getByRole("button", { name: /^Usage/u }).textContent).toContain(
     "$2.74",
   );
   expect(
     screen.getByRole("button", { name: /^Provenance/u }).textContent,
   ).toContain("Revision 1");
+});
+
+test("the Brief row counts what the brief holds beside its intent", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: {
+      ...parkedTicket,
+      brief: {
+        intent: "Give the console a footer",
+        links: ["https://example.test/one"],
+        checks: ["npm run lint", "npm test"],
+      },
+    },
+  });
+  expect(screen.getByRole("button", { name: /^Brief/u }).textContent).toContain(
+    "1 link · 2 checks",
+  );
 });
 
 test("the shell's top bar draws the ticket's own number and phase", async () => {
@@ -668,6 +706,7 @@ test("no string the page composes but the brief runs past the copy budget", asyn
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
+  await cyclesOpened(container);
   expect(drawnStringsOver(container)).toEqual([]);
 });
 
@@ -760,6 +799,21 @@ test("a running ticket says when it started, from its release", async () => {
  * §5.2's waiting reading: a row whose first attempt the wire dates says how
  * much of its window was the queue, and one it does not reads as before.
  */
+/** A row reads its run to learn whether it has a conversation, so a cycle
+ * the page draws closed reads its runs only once a reader opens it. */
+test("a closed cycle reads none of its runs until it is opened", async () => {
+  const { container } = await drawTicket({
+    shapes: ticket21Parked,
+    ticket: parkedTicket,
+  });
+  const runReads = (): number =>
+    routed.filter((url) => /\/executions\/[^/?]+$/u.test(url)).length;
+  const onLoad = runReads();
+  expect(onLoad).toBeGreaterThan(0);
+  await cyclesOpened(container);
+  expect(runReads()).toBeGreaterThan(onLoad);
+});
+
 test("a row separates its wait from its run where the wire dates the start", async () => {
   const started: readonly ExecutionShape[] = ticket21Parked.map((shape) =>
     shape.task === 1 ? { ...shape, startedAt: "2026-08-26T00:11:00Z" } : shape,
@@ -768,6 +822,7 @@ test("a row separates its wait from its run where the wire dates the start", asy
     shapes: started,
     ticket: parkedTicket,
   });
+  await cyclesOpened(container);
   const rows = [...container.querySelectorAll(".ledger-row")].map(
     (row) => row.querySelector(".ledger-when")?.textContent ?? "",
   );
@@ -916,6 +971,7 @@ async function drawFanout(): Promise<Drawn> {
  */
 test("a sparse stage draws each evaluator as its own row, priced and timed apart", async () => {
   const { container } = await drawFanout();
+  await cyclesOpened(container);
   const rows = stageRows(groups(container).at(-1));
   expect(rows).toHaveLength(2);
   expect(rows[0]?.querySelector(".ledger-label")?.textContent).toBe(
@@ -943,6 +999,7 @@ test("a sparse stage draws each evaluator as its own row, priced and timed apart
  */
 test("a relaunched, short stage row in a superseded cycle still fits the copy budget", async () => {
   const { container } = await drawFanout();
+  await cyclesOpened(container);
   const superseded = groups(container).at(-1);
   expect(superseded?.classList.contains("ledger-group-superseded")).toBe(true);
   const over = drawnStringsOver(container);

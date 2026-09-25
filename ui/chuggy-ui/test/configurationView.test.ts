@@ -166,6 +166,49 @@ test("arguments naming no model read as the default, and the tool flag alone", (
   expect(view.settings.tools).toStrictEqual(["Bash"]);
 });
 
+/** Codex refuses `--model` among its arguments; its mode names the model and
+ * the worker passes it, so the field is what the run is given. */
+test("a Codex mode's model is read from its own field, as named", () => {
+  const view = configurationViewOf(
+    JSON.stringify({
+      worker: {
+        mode: {
+          type: "SingleAgent",
+          agent: "Codex",
+          model: "gpt-5-codex",
+          arguments: [],
+        },
+      },
+    }),
+  );
+  expect(view.settings.model).toStrictEqual({
+    label: "gpt-5-codex",
+    argument: undefined,
+  });
+});
+
+/** The briefing's own rule: a role that runs commands is briefed with no
+ * practices, a role naming its own is briefed with those, and any other with
+ * the configuration's. */
+test("each role shows the practices it is briefed with", () => {
+  const view = configurationViewOf(
+    JSON.stringify({
+      practices: ["RegressionCoverage"],
+      work: { commands: ["just build"] },
+      review: { instructions: ["Review it."] },
+    }),
+  );
+  expect(view.work.practices).toStrictEqual([]);
+  expect(view.review.practices).toStrictEqual(["RegressionCoverage"]);
+  const own = configurationViewOf(
+    JSON.stringify({
+      practices: ["RegressionCoverage"],
+      work: { instructions: ["Build it."], practices: ["Layering"] },
+    }),
+  );
+  expect(own.work.practices).toStrictEqual(["Layering"]);
+});
+
 test("a practice identity is drawn as the words it names", () => {
   expect(practiceLabel("RegressionCoverage")).toBe("Regression coverage");
   expect(practiceLabel("ChangedCallPaths")).toBe("Changed call paths");

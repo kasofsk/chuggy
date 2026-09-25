@@ -18,6 +18,7 @@ import type {
 } from "../../../../../src/contract/responses.ts";
 import { costFigure } from "../../core/figures.ts";
 import type { PanelState } from "../../core/freshness.ts";
+import { countedLabel } from "../../core/runTotals.ts";
 import type { TicketPageFacts } from "../../core/ticketPageFacts.ts";
 import { useShellDetailsShow } from "../shell/slots.tsx";
 import { useViewportAtLeastEm, viewportDeskEm } from "../shell/viewport.ts";
@@ -50,6 +51,21 @@ function usageFigure(ticket: TicketResponse | undefined): ReactNode {
   return <Figure figure={costFigure(totals.costUsdMicros, totals.costBasis)} />;
 }
 
+/** What the brief holds beside its intent: its links and checks, counted. */
+function briefSummary(ticket: TicketResponse | undefined): string | null {
+  if (ticket === undefined) return null;
+  if (ticket.brief === undefined) return "Not kept";
+  const links = ticket.brief.links.length;
+  const checks = ticket.brief.checks?.length ?? 0;
+  if (links === 0 && checks === 0) return "Intent only";
+  return [
+    links === 0 ? undefined : countedLabel(links, "link"),
+    checks === 0 ? undefined : countedLabel(checks, "check"),
+  ]
+    .filter((part) => part !== undefined)
+    .join(" · ");
+}
+
 /** One anchor per region of the page, each with the one figure it is about. */
 export function ticketSections(
   ticket: TicketResponse,
@@ -66,6 +82,7 @@ export function ticketSections(
           ? "Not read"
           : `${String(ledger.cycles.length)} · ${String(ledger.spend.executions)} runs`,
     },
+    { id: "brief", label: "Brief" },
     {
       id: "usage",
       label: "Usage",
@@ -74,7 +91,6 @@ export function ticketSections(
           ? { kind: "Absent", why: "No run figures yet" }
           : costFigure(totals.costUsdMicros, totals.costBasis),
     },
-    { id: "brief", label: "Brief" },
     { id: "provenance", label: "Provenance" },
   ];
 }
@@ -142,7 +158,7 @@ export function TicketSections(props: {
       onValueChange={props.onOpenChange}
       className="ticket-sections bg-surface-1 border-edge rounded-3 border"
     >
-      <SectionRow id="brief" label="Brief" summary={null}>
+      <SectionRow id="brief" label="Brief" summary={briefSummary(ticket)}>
         <TicketBrief state={props.ticketState} />
       </SectionRow>
       <SectionRow id="usage" label="Usage" summary={usageFigure(ticket)}>

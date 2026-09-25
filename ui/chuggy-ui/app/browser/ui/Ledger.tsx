@@ -11,6 +11,7 @@
  * function-length cap is what keeps each of them readable.
  */
 
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { Figure as FigureValue, Spend } from "../../core/figures.ts";
@@ -53,12 +54,19 @@ export function LedgerGroup(props: {
   readonly summary: string;
   readonly rollup?: ReactNode | undefined;
   readonly open: boolean;
+  /** Mount the rows only once the group is first opened, for rows that read
+   * on mount. */
+  readonly lazy?: boolean;
   readonly children: ReactNode;
 }): ReactNode {
+  const [opened, setOpened] = useState(props.open || props.lazy !== true);
   return (
     <details
       className={`ledger-group ledger-group-${props.standing.toLowerCase()}`}
       open={props.open}
+      onToggle={(event) => {
+        if (event.currentTarget.open) setOpened(true);
+      }}
     >
       <summary>
         <span className="ledger-group-head">
@@ -72,7 +80,7 @@ export function LedgerGroup(props: {
           <span className="ledger-group-rollup">{props.rollup}</span>
         )}
       </summary>
-      {props.children}
+      {opened || props.open ? props.children : null}
     </details>
   );
 }

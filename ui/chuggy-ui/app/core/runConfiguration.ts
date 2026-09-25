@@ -14,7 +14,7 @@ import { z } from "zod";
 
 import type { RunConfigurationResponse } from "../../../../src/contract/responses.ts";
 import type { PanelState } from "./freshness.ts";
-import { runCountLabel } from "./runTotals.ts";
+import { countedLabel, runCountLabel } from "./runTotals.ts";
 
 /**
  * The most files one snapshot names, above the count the worker's own walk
@@ -153,17 +153,13 @@ export function runConfigurationHead(
   };
 }
 
-function counted(value: number, noun: string): string {
-  return `${runCountLabel(value)} ${noun}${value === 1 ? "" : "s"}`;
-}
-
 /** What the runtime reported it could reach, or that it reported none of it. */
 export function runConfigurationCapabilitiesSentence(
   head: RunConfigurationHead,
 ): string {
   const said = [
-    head.tools === undefined ? undefined : counted(head.tools, "tool"),
-    head.skills === undefined ? undefined : counted(head.skills, "skill"),
+    head.tools === undefined ? undefined : countedLabel(head.tools, "tool"),
+    head.skills === undefined ? undefined : countedLabel(head.skills, "skill"),
   ].filter((part) => part !== undefined);
   return said.length === 0 ? "none were reported" : said.join(", ");
 }

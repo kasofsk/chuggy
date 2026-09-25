@@ -74,6 +74,11 @@ export function runCountLabel(value: number): string {
   return Math.trunc(value).toLocaleString("en-US");
 }
 
+/** A count and its noun, the noun plural unless the count is one. */
+export function countedLabel(value: number, noun: string): string {
+  return `${runCountLabel(value)} ${noun}${value === 1 ? "" : "s"}`;
+}
+
 /** Whole units, largest first, with the ones that would be zero left out. */
 export function runDurationLabel(durationMs: number): string {
   const seconds = Math.max(Math.floor(durationMs / durationMsPerSecond), 0);
