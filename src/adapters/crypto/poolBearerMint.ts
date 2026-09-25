@@ -1,15 +1,11 @@
 /**
- * Where a worker pool's assignment bearer is drawn.
- *
- * HEX, SO THE SESSION PREFIX IS UNREACHABLE. A session bearer starts
- * `chgs_`, and hex has no `g`, `s` or `_`: no draw from this alphabet can
- * ever match `sessionBearerPattern`, so the two languages are disjoint by
- * construction rather than by chance.
+ * Hex, so no draw can begin with the session-bearer prefix `chgs_` and the
+ * worker plane never routes a pool bearer as a session bearer.
  */
 
 import { randomBytes } from "node:crypto";
 
-/** One pool assignment bearer, 64 lowercase hex characters. */
+/** Draws an assignment's identity or its bearer: 64 lowercase hex characters. */
 export function poolBearerMint(): string {
   return randomBytes(32).toString("hex");
 }

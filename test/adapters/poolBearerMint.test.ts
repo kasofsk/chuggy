@@ -1,17 +1,23 @@
 /**
- * Structural, not statistical: the alphabets are disjoint by construction, so
- * this proves it from the two patterns rather than by sampling draws, which
- * would pass while the property failed (the collision rate is about 2^-30).
+ * Structural rather than sampled: the property is that no hex draw can match
+ * the session-bearer pattern at all.
  */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { poolBearerMint } from "../../src/adapters/crypto/poolBearerMint.ts";
-import { sessionBearerPrefix } from "../../src/interpreter/agentSession.ts";
+import {
+  sessionBearerPattern,
+  sessionBearerPrefix,
+} from "../../src/interpreter/agentSession.ts";
 
 test("a pool bearer is drawn from the hex alphabet", () => {
   assert.match(poolBearerMint(), /^[0-9a-f]{64}$/u);
+});
+
+test("the session pattern demands the session prefix", () => {
+  assert.ok(sessionBearerPattern.source.startsWith(`^${sessionBearerPrefix}`));
 });
 
 test("the session prefix has a character no hex draw can produce", () => {
