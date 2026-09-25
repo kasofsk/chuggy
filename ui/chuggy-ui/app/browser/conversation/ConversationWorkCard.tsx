@@ -71,7 +71,7 @@ function ConversationToolCall(props: {
         <code
           className={result?.isError === true ? "text-tone-fail" : "text-ink-1"}
         >
-          {call.name ?? call.id}
+          {call.name ?? "Result"}
         </code>
         <span className="text-ink-3 wrap-anywhere min-w-0 grow text-sm">
           {conversationArgumentLine(conversationArgumentSummary(call.input))}

@@ -211,7 +211,7 @@ test("a long run opens on its newest batches and reads earlier ones on asking", 
   await settled();
   await turned(() => {
     within(nowCard())
-      .getByRole("button", { name: "Earlier · 14 batches" })
+      .getByRole("button", { name: "Earlier" })
       .click();
   });
   await settled();
@@ -221,6 +221,6 @@ test("a long run opens on its newest batches and reads earlier ones on asking", 
     "?after=6",
   ]);
   expect(
-    within(nowCard()).getByRole("button", { name: "Earlier · 6 batches" }),
+    within(nowCard()).getByRole("button", { name: "Earlier" }),
   ).toBeDefined();
 });

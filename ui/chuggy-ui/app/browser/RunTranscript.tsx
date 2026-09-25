@@ -167,7 +167,6 @@ function RunConversationDrawn(props: {
         ? {}
         : {
             earlier: {
-              batches: earlier.batches,
               busy: walk.readingEarlier,
               onRead: () => {
                 walk.readEarlier(earlier.after);

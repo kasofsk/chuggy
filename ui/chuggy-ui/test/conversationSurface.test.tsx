@@ -355,6 +355,27 @@ test("a tool result that failed marks the row and draws no pill", () => {
   styleless();
 });
 
+/** A window that opens partway through a run holds results whose calls it
+ * never read; the row names what it is rather than the wire's call id. */
+test("a result whose call was not read is titled Result, never its id", () => {
+  const orphan = exchangeOf({
+    answer: "done",
+    work: [
+      {
+        step: "ToolCall",
+        id: "toolu_012xu4dezNK5ynXZCchUbpXF",
+        input: undefined,
+        result: { text: "exit 0", isError: false },
+      },
+    ],
+  });
+  render(<Conversation exchanges={[orphan]} empty="No conversation" />);
+  fireEvent.click(screen.getByRole("button", { name: /tool/ }));
+  expect(screen.getByText("Result")).toBeDefined();
+  expect(screen.queryByText("toolu_012xu4dezNK5ynXZCchUbpXF")).toBeNull();
+  styleless();
+});
+
 test("a running exchange's card says Working", () => {
   const running = exchangeOf({
     id: "x4",

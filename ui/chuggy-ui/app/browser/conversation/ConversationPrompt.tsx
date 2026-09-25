@@ -9,13 +9,11 @@ import type { ReactNode } from "react";
 
 import { runPromptHead } from "../../core/runConfiguration.ts";
 import type { RunPrompt } from "../../core/runConfiguration.ts";
-import { runCountLabel } from "../../core/runTotals.ts";
 import { Button } from "../ui/Button.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 
 /** An earlier read the page can make, and whether one is already out. */
 export interface ConversationEarlierProps {
-  readonly batches: number;
   readonly busy: boolean;
   readonly onRead: () => void;
 }
@@ -73,8 +71,7 @@ export function ConversationEarlier(
         disabled={props.busy}
         onClick={props.onRead}
       >
-        Earlier · {runCountLabel(props.batches)}{" "}
-        {props.batches === 1 ? "batch" : "batches"}
+        Earlier
       </Button>
     </div>
   );
