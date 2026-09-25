@@ -14,7 +14,7 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import type { RenderResult } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -350,6 +350,36 @@ async function following(
   expect(button("Cancel")).not.toBeNull();
   return view;
 }
+
+test("a resume pressed in the card is followed in the bar, which holds its own buttons too", async () => {
+  const api = accepting();
+  vi.stubGlobal("fetch", api.fetch);
+  const { container } = mounted(new QueryClient());
+  await settled();
+  const card = screen.getByRole("status", { name: "Needs you" });
+  const bar = container.querySelector<HTMLElement>(".ticket-status");
+  if (bar === null) throw new Error("no status bar drawn");
+  expect(within(bar).queryByRole("button", { name: "Resume" })).toBeNull();
+
+  await turned(() => {
+    within(card).getByRole("button", { name: "Resume" }).click();
+  });
+  await settled();
+
+  expect(within(bar).getByText("Waiting for actor…")).toBeDefined();
+  expect(within(bar).getByRole("button", { name: "Cancel" })).toBeDefined();
+  expect(
+    within(bar)
+      .getByRole("button", { name: "Revoke" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  expect(
+    within(card)
+      .getByRole("button", { name: "Resume" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  expect(api.posts()).toBe(1);
+});
 
 test("a cancellation that throws is said rather than swallowed", async () => {
   await following(accepting(deferred), new QueryClient());

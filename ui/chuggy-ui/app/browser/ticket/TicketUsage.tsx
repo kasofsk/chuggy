@@ -25,7 +25,7 @@ import {
   tokensFigure,
 } from "../../core/figures.ts";
 import { runSpendOf } from "../../core/runTotals.ts";
-import { runsLabel } from "./ticketPageFacts.ts";
+import { runsLabel } from "../../core/ticketPageFacts.ts";
 import type { RunSpend } from "../../core/runTotals.ts";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";

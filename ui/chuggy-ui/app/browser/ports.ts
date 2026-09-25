@@ -138,3 +138,8 @@ export function redirect(url: string): void {
 export function currentPath(): string {
   return `${location.pathname}${location.search}`;
 }
+
+/** The anchor this tab was opened at, without its `#`. */
+export function currentAnchor(): string {
+  return location.hash.slice(1);
+}

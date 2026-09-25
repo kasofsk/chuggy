@@ -23,6 +23,7 @@ import {
   type EscalationKind,
   type FinalizationUnavailableKind,
   type GitEvidenceLabel,
+  type NativeActionKind,
   type OperationRefusalCode,
   type OperationState,
   type ResumePoint,
@@ -234,6 +235,17 @@ export function phaseLabel(phase: TicketPhase): string {
     case "Escalated":
     case "Revoked":
       return phase;
+  }
+}
+
+/** What an open native action is asking, as the line a card answering it
+ * leads with. */
+export function nativeActionKindLabel(kind: NativeActionKind): string {
+  switch (kind) {
+    case "TicketEscalation":
+      return "Escalated";
+    case "FinalizationApproval":
+      return "Awaiting approval";
   }
 }
 

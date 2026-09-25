@@ -1,0 +1,170 @@
+/* The ticket page: the status bar tinted by where the ticket stands, the card
+   under it, and the rows that open onto the detail. The tint is a data
+   attribute, so a tone with no wash of its own stays the plain panel. */
+
+@layer page {
+  .ticket-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--space-6);
+    row-gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-3);
+  }
+
+  .ticket-status[data-tone="live"] {
+    background: var(--wash-live);
+    border-color: color-mix(in srgb, var(--tone-live) 30%, var(--edge));
+  }
+
+  .ticket-status[data-tone="parked"] {
+    background: var(--wash-parked);
+    border-color: color-mix(in srgb, var(--tone-parked) 30%, var(--edge));
+  }
+
+  .ticket-status[data-tone="pass"] {
+    background: var(--wash-pass);
+    border-color: color-mix(in srgb, var(--tone-pass) 30%, var(--edge));
+  }
+
+  .ticket-status[data-tone="fail"] {
+    background: var(--wash-fail);
+    border-color: color-mix(in srgb, var(--tone-fail) 30%, var(--edge));
+  }
+
+  .ticket-status-standing {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .ticket-status-line,
+  .ticket-status-line .fig {
+    color: var(--ink-3);
+  }
+
+  .ticket-status-figures .fields {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: var(--space-5);
+  }
+
+  .ticket-status-figures .field {
+    display: grid;
+  }
+
+  .ticket-status-figures dt {
+    font: var(--weight-medium) var(--text-xs) / 1 var(--font-mono);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+  }
+
+  .ticket-status-figures dd {
+    color: var(--ink-1);
+  }
+
+  .ticket-status-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: var(--space-4);
+    margin-left: auto;
+  }
+
+  .ticket-status-actions .act,
+  .ticket-card-actions .act {
+    padding: 0;
+    border: 0;
+    max-width: none;
+  }
+
+  .ticket-status-actions .act {
+    justify-items: end;
+    text-align: right;
+  }
+
+  .ticket-status-actions .act-effect,
+  .ticket-status-actions .act-more,
+  .ticket-card-actions .act-effect {
+    font-size: var(--text-sm);
+    color: var(--ink-3);
+  }
+
+  .ticket-card {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-4) var(--space-5);
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-3);
+  }
+
+  .ticket-card-asking {
+    border-color: color-mix(in srgb, var(--tone-parked) 30%, var(--edge));
+  }
+
+  .ticket-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+    padding-top: var(--space-2);
+  }
+
+  .ticket-card-actions:empty {
+    display: none;
+  }
+
+  .ticket-card-actions .act {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .ticket-section + .ticket-section {
+    border-top: var(--hairline) solid var(--edge);
+  }
+
+  .ticket-section-trigger {
+    appearance: none;
+    font-weight: var(--weight-regular);
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    padding: var(--space-3) var(--space-4);
+    background: transparent;
+    border: 0;
+    color: var(--ink-1);
+    font-family: inherit;
+    font-size: var(--text-md);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .ticket-section-summary,
+  .ticket-section-summary .fig,
+  .ticket-section-chevron {
+    color: var(--ink-3);
+  }
+
+  .ticket-section-chevron {
+    transition: rotate var(--duration-2) var(--ease-out);
+  }
+
+  .ticket-section-trigger[data-state="open"] > .ticket-section-chevron {
+    rotate: 90deg;
+  }
+
+  .ticket-section-body {
+    display: grid;
+    gap: var(--space-3);
+    padding: 0 var(--space-4) var(--space-4);
+  }
+}

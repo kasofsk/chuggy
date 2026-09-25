@@ -138,7 +138,6 @@
     --width-column: 64rem; /* a conversation's reading column */
     --width-settings: 56rem; /* a settings page: form rows, not prose */
     --width-aside: 22rem;
-    --width-aside-min: 18rem;
     --width-chat: 25%; /* the frame a docked chat pane takes beside the pages */
     --height-chat: 33%; /* and under them, where a quarter is too short to read */
     --width-chat-strip: 2.5rem; /* the collapsed pane, which its control expands */

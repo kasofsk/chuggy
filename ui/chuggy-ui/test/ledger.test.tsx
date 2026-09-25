@@ -40,8 +40,7 @@ afterEach(() => {
 
 const when: FigureValue = {
   kind: "Span",
-  start: "10:31",
-  length: "17m 40s",
+  parts: ["started 20m ago", "ran 17m 40s"],
   open: false,
   title: "a → b",
 };

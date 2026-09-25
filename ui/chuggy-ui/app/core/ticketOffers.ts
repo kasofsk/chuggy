@@ -17,7 +17,7 @@ import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import type { PanelState } from "./freshness.ts";
 import { nativeActionsAnswers } from "./nativeActionAnswers.ts";
 import { actionsFor, ticketRevisable } from "./ticketActions.ts";
-import type { TicketAction } from "./ticketActions.ts";
+import type { TicketAction, TicketActionName } from "./ticketActions.ts";
 
 /** The buttons to draw and whether the edit screen is offered beside them, or
  * the read whose state is drawn in their place. */
@@ -58,4 +58,28 @@ export function ticketOffers(
       };
     }
   }
+}
+
+/** Whether the action answers what the ticket is waiting on a person for, which
+ * is where the page draws it: beside the question rather than with the rest. */
+export function ticketActionResolves(action: TicketActionName): boolean {
+  switch (action) {
+    case "Resume":
+    case "Approve":
+    case "Decline":
+      return true;
+    case "Dispatch":
+    case "Revoke":
+      return false;
+  }
+}
+
+/** The offered actions a card beside the bar draws: none where no card asks
+ * anything, and otherwise the ones that answer what it asks. */
+export function offersAnswered(
+  offers: TicketOffers,
+  asking: boolean,
+): readonly TicketAction[] {
+  if (!asking || offers.offers === "Unread") return [];
+  return offers.actions.filter((action) => ticketActionResolves(action.action));
 }

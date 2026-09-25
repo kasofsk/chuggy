@@ -25,6 +25,7 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
+import { ticketDispatchViewOf } from "./ticketPageFixture.ts";
 import {
   ledgerPage,
   ticket21Parked,
@@ -85,9 +86,19 @@ const resumedRow = {
   ...ticketInstants,
 };
 
-/** The page's routes; the ticket's own read answers resumed once anything has
+/** Ticket 21 waiting on a paused selector, where only a press dispatches it. */
+const pendingRead = { ...parkedRead, phase: "Pending", escalation: undefined };
+
+/** Ticket 21 dispatched, as the project's row carries it. */
+const dispatchedRow = { ...resumedRow, phase: "Work" };
+
+/** The page's routes; the ticket's own read answers `after` once anything has
  * been submitted, the way the API would. */
-function drawn(): ReturnType<typeof openedStream> {
+function drawn(
+  held: object = parkedRead,
+  after: object = resumedRow,
+  dispatch: unknown = { result: "Reset" },
+): ReturnType<typeof openedStream> {
   const api = apiDouble({
     operation: {
       operation: "op-one",
@@ -96,7 +107,7 @@ function drawn(): ReturnType<typeof openedStream> {
       decidedSequence: resumedRow.sequence,
     },
     route: (url) => {
-      if (url.includes("/dispatch-view")) return answer({ result: "Reset" });
+      if (url.includes("/dispatch-view")) return answer(dispatch);
       if (url.includes("/native-actions")) return answer({ actions: [] });
       if (url.includes("/executions"))
         return answer(ledgerPage(ticket21Parked));
@@ -104,11 +115,9 @@ function drawn(): ReturnType<typeof openedStream> {
         return answer({}, 404);
       if (url.includes("/tickets/"))
         return answer(
-          api.submitted() === undefined
-            ? parkedRead
-            : { ...resumedRow, ...ownRead },
+          api.submitted() === undefined ? held : { ...after, ...ownRead },
         );
-      return answer({ partition: atlas, sequence: 169, tickets: [resumedRow] });
+      return answer({ partition: atlas, sequence: 169, tickets: [after] });
     },
   });
   vi.stubGlobal("fetch", api.fetch);
@@ -129,10 +138,18 @@ function cyclesDrawn(): number {
   return document.querySelectorAll(".ledger-group").length;
 }
 
+/** Opens the Brief row, which the page draws closed, and counts the brief. */
+async function briefOpened(): Promise<number> {
+  await turned(() => {
+    screen.getByRole("button", { name: "Brief" }).click();
+  });
+  return screen.getAllByText(intent).length;
+}
+
 test("a frame carrying the project's row leaves the ledger grouped and the brief drawn", async () => {
   const server = drawn();
   await settled();
-  const briefDrawn = screen.getAllByText(intent).length;
+  const briefDrawn = await briefOpened();
   expect(briefDrawn).toBeGreaterThan(0);
   expect(cyclesDrawn()).toBe(3);
 
@@ -156,7 +173,7 @@ test("a frame carrying the project's row leaves the ledger grouped and the brief
 test("an action's confirmed row leaves the ledger grouped and the brief drawn", async () => {
   drawn();
   await settled();
-  const briefDrawn = screen.getAllByText(intent).length;
+  const briefDrawn = await briefOpened();
 
   await turned(() => {
     screen.getByRole("button", { name: "Resume" }).click();
@@ -164,6 +181,37 @@ test("an action's confirmed row leaves the ledger grouped and the brief drawn", 
   await settled();
 
   expect(screen.getAllByText("Evaluating").length).toBeGreaterThan(0);
+  expect(screen.queryByText("Ungrouped · program not loaded")).toBeNull();
+  expect(cyclesDrawn()).toBe(3);
+  expect(screen.getAllByText(intent)).toHaveLength(briefDrawn);
+});
+
+test("a dispatch's confirmed row leaves the ledger grouped and the brief drawn", async () => {
+  drawn(
+    pendingRead,
+    dispatchedRow,
+    ticketDispatchViewOf(atlas, [
+      {
+        ticket: 21,
+        ticketVersion: 4,
+        dependencies: [],
+        program: [],
+        configurationRevision: "r1",
+        configurationDigest: "b".repeat(64),
+        configurationCanonical: "{}",
+      },
+    ]),
+  );
+  await settled();
+  const briefDrawn = await briefOpened();
+  expect(cyclesDrawn()).toBe(3);
+
+  await turned(() => {
+    screen.getByRole("button", { name: "Dispatch" }).click();
+  });
+  await settled();
+
+  expect(screen.getAllByText("Working").length).toBeGreaterThan(0);
   expect(screen.queryByText("Ungrouped · program not loaded")).toBeNull();
   expect(cyclesDrawn()).toBe(3);
   expect(screen.getAllByText(intent)).toHaveLength(briefDrawn);
