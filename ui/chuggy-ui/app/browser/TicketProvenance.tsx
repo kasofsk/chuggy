@@ -304,43 +304,62 @@ function ConfigurationRoleBody(props: {
   );
 }
 
-/** A Review tab only where a review run is briefed from the review block; the
- * evaluation stages are the review otherwise. */
+function ConfigurationInstructionsBar(props: {
+  readonly tabs: ReactNode;
+}): ReactNode {
+  return (
+    <div className="ticket-config-instructions-bar">
+      <span className="panel-title">Instructions</span>
+      {props.tabs}
+      <span className="ticket-config-instructions-caption">
+        As configured · a run's exact prompt is in its conversation
+      </span>
+    </div>
+  );
+}
+
+const instructionTabs = ["Work", "Review"] as const;
+
+/** Work and Review tabs only where a review run is briefed from the review
+ * block; the evaluation stages are the review otherwise, and Work is drawn
+ * alone. */
 function ConfigurationInstructions(props: {
   readonly brief: ConfigurationBrief;
   readonly work: ConfigurationRole;
   readonly review: ConfigurationRole | undefined;
 }): ReactNode {
   const review = props.review;
-  const tabs = review === undefined ? ["Work"] : ["Work", "Review"];
+  if (review === undefined)
+    return (
+      <div className="ticket-config-instructions">
+        <ConfigurationInstructionsBar tabs={null} />
+        <ConfigurationRoleBody brief={props.brief} role={props.work} />
+      </div>
+    );
   return (
     <Tabs.Root className="ticket-config-instructions" defaultValue="Work">
-      <div className="ticket-config-instructions-bar">
-        <span className="panel-title">Instructions</span>
-        {tabs.length < 2 ? null : (
+      <ConfigurationInstructionsBar
+        tabs={
           <Tabs.List
             className="ticket-config-tabs"
             aria-label="Instructions for"
           >
-            {tabs.map((tab) => (
+            {instructionTabs.map((tab) => (
               <Tabs.Trigger key={tab} value={tab} className="ticket-config-tab">
                 {tab}
               </Tabs.Trigger>
             ))}
           </Tabs.List>
-        )}
-        <span className="ticket-config-instructions-caption">
-          As configured · a run's exact prompt is in its conversation
-        </span>
-      </div>
-      <Tabs.Content value="Work">
-        <ConfigurationRoleBody brief={props.brief} role={props.work} />
-      </Tabs.Content>
-      {review === undefined ? null : (
-        <Tabs.Content value="Review">
-          <ConfigurationRoleBody brief={props.brief} role={review} />
+        }
+      />
+      {instructionTabs.map((tab) => (
+        <Tabs.Content key={tab} value={tab}>
+          <ConfigurationRoleBody
+            brief={props.brief}
+            role={tab === "Work" ? props.work : review}
+          />
         </Tabs.Content>
-      )}
+      ))}
     </Tabs.Root>
   );
 }

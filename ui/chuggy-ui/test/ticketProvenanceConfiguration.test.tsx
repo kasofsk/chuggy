@@ -4,8 +4,10 @@
  * row is the only heading either draws, never a second one repeating it.
  *
  * The canonical body is read from `chuggy-development-opus.json` itself, not a
- * copied fixture, so the settings grid, the Instructions tabs and the
- * Evaluation list are asserted against what the repository actually declares.
+ * copied fixture, so the settings grid, the Instructions and the Evaluation
+ * list are asserted against what the repository actually declares; the Review
+ * tab, which a declared document with stages never draws, is asserted over the
+ * same document with its stages taken out.
  */
 
 import { QueryClient } from "@tanstack/react-query";
@@ -170,13 +172,13 @@ test("the settings grid reads the model off its own flag and the tools off the a
   ).toBe("No");
 });
 
-/** The Instructions block alone, since the Evaluation section below it can
- * carry the very same sentence as a stage's own instructions. */
 const workText =
   "Implement the requested change, add focused regression coverage, and run the checks relevant to the files changed.";
 const reviewText =
   "Read .chug/tasks/review-change.md and review the change exactly as that brief requires.";
 
+/** The Instructions block alone, since the Evaluation section below it can
+ * carry the very same sentence as a stage's own instructions. */
 function instructions(): HTMLElement {
   const region = document.querySelector(".ticket-config-instructions");
   if (!(region instanceof HTMLElement))
@@ -195,6 +197,7 @@ test("the Instructions draw the shared brief and the work's own words, and no Re
   expect(within(instructions()).getByText(workText)).toBeDefined();
   expect(within(instructions()).getByText("Regression coverage")).toBeDefined();
   expect(within(instructions()).queryByRole("tab")).toBeNull();
+  expect(within(instructions()).queryByRole("tabpanel")).toBeNull();
   expect(within(instructions()).queryByText(reviewText)).toBeNull();
 });
 
