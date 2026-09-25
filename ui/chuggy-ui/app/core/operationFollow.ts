@@ -360,27 +360,6 @@ function operationEventOf<T>(
   };
 }
 
-/**
- * What the confirmation's answer does to the ticket the page is already
- * holding. The project row is a narrower projection than the ticket's own read
- * — it carries no `brief` — so the field the row cannot carry survives, and a
- * row older than what a live frame has already written is dropped, because the
- * frames are the only other writer and they arrive in sequence order.
- */
-export function ticketConfirmed(
-  held: TicketResponse | undefined,
-  confirmed: TicketResponse,
-): TicketResponse {
-  if (held === undefined) return confirmed;
-  if (held.sequence > confirmed.sequence) return held;
-  return {
-    ...confirmed,
-    ...(confirmed.brief === undefined && held.brief !== undefined
-      ? { brief: held.brief }
-      : {}),
-  };
-}
-
 /** The route's `after` is exclusive and names a ticket, so the first has none. */
 export function operationConfirmationPage(
   ticket: number,

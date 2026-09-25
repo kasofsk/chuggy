@@ -352,18 +352,19 @@ test("a page that hands the shell no details gets no toggle", async () => {
 
 /** A page's own middle row pins a composer to its foot with `flex-1` and
  * gives up the wrapper's reading measure and padding to its own scroller —
- * both only when the page draws a `role="region"`, so a plain listing keeps
- * its own height and inset instead of losing them. jsdom draws no boxes;
- * this reads the declaration, not the effect. */
+ * both only when the page marks a region `data-fills-page`, so a plain listing
+ * keeps its own height and inset, and so does a page whose disclosures are
+ * regions of their own. jsdom draws no boxes; this reads the declaration, not
+ * the effect. */
 test("the page column only stretches its wrapper for a page that fills it", async () => {
   pageDrawn = () => <p>page</p>;
   await mounted(viewportDeskEm);
   const wrapper = screen.getByText("page").parentElement;
   expect(wrapper?.className).toContain("self-start");
-  expect(wrapper?.className).toContain("has-[[role=region]]:self-stretch");
-  expect(wrapper?.className).toContain("has-[[role=region]]:max-w-none");
-  expect(wrapper?.className).toContain("has-[[role=region]]:p-0");
-  expect(wrapper?.className).toContain("has-[[role=region]]:w-full");
+  expect(wrapper?.className).toContain("has-[[data-fills-page]]:self-stretch");
+  expect(wrapper?.className).toContain("has-[[data-fills-page]]:max-w-none");
+  expect(wrapper?.className).toContain("has-[[data-fills-page]]:p-0");
+  expect(wrapper?.className).toContain("has-[[data-fills-page]]:w-full");
   styleless();
 });
 

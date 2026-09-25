@@ -19,6 +19,8 @@ import {
   countFigure,
   durationText,
   instantText,
+  settledFigure,
+  sinceFigure,
   spanFigure,
   spanSetFigure,
   spendFigures,
@@ -164,22 +166,35 @@ test("an ago figure carries the relative reading and the full date and clock for
   expect(figure.full).toBe("2026-08-24 12:00");
 });
 
-test("a closed span names both ends and an open one says it is still running", () => {
+test("a closed span says when it started and how long it ran, an open one only when", () => {
   const from = "2026-08-27T10:19:00Z";
   const nowMs = Date.parse("2026-08-27T11:07:00Z");
   const closed = spanFigure({ from, to: "2026-08-27T10:49:00Z" }, nowMs);
   expect(closed.kind).toBe("Span");
   if (closed.kind !== "Span") throw new Error("not a span");
-  expect(closed.length).toBe("30m");
+  expect(closed.parts).toEqual(["started 48m ago", "ran 30m"]);
   expect(closed.open).toBe(false);
   const open = spanFigure({ from, to: undefined }, nowMs);
   if (open.kind !== "Span") throw new Error("not a span");
-  expect(open.end).toBe("running");
-  expect(open.length).toBe("48m so far");
+  expect(open.parts).toEqual(["started 48m ago"]);
   expect(open.open).toBe(true);
 });
 
-test("a row's window is its start and how long, and a running one says how long so far", () => {
+test("a span hovers its absolute ends, to the second", () => {
+  const from = new Date(2026, 7, 27, 10, 19, 5);
+  const to = new Date(2026, 7, 27, 10, 49, 0);
+  const closed = spanFigure(
+    { from: from.toISOString(), to: to.toISOString() },
+    to.getTime(),
+  );
+  if (closed.kind !== "Span") throw new Error("not a span");
+  expect(closed.title).toBe("2026-08-27 10:19:05 → 2026-08-27 10:49:00");
+  const open = spanFigure({ from: from.toISOString(), to: undefined }, 0);
+  if (open.kind !== "Span") throw new Error("not a span");
+  expect(open.title).toBe("2026-08-27 10:19:05");
+});
+
+test("a row's window is when it started, and once ended how long it ran", () => {
   const nowMs = Date.parse("2026-08-27T11:07:00Z");
   const ended = whenFigure(
     {
@@ -189,18 +204,17 @@ test("a row's window is its start and how long, and a running one says how long 
     nowMs,
   );
   if (ended.kind !== "Span") throw new Error("not a span");
-  expect(ended.length).toBe("17m 40s");
-  expect(ended.end).toBe(undefined);
+  expect(ended.parts).toEqual(["started 36m ago", "ran 17m 40s"]);
   const running = whenFigure({ registeredAt: "2026-08-27T11:03:20Z" }, nowMs);
   if (running.kind !== "Span") throw new Error("not a span");
-  expect(running.length).toBe("running 3m 40s");
+  expect(running.parts).toEqual(["started 3m 40s ago"]);
   expect(running.open).toBe(true);
 });
 
 /**
  * §5.2's waiting reading: where the wire carries the first attempt's opening,
- * the queue and the run are two figures rather than one, and where it does not
- * the row reads as it did before the field existed.
+ * the queue is its own figure and the start is the run's, and where it does not
+ * the row is timed from its registration as it was before the field existed.
  */
 test("a row separates the wait from the run where the wire carries the start", () => {
   const nowMs = Date.parse("2026-08-27T11:07:00Z");
@@ -213,7 +227,11 @@ test("a row separates the wait from the run where the wire carries the start", (
     nowMs,
   );
   if (ran.kind !== "Span") throw new Error("not a span");
-  expect(ran.length).toBe("waited 12s · ran 17m 28s");
+  expect(ran.parts).toEqual([
+    "started 35m 48s ago",
+    "waited 12s",
+    "ran 17m 28s",
+  ]);
   const running = whenFigure(
     {
       registeredAt: "2026-08-27T11:03:20Z",
@@ -222,18 +240,44 @@ test("a row separates the wait from the run where the wire carries the start", (
     nowMs,
   );
   if (running.kind !== "Span") throw new Error("not a span");
-  expect(running.length).toBe("waited 12s · running 3m 28s");
+  expect(running.parts).toEqual(["started 3m 28s ago", "waited 12s"]);
   expect(running.open).toBe(true);
 });
 
-/** A ticket's span begins where the journal dated its release, not at its first run. */
-test("a span begins at the instant it is given, over the set's own first", () => {
+test("an ago on the ticket page is two units, names what happened and hovers the second", () => {
+  const at = new Date(2026, 7, 27, 10, 19, 5);
+  const figure = sinceFigure(
+    at.toISOString(),
+    at.getTime() + 634_000,
+    "started",
+  );
+  if (figure.kind !== "Ago") throw new Error("not an ago figure");
+  expect(figure.text).toBe("started 10m 34s ago");
+  expect(figure.full).toBe("2026-08-27 10:19:05");
+  const bare = sinceFigure(at.toISOString(), at.getTime() + 4_000);
+  if (bare.kind !== "Ago") throw new Error("not an ago figure");
+  expect(bare.text).toBe("4s ago");
+  expect(sinceFigure("not an instant", 0).kind).toBe("Absent");
+});
+
+test("a settled window is read from when it last moved, and how long it ran where it ran", () => {
   const nowMs = Date.parse("2026-08-27T11:07:00Z");
-  const span = { from: "2026-08-27T10:19:00Z", to: "2026-08-27T10:49:00Z" };
-  const released = spanFigure(span, nowMs, "2026-08-27T09:49:00Z");
-  if (released.kind !== "Span") throw new Error("not a span");
-  expect(released.length).toBe("1h");
-  expect(spanFigure(span, nowMs, undefined)).toEqual(spanFigure(span, nowMs));
+  const changedAt = "2026-08-27T10:44:00Z";
+  const ran = settledFigure(
+    changedAt,
+    { from: "2026-08-27T10:07:00Z", to: undefined },
+    nowMs,
+  );
+  if (ran.kind !== "Span") throw new Error("not a span");
+  expect(ran.parts).toEqual(["23m ago", "ran 37m"]);
+  expect(ran.open).toBe(false);
+  const never = settledFigure(
+    changedAt,
+    { from: undefined, to: undefined },
+    nowMs,
+  );
+  if (never.kind !== "Span") throw new Error("not a span");
+  expect(never.parts).toEqual(["23m ago"]);
 });
 
 test("a span with no readable start, and a spend with no totals, are absences", () => {

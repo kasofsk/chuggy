@@ -1,6 +1,12 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -30,6 +36,7 @@ import {
 } from "./ticketLedgerFixture.ts";
 import type { ExecutionShape } from "./ticketLedgerFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import { instantExactText } from "../app/core/figures.ts";
 import type { TicketProgram } from "../app/core/ticketLedger.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
@@ -72,6 +79,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  history.replaceState(null, "", "/");
   document.documentElement.removeAttribute("data-theme");
   vi.unstubAllGlobals();
 });
@@ -157,13 +165,18 @@ interface Served {
   };
 }
 
+/** Every route the last drawn page asked for, in order. */
+let routed: string[] = [];
+
 async function drawTicket(
   served: Served,
   options: { readonly shell?: boolean } = {},
 ): Promise<Drawn> {
+  routed = [];
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
+      routed.push(url);
       if (url.includes("/dispatch-view")) return answer({ result: "Reset" });
       if (url.includes("/native-actions")) return answer({ actions: [] });
       if (url.includes("/executions"))
@@ -235,6 +248,17 @@ function groups(container: HTMLElement): readonly HTMLElement[] {
   return [...container.querySelectorAll<HTMLElement>(".ledger-group")];
 }
 
+/** Opens every cycle, since a closed one draws no rows until it is opened. */
+async function cyclesOpened(container: HTMLElement): Promise<void> {
+  await turned(() => {
+    for (const group of groups(container)) {
+      (group as HTMLDetailsElement).open = true;
+      group.dispatchEvent(new Event("toggle"));
+    }
+  });
+  await settled();
+}
+
 /** Every row an evaluated stage drew, picked out from the work row that
  * always draws first in its cycle. */
 function stageRows(group: HTMLElement | undefined): readonly HTMLElement[] {
@@ -251,32 +275,61 @@ function rowsOf(group: HTMLElement): readonly string[] {
   );
 }
 
+/** The status bar, which is where the page says where the ticket stands. */
+function statusBar(container: HTMLElement): HTMLElement {
+  const bar = container.querySelector<HTMLElement>(".ticket-status");
+  if (bar === null) throw new Error("no status bar drawn");
+  return bar;
+}
+
+/** Opens one of the rows under the ledger, which the page draws closed. */
+async function sectionOpened(label: string): Promise<void> {
+  const trigger = screen.getByRole("button", {
+    name: new RegExp(`^${label}`, "u"),
+  });
+  await turned(() => {
+    trigger.click();
+  });
+  await settled();
+}
+
 test("the parked ticket names its wall, its phase and what the whole of it cost", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  expect(screen.getAllByText("Give the console a footer").length).toBe(2);
-  expect(screen.getByText("Parked")).toBeDefined();
+  const bar = statusBar(container);
+  expect(bar.getAttribute("data-tone")).toBe("parked");
+  expect(bar.textContent).toContain("Escalated");
+  expect(bar.textContent).toContain("$2.74");
+  expect(bar.textContent).toContain("198k tok");
+  expect(bar.textContent).toContain("Runs7");
   expect(screen.getAllByText("Rework budget exhausted").length).toBeGreaterThan(
     0,
   );
-  const head = container.querySelector(".fields-inline");
-  expect(head?.textContent).toContain("167");
-  expect(head?.textContent).toContain("$2.74");
-  expect(head?.textContent).toContain("198k tok");
-  expect(head?.textContent).toContain("7");
 });
 
-test("the wall notice says where it is, why, and which stage failed", async () => {
+test("the page is one column: no aside, no intent line and no sequence", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  const notice = container.querySelector(".notice-parked");
-  expect(notice?.textContent).toContain("Parked");
-  expect(notice?.textContent).toContain("Rework budget exhausted");
-  expect(notice?.textContent).toContain("Stage 1 of 2 failed");
+  expect(container.querySelector("aside")).toBeNull();
+  expect(screen.queryByText("Give the console a footer")).toBeNull();
+  expect(statusBar(container).textContent).not.toContain("167");
+  expect(screen.queryByText("Sequence")).toBeNull();
+});
+
+test("the wall is a card that needs you: why, which stage failed, and the resume", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: parkedTicket,
+  });
+  const card = screen.getByRole("status", { name: "Needs you" });
+  expect(card.textContent).toContain("Rework budget exhausted");
+  expect(card.textContent).toContain("Stage 1 of 2 failed");
+  expect(within(card).getByRole("button", { name: "Resume" })).toBeDefined();
+  expect(within(card).queryByRole("button", { name: "Revoke" })).toBeNull();
 });
 
 test("the cycles are newest first, the current one open and the rest closed", async () => {
@@ -329,6 +382,7 @@ test("a superseded cycle says which cycle replaced its artifact", async () => {
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
+  await cyclesOpened(container);
   const superseded = groups(container)[1];
   expect(superseded).toBeDefined();
   if (superseded === undefined) throw new Error("no superseded cycle");
@@ -347,6 +401,7 @@ test("a page that does not start at cycle 1 names the cycle that superseded one"
     shapes: [workedIn(2), workedIn(3)],
     ticket: parkedTicket,
   });
+  await cyclesOpened(container);
   const superseded = groups(container)[1];
   if (superseded === undefined) throw new Error("no superseded cycle");
   expect(superseded.querySelector("h3")?.textContent).toBe("Cycle 2");
@@ -361,7 +416,7 @@ test("the resume states what it re-runs", async () => {
   ).not.toBeNull();
 });
 
-test("every section of the main body has an anchor pointing at it", async () => {
+test("every section of the page has an anchor pointing at it", async () => {
   const { container } = await drawTicket(
     { shapes: ticket21Parked, ticket: parkedTicket },
     { shell: true },
@@ -372,10 +427,70 @@ test("every section of the main body has an anchor pointing at it", async () => 
   const anchors = [...container.querySelectorAll("nav.sections a")].map(
     (link) => link.getAttribute("href"),
   );
-  expect(anchors).toEqual(["#cycles", "#usage", "#brief", "#provenance"]);
-  for (const anchor of anchors)
-    expect(container.querySelector(`section${String(anchor)}`)).not.toBeNull();
+  expect(anchors).toEqual(["#cycles", "#brief", "#usage", "#provenance"]);
+  const drawn = [...container.querySelectorAll("section[id]")].map(
+    (section) => `#${section.id}`,
+  );
+  expect(drawn).toEqual(anchors);
   expect(screen.getByText("3 · 7 runs")).toBeDefined();
+});
+
+test("the rows under the ledger are closed, and following an anchor opens its row", async () => {
+  const { container } = await drawTicket(
+    { shapes: ticket21Parked, ticket: parkedTicket },
+    { shell: true },
+  );
+  expect(screen.queryByText("Dependencies")).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Details", pressed: false }),
+  );
+  const anchor = container.querySelector('nav.sections a[href="#provenance"]');
+  if (!(anchor instanceof HTMLElement)) throw new Error("no provenance anchor");
+  await turned(() => {
+    anchor.click();
+  });
+  await settled();
+  expect(screen.getByText("Dependencies")).toBeDefined();
+  expect(
+    screen
+      .getByRole("button", { name: /^Provenance/u })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  expect(
+    screen
+      .getByRole("button", { name: /^Brief/u })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
+});
+
+test("each closed row says what it holds on the right", async () => {
+  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
+  expect(screen.getByRole("button", { name: /^Brief/u }).textContent).toContain(
+    "Intent only",
+  );
+  expect(screen.getByRole("button", { name: /^Usage/u }).textContent).toContain(
+    "$2.74",
+  );
+  expect(
+    screen.getByRole("button", { name: /^Provenance/u }).textContent,
+  ).toContain("Revision 1");
+});
+
+test("the Brief row counts what the brief holds beside its intent", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: {
+      ...parkedTicket,
+      brief: {
+        intent: "Give the console a footer",
+        links: ["https://example.test/one"],
+        checks: ["npm run lint", "npm test"],
+      },
+    },
+  });
+  expect(screen.getByRole("button", { name: /^Brief/u }).textContent).toContain(
+    "1 link · 2 checks",
+  );
 });
 
 test("the shell's top bar draws the ticket's own number and phase", async () => {
@@ -383,9 +498,9 @@ test("the shell's top bar draws the ticket's own number and phase", async () => 
     { shapes: ticket21Parked, ticket: parkedTicket },
     { shell: true },
   );
-  expect(screen.getByRole("heading", { name: "Ticket" })).toBeDefined();
-  expect(screen.getByText("21")).toBeDefined();
-  expect(screen.getByText("Escalated")).toBeDefined();
+  const top = screen.getByRole("heading", { name: "Ticket" }).parentElement;
+  expect(top?.textContent).toContain("21");
+  expect(top?.textContent).toContain("Escalated");
 });
 
 test("the shell's top bar is headed by the ticket's own title where it has one", async () => {
@@ -410,9 +525,10 @@ test("the top bar's breadcrumb returns to the project's overview", async () => {
   expect(crumb.tagName).toBe("A");
 });
 
-test("the canonical configuration is closed until asked for, and its trigger names what it opens", async () => {
+test("the canonical JSON is closed until asked for, and its trigger controls it", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
-  const trigger = screen.getByRole("button", { name: "show canonical" });
+  await sectionOpened("Provenance");
+  const trigger = screen.getByRole("button", { name: "Canonical JSON" });
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByText("{}")).toBeNull();
   await turned(() => {
@@ -421,20 +537,20 @@ test("the canonical configuration is closed until asked for, and its trigger nam
   const body = screen.getByText("{}");
   expect(trigger.getAttribute("aria-expanded")).toBe("true");
   expect(trigger.getAttribute("aria-controls")).toBe(body.id);
-  expect(screen.getByRole("button", { name: "hide canonical" })).toBe(trigger);
   await turned(() => {
     trigger.click();
   });
   expect(screen.queryByText("{}")).toBeNull();
 });
 
-test("the usage panel names the basis once and breaks the spend down twice", async () => {
+test("the usage row names the basis and breaks the spend down twice", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
+  await sectionOpened("Usage");
   const usage = container.querySelector("#usage");
-  expect(usage?.textContent).toContain("list price");
+  expect(usage?.querySelector(".fig-basis")?.textContent).toBe("list");
   expect(usage?.textContent).toContain("$2.74");
   expect(usage?.textContent).toContain("1h 06m");
   expect(usage?.textContent).toContain("claude-opus-4");
@@ -461,13 +577,13 @@ test("after a resume the current cycle draws its resumed evaluator running, agai
     shapes: ticket21Resumed,
     ticket: resumedTicket,
   });
-  expect(screen.getAllByText("Evaluating")).toHaveLength(2);
+  expect(statusBar(container).textContent).toContain("Evaluating");
   expect(screen.queryByText("Rework budget exhausted")).toBeNull();
   const current = groups(container)[0];
   if (current === undefined) throw new Error("no current cycle");
   const running = rowsOf(current).find((row) => row.includes("Running"));
   expect(running).toBeDefined();
-  expect(running).toContain("running ");
+  expect(running).toMatch(/started \S+( \S+)? ago/u);
   expect(running).toContain("generation 2");
   expect(current.querySelector(".fig-live")).not.toBeNull();
   const blocked = rowsOf(current).find((row) => row.includes("Blocked"));
@@ -483,9 +599,26 @@ test("a resumed ticket says it was resumed", async () => {
     shapes: ticket21Resumed,
     ticket: resumedTicket,
   });
-  const notice = container.querySelector(".notice-live");
-  expect(notice?.textContent).toContain("Evaluating");
-  expect(notice?.textContent).toContain("Resumed at stage 1 · cycle 3");
+  const bar = statusBar(container);
+  expect(bar.getAttribute("data-tone")).toBe("live");
+  expect(bar.textContent).toContain("Evaluating");
+  expect(bar.textContent).toContain("Resumed at stage 1 · cycle 3");
+});
+
+test("a running ticket's slot is the run going now, and nothing needs you", async () => {
+  await drawTicket({ shapes: ticket21Resumed, ticket: resumedTicket });
+  const now = screen.getByRole("region", { name: "Now" });
+  expect(now.textContent).toContain("Stage 1 of 2 · run 8");
+  expect(screen.queryByRole("status", { name: "Needs you" })).toBeNull();
+});
+
+test("a ticket that is neither running nor waiting on anyone draws no card", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: { ...resumedTicket, phase: "Done" },
+  });
+  expect(screen.queryByRole("region", { name: "Now" })).toBeNull();
+  expect(screen.queryByRole("status", { name: "Needs you" })).toBeNull();
 });
 
 test("a short page says so, and no cycle on it claims to be whole", async () => {
@@ -528,9 +661,19 @@ test("nothing the page draws is a colour of its own, in either theme", async () 
       shapes: ticket21Parked,
       ticket: parkedTicket,
     });
-    expect(container.querySelector("[style]")).toBeNull();
+    const styled = [...container.querySelectorAll("[style]")].filter(
+      (node) =>
+        !(node.getAttribute("style") ?? "")
+          .split(";")
+          .every(
+            (declaration) =>
+              declaration.trim() === "" ||
+              declaration.trim().startsWith("--radix-"),
+          ),
+    );
+    expect(styled).toEqual([]);
     expect(document.documentElement.getAttribute("data-theme")).toBe(theme);
-    expect(container.querySelector(".notice-parked")).not.toBeNull();
+    expect(container.querySelector(".ticket-status")).not.toBeNull();
     cleanup();
     vi.unstubAllGlobals();
     viewportAtEm(viewportDeskEm);
@@ -565,6 +708,7 @@ test("no string the page composes but the brief runs past the copy budget", asyn
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
+  await cyclesOpened(container);
   expect(drawnStringsOver(container)).toEqual([]);
 });
 
@@ -609,8 +753,7 @@ test("a short page marks the head's own counts, draft or no draft", async () => 
       cursor: "more",
       withDraft,
     });
-    const head = container.querySelector(".fields-inline");
-    expect(head?.textContent).toContain("on this page");
+    expect(statusBar(container).textContent).toContain("on this page");
     cleanup();
     vi.unstubAllGlobals();
     viewportAtEm(viewportDeskEm);
@@ -618,54 +761,61 @@ test("a short page marks the head's own counts, draft or no draft", async () => 
 });
 
 /**
- * The wall is dated by when the ticket entered it, which is the journal's own
+ * A settled ticket is dated by when it last moved, which is the journal's own
  * instant and not the failing row's end — those differ whenever anything ran
  * after the wall, and the fixture makes them differ.
  */
-test("the wall says when the ticket entered it, from the journal's own instant", async () => {
+test("the status says when the ticket last moved, hovering the journal's own instant", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  const when = container.querySelector(".notice-parked .fig");
-  if (when === null) throw new Error("no wall instant figure drawn");
+  const when = statusBar(container).querySelector(".fig");
+  if (when === null) throw new Error("no status figure drawn");
+  expect(when.textContent).toMatch(/ ago·ran /u);
   fireEvent.focus(when);
   expect((await screen.findByRole("tooltip")).textContent).toBe(
-    new Date(ticketInstants.changedAt).toISOString(),
-  );
-  expect(when.textContent).not.toBe("");
-});
-
-test("a live phase is dated the same way", async () => {
-  const { container } = await drawTicket({
-    shapes: ticket21Resumed,
-    ticket: resumedTicket,
-  });
-  const when = container.querySelector(".notice-live .fig");
-  if (when === null) throw new Error("no wall instant figure drawn");
-  fireEvent.focus(when);
-  expect((await screen.findByRole("tooltip")).textContent).toBe(
-    new Date(ticketInstants.changedAt).toISOString(),
+    instantExactText(new Date(ticketInstants.changedAt)),
   );
 });
 
 /**
- * The ticket's span begins at the release the journal dates, not at whatever
- * ran first — the fixture releases well before its first execution, so the two
- * give different lengths.
+ * A running ticket is dated from the release the journal dates, not from
+ * whatever ran first — the fixture releases well before its first execution.
  */
-test("the head's span begins at the release and not at the first run", async () => {
+test("a running ticket says when it started, from its release", async () => {
+  const { container } = await drawTicket({
+    shapes: ticket21Resumed,
+    ticket: resumedTicket,
+  });
+  const when = statusBar(container).querySelector(".fig");
+  if (when === null) throw new Error("no status figure drawn");
+  expect(when.textContent).toMatch(/^started .+ ago$/u);
+  fireEvent.focus(when);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    instantExactText(new Date(ticketInstants.releasedAt)),
+  );
+});
+
+/** A row reads its run to learn whether it has a conversation, so a cycle
+ * the page draws closed reads its runs only once a reader opens it. */
+test("a closed cycle reads none of its runs until it is opened", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  const span = [...container.querySelectorAll(".fields-inline .fig")].find(
-    (figure) => figure.textContent?.includes("→") === true,
-  );
-  if (span === undefined) throw new Error("no span figure drawn");
-  fireEvent.focus(span);
-  expect((await screen.findByRole("tooltip")).textContent).toContain(
-    new Date(ticketInstants.releasedAt).toISOString(),
+  const runsRead = (): readonly string[] =>
+    [
+      ...new Set(
+        routed.flatMap(
+          (url) => /\/executions\/([^/?]+)$/u.exec(url)?.slice(1) ?? [],
+        ),
+      ),
+    ].sort();
+  expect(runsRead()).toEqual(["execution-b8bdfdd4-7", "execution-c004a1fa-6"]);
+  await cyclesOpened(container);
+  expect(runsRead()).toEqual(
+    ticket21Parked.map((shape) => shape.execution).sort(),
   );
 });
 
@@ -681,10 +831,11 @@ test("a row separates its wait from its run where the wire dates the start", asy
     shapes: started,
     ticket: parkedTicket,
   });
+  await cyclesOpened(container);
   const rows = [...container.querySelectorAll(".ledger-row")].map(
     (row) => row.querySelector(".ledger-when")?.textContent ?? "",
   );
-  expect(rows.some((row) => row.includes("waited 1m · ran"))).toBe(true);
+  expect(rows.some((row) => row.includes("waited 1m·ran"))).toBe(true);
   expect(rows.some((row) => row.includes("waited") === false)).toBe(true);
 });
 
@@ -698,9 +849,9 @@ test("a settled ticket is not drawn as still running when its runs are unread", 
       shapes: [],
       ticket: { ...parkedTicket, phase },
     });
-    const head = document.querySelector(".fields-inline");
-    expect(head?.textContent).not.toContain("running");
-    expect(head?.textContent).not.toContain("so far");
+    const line = document.querySelector(".ticket-status-line");
+    expect(line?.textContent).not.toContain("started");
+    expect(line?.textContent).toMatch(/ ago$/u);
     cleanup();
     vi.unstubAllGlobals();
     viewportAtEm(viewportDeskEm);
@@ -712,21 +863,8 @@ test("a ticket the machine is working on now keeps its open span", async () => {
     shapes: [],
     ticket: { ...resumedTicket, phase: "Evaluation" },
   });
-  const head = document.querySelector(".fields-inline");
-  expect(head?.textContent).toContain("running");
-});
-
-/** The provenance panel draws a stage as its evaluator count, never its key. */
-test("provenance draws each stage as its evaluator count", async () => {
-  const { container } = await drawTicket({
-    shapes: ticket21Parked,
-    ticket: parkedTicket,
-    program: [
-      { key: 1, evaluators: [{ key: 1 }, { key: 2 }, { key: 3 }] },
-      { key: 2, evaluators: [{ key: 1 }, { key: 3 }] },
-    ],
-  });
-  expect(container.textContent).toContain("3× then 2×");
+  const line = document.querySelector(".ticket-status-line");
+  expect(line?.textContent).toMatch(/^started .+ ago$/u);
 });
 
 /** A cancelled run has stopped, so it is not one of the runs still going. */
@@ -741,6 +879,7 @@ test("a cancelled run is counted but is not counted as running", async () => {
     shapes: cancelled,
     ticket: parkedTicket,
   });
+  await sectionOpened("Usage");
   const usage = container.querySelector("#usage")?.textContent ?? "";
   expect(usage).toContain("Runs7");
   expect(usage).not.toContain("running");
@@ -765,6 +904,7 @@ test("the usage panel counts the runs, and says which are still going", async ()
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
+  await sectionOpened("Usage");
   expect(container.querySelector("#usage")?.textContent).toContain("Runs7");
   cleanup();
   vi.unstubAllGlobals();
@@ -773,6 +913,7 @@ test("the usage panel counts the runs, and says which are still going", async ()
     shapes: ticket21Resumed,
     ticket: resumedTicket,
   });
+  await sectionOpened("Usage");
   expect(resumed.container.querySelector("#usage")?.textContent).toContain(
     "Runs8 · 1 running · 1 unmeasured",
   );
@@ -783,6 +924,7 @@ test("the by-stage table is work first and then the program's own order", async 
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
+  await sectionOpened("Usage");
   const table = screen.getByRole("table", { name: "Usage by stage" });
   expect(
     [...table.querySelectorAll("tbody th")].map((cell) => cell.textContent),
@@ -838,6 +980,7 @@ async function drawFanout(): Promise<Drawn> {
  */
 test("a sparse stage draws each evaluator as its own row, priced and timed apart", async () => {
   const { container } = await drawFanout();
+  await cyclesOpened(container);
   const rows = stageRows(groups(container).at(-1));
   expect(rows).toHaveLength(2);
   expect(rows[0]?.querySelector(".ledger-label")?.textContent).toBe(
@@ -865,6 +1008,7 @@ test("a sparse stage draws each evaluator as its own row, priced and timed apart
  */
 test("a relaunched, short stage row in a superseded cycle still fits the copy budget", async () => {
   const { container } = await drawFanout();
+  await cyclesOpened(container);
   const superseded = groups(container).at(-1);
   expect(superseded?.classList.contains("ledger-group-superseded")).toBe(true);
   const over = drawnStringsOver(container);
@@ -876,7 +1020,8 @@ test("a relaunched, short stage row in a superseded cycle still fits the copy bu
 test("nothing the ticket page draws is a runtime style element", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
   expect(document.querySelectorAll("style").length).toBe(0);
-  fireEvent.click(screen.getByRole("button", { name: "show canonical" }));
+  await sectionOpened("Provenance");
+  fireEvent.click(screen.getByRole("button", { name: "Canonical JSON" }));
   expect(document.querySelectorAll("style").length).toBe(0);
 });
 
@@ -906,12 +1051,13 @@ test("the provenance names the live revision and a draft revised past it", async
     ticket: pendingTicket,
     versions: { authoringVersion: 3, releasedAuthoringVersion: 2 },
   });
-  expect(screen.getByText("live").nextElementSibling?.textContent).toBe(
-    "revision 2, from draft version 2",
+  await sectionOpened("Provenance");
+  expect(screen.getByText("Live").nextElementSibling?.textContent).toBe(
+    "Revision 2",
   );
   expect(
-    screen.getAllByText("draft").at(-1)?.nextElementSibling?.textContent,
-  ).toBe("version 3 holds unreleased changes");
+    screen.getAllByText("Draft").at(-1)?.nextElementSibling?.textContent,
+  ).toBe("1 unreleased");
   expect(drawnStringsOver(container)).toEqual([]);
 });
 
@@ -921,9 +1067,10 @@ test("the provenance says a draft at its release holds nothing unreleased", asyn
     ticket: pendingTicket,
     versions: { authoringVersion: 2, releasedAuthoringVersion: 2 },
   });
+  await sectionOpened("Provenance");
   expect(
-    screen.getAllByText("draft").at(-1)?.nextElementSibling?.textContent,
-  ).toBe("nothing unreleased");
+    screen.getAllByText("Draft").at(-1)?.nextElementSibling?.textContent,
+  ).toBe("Nothing unreleased");
 });
 
 /** A Pending ticket's author may revise its draft without releasing it, and
@@ -939,20 +1086,22 @@ test("a ticket whose draft is ahead draws the brief and configuration it was rel
       configurationRevision: "r2",
     },
   });
-  expect(screen.getAllByText("Give the console a footer").length).toBe(2);
+  await sectionOpened("Brief");
+  await sectionOpened("Provenance");
+  expect(screen.getAllByText("Give the console a footer").length).toBe(1);
   expect(screen.queryByText("A rewrite nobody has released")).toBeNull();
   expect(
     screen.getByText("released under").nextElementSibling?.textContent,
   ).toBe("r1");
   expect(screen.queryByText("r2")).toBeNull();
   expect(
-    screen.getAllByText("draft").at(-1)?.nextElementSibling?.textContent,
-  ).toBe("version 3 holds unreleased changes");
+    screen.getAllByText("Draft").at(-1)?.nextElementSibling?.textContent,
+  ).toBe("1 unreleased");
 });
 
 /** A draft revised while its ticket was Pending and never released holds a
- * program the ticket does not run, so the ledger, the wall and the provenance
- * are drawn from the program the ticket was released with. */
+ * program the ticket does not run, so the ledger and the wall are drawn from
+ * the program the ticket was released with. */
 test("a ticket whose draft's program is ahead draws the stages it ran", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
@@ -972,10 +1121,7 @@ test("a ticket whose draft's program is ahead draws the stages it ran", async ()
   expect(stageRows(current)).toHaveLength(2);
   expect(rowsOf(current ?? container)[1]).toContain("Stage 1 of 2");
   expect(container.textContent).not.toContain("of 3");
-  expect(container.querySelector(".notice-parked")?.textContent).toContain(
-    "Stage 1 of 2 failed",
-  );
   expect(
-    screen.getByText("evaluation stages").nextElementSibling?.textContent,
-  ).toBe("1× then 1×");
+    screen.getByRole("status", { name: "Needs you" }).textContent,
+  ).toContain("Stage 1 of 2 failed");
 });

@@ -1,18 +1,17 @@
 /**
- * One ticket: where it is, what may be done to it, what has run for it and
- * what all of that cost.
+ * One ticket: where it stands and what may be done to it, the run going now or
+ * the question it waits on, what has run for it, and — a click away — its
+ * brief, what it has cost and where it came from.
  *
  * The brief, the configuration and the program the ledger groups by are the
  * ticket's own, which is what it runs, and not the draft's, which a Pending
  * ticket's author may have revised past it; the draft is read for the
- * provenance alone. The situation
- * column is short and the detail is in the main body under the ledger, reached
- * by anchors rather than tabs: the ledger is the page, and a tab would hide it.
- * One clock ticks the whole page, so a running row, a cycle's open span and a
- * panel's freshness all age together.
+ * provenance alone. One clock ticks the whole page, so a running row, a
+ * cycle's open span and a panel's freshness all age together.
  */
 
 import { useParams } from "@tanstack/react-router";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -30,27 +29,40 @@ import {
   apiTicketNativeActions,
 } from "../core/apiRoutes.ts";
 import type { PanelState } from "../core/freshness.ts";
-import { ticketDispatchList } from "../core/ticketActions.ts";
+import {
+  manualDispatchAction,
+  ticketDispatchList,
+} from "../core/ticketActions.ts";
+import { offersAnswered, ticketOffers } from "../core/ticketOffers.ts";
+import type { TicketOffers } from "../core/ticketOffers.ts";
+import { ticketPageFacts } from "../core/ticketPageFacts.ts";
+import type { TicketPageFacts } from "../core/ticketPageFacts.ts";
+import { resumedFrom, ticketSlot } from "../core/ticketSituation.ts";
+import type { TicketSlot as Slot } from "../core/ticketSituation.ts";
 import { usePanelList, usePanelResource } from "./api.ts";
-import { useNowMs } from "./Freshness.tsx";
+import { FreshnessInstants, useNowMs } from "./Freshness.tsx";
+import { currentAnchor } from "./ports.ts";
 import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
-import { useViewportAtLeastEm, viewportTwoColumnEm } from "./shell/viewport.ts";
-import { TicketActions } from "./TicketActions.tsx";
-import { TicketHead, TicketTopBar } from "./ticket/TicketHead.tsx";
+import {
+  TicketActingScope,
+  TicketAnswerActions,
+  TicketBarActions,
+} from "./TicketActions.tsx";
+import type { TicketActing } from "./TicketActions.tsx";
+import { TicketTopBar } from "./ticket/TicketHead.tsx";
 import {
   TicketLedgerPanel,
   useTicketExecutions,
 } from "./ticket/TicketLedger.tsx";
-import { TicketMain } from "./ticket/TicketMain.tsx";
-import { ticketPageFacts } from "./ticket/ticketPageFacts.ts";
-import type { TicketPageFacts } from "./ticket/ticketPageFacts.ts";
 import {
   TicketPageDetails,
-  TicketSituation,
-  usageSectionFigure,
-} from "./ticket/TicketSituation.tsx";
+  TicketSections,
+  ticketSections,
+  ticketSectionsOpened,
+} from "./ticket/TicketSections.tsx";
+import { TicketSlot } from "./ticket/TicketSlot.tsx";
+import { TicketStatus } from "./ticket/TicketStatus.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
-import type { SectionEntry } from "./ui/SectionList.tsx";
 
 /** Everything the page has read, so each part is handed facts and not a query. */
 export interface TicketReads {
@@ -65,62 +77,13 @@ function readValue<T>(state: PanelState<T>): T | undefined {
   return state.state === "Ready" ? state.value : undefined;
 }
 
-/** One anchor per region of the main body, each with the one figure it is about. */
-export function ticketSections(
-  ticket: TicketResponse,
-  facts: TicketPageFacts,
-): readonly SectionEntry[] {
-  const ledger = facts.ledger;
-  return [
-    {
-      id: "cycles",
-      label: "Cycles",
-      note:
-        ledger === undefined
-          ? "Not read"
-          : `${String(ledger.cycles.length)} · ${String(ledger.spend.executions)} runs`,
-    },
-    { id: "usage", label: "Usage", figure: usageSectionFigure(ticket) },
-    { id: "brief", label: "Brief" },
-    { id: "provenance", label: "Provenance" },
-  ];
-}
-
-function TicketAside(props: {
-  readonly ticket: TicketResponse | undefined;
-  readonly facts: TicketPageFacts;
-  readonly actions: ReactNode;
-  readonly nowMs: number;
-  readonly sticky: boolean;
-}): ReactNode {
-  const ticket = props.ticket;
-  const ledger = props.facts.ledger;
-  if (ticket === undefined || ledger === undefined)
-    return (
-      <aside
-        className={`grid min-w-0 gap-4 ${props.sticky ? "sticky top-4" : ""}`}
-      >
-        {props.actions}
-      </aside>
-    );
-  return (
-    <TicketSituation
-      ticket={ticket}
-      facts={ledger}
-      stageCount={props.facts.stageCount}
-      actions={props.actions}
-      nowMs={props.nowMs}
-      sticky={props.sticky}
-    />
-  );
-}
-
 /** Where the page's own head belongs while the shell has taken it: the top bar
  * and the details pane fill only once the ticket has been read. */
 function TicketPortals(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: TicketResponse | undefined;
   readonly facts: TicketPageFacts;
+  readonly onChoose: (id: string) => void;
 }): ReactNode {
   const ticket = props.ticket;
   if (ticket === undefined) return null;
@@ -130,18 +93,95 @@ function TicketPortals(props: {
         <TicketTopBar partition={props.partition} ticket={ticket} />
       </TopBarSlot>
       <DetailsSlot>
-        <TicketPageDetails sections={ticketSections(ticket, props.facts)} />
+        <TicketPageDetails
+          sections={ticketSections(ticket, props.facts)}
+          onChoose={props.onChoose}
+        />
       </DetailsSlot>
     </>
   );
 }
 
-/** The situation column's width where it stands beside the main body, one
- * column where it does not. */
-function ticketPageGridColumns(twoColumn: boolean): string {
-  return twoColumn
-    ? "grid-cols-[minmax(var(--width-aside-min),var(--width-aside))_minmax(0,1fr)]"
-    : "grid-cols-1";
+interface StandingProps {
+  readonly partition: PartitionIdentity;
+  readonly ticket: number;
+  readonly reads: TicketReads;
+  readonly facts: TicketPageFacts;
+  readonly nowMs: number;
+}
+
+/** The offers, and the one card the slot holds, from what the page has read. */
+function standingOf(props: StandingProps): {
+  readonly offers: TicketOffers;
+  readonly slot: Slot;
+} {
+  const ticket = readValue(props.reads.ticketState);
+  if (ticket === undefined)
+    return { offers: { offers: "Unread" }, slot: { slot: "Nothing" } };
+  const dispatchState = props.reads.dispatchState;
+  const dispatch =
+    dispatchState.state === "Ready"
+      ? manualDispatchAction(props.ticket, dispatchState.value)
+      : undefined;
+  return {
+    offers: ticketOffers(props.reads.openState, ticket, dispatch),
+    slot: ticketSlot({
+      ticket,
+      ledger: props.facts.ledger,
+      stageCount: props.facts.stageCount,
+      open: readValue(props.reads.openState)?.actions,
+      executions: readValue(props.reads.pageState)?.executions ?? [],
+    }),
+  };
+}
+
+/** The status bar and the card under it, which answer through one submission
+ * wherever the button pressed is drawn. */
+function TicketStanding(
+  props: StandingProps & { readonly acting: TicketActing },
+): ReactNode {
+  const { offers, slot } = standingOf(props);
+  const asking = slot.slot === "NeedsYou";
+  const answered = offersAnswered(offers, asking);
+  const ledger = props.facts.ledger;
+  return (
+    <>
+      <TicketStatus
+        state={props.reads.ticketState}
+        page={readValue(props.reads.pageState)}
+        resumed={
+          asking || ledger === undefined ? undefined : resumedFrom(ledger)
+        }
+        truncated={props.facts.truncated}
+        nowMs={props.nowMs}
+        actions={
+          <TicketBarActions
+            partition={props.partition}
+            ticket={props.ticket}
+            acting={props.acting}
+            offers={offers}
+            openState={props.reads.openState}
+            dispatchState={props.reads.dispatchState}
+            resume={props.facts.resume}
+            answered={answered}
+          />
+        }
+      />
+      <TicketSlot
+        partition={props.partition}
+        slot={slot}
+        nowMs={props.nowMs}
+        actions={
+          <TicketAnswerActions
+            acting={props.acting}
+            offers={offers}
+            answered={answered}
+            resume={props.facts.resume}
+          />
+        }
+      />
+    </>
+  );
 }
 
 function TicketBody(props: {
@@ -153,60 +193,52 @@ function TicketBody(props: {
   const ticket = readValue(props.reads.ticketState);
   const page = readValue(props.reads.pageState);
   const facts = ticketPageFacts(ticket, page);
-  const twoColumn = useViewportAtLeastEm(viewportTwoColumnEm);
-  const actions = (
-    <TicketActions
-      partition={props.partition}
-      ticket={props.ticket}
-      state={props.reads.ticketState}
-      openState={props.reads.openState}
-      dispatchState={props.reads.dispatchState}
-      resume={facts.resume}
-    />
+  const [open, setOpen] = useState<readonly string[]>(() =>
+    ticketSectionsOpened([], currentAnchor()),
   );
+  const choose = (id: string): void => {
+    setOpen((held) => ticketSectionsOpened(held, id));
+  };
   return (
-    <>
+    <FreshnessInstants>
       <TicketPortals
         partition={props.partition}
         ticket={ticket}
         facts={facts}
+        onChoose={choose}
       />
-      {ticket === undefined ? null : (
-        <TicketHead
-          ticket={ticket}
-          intent={ticket.brief?.intent}
-          page={page}
-          truncated={facts.truncated}
-          nowMs={props.nowMs}
-        />
-      )}
-      <div
-        className={`grid items-start gap-4 ${ticketPageGridColumns(twoColumn)}`}
-      >
-        <TicketAside
-          ticket={ticket}
-          facts={facts}
-          actions={actions}
-          nowMs={props.nowMs}
-          sticky={twoColumn}
-        />
-        <TicketMain
+      <div className="grid w-page max-w-full min-w-0 gap-4">
+        <TicketActingScope partition={props.partition} ticket={props.ticket}>
+          {(acting) => (
+            <TicketStanding
+              partition={props.partition}
+              ticket={props.ticket}
+              reads={props.reads}
+              facts={facts}
+              nowMs={props.nowMs}
+              acting={acting}
+            />
+          )}
+        </TicketActingScope>
+        <section id="cycles" className="scroll-mt-4">
+          <TicketLedgerPanel
+            partition={props.partition}
+            page={props.reads.pageState}
+            program={facts.program}
+            nowMs={props.nowMs}
+          />
+        </section>
+        <TicketSections
           partition={props.partition}
           ticketState={props.reads.ticketState}
           draftState={props.reads.draftState}
-          ledger={
-            <TicketLedgerPanel
-              partition={props.partition}
-              page={props.reads.pageState}
-              program={facts.program}
-              nowMs={props.nowMs}
-            />
-          }
-          totals={ticket?.runTotals}
           page={page}
+          open={open}
+          onOpenChange={setOpen}
+          nowMs={props.nowMs}
         />
       </div>
-    </>
+    </FreshnessInstants>
   );
 }
 

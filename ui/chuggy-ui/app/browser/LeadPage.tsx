@@ -246,6 +246,7 @@ function LeadBody(props: {
       <div
         role="region"
         aria-label="Conversation"
+        data-fills-page
         className="flex-1 min-h-0 min-w-0"
       >
         <Conversation

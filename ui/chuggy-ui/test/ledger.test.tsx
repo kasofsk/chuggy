@@ -10,6 +10,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 
 import type { Figure as FigureValue, Spend } from "../app/core/figures.ts";
@@ -40,8 +41,7 @@ afterEach(() => {
 
 const when: FigureValue = {
   kind: "Span",
-  start: "10:31",
-  length: "17m 40s",
+  parts: ["started 20m ago", "ran 17m 40s"],
   open: false,
   title: "a → b",
 };
@@ -75,6 +75,70 @@ test("both standings draw a group that is a disclosure, open where it is told", 
     expect(container.querySelector("[style]")).toBeNull();
     cleanup();
   }
+});
+
+/** A lazy group's rows read on mount, so they mount at the first open and are
+ * kept through every close after it rather than read again. */
+test("a lazy group mounts its rows at the first open and keeps them through a close", () => {
+  const mounted = vi.fn();
+  function Counted(): ReactNode {
+    useEffect(mounted, []);
+    return <LedgerRow label="Work" pill={{ tone: "pass", text: "Passed" }} />;
+  }
+  const { container } = render(
+    <LedgerGroup
+      title="Cycle 2"
+      standing="Superseded"
+      summary="Work passed"
+      open={false}
+      lazy
+    >
+      <LedgerBlock>
+        <Counted />
+      </LedgerBlock>
+    </LedgerGroup>,
+  );
+  const group = container.querySelector("details");
+  if (group === null) throw new Error("no group drawn");
+  const turned = (open: boolean): void => {
+    group.open = open;
+    fireEvent(group, new Event("toggle"));
+  };
+  expect(screen.queryByText("Work")).toBeNull();
+  turned(true);
+  expect(screen.getByText("Work")).toBeDefined();
+  turned(false);
+  expect(screen.getByText("Work")).toBeDefined();
+  turned(true);
+  expect(screen.getByText("Work")).toBeDefined();
+  expect(mounted).toHaveBeenCalledTimes(1);
+});
+
+/** A cycle the page closes itself, once superseded, keeps its rows as well. */
+test("a lazy group told to close keeps the rows it mounted open", () => {
+  const mounted = vi.fn();
+  function Counted(): ReactNode {
+    useEffect(mounted, []);
+    return <LedgerRow label="Work" pill={{ tone: "pass", text: "Passed" }} />;
+  }
+  const group = (open: boolean): ReactNode => (
+    <LedgerGroup
+      title="Cycle 2"
+      standing={open ? "Current" : "Superseded"}
+      summary="Work passed"
+      open={open}
+      lazy
+    >
+      <LedgerBlock>
+        <Counted />
+      </LedgerBlock>
+    </LedgerGroup>
+  );
+  const { container, rerender } = render(group(true));
+  rerender(group(false));
+  expect(container.querySelector("details")?.open).toBe(false);
+  expect(screen.getByText("Work")).toBeDefined();
+  expect(mounted).toHaveBeenCalledTimes(1);
 });
 
 test("a row draws its label, its status, its window and its spend", async () => {
@@ -133,7 +197,15 @@ test("an expander says whether it is open and swaps its own word", () => {
       <LedgerRow
         label="Work"
         pill={{ tone: "pass", text: "Passed" }}
-        expand={{ open: false, onToggle: toggled, children: <p>detail</p> }}
+        expands={[
+          {
+            label: "Details",
+            hide: "Hide",
+            open: false,
+            onToggle: toggled,
+            children: <p>detail</p>,
+          },
+        ]}
       />
     </LedgerBlock>,
   );
@@ -148,7 +220,15 @@ test("an expander says whether it is open and swaps its own word", () => {
       <LedgerRow
         label="Work"
         pill={{ tone: "pass", text: "Passed" }}
-        expand={{ open: true, onToggle: toggled, children: <p>detail</p> }}
+        expands={[
+          {
+            label: "Details",
+            hide: "Hide",
+            open: true,
+            onToggle: toggled,
+            children: <p>detail</p>,
+          },
+        ]}
       />
     </LedgerBlock>,
   );
@@ -156,6 +236,36 @@ test("an expander says whether it is open and swaps its own word", () => {
     screen.getByRole("button", { name: "Hide" }).getAttribute("aria-expanded"),
   ).toBe("true");
   expect(screen.getByText("detail")).toBeDefined();
+});
+
+/** Two open areas under one row would push the second a screen away from the
+ * button that opened it, so the row holds one. */
+test("a row's expanders share one detail area, the open one's", () => {
+  const expander = (label: string, open: boolean) => ({
+    label,
+    hide: `Hide ${label.toLowerCase()}`,
+    open,
+    onToggle: vi.fn(),
+    children: <p>{label} detail</p>,
+  });
+  const { container } = render(
+    <LedgerBlock>
+      <LedgerRow
+        label="Work"
+        pill={{ tone: "pass", text: "Passed" }}
+        expands={[expander("Conversation", true), expander("Details", false)]}
+      />
+    </LedgerBlock>,
+  );
+  expect(
+    [...container.querySelectorAll("button")].map(
+      (button) => button.textContent,
+    ),
+  ).toEqual(["Hide conversation", "Details"]);
+  expect(container.querySelectorAll(".ledger-detail")).toHaveLength(1);
+  expect(container.querySelector(".ledger-detail")?.textContent).toBe(
+    "Conversation detail",
+  );
 });
 
 test("a changed row is marked, and a short page says so above the groups", () => {

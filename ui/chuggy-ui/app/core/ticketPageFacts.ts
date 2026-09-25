@@ -22,14 +22,11 @@
 import type {
   ExecutionsResponse,
   TicketResponse,
-} from "../../../../../src/contract/responses.ts";
-import type { ResumeOffer } from "../../core/codeLabels.ts";
-import type { ResumePoint } from "../../../../../src/contract/rosters.ts";
-import { ticketLedger } from "../../core/ticketLedger.ts";
-import type {
-  Ledger as LedgerFacts,
-  TicketProgram,
-} from "../../core/ticketLedger.ts";
+} from "../../../../src/contract/responses.ts";
+import type { ResumeOffer } from "./codeLabels.ts";
+import type { ResumePoint } from "../../../../src/contract/rosters.ts";
+import { ticketLedger } from "./ticketLedger.ts";
+import type { Ledger as LedgerFacts, TicketProgram } from "./ticketLedger.ts";
 
 /**
  * How many executions this page holds, and what is true of them that a count

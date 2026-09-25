@@ -14,6 +14,7 @@ import type { ExecutionSummary } from "../../../src/contract/responses.ts";
 import {
   configurationCommitShort,
   configurationLabel,
+  digestShortened,
   executionRequirementLabel,
   imageShortened,
   workerLabel,
@@ -87,6 +88,16 @@ test("an uncatalogued tag reference is kept whole, however long the tag", () => 
 test("a reference with neither path nor digest is drawn as it stands", () => {
   expect(imageShortened("worker")).toBe("worker");
   expect(imageShortened("chuggy/worker@notadigest")).toBe("worker@notadigest");
+});
+
+test("a long digest is cut to a head and a tail, with the middle marked missing", () => {
+  expect(digestShortened("c".repeat(64))).toBe(
+    `${"c".repeat(12)}…${"c".repeat(6)}`,
+  );
+});
+
+test("a digest already short enough is kept whole", () => {
+  expect(digestShortened("abcd")).toBe("abcd");
 });
 
 const containerExecution: ExecutionSummary = {

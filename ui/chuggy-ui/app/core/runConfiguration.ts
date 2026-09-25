@@ -12,7 +12,9 @@
 
 import { z } from "zod";
 
-import { runCountLabel } from "./runTotals.ts";
+import type { RunConfigurationResponse } from "../../../../src/contract/responses.ts";
+import type { PanelState } from "./freshness.ts";
+import { countedLabel, runCountLabel } from "./runTotals.ts";
 
 /**
  * The most files one snapshot names, above the count the worker's own walk
@@ -53,6 +55,7 @@ export type RunConfigurationFile = z.infer<typeof snapshotFileSchema>;
 export const runConfigurationSnapshotSchema = z.object({
   argv: z.array(z.string()).max(runConfigurationArgvMax),
   argvTruncated: truncationMarkerSchema.optional(),
+  agent: z.string().optional(),
   claudeVersion: z.string().optional(),
   init: z.unknown(),
   files: z.array(snapshotFileSchema).max(runConfigurationFilesMax),
@@ -150,17 +153,13 @@ export function runConfigurationHead(
   };
 }
 
-function counted(value: number, noun: string): string {
-  return `${runCountLabel(value)} ${noun}${value === 1 ? "" : "s"}`;
-}
-
 /** What the runtime reported it could reach, or that it reported none of it. */
 export function runConfigurationCapabilitiesSentence(
   head: RunConfigurationHead,
 ): string {
   const said = [
-    head.tools === undefined ? undefined : counted(head.tools, "tool"),
-    head.skills === undefined ? undefined : counted(head.skills, "skill"),
+    head.tools === undefined ? undefined : countedLabel(head.tools, "tool"),
+    head.skills === undefined ? undefined : countedLabel(head.skills, "skill"),
   ].filter((part) => part !== undefined);
   return said.length === 0 ? "none were reported" : said.join(", ");
 }
@@ -235,4 +234,74 @@ export function runConfigurationArgvSentence(
   return elided === undefined
     ? undefined
     : "the command line did not fit and is kept as a digest of itself";
+}
+
+/** The prompt a run was handed, or that its snapshot does not hold one. */
+export type RunPrompt =
+  | { readonly prompt: "Kept"; readonly text: string }
+  | { readonly prompt: "NotKept" }
+  | { readonly prompt: "Unreadable" };
+
+/** The agents whose worker hands the prompt as the command line's last word. A
+ * snapshot from before the worker named its agent was Claude's, the only one
+ * that wrote one then. */
+function runPromptLast(snapshot: RunConfigurationSnapshot): boolean {
+  if (snapshot.agent === undefined) return snapshot.claudeVersion !== undefined;
+  return snapshot.agent === "Claude" || snapshot.agent === "Codex";
+}
+
+/** The prompt the snapshot's command line ends on, where it kept that line. */
+export function runPromptOf(snapshot: RunConfigurationSnapshot): RunPrompt {
+  const text = snapshot.argv.at(-1);
+  if (
+    truncationMarkerOf(snapshot.argvTruncated) !== undefined ||
+    !runPromptLast(snapshot) ||
+    text === undefined ||
+    text.length === 0
+  )
+    return { prompt: "NotKept" };
+  return { prompt: "Kept", text };
+}
+
+/** The stored snapshot's prompt, or that the bytes are not a snapshot at all. */
+export function runPromptRead(content: string): RunPrompt {
+  const reading = runConfigurationRead(content);
+  return reading.reading === "Snapshot"
+    ? runPromptOf(reading.snapshot)
+    : { prompt: "Unreadable" };
+}
+
+/** The prompt as far as the snapshot's read has got: nothing while it is out,
+ * and a read that failed is not a snapshot that kept none. */
+export function runPromptOfPanel(
+  state: PanelState<RunConfigurationResponse>,
+): RunPrompt | undefined {
+  switch (state.state) {
+    case "Pending":
+      return undefined;
+    case "Ready":
+      return runPromptRead(state.value.content);
+    case "Absent":
+      return { prompt: "NotKept" };
+    case "Failed":
+      return { prompt: "Unreadable" };
+  }
+}
+
+/** The most lines a prompt shows before a reader asks for the rest. */
+export const runPromptHeadLinesMax = 6;
+
+/** The most characters those lines carry, since one line can be a paragraph. */
+export const runPromptHeadCharsMax = 480;
+
+/** The opening a prompt is drawn with while folded, and whether it is all of it. */
+export function runPromptHead(text: string): {
+  readonly head: string;
+  readonly cut: boolean;
+} {
+  const lines = text.split("\n").slice(0, runPromptHeadLinesMax).join("\n");
+  const head = lines.slice(0, runPromptHeadCharsMax);
+  return head.length === text.length
+    ? { head, cut: false }
+    : { head: `${head.trimEnd()}…`, cut: true };
 }

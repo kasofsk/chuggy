@@ -45,30 +45,31 @@ import {
   operationFollowing,
   operationIdBytesCount,
   operationSubmitting,
-  ticketConfirmed,
 } from "../core/operationFollow.ts";
 import type {
   OperationFollowed,
   OperationStep,
 } from "../core/operationFollow.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
-import {
-  manualDispatchAction,
-  ticketDispatchList,
+import { ticketArrival } from "../core/ticketArrival.ts";
+import { ticketDispatchList } from "../core/ticketActions.ts";
+import type {
+  TicketAction,
+  TicketActionName,
+  TicketAttempt,
 } from "../core/ticketActions.ts";
-import type { TicketAction, TicketAttempt } from "../core/ticketActions.ts";
-import { ticketOffers } from "../core/ticketOffers.ts";
+import type { TicketOffers } from "../core/ticketOffers.ts";
 import { useApiPorts } from "./api.ts";
+import { applyResourceArrival } from "./stream.tsx";
 import {
   ticketAttemptDropped,
   ticketAttemptHeld,
   ticketAttemptRead,
 } from "./ticketAttemptHeld.ts";
-import { DataPanel, PanelUnready } from "./DataPanel.tsx";
+import { PanelUnready } from "./DataPanel.tsx";
 import { drawBytes } from "./ports.ts";
 import { TicketEditOffer } from "./ticket/TicketEditOffer.tsx";
 import { OfferedAction } from "./ui/OfferedAction.tsx";
-import { EmptyState } from "./ui/EmptyState.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
 
@@ -146,9 +147,14 @@ function followWrittenBack(
   });
   const confirmed = followed.ticket;
   if (confirmed === undefined) return;
-  client.setQueryData(
-    projectResourceKey(partition, "Ticket", String(ticket)),
-    (held: TicketResponse | undefined) => ticketConfirmed(held, confirmed),
+  const key = projectResourceKey(partition, "Ticket", String(ticket));
+  applyResourceArrival(
+    client,
+    key,
+    ticketArrival(client.getQueryData<TicketResponse>(key), {
+      carried: "ProjectRow",
+      ticket: confirmed,
+    }),
   );
 }
 
@@ -234,43 +240,36 @@ async function followInto(
   }
 }
 
-/** What the machine charges for and what it undoes, said before it is pressed. */
+/** What the machine charges for and what it undoes, said before it is pressed.
+ * A resume's effect names the exits it leaves, which are every action offered
+ * and not only the ones drawn beside it. */
 function ActionButtons(props: {
   readonly actions: readonly TicketAction[];
+  readonly exits: readonly TicketActionName[];
   readonly busy: boolean;
   readonly resume: ResumeOffer;
   readonly onChoose: (action: TicketAction) => void;
 }): ReactNode {
-  if (props.actions.length === 0)
-    return <EmptyState label="No action in this phase" />;
-  return (
-    <div className="flex gap-2">
-      {props.actions.map((action) => {
-        const effect = ticketActionEffect(
-          action.action,
-          props.resume,
-          props.actions.map((offered) => offered.action),
-        );
-        return (
-          <OfferedAction
-            key={action.action}
-            action={action.action}
-            effect={effect.effect}
-            {...(effect.more === undefined ? {} : { more: effect.more })}
-            {...(effect.refusedBecause === undefined
-              ? {}
-              : { refusedBecause: effect.refusedBecause })}
-            offered={effect.offered}
-            busy={props.busy}
-            danger={action.action === "Revoke"}
-            onChoose={() => {
-              props.onChoose(action);
-            }}
-          />
-        );
-      })}
-    </div>
-  );
+  return props.actions.map((action) => {
+    const effect = ticketActionEffect(action.action, props.resume, props.exits);
+    return (
+      <OfferedAction
+        key={action.action}
+        action={action.action}
+        effect={effect.effect}
+        {...(effect.more === undefined ? {} : { more: effect.more })}
+        {...(effect.refusedBecause === undefined
+          ? {}
+          : { refusedBecause: effect.refusedBecause })}
+        offered={effect.offered}
+        busy={props.busy}
+        danger={action.action === "Revoke"}
+        onChoose={() => {
+          props.onChoose(action);
+        }}
+      />
+    );
+  });
 }
 
 /**
@@ -348,17 +347,17 @@ interface Submitting {
 
 /**
  * One submission at a time, followed to settlement and merged into the ticket
- * this page reads. The confirmed row goes through `ticketConfirmed` because it
+ * this page reads. The confirmed row goes through `ticketArrival` because it
  * is a narrower projection than the ticket's own read and a live frame may
  * already have written a later one, and the open actions are invalidated rather
  * than written because what the follow learned is that the question was
  * answered and not what is open now.
  *
  * AN ATTEMPT OUTLIVES THE PANEL THAT MADE IT. The identity is held before the
- * submission is made and not after it is accepted, because a panel that
- * unmounts with the submission in flight — which this page does whenever the
- * situation column has read enough to change shape — abandons the request
- * without unmaking whatever the API did with it. So the record is what a mount
+ * submission is made and not after it is accepted, because a page that
+ * unmounts with the submission in flight — which a reader who leaves and comes
+ * back does — abandons the request without unmaking whatever the API did with
+ * it. So the record is what a mount
  * picks up, and the pick-up polls, because only the API can say whether the
  * identity it names ever arrived.
  *
@@ -464,97 +463,153 @@ function useSubmitting(
   };
 }
 
-export interface TicketActionsProps {
-  readonly partition: PartitionIdentity;
-  readonly ticket: number;
-  readonly state: PanelState<TicketResponse>;
-  readonly openState: PanelState<TicketNativeActionsResponse>;
-  readonly dispatchState: PanelState<DispatchViewResponse>;
-  readonly resume: ResumeOffer;
+/** One ticket's submission and whether it is still going, shared by every
+ * place a button for the ticket is drawn so that there is one follow and not
+ * one per place. */
+export interface TicketActing {
+  readonly submitting: Submitting;
+  readonly busy: boolean;
 }
 
-function TicketActionsPanel(props: TicketActionsProps): ReactNode {
+function TicketActingHeld(props: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: number;
+  readonly children: (acting: TicketActing) => ReactNode;
+}): ReactNode {
   const submitting = useSubmitting(props.partition, props.ticket);
   const step = submitting.attempt?.step;
-  const pending = step?.step === "Following" ? step.operation : undefined;
   const busy = step !== undefined && !operationFinished(step);
-  const dispatch =
-    props.dispatchState.state === "Ready"
-      ? manualDispatchAction(props.ticket, props.dispatchState.value)
-      : undefined;
-  return (
-    <DataPanel title="Actions" state={props.state}>
-      {(value) => {
-        const offers = ticketOffers(props.openState, value, dispatch);
-        return (
-          <div className="grid gap-2 px-4 py-2">
-            {offers.offers === "Unread" ? (
-              <PanelUnready state={props.openState} />
-            ) : (
-              <>
-                <ActionButtons
-                  actions={offers.actions}
-                  busy={busy}
-                  resume={props.resume}
-                  onChoose={submitting.submit}
-                />
-                {offers.editable ? (
-                  <TicketEditOffer
-                    partition={props.partition}
-                    ticket={props.ticket}
-                  />
-                ) : null}
-              </>
-            )}
-            {props.dispatchState.state === "Failed" ? (
-              <Notice
-                tone="parked"
-                inline
-                detail={`Dispatch unavailable · ${props.dispatchState.reason}`}
-              />
-            ) : null}
-            {step === undefined || submitting.attempt === undefined ? null : (
-              <StepNote step={step} action={submitting.attempt.action} />
-            )}
-            {pending === undefined ? null : (
-              <Button
-                variant="quiet"
-                size="sm"
-                onClick={() => {
-                  submitting.cancel(pending);
-                }}
-              >
-                Cancel
-              </Button>
-            )}
-            {submitting.refused === undefined ? null : (
-              <Notice
-                tone="danger"
-                inline
-                detail={`Cancel refused · ${submitting.refused}`}
-              />
-            )}
-          </div>
-        );
-      }}
-    </DataPanel>
-  );
+  return props.children({ submitting, busy });
 }
 
 /**
- * The panel, keyed by the ticket it is about, which is what makes the pick-up
- * above per ticket rather than per mount and is why its effect names no
+ * The submission, keyed by the ticket it is about, which is what makes the
+ * pick-up above per ticket rather than per mount and is why its effect names no
  * dependency. THE KEY IS HERE AND NOT AT THE CALL SITE, which is where the
- * idiom would put it, because a caller who left it off would get a panel
+ * idiom would put it, because a caller who left it off would get a page
  * drawing the last ticket's attempt over this one rather than an error, and a
  * component that cannot be mounted wrongly is worth more here than the idiom.
  */
-export function TicketActions(props: TicketActionsProps): ReactNode {
+export function TicketActingScope(props: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: number;
+  readonly children: (acting: TicketActing) => ReactNode;
+}): ReactNode {
   const { tenant, project } = props.partition;
   return (
-    <TicketActionsPanel
+    <TicketActingHeld
       key={`${tenant}/${project}/${String(props.ticket)}`}
-      {...props}
+      partition={props.partition}
+      ticket={props.ticket}
+    >
+      {props.children}
+    </TicketActingHeld>
+  );
+}
+
+/** Where the submission has got to, the Cancel that stops it, and what a
+ * refused Cancel said. */
+function FollowNotes(props: { readonly submitting: Submitting }): ReactNode {
+  const attempt = props.submitting.attempt;
+  const step = attempt?.step;
+  const pending = step?.step === "Following" ? step.operation : undefined;
+  return (
+    <>
+      {attempt === undefined ? null : (
+        <StepNote step={attempt.step} action={attempt.action} />
+      )}
+      {pending === undefined ? null : (
+        <Button
+          variant="quiet"
+          size="sm"
+          onClick={() => {
+            props.submitting.cancel(pending);
+          }}
+        >
+          Cancel
+        </Button>
+      )}
+      {props.submitting.refused === undefined ? null : (
+        <Notice
+          tone="danger"
+          inline
+          detail={`Cancel refused · ${props.submitting.refused}`}
+        />
+      )}
+    </>
+  );
+}
+
+export interface TicketActionsProps {
+  readonly partition: PartitionIdentity;
+  readonly ticket: number;
+  readonly acting: TicketActing;
+  readonly offers: TicketOffers;
+  readonly openState: PanelState<TicketNativeActionsResponse>;
+  readonly dispatchState: PanelState<DispatchViewResponse>;
+  readonly resume: ResumeOffer;
+  /** The actions a card beside the bar answers, which the bar leaves out. */
+  readonly answered: readonly TicketAction[];
+}
+
+/** Every action but the ones a card answers, the edit screen, and the follow
+ * of whichever was pressed, wherever it was pressed. */
+export function TicketBarActions(props: TicketActionsProps): ReactNode {
+  const offers = props.offers;
+  return (
+    <>
+      {offers.offers === "Unread" ? (
+        <PanelUnready state={props.openState} />
+      ) : (
+        <>
+          <ActionButtons
+            actions={offers.actions.filter(
+              (action) =>
+                !props.answered.some(
+                  (answer) => answer.action === action.action,
+                ),
+            )}
+            exits={offers.actions.map((offered) => offered.action)}
+            busy={props.acting.busy}
+            resume={props.resume}
+            onChoose={props.acting.submitting.submit}
+          />
+          {offers.editable ? (
+            <TicketEditOffer
+              partition={props.partition}
+              ticket={props.ticket}
+            />
+          ) : null}
+        </>
+      )}
+      {props.dispatchState.state === "Failed" ? (
+        <Notice
+          tone="parked"
+          inline
+          detail={`Dispatch unavailable · ${props.dispatchState.reason}`}
+        />
+      ) : null}
+      <FollowNotes submitting={props.acting.submitting} />
+    </>
+  );
+}
+
+/** The actions that answer what the ticket is waiting on, drawn in the card
+ * that asks it and followed by the same submission as the bar's. */
+export function TicketAnswerActions(props: {
+  readonly acting: TicketActing;
+  readonly offers: TicketOffers;
+  readonly answered: readonly TicketAction[];
+  readonly resume: ResumeOffer;
+}): ReactNode {
+  if (props.offers.offers === "Unread") return null;
+  return (
+    <ActionButtons
+      actions={props.answered}
+      exits={props.offers.actions.map((offered) => offered.action)}
+      busy={props.acting.busy}
+      resume={props.resume}
+      onChoose={props.acting.submitting.submit}
     />
   );
 }

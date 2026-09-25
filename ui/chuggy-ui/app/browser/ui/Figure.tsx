@@ -8,6 +8,7 @@
  * in a tooltip rather than as a zero.
  */
 
+import { Fragment } from "react";
 import type { ReactNode } from "react";
 
 import type { Figure as FigureValue } from "../../core/figures.ts";
@@ -28,12 +29,19 @@ function FigureSpan(props: {
         className={span.open ? "fig fig-live" : "fig"}
         data-open={span.open ? "true" : undefined}
       >
-        {span.start}
-        {span.end === undefined ? null : ` → ${span.end}`}
-        <i className="fig-sep" aria-hidden="true">
-          ·
-        </i>
-        {span.length}
+        {span.parts.map((part, index) => (
+          <Fragment key={part}>
+            {index === 0 ? null : (
+              <>
+                <i className="fig-sep" aria-hidden="true">
+                  ·
+                </i>
+                <wbr />
+              </>
+            )}
+            <span className="fig-part">{part}</span>
+          </Fragment>
+        ))}
       </span>
     </Tooltip>
   );

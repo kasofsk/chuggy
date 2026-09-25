@@ -1,20 +1,21 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { TicketPage } from "../app/browser/TicketPage.tsx";
 import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import {
-  answer,
-  apiDouble,
-  openedStream,
-  ScreenHarness,
-  settled,
-  turned,
-} from "./screenHarness.tsx";
+  runAttempt,
+  runDigest,
+  runPageDrawn,
+  runSummary,
+  runTotals,
+  runTranscriptPage,
+  transcriptReads,
+} from "./runPageFixture.tsx";
+import type { RunPageDrawn, RunPageServed } from "./runPageFixture.tsx";
+import { settled, turned } from "./screenHarness.tsx";
 import { elementScrollToStubbed } from "./scrolling.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { frame } from "./streamDouble.ts";
@@ -49,157 +50,22 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const digest = "a".repeat(64);
-
-function totals(costUsdMicros: number): Record<string, unknown> {
-  return {
-    turns: 3,
-    durationMs: 252_000,
-    durationApiMs: 200_000,
-    tokensInput: 10,
-    tokensOutput: 20,
-    tokensCacheCreation: 30,
-    tokensCacheRead: 40,
-    costUsdMicros,
-    costBasis: "List",
-    permissionDenials: 0,
-    models: [],
-  };
-}
-
-function summary(over: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    execution: "e1",
-    ticket: 11,
-    task: 1,
-    taskKind: "Work",
-    identity: { type: "WorkTask", value: { ticket: 11, cycle: 1 } },
-    cluster: "rig",
-    configurationRevision: "r1",
-    requirementIdentity: "req-1",
-    requirement: {
-      mode: "Container",
-      operatingSystem: "Linux",
-      architecture: "Amd64",
-      image: "chuggy/worker",
-    },
-    requirementDigest: digest,
-    requirementSource: "PlatformDefault",
-    platformDefaultVersion: 1,
-    status: "Terminal",
-    outcome: "Passed",
-    retriesSpent: 1,
-    registeredAt: "2026-08-27T00:00:00Z",
-    runTotals: totals(150_000),
-    ...over,
-  };
-}
-
-function attempt(
-  attemptId: string,
-  over: Record<string, unknown> = {},
-): Record<string, unknown> {
-  return {
-    attempt: attemptId,
-    number: 1,
-    generation: 1,
-    state: "Reported",
-    openedAt: "2026-08-27T00:00:00Z",
-    run: {
-      startedAt: "2026-08-27T00:00:00Z",
-      turnsRecorded: 3,
-      totals: totals(100_000),
-      transcript: {
-        batches: 2,
-        bytes: 40,
-        highWaterBatch: 2,
-        observedAt: "2026-08-27T00:00:10Z",
-      },
-    },
-    ...over,
-  };
-}
-
-function transcript(
-  batches: readonly number[],
-  complete: boolean,
-): Record<string, unknown> {
-  return {
-    batches: batches.map((batch) => ({
-      batch,
-      recordedAt: "2026-08-27T00:00:10Z",
-      bytes: 20,
-      read: "Content",
-      content: `{"type":"assistant","message":{"content":[{"type":"text","text":"batch ${String(batch)}"}]}}`,
-    })),
-    observedAt: "2026-08-27T00:00:10Z",
-    complete,
-  };
-}
-
-interface Rendered {
-  readonly container: HTMLElement;
-  readonly reads: readonly string[];
-  readonly push: (chunk: string) => void;
-}
-
-async function ticketPage(served: {
-  readonly ticket: Record<string, unknown>;
-  readonly executions: readonly Record<string, unknown>[];
-  readonly execution: Record<string, unknown>;
-  readonly transcripts: readonly Record<string, unknown>[];
-}): Promise<Rendered> {
-  const reads: string[] = [];
-  let batchPage = 0;
-  const api = apiDouble({
-    operation: { operation: "op-one", acceptedAt: "x", state: "Pending" },
-    route: (url) => {
-      reads.push(url);
-      if (url.includes("/transcript")) {
-        const page = served.transcripts[batchPage] ?? served.transcripts.at(-1);
-        batchPage += 1;
-        return answer(page);
-      }
-      if (url.includes("/dispatch-view")) return answer({ result: "Reset" });
-      if (url.includes("/native-actions")) return answer({ actions: [] });
-      if (url.includes("/executions/")) return answer(served.execution);
-      if (url.includes("/executions"))
-        return answer({ executions: served.executions });
-      if (url.includes("/drafts/")) return answer({}, 404);
-      if (url.includes("/tickets/")) return answer(served.ticket);
-      return answer({ partition: atlas, sequence: 8, tickets: [] });
-    },
-  });
-  vi.stubGlobal("fetch", api.fetch);
-  const server = openedStream();
-  const view = render(
-    <ScreenHarness
-      partition={atlas}
-      client={new QueryClient()}
-      transport={server.ports.fetch}
-    >
-      <TicketPage />
-    </ScreenHarness>,
-  );
-  await settled();
+/** The page with the first row's details open, which is where the run's
+ * evidence is drawn. */
+async function ticketPage(served: RunPageServed): Promise<RunPageDrawn> {
+  const drawn = await runPageDrawn(atlas, served);
   await turned(() => {
     screen.getAllByRole("button", { name: "Details" })[0]?.click();
   });
   await settled();
-  return { container: view.container, reads, push: server.push };
-}
-
-function transcriptReads(reads: readonly string[]): readonly string[] {
-  return reads
-    .filter((url) => url.includes("/transcript"))
-    .map((url) => url.slice(url.indexOf("?")));
+  return drawn;
 }
 
 const ticket = {
   ticket: 11,
   phase: "Pending",
   sequence: 7,
-  runTotals: totals(9_990_000),
+  runTotals: runTotals(9_990_000),
   ...ticketInstants,
 };
 
@@ -208,9 +74,12 @@ const ticket = {
 test("a rising high-water mark reads exactly the batches above what is held", async () => {
   const rendered = await ticketPage({
     ticket,
-    executions: [summary()],
-    execution: { ...summary(), attempts: [attempt("a1")] },
-    transcripts: [transcript([1, 2], false), transcript([3, 4], false)],
+    executions: [runSummary()],
+    execution: { ...runSummary(), attempts: [runAttempt("a1")] },
+    transcripts: [
+      runTranscriptPage([1, 2], false),
+      runTranscriptPage([3, 4], false),
+    ],
   });
   expect(transcriptReads(rendered.reads)).toEqual(["?after=0"]);
 
@@ -220,13 +89,13 @@ test("a rising high-water mark reads exactly the batches above what is held", as
         version: 1,
         resource: "e1",
         representation: {
-          ...summary(),
+          ...runSummary(),
           attempts: [
-            attempt("a1", {
+            runAttempt("a1", {
               run: {
                 startedAt: "2026-08-27T00:00:00Z",
                 turnsRecorded: 3,
-                totals: totals(100_000),
+                totals: runTotals(100_000),
                 transcript: {
                   batches: 4,
                   bytes: 80,
@@ -256,9 +125,9 @@ test("a rising high-water mark reads exactly the batches above what is held", as
 test("a run whose attempt has ended draws complete and reads no further", async () => {
   const rendered = await ticketPage({
     ticket,
-    executions: [summary()],
-    execution: { ...summary(), attempts: [attempt("a1")] },
-    transcripts: [transcript([1, 2], true)],
+    executions: [runSummary()],
+    execution: { ...runSummary(), attempts: [runAttempt("a1")] },
+    transcripts: [runTranscriptPage([1, 2], true)],
   });
   expect(transcriptReads(rendered.reads)).toEqual(["?after=0"]);
   expect(
@@ -273,8 +142,8 @@ test("a run whose attempt has ended draws complete and reads no further", async 
         version: 1,
         resource: "e1",
         representation: {
-          ...summary(),
-          attempts: [attempt("a1", { endedAt: "2026-08-27T00:01:00Z" })],
+          ...runSummary(),
+          attempts: [runAttempt("a1", { endedAt: "2026-08-27T00:01:00Z" })],
         },
       }),
     );
@@ -289,30 +158,30 @@ test("a run whose attempt has ended draws complete and reads no further", async 
 test("a lost run says it ended without a result and draws no verdict", async () => {
   const rendered = await ticketPage({
     ticket,
-    executions: [summary()],
+    executions: [runSummary()],
     execution: {
-      ...summary(),
+      ...runSummary(),
       attempts: [
-        attempt("a1", {
+        runAttempt("a1", {
           state: "Lost",
           number: 1,
           evidence: "LeaseExpired",
           endedAt: "2026-08-27T00:00:30Z",
         }),
-        attempt("a2", { number: 2 }),
+        runAttempt("a2", { number: 2 }),
       ],
       result: {
         manifest: "m1",
         attempt: "a2",
         schemaVersion: 3,
-        digest,
+        digest: runDigest,
         verdict: "Pass",
         recordedAt: "2026-08-27T00:01:00Z",
         artifacts: [],
         report: "the work passed",
       },
     },
-    transcripts: [transcript([1, 2], true)],
+    transcripts: [runTranscriptPage([1, 2], true)],
   });
   const lost = rendered.container.querySelector('[data-attempt="a1"]');
   expect(lost?.textContent).toContain("ended without a result: LeaseExpired");
@@ -326,21 +195,21 @@ test("a lost run says it ended without a result and draws no verdict", async () 
 test("a result older than the summary field draws the reason there is none", async () => {
   const rendered = await ticketPage({
     ticket,
-    executions: [summary()],
+    executions: [runSummary()],
     execution: {
-      ...summary(),
-      attempts: [attempt("a1")],
+      ...runSummary(),
+      attempts: [runAttempt("a1")],
       result: {
         manifest: "m1",
         attempt: "a1",
         schemaVersion: 2,
-        digest,
+        digest: runDigest,
         verdict: "Pass",
         recordedAt: "2026-08-27T00:01:00Z",
         artifacts: [],
       },
     },
-    transcripts: [transcript([1, 2], true)],
+    transcripts: [runTranscriptPage([1, 2], true)],
   });
   expect(
     rendered.container.querySelector('[data-attempt="a1"]')?.textContent,
@@ -352,13 +221,17 @@ test("a result older than the summary field draws the reason there is none", asy
 test("the ticket's total is the figure the ticket read answered with", async () => {
   const rendered = await ticketPage({
     ticket,
-    executions: [summary(), summary({ execution: "e2" })],
-    execution: { ...summary(), attempts: [attempt("a1")] },
-    transcripts: [transcript([1, 2], true)],
+    executions: [runSummary(), runSummary({ execution: "e2" })],
+    execution: { ...runSummary(), attempts: [runAttempt("a1")] },
+    transcripts: [runTranscriptPage([1, 2], true)],
   });
   expect(
-    rendered.container.querySelector(".fields-inline")?.textContent,
+    rendered.container.querySelector(".ticket-status")?.textContent,
   ).toContain("$9.99");
+  const usage = screen.getByRole("button", { name: /^Usage/u });
+  await turned(() => {
+    usage.click();
+  });
   expect(rendered.container.querySelector("#usage")?.textContent).toContain(
     "$0.30",
   );
@@ -370,22 +243,22 @@ test("the ticket's total is the figure the ticket read answered with", async () 
 test("a reported run draws its markdown and keeps its line breaks", async () => {
   const rendered = await ticketPage({
     ticket,
-    executions: [summary()],
+    executions: [runSummary()],
     execution: {
-      ...summary(),
-      attempts: [attempt("a1")],
+      ...runSummary(),
+      attempts: [runAttempt("a1")],
       result: {
         manifest: "m1",
         attempt: "a1",
         schemaVersion: 3,
-        digest,
+        digest: runDigest,
         verdict: "Pass",
         recordedAt: "2026-08-27T00:01:00Z",
         artifacts: [],
         report: "**All good.**\nEvery check passed.",
       },
     },
-    transcripts: [transcript([1, 2], true)],
+    transcripts: [runTranscriptPage([1, 2], true)],
   });
   const report = rendered.container.querySelector(".run-report");
   expect(report?.querySelector("strong")?.textContent).toBe("All good.");
@@ -398,10 +271,10 @@ test("a reported run draws its markdown and keeps its line breaks", async () => 
 test("a run from a worker that wrote no evidence says so", async () => {
   const rendered = await ticketPage({
     ticket: { ticket: 11, phase: "Pending", sequence: 7, ...ticketInstants },
-    executions: [summary({ runTotals: undefined })],
+    executions: [runSummary({ runTotals: undefined })],
     execution: {
-      ...summary({ runTotals: undefined }),
-      attempts: [attempt("a1", { run: undefined })],
+      ...runSummary({ runTotals: undefined }),
+      attempts: [runAttempt("a1", { run: undefined })],
     },
     transcripts: [],
   });
@@ -409,7 +282,7 @@ test("a run from a worker that wrote no evidence says so", async () => {
     rendered.container.querySelector('[data-attempt="a1"]')?.textContent,
   ).toContain("recorded no run evidence");
   expect(
-    rendered.container.querySelector(".fields-inline")?.textContent,
+    rendered.container.querySelector(".ticket-status")?.textContent,
   ).toContain("—");
   expect(transcriptReads(rendered.reads)).toEqual([]);
 });

@@ -3,18 +3,28 @@
  * arrive, and what each recorded line is as a conversation item.
  *
  * The quiet failures are a pane that re-reads from the first batch every time
- * the high-water mark moves, a pane that calls a run complete because it has
- * caught up rather than because the attempt ended, and a parser that throws on
- * a line the agent runtime has only just started writing.
+ * the high-water mark moves, a pane that opens a long run at its first batch
+ * rather than where it is now, an earlier read the cap drops as it lands, a
+ * pane that calls a run complete because it has caught up rather than because
+ * the attempt ended, and a parser that throws on a line the agent runtime has
+ * only just started writing.
  */
 
 import { expect, test } from "vitest";
 
 import { conversationExchanges } from "../app/core/conversation.ts";
-import type { RunTranscriptResponse } from "../../../src/contract/responses.ts";
+import type {
+  ExecutionResponse,
+  RunTranscriptResponse,
+} from "../../../src/contract/responses.ts";
 import type { RunTranscriptHeld } from "../app/core/runTranscript.ts";
+import { runTranscriptPageBatchesMax } from "../../../src/contract/http.ts";
 import {
-  runTranscriptBatchesHeldMax,
+  runTranscriptBatchesBefore,
+  runTranscriptCapacityBatches,
+  runTranscriptCapacityBatchesMax,
+  runTranscriptAttempt,
+  runTranscriptEarlierMerged,
   runTranscriptEnded,
   runTranscriptFreshnessSentence,
   runTranscriptHeldEmpty,
@@ -44,9 +54,16 @@ function page(
   };
 }
 
-test("a pane holding nothing asks from the beginning", () => {
+test("a pane holding nothing asks from the beginning of a short run", () => {
   expect(runTranscriptHighestBatch(runTranscriptHeldEmpty)).toBe(0);
   expect(runTranscriptNextAfter(runTranscriptHeldEmpty, 3)).toBe(0);
+});
+
+test("a pane holding nothing opens a long run on the newest batches it keeps", () => {
+  expect(runTranscriptNextAfter(runTranscriptHeldEmpty, 100)).toBe(
+    100 - runTranscriptCapacityBatches,
+  );
+  expect(runTranscriptNextAfter(runTranscriptHeldEmpty, 0)).toBeUndefined();
 });
 
 /** Asking after zero again is how a pane reads every batch a second time. */
@@ -82,30 +99,69 @@ function heldPast(batches: number): RunTranscriptHeld {
  * and a live pane reads forever while showing nothing new.
  */
 test("the batches kept past the cap are the newest, and the oldest are the ones that left", () => {
-  const held = heldPast(runTranscriptBatchesHeldMax + 2);
+  const held = heldPast(runTranscriptCapacityBatches + 2);
   const newest = Array.from(
-    { length: runTranscriptBatchesHeldMax },
+    { length: runTranscriptCapacityBatches },
     (_unused, at) => at + 3,
   );
   expect(held.batches.map((batch) => batch.batch)).toEqual(newest);
-  expect(held.batchesDropped).toBe(2);
-  expect(runTranscriptRead(held).items[0]).toEqual({
-    item: "Marker",
-    marker: {
-      marker: "Capped",
-      sentence: "2 earlier batches are no longer held",
-    },
-  });
+  expect(runTranscriptBatchesBefore(held)).toBe(2);
 });
 
 test("a pane already at its cap still advances when the high-water mark rises", () => {
-  const held = heldPast(runTranscriptBatchesHeldMax + 2);
-  const highest = runTranscriptBatchesHeldMax + 2;
+  const held = heldPast(runTranscriptCapacityBatches + 2);
+  const highest = runTranscriptCapacityBatches + 2;
   expect(runTranscriptHighestBatch(held)).toBe(highest);
   expect(runTranscriptNextAfter(held, highest + 1)).toBe(highest);
   const advanced = runTranscriptMerged(held, page([highest + 1]));
   expect(runTranscriptHighestBatch(advanced)).toBe(highest + 1);
   expect(runTranscriptNextAfter(advanced, highest + 1)).toBeUndefined();
+});
+
+/** The batches below the window are offered as the page just beneath it, and
+ * a reader who asks for them keeps them: a merge at the old cap would drop the
+ * page it had just read. */
+test("an earlier read reads the page beneath the window, and keeps it", () => {
+  const held = runTranscriptMerged(
+    runTranscriptHeldEmpty,
+    page(Array.from({ length: 16 }, (_unused, at) => at + 25)),
+  );
+  const earlier = runTranscriptRead(held).earlier;
+  expect(earlier).toEqual({
+    batches: 24,
+    after: 24 - runTranscriptPageBatchesMax,
+  });
+  const widened = runTranscriptEarlierMerged(
+    held,
+    page(Array.from({ length: 8 }, (_unused, at) => at + 17)),
+  );
+  expect(widened.batches.map((batch) => batch.batch)).toEqual(
+    Array.from({ length: 24 }, (_unused, at) => at + 17),
+  );
+  expect(runTranscriptRead(widened).earlier).toEqual({ batches: 16, after: 8 });
+});
+
+test("the last earlier page asks from the first batch", () => {
+  const held = runTranscriptMerged(runTranscriptHeldEmpty, page([4, 5, 6]));
+  expect(runTranscriptRead(held).earlier).toEqual({ batches: 3, after: 0 });
+  const whole = runTranscriptEarlierMerged(held, page([1, 2, 3, 4, 5, 6]));
+  expect(runTranscriptRead(whole).earlier).toBeUndefined();
+  expect(runTranscriptRead(whole).batchesBefore).toBe(0);
+});
+
+/** A pane that may hold no more says what it is not holding, rather than
+ * offering a read whose page the cap would drop as it landed. */
+test("a pane at its ceiling offers no earlier read and says what it does not hold", () => {
+  const held = {
+    ...runTranscriptMerged(runTranscriptHeldEmpty, page([10, 11])),
+    capacity: runTranscriptCapacityBatchesMax,
+  };
+  const reading = runTranscriptRead(held);
+  expect(reading.earlier).toBeUndefined();
+  expect(reading.items[0]).toEqual({
+    item: "Marker",
+    marker: { marker: "Capped", sentence: "Earlier conversation not held" },
+  });
 });
 
 /**
@@ -134,6 +190,57 @@ test("a pane that has read nothing says so rather than dating a batch", () => {
   expect(runTranscriptFreshnessSentence(runTranscriptHeldEmpty, 0)).toBe(
     "not read yet",
   );
+});
+
+/** The Now card dates each note by when it was recorded, which is the batch's
+ * instant: a line carries none of its own. */
+test("an entry is dated by the batch that recorded it", () => {
+  const line = JSON.stringify({
+    type: "assistant",
+    message: { content: [{ type: "text", text: "said" }] },
+  });
+  const held = runTranscriptMerged(runTranscriptHeldEmpty, {
+    batches: [1, 2].map((batch) => ({
+      batch,
+      recordedAt: `2026-08-27T00:00:0${String(batch)}Z`,
+      bytes: 1,
+      read: "Content" as const,
+      content: line,
+    })),
+    observedAt: "2026-08-27T00:00:00Z",
+    complete: false,
+  });
+  expect(
+    runTranscriptRead(held).items.map((item) =>
+      item.item === "Entry" ? item.entry.at : undefined,
+    ),
+  ).toEqual(["2026-08-27T00:00:01Z", "2026-08-27T00:00:02Z"]);
+});
+
+/** A relaunch that was lost before it ran recorded nothing, and opening it
+ * would draw an empty conversation over the attempt that did the work. */
+test("an execution's conversation is its newest attempt that recorded one", () => {
+  const transcript = {
+    batches: 1,
+    bytes: 1,
+    highWaterBatch: 1,
+    observedAt: "2026-08-27T00:00:00Z",
+  };
+  const attempt = (number: number, recorded: boolean): unknown => ({
+    attempt: `a${String(number)}`,
+    number,
+    run: recorded
+      ? { startedAt: "2026-08-27T00:00:00Z", turnsRecorded: 1, transcript }
+      : { startedAt: "2026-08-27T00:00:00Z", turnsRecorded: 0 },
+  });
+  const execution = (attempts: readonly unknown[]): ExecutionResponse =>
+    ({ attempts }) as ExecutionResponse;
+  expect(
+    runTranscriptAttempt(
+      execution([attempt(2, true), attempt(3, false), attempt(1, true)]),
+    )?.attempt,
+  ).toBe("a2");
+  expect(runTranscriptAttempt(execution([attempt(1, false)]))).toBeUndefined();
 });
 
 test("an assistant line is an entry carrying the blocks the surface reads", () => {
@@ -281,6 +388,7 @@ test("every held batch's lines are read in order and blank lines are not steps",
       entry: {
         id: "2",
         role: "Assistant",
+        at: "2026-08-27T00:00:00Z",
         blocks: [{ block: "Text", text: "hi" }],
       },
     },
@@ -374,6 +482,7 @@ test("a batch the server has no characters for is a marker naming the gap", () =
       entry: {
         id: "4",
         role: "Assistant",
+        at: "2026-08-27T00:00:10Z",
         blocks: [{ block: "Text", text: "back" }],
       },
     },

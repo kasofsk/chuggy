@@ -12,7 +12,7 @@
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -115,8 +115,10 @@ function mounted(): {
 test("an open approval is offered as approve and decline, and answered once", async () => {
   const held = mounted();
   await settled();
-  expect(screen.getByRole("button", { name: "Approve" })).toBeDefined();
-  expect(screen.getByRole("button", { name: "Decline" })).toBeDefined();
+  const card = screen.getByRole("status", { name: "Needs you" });
+  expect(card.textContent).toContain("Awaiting approval");
+  expect(within(card).getByRole("button", { name: "Approve" })).toBeDefined();
+  expect(within(card).getByRole("button", { name: "Decline" })).toBeDefined();
 
   await turned(() => {
     screen.getByRole("button", { name: "Approve" }).click();
@@ -133,7 +135,7 @@ test("an open approval is offered as approve and decline, and answered once", as
   await settled();
   expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
-  expect(screen.getByText(/No action in this phase/u)).toBeDefined();
+  expect(screen.queryByRole("status", { name: "Needs you" })).toBeNull();
 });
 
 /** The frame carries the per-ticket read's own body, so the page's query has to

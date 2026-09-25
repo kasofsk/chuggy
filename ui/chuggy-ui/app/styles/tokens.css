@@ -119,6 +119,7 @@
     --hairline: 1px;
     --rail: 2px; /* the standing rail of a ledger group */
     --height-clip: 24em; /* the tallest a quoted block stands before it scrolls */
+    --height-run-conversation: 70vh; /* a run's conversation, which scrolls itself */
 
     /* rings */
     --ring-focus: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--focus);
@@ -138,7 +139,6 @@
     --width-column: 64rem; /* a conversation's reading column */
     --width-settings: 56rem; /* a settings page: form rows, not prose */
     --width-aside: 22rem;
-    --width-aside-min: 18rem;
     --width-chat: 25%; /* the frame a docked chat pane takes beside the pages */
     --height-chat: 33%; /* and under them, where a quarter is too short to read */
     --width-chat-strip: 2.5rem; /* the collapsed pane, which its control expands */

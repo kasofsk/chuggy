@@ -13,11 +13,10 @@ import { expect, test } from "vitest";
 import type { DraftResponse } from "../../../src/contract/responses.ts";
 import { creationBodyFrom } from "../app/core/ticketCreation.ts";
 import {
-  draftReleaseLine,
   draftReleaseOf,
+  draftUnreleasedLabel,
   editFormFrom,
   editRevisionFrom,
-  ticketRevisionLine,
   ticketUpdateMutation,
 } from "../app/core/ticketEdit.ts";
 import {
@@ -153,24 +152,24 @@ test("the update names the revision the ticket was read at and the draft revised
 test("a draft at the version its ticket was released from holds nothing unreleased", () => {
   const release = draftReleaseOf(released);
   expect(release).toStrictEqual({ release: "Current", released: 5 });
-  expect(ticketRevisionLine(2, release)).toBe(
-    "revision 2, from draft version 5",
-  );
-  expect(draftReleaseLine(release)).toBe("nothing unreleased");
 });
 
 test("a draft revised past its release says it holds unreleased changes", () => {
   const release = draftReleaseOf({ ...released, authoringVersion: 7 });
   expect(release).toStrictEqual({ release: "Ahead", released: 5, current: 7 });
-  expect(ticketRevisionLine(2, release)).toBe(
-    "revision 2, from draft version 5",
-  );
-  expect(draftReleaseLine(release)).toBe("version 7 holds unreleased changes");
 });
 
 test("a draft naming no released version is not read as current", () => {
   const release = draftReleaseOf(unbriefed);
   expect(release).toStrictEqual({ release: "Unrecorded" });
-  expect(ticketRevisionLine(2, release)).toBe("revision 2");
-  expect(draftReleaseLine(release)).not.toBe("nothing unreleased");
+});
+
+test("the short label counts what the sentence spells out", () => {
+  expect(draftUnreleasedLabel(draftReleaseOf(released))).toBe(
+    "Nothing unreleased",
+  );
+  expect(
+    draftUnreleasedLabel(draftReleaseOf({ ...released, authoringVersion: 7 })),
+  ).toBe("2 unreleased");
+  expect(draftUnreleasedLabel(draftReleaseOf(unbriefed))).toBe("Not recorded");
 });

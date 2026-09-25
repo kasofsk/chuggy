@@ -32,9 +32,7 @@ const everyKind: readonly FigureValue[] = [
   { kind: "Ago", text: "3h ago", full: "2026-08-27 07:12" },
   {
     kind: "Span",
-    start: "10:19",
-    end: "10:49",
-    length: "30m",
+    parts: ["started 48m ago", "ran 30m"],
     open: false,
     title: "a → b",
   },
@@ -101,24 +99,46 @@ test("an ago figure hovers its full date and clock, like an instant hovers its I
 test("an open span is drawn live and a closed one is not", () => {
   const open: FigureValue = {
     kind: "Span",
-    start: "10:19",
-    end: "running",
-    length: "48m so far",
+    parts: ["started 48m ago", "waited <1s"],
     open: true,
-    title: "a → running",
+    title: "a",
   };
   const { container } = render(<Figure figure={open} />);
   const drawn = container.querySelector(".fig");
   expect(drawn?.classList.contains("fig-live")).toBe(true);
-  expect(drawn?.textContent).toContain("10:19 → running");
-  expect(drawn?.textContent).toContain("48m so far");
+  expect(drawn?.textContent).toBe("started 48m ago·waited <1s");
+  expect(drawn?.querySelectorAll(".fig-sep")).toHaveLength(1);
   cleanup();
   const closed = render(
-    <Figure figure={{ ...open, end: "10:49", length: "30m", open: false }} />,
+    <Figure
+      figure={{ ...open, parts: ["started 48m ago", "ran 30m"], open: false }}
+    />,
   );
   expect(
     closed.container.querySelector(".fig")?.classList.contains("fig-live"),
   ).toBe(false);
+});
+
+/** A narrow cell wraps a span between its parts, never inside one, so
+ * `1h 59m` is not split across lines. */
+test("a span breaks only between its parts", () => {
+  const { container } = render(
+    <Figure
+      figure={{
+        kind: "Span",
+        parts: ["started 1h 59m ago", "waited <1s", "ran 12m 28s"],
+        open: false,
+        title: "a",
+      }}
+    />,
+  );
+  const parts = [...container.querySelectorAll(".fig-part")];
+  expect(parts.map((part) => part.textContent)).toEqual([
+    "started 1h 59m ago",
+    "waited <1s",
+    "ran 12m 28s",
+  ]);
+  expect(container.querySelectorAll("wbr")).toHaveLength(2);
 });
 
 /** A ceiling and what it counts are read together, so the unit is drawn beside

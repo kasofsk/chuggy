@@ -9,7 +9,15 @@
 
 import { expect, test } from "vitest";
 
+import type { RunConfigurationResponse } from "../../../src/contract/responses.ts";
+import type { PanelState } from "../app/core/freshness.ts";
 import {
+  runPromptHead,
+  runPromptHeadCharsMax,
+  runPromptHeadLinesMax,
+  runPromptOf,
+  runPromptOfPanel,
+  runPromptRead,
   runConfigurationArgvSentence,
   runConfigurationCapabilitiesSentence,
   runConfigurationFileSentence,
@@ -246,4 +254,84 @@ test("a snapshot naming no omitted count says nothing about one", () => {
   const snapshot = read(JSON.stringify(older));
   expect(snapshot.droppedOmitted).toBeUndefined();
   expect(runConfigurationOmittedSentence(snapshot)).toBeUndefined();
+});
+
+/** The worker hands Claude and Codex their prompt as the last word of the
+ * command line; any other agent's last word is a flag or a path, and drawing
+ * it as the prompt would put words in the member's mouth. */
+test("the prompt is the command line's last word for an agent that is handed it there", () => {
+  for (const agent of ["Claude", "Codex"])
+    expect(runPromptOf(read(snapshotOf({ agent })))).toEqual({
+      prompt: "Kept",
+      text: "do the thing",
+    });
+  expect(runPromptOf(read(snapshotOf()))).toEqual({
+    prompt: "Kept",
+    text: "do the thing",
+  });
+  expect(runPromptOf(read(snapshotOf({ agent: "Aider" })))).toEqual({
+    prompt: "NotKept",
+  });
+  expect(runPromptOf(read(snapshotOf({ claudeVersion: undefined })))).toEqual({
+    prompt: "NotKept",
+  });
+});
+
+/** A command line cut short keeps a digest in place of its words, so its last
+ * surviving word is not the prompt. */
+test("a command line that did not fit, or holds nothing, kept no prompt", () => {
+  const cut = read(
+    snapshotOf({ argv: ["claude", "--print"], argvTruncated: marker }),
+  );
+  expect(runPromptOf(cut)).toEqual({ prompt: "NotKept" });
+  expect(runPromptOf(read(snapshotOf({ argv: [] })))).toEqual({
+    prompt: "NotKept",
+  });
+  expect(runPromptOf(read(snapshotOf({ argv: ["claude", ""] })))).toEqual({
+    prompt: "NotKept",
+  });
+});
+
+/** A read that failed says nothing about whether the run kept a prompt, so it
+ * must not be drawn as one that kept none. */
+test("the prompt follows the snapshot's read, and a failed read is not a missing prompt", () => {
+  const ready = (content: string): PanelState<RunConfigurationResponse> => ({
+    state: "Ready",
+    value: { read: "Content", digest: "d".repeat(64), bytes: 1, content },
+    observedAtMs: undefined,
+  });
+  expect(runPromptOfPanel({ state: "Pending" })).toBeUndefined();
+  expect(runPromptOfPanel(ready(snapshotOf()))).toEqual({
+    prompt: "Kept",
+    text: "do the thing",
+  });
+  expect(runPromptOfPanel(ready("{"))).toEqual({ prompt: "Unreadable" });
+  expect(runPromptOfPanel({ state: "Absent", reason: "gone" })).toEqual({
+    prompt: "NotKept",
+  });
+  expect(runPromptOfPanel({ state: "Failed", reason: "down" })).toEqual({
+    prompt: "Unreadable",
+  });
+  expect(runPromptRead("not json")).toEqual({ prompt: "Unreadable" });
+});
+
+test("a prompt folds to its opening lines, and one long line to its opening characters", () => {
+  expect(runPromptHead("short")).toEqual({ head: "short", cut: false });
+  const lines = Array.from(
+    { length: runPromptHeadLinesMax + 2 },
+    (_, at) => `line ${String(at + 1)}`,
+  );
+  const folded = runPromptHead(lines.join("\n"));
+  expect(folded.cut).toBe(true);
+  expect(folded.head).toBe(
+    `${lines.slice(0, runPromptHeadLinesMax).join("\n")}…`,
+  );
+  const long = runPromptHead("x".repeat(runPromptHeadCharsMax + 1));
+  expect(long).toEqual({
+    head: `${"x".repeat(runPromptHeadCharsMax)}…`,
+    cut: true,
+  });
+  expect(
+    runPromptHead(lines.slice(0, runPromptHeadLinesMax).join("\n")).cut,
+  ).toBe(false);
 });

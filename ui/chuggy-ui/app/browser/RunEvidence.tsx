@@ -290,7 +290,8 @@ function RunSummary(props: {
 }
 
 /** The run's own conversation, told what state the attempt is in so a run that
- * is over draws no exchange still open. */
+ * is over draws no exchange still open, and whether it kept the snapshot its
+ * prompt is read from. */
 function RunEvidenceTranscript(props: {
   readonly partition: PartitionIdentity;
   readonly execution: string;
@@ -305,9 +306,8 @@ function RunEvidenceTranscript(props: {
     <RunTranscript
       partition={props.partition}
       execution={props.execution}
-      attempt={props.attempt.attempt}
+      attempt={props.attempt}
       highWaterBatch={transcript.highWaterBatch}
-      state={props.attempt.state}
     />
   );
 }

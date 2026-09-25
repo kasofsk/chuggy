@@ -13,6 +13,7 @@ import {
   openedStream,
   ScreenHarness,
   settled,
+  turned,
 } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -157,6 +158,13 @@ async function drawTicket(named: Named): Promise<void> {
     </ScreenHarness>,
   );
   await settled();
+  for (const row of [/^Brief/u, /^Provenance/u]) {
+    const trigger = screen.getByRole("button", { name: row });
+    await turned(() => {
+      trigger.click();
+    });
+  }
+  await settled();
 }
 
 /** The one element carrying a drawn phrase, whose `title` is the question. */
@@ -181,7 +189,7 @@ test("the revision a ticket was released under stays reachable from its name", a
 test("the configuration panel keeps the revision its heading no longer shows", async () => {
   await drawTicket(named);
   expect(
-    screen.getByRole("heading", { name: /configuration chuggy #12/u }),
+    screen.getByRole("heading", { name: /Configuration chuggy #12/u }),
   ).toBeDefined();
   expect(screen.getByText("revision").nextElementSibling?.textContent).toBe(
     revision,
