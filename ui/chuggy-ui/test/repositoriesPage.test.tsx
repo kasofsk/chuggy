@@ -385,6 +385,47 @@ test("choosing a repository binds it by address under an idempotency key", async
   ).toBeTruthy();
 });
 
+async function searchPicker(query: string): Promise<void> {
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  fireEvent.change(screen.getByRole("textbox", { name: "Search" }), {
+    target: { value: query },
+  });
+  await settled();
+}
+
+test("a query narrows the picker and a row it kept still binds by address", async () => {
+  const sent = await drawPage();
+  await searchPicker("SCRATCH");
+  const picker = within(screen.getByRole("dialog"));
+  expect(picker.queryByRole("button", { name: "kasofsk/chuggy" })).toBeNull();
+  fireEvent.click(picker.getByRole("button", { name: "gdoteof/scratch" }));
+  await settled();
+  expect(sent.find((one) => one.method === "POST")?.body).toStrictEqual({
+    repository: freeUrl,
+  });
+});
+
+/** The address is behind the row and not on it, so a query naming only the
+ * address's host keeps nothing. */
+test("a query is matched against the name a row draws and not its address", async () => {
+  await drawPage();
+  await searchPicker("forge.test");
+  expect(
+    within(screen.getByRole("dialog")).queryAllByRole("listitem"),
+  ).toStrictEqual([]);
+});
+
+/** A reader who searched and found nothing has to see the roster they searched
+ * was not all of it. */
+test("a query matching nothing still draws the listing was partial", async () => {
+  await drawPage();
+  await searchPicker("absent");
+  const picker = within(screen.getByRole("dialog"));
+  expect(picker.getByText("No match")).toBeTruthy();
+  expect(picker.getByText("More than shown")).toBeTruthy();
+});
+
 /**
  * A binding is checked against a portal installation, so with none there is
  * nothing the picker could offer and nothing a bind could be granted by — the
