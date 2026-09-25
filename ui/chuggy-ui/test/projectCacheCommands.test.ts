@@ -62,6 +62,37 @@ test("ready and source touch the cache at all", () => {
 });
 
 test("a change writes the representation and offers it to the lists", () => {
+  const operation = {
+    operation: "op-1",
+    acceptedAt: "2026-08-26T00:00:00Z",
+    state: "Pending",
+  };
+  const commands = projectCacheCommands(
+    partition,
+    decoded({
+      event: "Operation",
+      id: "12",
+      data: { version: 1, resource: "op-1", representation: operation },
+    }),
+  );
+  expect(commands[0]).toEqual({
+    command: "WriteResource",
+    key: projectResourceKey(partition, "Operation", "op-1"),
+    representation: operation,
+  });
+  expect(commands[1]).toEqual({
+    command: "FoldLists",
+    kind: "Operation",
+    resource: "op-1",
+    representation: operation,
+  });
+});
+
+/**
+ * A ticket's key has a second writer, the page's own confirmation, so the frame
+ * is written by the rule both share — here, over what that key could hold.
+ */
+test("a ticket frame is written by the rule the page's confirmations share", () => {
   const commands = projectCacheCommands(
     partition,
     decoded({
@@ -70,12 +101,23 @@ test("a change writes the representation and offers it to the lists", () => {
       data: { version: 1, resource: "3", representation: ticket },
     }),
   );
-  expect(commands[0]).toEqual({
-    command: "WriteResource",
-    key: projectResourceKey(partition, "Ticket", "3"),
+  const [revised, fold] = commands;
+  if (revised?.command !== "ReviseResource")
+    throw new Error("the ticket frame was not revised against what is held");
+  expect(revised.key).toEqual(projectResourceKey(partition, "Ticket", "3"));
+  expect(revised.revise(undefined)).toEqual({
+    arrival: "Write",
     representation: ticket,
   });
-  expect(commands[1]).toEqual({
+  expect(revised.revise({ ...ticket, sequence: 12 })).toEqual({
+    arrival: "Keep",
+  });
+  const brief = { intent: "ship it", links: [] };
+  expect(revised.revise({ ...ticket, sequence: 4, brief })).toEqual({
+    arrival: "Write",
+    representation: { ...ticket, brief },
+  });
+  expect(fold).toEqual({
     command: "FoldLists",
     kind: "Ticket",
     resource: "3",

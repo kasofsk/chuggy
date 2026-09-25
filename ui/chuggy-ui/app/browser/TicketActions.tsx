@@ -45,13 +45,13 @@ import {
   operationFollowing,
   operationIdBytesCount,
   operationSubmitting,
-  ticketConfirmed,
 } from "../core/operationFollow.ts";
 import type {
   OperationFollowed,
   OperationStep,
 } from "../core/operationFollow.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
+import { ticketArrival } from "../core/ticketArrival.ts";
 import {
   manualDispatchAction,
   ticketDispatchList,
@@ -59,6 +59,7 @@ import {
 import type { TicketAction, TicketAttempt } from "../core/ticketActions.ts";
 import { ticketOffers } from "../core/ticketOffers.ts";
 import { useApiPorts } from "./api.ts";
+import { applyResourceArrival } from "./stream.tsx";
 import {
   ticketAttemptDropped,
   ticketAttemptHeld,
@@ -146,9 +147,14 @@ function followWrittenBack(
   });
   const confirmed = followed.ticket;
   if (confirmed === undefined) return;
-  client.setQueryData(
-    projectResourceKey(partition, "Ticket", String(ticket)),
-    (held: TicketResponse | undefined) => ticketConfirmed(held, confirmed),
+  const key = projectResourceKey(partition, "Ticket", String(ticket));
+  applyResourceArrival(
+    client,
+    key,
+    ticketArrival(client.getQueryData<TicketResponse>(key), {
+      carried: "ProjectRow",
+      ticket: confirmed,
+    }),
   );
 }
 
@@ -348,7 +354,7 @@ interface Submitting {
 
 /**
  * One submission at a time, followed to settlement and merged into the ticket
- * this page reads. The confirmed row goes through `ticketConfirmed` because it
+ * this page reads. The confirmed row goes through `ticketArrival` because it
  * is a narrower projection than the ticket's own read and a live frame may
  * already have written a later one, and the open actions are invalidated rather
  * than written because what the follow learned is that the question was

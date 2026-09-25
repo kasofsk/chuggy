@@ -24,7 +24,10 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
 import { projectCacheCommands } from "../core/projectCacheCommands.ts";
-import type { ProjectCacheCommand } from "../core/projectCacheCommands.ts";
+import type {
+  ProjectCacheCommand,
+  ProjectResourceArrival,
+} from "../core/projectCacheCommands.ts";
 import { runProjectFallback } from "../core/projectFallback.ts";
 import {
   openProjectStream,
@@ -110,6 +113,25 @@ function applyListRefresh(
   }
 }
 
+/** What an arrival does to its key, whether a frame or a screen's own
+ * confirmation brought it. */
+export function applyResourceArrival(
+  client: QueryClient,
+  key: ProjectQueryKey,
+  arrival: ProjectResourceArrival,
+): void {
+  switch (arrival.arrival) {
+    case "Write":
+      client.setQueryData(key, arrival.representation);
+      return;
+    case "Keep":
+      return;
+    case "Reread":
+      void client.invalidateQueries({ queryKey: key, exact: true });
+      return;
+  }
+}
+
 function applyCommand(
   client: QueryClient,
   folds: ReadonlySet<ProjectListRegistration>,
@@ -118,6 +140,13 @@ function applyCommand(
   switch (command.command) {
     case "WriteResource":
       client.setQueryData(command.key, command.representation);
+      return;
+    case "ReviseResource":
+      applyResourceArrival(
+        client,
+        command.key,
+        command.revise(client.getQueryData(command.key)),
+      );
       return;
     case "DropResource":
       client.removeQueries({ queryKey: command.key, exact: true });

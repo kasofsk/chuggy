@@ -18,13 +18,11 @@ import {
   operationConfirmationPage,
   operationRequest,
   operationSubmitting,
-  ticketConfirmed,
 } from "../app/core/operationFollow.ts";
 import type {
   OperationEvent,
   OperationStep,
 } from "../app/core/operationFollow.ts";
-import { ticketInstants } from "./ticketInstants.ts";
 
 const acceptedAt = "2026-08-26T00:00:00Z";
 
@@ -219,73 +217,6 @@ test("the confirmation addresses the first ticket without an exclusive cursor", 
     limit: 1,
     minimumSequence: 91,
   });
-});
-
-test("a confirmation keeps the fields the project row does not carry", () => {
-  const brief = { intent: "ship it", links: [] };
-  expect(
-    ticketConfirmed(
-      { ticket: 7, phase: "Escalated", sequence: 4, brief, ...ticketInstants },
-      { ticket: 7, phase: "Work", sequence: 9, ...ticketInstants },
-    ),
-  ).toEqual({
-    ticket: 7,
-    phase: "Work",
-    sequence: 9,
-    brief,
-    ...ticketInstants,
-  });
-});
-
-test("a confirmation drops the fields the project row supersedes", () => {
-  expect(
-    ticketConfirmed(
-      {
-        ticket: 7,
-        phase: "Escalated",
-        sequence: 4,
-        escalation: { kind: "WorkFailureEscalated", resumeAt: "ResumeWork" },
-        ...ticketInstants,
-      },
-      { ticket: 7, phase: "Work", sequence: 9, ...ticketInstants },
-    ).escalation,
-  ).toBeUndefined();
-});
-
-test("a confirmation older than what is held does not put it back", () => {
-  const newer = {
-    ticket: 7,
-    phase: "Done",
-    sequence: 12,
-    ...ticketInstants,
-  } as const;
-  expect(
-    ticketConfirmed(newer, {
-      ticket: 7,
-      phase: "Work",
-      sequence: 9,
-      ...ticketInstants,
-    }),
-  ).toBe(newer);
-});
-
-test("a confirmation at the same sequence is written, not dropped", () => {
-  expect(
-    ticketConfirmed(
-      { ticket: 7, phase: "Work", sequence: 9, ...ticketInstants },
-      { ticket: 7, phase: "Done", sequence: 9, ...ticketInstants },
-    ).phase,
-  ).toBe("Done");
-});
-
-test("a confirmation with nothing held is what the page reads", () => {
-  const confirmed = {
-    ticket: 7,
-    phase: "Done",
-    sequence: 9,
-    ...ticketInstants,
-  } as const;
-  expect(ticketConfirmed(undefined, confirmed)).toBe(confirmed);
 });
 
 test("a server that keeps deferring is abandoned at the budget", () => {

@@ -12,7 +12,9 @@
  * own header says: its representation is the inventory entry, which is less
  * than reading the project returns, so the partition is invalidated and every
  * query under it reads again. Every other kind carries its GET body and is
- * written under its resource's key.
+ * written under its resource's key — `Ticket` through `ticketArrival`, the rule
+ * the page's own confirmations are written by too, so the command carries that
+ * rule as a function of whatever the key holds when it is applied.
  *
  * The commands are returned rather than performed, which is what lets every
  * case be held against the contract's own events with no cache present.
@@ -20,20 +22,34 @@
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
+  ProjectChangeEvent,
   ProjectChangeKind,
   ProjectStreamEvent,
 } from "../../../../src/contract/events.ts";
+import type { TicketResponse } from "../../../../src/contract/responses.ts";
 
 import { projectPartitionKey, projectResourceKey } from "./projectQueryKeys.ts";
 import type { ProjectQueryKey } from "./projectQueryKeys.ts";
+import { ticketArrival } from "./ticketArrival.ts";
 
 export type ProjectRepresentation = unknown;
+
+/** What an arriving representation does to the one held under its key. */
+export type ProjectResourceArrival =
+  | { readonly arrival: "Write"; readonly representation: unknown }
+  | { readonly arrival: "Keep" }
+  | { readonly arrival: "Reread" };
 
 export type ProjectCacheCommand =
   | {
       readonly command: "WriteResource";
       readonly key: ProjectQueryKey;
       readonly representation: unknown;
+    }
+  | {
+      readonly command: "ReviseResource";
+      readonly key: ProjectQueryKey;
+      readonly revise: (held: unknown) => ProjectResourceArrival;
     }
   | { readonly command: "DropResource"; readonly key: ProjectQueryKey }
   | {
@@ -50,6 +66,30 @@ function projectCacheInvalidation(
   return [
     { command: "InvalidatePartition", key: projectPartitionKey(partition) },
   ];
+}
+
+/** Every writer of a ticket's key writes a ticket, which is what lets the held
+ * value be taken as one. */
+function projectCacheResource(
+  key: ProjectQueryKey,
+  event: ProjectChangeEvent,
+): ProjectCacheCommand {
+  if (event.event === "Ticket" && event.data.representation !== null) {
+    const ticket = event.data.representation;
+    return {
+      command: "ReviseResource",
+      key,
+      revise: (held) =>
+        ticketArrival(held as TicketResponse | undefined, {
+          carried: "OwnRead",
+          ticket,
+        }),
+    };
+  }
+  const representation: unknown = event.data.representation;
+  return representation === null
+    ? { command: "DropResource", key }
+    : { command: "WriteResource", key, representation };
 }
 
 export function projectCacheCommands(
@@ -69,6 +109,5 @@ export function projectCacheCommands(
     resource,
     representation,
   } as const;
-  if (representation === null) return [{ command: "DropResource", key }, fold];
-  return [{ command: "WriteResource", key, representation }, fold];
+  return [projectCacheResource(key, event), fold];
 }
