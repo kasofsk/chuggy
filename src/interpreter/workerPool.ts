@@ -167,7 +167,7 @@ export interface WorkerPoolPollSettings {
   readonly pollsMax: number;
 }
 
-/** Draws the one-shot bearer an assignment's harness answers under. */
+/** Draws an assignment's identity and the one-shot bearer its harness answers under. */
 export type WorkerPoolMint = () => string;
 
 function workerPoolCheckedSettings(settings: WorkerPoolPollSettings): void {
