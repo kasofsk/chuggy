@@ -235,6 +235,7 @@ function TicketBody(props: {
           page={page}
           open={open}
           onOpenChange={setOpen}
+          nowMs={props.nowMs}
         />
       </div>
     </FreshnessInstants>

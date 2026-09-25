@@ -32,6 +32,19 @@ const imageDigestHexCharsShort = 8;
 /** The same reading of a commit, as short as a repository prints one. */
 const commitCharsShort = 7;
 
+/** How much of a digest's head and tail tell it apart from its neighbours at
+ * a glance. */
+const digestCharsShortHead = 12;
+const digestCharsShortTail = 6;
+
+/** A content digest shortened for a caption line, the value in full kept for
+ * the hover. A digest already this short or shorter is kept whole. */
+export function digestShortened(digest: string): string {
+  return digest.length <= digestCharsShortHead + digestCharsShortTail
+    ? digest
+    : `${digest.slice(0, digestCharsShortHead)}…${digest.slice(-digestCharsShortTail)}`;
+}
+
 /**
  * The configuration's name and the number the server assigned it. A revision
  * the server assigned none — an authored one, or one imported before numbers
