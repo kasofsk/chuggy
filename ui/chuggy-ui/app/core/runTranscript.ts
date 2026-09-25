@@ -5,7 +5,10 @@
  *
  * The high-water mark rides the `Execution` frame the browser already receives,
  * so the only question here is which batches sit above the highest one held —
- * nothing polls and nothing follows. An assistant or user line becomes the
+ * nothing polls and nothing follows. A pane opens on the newest batches and
+ * reads earlier ones only when a reader asks, because the plane numbers a
+ * run's batches from one without a gap and so what lies below the held window
+ * is a count rather than a guess. An assistant or user line becomes the
  * entry the surface's own block parser reads it as; a payload the run elided,
  * a cap the run hit or a line this console cannot parse becomes the marker the
  * surface has a place for; a batch whose bytes are gone or fail their digest
@@ -15,7 +18,11 @@
  * it elided still is.
  */
 
-import type { RunTranscriptResponse } from "../../../../src/contract/responses.ts";
+import { runTranscriptPageBatchesMax } from "../../../../src/contract/http.ts";
+import type {
+  ExecutionResponse,
+  RunTranscriptResponse,
+} from "../../../../src/contract/responses.ts";
 import type { AttemptState } from "../../../../src/contract/rosters.ts";
 
 import type {
@@ -27,9 +34,12 @@ import { conversationBlocksOf } from "./conversation.ts";
 import { freshnessLabel, panelObservedAtMs } from "./freshness.ts";
 import { runCountLabel } from "./runTotals.ts";
 
-/** The most batches a pane keeps, past which the oldest leave so a live run
- * stays followable. */
-export const runTranscriptBatchesHeldMax = 16;
+/** The batches a pane keeps while it follows a run, past which the oldest
+ * leave so a live run stays followable. */
+export const runTranscriptCapacityBatches = 16;
+
+/** The most batches a reader's earlier reads may raise a pane's keep to. */
+export const runTranscriptCapacityBatchesMax = 64;
 
 /** The most steps one pane draws, taken from the end so the newest are the ones
  * on screen. */
@@ -50,6 +60,33 @@ const truncationMarkerKey = "chuggy_truncated";
 
 export type RunTranscriptBatch = RunTranscriptResponse["batches"][number];
 
+type RunTranscriptAttempt = ExecutionResponse["attempts"][number];
+type RunTranscriptRun = NonNullable<RunTranscriptAttempt["run"]>;
+
+/** An attempt whose run recorded a transcript. */
+export type RunTranscriptAttempted = RunTranscriptAttempt & {
+  readonly run: RunTranscriptRun & {
+    readonly transcript: NonNullable<RunTranscriptRun["transcript"]>;
+  };
+};
+
+function runTranscriptRecorded(
+  attempt: RunTranscriptAttempt,
+): attempt is RunTranscriptAttempted {
+  return attempt.run?.transcript !== undefined;
+}
+
+/** The attempt whose conversation an execution opens on: the newest that
+ * recorded a transcript, and none where no attempt did. */
+export function runTranscriptAttempt(
+  execution: ExecutionResponse,
+): RunTranscriptAttempted | undefined {
+  return execution.attempts
+    .filter(runTranscriptRecorded)
+    .sort((left, right) => left.number - right.number)
+    .at(-1);
+}
+
 /** Whether a batch answered with its characters, or why it did not. */
 export type RunTranscriptBatchRead = RunTranscriptBatch["read"];
 
@@ -58,16 +95,17 @@ export interface RunTranscriptHeld {
   readonly batches: readonly RunTranscriptBatch[];
   readonly observedAt: string | undefined;
   readonly complete: boolean;
-  readonly batchesDropped: number;
   readonly failure: string | undefined;
+  /** How many batches the pane keeps, raised a page by each earlier read. */
+  readonly capacity: number;
 }
 
 export const runTranscriptHeldEmpty: RunTranscriptHeld = {
   batches: [],
   observedAt: undefined,
   complete: false,
-  batchesDropped: 0,
   failure: undefined,
+  capacity: runTranscriptCapacityBatches,
 };
 
 /** The batch a read resumes after, which is zero when the pane holds none. */
@@ -78,19 +116,30 @@ export function runTranscriptHighestBatch(held: RunTranscriptHeld): number {
   );
 }
 
+/** How many batches the run wrote below the lowest one held. */
+export function runTranscriptBatchesBefore(held: RunTranscriptHeld): number {
+  const lowest = held.batches[0]?.batch;
+  return lowest === undefined ? 0 : lowest - 1;
+}
+
 /**
  * The cursor the next read asks after, and nothing at all when the run has
- * written no batch above the one this pane already holds.
+ * written no batch above the one this pane already holds. A pane holding none
+ * asks for the newest it keeps, so a long run opens where it is now.
  */
 export function runTranscriptNextAfter(
   held: RunTranscriptHeld,
   highWaterBatch: number,
 ): number | undefined {
   const highest = runTranscriptHighestBatch(held);
-  return highWaterBatch > highest ? highest : undefined;
+  if (highWaterBatch <= highest) return undefined;
+  return held.batches.length === 0
+    ? Math.max(highWaterBatch - held.capacity, 0)
+    : highest;
 }
 
-/** Ascending by batch, each number once, and the oldest dropped past the cap. */
+/** Ascending by batch, each number once, and the oldest dropped past the
+ * pane's capacity. */
 export function runTranscriptMerged(
   held: RunTranscriptHeld,
   page: RunTranscriptResponse,
@@ -101,14 +150,26 @@ export function runTranscriptMerged(
   const ordered = [...byBatch.values()].sort((left, right) =>
     left.batch === right.batch ? 0 : left.batch - right.batch,
   );
-  const kept = ordered.slice(-runTranscriptBatchesHeldMax);
   return {
-    batches: kept,
+    batches: ordered.slice(-held.capacity),
     observedAt: page.observedAt,
     complete: page.complete,
-    batchesDropped: held.batchesDropped + (ordered.length - kept.length),
     failure: undefined,
+    capacity: held.capacity,
   };
+}
+
+/** An earlier page raises the capacity by what it carries, so the batches a
+ * reader asked for are not the ones the merge then drops. */
+export function runTranscriptEarlierMerged(
+  held: RunTranscriptHeld,
+  page: RunTranscriptResponse,
+): RunTranscriptHeld {
+  const capacity = Math.min(
+    held.capacity + runTranscriptPageBatchesMax,
+    runTranscriptCapacityBatchesMax,
+  );
+  return runTranscriptMerged({ ...held, capacity }, page);
 }
 
 /** A read that did not answer leaves what is held alone and says why. */
@@ -220,14 +281,25 @@ export function runTranscriptStep(
   ];
 }
 
-/** The items a pane draws, and how many earlier lines it is not drawing. */
+/** The batches below the held window, and the cursor the read of the page
+ * just beneath it asks after. */
+export interface RunTranscriptEarlier {
+  readonly batches: number;
+  readonly after: number;
+}
+
+/** The items a pane draws, how many earlier lines and batches it is not
+ * drawing, and the earlier read a reader may still ask for. */
 export interface RunTranscriptReading {
   readonly items: readonly ConversationItem[];
   readonly stepsBefore: number;
+  readonly batchesBefore: number;
+  readonly earlier: RunTranscriptEarlier | undefined;
 }
 
 interface RunTranscriptLine {
   readonly batch: number;
+  readonly recordedAt: string;
   readonly read: RunTranscriptBatchRead;
   readonly line: string | undefined;
 }
@@ -252,63 +324,90 @@ export function runTranscriptGapSentence(
 function runTranscriptLines(
   batch: RunTranscriptBatch,
 ): readonly RunTranscriptLine[] {
+  const at = { batch: batch.batch, recordedAt: batch.recordedAt };
   const drawn =
     batch.read === "Content"
       ? batch.content.split("\n").filter((line) => line.trim().length > 0)
       : [];
   return drawn.length === 0
-    ? [{ batch: batch.batch, read: batch.read, line: undefined }]
-    : drawn.map((line) => ({ batch: batch.batch, read: batch.read, line }));
+    ? [{ ...at, read: batch.read, line: undefined }]
+    : drawn.map((line) => ({ ...at, read: batch.read, line }));
 }
 
-/** One held line as its items, or the gap marker naming the batch a line was
- * never recorded for. */
+/** One held line as its items, each entry dated by the batch it was recorded
+ * in, or the gap marker naming the batch a line was never recorded for. */
 function runTranscriptLineItems(
   ordinal: number,
   held: RunTranscriptLine,
 ): readonly ConversationItem[] {
-  return held.line === undefined
-    ? [
-        {
-          item: "Marker",
-          marker: {
-            marker: "Capped",
-            sentence: runTranscriptGapSentence(held.batch, held.read),
-          },
+  if (held.line === undefined)
+    return [
+      {
+        item: "Marker",
+        marker: {
+          marker: "Capped",
+          sentence: runTranscriptGapSentence(held.batch, held.read),
         },
-      ]
-    : runTranscriptStep(ordinal, held.line);
+      },
+    ];
+  return runTranscriptStep(ordinal, held.line).map((item) =>
+    item.item === "Entry"
+      ? { ...item, entry: { ...item.entry, at: held.recordedAt } }
+      : item,
+  );
+}
+
+/** An earlier read is offered while batches lie below the window, the pane
+ * may still hold more, and the drawn window has room for what it would add. */
+function runTranscriptEarlierOf(
+  held: RunTranscriptHeld,
+  batchesBefore: number,
+  stepsBefore: number,
+): RunTranscriptEarlier | undefined {
+  if (batchesBefore === 0 || stepsBefore > 0) return undefined;
+  if (held.capacity >= runTranscriptCapacityBatchesMax) return undefined;
+  return {
+    batches: batchesBefore,
+    after: Math.max(batchesBefore - runTranscriptPageBatchesMax, 0),
+  };
 }
 
 /**
  * Every held batch's lines as conversation items, windowed from the end. What
- * the window cut and what the batch cap evicted are named ahead of what
- * remains, so a pane short of either says so rather than drawing a transcript
- * that looks whole.
+ * the window cut, and the batches below it no earlier read can bring in, are
+ * named ahead of what remains, so a pane short of either says so rather than
+ * drawing a transcript that looks whole.
  */
 export function runTranscriptRead(
   held: RunTranscriptHeld,
 ): RunTranscriptReading {
   const lines = held.batches.flatMap(runTranscriptLines);
   const from = Math.max(lines.length - runTranscriptStepsMax, 0);
+  const batchesBefore = runTranscriptBatchesBefore(held);
+  const earlier = runTranscriptEarlierOf(held, batchesBefore, from);
   const leading: ConversationItem[] = [];
   if (from > 0)
     leading.push({
       item: "Marker",
       marker: { marker: "Dropped", count: from },
     });
-  if (held.batchesDropped > 0)
+  if (batchesBefore > 0 && earlier === undefined)
     leading.push({
       item: "Marker",
       marker: {
         marker: "Capped",
-        sentence: `${runCountLabel(held.batchesDropped)} earlier batches are no longer held`,
+        sentence: `${runCountLabel(batchesBefore)} earlier batches not held`,
       },
     });
   const items = lines
     .slice(from)
     .flatMap((line, at) => runTranscriptLineItems(from + at + 1, line));
-  return { items: [...leading, ...items], stepsBefore: from };
+  return {
+    items: [...leading, ...items],
+    stepsBefore: from,
+    batchesBefore,
+    earlier,
+  };
 }
 
 /** Where a run's trailing exchange stands once the run is over: a run that

@@ -132,7 +132,15 @@ test("an expander says whether it is open and swaps its own word", () => {
       <LedgerRow
         label="Work"
         pill={{ tone: "pass", text: "Passed" }}
-        expand={{ open: false, onToggle: toggled, children: <p>detail</p> }}
+        expands={[
+          {
+            label: "Details",
+            hide: "Hide",
+            open: false,
+            onToggle: toggled,
+            children: <p>detail</p>,
+          },
+        ]}
       />
     </LedgerBlock>,
   );
@@ -147,7 +155,15 @@ test("an expander says whether it is open and swaps its own word", () => {
       <LedgerRow
         label="Work"
         pill={{ tone: "pass", text: "Passed" }}
-        expand={{ open: true, onToggle: toggled, children: <p>detail</p> }}
+        expands={[
+          {
+            label: "Details",
+            hide: "Hide",
+            open: true,
+            onToggle: toggled,
+            children: <p>detail</p>,
+          },
+        ]}
       />
     </LedgerBlock>,
   );
@@ -155,6 +171,36 @@ test("an expander says whether it is open and swaps its own word", () => {
     screen.getByRole("button", { name: "Hide" }).getAttribute("aria-expanded"),
   ).toBe("true");
   expect(screen.getByText("detail")).toBeDefined();
+});
+
+/** Two open areas under one row would push the second a screen away from the
+ * button that opened it, so the row holds one. */
+test("a row's expanders share one detail area, the open one's", () => {
+  const expander = (label: string, open: boolean) => ({
+    label,
+    hide: `Hide ${label.toLowerCase()}`,
+    open,
+    onToggle: vi.fn(),
+    children: <p>{label} detail</p>,
+  });
+  const { container } = render(
+    <LedgerBlock>
+      <LedgerRow
+        label="Work"
+        pill={{ tone: "pass", text: "Passed" }}
+        expands={[expander("Conversation", true), expander("Details", false)]}
+      />
+    </LedgerBlock>,
+  );
+  expect(
+    [...container.querySelectorAll("button")].map(
+      (button) => button.textContent,
+    ),
+  ).toEqual(["Hide conversation", "Details"]);
+  expect(container.querySelectorAll(".ledger-detail")).toHaveLength(1);
+  expect(container.querySelector(".ledger-detail")?.textContent).toBe(
+    "Conversation detail",
+  );
 });
 
 test("a changed row is marked, and a short page says so above the groups", () => {

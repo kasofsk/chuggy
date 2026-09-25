@@ -119,6 +119,7 @@
     --hairline: 1px;
     --rail: 2px; /* the standing rail of a ledger group */
     --height-clip: 24em; /* the tallest a quoted block stands before it scrolls */
+    --height-run-conversation: 70vh; /* a run's conversation, which scrolls itself */
 
     /* rings */
     --ring-focus: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--focus);

@@ -167,4 +167,113 @@
     gap: var(--space-3);
     padding: 0 var(--space-4) var(--space-4);
   }
+
+  .ticket-now-head,
+  .ticket-now-running,
+  .ticket-now-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .ticket-now-head .fig,
+  .ticket-now-running .fig,
+  .ticket-now-call .fig,
+  .ticket-now-note-at .fig {
+    color: var(--ink-3);
+  }
+
+  .ticket-now-line {
+    font-size: var(--text-xl);
+    line-height: var(--leading-prose);
+    color: var(--ink-1);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
+  }
+
+  .ticket-now-running .ticket-now-line {
+    flex-grow: 1;
+  }
+
+  .ticket-now-call {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface-2);
+    border-radius: var(--radius-2);
+  }
+
+  .ticket-now-call-name {
+    font-weight: var(--weight-strong);
+    color: var(--ink-1);
+  }
+
+  .ticket-now-call-argument {
+    flex-grow: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink-3);
+  }
+
+  .ticket-now-notes {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    column-gap: var(--space-4);
+    row-gap: var(--space-2);
+    margin: 0;
+    padding: var(--space-1) 0 0;
+    list-style: none;
+  }
+
+  .ticket-now-notes > li {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: baseline;
+  }
+
+  .ticket-now-note-at {
+    font-size: var(--text-sm);
+  }
+
+  .ticket-now-note-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink-2);
+  }
+
+  .ticket-now-notes > li:nth-child(2) .ticket-now-note-text {
+    opacity: 0.85;
+  }
+
+  .ticket-now-notes > li:nth-child(3) .ticket-now-note-text {
+    opacity: 0.7;
+  }
+
+  .ticket-now-notes > li:nth-child(4) .ticket-now-note-text {
+    opacity: 0.55;
+  }
+
+  .ticket-now-foot {
+    padding-top: var(--space-1);
+  }
+
+  .ticket-now-open {
+    gap: var(--space-3);
+  }
+
+  .ticket-now-conversation {
+    border-top: var(--hairline) solid var(--edge);
+    padding-top: var(--space-3);
+  }
 }

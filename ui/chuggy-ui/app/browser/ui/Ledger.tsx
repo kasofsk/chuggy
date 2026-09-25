@@ -4,7 +4,8 @@
  * a window, a spend and a note.
  *
  * Total over a group current or superseded × open or closed, and over a row
- * plain or ghosted × changed or not × expandable or not. Every figure arrives
+ * plain or ghosted × changed or not × any number of expanders, which share the
+ * one detail area beneath it. Every figure arrives
  * already formatted, so a row does no arithmetic and no two rows round the same
  * quantity differently. It is four components rather than one because the
  * function-length cap is what keeps each of them readable.
@@ -118,30 +119,43 @@ export interface LedgerRowProps {
   /** A generation an evaluator's own resume replaced, drawn dimmed beneath
    * the one that stands now. */
   readonly superseded?: boolean;
-  readonly expand?: {
-    readonly open: boolean;
-    readonly onToggle: () => void;
-    readonly children: ReactNode;
-  };
+  /** Drawn in order, the last at the row's edge; the first open one fills the
+   * detail area, so a caller keeps at most one open. */
+  readonly expands?: readonly LedgerRowExpand[];
 }
 
-function LedgerRowExpand(props: {
-  readonly expand: NonNullable<LedgerRowProps["expand"]>;
+export interface LedgerRowExpand {
+  readonly label: string;
+  /** What the button says while its detail is open. */
+  readonly hide: string;
+  readonly open: boolean;
+  readonly onToggle: () => void;
+  readonly children: ReactNode;
+}
+
+function LedgerRowExpands(props: {
+  readonly expands: readonly LedgerRowExpand[];
 }): ReactNode {
   return (
-    <Button
-      variant="quiet"
-      size="sm"
-      expanded={props.expand.open}
-      onClick={props.expand.onToggle}
-    >
-      {props.expand.open ? "Hide" : "Details"}
-    </Button>
+    <span className="ledger-expands">
+      {props.expands.map((expand) => (
+        <Button
+          key={expand.label}
+          variant="quiet"
+          size="sm"
+          expanded={expand.open}
+          onClick={expand.onToggle}
+        >
+          {expand.open ? expand.hide : expand.label}
+        </Button>
+      ))}
+    </span>
   );
 }
 
 export function LedgerRow(props: LedgerRowProps): ReactNode {
-  const expand = props.expand;
+  const expands = props.expands ?? [];
+  const opened = expands.find((expand) => expand.open);
   return (
     <li
       className={ledgerRowClassName(
@@ -174,10 +188,10 @@ export function LedgerRow(props: LedgerRowProps): ReactNode {
         )}
       </span>
       <span className="ledger-note">{props.note}</span>
-      {expand === undefined ? null : <LedgerRowExpand expand={expand} />}
-      {expand?.open === true ? (
-        <div className="ledger-detail">{expand.children}</div>
-      ) : null}
+      {expands.length === 0 ? null : <LedgerRowExpands expands={expands} />}
+      {opened === undefined ? null : (
+        <div className="ledger-detail">{opened.children}</div>
+      )}
     </li>
   );
 }

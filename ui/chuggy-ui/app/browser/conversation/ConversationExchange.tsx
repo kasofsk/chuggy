@@ -14,7 +14,7 @@
 
 import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
 import type { TextMessagePartComponent } from "@assistant-ui/react";
-import { Fragment } from "react";
+import { createContext, Fragment, useContext } from "react";
 import type { ReactNode } from "react";
 
 import { ticketReferenceSplit } from "../../../../../src/contract/ticketReference.ts";
@@ -32,6 +32,9 @@ import {
 import { ConversationWorkCard } from "./ConversationWorkCard.tsx";
 
 import "./conversation.css";
+
+/** Whether the surface draws each exchange's work open. */
+export const ConversationWorkOpen = createContext(false);
 
 /** What one message carries of the exchange it is half of. */
 export interface ConversationCustom {
@@ -156,6 +159,7 @@ export function ConversationAskMessage(): ReactNode {
  * ended up. */
 export function ConversationAnswerMessage(): ReactNode {
   const exchange = useConversationExchange();
+  const workOpen = useContext(ConversationWorkOpen);
   if (exchange === undefined) return null;
   const standing = exchange.standing;
   if (standing.standing === "Markers") return null;
@@ -164,6 +168,7 @@ export function ConversationAnswerMessage(): ReactNode {
       <ConversationWorkCard
         work={exchange.work}
         running={standing.standing === "Running"}
+        open={workOpen}
       />
       {standing.standing === "Failed" && standing.failure !== undefined ? (
         <Notice tone="danger" detail={standing.failure} />

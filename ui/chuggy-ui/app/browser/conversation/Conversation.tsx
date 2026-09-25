@@ -36,12 +36,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { ConversationExchange } from "../../core/conversation.ts";
+import type { RunPrompt } from "../../core/runConfiguration.ts";
 import { ConversationComposer } from "./ConversationComposer.tsx";
 import type { ConversationComposerProps } from "./ConversationComposer.tsx";
 import {
   ConversationAnswerMessage,
   ConversationAskMessage,
+  ConversationWorkOpen,
 } from "./ConversationExchange.tsx";
+import {
+  ConversationEarlier,
+  ConversationPrompt,
+} from "./ConversationPrompt.tsx";
+import type { ConversationEarlierProps } from "./ConversationPrompt.tsx";
 import { ConversationWaiting } from "./ConversationWaiting.tsx";
 import { Notice } from "../ui/Notice.tsx";
 
@@ -49,6 +56,7 @@ export type {
   ConversationComposerProps,
   ConversationSent,
 } from "./ConversationComposer.tsx";
+export type { ConversationEarlierProps } from "./ConversationPrompt.tsx";
 
 function conversationStatus(exchange: ConversationExchange): MessageStatus {
   const standing = exchange.standing;
@@ -247,6 +255,13 @@ export function Conversation(props: {
    * whose wrapper gave up its inset for it — rather than a panel that already
    * pads itself. */
   readonly pane?: boolean;
+  /** What a run was handed, drawn as the first message of its thread. */
+  readonly prompt?: RunPrompt;
+  /** The read of earlier records a page can make, offered at the top. */
+  readonly earlier?: ConversationEarlierProps;
+  /** Whether each exchange's work draws open, which is how a run is read:
+   * its steps are the conversation rather than the way to an answer. */
+  readonly workOpen?: boolean;
 }): ReactNode {
   const reading = props.reading === true;
   const activeExchanges = reading ? [] : props.exchanges;
@@ -263,12 +278,20 @@ export function Conversation(props: {
           <div
             className={`max-w-column mx-auto flex w-full flex-col gap-6 ${inset}`}
           >
-            <ConversationBody
-              reading={reading}
-              empty={props.exchanges.length === 0}
-              emptyTitle={props.emptyTitle}
-              sentence={props.empty}
-            />
+            {props.prompt === undefined ? null : (
+              <ConversationPrompt prompt={props.prompt} />
+            )}
+            {props.earlier === undefined ? null : (
+              <ConversationEarlier {...props.earlier} />
+            )}
+            <ConversationWorkOpen.Provider value={props.workOpen === true}>
+              <ConversationBody
+                reading={reading}
+                empty={props.exchanges.length === 0}
+                emptyTitle={props.emptyTitle}
+                sentence={props.empty}
+              />
+            </ConversationWorkOpen.Provider>
           </div>
         </ThreadPrimitive.Viewport>
         {props.composer === undefined ? null : (

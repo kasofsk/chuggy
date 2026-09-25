@@ -9,6 +9,7 @@ import { Fragment } from "react";
 import type { ReactNode } from "react";
 
 import {
+  markdownInlineOf,
   markdownReportBlocks,
   type MarkdownBlock,
   type MarkdownInline,
@@ -152,6 +153,12 @@ function MarkdownBlockView(props: {
     case "Table":
       return <MarkdownTable header={block.header} rows={block.rows} />;
   }
+}
+
+/** One line of a worker's prose with its inline marks, for a place that draws
+ * a line rather than a report. */
+export function MarkdownLine(props: { readonly text: string }): ReactNode {
+  return <MarkdownInlineRun nodes={markdownInlineOf(props.text)} />;
 }
 
 /** The worker's report, laid out as the markdown it tends to write. `bare`
