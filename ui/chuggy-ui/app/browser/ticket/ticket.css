@@ -355,6 +355,7 @@
   }
 
   .ticket-config-canonical {
+    flex-basis: 100%;
     max-height: var(--height-clip);
     overflow: auto;
     margin: 0;

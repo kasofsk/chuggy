@@ -210,9 +210,7 @@ test("a long run opens on its newest batches and reads earlier ones on asking", 
   });
   await settled();
   await turned(() => {
-    within(nowCard())
-      .getByRole("button", { name: "Earlier" })
-      .click();
+    within(nowCard()).getByRole("button", { name: "Earlier" }).click();
   });
   await settled();
   expect(transcriptReads(drawn.reads)).toEqual([

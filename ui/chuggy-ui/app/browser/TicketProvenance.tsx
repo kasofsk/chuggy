@@ -484,7 +484,9 @@ function ConfigurationHeaderLabel(props: {
 function ConfigurationFoot(props: {
   readonly revision: string;
   readonly digest: string;
+  readonly canonical: string;
 }): ReactNode {
+  const [open, setOpen] = useState(false);
   return (
     <div className="ticket-config-foot">
       <span>Digest</span>
@@ -494,6 +496,15 @@ function ConfigurationFoot(props: {
       <span>·</span>
       <span>revision</span>
       <code>{props.revision}</code>
+      <span className="grow" />
+      <Disclosure
+        open={open}
+        onOpenChange={setOpen}
+        label="Canonical JSON"
+        look={{ variant: "quiet", size: "sm" }}
+      >
+        <pre className="ticket-config-canonical">{props.canonical}</pre>
+      </Disclosure>
     </div>
   );
 }
@@ -501,14 +512,10 @@ function ConfigurationFoot(props: {
 function ConfigurationBody(props: {
   readonly configuration: ConfigurationResponse;
 }): ReactNode {
-  const [open, setOpen] = useState(false);
   const configuration = props.configuration;
   const view = configurationViewOf(configuration.canonical);
   return (
     <div className="ticket-config">
-      <Disclosure open={open} onOpenChange={setOpen} label="Canonical JSON">
-        <pre className="ticket-config-canonical">{configuration.canonical}</pre>
-      </Disclosure>
       <ConfigurationSettingsGrid settings={view.settings} />
       <ConfigurationInstructions
         brief={view.brief}
@@ -519,6 +526,7 @@ function ConfigurationBody(props: {
       <ConfigurationFoot
         revision={configuration.revision}
         digest={configuration.digest}
+        canonical={configuration.canonical}
       />
     </div>
   );
