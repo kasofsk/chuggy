@@ -3,9 +3,11 @@ import { test } from "node:test";
 import {
   allTaskConfigurationFaults,
   authoredTaskConfigurationReadiness,
+} from "../../src/interpreter/taskConfiguration.ts";
+import {
   briefingLineCharsMax,
   commandLinesMax,
-} from "../../src/interpreter/taskConfiguration.ts";
+} from "../../src/contract/workerTask.ts";
 
 const configuration = {
   brief: {

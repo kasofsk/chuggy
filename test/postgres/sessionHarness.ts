@@ -26,7 +26,6 @@ import {
   asSessionBearerSecret,
   asSessionId,
   asSessionTurnId,
-  sessionBearerPrefix,
   type SessionBearerSecret,
   type SessionCapability,
   type SessionId,
@@ -34,6 +33,7 @@ import {
   type SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
 import type { AgentSessionStore } from "../../src/interpreter/agentSession.ts";
+import { sessionBearerPrefix } from "../../src/contract/sessionPlane.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type {
   Partition,

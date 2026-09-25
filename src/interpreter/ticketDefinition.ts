@@ -27,6 +27,7 @@
 
 import { createHash } from "node:crypto";
 
+import { resultManifestSchemaVersion } from "../contract/workerDocuments.ts";
 import type {
   ReleasedTicket,
   TaskDefinition,
@@ -40,7 +41,7 @@ import {
   type ExecutionTaskKindKey,
   type MaterializedExecutionRequirement,
 } from "./executionRequirement.ts";
-import { digestFold, resultManifestSchemaVersion } from "./resultManifest.ts";
+import { digestFold } from "./resultManifest.ts";
 import { asDraftBrief, type DraftBrief } from "./ticketBrief.ts";
 import type { StageBlock } from "./taskConfiguration.ts";
 

@@ -52,10 +52,8 @@ import {
   leadSessionCapabilities,
   leadToolAllowlist,
 } from "../../src/interpreter/leadTools.ts";
-import {
-  leadDispatchesMax,
-  leadRefusalsPerDecisionMax,
-} from "../../src/interpreter/selector.ts";
+import { leadDispatchesMax } from "../../src/interpreter/selector.ts";
+import { leadRefusalsPerDecisionMax } from "../../src/contract/sessionTools.ts";
 import { threadCapabilitiesDefault } from "../../src/interpreter/thread.ts";
 import * as image from "../../images/worker/chuggyTools.mjs";
 import * as decision from "../../images/worker/leadDecision.mjs";

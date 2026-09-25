@@ -200,6 +200,15 @@ export const attemptEvidences = [
 ] as const;
 export type AttemptEvidence = (typeof attemptEvidences)[number];
 
+/** The labels a run may end itself under, which are the ones the run itself sees. */
+export const runEndedEvidences = [
+  "RunFailed",
+  "RunRateLimited",
+  "RunTurnsExhausted",
+  "RunUploadRefused",
+] as const;
+export type RunEndedEvidence = (typeof runEndedEvidences)[number];
+
 /** What a cost figure is: the agent runtime's published list price, never a bill. */
 export const runCostBases = ["List"] as const;
 export type RunCostBasis = (typeof runCostBases)[number];
@@ -446,6 +455,22 @@ export type SelectorHistoryOrder = (typeof selectorHistoryOrders)[number];
 export const agenticRefusalEvents = ["Refused", "Lifted"] as const;
 export type AgenticRefusalEvent = (typeof agenticRefusalEvents)[number];
 
+/** What a session is for, which is what decides whose turns it takes and what it may write. */
+export const sessionKinds = ["Lead", "Thread", "Inquiry"] as const;
+export type SessionKind = (typeof sessionKinds)[number];
+
+/** What a session may do, which the worker image maps to its agent runtime's own tools. */
+export const sessionCapabilities = [
+  "RepositoryRead",
+  "RepositoryWrite",
+  "RunCommands",
+  "ProjectRead",
+  "DraftAuthor",
+  "DraftOriginate",
+  "LeadDecision",
+] as const;
+export type SessionCapability = (typeof sessionCapabilities)[number];
+
 /** Whether a session still takes turns, which is the whole of its lifecycle. */
 export const sessionStates = ["Open", "Closed"] as const;
 export type SessionState = (typeof sessionStates)[number];
@@ -497,6 +522,17 @@ export const sessionTurnStates = [
   "Abandoned",
 ] as const;
 export type SessionTurnState = (typeof sessionTurnStates)[number];
+
+/** Why one turn a pod held ended without an answer, which is the whole of what a pod may name. */
+export const agentReportedTurnFailures = [
+  "AgentFailed",
+  "AgentRateLimited",
+  "AgentTurnsExhausted",
+  "AgentBudgetExhausted",
+  "StoreRefused",
+] as const;
+export type AgentReportedTurnFailure =
+  (typeof agentReportedTurnFailures)[number];
 
 /** Why one turn ended without an answer. */
 export const sessionTurnFailures = [

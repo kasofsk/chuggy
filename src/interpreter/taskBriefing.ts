@@ -95,12 +95,10 @@ import {
   briefIntentLinesMax,
   briefLinksMax,
 } from "../contract/brief.ts";
-import { textCodePointsCount } from "../contract/http.ts";
+import { resultReportCharsMax, textCodePointsCount } from "../contract/http.ts";
+import { commandLinesMax } from "../contract/workerTask.ts";
 import type { ConfigurationPin } from "./projectDecision.ts";
-import {
-  resultReportCharsMax,
-  resultTextControlCharacter,
-} from "./resultManifest.ts";
+import { resultTextControlCharacter } from "./resultManifest.ts";
 import type { Partition } from "./projectStore.ts";
 import {
   schedulerIdentityCharsMax,
@@ -111,7 +109,6 @@ import {
   allPracticeIds,
   blockCommandLines,
   briefingLinesMax,
-  commandLinesMax,
   firstCommandedCheckStage,
   taskConfigurationLineFault,
   type AuthoredTaskConfiguration,
@@ -125,9 +122,7 @@ export {
   authoredTaskConfigurationReadiness,
   allPracticeIds,
   blockCommandLines,
-  briefingLineCharsMax,
   briefingLinesMax,
-  commandLinesMax,
   firstCommandedCheckStage,
   type AgentEvaluationBlock,
   type AuthoredTaskConfiguration,

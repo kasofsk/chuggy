@@ -10,7 +10,7 @@ import { poolBearerMint } from "../../src/adapters/crypto/poolBearerMint.ts";
 import {
   sessionBearerPattern,
   sessionBearerPrefix,
-} from "../../src/interpreter/agentSession.ts";
+} from "../../src/contract/sessionPlane.ts";
 
 test("a pool bearer is drawn from the hex alphabet", () => {
   assert.match(poolBearerMint(), /^[0-9a-f]{64}$/u);

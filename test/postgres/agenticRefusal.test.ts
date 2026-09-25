@@ -19,7 +19,7 @@ import {
   dispatchViewPageLimitMax,
 } from "../../src/contract/http.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import { leadRefusalsPerDecisionMax } from "../../src/interpreter/selector.ts";
+import { leadRefusalsPerDecisionMax } from "../../src/contract/sessionTools.ts";
 import { leadRigDecision, leadRigOpen, leadRigProject } from "./leadHarness.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";

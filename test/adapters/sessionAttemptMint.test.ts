@@ -13,10 +13,10 @@ import { test } from "node:test";
 
 import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint.ts";
 import {
-  asSessionBearerSecret,
   sessionBearerPattern,
   sessionBearerPrefix,
-} from "../../src/interpreter/agentSession.ts";
+} from "../../src/contract/sessionPlane.ts";
+import { asSessionBearerSecret } from "../../src/interpreter/agentSession.ts";
 
 test("a drawn bearer is in the language the API routes on, and is never reused", () => {
   const mint = sessionAttemptMint();

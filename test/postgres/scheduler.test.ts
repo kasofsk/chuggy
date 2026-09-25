@@ -45,8 +45,8 @@ import {
   allArtifactRoles,
   asArtifactDigest,
   digestFold,
-  resultManifestSchemaVersion,
 } from "../../src/interpreter/resultManifest.ts";
+import { resultManifestSchemaVersion } from "../../src/contract/workerDocuments.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   postgresHarnessBrief,

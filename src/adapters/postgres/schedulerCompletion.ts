@@ -55,6 +55,7 @@ import { sql } from "@ts-safeql/sql-tag";
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 
+import { resultManifestSchemaVersion } from "../../contract/workerDocuments.ts";
 import { assertNever } from "../../domain/assertNever.ts";
 import {
   asAttemptId,
@@ -72,7 +73,6 @@ import type { Partition } from "../../interpreter/projectStore.ts";
 import {
   acceptResultManifest,
   asResultManifestId,
-  resultManifestSchemaVersion,
   type ArtifactRole,
   type ArtifactRow,
   type ResultManifest,

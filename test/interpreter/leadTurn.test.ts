@@ -28,7 +28,6 @@ import {
   leadDispatchesMax,
   leadObservationBytesMax,
   leadRefusalsObservedMax,
-  leadRefusalsPerDecisionMax,
   leadInputBytesMax,
   observeSelectorProject,
   resolvedSelectorSettings,
@@ -36,6 +35,7 @@ import {
   type SelectorRefusalLedger,
   type SelectorRuntimeSettings,
 } from "../../src/interpreter/selector.ts";
+import { leadRefusalsPerDecisionMax } from "../../src/contract/sessionTools.ts";
 
 const partition = {
   tenant: asTenantId("acme"),

@@ -30,14 +30,16 @@ import {
   manifestsAgree,
   digestFold,
   digestFoldHexChars,
-  resultManifestSchemaVersion,
-  resultManifestTextCharsMax,
   type CanonicalManifest,
   type ManifestAccepted,
   type ManifestAttemptBinding,
   type ManifestRejection,
   type ResultManifest,
 } from "../../src/interpreter/resultManifest.ts";
+import {
+  resultManifestSchemaVersion,
+  resultManifestTextCharsMax,
+} from "../../src/contract/workerDocuments.ts";
 import {
   asAttemptId,
   asExecutionId,

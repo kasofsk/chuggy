@@ -27,6 +27,8 @@ import {
   agenticRefusalReasonCharsMax,
   textCodePointsCount,
 } from "../contract/http.ts";
+import { leadRefusalsPerDecisionMax } from "../contract/sessionTools.ts";
+import { leadTurnDocumentVersion } from "../contract/workerDocuments.ts";
 import {
   agenticRefusalIsSuperseded,
   type AgenticRefusalRecord,
@@ -46,16 +48,12 @@ import {
   leadDispatchesMax,
   leadObservationBytesMax,
   leadRefusalsObservedMax,
-  leadRefusalsPerDecisionMax,
   type JsonValue,
   type SelectorObservation,
   type SelectorOperationalContext,
   type SelectorPolicyResult,
   type SelectorProjectState,
 } from "./selector.ts";
-
-/** The one document version this tree writes and the only one it accepts. */
-export const leadTurnDocumentVersion = 1;
 
 /** One standing refusal as the observation shows it, with what the reader must know about it. */
 export interface LeadObservedRefusal {
