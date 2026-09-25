@@ -9,14 +9,12 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import {
+  conversationArgumentLine,
   conversationArgumentSummary,
   conversationArgumentText,
   conversationWorkSummary,
 } from "../../core/conversation.ts";
-import type {
-  ConversationArgument,
-  ConversationStep,
-} from "../../core/conversation.ts";
+import type { ConversationStep } from "../../core/conversation.ts";
 import { runCountLabel } from "../../core/runTotals.ts";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import {
@@ -49,17 +47,6 @@ function ConversationGlyph(props: { readonly running: boolean }): ReactNode {
       />
     </svg>
   );
-}
-
-function conversationArgumentLine(argument: ConversationArgument): string {
-  switch (argument.argument) {
-    case "Text":
-      return argument.text;
-    case "Size":
-      return `${runCountLabel(argument.chars)} chars`;
-    case "None":
-      return "";
-  }
 }
 
 const conversationResultClassName =
@@ -154,12 +141,15 @@ function conversationWorkLabel(
 export function ConversationWorkCard(props: {
   readonly work: readonly ConversationStep[];
   readonly running: boolean;
+  /** Whether the card first draws open. */
+  readonly open?: boolean;
 }): ReactNode {
   if (props.work.length === 0) return null;
   return (
     <ConversationCard
       label={conversationWorkLabel(props.work, props.running)}
       glyph={<ConversationGlyph running={props.running} />}
+      defaultOpen={props.open === true}
     >
       <ol className="border-edge flex flex-col gap-3 border-l pl-4">
         {props.work.map((step, at) => (

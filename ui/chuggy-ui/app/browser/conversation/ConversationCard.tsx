@@ -37,9 +37,10 @@ export function ConversationChevron(): ReactNode {
 export function ConversationCard(props: {
   readonly label: ReactNode;
   readonly glyph?: ReactNode;
+  readonly defaultOpen?: boolean;
   readonly children: ReactNode;
 }): ReactNode {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(props.defaultOpen === true);
   return (
     <Collapsible.Root
       className="bg-surface-1 border-edge rounded-3 flex flex-col gap-3 border p-3"

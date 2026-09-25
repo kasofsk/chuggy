@@ -16,6 +16,7 @@ import {
   threadTurnBoundaryHeading,
   threadTurnRecordedLastLine,
 } from "../../../../src/contract/threadSeeding.ts";
+import { runCountLabel } from "./runTotals.ts";
 import { threadWakeDrawn } from "./threads.ts";
 
 /** The most blocks one entry is read for. */
@@ -301,6 +302,20 @@ export function conversationArgumentSummary(
   return text.length === 0
     ? { argument: "None" }
     : { argument: "Size", chars: text.length };
+}
+
+/** The words a call's argument summary is drawn in. */
+export function conversationArgumentLine(
+  argument: ConversationArgument,
+): string {
+  switch (argument.argument) {
+    case "Text":
+      return argument.text;
+    case "Size":
+      return `${runCountLabel(argument.chars)} chars`;
+    case "None":
+      return "";
+  }
 }
 
 /** Whether a text is a machine envelope rather than a member's own words: a

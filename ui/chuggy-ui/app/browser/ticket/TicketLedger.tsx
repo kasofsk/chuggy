@@ -23,13 +23,14 @@ import type {
   ExecutionSummary,
   ExecutionsResponse,
 } from "../../../../../src/contract/responses.ts";
-import { apiExecutions } from "../../core/apiRoutes.ts";
+import { apiExecution, apiExecutions } from "../../core/apiRoutes.ts";
 import { spanFigure, spendFigures, whenFigure } from "../../core/figures.ts";
 import type { Spend } from "../../core/figures.ts";
 import { executionRequirementLabel } from "../../core/labels.ts";
 import { projectListFolded } from "../../core/projectQueryKeys.ts";
 import type { ProjectListChange } from "../../core/projectQueryKeys.ts";
 import { generationLabel, runSpendOf } from "../../core/runTotals.ts";
+import { runTranscriptAttempt } from "../../core/runTranscript.ts";
 import { ticketExecutionsFolded } from "../../core/ticketExecutions.ts";
 import type {
   Cycle,
@@ -50,12 +51,14 @@ import {
   ticketLedger,
 } from "../../core/ticketLedger.ts";
 import { stageArm, verdictTone } from "../../core/tones.ts";
-import { usePanelList } from "../api.ts";
+import { usePanelList, usePanelResource } from "../api.ts";
 import { DataPanel } from "../DataPanel.tsx";
+import { RunConversationFollowed } from "../RunTranscript.tsx";
 import { ExecutionDetail } from "../TicketExecutions.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Ledger, LedgerBlock, LedgerGroup, LedgerRow } from "../ui/Ledger.tsx";
+import type { LedgerRowExpand } from "../ui/Ledger.tsx";
 
 /**
  * When the earliest task of a set first ran, which is what separates the wait
@@ -133,34 +136,92 @@ function SetRowNote(props: {
   );
 }
 
+/** What a row opens beneath itself: everything its run left, or the run's
+ * conversation alone. */
+type RowDetail = "Details" | "Conversation";
+
+interface RowOpened {
+  readonly execution: string;
+  readonly detail: RowDetail;
+}
+
 interface RowChrome {
   readonly partition: PartitionIdentity;
   readonly nowMs: number;
-  readonly opened: string | undefined;
-  readonly onToggle: (execution: string) => void;
+  readonly opened: RowOpened | undefined;
+  readonly onToggle: (opened: RowOpened) => void;
 }
 
-function SetRow(props: {
+interface SetRowProps {
   readonly chrome: RowChrome;
   readonly label: string;
   readonly set: TaskSet;
   readonly standing?: string;
   readonly shortfall?: string;
   readonly superseded?: boolean;
-}): ReactNode {
-  const first = props.set.executions[0];
-  const pill = {
-    tone: verdictTone(props.set.verdict),
-    text: props.set.verdict,
-  };
-  if (first === undefined)
-    return <LedgerRow label={props.label} pill={pill} ghost />;
-  const open = props.chrome.opened === first.execution;
+}
+
+/** The row's expanders: the run's conversation, where one of its attempts
+ * recorded a transcript, and its details. The execution is read under the key
+ * the details read it by, so opening them costs nothing further. */
+function useSetRowExpands(
+  chrome: RowChrome,
+  execution: string,
+): readonly LedgerRowExpand[] {
+  const { partition } = chrome;
+  const state = usePanelResource(partition, "Execution", execution, (ports) =>
+    apiExecution(ports, partition, execution),
+  );
+  const attempt =
+    state.state === "Ready" ? runTranscriptAttempt(state.value) : undefined;
+  const expand = (
+    detail: RowDetail,
+    hide: string,
+    children: ReactNode,
+  ): LedgerRowExpand => ({
+    label: detail,
+    hide,
+    open:
+      chrome.opened?.execution === execution && chrome.opened.detail === detail,
+    onToggle: () => {
+      chrome.onToggle({ execution, detail });
+    },
+    children,
+  });
+  return [
+    ...(attempt === undefined
+      ? []
+      : [
+          expand(
+            "Conversation",
+            "Hide conversation",
+            <RunConversationFollowed
+              key={attempt.attempt}
+              partition={partition}
+              execution={execution}
+              attempt={attempt}
+              highWaterBatch={attempt.run.transcript.highWaterBatch}
+            />,
+          ),
+        ]),
+    expand(
+      "Details",
+      "Hide",
+      <ExecutionDetail partition={partition} execution={execution} />,
+    ),
+  ];
+}
+
+function SetRowRan(
+  props: SetRowProps & { readonly first: ExecutionSummary },
+): ReactNode {
+  const first = props.first;
+  const expands = useSetRowExpands(props.chrome, first.execution);
   return (
     <LedgerRow
       label={props.label}
       identity={executionRequirementLabel(first)}
-      pill={pill}
+      pill={{ tone: verdictTone(props.set.verdict), text: props.set.verdict }}
       when={whenFigure(
         {
           registeredAt: props.set.span.from ?? first.registeredAt,
@@ -180,20 +241,22 @@ function SetRow(props: {
       {...(props.superseded === undefined
         ? {}
         : { superseded: props.superseded })}
-      expand={{
-        open,
-        onToggle: () => {
-          props.chrome.onToggle(first.execution);
-        },
-        children: (
-          <ExecutionDetail
-            partition={props.chrome.partition}
-            execution={first.execution}
-          />
-        ),
-      }}
+      expands={expands}
     />
   );
+}
+
+function SetRow(props: SetRowProps): ReactNode {
+  const first = props.set.executions[0];
+  if (first === undefined)
+    return (
+      <LedgerRow
+        label={props.label}
+        pill={{ tone: verdictTone(props.set.verdict), text: props.set.verdict }}
+        ghost
+      />
+    );
+  return <SetRowRan {...props} first={first} />;
 }
 
 /** An evaluator's own label: the stage, and its key where the stage names
@@ -482,20 +545,24 @@ export function useTicketExecutions(
   );
 }
 
-/** One row is open at a time, which is the state the whole ledger shares. */
+/** One row's one detail is open at a time, which is the state the whole
+ * ledger shares: pressing another replaces it. */
 function TicketRows(props: {
   readonly partition: PartitionIdentity;
   readonly page: ExecutionsResponse;
   readonly program: TicketProgram | undefined;
   readonly nowMs: number;
 }): ReactNode {
-  const [opened, setOpened] = useState<string | undefined>(undefined);
+  const [opened, setOpened] = useState<RowOpened | undefined>(undefined);
   const chrome: RowChrome = {
     partition: props.partition,
     nowMs: props.nowMs,
     opened,
-    onToggle: (execution) => {
-      setOpened(opened === execution ? undefined : execution);
+    onToggle: (pressed) => {
+      const again =
+        opened?.execution === pressed.execution &&
+        opened.detail === pressed.detail;
+      setOpened(again ? undefined : pressed);
     },
   };
   const program = props.program;
