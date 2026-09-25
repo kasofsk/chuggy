@@ -207,7 +207,7 @@ function TicketBody(props: {
         facts={facts}
         onChoose={choose}
       />
-      <div className="grid min-w-0 gap-4">
+      <div className="grid w-page max-w-full min-w-0 gap-4">
         <TicketActingScope partition={props.partition} ticket={props.ticket}>
           {(acting) => (
             <TicketStanding

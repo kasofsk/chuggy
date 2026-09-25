@@ -355,6 +355,7 @@ test("a Queued lead turn appends a running exchange with the kind word and no te
   await mountLead();
   expect(exchangeCount()).toBe(1);
   const conversation = screen.getByRole("region", { name: "Conversation" });
+  expect(conversation.hasAttribute("data-fills-page")).toBe(true);
   expect(within(conversation).getByText("Observation")).toBeDefined();
   expect(within(conversation).getByText("Queued")).toBeDefined();
 });

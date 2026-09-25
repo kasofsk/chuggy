@@ -29,6 +29,10 @@
     font-style: normal;
   }
 
+  .fig-part {
+    white-space: nowrap;
+  }
+
   .fig-sep {
     color: var(--edge-strong);
     margin: 0 var(--space-1);

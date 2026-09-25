@@ -119,6 +119,28 @@ test("an open span is drawn live and a closed one is not", () => {
   ).toBe(false);
 });
 
+/** A narrow cell wraps a span between its parts, never inside one, so
+ * `1h 59m` is not split across lines. */
+test("a span breaks only between its parts", () => {
+  const { container } = render(
+    <Figure
+      figure={{
+        kind: "Span",
+        parts: ["started 1h 59m ago", "waited <1s", "ran 12m 28s"],
+        open: false,
+        title: "a",
+      }}
+    />,
+  );
+  const parts = [...container.querySelectorAll(".fig-part")];
+  expect(parts.map((part) => part.textContent)).toEqual([
+    "started 1h 59m ago",
+    "waited <1s",
+    "ran 12m 28s",
+  ]);
+  expect(container.querySelectorAll("wbr")).toHaveLength(2);
+});
+
 /** A ceiling and what it counts are read together, so the unit is drawn beside
  * the digits rather than left to the column head a settings row does not have. */
 test("a quantity draws its unit beside its digits", () => {

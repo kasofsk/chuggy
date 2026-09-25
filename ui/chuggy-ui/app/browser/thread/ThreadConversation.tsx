@@ -53,6 +53,7 @@ export function ThreadConversation(props: {
     <div
       role="region"
       aria-label="Conversation"
+      data-fills-page
       className="min-h-0 min-w-0 flex-1"
     >
       <Conversation

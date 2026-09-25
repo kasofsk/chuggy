@@ -32,11 +32,14 @@ function FigureSpan(props: {
         {span.parts.map((part, index) => (
           <Fragment key={part}>
             {index === 0 ? null : (
-              <i className="fig-sep" aria-hidden="true">
-                ·
-              </i>
+              <>
+                <i className="fig-sep" aria-hidden="true">
+                  ·
+                </i>
+                <wbr />
+              </>
             )}
-            {part}
+            <span className="fig-part">{part}</span>
           </Fragment>
         ))}
       </span>

@@ -91,11 +91,19 @@
   }
 
   .ledger-identity,
-  .ledger-when,
   .ledger-spent {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* A window wraps between its parts rather than losing the last of them. */
+  .ledger-when {
+    min-width: 0;
+  }
+
+  .ledger-when .fig {
+    white-space: normal;
   }
 
   .ledger-note {
