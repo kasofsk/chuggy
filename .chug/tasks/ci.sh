@@ -20,8 +20,7 @@
 #   CHUG_CI_SHELL_SUITES=0        skip the shell-suite stage (set for the
 #                                 suites themselves, so ci.test.sh cannot
 #                                 recurse into a real run)
-#   CHUG_CI_SUITE_TIMEOUT_SECS    per-suite cap, default 60
-#   CHUG_CI_SUITES_BUDGET_SECS    total suite budget, default 120
+#   CHUG_CI_SUITE_TIMEOUT_SECS    per-suite cap, default 300
 set -eu
 export LC_ALL=C
 
@@ -94,8 +93,7 @@ if [ "${CHUG_CI_SHELL_SUITES:-1}" = "0" ]; then
 	printf '\n--- shell suites: SKIPPED (CHUG_CI_SHELL_SUITES=0)\n'
 else
 	printf '\n--- shell suites\n'
-	suite_cap="${CHUG_CI_SUITE_TIMEOUT_SECS:-60}"
-	suite_budget="${CHUG_CI_SUITES_BUDGET_SECS:-120}"
+	suite_cap="${CHUG_CI_SUITE_TIMEOUT_SECS:-300}"
 
 	# Probed functionally — `command -v` says a binary exists, not that it
 	# runs. macOS ships no GNU `timeout`; `gtimeout` arrives with coreutils.
@@ -130,24 +128,15 @@ else
 		fi
 	else
 		if [ -n "$timeout_cmd" ]; then
-			echo "ci: cap ${suite_cap}s per suite, ${suite_budget}s total"
+			echo "ci: cap ${suite_cap}s per suite, no total"
 		else
 			echo "ci: WARNING — no working \`timeout\` or \`gtimeout\`, so suites run"
-			echo "ci:           UNCAPPED. The ${suite_budget}s total budget still"
-			echo "ci:           applies between suites. Install coreutils for the cap."
+			echo "ci:           UNCAPPED. Install coreutils for the cap."
 		fi
 		started="$(date +%s)"
-		stopped=""
 		IFS='
 '
 		for suite in $suites; do
-			elapsed=$(( $(date +%s) - started ))
-			# Checked between suites: a post-loop check bounds nothing.
-			if [ "$elapsed" -ge "$suite_budget" ]; then
-				stopped="$stopped$suite
-"
-				continue
-			fi
 			printf '  - %s\n' "$suite"
 			set +e
 			if [ -n "$timeout_cmd" ]; then
@@ -157,18 +146,16 @@ else
 			fi
 			rc=$?
 			set -e
-			if [ "$rc" -ne 0 ]; then
+			if [ "$rc" -eq 124 ] && [ -n "$timeout_cmd" ]; then
+				echo "ci: FAILED — $suite ran past the ${suite_cap}s cap (CHUG_CI_SUITE_TIMEOUT_SECS); rerun with: sh $suite"
+				failed=$((failed + 1))
+			elif [ "$rc" -ne 0 ]; then
 				echo "ci: FAILED — $suite (rc=$rc); rerun with: sh $suite"
 				failed=$((failed + 1))
 			fi
 		done
 		unset IFS
 		echo "ci: suites finished in $(( $(date +%s) - started ))s"
-		if [ -n "$stopped" ]; then
-			echo "ci: BUDGET REACHED — these suites did NOT run:"
-			printf '%s' "$stopped" | sed 's/^/    /'
-			failed=$((failed + 1))
-		fi
 	fi
 fi
 

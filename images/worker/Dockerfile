@@ -192,13 +192,8 @@ RUN --mount=type=bind,source=.claude/settings.json,target=/tmp/practices.json \
 # `CHUG_PG_URL` through `postgres.mjs`, and nothing hands them a Keto yet
 # (kasofsk/chuggy#681), which a green build here does not say otherwise.
 #
-# THE SUITE BUDGET IS THE BUILD'S, NOT A LAPTOP'S. `ci.sh` bounds its shell
-# suites by default at figures chosen for a keyboard, and the whole set runs
-# close to that bound on a fast machine, so the bound is named here at what the
-# profile's hour affords; a build that reds on a slow builder for a reason that
-# is not the image is a control that gets bypassed. A server that does not
-# come up ends the stage with only the gate's could-not-run line, so the
-# servers' logs are printed on the way out.
+# THE SERVERS' LOGS ARE PRINTED ON THE WAY OUT. A server that does not come up
+# ends the stage with only the gate's could-not-run line.
 #
 # THE SERVER IS INITIALISED IN UTF-8 BY NAME. A build has no locale in its
 # environment, so `initdb` left to itself makes an SQL_ASCII cluster, under
@@ -238,8 +233,6 @@ RUN cd /workspace/tree \
     --message 'the tree this image is held to' \
   && npm ci \
   && CHUG_CI_FULL=1 \
-    CHUG_CI_SUITE_TIMEOUT_SECS=300 \
-    CHUG_CI_SUITES_BUDGET_SECS=900 \
     CHUG_PG_URL=postgres://postgres@127.0.0.1:5432/postgres \
     CHUG_KETO_READ_URL=http://127.0.0.1:4466/ \
     CHUG_KETO_WRITE_URL=http://127.0.0.1:4467/ \

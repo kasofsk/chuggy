@@ -4,7 +4,7 @@
 # Cases run against throwaway repos holding stub gates with controllable exit
 # codes: what is under test is how ci.sh *treats* a verdict — that a finding
 # and a could-not-run stay different answers all the way to its own exit code,
-# and that the suite budget stops where it says it does.
+# and that the only time bound on the suites is each one's own cap.
 #
 # The fixture carries a stub for every gate the sequencer names, because a
 # named gate that is absent is itself a could-not-run. A fixture short of one
@@ -27,8 +27,7 @@ R="$WORK/repo"
 # and answers a question the case did not ask. These are ci.sh's own Env block
 # and the base `_ci-select.sh` reads, less CHUG_CI_SHELL_SUITES — the recursion
 # guard, which each case that reaches the suite stage sets for itself.
-unset CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF \
-	CHUG_CI_SUITE_TIMEOUT_SECS CHUG_CI_SUITES_BUDGET_SECS
+unset CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF CHUG_CI_SUITE_TIMEOUT_SECS
 
 ROOT="$(cd "$HERE/../.." && pwd)"
 grep -F '    ./.chug/tasks/ci.sh' "$ROOT/justfile" >/dev/null
@@ -304,20 +303,39 @@ git -C "$R" add -A
 run_ci
 check "a passing suite leaves the run clean" 0 "$RC" "all gates clean"
 
-# The budget stops between suites and NAMES what it did not run: one that
-# silently truncates reads as full coverage.
+# The stage has no total: a clock that reads an hour later every time it is
+# asked stops no suite, so a slower machine runs them all.
 stub_repo 0
-printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/one.test.sh"
-chmod +x "$R/.chug/tasks/one.test.sh"
+for suite in one two; do
+	printf '#!/bin/sh\ntouch "%s/ran-%s"\n' "$WORK" "$suite" > "$R/.chug/tasks/$suite.test.sh"
+done
+mkdir -p "$WORK/clock"
+printf '#!/bin/sh\nn="$(cat "%s/hours" 2>/dev/null || echo 0)"\necho $((n + 1)) > "%s/hours"\necho $((n * 3600))\n' \
+	"$WORK/clock" "$WORK/clock" > "$WORK/clock/date"
+chmod +x "$WORK/clock/date"
 git -C "$R" add -A
 OUT="$WORK/.out"
 set +e
-(cd "$R" && CHUG_CI_SHELL_SUITES=1 CHUG_CI_SUITES_BUDGET_SECS=0 \
+(cd "$R" && PATH="$WORK/clock:$PATH" CHUG_CI_SHELL_SUITES=1 ./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+ls "$WORK" >>"$OUT"
+check "hours between suites stop none of them" 0 "$RC" "all gates clean"
+check "the first suite ran" 0 "$RC" "ran-one"
+check "the last suite ran" 0 "$RC" "ran-two"
+check "the stage states the one bound it applies" 0 "$RC" "per suite, no total"
+
+# A suite past its own cap is stopped and fails the run by name.
+stub_repo 0
+printf '#!/bin/sh\nexec sleep 5\n' > "$R/.chug/tasks/slow.test.sh"
+git -C "$R" add -A
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_SHELL_SUITES=1 CHUG_CI_SUITE_TIMEOUT_SECS=1 \
 	./.chug/tasks/ci.sh) >"$OUT" 2>&1
 RC=$?
 set -e
-check "an exhausted budget names the suites it skipped" 1 "$RC" "did NOT run"
-check "the skipped suite is named, not just counted" 1 "$RC" "one.test.sh"
+check "a suite past its cap fails the run" 1 "$RC" "slow.test.sh ran past the 1s cap"
 
 # A glob matching nothing must not read as "the suites passed".
 stub_repo 0

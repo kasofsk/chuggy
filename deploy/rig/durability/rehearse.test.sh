@@ -15,9 +15,8 @@
 # they hold on the day it is run; only a suite stops the shape returning.
 # `.chug/tasks/check-gates.sh` does not reach this directory, but
 # `.chug/tasks/ci.sh` discovers suites tree-wide, so a change to this rig or its
-# suite runs this one under the same per-suite cap and shared budget as the
-# rest: a case here that waited on anything real would cost another suite its
-# run.
+# suite runs this one under the same per-suite cap as the rest: a case here
+# that waited on anything real would fail the run at the cap.
 #
 # NOTHING HERE TALKS TO A CLUSTER, and the cases whose subject is a refusal that
 # comes first require that nothing reached one. `kubectl` is a stub on `PATH`

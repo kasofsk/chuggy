@@ -74,7 +74,7 @@ check "a figure in markdown is a finding" 1 "$RC" "eight — a spelled quantity"
 
 # A pin, a date, and a threshold the code reads.
 gate_saying 'quint 0.32.0 is pinned. jscpd v5, dash 0.5 and bash 5.2 diverge,' \
-	'measured 2026-08-08. The per-suite cap defaults to 60.'
+	'measured 2026-08-08. The per-suite cap defaults to 300.'
 check "pins, dates and thresholds are silent" 0 "$RC" "0 finding(s)"
 
 # Only comment lines are read, so a figure in code is a value rather than a
