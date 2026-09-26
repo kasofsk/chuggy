@@ -4,6 +4,7 @@ import fastify, {
   type FastifyInstance,
   type FastifyReply,
   type FastifyRequest,
+  type RouteHandlerMethod,
 } from "fastify";
 import { z } from "zod";
 
@@ -12,10 +13,8 @@ import {
   isBoundedText,
   nativeHttpPageItemsMax,
   runConfigurationBytesMax,
-  runModelCharsMax,
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
-  runTurnSeriesMax,
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
@@ -26,14 +25,20 @@ import {
   textCodePointsCount,
 } from "../../contract/http.ts";
 import {
-  runModelUsageSchema,
-  runTotalsSchema,
-} from "../../contract/responses.ts";
-import {
   isSessionStoreStream,
   sessionBearerPattern,
+  sessionPlaneRoutes,
 } from "../../contract/sessionPlane.ts";
 import { resultManifestTextCharsMax } from "../../contract/workerDocuments.ts";
+import {
+  workerPlaneBytesMediaType,
+  workerPlaneRoutes,
+  workerRunEndedSchema,
+  workerRunTotalsSchema,
+  workerRunTurnsSchema,
+  type WorkerCredentialAbsent,
+  type WorkerPlaneRoute,
+} from "../../contract/workerPlane.ts";
 import {
   allAgentReportedTurnFailures,
   asSessionBearerSecret,
@@ -67,7 +72,6 @@ import {
 } from "../../interpreter/executionScheduler.ts";
 import {
   runConfigurationPath,
-  runEndedEvidences,
   runTranscriptBatchPath,
   type RunEvidenceStored,
   type RunTotals,
@@ -103,36 +107,29 @@ import type {
   WorkerReportPort,
 } from "../../interpreter/workerPlane.ts";
 
-export const workerPlaneRoutes = [
-  "/health/live",
-  "/health/ready",
-  "/v1/input",
-  "/v1/heartbeat",
-  "/v1/artifacts/*",
-  "/v1/report",
-  "/v1/run/configuration",
-  "/v1/run/transcript/*",
-  "/v1/run/turns",
-  "/v1/run/totals",
-  "/v1/run/ended",
-  "/v1/credential",
-  "/v1/session",
-  "/v1/session/heartbeat",
-  "/v1/session/reference",
-  "/v1/session/turn",
-  "/v1/session/turn/answer",
-  "/v1/session/turn/failure",
-  "/v1/session/held",
-  "/v1/session/store",
-  "/v1/session/store/*",
-  "/v1/session/credential",
-] as const;
-
-/** What marks a route as one only a composed session plane answers. */
-const sessionRoutePrefix = "/v1/session";
+/** The probes the cluster sends, which no worker calls and so the worker contract does not name. */
+export const workerPlaneHealthRoutes = {
+  live: { method: "GET", path: "/health/live" },
+  ready: { method: "GET", path: "/health/ready" },
+} as const satisfies Readonly<Record<string, WorkerPlaneRoute>>;
 
 /** Where a store route's own segments begin, which is what the raw url is cut at. */
-const sessionStorePrefix = "/v1/session/store/";
+const sessionStorePrefix = sessionPlaneRoutes.storeBatch.path.replace(
+  /\*$/u,
+  "",
+);
+
+/** Registers one handler at the method and path its route names, which is the only way a handler here is served. */
+type WorkerPlaneRegistrar = (
+  route: WorkerPlaneRoute,
+  handler: RouteHandlerMethod,
+) => void;
+
+function workerPlaneRegistrar(app: FastifyInstance): WorkerPlaneRegistrar {
+  return (route, handler) => {
+    app.route({ method: route.method, url: route.path, handler });
+  };
+}
 
 /** The ports a run's own evidence is written through, all five attempt-fenced. */
 export interface WorkerRunEvidencePorts {
@@ -193,49 +190,6 @@ export interface WorkerPlaneServerService {
   readonly uploadBytesMax: number;
 }
 
-/** Which of this plane's routes a service composed like this one serves. */
-export function workerPlaneServed(
-  service: WorkerPlaneServerService,
-): readonly string[] {
-  return service.sessions === undefined
-    ? workerPlaneRoutes.filter((route) => !route.startsWith(sessionRoutePrefix))
-    : workerPlaneRoutes;
-}
-
-/** One turn as a worker offers it; the server is what dates the stored row. */
-const workerRunTurnsSchema = z.strictObject({
-  turns: z
-    .array(
-      z.strictObject({
-        ordinal: z.number().int().positive().max(runTurnSeriesMax),
-        model: z.string().min(1).max(runModelCharsMax),
-        tokensInput: countSchema,
-        tokensOutput: countSchema,
-        tokensCacheCreation: countSchema,
-        tokensCacheRead: countSchema,
-      }),
-    )
-    .min(1)
-    .max(nativeHttpPageItemsMax),
-});
-
-/**
- * The same figures as a worker offers them. A response schema drops a field the
- * wire does not name, so an older browser survives a newer server; a write
- * refuses one instead, because a field the plane dropped in silence is a figure
- * the worker believes it put on record.
- */
-const workerRunTotalsSchema = z.strictObject({
-  ...runTotalsSchema.shape,
-  models: z
-    .array(z.strictObject(runModelUsageSchema.shape))
-    .max(nativeHttpPageItemsMax),
-});
-
-const workerRunEndedSchema = z.strictObject({
-  evidence: z.enum(runEndedEvidences),
-});
-
 /** The offered totals as the durable port takes them, an absent label omitted. */
 function workerRunTotals(
   offered: z.infer<typeof workerRunTotalsSchema>,
@@ -265,10 +219,10 @@ function workerRunEvents(content: Uint8Array): number {
 }
 
 function workerHeartbeatRoute(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  app.post(workerPlaneRoutes[3], async (request, reply) => {
+  register(workerPlaneRoutes.heartbeat, async (request, reply) => {
     const secret = workerBearer(request);
     if (secret === undefined) return reply.code(401).send({ action: "stop" });
     const authority = await workerAuthority(service, request);
@@ -285,11 +239,13 @@ function workerHeartbeatRoute(
 }
 
 function workerHealthRoutes(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  app.get(workerPlaneRoutes[0], () => ({ status: "live" }));
-  app.get(workerPlaneRoutes[1], async (_request, reply) =>
+  register(workerPlaneHealthRoutes.live, () => ({
+    status: "live",
+  }));
+  register(workerPlaneHealthRoutes.ready, async (_request, reply) =>
     (await service.ready())
       ? { status: "ready" }
       : reply.code(503).send({ status: "unready" }),
@@ -324,10 +280,10 @@ function workerBearer(request: FastifyRequest) {
 }
 
 function workerInputRoute(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  app.get(workerPlaneRoutes[2], async (request, reply) => {
+  register(workerPlaneRoutes.input, async (request, reply) => {
     const authority = await workerAuthority(service, request);
     if (authority === undefined || !authority.live)
       return reply.code(401).send({ action: "stop" });
@@ -340,10 +296,10 @@ function workerInputRoute(
 }
 
 function workerUploadRoute(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  app.put(workerPlaneRoutes[4], async (request, reply) => {
+  register(workerPlaneRoutes.artifact, async (request, reply) => {
     const authority = await workerAuthority(service, request);
     if (authority === undefined || !authority.live)
       return reply.code(401).send({ action: "stop" });
@@ -475,10 +431,10 @@ function workerRunDigest(content: Uint8Array) {
 }
 
 function workerRunConfigurationRoute(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  app.put(workerPlaneRoutes[6], async (request, reply) => {
+  register(workerPlaneRoutes.runConfiguration, async (request, reply) => {
     const writer = await workerRunWriter(service, request);
     if (writer === undefined) return reply.code(401).send({ action: "stop" });
     if (!(request.body instanceof Uint8Array))
@@ -507,10 +463,10 @@ function workerRunConfigurationRoute(
 }
 
 function workerRunTranscriptRoute(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  app.put(workerPlaneRoutes[7], async (request, reply) => {
+  register(workerPlaneRoutes.runTranscript, async (request, reply) => {
     const writer = await workerRunWriter(service, request);
     if (writer === undefined) return reply.code(401).send({ action: "stop" });
     if (!(request.body instanceof Uint8Array))
@@ -545,10 +501,10 @@ function workerRunTranscriptRoute(
 }
 
 function workerRunFigureRoutes(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  app.post(workerPlaneRoutes[8], async (request, reply) => {
+  register(workerPlaneRoutes.runTurns, async (request, reply) => {
     const writer = await workerRunWriter(service, request);
     if (writer === undefined) return reply.code(401).send({ action: "stop" });
     const offered = workerRunTurnsSchema.safeParse(request.body);
@@ -562,7 +518,7 @@ function workerRunFigureRoutes(
       ? reply.code(200).send({ turnsRecorded: recorded.turnsRecorded })
       : reply.code(409).send({ action: "stop", reason: recorded.recorded });
   });
-  app.post(workerPlaneRoutes[9], async (request, reply) => {
+  register(workerPlaneRoutes.runTotals, async (request, reply) => {
     const writer = await workerRunWriter(service, request);
     if (writer === undefined) return reply.code(401).send({ action: "stop" });
     const offered = workerRunTotalsSchema.safeParse(request.body);
@@ -578,7 +534,7 @@ function workerRunFigureRoutes(
           .code(workerRunStatus(stored))
           .send({ action: "stop", reason: stored });
   });
-  app.post(workerPlaneRoutes[10], async (request, reply) => {
+  register(workerPlaneRoutes.runEnded, async (request, reply) => {
     const writer = await workerRunWriter(service, request);
     if (writer === undefined) return reply.code(401).send({ action: "stop" });
     const offered = workerRunEndedSchema.safeParse(request.body);
@@ -612,10 +568,10 @@ function workerReportRefused(
 }
 
 function workerReportRoute(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  app.post(workerPlaneRoutes[5], async (request, reply) => {
+  register(workerPlaneRoutes.report, async (request, reply) => {
     const secret = workerBearer(request);
     if (secret === undefined) return reply.code(401).send({ action: "stop" });
     const authority = await workerAuthority(service, request);
@@ -664,10 +620,14 @@ function workerReportRoute(
 const workerCredentialRetryAfterSeconds = 1;
 
 /** What a plane holding no app key answers, which is the pod's signal to fall back. */
-const workerCredentialNotConfigured = { reason: "ForgeNotConfigured" };
+const workerCredentialNotConfigured: WorkerCredentialAbsent = {
+  reason: "ForgeNotConfigured",
+};
 
 /** What a plane that mints answers for a repository it may not mint for. */
-const workerCredentialNotMinted = { reason: "NotMinted" };
+const workerCredentialNotMinted: WorkerCredentialAbsent = {
+  reason: "NotMinted",
+};
 
 /** One repository as a session names it, refused here rather than by the brand. */
 const sessionCredentialSchema = z.strictObject({
@@ -707,10 +667,10 @@ function workerCredentialAnswered(
  * pod to name and nothing for it to widen.
  */
 function workerCredentialRoute(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  app.post(workerPlaneRoutes[11], async (request, reply) => {
+  register(workerPlaneRoutes.credential, async (request, reply) => {
     const authority = await workerAuthority(service, request);
     if (authority === undefined || !authority.live)
       return reply.code(401).send({ action: "stop" });
@@ -728,11 +688,11 @@ function workerCredentialRoute(
  * own bindings, and a session is never minted more than a read.
  */
 function sessionCredentialRoute(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   service: WorkerPlaneServerService,
   sessions: SessionPlaneService,
 ): void {
-  app.post(workerPlaneRoutes[21], async (request, reply) => {
+  register(sessionPlaneRoutes.credential, async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const offered = sessionCredentialSchema.safeParse(request.body);
@@ -908,10 +868,10 @@ function sessionSettled(
 }
 
 function sessionFactsRoute(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   sessions: SessionPlaneService,
 ): void {
-  app.get(workerPlaneRoutes[12], async (request, reply) => {
+  register(sessionPlaneRoutes.facts, async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const identity = caller.identity;
@@ -936,10 +896,10 @@ function sessionFactsRoute(
 }
 
 function sessionHeartbeatRoute(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   sessions: SessionPlaneService,
 ): void {
-  app.post(workerPlaneRoutes[13], async (request, reply) => {
+  register(sessionPlaneRoutes.heartbeat, async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     return (await sessions.heartbeats.heartbeat(
@@ -953,10 +913,10 @@ function sessionHeartbeatRoute(
 }
 
 function sessionReferenceRoute(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   sessions: SessionPlaneService,
 ): void {
-  app.put(workerPlaneRoutes[14], async (request, reply) => {
+  register(sessionPlaneRoutes.reference, async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const offered = sessionReferenceSchema.safeParse(request.body);
@@ -979,7 +939,7 @@ function sessionReferenceRoute(
  * cannot hold every connection this plane has.
  */
 function sessionTurnRoute(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   sessions: SessionPlaneService,
 ): void {
   const polls = Math.max(
@@ -987,7 +947,7 @@ function sessionTurnRoute(
     Math.ceil((sessions.turnPollSecsMax * 1_000) / sessions.turnPollIntervalMs),
   );
   let waiting = 0;
-  app.get(workerPlaneRoutes[15], async (request, reply) => {
+  register(sessionPlaneRoutes.turn, async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     if (waiting >= sessions.pollsMax) return reply.code(204).send();
@@ -1009,10 +969,10 @@ function sessionTurnRoute(
 }
 
 function sessionSettleRoutes(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   sessions: SessionPlaneService,
 ): void {
-  app.post(workerPlaneRoutes[16], async (request, reply) => {
+  register(sessionPlaneRoutes.turnAnswer, async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const offered = sessionTurnAnswerSchema.safeParse(request.body);
@@ -1031,7 +991,7 @@ function sessionSettleRoutes(
       }),
     );
   });
-  app.post(workerPlaneRoutes[17], async (request, reply) => {
+  register(sessionPlaneRoutes.turnFailure, async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const offered = sessionTurnFailureSchema.safeParse(request.body);
@@ -1046,7 +1006,7 @@ function sessionSettleRoutes(
       }),
     );
   });
-  app.post(workerPlaneRoutes[18], async (request, reply) => {
+  register(sessionPlaneRoutes.held, async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const held = await sessions.holds.hold(
@@ -1080,10 +1040,10 @@ function sessionStoreObjectRefusal(
 }
 
 function sessionStoreWriteRoute(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   sessions: SessionPlaneService,
 ): void {
-  app.put(workerPlaneRoutes[20], async (request, reply) => {
+  register(sessionPlaneRoutes.storeBatch, async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     if (!(request.body instanceof Uint8Array))
@@ -1139,10 +1099,10 @@ function sessionStoreWriteRoute(
  * thing to do about it, and the batches beside it are what the caller came for.
  */
 function sessionStoreReadRoute(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   sessions: SessionPlaneService,
 ): void {
-  app.get(workerPlaneRoutes[20], async (request, reply) => {
+  register(sessionPlaneRoutes.storePage, async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const segments = sessionStoreSegments(request);
@@ -1216,10 +1176,10 @@ function sessionStoreReadRoute(
  * to prevent.
  */
 function sessionStoreStreamsRoute(
-  app: FastifyInstance,
+  register: WorkerPlaneRegistrar,
   sessions: SessionPlaneService,
 ): void {
-  app.get(workerPlaneRoutes[19], async (request, reply) => {
+  register(sessionPlaneRoutes.storeStreams, async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const asked = (request.query as Record<string, unknown>)["stream"];
@@ -1267,33 +1227,34 @@ export function createWorkerPlaneApp(
 ): FastifyInstance {
   const app = fastify({ logger: false, bodyLimit: service.uploadBytesMax });
   app.addContentTypeParser(
-    "application/octet-stream",
+    workerPlaneBytesMediaType,
     { parseAs: "buffer" },
     (_request, body, done) => {
       done(null, body);
     },
   );
-  workerHealthRoutes(app, service);
-  workerInputRoute(app, service);
-  workerHeartbeatRoute(app, service);
-  workerUploadRoute(app, service);
-  workerReportRoute(app, service);
-  workerRunConfigurationRoute(app, service);
-  workerRunTranscriptRoute(app, service);
-  workerRunFigureRoutes(app, service);
-  workerCredentialRoute(app, service);
+  const register = workerPlaneRegistrar(app);
+  workerHealthRoutes(register, service);
+  workerInputRoute(register, service);
+  workerHeartbeatRoute(register, service);
+  workerUploadRoute(register, service);
+  workerReportRoute(register, service);
+  workerRunConfigurationRoute(register, service);
+  workerRunTranscriptRoute(register, service);
+  workerRunFigureRoutes(register, service);
+  workerCredentialRoute(register, service);
   const sessions = service.sessions;
   if (sessions !== undefined) {
     sessionBoundsChecked(sessions);
-    sessionCredentialRoute(app, service, sessions);
-    sessionFactsRoute(app, sessions);
-    sessionHeartbeatRoute(app, sessions);
-    sessionReferenceRoute(app, sessions);
-    sessionTurnRoute(app, sessions);
-    sessionSettleRoutes(app, sessions);
-    sessionStoreWriteRoute(app, sessions);
-    sessionStoreReadRoute(app, sessions);
-    sessionStoreStreamsRoute(app, sessions);
+    sessionCredentialRoute(register, service, sessions);
+    sessionFactsRoute(register, sessions);
+    sessionHeartbeatRoute(register, sessions);
+    sessionReferenceRoute(register, sessions);
+    sessionTurnRoute(register, sessions);
+    sessionSettleRoutes(register, sessions);
+    sessionStoreWriteRoute(register, sessions);
+    sessionStoreReadRoute(register, sessions);
+    sessionStoreStreamsRoute(register, sessions);
   }
   return app;
 }

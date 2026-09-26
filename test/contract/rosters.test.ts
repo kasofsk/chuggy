@@ -82,7 +82,15 @@ import {
   sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
 } from "../../src/contract/http.ts";
-import { resultManifestSchemaVersion } from "../../src/contract/workerDocuments.ts";
+import {
+  artifactFailures,
+  resultManifestRejections,
+  resultManifestSchemaVersion,
+} from "../../src/contract/workerDocuments.ts";
+import {
+  repositoryCredentialCharsMax,
+  workerInputReferencesMax,
+} from "../../src/contract/workerPlane.ts";
 import {
   runEndedEvidences as interpretedRunEndedEvidences,
   runTurnsPageLimitMax,
@@ -140,6 +148,8 @@ import {
   allFinalizationHoldKinds,
   allGitEvidence,
   finalizerIdentityCharsMax,
+  inputBundleReferencesMax,
+  repositoryCredentialCharsMax as interpretedRepositoryCredentialCharsMax,
   type FinalizationHoldKind,
 } from "../../src/interpreter/finalizer.ts";
 import type {
@@ -154,7 +164,11 @@ import type {
   RequirementSource as MaterializedRequirementSource,
 } from "../../src/interpreter/executionRequirement.ts";
 import { executionRequirementSchema } from "../../src/contract/responses.ts";
-import { allArtifactRoles } from "../../src/interpreter/resultManifest.ts";
+import {
+  allArtifactFailures,
+  allArtifactRoles,
+  allManifestRejections,
+} from "../../src/interpreter/resultManifest.ts";
 import {
   allNativeActionKinds,
   allNativeActionResolutions,
@@ -564,6 +578,8 @@ test("every session and refusal roster restates the interpreter's own", () => {
   );
   assert.deepEqual(operationTicketRefusalCodes, ticketRefusalTags);
   assert.deepEqual(operationBoundaryRefusalCodes, allBoundaryRefusalCodes);
+  assert.deepEqual(resultManifestRejections, allManifestRejections);
+  assert.deepEqual(artifactFailures, allArtifactFailures);
 });
 
 /**
@@ -583,6 +599,11 @@ test("the attention roster is the union the selector's own state carries", () =>
 test("every bound the wire restates holds the value its source does", () => {
   assert.equal(sessionCapabilitiesMax, interpretedSessionCapabilitiesMax);
   assert.equal(repositoryIdentityCharsMax, finalizerIdentityCharsMax);
+  assert.equal(
+    repositoryCredentialCharsMax,
+    interpretedRepositoryCredentialCharsMax,
+  );
+  assert.equal(workerInputReferencesMax, inputBundleReferencesMax);
   assert.equal(sessionTurnModelCharsMax, sessionIdentityCharsMax);
   assert.equal(leadRefusalsObservedMax, dispatchViewPageLimitMax);
   assert.equal(leadObservationBytesMax, sessionTurnInputCharsMax);

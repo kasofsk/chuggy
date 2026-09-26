@@ -6,12 +6,29 @@
  */
 
 import type {
+  SessionPlaneService,
   WorkerPlaneServerService,
   WorkerRunEvidencePorts,
 } from "../../src/adapters/http/workerPlaneServer.ts";
+import type { SessionPlaneAuthority } from "../../src/interpreter/sessionPlane.ts";
 
 /** A lease no fixture case renews and none is about. */
 const workerPlaneFixtureLeaseSecs = 300;
+
+/** The figures one run reports, which every totals case varies one field of. */
+export const runTotalsBody = {
+  turns: 2,
+  durationMs: 10,
+  durationApiMs: 5,
+  tokensInput: 1,
+  tokensOutput: 2,
+  tokensCacheCreation: 3,
+  tokensCacheRead: 4,
+  costUsdMicros: 7,
+  costBasis: "List",
+  models: [],
+  permissionDenials: 0,
+} as const;
 
 /** Every run-evidence port a case about something else never reaches. */
 export const inertRunEvidence: WorkerRunEvidencePorts = {
@@ -44,5 +61,35 @@ export function inertWorkerPlane(
     runEvidence: inertRunEvidence,
     ready: () => Promise.resolve(true),
     uploadBytesMax,
+  };
+}
+
+/** The session half of a whole plane, every port but its authority answering the least it can. */
+export function inertSessionPlane(
+  authority: SessionPlaneAuthority,
+): SessionPlaneService {
+  return {
+    authority,
+    heartbeats: { heartbeat: () => Promise.resolve(true) },
+    heartbeatLeaseSecs: workerPlaneFixtureLeaseSecs,
+    references: { bind: () => Promise.resolve("Bound") },
+    turns: { claim: () => Promise.resolve(undefined) },
+    settlements: {
+      answer: () => Promise.resolve("Answered"),
+      fail: () => Promise.resolve("Failed"),
+    },
+    holds: { hold: () => Promise.resolve(true) },
+    records: { record: () => Promise.resolve("Stored") },
+    queries: {
+      batches: () => Promise.resolve([]),
+      streams: () => Promise.resolve([]),
+    },
+    store: {
+      storeBatch: () => Promise.resolve({ stored: "Stored" }),
+      readBatch: () => Promise.resolve({ read: "NotFound" }),
+    },
+    turnPollIntervalMs: 1_000,
+    turnPollSecsMax: 1,
+    pollsMax: 64,
   };
 }

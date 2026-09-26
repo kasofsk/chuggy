@@ -23,7 +23,6 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import {
   createWorkerPlaneApp,
-  workerPlaneServed,
   type SessionPlaneService,
 } from "../../src/adapters/http/workerPlaneServer.ts";
 import {
@@ -46,7 +45,7 @@ import {
 import type { SessionPlaneIdentity } from "../../src/interpreter/sessionPlane.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
-import { inertWorkerPlane } from "./workerPlaneFixtures.ts";
+import { inertSessionPlane, inertWorkerPlane } from "./workerPlaneFixtures.ts";
 
 /** One bearer in the session language, which is the only token these routes read. */
 const secret = `chgs_${"a".repeat(32)}`;
@@ -65,30 +64,9 @@ const identity: SessionPlaneIdentity = {
 };
 
 /** Every session port answering the least it can, which a case overrides one of. */
-const inertSessions: SessionPlaneService = {
-  authority: { authenticate: () => Promise.resolve(identity) },
-  heartbeats: { heartbeat: () => Promise.resolve(true) },
-  heartbeatLeaseSecs: 300,
-  references: { bind: () => Promise.resolve("Bound") },
-  turns: { claim: () => Promise.resolve(undefined) },
-  settlements: {
-    answer: () => Promise.resolve("Answered"),
-    fail: () => Promise.resolve("Failed"),
-  },
-  holds: { hold: () => Promise.resolve(true) },
-  records: { record: () => Promise.resolve("Stored") },
-  queries: {
-    batches: () => Promise.resolve([]),
-    streams: () => Promise.resolve([]),
-  },
-  store: {
-    storeBatch: () => Promise.resolve({ stored: "Stored" }),
-    readBatch: () => Promise.resolve({ read: "NotFound" }),
-  },
-  turnPollIntervalMs: 1_000,
-  turnPollSecsMax: 1,
-  pollsMax: 64,
-};
+const inertSessions = inertSessionPlane({
+  authenticate: () => Promise.resolve(identity),
+});
 
 /** One batch of the caller's own store, which the cases about a page's shape share. */
 const oneOwnBatch = {
@@ -1305,12 +1283,6 @@ test("a session bound no loop could work around is refused at construction", () 
 
 test("a plane composed with no session plane serves no session route at all", async () => {
   const app = createWorkerPlaneApp(inertAttempt);
-  assert.deepEqual(
-    workerPlaneServed(inertAttempt).filter((route) =>
-      route.startsWith("/v1/session"),
-    ),
-    [],
-  );
   for (const [method, url, payload, kind] of sessionCalls) {
     const response = await app.inject({
       method,
@@ -1321,24 +1293,6 @@ test("a plane composed with no session plane serves no session route at all", as
     assert.equal(response.statusCode, 404, url);
   }
   await app.close();
-  const composed = { ...inertAttempt, sessions: inertSessions };
-  assert.deepEqual(
-    workerPlaneServed(composed).filter((route) =>
-      route.startsWith("/v1/session"),
-    ),
-    [
-      "/v1/session",
-      "/v1/session/heartbeat",
-      "/v1/session/reference",
-      "/v1/session/turn",
-      "/v1/session/turn/answer",
-      "/v1/session/turn/failure",
-      "/v1/session/held",
-      "/v1/session/store",
-      "/v1/session/store/*",
-      "/v1/session/credential",
-    ],
-  );
 });
 
 /**
