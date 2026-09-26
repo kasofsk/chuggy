@@ -450,6 +450,37 @@ test("an attempt a pool refused is withdrawn without spending, its execution blo
   assert.deepEqual(await poolRefusals(routed), [refusal]);
 });
 
+/**
+ * A refusal is ended and blocked in two transactions. Another pass can run
+ * between them, a second scheduler's or this one's after a crash, and finds
+ * the claimed attempt ended with no report; it blocks rather than settling the
+ * process as dead, and the block committed after it is the one already there.
+ */
+test("a pass between a refusal's end and its block blocks the execution as refused", async () => {
+  const routed = await poolRoutedExecution(rig, "pools-refused-window");
+  await poolRefused(routed, "no node takes this image");
+  const refused = (
+    await rig.store.refusedAttempts(
+      routed.project.epoch,
+      service.config.attemptsPerPassMax,
+    )
+  ).find((attempt) => attempt.execution === routed.execution);
+  assert.ok(refused);
+  assert.equal(
+    await rig.store.attemptEnded(refused, "Withdrawn", "PlacementRefused"),
+    true,
+  );
+  await executionSchedulerLaunch(service, routed.project.epoch);
+  assert.deepEqual(await poolRoutedStanding(rig, routed), refusedStanding);
+  const late = await rig.store.blockExecution(
+    routed.project.partition,
+    routed.execution,
+    "RequiredCapabilityUnavailable",
+  );
+  assert.equal(late.blocked, "AlreadyBlocked");
+  assert.deepEqual(await poolRoutedStanding(rig, routed), refusedStanding);
+});
+
 test("a refused attempt whose lease has also run out is not the reaper's, and the pass blocks it as refused", async () => {
   const routed = await poolRoutedExecution(rig, "pools-refused-lapsed");
   await poolRefused(routed, "no node takes this image");

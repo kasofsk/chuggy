@@ -716,7 +716,9 @@ export interface ExecutionSchedulerStore {
 
   /**
    * Terminalizes an execution whose attempt a pool claimed and that ended
-   * without a verified report, as `retriesExhausted` settles a spent budget.
+   * without a verified report, as `retriesExhausted` settles a spent budget,
+   * or blocks it as `RequiredCapabilityUnavailable` where the pool refused
+   * that attempt.
    */
   assignmentEnded(
     partition: Partition,

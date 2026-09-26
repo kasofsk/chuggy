@@ -27,9 +27,9 @@ export const workerPoolEvidenceCharsMax = 4_096;
 /** The longest image reference an assignment names. */
 export const workerImageCharsMax = 512;
 /**
- * The longest a pool may ask the orchestrator to wait before offering again,
- * which is the same ceiling a `retry-after` header is held to: a wait taken on
- * the other side's word is bounded by this side.
+ * The longest wait an `Unavailable` answer may name, which is the same ceiling
+ * a `retry-after` header is held to. The orchestrator accepts it and waits on
+ * nothing, because that answer concludes the assignment's execution.
  */
 export const workerPoolRetryAfterSecsMax = retryAfterSecondsMax;
 

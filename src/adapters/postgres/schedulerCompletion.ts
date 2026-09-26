@@ -43,7 +43,10 @@
  * reported one goes through. Writing the row directly would be a result that
  * skipped validation, which is the one thing the sealed type exists to prevent.
  * An execution whose attempt a pool claimed and that ended unreported settles
- * the same way, under a report that says so and bound to that attempt.
+ * the same way, under a report that says so and bound to that attempt. One
+ * whose attempt a pool refused is blocked instead, as the refusal's own pass
+ * blocks it, so a pass that runs between that pass's two transactions
+ * concludes it the same way.
  *
  * AND IT IS SUBMITTED UNDER ITS OWN OUTCOME, because that manifest is this
  * adapter's sentence and not a worker's. The failed verdict in it says the
@@ -616,36 +619,42 @@ export async function schedulerTerminalize(
   return schedulerSettle(client, standing.execution, report.manifest);
 }
 
+/** The attempt an unreported execution is settled on, and whether a pool refused it. */
+interface SchedulerUnreportedAttempt {
+  readonly attempt: string;
+  readonly refused: boolean;
+}
+
 /** The highest-numbered attempt that was not fenced, which is what an exhausted budget leaves. */
 async function schedulerLastReporter(
   client: pg.PoolClient,
   execution: LogicalExecution,
-): Promise<string | undefined> {
-  const found = await client.query<{ attempt: string }>(
-    sql`SELECT attempt FROM execution_attempt
+): Promise<SchedulerUnreportedAttempt | undefined> {
+  const found = await client.query<SchedulerUnreportedAttempt>(
+    sql`SELECT attempt, pool_refusal IS NOT NULL AS refused FROM execution_attempt
          WHERE tenant = ${execution.partition.tenant}
            AND project = ${execution.partition.project}
            AND execution = ${execution.execution}
            AND state <> 'Superseded'
          ORDER BY attempt_number DESC LIMIT 1`,
   );
-  return found.rows[0]?.attempt;
+  return found.rows[0];
 }
 
 /** The highest-numbered attempt a pool claimed, which is the assignment that ended. */
 async function schedulerLastAssigned(
   client: pg.PoolClient,
   execution: LogicalExecution,
-): Promise<string | undefined> {
-  const found = await client.query<{ attempt: string }>(
-    sql`SELECT attempt FROM execution_attempt
+): Promise<SchedulerUnreportedAttempt | undefined> {
+  const found = await client.query<SchedulerUnreportedAttempt>(
+    sql`SELECT attempt, pool_refusal IS NOT NULL AS refused FROM execution_attempt
          WHERE tenant = ${execution.partition.tenant}
            AND project = ${execution.partition.project}
            AND execution = ${execution.execution}
            AND pool IS NOT NULL
          ORDER BY attempt_number DESC LIMIT 1`,
   );
-  return found.rows[0]?.attempt;
+  return found.rows[0];
 }
 
 /** The explicit empty manifest an unreported execution settles under, sealed like any other. */
@@ -677,12 +686,16 @@ interface SchedulerUnreported {
   readonly reporter: (
     client: pg.PoolClient,
     execution: LogicalExecution,
-  ) => Promise<string | undefined>;
+  ) => Promise<SchedulerUnreportedAttempt | undefined>;
   readonly missing: string;
   readonly report: string;
 }
 
-/** Settles one logical task no worker reported for as a single failed completion, the process that died. */
+/**
+ * Settles one logical task no worker reported for as a single failed
+ * completion, the process that died, or blocks it where a pool refused the
+ * attempt it is settled on.
+ */
 async function schedulerSettleUnreported(
   client: pg.PoolClient,
   partition: Partition,
@@ -719,10 +732,21 @@ async function schedulerSettleUnreported(
       ),
     };
   }
+  if (reporter.refused) {
+    return schedulerBlockOpen(
+      client,
+      standing.execution,
+      "RequiredCapabilityUnavailable",
+    );
+  }
   return schedulerSettle(
     client,
     standing.execution,
-    schedulerEmptyManifest(standing.execution, reporter, unreported.report),
+    schedulerEmptyManifest(
+      standing.execution,
+      reporter.attempt,
+      unreported.report,
+    ),
     "ProcessFailed",
   );
 }
@@ -766,6 +790,22 @@ function schedulerSettledAlready(execution: LogicalExecution): Terminalized {
   return { terminalized: "AlreadyTerminal", outcome, operation };
 }
 
+/** Submits the block of a registration its caller found open, and what the boundary made of it. */
+async function schedulerBlockOpen(
+  client: pg.PoolClient,
+  execution: LogicalExecution,
+  reason: BlockedReason,
+): Promise<Terminalized> {
+  const submitted = await schedulerSubmit(
+    client,
+    execution,
+    "Blocked",
+    undefined,
+    reason,
+  );
+  return schedulerTerminalized(client, execution, "Blocked", submitted);
+}
+
 /** Retires one registration that definitively cannot run, releasing its slot as it settles. */
 export async function schedulerBlockExecution(
   client: pg.PoolClient,
@@ -790,19 +830,7 @@ export async function schedulerBlockExecution(
     default:
       return assertNever(standing);
   }
-  const submitted = await schedulerSubmit(
-    client,
-    standing.execution,
-    "Blocked",
-    undefined,
-    reason,
-  );
-  const settled = await schedulerTerminalized(
-    client,
-    standing.execution,
-    "Blocked",
-    submitted,
-  );
+  const settled = await schedulerBlockOpen(client, standing.execution, reason);
   if (
     settled.terminalized === "Terminalized" ||
     settled.terminalized === "AlreadyTerminal"

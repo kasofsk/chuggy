@@ -126,11 +126,11 @@ import { postgresOwnershipEpoch } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
+  schedulerAssignmentEnded,
   schedulerBlockExecution,
   schedulerEvidence,
   schedulerFulfilRequest,
   schedulerRecordIncident,
-  schedulerAssignmentEnded,
   schedulerRetriesExhausted,
   schedulerTerminalize,
 } from "./schedulerCompletion.ts";
