@@ -82,6 +82,7 @@ import {
   type WorkerPoolRegistry,
   type WorkerPoolRoster,
 } from "../../interpreter/workerPool.ts";
+import { asWorkerPoolClass } from "../../interpreter/workerPoolAssignment.ts";
 import {
   workerPoolTokensLiveMax,
   type WorkerPoolRegistrationTokens,
@@ -266,8 +267,9 @@ export function postgresWorkerPoolRoster(pool: pg.Pool): WorkerPoolRoster {
       const found = await pool.query<{
         pool: string;
         capabilities: string[];
+        class: string;
         principal: string;
-      }>(sql`SELECT w.pool,w.capabilities,w.principal FROM worker_pool w
+      }>(sql`SELECT w.pool,w.capabilities,w.class,w.principal FROM worker_pool w
         WHERE w.tenant=${partition.tenant} AND w.project=${partition.project}
         ORDER BY w.pool LIMIT ${workerPoolsAnsweredMax + 1}`);
       return {
@@ -275,6 +277,7 @@ export function postgresWorkerPoolRoster(pool: pg.Pool): WorkerPoolRoster {
           partition,
           pool: row.pool,
           capabilities: row.capabilities,
+          class: asWorkerPoolClass(row.class),
           principal: asPrincipal(row.principal),
         })),
         truncated: found.rows.length > workerPoolsAnsweredMax,

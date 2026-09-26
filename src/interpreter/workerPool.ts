@@ -91,9 +91,10 @@ export interface WorkerPoolRegistry {
   identify(principal: Principal): Promise<WorkerPoolIdentity | undefined>;
 }
 
-/** One registered pool as the scheduler reads it: its identity, and what it declared. */
+/** One registered pool as the scheduler reads it: its identity, what it declared, and its class. */
 export interface WorkerPoolRegistered extends WorkerPoolIdentity {
   readonly capabilities: readonly string[];
+  readonly class: WorkerPoolClass;
 }
 
 /** The most registered pools one read answers for a project. */
@@ -126,12 +127,20 @@ export async function workerPoolAdmitted(
 ): Promise<WorkerPoolIdentity | undefined> {
   const identity = await registry.identify(principal);
   if (identity === undefined) return undefined;
-  const authority = await access.authorize(
-    principal,
-    identity.partition,
-    "Execute",
+  return (await workerPoolExecutes(access, identity.partition, principal))
+    ? identity
+    : undefined;
+}
+
+/** Whether the authority permits a pool's principal to run its project's work, which is the one question a pool is admitted or revoked by. */
+export async function workerPoolExecutes(
+  access: ProjectAccess,
+  partition: Partition,
+  principal: Principal,
+): Promise<boolean> {
+  return (
+    (await access.authorize(principal, partition, "Execute")) !== undefined
   );
-  return authority === undefined ? undefined : identity;
 }
 
 /** A fault that left the issuer's client registry unchanged, or left it unknown whether it did. */

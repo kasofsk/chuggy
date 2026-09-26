@@ -19,6 +19,7 @@ import {
 } from "../../src/interpreter/executionScheduler.ts";
 import type { ExecutionSchedulerService } from "../../src/interpreter/executionSchedulerRun.ts";
 import { finalizerDefaults } from "../../src/interpreter/finalizer.ts";
+import type { ProjectAccessSettings } from "../../src/interpreter/projectAccess.ts";
 import { sessionSchedulerDefaults } from "../../src/interpreter/sessionScheduler.ts";
 import type { SessionSchedulerService } from "../../src/interpreter/sessionSchedulerRun.ts";
 import { blessedPracticeCatalog } from "../../src/interpreter/taskBriefing.ts";
@@ -33,6 +34,7 @@ export const schedulerRootService: Omit<
   | "priorEvaluationReports"
   | "ticketBriefs"
   | "workerPools"
+  | "access"
 > = {
   placement: {
     place: () =>
@@ -83,4 +85,10 @@ export const schedulerRootSessions: Omit<
     mirrors: {},
   },
   config: sessionSchedulerDefaults,
+};
+
+/** A project authority nothing listens at, which is what the root's own access adapter is asked of. */
+export const schedulerRootAccess: ProjectAccessSettings = {
+  readUrl: "http://127.0.0.1:1/",
+  requestTimeoutMs: 1_000,
 };

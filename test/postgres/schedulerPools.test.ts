@@ -4,51 +4,41 @@
  * attempt waits for a pool, and what the reaper does with one whose lease ran
  * out.
  *
- * NOTHING IN THIS TREE ROUTES WORK TO A POOL YET, so each case marks its own
- * execution through the owner's harness. Everything else is the role a
- * deployment runs: the store and the registry read are the scheduler's, a
- * registration is the API's and a claim is the pool plane's.
+ * Everything but the authority is the role a deployment runs: the store and
+ * the registry read are the scheduler's, a registration is the API's and a
+ * claim is the pool plane's. The authority holds its grants in memory, and
+ * every pool registered here is granted `Execute`; `test/keto/` asks a real
+ * one about a pool it withholds that from.
  *
  * A PASS IS INSTALLATION-WIDE and the cases share one database, so each reads
- * back only its own project's rows. Every execution here is routed to pools,
- * and the first port the in-cluster arm asks refuses, so a pass that placed
- * any of them fails the case that ran it.
+ * back only its own project's rows.
  */
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 
-import {
-  postgresPriorEvaluationReports,
-  postgresPriorWorkReports,
-} from "../../src/adapters/postgres/evaluationReports.ts";
-import { postgresPinnedConfigurations } from "../../src/adapters/postgres/pinnedConfigurations.ts";
 import { apiRole, poolPlaneRole } from "../../src/adapters/postgres/schema.ts";
-import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRegistry,
   postgresWorkerPoolRoster,
 } from "../../src/adapters/postgres/workerPool.ts";
-import type { ExecutionId } from "../../src/interpreter/executionScheduler.ts";
-import {
-  executionSchedulerLaunch,
-  type ExecutionSchedulerService,
-} from "../../src/interpreter/executionSchedulerRun.ts";
+import { executionSchedulerLaunch } from "../../src/interpreter/executionSchedulerRun.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { workerPoolsAnsweredMax } from "../../src/interpreter/workerPool.ts";
 import { postgresHarnessProject, postgresHarnessRolePool } from "./harness.ts";
+import { memoryProjectAccess } from "./projectAccessMemory.ts";
+import { schedulerInvocation, schedulerRigOpen } from "./schedulerHarness.ts";
 import {
-  schedulerClaimFor,
-  schedulerInvocation,
-  schedulerOwner,
-  schedulerProject,
-  schedulerRigOpen,
-  type SchedulerProject,
-} from "./schedulerHarness.ts";
-import { schedulerRootService } from "./schedulerRootPorts.ts";
+  poolRoutedExecution,
+  poolRoutedKey,
+  poolRoutedService,
+  poolRoutedStanding,
+  poolRoutedUnsettled,
+  type PoolRouted,
+} from "./schedulerPoolsHarness.ts";
 
 const rig = await schedulerRigOpen();
 const apiPool = postgresHarnessRolePool(apiRole);
@@ -62,60 +52,11 @@ after(async () => {
 const registry = postgresWorkerPoolRegistry(apiPool);
 const assignments = postgresWorkerPoolAssignments(planePool);
 const roster = postgresWorkerPoolRoster(rig.pool);
-
-/** A scheduler over the real store and registry, whose in-cluster arm refuses at its first port. */
-const service: ExecutionSchedulerService = {
-  ...schedulerRootService,
-  store: rig.store,
-  workerPools: roster,
-  policy: {
-    profileFor: (execution) =>
-      Promise.reject(
-        new Error(
-          `scheduler pools suite: ${execution.execution} was placed in the cluster`,
-        ),
-      ),
-  },
-  configurations: postgresPinnedConfigurations(rig.pool),
-  priorWorkReports: postgresPriorWorkReports(rig.pool),
-  priorEvaluationReports: postgresPriorEvaluationReports(rig.pool),
-  ticketBriefs: postgresTicketBrief(rig.pool),
-};
-
-/** One execution routed to its project's pools, and the project it belongs to. */
-interface Routed {
-  readonly project: SchedulerProject;
-  readonly execution: ExecutionId;
-}
-
-/** The key of a routed execution's row, in the order every statement here binds it. */
-function routedKey(routed: Routed): readonly string[] {
-  const { tenant, project } = routed.project.partition;
-  return [tenant, project, routed.execution];
-}
-
-/** The one execution of a fresh project, admitted under the platform default and marked for the project's pools. */
-async function routedExecution(label: string): Promise<Routed> {
-  const project = await schedulerProject(rig, label, { tasks: 1 });
-  const owner = schedulerOwner(label);
-  await rig.store.registerSpawn(
-    await schedulerClaimFor(rig, project.partition, project.request, owner),
-    1,
-  );
-  const admitted = await rig.store.admit(project.cluster);
-  if (admitted.admitted !== "Admitted")
-    throw new Error(`scheduler pools suite: ${label} admitted no execution`);
-  const routed = { project, execution: admitted.execution };
-  await rig.harness.query(
-    `UPDATE execution SET placement='Pool'
-      WHERE tenant=$1 AND project=$2 AND execution=$3`,
-    routedKey(routed),
-  );
-  return routed;
-}
+const access = memoryProjectAccess();
+const service = poolRoutedService(rig, access);
 
 /** The attempt the scheduler opens for a routed execution, with the lease and budget a pass opens it under. */
-async function routedAttempt(routed: Routed) {
+async function routedAttempt(routed: PoolRouted) {
   const opened = await rig.store.openAttempt({
     partition: routed.project.partition,
     execution: routed.execution,
@@ -131,12 +72,15 @@ async function routedAttempt(routed: Routed) {
   return opened.attempt;
 }
 
-/** Registers one pool under the API's role, declaring what the case wants it to. */
+/** Registers one pool under the API's role, declaring what the case wants it to, and grants it `Execute`. */
 async function poolRegistered(
   partition: Partition,
   pool: string,
   capabilities: readonly string[],
 ): Promise<void> {
+  const principal = asPrincipal(
+    `https://issuer.invalid#${pool}-${randomUUID()}`,
+  );
   assert.equal(
     await registry.register({
       partition,
@@ -144,53 +88,25 @@ async function poolRegistered(
       capabilities,
       class: "Dedicated",
       clientId: `chuggy-pool-${randomUUID()}`,
-      principal: asPrincipal(`https://issuer.invalid#${pool}-${randomUUID()}`),
+      principal,
     }),
     true,
   );
+  access.grant({ partition, principal, access: new Set(["Execute"]) });
 }
 
 /** Runs out the lease of every live attempt of this execution, as the owner. */
-async function leaseLapsed(routed: Routed): Promise<void> {
+async function leaseLapsed(routed: PoolRouted): Promise<void> {
   await rig.harness.query(
     `UPDATE execution_attempt SET lease_expires_at=now()-interval '1 second'
       WHERE tenant=$1 AND project=$2 AND execution=$3
         AND state IN ('Placing','Running')`,
-    routedKey(routed),
+    poolRoutedKey(routed),
   );
 }
-
-/** What the scheduler has made of one execution so far, read as the owner. */
-async function standing(routed: Routed): Promise<{
-  readonly execution: Record<string, unknown>;
-  readonly attempts: readonly Record<string, unknown>[];
-}> {
-  const key = routedKey(routed);
-  const [execution] = await rig.harness.query(
-    `SELECT status, outcome, blocked_reason, retries_spent::int AS retries_spent,
-            placement_backoff_from IS NOT NULL AS backed_off
-       FROM execution WHERE tenant=$1 AND project=$2 AND execution=$3`,
-    key,
-  );
-  assert.ok(execution !== undefined);
-  const attempts = await rig.harness.query(
-    `SELECT state, evidence, pool FROM execution_attempt
-      WHERE tenant=$1 AND project=$2 AND execution=$3
-      ORDER BY opened_at, attempt`,
-    key,
-  );
-  return { execution, attempts };
-}
-
-/** The standing of an execution the scheduler has not settled and has spent nothing on. */
-const unsettled = {
-  outcome: null,
-  blocked_reason: null,
-  retries_spent: 0,
-};
 
 test("an attempt no pool took ends withdrawn when its lease runs out, and spends nothing", async () => {
-  const routed = await routedExecution("pools-unclaimed");
+  const routed = await poolRoutedExecution(rig, "pools-unclaimed");
   await routedAttempt(routed);
   await leaseLapsed(routed);
   assert.equal(
@@ -200,8 +116,12 @@ test("an attempt no pool took ends withdrawn when its lease runs out, and spends
     ),
     1,
   );
-  assert.deepEqual(await standing(routed), {
-    execution: { status: "Launching", ...unsettled, backed_off: true },
+  assert.deepEqual(await poolRoutedStanding(rig, routed), {
+    execution: {
+      status: "Launching",
+      ...poolRoutedUnsettled,
+      backed_off: true,
+    },
     attempts: [
       { state: "Withdrawn", evidence: "PlacementUnavailable", pool: null },
     ],
@@ -209,7 +129,7 @@ test("an attempt no pool took ends withdrawn when its lease runs out, and spends
 });
 
 test("an attempt a pool held is lost when its lease runs out, and spends the budget", async () => {
-  const routed = await routedExecution("pools-claimed");
+  const routed = await poolRoutedExecution(rig, "pools-claimed");
   await poolRegistered(routed.project.partition, "claiming", [
     "Platform:Linux:Amd64",
   ]);
@@ -237,10 +157,10 @@ test("an attempt a pool held is lost when its lease runs out, and spends the bud
     ),
     1,
   );
-  assert.deepEqual(await standing(routed), {
+  assert.deepEqual(await poolRoutedStanding(rig, routed), {
     execution: {
       status: "Launching",
-      ...unsettled,
+      ...poolRoutedUnsettled,
       retries_spent: 1,
       backed_off: true,
     },
@@ -249,7 +169,7 @@ test("an attempt a pool held is lost when its lease runs out, and spends the bud
 });
 
 test("an execution routed to pools none of its project's is configured to run is blocked, and never placed", async () => {
-  const routed = await routedExecution("pools-incompatible");
+  const routed = await poolRoutedExecution(rig, "pools-incompatible");
   await poolRegistered(routed.project.partition, "arm", [
     "Platform:Linux:Arm64",
   ]);
@@ -259,7 +179,7 @@ test("an execution routed to pools none of its project's is configured to run is
     ["Platform:Linux:Amd64"],
   );
   await executionSchedulerLaunch(service, routed.project.epoch);
-  assert.deepEqual(await standing(routed), {
+  assert.deepEqual(await poolRoutedStanding(rig, routed), {
     execution: {
       status: "Terminal",
       outcome: "Blocked",
@@ -274,19 +194,23 @@ test("an execution routed to pools none of its project's is configured to run is
 });
 
 test("an execution routed to pools one of its project's is configured to run waits on its attempt, neither placed nor blocked", async () => {
-  const routed = await routedExecution("pools-compatible");
+  const routed = await poolRoutedExecution(rig, "pools-compatible");
   await poolRegistered(routed.project.partition, "amd", [
     "Platform:Linux:Amd64",
   ]);
   await executionSchedulerLaunch(service, routed.project.epoch);
-  assert.deepEqual(await standing(routed), {
-    execution: { status: "Launching", ...unsettled, backed_off: false },
+  assert.deepEqual(await poolRoutedStanding(rig, routed), {
+    execution: {
+      status: "Launching",
+      ...poolRoutedUnsettled,
+      backed_off: false,
+    },
     attempts: [{ state: "Placing", evidence: null, pool: null }],
   });
 });
 
 test("an execution whose attempt no pool took is opened again once the placement backoff has passed, and not before", async () => {
-  const routed = await routedExecution("pools-reopened");
+  const routed = await poolRoutedExecution(rig, "pools-reopened");
   await poolRegistered(routed.project.partition, "amd", [
     "Platform:Linux:Amd64",
   ]);
@@ -298,19 +222,27 @@ test("an execution whose attempt no pool took is opened again once the placement
     evidence: "PlacementUnavailable",
     pool: null,
   };
-  assert.deepEqual(await standing(routed), {
-    execution: { status: "Launching", ...unsettled, backed_off: true },
+  assert.deepEqual(await poolRoutedStanding(rig, routed), {
+    execution: {
+      status: "Launching",
+      ...poolRoutedUnsettled,
+      backed_off: true,
+    },
     attempts: [withdrawn],
   });
   await rig.harness.query(
     `UPDATE execution
         SET placement_backoff_from=placement_backoff_from-make_interval(secs=>$4)
       WHERE tenant=$1 AND project=$2 AND execution=$3`,
-    [...routedKey(routed), service.config.placementBackoffSecs],
+    [...poolRoutedKey(routed), service.config.placementBackoffSecs],
   );
   await executionSchedulerLaunch(service, routed.project.epoch);
-  assert.deepEqual(await standing(routed), {
-    execution: { status: "Launching", ...unsettled, backed_off: true },
+  assert.deepEqual(await poolRoutedStanding(rig, routed), {
+    execution: {
+      status: "Launching",
+      ...poolRoutedUnsettled,
+      backed_off: true,
+    },
     attempts: [withdrawn, { state: "Placing", evidence: null, pool: null }],
   });
 });

@@ -71,6 +71,7 @@ import {
   postgresHarnessNewEpoch,
   postgresHarnessRolePool,
 } from "./harness.ts";
+import { memoryProjectAccess } from "./projectAccessMemory.ts";
 import {
   schedulerClaimFor,
   schedulerEvaluationRequest,
@@ -228,6 +229,7 @@ function launching(
       cancel: () => Promise.resolve({ cancelled: "Accepted" }),
     },
     workerPools: postgresWorkerPoolRoster(rig.pool),
+    access: memoryProjectAccess(),
     policy: {
       profileFor: () =>
         Promise.resolve({

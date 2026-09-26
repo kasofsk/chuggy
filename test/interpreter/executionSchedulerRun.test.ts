@@ -74,7 +74,15 @@ import {
   asDraftBrief,
   type DraftBrief,
 } from "../../src/interpreter/ticketBrief.ts";
-import { asPrincipal } from "../../src/interpreter/principal.ts";
+import {
+  asPrincipal,
+  type Principal,
+} from "../../src/interpreter/principal.ts";
+import {
+  memberAuthority,
+  ProjectAccessUnavailable,
+  type ProjectAccess,
+} from "../../src/interpreter/projectAccess.ts";
 import type {
   WorkerPoolRegistered,
   WorkerPoolRosterPage,
@@ -84,6 +92,23 @@ const partition = {
   tenant: asTenantId("tenant"),
   project: asProjectId("project"),
 };
+
+/** An authority that permits `Execute` to every principal but the ones a case withholds it from, noting each question it is asked. */
+function poolAccess(
+  withheld: ReadonlySet<Principal> = new Set(),
+  asked: string[] = [],
+): ProjectAccess {
+  return {
+    authorize: (principal, where, kind) => {
+      asked.push(`${where.project}:${principal}:${kind}`);
+      return Promise.resolve(
+        withheld.has(principal) ? undefined : memberAuthority(principal),
+      );
+    },
+    authorizeTenant: () =>
+      Promise.reject(new Error("the scheduler asks no tenant question")),
+  };
+}
 const epoch = asRecoveryEpoch("epoch");
 const cluster = asClusterId("cluster");
 const owner = asSchedulerOwnerId("scheduler-one");
@@ -247,6 +272,7 @@ function serviceWith(
         return Promise.resolve({ pools: [], truncated: false });
       },
     },
+    access: poolAccess(),
     policy,
     configurations: { configuration: () => Promise.resolve(read) },
     runtimeFacts: { facts: () => Promise.resolve(facts) },
@@ -1307,15 +1333,17 @@ function registeredPool(
     partition: { ...partition, project },
     pool: "pool-one",
     capabilities,
+    class: "Dedicated",
     principal: asPrincipal("principal-one"),
   };
 }
 
-/** A pass over the fixture execution routed to pools, against the registry page a case supplies. */
+/** A pass over the fixture execution routed to pools, against the registry page and the authority a case supplies. */
 function poolLaunch(
   calls: string[],
   page: WorkerPoolRosterPage,
   seen: string[] = [],
+  access: ProjectAccess = poolAccess(),
 ): Promise<number> {
   const service = serviceWith(calls, runnable, placedOk);
   return executionSchedulerLaunch(
@@ -1339,6 +1367,7 @@ function poolLaunch(
           return Promise.resolve(page);
         },
       },
+      access,
       metrics: schedulerTelemetry(recordingMetrics(seen)),
     },
     epoch,
@@ -1387,4 +1416,73 @@ test("a registry page cut short never blocks, since a pool past it may be config
   const calls: string[] = [];
   assert.equal(await poolLaunch(calls, { pools: [], truncated: true }), 0);
   assert.deepEqual(calls, ["registered:project"]);
+});
+
+test("a pool the authority withholds Execute from is revoked, so an execution only it would run is blocked", async () => {
+  const revoked = {
+    ...registeredPool(["Platform:Linux:Amd64"]),
+    pool: "revoked",
+    principal: asPrincipal("principal-revoked"),
+  };
+  const arm = registeredPool(["Platform:Linux:Arm64"]);
+  const calls: string[] = [];
+  const asked: string[] = [];
+  assert.equal(
+    await poolLaunch(
+      calls,
+      { pools: [revoked, arm], truncated: false },
+      [],
+      poolAccess(new Set([revoked.principal]), asked),
+    ),
+    0,
+  );
+  assert.deepEqual(calls, [
+    "registered:project",
+    "ended:Withdrawn:PlacementIncompatible",
+    "blocked:RequiredCapabilityUnavailable",
+  ]);
+  assert.deepEqual(asked.sort(), [
+    "project:principal-one:Execute",
+    "project:principal-revoked:Execute",
+  ]);
+});
+
+test("a pool of a class the routed demand refuses is not configured, so an execution only it would run is blocked", async () => {
+  const calls: string[] = [];
+  assert.equal(
+    await poolLaunch(calls, {
+      pools: [
+        { ...registeredPool(["Platform:Linux:Amd64"]), class: "Personal" },
+      ],
+      truncated: false,
+    }),
+    0,
+  );
+  assert.deepEqual(calls, [
+    "registered:project",
+    "ended:Withdrawn:PlacementIncompatible",
+    "blocked:RequiredCapabilityUnavailable",
+  ]);
+});
+
+test("an authority that cannot answer decides nothing, so the execution is held and never blocked", async () => {
+  for (const failure of [
+    new ProjectAccessUnavailable("the authority did not answer"),
+    new Error("the authority answered something unreadable"),
+  ]) {
+    const calls: string[] = [];
+    assert.equal(
+      await poolLaunch(
+        calls,
+        { pools: [registeredPool(["Platform:Linux:Arm64"])], truncated: false },
+        [],
+        {
+          authorize: () => Promise.reject(failure),
+          authorizeTenant: () => Promise.reject(failure),
+        },
+      ),
+      0,
+    );
+    assert.deepEqual(calls, ["registered:project"]);
+  }
 });

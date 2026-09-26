@@ -512,7 +512,13 @@ export interface SchedulerProcessRootConfig {
     | "priorEvaluationReports"
     | "ticketBriefs"
     | "workerPools"
+    | "access"
   >;
+  /**
+   * Where the project authority is. A pass asks it whether a registered pool
+   * may still run its project's work, which no row in this database says.
+   */
+  readonly access: ProjectAccessSettings;
   /**
    * The session half of the same process; its own store and its binding read
    * come from the same pool, so a deployment names neither.
@@ -526,9 +532,11 @@ export interface SchedulerProcessRootConfig {
 export function schedulerProcessRootService(
   pool: pg.Pool,
   service: SchedulerProcessRootConfig["service"],
+  access: ProjectAccessSettings,
 ): ExecutionSchedulerService {
   return {
     ...service,
+    access: ketoProjectAccess(access),
     store: postgresExecutionScheduler(pool),
     configurations: postgresPinnedConfigurations(pool),
     priorWorkReports: postgresPriorWorkReports(pool),
@@ -561,7 +569,11 @@ export function schedulerProcessRoot(
   config: SchedulerProcessRootConfig,
 ): ServiceRuntime {
   const pool = processPool(config.database);
-  const service = schedulerProcessRootService(pool, config.service);
+  const service = schedulerProcessRootService(
+    pool,
+    config.service,
+    config.access,
+  );
   return ownedProcess(
     pool,
     schedulerProcess(

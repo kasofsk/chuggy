@@ -45,11 +45,10 @@
  * epoch, because a restore withdraws the authority a scheduler was holding
  * before it.
  *
- * AN ATTEMPT OFFERED TO POOLS THAT NO POOL HOLDS NEVER RAN. When its lease
- * lapses it is `runner.qnt`'s `Unavailable`, the hold the placement port
- * answers for an attempt the cluster would not take, and it is withdrawn the
- * same way, as `PlacementUnavailable` and without spending the budget. One a
- * pool holds ran, and is lost like any other.
+ * AN ATTEMPT OFFERED TO POOLS THAT NO POOL HOLDS NEVER RAN. The reaper reads
+ * one whose execution is placed with pools and whose `pool` is null as that,
+ * and withdraws it as `PlacementUnavailable` without spending the budget. One
+ * a pool holds ran, and is lost like any other.
  *
  * ROWS ARE TAKEN IN ONE ORDER: REQUEST, THEN EXECUTION, THEN PROJECT, THEN
  * ATTEMPT — AND WITHIN EACH OF THOSE, IN KEY ORDER. A worker reporting on a

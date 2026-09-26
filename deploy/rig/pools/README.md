@@ -40,7 +40,10 @@ declaration covers, a platform being declared as a token such as
 `Platform:Linux:Amd64`, and mints a forge credential for any repository the
 project binds (`src/interpreter/forgeCredentials.ts`). Both are revoked by
 taking the relation back, so a revoked pool stops being admitted without
-anything being deleted (`src/interpreter/workerPool.ts`).
+anything being deleted (`src/interpreter/workerPool.ts`). The scheduler asks
+the authority the same question of every registered pool, so a revoked one is
+not counted as able to run the project's work either: work that only it could
+run is blocked, and an authority the scheduler cannot reach blocks nothing.
 
 **The pool's host sees everything the harness sees.** This is not a gap waiting
 on a fix — it is what running the work means. The machine executing a harness
@@ -71,7 +74,8 @@ host the rig does not run and those controls say nothing about.
 **The deployed relation model gains `pools` first.** Keto writes a tuple naming
 any relation whether or not the model declares one, so a registration against a
 model without `pools` succeeds, answers nothing, and every poll that pool makes
-is refused as though it were never registered. The deployed model is the
+is refused as though it were never registered; the scheduler reads that pool as
+revoked, and blocks the work only it could run. The deployed model is the
 fabric's; `.chug/tasks/keto/namespaces.ts` is the copy `check-keto.sh` drives
 its own server with, and `deploy/rig/keto/README.md` is why reading one against
 the other is a hand operation.

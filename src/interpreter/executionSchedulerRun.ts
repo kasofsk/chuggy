@@ -83,10 +83,12 @@
  * that never reached one.
  *
  * AN EXECUTION ROUTED TO POOLS IS NEVER PLACED HERE. Its attempt is opened and
- * the registry asked `runner.qnt`'s `placementOutcome`, which is the two
- * inabilities again: no registered pool configured to run it blocks, and one
- * that could is a hold. A held attempt waits on its own lease, and one no pool
- * holds when that lapses is withdrawn without spending the budget.
+ * `runner.qnt`'s `placementOutcome` asked of the pools its project registered,
+ * each revoked where the project authority withholds its `Execute`. That is
+ * the two inabilities again: no pool configured to run it blocks, and one that
+ * could is a hold, as is an authority that could not answer. A held attempt
+ * waits on its own lease, and one no pool holds when that lapses is withdrawn
+ * without spending the budget.
  *
  * NOTHING HERE READS A CLOCK. Claim leases, placement backoff and attempt
  * leases are durations handed to the store, which asks the database what time
@@ -132,8 +134,16 @@ import {
 } from "./taskBriefing.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
 import type { TicketBriefPort } from "./ticketBrief.ts";
-import type { WorkerPoolRoster } from "./workerPool.ts";
-import { workerPoolOutcomeRegistered } from "./workerPoolAssignment.ts";
+import type { ProjectAccess } from "./projectAccess.ts";
+import {
+  workerPoolExecutes,
+  type WorkerPoolRegistered,
+  type WorkerPoolRoster,
+} from "./workerPool.ts";
+import {
+  workerPoolOutcomeRegistered,
+  type WorkerPoolAnswered,
+} from "./workerPoolAssignment.ts";
 import { workTaskInvocation } from "./workerTask.ts";
 
 /** Everything a scheduler pass calls out through, and the bounds it works within. */
@@ -141,6 +151,7 @@ export interface ExecutionSchedulerService {
   readonly store: ExecutionSchedulerStore;
   readonly placement: AttemptPlacementPort;
   readonly workerPools: WorkerPoolRoster;
+  readonly access: ProjectAccess;
   readonly policy: ExecutionPolicy;
   readonly configurations: PinnedConfigurationPort;
   readonly runtimeFacts: RuntimeFactsPort;
@@ -649,10 +660,32 @@ async function schedulerPlace(
   }
 }
 
+/** Each pool beside whether the authority withholds its `Execute`, or nothing where the authority could not answer, which decides nothing this pass. */
+async function schedulerPoolsAnswered(
+  access: ProjectAccess,
+  pools: readonly WorkerPoolRegistered[],
+): Promise<readonly WorkerPoolAnswered[] | undefined> {
+  try {
+    return await Promise.all(
+      pools.map(async (pool) => ({
+        ...pool,
+        revoked: !(await workerPoolExecutes(
+          access,
+          pool.partition,
+          pool.principal,
+        )),
+      })),
+    );
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Asks what can be said of an execution routed to pools against the pools its
  * project registered, and blocks the one no pool is configured to run. A page
- * the registry cut short never blocks, since a pool past it may be.
+ * the registry cut short never blocks, since a pool past it may be, and an
+ * undecided authority holds.
  */
 async function schedulerHoldForPools(
   service: ExecutionSchedulerService,
@@ -660,7 +693,12 @@ async function schedulerHoldForPools(
   attempt: PhysicalAttempt,
 ): Promise<void> {
   const registered = await service.workerPools.registered(execution.partition);
-  const outcome = workerPoolOutcomeRegistered(execution, registered.pools);
+  const answered = await schedulerPoolsAnswered(
+    service.access,
+    registered.pools,
+  );
+  if (answered === undefined) return;
+  const outcome = workerPoolOutcomeRegistered(execution, answered);
   switch (outcome) {
     case "DefinitiveIncompatibility":
       if (registered.truncated) return;

@@ -8858,6 +8858,7 @@ test("020 records a pool's class, the one class there is for each pool already r
     assert.deepEqual(await poolClassPrivileges(subject), [
       { role: apiRole, read: true, insert: true, update: false },
       { role: poolPlaneRole, read: true, insert: false, update: false },
+      { role: schedulerRole, read: true, insert: false, update: false },
     ]);
   });
 });
@@ -8877,7 +8878,7 @@ async function schedulerPoolColumns(
   return found.rows.map((row) => row.attname);
 }
 
-test("021 lets the scheduler read what a registered pool declared, and not its client or its registration", async () => {
+test("021 lets the scheduler read a registered pool's project, name, declaration, principal and class, and no other column", async () => {
   await migrationDatabase("scheduler_pools", async (subject) => {
     await installationBefore(subject, migration021.version);
     assert.deepEqual(await schedulerPoolColumns(subject), []);
@@ -8888,6 +8889,7 @@ test("021 lets the scheduler read what a registered pool declared, and not its c
       "pool",
       "capabilities",
       "principal",
+      "class",
     ]);
   });
 });

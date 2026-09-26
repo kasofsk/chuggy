@@ -31,6 +31,7 @@ import {
 import { sessionTaskVariable } from "../../src/contract/workerEnvironment.ts";
 import type { SessionBounds } from "../../src/contract/workerTask.ts";
 import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
+import { projectAccessTimeoutMsDefault } from "../../src/interpreter/projectAccess.ts";
 import { sessionSchedulerDefaults } from "../../src/interpreter/sessionScheduler.ts";
 import {
   finalizerDefaults,
@@ -119,6 +120,7 @@ const environment: Readonly<Record<string, string>> = {
   CHUG_SCHEDULER_SESSION_POLICY: JSON.stringify(sessionPolicy),
   CHUG_SCHEDULER_SESSION_MODEL: "claude-opus-4-5",
   CHUG_SCHEDULER_SESSION_API_URL: "http://chuggy-api.invalid:3000",
+  CHUG_SCHEDULER_KETO_READ_URL: "http://keto-read.invalid:4466/",
 };
 
 /** Every variable the command refuses to start without. */
@@ -230,6 +232,10 @@ const parsed = {
     profile: { profile: "session", runtimeVersion: "1" },
     grant,
     mirrors: {},
+  },
+  access: {
+    readUrl: "http://keto-read.invalid:4466/",
+    requestTimeoutMs: projectAccessTimeoutMsDefault,
   },
 };
 
@@ -678,6 +684,18 @@ test("a stated bound is taken and the rest stay the published defaults", async (
   assert.deepEqual(found.parsed.scheduler, {
     ...executionSchedulerDefaults,
     admissionsPerPassMax: 4,
+  });
+});
+
+test("a stated project authority timeout is taken", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(
+      parseProgram({ ...environment, CHUG_SCHEDULER_KETO_TIMEOUT_MS: "250" }),
+    ),
+  ) as { readonly parsed: { readonly access: unknown } };
+  assert.deepEqual(found.parsed.access, {
+    readUrl: "http://keto-read.invalid:4466/",
+    requestTimeoutMs: 250,
   });
 });
 
