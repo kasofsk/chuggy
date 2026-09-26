@@ -186,11 +186,15 @@ test("a placed pod is named for its assignment and asks for the box it was offer
   assert.equal(pod.spec.containers[0]?.env[0]?.name, workerTaskVariable);
 });
 
-/** The pod one site places for `assignment`, as the cluster was asked to create it. */
-async function placedPod(site: KubernetesPoolPlacementConfig): Promise<{
+/** The pod one site places for an assignment, as the cluster was asked to create it. */
+async function placedPod(
+  site: KubernetesPoolPlacementConfig,
+  placed: WorkerPoolAssignment = assignment,
+): Promise<{
   spec: {
     activeDeadlineSeconds: number;
     containers: readonly {
+      image: string;
       volumeMounts: readonly {
         name: string;
         mountPath: string;
@@ -200,15 +204,28 @@ async function placedPod(site: KubernetesPoolPlacementConfig): Promise<{
     volumes: readonly { name: string; emptyDir?: unknown }[];
   };
 }> {
-  const name = kubernetesPoolPodName(site, assignment.assignment);
+  const name = kubernetesPoolPodName(site, placed.assignment);
   const { reached, fetcher } = cluster((made) =>
     made.path.startsWith("/api/v1/namespaces/pool/pods")
       ? created(name)
       : new Response("{}", { status: 201 }),
   );
-  await kubernetesPoolBackend(site, fetcher).place(assignment);
+  await kubernetesPoolBackend(site, fetcher).place(placed);
   return reached[0]?.body as Awaited<ReturnType<typeof placedPod>>;
 }
+
+test("a pod runs the image its assignment names, and the site's own where it names none", async () => {
+  const image = `registry.invalid/pinned-worker@sha256:${"c".repeat(64)}`;
+  assert.equal(
+    (await placedPod(config, { ...assignment, image })).spec.containers[0]
+      ?.image,
+    image,
+  );
+  assert.equal(
+    (await placedPod(config)).spec.containers[0]?.image,
+    config.image,
+  );
+});
 
 /** Catches a pool whose own bound on its workloads is enforced nowhere. */
 test("a pod runs no longer than the pool's own bound where the plane would let it run longer", async () => {

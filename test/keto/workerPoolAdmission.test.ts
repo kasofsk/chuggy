@@ -39,7 +39,7 @@ function registryOf(
   const identity: WorkerPoolIdentity = {
     partition,
     pool: "pool-one",
-    capabilities: ["linux-containers"],
+    principal,
   };
   return {
     register: () => Promise.resolve(true),
@@ -50,7 +50,7 @@ function registryOf(
   };
 }
 
-test("a registered pool the authority permits is admitted with what it declared", async () => {
+test("a registered pool the authority permits is admitted as the registration its principal names", async () => {
   const partition = ketoHarnessPartition("pool-admitted");
   const principal = oidcPrincipal(ketoHarnessIssuer, "chuggy-pool-admitted");
   await grants.write(
@@ -71,7 +71,7 @@ test("a registered pool the authority permits is admitted with what it declared"
     {
       partition,
       pool: "pool-one",
-      capabilities: ["linux-containers"],
+      principal,
     },
   );
 });

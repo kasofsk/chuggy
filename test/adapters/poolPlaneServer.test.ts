@@ -8,6 +8,7 @@ import {
   contractVersionRefusalStatus,
   workerContractHeader,
   workerContractRelease,
+  workerContractVersionText,
 } from "../../src/contract/workerContract.ts";
 import {
   workerPoolPollQuery,
@@ -15,6 +16,7 @@ import {
   workerPoolReconciliationSchema,
   workerPoolSettlementPath,
 } from "../../src/contract/workerPool.ts";
+import { workerContractAccepted } from "../../src/interpreter/workerPlane.ts";
 import type {
   WorkerPoolAssignments,
   WorkerPoolIdentity,
@@ -30,14 +32,27 @@ import {
 } from "../../src/interpreter/projectAccess.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 
+const issuer = "https://issuer.invalid";
+
+/** The one client the fake issuer knows, and the principal its subject resolves to. */
+const poolToken = "pool-token";
+const poolPrincipal = oidcPrincipal(issuer, "client-one");
+
 const partition = { tenant: "tenant", project: "project" } as Partition;
 const identity: WorkerPoolIdentity = {
   partition,
   pool: "pool-one",
-  capabilities: ["linux"],
+  principal: poolPrincipal,
 };
 
-const issuer = "https://issuer.invalid";
+/** The image the one claimed execution pinned. */
+const pinned = `registry.invalid/worker@sha256:${"a".repeat(64)}`;
+
+/** A pool's token and the release it speaks, which is this plane's own. */
+const speaking = {
+  authorization: `Bearer ${poolToken}`,
+  [workerContractHeader]: workerContractRelease,
+};
 
 /** The poll's address carrying one `held` per assignment and the room asked for. */
 function polling(held: readonly string[], wanted = 1): string {
@@ -47,9 +62,6 @@ function polling(held: readonly string[], wanted = 1): string {
   ]).toString();
   return `${workerPoolPollRoute}?${query}`;
 }
-/** The one client the fake issuer knows, and the principal its subject resolves to. */
-const poolToken = "pool-token";
-const poolPrincipal = oidcPrincipal(issuer, "client-one");
 
 /** Records every call a route made, so the route's mapping is what the case reads. */
 function calls(): {
@@ -61,11 +73,20 @@ function calls(): {
   return {
     made,
     ports: {
-      claim: (_identity, _leaseSecs, assignment) => {
+      claim: (_identity, _terms, assignment) => {
         made.push(["claim", assignment]);
         claims += 1;
         return Promise.resolve(
-          claims === 1 ? { capabilities: ["linux"] } : undefined,
+          claims === 1
+            ? {
+                requirement: {
+                  mode: "Container",
+                  operatingSystem: "Linux",
+                  architecture: "Amd64",
+                  image: pinned,
+                },
+              }
+            : undefined,
         );
       },
       renew: (_identity, assignment) =>
@@ -150,14 +171,15 @@ test("one poll renews what is held, says what must stop and hands over what it c
   const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
     method: "GET",
     url: polling(["live", "gone"]),
-    headers: { authorization: "Bearer pool-token" },
+    headers: speaking,
   });
   assert.equal(answered.statusCode, 200);
   assert.deepEqual(answered.json(), {
     assignments: [
       {
         assignment: "minted-1",
-        capabilities: ["linux"],
+        capabilities: ["Platform:Linux:Amd64"],
+        image: pinned,
         cpuMillis: 500,
         memoryMib: 256,
         deadlineSecs: 600,
@@ -179,7 +201,7 @@ test("a pool wanting none is renewed, told what to stop and claimed nothing", as
   const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
     method: "GET",
     url: polling(["live", "gone"], 0),
-    headers: { authorization: "Bearer pool-token" },
+    headers: speaking,
   });
   assert.equal(answered.statusCode, 200);
   assert.deepEqual(answered.json(), { assignments: [], stop: ["gone"] });
@@ -194,7 +216,7 @@ test("a pool wanting more than the plane hands out per poll is claimed the plane
   const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
     method: "GET",
     url: polling([], 5),
-    headers: { authorization: "Bearer pool-token" },
+    headers: speaking,
   });
   assert.equal(answered.statusCode, 200);
   assert.equal(
@@ -211,7 +233,7 @@ test("a poll that does not say its room, or says it as no count, is refused", as
     const answered = await app.inject({
       method: "GET",
       url: `${workerPoolPollRoute}${query}`,
-      headers: { authorization: "Bearer pool-token" },
+      headers: speaking,
     });
     assert.equal(answered.statusCode, 400, query);
     assert.equal(answered.body, "");
@@ -224,7 +246,7 @@ test("a pool already at its bound still polls and is answered with control alone
   const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
     method: "GET",
     url: polling(["live", "live", "live"]),
-    headers: { authorization: "Bearer pool-token" },
+    headers: speaking,
   });
   assert.deepEqual(answered.json(), { assignments: [], stop: [] });
   assert.deepEqual(recorded.made, [
@@ -238,7 +260,7 @@ test("a list longer than the bound is refused rather than cut", async () => {
   const answered = await createPoolPlaneApp(plane(calls().ports)).inject({
     method: "GET",
     url: polling(["one", "two", "three", "four"]),
-    headers: { authorization: "Bearer pool-token" },
+    headers: speaking,
   });
   assert.equal(answered.statusCode, 400);
   assert.equal(answered.body, "");
@@ -261,7 +283,7 @@ for (const [why, headers, status] of [
     const answered = await createPoolPlaneApp(plane(calls().ports)).inject({
       method: "GET",
       url: polling([]),
-      headers,
+      headers: { ...headers, [workerContractHeader]: workerContractRelease },
     });
     assert.equal(answered.statusCode, status);
     assert.equal(answered.body, "");
@@ -273,7 +295,7 @@ test("a pool the authority refuses is told it is not there rather than told to r
   ).inject({
     method: "GET",
     url: polling([]),
-    headers: { authorization: "Bearer pool-token" },
+    headers: speaking,
   });
   assert.equal(answered.statusCode, 404);
   assert.equal(answered.body, "");
@@ -286,7 +308,7 @@ test("a pool polling through an authority outage is told to retry", async () => 
   ).inject({
     method: "GET",
     url: polling([]),
-    headers: { authorization: "Bearer pool-token" },
+    headers: speaking,
   });
   assert.equal(answered.statusCode, 503);
   assert.equal(answered.body, "");
@@ -309,7 +331,7 @@ test("each settlement route reaches the one port its own path names", async () =
     const answered = await app.inject({
       method: "POST",
       url,
-      headers: { authorization: "Bearer pool-token" },
+      headers: speaking,
       payload,
     });
     assert.equal(answered.statusCode, 204, url);
@@ -326,7 +348,7 @@ test("a settlement whose body does not carry what its path needs is refused", as
   const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
     method: "POST",
     url: workerPoolSettlementPath("Refused", "one"),
-    headers: { authorization: "Bearer pool-token" },
+    headers: speaking,
     payload: { retryAfterSecs: 30 },
   });
   assert.equal(answered.statusCode, 400);
@@ -334,25 +356,38 @@ test("a settlement whose body does not carry what its path needs is refused", as
   assert.deepEqual(recorded.made, []);
 });
 
-test("a release the plane does not serve is refused at the poll and at every settlement, before any port", async () => {
+/** A later minor than the one this plane was built with, which it cannot serve. */
+const unreleased = `${String(workerContractAccepted.max.major)}.${String(workerContractAccepted.max.minor + 1)}.0`;
+
+test("a pool naming no release, the first release or one later than the plane's is refused at the poll and at every settlement, before any port", async () => {
   const recorded = calls();
   const app = createPoolPlaneApp(plane(recorded.ports));
-  const headers = {
-    authorization: "Bearer pool-token",
-    [workerContractHeader]: "1.1.0",
-  };
-  for (const [method, url] of [
-    ["GET", polling(["live"])],
-    ["POST", workerPoolSettlementPath("Accepted", "one")],
-    ["POST", workerPoolSettlementPath("Refused", "one")],
-    ["POST", workerPoolSettlementPath("Unavailable", "one")],
-  ] as const) {
-    const refused = await app.inject({ method, url, headers, payload: {} });
-    assert.equal(refused.statusCode, contractVersionRefusalStatus, url);
-    assert.deepEqual(
-      contractVersionRefusalSchema.parse(refused.json()),
-      refused.json(),
-    );
+  for (const offered of [undefined, "1.0.0", unreleased]) {
+    const headers = {
+      authorization: `Bearer ${poolToken}`,
+      ...(offered === undefined ? {} : { [workerContractHeader]: offered }),
+    };
+    for (const [method, url] of [
+      ["GET", polling(["live"])],
+      ["POST", workerPoolSettlementPath("Accepted", "one")],
+      ["POST", workerPoolSettlementPath("Refused", "one")],
+      ["POST", workerPoolSettlementPath("Unavailable", "one")],
+    ] as const) {
+      const refused = await app.inject({ method, url, headers, payload: {} });
+      assert.equal(
+        refused.statusCode,
+        contractVersionRefusalStatus,
+        `${String(offered)} ${url}`,
+      );
+      assert.deepEqual(contractVersionRefusalSchema.parse(refused.json()), {
+        action: "stop",
+        reason: "UnsupportedContractVersion",
+        accepted: {
+          min: "1.1",
+          max: workerContractVersionText(workerContractAccepted.max),
+        },
+      });
+    }
   }
   assert.deepEqual(recorded.made, []);
 });
@@ -367,11 +402,18 @@ test("every answer names the plane's release, the probes' and the framework's ow
     },
     ready: () => Promise.resolve(false),
   };
-  const token = { authorization: "Bearer pool-token" };
+  const token = speaking;
   for (const [service, method, url, headers, status] of [
     [plane(ports), "GET", polling(["live"]), token, 200],
     [plane(ports), "GET", polling(["a", "b", "c", "d"]), token, 400],
-    [plane(ports), "GET", polling([]), {}, 401],
+    [
+      plane(ports),
+      "GET",
+      polling([]),
+      { [workerContractHeader]: workerContractRelease },
+      401,
+    ],
+    [plane(ports), "GET", polling([]), {}, contractVersionRefusalStatus],
     [plane(ports, authority("Refuse")), "GET", polling([]), token, 404],
     [plane(ports, authority("Outage")), "GET", polling([]), token, 503],
     [failing, "GET", polling([]), token, 500],

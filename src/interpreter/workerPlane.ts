@@ -21,11 +21,14 @@ import type { ResultManifestId } from "./resultManifest.ts";
 import type { SessionTaskInvocation } from "./sessionScheduler.ts";
 import type { SessionTaskIdentity, WorkTaskIdentity } from "./workerTask.ts";
 
-/** The versions of the worker contract this plane serves, from the first to the one it was built with. */
-export const workerContractAccepted: {
+/** A range of worker contract versions, both ends served. */
+export interface WorkerContractRange {
   readonly min: WorkerContractVersion;
   readonly max: WorkerContractVersion;
-} = {
+}
+
+/** The versions the job and session planes serve, from the first: a harness naming no release speaks it. */
+export const workerContractAccepted: WorkerContractRange = {
   min: { major: 1, minor: 0 },
   max: workerContractServed(),
 };
@@ -49,28 +52,35 @@ function workerContractOrdered(
   );
 }
 
-/** Whether a request naming `offered`, or naming no release, speaks a version this plane serves. */
-export function contractVersionAccepted(offered: string | undefined): boolean {
+/** Whether a request naming `offered`, or naming no release, speaks a version in `range`. */
+export function contractVersionAccepted(
+  range: WorkerContractRange,
+  offered: string | undefined,
+): boolean {
   const version =
     offered === undefined
       ? workerContractUnnamed
       : workerContractVersionOf(offered);
   return (
     version !== undefined &&
-    workerContractOrdered(workerContractAccepted.min, version) &&
-    workerContractOrdered(version, workerContractAccepted.max)
+    workerContractOrdered(range.min, version) &&
+    workerContractOrdered(version, range.max)
   );
 }
 
-/** What a request speaking a version outside the range is answered with. */
-export const contractVersionRefusal: ContractVersionRefusal = {
-  action: "stop",
-  reason: "UnsupportedContractVersion",
-  accepted: {
-    min: workerContractVersionText(workerContractAccepted.min),
-    max: workerContractVersionText(workerContractAccepted.max),
-  },
-};
+/** What a request speaking a version outside `range` is answered with. */
+export function contractVersionRefusal(
+  range: WorkerContractRange,
+): ContractVersionRefusal {
+  return {
+    action: "stop",
+    reason: "UnsupportedContractVersion",
+    accepted: {
+      min: workerContractVersionText(range.min),
+      max: workerContractVersionText(range.max),
+    },
+  };
+}
 
 /** The bounded metadata of one immutable reference pinned by an attempt's input bundle. */
 export interface WorkerInputReference {

@@ -91,15 +91,16 @@ import {
   type ArtifactSite,
   type ManifestRejection,
 } from "../../interpreter/resultManifest.ts";
-import type {
-  WorkerArtifactReservationPort,
-  WorkerArtifactStored,
-  WorkerArtifactUploadPort,
-  WorkerAttemptHeartbeatPort,
-  WorkerAttemptAuthority,
-  WorkerPlaneAuthority,
-  WorkerReportPort,
-  WorkerTaskPort,
+import {
+  workerContractAccepted,
+  type WorkerArtifactReservationPort,
+  type WorkerArtifactStored,
+  type WorkerArtifactUploadPort,
+  type WorkerAttemptHeartbeatPort,
+  type WorkerAttemptAuthority,
+  type WorkerPlaneAuthority,
+  type WorkerReportPort,
+  type WorkerTaskPort,
 } from "../../interpreter/workerPlane.ts";
 import {
   sessionTask,
@@ -129,6 +130,11 @@ type WorkerPlaneRegistrar = (
   handler: RouteHandlerMethod,
 ) => void;
 
+/** A contract route's refusal of a release outside the range the job and session planes serve. */
+const workerPlaneContractChecked = workerContractChecked(
+  workerContractAccepted,
+);
+
 /** A registrar for the contract's routes, each refusing a release this plane does not serve, or for the probes, which none is. */
 function workerPlaneRegistrar(
   app: FastifyInstance,
@@ -139,7 +145,9 @@ function workerPlaneRegistrar(
       method: route.method,
       url: route.path,
       handler,
-      ...(routes === "Contract" ? { onRequest: workerContractChecked } : {}),
+      ...(routes === "Contract"
+        ? { onRequest: workerPlaneContractChecked }
+        : {}),
     });
   };
 }

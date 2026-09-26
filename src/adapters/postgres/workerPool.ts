@@ -17,6 +17,35 @@
  * the scheduler minted went to an in-cluster pod that was never launched, and
  * an attempt whose bearer nobody holds is an attempt nothing can report.
  *
+ * THE CLAIM IS `workerPoolCanAssign`, DECIDED UNDER THE ROW LOCK. The execution
+ * is `Launching`; an attempt no pool holds is a placement still waiting; the
+ * unique `assignment` column refuses an identity already bound, by failing the
+ * statement; `placement` is the route and the partition the account. The
+ * registry row joined on the poll's own principal is a pool that is enabled,
+ * polling under its current registration, and of a class the routed demand
+ * allows. Its capabilities are the inventory, matched as
+ * `workerPoolInventoryMatches` does and with a platform spelled as
+ * `workerPoolPlatformToken` spells it, and the held count is the slot. The rest
+ * hold before a claim is made: the bearer's authentication refuses a token that
+ * lapsed and `workerPoolAdmitted` a principal that lost `Execute`, a claim is
+ * made only by a poll, and
+ * drain, trust, secrets, source and owner are constants every registered pool
+ * and every routed execution holds.
+ *
+ * THE HELD COUNT IS THE DATABASE'S AND NOT THE POOL'S. It counts every attempt
+ * under the pool's name that is still placing or running, so a pool that leaves
+ * work out of its report claims no more for it. Claims by one pool are
+ * serialized on an advisory lock taken in a statement of its own, because a
+ * statement's snapshot is taken when it starts and a count taken in the claim's
+ * own statement would miss a claim committed while it waited. The count is by
+ * name rather than by registration, which is never less than the model's count
+ * for the current one.
+ *
+ * AN IMAGE A CLAIM HANDS OUT IS ONE THE SITE ADMITTED. A claim sees an attempt
+ * only once its invocation is recorded, and the scheduler records one only
+ * after `schedulerPrepare` resolved the execution's profile, which refuses a
+ * pinned image the site does not admit as `ExecutionPolicyDenied`.
+ *
  * A RELEASE IS A BACKOFF THE NEXT CLAIM READS. On the pool path
  * `placement_backoff_from` holds the instant a claim may next take the
  * execution — the pool's own `retryAfterSecs` from now — and the claim
@@ -31,11 +60,6 @@
  * the row before a pool may claim it and still bounds a row no pool comes back
  * for.
  *
- * THE CAPABILITIES COME BACK NULLABLE BECAUSE THE CHECKER CANNOT SEE OTHERWISE.
- * A correlated subquery over a joined row is a value `check-queries` proves
- * nothing about, so the row type says what the checker can see and the absence
- * is read as the empty list it is — a requirement naming no capability.
- *
  * EVERY STATEMENT IS SCOPED TO THE POOL THAT ASKED. An assignment is the only
  * handle a pool has, and each one is resolved together with the pool holding it
  * and its project, so nothing a pool can say reaches another pool's work.
@@ -45,9 +69,13 @@ import { createHash } from "node:crypto";
 import type pg from "pg";
 
 import { workerPoolRetryAfterSecsMax } from "../../contract/workerPool.ts";
+import { asExecutionRequirement } from "../../interpreter/executionRequirement.ts";
+import { asPrincipal } from "../../interpreter/principal.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type {
   WorkerPoolAssignments,
+  WorkerPoolClaimed,
+  WorkerPoolClaimTerms,
   WorkerPoolIdentity,
   WorkerPoolRegistration,
   WorkerPoolRegistry,
@@ -174,8 +202,8 @@ async function workerPoolRegistered(
   await client.query(sql`DELETE FROM worker_pool
     WHERE tenant=${partition.tenant} AND project=${partition.project} AND pool=${registration.pool}`);
   const inserted =
-    await client.query(sql`INSERT INTO worker_pool(tenant,project,pool,capabilities,principal,client_id)
-    SELECT ${partition.tenant},${partition.project},${registration.pool},${[...registration.capabilities]}::text[],${registration.principal as string},${registration.clientId}
+    await client.query(sql`INSERT INTO worker_pool(tenant,project,pool,capabilities,class,principal,client_id)
+    SELECT ${partition.tenant},${partition.project},${registration.pool},${[...registration.capabilities]}::text[],${registration.class},${registration.principal as string},${registration.clientId}
     WHERE EXISTS(SELECT 1 FROM project p
       WHERE p.tenant=${partition.tenant} AND p.project=${partition.project} AND p.lifecycle='Active')`);
   return (inserted.rowCount ?? 0) === 1;
@@ -205,8 +233,8 @@ export function postgresWorkerPoolRegistry(pool: pg.Pool): WorkerPoolRegistry {
         tenant: string;
         project: string;
         pool: string;
-        capabilities: string[];
-      }>(sql`SELECT w.tenant,w.project,w.pool,w.capabilities FROM worker_pool w
+        principal: string;
+      }>(sql`SELECT w.tenant,w.project,w.pool,w.principal FROM worker_pool w
         WHERE w.principal=${principal}
           AND EXISTS(SELECT 1 FROM project p
             WHERE p.tenant=w.tenant AND p.project=w.project AND p.lifecycle='Active')`);
@@ -219,7 +247,7 @@ export function postgresWorkerPoolRegistry(pool: pg.Pool): WorkerPoolRegistry {
               project: row.project,
             } as Partition,
             pool: row.pool,
-            capabilities: row.capabilities,
+            principal: asPrincipal(row.principal),
           };
     },
   };
@@ -227,48 +255,76 @@ export function postgresWorkerPoolRegistry(pool: pg.Pool): WorkerPoolRegistry {
 
 /**
  * One opened-but-unplaced attempt whose invocation is recorded, taken for this
- * pool, bound to the assignment it will be cancelled by and to the bearer its
- * harness answers under. The epoch is not moved: this process fences nothing,
- * and an attempt whose epoch has since moved is one the scheduler's own fence
- * will end under this pool's feet, which the renewal answers as a stop.
+ * pool where `workerPoolCanAssign` would take it, bound to the assignment it
+ * will be cancelled by and to the bearer its harness answers under. The epoch
+ * is not moved: this process fences nothing, and an attempt whose epoch has
+ * since moved is one the scheduler's own fence will end under this pool's
+ * feet, which the renewal answers as a stop.
  */
 async function workerPoolClaimed(
-  pool: pg.Pool,
+  client: pg.PoolClient,
   identity: WorkerPoolIdentity,
-  leaseSecs: number,
+  terms: WorkerPoolClaimTerms,
   assignment: string,
   bearer: string,
-): Promise<{ capabilities: string[] } | undefined> {
-  const found = await pool.query<{ capabilities: string[] | null }>(
+): Promise<WorkerPoolClaimed | undefined> {
+  const { partition } = identity;
+  await client.query<{ locked: string | null }>(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(
+          'worker-pool-claim:' || ${partition.tenant} || '/' || ${partition.project} || '/' || ${identity.pool}, 0))::text AS locked`,
+  );
+  const found = await client.query<{ requirement: unknown }>(
     sql`UPDATE execution_attempt a SET
         pool=${identity.pool},assignment=${assignment},pool_refusal=NULL,
         capability_secret_digest=${workerPoolDigest(bearer)},
         lease_owner=${identity.pool},
-        lease_expires_at=now()+make_interval(secs=>${leaseSecs}::double precision)
-      WHERE (a.tenant,a.project,a.execution,a.attempt) IN (
+        lease_expires_at=now()+make_interval(secs=>${terms.leaseSecs}::double precision)
+      FROM execution e
+      WHERE e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
+        AND (a.tenant,a.project,a.execution,a.attempt) IN (
         SELECT q.tenant,q.project,q.execution,q.attempt
         FROM execution_attempt q
-        JOIN execution e
-          ON e.tenant=q.tenant AND e.project=q.project AND e.execution=q.execution
-        WHERE q.tenant=${identity.partition.tenant} AND q.project=${identity.partition.project}
+        JOIN execution x
+          ON x.tenant=q.tenant AND x.project=q.project AND x.execution=q.execution
+        JOIN worker_pool w
+          ON w.tenant=q.tenant AND w.project=q.project
+        WHERE q.tenant=${partition.tenant} AND q.project=${partition.project}
+          AND w.pool=${identity.pool} AND w.principal=${identity.principal}
           AND q.state='Placing' AND q.pool IS NULL AND q.invoked
-          AND e.placement='Pool' AND e.status IN ('Admitted','Launching')
-          AND (e.placement_backoff_from IS NULL OR e.placement_backoff_from<=now())
+          AND x.placement='Pool' AND x.status='Launching'
+          AND (x.placement_backoff_from IS NULL OR x.placement_backoff_from<=now())
           AND q.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)
-          AND COALESCE(ARRAY(SELECT jsonb_array_elements_text(e.requirement_value->'capabilities')),'{}'::text[])
-              <@ ${[...identity.capabilities]}::text[]
+          AND w.class<>'Personal'
+          AND CASE x.requirement_value->>'mode'
+            WHEN 'Container' THEN
+              'Platform:' || (x.requirement_value->>'operatingSystem') || ':' || (x.requirement_value->>'architecture')
+                = ANY(w.capabilities)
+            WHEN 'ContainerCapability' THEN
+              'Platform:' || (x.requirement_value->>'operatingSystem') || ':' || (x.requirement_value->>'architecture')
+                = ANY(w.capabilities)
+              AND ARRAY(SELECT jsonb_array_elements_text(x.requirement_value->'capabilities')) <@ w.capabilities
+            ELSE false END
+          AND (SELECT count(*) FROM execution_attempt h
+                WHERE h.tenant=q.tenant AND h.project=q.project AND h.pool=w.pool
+                  AND h.state IN ('Placing','Running')) < ${terms.heldMax}::bigint
           AND EXISTS(SELECT 1 FROM project p
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
         ORDER BY q.opened_at,q.attempt
-        LIMIT 1 FOR UPDATE SKIP LOCKED)
-      RETURNING COALESCE(ARRAY(SELECT jsonb_array_elements_text(
-        (SELECT e.requirement_value->'capabilities' FROM execution e
-          WHERE e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution))),'{}'::text[]) AS capabilities`,
+        LIMIT 1 FOR UPDATE OF q, x SKIP LOCKED)
+      RETURNING e.requirement_value AS requirement`,
   );
   const row = found.rows[0];
   return row === undefined
     ? undefined
-    : { capabilities: row.capabilities ?? [] };
+    : { requirement: asExecutionRequirement(row.requirement) };
+}
+
+/** A claim's terms, each a positive whole number, checked before anything is locked. */
+function workerPoolClaimTermsChecked(terms: WorkerPoolClaimTerms): void {
+  if (!Number.isSafeInteger(terms.leaseSecs) || terms.leaseSecs < 1)
+    throw new RangeError("invalid worker pool lease");
+  if (!Number.isSafeInteger(terms.heldMax) || terms.heldMax < 1)
+    throw new RangeError("invalid worker pool held bound");
 }
 
 /** One assignment given back: the row parked under the attempt's own lease, and the backoff written beside it. */
@@ -304,10 +360,11 @@ export function postgresWorkerPoolAssignments(
   pool: pg.Pool,
 ): WorkerPoolAssignments {
   return {
-    claim: async (identity, leaseSecs, assignment, bearer) => {
-      if (!Number.isSafeInteger(leaseSecs) || leaseSecs < 1)
-        throw new RangeError("invalid worker pool lease");
-      return workerPoolClaimed(pool, identity, leaseSecs, assignment, bearer);
+    claim: async (identity, terms, assignment, bearer) => {
+      workerPoolClaimTermsChecked(terms);
+      return postgresTransaction(pool, (client) =>
+        workerPoolClaimed(client, identity, terms, assignment, bearer),
+      );
     },
     renew: async (identity, assignment, leaseSecs) => {
       if (!Number.isSafeInteger(leaseSecs) || leaseSecs < 1)

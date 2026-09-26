@@ -42,6 +42,7 @@ import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
 import type { ProjectAccess } from "../../interpreter/projectAccess.ts";
 import {
   workerPoolAdmitted,
+  workerPoolContractAccepted,
   workerPoolPoll,
   type WorkerPoolAssignments,
   type WorkerPoolIdentity,
@@ -54,6 +55,11 @@ import {
   workerContractChecked,
   workerContractNamed,
 } from "./workerContractVersion.ts";
+
+/** A contract route's refusal of a release outside the range the pool plane serves. */
+const poolPlaneContractChecked = workerContractChecked(
+  workerPoolContractAccepted,
+);
 
 export interface PoolPlaneService {
   readonly authentication: PrincipalAuthentication;
@@ -157,7 +163,7 @@ function poolAssignmentsRoute(
 ): void {
   app.get(
     workerPoolPollRoute,
-    { onRequest: workerContractChecked },
+    { onRequest: poolPlaneContractChecked },
     async (request, reply) => {
       const caller = await poolCaller(service, request);
       if (caller.caller !== "Pool") return poolRefused(reply, caller.caller);
@@ -191,7 +197,7 @@ function poolOutcomeRoutes(
   for (const outcome of ["Accepted", "Refused", "Unavailable"] as const)
     app.post(
       workerPoolSettlementRoutes[outcome],
-      { onRequest: workerContractChecked },
+      { onRequest: poolPlaneContractChecked },
       async (request, reply) =>
         poolOutcomeAnswered(service, request, reply, outcome),
     );

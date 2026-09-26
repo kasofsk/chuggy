@@ -92,6 +92,7 @@ test("registration mints a client, writes the relation and records the principal
         partition: { tenant: "tenant", project: "project" },
         pool: "pool-one",
         capabilities: ["linux-containers"],
+        class: "Dedicated",
         clientId: "chuggy-pool-fixed",
         principal: oidcPrincipal(issuer, "chuggy-pool-fixed"),
       },

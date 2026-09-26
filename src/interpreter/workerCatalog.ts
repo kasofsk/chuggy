@@ -15,6 +15,7 @@
  */
 
 import { textCodePointsCount } from "../contract/http.ts";
+import { workerImageCharsMax } from "../contract/workerPool.ts";
 import { asRepositoryConfigurationName } from "./repositoryConfigurationIdentity.ts";
 
 /** The label an image carries in front of a reader, as the catalog holds it. */
@@ -28,7 +29,8 @@ export interface AdmittedWorker extends Worker {
   readonly image: string;
 }
 
-export const workerImageCharsMax = 512;
+/** The image bound, surfaced where a catalog entry reads it. */
+export { workerImageCharsMax };
 export const workerVersionCharsMax = 64;
 
 /** The most entries one deployment's admitted-images list may carry. */

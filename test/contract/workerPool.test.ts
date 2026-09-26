@@ -19,6 +19,7 @@ import {
   workerPoolRegistrationSchema,
   workerPoolSettlementPath,
   workerPoolSettlementRoutes,
+  workerImageCharsMax,
 } from "../../src/contract/workerPool.ts";
 
 const assignment = {
@@ -33,6 +34,11 @@ const assignment = {
 
 test("an assignment carries the placement fields and nothing beside them", () => {
   assert.deepEqual(workerPoolAssignmentSchema.parse(assignment), assignment);
+  const pinned = {
+    ...assignment,
+    image: `registry.invalid/worker@sha256:${"a".repeat(64)}`,
+  };
+  assert.deepEqual(workerPoolAssignmentSchema.parse(pinned), pinned);
   for (const extra of ["taskKey", "ticket", "repository", "obligation"])
     assert.equal(
       workerPoolAssignmentSchema.safeParse({ ...assignment, [extra]: "x" })
@@ -48,6 +54,8 @@ test("an assignment is bounded in every member a pool could grow", () => {
     { ...assignment, deadlineSecs: -1 },
     { ...assignment, callbackUrl: "not-a-url" },
     { ...assignment, bearer: "" },
+    { ...assignment, image: "" },
+    { ...assignment, image: "i".repeat(workerImageCharsMax + 1) },
     { ...assignment, capabilities: ["has space"] },
     {
       ...assignment,
