@@ -92,7 +92,7 @@ export const workerPlaneStopSchema = z.object({ action: z.literal("stop") });
 export const workerPlaneRetrySchema = z.object({ action: z.literal("retry") });
 
 /** A refusal the pod stops on, naming which of `reasons` it was refused for. */
-function workerPlaneRefusalSchema<
+export function workerPlaneRefusalSchema<
   const Reasons extends readonly [string, ...string[]],
 >(reasons: Reasons) {
   return z.object({ action: z.literal("stop"), reason: z.enum(reasons) });

@@ -1,7 +1,8 @@
 /**
- * The job plane held to its contract from the provider's side: the app serves
- * exactly the routes the contract names, and every answer a handler gives
- * parses under the answer map's schema for its route and status.
+ * The job plane and the session plane held to their contract from the
+ * provider's side: the app serves exactly the routes the contract names, and
+ * every answer a handler gives parses under the answer map's schema for its
+ * route and status.
  *
  * EVERY OUTCOME A FAKE PORT CAN ANSWER IS DRIVEN. A port's outcomes are listed
  * from the interpreter's own roster where one exists, and otherwise in a record
@@ -11,24 +12,37 @@
  * AN ANSWER NAMES NOTHING ITS SCHEMA DOES NOT. The schemas drop a field they do
  * not name, for an older pod's sake, so each answer must also equal its own
  * parse: a field the server renamed is a failure here rather than a drop.
+ *
+ * EVERY OPTIONAL FIELD IS SEEN BOTH WAYS. A field its schema lets be absent is
+ * one a server could stop sending with every parse still passing, so each
+ * optional field a status's schema names must be present in some case of that
+ * route and absent in another.
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 
 import {
   createWorkerPlaneApp,
   workerPlaneHealthRoutes,
+  type SessionPlaneService,
   type WorkerPlaneServerService,
 } from "../../src/adapters/http/workerPlaneServer.ts";
 import {
+  nativeHttpPageItemsMax,
   runConfigurationBytesMax,
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
+  sessionStoreBatchBytesMax,
 } from "../../src/contract/http.ts";
-import { sessionPlaneRoutes } from "../../src/contract/sessionPlane.ts";
+import {
+  sessionPlaneAnswers,
+  sessionPlaneRoutes,
+  type SessionPlaneRouteName,
+} from "../../src/contract/sessionPlane.ts";
 import {
   workerPlaneAnswers,
   workerPlaneBytesMediaType,
@@ -37,6 +51,13 @@ import {
   type WorkerPlaneRoute,
   type WorkerPlaneRouteName,
 } from "../../src/contract/workerPlane.ts";
+import {
+  allSessionTurnInputKinds,
+  asSessionAttemptId,
+  asSessionId,
+  asSessionStoreStream,
+  asSessionTurnId,
+} from "../../src/interpreter/agentSession.ts";
 import {
   asAttemptId,
   asExecutionId,
@@ -56,6 +77,18 @@ import {
   allRunEvidenceStored,
   type RunTurnsRecorded,
 } from "../../src/interpreter/runEvidence.ts";
+import type {
+  SessionPlaneIdentity,
+  SessionReferenceBound,
+  SessionStoreStreamRow,
+  SessionTurnAnswered,
+  SessionTurnFailed,
+} from "../../src/interpreter/sessionPlane.ts";
+import type {
+  SessionStoreRead,
+  SessionStoreRecorded,
+  SessionStoreStored,
+} from "../../src/interpreter/sessionStore.ts";
 import type {
   WorkerArtifactReserved,
   WorkerArtifactStored,
@@ -94,9 +127,10 @@ const liveAuthority: WorkerAttemptAuthority = {
   ],
 };
 
-/** One call a route is driven with; `rest` fills the route's trailing `*`. */
+/** One call a route is driven with; `rest` fills the route's trailing `*` and `query` follows the path. */
 interface WorkerPlaneCall {
   readonly rest?: string;
+  readonly query?: string;
   readonly headers?: Readonly<Record<string, string>>;
   readonly payload?: string | Buffer | object;
 }
@@ -173,6 +207,13 @@ const workerPlaneMalformed: WorkerPlaneCase = {
   call: { headers: json, payload: { unknown: true } },
 };
 
+/** The members of a union a record keyed by it names, which the compiler holds to the union. */
+function keysOf<Key extends string>(
+  record: Readonly<Record<Key, true>>,
+): readonly Key[] {
+  return Object.keys(record) as Key[];
+}
+
 const reservations: Readonly<
   Record<WorkerArtifactReserved["reserved"], WorkerArtifactReserved>
 > = {
@@ -190,7 +231,7 @@ const stores: Readonly<
   Record<WorkerArtifactStored["stored"], readonly WorkerArtifactStored[]>
 > = {
   Stored: [{ stored: "Stored" }],
-  Refused: (Object.keys(storeRefusals) as (keyof typeof storeRefusals)[]).map(
+  Refused: keysOf(storeRefusals).map(
     (reason) => ({ stored: "Refused", reason }) as const,
   ),
   Conflict: [{ stored: "Conflict" }],
@@ -257,6 +298,20 @@ const credentialsMinted: Readonly<
   NotFound: { minted: "NotFound" },
   Unavailable: { minted: "Unavailable" },
 };
+
+/** Every answer the minting can give, through whichever of its two doors the route calls. */
+const credentialCases: readonly WorkerPlaneCase[] = [
+  { name: "a plane that mints nothing" },
+  ...Object.values(credentialsMinted).map((minted) => ({
+    name: `a mint answering ${minted.minted}`,
+    service: {
+      credentials: {
+        attempt: () => Promise.resolve(minted),
+        session: () => Promise.resolve(minted),
+      },
+    },
+  })),
+];
 
 const bothAnswers = [true, false] as const;
 
@@ -370,38 +425,339 @@ const workerPlaneCases: Readonly<
       },
     })),
   ],
-  credential: [
-    ...workerPlaneStrangers,
-    { name: "a plane that mints nothing" },
-    ...Object.values(credentialsMinted).map((minted) => ({
-      name: `a mint answering ${minted.minted}`,
-      service: {
-        credentials: {
-          attempt: () => Promise.resolve(minted),
-          session: () => Promise.resolve(minted),
-        },
-      },
+  credential: [...workerPlaneStrangers, ...credentialCases],
+};
+
+const liveSession: SessionPlaneIdentity = {
+  live: true,
+  partition: liveAuthority.partition,
+  session: asSessionId("session"),
+  attempt: asSessionAttemptId("attempt"),
+  generation: 1,
+  kind: "Lead",
+  capabilities: ["RepositoryRead", "RunCommands"],
+  credentialSlot: "claude-code",
+};
+
+/** The session ports a live session meets, `over` replacing the ones a case is about. */
+function sessionPorts(
+  over: Partial<SessionPlaneService>,
+): Pick<WorkerPlaneServerService, "sessions"> {
+  return {
+    sessions: {
+      ...inertSessionPlane({
+        authenticate: () => Promise.resolve(liveSession),
+      }),
+      ...over,
+    },
+  };
+}
+
+function sessionAuthority(
+  identity: SessionPlaneIdentity | undefined,
+): Pick<WorkerPlaneServerService, "sessions"> {
+  return sessionPorts({
+    authority: { authenticate: () => Promise.resolve(identity) },
+  });
+}
+
+/** The call each session route is driven with where a case changes nothing about it. */
+const sessionPlaneCalls: Readonly<
+  Record<SessionPlaneRouteName, WorkerPlaneCall>
+> = {
+  facts: {},
+  heartbeat: {},
+  reference: { headers: json, payload: { reference: "reference" } },
+  turn: {},
+  turnAnswer: { headers: json, payload: { turn: "turn", result: "result" } },
+  turnFailure: {
+    headers: json,
+    payload: { turn: "turn", failure: "AgentFailed" },
+  },
+  held: { headers: json, payload: {} },
+  storeStreams: {},
+  storeBatch: {
+    rest: "stream/1",
+    headers: octets,
+    payload: Buffer.from("{}\n"),
+  },
+  storePage: { rest: "stream" },
+  credential: {
+    headers: json,
+    payload: { repository: "github.com/owner/name" },
+  },
+};
+
+/** The callers every session route refuses before its own ports are reached. */
+const sessionPlaneStrangers: readonly WorkerPlaneCase[] = [
+  { name: "no bearer", anonymous: true },
+  { name: "an unknown session bearer", service: sessionAuthority(undefined) },
+  {
+    name: "a session no longer live",
+    service: sessionAuthority({ ...liveSession, live: false }),
+  },
+];
+
+const referencesBound: Readonly<Record<SessionReferenceBound, true>> = {
+  Bound: true,
+  AlreadyBound: true,
+  Conflict: true,
+  Fenced: true,
+};
+
+const turnsAnswered: Readonly<Record<SessionTurnAnswered, true>> = {
+  Answered: true,
+  AlreadyAnswered: true,
+  Conflict: true,
+  Fenced: true,
+};
+
+const turnsFailed: Readonly<Record<SessionTurnFailed, true>> = {
+  Failed: true,
+  AlreadyFailed: true,
+  Conflict: true,
+  Fenced: true,
+};
+
+const batchRefusals: Readonly<
+  Record<Extract<SessionStoreStored, { stored: "Refused" }>["reason"], true>
+> = { QuotaExceeded: true };
+
+const batchesKept: Readonly<
+  Record<SessionStoreStored["stored"], readonly SessionStoreStored[]>
+> = {
+  Stored: [{ stored: "Stored" }],
+  Refused: keysOf(batchRefusals).map(
+    (reason) => ({ stored: "Refused", reason }) as const,
+  ),
+  Conflict: [{ stored: "Conflict" }],
+  Unavailable: [{ stored: "Unavailable", retryAfterSeconds: 7 }],
+};
+
+const batchesRecorded: Readonly<Record<SessionStoreRecorded, true>> = {
+  Stored: true,
+  AlreadyStored: true,
+  OutOfOrder: true,
+  Conflict: true,
+  QuotaExceeded: true,
+  Fenced: true,
+};
+
+const batchesRead: Readonly<
+  Record<SessionStoreRead["read"], SessionStoreRead>
+> = {
+  Content: { read: "Content", content: "{}\n" },
+  NotFound: { read: "NotFound" },
+  Unavailable: { read: "Unavailable", retryAfterSeconds: 7 },
+  Corrupt: { read: "Corrupt" },
+};
+
+/** A store holding one batch of the caller's own stream, which the page reads as `read` answers. */
+function sessionPageCase(
+  read: SessionStoreRead,
+): Partial<WorkerPlaneServerService> {
+  return sessionPorts({
+    queries: {
+      batches: () =>
+        Promise.resolve([
+          { session: liveSession.session, batch: 1, digest: "d", bytes: 3 },
+        ]),
+      streams: () => Promise.resolve([]),
+    },
+    store: {
+      storeBatch: () => Promise.resolve({ stored: "Stored" }),
+      readBatch: () => Promise.resolve(read),
+    },
+  });
+}
+
+function sessionStreamRows(count: number): readonly SessionStoreStreamRow[] {
+  return Array.from({ length: count }, (_unused, index) => ({
+    stream: asSessionStoreStream(`stream/${String(index)}`),
+    batches: 1,
+  }));
+}
+
+const sessionPlaneCases: Readonly<
+  Record<SessionPlaneRouteName, readonly WorkerPlaneCase[]>
+> = {
+  facts: [
+    ...sessionPlaneStrangers,
+    { name: "a session none of whose optional facts exist yet" },
+    {
+      name: "a session bound, told what it is, and forking",
+      service: sessionAuthority({
+        ...liveSession,
+        kind: "Inquiry",
+        agentReference: "reference",
+        systemPrompt: "prompt",
+        forkFrom: "parent",
+      }),
+    },
+  ],
+  heartbeat: [
+    ...sessionPlaneStrangers,
+    ...bothAnswers.map((renewed) => ({
+      name: `a heartbeat answering ${String(renewed)}`,
+      service: sessionPorts({
+        heartbeats: { heartbeat: () => Promise.resolve(renewed) },
+      }),
     })),
+  ],
+  reference: [
+    ...sessionPlaneStrangers,
+    workerPlaneMalformed,
+    ...keysOf(referencesBound).map((bound) => ({
+      name: `a binding answering ${bound}`,
+      service: sessionPorts({
+        references: { bind: () => Promise.resolve(bound) },
+      }),
+    })),
+  ],
+  turn: [
+    ...sessionPlaneStrangers,
+    { name: "a mailbox with nothing in it" },
+    ...allSessionTurnInputKinds.map((inputKind) => ({
+      name: `a mailbox handing over a ${inputKind} turn`,
+      service: sessionPorts({
+        turns: {
+          claim: () =>
+            Promise.resolve({
+              turn: asSessionTurnId("turn"),
+              ordinal: 1,
+              inputKind,
+              input: "input",
+            }),
+        },
+      }),
+    })),
+  ],
+  turnAnswer: [
+    ...sessionPlaneStrangers,
+    workerPlaneMalformed,
+    ...keysOf(turnsAnswered).map((answered) => ({
+      name: `an answer settling as ${answered}`,
+      service: sessionPorts({
+        settlements: {
+          answer: () => Promise.resolve(answered),
+          fail: () => Promise.resolve("Failed"),
+        },
+      }),
+    })),
+  ],
+  turnFailure: [
+    ...sessionPlaneStrangers,
+    workerPlaneMalformed,
+    ...keysOf(turnsFailed).map((failed) => ({
+      name: `a failure settling as ${failed}`,
+      service: sessionPorts({
+        settlements: {
+          answer: () => Promise.resolve("Answered"),
+          fail: () => Promise.resolve(failed),
+        },
+      }),
+    })),
+  ],
+  held: [
+    ...sessionPlaneStrangers,
+    ...bothAnswers.map((held) => ({
+      name: `a hold answering ${String(held)}`,
+      service: sessionPorts({ holds: { hold: () => Promise.resolve(held) } }),
+    })),
+  ],
+  storeStreams: [
+    ...sessionPlaneStrangers,
+    { name: "a prefix asked twice", call: { query: "stream=a&stream=b" } },
+    ...[0, 1, nativeHttpPageItemsMax + 1].map((count) => ({
+      name: `a store holding ${String(count)} streams`,
+      service: sessionPorts({
+        queries: {
+          batches: () => Promise.resolve([]),
+          streams: () => Promise.resolve(sessionStreamRows(count)),
+        },
+      }),
+    })),
+  ],
+  storeBatch: [
+    ...sessionPlaneStrangers,
+    workerPlaneNotBytes,
+    { name: "a path naming no batch", call: { rest: "stream" } },
+    { name: "a stream name no row can hold", call: { rest: "%20/1" } },
+    { name: "batch zero", call: { rest: "stream/0" } },
+    {
+      name: "a batch past its bound",
+      call: { payload: Buffer.alloc(sessionStoreBatchBytesMax + 1) },
+    },
+    ...Object.values(batchesKept)
+      .flat()
+      .map((kept) => ({
+        name: `the store answering ${JSON.stringify(kept)}`,
+        service: sessionPorts({
+          store: {
+            storeBatch: () => Promise.resolve(kept),
+            readBatch: () => Promise.resolve({ read: "NotFound" }),
+          },
+        }),
+      })),
+    ...keysOf(batchesRecorded).map((recorded) => ({
+      name: `the batch row answering ${recorded}`,
+      service: sessionPorts({
+        records: { record: () => Promise.resolve(recorded) },
+      }),
+    })),
+  ],
+  storePage: [
+    ...sessionPlaneStrangers,
+    { name: "a path naming a batch", call: { rest: "stream/1" } },
+    { name: "a stream name no row can hold", call: { rest: "%20" } },
+    { name: "a limit of zero", call: { query: "limit=0" } },
+    { name: "a stream with no batches" },
+    ...Object.values(batchesRead).map((read) => ({
+      name: `a batch whose object reads ${read.read}`,
+      service: sessionPageCase(read),
+    })),
+    {
+      name: "a page as full as its limit",
+      call: { query: "limit=1" },
+      service: sessionPageCase(batchesRead.Content),
+    },
+  ],
+  credential: [
+    ...sessionPlaneStrangers,
+    workerPlaneMalformed,
+    ...credentialCases,
   ],
 };
 
+/** One plane as this suite drives it: its routes, their calls, its answer map and cases, and the bearer it reads. */
+interface WorkerPlaneDriven<Name extends string> {
+  readonly routes: Readonly<Record<Name, WorkerPlaneRoute>>;
+  readonly calls: Readonly<Record<Name, WorkerPlaneCall>>;
+  readonly answers: Readonly<
+    Record<Name, Readonly<Record<number, WorkerPlaneAnswer>>>
+  >;
+  readonly cases: Readonly<Record<Name, readonly WorkerPlaneCase[]>>;
+  readonly bearer: string;
+  readonly service: WorkerPlaneServerService;
+}
+
 /** One case driven through a plane of its own, answered as the pod would read it. */
-async function workerPlaneDriven(
-  name: WorkerPlaneRouteName,
+async function workerPlaneDriven<Name extends string>(
+  plane: WorkerPlaneDriven<Name>,
+  name: Name,
   driven: WorkerPlaneCase,
 ): Promise<{ status: number; body: string; retryAfter: unknown }> {
-  const app = createWorkerPlaneApp({
-    ...inertWorkerPlane(workerPlaneContractUploadBytesMax),
-    ...workerPlaneAuthority(liveAuthority),
-    ...driven.service,
-  });
-  const route = workerPlaneRoutes[name];
-  const call = { ...workerPlaneCalls[name], ...driven.call };
+  const app = createWorkerPlaneApp({ ...plane.service, ...driven.service });
+  const route = plane.routes[name];
+  const call = { ...plane.calls[name], ...driven.call };
+  const path = route.path.replace("*", call.rest ?? "");
   const response = await app.inject({
     method: route.method,
-    url: route.path.replace("*", call.rest ?? ""),
+    url: call.query === undefined ? path : `${path}?${call.query}`,
     headers: {
-      ...(driven.anonymous === true ? {} : { authorization: "Bearer held" }),
+      ...(driven.anonymous === true
+        ? {}
+        : { authorization: `Bearer ${plane.bearer}` }),
       ...call.headers,
     },
     ...(call.payload === undefined ? {} : { payload: call.payload }),
@@ -414,44 +770,132 @@ async function workerPlaneDriven(
   };
 }
 
+/**
+ * Marks every optional field `schema` names along `value` as present or absent
+ * under its path. A union is followed down the member that reads the value,
+ * which is the member its parse answered with.
+ */
+function workerPlaneOptionalsSeen(
+  schema: z.ZodType,
+  value: unknown,
+  path: string,
+  seen: Map<string, Set<boolean>>,
+): void {
+  if (schema instanceof z.ZodObject) {
+    const shape = schema.shape as Readonly<Record<string, z.ZodType>>;
+    for (const [key, field] of Object.entries(shape)) {
+      const held = (value as Readonly<Record<string, unknown>>)[key];
+      const at = `${path}.${key}`;
+      if (field instanceof z.ZodOptional)
+        seen.set(at, (seen.get(at) ?? new Set()).add(held !== undefined));
+      if (held !== undefined)
+        workerPlaneOptionalsSeen(
+          field instanceof z.ZodOptional
+            ? (field.unwrap() as z.ZodType)
+            : field,
+          held,
+          at,
+          seen,
+        );
+    }
+  } else if (schema instanceof z.ZodArray) {
+    for (const item of value as readonly unknown[])
+      workerPlaneOptionalsSeen(
+        schema.element as z.ZodType,
+        item,
+        `${path}[]`,
+        seen,
+      );
+  } else if (schema instanceof z.ZodUnion) {
+    const members = schema.options as readonly z.ZodType[];
+    const index = members.findIndex(
+      (member) => member.safeParse(value).success,
+    );
+    const member = members[index];
+    if (member !== undefined)
+      workerPlaneOptionalsSeen(member, value, `${path}|${String(index)}`, seen);
+  }
+}
+
 /** Whether a body is what the map says its status answers with, and names nothing more. */
-function workerPlaneAnswerRead(answer: WorkerPlaneAnswer, body: string): void {
+function workerPlaneAnswerRead(
+  answer: WorkerPlaneAnswer,
+  body: string,
+  status: number,
+  seen: Map<string, Set<boolean>>,
+): void {
   if (answer === "empty") {
     assert.equal(body, "");
     return;
   }
   const offered: unknown = JSON.parse(body);
   assert.deepEqual(answer.parse(offered), offered);
+  workerPlaneOptionalsSeen(answer, offered, String(status), seen);
 }
 
-for (const name of Object.keys(workerPlaneRoutes) as WorkerPlaneRouteName[]) {
-  test(`${name} answers every outcome with a status and a body the contract names`, async () => {
-    const answers: Readonly<Record<number, WorkerPlaneAnswer>> =
-      workerPlaneAnswers[name];
-    const statuses = new Set<number>();
-    for (const driven of workerPlaneCases[name]) {
-      const answered = await workerPlaneDriven(name, driven);
-      const answer = answers[answered.status];
-      assert.ok(
-        answer !== undefined,
-        `${driven.name} answered ${String(answered.status)}, which the map does not list`,
+function workerPlaneAnswersHeld<Name extends string>(
+  plane: WorkerPlaneDriven<Name>,
+): void {
+  for (const name of Object.keys(plane.routes) as Name[]) {
+    const route = plane.routes[name];
+    test(`${route.method} ${route.path} answers every outcome with a status and a body the contract names`, async () => {
+      const answers = plane.answers[name];
+      const statuses = new Set<number>();
+      const seen = new Map<string, Set<boolean>>();
+      for (const driven of plane.cases[name]) {
+        const answered = await workerPlaneDriven(plane, name, driven);
+        const answer = answers[answered.status];
+        assert.ok(
+          answer !== undefined,
+          `${driven.name} answered ${String(answered.status)}, which the map does not list`,
+        );
+        assert.doesNotThrow(() => {
+          workerPlaneAnswerRead(answer, answered.body, answered.status, seen);
+        }, `${driven.name} answered ${answered.body}`);
+        if (answered.status === 503)
+          assert.match(String(answered.retryAfter), /^[1-9][0-9]*$/u);
+        statuses.add(answered.status);
+      }
+      assert.deepEqual(
+        [...statuses].sort((left, right) => left - right),
+        Object.keys(answers)
+          .map(Number)
+          .sort((left, right) => left - right),
+        "every status the map lists is one some outcome answers",
       );
-      assert.doesNotThrow(() => {
-        workerPlaneAnswerRead(answer, answered.body);
-      }, `${driven.name} answered ${answered.body}`);
-      if (answered.status === 503)
-        assert.match(String(answered.retryAfter), /^[1-9][0-9]*$/u);
-      statuses.add(answered.status);
-    }
-    assert.deepEqual(
-      [...statuses].sort((left, right) => left - right),
-      Object.keys(answers)
-        .map(Number)
-        .sort((left, right) => left - right),
-      "every status the map lists is one some outcome answers",
-    );
-  });
+      for (const [field, held] of seen)
+        assert.equal(
+          held.size,
+          2,
+          `${field} is ${held.has(true) ? "present" : "absent"} in every case that answers it`,
+        );
+    });
+  }
 }
+
+workerPlaneAnswersHeld({
+  routes: workerPlaneRoutes,
+  calls: workerPlaneCalls,
+  answers: workerPlaneAnswers,
+  cases: workerPlaneCases,
+  bearer: "held",
+  service: {
+    ...inertWorkerPlane(workerPlaneContractUploadBytesMax),
+    ...workerPlaneAuthority(liveAuthority),
+  },
+});
+
+workerPlaneAnswersHeld({
+  routes: sessionPlaneRoutes,
+  calls: sessionPlaneCalls,
+  answers: sessionPlaneAnswers,
+  cases: sessionPlaneCases,
+  bearer: `chgs_${"a".repeat(32)}`,
+  service: {
+    ...inertWorkerPlane(workerPlaneContractUploadBytesMax),
+    ...sessionPorts({}),
+  },
+});
 
 /**
  * Every method and path an app serves, read off its own router rather than the

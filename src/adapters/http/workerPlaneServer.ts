@@ -6,11 +6,9 @@ import fastify, {
   type FastifyRequest,
   type RouteHandlerMethod,
 } from "fastify";
-import { z } from "zod";
+import type { z } from "zod";
 
 import {
-  countSchema,
-  isBoundedText,
   nativeHttpPageItemsMax,
   runConfigurationBytesMax,
   runTranscriptBatchBytesMax,
@@ -18,16 +16,16 @@ import {
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
-  sessionTurnModelCharsMax,
-  sessionTurnResultCharsMax,
-  sessionTurnToolNameCharsMax,
-  sessionTurnToolsMax,
   textCodePointsCount,
 } from "../../contract/http.ts";
 import {
   isSessionStoreStream,
   sessionBearerPattern,
+  sessionCredentialSchema,
   sessionPlaneRoutes,
+  sessionReferenceSchema,
+  sessionTurnAnswerSchema,
+  sessionTurnFailureSchema,
 } from "../../contract/sessionPlane.ts";
 import { resultManifestTextCharsMax } from "../../contract/workerDocuments.ts";
 import {
@@ -40,11 +38,9 @@ import {
   type WorkerPlaneRoute,
 } from "../../contract/workerPlane.ts";
 import {
-  allAgentReportedTurnFailures,
   asSessionBearerSecret,
   asSessionStoreStream,
   asSessionTurnId,
-  sessionIdentityCharsMax,
   type SessionBearerSecret,
   type SessionStoreStream,
 } from "../../interpreter/agentSession.ts";
@@ -81,10 +77,7 @@ import {
   type WorkerRunTranscriptPort,
   type WorkerRunTurnsPort,
 } from "../../interpreter/runEvidence.ts";
-import {
-  asRepositoryId,
-  finalizerIdentityCharsMax,
-} from "../../interpreter/finalizer.ts";
+import { asRepositoryId } from "../../interpreter/finalizer.ts";
 import type {
   WorkerPlaneCredentialMinted,
   WorkerPlaneCredentialMinting,
@@ -629,13 +622,6 @@ const workerCredentialNotMinted: WorkerCredentialAbsent = {
   reason: "NotMinted",
 };
 
-/** One repository as a session names it, refused here rather than by the brand. */
-const sessionCredentialSchema = z.strictObject({
-  repository: z
-    .string()
-    .refine((value) => isBoundedText(value, finalizerIdentityCharsMax)),
-});
-
 /**
  * One minted credential, or the refusal that sends a pod back to what its
  * launcher mounted. A not-found carries no `action`, unlike every other refusal
@@ -779,83 +765,6 @@ function sessionQueryCount(
     ? parsed
     : undefined;
 }
-
-/**
- * One opaque identity a session body carries, refused here rather than by the
- * brand it is about to become. `asBoundedText`'s rule is wider than a length:
- * a NUL and an unpaired surrogate are values no stored row holds, and a brand
- * raising on one inside a handler is a five-hundred with an internal message in
- * it where the route's own status map names four-hundred.
- */
-const sessionIdentitySchema = z
-  .string()
-  .refine((value) => isBoundedText(value, sessionIdentityCharsMax));
-
-const sessionReferenceSchema = z.strictObject({
-  reference: sessionIdentitySchema,
-});
-
-/**
- * What the pod measured of one turn: one measurement rather than five figures,
- * so a body carrying four of them is refused here rather than written as a
- * measurement with a hole in it. Every text is one a stored row holds, because
- * a model or a tool the plane took and PostgreSQL then refused would be a
- * five-hundred where the route's own map names four-hundred.
- */
-const sessionTurnMeasuredSchema = z.strictObject({
-  model: z
-    .string()
-    .refine((value) => isBoundedText(value, sessionTurnModelCharsMax)),
-  tokens: countSchema,
-  costMicros: countSchema,
-  durationMs: countSchema,
-  tools: z
-    .array(
-      z
-        .string()
-        .refine((value) => isBoundedText(value, sessionTurnToolNameCharsMax)),
-    )
-    .max(sessionTurnToolsMax),
-});
-
-/**
- * One answered turn as a pod offers it. A batch range is both of its ends or
- * neither, because the row it is written into says so and a half range is a
- * refusal a caller should read here rather than out of a failed cast, and the
- * measurement is optional for two reasons that are both real: a thread's turn
- * is answered by this same route and has no policy control over it, and a
- * runtime that reported no usage must still be able to answer rather than be
- * stuck.
- */
-const sessionTurnAnswerSchema = z
-  .strictObject({
-    turn: sessionIdentitySchema,
-    result: z.string().max(sessionTurnResultCharsMax),
-    measured: sessionTurnMeasuredSchema.optional(),
-    batchFirst: z
-      .number()
-      .int()
-      .positive()
-      .max(sessionStoreBatchesMax)
-      .optional(),
-    batchLast: z
-      .number()
-      .int()
-      .positive()
-      .max(sessionStoreBatchesMax)
-      .optional(),
-  })
-  .refine(
-    (offered) =>
-      (offered.batchFirst === undefined) ===
-        (offered.batchLast === undefined) &&
-      (offered.batchFirst ?? 0) <= (offered.batchLast ?? 0),
-  );
-
-const sessionTurnFailureSchema = z.strictObject({
-  turn: sessionIdentitySchema,
-  failure: z.enum(allAgentReportedTurnFailures),
-});
 
 /** What a refused settlement answers with, a conflict and a fence read alike by the pod. */
 function sessionSettled(
