@@ -144,6 +144,25 @@ export function pathReport(path: string): string {
   return report("Pass", [{ path, digest: digestFor(path), bytes: 1 }]);
 }
 
+/** Bodies with a value of the wrong type where a source or a list belongs, each with the refusal it earns rather than being read as absent. */
+export const manifestBodiesMistyped: readonly (readonly [
+  string,
+  ManifestRejection,
+])[] = [
+  [sourceReport("Pass", source.ref), "SourceMalformed"],
+  [sourceReport("Pass", []), "SourceMalformed"],
+  [
+    JSON.stringify({
+      version: 3,
+      verdict: "Pass",
+      report: "a review",
+      handoffs: null,
+      diagnostics: [],
+    }),
+    "MissingField",
+  ],
+];
+
 /** The bodies the envelope alone refuses, which is where a version and a key set are read. */
 function manifestBodiesRefusedInEnvelope(): readonly string[] {
   return [

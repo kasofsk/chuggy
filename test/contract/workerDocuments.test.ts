@@ -38,6 +38,7 @@ import {
 import {
   candidate,
   decision,
+  decisionLiftingBareTicket,
   observation,
   parcelledObservation,
   standingRefusal,
@@ -45,6 +46,7 @@ import {
 import {
   accept,
   digestFor,
+  manifestBodiesMistyped,
   manifestBodiesRefused,
   report,
   row,
@@ -63,18 +65,26 @@ interface Judged {
 /** An example built from a schema: what it varies, the value, and whether the schema was built to accept it. */
 type Built = readonly [string, Readonly<Record<string, unknown>>, boolean];
 
-/** Whether the text is JSON the schema accepts, which is a schema's answer to a body. */
-function schemaAccepts(schema: ZodType, text: string): boolean {
-  let value: unknown;
+/** Whether the text parses as JSON, which is what a schema is handed. */
+function textIsJson(text: string): boolean {
   try {
-    value = JSON.parse(text);
+    JSON.parse(text);
+    return true;
   } catch {
     return false;
   }
-  return schema.safeParse(value).success;
 }
 
-/** Asserts no body is accepted by the parser and refused by the schema, over cases that reach both answers. */
+/** Whether the text is JSON the schema accepts, which is a schema's answer to a body. */
+function schemaAccepts(schema: ZodType, text: string): boolean {
+  return textIsJson(text) && schema.safeParse(JSON.parse(text)).success;
+}
+
+/**
+ * Asserts no body is accepted by the parser and refused by the schema, over
+ * cases that reach both answers. A refusal counts only where the text is JSON,
+ * since text that is not JSON is refused before any schema is asked.
+ */
 function assertParserAcceptsNothingSchemaRefuses(
   judged: readonly Judged[],
 ): void {
@@ -83,8 +93,8 @@ function assertParserAcceptsNothingSchemaRefuses(
     "no case the parser accepts, so nothing is held on that side",
   );
   assert.ok(
-    judged.some((each) => !each.schema),
-    "no case the schema refuses, so nothing is held on that side",
+    judged.some((each) => !each.schema && textIsJson(each.text)),
+    "no JSON case the schema refuses, so nothing is held on that side",
   );
   assert.deepEqual(
     judged
@@ -147,6 +157,7 @@ function manifestBodiesFromReaderSuite(): readonly string[] {
   const digest = digestFor("out/a");
   return [
     ...manifestBodiesRefused(),
+    ...manifestBodiesMistyped.map(([text]) => text),
     workerReport("Pass"),
     workerReport("Fail"),
     workerReport("Fail", null),
@@ -460,6 +471,7 @@ const leadBodiesFromReaderSuite: readonly (readonly [
   ],
   [decision({ dispatches: [{ ticket: 41 }] }), observation],
   [decision({ lifts: [{ ticket: 39 }] }), observation],
+  [decisionLiftingBareTicket, observation],
   [JSON.stringify({ version: 1, attention: "Monitoring" }), observation],
   [JSON.stringify({ version: 1, handoffNote: {} }), observation],
 ];

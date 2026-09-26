@@ -44,6 +44,7 @@ import {
   binding,
   digestFor,
   digestOf,
+  manifestBodiesMistyped,
   manifestBodiesRefused,
   manifestId,
   pathCases,
@@ -435,6 +436,11 @@ test("a row that is not a row of the schema is missing its fields", () => {
     ),
     "MissingField",
   );
+});
+
+test("a source or a list of the wrong type is refused rather than read as absent", () => {
+  for (const [text, refused] of manifestBodiesMistyped)
+    assert.equal(rejection(text), refused, text);
 });
 
 /** Every rejection a body of the wire form can be refused with, gathered from bodies. */

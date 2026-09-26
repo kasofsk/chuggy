@@ -97,3 +97,8 @@ export function decision(body: Readonly<Record<string, unknown>>): string {
     ...body,
   });
 }
+
+/** A decision lifting the standing refusal by its bare ticket number, where a lift object belongs. */
+export const decisionLiftingBareTicket = decision({
+  lifts: [standingRefusal.ticket],
+});

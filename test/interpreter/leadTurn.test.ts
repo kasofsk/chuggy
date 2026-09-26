@@ -37,6 +37,7 @@ import { leadRefusalsPerDecisionMax } from "../../src/contract/sessionTools.ts";
 import {
   candidate,
   decision,
+  decisionLiftingBareTicket,
   observation,
   operationalContext,
   parcelledObservation,
@@ -400,6 +401,13 @@ test("a lift of a refusal that is not standing is refused", () => {
   assert.throws(
     () => parseLeadDecision(decision({ lifts: [{ ticket: 39 }] }), observation),
     TypeError,
+  );
+});
+
+test("a lift that is a bare ticket rather than a lift is refused", () => {
+  assert.throws(
+    () => parseLeadDecision(decisionLiftingBareTicket, observation),
+    /lead lift must be an object/u,
   );
 });
 

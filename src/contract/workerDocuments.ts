@@ -3,8 +3,8 @@
  * written at, the ways the plane refuses a manifest and its artifacts, and the
  * shapes of the two a worker writes. The rosters and the shapes restate the
  * interpreter, which stays the authority: `test/contract/rosters.test.ts` pins
- * the rosters, and `test/contract/workerDocuments.test.ts` holds each parser
- * to accepting nothing its shape refuses.
+ * the rosters, and `test/contract/workerDocuments.test.ts` holds each parser,
+ * at the version a worker writes, to accepting nothing its shape refuses.
  */
 
 import { z } from "zod";
@@ -80,7 +80,11 @@ export const artifactFailures = [
   "Mutable",
 ] as const;
 
-/** Copies of the manifest reader's own bounds, pinned to it by the suite named above. */
+/**
+ * Copies of the manifest reader's bounds, which limit what storage holds rather
+ * than what the wire carries; `test/contract/workerDocuments.test.ts` pins each
+ * to the reader's.
+ */
 export const artifactPathCharsMax = 256;
 export const artifactBytesMax = 1_073_741_824;
 export const manifestHandoffsMax = 64;
