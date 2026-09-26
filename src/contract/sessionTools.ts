@@ -175,7 +175,7 @@ export const dependentRelationsAdmitted = ["FollowUp"] as const;
 /** How many tickets one decision may refuse, and how many it may lift. */
 export const leadRefusalsPerDecisionMax = 16;
 
-/** The public API routes the project tools reach, each the route table's own entry rather than its path written again. */
+/** The public API routes the project tools call, including the tools the image refuses until the API serves them; each is the route table's own entry. */
 export const chuggyToolRoutes = {
   project: nativeHttpRoutes.project,
   ticket: nativeHttpRoutes.ticket,
