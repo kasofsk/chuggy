@@ -7,9 +7,11 @@
  * an envelope projected through a pod-owned Secret are assembled by
  * `kubernetesSite.ts`, whose pod and Secret helpers this backend is the one
  * caller of, and a site's database is the sidecar `workerDatabase.ts` renders
- * for a pushed worker too; what differs is that a pool is handed six fields
+ * for a pushed worker too; what differs is that a pool is handed an assignment
  * rather than a briefed placement, so nothing here reads a requirement, a
- * configuration or an invocation.
+ * configuration or an invocation. The image is the one the assignment names,
+ * which is the requirement's pinned image, and the pool's own where it names
+ * none.
  *
  * WHAT IS RUNNING IS READ FROM THE CLUSTER. `held` lists this pool's own pods
  * by its label and reads each assignment off an annotation, so a restarted
@@ -235,7 +237,7 @@ function poolPlacementPod(
     containers: [
       {
         name: kubernetesPoolContainerName,
-        image: config.image,
+        image: assignment.image ?? config.image,
         env: [
           {
             name: workerTaskVariable,

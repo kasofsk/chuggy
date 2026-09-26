@@ -95,12 +95,13 @@ import type {
   SessionStoreRecorded,
   SessionStoreStored,
 } from "../../src/interpreter/sessionStore.ts";
-import type {
-  SessionTaskRead,
-  WorkerArtifactReserved,
-  WorkerArtifactStored,
-  WorkerAttemptAuthority,
-  WorkerTaskRead,
+import {
+  workerContractAccepted,
+  type SessionTaskRead,
+  type WorkerArtifactReserved,
+  type WorkerArtifactStored,
+  type WorkerAttemptAuthority,
+  type WorkerTaskRead,
 } from "../../src/interpreter/workerPlane.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
 import { fixtureForgeShapedToken } from "./forgeFixtures.ts";
@@ -188,10 +189,12 @@ interface WorkerPlaneCase {
   readonly release?: string;
 }
 
+const served = workerContractAccepted.max;
+
 /** A caller every route refuses before it reads a bearer. */
 const workerContractStranger: WorkerPlaneCase = {
   name: "a release the plane does not serve",
-  release: "1.1.0",
+  release: `${String(served.major)}.${String(served.minor + 1)}.0`,
 };
 
 const octets = { "content-type": workerPlaneBytesMediaType };

@@ -24,6 +24,8 @@ export const workerPoolTokenCharsMax = 63;
 export const workerPoolIdentityCharsMax = 256;
 export const workerPoolCapabilitiesMax = 64;
 export const workerPoolEvidenceCharsMax = 4_096;
+/** The longest image reference an assignment names, which is the longest one a deployment admits. */
+export const workerImageCharsMax = 512;
 /**
  * The longest a pool may ask the orchestrator to wait before offering again,
  * which is the same ceiling a `retry-after` header is held to: a wait taken on
@@ -58,6 +60,12 @@ export const workerPoolAssignmentSchema = z.strictObject({
   /** The idempotency key and the cancel handle in one. */
   assignment: workerPoolAssignmentIdentitySchema,
   capabilities: workerPoolCapabilitiesSchema,
+  /**
+   * The image the execution's requirement pinned, which is the image the
+   * workload runs. It is absent where the requirement names capabilities
+   * rather than an image, and the pool runs its own.
+   */
+  image: z.string().min(1).max(workerImageCharsMax).optional(),
   /**
    * The size of the box, which no capability token expresses. Omit them and
    * large work lands on a small machine and dies as a process failure rather

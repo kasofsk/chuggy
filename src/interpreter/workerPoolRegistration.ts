@@ -36,6 +36,7 @@ import type {
   WorkerPoolClientSecret,
   WorkerPoolRegistry,
 } from "./workerPool.ts";
+import { workerPoolPolicyRegistered } from "./workerPoolAssignment.ts";
 
 export type RegisterPoolEnvironment = Readonly<
   Record<string, string | undefined>
@@ -174,6 +175,7 @@ export async function workerPoolRegisteredAt(
       partition: request.partition,
       pool: request.pool,
       capabilities: request.capabilities,
+      class: workerPoolPolicyRegistered.class,
       clientId: minted.clientId,
       principal: oidcPrincipal(request.issuer, minted.clientId),
     });

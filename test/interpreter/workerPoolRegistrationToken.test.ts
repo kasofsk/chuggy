@@ -177,6 +177,7 @@ test("redeeming registers the pool for the partition the token named", async () 
         partition,
         pool: "pool-one",
         capabilities: ["amd64"],
+        class: "Dedicated",
         clientId: "chuggy-pool-fixed",
         principal: oidcPrincipal(issuer, "chuggy-pool-fixed"),
       },

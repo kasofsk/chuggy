@@ -13,10 +13,8 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
-import type pg from "pg";
 
 import { workerPoolRetryAfterSecsMax } from "../../src/contract/workerPool.ts";
-import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   apiRole,
   poolPlaneRole,
@@ -29,9 +27,15 @@ import {
 import { postgresWorkerPlaneAuthority } from "../../src/adapters/postgres/workerPlane.ts";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
-import type { WorkerPoolIdentity } from "../../src/interpreter/workerPool.ts";
+import type {
+  WorkerPoolClaimTerms,
+  WorkerPoolIdentity,
+} from "../../src/interpreter/workerPool.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import { postgresHarnessConfiguration, postgresHarnessUrl } from "./harness.ts";
+import {
+  postgresHarnessConfiguration,
+  postgresHarnessRolePool,
+} from "./harness.ts";
 import {
   schedulerClaimFor,
   schedulerOwner,
@@ -41,17 +45,10 @@ import {
   type SchedulerProject,
 } from "./schedulerHarness.ts";
 
-/** One role's own pool over the migrated database, which is how a grant is proved. */
-function rolePool(role: string): pg.Pool {
-  const url = new URL(postgresHarnessUrl());
-  url.searchParams.set("options", `-c role=${role}`);
-  return postgresPool(url.toString());
-}
-
 const rig = await schedulerRigOpen();
-const planePool = rolePool(poolPlaneRole);
-const apiPool = rolePool(apiRole);
-const harnessPlanePool = rolePool(workerPlaneRole);
+const planePool = postgresHarnessRolePool(poolPlaneRole);
+const apiPool = postgresHarnessRolePool(apiRole);
+const harnessPlanePool = postgresHarnessRolePool(workerPlaneRole);
 
 after(async () => {
   await Promise.all([planePool.end(), apiPool.end(), harnessPlanePool.end()]);
@@ -63,6 +60,12 @@ const assignments = postgresWorkerPoolAssignments(planePool);
 
 /** How long a claim's lease runs for, past the duration of any case here. */
 const leaseSecs = 300;
+
+/** A claim's terms, holding more than any pool here holds. */
+const terms: WorkerPoolClaimTerms = { leaseSecs, heldMax: 4 };
+
+/** The platform every configuration here requires, as a pool declares it. */
+const platform = "Platform:Linux:Amd64";
 
 /**
  * The requirement a project's own configuration puts on every execution of it,
@@ -188,6 +191,7 @@ async function registered(
       partition,
       pool: label,
       capabilities,
+      class: "Dedicated",
       clientId: `chuggy-pool-${randomUUID()}`,
       principal,
     }),
@@ -209,6 +213,7 @@ function handles(label: string): { assignment: string; bearer: string } {
 test("a pool claims only work marked for a pool, and only what it declared", async () => {
   const beyond = await poolProject("pool-beyond", 1, "Codex");
   const beyondPool = await registered(beyond.partition, "beyond", [
+    platform,
     "Agent:Claude",
   ]);
   await poolAttempt(beyond, "beyond");
@@ -216,7 +221,7 @@ test("a pool claims only work marked for a pool, and only what it declared", asy
   assert.equal(
     await assignments.claim(
       beyondPool,
-      leaseSecs,
+      terms,
       unclaimable.assignment,
       unclaimable.bearer,
     ),
@@ -226,6 +231,7 @@ test("a pool claims only work marked for a pool, and only what it declared", asy
 
   const project = await poolProject("pool-claims", 3, "Claude");
   const pool = await registered(project.partition, "claims", [
+    platform,
     "Agent:Claude",
     "Agent:Codex",
   ]);
@@ -233,11 +239,18 @@ test("a pool claims only work marked for a pool, and only what it declared", asy
   const drawn = handles("covered");
   const claimed = await assignments.claim(
     pool,
-    leaseSecs,
+    terms,
     drawn.assignment,
     drawn.bearer,
   );
-  assert.deepEqual(claimed, { capabilities: ["Agent:Claude"] });
+  assert.deepEqual(claimed, {
+    requirement: {
+      mode: "ContainerCapability",
+      operatingSystem: "Linux",
+      architecture: "Amd64",
+      capabilities: ["Agent:Claude"],
+    },
+  });
   const held = (await rig.harness.query(
     `SELECT attempt, pool FROM execution_attempt
       WHERE tenant=$1 AND project=$2 AND assignment=$3`,
@@ -246,14 +259,32 @@ test("a pool claims only work marked for a pool, and only what it declared", asy
   assert.deepEqual(held, [{ attempt: wanted.attempt, pool: "claims" }]);
   const second = handles("second");
   assert.equal(
-    await assignments.claim(pool, leaseSecs, second.assignment, second.bearer),
+    await assignments.claim(pool, terms, second.assignment, second.bearer),
     undefined,
+  );
+});
+
+test("a container claim returns the image its execution's requirement pinned", async () => {
+  const project = await poolProject("pool-image");
+  const pool = await registered(project.partition, "image", [platform]);
+  await poolAttempt(project, "image");
+  const drawn = handles("image");
+  assert.deepEqual(
+    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer),
+    {
+      requirement: {
+        mode: "Container",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        image: "worker:v1",
+      },
+    },
   );
 });
 
 test("an execution the scheduler still places is offered to no pool", async () => {
   const project = await poolProject("pool-in-cluster");
-  const pool = await registered(project.partition, "in-cluster", ["linux"]);
+  const pool = await registered(project.partition, "in-cluster", [platform]);
   const admitted = await rig.store.admit(project.cluster);
   assert.equal(admitted.admitted, "Admitted");
   if (admitted.admitted !== "Admitted") return;
@@ -273,29 +304,29 @@ test("an execution the scheduler still places is offered to no pool", async () =
   );
   const drawn = handles("in-cluster");
   assert.equal(
-    await assignments.claim(pool, leaseSecs, drawn.assignment, drawn.bearer),
+    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer),
     undefined,
   );
 });
 
 test("an attempt with no invocation recorded is offered to no pool", async () => {
   const project = await poolProject("pool-uninvoked");
-  const pool = await registered(project.partition, "uninvoked", []);
+  const pool = await registered(project.partition, "uninvoked", [platform]);
   await poolAttempt(project, "uninvoked", false);
   const drawn = handles("uninvoked");
   assert.equal(
-    await assignments.claim(pool, leaseSecs, drawn.assignment, drawn.bearer),
+    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer),
     undefined,
   );
 });
 
 test("a claim binds the attempt to the bearer its harness answers under", async () => {
   const project = await poolProject("pool-bearer");
-  const pool = await registered(project.partition, "bearer", []);
+  const pool = await registered(project.partition, "bearer", [platform]);
   const attempt = await poolAttempt(project, "bearer");
   const drawn = handles("bearer");
   assert.notEqual(
-    await assignments.claim(pool, leaseSecs, drawn.assignment, drawn.bearer),
+    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer),
     undefined,
   );
   const digest = createHash("sha256")
@@ -317,17 +348,12 @@ test("a claim binds the attempt to the bearer its harness answers under", async 
 
 test("an assignment is renewed, refused and released by the pool holding it", async () => {
   const project = await poolProject("pool-settles", 3);
-  const mine = await registered(project.partition, "mine", []);
-  const theirs = await registered(project.partition, "theirs", []);
+  const mine = await registered(project.partition, "mine", [platform]);
+  const theirs = await registered(project.partition, "theirs", [platform]);
   await poolAttempt(project, "renewed");
   const renewed = handles("renewed");
   assert.notEqual(
-    await assignments.claim(
-      mine,
-      leaseSecs,
-      renewed.assignment,
-      renewed.bearer,
-    ),
+    await assignments.claim(mine, terms, renewed.assignment, renewed.bearer),
     undefined,
   );
   assert.equal(await assignments.held(mine, renewed.assignment), true);
@@ -354,11 +380,11 @@ test("an assignment is renewed, refused and released by the pool holding it", as
 
 test("a released attempt backs off for as long as the pool said before it is offered again", async () => {
   const project = await poolProject("pool-releases");
-  const mine = await registered(project.partition, "releasing", []);
+  const mine = await registered(project.partition, "releasing", [platform]);
   const released = await poolAttempt(project, "released");
   const handle = handles("released");
   assert.notEqual(
-    await assignments.claim(mine, leaseSecs, handle.assignment, handle.bearer),
+    await assignments.claim(mine, terms, handle.assignment, handle.bearer),
     undefined,
   );
   assert.equal(await assignments.release(mine, handle.assignment, 30), true);
@@ -379,7 +405,7 @@ test("a released attempt backs off for as long as the pool said before it is off
   assert.equal(await assignments.release(mine, handle.assignment, 30), false);
   const again = handles("again");
   assert.equal(
-    await assignments.claim(mine, leaseSecs, again.assignment, again.bearer),
+    await assignments.claim(mine, terms, again.assignment, again.bearer),
     undefined,
     "a released attempt is offered to no pool before its backoff elapses",
   );
@@ -389,7 +415,7 @@ test("a released attempt backs off for as long as the pool said before it is off
     [project.partition.tenant, project.partition.project, released.execution],
   );
   assert.notEqual(
-    await assignments.claim(mine, leaseSecs, again.assignment, again.bearer),
+    await assignments.claim(mine, terms, again.assignment, again.bearer),
     undefined,
     "a backoff that has elapsed offers the attempt again",
   );
@@ -409,6 +435,55 @@ test("the plane serving pools cannot write an attempt's outcome", async () => {
   );
 });
 
+/**
+ * A claim hands out the image its execution's requirement pinned, which the
+ * plane reads to do it; this is every other column the plane may touch, so an
+ * attempt's invocation, the digest a bearer is checked against and a pool's
+ * client are none of them.
+ */
+test("the plane serving pools reads and writes these columns and no others", async () => {
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT table_name, privilege_type,
+              string_agg(column_name::text, ',' ORDER BY column_name) AS columns
+         FROM information_schema.role_column_grants
+        WHERE grantee=$1 AND table_schema='public'
+        GROUP BY table_name, privilege_type ORDER BY table_name, privilege_type`,
+      [poolPlaneRole],
+    ),
+    [
+      [
+        "execution",
+        "SELECT",
+        "execution,placement,placement_backoff_from,project,requirement_value,status,tenant",
+      ],
+      ["execution", "UPDATE", "placement_backoff_from"],
+      [
+        "execution_attempt",
+        "SELECT",
+        "assignment,attempt,execution,generation,invoked,lease_expires_at,lease_owner,opened_at,pool,pool_refusal,project,recovery_epoch,state,tenant",
+      ],
+      [
+        "execution_attempt",
+        "UPDATE",
+        "assignment,capability_secret_digest,lease_expires_at,lease_owner,pool,pool_refusal",
+      ],
+      ["project", "SELECT", "lifecycle,project,tenant"],
+      ["recovery_epoch", "SELECT", "epoch,established_at,ordinal"],
+      ["schema_migration", "SELECT", "applied_at,name,version"],
+      [
+        "worker_pool",
+        "SELECT",
+        "capabilities,class,pool,principal,project,tenant",
+      ],
+    ].map(([table_name, privilege_type, columns]) => ({
+      table_name,
+      privilege_type,
+      columns,
+    })),
+  );
+});
+
 test("deregistration names the client the row holds, goes with that client alone, and leaves the work it held", async () => {
   const project = await poolProject("pool-deregister");
   const principal = asPrincipal("https://issuer.invalid#pool-gone");
@@ -417,7 +492,8 @@ test("deregistration names the client the row holds, goes with that client alone
     await registry.register({
       partition: project.partition,
       pool: "gone",
-      capabilities: [],
+      capabilities: [platform],
+      class: "Dedicated",
       clientId,
       principal,
     }),
@@ -427,12 +503,7 @@ test("deregistration names the client the row holds, goes with that client alone
   const attempt = await poolAttempt(project, "orphaned");
   const drawn = handles("orphaned");
   assert.notEqual(
-    await assignments.claim(
-      identity,
-      leaseSecs,
-      drawn.assignment,
-      drawn.bearer,
-    ),
+    await assignments.claim(identity, terms, drawn.assignment, drawn.bearer),
     undefined,
   );
   assert.equal(await registry.clientOf(project.partition, "gone"), clientId);
@@ -461,7 +532,7 @@ test("deregistration names the client the row holds, goes with that client alone
 
 test("a release past the bound on a pool's retry-after is refused before it is written", async () => {
   const project = await poolProject("pool-retry-bound");
-  const mine = await registered(project.partition, "bounded", []);
+  const mine = await registered(project.partition, "bounded", [platform]);
   await assert.rejects(
     assignments.release(mine, "never-claimed", workerPoolRetryAfterSecsMax + 1),
     RangeError,
@@ -470,11 +541,16 @@ test("a release past the bound on a pool's retry-after is refused before it is w
 
 test("a released attempt outlives the reaper for the backoff it was given", async () => {
   const project = await poolProject("pool-parked");
-  const mine = await registered(project.partition, "parking", []);
+  const mine = await registered(project.partition, "parking", [platform]);
   const parked = await poolAttempt(project, "parked");
   const handle = handles("parked");
   assert.notEqual(
-    await assignments.claim(mine, 1, handle.assignment, handle.bearer),
+    await assignments.claim(
+      mine,
+      { ...terms, leaseSecs: 1 },
+      handle.assignment,
+      handle.bearer,
+    ),
     undefined,
   );
   assert.equal(await assignments.release(mine, handle.assignment, 3), true);
@@ -505,7 +581,7 @@ test("a released attempt outlives the reaper for the backoff it was given", asyn
   );
   const again = handles("parked-again");
   assert.notEqual(
-    await assignments.claim(mine, leaseSecs, again.assignment, again.bearer),
+    await assignments.claim(mine, terms, again.assignment, again.bearer),
     undefined,
   );
 });

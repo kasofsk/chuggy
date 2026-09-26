@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { ExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
   workerPoolPoll,
   workerPoolReconcile,
   type WorkerPoolAssignments,
+  type WorkerPoolClaimTerms,
   type WorkerPoolIdentity,
   type WorkerPoolPollSettings,
 } from "../../src/interpreter/workerPool.ts";
@@ -13,7 +16,14 @@ import type { Partition } from "../../src/interpreter/projectStore.ts";
 const identity: WorkerPoolIdentity = {
   partition: { tenant: "tenant", project: "project" } as Partition,
   pool: "pool-one",
-  capabilities: [],
+  principal: asPrincipal("principal-one"),
+};
+
+const container: ExecutionRequirement = {
+  mode: "Container",
+  operatingSystem: "Linux",
+  architecture: "Arm64",
+  image: `registry.invalid/worker@sha256:${"a".repeat(64)}`,
 };
 
 const settings: WorkerPoolPollSettings = {
@@ -44,7 +54,7 @@ test("a claim is asked for only as far as the pool's remaining room", async () =
       ...idle,
       claim: () => {
         asked += 1;
-        return Promise.resolve({ capabilities: [] });
+        return Promise.resolve({ requirement: container });
       },
     },
     identity,
@@ -65,7 +75,7 @@ test("a pool wanting none is claimed nothing and still renewed and told what to 
       ...idle,
       claim: () => {
         asked += 1;
-        return Promise.resolve({ capabilities: [] });
+        return Promise.resolve({ requirement: container });
       },
       renew: (_identity, assignment) => {
         renewed.push(assignment);
@@ -89,7 +99,7 @@ test("a pool wanting more than the plane allows is claimed the plane's bound", a
     ...idle,
     claim: () => {
       asked += 1;
-      return Promise.resolve({ capabilities: [] });
+      return Promise.resolve({ requirement: container });
     },
   };
   const perPoll = await workerPoolReconcile(
@@ -111,6 +121,75 @@ test("a pool wanting more than the plane allows is claimed the plane's bound", a
     () => `minted-${String(asked)}`,
   );
   assert.equal(room.assignments.length, settings.heldMax - 1);
+});
+
+/** The one assignment a poll hands out when the durable side claims `requirement`, and the terms the claim was held to. */
+async function reconciledOne(requirement: ExecutionRequirement): Promise<{
+  readonly assignment: Record<string, unknown>;
+  readonly terms: WorkerPoolClaimTerms[];
+}> {
+  const terms: WorkerPoolClaimTerms[] = [];
+  const answered = await workerPoolReconcile(
+    {
+      ...idle,
+      claim: (_identity, held) => {
+        terms.push(held);
+        return Promise.resolve(
+          terms.length === 1 ? { requirement } : undefined,
+        );
+      },
+    },
+    identity,
+    [],
+    1,
+    settings,
+    () => "minted",
+  );
+  assert.equal(answered.assignments.length, 1);
+  return {
+    assignment: answered.assignments[0] as Record<string, unknown>,
+    terms,
+  };
+}
+
+test("a container is handed out with its platform and the image its requirement pinned", async () => {
+  const { assignment, terms } = await reconciledOne(container);
+  assert.deepEqual(assignment["capabilities"], ["Platform:Linux:Arm64"]);
+  assert.equal(
+    assignment["image"],
+    `registry.invalid/worker@sha256:${"a".repeat(64)}`,
+  );
+  assert.deepEqual(
+    terms.map(({ leaseSecs, heldMax }) => ({ leaseSecs, heldMax })),
+    [{ leaseSecs: settings.leaseSecs, heldMax: settings.heldMax }],
+  );
+});
+
+test("a capability requirement is handed out with its platform and capabilities and no image", async () => {
+  const { assignment } = await reconciledOne({
+    mode: "ContainerCapability",
+    operatingSystem: "Linux",
+    architecture: "Amd64",
+    capabilities: ["Agent:Codex"],
+  });
+  assert.deepEqual(assignment["capabilities"], [
+    "Platform:Linux:Amd64",
+    "Agent:Codex",
+  ]);
+  assert.equal("image" in assignment, false);
+});
+
+test("a native requirement a claim returned is refused rather than handed to a pool", async () => {
+  await assert.rejects(
+    reconciledOne({
+      mode: "Native",
+      architecture: "Arm64",
+      driver: "XcodeBuild",
+      xcodeVersionMin: 17,
+      sdkVersionMin: 18,
+    }),
+    /claimed a native requirement/u,
+  );
 });
 
 test("a wanted that is not a whole count refuses the poll", async () => {

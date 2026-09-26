@@ -13,9 +13,9 @@
  * poll.
  *
  * NOTHING HERE READS THE TICKET MACHINE. An assignment is built from the
- * attempt row's own columns, so the process serving pools never holds a
- * journal, an obligation or a domain type. What it hands out is the contract's
- * assignment and nothing wider.
+ * attempt row and the requirement its execution recorded, so the process
+ * serving pools never holds a journal, an obligation or a domain type. What it
+ * hands out is the contract's assignment and nothing wider.
  *
  * THE BOX IS THE DEPLOYMENT'S ANSWER AND NOT THE WORK'S. An execution
  * requirement in this tree names a platform, an image and capabilities and
@@ -30,22 +30,42 @@ import type {
   WorkerPoolAssignment,
   WorkerPoolReconciliation,
 } from "../contract/workerPool.ts";
+import type { ExecutionRequirement } from "./executionRequirement.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
+import {
+  workerPoolPlatformToken,
+  type WorkerPoolClass,
+} from "./workerPoolAssignment.ts";
+import {
+  workerContractAccepted,
+  type WorkerContractRange,
+} from "./workerPlane.ts";
 
-/** One registered pool as its principal resolves it: whose it is, and what it declared. */
+/**
+ * The worker contract versions the pool plane serves. They start at the one
+ * whose assignment names the pinned image, because a pool speaking an earlier
+ * one would run its own image in that image's place.
+ */
+export const workerPoolContractAccepted: WorkerContractRange = {
+  min: { major: 1, minor: 1 },
+  max: workerContractAccepted.max,
+};
+
+/** One registered pool as its principal resolves it: whose it is, and the principal a claim is current under. */
 export interface WorkerPoolIdentity {
   readonly partition: Partition;
   readonly pool: string;
-  readonly capabilities: readonly string[];
+  readonly principal: Principal;
 }
 
-/** What registering one pool records: who it is at the issuer, and what it declared. */
+/** What registering one pool records: who it is at the issuer, what it declared, and its class. */
 export interface WorkerPoolRegistration {
   readonly partition: Partition;
   readonly pool: string;
   readonly capabilities: readonly string[];
+  readonly class: WorkerPoolClass;
   readonly clientId: string;
   readonly principal: Principal;
 }
@@ -119,9 +139,15 @@ export interface WorkerPoolClients {
   remove(clientId: string): Promise<void>;
 }
 
-/** What one claim produced, which is what the claimed attempt already required. */
+/** What one claim produced, which is the requirement the claimed attempt's execution recorded. */
 export interface WorkerPoolClaimed {
-  readonly capabilities: readonly string[];
+  readonly requirement: ExecutionRequirement;
+}
+
+/** What a claim is held to: how long the lease it takes runs, and how many live attempts the pool may hold with it. */
+export interface WorkerPoolClaimTerms {
+  readonly leaseSecs: number;
+  readonly heldMax: number;
 }
 
 /**
@@ -132,7 +158,7 @@ export interface WorkerPoolClaimed {
 export interface WorkerPoolAssignments {
   claim(
     identity: WorkerPoolIdentity,
-    leaseSecs: number,
+    terms: WorkerPoolClaimTerms,
     assignment: string,
     bearer: string,
   ): Promise<WorkerPoolClaimed | undefined>;
@@ -209,6 +235,32 @@ async function workerPoolHeldReconciled(
 }
 
 /**
+ * What a pool is told of the requirement it was assigned: the platform and the
+ * capabilities it places the workload by, as the tokens it declared them in,
+ * and the image where the requirement pinned one.
+ */
+function workerPoolClaimedPlacement(
+  requirement: ExecutionRequirement,
+): Pick<WorkerPoolAssignment, "capabilities" | "image"> {
+  switch (requirement.mode) {
+    case "Container":
+      return {
+        capabilities: [workerPoolPlatformToken(requirement)],
+        image: requirement.image,
+      };
+    case "ContainerCapability":
+      return {
+        capabilities: [
+          workerPoolPlatformToken(requirement),
+          ...requirement.capabilities,
+        ],
+      };
+    case "Native":
+      throw new Error("a worker pool claimed a native requirement");
+  }
+}
+
+/**
  * The claims one poll makes, each one a row taken and bound to a fresh bearer
  * in the same statement. A pool with no room asks for none and none is
  * claimed, so a full pool's poll costs no row a pool with room could take.
@@ -224,16 +276,11 @@ async function workerPoolClaims(
   for (let taken = 0; taken < wanted; taken += 1) {
     const assignment = mint();
     const bearer = mint();
-    const row = await assignments.claim(
-      identity,
-      settings.leaseSecs,
-      assignment,
-      bearer,
-    );
+    const row = await assignments.claim(identity, settings, assignment, bearer);
     if (row === undefined) break;
     claimed.push({
       assignment,
-      capabilities: [...row.capabilities],
+      ...workerPoolClaimedPlacement(row.requirement),
       cpuMillis: settings.cpuMillis,
       memoryMib: settings.memoryMib,
       deadlineSecs: settings.deadlineSecs,

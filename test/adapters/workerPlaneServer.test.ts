@@ -13,6 +13,7 @@ import {
   contractVersionRefusalStatus,
   workerContractHeader,
   workerContractRelease,
+  workerContractVersionText,
 } from "../../src/contract/workerContract.ts";
 import { workerPlaneRoutes } from "../../src/contract/workerPlane.ts";
 import {
@@ -34,9 +35,10 @@ import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
 import type { ReportIngested } from "../../src/interpreter/executionSchedulerReport.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
-import type {
-  SessionTaskRead,
-  WorkerTaskRead,
+import {
+  workerContractAccepted,
+  type SessionTaskRead,
+  type WorkerTaskRead,
 } from "../../src/interpreter/workerPlane.ts";
 import {
   sessionTask,
@@ -1232,7 +1234,7 @@ test("a refusal carries no action and an outage carries the wait, so a pod can t
   await unavailable.close();
 });
 
-test("a release the plane does not serve is refused before any bearer is read, and one it serves is not", async () => {
+test("a release the plane does not serve is refused before any bearer is read, and one it serves is not, the first and none among them", async () => {
   let authenticated = 0;
   const app = createWorkerPlaneApp({
     ...inertWorkerPlane(64),
@@ -1252,17 +1254,29 @@ test("a release the plane does not serve is refused before any bearer is read, a
         ...(release === undefined ? {} : { [workerContractHeader]: release }),
       },
     });
-  for (const release of [undefined, workerContractRelease, "1.0.9"])
+  const served = workerContractAccepted.max;
+  const accepted = [undefined, "1.0.0", "1.0.9", workerContractRelease];
+  for (const release of accepted)
     assert.equal((await heartbeat(release)).statusCode, 401, String(release));
-  for (const release of ["1.1.0", "2.0.0", "1.0", ""]) {
+  for (const release of [
+    `${String(served.major)}.${String(served.minor + 1)}.0`,
+    "2.0.0",
+    "1.0",
+    "",
+  ]) {
     const refused = await heartbeat(release);
     assert.equal(refused.statusCode, contractVersionRefusalStatus, release);
-    assert.deepEqual(
-      contractVersionRefusalSchema.parse(refused.json()),
-      refused.json(),
-    );
+    assert.deepEqual(contractVersionRefusalSchema.parse(refused.json()), {
+      action: "stop",
+      reason: "UnsupportedContractVersion",
+      accepted: { min: "1.0", max: workerContractVersionText(served) },
+    });
   }
-  assert.equal(authenticated, 3, "a refused release reached the authority");
+  assert.equal(
+    authenticated,
+    accepted.length,
+    "a refused release reached the authority",
+  );
   await app.close();
 });
 

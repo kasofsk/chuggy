@@ -351,7 +351,8 @@ test("a pool's bearer fetches the task the scheduler recorded, and the bearer it
     await postgresWorkerPoolRegistry(apiPool).register({
       partition: project.partition,
       pool: "task-pool",
-      capabilities: ["Agent:Claude"],
+      capabilities: ["Platform:Linux:Amd64", "Agent:Claude"],
+      class: "Dedicated",
       clientId: `chuggy-pool-${randomUUID()}`,
       principal,
     }),
@@ -371,7 +372,7 @@ test("a pool's bearer fetches the task the scheduler recorded, and the bearer it
     assert.notEqual(
       await postgresWorkerPoolAssignments(poolPlanePool).claim(
         identity,
-        leaseSecs,
+        { leaseSecs, heldMax: 1 },
         `assignment-${randomUUID()}`,
         bearer,
       ),

@@ -28,6 +28,7 @@ import { migration016 } from "../../src/adapters/postgres/schema/migrations/016-
 import { migration017 } from "../../src/adapters/postgres/schema/migrations/017-ticket-repin.ts";
 import { migration018 } from "../../src/adapters/postgres/schema/migrations/018-attempt-invocation.ts";
 import { migration019 } from "../../src/adapters/postgres/schema/migrations/019-session-invocation.ts";
+import { migration020 } from "../../src/adapters/postgres/schema/migrations/020-worker-pool-class.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -8795,5 +8796,67 @@ test("019 gives a session attempt its invocation, opened only with one, and the 
         },
       ],
     );
+  });
+});
+
+/** Every role of the installation holding anything on a pool's class, and what it holds. */
+async function poolClassPrivileges(
+  subject: pg.Pool,
+): Promise<readonly Record<string, unknown>[]> {
+  const found = await subject.query<Record<string, unknown>>(
+    `SELECT r.rolname AS role,
+            has_column_privilege(r.rolname,'public.worker_pool','class','SELECT') AS read,
+            has_column_privilege(r.rolname,'public.worker_pool','class','INSERT') AS insert,
+            has_column_privilege(r.rolname,'public.worker_pool','class','UPDATE') AS update
+       FROM pg_roles r WHERE r.rolname LIKE 'chuggy%'
+        AND (has_column_privilege(r.rolname,'public.worker_pool','class','SELECT')
+          OR has_column_privilege(r.rolname,'public.worker_pool','class','INSERT')
+          OR has_column_privilege(r.rolname,'public.worker_pool','class','UPDATE'))
+      ORDER BY r.rolname`,
+  );
+  return found.rows;
+}
+
+/** A pool's class column as the catalogue has it: absent, or present with its default. */
+async function poolClassColumn(
+  subject: pg.Pool,
+): Promise<readonly Record<string, unknown>[]> {
+  const found = await subject.query<Record<string, unknown>>(
+    `SELECT column_default, is_nullable FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='worker_pool' AND column_name='class'`,
+  );
+  return found.rows;
+}
+
+test("020 records a pool's class, the one class there is for each pool already registered", async () => {
+  await migrationDatabase("worker_pool_class", async (subject) => {
+    await installationBefore(subject, migration020.version);
+    assert.deepEqual(await poolClassColumn(subject), []);
+    await subject.query(
+      `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-20','project-20','Active');
+       INSERT INTO worker_pool(tenant,project,pool,principal,client_id)
+       VALUES('tenant-20','project-20','pool-20','principal-20','client-20')`,
+    );
+    assert.ok((await postgresMigrate(subject)).includes(migration020.version));
+    assert.deepEqual(
+      (await subject.query("SELECT pool, class FROM worker_pool")).rows,
+      [{ pool: "pool-20", class: "Dedicated" }],
+    );
+    assert.deepEqual(await poolClassColumn(subject), [
+      { column_default: null, is_nullable: "NO" },
+    ]);
+    for (const refused of ["Personal", "Shared"])
+      await assert.rejects(
+        subject.query(
+          `INSERT INTO worker_pool(tenant,project,pool,class,principal,client_id)
+           VALUES('tenant-20','project-20',$1,$1,$1,$1)`,
+          [refused],
+        ),
+        /worker_pool_class_is_known/u,
+      );
+    assert.deepEqual(await poolClassPrivileges(subject), [
+      { role: apiRole, read: true, insert: true, update: false },
+      { role: poolPlaneRole, read: true, insert: false, update: false },
+    ]);
   });
 });
