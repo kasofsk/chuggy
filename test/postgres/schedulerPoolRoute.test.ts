@@ -34,7 +34,9 @@ import {
   asAttemptId,
   asExecutionId,
   asPlacementId,
+  executionSchedulerDefaults,
   silentSchedulerTelemetry,
+  type ExecutionRoutes,
   type ExecutionRouting,
   type RequestClaim,
 } from "../../src/interpreter/executionScheduler.ts";
@@ -64,6 +66,7 @@ import {
   schedulerClaimFor,
   schedulerDeclaredSource,
   schedulerDigest,
+  schedulerEvaluationRequest,
   schedulerOwner,
   schedulerProject,
   schedulerRigOpen,
@@ -395,4 +398,59 @@ test("a project's override routes that project, and neither one beside it nor on
     "route-beside": "InCluster",
     "route-elsewhere": "InCluster",
   });
+});
+
+/** Registers a work request and an evaluation request of one project as the scheduler under `routes`, and answers the route each kind's execution was written with. */
+async function routedKinds(label: string, routes: ExecutionRoutes) {
+  const project = await schedulerProject(rig, label, { tasks: 1 });
+  const evaluation = await schedulerEvaluationRequest(rig, project, label, {
+    cycle: 1,
+    stage: 1,
+    generation: 1,
+    evaluator: 1,
+  });
+  for (const request of [project.request, evaluation]) {
+    const claim = await schedulerClaimFor(
+      rig,
+      project.partition,
+      request,
+      schedulerOwner(label),
+    );
+    assert.deepEqual(
+      await rig.store.registerSpawn(
+        claim,
+        executionSchedulerDefaults.nTasks,
+        routes,
+      ),
+      { registered: "Registered", created: 1 },
+    );
+  }
+  return rig.harness.query(
+    `SELECT t.kind, e.placement FROM execution e
+       JOIN execution_request_task t
+         ON t.tenant=e.tenant AND t.project=e.project
+        AND t.request=e.source_request AND t.task=e.task
+      WHERE e.tenant=$1 AND e.project=$2 ORDER BY t.kind`,
+    [project.partition.tenant, project.partition.project],
+  );
+}
+
+test("each task kind registers on its own kind's route, whichever way the policy splits them", async () => {
+  assert.deepEqual(
+    await routedKinds("route-split", { Work: "Pool", Evaluation: "InCluster" }),
+    [
+      { kind: "Evaluation", placement: "InCluster" },
+      { kind: "Work", placement: "Pool" },
+    ],
+  );
+  assert.deepEqual(
+    await routedKinds("route-swapped", {
+      Work: "InCluster",
+      Evaluation: "Pool",
+    }),
+    [
+      { kind: "Evaluation", placement: "Pool" },
+      { kind: "Work", placement: "InCluster" },
+    ],
+  );
 });
