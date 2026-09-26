@@ -136,7 +136,7 @@ async function schedulerProgram(source: string): Promise<string> {
   return result.stdout;
 }
 
-/** The parsed configuration, with the policy map written as the record JSON can carry. */
+/** The parsed configuration, with the policy's maps written as the records JSON can carry. */
 function parseProgram(named: Readonly<Record<string, string>>): string {
   return `
     const config = await import('./src/roots/schedulerConfig.ts');
@@ -144,7 +144,16 @@ function parseProgram(named: Readonly<Record<string, string>>): string {
     try {
       const parsed = config.schedulerCommandConfig(environment);
       process.stdout.write(JSON.stringify({
-        parsed: { ...parsed, policy: { ...parsed.policy, profiles: Object.fromEntries(parsed.policy.profiles) } },
+        parsed: { ...parsed, policy: {
+          ...parsed.policy,
+          profiles: Object.fromEntries(parsed.policy.profiles),
+          routing: {
+            ...parsed.policy.routing,
+            projectRoutes: Object.fromEntries(
+              [...parsed.policy.routing.projectRoutes].map(([tenant, projects]) => [tenant, Object.fromEntries(projects)]),
+            ),
+          },
+        } },
       }));
     } catch (failure) {
       process.stdout.write(JSON.stringify({ refused: failure.message }));
@@ -197,6 +206,10 @@ const parsed = {
         profile: { profile: "standard", runtimeVersion: "1" },
         grant,
       },
+    },
+    routing: {
+      routes: { Work: "InCluster", Evaluation: "InCluster" },
+      projectRoutes: {},
     },
     imagesAdmitted: images,
   },
@@ -475,6 +488,58 @@ test("a key the session policy does not publish is refused rather than ignored",
       `${JSON.stringify(extra)} was accepted`,
     );
     assert.match(found.refused ?? "", /SESSION_POLICY/u);
+  }
+});
+
+/** The execution policy as one case wrote it, parsed or refused. */
+async function parsedExecutionPolicy(written: unknown): Promise<{
+  readonly parsed?: { readonly policy: { readonly routing: unknown } };
+  readonly refused?: string;
+}> {
+  return JSON.parse(
+    await schedulerProgram(
+      parseProgram({
+        ...environment,
+        CHUG_SCHEDULER_EXECUTION_POLICY: JSON.stringify(written),
+      }),
+    ),
+  ) as {
+    readonly parsed?: { readonly policy: { readonly routing: unknown } };
+    readonly refused?: string;
+  };
+}
+
+test("a kind's route and each project's routes are parsed as the policy states them", async () => {
+  const found = await parsedExecutionPolicy({
+    Work: { ...policy.Work, route: "Pool" },
+    projectRoutes: {
+      tenant: { project: { Evaluation: "Pool" }, other: { Work: "InCluster" } },
+    },
+  });
+  assert.deepEqual(found.parsed?.policy.routing, {
+    routes: { Work: "Pool", Evaluation: "InCluster" },
+    projectRoutes: {
+      tenant: { project: { Evaluation: "Pool" }, other: { Work: "InCluster" } },
+    },
+  });
+});
+
+test("a route this tree does not name, or a project's route for a kind it does not name, is refused", async () => {
+  for (const written of [
+    { Work: { ...policy.Work, route: "Kubernetes" } },
+    { ...policy, projectRoutes: { tenant: { project: { Work: "Spill" } } } },
+    { ...policy, projectRoutes: { tenant: { project: { Review: "Pool" } } } },
+    { ...policy, projectRoutes: { tenant: { project: "Pool" } } },
+    { ...policy, projectRoutes: { "": { project: { Work: "Pool" } } } },
+    { ...policy, projectRoutes: { tenant: { "": { Work: "Pool" } } } },
+  ]) {
+    const found = await parsedExecutionPolicy(written);
+    assert.equal(
+      found.parsed,
+      undefined,
+      `${JSON.stringify(written)} was accepted`,
+    );
+    assert.match(found.refused ?? "", /EXECUTION_POLICY/u);
   }
 });
 
@@ -891,7 +956,7 @@ function processProgram(
           profile: { profile: 'standard', runtimeVersion: '1' },
           grant: ${JSON.stringify(grant)},
         }]]),
-        imagesAdmitted: ${JSON.stringify(images)},
+        routing: { routes: { Work: 'InCluster', Evaluation: 'InCluster' }, projectRoutes: new Map() }, imagesAdmitted: ${JSON.stringify(images)},
       }),
       configurations: {
         configuration: async () => ({ read: 'Configuration', configuration }),

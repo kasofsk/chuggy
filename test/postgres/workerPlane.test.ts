@@ -25,6 +25,7 @@ import {
   schedulerProject,
   schedulerReport,
   schedulerRigOpen,
+  schedulerInCluster,
 } from "./schedulerHarness.ts";
 
 const rig = await schedulerRigOpen();
@@ -47,6 +48,7 @@ async function placedAttempt(label: string) {
       schedulerOwner(label),
     ),
     200,
+    schedulerInCluster,
   );
   return (await schedulerPlacedAttempt(rig, project, label)).attempt;
 }

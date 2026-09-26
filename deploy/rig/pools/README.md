@@ -4,23 +4,22 @@ A worker pool is a machine or a cluster that claims work from a project and
 runs it. This is what registering one means and the order an operator writes
 in, neither of which a variable table can carry.
 
-## Nothing reaches a pool yet
+## What reaches a pool
 
-An execution is offered to a pool only where its `placement` is `Pool`, and no
-code in this tree writes that: every execution is `InCluster` and the
-scheduler places it itself, which is the launch read in
-`src/adapters/postgres/scheduler.ts`. What is here is the plane, the registry,
-the registration token and the Kubernetes backend — the seam a second fabric is
-added at — and the slice that routes work to a pool (kasofsk/chuggy#687) is
-what turns them on.
+An execution is offered to a pool only where its `placement` is `Pool`, which
+the scheduler writes once, when it registers the execution. The route is
+`CHUG_SCHEDULER_EXECUTION_POLICY`'s: a `route` of `InCluster` or `Pool` on each
+task kind, and `projectRoutes`, keyed by tenant and then project, for a project
+that routes a kind otherwise. A kind that names no route runs in the cluster,
+so a pool takes nothing until a policy sends it work, and a policy changed
+later moves only what registers after it.
 
-One thing that slice brings with it is filed rather than found later: **a
-pool's attempt needs its invocation recorded.** A pool is handed a placement
-and nothing about the work, so its harness fetches the task from the worker
-plane under the attempt bearer, as it fetches its inputs and its credentials
-(`GET /v1/task`, `src/adapters/http/workerPlaneServer.ts`). The scheduler
-records that task only for an attempt it places itself, and a pool claims no
-attempt without one (kasofsk/chuggy#706).
+A pool is handed a placement and nothing about the work, so its harness
+fetches the task from the worker plane under the attempt bearer, as it fetches
+its inputs and its credentials (`GET /v1/task`,
+`src/adapters/http/workerPlaneServer.ts`). The scheduler records that task for
+an attempt routed to a pool after the same policy check as one it places, and
+does not place it: the pool claims it.
 
 **A pool's refusal is final.** The scheduler withdraws the refused attempt
 without spending the retry budget and blocks the execution; it does not offer

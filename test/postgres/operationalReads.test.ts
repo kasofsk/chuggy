@@ -22,6 +22,7 @@ import {
   schedulerPlacedAttempt,
   schedulerProject,
   schedulerRigOpen,
+  schedulerInCluster,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
 import type {
@@ -55,8 +56,13 @@ test("operational reads page scheduler-owned execution state", async () => {
     schedulerOwner("operational-page"),
   );
   assert.equal(
-    (await rig.store.registerSpawn(claim, executionSchedulerDefaults.nTasks))
-      .registered,
+    (
+      await rig.store.registerSpawn(
+        claim,
+        executionSchedulerDefaults.nTasks,
+        schedulerInCluster,
+      )
+    ).registered,
     "Registered",
   );
   const durable = await schedulerExecutions(rig, project.partition);
@@ -105,6 +111,7 @@ test("every execution of one fan-out names the request that spawned it", async (
       schedulerOwner("operational-request"),
     ),
     executionSchedulerDefaults.nTasks,
+    schedulerInCluster,
   );
   const reads = postgresOperationalReads(ingress);
   const page = await reads.executions(project.partition, {
@@ -175,6 +182,7 @@ test("an execution reads back empty until its run writes evidence", async () => 
       schedulerOwner("operational-run"),
     ),
     executionSchedulerDefaults.nTasks,
+    schedulerInCluster,
   );
   const placed = await schedulerPlacedAttempt(rig, project, "operational-run");
   const reads = postgresOperationalReads(ingress);
@@ -241,8 +249,13 @@ async function operationalRegistered(
     schedulerOwner(label),
   );
   assert.equal(
-    (await rig.store.registerSpawn(claim, executionSchedulerDefaults.nTasks))
-      .registered,
+    (
+      await rig.store.registerSpawn(
+        claim,
+        executionSchedulerDefaults.nTasks,
+        schedulerInCluster,
+      )
+    ).registered,
     "Registered",
   );
 }
@@ -385,6 +398,7 @@ test("an execution's attempts are read in the order they were opened", async () 
       schedulerOwner("operational-attempt-order"),
     ),
     executionSchedulerDefaults.nTasks,
+    schedulerInCluster,
   );
   const admitted = await rig.store.admit(project.cluster);
   assert.ok(admitted.admitted === "Admitted");
@@ -435,6 +449,7 @@ test("an execution's summary starts at its first attempt and stays there", async
       schedulerOwner("operational-started"),
     ),
     executionSchedulerDefaults.nTasks,
+    schedulerInCluster,
   );
   const reads = postgresOperationalReads(ingress);
   const summaryOf = async (execution: string) =>

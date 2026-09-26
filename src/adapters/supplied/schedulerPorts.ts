@@ -17,6 +17,7 @@
 import type {
   ExecutionPolicy,
   ExecutionProfile,
+  ExecutionRouting,
   ExecutionTaskKind,
   LogicalExecution,
   ProfileResolved,
@@ -39,10 +40,12 @@ export interface SuppliedExecutionProfile {
 
 /**
  * The execution policy a deployment states: what each kind of logical task may
- * do, and the admitted runtimes used to admit exact images or resolve capabilities.
+ * do, where it runs, and the admitted runtimes used to admit exact images or
+ * resolve capabilities.
  */
 export interface SuppliedExecutionPolicyConfig {
   readonly profiles: ReadonlyMap<ExecutionTaskKind, SuppliedExecutionProfile>;
+  readonly routing: ExecutionRouting;
   readonly imagesAdmitted: readonly (string | SuppliedRuntime)[];
 }
 
@@ -197,6 +200,7 @@ export function suppliedExecutionPolicy(
 ): ExecutionPolicy {
   const config = checkedSuppliedExecutionPolicyConfig(input);
   return {
+    routing: config.routing,
     profileFor: (execution: LogicalExecution): Promise<ProfileResolved> => {
       const admission = suppliedAdmission(config, execution);
       if ("denied" in admission) return Promise.resolve(admission.denied);

@@ -906,6 +906,14 @@ test("the scheduler cannot rewrite a settlement, a result or its own entitlement
   }
 });
 
+test("the scheduler cannot move an execution's route once it is registered", async () => {
+  const refusal = await harness.attemptAs(
+    schedulerRole,
+    "UPDATE execution SET placement='Pool'",
+  );
+  assert.match(refusal ?? "", postgresHarnessDenial("execution"));
+});
+
 /** Every non-SELECT grant the scheduler role holds, which is the whole of its write surface. */
 const schedulerWritePrivileges = [
   {
@@ -922,7 +930,7 @@ const schedulerWritePrivileges = [
     table_name: "execution",
     privilege_type: "INSERT",
     columns:
-      "account,cluster,configuration_digest,configuration_revision,execution,platform_default_version,project,requirement_digest,requirement_identity,requirement_source,requirement_value,source_request,task,tenant,ticket",
+      "account,cluster,configuration_digest,configuration_revision,execution,placement,platform_default_version,project,requirement_digest,requirement_identity,requirement_source,requirement_value,source_request,task,tenant,ticket",
   },
   {
     table_name: "execution",

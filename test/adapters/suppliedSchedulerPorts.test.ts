@@ -16,6 +16,7 @@ import {
   asCapacityAccountId,
   asClusterId,
   asExecutionId,
+  type ExecutionRouting,
   type ExecutionTaskKind,
   type LogicalExecution,
 } from "../../src/interpreter/executionScheduler.ts";
@@ -44,6 +45,11 @@ const unnamedReach = "Everything" as unknown as FilesystemAccess;
 const work: SuppliedExecutionProfile = {
   profile: { profile: "standard", runtimeVersion: "1" },
   grant,
+};
+
+const routing: ExecutionRouting = {
+  routes: { Work: "InCluster", Evaluation: "InCluster" },
+  projectRoutes: new Map(),
 };
 
 function executionOf(taskKind: ExecutionTaskKind): LogicalExecution {
@@ -85,6 +91,7 @@ const admitted = ["registry.invalid/worker:v1"];
 test("a task kind the deployment states resolves to its profile and grant", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
+    routing,
     imagesAdmitted: admitted,
   });
   assert.deepEqual(await policy.profileFor(executionOf("Work")), {
@@ -97,6 +104,7 @@ test("a task kind the deployment states resolves to its profile and grant", asyn
 test("a task kind the deployment states nothing for is a definitive inability", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
+    routing,
     imagesAdmitted: admitted,
   });
   assert.deepEqual(await policy.profileFor(executionOf("Evaluation")), {
@@ -108,6 +116,7 @@ test("a task kind the deployment states nothing for is a definitive inability", 
 test("an image the site does not admit is a definitive policy denial", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
+    routing,
     imagesAdmitted: ["registry.invalid/other:v1"],
   });
   assert.deepEqual(await policy.profileFor(executionOf("Work")), {
@@ -133,6 +142,7 @@ const catalogGrown = [
 test("a pinned image is what runs when the configuration also names an agent", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
+    routing,
     imagesAdmitted: catalogGrown,
   });
   assert.deepEqual(
@@ -153,6 +163,7 @@ test("a pinned image is what runs when the configuration also names an agent", a
 test("a pinned image whose entry does not provide the agent is a policy denial", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
+    routing,
     imagesAdmitted: [
       {
         image: "registry.invalid/claude-only:v1",
@@ -180,6 +191,7 @@ test("a pinned image whose entry does not provide the agent is a policy denial",
 test("a pinned image whose entry publishes no capability runs the agent anyway", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
+    routing,
     imagesAdmitted: admitted,
   });
   assert.deepEqual(
@@ -194,6 +206,7 @@ test("a pinned image whose entry publishes no capability runs the agent anyway",
 test("an agent capability resolves to the last admitted runtime that provides it", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
+    routing,
     imagesAdmitted: catalogGrown,
   });
   assert.deepEqual(
@@ -218,6 +231,7 @@ test("an agent capability resolves to the last admitted runtime that provides it
 test("an agent capability resolves to an admitted runtime that provides it", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
+    routing,
     imagesAdmitted: [
       {
         image: "registry.invalid/agents:v1",
@@ -250,6 +264,7 @@ test("an agent capability resolves to an admitted runtime that provides it", asy
 test("an agent capability does not resolve to a runtime on the wrong platform", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
+    routing,
     imagesAdmitted: [
       {
         image: "registry.invalid/agents-arm:v1",
@@ -283,6 +298,7 @@ test("an agent capability does not resolve to a runtime on the wrong platform", 
 test("a legacy admitted image provides the legacy Claude capability", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
+    routing,
     imagesAdmitted: admitted,
   });
   const execution = executionOf("Work");
@@ -306,6 +322,7 @@ test("a legacy admitted image provides the legacy Claude capability", async () =
 test("a native requirement is refused by capability and never by the image list", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
+    routing,
     imagesAdmitted: admitted,
   });
   const native = executionOf("Work");
@@ -329,6 +346,7 @@ test("a policy admitting no image at all is refused where it is composed", () =>
     () =>
       suppliedExecutionPolicy({
         profiles: new Map([["Work", work]]),
+        routing,
         imagesAdmitted: [],
       }),
     Error,
@@ -337,6 +355,7 @@ test("a policy admitting no image at all is refused where it is composed", () =>
     () =>
       suppliedExecutionPolicy({
         profiles: new Map([["Work", work]]),
+        routing,
         imagesAdmitted: [""],
       }),
     Error,
@@ -348,6 +367,7 @@ test("an entry publishing an empty capability list is refused where it is compos
     () =>
       suppliedExecutionPolicy({
         profiles: new Map([["Work", work]]),
+        routing,
         imagesAdmitted: [
           {
             image: "registry.invalid/worker:v1",
@@ -366,6 +386,7 @@ test("a policy that grants nothing, or grants a reach nothing names, is refused"
     () =>
       suppliedExecutionPolicy({
         profiles: new Map(),
+        routing,
         imagesAdmitted: admitted,
       }),
     Error,
@@ -382,6 +403,7 @@ test("a policy that grants nothing, or grants a reach nothing names, is refused"
             },
           ],
         ]),
+        routing,
         imagesAdmitted: admitted,
       }),
     Error,
@@ -392,6 +414,7 @@ test("a policy that grants nothing, or grants a reach nothing names, is refused"
         profiles: new Map([
           ["Work", { ...work, profile: { profile: "", runtimeVersion: "1" } }],
         ]),
+        routing,
         imagesAdmitted: admitted,
       }),
     Error,

@@ -44,6 +44,7 @@ import {
   schedulerOwner,
   schedulerProject,
   schedulerRigOpen,
+  schedulerInCluster,
   type SchedulerProject,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
@@ -89,6 +90,7 @@ async function registerAll(project: SchedulerProject, label: string) {
       schedulerOwner(label),
     ),
     executionSchedulerDefaults.nTasks,
+    schedulerInCluster,
   );
 }
 

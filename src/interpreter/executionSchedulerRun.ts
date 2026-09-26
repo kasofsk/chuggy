@@ -86,9 +86,10 @@
  * `runner.qnt`'s `placementOutcome` asked of the pools its project registered,
  * each revoked where the project authority withholds its `Execute`. That is
  * the two inabilities again: no pool configured to run it blocks, and one that
- * could is a hold, as is an authority that could not answer. A held attempt
- * waits on its own lease, and one no pool holds when that lapses is withdrawn
- * without spending the budget.
+ * could is a hold, as is an authority that could not answer. A held attempt,
+ * prepared and invoked as a placed one is where a pool could run it, waits on
+ * its own lease, and one no pool holds when that lapses is withdrawn without
+ * spending the budget.
  *
  * A POOL'S REFUSAL IS THE DEFINITIVE INABILITY. A pool that says it cannot run
  * what it claimed blocks the execution rather than holding it for another pool,
@@ -111,6 +112,7 @@
 
 import {
   checkedExecutionSchedulerConfig,
+  executionRoutes,
   recordScheduler,
   type AttemptEvidenceRecord,
   type AttemptLoss,
@@ -269,7 +271,11 @@ export async function executionSchedulerRegister(
   );
   let registered = 0;
   for (const claim of claims) {
-    const outcome = await service.store.registerSpawn(claim, config.nTasks);
+    const outcome = await service.store.registerSpawn(
+      claim,
+      config.nTasks,
+      executionRoutes(service.policy.routing, claim.partition),
+    );
     recordScheduler(service.metrics, (metrics) => {
       metrics.registration(outcome.registered);
       if (outcome.registered === "Conflicting") {
@@ -686,35 +692,35 @@ async function schedulerPoolsAnswered(
 
 /**
  * Asks what can be said of an execution routed to pools against the pools its
- * project registered, and blocks the one no pool is configured to run. A page
- * the registry cut short never blocks, since a pool past it may be, and an
- * undecided authority holds.
+ * project registered, blocks the one no pool is configured to run, and answers
+ * whether its attempt may be offered. A page the registry cut short never
+ * blocks, since a pool past it may be, and an undecided authority holds.
  */
-async function schedulerHoldForPools(
+async function schedulerOfferable(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
   attempt: PhysicalAttempt,
-): Promise<void> {
+): Promise<boolean> {
   const registered = await service.workerPools.registered(execution.partition);
   const answered = await schedulerPoolsAnswered(
     service.access,
     registered.pools,
   );
-  if (answered === undefined) return;
+  if (answered === undefined) return false;
   const outcome = workerPoolOutcomeRegistered(execution, answered);
   switch (outcome) {
     case "DefinitiveIncompatibility":
-      if (registered.truncated) return;
+      if (registered.truncated) return true;
       await schedulerBlock(
         service,
         attempt,
         "PlacementIncompatible",
         "RequiredCapabilityUnavailable",
       );
-      return;
+      return false;
     case "Placeable":
     case "Unavailable":
-      return;
+      return true;
     case "NotApplicable":
       throw new Error(
         `execution scheduler: ${execution.execution} is routed to pools and no pool outcome applies to it`,
@@ -722,7 +728,29 @@ async function schedulerHoldForPools(
   }
 }
 
-/** Places an opened attempt, or holds it for the pools its execution is routed to. */
+/**
+ * Offers an opened attempt to the pools its execution is routed to: prepared
+ * and invoked as a placed one is, so a pool claims what policy admitted, and
+ * never placed, because a pool takes it rather than being handed it.
+ */
+async function schedulerOffer(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+  attempt: PhysicalAttempt,
+): Promise<void> {
+  if (!(await schedulerOfferable(service, execution, attempt))) return;
+  const launch = await schedulerPrepare(service, execution, attempt);
+  if (launch === undefined) return;
+  if (
+    !(await service.store.attemptInvoked(attempt, workTaskInvocation(launch)))
+  )
+    return;
+  recordScheduler(service.metrics, (metrics) => {
+    metrics.attemptOffered();
+  });
+}
+
+/** Places an opened attempt, or offers it to the pools its execution is routed to. */
 async function schedulerLaunchOpened(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
@@ -732,7 +760,7 @@ async function schedulerLaunchOpened(
     case "InCluster":
       return schedulerPlace(service, execution, attempt);
     case "Pool":
-      await schedulerHoldForPools(service, execution, attempt);
+      await schedulerOffer(service, execution, attempt);
       return false;
   }
 }

@@ -45,11 +45,13 @@ import type {
   SuppliedRuntimeFactsConfig,
 } from "../adapters/supplied/schedulerPorts.ts";
 import {
+  allExecutionRoutes,
   asClusterId,
   asSchedulerOwnerId,
   executionCapacityDefaults,
   executionSchedulerDefaults,
   type ClusterId,
+  type ExecutionRouting,
   type ExecutionSchedulerConfig,
   type ExecutionTaskKind,
   type SchedulerOwnerId,
@@ -72,7 +74,9 @@ import {
   type ProjectAccessSettings,
 } from "../interpreter/projectAccess.ts";
 import {
+  asProjectId,
   asRecoveryEpoch,
+  asTenantId,
   type RecoveryEpoch,
 } from "../interpreter/projectStore.ts";
 import type { ServiceRuntimeConfig } from "../interpreter/serviceRuntime.ts";
@@ -154,10 +158,13 @@ const schedulerGrantSchema = z.strictObject({
   mayCompleteTask: z.boolean(),
 });
 
+const schedulerRouteSchema = z.enum(allExecutionRoutes);
+
 const schedulerProfileSchema = z.strictObject({
   profile: schedulerTextSchema,
   runtimeVersion: schedulerTextSchema,
   grant: schedulerGrantSchema,
+  route: schedulerRouteSchema.optional(),
 });
 
 /**
@@ -193,7 +200,21 @@ const schedulerPolicyShape = {
   Evaluation: schedulerProfileSchema.optional(),
 } satisfies Record<ExecutionTaskKind, z.ZodType>;
 
-const schedulerPolicySchema = z.strictObject(schedulerPolicyShape);
+/** One project's routes, naming only the kinds it routes otherwise. */
+const schedulerProjectRoutesSchema = z.strictObject({
+  Work: schedulerRouteSchema.exactOptional(),
+  Evaluation: schedulerRouteSchema.exactOptional(),
+} satisfies Record<ExecutionTaskKind, z.ZodType>);
+
+const schedulerPolicySchema = z.strictObject({
+  ...schedulerPolicyShape,
+  projectRoutes: z
+    .record(
+      schedulerTextSchema,
+      z.record(schedulerTextSchema, schedulerProjectRoutesSchema),
+    )
+    .optional(),
+});
 
 /** Every task kind the policy above states a profile for, read off the shape that states them. */
 const schedulerTaskKinds = Object.keys(
@@ -475,7 +496,36 @@ function schedulerWorkerCatalog(
     }));
 }
 
-/** The execution policy this deployment states, one profile and grant per task kind. */
+/**
+ * Where this deployment routes each task kind, and the projects it routes
+ * otherwise, keyed by tenant and then project. A kind that names no route runs
+ * in cluster, because a pool is opt-in: `runner.qnt` lets no registered runner
+ * redirect Kubernetes placement, and a policy written before routes existed
+ * parses to the placement it always had.
+ */
+function schedulerPolicyRouting(
+  parsed: z.infer<typeof schedulerPolicySchema>,
+): ExecutionRouting {
+  return {
+    routes: {
+      Work: parsed.Work?.route ?? "InCluster",
+      Evaluation: parsed.Evaluation?.route ?? "InCluster",
+    },
+    projectRoutes: new Map(
+      Object.entries(parsed.projectRoutes ?? {}).map(([tenant, projects]) => [
+        asTenantId(tenant),
+        new Map(
+          Object.entries(projects).map(([project, override]) => [
+            asProjectId(project),
+            override,
+          ]),
+        ),
+      ]),
+    ),
+  };
+}
+
+/** The execution policy this deployment states, one profile, grant and route per task kind. */
 function schedulerPolicy(
   environment: SchedulerEnvironment,
   admitted: readonly SchedulerAdmittedImage[],
@@ -497,7 +547,11 @@ function schedulerPolicy(
       grant: supplied.grant,
     });
   }
-  return { profiles, imagesAdmitted: admitted.map(schedulerRuntime) };
+  return {
+    profiles,
+    routing: schedulerPolicyRouting(parsed),
+    imagesAdmitted: admitted.map(schedulerRuntime),
+  };
 }
 
 /** The site policy a placed pod carries, every value of it read and handed on unread. */

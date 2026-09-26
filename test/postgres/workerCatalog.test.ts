@@ -37,6 +37,7 @@ import {
   schedulerProject,
   schedulerRigOpen,
   schedulerRolePool,
+  schedulerInCluster,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
 import { postgresHarnessDenial } from "./harness.ts";
@@ -163,8 +164,13 @@ test("an image labels its execution and its configuration only once catalogued",
     schedulerOwner("worker-catalog-read"),
   );
   assert.equal(
-    (await rig.store.registerSpawn(claim, executionSchedulerDefaults.nTasks))
-      .registered,
+    (
+      await rig.store.registerSpawn(
+        claim,
+        executionSchedulerDefaults.nTasks,
+        schedulerInCluster,
+      )
+    ).registered,
     "Registered",
   );
   const reads = postgresOperationalReads(ingress);

@@ -57,6 +57,8 @@ import {
   asSchedulerOwnerId,
   type ClusterId,
   type AttemptReport,
+  type ExecutionRoutes,
+  type ExecutionRouting,
   type ExecutionSchedulerStore,
   type FencedAttempt,
   type PhysicalAttempt,
@@ -619,6 +621,19 @@ export const schedulerInvocation: WorkTaskInvocation = {
     mayCompleteTask: false,
   },
 };
+
+/** The routes a case registers with when it is not about routing. */
+export const schedulerInCluster: ExecutionRoutes = {
+  Work: "InCluster",
+  Evaluation: "InCluster",
+};
+
+/** A policy's routing that sends every project's work one way. */
+export function schedulerRouting(
+  routes: ExecutionRoutes = schedulerInCluster,
+): ExecutionRouting {
+  return { routes, projectRoutes: new Map() };
+}
 
 /** How long a placed attempt's lease runs for, past any case's own duration. */
 const schedulerPlacedLeaseSecs = 300;

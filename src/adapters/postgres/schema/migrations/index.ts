@@ -21,6 +21,7 @@ import { migration020 } from "./020-worker-pool-class.ts";
 import { migration021 } from "./021-scheduler-reads-pools.ts";
 import { migration022 } from "./022-worker-pool-fencing.ts";
 import { migration023 } from "./023-worker-pool-release-ends.ts";
+import { migration024 } from "./024-scheduler-writes-placement.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -47,4 +48,5 @@ export const migrations: readonly Migration[] = [
   migration021,
   migration022,
   migration023,
+  migration024,
 ];
