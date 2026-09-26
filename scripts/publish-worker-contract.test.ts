@@ -10,6 +10,7 @@ import {
 const wire = "a".repeat(64);
 const name = "@chuggy/worker-contract";
 const release = "1.2.0";
+const files = "e".repeat(64);
 
 /** A git and a GitHub that hold nothing yet, recording every change asked of them; `over` makes one of them refuse. */
 function faked(over: Partial<WorkerContractPublishPorts> = {}): {
@@ -25,13 +26,13 @@ function faked(over: Partial<WorkerContractPublishPorts> = {}): {
       tagged: () => false,
       released: () => false,
       history: () => [
-        { release: "1.0.0", wire: "b".repeat(64) },
-        { release, wire },
+        { release: "1.0.0", wire: "b".repeat(64), files: "f".repeat(64) },
+        { release, wire, files },
       ],
       wire: () => Promise.resolve(wire),
       pack: (outDirectory) => {
         made.push(`pack ${outDirectory}`);
-        return { tarball: `${outDirectory}/contract.tgz`, sha256: "c" };
+        return { tarball: `${outDirectory}/contract.tgz`, sha256: "c", files };
       },
       release: (tag, commit, tarball, title, notes) => {
         made.push(`release ${tag} ${commit} ${tarball} ${title} ${notes}`);
@@ -95,7 +96,7 @@ for (const [why, over, refusal] of [
   ],
   [
     "a release the history has no entry for",
-    { history: () => [{ release: "1.1.0", wire }] },
+    { history: () => [{ release: "1.1.0", wire, files }] },
     /add its entry/u,
   ],
   [
@@ -131,6 +132,26 @@ for (const [why, over, refusal] of [
       );
       assert.deepEqual(made, []);
     });
+
+for (const dryRun of [false, true])
+  test(`a pack whose files the history does not record is refused before it is released${dryRun ? ", in a dry run too" : ""}`, async () => {
+    const { made, ports } = faked({
+      history: () => [{ release, wire, files: "f".repeat(64) }],
+    });
+    const published = await publishWorkerContract(
+      ports,
+      name,
+      release,
+      "/out",
+      dryRun,
+    );
+    assert.equal(published.published, "Refused");
+    assert.match(
+      published.published === "Refused" ? published.why : "",
+      new RegExp(`the pack's are ${files}: record the pack's`, "u"),
+    );
+    assert.deepEqual(made, ["pack /out"]);
+  });
 
 test("a GitHub that cannot say whether the release exists stops the release", async () => {
   const { made, ports } = faked({

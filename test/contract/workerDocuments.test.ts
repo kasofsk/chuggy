@@ -10,12 +10,16 @@
  * schema at and one past every bound it states. A manifest body written at a
  * retained version is lifted to the version the harness writes, which is the
  * only one the schema describes.
+ *
+ * AN OLDER RELEASE A PLANE STILL SERVES WRITES DOCUMENTS THIS TREE READS: at a
+ * version the reader accepts, and, where that version is this tree's own, no
+ * built example its schema accepts is one this tree's schema refuses.
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ZodType } from "zod";
+import { z, type ZodType } from "zod";
 
 import {
   agenticRefusalReasonCharsMax,
@@ -54,6 +58,11 @@ import {
   sourceReport,
   workerReport,
 } from "../interpreter/resultManifestFixture.ts";
+import {
+  workerContractReleaseExport,
+  workerContractReleaseSchema,
+  workerContractReplayed,
+} from "./workerContractReleases.ts";
 
 /** One body and what each side answered it. */
 interface Judged {
@@ -676,3 +685,50 @@ test("the reader accepts no decision the schema refuses", () => {
     })),
   );
 });
+
+for (const [plane, version, current, accepted, name, schema, built] of [
+  [
+    "job",
+    "resultManifestSchemaVersion",
+    contract.resultManifestSchemaVersion,
+    contract.resultManifestSchemaVersionsAccepted,
+    "resultManifestDocumentSchema",
+    contract.resultManifestDocumentSchema,
+    manifestBuilt,
+  ],
+  [
+    "session",
+    "leadTurnDocumentVersion",
+    contract.leadTurnDocumentVersion,
+    [contract.leadTurnDocumentVersion],
+    "leadDecisionDocumentSchema",
+    contract.leadDecisionDocumentSchema,
+    leadBuilt,
+  ],
+] as const)
+  for (const release of workerContractReplayed(plane))
+    test(`a ${release} harness writes its ${name} at a version this tree reads, and at this tree's own builds none this tree refuses`, async () => {
+      const written = await workerContractReleaseExport(
+        release,
+        "workerDocuments",
+        version,
+        z.number(),
+      );
+      assert.ok(accepted.some((known) => known === written));
+      const older = await workerContractReleaseExport(
+        release,
+        "workerDocuments",
+        name,
+        workerContractReleaseSchema,
+      );
+      const builds = built.filter(
+        ([, value]) => older.safeParse(value).success,
+      );
+      assert.ok(written !== current || builds.length > 0);
+      assert.deepEqual(
+        builds
+          .filter(([, value]) => !schema.safeParse(value).success)
+          .map(([what]) => what),
+        [],
+      );
+    });

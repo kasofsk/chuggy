@@ -1,6 +1,6 @@
 /**
  * The worker contract's wire as one digest, and the history that names the
- * release each wire was published as.
+ * release each wire was published as and the files its asset holds.
  *
  * THE DIGEST IS TAKEN OVER EVERY EXPORT OF EVERY ENTRY THE PACKAGE NAMES, read
  * off the modules rather than listed, so an export added or removed moves it
@@ -58,7 +58,7 @@ import { workspaceManifestOf } from "./pack-worker-contract.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 
-/** Where the history is kept, one entry per published release. */
+/** Where the history is kept, one entry per published release, its files as `workerContractFilesDigest` reads them. */
 export const workerContractHistoryPath = join(
   root,
   "test/contract/workerContract.history.json",
@@ -71,6 +71,7 @@ const workerContractHistorySchema = z
         .string()
         .refine((release) => workerContractVersionOf(release) !== undefined),
       wire: z.string().regex(/^[0-9a-f]{64}$/u),
+      files: z.string().regex(/^[0-9a-f]{64}$/u),
     }),
   )
   .min(1);
@@ -1066,7 +1067,10 @@ export async function workerContractWire(): Promise<string> {
 }
 
 /** Whether `later` is a later release than `earlier`, each read as its three numbers. */
-function workerContractHistoryLater(earlier: string, later: string): boolean {
+export function workerContractHistoryLater(
+  earlier: string,
+  later: string,
+): boolean {
   const right = later.split(".").map(Number);
   for (const [index, part] of earlier.split(".").map(Number).entries()) {
     const other = right[index] ?? 0;
@@ -1087,7 +1091,7 @@ function workerContractHistoryVersion(release: string): string {
  * patch moves only the packaging.
  */
 export function workerContractHistoryRefusal(
-  history: WorkerContractHistory,
+  history: readonly Pick<WorkerContractHistory[number], "release" | "wire">[],
   release: string,
   wire: string,
 ): string | undefined {

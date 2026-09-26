@@ -1,10 +1,12 @@
 [
   {
     "release": "1.0.0",
-    "wire": "98f42d8de66cf557a4f1990fae9638e49f5471958e4375e0feecd6ee56bcf9ed"
+    "wire": "98f42d8de66cf557a4f1990fae9638e49f5471958e4375e0feecd6ee56bcf9ed",
+    "files": "6622d6c03c194727a4e23ceed67846a084d5ce5777d63c8c8a43eab383e5f697"
   },
   {
     "release": "1.1.0",
-    "wire": "50cbceb92c14d230fa5732de1829336c31fec7cca0e14cf5265311a8e3d42c72"
+    "wire": "50cbceb92c14d230fa5732de1829336c31fec7cca0e14cf5265311a8e3d42c72",
+    "files": "27f06beacd6b992edfba4c9b2778655d0eb11f007166dac45668567d4e871159"
   }
 ]

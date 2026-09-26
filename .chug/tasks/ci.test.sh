@@ -135,6 +135,7 @@ RC=$?
 set -e
 check "a source-only change skips Quint" 0 "$RC" "check-model: SKIPPED"
 check "a source-only change selects static checks" 0 "$RC" "stub check-source"
+refute "a source-only change runs the suites" 0 "$RC" "check-source unit: SKIPPED"
 
 # THE SUITES UNDER `test/` ARE WHAT HOLDS `scripts/` ANSWERABLE, and a change
 # to a script reaches them only if the unit stage is selected for it. A cone
@@ -174,6 +175,24 @@ RC=$?
 set -e
 refute "a change to the pack's tsconfig runs the suites" 0 "$RC" "check-source unit: SKIPPED"
 check "a change to the pack's tsconfig still skips Quint" 0 "$RC" "check-model: SKIPPED"
+
+# The contract's history names the releases the unit suites replay against the
+# server, so a change to that file alone must select the unit stage.
+stub_repo 0
+mkdir -p "$R/test/contract"
+printf '[]\n' > "$R/test/contract/workerContract.history.json"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf '[{}]\n' > "$R/test/contract/workerContract.history.json"
+git -C "$R" add -A
+git -C "$R" commit -qm history
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+refute "a change to the contract's history runs the suites" 0 "$RC" "check-source unit: SKIPPED"
 
 # The harness is cruised and its comments name paths, so a change to it alone
 # must select both gates, or its boundary rules go unasked on a changed run.
