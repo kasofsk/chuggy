@@ -60,6 +60,19 @@ const document: LeadObservationDocument = {
   refusals: leadObservedRefusals(standing, observation.candidates),
 };
 
+/** The view with the candidate standing refused at its previous version. */
+const superseded: SelectorObservation = {
+  ...observation,
+  refusals: [
+    ...standing,
+    {
+      ...standingRefusal,
+      ticket: candidate.ticket,
+      ticketVersion: candidate.ticketVersion - 1,
+    },
+  ],
+};
+
 test("an observation document round-trips through its own text", () => {
   assert.deepEqual(
     parseLeadObservation(leadObservationText(document)),
@@ -167,17 +180,6 @@ test("a decision names what it chose, refused and lifted", () => {
 });
 
 test("a candidate standing refused at an earlier version may be lifted, and dispatched beside the lift", () => {
-  const superseded: SelectorObservation = {
-    ...observation,
-    refusals: [
-      ...standing,
-      {
-        ...standingRefusal,
-        ticket: candidate.ticket,
-        ticketVersion: candidate.ticketVersion - 1,
-      },
-    ],
-  };
   const lifts = [{ ticket: candidate.ticket }];
   assert.deepEqual(
     parseLeadDecision(decision({ lifts }), superseded).lifts,
@@ -191,6 +193,20 @@ test("a candidate standing refused at an earlier version may be lifted, and disp
     { ticket: candidate.ticket, expectedTicketVersion: 3 },
   ]);
   assert.deepEqual(both.lifts, lifts);
+});
+
+test("a candidate standing refused at an earlier version may be refused again at its own", () => {
+  const refusals = [
+    {
+      ticket: candidate.ticket,
+      ticketVersion: candidate.ticketVersion,
+      reason: "still not ready",
+    },
+  ];
+  assert.deepEqual(
+    parseLeadDecision(decision({ refusals }), superseded).refusals,
+    refusals,
+  );
 });
 
 test("a decision that chose nothing is the free one and parses", () => {

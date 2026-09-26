@@ -654,6 +654,11 @@ const leadBuiltChoices: readonly Built[] = [
     true,
   ],
   [
+    "a refusal of a candidate whose earlier refusal stands",
+    leadWith({ refusals: [leadRefusalOf(1)] }),
+    true,
+  ],
+  [
     "a negative version",
     leadWith({ dispatches: [{ ticket: 1, expectedTicketVersion: -1 }] }),
     false,

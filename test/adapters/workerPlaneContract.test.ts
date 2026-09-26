@@ -201,7 +201,7 @@ interface WorkerPlaneCall {
   readonly payload?: string | Buffer | object;
 }
 
-/** One way of driving a route: the ports it meets, and how its call, its bearer and the release it names differ from the plane's own. */
+/** One way of driving a route: the ports it meets, how its call, its bearer and the release it names differ from the plane's own, and the status it must be answered with where it decides one. */
 interface WorkerPlaneCase {
   readonly name: string;
   readonly service?: Partial<WorkerPlaneServerService>;
@@ -209,9 +209,21 @@ interface WorkerPlaneCase {
   readonly anonymous?: true;
   readonly bearer?: string;
   readonly release?: string;
+  readonly status?: number;
 }
 
 const served = workerContractAccepted.max;
+
+/**
+ * Every path the worker core's `entrypoint.mjs` uploads an artifact at: an
+ * agentic attempt's result, a commands attempt's output, and a crash's error.
+ * They are restated because that module is in kasofsk/chuggy-common.
+ */
+const workerUploadPathsWritten = [
+  ".chuggy/agent-result.json",
+  ".chuggy/check-output.json",
+  ".chuggy/worker-error.txt",
+] as const;
 
 /** A caller every route refuses before it reads a bearer. */
 const workerContractStranger: WorkerPlaneCase = {
@@ -689,6 +701,11 @@ const workerPlaneCases: Readonly<
     ...workerPlaneStrangers,
     workerPlaneNotBytes,
     { name: "a path no artifact may have", call: { rest: "%2E%2E%2Fescape" } },
+    ...workerUploadPathsWritten.map((path) => ({
+      name: `an upload at ${path}`,
+      call: { rest: path },
+      status: 204,
+    })),
     ...Object.values(reservations).map((reserved) => ({
       name: `a reservation answering ${reserved.reserved}`,
       service: { reservations: { reserve: () => Promise.resolve(reserved) } },
@@ -1128,6 +1145,19 @@ async function workerPlaneDriven<Name extends string>(
   };
 }
 
+/** Asserts a case that decides its status was answered with it. */
+function workerPlaneStatusHeld(
+  driven: WorkerPlaneCase,
+  answered: WorkerPlaneAnswered,
+): void {
+  if (driven.status !== undefined)
+    assert.equal(
+      answered.status,
+      driven.status,
+      `${driven.name} answered ${answered.body}`,
+    );
+}
+
 /** Which of the bodies a status may carry `body` is, read as the pod's parse reads it: the first that accepts it. */
 function workerPlaneMemberRead(answer: z.ZodUnion, body: string): number {
   const offered: unknown = JSON.parse(body);
@@ -1164,6 +1194,7 @@ function workerPlaneAnswersHeld<Name extends string>(
       const seen = new Map<string, Set<boolean>>();
       for (const driven of plane.cases[name]) {
         const answered = await workerPlaneDriven(plane, name, driven);
+        workerPlaneStatusHeld(driven, answered);
         const answer = answers[answered.status];
         assert.ok(
           answer !== undefined,
@@ -1261,6 +1292,7 @@ function workerPlaneReplayed<Name extends string>(
           route,
         );
         workerPlaneReadBy(older, called, driven.name, answered);
+        workerPlaneStatusHeld(driven, answered);
         assert.ok(
           driven.release !== undefined || !workerPlaneVersionRefused(answered),
           `${driven.name} was refused for naming ${older.release}`,
