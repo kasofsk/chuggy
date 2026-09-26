@@ -1,6 +1,7 @@
 /**
  * The documents a pod is launched with, held against what the launchers build
- * and against the interpreter's grant and worker configuration they restate.
+ * and against the interpreter's grant, worker configuration and execution
+ * profile they restate.
  */
 
 import assert from "node:assert/strict";
@@ -117,11 +118,31 @@ test("the worker configuration the wire names is the interpreter's", () => {
     worker: WorkerConfiguration,
   ): NonNullable<WorkTaskDocument["worker"]> => worker;
   type WireWorker = NonNullable<WorkTaskDocument["worker"]>;
+  type WireMode = Extract<WireWorker, { mode: unknown }>["mode"];
+  /** Variant by variant, so a key one variant adds cannot hide behind another that names it. */
   const sameKeys: [
-    SameKeys<WireWorker, WorkerConfiguration>,
-    SameKeys<Extract<WireWorker, { mode: unknown }>["mode"], WorkerMode>,
+    SameKeys<
+      Extract<WireWorker, { mode: unknown }>,
+      Extract<WorkerConfiguration, { mode: unknown }>
+    >,
+    SameKeys<
+      Extract<WireWorker, { arguments: unknown }>,
+      Extract<WorkerConfiguration, { arguments: unknown }>
+    >,
+    SameKeys<
+      Extract<WireMode, { agent: "Claude" }>,
+      Extract<WorkerMode, { agent: "Claude" }>
+    >,
+    SameKeys<
+      Extract<WireMode, { agent: "Codex" }>,
+      Extract<WorkerMode, { agent: "Codex" }>
+    >,
+    SameKeys<
+      Extract<WireMode, { type: "Commands" }>,
+      Extract<WorkerMode, { type: "Commands" }>
+    >,
     SameKeys<WireWorker["files"][number], WorkerConfiguration["files"][number]>,
-  ] = [true, true, true];
+  ] = [true, true, true, true, true, true];
   assert.ok(sameKeys.every(Boolean));
   const worker: WorkerConfiguration = {
     mode: { type: "Commands", commands: ["just check"] },
