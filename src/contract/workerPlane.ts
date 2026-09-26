@@ -20,6 +20,10 @@ import {
   runModelCharsMax,
   runTurnSeriesMax,
 } from "./http.ts";
+import {
+  workerPlaneAnswersRefusingVersions,
+  type WorkerPlaneAnswers,
+} from "./planeAnswers.ts";
 import { runModelUsageSchema, runTotalsSchema } from "./responses.ts";
 import { artifactRoles, runEndedEvidences } from "./rosters.ts";
 import {
@@ -70,6 +74,7 @@ export {
   workerPlaneUploadBytesMax,
 } from "./http.ts";
 export { runEndedEvidences } from "./rosters.ts";
+export type { WorkerPlaneAnswer } from "./planeAnswers.ts";
 
 /** One turn as a worker offers it; the server is what dates the stored row. */
 export const workerRunTurnsSchema = z.strictObject({
@@ -159,9 +164,6 @@ export type WorkerCredentialAbsent = z.infer<
   typeof workerCredentialAbsentSchema
 >;
 
-/** What one status answers with: a body its schema reads, or no body at all. */
-export type WorkerPlaneAnswer = z.ZodType | "empty";
-
 /** The refusals every write keeping a run's bytes answers with, whichever run object it keeps. */
 const workerRunObjectAnswers = {
   204: "empty",
@@ -173,7 +175,7 @@ const workerRunObjectAnswers = {
 } as const;
 
 /** Every status each job route's handler answers with, and what it answers. */
-export const workerPlaneAnswers = {
+export const workerPlaneAnswers = workerPlaneAnswersRefusingVersions({
   input: { 200: workerInputAnswerSchema, 401: workerPlaneStopSchema },
   task: {
     200: workerTaskAnswerSchema,
@@ -236,6 +238,4 @@ export const workerPlaneAnswers = {
     404: workerCredentialAbsentSchema,
     503: workerPlaneRetrySchema,
   },
-} as const satisfies Readonly<
-  Record<WorkerPlaneRouteName, Readonly<Record<number, WorkerPlaneAnswer>>>
->;
+} as const satisfies WorkerPlaneAnswers<WorkerPlaneRouteName>);

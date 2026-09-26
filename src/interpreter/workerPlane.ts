@@ -1,3 +1,11 @@
+import {
+  workerContractRelease,
+  workerContractUnnamed,
+  workerContractVersionOf,
+  workerContractVersionText,
+  type ContractVersionRefusal,
+  type WorkerContractVersion,
+} from "../contract/workerContract.ts";
 import type { SessionBearerSecret } from "./agentSession.ts";
 import type {
   AttemptCapabilitySecret,
@@ -12,6 +20,57 @@ import type { ExecutionTaskKind } from "./executionRequirement.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
 import type { SessionTaskInvocation } from "./sessionScheduler.ts";
 import type { SessionTaskIdentity, WorkTaskIdentity } from "./workerTask.ts";
+
+/** The versions of the worker contract this plane serves, from the first to the one it was built with. */
+export const workerContractAccepted: {
+  readonly min: WorkerContractVersion;
+  readonly max: WorkerContractVersion;
+} = {
+  min: { major: 1, minor: 0 },
+  max: workerContractServed(),
+};
+
+/** The version this plane was built with, read off its release. */
+function workerContractServed(): WorkerContractVersion {
+  const served = workerContractVersionOf(workerContractRelease);
+  if (served === undefined)
+    throw new Error(`${workerContractRelease} is not a contract release`);
+  return served;
+}
+
+/** Whether `left` is no later a version than `right`. */
+function workerContractOrdered(
+  left: WorkerContractVersion,
+  right: WorkerContractVersion,
+): boolean {
+  return (
+    left.major < right.major ||
+    (left.major === right.major && left.minor <= right.minor)
+  );
+}
+
+/** Whether a request naming `offered`, or naming no release, speaks a version this plane serves. */
+export function contractVersionAccepted(offered: string | undefined): boolean {
+  const version =
+    offered === undefined
+      ? workerContractUnnamed
+      : workerContractVersionOf(offered);
+  return (
+    version !== undefined &&
+    workerContractOrdered(workerContractAccepted.min, version) &&
+    workerContractOrdered(version, workerContractAccepted.max)
+  );
+}
+
+/** What a request speaking a version outside the range is answered with. */
+export const contractVersionRefusal: ContractVersionRefusal = {
+  action: "stop",
+  reason: "UnsupportedContractVersion",
+  accepted: {
+    min: workerContractVersionText(workerContractAccepted.min),
+    max: workerContractVersionText(workerContractAccepted.max),
+  },
+};
 
 /** The bounded metadata of one immutable reference pinned by an attempt's input bundle. */
 export interface WorkerInputReference {

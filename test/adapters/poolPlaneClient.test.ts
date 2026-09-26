@@ -3,6 +3,10 @@ import test from "node:test";
 
 import { poolClientTokens } from "../../src/adapters/http/poolTokens.ts";
 import {
+  workerContractHeader,
+  workerContractRelease,
+} from "../../src/contract/workerContract.ts";
+import {
   checkedPoolPlaneClientSettings,
   poolPlaneClient,
 } from "../../src/adapters/http/poolPlaneClient.ts";
@@ -286,4 +290,45 @@ test("a token the plane refused is minted again on the next acquire", async () =
   const replaced = await tokens.acquire();
   assert.equal(replaced.acquired === "Token" ? replaced.token : "", "minted-2");
   assert.equal(granted, 2);
+});
+
+test("a poll and every settlement name the release this client was built with", async () => {
+  const named: string[] = [];
+  const plane = poolPlaneClient(planeSettings, (_input, init) => {
+    named.push(sentHeader(init, workerContractHeader));
+    return Promise.resolve(
+      answered(200, JSON.stringify({ assignments: [], stop: [] })),
+    );
+  });
+  await plane.poll("pool-token", [], 1);
+  await plane.settle("pool-token", "one", { outcome: "Accepted" });
+  assert.deepEqual(named, [workerContractRelease, workerContractRelease]);
+});
+
+test("a plane refusing this client's release ends the pool rather than losing an assignment", async () => {
+  const refusal = JSON.stringify({
+    action: "stop",
+    reason: "UnsupportedContractVersion",
+    accepted: { min: "1.0", max: "1.0" },
+  });
+  const refusing = poolPlaneClient(planeSettings, () =>
+    Promise.resolve(answered(409, refusal)),
+  );
+  const polled = await refusing.poll("pool-token", [], 1);
+  assert.equal(polled.polled, "Denied");
+  assert.ok(
+    polled.polled === "Denied" &&
+      polled.evidence.includes(workerContractRelease),
+  );
+  assert.equal(
+    await refusing.settle("pool-token", "one", { outcome: "Accepted" }),
+    "Denied",
+  );
+  const losing = poolPlaneClient(planeSettings, () =>
+    Promise.resolve(answered(409, "")),
+  );
+  assert.equal(
+    await losing.settle("pool-token", "one", { outcome: "Accepted" }),
+    "Lost",
+  );
 });

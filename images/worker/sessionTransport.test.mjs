@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import {
+  workerContractHeader,
+  workerContractRelease,
+} from "@chuggy/worker-contract/workerContract";
+
 import { sessionRequest, sessionStopped } from "./sessionTransport.mjs";
 
 const task = { workerPlane: { url: "http://worker-plane.test:3001" } };
@@ -26,13 +31,16 @@ function transportOf(answers) {
   };
 }
 
-test("the bearer and the plane's base url are what the request is made against", async () => {
+test("the bearer, the release and the plane's base url are what the request is made against", async () => {
   const { calls, transport } = transportOf([{ status: 204 }]);
 
   await sessionRequest(task, "chgs_secret", "/v1/session/turn", {}, transport);
 
   assert.equal(calls[0].url, "http://worker-plane.test:3001/v1/session/turn");
-  assert.equal(calls[0].init.headers.authorization, "Bearer chgs_secret");
+  assert.deepEqual(calls[0].init.headers, {
+    authorization: "Bearer chgs_secret",
+    [workerContractHeader]: workerContractRelease,
+  });
 });
 
 test("a decision is answered to the caller rather than asked again", async () => {

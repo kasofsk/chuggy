@@ -31,6 +31,10 @@ import {
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
 } from "./http.ts";
+import {
+  workerPlaneAnswersRefusingVersions,
+  type WorkerPlaneAnswers,
+} from "./planeAnswers.ts";
 import { leadStoreStreamResponseSchema } from "./responses.ts";
 import {
   agentReportedTurnFailures,
@@ -44,12 +48,13 @@ import {
   workerPlaneRefusalSchema,
   workerPlaneRetrySchema,
   workerPlaneStopSchema,
-  type WorkerPlaneAnswer,
   type WorkerPlaneRoute,
 } from "./workerPlane.ts";
 
-/** The bounds a session pod's turns and store are written against, the failures a turn may name, and the capabilities a session may hold. */
+/** The bounds a session pod's identities, turns and store are written against, the failures a turn may name, and the capabilities a session may hold. */
 export {
+  repositoryIdentityCharsMax,
+  sessionIdentityCharsMax,
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
@@ -237,7 +242,7 @@ const sessionSettleRefusalSchema = workerPlaneRefusalSchema([
 ]);
 
 /** Every status each session route's handler answers with, and what it answers. */
-export const sessionPlaneAnswers = {
+export const sessionPlaneAnswers = workerPlaneAnswersRefusingVersions({
   facts: { 200: sessionFactsAnswerSchema, 401: workerPlaneStopSchema },
   heartbeat: {
     204: "empty",
@@ -308,6 +313,4 @@ export const sessionPlaneAnswers = {
     404: workerCredentialAbsentSchema,
     503: workerPlaneRetrySchema,
   },
-} as const satisfies Readonly<
-  Record<SessionPlaneRouteName, Readonly<Record<number, WorkerPlaneAnswer>>>
->;
+} as const satisfies WorkerPlaneAnswers<SessionPlaneRouteName>);

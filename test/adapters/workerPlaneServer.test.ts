@@ -8,6 +8,12 @@ import {
   type WorkerRunEvidencePorts,
 } from "../../src/adapters/http/workerPlaneServer.ts";
 import { sessionPlaneRoutes } from "../../src/contract/sessionPlane.ts";
+import {
+  contractVersionRefusalSchema,
+  contractVersionRefusalStatus,
+  workerContractHeader,
+  workerContractRelease,
+} from "../../src/contract/workerContract.ts";
 import { workerPlaneRoutes } from "../../src/contract/workerPlane.ts";
 import {
   runConfigurationBytesMax,
@@ -48,6 +54,7 @@ import {
   inertRunEvidence,
   inertSessionPlane,
   inertTasks,
+  inertWorkerPlane,
   runTotalsBody,
 } from "./workerPlaneFixtures.ts";
 
@@ -1223,4 +1230,73 @@ test("a refusal carries no action and an outage carries the wait, so a pod can t
   assert.deepEqual(waiting.json(), { action: "retry" });
   assert.equal(waiting.headers["retry-after"], "1");
   await unavailable.close();
+});
+
+test("a release the plane does not serve is refused before any bearer is read, and one it serves is not", async () => {
+  let authenticated = 0;
+  const app = createWorkerPlaneApp({
+    ...inertWorkerPlane(64),
+    authority: {
+      authenticate: () => {
+        authenticated += 1;
+        return Promise.resolve(undefined);
+      },
+    },
+  });
+  const heartbeat = (release?: string) =>
+    app.inject({
+      method: workerPlaneRoutes.heartbeat.method,
+      url: workerPlaneRoutes.heartbeat.path,
+      headers: {
+        ...held,
+        ...(release === undefined ? {} : { [workerContractHeader]: release }),
+      },
+    });
+  for (const release of [undefined, workerContractRelease, "1.0.9"])
+    assert.equal((await heartbeat(release)).statusCode, 401, String(release));
+  for (const release of ["1.1.0", "2.0.0", "1.0", ""]) {
+    const refused = await heartbeat(release);
+    assert.equal(refused.statusCode, contractVersionRefusalStatus, release);
+    assert.deepEqual(
+      contractVersionRefusalSchema.parse(refused.json()),
+      refused.json(),
+    );
+  }
+  assert.equal(authenticated, 3, "a refused release reached the authority");
+  await app.close();
+});
+
+test("every answer names the plane's release, the probes' and the framework's own among them", async () => {
+  const app = createWorkerPlaneApp({
+    ...inertWorkerPlane(64),
+    authority: { authenticate: () => Promise.reject(new Error("down")) },
+    ready: () => Promise.resolve(false),
+  });
+  for (const [method, url, headers, status] of [
+    ["GET", workerPlaneHealthRoutes.live.path, {}, 200],
+    [
+      "GET",
+      workerPlaneHealthRoutes.live.path,
+      { [workerContractHeader]: "2.0.0" },
+      200,
+    ],
+    ["GET", workerPlaneHealthRoutes.ready.path, {}, 503],
+    ["GET", "/v1/nothing", {}, 404],
+    ["POST", workerPlaneRoutes.heartbeat.path, held, 500],
+    [
+      "POST",
+      workerPlaneRoutes.report.path,
+      { ...held, "content-type": "application/xml" },
+      415,
+    ],
+  ] as const) {
+    const answered = await app.inject({ method, url, headers, payload: "" });
+    assert.equal(answered.statusCode, status, url);
+    assert.equal(
+      answered.headers[workerContractHeader],
+      workerContractRelease,
+      `${method} ${url} answered ${String(status)} naming no release`,
+    );
+  }
+  await app.close();
 });

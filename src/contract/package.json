@@ -6,6 +6,7 @@
   "exports": {
     "./sessionPlane": "./sessionPlane.ts",
     "./sessionTools": "./sessionTools.ts",
+    "./workerContract": "./workerContract.ts",
     "./workerDocuments": "./workerDocuments.ts",
     "./workerEnvironment": "./workerEnvironment.ts",
     "./workerPlane": "./workerPlane.ts",

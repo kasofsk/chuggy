@@ -4,6 +4,12 @@ import { test } from "node:test";
 import { createPoolPlaneApp } from "../../src/adapters/http/poolPlaneServer.ts";
 import type { PoolPlaneService } from "../../src/adapters/http/poolPlaneServer.ts";
 import {
+  contractVersionRefusalSchema,
+  contractVersionRefusalStatus,
+  workerContractHeader,
+  workerContractRelease,
+} from "../../src/contract/workerContract.ts";
+import {
   workerPoolPollQuery,
   workerPoolPollRoute,
   workerPoolReconciliationSchema,
@@ -326,4 +332,77 @@ test("a settlement whose body does not carry what its path needs is refused", as
   assert.equal(answered.statusCode, 400);
   assert.equal(answered.body, "");
   assert.deepEqual(recorded.made, []);
+});
+
+test("a release the plane does not serve is refused at the poll and at every settlement, before any port", async () => {
+  const recorded = calls();
+  const app = createPoolPlaneApp(plane(recorded.ports));
+  const headers = {
+    authorization: "Bearer pool-token",
+    [workerContractHeader]: "1.1.0",
+  };
+  for (const [method, url] of [
+    ["GET", polling(["live"])],
+    ["POST", workerPoolSettlementPath("Accepted", "one")],
+    ["POST", workerPoolSettlementPath("Refused", "one")],
+    ["POST", workerPoolSettlementPath("Unavailable", "one")],
+  ] as const) {
+    const refused = await app.inject({ method, url, headers, payload: {} });
+    assert.equal(refused.statusCode, contractVersionRefusalStatus, url);
+    assert.deepEqual(
+      contractVersionRefusalSchema.parse(refused.json()),
+      refused.json(),
+    );
+  }
+  assert.deepEqual(recorded.made, []);
+});
+
+test("every answer names the plane's release, the probes' and the framework's own among them", async () => {
+  const ports = calls().ports;
+  const failing = {
+    ...plane(ports),
+    registry: {
+      ...plane(ports).registry,
+      identify: () => Promise.reject(new Error("down")),
+    },
+    ready: () => Promise.resolve(false),
+  };
+  const token = { authorization: "Bearer pool-token" };
+  for (const [service, method, url, headers, status] of [
+    [plane(ports), "GET", polling(["live"]), token, 200],
+    [plane(ports), "GET", polling(["a", "b", "c", "d"]), token, 400],
+    [plane(ports), "GET", polling([]), {}, 401],
+    [plane(ports, authority("Refuse")), "GET", polling([]), token, 404],
+    [plane(ports, authority("Outage")), "GET", polling([]), token, 503],
+    [failing, "GET", polling([]), token, 500],
+    [
+      plane(ports),
+      "POST",
+      workerPoolSettlementPath("Accepted", "one"),
+      token,
+      204,
+    ],
+    [
+      plane(ports),
+      "GET",
+      "/health/live",
+      { [workerContractHeader]: "2.0.0" },
+      200,
+    ],
+    [failing, "GET", "/health/ready", {}, 503],
+    [plane(ports), "GET", "/v1/nothing", {}, 404],
+  ] as const) {
+    const answered = await createPoolPlaneApp(service).inject({
+      method,
+      url,
+      headers,
+      ...(method === "POST" ? { payload: {} } : {}),
+    });
+    assert.equal(answered.statusCode, status, url);
+    assert.equal(
+      answered.headers[workerContractHeader],
+      workerContractRelease,
+      `${method} ${url} answered ${String(status)} naming no release`,
+    );
+  }
 });

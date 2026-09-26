@@ -1,6 +1,7 @@
 /**
  * The session pod's one way to reach the worker plane: `workerRequest`'s bounded
- * retry, against the same base URL and under the session bearer.
+ * retry, against the same base URL, with the same headers and under the session
+ * bearer.
  *
  * A RETRY IS FOR A CONDITION, NEVER FOR A DECISION. The session routes answer
  * `stop` and `retry` as distinct things — a fenced attempt is `401`, a batch
@@ -23,6 +24,7 @@ import { URL } from "node:url";
 import { sessionPlaneAnswers } from "@chuggy/worker-contract/sessionPlane";
 import { workerPlaneStopSchema } from "@chuggy/worker-contract/workerPlane";
 
+import { workerPlaneHeaders } from "./transport.mjs";
 import { answeredWith } from "./wire.mjs";
 
 const attemptsMax = 15;
@@ -58,7 +60,7 @@ export async function sessionRequest(
     try {
       const response = await send(new URL(path, task.workerPlane.url), {
         ...init,
-        headers: { authorization: `Bearer ${bearer}`, ...init.headers },
+        headers: workerPlaneHeaders(bearer, init.headers),
       });
       if (
         response.status < serverErrorStatusMin ||

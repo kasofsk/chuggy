@@ -106,6 +106,10 @@ import {
   workTask,
   type SessionTask,
 } from "../../interpreter/workerTask.ts";
+import {
+  workerContractChecked,
+  workerContractNamed,
+} from "./workerContractVersion.ts";
 
 /** The probes the cluster sends, which no worker calls and so the worker contract does not name. */
 export const workerPlaneHealthRoutes = {
@@ -125,9 +129,18 @@ type WorkerPlaneRegistrar = (
   handler: RouteHandlerMethod,
 ) => void;
 
-function workerPlaneRegistrar(app: FastifyInstance): WorkerPlaneRegistrar {
+/** A registrar for the contract's routes, each refusing a release this plane does not serve, or for the probes, which none is. */
+function workerPlaneRegistrar(
+  app: FastifyInstance,
+  routes: "Contract" | "Probes",
+): WorkerPlaneRegistrar {
   return (route, handler) => {
-    app.route({ method: route.method, url: route.path, handler });
+    app.route({
+      method: route.method,
+      url: route.path,
+      handler,
+      ...(routes === "Contract" ? { onRequest: workerContractChecked } : {}),
+    });
   };
 }
 
@@ -1205,8 +1218,9 @@ export function createWorkerPlaneApp(
       done(null, body);
     },
   );
-  const register = workerPlaneRegistrar(app);
-  workerHealthRoutes(register, service);
+  workerContractNamed(app);
+  workerHealthRoutes(workerPlaneRegistrar(app, "Probes"), service);
+  const register = workerPlaneRegistrar(app, "Contract");
   workerInputRoute(register, service);
   workerTaskRoute(register, service);
   workerHeartbeatRoute(register, service);

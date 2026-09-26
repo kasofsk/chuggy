@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import {
+  workerContractHeader,
+  workerContractRelease,
+} from "@chuggy/worker-contract/workerContract";
+
 import { workerRequest } from "./transport.mjs";
 
 const task = { workerPlane: { url: "http://worker-plane.test:3001" } };
@@ -31,10 +36,37 @@ test("a refused connection is retried in the same worker", async () => {
   assert.equal(requests[0].init.headers.authorization, "Bearer secret");
 });
 
+test("every request names the contract release the image was built with, whatever headers its caller sets", async () => {
+  const requests = [];
+  await workerRequest(
+    task,
+    "secret",
+    "/v1/report",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "text/plain",
+        [workerContractHeader]: "0.0.0",
+      },
+    },
+    {
+      fetch: async (_url, init) => {
+        requests.push(init);
+        return { ok: true, status: 202 };
+      },
+    },
+  );
+
+  assert.deepEqual(requests[0].headers, {
+    authorization: "Bearer secret",
+    "content-type": "text/plain",
+    [workerContractHeader]: workerContractRelease,
+  });
+});
+
 /**
  * A refusal the caller settles for is an answer, not a fault: without the list
- * every non-ok status is a throw, and a not-found a caller means to read would
- * be retried to the bound before reaching it.
+ * every other failing status is a throw.
  */
 test("a status the caller settles for is handed back, and every other is a fault", async () => {
   let requests = 0;
@@ -71,6 +103,33 @@ test("a status the caller settles for is handed back, and every other is a fault
     ),
     /answered 500/u,
   );
+});
+
+test("a refusal raises at the first answer, and a server error is asked again", async () => {
+  for (const status of [400, 401, 404, 409, 413, 415, 503]) {
+    let requests = 0;
+    let waits = 0;
+    await assert.rejects(
+      workerRequest(
+        task,
+        "secret",
+        "/v1/heartbeat",
+        { method: "POST" },
+        {
+          fetch: async () => {
+            requests += 1;
+            return { ok: false, status };
+          },
+          wait: async () => {
+            waits += 1;
+          },
+        },
+      ),
+      new RegExp(`answered ${String(status)}`, "u"),
+    );
+    assert.equal(requests, status === 503 ? 15 : 1, String(status));
+    assert.equal(waits, requests - 1, String(status));
+  }
 });
 
 test("worker-plane retries are bounded", async () => {

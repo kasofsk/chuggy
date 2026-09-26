@@ -13,6 +13,12 @@ check-full:
 bump-claude-code:
     node --experimental-strip-types scripts/bump-claude-code.ts
 
+# The worker contract published to npm and its commit tagged. The script's
+# header names what it refuses; `just publish-worker-contract --dry-run` packs,
+# and neither publishes nor tags.
+publish-worker-contract *ARGS:
+    node --experimental-strip-types scripts/publish-worker-contract.ts {{ ARGS }}
+
 # The gates' own tests, without the sequencer.
 suites:
     #!/bin/sh

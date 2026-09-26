@@ -50,6 +50,10 @@ import {
   type WorkerPoolRegistry,
 } from "../../interpreter/workerPool.ts";
 import type { PrincipalAuthentication } from "./server.ts";
+import {
+  workerContractChecked,
+  workerContractNamed,
+} from "./workerContractVersion.ts";
 
 export interface PoolPlaneService {
   readonly authentication: PrincipalAuthentication;
@@ -151,23 +155,27 @@ function poolAssignmentsRoute(
   app: FastifyInstance,
   service: PoolPlaneService,
 ): void {
-  app.get(workerPoolPollRoute, async (request, reply) => {
-    const caller = await poolCaller(service, request);
-    if (caller.caller !== "Pool") return poolRefused(reply, caller.caller);
-    const query = workerPoolPollQuerySchema(service.settings.heldMax).safeParse(
-      request.query,
-    );
-    if (!query.success) return reply.code(400).send();
-    const answered = await workerPoolPoll(
-      service.assignments,
-      caller.identity,
-      query.data[workerPoolPollQuery.held],
-      query.data[workerPoolPollQuery.wanted],
-      service.settings,
-      service.mint,
-    );
-    return reply.code(200).send(answered);
-  });
+  app.get(
+    workerPoolPollRoute,
+    { onRequest: workerContractChecked },
+    async (request, reply) => {
+      const caller = await poolCaller(service, request);
+      if (caller.caller !== "Pool") return poolRefused(reply, caller.caller);
+      const query = workerPoolPollQuerySchema(
+        service.settings.heldMax,
+      ).safeParse(request.query);
+      if (!query.success) return reply.code(400).send();
+      const answered = await workerPoolPoll(
+        service.assignments,
+        caller.identity,
+        query.data[workerPoolPollQuery.held],
+        query.data[workerPoolPollQuery.wanted],
+        service.settings,
+        service.mint,
+      );
+      return reply.code(200).send(answered);
+    },
+  );
 }
 
 /**
@@ -181,8 +189,11 @@ function poolOutcomeRoutes(
   service: PoolPlaneService,
 ): void {
   for (const outcome of ["Accepted", "Refused", "Unavailable"] as const)
-    app.post(workerPoolSettlementRoutes[outcome], async (request, reply) =>
-      poolOutcomeAnswered(service, request, reply, outcome),
+    app.post(
+      workerPoolSettlementRoutes[outcome],
+      { onRequest: workerContractChecked },
+      async (request, reply) =>
+        poolOutcomeAnswered(service, request, reply, outcome),
     );
 }
 
@@ -234,6 +245,7 @@ async function poolOutcomeSettled(
 
 export function createPoolPlaneApp(service: PoolPlaneService): FastifyInstance {
   const app = fastify({ logger: false });
+  workerContractNamed(app);
   poolHealthRoutes(app, service);
   poolAssignmentsRoute(app, service);
   poolOutcomeRoutes(app, service);
