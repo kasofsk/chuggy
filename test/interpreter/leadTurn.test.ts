@@ -12,7 +12,6 @@ import test from "node:test";
 import { agenticRefusalReasonCharsMax } from "../../src/contract/http.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import type { AgenticRefusalRecord } from "../../src/interpreter/agenticRefusal.ts";
-import type { DispatchCandidate } from "../../src/interpreter/dispatchView.ts";
 import {
   leadObservationText,
   leadObservedRefusals,
@@ -22,7 +21,6 @@ import {
 } from "../../src/interpreter/leadTurn.ts";
 import { dispatchViewPageLimitMax } from "../../src/interpreter/dispatchView.ts";
 import { notificationPageLimitMax } from "../../src/interpreter/notifications.ts";
-import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   leadDecisionBytesMax,
   leadDispatchesMax,
@@ -36,83 +34,17 @@ import {
   type SelectorRuntimeSettings,
 } from "../../src/interpreter/selector.ts";
 import { leadRefusalsPerDecisionMax } from "../../src/contract/sessionTools.ts";
-
-const partition = {
-  tenant: asTenantId("acme"),
-  project: asProjectId("atlas"),
-};
-
-const candidate: DispatchCandidate = {
-  ticket: asTicketId(41),
-  ticketVersion: 3,
-  dependencies: [],
-  program: [{ key: 1, evaluators: [{ key: 1 }] }],
-  configurationRevision: "revision",
-  configurationDigest: "d".repeat(64),
-  configurationCanonical: "{}",
-};
-
-const token = {
-  ...partition,
-  recoveryEpoch: "epoch",
-  schemaVersion: 1,
-  watermark: 2,
-  digest: "a".repeat(64),
-};
-
-const operationalContext = {
-  version: 2,
-  observedAt: "2026-09-02T12:00:00.000Z",
-  observedAtEpochMs: 1_788_000_000_000,
-  reviewFeedback: [],
-  activeWork: { queued: 0, admitted: 0, launching: 0, running: 0 },
-  capacity: {
-    account: "account",
-    accountMaximum: 8,
-    accountActive: 1,
-    accountReservationDeficit: 0,
-    clusterSlotsMax: 8,
-    clusterActive: 1,
-  },
-  backlog: {
-    project: { queued: 0, ceiling: 100 },
-    installation: { queued: 0, ceiling: 1_000 },
-  },
-} as const;
-
-const standingRefusal: AgenticRefusalRecord = {
-  ticket: asTicketId(40),
-  ticketVersion: 2,
-  reason: "its dependency has not passed",
-  decision: "selector-decision-one",
-  recordedAt: "2026-09-02T11:00:00.000Z",
-};
-
-const standing: readonly AgenticRefusalRecord[] = [standingRefusal];
-
-const observation: SelectorObservation = {
-  token,
-  candidates: [candidate],
-  refusals: standing,
-  notificationCursor: 1_204,
-  changes: [{ ordinal: 1_205, kind: "Ticket", resource: "41" }],
+import {
+  candidate,
+  decision,
+  observation,
   operationalContext,
-  handoffNote: { watching: "41" },
-  nextCandidateScan: { state: "Exhausted", token },
-};
-
-/**
- * The same view with ticket 40 in it and a refusal of 39 standing, so a decision
- * may name 40 and 41 alike and lift one the page's standing carries.
- */
-const parcelledObservation: SelectorObservation = {
-  ...observation,
-  candidates: [
-    candidate,
-    { ...candidate, ticket: asTicketId(40), ticketVersion: 2 },
-  ],
-  refusals: [...standing, { ...standingRefusal, ticket: asTicketId(39) }],
-};
+  parcelledObservation,
+  partition,
+  standing,
+  standingRefusal,
+  token,
+} from "./leadTurnFixture.ts";
 
 const document: LeadObservationDocument = {
   version: 1,
@@ -126,15 +58,6 @@ const document: LeadObservationDocument = {
   handoffNote: observation.handoffNote,
   refusals: leadObservedRefusals(standing, observation.candidates),
 };
-
-function decision(body: Readonly<Record<string, unknown>>): string {
-  return JSON.stringify({
-    version: 1,
-    attention: "Monitoring",
-    handoffNote: {},
-    ...body,
-  });
-}
 
 test("an observation document round-trips through its own text", () => {
   assert.deepEqual(
