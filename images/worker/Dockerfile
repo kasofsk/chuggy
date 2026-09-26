@@ -41,12 +41,11 @@ FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599
 # below reads both versions off the built image and fails the build when they
 # differ. `just bump-claude-code` moves the two ARGs together.
 #
-# THE SDK'S `zod` PEER IS INSTALLED HERE FOR THE SAME REASON. The SDK's global
-# install leaves its `zod` peer absent, and the session mode then fails every
-# turn it takes; `sdkProbe.mjs` reads the SDK's own declared range
-# and fails the build where this pin no longer satisfies it. The version is the
-# one `package-lock.json` resolves, so the tool shapes the suites validate are
-# validated by the same zod the image runs.
+# THE SDK'S `zod` PEER IS INSTALLED HERE FOR THE SAME REASON: `sdkProbe.mjs`
+# reads the SDK's own declared range and fails the build where this pin no
+# longer satisfies it. The version is the one `package-lock.json` resolves, so
+# the tool shapes the suites validate are validated by the same zod the image
+# runs.
 ARG CLAUDE_CODE_VERSION=2.1.282
 ARG CODEX_VERSION=0.151.0
 ARG AGENT_SDK_VERSION=0.3.282
