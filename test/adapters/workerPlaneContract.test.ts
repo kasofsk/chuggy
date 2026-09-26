@@ -682,7 +682,7 @@ const sessionPlaneCases: Readonly<
     ...sessionPlaneStrangers,
     workerPlaneNotBytes,
     { name: "a path naming no batch", call: { rest: "stream" } },
-    { name: "a stream no row holds", call: { rest: "%20/1" } },
+    { name: "a stream name no row can hold", call: { rest: "%20/1" } },
     { name: "batch zero", call: { rest: "stream/0" } },
     {
       name: "a batch past its bound",
@@ -709,7 +709,7 @@ const sessionPlaneCases: Readonly<
   storePage: [
     ...sessionPlaneStrangers,
     { name: "a path naming a batch", call: { rest: "stream/1" } },
-    { name: "a stream no row holds", call: { rest: "%20" } },
+    { name: "a stream name no row can hold", call: { rest: "%20" } },
     { name: "a limit of zero", call: { query: "limit=0" } },
     { name: "a stream with no batches" },
     ...Object.values(batchesRead).map((read) => ({
