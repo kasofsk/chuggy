@@ -44,12 +44,12 @@
 
 import { spawn } from "node:child_process";
 
-/**
- * What one upload may weigh, mirroring the worker plane's `uploadBytesMax`
- * default. A body over it is refused, and a refused diagnostic ends the attempt
- * as a crashed run rather than the verdict the stage actually reached.
- */
-export const workerCheckArtifactBytesMax = 4_194_304;
+import { resultReportCharsMax } from "@chuggy/worker-contract/workerDocuments";
+import {
+  sessionTaskVariable,
+  workerTaskVariable,
+} from "@chuggy/worker-contract/workerEnvironment";
+import { workerPlaneUploadBytesMax } from "@chuggy/worker-contract/workerPlane";
 
 /**
  * What one character of a stage's own text can cost in that artifact. The
@@ -63,17 +63,18 @@ const checkArtifactCharBytesMax = 8;
 /** The room the artifact's own keys, indentation and command lines are left. */
 const checkArtifactFrameBytesMax = 65_536;
 
-/** The characters one whole stage keeps, which is what is left of the upload. */
+/**
+ * The characters one whole stage keeps, which is what is left of the upload. A
+ * body over the upload bound is refused, and a refused diagnostic ends the
+ * attempt as a crashed run rather than the verdict the stage actually reached.
+ */
 export const workerCheckStageOutputCharsMax = Math.floor(
-  (workerCheckArtifactBytesMax - checkArtifactFrameBytesMax) /
+  (workerPlaneUploadBytesMax - checkArtifactFrameBytesMax) /
     checkArtifactCharBytesMax,
 );
 
 /** The characters one command keeps, so no single command spends the stage's room. */
 export const workerCheckOutputCharsMax = 262_144;
-
-/** The characters one stage's report keeps, mirroring the manifest's `resultReportCharsMax`. */
-export const workerCheckReportCharsMax = 8_192;
 
 /** What the report says before the failing command's output, which is what makes the excerpt readable as one. */
 const checkReportExcerptLabel = "; last output of ";
@@ -114,7 +115,7 @@ function checkPassed(outcome) {
 }
 
 /** The environment variables a launcher places a whole task document in. */
-const checkTaskDocuments = ["CHUG_WORKER_TASK", "CHUG_SESSION_TASK"];
+const checkTaskDocuments = [workerTaskVariable, sessionTaskVariable];
 
 /**
  * What the pod holds, less the document that placed it. Everything else stands,
@@ -218,11 +219,11 @@ function checkReport(commands, ran, scrub) {
   ];
   const status = checkHead(
     checkClean(scrub(lines.join("; "))),
-    workerCheckReportCharsMax,
+    resultReportCharsMax,
   );
   const failed = ran.find((outcome) => !checkPassed(outcome));
   if (failed === undefined) return status;
-  const room = workerCheckReportCharsMax - status.length;
+  const room = resultReportCharsMax - status.length;
   return `${status}${checkReportExcerpt(failed, room, scrub)}`;
 }
 

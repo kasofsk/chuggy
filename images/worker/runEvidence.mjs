@@ -20,21 +20,27 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 
 import {
+  nativeHttpPageItemsMax,
+  runEndedEvidences,
+  runModelCharsMax,
+  runOutcomeLabelCharsMax,
+  runTranscriptBatchBytesMax,
+  runTranscriptBatchesMax,
+  runTurnSeriesMax,
+  workerPlaneBytesMediaType,
+  workerPlaneRoutes,
+} from "@chuggy/worker-contract/workerPlane";
+
+import {
   observeRateLimit,
   rateLimitSightings,
   rateLimited,
 } from "./rateLimit.mjs";
 import { workerRequest } from "./transport.mjs";
+import { rosterLabel, routePath } from "./wire.mjs";
 
 /** The interval a run's transcript is shipped on, whether or not anyone reads. */
 export const runTranscriptFlushMs = 5_000;
-
-/** One batch is one wire body's worth, mirroring `nativeHttpBodyBytesMax`. */
-export const runTranscriptBatchBytesMax = 65_536;
-
-/** The most batches one run writes, past which the transcript carries its own
- * truncation. */
-export const runTranscriptBatchesMax = 4_096;
 
 /** The largest event kept whole; a larger one keeps its shape and loses its
  * oversized string payloads. */
@@ -45,17 +51,6 @@ export const runTranscriptEventBytesMax = 16_384;
 export const runTranscriptEventDepthMax = 16;
 export const runTranscriptEventStringsMax = 4_096;
 
-/** The most turns one run's durable series retains. */
-export const runTurnSeriesMax = 1_000;
-
-/** The rows one page of a run collection carries, mirroring
- * `nativeHttpPageItemsMax`. */
-export const runPageItemsMax = 100;
-
-/** The longest outcome label and model identity the plane stores. */
-export const runOutcomeLabelCharsMax = 64;
-export const runModelCharsMax = 128;
-
 /** Values shorter than this are not distinctive enough to replace without
  * mangling ordinary text. */
 export const credentialScrubCharsMin = 16;
@@ -64,7 +59,15 @@ const credentialRedaction = "[redacted credential]";
 const turnsExhaustedSubtype = "error_max_turns";
 const runCostBasis = "List";
 const unnamedModel = "unknown";
-const runTurnPagesMax = Math.ceil(runTurnSeriesMax / runPageItemsMax);
+const runTurnPagesMax = Math.ceil(runTurnSeriesMax / nativeHttpPageItemsMax);
+
+/** The plane's labels for how a run ended, each refused as this module loads where the contract no longer has it. */
+const [runFailed, runRateLimited, runTurnsExhausted, runUploadRefused] = [
+  "RunFailed",
+  "RunRateLimited",
+  "RunTurnsExhausted",
+  "RunUploadRefused",
+].map((label) => rosterLabel(runEndedEvidences, label));
 
 /**
  * The scrub every uploaded byte passes through, replacing exact occurrences of
@@ -224,7 +227,7 @@ export function runTurn(event, ordinal) {
 function reportedModels(modelUsage) {
   if (modelUsage === null || typeof modelUsage !== "object") return [];
   return Object.entries(modelUsage)
-    .slice(0, runPageItemsMax)
+    .slice(0, nativeHttpPageItemsMax)
     .map(([model, usage]) => ({
       model: boundedModel(model),
       tokensInput: count(usage?.inputTokens),
@@ -252,7 +255,7 @@ function foldedModels(turns) {
     held.tokensCacheRead += turn.tokensCacheRead;
     byModel.set(turn.model, held);
   }
-  return [...byModel.values()].slice(0, runPageItemsMax);
+  return [...byModel.values()].slice(0, nativeHttpPageItemsMax);
 }
 
 function summed(models, kind) {
@@ -309,10 +312,10 @@ export function runTotals(result, turns) {
  */
 export function endedEvidence(result, planeRefused, sightings) {
   const subtype = typeof result?.subtype === "string" ? result.subtype : "";
-  if (rateLimited(sightings)) return "RunRateLimited";
-  if (subtype === turnsExhaustedSubtype) return "RunTurnsExhausted";
-  if (result !== null && result !== undefined) return "RunFailed";
-  return planeRefused === true ? "RunUploadRefused" : "RunFailed";
+  if (rateLimited(sightings)) return runRateLimited;
+  if (subtype === turnsExhaustedSubtype) return runTurnsExhausted;
+  if (result !== null && result !== undefined) return runFailed;
+  return planeRefused === true ? runUploadRefused : runFailed;
 }
 
 function transcriptTruncationLine(batches) {
@@ -384,8 +387,8 @@ async function deliverTurns(state, call) {
     page < runTurnPagesMax && state.pending.length > 0;
     page += 1
   ) {
-    const rows = state.pending.slice(0, runPageItemsMax);
-    const answer = await call("/v1/run/turns", {
+    const rows = state.pending.slice(0, nativeHttpPageItemsMax);
+    const answer = await call(workerPlaneRoutes.runTurns.path, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ turns: rows }),
@@ -407,11 +410,14 @@ async function deliverBatch(state, call) {
   const body = final
     ? `${transcriptTruncationLine(state.nextBatch)}\n`
     : `${state.lines.join("\n")}\n`;
-  await call(`/v1/run/transcript/${String(state.nextBatch)}`, {
-    method: "PUT",
-    headers: { "content-type": "application/octet-stream" },
-    body: Buffer.from(body),
-  });
+  await call(
+    routePath(workerPlaneRoutes.runTranscript, String(state.nextBatch)),
+    {
+      method: "PUT",
+      headers: { "content-type": workerPlaneBytesMediaType },
+      body: Buffer.from(body),
+    },
+  );
   state.nextBatch += 1;
   state.lines = [];
   state.bufferedBytes = 0;
@@ -444,9 +450,9 @@ function evidenceUploads(state, call, warn, flush, done) {
   return {
     async configuration(content) {
       try {
-        await call("/v1/run/configuration", {
+        await call(workerPlaneRoutes.runConfiguration.path, {
           method: "PUT",
-          headers: { "content-type": "application/octet-stream" },
+          headers: { "content-type": workerPlaneBytesMediaType },
           body: content,
         });
       } catch (failure) {
@@ -459,7 +465,7 @@ function evidenceUploads(state, call, warn, flush, done) {
       done();
       await flush();
       try {
-        await call("/v1/run/totals", {
+        await call(workerPlaneRoutes.runTotals.path, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(runTotals(state.result, state.turns)),
@@ -470,7 +476,7 @@ function evidenceUploads(state, call, warn, flush, done) {
     },
     async ended() {
       done();
-      await call("/v1/run/ended", {
+      await call(workerPlaneRoutes.runEnded.path, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

@@ -2,19 +2,20 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import test from "node:test";
 
+import {
+  chuggyToolCapabilities,
+  leadRefusalsPerDecisionMax,
+} from "@chuggy/worker-contract/sessionTools";
+import {
+  agenticRefusalReasonCharsMax,
+  leadDispatchesMax,
+  leadTurnDocumentVersion,
+  selectorHandoffNoteBytesMax,
+} from "@chuggy/worker-contract/workerDocuments";
 import { z } from "zod";
 
 import { chuggyToolHandler } from "./chuggyTools.mjs";
-import {
-  agenticRefusalReasonCharsMax,
-  leadDecisionBytesMax,
-  leadDecisionStaging,
-  leadDecisionToolNames,
-  leadDispatchesMax,
-  leadRefusalsPerDecisionMax,
-  leadTurnDocumentVersion,
-  selectorHandoffNoteBytesMax,
-} from "./leadDecision.mjs";
+import { leadDecisionBytesMax, leadDecisionStaging } from "./leadDecision.mjs";
 
 function observationOf(overrides = {}) {
   return JSON.stringify({
@@ -83,7 +84,7 @@ test("every decision tool answers the model a result carrying its own answer", a
 
   assert.deepEqual(
     cases.map(([name]) => name),
-    [...leadDecisionToolNames],
+    [...chuggyToolCapabilities.LeadDecision],
     "a decision tool nothing here answers for",
   );
   for (const [name, args, text] of cases) {

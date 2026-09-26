@@ -1,43 +1,33 @@
 /**
- * The chuggy tool roster: that every tool is gated by exactly one capability,
- * that the qualified names a control plane must name are derivable from a
- * session's own roster, and that a lead's objectives carry the standing rules
- * its tools mean nothing without.
- *
- * The roster is compared against a list written out here rather than against
- * itself, because a roster that only agreed with its own derivation would
- * accept a tool silently added to it.
+ * What a lead is given: the tools its roster admits, the allowlist the
+ * installation seeds from it, and objectives that carry the standing rules its
+ * tools mean nothing without. The roster itself is the contract's, and
+ * `test/contract/sessionTools.test.ts` holds it.
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  nativeHttpBodyBytesMax,
-  selectorSettingsTextCharsMax,
-} from "../../src/contract/http.ts";
-import { allSessionCapabilities } from "../../src/interpreter/agentSession.ts";
+import { selectorSettingsTextCharsMax } from "../../src/contract/http.ts";
 import {
   allChuggyTools,
   allDependentRelations,
+  builtInToolCapabilities,
   chuggyToolCapabilities,
   chuggyToolNames,
-  chuggyToolPagesMax,
   chuggyToolPrefix,
-  chuggyToolResponseBytesMax,
-  chuggyToolServerName,
-  chuggyToolTimeoutMs,
   dependentRelationsAdmitted,
 } from "../../src/contract/sessionTools.ts";
 import {
   dependentRelationsRefused,
   leadObjectivesFixedChars,
+  leadSessionCapabilities,
   leadSystemPrompt,
+  leadToolAllowlist,
   sessionSystemPromptCharsMax,
 } from "../../src/interpreter/leadTools.ts";
 import type { SelectorResolvedSettings } from "../../src/interpreter/selector.ts";
 import { threadCapabilitiesDefault } from "../../src/interpreter/thread.ts";
-import { leadRoster } from "../contract/sessionRosterFixture.ts";
 
 const settings = (
   basePrompt: string,
@@ -45,56 +35,6 @@ const settings = (
 ): Pick<SelectorResolvedSettings, "basePrompt" | "northStar"> => ({
   basePrompt,
   ...(northStar === undefined ? {} : { northStar }),
-});
-
-test("the roster names every tool the plan gives it, in roster order", () => {
-  assert.deepEqual(allChuggyTools, [
-    "list_tickets",
-    "read_ticket",
-    "read_draft",
-    "list_drafts",
-    "list_configurations",
-    "read_configuration",
-    "read_decision_log",
-    "read_refusals",
-    "read_ticket_refusals",
-    "read_projects",
-    "read_lead",
-    "read_lead_transcript",
-    "list_executions",
-    "read_execution",
-    "read_run_transcript",
-    "read_operation",
-    "list_threads",
-    "read_thread",
-    "read_thread_transcript",
-    "initialize_draft",
-    "file_dependent",
-    "revise_draft",
-    "delete_draft",
-    "release_draft",
-    "create_draft",
-    "dispatch",
-    "refuse",
-    "lift",
-    "set_attention",
-    "set_handoff_note",
-    "set_planning_intent",
-  ]);
-});
-
-test("no tool re-authors a released ticket, whatever roster holds it", () => {
-  for (const refused of [
-    "revoke",
-    "merge_tickets",
-    "split_ticket",
-    "supersede_ticket",
-    "set_dependencies",
-  ])
-    assert.ok(
-      !(allChuggyTools as readonly string[]).includes(refused),
-      `the roster holds ${refused}`,
-    );
 });
 
 /**
@@ -112,117 +52,34 @@ test("origination is admitted for a thread's roster and refused for a lead's", (
     chuggyToolNames(threadCapabilitiesDefault).includes(originating),
     "a thread's own roster does not admit the tool it exists for",
   );
-  assert.ok(!chuggyToolNames(leadRoster).includes(originating));
+  assert.ok(!chuggyToolNames(leadSessionCapabilities).includes(originating));
   assert.deepEqual(
-    chuggyToolNames(leadRoster),
+    chuggyToolNames(leadSessionCapabilities),
     allChuggyTools
       .filter((tool) => tool !== "create_draft")
       .map((tool) => `${chuggyToolPrefix}${tool}`),
   );
 });
 
-test("every capability is mapped and every tool is gated by exactly one", () => {
+/**
+ * The allowlist the installation seeds, held to what the contract's capabilities
+ * admit for a lead. `contract.test.mjs` holds the pod to the same admission over
+ * every roster, so the two sides agree by each agreeing with the contract.
+ */
+test("the seeded allowlist is exactly what a lead's capabilities admit", () => {
   assert.deepEqual(
-    Object.keys(chuggyToolCapabilities).sort(),
-    [...allSessionCapabilities].sort(),
+    new Set(leadToolAllowlist),
+    new Set([
+      ...leadSessionCapabilities.flatMap(
+        (capability) => builtInToolCapabilities[capability],
+      ),
+      ...chuggyToolNames(leadSessionCapabilities),
+    ]),
   );
-  const gates = new Map<string, number>();
-  for (const capability of allSessionCapabilities)
-    for (const tool of chuggyToolCapabilities[capability])
-      gates.set(tool, (gates.get(tool) ?? 0) + 1);
-  for (const tool of allChuggyTools)
-    assert.equal(gates.get(tool), 1, `${tool} is gated once`);
-  assert.equal(gates.size, allChuggyTools.length);
+  assert.equal(new Set(leadToolAllowlist).size, leadToolAllowlist.length);
 });
 
-test("each capability admits the tools the roster gives it and no other", () => {
-  assert.deepEqual(chuggyToolCapabilities.ProjectRead, [
-    "list_tickets",
-    "read_ticket",
-    "read_draft",
-    "list_drafts",
-    "list_configurations",
-    "read_configuration",
-    "read_decision_log",
-    "read_refusals",
-    "read_ticket_refusals",
-    "read_projects",
-    "read_lead",
-    "read_lead_transcript",
-    "list_executions",
-    "read_execution",
-    "read_run_transcript",
-    "read_operation",
-    "list_threads",
-    "read_thread",
-    "read_thread_transcript",
-  ]);
-  assert.deepEqual(chuggyToolCapabilities.DraftAuthor, [
-    "initialize_draft",
-    "file_dependent",
-    "revise_draft",
-    "delete_draft",
-    "release_draft",
-  ]);
-  assert.deepEqual(chuggyToolCapabilities.DraftOriginate, ["create_draft"]);
-  assert.deepEqual(chuggyToolCapabilities.LeadDecision, [
-    "dispatch",
-    "refuse",
-    "lift",
-    "set_attention",
-    "set_handoff_note",
-    "set_planning_intent",
-  ]);
-});
-
-test("a capability that maps built-ins alone admits no chuggy tool", () => {
-  for (const capability of [
-    "RepositoryRead",
-    "RepositoryWrite",
-    "RunCommands",
-  ] as const)
-    assert.deepEqual(chuggyToolCapabilities[capability], []);
-});
-
-test("the qualified names are the roster's own, prefixed, and never repeated", () => {
-  assert.deepEqual(chuggyToolNames([]), []);
-  assert.deepEqual(
-    chuggyToolNames(["LeadDecision"]),
-    [
-      "dispatch",
-      "refuse",
-      "lift",
-      "set_attention",
-      "set_handoff_note",
-      "set_planning_intent",
-    ].map((tool) => `${chuggyToolPrefix}${tool}`),
-  );
-  const every = chuggyToolNames(allSessionCapabilities);
-  assert.equal(new Set(every).size, every.length);
-  assert.deepEqual(
-    every,
-    allChuggyTools.map((tool) => `${chuggyToolPrefix}${tool}`),
-  );
-  assert.deepEqual(
-    chuggyToolNames(["ProjectRead", "ProjectRead"]),
-    chuggyToolNames(["ProjectRead"]),
-  );
-  assert.deepEqual(chuggyToolNames(["LeadDecision", "ProjectRead"]), [
-    ...chuggyToolNames(["ProjectRead"]),
-    ...chuggyToolNames(["LeadDecision"]),
-  ]);
-  assert.equal(chuggyToolPrefix, `mcp__${chuggyToolServerName}__`);
-});
-
-test("every bound a tool call is held to is named, an unnamed one being unbounded", () => {
-  assert.equal(chuggyToolResponseBytesMax, nativeHttpBodyBytesMax);
-  assert.equal(chuggyToolTimeoutMs, 30_000);
-  assert.equal(chuggyToolPagesMax, 1);
-});
-
-test("a dependent may be a follow-up and may not be a prerequisite", () => {
-  assert.deepEqual(allDependentRelations, ["FollowUp", "Prerequisite"]);
-  assert.deepEqual(dependentRelationsAdmitted, ["FollowUp"]);
+test("the relations a lead is refused are the ones the contract does not admit", () => {
   assert.deepEqual(dependentRelationsRefused, ["Prerequisite"]);
   assert.deepEqual(
     [...dependentRelationsAdmitted, ...dependentRelationsRefused].sort(),

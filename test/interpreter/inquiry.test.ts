@@ -6,8 +6,8 @@
  * because a suite that names a ceiling passes when the module and the suite
  * agree on the wrong one. The load-bearing case is not in this file: that a
  * roster of reads leaves every write tool in `disallowedTools` is a fact about
- * the module the pod actually runs, and `test/contract/imageTools.test.mjs`
- * reads that module rather than this one's copy of its shape.
+ * the module the pod actually runs, and `images/worker/contract.test.mjs`
+ * holds that module over every roster.
  */
 
 import assert from "node:assert/strict";

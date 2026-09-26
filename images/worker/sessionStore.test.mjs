@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import test from "node:test";
 
+import { sessionStoreBatchBytesMax } from "@chuggy/worker-contract/sessionPlane";
+
 import {
   sessionStoreAdapter,
-  sessionStoreBatchBytesMax,
   sessionStoreClipBudgetBytes,
   sessionStoreStream,
 } from "./sessionStore.mjs";

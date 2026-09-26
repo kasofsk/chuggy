@@ -27,6 +27,8 @@
 
 import { setTimeout as wait } from "node:timers/promises";
 
+import { sessionPlaneRoutes } from "@chuggy/worker-contract/sessionPlane";
+
 import { sessionRequest, sessionStopped } from "./sessionTransport.mjs";
 
 const claimedStatus = 200;
@@ -62,7 +64,7 @@ export function sessionMailbox(task, bearer, services = {}) {
   }
 
   async function claim() {
-    const response = await request(task, bearer, "/v1/session/turn", {
+    const response = await request(task, bearer, sessionPlaneRoutes.turn.path, {
       method: "GET",
     });
     if (sessionStopped(response) || response.status === emptyStatus)

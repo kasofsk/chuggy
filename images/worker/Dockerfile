@@ -44,12 +44,12 @@ FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599
 # THE SDK'S `zod` PEER IS INSTALLED HERE FOR THE SAME REASON: `sdkProbe.mjs`
 # reads the SDK's own declared range and fails the build where this pin no
 # longer satisfies it. The version is the one `package-lock.json` resolves, so
-# the tool shapes the suites validate are validated by the same zod the image
-# runs.
+# the contract's schemas and the tool shapes run under the zod every suite runs
+# them under, and `entrypoint.test.mjs` fails when the two part.
 ARG CLAUDE_CODE_VERSION=2.1.282
 ARG CODEX_VERSION=0.151.0
 ARG AGENT_SDK_VERSION=0.3.282
-ARG ZOD_VERSION=4.4.3
+ARG ZOD_VERSION=4.5.4
 
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
     /etc/apt/sources.list.d/debian.sources \
@@ -109,6 +109,7 @@ COPY images/worker/toolListing.mjs /usr/local/lib/chuggy/toolListing.mjs
 COPY images/worker/toolProbe.mjs /usr/local/lib/chuggy/toolProbe.mjs
 COPY images/worker/transcriptPage.mjs /usr/local/lib/chuggy/transcriptPage.mjs
 COPY images/worker/transport.mjs /usr/local/lib/chuggy/transport.mjs
+COPY images/worker/wire.mjs /usr/local/lib/chuggy/wire.mjs
 COPY --chmod=0555 images/worker/git-askpass.sh /usr/local/lib/chuggy/git-askpass.sh
 
 # What the session mode needs, read off the image rather than off this file. The

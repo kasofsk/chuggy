@@ -155,11 +155,9 @@ export const allSessionStates = ["Open", "Closed"] as const;
 export type SessionState = (typeof allSessionStates)[number];
 
 /**
- * What a session may do, mapped to the agent runtime's own tool names by the
- * worker image. A member that maps to nothing is an unverified control, so the
- * first three are mapped in `images/worker/sessionStore.mjs` today and the
- * three below them map to the chuggy tool server's own names once that server
- * reaches the image; until it does, they admit nothing a session is given.
+ * What a session may do, each member admitting the agent runtime's own tools or
+ * the chuggy tool server's as `../contract/sessionTools.ts` maps them; a member
+ * that admitted nothing would be an unverified control.
  */
 export const allSessionCapabilities = [
   "RepositoryRead",

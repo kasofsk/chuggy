@@ -3,11 +3,12 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import test from "node:test";
 
+import { runConfigurationBytesMax } from "@chuggy/worker-contract/workerPlane";
+
 import { credentialScrub } from "./runEvidence.mjs";
 
 import {
   configurationCandidates,
-  runConfigurationBytesMax,
   runConfigurationDigestBytesMax,
   runConfigurationFilesMax,
   runConfigurationFileBytesMax,

@@ -18,6 +18,15 @@ import {
 import { resultVerdicts, selectorAttentions } from "./rosters.ts";
 import { leadRefusalsPerDecisionMax } from "./sessionTools.ts";
 
+/** The bounds and the roster a worker writes these documents against, and the handoff note a decision carries beside them. */
+export {
+  agenticRefusalReasonCharsMax,
+  leadDispatchesMax,
+  resultReportCharsMax,
+  selectorHandoffNoteBytesMax,
+} from "./http.ts";
+export { selectorAttentions } from "./rosters.ts";
+
 /** The result manifest schema version workers author now. */
 export const resultManifestSchemaVersion = 3;
 

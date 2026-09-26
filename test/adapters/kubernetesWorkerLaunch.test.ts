@@ -21,11 +21,6 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import {
-  mintedCredentialDirectory as imageMintedCredentialDirectory,
-  workerRepositories,
-  workerRepository,
-} from "../../images/worker/repository.mjs";
-import {
   kubernetesNamespacePrecondition,
   kubernetesWorkerLaunch,
 } from "../../src/adapters/kubernetes/workerLaunch.ts";
@@ -491,23 +486,22 @@ function suppliedValue(pod: KubernetesPod, name: string): string {
   return variable.value;
 }
 
-test("the launched repository configuration is accepted by the worker", () => {
+/**
+ * The pair a pod resolves its repository from: the site's map, carried as the
+ * site wrote it, and each credential the map names at the path it is mounted.
+ * How the image reads that pair is `images/worker/repository.test.mjs`'s.
+ */
+test("the pod carries the site's repository map and the path each credential it names is mounted at", () => {
   const requested = kubernetesWorkerPodRequest(config, placement);
   assert.equal(requested.requested, "Pod");
   if (requested.requested !== "Pod") return;
-  const selected = workerRepository(
-    workerRepositories(
-      suppliedValue(requested.pod, workerRepositoriesVariable),
-    ),
-    workerRepositories(
-      suppliedValue(requested.pod, workerCredentialFilesVariable),
-    ),
-    "repository",
-  );
-  assert.equal(selected.repository, "https://git.invalid/repository.git");
   assert.equal(
-    selected.environment.CHUG_WORKER_GIT_CREDENTIAL_FILE,
-    workspaceCredentialMount.mountPath,
+    suppliedValue(requested.pod, workerRepositoriesVariable),
+    workerRepositoriesValue,
+  );
+  assert.deepEqual(
+    JSON.parse(suppliedValue(requested.pod, workerCredentialFilesVariable)),
+    { workspace: workspaceCredentialMount.mountPath },
   );
 });
 
@@ -519,9 +513,8 @@ test("the pod mounts memory where the image writes a minted credential", () => {
   const requested = kubernetesWorkerPodRequest(config, placement);
   assert.equal(requested.requested, "Pod");
   if (requested.requested !== "Pod") return;
-  assert.equal(mintedCredentialDirectory, imageMintedCredentialDirectory);
   const mount = requested.pod.spec.containers[0]?.volumeMounts.find(
-    ({ mountPath }) => mountPath === imageMintedCredentialDirectory,
+    ({ mountPath }) => mountPath === mintedCredentialDirectory,
   );
   assert.equal(mount?.readOnly, false);
   assert.deepEqual(

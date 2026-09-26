@@ -30,11 +30,7 @@ import { setTimeout as wait } from "node:timers/promises";
 import { URL } from "node:url";
 import { TextDecoder } from "node:util";
 
-/** The media type both directions of this API are written in. */
-export const chuggyMediaType = "application/vnd.chuggy.v1+json";
-
-/** The versioned base path built onto the origin `task.api.url` names. */
-export const chuggyBasePath = "/api/v1";
+import { nativeHttpMediaType } from "@chuggy/worker-contract/sessionTools";
 
 /** How many times one read is asked, and how long between two asks. */
 export const chuggyRequestAttemptsMax = 3;
@@ -81,7 +77,7 @@ export async function chuggyRequest(
         headers: {
           ...init.headers,
           authorization: `Bearer ${bearer}`,
-          accept: chuggyMediaType,
+          accept: nativeHttpMediaType,
         },
       });
       if (response.status < serverErrorStatusMin) return response;

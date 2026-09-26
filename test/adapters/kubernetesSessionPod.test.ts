@@ -19,7 +19,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { mintedCredentialDirectory as imageMintedCredentialDirectory } from "../../images/worker/repository.mjs";
 import { kubernetesNameCharsMax } from "../../src/adapters/kubernetes/kubernetesSite.ts";
 import {
   mintedCredentialDirectory,
@@ -350,9 +349,8 @@ test("only the credentials the grant names are mounted, and the workspace is eph
  * its document and at the path its image writes.
  */
 test("a session pod mounts memory where the image writes a minted credential", () => {
-  assert.equal(mintedCredentialDirectory, imageMintedCredentialDirectory);
   const mount = renderedContainer().volumeMounts.find(
-    ({ mountPath }) => mountPath === imageMintedCredentialDirectory,
+    ({ mountPath }) => mountPath === mintedCredentialDirectory,
   );
   assert.equal(mount?.readOnly, false);
   assert.deepEqual(

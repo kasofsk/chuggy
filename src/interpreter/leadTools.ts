@@ -8,8 +8,8 @@
  * reach for is enforced inside the pod; what a finished decision may have used
  * is `toolAllowlist`, which the installation is seeded with and which admitted
  * everything until a lead held tools. The seeded list is therefore derived from
- * the roster a lead is opened with rather than written beside it, and the
- * runtime built-ins it also carries are held to the image's own.
+ * the roster a lead is opened with rather than written beside it, built-ins and
+ * chuggy tools alike.
  *
  * DERIVED WORK ONLY IS THE LEAD'S RULE. `DraftOriginate` is the one capability
  * that admits a bare create, and it is one a thread is opened with
@@ -24,6 +24,7 @@ import {
 } from "../contract/http.ts";
 import {
   allDependentRelations,
+  builtInToolCapabilities,
   chuggyToolNames,
   dependentRelationsAdmitted,
   type DependentRelation,
@@ -46,19 +47,14 @@ export const leadSessionCapabilities = [
 ] as const satisfies readonly SessionCapability[];
 
 /**
- * The agent runtime's own tools a lead's roster admits, written here because the
- * image declares them and `images/worker/` is not reachable from `src/`; the
- * copies are held together by `test/contract/imageTools.test.mjs`.
- */
-export const leadBuiltInTools = ["Glob", "Grep", "Read"] as const;
-
-/**
  * Every tool name a lead's decision may report, in roster order, which is what
  * the installation narrows `toolAllowlist` to: a wildcard admits everything, so
  * a lead holding tools would be judged by a control that checked nothing.
  */
 export const leadToolAllowlist: readonly string[] = [
-  ...leadBuiltInTools,
+  ...leadSessionCapabilities.flatMap(
+    (capability) => builtInToolCapabilities[capability],
+  ),
   ...chuggyToolNames(leadSessionCapabilities),
 ];
 

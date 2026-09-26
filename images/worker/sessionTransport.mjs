@@ -20,6 +20,11 @@
 import { setTimeout as wait } from "node:timers/promises";
 import { URL } from "node:url";
 
+import { sessionPlaneAnswers } from "@chuggy/worker-contract/sessionPlane";
+import { workerPlaneStopSchema } from "@chuggy/worker-contract/workerPlane";
+
+import { answeredWith } from "./wire.mjs";
+
 const attemptsMax = 15;
 const retryMilliseconds = 2_000;
 const retryAfterMillisecondsMax = 60_000;
@@ -73,7 +78,13 @@ export async function sessionRequest(
   throw refusal ?? new Error("worker plane retry bound was exhausted");
 }
 
+/** What the plane answers a heartbeat with once the lease is gone, which is a stop on every route. */
+const stoppedStatuses = answeredWith(
+  sessionPlaneAnswers.heartbeat,
+  workerPlaneStopSchema,
+);
+
 /** What the plane says when the answer is a decision the pod may not retry past. */
 export function sessionStopped(response) {
-  return response.status === 401 || response.status === 409;
+  return stoppedStatuses.includes(response.status);
 }

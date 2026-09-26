@@ -46,28 +46,22 @@
 
 import { Buffer } from "node:buffer";
 
-/** The bounds this module writes a second time; `test/contract/imageTools.test.mjs` holds them to the contract's. */
-export const leadDispatchesMax = 8;
-export const leadRefusalsPerDecisionMax = 16;
-export const agenticRefusalReasonCharsMax = 1_024;
-export const selectorHandoffNoteBytesMax = 65_536;
-export const leadDecisionBytesMax = 65_536;
+import { sessionTurnResultCharsMax } from "@chuggy/worker-contract/sessionPlane";
+import { leadRefusalsPerDecisionMax } from "@chuggy/worker-contract/sessionTools";
+import {
+  agenticRefusalReasonCharsMax,
+  leadDispatchesMax,
+  leadTurnDocumentVersion,
+  selectorAttentions,
+} from "@chuggy/worker-contract/workerDocuments";
 
-/** The one document version this tree writes and the only one the runtime accepts. */
-export const leadTurnDocumentVersion = 1;
+import { rosterLabel } from "./wire.mjs";
 
-/** The attentions a decision may name, which the runtime writes onto the project. */
-export const leadAttentions = ["Monitoring", "Attention", "Stopped"];
+/** What the whole document may weigh, which is what the turn's answer carries it in. */
+export const leadDecisionBytesMax = sessionTurnResultCharsMax;
 
-/** The decision tools, in the order a roster is read in. */
-export const leadDecisionToolNames = [
-  "dispatch",
-  "refuse",
-  "lift",
-  "set_attention",
-  "set_handoff_note",
-  "set_planning_intent",
-];
+/** The attention a decision names where this pod has never been told one. */
+const attentionUntold = rosterLabel(selectorAttentions, "Monitoring");
 
 function seededState(observation) {
   return {
@@ -122,7 +116,7 @@ export function leadObservationOffered(input) {
       : []
     )
       .map((decision) => decision?.attention)
-      .filter((attention) => leadAttentions.includes(attention))
+      .filter((attention) => selectorAttentions.includes(attention))
       .at(-1),
   };
 }
@@ -133,7 +127,7 @@ function documentOf(state, standingAttention) {
     dispatches: state.dispatches,
     refusals: state.refusals,
     lifts: state.lifts,
-    attention: state.attention ?? standingAttention ?? "Monitoring",
+    attention: state.attention ?? standingAttention ?? attentionUntold,
     handoffNote: state.handoffNote,
     ...(state.planningIntent === undefined
       ? {}
@@ -287,7 +281,7 @@ const decisionTools = [
     name: "set_attention",
     description:
       "Sets what this project's state says to a human: monitoring, wanting attention, or stopped. Last call wins.",
-    shape: (z) => ({ attention: z.enum(leadAttentions) }),
+    shape: (z) => ({ attention: z.enum(selectorAttentions) }),
     call: (state, { attention }, standingAttention) => {
       stage(state, { attention }, standingAttention);
       return `attention set to ${attention}`;

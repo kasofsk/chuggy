@@ -4,13 +4,21 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { URL } from "node:url";
 
-import { leadRoster } from "../../test/contract/sessionRosterFixture.ts";
-
+import { sessionStoreBatchBytesMax } from "@chuggy/worker-contract/sessionPlane";
+import {
+  agenticRefusalsAnsweredMax,
+  allChuggyTools,
+  briefLineCharsMax,
+  chuggyToolPrefix,
+  chuggyToolResponseBytesMax,
+  chuggyToolTimeoutMs,
+  nativeHttpPageItemsMax,
+  selectorHistoryLimitMax,
+  threadTurnsAnsweredMax,
+} from "@chuggy/worker-contract/sessionTools";
 import { z } from "zod";
 
 import {
-  allChuggyTools,
-  chuggyBriefIntentLineCharsMax,
   chuggyOperationIdentity,
   chuggyToolAnswerBytes,
   chuggyToolAnswerBytesMax,
@@ -20,20 +28,15 @@ import {
   chuggyToolContext,
   chuggyToolDefinitions,
   chuggyToolHandler,
-  chuggyToolPrefix,
-  chuggyToolResponseBytesMax,
   chuggyToolServer,
   chuggyToolsNotYetServed,
-  chuggyToolTimeoutMs,
   sessionAllowedTools,
   sessionBuiltInTools,
   sessionCapabilityTools,
 } from "./chuggyTools.mjs";
 import { leadDecisionStaging } from "./leadDecision.mjs";
-import {
-  sessionStoreAdapter,
-  sessionStoreBatchBytesMax,
-} from "./sessionStore.mjs";
+import { leadRoster } from "./sessionHarness.fixture.mjs";
+import { sessionStoreAdapter } from "./sessionStore.mjs";
 
 const task = {
   tenant: "vteng",
@@ -144,7 +147,7 @@ test("every tool that takes a brief names the line bound an intent is held to", 
 
   for (const { name, description } of taking) {
     assert.ok(
-      description.includes(String(chuggyBriefIntentLineCharsMax)),
+      description.includes(String(briefLineCharsMax)),
       `${name} names no line bound`,
     );
     assert.ok(
@@ -156,6 +159,36 @@ test("every tool that takes a brief names the line bound an intent is held to", 
       false,
       `${name} still asks for one long line`,
     );
+  }
+});
+
+/** Which bound each read's page is held to is written here; the bound itself is the contract's. */
+test("every read that takes a limit admits its route's bound and no more", () => {
+  const bounds = {
+    list_tickets: nativeHttpPageItemsMax,
+    list_drafts: nativeHttpPageItemsMax,
+    list_configurations: nativeHttpPageItemsMax,
+    read_decision_log: selectorHistoryLimitMax,
+    read_refusals: agenticRefusalsAnsweredMax,
+    read_projects: nativeHttpPageItemsMax,
+    list_executions: nativeHttpPageItemsMax,
+    read_thread: threadTurnsAnsweredMax,
+  };
+  const limited = chuggyToolDefinitions(
+    chuggyToolContext(task, bearer, {
+      capabilities: everyCapability,
+      staging: leadDecisionStaging(),
+    }),
+  ).filter((definition) => "limit" in definition.shape(z));
+
+  assert.deepEqual(
+    limited.map(({ name }) => name).sort(),
+    Object.keys(bounds).sort(),
+  );
+  for (const { name, shape } of limited) {
+    const { limit } = shape(z);
+    assert.ok(limit.safeParse(bounds[name]).success, `${name} at its bound`);
+    assert.ok(!limit.safeParse(bounds[name] + 1).success, `${name} past it`);
   }
 });
 

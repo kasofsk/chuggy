@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { workerDatabaseUrlVariable } from "../../src/contract/workerEnvironment.ts";
+import { workerDatabaseUrlVariable } from "@chuggy/worker-contract/workerEnvironment";
+
 import { attemptDatabase } from "./postgres.mjs";
 
 test("the gates are handed the attempt's own server under their own name, one worker wide", () => {

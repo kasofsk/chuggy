@@ -12,7 +12,8 @@ import {
   workerRepositoriesVariable,
   workerTaskVariable,
   workerWorkspaceVariable,
-} from "../../src/contract/workerEnvironment.ts";
+} from "@chuggy/worker-contract/workerEnvironment";
+
 import { workerCheckCommands } from "./checks.mjs";
 import {
   prepareWorker,
@@ -118,7 +119,10 @@ test("the image carries every module the worker imports", async () => {
   const directory = dirname(fileURLToPath(import.meta.url));
   const dockerfile = await readFile(join(directory, "Dockerfile"), "utf8");
   const modules = (await readdir(directory)).filter(
-    (name) => name.endsWith(".mjs") && !name.endsWith(".test.mjs"),
+    (name) =>
+      name.endsWith(".mjs") &&
+      !name.endsWith(".test.mjs") &&
+      !name.endsWith(".fixture.mjs"),
   );
 
   assert.ok(modules.includes("checks.mjs"), modules.join(" "));
@@ -136,6 +140,20 @@ test("the image names the workspace a work pod reads", async () => {
   const dockerfile = await readFile(join(directory, "Dockerfile"), "utf8");
 
   assert.match(dockerfile, new RegExp(`^ +${workerWorkspaceVariable}=`, "mu"));
+});
+
+/** The contract's schemas run under the image's zod in a pod and under the lockfile's in every suite here. */
+test("the image installs the zod the suites run", async () => {
+  const directory = dirname(fileURLToPath(import.meta.url));
+  const dockerfile = await readFile(join(directory, "Dockerfile"), "utf8");
+  const lockfile = JSON.parse(
+    await readFile(join(directory, "../../package-lock.json"), "utf8"),
+  );
+
+  assert.equal(
+    /^ARG ZOD_VERSION=(\S+)$/mu.exec(dockerfile)?.[1],
+    lockfile.packages["node_modules/zod"].version,
+  );
 });
 
 test("exactly one task document is what a pod may be launched with", () => {

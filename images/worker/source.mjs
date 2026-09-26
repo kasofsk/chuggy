@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
 
+import { resultManifestSchemaVersion } from "@chuggy/worker-contract/workerDocuments";
+
 export function ticketBranch(task) {
   const attempt = createHash("sha256").update(task.attempt).digest("hex");
   return `refs/heads/chuggy/tickets/${String(task.ticket)}/attempts/${attempt}`;
 }
 
 export function resultDocument(manifest) {
-  return { version: 3, ...manifest };
+  return { version: resultManifestSchemaVersion, ...manifest };
 }
 
 /**

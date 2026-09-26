@@ -32,19 +32,37 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
-  mintedCredentialDirectory,
-  workerCredentialEnvironment,
-} from "./repository.mjs";
+  sessionPlaneAnswers,
+  sessionPlaneRoutes,
+} from "@chuggy/worker-contract/sessionPlane";
+import { mintedCredentialDirectory } from "@chuggy/worker-contract/workerEnvironment";
+import {
+  workerCredentialAbsentSchema,
+  workerPlaneAnswers,
+  workerPlaneRoutes,
+} from "@chuggy/worker-contract/workerPlane";
+
+import { workerCredentialEnvironment } from "./repository.mjs";
 import { workerRequest } from "./transport.mjs";
+import { answeredWith } from "./wire.mjs";
 
 /** The route an attempt bearer asks its own credential through. */
-export const workerCredentialPath = "/v1/credential";
+export const workerCredentialPath = workerPlaneRoutes.credential.path;
 
 /** The route a session bearer asks a repository's credential through. */
-export const sessionCredentialPath = "/v1/session/credential";
+export const sessionCredentialPath = sessionPlaneRoutes.credential.path;
 
-/** What the plane answers for a repository it mints nothing for. */
-const notMintedStatus = 404;
+/** What each of those routes answers for a repository it mints nothing for. */
+const notMintedStatuses = new Map([
+  [
+    workerCredentialPath,
+    answeredWith(workerPlaneAnswers.credential, workerCredentialAbsentSchema),
+  ],
+  [
+    sessionCredentialPath,
+    answeredWith(sessionPlaneAnswers.credential, workerCredentialAbsentSchema),
+  ],
+]);
 
 /** The file the minted password stands in, which only this pod can read. */
 const planeCredentialFileName = "chuggy-git-credential";
@@ -82,6 +100,9 @@ export async function planeCredential({
   request = workerRequest,
   write = writeFile,
 }) {
+  const notMinted = notMintedStatuses.get(path);
+  if (notMinted === undefined)
+    throw new Error(`${path} is not a route a credential is minted through`);
   const response = await request(
     task,
     bearer,
@@ -93,9 +114,9 @@ export async function planeCredential({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ repository }),
         },
-    { settled: [notMintedStatus] },
+    { settled: notMinted },
   );
-  if (response.status === notMintedStatus) return undefined;
+  if (notMinted.includes(response.status)) return undefined;
   if (!response.ok)
     throw new Error(
       `the worker plane answered ${String(response.status)} for a credential`,

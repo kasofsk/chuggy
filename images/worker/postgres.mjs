@@ -12,15 +12,17 @@
  * gates' own name.
  */
 
+import { workerDatabaseUrlVariable } from "@chuggy/worker-contract/workerEnvironment";
+
 /**
  * A site that placed no server names none, and its worker asks for none: only
  * the work that then needs one fails, in the gate that needed it.
  * @param {Record<string, string | undefined>} environment
  */
 export function attemptDatabase(environment) {
-  const url = environment["CHUG_WORKER_DATABASE_URL"];
+  const url = environment[workerDatabaseUrlVariable];
   if (!url) return;
   environment["CHUG_PG_URL"] = url;
   if (!environment["CHUG_PG_WORKERS"]) environment["CHUG_PG_WORKERS"] = "1";
-  delete environment["CHUG_WORKER_DATABASE_URL"];
+  delete environment[workerDatabaseUrlVariable];
 }

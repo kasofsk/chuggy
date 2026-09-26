@@ -66,45 +66,47 @@
  * `model/domain.qnt`, which names re-authoring machinery as deliberately absent.
  *
  * `zod` IS A PEER DEPENDENCY OF THE AGENT SDK, NOT ONE OF ITS DEPENDENCIES, so
- * nothing here imports it: the shapes are functions of a `z` the caller
- * resolves, and the image's build probe is what proves the peer is installed.
+ * the shapes are functions of a `z` the caller resolves rather than of an import
+ * here, and the image's build probes are what prove the peer is installed and is
+ * the one the contract parses with.
  */
 
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { URLSearchParams } from "node:url";
 
+import { sessionStoreBatchBytesMax } from "@chuggy/worker-contract/sessionPlane";
 import {
-  chuggyBasePath,
-  chuggyBoundedBody,
-  chuggyMediaType,
-  chuggyRequest,
-} from "./chuggyApi.mjs";
-import { leadDecisionStaging, leadDecisionToolNames } from "./leadDecision.mjs";
-import { sessionStoreBatchBytesMax } from "./sessionStore.mjs";
+  agenticRefusalsAnsweredMax,
+  allChuggyTools,
+  allDependentRelations,
+  briefLineCharsMax,
+  builtInToolCapabilities,
+  chuggyToolCapabilities,
+  chuggyToolNames,
+  chuggyToolPrefix,
+  chuggyToolResponseBytesMax,
+  chuggyToolRoutes,
+  chuggyToolServerName,
+  chuggyToolTimeoutMs,
+  dependentRelationsAdmitted,
+  nativeHttpMediaType,
+  nativeHttpPageItemsMax,
+  selectorHistoryLimitMax,
+  threadTurnsAnsweredMax,
+} from "@chuggy/worker-contract/sessionTools";
+
+import { chuggyBoundedBody, chuggyRequest } from "./chuggyApi.mjs";
+import { leadDecisionStaging } from "./leadDecision.mjs";
 import { transcriptPageAnswer } from "./transcriptPage.mjs";
-
-/** The one MCP server every session is given, and the prefix its tool names carry. */
-export const chuggyToolServerName = "chuggy";
-export const chuggyToolPrefix = "mcp__chuggy__";
-
-/** The bounds this image writes a second time; `test/contract/imageTools.test.mjs` holds them to the contract's. */
-export const chuggyToolResponseBytesMax = 65_536;
-export const chuggyToolTimeoutMs = 30_000;
-export const chuggyToolPagesMax = 1;
-export const nativeHttpPageItemsMax = 100;
-export const selectorHistoryLimitMax = 50;
-export const agenticRefusalsAnsweredMax = 32;
-export const sessionStorePageBatchesMax = 8;
-export const threadTurnsAnsweredMax = 32;
-export const chuggyBriefIntentLineCharsMax = 512;
+import { routeFilled } from "./wire.mjs";
 
 /**
  * What a session is told a brief carries, `brief` being an open object on the
  * wire. An intent is bounded a line at a time, so a paragraph filed as one line
  * is refused however short the paragraph is.
  */
-const chuggyBriefDescription = `\`brief\` is {title?, intent, links, checks?, repository?, branch?, finalization?}: \`title\` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; \`intent\` is lines, each at most ${String(chuggyBriefIntentLineCharsMax)} characters — break a sentence across lines rather than shorten it; \`repository\` is the repository the work happens in, which list_configurations reports as an imported configuration's provenance, and a draft carrying none is refused when it is released. A 400 names the rule the brief broke.`;
+const chuggyBriefDescription = `\`brief\` is {title?, intent, links, checks?, repository?, branch?, finalization?}: \`title\` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; \`intent\` is lines, each at most ${String(briefLineCharsMax)} characters — break a sentence across lines rather than shorten it; \`repository\` is the repository the work happens in, which list_configurations reports as an imported configuration's provenance, and a draft carrying none is refused when it is released. A 400 names the rule the brief broke.`;
 
 /**
  * How many times the entry the runtime mirrors carries one answer's text. The
@@ -153,10 +155,6 @@ export function chuggyToolAnswerBytes(text) {
   return Buffer.byteLength(JSON.stringify(text));
 }
 
-/** The relation a filed dependent may carry, and the one it may not. */
-export const allDependentRelations = ["FollowUp", "Prerequisite"];
-export const dependentRelationsAdmitted = ["FollowUp"];
-
 /**
  * The agent runtime's built-in tools as the pinned CLI names them. A tool a
  * later runtime adds is not in `disallowedTools` until this roster carries it,
@@ -181,74 +179,22 @@ export const sessionBuiltInTools = [
   "Write",
 ];
 
-/** Every chuggy tool the reads channel offers, in the order a roster is read in. */
-const projectReadTools = [
-  "list_tickets",
-  "read_ticket",
-  "read_draft",
-  "list_drafts",
-  "list_configurations",
-  "read_configuration",
-  "read_decision_log",
-  "read_refusals",
-  "read_ticket_refusals",
-  "read_projects",
-  "read_lead",
-  "read_lead_transcript",
-  "list_executions",
-  "read_execution",
-  "read_run_transcript",
-  "read_operation",
-  "list_threads",
-  "read_thread",
-  "read_thread_transcript",
-];
-
-const draftAuthorTools = [
-  "initialize_draft",
-  "file_dependent",
-  "revise_draft",
-  "delete_draft",
-  "release_draft",
-];
-
-/** The one tool that files work nothing derived, which a thread holds and a lead does not. */
-const draftOriginateTools = ["create_draft"];
-
 /**
- * Which capability admits which tool. A capability this image does not know
- * admits nothing, and a tool in no list would be a tool nothing gates.
+ * Which capability admits which tool, the runtime's own and the chuggy server's
+ * alike. A capability this image does not know admits nothing.
  */
-export const sessionCapabilityTools = {
-  RepositoryRead: ["Read", "Glob", "Grep"],
-  RepositoryWrite: ["Write", "Edit", "NotebookEdit"],
-  RunCommands: ["Bash"],
-  ProjectRead: projectReadTools,
-  DraftAuthor: draftAuthorTools,
-  DraftOriginate: draftOriginateTools,
-  LeadDecision: leadDecisionToolNames,
-};
+export const sessionCapabilityTools = Object.fromEntries(
+  Object.entries(chuggyToolCapabilities).map(([capability, tools]) => [
+    capability,
+    [...builtInToolCapabilities[capability], ...tools],
+  ]),
+);
 
-/** Every chuggy tool there is, which is every capability's list but the built-ins'. */
-export const allChuggyTools = [
-  ...projectReadTools,
-  ...draftAuthorTools,
-  ...draftOriginateTools,
-  ...leadDecisionToolNames,
-];
-
-/**
- * The qualified names the runtime reports and the allowlist must name, in roster
- * order. The roster is filtered rather than the capabilities walked, so a tool
- * two capabilities admitted would still be named once.
- */
-export function chuggyToolNames(capabilities) {
-  const admitted = new Set(
-    (capabilities ?? []).flatMap((held) => sessionCapabilityTools[held] ?? []),
+/** The capabilities of a roster this image knows, so one a newer plane names is ignored rather than raised on. */
+function knownCapabilities(capabilities) {
+  return (capabilities ?? []).filter((held) =>
+    Object.hasOwn(sessionCapabilityTools, held),
   );
-  return allChuggyTools
-    .filter((tool) => admitted.has(tool))
-    .map((tool) => `${chuggyToolPrefix}${tool}`);
 }
 
 /**
@@ -268,7 +214,7 @@ export function sessionAllowedTools(capabilities) {
   ];
   const held = new Set([
     ...sessionBuiltInTools.filter((tool) => admitted.has(tool)),
-    ...chuggyToolNames(capabilities),
+    ...chuggyToolNames(knownCapabilities(capabilities)),
   ]);
   return {
     allowedTools: every.filter((tool) => held.has(tool)),
@@ -276,8 +222,13 @@ export function sessionAllowedTools(capabilities) {
   };
 }
 
-function partitionPath(task) {
-  return `${chuggyBasePath}/tenants/${encodeURIComponent(task.tenant)}/projects/${encodeURIComponent(task.project)}`;
+/** One of the tools' routes for this session's own project, `values` filling the rest of its pattern. */
+function projectPath(context, route, values = {}) {
+  return routeFilled(chuggyToolRoutes[route], {
+    tenant: context.task.tenant,
+    project: context.task.project,
+    ...values,
+  });
 }
 
 /** A query string built from the fields a caller actually gave, or nothing. */
@@ -389,7 +340,7 @@ async function readTranscript(context, path, cursor) {
 function write(context, path, method, body, headers = {}) {
   return relay(context, path, {
     method,
-    headers: { "content-type": chuggyMediaType, ...headers },
+    headers: { "content-type": nativeHttpMediaType, ...headers },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 }
@@ -478,7 +429,7 @@ export const chuggyProjectTools = [
     call: (context, { after, limit: pageLimit, phase }) =>
       read(
         context,
-        `${partitionPath(context.task)}${search({ after, limit: pageLimit, phase })}`,
+        `${projectPath(context, "project")}${search({ after, limit: pageLimit, phase })}`,
       ),
   },
   {
@@ -487,10 +438,7 @@ export const chuggyProjectTools = [
       "One ticket: its phase, its version, its authoring and its brief.",
     shape: (z) => ({ ticket: ticket(z) }),
     call: (context, args) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/tickets/${String(args.ticket)}`,
-      ),
+      read(context, projectPath(context, "ticket", { ticket: args.ticket })),
   },
   {
     name: "read_draft",
@@ -498,10 +446,7 @@ export const chuggyProjectTools = [
       "One draft still open on this project, by the ticket number it holds.",
     shape: (z) => ({ ticket: ticket(z) }),
     call: (context, args) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/drafts/${String(args.ticket)}`,
-      ),
+      read(context, projectPath(context, "draft", { ticket: args.ticket })),
   },
   {
     name: "list_drafts",
@@ -514,7 +459,7 @@ export const chuggyProjectTools = [
     call: (context, { cursor, limit: pageLimit }) =>
       read(
         context,
-        `${partitionPath(context.task)}/drafts${search({ cursor, limit: pageLimit })}`,
+        `${projectPath(context, "drafts")}${search({ cursor, limit: pageLimit })}`,
       ),
   },
   {
@@ -528,7 +473,7 @@ export const chuggyProjectTools = [
     call: (context, { cursor, limit: pageLimit }) =>
       read(
         context,
-        `${partitionPath(context.task)}/configurations${search({ cursor, limit: pageLimit })}`,
+        `${projectPath(context, "configurations")}${search({ cursor, limit: pageLimit })}`,
       ),
   },
   {
@@ -537,10 +482,7 @@ export const chuggyProjectTools = [
       "One configuration revision, canonical, as a draft is authored against it.",
     shape: (z) => ({ revision: identity(z) }),
     call: (context, { revision }) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/configurations/${encodeURIComponent(revision)}`,
-      ),
+      read(context, projectPath(context, "configuration", { revision })),
   },
   {
     name: "read_decision_log",
@@ -553,7 +495,7 @@ export const chuggyProjectTools = [
     call: (context, { after, limit: pageLimit }) =>
       read(
         context,
-        `${partitionPath(context.task)}/selector-history${search({ after, limit: pageLimit })}`,
+        `${projectPath(context, "selectorHistory")}${search({ after, limit: pageLimit })}`,
       ),
   },
   {
@@ -564,7 +506,7 @@ export const chuggyProjectTools = [
     call: (context, { limit: pageLimit }) =>
       read(
         context,
-        `${partitionPath(context.task)}/agentic-refusals${search({ limit: pageLimit })}`,
+        `${projectPath(context, "agenticRefusals")}${search({ limit: pageLimit })}`,
       ),
   },
   {
@@ -575,7 +517,7 @@ export const chuggyProjectTools = [
     call: (context, args) =>
       read(
         context,
-        `${partitionPath(context.task)}/tickets/${String(args.ticket)}/agentic-refusals`,
+        projectPath(context, "ticketAgenticRefusals", { ticket: args.ticket }),
       ),
   },
   {
@@ -588,7 +530,7 @@ export const chuggyProjectTools = [
     call: (context, { cursor, limit: pageLimit }) =>
       read(
         context,
-        `${chuggyBasePath}/projects${search({ cursor, limit: pageLimit })}`,
+        `${routeFilled(chuggyToolRoutes.projects, {})}${search({ cursor, limit: pageLimit })}`,
       ),
   },
   {
@@ -596,7 +538,7 @@ export const chuggyProjectTools = [
     description:
       "This project's lead session: its state, its mailbox tail and its transcript streams.",
     shape: () => ({}),
-    call: (context) => read(context, `${partitionPath(context.task)}/lead`),
+    call: (context) => read(context, projectPath(context, "lead")),
   },
   {
     name: "read_lead_transcript",
@@ -610,7 +552,7 @@ export const chuggyProjectTools = [
     call: (context, { stream, after, entry }) =>
       readTranscript(
         context,
-        `${partitionPath(context.task)}/lead/transcript${search({ stream, after, limit: chuggyTranscriptBatchesRead })}`,
+        `${projectPath(context, "leadTranscript")}${search({ stream, after, limit: chuggyTranscriptBatchesRead })}`,
         { after: after ?? 0, entry: entry ?? 0 },
       ),
   },
@@ -627,7 +569,7 @@ export const chuggyProjectTools = [
     call: (context, { ticket: onTicket, state, cursor, limit: pageLimit }) =>
       read(
         context,
-        `${partitionPath(context.task)}/executions${search({ ticket: onTicket, state, cursor, limit: pageLimit })}`,
+        `${projectPath(context, "executions")}${search({ ticket: onTicket, state, cursor, limit: pageLimit })}`,
       ),
   },
   {
@@ -636,10 +578,7 @@ export const chuggyProjectTools = [
       "One execution: its ticket, its attempts, its state and its outcome.",
     shape: (z) => ({ execution: identity(z) }),
     call: (context, { execution }) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/executions/${encodeURIComponent(execution)}`,
-      ),
+      read(context, projectPath(context, "execution", { execution })),
   },
   {
     name: "read_run_transcript",
@@ -653,7 +592,7 @@ export const chuggyProjectTools = [
     call: (context, { execution, attempt, after }) =>
       read(
         context,
-        `${partitionPath(context.task)}/executions/${encodeURIComponent(execution)}/attempts/${encodeURIComponent(attempt)}/transcript${search({ after })}`,
+        `${projectPath(context, "runTranscript", { execution, attempt })}${search({ after })}`,
       ),
   },
   {
@@ -662,17 +601,14 @@ export const chuggyProjectTools = [
       "One submitted operation's outcome. This is the only way to learn what a command did.",
     shape: (z) => ({ operation: identity(z) }),
     call: (context, { operation }) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/operations/${encodeURIComponent(operation)}`,
-      ),
+      read(context, projectPath(context, "operation", { operation })),
   },
   {
     name: "list_threads",
     description:
       "The member threads open on this project: whose each is, its state, and whether it is this session's own.",
     shape: () => ({}),
-    call: (context) => read(context, `${partitionPath(context.task)}/threads`),
+    call: (context) => read(context, projectPath(context, "threads")),
   },
   {
     name: "read_thread",
@@ -686,7 +622,7 @@ export const chuggyProjectTools = [
     call: (context, { session, before, limit: pageLimit }) =>
       read(
         context,
-        `${partitionPath(context.task)}/threads/${encodeURIComponent(session)}${search({ before, limit: pageLimit })}`,
+        `${projectPath(context, "thread", { session })}${search({ before, limit: pageLimit })}`,
       ),
   },
   {
@@ -702,7 +638,7 @@ export const chuggyProjectTools = [
     call: (context, { session, stream, after, entry }) =>
       readTranscript(
         context,
-        `${partitionPath(context.task)}/threads/${encodeURIComponent(session)}/transcript${search({ stream, after, limit: chuggyTranscriptBatchesRead })}`,
+        `${projectPath(context, "threadTranscript", { session })}${search({ stream, after, limit: chuggyTranscriptBatchesRead })}`,
         { after: after ?? 0, entry: entry ?? 0 },
       ),
   },
@@ -712,10 +648,7 @@ export const chuggyProjectTools = [
       "The defaults, the dependency candidates and the fence a new draft is filed against, for one configuration revision.",
     shape: (z) => ({ revision: identity(z) }),
     call: (context, { revision }) =>
-      read(
-        context,
-        `${partitionPath(context.task)}/draft-initializations/${encodeURIComponent(revision)}`,
-      ),
+      read(context, projectPath(context, "draftInitialization", { revision })),
   },
   {
     name: "file_dependent",
@@ -741,7 +674,7 @@ export const chuggyProjectTools = [
           `a dependent must carry its parent: authoring.dependencies does not name ticket ${String(args.parent)}.`,
           true,
         );
-      return write(context, `${partitionPath(context.task)}/drafts`, "POST", {
+      return write(context, projectPath(context, "drafts"), "POST", {
         configurationRevision: args.configurationRevision,
         configurationDigest: args.configurationDigest,
         expectedProjectSequence: args.expectedProjectSequence,
@@ -763,7 +696,7 @@ export const chuggyProjectTools = [
     call: (context, args) =>
       write(
         context,
-        `${partitionPath(context.task)}/drafts/${String(args.ticket)}`,
+        projectPath(context, "draft", { ticket: args.ticket }),
         "PUT",
         {
           expectedVersion: args.expectedVersion,
@@ -780,7 +713,7 @@ export const chuggyProjectTools = [
     call: (context, args) =>
       write(
         context,
-        `${partitionPath(context.task)}/drafts/${String(args.ticket)}${search({ expectedVersion: args.expectedVersion })}`,
+        `${projectPath(context, "draft", { ticket: args.ticket })}${search({ expectedVersion: args.expectedVersion })}`,
         "DELETE",
       ),
   },
@@ -803,7 +736,7 @@ export const chuggyProjectTools = [
       const operation = chuggyOperationIdentity(claimedTurn(context), mutation);
       return write(
         context,
-        `${partitionPath(context.task)}/operations`,
+        projectPath(context, "operations"),
         "POST",
         { operation, mutation },
         { "idempotency-key": operation },
@@ -821,7 +754,7 @@ export const chuggyProjectTools = [
       brief: anyObject(z),
     }),
     call: (context, args) =>
-      write(context, `${partitionPath(context.task)}/drafts`, "POST", {
+      write(context, projectPath(context, "drafts"), "POST", {
         configurationRevision: args.configurationRevision,
         configurationDigest: args.configurationDigest,
         expectedProjectSequence: args.expectedProjectSequence,
