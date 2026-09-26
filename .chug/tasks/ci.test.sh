@@ -158,6 +158,24 @@ set -e
 refute "a script-only change runs the suites, not just the static checks" 0 "$RC" "check-source unit: SKIPPED"
 check "a script-only change still skips Quint" 0 "$RC" "check-model: SKIPPED"
 
+# The contract's package is emitted under its own tsconfig, which only a unit
+# suite reads, so a change to that file alone must select the unit stage.
+stub_repo 0
+printf '{}\n' > "$R/tsconfig.contract-pack.json"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf '{ "include": [] }\n' > "$R/tsconfig.contract-pack.json"
+git -C "$R" add -A
+git -C "$R" commit -qm pack
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+refute "a change to the pack's tsconfig runs the suites" 0 "$RC" "check-source unit: SKIPPED"
+check "a change to the pack's tsconfig still skips Quint" 0 "$RC" "check-model: SKIPPED"
+
 # `check-keto`'s end-to-end suite composes the boundary over the postgres
 # harnesses, so a cone naming only the Keto adapter leaves the one suite that
 # proves a derived owner against a real authority unrun on a changed run.

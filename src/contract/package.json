@@ -1,0 +1,18 @@
+{
+  "name": "@chuggy/worker-contract",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./sessionPlane": "./sessionPlane.ts",
+    "./sessionTools": "./sessionTools.ts",
+    "./workerDocuments": "./workerDocuments.ts",
+    "./workerEnvironment": "./workerEnvironment.ts",
+    "./workerPlane": "./workerPlane.ts",
+    "./workerPool": "./workerPool.ts",
+    "./workerTask": "./workerTask.ts"
+  },
+  "peerDependencies": {
+    "zod": "^4.4.3"
+  }
+}

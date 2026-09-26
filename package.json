@@ -18,7 +18,8 @@
   "type": "module",
   "workspaces": [
     "test/rig",
-    "ui/chuggy-ui"
+    "ui/chuggy-ui",
+    "src/contract"
   ],
   "scripts": {
     "check": "./.chug/tasks/ci.sh",
