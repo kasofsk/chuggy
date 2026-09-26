@@ -120,6 +120,8 @@ import {
 } from "../../src/interpreter/workerPlane.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
 import {
+  workerContractEnumsWalked,
+  workerContractOptionalsSeen,
   workerContractReleasePlane,
   workerContractReplayed,
   type WorkerContractReleasePlane,
@@ -1126,53 +1128,6 @@ async function workerPlaneDriven<Name extends string>(
   };
 }
 
-/**
- * Marks every optional field `schema` names along `value` as present or absent
- * under its path. A union is followed down the member that reads the value,
- * which is the member its parse answered with.
- */
-function workerPlaneOptionalsSeen(
-  schema: z.ZodType,
-  value: unknown,
-  path: string,
-  seen: Map<string, Set<boolean>>,
-): void {
-  if (schema instanceof z.ZodObject) {
-    const shape = schema.shape as Readonly<Record<string, z.ZodType>>;
-    for (const [key, field] of Object.entries(shape)) {
-      const held = (value as Readonly<Record<string, unknown>>)[key];
-      const at = `${path}.${key}`;
-      const optional =
-        field instanceof z.ZodOptional || field instanceof z.ZodExactOptional;
-      if (optional)
-        seen.set(at, (seen.get(at) ?? new Set()).add(held !== undefined));
-      if (held !== undefined)
-        workerPlaneOptionalsSeen(
-          optional ? (field.unwrap() as z.ZodType) : field,
-          held,
-          at,
-          seen,
-        );
-    }
-  } else if (schema instanceof z.ZodArray) {
-    for (const item of value as readonly unknown[])
-      workerPlaneOptionalsSeen(
-        schema.element as z.ZodType,
-        item,
-        `${path}[]`,
-        seen,
-      );
-  } else if (schema instanceof z.ZodUnion) {
-    const members = schema.options as readonly z.ZodType[];
-    const index = members.findIndex(
-      (member) => member.safeParse(value).success,
-    );
-    const member = members[index];
-    if (member !== undefined)
-      workerPlaneOptionalsSeen(member, value, `${path}|${String(index)}`, seen);
-  }
-}
-
 /** Which of the bodies a status may carry `body` is, read as the pod's parse reads it: the first that accepts it. */
 function workerPlaneMemberRead(answer: z.ZodUnion, body: string): number {
   const offered: unknown = JSON.parse(body);
@@ -1194,7 +1149,7 @@ function workerPlaneAnswerRead(
   }
   const offered: unknown = JSON.parse(body);
   assert.deepEqual(answer.parse(offered), offered);
-  workerPlaneOptionalsSeen(answer, offered, String(status), seen);
+  workerContractOptionalsSeen(answer, offered, String(status), seen);
 }
 
 function workerPlaneAnswersHeld<Name extends string>(
@@ -1283,55 +1238,6 @@ function workerPlaneReadBy(
 }
 
 /**
- * `body` first, then again for each other value of each enum `schema` reads in
- * it, the rest held, so a roster is offered whole wherever the body offers one
- * member. A union is followed down the member that reads the body.
- */
-function workerPlaneEnumsWalked(
-  schema: z.ZodType,
-  body: unknown,
-): readonly unknown[] {
-  if (schema instanceof z.ZodEnum)
-    return [body, ...schema.options.filter((value) => value !== body)];
-  if (schema instanceof z.ZodOptional || schema instanceof z.ZodExactOptional)
-    return body === undefined
-      ? [body]
-      : workerPlaneEnumsWalked(schema.unwrap() as z.ZodType, body);
-  if (schema instanceof z.ZodUnion) {
-    const member = (schema.options as readonly z.ZodType[]).find(
-      (option) => option.safeParse(body).success,
-    );
-    return member === undefined ? [body] : workerPlaneEnumsWalked(member, body);
-  }
-  if (schema instanceof z.ZodObject) {
-    const held = body as Readonly<Record<string, unknown>>;
-    const shape = schema.shape as Readonly<Record<string, z.ZodType>>;
-    return [
-      held,
-      ...Object.entries(shape).flatMap(([key, field]) =>
-        workerPlaneEnumsWalked(field, held[key])
-          .slice(1)
-          .map((value) => ({ ...held, [key]: value })),
-      ),
-    ];
-  }
-  if (schema instanceof z.ZodArray) {
-    const items = body as readonly unknown[];
-    return [
-      items,
-      ...items.flatMap((item, index) =>
-        workerPlaneEnumsWalked(schema.element as z.ZodType, item)
-          .slice(1)
-          .map((value) =>
-            items.map((each, at) => (at === index ? value : each)),
-          ),
-      ),
-    ];
-  }
-  return [body];
-}
-
-/**
  * Drives every case of `plane` as a pod built with `older` sends it, naming
  * that release, and offers every JSON body that release builds. A route the
  * release calls must be one this plane names.
@@ -1390,8 +1296,8 @@ async function workerPlaneBodiesTaken<Name extends string>(
   assert.ok(built.length > 0, `${older.release} builds no body offered`);
   const seen = new Map<string, Set<boolean>>();
   for (const body of built) {
-    workerPlaneOptionalsSeen(schema, body, request.schema, seen);
-    for (const offered of workerPlaneEnumsWalked(schema, body)) {
+    workerContractOptionalsSeen(schema, body, request.schema, seen);
+    for (const offered of workerContractEnumsWalked(schema, body)) {
       const what = JSON.stringify(offered);
       assert.ok(schema.safeParse(offered).success, what);
       const answered = await workerPlaneDriven(

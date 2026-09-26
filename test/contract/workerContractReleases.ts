@@ -3,7 +3,8 @@
  * and how a suite reads one. A plane serves every history entry its accepted
  * range holds; each older one is installed as a devDependency named for its
  * release, from the asset its tag was published with, and is read through its
- * own emitted modules rather than this tree's sources.
+ * own emitted modules rather than this tree's sources. A body one of its schemas
+ * builds is walked through every roster value that schema names.
  */
 
 import { readFileSync } from "node:fs";
@@ -194,4 +195,124 @@ export async function workerContractReleasePlane(
       ),
     ),
   };
+}
+
+/**
+ * Hands `visit` every schema that reads `value` along the way, with the path to
+ * it and what the value holds there, a field left out included. A union is
+ * followed down the member that reads the value, which its parse answers with.
+ */
+function workerContractVisited(
+  schema: z.ZodType,
+  value: unknown,
+  path: string,
+  visit: (schema: z.ZodType, value: unknown, path: string) => void,
+): void {
+  visit(schema, value, path);
+  if (value === undefined) return;
+  if (schema instanceof z.ZodOptional || schema instanceof z.ZodExactOptional)
+    workerContractVisited(schema.unwrap() as z.ZodType, value, path, visit);
+  else if (schema instanceof z.ZodObject) {
+    const shape = schema.shape as Readonly<Record<string, z.ZodType>>;
+    for (const [key, field] of Object.entries(shape))
+      workerContractVisited(
+        field,
+        (value as Readonly<Record<string, unknown>>)[key],
+        `${path}.${key}`,
+        visit,
+      );
+  } else if (schema instanceof z.ZodArray)
+    for (const item of value as readonly unknown[])
+      workerContractVisited(
+        schema.element as z.ZodType,
+        item,
+        `${path}[]`,
+        visit,
+      );
+  else if (schema instanceof z.ZodUnion) {
+    const members = schema.options as readonly z.ZodType[];
+    const index = members.findIndex(
+      (member) => member.safeParse(value).success,
+    );
+    const member = members[index];
+    if (member !== undefined)
+      workerContractVisited(member, value, `${path}|${String(index)}`, visit);
+  }
+}
+
+/** Marks every optional field `schema` names along `value` as present or absent under its path. */
+export function workerContractOptionalsSeen(
+  schema: z.ZodType,
+  value: unknown,
+  path: string,
+  seen: Map<string, Set<boolean>>,
+): void {
+  workerContractVisited(schema, value, path, (field, held, at) => {
+    if (field instanceof z.ZodOptional || field instanceof z.ZodExactOptional)
+      seen.set(at, (seen.get(at) ?? new Set()).add(held !== undefined));
+  });
+}
+
+/** Marks the value each roster `schema` reads along `value` holds, under its path. */
+export function workerContractEnumsSeen(
+  schema: z.ZodType,
+  value: unknown,
+  path: string,
+  seen: Map<string, Set<unknown>>,
+): void {
+  workerContractVisited(schema, value, path, (field, held, at) => {
+    if (field instanceof z.ZodEnum)
+      seen.set(at, (seen.get(at) ?? new Set()).add(held));
+  });
+}
+
+/**
+ * `body` first, then again for each other value of each enum `schema` reads in
+ * it, the rest held, so a roster is offered whole wherever the body offers one
+ * member. A union is followed down the member that reads the body.
+ */
+export function workerContractEnumsWalked(
+  schema: z.ZodType,
+  body: unknown,
+): readonly unknown[] {
+  if (schema instanceof z.ZodEnum)
+    return [body, ...schema.options.filter((value) => value !== body)];
+  if (schema instanceof z.ZodOptional || schema instanceof z.ZodExactOptional)
+    return body === undefined
+      ? [body]
+      : workerContractEnumsWalked(schema.unwrap() as z.ZodType, body);
+  if (schema instanceof z.ZodUnion) {
+    const member = (schema.options as readonly z.ZodType[]).find(
+      (option) => option.safeParse(body).success,
+    );
+    return member === undefined
+      ? [body]
+      : workerContractEnumsWalked(member, body);
+  }
+  if (schema instanceof z.ZodObject) {
+    const held = body as Readonly<Record<string, unknown>>;
+    const shape = schema.shape as Readonly<Record<string, z.ZodType>>;
+    return [
+      held,
+      ...Object.entries(shape).flatMap(([key, field]) =>
+        workerContractEnumsWalked(field, held[key])
+          .slice(1)
+          .map((value) => ({ ...held, [key]: value })),
+      ),
+    ];
+  }
+  if (schema instanceof z.ZodArray) {
+    const items = body as readonly unknown[];
+    return [
+      items,
+      ...items.flatMap((item, index) =>
+        workerContractEnumsWalked(schema.element as z.ZodType, item)
+          .slice(1)
+          .map((value) =>
+            items.map((each, at) => (at === index ? value : each)),
+          ),
+      ),
+    ];
+  }
+  return [body];
 }
