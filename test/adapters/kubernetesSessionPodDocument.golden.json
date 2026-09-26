@@ -1,0 +1,710 @@
+{
+  "freshUnbound": {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "name": "golden-session-cf45557c1dd3fa5e62070da1ffe0664faf25ab7d9b84c19ee95b519e914bdae6",
+      "namespace": "golden-session",
+      "labels": {
+        "app.kubernetes.io/name": "golden-session"
+      },
+      "annotations": {
+        "site.invalid/tier": "golden",
+        "chuggy.internal/tenant": "golden-tenant",
+        "chuggy.internal/project": "golden-project",
+        "chuggy.internal/session": "golden-session",
+        "chuggy.internal/attempt": "golden-attempt",
+        "chuggy.internal/generation": "4",
+        "chuggy.internal/kind": "Lead",
+        "chuggy.internal/profile": "standard",
+        "chuggy.internal/runtime-version": "1"
+      }
+    },
+    "spec": {
+      "restartPolicy": "Never",
+      "serviceAccountName": "golden-session",
+      "automountServiceAccountToken": false,
+      "activeDeadlineSeconds": 3600,
+      "nodeSelector": {
+        "kubernetes.io/arch": "amd64"
+      },
+      "securityContext": {
+        "runAsNonRoot": true,
+        "fsGroup": 2000
+      },
+      "containers": [
+        {
+          "name": "session",
+          "image": "registry.invalid/golden-worker:1",
+          "env": [
+            {
+              "name": "CHUG_SESSION_TASK",
+              "value": "{\"tenant\":\"golden-tenant\",\"project\":\"golden-project\",\"session\":\"golden-session\",\"kind\":\"Lead\",\"attempt\":\"golden-attempt\",\"generation\":4,\"capabilities\":[\"RepositoryRead\",\"RunCommands\"],\"credentialSlot\":\"claude-code\",\"authority\":{\"tools\":[\"editor\"],\"credentials\":[\"claude-code\",\"forge\"],\"network\":true,\"filesystem\":\"WriteWorkspace\",\"mayCompleteTask\":false},\"workerPlane\":{\"url\":\"http://golden-plane.invalid:3001\",\"capabilityFile\":\"/var/run/golden/session-capability/bearer\"},\"api\":{\"url\":\"https://api.invalid\"},\"bounds\":{\"mailboxPollMs\":1000,\"idleMs\":300000,\"resultDrainMs\":2000,\"loadTimeoutMs\":120000,\"turnsMax\":200,\"budgetUsd\":5}}"
+            },
+            {
+              "name": "CHUG_WORKER_CREDENTIAL_FILES",
+              "value": "{\"claude-code\":\"/var/run/golden/claude-code/token\",\"forge\":\"/var/run/golden/forge/token\"}"
+            },
+            {
+              "name": "CHUG_WORKER_WORKSPACE",
+              "value": "/workspace"
+            },
+            {
+              "name": "CLAUDE_CONFIG_DIR",
+              "value": "/workspace/.claude"
+            },
+            {
+              "name": "CHUG_SESSION_MODEL",
+              "value": "claude-opus-4-5"
+            },
+            {
+              "name": "CHUG_SITE",
+              "value": "golden"
+            }
+          ],
+          "resources": {
+            "requests": {
+              "cpu": "500m",
+              "memory": "1Gi",
+              "ephemeral-storage": "10Gi"
+            },
+            "limits": {
+              "cpu": "1",
+              "memory": "2Gi",
+              "ephemeral-storage": "10Gi"
+            }
+          },
+          "securityContext": {
+            "allowPrivilegeEscalation": false,
+            "readOnlyRootFilesystem": true
+          },
+          "volumeMounts": [
+            {
+              "name": "session-capability",
+              "mountPath": "/var/run/golden/session-capability/bearer",
+              "subPath": "bearer",
+              "readOnly": true
+            },
+            {
+              "name": "session-workspace",
+              "mountPath": "/workspace",
+              "readOnly": false
+            },
+            {
+              "name": "minted-credential",
+              "mountPath": "/var/run/chuggy/minted",
+              "readOnly": false
+            },
+            {
+              "name": "session-credential-0",
+              "mountPath": "/var/run/golden/claude-code",
+              "readOnly": true
+            },
+            {
+              "name": "session-credential-1",
+              "mountPath": "/var/run/golden/forge",
+              "readOnly": true
+            }
+          ]
+        }
+      ],
+      "volumes": [
+        {
+          "name": "session-capability",
+          "secret": {
+            "secretName": "golden-session-cf45557c1dd3fa5e62070da1ffe0664faf25ab7d9b84c19ee95b519e914bdae6",
+            "defaultMode": 256,
+            "items": [
+              {
+                "key": "bearer",
+                "path": "bearer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "session-workspace",
+          "emptyDir": {
+            "sizeLimit": "10Gi"
+          }
+        },
+        {
+          "name": "minted-credential",
+          "emptyDir": {
+            "medium": "Memory",
+            "sizeLimit": "1Mi"
+          }
+        },
+        {
+          "name": "session-credential-0",
+          "projected": {
+            "defaultMode": 256,
+            "sources": [
+              {
+                "secret": {
+                  "name": "golden-claude-code",
+                  "items": [
+                    {
+                      "key": "token",
+                      "path": "token"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "session-credential-1",
+          "projected": {
+            "defaultMode": 256,
+            "sources": [
+              {
+                "secret": {
+                  "name": "golden-forge",
+                  "items": [
+                    {
+                      "key": "token",
+                      "path": "token"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "freshBound": {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "name": "golden-session-cf45557c1dd3fa5e62070da1ffe0664faf25ab7d9b84c19ee95b519e914bdae6",
+      "namespace": "golden-session",
+      "labels": {
+        "app.kubernetes.io/name": "golden-session"
+      },
+      "annotations": {
+        "site.invalid/tier": "golden",
+        "chuggy.internal/tenant": "golden-tenant",
+        "chuggy.internal/project": "golden-project",
+        "chuggy.internal/session": "golden-session",
+        "chuggy.internal/attempt": "golden-attempt",
+        "chuggy.internal/generation": "4",
+        "chuggy.internal/kind": "Lead",
+        "chuggy.internal/profile": "standard",
+        "chuggy.internal/runtime-version": "1"
+      }
+    },
+    "spec": {
+      "restartPolicy": "Never",
+      "serviceAccountName": "golden-session",
+      "automountServiceAccountToken": false,
+      "activeDeadlineSeconds": 3600,
+      "nodeSelector": {
+        "kubernetes.io/arch": "amd64"
+      },
+      "securityContext": {
+        "runAsNonRoot": true,
+        "fsGroup": 2000
+      },
+      "containers": [
+        {
+          "name": "session",
+          "image": "registry.invalid/golden-worker:1",
+          "env": [
+            {
+              "name": "CHUG_SESSION_TASK",
+              "value": "{\"tenant\":\"golden-tenant\",\"project\":\"golden-project\",\"session\":\"golden-session\",\"kind\":\"Lead\",\"attempt\":\"golden-attempt\",\"generation\":4,\"capabilities\":[\"RepositoryRead\",\"RunCommands\"],\"credentialSlot\":\"claude-code\",\"authority\":{\"tools\":[\"editor\"],\"credentials\":[\"claude-code\",\"forge\"],\"network\":true,\"filesystem\":\"WriteWorkspace\",\"mayCompleteTask\":false},\"workerPlane\":{\"url\":\"http://golden-plane.invalid:3001\",\"capabilityFile\":\"/var/run/golden/session-capability/bearer\"},\"api\":{\"url\":\"https://api.invalid\"},\"repository\":{\"reference\":\"golden-repository\"},\"bounds\":{\"mailboxPollMs\":1000,\"idleMs\":300000,\"resultDrainMs\":2000,\"loadTimeoutMs\":120000,\"turnsMax\":200,\"budgetUsd\":5}}"
+            },
+            {
+              "name": "CHUG_WORKER_CREDENTIAL_FILES",
+              "value": "{\"claude-code\":\"/var/run/golden/claude-code/token\",\"forge\":\"/var/run/golden/forge/token\"}"
+            },
+            {
+              "name": "CHUG_WORKER_WORKSPACE",
+              "value": "/workspace"
+            },
+            {
+              "name": "CLAUDE_CONFIG_DIR",
+              "value": "/workspace/.claude"
+            },
+            {
+              "name": "CHUG_SESSION_MODEL",
+              "value": "claude-opus-4-5"
+            },
+            {
+              "name": "CHUG_SITE",
+              "value": "golden"
+            }
+          ],
+          "resources": {
+            "requests": {
+              "cpu": "500m",
+              "memory": "1Gi",
+              "ephemeral-storage": "10Gi"
+            },
+            "limits": {
+              "cpu": "1",
+              "memory": "2Gi",
+              "ephemeral-storage": "10Gi"
+            }
+          },
+          "securityContext": {
+            "allowPrivilegeEscalation": false,
+            "readOnlyRootFilesystem": true
+          },
+          "volumeMounts": [
+            {
+              "name": "session-capability",
+              "mountPath": "/var/run/golden/session-capability/bearer",
+              "subPath": "bearer",
+              "readOnly": true
+            },
+            {
+              "name": "session-workspace",
+              "mountPath": "/workspace",
+              "readOnly": false
+            },
+            {
+              "name": "minted-credential",
+              "mountPath": "/var/run/chuggy/minted",
+              "readOnly": false
+            },
+            {
+              "name": "session-credential-0",
+              "mountPath": "/var/run/golden/claude-code",
+              "readOnly": true
+            },
+            {
+              "name": "session-credential-1",
+              "mountPath": "/var/run/golden/forge",
+              "readOnly": true
+            }
+          ]
+        }
+      ],
+      "volumes": [
+        {
+          "name": "session-capability",
+          "secret": {
+            "secretName": "golden-session-cf45557c1dd3fa5e62070da1ffe0664faf25ab7d9b84c19ee95b519e914bdae6",
+            "defaultMode": 256,
+            "items": [
+              {
+                "key": "bearer",
+                "path": "bearer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "session-workspace",
+          "emptyDir": {
+            "sizeLimit": "10Gi"
+          }
+        },
+        {
+          "name": "minted-credential",
+          "emptyDir": {
+            "medium": "Memory",
+            "sizeLimit": "1Mi"
+          }
+        },
+        {
+          "name": "session-credential-0",
+          "projected": {
+            "defaultMode": 256,
+            "sources": [
+              {
+                "secret": {
+                  "name": "golden-claude-code",
+                  "items": [
+                    {
+                      "key": "token",
+                      "path": "token"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "session-credential-1",
+          "projected": {
+            "defaultMode": 256,
+            "sources": [
+              {
+                "secret": {
+                  "name": "golden-forge",
+                  "items": [
+                    {
+                      "key": "token",
+                      "path": "token"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "resumedUnbound": {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "name": "golden-session-cf45557c1dd3fa5e62070da1ffe0664faf25ab7d9b84c19ee95b519e914bdae6",
+      "namespace": "golden-session",
+      "labels": {
+        "app.kubernetes.io/name": "golden-session"
+      },
+      "annotations": {
+        "site.invalid/tier": "golden",
+        "chuggy.internal/tenant": "golden-tenant",
+        "chuggy.internal/project": "golden-project",
+        "chuggy.internal/session": "golden-session",
+        "chuggy.internal/attempt": "golden-attempt",
+        "chuggy.internal/generation": "4",
+        "chuggy.internal/kind": "Lead",
+        "chuggy.internal/profile": "standard",
+        "chuggy.internal/runtime-version": "1"
+      }
+    },
+    "spec": {
+      "restartPolicy": "Never",
+      "serviceAccountName": "golden-session",
+      "automountServiceAccountToken": false,
+      "activeDeadlineSeconds": 3600,
+      "nodeSelector": {
+        "kubernetes.io/arch": "amd64"
+      },
+      "securityContext": {
+        "runAsNonRoot": true,
+        "fsGroup": 2000
+      },
+      "containers": [
+        {
+          "name": "session",
+          "image": "registry.invalid/golden-worker:1",
+          "env": [
+            {
+              "name": "CHUG_SESSION_TASK",
+              "value": "{\"tenant\":\"golden-tenant\",\"project\":\"golden-project\",\"session\":\"golden-session\",\"kind\":\"Lead\",\"attempt\":\"golden-attempt\",\"generation\":4,\"capabilities\":[\"RepositoryRead\",\"RunCommands\"],\"credentialSlot\":\"claude-code\",\"agentReference\":\"golden-agent-reference\",\"authority\":{\"tools\":[\"editor\"],\"credentials\":[\"claude-code\",\"forge\"],\"network\":true,\"filesystem\":\"WriteWorkspace\",\"mayCompleteTask\":false},\"workerPlane\":{\"url\":\"http://golden-plane.invalid:3001\",\"capabilityFile\":\"/var/run/golden/session-capability/bearer\"},\"api\":{\"url\":\"https://api.invalid\"},\"bounds\":{\"mailboxPollMs\":1000,\"idleMs\":300000,\"resultDrainMs\":2000,\"loadTimeoutMs\":120000,\"turnsMax\":200,\"budgetUsd\":5}}"
+            },
+            {
+              "name": "CHUG_WORKER_CREDENTIAL_FILES",
+              "value": "{\"claude-code\":\"/var/run/golden/claude-code/token\",\"forge\":\"/var/run/golden/forge/token\"}"
+            },
+            {
+              "name": "CHUG_WORKER_WORKSPACE",
+              "value": "/workspace"
+            },
+            {
+              "name": "CLAUDE_CONFIG_DIR",
+              "value": "/workspace/.claude"
+            },
+            {
+              "name": "CHUG_SESSION_MODEL",
+              "value": "claude-opus-4-5"
+            },
+            {
+              "name": "CHUG_SITE",
+              "value": "golden"
+            }
+          ],
+          "resources": {
+            "requests": {
+              "cpu": "500m",
+              "memory": "1Gi",
+              "ephemeral-storage": "10Gi"
+            },
+            "limits": {
+              "cpu": "1",
+              "memory": "2Gi",
+              "ephemeral-storage": "10Gi"
+            }
+          },
+          "securityContext": {
+            "allowPrivilegeEscalation": false,
+            "readOnlyRootFilesystem": true
+          },
+          "volumeMounts": [
+            {
+              "name": "session-capability",
+              "mountPath": "/var/run/golden/session-capability/bearer",
+              "subPath": "bearer",
+              "readOnly": true
+            },
+            {
+              "name": "session-workspace",
+              "mountPath": "/workspace",
+              "readOnly": false
+            },
+            {
+              "name": "minted-credential",
+              "mountPath": "/var/run/chuggy/minted",
+              "readOnly": false
+            },
+            {
+              "name": "session-credential-0",
+              "mountPath": "/var/run/golden/claude-code",
+              "readOnly": true
+            },
+            {
+              "name": "session-credential-1",
+              "mountPath": "/var/run/golden/forge",
+              "readOnly": true
+            }
+          ]
+        }
+      ],
+      "volumes": [
+        {
+          "name": "session-capability",
+          "secret": {
+            "secretName": "golden-session-cf45557c1dd3fa5e62070da1ffe0664faf25ab7d9b84c19ee95b519e914bdae6",
+            "defaultMode": 256,
+            "items": [
+              {
+                "key": "bearer",
+                "path": "bearer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "session-workspace",
+          "emptyDir": {
+            "sizeLimit": "10Gi"
+          }
+        },
+        {
+          "name": "minted-credential",
+          "emptyDir": {
+            "medium": "Memory",
+            "sizeLimit": "1Mi"
+          }
+        },
+        {
+          "name": "session-credential-0",
+          "projected": {
+            "defaultMode": 256,
+            "sources": [
+              {
+                "secret": {
+                  "name": "golden-claude-code",
+                  "items": [
+                    {
+                      "key": "token",
+                      "path": "token"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "session-credential-1",
+          "projected": {
+            "defaultMode": 256,
+            "sources": [
+              {
+                "secret": {
+                  "name": "golden-forge",
+                  "items": [
+                    {
+                      "key": "token",
+                      "path": "token"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "resumedBound": {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "name": "golden-session-cf45557c1dd3fa5e62070da1ffe0664faf25ab7d9b84c19ee95b519e914bdae6",
+      "namespace": "golden-session",
+      "labels": {
+        "app.kubernetes.io/name": "golden-session"
+      },
+      "annotations": {
+        "site.invalid/tier": "golden",
+        "chuggy.internal/tenant": "golden-tenant",
+        "chuggy.internal/project": "golden-project",
+        "chuggy.internal/session": "golden-session",
+        "chuggy.internal/attempt": "golden-attempt",
+        "chuggy.internal/generation": "4",
+        "chuggy.internal/kind": "Lead",
+        "chuggy.internal/profile": "standard",
+        "chuggy.internal/runtime-version": "1"
+      }
+    },
+    "spec": {
+      "restartPolicy": "Never",
+      "serviceAccountName": "golden-session",
+      "automountServiceAccountToken": false,
+      "activeDeadlineSeconds": 3600,
+      "nodeSelector": {
+        "kubernetes.io/arch": "amd64"
+      },
+      "securityContext": {
+        "runAsNonRoot": true,
+        "fsGroup": 2000
+      },
+      "containers": [
+        {
+          "name": "session",
+          "image": "registry.invalid/golden-worker:1",
+          "env": [
+            {
+              "name": "CHUG_SESSION_TASK",
+              "value": "{\"tenant\":\"golden-tenant\",\"project\":\"golden-project\",\"session\":\"golden-session\",\"kind\":\"Lead\",\"attempt\":\"golden-attempt\",\"generation\":4,\"capabilities\":[\"RepositoryRead\",\"RunCommands\"],\"credentialSlot\":\"claude-code\",\"agentReference\":\"golden-agent-reference\",\"authority\":{\"tools\":[\"editor\"],\"credentials\":[\"claude-code\",\"forge\"],\"network\":true,\"filesystem\":\"WriteWorkspace\",\"mayCompleteTask\":false},\"workerPlane\":{\"url\":\"http://golden-plane.invalid:3001\",\"capabilityFile\":\"/var/run/golden/session-capability/bearer\"},\"api\":{\"url\":\"https://api.invalid\"},\"repository\":{\"reference\":\"golden-repository\"},\"bounds\":{\"mailboxPollMs\":1000,\"idleMs\":300000,\"resultDrainMs\":2000,\"loadTimeoutMs\":120000,\"turnsMax\":200,\"budgetUsd\":5}}"
+            },
+            {
+              "name": "CHUG_WORKER_CREDENTIAL_FILES",
+              "value": "{\"claude-code\":\"/var/run/golden/claude-code/token\",\"forge\":\"/var/run/golden/forge/token\"}"
+            },
+            {
+              "name": "CHUG_WORKER_WORKSPACE",
+              "value": "/workspace"
+            },
+            {
+              "name": "CLAUDE_CONFIG_DIR",
+              "value": "/workspace/.claude"
+            },
+            {
+              "name": "CHUG_SESSION_MODEL",
+              "value": "claude-opus-4-5"
+            },
+            {
+              "name": "CHUG_SITE",
+              "value": "golden"
+            }
+          ],
+          "resources": {
+            "requests": {
+              "cpu": "500m",
+              "memory": "1Gi",
+              "ephemeral-storage": "10Gi"
+            },
+            "limits": {
+              "cpu": "1",
+              "memory": "2Gi",
+              "ephemeral-storage": "10Gi"
+            }
+          },
+          "securityContext": {
+            "allowPrivilegeEscalation": false,
+            "readOnlyRootFilesystem": true
+          },
+          "volumeMounts": [
+            {
+              "name": "session-capability",
+              "mountPath": "/var/run/golden/session-capability/bearer",
+              "subPath": "bearer",
+              "readOnly": true
+            },
+            {
+              "name": "session-workspace",
+              "mountPath": "/workspace",
+              "readOnly": false
+            },
+            {
+              "name": "minted-credential",
+              "mountPath": "/var/run/chuggy/minted",
+              "readOnly": false
+            },
+            {
+              "name": "session-credential-0",
+              "mountPath": "/var/run/golden/claude-code",
+              "readOnly": true
+            },
+            {
+              "name": "session-credential-1",
+              "mountPath": "/var/run/golden/forge",
+              "readOnly": true
+            }
+          ]
+        }
+      ],
+      "volumes": [
+        {
+          "name": "session-capability",
+          "secret": {
+            "secretName": "golden-session-cf45557c1dd3fa5e62070da1ffe0664faf25ab7d9b84c19ee95b519e914bdae6",
+            "defaultMode": 256,
+            "items": [
+              {
+                "key": "bearer",
+                "path": "bearer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "session-workspace",
+          "emptyDir": {
+            "sizeLimit": "10Gi"
+          }
+        },
+        {
+          "name": "minted-credential",
+          "emptyDir": {
+            "medium": "Memory",
+            "sizeLimit": "1Mi"
+          }
+        },
+        {
+          "name": "session-credential-0",
+          "projected": {
+            "defaultMode": 256,
+            "sources": [
+              {
+                "secret": {
+                  "name": "golden-claude-code",
+                  "items": [
+                    {
+                      "key": "token",
+                      "path": "token"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "session-credential-1",
+          "projected": {
+            "defaultMode": 256,
+            "sources": [
+              {
+                "secret": {
+                  "name": "golden-forge",
+                  "items": [
+                    {
+                      "key": "token",
+                      "path": "token"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
