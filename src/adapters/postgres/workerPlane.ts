@@ -2,8 +2,17 @@ import { createHash, randomUUID } from "node:crypto";
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
-import { workTaskDocumentSchema } from "../../contract/workerTask.ts";
+import {
+  sessionTaskDocumentSchema,
+  workTaskDocumentSchema,
+} from "../../contract/workerTask.ts";
 import { asTaskId, asTicketId } from "../../domain/ids.ts";
+import {
+  allSessionKinds,
+  asSessionAttemptId,
+  asSessionId,
+  type SessionBearerSecret,
+} from "../../interpreter/agentSession.ts";
 import {
   asAttemptId,
   asExecutionId,
@@ -31,6 +40,7 @@ import {
   type WorkerRunTurnsPort,
 } from "../../interpreter/runEvidence.ts";
 import type {
+  SessionTaskRead,
   WorkerAttemptAuthority,
   WorkerAttemptHeartbeatPort,
   WorkerArtifactReservationPort,
@@ -41,10 +51,13 @@ import type {
 } from "../../interpreter/workerPlane.ts";
 import { projectRowCounter } from "./rows.ts";
 import { executionRowTaskKind, taskRowStage } from "./schedulerRows.ts";
+import { sessionRowMember, sessionRowText } from "./sessionRows.ts";
 import { postgresTransaction } from "./pool.ts";
 
-/** The digest an attempt's bearer is keyed by, which is all the database holds of it. */
-function workerSecretDigest(secret: AttemptCapabilitySecret): string {
+/** The digest either kind of bearer is keyed by, which is all the database holds of it. */
+function workerSecretDigest(
+  secret: AttemptCapabilitySecret | SessionBearerSecret,
+): string {
   return createHash("sha256").update(secret, "utf8").digest("hex");
 }
 
@@ -239,8 +252,68 @@ async function workerTask(
   };
 }
 
+interface SessionTaskRow {
+  readonly tenant: string | null;
+  readonly project: string | null;
+  readonly session: string | null;
+  readonly attempt: string | null;
+  readonly generation: string | null;
+  readonly kind: string | null;
+  readonly credential_slot: string | null;
+  readonly live: boolean | null;
+  readonly invocation: unknown;
+}
+
+/** A recorded session invocation, which the scheduler wrote in the shape of the pod document it came from. */
+const sessionTaskInvocationSchema = sessionTaskDocumentSchema
+  .pick({
+    capabilities: true,
+    agentReference: true,
+    authority: true,
+    repository: true,
+  })
+  .strict();
+
+async function sessionTask(
+  pool: pg.Pool,
+  secret: SessionBearerSecret,
+): Promise<SessionTaskRead | undefined> {
+  const found = await pool.query<SessionTaskRow>(
+    sql`SELECT tenant,project,session,attempt,generation::text AS generation,
+               kind,credential_slot,live,invocation
+          FROM read_session_task(${workerSecretDigest(secret)})`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) return undefined;
+  if (row.live === null)
+    throw new Error("postgres worker plane: session task has no liveness");
+  return {
+    live: row.live,
+    identity: {
+      partition: {
+        tenant: asTenantId(sessionRowText(row.tenant, "tenant")),
+        project: asProjectId(sessionRowText(row.project, "project")),
+      },
+      session: asSessionId(sessionRowText(row.session, "session")),
+      attempt: asSessionAttemptId(sessionRowText(row.attempt, "attempt")),
+      generation: projectRowCounter(
+        sessionRowText(row.generation, "generation"),
+        "session attempt generation",
+      ),
+      kind: sessionRowMember(allSessionKinds, row.kind, "session kind"),
+      credentialSlot: sessionRowText(row.credential_slot, "credential slot"),
+    },
+    ...(row.invocation === null
+      ? {}
+      : { invocation: sessionTaskInvocationSchema.parse(row.invocation) }),
+  };
+}
+
 export function postgresWorkerTasks(pool: pg.Pool): WorkerTaskPort {
-  return { task: (secret) => workerTask(pool, secret) };
+  return {
+    work: (secret) => workerTask(pool, secret),
+    session: (secret) => sessionTask(pool, secret),
+  };
 }
 
 export function postgresWorkerAttemptHeartbeats(

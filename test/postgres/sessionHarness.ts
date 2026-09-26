@@ -42,6 +42,7 @@ import type {
 import type {
   FencedSessionAttempt,
   SessionSchedulerStore,
+  SessionTaskInvocation,
 } from "../../src/interpreter/sessionScheduler.ts";
 import { postgresAgentSessions } from "../../src/adapters/postgres/agentSession.ts";
 import {
@@ -195,6 +196,18 @@ export interface SessionRigCeilings {
   readonly leaseSecs?: number;
 }
 
+/** What a case opens an attempt with when it is not about the task a pod fetches. */
+export const sessionRigInvocation: SessionTaskInvocation = {
+  capabilities: ["RepositoryRead"],
+  authority: {
+    tools: [],
+    credentials: [],
+    network: false,
+    filesystem: "ReadWorkspace",
+    mayCompleteTask: false,
+  },
+};
+
 /** Opens the next attempt for a session, refusing anything but an opened one. */
 export async function sessionRigAttempt(
   rig: SessionRig,
@@ -216,6 +229,7 @@ export async function sessionRigAttempt(
     attemptsPerAccountMax:
       ceilings.attemptsPerAccountMax ?? sessionRigBoundless,
     clusterAttemptsMax: ceilings.clusterAttemptsMax ?? sessionRigBoundless,
+    invocation: sessionRigInvocation,
   });
   if (opened.opened !== "Opened")
     throw new Error(

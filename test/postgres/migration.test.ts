@@ -27,6 +27,7 @@ import { migration015 } from "../../src/adapters/postgres/schema/migrations/015-
 import { migration016 } from "../../src/adapters/postgres/schema/migrations/016-ticket-update.ts";
 import { migration017 } from "../../src/adapters/postgres/schema/migrations/017-ticket-repin.ts";
 import { migration018 } from "../../src/adapters/postgres/schema/migrations/018-attempt-invocation.ts";
+import { migration019 } from "../../src/adapters/postgres/schema/migrations/019-session-invocation.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -56,6 +57,7 @@ import {
   repositoryRetirementWriteFunction,
   schedulerRole,
   selectorServiceRole,
+  sessionTaskReadFunction,
   ticketServiceRole,
   workerPlaneRole,
   workerTaskReadFunction,
@@ -8725,6 +8727,73 @@ test("018 gives an attempt its invocation and the worker plane its one read of i
         )
       ).rows,
       [{ owner: boundaryOwnerRole, definer: true, plane: true, pool: false }],
+    );
+  });
+});
+
+/** The columns 019 gives a session attempt, by name. */
+async function sessionInvocationColumns(
+  subject: pg.Pool,
+): Promise<readonly string[]> {
+  const found = await subject.query<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='session_attempt'
+        AND column_name IN ('invocation','invoked')`,
+  );
+  return found.rows.map((row) => row.column_name);
+}
+
+/** Who owns each named boundary and which runtime roles may execute it, in name order. */
+async function sessionInvocationBoundaries(
+  subject: pg.Pool,
+  signatures: readonly string[],
+): Promise<readonly unknown[]> {
+  const found = await subject.query<Record<string, unknown>>(
+    `SELECT p.oid::regprocedure::text AS signature,
+            pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS definer,
+            has_function_privilege($2,p.oid,'EXECUTE') AS scheduler,
+            has_function_privilege($3,p.oid,'EXECUTE') AS plane,
+            has_function_privilege($4,p.oid,'EXECUTE') AS pool,
+            has_function_privilege($5,p.oid,'EXECUTE') AS api
+       FROM pg_proc p WHERE p.oid = ANY(SELECT to_regprocedure(unnest($1::text[])))
+      ORDER BY p.proname`,
+    [signatures, schedulerRole, workerPlaneRole, poolPlaneRole, apiRole],
+  );
+  return found.rows;
+}
+
+test("019 gives a session attempt its invocation, opened only with one, and the worker plane its one read of it", async () => {
+  await migrationDatabase("session_invocation", async (subject) => {
+    const bare =
+      "open_session_attempt(text,text,text,text,text,text,text,bigint,bigint,bigint,bigint)";
+    const invoked = bare.replace("bigint)", "bigint,jsonb)");
+    const read = `${sessionTaskReadFunction}(text)`;
+    await installationBefore(subject, migration019.version);
+    assert.deepEqual(await sessionInvocationColumns(subject), []);
+    assert.equal(await migrationHasFunction(subject, bare), true);
+    assert.equal(await migrationHasFunction(subject, read), false);
+    assert.ok((await postgresMigrate(subject)).includes(migration019.version));
+    assert.deepEqual(await sessionInvocationColumns(subject), ["invocation"]);
+    assert.equal(await migrationHasFunction(subject, bare), false);
+    const owned = { owner: boundaryOwnerRole, definer: true, pool: false };
+    assert.deepEqual(
+      await sessionInvocationBoundaries(subject, [invoked, read]),
+      [
+        {
+          signature: invoked,
+          ...owned,
+          scheduler: true,
+          plane: false,
+          api: false,
+        },
+        {
+          signature: read,
+          ...owned,
+          scheduler: false,
+          plane: true,
+          api: false,
+        },
+      ],
     );
   });
 });

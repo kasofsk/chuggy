@@ -59,6 +59,7 @@ import {
   type SessionAttemptMint,
   type SessionSchedulerService,
 } from "../../src/interpreter/sessionSchedulerRun.ts";
+import { sessionTaskInvocation } from "../../src/interpreter/workerTask.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -133,6 +134,8 @@ interface StoreAnswers {
    */
   readonly turnFailure?: SessionTurnFailure;
   readonly turnFailureFrom?: "AfterTheObservation";
+  /** Where every opening the store is asked for is kept, for a case about what an attempt records. */
+  readonly openings?: SessionAttemptOpening[];
 }
 
 /** A store that records the bound of every move asked of it and takes none. */
@@ -146,6 +149,7 @@ function recordingStore(
       return Promise.resolve(answers.awaiting ?? []);
     },
     openAttempt: (opening: SessionAttemptOpening) => {
+      answers.openings?.push(opening);
       calls.push(
         `openAttempt ${opening.attempt} lease=${String(opening.leaseSecs)} backoff=${String(opening.placementBackoffSecs)} account=${String(opening.attemptsPerAccountMax)} cluster=${String(opening.clusterAttemptsMax)}`,
       );
@@ -692,6 +696,59 @@ test("the mirror is the placement's and the binding it stands for is untouched",
     [bound],
     "the binding a finalizer reads was rewritten to place a session",
   );
+});
+
+test("an attempt records at opening the invocation its placement is then asked with", async () => {
+  const unrun: AgentSession = {
+    partition,
+    session: session.session,
+    kind: session.kind,
+    principal: session.principal,
+    capabilities: session.capabilities,
+    credentialSlot: session.credentialSlot,
+    account: session.account,
+    cluster: session.cluster,
+    state: session.state,
+  };
+  for (const [awaiting, binding, invocation] of [
+    [
+      session,
+      boundBinding,
+      {
+        capabilities: ["RepositoryRead"],
+        agentReference: "1a2b3c",
+        authority: policy.grant,
+        repository: { reference: mirror },
+      },
+    ],
+    [
+      unrun,
+      undefined,
+      { capabilities: ["RepositoryRead"], authority: policy.grant },
+    ],
+  ] as const) {
+    const openings: SessionAttemptOpening[] = [];
+    const asked: SessionPlacement[] = [];
+    await sessionSchedulerPass(
+      service(
+        [],
+        {
+          awaiting: [awaiting],
+          ...(binding === undefined ? {} : { binding }),
+          openings,
+        },
+        { placed: "Placed", placement: asPlacementId("chuggy-session-one") },
+        (placement) => asked.push(placement),
+        { mirrors: { [bound]: mirror } },
+      ),
+      epoch,
+    );
+    const [placed] = asked;
+    assert.ok(placed !== undefined);
+    assert.equal(openings.length, 1);
+    assert.deepEqual(openings[0]?.invocation, invocation);
+    assert.deepEqual(openings[0]?.invocation, sessionTaskInvocation(placed));
+  }
 });
 
 test("a project that binds no repository places a session with no checkout", async () => {

@@ -5,6 +5,8 @@
  * grows a method.
  */
 
+import type { FastifyInstance } from "fastify";
+
 import type {
   SessionPlaneService,
   WorkerPlaneServerService,
@@ -44,7 +46,8 @@ export const inertRunEvidence: WorkerRunEvidencePorts = {
 
 /** A task port that finds no attempt, for a case that never fetches one. */
 export const inertTasks: WorkerTaskPort = {
-  task: () => Promise.resolve(undefined),
+  work: () => Promise.resolve(undefined),
+  session: () => Promise.resolve(undefined),
 };
 
 /**
@@ -98,5 +101,21 @@ export function inertSessionPlane(
     turnPollIntervalMs: 1_000,
     turnPollSecsMax: 1,
     pollsMax: 64,
+  };
+}
+
+/** What a bearer is answered at the task route, as a pod reads it. */
+export async function taskFetched(
+  plane: Pick<FastifyInstance, "inject">,
+  bearer: string,
+): Promise<{ readonly status: number; readonly body: unknown }> {
+  const response = await plane.inject({
+    method: "GET",
+    url: "/v1/task",
+    headers: { authorization: `Bearer ${bearer}` },
+  });
+  return {
+    status: response.statusCode,
+    body: JSON.parse(response.body) as unknown,
   };
 }

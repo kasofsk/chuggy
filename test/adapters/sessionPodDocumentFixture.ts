@@ -29,7 +29,7 @@ const goldenGrant: PolicyAuthorityGrant = {
   mayCompleteTask: false,
 };
 
-const goldenConfig: KubernetesSessionLaunchConfig = {
+export const goldenConfig: KubernetesSessionLaunchConfig = {
   apiBaseUrl: "https://golden-cluster.invalid:6443",
   namespace: "golden-session",
   tokenFile: "/var/run/secrets/golden/token",

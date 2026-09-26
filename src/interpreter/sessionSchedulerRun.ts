@@ -95,6 +95,10 @@
  * takes it. The pass runs as `chuggy_scheduler`, and
  * `test/postgres/sessionPrivileges.test.ts` is what says that role still holds
  * the grant the read needs.
+ *
+ * SO IS EVERYTHING THE ATTEMPT IS PLACED WITH, as one value. The opening
+ * records its invocation and the placement is asked with the same value, so the
+ * task a pod fetches is the task it was pushed.
  */
 
 import type { AgentSession, SessionAttemptId } from "./agentSession.ts";
@@ -111,6 +115,7 @@ import {
   type SessionSchedulerConfig,
   type SessionSchedulerStore,
 } from "./sessionScheduler.ts";
+import { sessionTaskInvocation } from "./workerTask.ts";
 
 /** One attempt identity, its bearer, and the digest the durable row keeps of the secret. */
 export interface SessionAttemptMinted {
@@ -258,6 +263,28 @@ async function sessionPlaceOne(
   const config = checkedSessionSchedulerConfig(service.config);
   const binding = await service.bindings.binding(session.partition);
   const minted = service.bearers.mint();
+  const placing = {
+    kind: session.kind,
+    capabilities: session.capabilities,
+    credentialSlot: session.credentialSlot,
+    ...(session.agentReference === undefined
+      ? {}
+      : { agentReference: session.agentReference }),
+    profile: service.policy.profile,
+    image: service.policy.image,
+    authority: service.policy.grant,
+    bearer: minted.bearer,
+    /** A checkout nothing on the roster may read is a cost with no consequence. */
+    ...(binding === undefined ||
+    !session.capabilities.includes("RepositoryRead")
+      ? {}
+      : {
+          repository: sessionRepositoryRead(
+            service.policy.mirrors,
+            binding.repository,
+          ),
+        }),
+  };
   const opened = await service.store.openAttempt({
     partition: session.partition,
     session: session.session,
@@ -269,34 +296,13 @@ async function sessionPlaceOne(
     placementBackoffSecs: config.placementBackoffSecs,
     attemptsPerAccountMax: config.attemptsPerAccountMax,
     clusterAttemptsMax: config.clusterAttemptsMax,
+    invocation: sessionTaskInvocation(placing),
   });
   if (opened.opened !== "Opened") return false;
   return sessionAttemptPlaced(
     service,
     opened.attempt,
-    await service.placement.place({
-      ...opened.attempt,
-      kind: session.kind,
-      capabilities: session.capabilities,
-      credentialSlot: session.credentialSlot,
-      ...(session.agentReference === undefined
-        ? {}
-        : { agentReference: session.agentReference }),
-      profile: service.policy.profile,
-      image: service.policy.image,
-      authority: service.policy.grant,
-      bearer: minted.bearer,
-      /** A checkout nothing on the roster may read is a cost with no consequence. */
-      ...(binding === undefined ||
-      !session.capabilities.includes("RepositoryRead")
-        ? {}
-        : {
-            repository: sessionRepositoryRead(
-              service.policy.mirrors,
-              binding.repository,
-            ),
-          }),
-    }),
+    await service.placement.place({ ...opened.attempt, ...placing }),
   );
 }
 

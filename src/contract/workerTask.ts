@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 
+import { sessionKinds } from "./rosters.ts";
 import { workerPoolAssignmentSchema } from "./workerPool.ts";
 
 /** The longest single briefing line, which is one criterion, constraint or instruction. */
@@ -127,6 +128,21 @@ export const sessionTaskDocumentSchema = z.object({
   bounds: sessionBoundsSchema,
 });
 
+/**
+ * What a session fetches of its task: the document it is launched with, less
+ * what its site adds. It is told from a work task by its own session kind,
+ * which is already the document's `kind`.
+ */
+export const sessionTaskAnswerSchema = sessionTaskDocumentSchema
+  .omit({ workerPlane: true, api: true, bounds: true })
+  .extend({ kind: z.enum(sessionKinds) });
+
+/** What `GET /v1/task` answers, whichever kind of bearer asked. */
+export const workerTaskAnswerSchema = z.discriminatedUnion("kind", [
+  workTaskAnswerSchema,
+  sessionTaskAnswerSchema,
+]);
+
 /** What a pool's pod is launched with in place of a task document. */
 export const poolEnvelopeSchema = z.object({
   callbackUrl: workerPoolAssignmentSchema.shape.callbackUrl,
@@ -153,5 +169,8 @@ export type SessionBounds = LaunchedDocument<
 >;
 export type SessionTaskDocument = LaunchedDocument<
   z.infer<typeof sessionTaskDocumentSchema>
+>;
+export type SessionTaskAnswer = LaunchedDocument<
+  z.infer<typeof sessionTaskAnswerSchema>
 >;
 export type PoolEnvelope = LaunchedDocument<z.infer<typeof poolEnvelopeSchema>>;

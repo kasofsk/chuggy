@@ -92,6 +92,7 @@ import type {
   SessionStoreStored,
 } from "../../src/interpreter/sessionStore.ts";
 import type {
+  SessionTaskRead,
   WorkerArtifactReserved,
   WorkerArtifactStored,
   WorkerAttemptAuthority,
@@ -102,6 +103,7 @@ import { fixtureForgeShapedToken } from "./forgeFixtures.ts";
 import {
   inertRunEvidence,
   inertSessionPlane,
+  inertTasks,
   inertWorkerPlane,
   runTotalsBody,
 } from "./workerPlaneFixtures.ts";
@@ -172,12 +174,13 @@ interface WorkerPlaneCall {
   readonly payload?: string | Buffer | object;
 }
 
-/** One way of driving a route: the ports it meets, and how its call differs from the route's own. */
+/** One way of driving a route: the ports it meets, and how its call and its bearer differ from the plane's own. */
 interface WorkerPlaneCase {
   readonly name: string;
   readonly service?: Partial<WorkerPlaneServerService>;
   readonly call?: WorkerPlaneCall;
   readonly anonymous?: true;
+  readonly bearer?: string;
 }
 
 const octets = { "content-type": workerPlaneBytesMediaType };
@@ -226,7 +229,7 @@ function workerPlaneAuthority(
 function workerPlaneTask(
   found: WorkerTaskRead | undefined,
 ): Pick<WorkerPlaneServerService, "tasks"> {
-  return { tasks: { task: () => Promise.resolve(found) } };
+  return { tasks: { ...inertTasks, work: () => Promise.resolve(found) } };
 }
 
 /** The callers every route refuses before its own ports are reached. */
@@ -382,6 +385,116 @@ function runRecordCases(
   }));
 }
 
+const liveSession: SessionPlaneIdentity = {
+  live: true,
+  partition: liveAuthority.partition,
+  session: asSessionId("session"),
+  attempt: asSessionAttemptId("attempt"),
+  generation: 1,
+  kind: "Lead",
+  capabilities: ["RepositoryRead", "RunCommands"],
+  credentialSlot: "claude-code",
+};
+
+/** The session ports a live session meets, `over` replacing the ones a case is about. */
+function sessionPorts(
+  over: Partial<SessionPlaneService>,
+): Pick<WorkerPlaneServerService, "sessions"> {
+  return {
+    sessions: {
+      ...inertSessionPlane({
+        authenticate: () => Promise.resolve(liveSession),
+      }),
+      ...over,
+    },
+  };
+}
+
+function sessionAuthority(
+  identity: SessionPlaneIdentity | undefined,
+): Pick<WorkerPlaneServerService, "sessions"> {
+  return sessionPorts({
+    authority: { authenticate: () => Promise.resolve(identity) },
+  });
+}
+
+/** A session attempt's recorded identity and invocation, fresh and bound to no repository. */
+const liveSessionTask: SessionTaskRead = {
+  live: true,
+  identity: {
+    partition: liveSession.partition,
+    session: liveSession.session,
+    attempt: liveSession.attempt,
+    generation: liveSession.generation,
+    kind: liveSession.kind,
+    credentialSlot: liveSession.credentialSlot,
+  },
+  invocation: {
+    capabilities: liveSession.capabilities,
+    authority: liveInvocation.authority,
+  },
+};
+
+/** The ports a live session meets on `/v1/task`, its task read answering `found`. */
+function sessionTaskPorts(
+  found: SessionTaskRead | undefined,
+): Pick<WorkerPlaneServerService, "sessions" | "tasks"> {
+  return {
+    ...sessionPorts({}),
+    tasks: { ...inertTasks, session: () => Promise.resolve(found) },
+  };
+}
+
+/** Every way a session bearer is answered on `/v1/task`, each case carrying that bearer. */
+function sessionTaskCases(): readonly WorkerPlaneCase[] {
+  const bearer = `chgs_${"a".repeat(32)}`;
+  return [
+    { name: "a session bearer where no session plane is composed" },
+    {
+      name: "an unknown session bearer",
+      service: {
+        ...sessionTaskPorts(liveSessionTask),
+        ...sessionAuthority(undefined),
+      },
+    },
+    {
+      name: "a session no longer live",
+      service: {
+        ...sessionTaskPorts(liveSessionTask),
+        ...sessionAuthority({ ...liveSession, live: false }),
+      },
+    },
+    {
+      name: "a session attempt its task read finds no longer live",
+      service: sessionTaskPorts({ ...liveSessionTask, live: false }),
+    },
+    {
+      name: "a session attempt opened before invocations were recorded",
+      service: sessionTaskPorts({
+        live: true,
+        identity: liveSessionTask.identity,
+      }),
+    },
+    {
+      name: "a fresh session's task",
+      service: sessionTaskPorts(liveSessionTask),
+    },
+    {
+      name: "a resumed session's task, bound to a repository",
+      service: sessionTaskPorts({
+        ...liveSessionTask,
+        invocation: {
+          ...liveSessionTask.invocation,
+          capabilities: ["RepositoryRead"],
+          agentReference: "runtime-session",
+          authority: liveInvocation.authority,
+          repository: { reference: "github.com/owner/name" },
+        },
+      }),
+    },
+  ].map((driven) => ({ ...driven, bearer }));
+}
+
 const workerPlaneCases: Readonly<
   Record<WorkerPlaneRouteName, readonly WorkerPlaneCase[]>
 > = {
@@ -413,6 +526,7 @@ const workerPlaneCases: Readonly<
         },
       }),
     },
+    ...sessionTaskCases(),
   ],
   heartbeat: [
     ...workerPlaneStrangers,
@@ -499,39 +613,6 @@ const workerPlaneCases: Readonly<
   ],
   credential: [...workerPlaneStrangers, ...credentialCases],
 };
-
-const liveSession: SessionPlaneIdentity = {
-  live: true,
-  partition: liveAuthority.partition,
-  session: asSessionId("session"),
-  attempt: asSessionAttemptId("attempt"),
-  generation: 1,
-  kind: "Lead",
-  capabilities: ["RepositoryRead", "RunCommands"],
-  credentialSlot: "claude-code",
-};
-
-/** The session ports a live session meets, `over` replacing the ones a case is about. */
-function sessionPorts(
-  over: Partial<SessionPlaneService>,
-): Pick<WorkerPlaneServerService, "sessions"> {
-  return {
-    sessions: {
-      ...inertSessionPlane({
-        authenticate: () => Promise.resolve(liveSession),
-      }),
-      ...over,
-    },
-  };
-}
-
-function sessionAuthority(
-  identity: SessionPlaneIdentity | undefined,
-): Pick<WorkerPlaneServerService, "sessions"> {
-  return sessionPorts({
-    authority: { authenticate: () => Promise.resolve(identity) },
-  });
-}
 
 /** The call each session route is driven with where a case changes nothing about it. */
 const sessionPlaneCalls: Readonly<
@@ -829,7 +910,7 @@ async function workerPlaneDriven<Name extends string>(
     headers: {
       ...(driven.anonymous === true
         ? {}
-        : { authorization: `Bearer ${plane.bearer}` }),
+        : { authorization: `Bearer ${driven.bearer ?? plane.bearer}` }),
       ...call.headers,
     },
     ...(call.payload === undefined ? {} : { payload: call.payload }),
@@ -858,13 +939,13 @@ function workerPlaneOptionalsSeen(
     for (const [key, field] of Object.entries(shape)) {
       const held = (value as Readonly<Record<string, unknown>>)[key];
       const at = `${path}.${key}`;
-      if (field instanceof z.ZodOptional)
+      const optional =
+        field instanceof z.ZodOptional || field instanceof z.ZodExactOptional;
+      if (optional)
         seen.set(at, (seen.get(at) ?? new Set()).add(held !== undefined));
       if (held !== undefined)
         workerPlaneOptionalsSeen(
-          field instanceof z.ZodOptional
-            ? (field.unwrap() as z.ZodType)
-            : field,
+          optional ? (field.unwrap() as z.ZodType) : field,
           held,
           at,
           seen,

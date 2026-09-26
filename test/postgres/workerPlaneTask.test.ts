@@ -60,7 +60,10 @@ import {
 } from "../../src/interpreter/taskBriefing.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
 import type { WorkerPoolIdentity } from "../../src/interpreter/workerPool.ts";
-import { inertWorkerPlane } from "../adapters/workerPlaneFixtures.ts";
+import {
+  inertWorkerPlane,
+  taskFetched,
+} from "../adapters/workerPlaneFixtures.ts";
 import { goldenConfig } from "../adapters/workerPodDocumentFixture.ts";
 import {
   postgresHarnessConfiguration,
@@ -192,16 +195,7 @@ async function storedInvocation(attempt: FencedAttempt): Promise<unknown> {
 }
 
 /** The task a bearer is answered with, as the pod reads it. */
-async function fetchedTask(
-  bearer: string,
-): Promise<{ status: number; body: unknown }> {
-  const response = await plane.inject({
-    method: "GET",
-    url: "/v1/task",
-    headers: { authorization: `Bearer ${bearer}` },
-  });
-  return { status: response.statusCode, body: JSON.parse(response.body) };
-}
+const fetchedTask = (bearer: string) => taskFetched(plane, bearer);
 
 /** The pod document a placement is launched with, less the plane, as the fetch answers it. */
 function pushedTask(placement: AttemptPlacement): unknown {
@@ -340,7 +334,7 @@ test("a reported attempt's bearer is answered as stopped, though the read still 
     ).terminalized,
     "Terminalized",
   );
-  const read = await postgresWorkerTasks(planePool).task(secret);
+  const read = await postgresWorkerTasks(planePool).work(secret);
   assert.ok(read !== undefined);
   assert.equal(read.live, false);
   assert.notEqual(read.invocation, undefined);
