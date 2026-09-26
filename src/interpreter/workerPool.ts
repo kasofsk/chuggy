@@ -93,9 +93,9 @@ export interface WorkerPoolRegistry {
 
 /**
  * The pool one authenticated principal acts as, and nothing where the authority
- * says it may not: a registration is who the caller is and never what it may
- * do, `Execute` on the project is the permit, and revoking a pool is therefore a
- * revocation like any other and needs no row deleted here. An authority that
+ * says it may not: `Execute` on the project is the permit, and revoking a pool
+ * is therefore a revocation like any other and needs no row deleted here. An
+ * authority that
  * could not answer throws `ProjectAccessUnavailable` through this function
  * rather than resolving to `undefined`, because a pool told it is not allowed
  * stops where a pool told to retry comes back.

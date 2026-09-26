@@ -26,8 +26,9 @@
  * allows. Its capabilities are the inventory, matched as
  * `workerPoolInventoryMatches` does and with a platform spelled as
  * `workerPoolPlatformToken` spells it, and the held count is the slot. The rest
- * hold before a claim is made: `workerPoolAdmitted` refuses a principal whose
- * token lapsed or that lost `Execute`, a claim is made only by a poll, and
+ * hold before a claim is made: the bearer's authentication refuses a token that
+ * lapsed and `workerPoolAdmitted` a principal that lost `Execute`, a claim is
+ * made only by a poll, and
  * drain, trust, secrets, source and owner are constants every registered pool
  * and every routed execution holds.
  *

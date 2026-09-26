@@ -24,7 +24,7 @@ export const workerPoolTokenCharsMax = 63;
 export const workerPoolIdentityCharsMax = 256;
 export const workerPoolCapabilitiesMax = 64;
 export const workerPoolEvidenceCharsMax = 4_096;
-/** The longest image reference an assignment names, which is the longest one a deployment admits. */
+/** The longest image reference an assignment names. */
 export const workerImageCharsMax = 512;
 /**
  * The longest a pool may ask the orchestrator to wait before offering again,

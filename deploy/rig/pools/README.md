@@ -39,9 +39,8 @@ With `Execute` a pool claims work whose platform and required capabilities its
 declaration covers, a platform being declared as a token such as
 `Platform:Linux:Amd64`, and mints a forge credential for any repository the
 project binds (`src/interpreter/forgeCredentials.ts`). Both are revoked by
-taking the relation back; the row the registry keeps is who the caller is and
-never what it may do, so a revoked pool stops being admitted without anything
-being deleted (`src/interpreter/workerPool.ts`).
+taking the relation back, so a revoked pool stops being admitted without
+anything being deleted (`src/interpreter/workerPool.ts`).
 
 **The pool's host sees everything the harness sees.** This is not a gap waiting
 on a fix — it is what running the work means. The machine executing a harness
