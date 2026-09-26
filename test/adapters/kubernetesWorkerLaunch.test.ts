@@ -21,7 +21,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import {
-  mintedCredentialDirectory,
+  mintedCredentialDirectory as imageMintedCredentialDirectory,
   workerRepositories,
   workerRepository,
 } from "../../images/worker/repository.mjs";
@@ -34,21 +34,29 @@ import {
   kubernetesWorkerContainerName,
   kubernetesWorkerDatabaseContainerName,
   kubernetesWorkerDatabaseUrl,
-  kubernetesWorkerDatabaseUrlVariable,
   kubernetesWorkerPodName,
   kubernetesWorkerPodRequest,
   kubernetesWorkerReservedVariables,
+  kubernetesWorkerTask,
   type KubernetesWorkerLaunchConfig,
-  type KubernetesWorkerTask,
 } from "../../src/adapters/kubernetes/workerPod.ts";
 import {
-  kubernetesMintedCredentialPath,
   kubernetesNameCharsMax,
-  kubernetesSessionTaskVariable,
-  kubernetesWorkerCredentialFilesVariable,
-  kubernetesWorkerTaskVariable,
   type KubernetesPod,
 } from "../../src/adapters/kubernetes/kubernetesSite.ts";
+import {
+  mintedCredentialDirectory,
+  sessionTaskVariable,
+  workerCredentialFilesVariable,
+  workerDatabaseUrlVariable,
+  workerRepositoriesVariable,
+  workerTaskVariable,
+} from "../../src/contract/workerEnvironment.ts";
+import {
+  briefingLineCharsMax,
+  workTaskDocumentSchema,
+  type WorkTaskDocument,
+} from "../../src/contract/workerTask.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import {
   asAttemptCapabilityId,
@@ -73,7 +81,6 @@ import {
   type TaskInvocation,
 } from "../../src/interpreter/taskBriefing.ts";
 import { resultReportCharsMax } from "../../src/contract/http.ts";
-import { briefingLineCharsMax } from "../../src/contract/workerTask.ts";
 import { populated } from "../interpreter/roster.ts";
 
 const root = mkdtempSync(join(tmpdir(), "chuggy-cluster-"));
@@ -123,7 +130,7 @@ const config: KubernetesWorkerLaunchConfig = {
   credentialMounts: {
     workspace: workspaceCredentialMount,
   },
-  environment: { CHUG_WORKER_REPOSITORIES: workerRepositoriesValue },
+  environment: { [workerRepositoriesVariable]: workerRepositoriesValue },
   database: workerDatabase,
   serviceAccountName: "chuggy-worker",
   podNamePrefix: "chuggy-worker",
@@ -310,19 +317,19 @@ function expectedContainer(): unknown {
     name: kubernetesWorkerContainerName,
     image: workerImage,
     env: [
-      { name: kubernetesWorkerTaskVariable, value: expectedTask() },
+      { name: workerTaskVariable, value: expectedTask() },
       {
-        name: kubernetesWorkerCredentialFilesVariable,
+        name: workerCredentialFilesVariable,
         value: JSON.stringify({
           workspace: workspaceCredentialMount.mountPath,
         }),
       },
       {
-        name: kubernetesWorkerDatabaseUrlVariable,
+        name: workerDatabaseUrlVariable,
         value: kubernetesWorkerDatabaseUrl,
       },
       {
-        name: "CHUG_WORKER_REPOSITORIES",
+        name: workerRepositoriesVariable,
         value: workerRepositoriesValue,
       },
     ],
@@ -490,10 +497,10 @@ test("the launched repository configuration is accepted by the worker", () => {
   if (requested.requested !== "Pod") return;
   const selected = workerRepository(
     workerRepositories(
-      suppliedValue(requested.pod, "CHUG_WORKER_REPOSITORIES"),
+      suppliedValue(requested.pod, workerRepositoriesVariable),
     ),
     workerRepositories(
-      suppliedValue(requested.pod, kubernetesWorkerCredentialFilesVariable),
+      suppliedValue(requested.pod, workerCredentialFilesVariable),
     ),
     "repository",
   );
@@ -512,9 +519,9 @@ test("the pod mounts memory where the image writes a minted credential", () => {
   const requested = kubernetesWorkerPodRequest(config, placement);
   assert.equal(requested.requested, "Pod");
   if (requested.requested !== "Pod") return;
-  assert.equal(kubernetesMintedCredentialPath, mintedCredentialDirectory);
+  assert.equal(mintedCredentialDirectory, imageMintedCredentialDirectory);
   const mount = requested.pod.spec.containers[0]?.volumeMounts.find(
-    ({ mountPath }) => mountPath === mintedCredentialDirectory,
+    ({ mountPath }) => mountPath === imageMintedCredentialDirectory,
   );
   assert.equal(mount?.readOnly, false);
   assert.deepEqual(
@@ -708,9 +715,56 @@ test("a worker is handed the resolved authority and never the policy grant", asy
   };
   const task = JSON.parse(
     pod.spec.containers[0]?.env[0]?.value ?? "",
-  ) as KubernetesWorkerTask;
+  ) as WorkTaskDocument;
   assert.equal(grant.mayCompleteTask, true);
   assert.equal(task.authority.mayCompleteTask, false);
+});
+
+/** Catches the launcher writing a field the contract's document does not name, at any depth. */
+test("every worker configuration reaches a document the contract names in full", () => {
+  const preparation = {
+    setup: ["npm ci"],
+    files: [{ path: ".npmrc", content: "fund=false" }],
+  };
+  const workers: TaskInvocation["worker"][] = [
+    undefined,
+    { arguments: ["--verbose"], ...preparation },
+    {
+      mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+      ...preparation,
+    },
+    {
+      mode: {
+        type: "SingleAgent",
+        agent: "Codex",
+        arguments: [],
+        model: "codex-model",
+      },
+      ...preparation,
+    },
+    { mode: { type: "Commands", commands: ["just check"] }, ...preparation },
+  ];
+  for (const worker of workers)
+    for (const stage of [undefined, 1]) {
+      const document = JSON.parse(
+        JSON.stringify(
+          kubernetesWorkerTask(config, {
+            ...placement,
+            ...(stage === undefined ? {} : { stage }),
+            invocation: {
+              ...placement.invocation,
+              ...(worker === undefined ? {} : { worker }),
+            },
+          }),
+        ),
+      ) as object;
+      assert.deepEqual(
+        workTaskDocumentSchema.strict().parse(document),
+        document,
+      );
+      assert.equal(Object.hasOwn(document, "worker"), worker !== undefined);
+      assert.equal(Object.hasOwn(document, "stage"), stage !== undefined);
+    }
 });
 
 test("a cancellation addresses the pod its attempt named", async () => {
@@ -1013,10 +1067,10 @@ test("a deployment that cannot address a cluster is refused where it is composed
 
 test("site environment cannot replace any worker-owned document", () => {
   assert.deepEqual(kubernetesWorkerReservedVariables, [
-    kubernetesWorkerTaskVariable,
-    kubernetesSessionTaskVariable,
-    kubernetesWorkerCredentialFilesVariable,
-    kubernetesWorkerDatabaseUrlVariable,
+    workerTaskVariable,
+    sessionTaskVariable,
+    workerCredentialFilesVariable,
+    workerDatabaseUrlVariable,
   ]);
   for (const variable of populated(
     kubernetesWorkerReservedVariables,
@@ -1174,7 +1228,7 @@ test("the heaviest task a composition admits still fits the pod env that carries
   assert.equal(requested.requested, "Pod");
   if (requested.requested !== "Pod") return;
   const carried = new TextEncoder().encode(
-    suppliedValue(requested.pod, kubernetesWorkerTaskVariable),
+    suppliedValue(requested.pod, workerTaskVariable),
   ).byteLength;
   assert.ok(carried > 0, "the task variable is empty, so this proves nothing");
   assert.ok(

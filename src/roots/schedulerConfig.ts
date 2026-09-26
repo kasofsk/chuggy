@@ -26,6 +26,7 @@
 
 import { z } from "zod";
 
+import type { SessionBounds } from "../contract/workerTask.ts";
 import {
   postgresLimitsDefault,
   type PostgresLimits,
@@ -34,7 +35,6 @@ import type { KubernetesPodSite } from "../adapters/kubernetes/kubernetesSite.ts
 import {
   kubernetesSessionBoundsDefaults,
   kubernetesSessionBudgetUsdMin,
-  type KubernetesSessionBounds,
   type KubernetesSessionLaunchConfig,
 } from "../adapters/kubernetes/sessionPod.ts";
 import type { KubernetesWorkerLaunchConfig } from "../adapters/kubernetes/workerPod.ts";
@@ -446,7 +446,7 @@ function schedulerBounds<Bounds extends Record<keyof Bounds, number>>(
  * admit one set of values rather than agreeing by coincidence.
  */
 const schedulerSessionBoundKinds: {
-  readonly [Bound in keyof KubernetesSessionBounds]: z.ZodType<number>;
+  readonly [Bound in keyof SessionBounds]: z.ZodType<number>;
 } = {
   mailboxPollMs: schedulerBoundSchema,
   idleMs: schedulerBoundSchema,
@@ -648,7 +648,7 @@ function schedulerSessions(
       "SESSION_DEADLINE_SECS",
       schedulerCommandDefaults.sessionDeadlineSecs,
     ),
-    bounds: schedulerBounds<KubernetesSessionBounds>(
+    bounds: schedulerBounds<SessionBounds>(
       environment,
       "SESSION_BOUNDS",
       kubernetesSessionBoundsDefaults,

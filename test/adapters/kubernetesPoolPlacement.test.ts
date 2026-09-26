@@ -4,16 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
+import { workerTaskVariable } from "../../src/contract/workerEnvironment.ts";
 import {
   workerPoolRetryAfterSecsMax,
   type WorkerPoolAssignment,
 } from "../../src/contract/workerPool.ts";
+import { poolEnvelopeSchema } from "../../src/contract/workerTask.ts";
 import {
   checkedKubernetesPoolPlacementConfig,
   kubernetesPoolAssignmentAnnotation,
   kubernetesPoolBackend,
   kubernetesPoolPodName,
-  kubernetesPoolTaskVariable,
   type KubernetesPoolPlacementConfig,
 } from "../../src/adapters/kubernetes/poolPlacement.ts";
 
@@ -167,10 +168,7 @@ test("a placed pod is named for its assignment and asks for the box it was offer
   assert.equal(pod.spec.activeDeadlineSeconds, 900);
   assert.equal(pod.spec.containers[0]?.resources.requests["cpu"], "1500m");
   assert.equal(pod.spec.containers[0]?.resources.requests["memory"], "2048Mi");
-  assert.equal(
-    pod.spec.containers[0]?.env[0]?.name,
-    kubernetesPoolTaskVariable,
-  );
+  assert.equal(pod.spec.containers[0]?.env[0]?.name, workerTaskVariable);
 });
 
 test("a mapped capability moves the pod and an unmapped one does not", async () => {
@@ -214,6 +212,27 @@ test("the envelope carries the callback and the bearer and no material at all", 
     outputBytesMax: 4_096,
     providerCredentialFile: "/var/run/chuggy/codex/auth.json",
   });
+});
+
+/** Catches the launcher writing a field the contract's envelope does not name. */
+test("the envelope, with a provider credential and without, is one the contract names in full", async () => {
+  for (const site of [config, { ...config, providerCredential: undefined }]) {
+    const name = kubernetesPoolPodName(site, assignment.assignment);
+    const { reached, fetcher } = cluster((made) =>
+      made.path.startsWith("/api/v1/namespaces/pool/pods")
+        ? created(name)
+        : new Response("{}", { status: 201 }),
+    );
+    await kubernetesPoolBackend(site, fetcher).place(assignment);
+    const secret = reached.find((made) => made.path.includes("/secrets"))
+      ?.body as { stringData: { task: string } };
+    const envelope = JSON.parse(secret.stringData.task) as object;
+    assert.deepEqual(poolEnvelopeSchema.strict().parse(envelope), envelope);
+    assert.equal(
+      Object.hasOwn(envelope, "providerCredentialFile"),
+      site.providerCredential !== undefined,
+    );
+  }
 });
 
 test("a cluster that refused the document itself is a settled no", async () => {
@@ -398,7 +417,7 @@ test("a site is refused where it reserves the variable the envelope is read from
     () =>
       checkedKubernetesPoolPlacementConfig({
         ...config,
-        environment: { [kubernetesPoolTaskVariable]: "hijacked" },
+        environment: { [workerTaskVariable]: "hijacked" },
       }),
     RangeError,
   );

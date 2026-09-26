@@ -15,6 +15,11 @@
 import { z } from "zod";
 
 import { sessionMain } from "../../images/worker/session.mjs";
+import {
+  sessionTaskVariable,
+  workerCredentialFilesVariable,
+  workerWorkspaceVariable,
+} from "../../src/contract/workerEnvironment.ts";
 
 /** The rejection frame kasofsk/chuggy#386 reports, as the runtime declares it. */
 export const rejection = {
@@ -50,11 +55,11 @@ export const task = {
 };
 
 export const environment = {
-  CHUG_SESSION_TASK: JSON.stringify(task),
-  CHUG_WORKER_CREDENTIAL_FILES: JSON.stringify({
+  [sessionTaskVariable]: JSON.stringify(task),
+  [workerCredentialFilesVariable]: JSON.stringify({
     "claude-code": credentialFile,
   }),
-  CHUG_WORKER_WORKSPACE: "/workspace",
+  [workerWorkspaceVariable]: "/workspace",
 };
 
 /** What a plane that mints answers, and what this pod would then present to git. */

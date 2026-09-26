@@ -6,6 +6,13 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import {
+  sessionTaskVariable,
+  workerCredentialFilesVariable,
+  workerRepositoriesVariable,
+  workerTaskVariable,
+  workerWorkspaceVariable,
+} from "../../src/contract/workerEnvironment.ts";
 import { workerCheckCommands } from "./checks.mjs";
 import {
   prepareWorker,
@@ -123,16 +130,25 @@ test("the image carries every module the worker imports", async () => {
   }
 });
 
+/** Catches the image and the work launcher naming the workspace apart, since that launcher writes none. */
+test("the image names the workspace a work pod reads", async () => {
+  const directory = dirname(fileURLToPath(import.meta.url));
+  const dockerfile = await readFile(join(directory, "Dockerfile"), "utf8");
+
+  assert.match(dockerfile, new RegExp(`^ +${workerWorkspaceVariable}=`, "mu"));
+});
+
 test("exactly one task document is what a pod may be launched with", () => {
-  assert.equal(workerMode({ CHUG_WORKER_TASK: "{}" }), "Work");
-  assert.equal(workerMode({ CHUG_SESSION_TASK: "{}" }), "Session");
+  assert.equal(workerMode({ [workerTaskVariable]: "{}" }), "Work");
+  assert.equal(workerMode({ [sessionTaskVariable]: "{}" }), "Session");
   assert.throws(
-    () => workerMode({ CHUG_WORKER_TASK: "{}", CHUG_SESSION_TASK: "{}" }),
+    () =>
+      workerMode({ [workerTaskVariable]: "{}", [sessionTaskVariable]: "{}" }),
     /never both/u,
   );
   assert.throws(() => workerMode({}), /needs one of/u);
   assert.throws(
-    () => workerMode({ CHUG_WORKER_TASK: "", CHUG_SESSION_TASK: "" }),
+    () => workerMode({ [workerTaskVariable]: "", [sessionTaskVariable]: "" }),
     /needs one of/u,
   );
 });
@@ -179,18 +195,35 @@ function commandedWorkTask(authority = {}) {
   });
 }
 
+/** The refusal a pod launched without its credential map ends with. */
+const credentialFilesMissing = new RegExp(
+  `^${workerCredentialFilesVariable} is required$`,
+  "mu",
+);
+
 test("a pod placed with an empty repository map is given an empty one", async () => {
   const ran = await launched({
-    CHUG_WORKER_TASK: commandedWorkTask(),
-    CHUG_WORKER_REPOSITORIES: "",
+    [workerTaskVariable]: commandedWorkTask(),
+    [workerRepositoriesVariable]: "",
   });
 
   assert.equal(ran.code, 1);
   assert.match(
     ran.stderr,
-    /^CHUG_WORKER_CREDENTIAL_FILES is required$/mu,
+    credentialFilesMissing,
     "the map stood empty and the launch went on to the next variable",
   );
+});
+
+/** Catches the pod reading its repository map under a name its launcher does not write. */
+test("a pod placed with a repository map that is not one is refused", async () => {
+  const ran = await launched({
+    [workerTaskVariable]: commandedWorkTask(),
+    [workerRepositoriesVariable]: "[]",
+  });
+
+  assert.equal(ran.code, 1);
+  assert.match(ran.stderr, /worker repositories must be an object/u);
 });
 
 /**
@@ -199,11 +232,11 @@ test("a pod placed with an empty repository map is given an empty one", async ()
  * Work task would — stops the launch before the variable below is ever read.
  */
 test("a commanded work task is admitted with no agent credential mounted", async () => {
-  const ran = await launched({ CHUG_WORKER_TASK: commandedWorkTask() });
+  const ran = await launched({ [workerTaskVariable]: commandedWorkTask() });
 
   assert.match(
     ran.stderr,
-    /^CHUG_WORKER_CREDENTIAL_FILES is required$/mu,
+    credentialFilesMissing,
     "a commanded work task asked for something an agent's credential answers",
   );
 });
@@ -211,9 +244,11 @@ test("a commanded work task is admitted with no agent credential mounted", async
 /** Both halves of what a commanded work task must be granted before it runs. */
 test("a commanded work task without network or workspace write is refused", async () => {
   const launches = [
-    await launched({ CHUG_WORKER_TASK: commandedWorkTask({ network: false }) }),
     await launched({
-      CHUG_WORKER_TASK: commandedWorkTask({ filesystem: "ReadOnly" }),
+      [workerTaskVariable]: commandedWorkTask({ network: false }),
+    }),
+    await launched({
+      [workerTaskVariable]: commandedWorkTask({ filesystem: "ReadOnly" }),
     }),
   ];
 
@@ -231,15 +266,15 @@ test("a commanded work task without network or workspace write is refused", asyn
 test("a setup line sees the pod's environment but not the task document", async () => {
   const database = "postgres://postgres@127.0.0.1:5432/postgres";
   Object.assign(process.env, {
-    CHUG_WORKER_TASK: "{}",
-    CHUG_SESSION_TASK: "{}",
+    [workerTaskVariable]: "{}",
+    [sessionTaskVariable]: "{}",
     CHUG_PG_URL: database,
   });
   const directory = await mkdtemp(join(tmpdir(), "chuggy-setup-"));
   try {
     const setup =
-      'printf "%s|%s|%s" "${CHUG_WORKER_TASK-unset}" ' +
-      '"${CHUG_SESSION_TASK-unset}" "${CHUG_PG_URL-unset}" > inherited';
+      `printf "%s|%s|%s" "\${${workerTaskVariable}-unset}" ` +
+      `"\${${sessionTaskVariable}-unset}" "\${CHUG_PG_URL-unset}" > inherited`;
 
     await prepareWorker({ worker: { setup: [setup] } }, directory);
 
@@ -249,7 +284,7 @@ test("a setup line sees the pod's environment but not the task document", async 
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
-    for (const name of ["CHUG_WORKER_TASK", "CHUG_SESSION_TASK", "CHUG_PG_URL"])
+    for (const name of [workerTaskVariable, sessionTaskVariable, "CHUG_PG_URL"])
       delete process.env[name];
   }
 });
@@ -605,7 +640,7 @@ function workspaceFrom(mint) {
 }
 
 test("a workspace the plane minted for carries the refresh its push takes", async () => {
-  process.env.CHUG_WORKER_WORKSPACE = "/workspace";
+  process.env[workerWorkspaceVariable] = "/workspace";
 
   const workspace = await workspaceFrom({
     status: 200,
@@ -621,7 +656,7 @@ test("a workspace the plane minted for carries the refresh its push takes", asyn
 });
 
 test("a workspace the launcher's mount answered carries no refresh", async () => {
-  process.env.CHUG_WORKER_WORKSPACE = "/workspace";
+  process.env[workerWorkspaceVariable] = "/workspace";
 
   const workspace = await workspaceFrom({
     status: 404,

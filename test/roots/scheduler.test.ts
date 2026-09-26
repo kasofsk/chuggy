@@ -27,8 +27,9 @@ import { postgresLimitsDefault } from "../../src/adapters/postgres/pool.ts";
 import {
   kubernetesSessionBoundsDefaults,
   kubernetesSessionBudgetUsdMin,
-  type KubernetesSessionBounds,
 } from "../../src/adapters/kubernetes/sessionPod.ts";
+import { sessionTaskVariable } from "../../src/contract/workerEnvironment.ts";
+import type { SessionBounds } from "../../src/contract/workerTask.ts";
 import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
 import { sessionSchedulerDefaults } from "../../src/interpreter/sessionScheduler.ts";
 import {
@@ -327,7 +328,7 @@ async function parsedSessionBound(
   value: number,
 ): Promise<{
   readonly parsed?: {
-    readonly sessions: { readonly bounds: KubernetesSessionBounds };
+    readonly sessions: { readonly bounds: SessionBounds };
   };
   readonly refused?: string;
 }> {
@@ -340,7 +341,7 @@ async function parsedSessionBound(
     ),
   ) as {
     readonly parsed?: {
-      readonly sessions: { readonly bounds: KubernetesSessionBounds };
+      readonly sessions: { readonly bounds: SessionBounds };
     };
     readonly refused?: string;
   };
@@ -737,7 +738,7 @@ function processCluster(reachable: boolean): string {
         const submitted = JSON.parse(init.body);
         if (submitted.metadata.name.startsWith(sessionSite.podNamePrefix))
           sessionTasks.push(JSON.parse(submitted.spec.containers[0].env
-            .find((variable) => variable.name === 'CHUG_SESSION_TASK').value));
+            .find((variable) => variable.name === ${JSON.stringify(sessionTaskVariable)}).value));
         return Promise.resolve(Response.json({
           metadata: { ...submitted.metadata, uid: 'pod-uid-one' },
         }, { status: 201 }));

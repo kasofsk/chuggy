@@ -18,6 +18,13 @@ import {
 } from "./session.mjs";
 import { observeRateLimit, rateLimitSightings } from "./rateLimit.mjs";
 import {
+  sessionConfigDirectoryVariable,
+  sessionModelVariable,
+  sessionTaskVariable,
+  workerRepositoriesVariable,
+  workerWorkspaceVariable,
+} from "../../src/contract/workerEnvironment.ts";
+import {
   bearer,
   credentialFile,
   environment,
@@ -149,7 +156,10 @@ test("the query is opened eagerly against the store, with the session's own boun
   assert.equal(options.loadTimeoutMs, task.bounds.loadTimeoutMs);
   assert.equal(options.cwd, "/workspace");
   assert.equal(options.env.CLAUDE_CODE_OAUTH_TOKEN, token);
-  assert.equal(options.env.CLAUDE_CONFIG_DIR, "/workspace/.claude");
+  assert.equal(
+    options.env[sessionConfigDirectoryVariable],
+    "/workspace/.claude",
+  );
   assert.deepEqual(options.allowedTools, ["Bash", "Glob", "Grep", "Read"]);
   assert.ok(options.disallowedTools.includes("Write"));
   assert.ok(!("resume" in options), "a session that never ran was resumed");
@@ -536,7 +546,7 @@ test("a bound the launcher did not give is refused by name, with no default inve
     const code = await run({
       environment: {
         ...environment,
-        CHUG_SESSION_TASK: JSON.stringify({ ...task, bounds: rest }),
+        [sessionTaskVariable]: JSON.stringify({ ...task, bounds: rest }),
       },
       request: planeOf([], facts).request,
       query: queryOf(() => []).query,
@@ -1079,12 +1089,52 @@ test("a session with a checkout runs in it, and one without runs in the bare wor
 
     assert.equal(seen.options.cwd, cwd);
     assert.equal(
-      seen.options.env.CLAUDE_CONFIG_DIR,
+      seen.options.env[sessionConfigDirectoryVariable],
       "/workspace/.claude",
       "the runtime's local mirror moved into the git working tree",
     );
     assert.deepEqual(seen.options.settingSources, ["project"]);
   }
+});
+
+/** Catches the pod reading its workspace, model or config directory under a name its launcher does not write. */
+test("a session placed with a workspace, a model and a config directory runs under each", async () => {
+  const plane = planeOf([], facts);
+  const { seen, query } = queryOf(() => []);
+  const ensured = [];
+  const asked = [];
+
+  await run({
+    request: plane.request,
+    query,
+    environment: {
+      ...environment,
+      [workerWorkspaceVariable]: "/placed",
+      [sessionModelVariable]: "placed-model",
+      [sessionConfigDirectoryVariable]: "/placed-config",
+    },
+    ensureDirectory: async (path) => {
+      ensured.push(path);
+    },
+    checkout: async (
+      checkoutTask,
+      repositories,
+      credentialFiles,
+      workspace,
+    ) => {
+      asked.push(workspace);
+      return undefined;
+    },
+  });
+
+  assert.equal(seen.options.cwd, "/placed");
+  assert.equal(seen.options.model, "placed-model");
+  assert.equal(
+    seen.options.env[sessionConfigDirectoryVariable],
+    "/placed-config",
+  );
+  assert.deepEqual(ensured, ["/placed-config"]);
+  assert.deepEqual(asked, ["/placed"]);
 });
 
 test("the checkout is asked for what the placement bound, under the session's own workspace", async () => {
@@ -1097,11 +1147,13 @@ test("the checkout is asked for what the placement bound, under the session's ow
     query,
     environment: {
       ...environment,
-      CHUG_SESSION_TASK: JSON.stringify({
+      [sessionTaskVariable]: JSON.stringify({
         ...task,
         repository: { reference: "chuggy" },
       }),
-      CHUG_WORKER_REPOSITORIES: JSON.stringify({ chuggy: { url: "git://x" } }),
+      [workerRepositoriesVariable]: JSON.stringify({
+        chuggy: { url: "git://x" },
+      }),
     },
     checkout: async (
       checkoutTask,
@@ -1131,11 +1183,11 @@ test("a bound session placed with an empty repository map is given an empty one"
     query,
     environment: {
       ...environment,
-      CHUG_SESSION_TASK: JSON.stringify({
+      [sessionTaskVariable]: JSON.stringify({
         ...task,
         repository: { reference: "https://github.com/kasofsk/chuggy.git" },
       }),
-      CHUG_WORKER_REPOSITORIES: "",
+      [workerRepositoriesVariable]: "",
     },
     checkout: async (
       checkoutTask,
@@ -1162,7 +1214,7 @@ test("a bound session placed with no repository map is given an empty one", asyn
     query,
     environment: {
       ...environment,
-      CHUG_SESSION_TASK: JSON.stringify({
+      [sessionTaskVariable]: JSON.stringify({
         ...task,
         repository: { reference: "https://github.com/kasofsk/chuggy.git" },
       }),
@@ -1185,11 +1237,11 @@ test("a bound session placed with no repository map is given an empty one", asyn
 /** The environment a session is placed with when the placement bound a repository. */
 const boundEnvironment = {
   ...environment,
-  CHUG_SESSION_TASK: JSON.stringify({
+  [sessionTaskVariable]: JSON.stringify({
     ...task,
     repository: { reference: "chuggy" },
   }),
-  CHUG_WORKER_REPOSITORIES: JSON.stringify({ chuggy: { url: "git://x" } }),
+  [workerRepositoriesVariable]: JSON.stringify({ chuggy: { url: "git://x" } }),
 };
 
 test("a bound session asks the plane for its own repository and hands the mint to the checkout", async () => {

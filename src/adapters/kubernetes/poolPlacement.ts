@@ -27,10 +27,12 @@
  * rather than by a node.
  */
 
+import { workerTaskVariable } from "../../contract/workerEnvironment.ts";
 import {
   workerPoolRetryAfterSecsMax,
   type WorkerPoolAssignment,
 } from "../../contract/workerPool.ts";
+import type { PoolEnvelope } from "../../contract/workerTask.ts";
 import type {
   WorkerPoolBackend,
   WorkerPoolPlacement,
@@ -58,9 +60,6 @@ import {
   type KubernetesResourceBudget,
   type KubernetesToleration,
 } from "./kubernetesSite.ts";
-
-/** The variable the harness reads its envelope from, which both launchers write alike. */
-export const kubernetesPoolTaskVariable = "CHUG_WORKER_TASK";
 
 /** The annotation one pod carries its assignment in, which is what `held` reads back. */
 export const kubernetesPoolAssignmentAnnotation = `${kubernetesAnnotationPrefix}assignment`;
@@ -106,7 +105,7 @@ export function checkedKubernetesPoolPlacementConfig(
     throw new RangeError("pool placement label is empty");
   kubernetesReservedVariables(
     config.environment,
-    [kubernetesPoolTaskVariable],
+    [workerTaskVariable],
     "pool worker environment",
   );
   if (
@@ -158,14 +157,15 @@ function poolPlacementEnvelope(
   assignment: WorkerPoolAssignment,
   providerCredentialFile: string | undefined,
 ): string {
-  return JSON.stringify({
+  const envelope: PoolEnvelope = {
     callbackUrl: assignment.callbackUrl,
     bearer: assignment.bearer,
     workspace: config.workspacePath,
     timeoutSecsMax: config.timeoutSecsMax,
     outputBytesMax: config.outputBytesMax,
     ...(providerCredentialFile === undefined ? {} : { providerCredentialFile }),
-  });
+  };
+  return JSON.stringify(envelope);
 }
 
 /** The box the assignment asked for, the site deciding only what it said nothing about. */
@@ -210,7 +210,7 @@ function poolPlacementPod(
         image: config.image,
         env: [
           {
-            name: kubernetesPoolTaskVariable,
+            name: workerTaskVariable,
             valueFrom: { secretKeyRef: { name, key: "task" } },
           },
           ...Object.entries(config.environment).map(([variable, value]) => ({
