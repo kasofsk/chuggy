@@ -19,20 +19,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { mintedCredentialDirectory } from "../../images/worker/repository.mjs";
+import { mintedCredentialDirectory as imageMintedCredentialDirectory } from "../../images/worker/repository.mjs";
+import { kubernetesNameCharsMax } from "../../src/adapters/kubernetes/kubernetesSite.ts";
 import {
-  kubernetesMintedCredentialPath,
-  kubernetesNameCharsMax,
-  kubernetesSessionTaskVariable,
-  kubernetesWorkerCredentialFilesVariable,
-  kubernetesWorkerTaskVariable,
-  kubernetesWorkerWorkspaceVariable,
-} from "../../src/adapters/kubernetes/kubernetesSite.ts";
+  mintedCredentialDirectory,
+  sessionConfigDirectoryVariable,
+  sessionModelVariable,
+  sessionTaskVariable,
+  workerCredentialFilesVariable,
+  workerTaskVariable,
+  workerWorkspaceVariable,
+} from "../../src/contract/workerEnvironment.ts";
 import {
   checkedKubernetesSessionLaunchConfig,
-  kubernetesSessionConfigDirVariable,
   kubernetesSessionContainerName,
-  kubernetesSessionModelVariable,
   kubernetesSessionPodName,
   kubernetesSessionBudgetUsdMin,
   kubernetesSessionPodRequest,
@@ -272,12 +272,12 @@ test("the container's whole environment is the contract, in the order it is writ
       value: JSON.stringify(kubernetesSessionTask(config, placement)),
     },
     {
-      name: kubernetesWorkerCredentialFilesVariable,
+      name: workerCredentialFilesVariable,
       value: JSON.stringify({ "claude-code": agentCredential.mountPath }),
     },
-    { name: kubernetesWorkerWorkspaceVariable, value: "/workspace" },
-    { name: kubernetesSessionConfigDirVariable, value: "/workspace/.claude" },
-    { name: kubernetesSessionModelVariable, value: "claude-opus-4-5" },
+    { name: workerWorkspaceVariable, value: "/workspace" },
+    { name: sessionConfigDirectoryVariable, value: "/workspace/.claude" },
+    { name: sessionModelVariable, value: "claude-opus-4-5" },
     { name: "CHUG_SITE", value: "rig" },
   ]);
 });
@@ -350,9 +350,9 @@ test("only the credentials the grant names are mounted, and the workspace is eph
  * its document and at the path its image writes.
  */
 test("a session pod mounts memory where the image writes a minted credential", () => {
-  assert.equal(kubernetesMintedCredentialPath, mintedCredentialDirectory);
+  assert.equal(mintedCredentialDirectory, imageMintedCredentialDirectory);
   const mount = renderedContainer().volumeMounts.find(
-    ({ mountPath }) => mountPath === mintedCredentialDirectory,
+    ({ mountPath }) => mountPath === imageMintedCredentialDirectory,
   );
   assert.equal(mount?.readOnly, false);
   assert.deepEqual(
@@ -384,12 +384,12 @@ test("a credential slot the grant does not name is denied rather than placed", (
 
 test("a site environment cannot replace any variable the launcher writes itself", () => {
   assert.deepEqual(kubernetesSessionReservedVariables, [
-    kubernetesSessionTaskVariable,
-    kubernetesWorkerTaskVariable,
-    kubernetesWorkerCredentialFilesVariable,
-    kubernetesWorkerWorkspaceVariable,
-    kubernetesSessionConfigDirVariable,
-    kubernetesSessionModelVariable,
+    sessionTaskVariable,
+    workerTaskVariable,
+    workerCredentialFilesVariable,
+    workerWorkspaceVariable,
+    sessionConfigDirectoryVariable,
+    sessionModelVariable,
   ]);
   for (const variable of populated(
     kubernetesSessionReservedVariables,

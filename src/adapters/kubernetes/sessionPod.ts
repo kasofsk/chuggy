@@ -32,10 +32,21 @@
 
 import { join } from "node:path";
 
+import {
+  sessionConfigDirectoryVariable,
+  sessionModelVariable,
+  sessionTaskVariable,
+  workerCredentialFilesVariable,
+  workerTaskVariable,
+  workerWorkspaceVariable,
+} from "../../contract/workerEnvironment.ts";
+import type {
+  SessionBounds,
+  SessionTaskDocument,
+} from "../../contract/workerTask.ts";
 import type { SessionAttemptId } from "../../interpreter/agentSession.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { SessionPlacement } from "../../interpreter/sessionScheduler.ts";
-import type { PolicyAuthorityGrant } from "../../interpreter/taskAuthority.ts";
 import {
   checkedKubernetesPodSite,
   kubernetesAnnotationPrefix,
@@ -47,10 +58,6 @@ import {
   kubernetesPositive,
   kubernetesPositiveNumber,
   kubernetesReservedVariables,
-  kubernetesSessionTaskVariable,
-  kubernetesWorkerCredentialFilesVariable,
-  kubernetesWorkerTaskVariable,
-  kubernetesWorkerWorkspaceVariable,
   type KubernetesCredentialSelection,
   type KubernetesPod,
   type KubernetesPodRequested,
@@ -60,21 +67,11 @@ import {
 } from "./kubernetesSite.ts";
 
 /**
- * Every bound a session pod is given, each an operational choice and none a
- * default it invents. They are carried in the task document rather than read
- * from the image, so what a pod ran under is what this deployment named.
+ * The bounds a deployment that names none of them gets. They are carried in the
+ * task document rather than read from the image, so what a pod ran under is what
+ * this deployment named.
  */
-export interface KubernetesSessionBounds {
-  readonly mailboxPollMs: number;
-  readonly idleMs: number;
-  readonly resultDrainMs: number;
-  readonly loadTimeoutMs: number;
-  readonly turnsMax: number;
-  readonly budgetUsd: number;
-}
-
-/** The bounds a deployment that names none of them gets. */
-export const kubernetesSessionBoundsDefaults: KubernetesSessionBounds = {
+export const kubernetesSessionBoundsDefaults: SessionBounds = {
   mailboxPollMs: 1_000,
   idleMs: 300_000,
   resultDrainMs: 2_000,
@@ -108,12 +105,12 @@ function kubernetesSessionBudget(value: number, what: string): number {
  * pod honours while the launcher refuses it is a bound with two readings.
  *
  * The record is keyed by the bounds themselves rather than listed beside them,
- * so a bound added to the interface has no check here and does not compile —
+ * so a bound added to the schema has no check here and does not compile —
  * where a list of names only ever proves that what it holds are keys, never
  * that the keys are all held.
  */
 const kubernetesSessionBoundChecks: {
-  readonly [Bound in keyof KubernetesSessionBounds]: (
+  readonly [Bound in keyof SessionBounds]: (
     value: number,
     what: string,
   ) => number;
@@ -129,7 +126,7 @@ const kubernetesSessionBoundChecks: {
 /** Every bound, read off the checks so the two can never name different sets. */
 const kubernetesSessionBoundNames = Object.keys(
   kubernetesSessionBoundChecks,
-) as readonly (keyof KubernetesSessionBounds)[];
+) as readonly (keyof SessionBounds)[];
 
 /** Everything a deployment supplies the session-launch adapter beyond the shared site. */
 export interface KubernetesSessionLaunchConfig extends KubernetesPodSite {
@@ -139,7 +136,7 @@ export interface KubernetesSessionLaunchConfig extends KubernetesPodSite {
   readonly resources: KubernetesResourceBudget;
   readonly activeDeadlineSecs: number;
   readonly environment: Readonly<Record<string, string>>;
-  readonly bounds: KubernetesSessionBounds;
+  readonly bounds: SessionBounds;
   /** Which model every session of this site speaks to, which is a site choice and not a session's. */
   readonly model: string;
   /**
@@ -153,59 +150,30 @@ export interface KubernetesSessionLaunchConfig extends KubernetesPodSite {
 /** The one container name a placed session carries, so a reader of the cluster needs no lookup. */
 export const kubernetesSessionContainerName = "session";
 
-/** The environment variable naming the model the runtime is opened against. */
-export const kubernetesSessionModelVariable = "CHUG_SESSION_MODEL";
-
 /**
- * Where the agent runtime's subprocess mirrors its local copy. The store is the
- * durable one, but the runtime cannot be told to skip the local write, so it is
- * given somewhere writable on the pod's own ephemeral disk.
+ * The directory under the workspace the agent runtime's subprocess mirrors its
+ * local copy to. The store is the durable one, but the runtime cannot be told to
+ * skip the local write, so it is given somewhere writable on the pod's own
+ * ephemeral disk.
  */
-export const kubernetesSessionConfigDirVariable = "CLAUDE_CONFIG_DIR";
-
-/** The directory under the workspace that local copy is written to. */
 const kubernetesSessionConfigDirectory = ".claude";
 
-/** The names this adapter writes itself, which a site's own environment may not take. */
+/**
+ * The names this adapter writes itself, and the work document the image would
+ * refuse beside its own, which a site's own environment may not take.
+ */
 export const kubernetesSessionReservedVariables = [
-  kubernetesSessionTaskVariable,
-  kubernetesWorkerTaskVariable,
-  kubernetesWorkerCredentialFilesVariable,
-  kubernetesWorkerWorkspaceVariable,
-  kubernetesSessionConfigDirVariable,
-  kubernetesSessionModelVariable,
+  sessionTaskVariable,
+  workerTaskVariable,
+  workerCredentialFilesVariable,
+  workerWorkspaceVariable,
+  sessionConfigDirectoryVariable,
+  sessionModelVariable,
 ] as const;
 
 /** The volume a session's bearer is projected from, and the one it works in. */
 const kubernetesSessionCapabilityVolume = "session-capability";
 const kubernetesSessionWorkspaceVolume = "session-workspace";
-
-/** What a session is handed: its fenced identity, what it may do, and where its mailbox is. */
-export interface KubernetesSessionTask {
-  readonly tenant: string;
-  readonly project: string;
-  readonly session: string;
-  readonly kind: string;
-  readonly attempt: string;
-  readonly generation: number;
-  readonly capabilities: readonly string[];
-  readonly credentialSlot: string;
-  readonly agentReference?: string;
-  readonly authority: PolicyAuthorityGrant;
-  readonly workerPlane: {
-    readonly url: string;
-    readonly capabilityFile: string;
-  };
-  /** Where the pod's own tools reach the API, an origin the client appends the versioned path to. */
-  readonly api: {
-    readonly url: string;
-  };
-  /** The repository reference the pod resolves against the site's own map, absent where the project binds none. */
-  readonly repository?: {
-    readonly reference: string;
-  };
-  readonly bounds: KubernetesSessionBounds;
-}
 
 /** Refuses a deployment whose supplied cluster data cannot address a cluster. */
 export function checkedKubernetesSessionLaunchConfig(
@@ -287,7 +255,7 @@ export function kubernetesSessionSecret(
 export function kubernetesSessionTask(
   config: KubernetesSessionLaunchConfig,
   placement: SessionPlacement,
-): KubernetesSessionTask {
+): SessionTaskDocument {
   return {
     tenant: placement.partition.tenant,
     project: placement.partition.project,
@@ -350,19 +318,19 @@ function kubernetesSessionContainer(
     image: placement.image,
     env: [
       {
-        name: kubernetesSessionTaskVariable,
+        name: sessionTaskVariable,
         value: JSON.stringify(kubernetesSessionTask(config, placement)),
       },
       {
-        name: kubernetesWorkerCredentialFilesVariable,
+        name: workerCredentialFilesVariable,
         value: JSON.stringify(credentials.files),
       },
-      { name: kubernetesWorkerWorkspaceVariable, value: config.workspacePath },
+      { name: workerWorkspaceVariable, value: config.workspacePath },
       {
-        name: kubernetesSessionConfigDirVariable,
+        name: sessionConfigDirectoryVariable,
         value: join(config.workspacePath, kubernetesSessionConfigDirectory),
       },
-      { name: kubernetesSessionModelVariable, value: config.model },
+      { name: sessionModelVariable, value: config.model },
       ...Object.entries(config.environment).map(([name, value]) => ({
         name,
         value,

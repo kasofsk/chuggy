@@ -46,15 +46,20 @@
  * container so that the pod ends when the worker does.
  */
 
+import {
+  sessionTaskVariable,
+  workerCredentialFilesVariable,
+  workerDatabaseUrlVariable,
+  workerTaskVariable,
+} from "../../contract/workerEnvironment.ts";
+import type { WorkTaskDocument } from "../../contract/workerTask.ts";
 import type {
   AttemptPlacement,
   BlockedReason,
-  ExecutionProfile,
 } from "../../interpreter/executionScheduler.ts";
 import type { AttemptId } from "../../interpreter/schedulerIdentity.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { taskAuthorityGrant } from "../../interpreter/taskAuthority.ts";
-import type { PolicyAuthorityGrant } from "../../interpreter/taskAuthority.ts";
 import {
   checkedKubernetesPodSite,
   kubernetesAnnotationPrefix,
@@ -65,9 +70,6 @@ import {
   kubernetesPodNamePrefix,
   kubernetesPositive,
   kubernetesReservedVariables,
-  kubernetesSessionTaskVariable,
-  kubernetesWorkerCredentialFilesVariable,
-  kubernetesWorkerTaskVariable,
   type KubernetesContainer,
   type KubernetesContainerVariable,
   type KubernetesCredentialSelection,
@@ -101,9 +103,6 @@ export interface KubernetesWorkerLaunchConfig extends KubernetesPodSite {
 /** The name the worker's own container carries, so a reader of the cluster needs no lookup. */
 export const kubernetesWorkerContainerName = "worker";
 
-/** The environment variable a placed worker reaches its own PostgreSQL by. */
-export const kubernetesWorkerDatabaseUrlVariable = "CHUG_WORKER_DATABASE_URL";
-
 /** The container name the attempt's PostgreSQL runs under, beside the worker's. */
 export const kubernetesWorkerDatabaseContainerName = "postgres";
 
@@ -115,47 +114,16 @@ export const kubernetesWorkerDatabaseContainerName = "postgres";
 export const kubernetesWorkerDatabaseUrl =
   "postgres://postgres@127.0.0.1:5432/postgres";
 
-/** The names this adapter writes itself, which a site's own environment may not take. */
+/**
+ * The names this adapter writes itself, and the session document the image
+ * would refuse beside its own, which a site's own environment may not take.
+ */
 export const kubernetesWorkerReservedVariables = [
-  kubernetesWorkerTaskVariable,
-  kubernetesSessionTaskVariable,
-  kubernetesWorkerCredentialFilesVariable,
-  kubernetesWorkerDatabaseUrlVariable,
+  workerTaskVariable,
+  sessionTaskVariable,
+  workerCredentialFilesVariable,
+  workerDatabaseUrlVariable,
 ] as const;
-
-/** What a worker is handed: its fenced identity, its pinned inputs and what it may do. */
-export interface KubernetesWorkerTask {
-  readonly tenant: string;
-  readonly project: string;
-  readonly execution: string;
-  readonly attempt: string;
-  readonly generation: number;
-  readonly ticket: number;
-  readonly task: number;
-  readonly taskKind: string;
-  readonly stage?: number;
-  readonly sourceRequest: string;
-  readonly inputBundle: string;
-  readonly inputBundleDigest: string;
-  readonly configurationRevision: string;
-  readonly configurationDigest: string;
-  readonly profile: ExecutionProfile;
-  readonly requirementIdentity: string;
-  readonly requirementDigest: string;
-  readonly briefing: {
-    readonly templateVersion: number;
-    readonly purpose: string;
-    readonly text: string;
-  };
-  readonly authority: PolicyAuthorityGrant;
-  readonly worker?: NonNullable<AttemptPlacement["invocation"]["worker"]>;
-  readonly workerPlane: {
-    readonly url: string;
-    readonly capabilityFile: string;
-    readonly capability: string;
-    readonly manifest: string;
-  };
-}
 
 /**
  * Refuses a deployment whose supplied cluster data cannot address a cluster,
@@ -285,7 +253,7 @@ function kubernetesWorkerAnnotations(
 export function kubernetesWorkerTask(
   config: KubernetesWorkerLaunchConfig,
   placement: AttemptPlacement,
-): KubernetesWorkerTask {
+): WorkTaskDocument {
   const briefing = placement.invocation.briefing;
   return {
     tenant: placement.partition.tenant,
@@ -354,7 +322,7 @@ function kubernetesWorkerDatabaseVariables(
   if (config.database === undefined) return [];
   return [
     {
-      name: kubernetesWorkerDatabaseUrlVariable,
+      name: workerDatabaseUrlVariable,
       value: kubernetesWorkerDatabaseUrl,
     },
   ];
@@ -405,11 +373,11 @@ function kubernetesWorkerContainer(
     image,
     env: [
       {
-        name: kubernetesWorkerTaskVariable,
+        name: workerTaskVariable,
         value: JSON.stringify(kubernetesWorkerTask(config, placement)),
       },
       {
-        name: kubernetesWorkerCredentialFilesVariable,
+        name: workerCredentialFilesVariable,
         value: JSON.stringify(credentials.files),
       },
       ...kubernetesWorkerDatabaseVariables(config),

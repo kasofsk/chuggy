@@ -29,6 +29,7 @@
 import { createHash } from "node:crypto";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 
+import { mintedCredentialDirectory } from "../../contract/workerEnvironment.ts";
 import type { BlockedReason } from "../../interpreter/executionScheduler.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { PolicyAuthorityGrant } from "../../interpreter/taskAuthority.ts";
@@ -202,21 +203,6 @@ export interface KubernetesPod {
 export type KubernetesPodRequested =
   | { readonly requested: "Pod"; readonly pod: KubernetesPod }
   | { readonly requested: "Denied"; readonly reason: BlockedReason };
-
-/**
- * The two variables the image selects its mode by. Exactly one must be set, so
- * each launcher writes its own and reserves both: a site environment naming the
- * other would place a pod that refuses before it runs anything.
- */
-export const kubernetesWorkerTaskVariable = "CHUG_WORKER_TASK";
-export const kubernetesSessionTaskVariable = "CHUG_SESSION_TASK";
-
-/** Where each credential the grant named was mounted, which both pods read alike. */
-export const kubernetesWorkerCredentialFilesVariable =
-  "CHUG_WORKER_CREDENTIAL_FILES";
-
-/** The writable directory a pod does its work in. */
-export const kubernetesWorkerWorkspaceVariable = "CHUG_WORKER_WORKSPACE";
 
 /** The annotation namespace every identity a launcher writes is qualified by. */
 export const kubernetesAnnotationPrefix = "chuggy.internal/";
@@ -457,13 +443,7 @@ export function kubernetesPodSecret(
   };
 }
 
-/**
- * Where a pod's image writes a credential the worker plane minted for it, which
- * `images/worker/repository.mjs` names as `mintedCredentialDirectory`.
- */
-export const kubernetesMintedCredentialPath = "/var/run/chuggy/minted";
-
-/** The volume that path is, named apart from the credentials a site mounts. */
+/** The volume `mintedCredentialDirectory` is, named apart from the credentials a site mounts. */
 const kubernetesMintedCredentialVolume = "minted-credential";
 
 /**
@@ -483,7 +463,7 @@ export function kubernetesMintedCredentialVolumes(): {
     },
     mount: {
       name: kubernetesMintedCredentialVolume,
-      mountPath: kubernetesMintedCredentialPath,
+      mountPath: mintedCredentialDirectory,
       readOnly: false,
     },
   };

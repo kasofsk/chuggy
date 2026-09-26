@@ -23,6 +23,10 @@ import {
   briefingLineCharsMax,
   commandLinesMax,
 } from "../../src/contract/workerTask.ts";
+import {
+  sessionTaskVariable,
+  workerTaskVariable,
+} from "../../src/contract/workerEnvironment.ts";
 import { credentialScrub } from "./runEvidence.mjs";
 import {
   runChecks,
@@ -280,13 +284,13 @@ test("a stage handed no commands is a crashed run and never a pass", async () =>
  * authored from.
  */
 test("a stage's commands inherit the pod's environment but not the task document", async () => {
-  const placed = { CHUG_WORKER_TASK: "{}", CHUG_SESSION_TASK: "{}" };
+  const placed = { [workerTaskVariable]: "{}", [sessionTaskVariable]: "{}" };
   const database = "postgres://postgres@127.0.0.1:5432/postgres";
   Object.assign(process.env, placed, { CHUG_PG_URL: database });
   try {
     const { output } = await ran([
-      'printf "%s|%s|%s" "${CHUG_WORKER_TASK-unset}" ' +
-        '"${CHUG_SESSION_TASK-unset}" "${CHUG_PG_URL-unset}"',
+      `printf "%s|%s|%s" "\${${workerTaskVariable}-unset}" ` +
+        `"\${${sessionTaskVariable}-unset}" "\${CHUG_PG_URL-unset}"`,
     ]);
 
     assert.equal(output.checks[0].output, `unset|unset|${database}`);
