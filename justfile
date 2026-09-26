@@ -13,6 +13,12 @@ check-full:
 bump-claude-code:
     node --experimental-strip-types scripts/bump-claude-code.ts
 
+# The worker image moved to a commit on chuggy-common's main, with the contract
+# release that commit's lock installs. `images/worker/core.sh` names what it
+# refuses.
+bump-worker-core commit:
+    images/worker/core.sh bump {{ quote(commit) }}
+
 # The worker contract released on GitHub and its commit tagged. The script's
 # header names what it refuses; `just publish-worker-contract --dry-run` packs,
 # and neither releases nor tags.

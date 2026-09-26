@@ -13,8 +13,9 @@
 # WHAT IS REAL HERE. PostgreSQL in a container of this script's own, migrated by
 # the tree's own migration; `src/roots/workerPlane.ts` serving the session
 # routes over the plane role; `src/roots/provisionAgentSession.ts` opening the
-# session and giving it its turns; `images/worker/entrypoint.mjs` in Session
-# mode, which is the pod's whole code path. Nothing is stubbed.
+# session and giving it its turns; the worker core in Session mode, fetched by
+# `images/worker/core.sh` at the commit the image pins and installed from its
+# own lock, which is the pod's whole code path. Nothing is stubbed.
 #
 # THE AGENT CREDENTIAL IS THE OPERATOR'S OWN LOGIN, reached the way a developer
 # reaches it: `CLAUDE_CONFIG_DIR` names the config directory already logged in.
@@ -22,12 +23,9 @@
 # not cover is a mounted token's value. Nothing here reads or writes the
 # credential file.
 #
-# THE AGENT SDK IS NOT A DEPENDENCY OF THIS TREE — the image installs it — so
-# where it is not already resolvable this fetches the version the image pins into
-# a scratch directory and links that one name in beside the pod. Cleanup removes
-# the link it made and the directory only if it made that too, because a
-# developer who keeps their own install there must not have it deleted; the tree
-# is left as it was found either way.
+# THE AGENT SDK IS NOT A DEPENDENCY OF THE CORE — the image installs it — so
+# this fetches the version the image pins into the scratch directory and links
+# that one name in beside the core. The tree is left as it was found.
 #
 # Env:
 #   CHUG_DRILL_PG_PORT     host port for this drill's own server
@@ -63,14 +61,10 @@ turn_secs=240
 scratch=""
 plane_pid=""
 pod_pid=""
-linked=""
-made_modules=""
 
 drill_clean() {
 	[ -z "$pod_pid" ] || kill -9 "$pod_pid" 2>/dev/null || true
 	[ -z "$plane_pid" ] || kill "$plane_pid" 2>/dev/null || true
-	[ -z "$linked" ] || rm -f "$linked"
-	[ -z "$made_modules" ] || rmdir "$made_modules" 2>/dev/null || true
 	if [ -n "${CHUG_DRILL_KEEP:-}" ]; then
 		echo "session-resume-drill: kept $container and $scratch"
 		return
@@ -120,26 +114,22 @@ scratch="$(mktemp -d "${TMPDIR:-/tmp}/chuggy-drill-XXXXXX")"
 mkdir -p "$scratch/artifacts" "$scratch/workspace"
 : >"$scratch/credential"
 
-# --- the agent runtime, where this tree does not already carry it ------------
+# --- the core the image runs, and the agent runtime beside it ----------------
 
+# By its real path: the entry starts only when node was handed the file itself,
+# and a temporary directory behind a symlink, as macOS's is, reads as an import.
+core="$(cd "$scratch" && pwd -P)/core"
+images/worker/core.sh fetch "$core" || fail "the pinned worker core could not be fetched"
+npm ci --silent --no-audit --no-fund --omit=dev --ignore-scripts --prefix "$core" >/dev/null 2>&1 ||
+	fail "the core's lock did not install"
 sdk="@anthropic-ai/claude-agent-sdk"
 sdk_version="$(sed -n 's/^ARG AGENT_SDK_VERSION=//p' images/worker/Dockerfile)"
 [ -n "$sdk_version" ] || fail "images/worker/Dockerfile pins no agent SDK version"
-if ! node -e "require.resolve('$sdk/package.json')" >/dev/null 2>&1; then
-	say "fetching $sdk@$sdk_version, which this tree does not depend on"
-	npm install --silent --no-audit --no-fund --prefix "$scratch/sdk" \
-		"$sdk@$sdk_version" >/dev/null 2>&1 ||
-		fail "could not fetch $sdk@$sdk_version"
-	modules="$root/images/worker/node_modules"
-	[ -d "$modules" ] || made_modules="$modules"
-	mkdir -p "$modules"
-	scoped="$modules/@anthropic-ai"
-	if [ -e "$scoped" ] || [ -L "$scoped" ]; then
-		fail "$scoped is already there; the drill will not stand on or remove it"
-	fi
-	ln -s "$scratch/sdk/node_modules/@anthropic-ai" "$scoped"
-	linked="$scoped"
-fi
+say "fetching $sdk@$sdk_version, which the core does not depend on"
+npm install --silent --no-audit --no-fund --prefix "$scratch/sdk" \
+	"$sdk@$sdk_version" >/dev/null 2>&1 ||
+	fail "could not fetch $sdk@$sdk_version"
+ln -s "$scratch/sdk/node_modules/@anthropic-ai" "$core/node_modules/@anthropic-ai"
 
 # --- the worker plane -------------------------------------------------------
 
@@ -239,7 +229,7 @@ run_pod() { # <label>
 		CHUG_WORKER_WORKSPACE="$scratch/workspace" \
 		CLAUDE_CONFIG_DIR="$HOME/.claude" \
 		CHUG_SESSION_MODEL="$model" \
-		node images/worker/entrypoint.mjs >>"$scratch/pod-$1.log" 2>&1 &
+		node "$core/entrypoint.mjs" >>"$scratch/pod-$1.log" 2>&1 &
 	pod_pid=$!
 }
 

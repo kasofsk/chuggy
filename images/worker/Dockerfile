@@ -1,19 +1,12 @@
-# The worker contract, packed from the tree the way it is published, so the
-# image installs the package rather than the tree's sources. The base is the one
-# `images/api/Dockerfile` pins, and only the tarball leaves this stage.
-FROM node:26.7.0-trixie-slim@sha256:4ebb5ace66f15a24c14c492e01a8beeed4fddf970a856109f5126e703e5fe503 AS contract
-WORKDIR /srv/chuggy
-COPY package.json package-lock.json ./
-COPY src/contract/package.json src/contract/package.json
-RUN npm ci --ignore-scripts
-COPY tsconfig.contract.json tsconfig.contract-pack.json ./
-COPY src/contract src/contract
-COPY scripts/pack-worker-contract.ts scripts/pack-worker-contract.ts
-RUN node scripts/pack-worker-contract.ts --out /contract
+# The zod the image installs as the agent SDK's peer. It is declared before any
+# stage because two of them read it: the `core` stage holds it to the core's
+# lock and the `worker` stage installs it.
+ARG ZOD_VERSION=4.5.4
 
-# The image one attempt runs in, built by the fabric rather than by hand:
-# `builds/` in gdoteof/chuggy-fabric holds the request, and the profile it names
-# permits public HTTPS on 443 and nothing else outbound.
+# The base every stage builds from. The image one attempt runs in is built by
+# the fabric rather than by hand: `builds/` in gdoteof/chuggy-fabric holds the
+# request, and the profile it names permits public HTTPS on 443 and nothing
+# else outbound.
 #
 # THAT IS WHY THE BASE IS NOT THE SLIM ONE, AND WHY THE SOURCES ARE REWRITTEN.
 # Debian's apt fetches over port 80, which that profile refuses — the packages
@@ -32,7 +25,60 @@ RUN node scripts/pack-worker-contract.ts --out /contract
 #
 # The digest is the multi-architecture index's, read on 2026-09-17 with
 #   docker buildx imagetools inspect node:26.7.0-trixie
-FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599cd76a7a6caad48b AS worker
+FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599cd76a7a6caad48b AS base
+
+# The worker core: kasofsk/chuggy-common at the commit `core.json` pins, which
+# `core.sh` fetches and refuses unless that commit is on the core's main. Only
+# what the later stages copy leaves this one: the core's tree, for its suites;
+# its shipped set, which is `package.json`'s `files` read off that tree rather
+# than listed here; and the contract release its lock names.
+#
+# THE CONTRACT IS THE ONE THE CORE WAS TESTED WITH. The lock names a release by
+# the URL of its asset and the digest of its bytes, and the asset is refused
+# unless its bytes are those. `ZOD_VERSION` is held to the lock for the same
+# reason: it is the zod the contract's schemas and the tool shapes run under in
+# a pod, and the lock's is the one they ran under in every suite of the core.
+FROM base AS core
+ARG ZOD_VERSION
+RUN --mount=type=bind,source=images/worker/core.sh,target=/tmp/worker/core.sh \
+    --mount=type=bind,source=images/worker/core.json,target=/tmp/worker/core.json \
+  sh /tmp/worker/core.sh fetch /core \
+  && rm -rf /core/.git
+RUN node -e ' \
+    const lock = require("/core/package-lock.json").packages; \
+    const contract = lock["node_modules/@chuggy/worker-contract"] ?? {}; \
+    const zod = lock["node_modules/zod"]?.version; \
+    if (zod !== process.env.ZOD_VERSION) { \
+      console.error(`the core locks zod ${zod} and the image installs ${process.env.ZOD_VERSION}`); \
+      process.exit(1); \
+    } \
+    if (!contract.resolved || !contract.integrity) { \
+      console.error("the core locks no contract release"); \
+      process.exit(1); \
+    } \
+    console.log(`${contract.resolved} ${contract.integrity}`); \
+  ' > /tmp/contract.txt \
+  && read -r resolved integrity < /tmp/contract.txt \
+  && curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
+    --location "$resolved" --output /contract.tgz \
+  && node -e ' \
+    const bytes = require("node:fs").readFileSync("/contract.tgz"); \
+    const hash = require("node:crypto").createHash("sha512").update(bytes); \
+    const digest = `sha512-${hash.digest("base64")}`; \
+    if (digest !== process.argv[1]) { \
+      console.error(`the contract asset is ${digest} and the core locks ${process.argv[1]}`); \
+      process.exit(1); \
+    } \
+  ' "$integrity"
+RUN node -e 'for (const name of require("/core/package.json").files) console.log(name)' \
+    > /tmp/files.txt \
+  && mkdir /shipped \
+  && while read -r name; do cp "/core/$name" "/shipped/$name" || exit 1; done < /tmp/files.txt \
+  && mv /shipped/entrypoint.mjs /shipped/worker.mjs \
+  && chmod 0555 /shipped/git-askpass.sh
+
+# The image a pod runs.
+FROM base AS worker
 
 # THE IMAGE RUNS TWO CLAUDE CODES AND THEY MUST BE THE SAME ONE. A work attempt
 # spawns the global `claude`; a session's Agent SDK spawns a copy of its own,
@@ -43,13 +89,12 @@ FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599
 #
 # THE SDK'S `zod` PEER IS INSTALLED HERE FOR THE SAME REASON: `sdkProbe.mjs`
 # reads the SDK's own declared range and fails the build where this pin no
-# longer satisfies it. The version is the one `package-lock.json` resolves, so
-# the contract's schemas and the tool shapes run under the zod every suite runs
-# them under, and `entrypoint.test.mjs` fails when the two part.
+# longer satisfies it. The pin is declared at the top of this file, where the
+# `core` stage holds it to the core's lock.
 ARG CLAUDE_CODE_VERSION=2.1.282
 ARG CODEX_VERSION=0.151.0
 ARG AGENT_SDK_VERSION=0.3.282
-ARG ZOD_VERSION=4.5.4
+ARG ZOD_VERSION
 
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
     /etc/apt/sources.list.d/debian.sources \
@@ -77,40 +122,23 @@ ENV DISABLE_AUTOUPDATER=1 \
 
 # The contract's global install nests its own copy of its `zod` peer unless told
 # to leave peers alone: that would be a second `zod` beside the one above, which
-# `contractProbe.mjs` below fails the build on.
-RUN --mount=type=bind,from=contract,source=/contract,target=/tmp/contract \
-  npm install --global --legacy-peer-deps /tmp/contract/*.tgz
+# `contractProbe.mjs` below fails the build on. The release installed is the one
+# a pod names in every request, so it is held to the one `core.json` names.
+RUN --mount=type=bind,from=core,source=/contract.tgz,target=/tmp/contract.tgz \
+    --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
+  npm install --global --legacy-peer-deps /tmp/contract.tgz \
+  && cd /usr/local/lib \
+  && node --input-type=module --eval ' \
+    import { readFileSync } from "node:fs"; \
+    import { workerContractRelease } from "@chuggy/worker-contract/workerContract"; \
+    const { contractRelease } = JSON.parse(readFileSync("/tmp/core.json", "utf8")); \
+    if (workerContractRelease !== contractRelease) { \
+      console.error(`core.json names contract ${contractRelease} and the core installs ${workerContractRelease}`); \
+      process.exit(1); \
+    } \
+  '
 
-COPY images/worker/entrypoint.mjs /usr/local/lib/chuggy/worker.mjs
-COPY images/worker/agent.mjs /usr/local/lib/chuggy/agent.mjs
-COPY images/worker/checks.mjs /usr/local/lib/chuggy/checks.mjs
-COPY images/worker/chuggyApi.mjs /usr/local/lib/chuggy/chuggyApi.mjs
-COPY images/worker/chuggyTools.mjs /usr/local/lib/chuggy/chuggyTools.mjs
-COPY images/worker/claude.mjs /usr/local/lib/chuggy/claude.mjs
-COPY images/worker/codex.mjs /usr/local/lib/chuggy/codex.mjs
-COPY images/worker/contractProbe.mjs /usr/local/lib/chuggy/contractProbe.mjs
-COPY images/worker/leadDecision.mjs /usr/local/lib/chuggy/leadDecision.mjs
-COPY images/worker/lease.mjs /usr/local/lib/chuggy/lease.mjs
-COPY images/worker/planeCredential.mjs /usr/local/lib/chuggy/planeCredential.mjs
-COPY images/worker/postgres.mjs /usr/local/lib/chuggy/postgres.mjs
-COPY images/worker/rateLimit.mjs /usr/local/lib/chuggy/rateLimit.mjs
-COPY images/worker/repository.mjs /usr/local/lib/chuggy/repository.mjs
-COPY images/worker/result.mjs /usr/local/lib/chuggy/result.mjs
-COPY images/worker/runEvidence.mjs /usr/local/lib/chuggy/runEvidence.mjs
-COPY images/worker/sdkProbe.mjs /usr/local/lib/chuggy/sdkProbe.mjs
-COPY images/worker/session.mjs /usr/local/lib/chuggy/session.mjs
-COPY images/worker/sessionCheckout.mjs /usr/local/lib/chuggy/sessionCheckout.mjs
-COPY images/worker/sessionMailbox.mjs /usr/local/lib/chuggy/sessionMailbox.mjs
-COPY images/worker/sessionStore.mjs /usr/local/lib/chuggy/sessionStore.mjs
-COPY images/worker/sessionTransport.mjs /usr/local/lib/chuggy/sessionTransport.mjs
-COPY images/worker/snapshot.mjs /usr/local/lib/chuggy/snapshot.mjs
-COPY images/worker/source.mjs /usr/local/lib/chuggy/source.mjs
-COPY images/worker/toolListing.mjs /usr/local/lib/chuggy/toolListing.mjs
-COPY images/worker/toolProbe.mjs /usr/local/lib/chuggy/toolProbe.mjs
-COPY images/worker/transcriptPage.mjs /usr/local/lib/chuggy/transcriptPage.mjs
-COPY images/worker/transport.mjs /usr/local/lib/chuggy/transport.mjs
-COPY images/worker/wire.mjs /usr/local/lib/chuggy/wire.mjs
-COPY --chmod=0555 images/worker/git-askpass.sh /usr/local/lib/chuggy/git-askpass.sh
+COPY --from=core /shipped/ /usr/local/lib/chuggy/
 
 # What the session mode needs, read off the image rather than off this file. The
 # import runs from the directory the scripts live in, because that is what
@@ -131,11 +159,16 @@ COPY --chmod=0555 images/worker/git-askpass.sh /usr/local/lib/chuggy/git-askpass
 # to the scripts' own `zod`. Each argues itself in its own header, and every
 # probe's files are removed once the probes have run, because a build's verdict
 # is not something a pod needs.
+#
+# THEN THE ENTRY IS IMPORTED, AS A POD IMPORTS IT, from what is left. Loading it
+# starts nothing, so a module it reaches that `files` did not ship fails the
+# build here rather than the first pod.
 RUN cd /usr/local/lib/chuggy \
   && node sdkProbe.mjs \
   && node toolProbe.mjs \
   && node contractProbe.mjs \
   && rm sdkProbe.mjs toolProbe.mjs toolListing.mjs contractProbe.mjs \
+  && node --input-type=module --eval 'import "/usr/local/lib/chuggy/worker.mjs";' \
   && bundled="$(node -e "console.log(require('/usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk/manifest.json').version)")" \
   && global="$(claude --version)" \
   && if [ "${global% (Claude Code)}" != "$bundled" ]; then \
@@ -171,6 +204,18 @@ RUN --mount=type=bind,source=.claude/settings.json,target=/tmp/practices.json \
        esac; \
      done < /tmp/practices.txt \
   && rm /tmp/practices.txt
+
+# THE CORE'S SUITES RUN ON THIS IMAGE'S NODE, against the contract and the zod
+# it installed. The core's own gates run them on whatever Node its developers
+# have, and nothing else would run them on the one a pod has. They sit under
+# `/usr/local/lib` so that they resolve their packages by the walk the pod's
+# modules resolve theirs by. Like the roster stage below, this is a stage FROM
+# the image and not the image, and the final stage binds its verdict.
+FROM worker AS core-suites
+COPY --from=core --chown=1000:1000 /core /usr/local/lib/chuggy-core
+RUN cd /usr/local/lib/chuggy-core \
+  && node --test --test-reporter=dot ./*.test.mjs \
+  && touch /workspace/core-suites-clean
 
 # THE BUILD REFUSES AN IMAGE THAT CANNOT RUN THE GATES. Every attempt's Check
 # evaluation runs `.chug/tasks/ci.sh` inside this image, and the image a ticket
@@ -240,8 +285,11 @@ RUN cd /workspace/tree \
   && touch /workspace/roster-clean \
   || { tail -n 50 /tmp/postgres.log /tmp/keto.log; exit 1; }
 
-# The image is the worker stage and nothing the roster stage added. The bind is
-# what makes the build refuse to finish without the roster's verdict, and it
-# leaves nothing behind, because a build's verdict is not something a pod needs.
+# The image is the worker stage and nothing the stages FROM it added. The binds
+# are what make the build refuse to finish without the core suites' verdict and
+# the roster's, and they leave nothing behind, because a build's verdict is not
+# something a pod needs.
 FROM worker
-RUN --mount=type=bind,from=roster,source=/workspace/roster-clean,target=/tmp/roster-clean true
+RUN --mount=type=bind,from=core-suites,source=/workspace/core-suites-clean,target=/tmp/core-suites-clean \
+    --mount=type=bind,from=roster,source=/workspace/roster-clean,target=/tmp/roster-clean \
+  true
