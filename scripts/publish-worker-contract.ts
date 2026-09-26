@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 
 /**
- * Publishes the worker contract: packs it, publishes the tarball to npm and
- * tags the commit it was packed from as `worker-contract-v<release>`.
+ * Publishes the worker contract up to a maintainer's approval: packs it,
+ * stages the tarball on npm for them to approve under their own second factor,
+ * and tags the commit it was packed from as `worker-contract-v<release>`. npm
+ * stages only a package it already holds, so a first version is published by
+ * hand.
  *
  * IT REFUSES BEFORE IT PACKS. A working tree with changes is not the commit the
  * tag would name; a history that does not name this release as the wire this
  * tree holds is a release that was never moved; and a release already on the
  * registry or already tagged is one npm or git would refuse halfway through.
- * `--dry-run` does everything but the publish and the tag.
+ * `--dry-run` does everything but the stage and the tag.
  */
 
 import { spawnSync } from "node:child_process";
@@ -40,14 +43,14 @@ export interface WorkerContractPublishPorts {
   readonly history: () => WorkerContractHistory;
   readonly wire: () => Promise<string>;
   readonly pack: (outDirectory: string) => PackedWorkerContract;
-  readonly publish: (tarball: string) => void;
+  readonly stage: (tarball: string) => void;
   readonly tag: (tag: string, commit: string) => void;
 }
 
 export type WorkerContractPublished =
   | { readonly published: "Refused"; readonly why: string }
   | {
-      readonly published: "Packed" | "Published";
+      readonly published: "Packed" | "Staged";
       readonly packed: PackedWorkerContract;
       readonly commit: string;
       readonly tag: string;
@@ -58,7 +61,7 @@ export function workerContractTag(release: string): string {
   return `worker-contract-v${release}`;
 }
 
-/** Packs `release` into `outDirectory` unless a refusal holds, then publishes and tags it unless `dryRun`. */
+/** Packs `release` into `outDirectory` unless a refusal holds, then stages and tags it unless `dryRun`. */
 export async function publishWorkerContract(
   ports: WorkerContractPublishPorts,
   name: string,
@@ -88,9 +91,9 @@ export async function publishWorkerContract(
   const commit = ports.commit();
   const packed = ports.pack(outDirectory);
   if (dryRun) return { published: "Packed", packed, commit, tag };
-  ports.publish(packed.tarball);
+  ports.stage(packed.tarball);
   ports.tag(tag, commit);
-  return { published: "Published", packed, commit, tag };
+  return { published: "Staged", packed, commit, tag };
 }
 
 /** One command's output, raised where it exits other than `allowed` says. */
@@ -128,14 +131,21 @@ export function publishWorkerContractRegistered(viewed: {
   throw new Error("npm could not say whether the release is on the registry");
 }
 
-/** Publishes the tarball on this terminal, so npm can ask its operator for a one-time password. */
+/** An npm that has `npm stage`, which the toolchain's npm may not. */
+const publishWorkerContractStagingNpm = "npm@11.20.0";
+
+/** Stages the tarball on this terminal, so its operator sees the stage npm names. */
 function publishWorkerContractTarball(tarball: string): void {
-  const run = spawnSync("npm", ["publish", tarball, "--access", "public"], {
-    stdio: "inherit",
-  });
+  const run = spawnSync(
+    "npx",
+    ["--yes", publishWorkerContractStagingNpm, "stage", "publish", tarball],
+    { stdio: "inherit" },
+  );
   if (run.error !== undefined) throw run.error;
   if (run.status !== 0)
-    throw new Error(`npm publish ${tarball} exited ${String(run.status)}`);
+    throw new Error(
+      `npm stage publish ${tarball} exited ${String(run.status)}`,
+    );
 }
 
 const publishWorkerContractGit: Pick<
@@ -176,7 +186,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       history: workerContractHistory,
       wire: workerContractWire,
       pack: packWorkerContract,
-      publish: publishWorkerContractTarball,
+      stage: publishWorkerContractTarball,
     },
     workspaceManifest().name,
     workerContractRelease,
@@ -191,6 +201,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   } else
     process.stdout.write(
       `${published.published} ${published.packed.sha256}  ${published.packed.tarball}\n` +
-        `${published.published === "Published" ? "tagged" : "would tag"} ${published.tag} at ${published.commit}\n`,
+        `${published.published === "Staged" ? "tagged" : "would tag"} ${published.tag} at ${published.commit}\n` +
+        (published.published === "Staged"
+          ? `approve it: npx ${publishWorkerContractStagingNpm} stage approve <id>\n`
+          : ""),
     );
 }
