@@ -28,6 +28,7 @@ import {
   sessionTurnFailureSchema,
 } from "../../contract/sessionPlane.ts";
 import { resultManifestTextCharsMax } from "../../contract/workerDocuments.ts";
+import type { WorkTaskAnswer } from "../../contract/workerTask.ts";
 import {
   workerPlaneBytesMediaType,
   workerPlaneRoutes,
@@ -100,7 +101,11 @@ import type {
   WorkerReportPort,
   WorkerTaskPort,
 } from "../../interpreter/workerPlane.ts";
-import { workTask } from "../../interpreter/workerTask.ts";
+import {
+  sessionTask,
+  workTask,
+  type SessionTask,
+} from "../../interpreter/workerTask.ts";
 
 /** The probes the cluster sends, which no worker calls and so the worker contract does not name. */
 export const workerPlaneHealthRoutes = {
@@ -275,22 +280,58 @@ function workerBearer(request: FastifyRequest) {
     : undefined;
 }
 
-/** The task an attempt was invoked with, built as its pod's document is less the plane it was fetched from. */
+/** An attempt bearer's task, or nothing where the attempt is not live, or why a live one has none. */
+async function workerTaskOf(
+  service: WorkerPlaneServerService,
+  request: FastifyRequest,
+): Promise<WorkTaskAnswer | "TaskNotRecorded" | undefined> {
+  const secret = workerBearer(request);
+  const found =
+    secret === undefined ? undefined : await service.tasks.work(secret);
+  if (found === undefined || !found.live) return undefined;
+  return found.invocation === undefined
+    ? "TaskNotRecorded"
+    : { kind: "Work", ...workTask(found.identity, found.invocation) };
+}
+
+/** A session bearer's task, read only once the session authority has found its caller live. */
+async function sessionTaskOf(
+  service: WorkerPlaneServerService,
+  request: FastifyRequest,
+): Promise<SessionTask | "TaskNotRecorded" | undefined> {
+  const sessions = service.sessions;
+  const caller =
+    sessions === undefined ? undefined : await sessionCaller(sessions, request);
+  const found =
+    caller === undefined
+      ? undefined
+      : await service.tasks.session(caller.secret);
+  if (found === undefined || !found.live) return undefined;
+  return found.invocation === undefined
+    ? "TaskNotRecorded"
+    : sessionTask(found.identity, found.invocation);
+}
+
+/**
+ * The task a bearer's pod is launched with, less what its site adds, read by
+ * the authority its bearer's language names. A session's is told from a work
+ * task by its own kind.
+ */
 function workerTaskRoute(
   register: WorkerPlaneRegistrar,
   service: WorkerPlaneServerService,
 ): void {
   register(workerPlaneRoutes.task, async (request, reply) => {
-    const secret = workerBearer(request);
     const found =
-      secret === undefined ? undefined : await service.tasks.task(secret);
-    if (found === undefined || !found.live)
-      return reply.code(401).send({ action: "stop" });
-    if (found.invocation === undefined)
+      sessionBearer(request) === undefined
+        ? await workerTaskOf(service, request)
+        : await sessionTaskOf(service, request);
+    if (found === undefined) return reply.code(401).send({ action: "stop" });
+    if (found === "TaskNotRecorded")
       return reply
         .code(409)
         .send({ action: "stop", reason: "TaskNotRecorded" });
-    return { kind: "Work", ...workTask(found.identity, found.invocation) };
+    return found;
   });
 }
 

@@ -201,6 +201,10 @@ turn one "Remember the word $nonce. Reply with just: ok." ||
 bearer=""
 attempt=""
 
+# What each pod is invoked with, recorded at opening and carried by its task.
+capabilities='["RepositoryRead"]'
+authority='{"tools":[],"credentials":["claude-code"],"network":true,"filesystem":"WriteWorkspace","mayCompleteTask":false}'
+
 open_attempt() { # <label>
 	attempt="attempt-$1-$session"
 	bearer="chgs_$(cat /proc/sys/kernel/random/uuid)$(cat /proc/sys/kernel/random/uuid)"
@@ -208,7 +212,8 @@ open_attempt() { # <label>
 	opened="$(psql_as chuggy_scheduler "SELECT opened FROM open_session_attempt(
 	  'drill','drill','$session',
 	  (SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1),
-	  '$attempt','bearer-$1-$session','$digest',600,0,16,16)")"
+	  '$attempt','bearer-$1-$session','$digest',600,0,16,16,
+	  '{\"capabilities\":$capabilities,\"authority\":$authority}'::jsonb)")"
 	[ "$opened" = "Opened" ] || fail "opening attempt $1 answered $opened"
 	placed="$(psql_as chuggy_scheduler \
 		"SELECT place_session_attempt('$attempt',1,'pod-$1')")"
@@ -219,10 +224,8 @@ open_attempt() { # <label>
 pod_task() { # <label>
 	cat <<JSON
 {"tenant":"drill","project":"drill","session":"$session","kind":"Lead",
- "attempt":"$attempt","generation":1,"capabilities":["RepositoryRead"],
- "credentialSlot":"claude-code",
- "authority":{"tools":[],"credentials":["claude-code"],"network":true,
-              "filesystem":"WriteWorkspace","mayCompleteTask":false},
+ "attempt":"$attempt","generation":1,"capabilities":$capabilities,
+ "credentialSlot":"claude-code","authority":$authority,
  "workerPlane":{"url":"$plane","capabilityFile":"$scratch/bearer"},
  "bounds":{"mailboxPollMs":1000,"idleMs":120000,"resultDrainMs":3000,
            "loadTimeoutMs":120000,"turnsMax":20,"budgetUsd":1}}

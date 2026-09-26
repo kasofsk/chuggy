@@ -153,7 +153,8 @@ async function sessionOpenAttempt(
       ${opening.partition.tenant},${opening.partition.project},${opening.session},
       ${opening.epoch},${opening.attempt},${opening.bearer},${opening.bearerSecretDigest},
       ${opening.leaseSecs},${opening.placementBackoffSecs},
-      ${opening.attemptsPerAccountMax},${opening.clusterAttemptsMax})`,
+      ${opening.attemptsPerAccountMax},${opening.clusterAttemptsMax},
+      ${JSON.stringify(opening.invocation)}::jsonb)`,
   );
   const row = opened.rows[0];
   if (row === undefined || row.opened === null)

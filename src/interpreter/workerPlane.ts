@@ -1,3 +1,4 @@
+import type { SessionBearerSecret } from "./agentSession.ts";
 import type {
   AttemptCapabilitySecret,
   FencedAttempt,
@@ -9,7 +10,8 @@ import type {
 } from "./executionSchedulerReport.ts";
 import type { ExecutionTaskKind } from "./executionRequirement.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
-import type { WorkTaskIdentity } from "./workerTask.ts";
+import type { SessionTaskInvocation } from "./sessionScheduler.ts";
+import type { SessionTaskIdentity, WorkTaskIdentity } from "./workerTask.ts";
 
 /** The bounded metadata of one immutable reference pinned by an attempt's input bundle. */
 export interface WorkerInputReference {
@@ -37,8 +39,17 @@ export interface WorkerTaskRead {
   readonly invocation?: WorkTaskInvocation;
 }
 
+/** What a session attempt's bearer finds of its task, the invocation absent where the attempt opened before one was recorded. */
+export interface SessionTaskRead {
+  readonly live: boolean;
+  readonly identity: SessionTaskIdentity;
+  readonly invocation?: SessionTaskInvocation;
+}
+
+/** The task either kind of bearer fetches, each read through its own bearer's digest. */
 export interface WorkerTaskPort {
-  task(secret: AttemptCapabilitySecret): Promise<WorkerTaskRead | undefined>;
+  work(secret: AttemptCapabilitySecret): Promise<WorkerTaskRead | undefined>;
+  session(secret: SessionBearerSecret): Promise<SessionTaskRead | undefined>;
 }
 
 export interface WorkerPlaneAuthority {

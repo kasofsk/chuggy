@@ -3,7 +3,7 @@
  * durable move is made under, the bearer one attempt speaks through, the
  * placement a backend is asked for, and the bounds a deployment names.
  *
- * A SESSION CARRIES NO REQUIREMENT AND NO INVOCATION. It has no ticket, no
+ * A SESSION CARRIES NO REQUIREMENT AND NO BRIEFING. It has no ticket, no
  * pinned configuration and no briefing, so its image, profile and grant are one
  * site-level `SessionPolicy` and the briefing machinery is never entered. The
  * mailbox endpoint is not on the placement either: the worker plane URL and the
@@ -61,6 +61,7 @@ import type {
   SessionKind,
   SessionTurnFailure,
 } from "./agentSession.ts";
+import type { SessionTaskDocument } from "../contract/workerTask.ts";
 import type {
   AttemptPlacementOutcome,
   ExecutionProfile,
@@ -200,6 +201,16 @@ export function sessionPodEvidence(
 }
 
 /**
+ * What one session attempt's pod is handed that the session may change after it
+ * is placed, recorded when the attempt opens so its pod can fetch the task it
+ * was launched with.
+ */
+export type SessionTaskInvocation = Pick<
+  SessionTaskDocument,
+  "capabilities" | "agentReference" | "authority" | "repository"
+>;
+
+/**
  * What opening the next attempt for a session is asked for. The attempt's
  * identity, its bearer and that bearer's digest are minted by the caller,
  * because the secret itself is what the launcher needs and is not a value the
@@ -216,6 +227,7 @@ export interface SessionAttemptOpening {
   readonly placementBackoffSecs: number;
   readonly attemptsPerAccountMax: number;
   readonly clusterAttemptsMax: number;
+  readonly invocation: SessionTaskInvocation;
 }
 
 /**

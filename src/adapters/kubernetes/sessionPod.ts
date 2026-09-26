@@ -3,7 +3,7 @@
  * supplies, the image and grant its site-level policy resolved, and the request
  * the cluster API is asked for.
  *
- * A SESSION CARRIES NO REQUIREMENT AND NO INVOCATION. It has no ticket, no
+ * A SESSION CARRIES NO REQUIREMENT AND NO BRIEFING. It has no ticket, no
  * pinned configuration and no briefing, so nothing here reads a policy, a
  * revision or a catalog: the image, the profile and the grant arrive on the
  * placement, resolved once for the site, and the briefing machinery is never
@@ -47,6 +47,10 @@ import type {
 import type { SessionAttemptId } from "../../interpreter/agentSession.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { SessionPlacement } from "../../interpreter/sessionScheduler.ts";
+import {
+  sessionTask,
+  sessionTaskInvocation,
+} from "../../interpreter/workerTask.ts";
 import {
   checkedKubernetesPodSite,
   kubernetesAnnotationPrefix,
@@ -251,32 +255,23 @@ export function kubernetesSessionSecret(
   };
 }
 
-/** Everything the placement supplied, as the one document a session is handed. */
+/** Everything the placement supplied, as the one document a session is handed: the task a fetch answers, and the site data around it. */
 export function kubernetesSessionTask(
   config: KubernetesSessionLaunchConfig,
   placement: SessionPlacement,
 ): SessionTaskDocument {
+  const { repository, ...task } = sessionTask(
+    placement,
+    sessionTaskInvocation(placement),
+  );
   return {
-    tenant: placement.partition.tenant,
-    project: placement.partition.project,
-    session: placement.session,
-    kind: placement.kind,
-    attempt: placement.attempt,
-    generation: placement.generation,
-    capabilities: placement.capabilities,
-    credentialSlot: placement.credentialSlot,
-    ...(placement.agentReference === undefined
-      ? {}
-      : { agentReference: placement.agentReference }),
-    authority: placement.authority,
+    ...task,
     workerPlane: {
       url: config.workerPlaneUrl,
       capabilityFile: config.capabilityFile,
     },
     api: { url: config.apiUrl },
-    ...(placement.repository === undefined
-      ? {}
-      : { repository: { reference: placement.repository } }),
+    ...(repository === undefined ? {} : { repository }),
     bounds: config.bounds,
   };
 }

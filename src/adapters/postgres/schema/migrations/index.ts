@@ -16,6 +16,7 @@ import { migration015 } from "./015-ticket-commands.ts";
 import { migration016 } from "./016-ticket-update.ts";
 import { migration017 } from "./017-ticket-repin.ts";
 import { migration018 } from "./018-attempt-invocation.ts";
+import { migration019 } from "./019-session-invocation.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -37,4 +38,5 @@ export const migrations: readonly Migration[] = [
   migration016,
   migration017,
   migration018,
+  migration019,
 ];

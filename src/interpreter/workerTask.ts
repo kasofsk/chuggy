@@ -1,14 +1,22 @@
 /**
- * The task a work attempt's worker is handed, built by one function whether a
- * launcher pushes it into a pod or the worker plane answers a fetch with it.
+ * The task a work attempt's worker or a session attempt's pod is handed, each
+ * built by one function whether a launcher pushes it into a pod or the worker
+ * plane answers a fetch with it.
  */
 
-import type { WorkTaskDocument } from "../contract/workerTask.ts";
+import type {
+  SessionTaskDocument,
+  WorkTaskDocument,
+} from "../contract/workerTask.ts";
 import type {
   AttemptPlacement,
   ExecutionProfile,
   WorkTaskInvocation,
 } from "./executionScheduler.ts";
+import type {
+  SessionPlacement,
+  SessionTaskInvocation,
+} from "./sessionScheduler.ts";
 import { taskAuthorityGrant } from "./taskAuthority.ts";
 import type { TaskInvocation } from "./taskBriefing.ts";
 
@@ -82,5 +90,60 @@ export function workTask(
     briefing: invocation.briefing,
     authority: invocation.authority,
     ...(invocation.worker === undefined ? {} : { worker: invocation.worker }),
+  };
+}
+
+/** What a session attempt's rows say of the task its pod runs, none of which the session can change. */
+export type SessionTaskIdentity = Pick<
+  SessionPlacement,
+  "partition" | "session" | "attempt" | "generation" | "kind" | "credentialSlot"
+>;
+
+/** A session task without the site data its launcher adds. */
+export type SessionTask = Omit<
+  SessionTaskDocument,
+  "workerPlane" | "api" | "bounds"
+>;
+
+/** What a session placement is invoked with, in the shape it is recorded and handed over in. */
+export function sessionTaskInvocation(
+  placing: Pick<
+    SessionPlacement,
+    "capabilities" | "agentReference" | "authority" | "repository"
+  >,
+): SessionTaskInvocation {
+  return {
+    capabilities: placing.capabilities,
+    ...(placing.agentReference === undefined
+      ? {}
+      : { agentReference: placing.agentReference }),
+    authority: placing.authority,
+    ...(placing.repository === undefined
+      ? {}
+      : { repository: { reference: placing.repository } }),
+  };
+}
+
+/** One session task, its keys in the order the pod document carries them. */
+export function sessionTask(
+  identity: SessionTaskIdentity,
+  invocation: SessionTaskInvocation,
+): SessionTask {
+  return {
+    tenant: identity.partition.tenant,
+    project: identity.partition.project,
+    session: identity.session,
+    kind: identity.kind,
+    attempt: identity.attempt,
+    generation: identity.generation,
+    capabilities: invocation.capabilities,
+    credentialSlot: identity.credentialSlot,
+    ...(invocation.agentReference === undefined
+      ? {}
+      : { agentReference: invocation.agentReference }),
+    authority: invocation.authority,
+    ...(invocation.repository === undefined
+      ? {}
+      : { repository: invocation.repository }),
   };
 }

@@ -28,14 +28,25 @@ import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
 import type { ReportIngested } from "../../src/interpreter/executionSchedulerReport.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
-import type { WorkerTaskRead } from "../../src/interpreter/workerPlane.ts";
+import type {
+  SessionTaskRead,
+  WorkerTaskRead,
+} from "../../src/interpreter/workerPlane.ts";
 import {
+  sessionTask,
   workTask,
+  type SessionTaskIdentity,
   type WorkTaskIdentity,
 } from "../../src/interpreter/workerTask.ts";
+import {
+  asSessionAttemptId,
+  asSessionId,
+} from "../../src/interpreter/agentSession.ts";
+import type { SessionTaskInvocation } from "../../src/interpreter/sessionScheduler.ts";
 import { fixtureForgeShapedToken } from "./forgeFixtures.ts";
 import {
   inertRunEvidence,
+  inertSessionPlane,
   inertTasks,
   runTotalsBody,
 } from "./workerPlaneFixtures.ts";
@@ -183,7 +194,11 @@ test("a bearer written in the session language is never offered to the attempt a
       },
     },
     tasks: {
-      task: (secret) => {
+      work: (secret) => {
+        offered.push(secret);
+        return Promise.resolve(undefined);
+      },
+      session: (secret) => {
         offered.push(secret);
         return Promise.resolve(undefined);
       },
@@ -254,7 +269,7 @@ test("a task is answered only to a live attempt, and only once the scheduler rec
     ...heartbeatService,
     ...runEvidenceService,
     authority: { authenticate: () => Promise.resolve(authority) },
-    tasks: { task: (secret) => Promise.resolve(found[secret]) },
+    tasks: { ...inertTasks, work: (secret) => Promise.resolve(found[secret]) },
     reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
     artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },
     reports: { report: () => Promise.resolve({ ingested: "Fenced" }) },
@@ -284,6 +299,93 @@ test("a task is answered only to a live attempt, and only once the scheduler rec
     status: 200,
     body: { kind: "Work", ...workTask(identity, invocation) },
   });
+  await app.close();
+});
+
+/** The session attempt a session bearer's task read answers for. */
+const sessionTaskIdentity: SessionTaskIdentity = {
+  partition: authority.partition,
+  session: asSessionId("session"),
+  attempt: asSessionAttemptId("session-attempt"),
+  generation: 2,
+  kind: "Thread",
+  credentialSlot: "claude-code",
+};
+
+const sessionTaskInvoked: SessionTaskInvocation = {
+  capabilities: ["RepositoryRead"],
+  agentReference: "runtime-session",
+  authority: {
+    tools: [],
+    credentials: [],
+    network: false,
+    filesystem: "ReadWorkspace",
+    mayCompleteTask: false,
+  },
+  repository: { reference: "github.com/owner/name" },
+};
+
+test("a session bearer fetches its task through the session authority, and neither attempt port is offered it", async () => {
+  const offered: string[] = [];
+  const bearer = (name: string) => `chgs_${name.padEnd(32, "x")}`;
+  const identity = sessionTaskIdentity;
+  const invocation = sessionTaskInvoked;
+  const found: Readonly<Record<string, SessionTaskRead>> = {
+    [bearer("ended")]: { live: false, identity, invocation },
+    [bearer("unrecorded")]: { live: true, identity },
+    [bearer("held")]: { live: true, identity, invocation },
+  };
+  const app = createWorkerPlaneApp({
+    ...heartbeatService,
+    ...runEvidenceService,
+    authority: {
+      authenticate: (secret) => {
+        offered.push(secret);
+        return Promise.resolve(authority);
+      },
+    },
+    tasks: {
+      work: (secret) => {
+        offered.push(secret);
+        return Promise.resolve(undefined);
+      },
+      session: (secret) => Promise.resolve(found[secret]),
+    },
+    reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
+    artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },
+    reports: { report: () => Promise.resolve({ ingested: "Fenced" }) },
+    sessions: inertSessionPlane({
+      authenticate: (secret) =>
+        Promise.resolve(
+          found[secret] === undefined
+            ? undefined
+            : { ...identity, capabilities: ["RepositoryRead"], live: true },
+        ),
+    }),
+    ready: () => Promise.resolve(true),
+    uploadBytesMax: 64,
+  });
+  for (const [token, status, body] of [
+    ["stranger", 401, { action: "stop" }],
+    ["ended", 401, { action: "stop" }],
+    ["unrecorded", 409, { action: "stop", reason: "TaskNotRecorded" }],
+    ["held", 200, sessionTask(identity, invocation)],
+  ] as const) {
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/task",
+      headers: { authorization: `Bearer ${bearer(token)}` },
+    });
+    assert.deepEqual(
+      {
+        status: response.statusCode,
+        body: JSON.parse(response.body) as unknown,
+      },
+      { status, body },
+      token,
+    );
+  }
+  assert.deepEqual(offered, []);
   await app.close();
 });
 
