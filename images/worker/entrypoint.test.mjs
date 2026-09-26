@@ -25,6 +25,7 @@ import {
   publishWorkerResult,
   reportWorkerFailure,
   runWorkerTask,
+  workerAttempt,
   workerCredential,
   workerMode,
   workerWorkspace,
@@ -396,41 +397,62 @@ test("a pod launched with an envelope fetches its task and runs it under the env
   }
 });
 
-/** Catches an envelope's pod cloning where the image names rather than where its pool mounted the workspace. */
+/**
+ * Catches an envelope's pod cloning into the directory the image names rather
+ * than the one its pool mounted, whether the launch or the attempt drops it.
+ */
 test("an envelope's pod clones into the workspace its envelope names", async () => {
-  process.env[workerWorkspaceVariable] = "/workspace";
-  const { credentialFiles, workspace } =
-    await envelopeLaunch(envelope).given(undefined);
+  process.env[workerWorkspaceVariable] = "/not-the-envelopes";
+  const plane = await servedPlane((route) => {
+    switch (route) {
+      case "task":
+        return {
+          status: 200,
+          body: workTaskAnswerSchema.parse({
+            ...fetchedAnswer,
+            worker: {
+              mode: { type: "Commands", commands: ["true"] },
+              setup: [],
+              files: [],
+            },
+          }),
+        };
+      case "input":
+        return {
+          status: 200,
+          body: {
+            bundle: "bundle-1",
+            digest: "0".repeat(64),
+            references: [
+              { ordinal: 1, kind: "Repository", reference: "repository-1" },
+              { ordinal: 2, kind: "TargetCommit", reference: "0".repeat(40) },
+            ],
+          },
+        };
+      case "credential":
+        return {
+          status: 200,
+          body: { ...minted, expiresAtMs: 1_900_000_000_000 },
+        };
+      default:
+        return { status: 204 };
+    }
+  });
   const cloned = [];
-
-  await workerWorkspace(
-    { ...task, authority: { credentials: [] } },
-    {},
-    credentialFiles,
-    envelope.bearer,
-    () => undefined,
-    {
-      request: async (_task, _bearer, path) =>
-        path === "/v1/input"
-          ? {
-              ok: true,
-              status: 200,
-              json: async () => ({
-                references: [
-                  { kind: "Repository", reference: "repository-1" },
-                  { kind: "TargetCommit", reference: "0".repeat(40) },
-                ],
-              }),
-            }
-          : { ok: true, status: 200, json: async () => minted },
-      clone: async (_repository, _base, into) => {
-        cloned.push(into);
-        return join(into, "repository");
-      },
-      write: async () => undefined,
-      workspace,
-    },
-  );
+  try {
+    await assert.rejects(
+      workerAttempt(envelopeLaunch({ ...envelope, callbackUrl: plane.url }), {
+        write: async () => undefined,
+        clone: async (_repository, _base, into) => {
+          cloned.push(into);
+          throw new Error("cloned");
+        },
+      }),
+      /^Error: cloned$/u,
+    );
+  } finally {
+    await plane.close();
+  }
 
   assert.deepEqual(cloned, [envelope.workspace]);
 });

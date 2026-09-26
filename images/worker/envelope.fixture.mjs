@@ -1,41 +1,61 @@
 /**
  * The two things `CHUG_WORKER_TASK` may carry, as the suites hold them against
  * each other: the document a pushed pod is launched with, the answer the task
- * route gives for the same attempt, and a pool's envelope.
- *
- * THE DOCUMENT IS THE SERVER'S OWN, NOT ONE WRITTEN HERE. It is read out of the
- * pod golden the launcher's suite pins byte for byte, so a task this pod builds
- * from an envelope is compared with what a launcher really writes. The answer
- * is that document less its plane and told as a work task, which is how the
- * task route builds it from the same record, and it is read under the
- * contract's answer schema, refusing any field the schema does not name.
+ * route gives for the same attempt, and a pool's envelope naming the same
+ * plane. The document and the answer are read under the contract's schemas,
+ * refusing any field either does not name; that a launcher writes such a
+ * document, and the route answers it, is the server's suites' to hold.
  */
 
-import { readFileSync } from "node:fs";
-import { URL } from "node:url";
-
-import { workerTaskVariable } from "@chuggy/worker-contract/workerEnvironment";
 import {
   poolEnvelopeSchema,
   workTaskAnswerSchema,
+  workTaskDocumentSchema,
 } from "@chuggy/worker-contract/workerTask";
 
-const podGolden = JSON.parse(
-  readFileSync(
-    new URL(
-      "../../test/adapters/kubernetesWorkerPodDocument.golden.json",
-      import.meta.url,
-    ),
-    "utf8",
-  ),
-);
-
-/** The task document the launcher writes into a pushed pod. */
-export const pushed = JSON.parse(
-  podGolden.withoutDatabase.pod.spec.containers[0].env.find(
-    ({ name }) => name === workerTaskVariable,
-  ).value,
-);
+/** A work task as a launcher writes it into a pushed pod, naming every field the document does. */
+export const pushed = workTaskDocumentSchema.strict().parse({
+  tenant: "tenant-1",
+  project: "project-1",
+  execution: "execution-1",
+  attempt: "attempt-1",
+  generation: 4,
+  ticket: 7,
+  task: 3,
+  taskKind: "Work",
+  stage: 2,
+  sourceRequest: "7:0:ExecuteTask",
+  inputBundle: "7:0:InputBundle",
+  inputBundleDigest: "c".repeat(64),
+  configurationRevision: "revision-1",
+  configurationDigest: "configuration-digest",
+  profile: { profile: "standard", runtimeVersion: "1" },
+  requirementIdentity: "requirement-1",
+  requirementDigest: "requirement-digest",
+  briefing: {
+    templateVersion: 6,
+    purpose: "Work",
+    text: "## Your role\nImplement one task on this ticket.",
+  },
+  authority: {
+    tools: ["editor"],
+    credentials: ["forge"],
+    network: true,
+    filesystem: "WriteWorkspace",
+    mayCompleteTask: false,
+  },
+  worker: {
+    mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+    setup: [],
+    files: [],
+  },
+  workerPlane: {
+    url: "http://worker-plane.test:3001",
+    capabilityFile: "/run/worker-plane.test/bearer",
+    capability: "capability-1",
+    manifest: "manifest-1",
+  },
+});
 
 /** What the task route answers for the attempt `pushed` was written for. */
 export const fetchedAnswer = workTaskAnswerSchema

@@ -641,8 +641,11 @@ export function envelopeLaunch(envelope) {
   };
 }
 
-/** One attempt, run from its task onwards the same whichever carrier brought it. */
-async function workerAttempt(launch) {
+/**
+ * One attempt, run from its task onwards the same whichever carrier brought it.
+ * `seams` are `workerWorkspace`'s, less the directory, which is the launch's.
+ */
+export async function workerAttempt(launch, seams = {}) {
   const task = await launch.task();
   activeTask = task;
   const commands = workerCheckCommands(task);
@@ -671,7 +674,7 @@ async function workerAttempt(launch) {
       credentialFiles,
       bearer,
       keepSecret,
-      { workspace: into },
+      { ...seams, workspace: into },
     );
     attemptDatabase(process.env);
     await prepareWorker(task, workspace.directory);

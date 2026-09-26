@@ -538,6 +538,11 @@ test("the task an envelope's pod fetches is the pushed document, less what nothi
     overPlane(workerRequest, plane.fetch),
   );
 
+  assert.deepEqual(
+    Object.keys(pushed).sort(),
+    Object.keys(workTaskDocumentSchema.shape).sort(),
+    "the pushed document leaves a field out, which the read could drop unseen",
+  );
   assert.deepEqual(fetched, {
     ...pushed,
     workerPlane: { url: envelope.callbackUrl },
