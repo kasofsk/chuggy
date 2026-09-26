@@ -1,5 +1,9 @@
-export type OperatingSystem = "Linux" | "MacOS";
-export type Architecture = "Amd64" | "Arm64";
+/** Every operating system a platform names, so a suite iterates rather than restates. */
+export const allOperatingSystems = ["Linux", "MacOS"] as const;
+export type OperatingSystem = (typeof allOperatingSystems)[number];
+/** Every architecture a platform names, so a suite iterates rather than restates. */
+export const allArchitectures = ["Amd64", "Arm64"] as const;
+export type Architecture = (typeof allArchitectures)[number];
 export type ExecutionTaskKind = "Work" | "Evaluation";
 export type ExecutionTaskKindKey = ExecutionTaskKind | `Evaluation:${number}`;
 export interface Platform {
@@ -8,7 +12,12 @@ export interface Platform {
 }
 export type NativeDriver =
   "XcodeBuild" | "XcodeTesting" | "IosSimulatorTesting";
-export type ExecutionCapability = "Agent:Claude" | "Agent:Codex";
+/** Every execution capability, so a suite iterates rather than restates. */
+export const allExecutionCapabilities = [
+  "Agent:Claude",
+  "Agent:Codex",
+] as const;
+export type ExecutionCapability = (typeof allExecutionCapabilities)[number];
 
 export type ContainerExecutionRequirement = Readonly<
   Platform & { readonly mode: "Container"; readonly image: string }
@@ -74,6 +83,13 @@ function hasOnlyKeys(
   return Object.keys(value).every((key) => allowed.includes(key));
 }
 
+function memberOf<Member extends string>(
+  roster: readonly Member[],
+  value: unknown,
+): Member | undefined {
+  return roster.find((known) => known === value);
+}
+
 function capabilityRequirement(
   item: Record<string, unknown>,
 ): CapabilityExecutionRequirement | undefined {
@@ -86,17 +102,20 @@ function capabilityRequirement(
     ])
   )
     return undefined;
-  const operatingSystem = item["operatingSystem"];
-  const architecture = item["architecture"];
+  const operatingSystem = memberOf(
+    allOperatingSystems,
+    item["operatingSystem"],
+  );
+  const architecture = memberOf(allArchitectures, item["architecture"]);
   const capabilities = item["capabilities"];
   if (
-    (operatingSystem !== "Linux" && operatingSystem !== "MacOS") ||
-    (architecture !== "Amd64" && architecture !== "Arm64") ||
+    operatingSystem === undefined ||
+    architecture === undefined ||
     !Array.isArray(capabilities) ||
     capabilities.length === 0 ||
     !capabilities.every(
       (capability) =>
-        capability === "Agent:Claude" || capability === "Agent:Codex",
+        memberOf(allExecutionCapabilities, capability) !== undefined,
     ) ||
     new Set(capabilities).size !== capabilities.length
   )
@@ -116,12 +135,15 @@ function requirement(value: unknown): ExecutionRequirement | undefined {
       !hasOnlyKeys(item, ["mode", "operatingSystem", "architecture", "image"])
     )
       return undefined;
-    const operatingSystem = item["operatingSystem"];
-    const architecture = item["architecture"];
+    const operatingSystem = memberOf(
+      allOperatingSystems,
+      item["operatingSystem"],
+    );
+    const architecture = memberOf(allArchitectures, item["architecture"]);
     const image = item["image"];
     if (
-      (operatingSystem === "Linux" || operatingSystem === "MacOS") &&
-      (architecture === "Amd64" || architecture === "Arm64") &&
+      operatingSystem !== undefined &&
+      architecture !== undefined &&
       typeof image === "string" &&
       image.length > 0
     )
@@ -140,12 +162,12 @@ function requirement(value: unknown): ExecutionRequirement | undefined {
       ])
     )
       return undefined;
-    const architecture = item["architecture"];
+    const architecture = memberOf(allArchitectures, item["architecture"]);
     const driver = item["driver"];
     const xcodeVersionMin = item["xcodeVersionMin"];
     const sdkVersionMin = item["sdkVersionMin"];
     if (
-      (architecture === "Amd64" || architecture === "Arm64") &&
+      architecture !== undefined &&
       (driver === "XcodeBuild" ||
         driver === "XcodeTesting" ||
         driver === "IosSimulatorTesting") &&
