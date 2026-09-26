@@ -15,11 +15,12 @@
  * - a function is the tokens of the shipped source that declares it, and a
  *   language built-in is its name; any other function, and one carrying
  *   properties of its own, is refused;
- * - a plain object is its own enumerable data keys, an array its items, a
- *   regular expression its source and flags, and a string, number, bigint,
- *   boolean, null or undefined is itself, NaN, the infinities and minus zero
- *   included. Any other object, a symbol, an accessor, a hidden or symbol
- *   key, a hole and a value that holds itself are refused.
+ * - a plain object is its own enumerable data keys, an array its items and a
+ *   regular expression its source and flags, each refused where it has an
+ *   accessor, a hidden or symbol key, a hole, or a key its kind does not have;
+ *   a string, number, bigint, boolean, null or undefined is itself, NaN, the
+ *   infinities and minus zero included. Any other object, a symbol and a value
+ *   that holds itself are refused.
  *
  * Tokens leave out comments, whitespace, trailing commas and types, and a
  * number is its value, so a formatter moves no digest.
