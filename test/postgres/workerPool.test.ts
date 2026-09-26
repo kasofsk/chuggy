@@ -19,14 +19,26 @@ import {
   apiRole,
   poolPlaneRole,
   workerPlaneRole,
+  workerPoolFenceFunction,
 } from "../../src/adapters/postgres/schema.ts";
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRegistry,
 } from "../../src/adapters/postgres/workerPool.ts";
-import { postgresWorkerPlaneAuthority } from "../../src/adapters/postgres/workerPlane.ts";
+import {
+  postgresWorkerPlaneAuthority,
+  postgresWorkerReportStore,
+  postgresWorkerTasks,
+} from "../../src/adapters/postgres/workerPlane.ts";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
-import { asPrincipal } from "../../src/interpreter/principal.ts";
+import {
+  asAttemptCapabilitySecret,
+  type PhysicalAttempt,
+} from "../../src/interpreter/executionScheduler.ts";
+import {
+  asPrincipal,
+  type Principal,
+} from "../../src/interpreter/principal.ts";
 import type {
   WorkerPoolClaimTerms,
   WorkerPoolIdentity,
@@ -34,6 +46,7 @@ import type {
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   postgresHarnessConfiguration,
+  postgresHarnessPartition,
   postgresHarnessRolePool,
 } from "./harness.ts";
 import {
@@ -41,6 +54,7 @@ import {
   schedulerOwner,
   schedulerProject,
   schedulerInvocation,
+  schedulerReport,
   schedulerRigOpen,
   type SchedulerProject,
 } from "./schedulerHarness.ts";
@@ -125,12 +139,14 @@ async function poolProject(
   label: string,
   tasks = 1,
   agent?: "Claude" | "Codex",
+  partition?: Partition,
 ): Promise<SchedulerProject> {
   const project = await schedulerProject(
     rig,
     label,
     { tasks },
     asCanonicalConfiguration(poolConfiguration(agent)),
+    partition,
   );
   await rig.store.registerSpawn(
     await schedulerClaimFor(
@@ -153,7 +169,7 @@ async function poolAttempt(
   project: SchedulerProject,
   label: string,
   invoked = true,
-): Promise<{ execution: string; attempt: string }> {
+): Promise<{ execution: string; attempt: string; opened: PhysicalAttempt }> {
   const admitted = await rig.store.admit(project.cluster);
   if (admitted.admitted !== "Admitted")
     throw new Error(`worker pool suite: ${label} admitted no execution`);
@@ -176,16 +192,20 @@ async function poolAttempt(
     !(await rig.store.attemptInvoked(opened.attempt, schedulerInvocation))
   )
     throw new Error(`worker pool suite: ${label} recorded no invocation`);
-  return { execution: admitted.execution, attempt: opened.attempt.attempt };
+  return {
+    execution: admitted.execution,
+    attempt: opened.attempt.attempt,
+    opened: opened.attempt,
+  };
 }
 
-/** One registered pool of this project, declaring what the case wants it to claim. */
+/** One registered pool of this project, declaring what the case wants it to claim, under the principal its name gives unless the case names another. */
 async function registered(
   partition: Partition,
   label: string,
   capabilities: readonly string[],
+  principal: Principal = asPrincipal(`https://issuer.invalid#pool-${label}`),
 ): Promise<WorkerPoolIdentity> {
-  const principal = asPrincipal(`https://issuer.invalid#pool-${label}`);
   assert.equal(
     await registry.register({
       partition,
@@ -461,12 +481,12 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [
         "execution_attempt",
         "SELECT",
-        "assignment,attempt,execution,generation,invoked,lease_expires_at,lease_owner,opened_at,pool,pool_refusal,project,recovery_epoch,state,tenant",
+        "assignment,attempt,execution,generation,invoked,lease_expires_at,lease_owner,opened_at,pool,pool_principal,pool_refusal,project,recovery_epoch,state,tenant",
       ],
       [
         "execution_attempt",
         "UPDATE",
-        "assignment,capability_secret_digest,lease_expires_at,lease_owner,pool,pool_refusal",
+        "assignment,capability_secret_digest,lease_expires_at,lease_owner,pool,pool_principal,pool_refusal",
       ],
       ["project", "SELECT", "lifecycle,project,tenant"],
       ["recovery_epoch", "SELECT", "epoch,established_at,ordinal"],
@@ -583,5 +603,327 @@ test("a released attempt outlives the reaper for the backoff it was given", asyn
   assert.notEqual(
     await assignments.claim(mine, terms, again.assignment, again.bearer),
     undefined,
+  );
+});
+
+/** What a claim left on one attempt, which a call holding nothing leaves as it was. */
+async function poolClaimRow(
+  project: SchedulerProject,
+  attempt: string,
+): Promise<Record<string, unknown> | undefined> {
+  const [row] = await rig.harness.query(
+    `SELECT pool, pool_principal, assignment, pool_refusal, capability_secret_digest,
+            state, lease_owner, lease_expires_at::text AS lease_expires_at
+       FROM execution_attempt WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+    [project.partition.tenant, project.partition.project, attempt],
+  );
+  return row;
+}
+
+/** A pool of this project registered, one attempt claimed by it, and the handles the claim drew. */
+async function poolClaimedIn(
+  project: SchedulerProject,
+  pool: string,
+  principal?: Principal,
+): Promise<{
+  project: SchedulerProject;
+  identity: WorkerPoolIdentity;
+  claimed: Awaited<ReturnType<typeof poolAttempt>>;
+  drawn: { assignment: string; bearer: string };
+}> {
+  const identity = await registered(
+    project.partition,
+    pool,
+    [platform],
+    principal,
+  );
+  const claimed = await poolAttempt(project, pool);
+  const drawn = handles(pool);
+  assert.notEqual(
+    await assignments.claim(identity, terms, drawn.assignment, drawn.bearer),
+    undefined,
+  );
+  return { project, identity, claimed, drawn };
+}
+
+/** One project's pool registered and one attempt claimed by it. */
+async function poolClaimed(label: string): ReturnType<typeof poolClaimedIn> {
+  return poolClaimedIn(await poolProject(`pool-${label}`), label);
+}
+
+/** A principal no registration here has used, which is what registering a name again is given. */
+function poolPrincipalFresh(pool: string): Principal {
+  return asPrincipal(`https://issuer.invalid#pool-${pool}-${randomUUID()}`);
+}
+
+/** A registration made again of this project's pool, under a principal of its own. */
+async function poolRegisteredAgain(
+  project: SchedulerProject,
+  pool: string,
+): Promise<WorkerPoolIdentity> {
+  return registered(
+    project.partition,
+    pool,
+    [platform],
+    poolPrincipalFresh(pool),
+  );
+}
+
+/**
+ * Registering a pool's name again is `takeOver`: the principal moves, so the
+ * attempt the older registration claimed is one neither registration holds.
+ */
+test("a pool registered again holds nothing an older registration of its name claimed", async () => {
+  const { project, identity, claimed, drawn } = await poolClaimed("takeover");
+  const before = await poolClaimRow(project, claimed.attempt);
+  const newer = await poolRegisteredAgain(project, "takeover");
+  for (const [registration, caller] of [
+    ["newer", newer],
+    ["older", identity],
+  ] as const) {
+    assert.equal(
+      await assignments.renew(caller, drawn.assignment, leaseSecs),
+      false,
+      `the ${registration} registration renews nothing`,
+    );
+    assert.equal(
+      await assignments.held(caller, drawn.assignment),
+      false,
+      `the ${registration} registration holds nothing`,
+    );
+    assert.equal(
+      await assignments.refuse(caller, drawn.assignment, "no node takes this"),
+      false,
+      `the ${registration} registration refuses nothing`,
+    );
+    assert.equal(
+      await assignments.release(caller, drawn.assignment, 30),
+      false,
+      `the ${registration} registration releases nothing`,
+    );
+  }
+  assert.deepEqual(await poolClaimRow(project, claimed.attempt), {
+    ...before,
+    capability_secret_digest: null,
+  });
+});
+
+/**
+ * The fenced attempt keeps its lease and loses its bearer, so the harness the
+ * older registration launched is refused everywhere it asks and the lapse ends
+ * the attempt as lost.
+ */
+test("the harness an older registration launched is refused, and its attempt ends lost", async () => {
+  const { project, claimed, drawn } = await poolClaimed("fenced");
+  const bearer = asAttemptCapabilitySecret(drawn.bearer);
+  const authority = postgresWorkerPlaneAuthority(harnessPlanePool);
+  assert.notEqual(await authority.authenticate(bearer), undefined);
+  await poolRegisteredAgain(project, "fenced");
+  assert.deepEqual(
+    {
+      authenticated: await authority.authenticate(bearer),
+      task: await postgresWorkerTasks(harnessPlanePool).work(bearer),
+      report: (
+        await postgresWorkerReportStore(harnessPlanePool, bearer).terminalize(
+          schedulerReport(claimed.opened, "Pass"),
+        )
+      ).terminalized,
+    },
+    {
+      authenticated: undefined,
+      task: undefined,
+      report: "Fenced",
+    },
+  );
+  await rig.harness.query(
+    `UPDATE execution_attempt SET lease_expires_at=now()-interval '1 second'
+      WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+    [project.partition.tenant, project.partition.project, claimed.attempt],
+  );
+  await rig.store.reapLapsedAttempts(project.epoch, 10);
+  const ended = (await rig.harness.query(
+    `SELECT a.state, e.retries_spent::int AS retries_spent
+       FROM execution_attempt a
+       JOIN execution e ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
+      WHERE a.tenant=$1 AND a.project=$2 AND a.attempt=$3`,
+    [project.partition.tenant, project.partition.project, claimed.attempt],
+  )) as readonly { state: string; retries_spent: number }[];
+  assert.deepEqual(ended, [{ state: "Lost", retries_spent: 1 }]);
+});
+
+/**
+ * The fence is keyed by the pool's whole name, so registering it again takes
+ * nothing from another pool of its project, from its namesake in another
+ * project, or from one in another tenant whose project has its project's name.
+ */
+test("a pool registered again fences no other pool's attempts", async () => {
+  const project = await poolProject("pool-neighbours", 2);
+  const { tenant, project: named } = project.partition;
+  const fenced = await poolClaimedIn(project, "neighbours");
+  const neighbours = {
+    "another pool of its project": await poolClaimedIn(project, "beside"),
+    "its namesake in another project": await poolClaimedIn(
+      await poolProject("pool-neighbours-project", 1, undefined, {
+        ...postgresHarnessPartition("neighbours-project"),
+        tenant,
+      }),
+      "neighbours",
+      poolPrincipalFresh("neighbours"),
+    ),
+    "its namesake in another tenant": await poolClaimedIn(
+      await poolProject("pool-neighbours-tenant", 1, undefined, {
+        ...postgresHarnessPartition("neighbours-tenant"),
+        project: named,
+      }),
+      "neighbours",
+      poolPrincipalFresh("neighbours"),
+    ),
+  };
+  await poolRegisteredAgain(project, "neighbours");
+  assert.equal(
+    (await poolClaimRow(project, fenced.claimed.attempt))?.[
+      "capability_secret_digest"
+    ],
+    null,
+  );
+  const authority = postgresWorkerPlaneAuthority(harnessPlanePool);
+  for (const [name, neighbour] of Object.entries(neighbours)) {
+    assert.equal(
+      await assignments.renew(
+        neighbour.identity,
+        neighbour.drawn.assignment,
+        leaseSecs,
+      ),
+      true,
+      `${name} renews what it claimed`,
+    );
+    assert.equal(
+      (
+        await authority.authenticate(
+          asAttemptCapabilitySecret(neighbour.drawn.bearer),
+        )
+      )?.attempt,
+      neighbour.claimed.attempt,
+      `${name} keeps its bearer`,
+    );
+  }
+});
+
+/**
+ * An attempt an older registration saw to its report is no longer live, so
+ * registering the name again leaves it as the report left it.
+ */
+test("a pool registers again after an attempt it claimed has reported", async () => {
+  const { project, claimed, drawn } = await poolClaimed("reported");
+  assert.equal(
+    (
+      await postgresWorkerReportStore(
+        harnessPlanePool,
+        asAttemptCapabilitySecret(drawn.bearer),
+      ).terminalize(schedulerReport(claimed.opened, "Fail"))
+    ).terminalized,
+    "Terminalized",
+  );
+  const reported = await poolClaimRow(project, claimed.attempt);
+  assert.equal(reported?.["state"], "Reported");
+  await poolRegisteredAgain(project, "reported");
+  assert.deepEqual(await poolClaimRow(project, claimed.attempt), reported);
+});
+
+/**
+ * The fence commits with the registration or neither does, so a registration
+ * that cannot fence leaves the older one current and its bearer standing.
+ */
+test("a registration that cannot fence what it takes over is not made", async () => {
+  const { project, identity, claimed } = await poolClaimed("unfenced");
+  const before = await poolClaimRow(project, claimed.attempt);
+  const fence = `${workerPoolFenceFunction}(text,text,text)`;
+  const principal = poolPrincipalFresh("unfenced");
+  await rig.harness.query(
+    `REVOKE EXECUTE ON FUNCTION ${fence} FROM ${apiRole}`,
+  );
+  try {
+    await assert.rejects(
+      registry.register({
+        partition: project.partition,
+        pool: "unfenced",
+        capabilities: [platform],
+        class: "Dedicated",
+        clientId: `chuggy-pool-${randomUUID()}`,
+        principal,
+      }),
+      /permission denied for function/u,
+    );
+  } finally {
+    await rig.harness.query(`GRANT EXECUTE ON FUNCTION ${fence} TO ${apiRole}`);
+  }
+  assert.deepEqual(
+    {
+      newer: await registry.identify(principal),
+      older: await registry.identify(identity.principal),
+      attempt: await poolClaimRow(project, claimed.attempt),
+    },
+    { newer: undefined, older: identity, attempt: before },
+  );
+});
+
+/**
+ * A pool restarted under its own credentials asks as the principal it
+ * registered under, and a registration made again under that principal moves
+ * no generation, so either keeps what it claimed.
+ */
+test("a pool that comes back under the same principal keeps what it claimed", async () => {
+  const { project, identity, claimed, drawn } = await poolClaimed("restart");
+  const restarted = await registry.identify(identity.principal);
+  assert.deepEqual(restarted, identity);
+  assert.equal(
+    await assignments.held(restarted, drawn.assignment),
+    true,
+    "a restart under the same credentials holds what it claimed",
+  );
+  const before = await poolClaimRow(project, claimed.attempt);
+  const again = await registered(project.partition, "restart", [platform]);
+  assert.deepEqual(again, identity);
+  assert.deepEqual(await poolClaimRow(project, claimed.attempt), before);
+  assert.equal(
+    await assignments.renew(again, drawn.assignment, leaseSecs),
+    true,
+    "a registration under the same principal renews what it claimed",
+  );
+  const authenticated = await postgresWorkerPlaneAuthority(
+    harnessPlanePool,
+  ).authenticate(asAttemptCapabilitySecret(drawn.bearer));
+  assert.equal(authenticated?.attempt, claimed.attempt);
+});
+
+/**
+ * Registration runs as the API, which is granted the fence and no column of an
+ * attempt, so it can take a bearer away and never write one.
+ */
+test("the API registering a pool may fence its attempts and write no attempt", async () => {
+  const project = await poolProject("pool-api-fence");
+  await registered(project.partition, "api-fence", [platform]);
+  const [granted] = (
+    await apiPool.query(
+      `SELECT current_user AS role,
+            has_function_privilege('${workerPoolFenceFunction}(text,text,text)', 'EXECUTE') AS fences,
+            has_column_privilege('execution_attempt', 'capability_secret_digest', 'UPDATE') AS writes_digest,
+            has_table_privilege('execution_attempt', 'UPDATE') AS writes_attempt`,
+    )
+  ).rows as {
+    role: string;
+    fences: boolean;
+    writes_digest: boolean;
+    writes_attempt: boolean;
+  }[];
+  assert.deepEqual(granted, {
+    role: apiRole,
+    fences: true,
+    writes_digest: false,
+    writes_attempt: false,
+  });
+  await assert.rejects(
+    apiPool.query("UPDATE execution_attempt SET capability_secret_digest=NULL"),
+    /permission denied/u,
   );
 });

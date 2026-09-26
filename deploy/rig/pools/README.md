@@ -89,4 +89,6 @@ migration it precedes both have to have run.
 project and an operator redeems it on the machine, or
 `src/roots/registerWorkerPool.ts` makes the same writes where the owner is at
 the machine already. The client secret is answered once and stored nowhere: a
-pool that loses it is registered again.
+pool that loses it is registered again. Registering a pool's name again ends
+what the older registration held: its harnesses are refused at once, and each
+attempt they ran ends `Lost` when its lease lapses, spending a retry.

@@ -81,6 +81,7 @@ export interface WorkerPoolRegistration {
  * one.
  */
 export interface WorkerPoolRegistry {
+  /** Records the pool under this registration's principal, and fences the live attempts an older registration of its name claimed. */
   register(registration: WorkerPoolRegistration): Promise<boolean>;
   clientOf(partition: Partition, pool: string): Promise<string | undefined>;
   deregister(
@@ -180,8 +181,9 @@ export interface WorkerPoolClaimTerms {
 
 /**
  * The durable side of an assignment's whole life, every call scoped to the
- * pool that holds it. None of them names an execution or a task, because a
- * pool that could read one would learn the tenant's ticket structure.
+ * pool's current registration and to what that registration claimed. None of
+ * them names an execution or a task, because a pool that could read one would
+ * learn the tenant's ticket structure.
  */
 export interface WorkerPoolAssignments {
   claim(

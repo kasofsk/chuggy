@@ -30,6 +30,7 @@ import { migration018 } from "../../src/adapters/postgres/schema/migrations/018-
 import { migration019 } from "../../src/adapters/postgres/schema/migrations/019-session-invocation.ts";
 import { migration020 } from "../../src/adapters/postgres/schema/migrations/020-worker-pool-class.ts";
 import { migration021 } from "../../src/adapters/postgres/schema/migrations/021-scheduler-reads-pools.ts";
+import { migration022 } from "../../src/adapters/postgres/schema/migrations/022-worker-pool-fencing.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -62,6 +63,7 @@ import {
   sessionTaskReadFunction,
   ticketServiceRole,
   workerPlaneRole,
+  workerPoolFenceFunction,
   workerTaskReadFunction,
 } from "../../src/adapters/postgres/schema.ts";
 import {
@@ -8891,5 +8893,80 @@ test("021 lets the scheduler read a registered pool's project, name, declaration
       "principal",
       "class",
     ]);
+  });
+});
+
+/** Whether each role named may read and write the registration a pool's attempt was claimed under. */
+async function poolPrincipalPrivileges(
+  subject: pg.Pool,
+): Promise<readonly unknown[]> {
+  const found = await subject.query<Record<string, unknown>>(
+    `SELECT r.role,
+            has_column_privilege(r.role,'public.execution_attempt','pool_principal','SELECT') AS read,
+            has_column_privilege(r.role,'public.execution_attempt','pool_principal','UPDATE') AS update
+       FROM unnest($1::text[]) AS r(role) ORDER BY r.role`,
+    [[apiRole, poolPlaneRole, workerPlaneRole]],
+  );
+  return found.rows;
+}
+
+test("022 records the registration a pool's attempt was claimed under, and refuses an installation where a pool holds one already", async () => {
+  await migrationDatabase("worker_pool_fencing", async (subject) => {
+    const fence = `${workerPoolFenceFunction}(text,text,text)`;
+    await installationBefore(subject, migration022.version);
+    await releasedSeeded(subject);
+    await subject.query(
+      identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3", null),
+    );
+    await subject.query(
+      "UPDATE execution_attempt SET pool='pool-22', assignment='assignment-22'",
+    );
+    await assert.rejects(
+      postgresMigrate(subject),
+      /execution_attempt_pool_principal_is_a_pool_s/u,
+      "no principal is guessed for an attempt a pool already holds",
+    );
+    assert.deepEqual(await sessionInvocationBoundaries(subject, [fence]), []);
+    await subject.query(
+      "UPDATE execution_attempt SET pool=NULL, assignment=NULL",
+    );
+    assert.ok((await postgresMigrate(subject)).includes(migration022.version));
+    await assert.rejects(
+      subject.query(
+        "UPDATE execution_attempt SET pool='pool-22', assignment='assignment-22'",
+      ),
+      /execution_attempt_pool_principal_is_a_pool_s/u,
+    );
+    await subject.query(
+      "UPDATE execution_attempt SET pool='pool-22', assignment='assignment-22', pool_principal='principal-22', capability_secret_digest=NULL",
+    );
+    assert.deepEqual(await poolPrincipalPrivileges(subject), [
+      { role: apiRole, read: false, update: false },
+      { role: poolPlaneRole, read: true, update: true },
+      { role: workerPlaneRole, read: false, update: false },
+    ]);
+    assert.deepEqual(await sessionInvocationBoundaries(subject, [fence]), [
+      {
+        signature: fence,
+        owner: boundaryOwnerRole,
+        definer: true,
+        scheduler: false,
+        plane: false,
+        pool: false,
+        api: true,
+      },
+    ]);
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT array_to_string(proconfig,',') AS settings,
+                  EXISTS(SELECT 1 FROM aclexplode(proacl) entry
+                          WHERE entry.grantee=0) AS world
+             FROM pg_proc WHERE oid=$1::regprocedure`,
+          [fence],
+        )
+      ).rows,
+      [{ settings: "search_path=pg_catalog, public, pg_temp", world: false }],
+    );
   });
 });

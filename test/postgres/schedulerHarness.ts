@@ -85,8 +85,9 @@ import {
   postgresHarnessHistory,
   postgresHarnessJournal,
   postgresHarnessOpen,
-  postgresHarnessProject,
+  postgresHarnessPartition,
   postgresHarnessReleaseSubmission,
+  postgresHarnessRepository,
   postgresHarnessRolePool,
   postgresHarnessSubmission,
   postgresHarnessUrl,
@@ -224,16 +225,18 @@ async function schedulerCapacityFor(
 
 /**
  * A project with one dispatched ticket, a spawn request to register, and
- * capacity behind it. A case naming a configuration is released under it,
- * because what a ticket runs at is resolved by its release.
+ * capacity behind it. It is made in the partition a case names, which is how
+ * two projects share a name, and released under the configuration a case
+ * names, because what a ticket runs at is resolved by its release.
  */
 export async function schedulerProject(
   rig: SchedulerRig,
   label: string,
   capacity: SchedulerCapacity = {},
   canonical?: CanonicalConfiguration,
+  partition: Partition = postgresHarnessPartition(label),
 ): Promise<SchedulerProject> {
-  const partition = await postgresHarnessProject(rig.harness.store, label);
+  await rig.harness.store.createProject(partition);
   const memory = await postgresHarnessHistory(
     rig.harness,
     partition,
@@ -479,7 +482,7 @@ export function schedulerDeclaredSource(
   attempt: FencedAttempt,
 ): SchedulerDeclaredSource {
   return {
-    repository: `repository-${attempt.partition.tenant}`,
+    repository: postgresHarnessRepository(attempt.partition),
     ref: "refs/heads/harness",
     commit: schedulerHarnessCommit,
     base: schedulerHarnessCommit,

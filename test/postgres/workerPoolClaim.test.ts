@@ -24,8 +24,9 @@
  * named here without an edit.
  *
  * BESIDE THE TABLE is what no row of it states: a pool reporting less than it
- * holds, two claims of one pool made at once, and the image a claim hands out
- * reaching the pod a site places.
+ * holds, two claims of one pool made at once, a claim and a registration of
+ * its pool made at once, and the image a claim hands out reaching the pod a
+ * site places.
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -601,6 +602,56 @@ test("a claim made while the same pool's last is still open waits for it and cou
   assert.deepEqual(
     (await Promise.all([first, second])).map((taken) => taken !== undefined),
     [true, false],
+  );
+});
+
+/**
+ * An older registration's claim is held open at its commit, so the pool is
+ * registered again while that attempt is claimed and not yet committed: the
+ * fence waits on the pool's lock and then takes the bearer, where without the
+ * lock it would read the attempt as unclaimed and the claim would commit a
+ * bearer no registration answers for.
+ */
+test("a registration made while an older one's claim is still open waits for it and fences it", async () => {
+  const project = await releasedUnder("claim-fenced", pinned, 1);
+  const older = await pollingPool(project, "fenced", pinned);
+  const attempt = await opened(project);
+  let reach = (): void => undefined;
+  const reached = new Promise<void>((resolve) => (reach = resolve));
+  let open = (): void => undefined;
+  const gate = new Promise<void>((resolve) => (open = resolve));
+  const claim = postgresWorkerPoolAssignments(
+    heldAtCommit(planePool, reach, gate),
+  ).claim(
+    older,
+    { leaseSecs, heldMax: 1 },
+    `fenced-${randomUUID()}`,
+    `bearer-${randomUUID()}`,
+  );
+  await reached;
+  let settled = false;
+  const newer = registry
+    .register({
+      partition: project.partition,
+      pool: "fenced",
+      capabilities: declaringAll(pinned),
+      class: "Dedicated",
+      clientId: `chuggy-pool-${randomUUID()}`,
+      principal: asPrincipal(`https://issuer.invalid#fenced-${randomUUID()}`),
+    })
+    .finally(() => (settled = true));
+  while (!settled && !(await advisoryWaiting())) await delay(10);
+  open();
+  const [claimed, registered] = await Promise.all([claim, newer]);
+  assert.notEqual(claimed, undefined);
+  assert.equal(registered, true);
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT pool_principal, capability_secret_digest FROM execution_attempt
+        WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+      [project.partition.tenant, project.partition.project, attempt.attempt],
+    ),
+    [{ pool_principal: older.principal, capability_secret_digest: null }],
   );
 });
 
