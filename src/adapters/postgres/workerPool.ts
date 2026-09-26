@@ -60,9 +60,20 @@
  * the row before a pool may claim it and still bounds a row no pool comes back
  * for.
  *
+ * A REGISTRATION IS THE GENERATION AN ASSIGNMENT IS CURRENT UNDER. Each one
+ * mints a new principal and a claim records it beside the pool's name.
+ * Renewing, holding, refusing and releasing each require the caller to be
+ * both the registration the claim recorded and the one the name is registered
+ * under now, so a newer registration touches nothing an older one claimed, and
+ * an older one touches nothing at all, however late its request arrives.
+ * Registering also fences what the older one claimed: the attempt keeps its
+ * lease and loses its bearer, so its harness is refused at once and the lapse
+ * ends it `Lost`.
+ *
  * EVERY STATEMENT IS SCOPED TO THE POOL THAT ASKED. An assignment is the only
- * handle a pool has, and each one is resolved together with the pool holding it
- * and its project, so nothing a pool can say reaches another pool's work.
+ * handle a pool has, and each one is resolved together with the pool and the
+ * registration holding it and its project, so nothing a pool can say reaches
+ * another pool's work.
  */
 import { sql } from "@ts-safeql/sql-tag";
 import { createHash } from "node:crypto";
@@ -196,7 +207,11 @@ function workerPoolDigest(bearer: string): string {
   return createHash("sha256").update(bearer, "utf8").digest("hex");
 }
 
-/** Registration is a fresh registration every time, so a re-register re-declares the pool. */
+/**
+ * Registration is a fresh registration every time, so a re-register re-declares
+ * the pool and fences every live attempt an older registration of the name
+ * claimed.
+ */
 async function workerPoolRegistered(
   client: pg.PoolClient,
   registration: WorkerPoolRegistration,
@@ -209,7 +224,11 @@ async function workerPoolRegistered(
     SELECT ${partition.tenant},${partition.project},${registration.pool},${[...registration.capabilities]}::text[],${registration.class},${registration.principal as string},${registration.clientId}
     WHERE EXISTS(SELECT 1 FROM project p
       WHERE p.tenant=${partition.tenant} AND p.project=${partition.project} AND p.lifecycle='Active')`);
-  return (inserted.rowCount ?? 0) === 1;
+  if ((inserted.rowCount ?? 0) !== 1) return false;
+  await client.query<{ fenced: string | null }>(
+    sql`SELECT fence_worker_pool_attempts(${partition.tenant},${partition.project},${registration.pool})::text AS fenced`,
+  );
+  return true;
 }
 
 export function postgresWorkerPoolRegistry(pool: pg.Pool): WorkerPoolRegistry {
@@ -308,7 +327,8 @@ async function workerPoolClaimed(
   );
   const found = await client.query<{ requirement: unknown }>(
     sql`UPDATE execution_attempt a SET
-        pool=${identity.pool},assignment=${assignment},pool_refusal=NULL,
+        pool=${identity.pool},pool_principal=${identity.principal},
+        assignment=${assignment},pool_refusal=NULL,
         capability_secret_digest=${workerPoolDigest(bearer)},
         lease_owner=${identity.pool},
         lease_expires_at=now()+make_interval(secs=>${terms.leaseSecs}::double precision)
@@ -372,11 +392,14 @@ function workerPoolReleased(
       tenant: string;
       project: string;
       execution: string;
-    }>(sql`UPDATE execution_attempt a SET pool=NULL,assignment=NULL,pool_refusal=NULL,
-            lease_owner=a.attempt,
+    }>(sql`UPDATE execution_attempt a SET pool=NULL,pool_principal=NULL,assignment=NULL,
+            pool_refusal=NULL,lease_owner=a.attempt,
             lease_expires_at=a.lease_expires_at+make_interval(secs=>${retryAfterSecs}::double precision)
           WHERE a.tenant=${identity.partition.tenant} AND a.project=${identity.partition.project}
-            AND a.assignment=${assignment} AND a.pool=${identity.pool} AND a.state='Placing'
+            AND a.assignment=${assignment} AND a.pool=${identity.pool}
+            AND a.pool_principal=${identity.principal} AND a.state='Placing'
+            AND EXISTS(SELECT 1 FROM worker_pool w
+              WHERE w.tenant=a.tenant AND w.project=a.project AND w.pool=a.pool AND w.principal=${identity.principal})
             AND a.lease_expires_at>now() AND a.pool_refusal IS NULL
             AND a.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)
           RETURNING a.tenant,a.project,a.execution`);
@@ -406,6 +429,9 @@ export function postgresWorkerPoolAssignments(
         await pool.query(sql`UPDATE execution_attempt a SET lease_expires_at=now()+make_interval(secs=>${leaseSecs}::double precision)
         WHERE a.tenant=${identity.partition.tenant} AND a.project=${identity.partition.project}
           AND a.assignment=${assignment} AND a.pool=${identity.pool}
+          AND a.pool_principal=${identity.principal}
+          AND EXISTS(SELECT 1 FROM worker_pool w
+            WHERE w.tenant=a.tenant AND w.project=a.project AND w.pool=a.pool AND w.principal=${identity.principal})
           AND a.state IN ('Placing','Running')
           AND a.lease_expires_at>now() AND a.pool_refusal IS NULL
           AND a.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)
@@ -418,6 +444,9 @@ export function postgresWorkerPoolAssignments(
         await pool.query(sql`UPDATE execution_attempt a SET pool_refusal=${evidence}
         WHERE a.tenant=${identity.partition.tenant} AND a.project=${identity.partition.project}
           AND a.assignment=${assignment} AND a.pool=${identity.pool}
+          AND a.pool_principal=${identity.principal}
+          AND EXISTS(SELECT 1 FROM worker_pool w
+            WHERE w.tenant=a.tenant AND w.project=a.project AND w.pool=a.pool AND w.principal=${identity.principal})
           AND a.state IN ('Placing','Running')
           AND a.lease_expires_at>now() AND a.pool_refusal IS NULL
           AND a.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)`);
@@ -437,6 +466,9 @@ export function postgresWorkerPoolAssignments(
         FROM execution_attempt a
         WHERE a.tenant=${identity.partition.tenant} AND a.project=${identity.partition.project}
           AND a.assignment=${assignment} AND a.pool=${identity.pool}
+          AND a.pool_principal=${identity.principal}
+          AND EXISTS(SELECT 1 FROM worker_pool w
+            WHERE w.tenant=a.tenant AND w.project=a.project AND w.pool=a.pool AND w.principal=${identity.principal})
           AND a.state IN ('Placing','Running')
           AND a.lease_expires_at>now()
           AND a.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)`);

@@ -67,6 +67,7 @@ export const projectAuthorizationFunction = "authorize_project_access";
 export const schedulerRole = "chuggy_scheduler";
 export const workerPlaneRole = "chuggy_worker_plane";
 export const poolPlaneRole = "chuggy_pool_plane";
+export const workerPoolFenceFunction = "fence_worker_pool_attempts";
 export const configurationImporterRole = "chuggy_configuration_importer";
 export const workerAttemptReadFunction = "read_worker_attempt";
 export const workerTaskReadFunction = "read_worker_task";

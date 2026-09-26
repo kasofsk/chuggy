@@ -148,13 +148,18 @@ export async function postgresHarnessBinding(
   );
   const held = bound[0]?.["repository"];
   if (typeof held === "string") return asRepositoryId(held);
-  const repository = asRepositoryId(`repository-${partition.tenant}`);
+  const repository = postgresHarnessRepository(partition);
   await harness.query(
     `INSERT INTO project_repository (tenant,project,repository,recovery_epoch)
        SELECT $1,$2,$3,epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1`,
     [partition.tenant, partition.project, repository],
   );
   return repository;
+}
+
+/** The repository the harness binds a partition to, named by its project as well, since no two projects share one. */
+export function postgresHarnessRepository(partition: Partition): RepositoryId {
+  return asRepositoryId(`repository-${partition.tenant}-${partition.project}`);
 }
 
 /** The harness brief working in one repository, which is what a releasable draft carries. */
