@@ -566,10 +566,11 @@ export function postgresHarnessSubmission(
 
 /**
  * One completion written the way `submit_task_completion` writes it: under the
- * scheduler's own authority, at the project's next ingress ordinal, and with
- * the `Completion` priority no ingress classification produces. The
- * disposition is dropped on the way, because the boundary does not pick one
- * and the writer stamps its own at the serialization point.
+ * scheduler's own authority, at the project's next ingress ordinal, with the
+ * `Completion` priority no ingress classification produces, and taking the
+ * project row before the readiness row as an acceptance does. The disposition
+ * is dropped on the way, because the boundary does not pick one and the writer
+ * stamps its own at the serialization point.
  */
 export async function postgresHarnessCompletion(
   harness: PostgresHarness,
@@ -584,41 +585,57 @@ export async function postgresHarnessCompletion(
     command: "Decide",
     ticketCommand: encodeTicketCommand(completion),
   });
-  await harness.query(
-    `WITH claimed AS (
-       UPDATE project SET ingress_next = ingress_next + 1
+  const { tenant, project } = partition;
+  const transaction = await harness.begin();
+  try {
+    const [claimed] = await transaction.query(
+      `UPDATE project SET ingress_next = ingress_next + 1
         WHERE tenant = $1 AND project = $2
-        RETURNING ingress_next - 1 AS ordinal, lifecycle_generation
-     ), written AS (
-       INSERT INTO operation
+        RETURNING ingress_next - 1 AS ordinal, lifecycle_generation`,
+      [tenant, project],
+    );
+    if (claimed === undefined)
+      throw new Error("postgres harness: no project to complete in");
+    await transaction.query(
+      `INSERT INTO operation
          (tenant, project, operation, authority_kind, authority_subject, admission,
           key_version, key_digest, payload_digest, command, command_tag)
-       SELECT $1, $2, $3, $4, 'scheduler', 'CorrectnessReducing', 'scheduler-v1',
-              encode(sha256(convert_to($3, 'UTF8')), 'hex'),
-              encode(sha256(convert_to($5, 'UTF8')), 'hex'), $5, $6
-         FROM claimed
-       RETURNING operation
-     ), queued AS (
-       INSERT INTO decision_input
+       VALUES ($1, $2, $3, $4, 'scheduler', 'CorrectnessReducing', 'scheduler-v1',
+               encode(sha256(convert_to($3, 'UTF8')), 'hex'),
+               encode(sha256(convert_to($5, 'UTF8')), 'hex'), $5, $6)`,
+      [
+        tenant,
+        project,
+        operation,
+        executionSchedulerAuthorityKind,
+        command,
+        completion.type,
+      ],
+    );
+    await transaction.query(
+      `INSERT INTO decision_input
          (tenant, project, ordinal, input_kind, input_id, base_priority, lifecycle_generation)
-       SELECT $1, $2, claimed.ordinal, 'Operation', $3, 'Completion',
-              claimed.lifecycle_generation
-         FROM claimed
-       RETURNING ordinal
-     )
-     INSERT INTO project_readiness (tenant, project, ready, generation)
-     VALUES ($1, $2, true, 1)
-     ON CONFLICT (tenant, project) DO UPDATE
-       SET ready = true, generation = project_readiness.generation + 1`,
-    [
-      partition.tenant,
-      partition.project,
-      operation,
-      executionSchedulerAuthorityKind,
-      command,
-      completion.type,
-    ],
-  );
+       VALUES ($1, $2, $3, 'Operation', $4, 'Completion', $5)`,
+      [
+        tenant,
+        project,
+        claimed["ordinal"],
+        operation,
+        claimed["lifecycle_generation"],
+      ],
+    );
+    await transaction.query(
+      `INSERT INTO project_readiness (tenant, project, ready, generation)
+       VALUES ($1, $2, true, 1)
+       ON CONFLICT (tenant, project) DO UPDATE
+         SET ready = true, generation = project_readiness.generation + 1`,
+      [tenant, project],
+    );
+  } catch (failure) {
+    await transaction.rollback();
+    throw failure;
+  }
+  await transaction.commit();
 }
 
 /**
