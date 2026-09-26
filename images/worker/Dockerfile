@@ -1,3 +1,16 @@
+# The worker contract, packed from the tree the way it is published, so the
+# image installs the package rather than the tree's sources. The base is the one
+# `images/api/Dockerfile` pins, and only the tarball leaves this stage.
+FROM node:26.7.0-trixie-slim@sha256:4ebb5ace66f15a24c14c492e01a8beeed4fddf970a856109f5126e703e5fe503 AS contract
+WORKDIR /srv/chuggy
+COPY package.json package-lock.json ./
+COPY src/contract/package.json src/contract/package.json
+RUN npm ci --ignore-scripts
+COPY tsconfig.contract.json tsconfig.contract-pack.json ./
+COPY src/contract src/contract
+COPY scripts/pack-worker-contract.ts scripts/pack-worker-contract.ts
+RUN node scripts/pack-worker-contract.ts --out /contract
+
 # The image one attempt runs in, built by the fabric rather than by hand:
 # `builds/` in gdoteof/chuggy-fabric holds the request, and the profile it names
 # permits public HTTPS on 443 and nothing else outbound.
@@ -63,6 +76,12 @@ ENV DISABLE_AUTOUPDATER=1 \
     NODE_PATH=/usr/local/lib/node_modules \
     TMPDIR=/tmp
 
+# The contract's `zod` is a peer, and npm places a peer inside the package it
+# installs unless told to leave peers alone: that would be a second `zod` beside
+# the one above, which `contractProbe.mjs` below fails the build on.
+RUN --mount=type=bind,from=contract,source=/contract,target=/tmp/contract \
+  npm install --global --legacy-peer-deps /tmp/contract/*.tgz
+
 COPY images/worker/entrypoint.mjs /usr/local/lib/chuggy/worker.mjs
 COPY images/worker/agent.mjs /usr/local/lib/chuggy/agent.mjs
 COPY images/worker/checks.mjs /usr/local/lib/chuggy/checks.mjs
@@ -70,6 +89,7 @@ COPY images/worker/chuggyApi.mjs /usr/local/lib/chuggy/chuggyApi.mjs
 COPY images/worker/chuggyTools.mjs /usr/local/lib/chuggy/chuggyTools.mjs
 COPY images/worker/claude.mjs /usr/local/lib/chuggy/claude.mjs
 COPY images/worker/codex.mjs /usr/local/lib/chuggy/codex.mjs
+COPY images/worker/contractProbe.mjs /usr/local/lib/chuggy/contractProbe.mjs
 COPY images/worker/leadDecision.mjs /usr/local/lib/chuggy/leadDecision.mjs
 COPY images/worker/lease.mjs /usr/local/lib/chuggy/lease.mjs
 COPY images/worker/planeCredential.mjs /usr/local/lib/chuggy/planeCredential.mjs
@@ -106,13 +126,16 @@ COPY --chmod=0555 images/worker/git-askpass.sh /usr/local/lib/chuggy/git-askpass
 # shape the runtime cannot render to JSON schema makes the entire listing throw
 # while the server still reports itself connected — every tool silently absent,
 # and the lead told they do not exist. What that probe asks is `toolListing.mjs`,
-# which a suite drives against a stub server, so the gate itself is tested. Each
-# argues itself in its own header, and all three are removed after the probe has
-# run, because a build's verdict is not something a pod needs.
+# which a suite drives against a stub server, so the gate itself is tested.
+# `contractProbe.mjs` imports every entry of the installed contract and holds it
+# to the scripts' own `zod`. Each argues itself in its own header, and every
+# probe's files are removed once the probes have run, because a build's verdict
+# is not something a pod needs.
 RUN cd /usr/local/lib/chuggy \
   && node sdkProbe.mjs \
   && node toolProbe.mjs \
-  && rm sdkProbe.mjs toolProbe.mjs toolListing.mjs \
+  && node contractProbe.mjs \
+  && rm sdkProbe.mjs toolProbe.mjs toolListing.mjs contractProbe.mjs \
   && bundled="$(node -e "console.log(require('/usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk/manifest.json').version)")" \
   && global="$(claude --version)" \
   && if [ "${global% (Claude Code)}" != "$bundled" ]; then \

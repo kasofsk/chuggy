@@ -82,7 +82,7 @@ ci_gate_selected() { # <gate id>
 	check-vendored) ci_changed 'model/task-contract/**' 'model/ticket-domain/**' model/vendored.sha256 .chug/tasks/check-vendored.sh ;;
 	check-boundaries) ci_changed 'src/*.ts' 'src/**/*.ts' 'test/*.ts' 'test/**/*.ts' 'ui/*.js' 'ui/**/*.js' 'ui/**/*.ts' 'ui/**/*.tsx' .dependency-cruiser.cjs .chug/tasks/check-boundaries.sh || ci_toolchain_changed ;;
 	source-static) ci_changed '*.ts' '*.tsx' '*.js' '*.json' '*.cjs' '*.mjs' '*.yaml' '*.yml' .chug/tasks/check-source.sh || ci_toolchain_changed ;;
-	source-unit) ci_changed 'src/**' 'test/**' 'ui/**' 'images/**' 'scripts/**' .chug/tasks/check-source.sh || ci_toolchain_changed ;;
+	source-unit) ci_changed 'src/**' 'test/**' 'ui/**' 'images/**' 'scripts/**' tsconfig.contract.json tsconfig.contract-pack.json .chug/tasks/check-source.sh || ci_toolchain_changed ;;
 	check-console) ci_changed 'ui/**' 'src/contract/**' 'scripts/console-policy.ts' 'scripts/check-console-policy.ts' .chug/tasks/check-console.sh ;;
 	check-conformance) ci_changed 'src/domain/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'test/golden/**' 'model/domain.qnt' 'model/ticket.qnt' 'model/ticket-domain/**' 'model/task-contract/**' .chug/tasks/check-conformance.sh ;;
 	check-random) ci_changed 'src/domain/**' 'test/random/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'model/domain.qnt' 'model/ticket.qnt' 'model/ticket-domain/**' 'model/task-contract/**' 'model/mc/mc_chuggy.qnt' .chug/tasks/check-random.sh ;;

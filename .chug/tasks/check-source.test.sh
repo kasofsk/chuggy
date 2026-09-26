@@ -246,6 +246,32 @@ run_in "$R" --unit
 check "a console's own suite is not this stage's, at any depth" 0 "$RC" "0 stage(s) failed"
 check "and the split counts it as another gate's" 0 "$RC" "unit ran 1 suite(s); 1 left to"
 
+# --- Where the contract's workspace package resolves -------------------------
+#
+# A suite reaches the workspace package through a link, and a link into
+# another tree runs the suites against that tree's contract and passes. Unit
+# mode alone, over a node_modules holding nothing but the link: the stage needs
+# nothing else, and the real tree's link would point at the real tree.
+
+contract_link() { # [<link target>]
+	fixture --no-modules
+	clean_source
+	printf '%s\n' '{ "name": "@fixture/contract", "private": true }' > "$R/src/contract/package.json"
+	mkdir -p "$R/node_modules/@fixture" "$R/elsewhere/contract"
+	[ -z "${1:-}" ] || ln -s "$1" "$R/node_modules/@fixture/contract"
+	git -C "$R" add -A
+	run_in "$R" --unit
+}
+
+contract_link ../../src/contract
+check "a link to the tree's own contract runs the suites" 0 "$RC" "unit ran 1 suite(s)"
+
+contract_link ../../elsewhere/contract
+check "a link into another tree exits 2, not 0" 2 "$RC" "is not this tree's src/contract. Install with"
+
+contract_link
+check "no link at all exits 2 as well" 2 "$RC" "is not this tree's src/contract. Install with"
+
 # --- What the browser stage sees that the first typecheck does not ------------
 #
 # A platform import inside the contract typechecks against `tsconfig.json`,
