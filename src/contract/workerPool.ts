@@ -27,9 +27,9 @@ export const workerPoolEvidenceCharsMax = 4_096;
 /** The longest image reference an assignment names. */
 export const workerImageCharsMax = 512;
 /**
- * The longest a pool may ask the orchestrator to wait before offering again,
- * which is the same ceiling a `retry-after` header is held to: a wait taken on
- * the other side's word is bounded by this side.
+ * The longest wait an `Unavailable` answer may name, which is the same ceiling
+ * a `retry-after` header is held to. The orchestrator accepts it and waits on
+ * nothing, because that answer concludes the assignment's execution.
  */
 export const workerPoolRetryAfterSecsMax = retryAfterSecondsMax;
 
@@ -86,10 +86,9 @@ export const workerPoolAssignmentSchema = z.strictObject({
 });
 
 /**
- * A settled no becomes the attempt's evidence; a temporary no is the pool's own
- * backpressure, which is also why registration declares no concurrency — a
- * declared limit and a returned `retryAfterSecs` would be two sources of one
- * truth and only the second is current.
+ * Both kinds of no are final for the assignment: a refusal becomes the attempt's
+ * evidence and blocks its execution, and an unavailable concludes it as a failed
+ * process. A pool asks for only the work it has room for, through the poll.
  */
 export const assignmentOutcomeSchema = z.discriminatedUnion("outcome", [
   z.strictObject({ outcome: z.literal("Accepted") }),
@@ -112,7 +111,7 @@ export const assignmentOutcomeSchema = z.discriminatedUnion("outcome", [
  * The poll, which is the one call a pool makes for work: a GET at this path
  * whose query is `workerPoolPollQuerySchema`, answered with
  * `workerPoolReconciliationSchema`. Every lease the query names is renewed by
- * the call, so a pool that stops making it is a pool whose work comes back.
+ * the call, so a pool that stops making it is a pool whose work is lost.
  */
 export const workerPoolPollRoute = "/v1/assignments";
 

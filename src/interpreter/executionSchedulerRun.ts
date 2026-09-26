@@ -90,12 +90,19 @@
  * waits on its own lease, and one no pool holds when that lapses is withdrawn
  * without spending the budget.
  *
- * A POOL'S REFUSAL IS THE DEFINITIVE INABILITY. `runner.qnt` names no refusal:
- * an assignment there is offered, reported, verified or cancelled. A pool that
- * says it cannot run what it claimed blocks the execution rather than holding
- * it for another pool, which is the task contract's `TaskExecutionUnavailable`.
- * The reaper passes over a refused attempt whatever its lease, so a refusal is
- * never ended as a lapse.
+ * A POOL'S REFUSAL IS THE DEFINITIVE INABILITY. A pool that says it cannot run
+ * what it claimed blocks the execution rather than holding it for another pool,
+ * which is the task contract's `TaskExecutionUnavailable`. The reaper passes
+ * over a refused attempt whatever its lease, so a refusal is never ended as a
+ * lapse.
+ *
+ * ONCE A POOL HAS CLAIMED AN ATTEMPT, ITS EXECUTION OPENS NO OTHER. Any other
+ * end of that attempt without a verified report concludes the execution as the
+ * process that died, and recovery is the ticket's. A block, a refusal and that
+ * conclusion are `runner.qnt`'s `cancel` of the assignment where one was made,
+ * and the ledger's own move to `Cancelled` where none was. Which it was is
+ * evidence rather than a model term, and `test/interpreter/runner.test.ts`
+ * states the mapping and holds it to the model.
  *
  * NOTHING HERE READS A CLOCK. Claim leases, placement backoff and attempt
  * leases are durations handed to the store, which asks the database what time
@@ -761,6 +768,16 @@ async function schedulerLaunchOne(
       return false;
     case "RetriesExhausted": {
       const outcome = await service.store.retriesExhausted(
+        execution.partition,
+        execution.execution,
+      );
+      recordScheduler(service.metrics, (metrics) => {
+        metrics.terminalization(outcome.terminalized);
+      });
+      return false;
+    }
+    case "AssignmentEnded": {
+      const outcome = await service.store.assignmentEnded(
         execution.partition,
         execution.execution,
       );

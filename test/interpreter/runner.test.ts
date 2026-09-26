@@ -14,9 +14,28 @@
  * reads, a term or an arm changed there, or a run added, removed or renamed, is
  * a failure here until the refinement answers it.
  *
+ * A POOL-ROUTED EXECUTION SETTLED WITHOUT A VERIFIED REPORT IS THE MODEL'S
+ * `cancel`. The ledger settles every conclusion with an outcome `Terminal`,
+ * and only a verified report is `schedulerVerify`; a block, or a claimed
+ * attempt that ended unreported, is `Cancelled`. A refusal is `cancel` of the
+ * refused assignment, which its session owns, so its slot is released. A
+ * claimed attempt that was lost, withdrawn, released or fenced by a restore is
+ * `cancel` of an assignment its session owns only while the pool is
+ * registered as it was, and once it registered again no slot moves. A block
+ * no pool is configured for has nothing assigned, and is the ledger's
+ * `Launching` to `Cancelled`. Which of these it was is the scheduler's
+ * evidence and never a model term. Since nothing in the model or its instance
+ * places a placement again, the ledger opens no attempt once a pool has
+ * claimed one. `runnerConclusions` below is this mapping, read against the
+ * definitions that conclude, the runs that show them, and the instance that
+ * cancels across a takeover.
+ *
  * WHAT IT DOES NOT PROVE. It holds the decider to the model over the rows of
  * `test/interpreter/runnerCases.ts`, and says nothing of the claim a pool
- * makes against PostgreSQL, which states the guard a second time.
+ * makes against PostgreSQL, which states the guard a second time. That a
+ * `Terminal` outcome comes only from a verified report is the scheduler's, and
+ * `runnerConclusions` states it rather than reads it. That no attempt opens
+ * once a pool claimed one is `test/postgres/schedulerPools.test.ts`'s.
  */
 
 import assert from "node:assert/strict";
@@ -32,8 +51,13 @@ import {
   type ExecutionCapability,
 } from "../../src/interpreter/executionRequirement.ts";
 import {
+  allExecutionOutcomes,
   allExecutionRoutes,
+  allExecutionStatuses,
+  executionLegalMove,
+  type ExecutionOutcome,
   type ExecutionRoute,
+  type ExecutionStatus,
 } from "../../src/interpreter/executionScheduler.ts";
 import {
   allWorkerPoolClasses,
@@ -71,6 +95,25 @@ function runnerTestSource(): string {
   );
 }
 
+/** The registered-runner instance's source, whose step and invariants the conclusions lean on. */
+function runnerInstanceSource(): string {
+  return runnerFlattened(
+    readFileSync(join(modelRoot, "model", "mc", "mc_runner.qnt"), "utf8"),
+  );
+}
+
+/** The instance with its initial state set aside, which leaves what its actions write themselves. */
+function runnerInstanceActions(): string {
+  const instance = runnerInstanceSource();
+  const at = instance.indexOf("pure val initialState: RunnerState = {");
+  assert.ok(at >= 0, "model/mc/mc_runner.qnt declares no initial state");
+  const open = instance.indexOf("{", at);
+  return (
+    instance.slice(0, at) +
+    instance.slice(open + runnerBracketed(instance, open).length + 2)
+  );
+}
+
 /** The constructors a one-line sum type declares, in the order the model writes them. */
 function runnerRoster(name: string): readonly string[] {
   const found = new RegExp(`\\n  type ${name} = ([^{\\n]+)\\n`).exec(
@@ -103,6 +146,42 @@ function runnerBracketed(text: string, at: number): string {
   );
 }
 
+/** The expression that starts at `from`, up to the comma or bracket that ends it. */
+function runnerValue(text: string, from: number): string {
+  let depth = 0;
+  for (let index = from; index < text.length; index++) {
+    const character = text[index];
+    if (character === "(" || character === "{") depth++;
+    if (character === ")" || character === "}") depth--;
+    if (depth < 0 || (depth === 0 && character === ","))
+      return text.slice(from, index).trim();
+  }
+  return text.slice(from).trim();
+}
+
+/** Each value flattened Quint gives a record's `field`, written as `field:` or through `with`. */
+function runnerWrites(text: string, field: string): readonly string[] {
+  return [
+    ...text.matchAll(new RegExp(`\\b${field}: |with\\("${field}", `, "g")),
+  ].map((found) => runnerValue(text, found.index + found[0].length));
+}
+
+/** Flattened Quint with each record type it declares set aside, so a field left in it is written rather than typed. */
+function runnerUntyped(text: string): string {
+  let rest = runnerFlattened(text);
+  for (
+    let at = rest.search(/\btype \w+ = \{/);
+    at >= 0;
+    at = rest.search(/\btype \w+ = \{/)
+  ) {
+    const open = rest.indexOf("{", at);
+    rest =
+      rest.slice(0, at) +
+      rest.slice(open + runnerBracketed(rest, open).length + 2);
+  }
+  return rest;
+}
+
 /** The pieces a separator divides where no bracket is open. */
 function runnerTopLevel(text: string, separator: string): readonly string[] {
   const pieces: string[] = [];
@@ -121,14 +200,19 @@ function runnerTopLevel(text: string, separator: string): readonly string[] {
   return pieces.map((piece) => piece.trim()).filter((piece) => piece !== "");
 }
 
-/** The body of one pure definition, flattened: what follows its signature up to the next member of the module. */
-function runnerDefinition(name: string): string {
+/** One pure definition as the model writes it, up to the next member of the module. */
+function runnerDefinitionText(name: string): string {
   const source = runnerSource();
   const start = source.indexOf(`\n  pure def ${name}(`);
   assert.ok(start >= 0, `model/runner.qnt defines no ${name}`);
   const rest = source.slice(start + 1);
   const end = rest.search(/\n {2}[^\s}]/);
-  const text = runnerFlattened(end < 0 ? rest : rest.slice(0, end));
+  return end < 0 ? rest : rest.slice(0, end);
+}
+
+/** The body of one pure definition, flattened: what follows its signature up to the next member of the module. */
+function runnerDefinition(name: string): string {
+  const text = runnerFlattened(runnerDefinitionText(name));
   const signature = /^pure def \w+\([^)]*\): \w+ = /.exec(text);
   assert.ok(signature, `model/runner.qnt: ${name} has no signature to read`);
   return text.slice(signature[0].length).trim();
@@ -230,6 +314,85 @@ const runnerOutcome = {
     "inventoryMatches(p.requirement, s.sessions.get(rid).inventory)",
   ],
 };
+
+/**
+ * Each outcome the ledger settles a pool-routed execution with, as the status
+ * `model/runner.qnt` concludes it with, the definition that moves it there,
+ * and the run of `model/tests/runner_test.qnt` that shows it doing so.
+ */
+const runnerConclusions = {
+  Passed: {
+    status: "Terminal",
+    by: "schedulerVerify",
+    run: "schedulerAloneTerminalizesTest",
+  },
+  Failed: {
+    status: "Terminal",
+    by: "schedulerVerify",
+    run: "schedulerAloneTerminalizesTest",
+  },
+  Blocked: {
+    status: "Cancelled",
+    by: "cancel",
+    run: "cancellationFencesReportAndReleasesSlotTest",
+  },
+  ProcessFailed: {
+    status: "Cancelled",
+    by: "cancel",
+    run: "cancellationFencesReportAndReleasesSlotTest",
+  },
+} as const satisfies Record<
+  ExecutionOutcome,
+  { status: ExecutionStatus; by: string; run: string }
+>;
+
+/**
+ * Each definition of the model that writes an execution, beside the status it
+ * moves it to. A write that names no status, or names one by anything but its
+ * constructor, is a failure, because what it moves the execution to cannot be
+ * read.
+ */
+function runnerStatusWriters(): ReadonlyMap<string, string> {
+  const writers = new Map<string, string>();
+  for (const [, name] of runnerSource().matchAll(/\n {2}pure def (\w+)\(/g)) {
+    if (name === undefined) continue;
+    const writes = runnerWrites(
+      runnerFlattened(runnerDefinitionText(name)),
+      "executions",
+    );
+    if (writes.length === 0) continue;
+    const written = new Set(
+      writes.flatMap((write) => runnerWrites(write, "status")),
+    );
+    assert.equal(
+      written.size,
+      1,
+      `model/runner.qnt: ${name} writes an execution under statuses ${[...written].join(", ") || "it does not name"}`,
+    );
+    const [status] = written;
+    assert.ok(
+      status !== undefined &&
+        (allExecutionStatuses as readonly string[]).includes(status),
+      `model/runner.qnt: ${name} writes an execution's status as ${String(status)}, which is no constructor`,
+    );
+    writers.set(name, status);
+  }
+  return writers;
+}
+
+/** A definition's result once the calls it binds its names to are set aside. */
+function runnerResult(body: string): string {
+  let rest = body;
+  for (
+    let bound = /^val \w+ = [\w.]+\(/.exec(rest);
+    bound !== null;
+    bound = /^val \w+ = [\w.]+\(/.exec(rest)
+  ) {
+    const open = bound[0].length - 1;
+    rest = rest.slice(open + runnerBracketed(rest, open).length + 2).trim();
+  }
+  return rest;
+}
 
 /** The runs of `model/tests/runner_test.qnt` that call one of the guards this restates. */
 function runnerGuardRuns(): readonly string[] {
@@ -446,4 +609,83 @@ test("a poll's slots are refused unless they are a count under a positive bound"
       () => workerPoolSessionHasSlot({ ...session, heldMax }),
       RangeError,
     );
+});
+
+test("each outcome a pool-routed execution settles with is the status the model concludes it with, and no other definition concludes one", () => {
+  const writers = runnerStatusWriters();
+  const runs = runnerTestSource().split("\n  run ").slice(1);
+  for (const outcome of allExecutionOutcomes) {
+    const { status, by, run } = runnerConclusions[outcome];
+    assert.equal(writers.get(by), status, `${outcome} is ${by}'s ${status}`);
+    assert.ok(
+      executionLegalMove("Launching", status),
+      `the ledger cannot take ${outcome}'s ${status} from Launching`,
+    );
+    const shown = runs.find((each) => each.startsWith(`${run} `));
+    assert.ok(shown, `model/tests/runner_test.qnt has no run ${run}`);
+    assert.ok(
+      shown.includes(`${by}(`) && shown.includes(`.status == ${status}`),
+      `${run} does not show ${by} concluding ${status}`,
+    );
+  }
+  assert.deepEqual(
+    [...writers.keys()].sort(),
+    [...new Set(Object.values(runnerConclusions).map(({ by }) => by))].sort(),
+  );
+  assert.deepEqual(
+    runnerWrites(runnerInstanceActions(), "executions"),
+    [],
+    "model/mc/mc_runner.qnt writes an execution in an action of its own",
+  );
+});
+
+test("cancel concludes an assignment of any generation, and releases a slot only its session owns, across a takeover in the instance", () => {
+  assert.deepEqual(
+    [...runnerConjuncts(runnerResult(runnerDefinition("mayCancel")))].sort(),
+    [
+      "a.status != Verified",
+      "a.status != AssignmentCancelled",
+      "e.status != Terminal",
+      "e.status != Cancelled",
+    ].sort(),
+    "mayCancel guards on generation, so a lost assignment could not be concluded",
+  );
+  const cancel = runnerDefinition("cancel");
+  assert.ok(
+    cancel.includes(
+      "val owns = a.sessionGeneration == session.generation and (a.status == Offered or a.status == Reported)",
+    ) &&
+      cancel.includes(
+        "slotsUsed: if (owns) session.slotsUsed - 1 else session.slotsUsed",
+      ),
+    "cancel no longer releases a slot exactly when its session owns the assignment",
+  );
+  const instance = runnerInstanceSource();
+  const step = /action step = any \{([^}]*)\}/.exec(instance)?.[1] ?? "";
+  assert.ok(
+    ["takeover", "schedulerCancel"].every((action) =>
+      step.split(",").some((each) => each.trim() === action),
+    ),
+    "the instance does not step a takeover and a cancel",
+  );
+  assert.ok(
+    instance.includes("assignmentCommitSafe(runnerState)"),
+    "the instance does not check the slot count after a cancel",
+  );
+});
+
+test("nothing in the model or its instance places a placement again, so the ledger opens no attempt once a pool has claimed one", () => {
+  const phases = runnerRoster("PlacementPhase");
+  const model = runnerWrites(runnerUntyped(runnerSource()), "phase");
+  assert.ok(model.length > 0, "model/runner.qnt writes no phase");
+  for (const phase of [
+    ...model,
+    ...runnerWrites(runnerInstanceActions(), "phase"),
+  ]) {
+    assert.ok(
+      phases.includes(phase),
+      `a placement's phase is written as ${phase}, which is no constructor`,
+    );
+    assert.notEqual(phase, "Waiting", "a placement is placed again");
+  }
 });

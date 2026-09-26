@@ -202,11 +202,7 @@ export interface WorkerPoolAssignments {
     assignment: string,
     evidence: string,
   ): Promise<boolean>;
-  release(
-    identity: WorkerPoolIdentity,
-    assignment: string,
-    retryAfterSecs: number,
-  ): Promise<boolean>;
+  release(identity: WorkerPoolIdentity, assignment: string): Promise<boolean>;
   held(identity: WorkerPoolIdentity, assignment: string): Promise<boolean>;
 }
 

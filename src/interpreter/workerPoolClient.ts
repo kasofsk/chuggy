@@ -119,7 +119,7 @@ export interface WorkerPoolTokens {
 export interface WorkerPoolClientSettings {
   /** How many assignments this pool holds at once, which every poll's `wanted` is measured from. */
   readonly concurrencyMax: number;
-  /** What a pool offered more than it asked for tells the orchestrator to wait before offering again. */
+  /** The wait this client names when it answers `Unavailable` for an assignment offered past its room, which the orchestrator accepts and does not use. */
   readonly retryAfterSecs: number;
   /** How long a pass waits after an outage before the next one. */
   readonly outageBackoffMs: number;

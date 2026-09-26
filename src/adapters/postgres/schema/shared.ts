@@ -68,6 +68,7 @@ export const schedulerRole = "chuggy_scheduler";
 export const workerPlaneRole = "chuggy_worker_plane";
 export const poolPlaneRole = "chuggy_pool_plane";
 export const workerPoolFenceFunction = "fence_worker_pool_attempts";
+export const workerPoolReleaseFunction = "release_worker_pool_assignment";
 export const configurationImporterRole = "chuggy_configuration_importer";
 export const workerAttemptReadFunction = "read_worker_attempt";
 export const workerTaskReadFunction = "read_worker_task";

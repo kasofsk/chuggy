@@ -188,7 +188,8 @@ function poolAssignmentsRoute(
  * The three settlements a pool can report, each one the path rather than the
  * body: an accepted assignment is already leased and needs no write, a refusal
  * is evidence the orchestrator turns into the attempt's terminal, and an
- * unavailable is the pool's own backpressure and returns the work to the queue.
+ * unavailable releases the assignment, which concludes its execution as a
+ * failed process. The `retryAfterSecs` it carries is accepted and unused.
  */
 function poolOutcomeRoutes(
   app: FastifyInstance,
@@ -241,11 +242,7 @@ async function poolOutcomeSettled(
     case "Refused":
       return service.assignments.refuse(identity, assignment, offered.evidence);
     case "Unavailable":
-      return service.assignments.release(
-        identity,
-        assignment,
-        offered.retryAfterSecs,
-      );
+      return service.assignments.release(identity, assignment);
   }
 }
 

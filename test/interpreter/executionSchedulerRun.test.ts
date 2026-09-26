@@ -188,6 +188,14 @@ function recordingStore(calls: string[]): ExecutionSchedulerStore {
         operation: asOperationId("operation"),
       });
     },
+    assignmentEnded: () => {
+      calls.push("assignmentEnded");
+      return Promise.resolve({
+        terminalized: "Terminalized",
+        outcome: "ProcessFailed",
+        operation: asOperationId("operation"),
+      });
+    },
     terminalize: () =>
       Promise.resolve({
         terminalized: "Terminalized",
@@ -488,6 +496,17 @@ test("a spent retry budget terminalizes rather than placing again", async () => 
   };
   assert.equal(await executionSchedulerLaunch({ ...service, store }, epoch), 0);
   assert.deepEqual(calls, ["retriesExhausted"]);
+});
+
+test("an execution whose attempt a pool claimed is concluded rather than opened again", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    openAttempt: () => Promise.resolve({ opened: "AssignmentEnded" }),
+  };
+  assert.equal(await executionSchedulerLaunch({ ...service, store }, epoch), 0);
+  assert.deepEqual(calls, ["assignmentEnded"]);
 });
 
 test("an execution inside its placement backoff is left alone", async () => {
