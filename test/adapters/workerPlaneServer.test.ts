@@ -4,9 +4,11 @@ import test from "node:test";
 
 import {
   createWorkerPlaneApp,
-  workerPlaneRoutes,
+  workerPlaneHealthRoutes,
   type WorkerRunEvidencePorts,
 } from "../../src/adapters/http/workerPlaneServer.ts";
+import { sessionPlaneRoutes } from "../../src/contract/sessionPlane.ts";
+import { workerPlaneRoutes } from "../../src/contract/workerPlane.ts";
 import {
   runConfigurationBytesMax,
   runTranscriptBatchBytesMax,
@@ -25,7 +27,7 @@ import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPl
 import type { ReportIngested } from "../../src/interpreter/executionSchedulerReport.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
 import { fixtureForgeShapedToken } from "./forgeFixtures.ts";
-import { inertRunEvidence } from "./workerPlaneFixtures.ts";
+import { inertRunEvidence, runTotalsBody } from "./workerPlaneFixtures.ts";
 
 const authority = {
   live: true,
@@ -51,9 +53,13 @@ const heartbeatService = {
 const runEvidenceService = { runEvidence: inertRunEvidence } as const;
 
 test("the worker plane has no tenant-shaped or project-shaped route", () => {
-  for (const route of workerPlaneRoutes) {
-    assert.doesNotMatch(route, /tenant|project/u);
-    assert.doesNotMatch(route, /:[^/]+/u);
+  for (const { path } of [
+    ...Object.values(workerPlaneRoutes),
+    ...Object.values(sessionPlaneRoutes),
+    ...Object.values(workerPlaneHealthRoutes),
+  ]) {
+    assert.doesNotMatch(path, /tenant|project/u);
+    assert.doesNotMatch(path, /:[^/]+/u);
   }
 });
 
@@ -789,21 +795,6 @@ function runFigurePlane(offered: unknown[]) {
     },
   });
 }
-
-/** The figures one run reports, which every totals case varies one field of. */
-const runTotalsBody = {
-  turns: 2,
-  durationMs: 10,
-  durationApiMs: 5,
-  tokensInput: 1,
-  tokensOutput: 2,
-  tokensCacheCreation: 3,
-  tokensCacheRead: 4,
-  costUsdMicros: 7,
-  costBasis: "List",
-  models: [],
-  permissionDenials: 0,
-} as const;
 
 test("a run's totals and its ending are taken as the contract names them", async () => {
   const offered: unknown[] = [];

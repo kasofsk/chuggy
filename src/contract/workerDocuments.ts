@@ -1,4 +1,4 @@
-/** The versions and bounds of the documents a worker writes for the plane to read. */
+/** The versions, bounds and refusals of the documents a worker writes for the plane to read. */
 
 /** The result manifest schema version workers author now. */
 export const resultManifestSchemaVersion = 3;
@@ -17,3 +17,47 @@ export const resultManifestTextCharsMax = 131_072;
 
 /** The one lead turn document version the plane writes and the only one it accepts. */
 export const leadTurnDocumentVersion = 1;
+
+/** Every way the plane refuses one result manifest, restating the interpreter's roster. */
+export const resultManifestRejections = [
+  "PathNotWellFormed",
+  "PathEmpty",
+  "PathTooLong",
+  "PathNotNormalForm",
+  "PathHasControlCharacter",
+  "PathHasBackslash",
+  "PathAbsolute",
+  "PathEmptySegment",
+  "PathDotSegment",
+  "PathTooDeep",
+  "PathSegmentTooLong",
+  "PathHasEdgeWhitespace",
+  "TextTooLong",
+  "TextUnreadable",
+  "UnexpectedField",
+  "MissingField",
+  "UnsupportedSchemaVersion",
+  "UnknownVerdict",
+  "ReportMalformed",
+  "TooManyHandoffs",
+  "TooManyDiagnostics",
+  "HandoffsOnFailedVerdict",
+  "SourceMalformed",
+  "SourceOnFailedVerdict",
+  "SourceAndHandoffs",
+  "ArtifactBytesNotCounted",
+  "ArtifactTooLarge",
+  "ManifestTooLarge",
+  "ArtifactDigestMalformed",
+  "DuplicatePath",
+] as const;
+
+/** Every way one declared artifact fails to be confirmed, restating the interpreter's roster. */
+export const artifactFailures = [
+  "Missing",
+  "NotDurable",
+  "DigestMismatch",
+  "ByteCountMismatch",
+  "ForeignProject",
+  "Mutable",
+] as const;
