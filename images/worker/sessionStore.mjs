@@ -119,7 +119,6 @@ import {
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
-  sessionStoreUuidsRemembered,
 } from "@chuggy/worker-contract/sessionPlane";
 import { workerPlaneBytesMediaType } from "@chuggy/worker-contract/workerPlane";
 
@@ -139,6 +138,9 @@ import { routePath } from "./wire.mjs";
 export const sessionStoreClipBudgetBytes = Math.floor(
   sessionStoreBatchBytesMax / 2,
 );
+
+/** How many already-confirmed entry uuids one stream's adapter remembers. */
+const sessionStoreUuidsRemembered = 4_096;
 
 const loadPagesMax = Math.ceil(
   sessionStoreBatchesMax / sessionStorePageBatchesMax,

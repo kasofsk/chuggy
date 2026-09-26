@@ -557,6 +557,7 @@ check "the surface may reach a primitive and the decisions" 0 "$RC" "graph clean
 # The harness names the contract through a workspace link, and the shared
 # node_modules would resolve that link into this checkout rather than the
 # fixture's, so these trees hold their own link beside the packages they use.
+# Each package the image installs globally stands in as a module of its name.
 harness_fixture() {
 	fixture
 	rm "$R/node_modules"
@@ -564,18 +565,36 @@ harness_fixture() {
 	ln -s "$ROOT/node_modules/.bin" "$R/node_modules/.bin"
 	ln -s "$ROOT/node_modules/zod" "$R/node_modules/zod"
 	ln -s ../../src/contract "$R/node_modules/@chuggy/worker-contract"
+	for installed in @anthropic-ai/claude-agent-sdk @anthropic-ai/claude-code @openai/codex; do
+		mkdir -p "$R/node_modules/$installed"
+		printf '{ "name": "%s", "type": "module", "exports": "./index.js" }\n' "$installed" > "$R/node_modules/$installed/package.json"
+		printf '%s\n' 'export const x = 1' > "$R/node_modules/$installed/index.js"
+	done
 	printf '%s\n' '{ "name": "fixture", "private": true, "type": "module", "workspaces": ["src/contract"] }' > "$R/package.json"
 	printf '%s\n' '{ "name": "@chuggy/worker-contract", "type": "module", "exports": { "./wire": "./wire.ts" } }' > "$R/src/contract/package.json"
 	printf '%s\n' 'export const wire = 1' > "$R/src/contract/wire.ts"
 }
 
+# A harness module that names the contract and nothing else here, for the
+# cases whose violation is somewhere else.
+harness_module() {
+	printf '%s\n' 'import { wire } from "@chuggy/worker-contract/wire"' 'export const run = () => wire' > "$R/images/worker/run.mjs"
+}
+
 # Every exit the harness has: the contract by its package name, a platform
-# module and a package. A red here would mean a rule below over-fires on the
-# imports the pod is built from.
+# module and each package its image installs. A red here would mean a rule
+# below over-fires on the imports the pod is built from.
 harness_fixture
-printf '%s\n' 'import { wire } from "@chuggy/worker-contract/wire"' 'import { join } from "node:path"' 'import { z } from "zod"' 'export const run = () => join(String(wire), String(z))' > "$R/images/worker/run.mjs"
+printf '%s\n' 'import { wire } from "@chuggy/worker-contract/wire"' 'import { join } from "node:path"' 'import { z } from "zod"' 'import { x as sdk } from "@anthropic-ai/claude-agent-sdk"' 'import { x as code } from "@anthropic-ai/claude-code"' 'import { x as codex } from "@openai/codex"' 'export const run = () => join(String(wire), String(z), String(sdk + code + codex))' > "$R/images/worker/run.mjs"
 seal
-check "the harness may name the contract, a platform module and a package" 0 "$RC" "graph clean"
+check "the harness may name the contract, a platform module and every package its image installs" 0 "$RC" "graph clean"
+
+# A devDependency of this tree resolves here and in no pod.
+harness_fixture
+ln -s "$ROOT/node_modules/typescript" "$R/node_modules/typescript"
+printf '%s\n' 'import { wire } from "@chuggy/worker-contract/wire"' 'import ts from "typescript"' 'export const run = () => String(ts) + wire' > "$R/images/worker/run.mjs"
+seal
+check "the harness may not name a package its image does not install" 1 "$RC" "harness-reaches-only-the-contract:"
 
 # The label is dependency-cruiser's to assign, and this is where it is seen
 # assigned: the rule below fires only on an import labelled
@@ -588,6 +607,12 @@ seal
 check "the server may not name the contract by package" 1 "$RC" "source-names-the-contract-by-path:"
 
 harness_fixture
+mkdir -p "$R/ui/console"
+printf '%s\n' 'import { wire } from "@chuggy/worker-contract/wire"' 'export const app = wire' > "$R/ui/console/app.ts"
+seal
+check "a console may not name the contract by package" 1 "$RC" "source-names-the-contract-by-path:"
+
+harness_fixture
 printf '%s\n' 'import { wire } from "../../src/contract/wire.ts"' 'export const run = () => wire' > "$R/images/worker/run.mjs"
 seal
 check "the harness may not reach the contract by a path the image lacks" 1 "$RC" "harness-names-the-contract-by-package:"
@@ -598,16 +623,49 @@ printf '%s\n' 'import { wire } from "@chuggy/worker-contract/wire"' 'import { x 
 seal
 check "the harness may not reach the server" 1 "$RC" "harness-reaches-only-the-contract:"
 
+# Each root outside images/ is held to it: nothing reaches a module cruised
+# from no root, so a root the gate stopped naming would fall silent here.
 harness_fixture
-printf '%s\n' 'export const run = () => 1' > "$R/images/worker/run.mjs"
-printf '%s\n' 'import { wire } from "../src/contract/wire.ts"' 'import { run } from "../images/worker/run.mjs"' 'export const z = run() + wire' > "$R/test/a.test.ts"
+harness_module
+printf '%s\n' 'import { run } from "../images/worker/run.mjs"' 'export const z = run()' > "$R/test/a.test.ts"
 seal
 check "a suite may not reach the harness" 1 "$RC" "no-source-reaches-the-harness:"
+
+harness_fixture
+harness_module
+mkdir -p "$R/src/interpreter"
+printf '%s\n' 'import { run } from "../../images/worker/run.mjs"' 'export const port = run' > "$R/src/interpreter/port.ts"
+seal
+check "the server may not reach the harness" 1 "$RC" "no-source-reaches-the-harness:"
+
+harness_fixture
+harness_module
+mkdir -p "$R/ui/console"
+printf '%s\n' 'import { run } from "../../images/worker/run.mjs"' 'export const app = run' > "$R/ui/console/app.ts"
+seal
+check "a console may not reach the harness" 1 "$RC" "no-source-reaches-the-harness:"
+
+harness_fixture
+harness_module
+mkdir -p "$R/scripts"
+printf '%s\n' 'import { run } from "../images/worker/run.mjs"' 'export const script = run' > "$R/scripts/run.ts"
+seal
+check "a script may not reach the harness" 1 "$RC" "no-source-reaches-the-harness:"
+
+# A module reached by import alone is followed whatever its extension, or the
+# edge it relays is never judged.
+harness_fixture
+harness_module
+mkdir -p "$R/tools"
+printf '%s\n' 'import { run } from "../images/worker/run.mjs"' 'export const relay = run' > "$R/tools/relay.mjs"
+printf '%s\n' 'import { relay } from "../tools/relay.mjs"' 'export const z = relay' > "$R/test/a.test.ts"
+seal
+check "a module outside every root may not relay into the harness" 1 "$RC" "no-source-reaches-the-harness:"
 
 # The link gone, as a harness install that skipped the workspace would leave it.
 harness_fixture
 rm "$R/node_modules/@chuggy/worker-contract"
-printf '%s\n' 'import { wire } from "@chuggy/worker-contract/wire"' 'export const run = () => wire' > "$R/images/worker/run.mjs"
+harness_module
 printf '%s\n' 'import { wire } from "../src/contract/wire.ts"' 'export const z = wire' > "$R/test/a.test.ts"
 seal
 check "an import the harness cannot resolve is a finding" 1 "$RC" "harness-resolves-every-import:"

@@ -42,8 +42,10 @@ import {
 import {
   mintedCredentialDirectory,
   sessionTaskVariable,
+  workerCredentialFilesSchema,
   workerCredentialFilesVariable,
   workerDatabaseUrlVariable,
+  workerRepositoriesSchema,
   workerRepositoriesVariable,
   workerTaskVariable,
 } from "../../src/contract/workerEnvironment.ts";
@@ -487,20 +489,25 @@ function suppliedValue(pod: KubernetesPod, name: string): string {
 }
 
 /**
- * The pair a pod resolves its repository from: the site's map, carried as the
- * site wrote it, and each credential the map names at the path it is mounted.
- * How the image reads that pair is `images/worker/repository.test.mjs`'s.
+ * The pair a pod resolves its repository from, each as the contract states it:
+ * the site's map, carried as the site wrote it, and every credential the pod's
+ * own grant names at the path it is mounted. `images/worker/repository.test.mjs`
+ * resolves a repository against the same two schemas.
  */
 test("the pod carries the site's repository map and the path each credential it names is mounted at", () => {
   const requested = kubernetesWorkerPodRequest(config, placement);
   assert.equal(requested.requested, "Pod");
   if (requested.requested !== "Pod") return;
-  assert.equal(
-    suppliedValue(requested.pod, workerRepositoriesVariable),
-    workerRepositoriesValue,
+  const { authority } = workTaskDocumentSchema.parse(
+    JSON.parse(suppliedValue(requested.pod, workerTaskVariable)),
   );
+  const repositories = suppliedValue(requested.pod, workerRepositoriesVariable);
+  assert.equal(repositories, workerRepositoriesValue);
+  workerRepositoriesSchema.parse(JSON.parse(repositories));
   assert.deepEqual(
-    JSON.parse(suppliedValue(requested.pod, workerCredentialFilesVariable)),
+    workerCredentialFilesSchema(authority.credentials).parse(
+      JSON.parse(suppliedValue(requested.pod, workerCredentialFilesVariable)),
+    ),
     { workspace: workspaceCredentialMount.mountPath },
   );
 });

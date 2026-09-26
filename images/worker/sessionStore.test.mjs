@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import test from "node:test";
 
-import { sessionStoreBatchBytesMax } from "@chuggy/worker-contract/sessionPlane";
+import {
+  isSessionStoreStream,
+  sessionStoreBatchBytesMax,
+  sessionStoreStreamCharsMax,
+} from "@chuggy/worker-contract/sessionPlane";
 
 import {
   sessionStoreAdapter,
@@ -376,6 +380,34 @@ test("a stream is the session id and its subpath, and the project key is not in 
   assert.deepEqual(
     bodies(calls).map(({ path }) => path),
     ["/v1/session/store/s/1", "/v1/session/store/s/2"],
+  );
+});
+
+/** Counted in code points, so the longest stream the plane holds is longer than that in UTF-16 units. */
+test("a stream the plane refuses is refused before any put, and the longest it holds is sent", async () => {
+  const longest = "\u{1D4B3}".repeat(sessionStoreStreamCharsMax);
+  const refused = [
+    "s".repeat(sessionStoreStreamCharsMax + 1),
+    "s p",
+    "s\u0007",
+  ];
+  assert.ok(isSessionStoreStream(longest));
+  for (const stream of refused) assert.ok(!isSessionStoreStream(stream));
+
+  for (const sessionId of refused) {
+    const { calls, store } = storeOf();
+    await assert.rejects(
+      store.append({ sessionId }, [entry("a")]),
+      /is not one the plane holds/u,
+    );
+    assert.deepEqual(bodies(calls), []);
+  }
+
+  const { calls, store } = storeOf();
+  await store.append({ sessionId: longest }, [entry("a")]);
+  assert.deepEqual(
+    bodies(calls).map(({ path }) => path),
+    [`/v1/session/store/${encodeURIComponent(longest)}/1`],
   );
 });
 

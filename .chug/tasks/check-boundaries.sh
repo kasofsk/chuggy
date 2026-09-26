@@ -7,6 +7,10 @@
 # is served there is what the directory holds — that console's `app/` reaches no
 # document, and no console reaches another.
 #
+# `images/` and `scripts/` are cruised too: the worker harness reaches only
+# Node, the packages its image installs and the contract by package name, and
+# nothing outside `images/` reaches it.
+#
 # This is house rule 2's graph half; `eslint.config.js` holds the ambient half.
 # What no per-file check can see is reachability — a helper inside the domain
 # that imports a filesystem module names no forbidden global, and the decider

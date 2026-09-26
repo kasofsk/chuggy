@@ -344,17 +344,21 @@ module.exports = {
       comment:
         "images/worker/ is the pod's own program, and its image carries none " +
         "of this tree but the packed contract. So it reaches Node's own " +
-        "modules, a package and src/contract/, and nothing else here: a " +
-        "module it reached anywhere else is one the image does not hold, and " +
-        "a suite of it that read the server would be pinning the pod to the " +
-        "server rather than to the contract both read. Not reachability, for " +
+        "modules, the packages images/worker/Dockerfile installs globally and " +
+        "src/contract/, and nothing else here: a module it reached anywhere " +
+        "else is one the image does not hold, and a suite of it that read the " +
+        "server would be pinning the pod to the server rather than to the " +
+        "contract both read. The packages are named rather than node_modules " +
+        "as a whole, because a devDependency of this tree resolves in every " +
+        "suite here and in no pod. Not reachability, for " +
         "contract-reaches-only-zod's reason: the `to` is everything but the " +
         "exits, so a relay is caught at its first edge.",
       severity: "error",
       from: { path: "^images/worker/" },
       to: {
         path: "^(?!images/worker/)",
-        pathNot: "node_modules/|^src/contract/",
+        pathNot:
+          "(^|/)node_modules/(zod|@anthropic-ai/claude-agent-sdk|@anthropic-ai/claude-code|@openai/codex)/|^src/contract/",
         dependencyTypesNot: ["core"],
       },
     },
@@ -445,6 +449,8 @@ module.exports = {
     enhancedResolveOptions: {
       exportsFields: ["exports"],
       conditionNames: ["import", "require", "node", "default", "types"],
+      // An imported module whose extension is not listed is a leaf the cruise
+      // does not follow, so the harness's own `.mjs` is listed.
       extensions: [".ts", ".js", ".mjs"],
     },
     reporterOptions: {

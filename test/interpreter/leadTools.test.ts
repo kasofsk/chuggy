@@ -1,8 +1,7 @@
 /**
- * What a lead is given: the tools its roster admits, the allowlist the
- * installation seeds from it, and objectives that carry the standing rules its
- * tools mean nothing without. The roster itself is the contract's, and
- * `test/contract/sessionTools.test.ts` holds it.
+ * What a lead is given: the tools its roster admits, and objectives that carry
+ * the standing rules its tools mean nothing without. The roster itself is the
+ * contract's, and `test/contract/sessionTools.test.ts` holds it.
  */
 
 import assert from "node:assert/strict";
@@ -12,7 +11,6 @@ import { selectorSettingsTextCharsMax } from "../../src/contract/http.ts";
 import {
   allChuggyTools,
   allDependentRelations,
-  builtInToolCapabilities,
   chuggyToolCapabilities,
   chuggyToolNames,
   chuggyToolPrefix,
@@ -23,7 +21,6 @@ import {
   leadObjectivesFixedChars,
   leadSessionCapabilities,
   leadSystemPrompt,
-  leadToolAllowlist,
   sessionSystemPromptCharsMax,
 } from "../../src/interpreter/leadTools.ts";
 import type { SelectorResolvedSettings } from "../../src/interpreter/selector.ts";
@@ -59,24 +56,6 @@ test("origination is admitted for a thread's roster and refused for a lead's", (
       .filter((tool) => tool !== "create_draft")
       .map((tool) => `${chuggyToolPrefix}${tool}`),
   );
-});
-
-/**
- * The allowlist the installation seeds, held to what the contract's capabilities
- * admit for a lead. `contract.test.mjs` holds the pod to the same admission over
- * every roster, so the two sides agree by each agreeing with the contract.
- */
-test("the seeded allowlist is exactly what a lead's capabilities admit", () => {
-  assert.deepEqual(
-    new Set(leadToolAllowlist),
-    new Set([
-      ...leadSessionCapabilities.flatMap(
-        (capability) => builtInToolCapabilities[capability],
-      ),
-      ...chuggyToolNames(leadSessionCapabilities),
-    ]),
-  );
-  assert.equal(new Set(leadToolAllowlist).size, leadToolAllowlist.length);
 });
 
 test("the relations a lead is refused are the ones the contract does not admit", () => {

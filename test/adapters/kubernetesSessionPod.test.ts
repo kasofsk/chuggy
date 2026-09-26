@@ -25,10 +25,12 @@ import {
   sessionConfigDirectoryVariable,
   sessionModelVariable,
   sessionTaskVariable,
+  workerCredentialFilesSchema,
   workerCredentialFilesVariable,
   workerTaskVariable,
   workerWorkspaceVariable,
 } from "../../src/contract/workerEnvironment.ts";
+import { sessionTaskDocumentSchema } from "../../src/contract/workerTask.ts";
 import {
   checkedKubernetesSessionLaunchConfig,
   kubernetesSessionContainerName,
@@ -279,6 +281,25 @@ test("the container's whole environment is the contract, in the order it is writ
     { name: sessionModelVariable, value: "claude-opus-4-5" },
     { name: "CHUG_SITE", value: "rig" },
   ]);
+});
+
+/** The credential files as the contract states them for the grant the session's own task names. */
+test("the session is handed every credential its grant names at the path it is mounted", () => {
+  const { env } = renderedContainer();
+  const valueOf = (name: string): unknown => {
+    const variable = env.find((entry) => entry.name === name);
+    assert.ok(variable !== undefined && "value" in variable);
+    return JSON.parse(variable.value);
+  };
+  const { authority } = sessionTaskDocumentSchema.parse(
+    valueOf(sessionTaskVariable),
+  );
+  assert.deepEqual(
+    workerCredentialFilesSchema(authority.credentials).parse(
+      valueOf(workerCredentialFilesVariable),
+    ),
+    { "claude-code": agentCredential.mountPath },
+  );
 });
 
 test("the session container runs the placement's image under the site's budget", () => {

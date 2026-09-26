@@ -53,7 +53,7 @@ export {
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
-  sessionStoreUuidsRemembered,
+  sessionStoreStreamCharsMax,
   sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,

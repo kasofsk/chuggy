@@ -8,6 +8,11 @@ import { fileURLToPath, URL } from "node:url";
 import { promisify } from "node:util";
 
 import {
+  workerCredentialFilesSchema,
+  workerRepositoriesSchema,
+} from "@chuggy/worker-contract/workerEnvironment";
+
+import {
   workerRepositories,
   workerRepository,
   workerRepositoryUrl,
@@ -15,6 +20,40 @@ import {
 
 const executeFile = promisify(execFile);
 const askpass = fileURLToPath(new URL("./git-askpass.sh", import.meta.url));
+
+/** The two variables as the contract states a site writes them, read the way a pod reads its environment. */
+test("a repository resolves against the pair the contract states a site writes", () => {
+  const credentialFiles = workerCredentialFilesSchema([
+    "workspace",
+    "claude-code",
+  ]).parse({
+    workspace: "/run/chuggy/credentials/workspace",
+    "claude-code": "/run/chuggy/credentials/claude-code",
+  });
+  const repositories = workerRepositoriesSchema.parse({
+    repository: {
+      url: "https://git.invalid/repository.git",
+      credential: "workspace",
+      credentialUsername: "worker",
+    },
+  });
+
+  const selected = workerRepository(
+    workerRepositories(JSON.stringify(repositories)),
+    workerRepositories(JSON.stringify(credentialFiles)),
+    "repository",
+  );
+
+  assert.equal(selected.repository, repositories.repository.url);
+  assert.equal(
+    selected.environment.CHUG_WORKER_GIT_CREDENTIAL_FILE,
+    credentialFiles.workspace,
+  );
+  assert.equal(
+    selected.environment.CHUG_WORKER_GIT_CREDENTIAL_USERNAME,
+    repositories.repository.credentialUsername,
+  );
+});
 
 test("a worker repository selects its own credential", () => {
   const repositories = {
