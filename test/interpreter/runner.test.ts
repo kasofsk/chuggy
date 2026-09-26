@@ -10,8 +10,9 @@
  * source its rosters, the terms `canAssign` conjoins with each predicate it
  * calls opened, `policyConfigures` as `policyAllows` without drain, the arms
  * of `placementOutcome` and the terms of each block they test, and the runs of
- * `model/tests/runner_test.qnt` that call a guard. A constructor, term, arm or
- * run changed there is a failure here until the refinement answers it.
+ * `model/tests/runner_test.qnt` that call a guard. A constructor of a roster it
+ * reads, a term or an arm changed there, or a run added, removed or renamed, is
+ * a failure here until the refinement answers it.
  *
  * WHAT IT DOES NOT PROVE. It holds the decider to the model over the rows of
  * `test/interpreter/runnerCases.ts`, and says nothing of the claim a pool
