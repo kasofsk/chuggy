@@ -2,12 +2,13 @@
  * The build's verdict on what the session mode can resolve, read off the image
  * rather than off the Dockerfile.
  *
- * `zod` IS A PEER DEPENDENCY OF THE AGENT SDK AND A GLOBAL INSTALL DOES NOT
- * PLACE IT. The SDK declares `zod` under `peerDependencies`, npm's global
- * install resolves no peers, and nothing about a missing one is visible until a
- * lead takes a turn: the tool shapes are zod raw shapes, so a pod without it
- * starts, claims a turn and then fails every one of them. So the image installs
- * `zod` beside the SDK at a pinned version, and this checks the two agree.
+ * `zod` IS A PEER OF THE AGENT SDK THAT THE POD'S OWN SCRIPTS IMPORT TOO. npm's
+ * global install nests a package's peers inside that package's own tree, where
+ * the scripts' resolution never looks, and nothing about a missing `zod` is
+ * visible until a lead takes a turn: the tool shapes are zod raw shapes, so a
+ * pod without it starts, claims a turn and then fails every one of them. So the
+ * image installs `zod` beside the SDK at a pinned version, where npm places the
+ * one copy both resolve, and this checks the two agree.
  *
  * THE AGREEMENT IS READ, NOT ASSERTED. The SDK's own `peerDependencies.zod`
  * range is read off the installed package and the installed `zod` is checked
@@ -15,12 +16,12 @@
  * of `AGENT_SDK_VERSION` that moved the range fails the build instead of the
  * rig.
  *
- * THE OTHER TWO PEERS ARE DELIBERATELY NOT INSTALLED. `@anthropic-ai/sdk` and
- * `@modelcontextprotocol/sdk` are declared peers too and neither resolves in
- * this image; `toolProbe.mjs` stands the in-process MCP server up and lists all
- * of its tools without them, because the SDK bundles what it uses. A peer that
- * is genuinely needed shows up as a probe that fails, which is the point of
- * running both here.
+ * THE OTHER TWO PEERS ARE LEFT WHERE npm NESTS THEM. `@anthropic-ai/sdk` and
+ * `@modelcontextprotocol/sdk` are declared peers too, and nothing but the SDK
+ * imports either, so the copies inside its tree are the ones that matter;
+ * `toolProbe.mjs` stands the in-process MCP server up and lists all of its
+ * tools. A peer the SDK needs and cannot resolve shows up as a probe that
+ * fails, which is the point of running both here.
  *
  * RESOLUTION IS THE RUNTIME'S OWN. This runs from the directory the pod's
  * scripts live in and imports through the same specifiers `session.mjs` does,

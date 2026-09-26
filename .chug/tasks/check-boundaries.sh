@@ -7,6 +7,10 @@
 # is served there is what the directory holds — that console's `app/` reaches no
 # document, and no console reaches another.
 #
+# `images/` and `scripts/` are cruised too: the worker harness reaches only
+# Node, the packages its image installs and the contract by package name, and
+# nothing outside `images/` reaches it.
+#
 # This is house rule 2's graph half; `eslint.config.js` holds the ambient half.
 # What no per-file check can see is reachability — a helper inside the domain
 # that imports a filesystem module names no forbidden global, and the decider
@@ -20,8 +24,9 @@
 # WHAT IT CANNOT SEE. A capability reached without an import — a global, a
 # dynamic `import()` built from a computed string, a value injected at run time
 # — is invisible to a static graph. The first is eslint's half; the second is
-# not written here and would be a finding on sight; the third is what the ports
-# exist to make legible, and the reviewer's.
+# how `session.mjs` imports the agent SDK and zod and `contractProbe.mjs` the
+# contract's entries, which the image build's probes load instead; the third is
+# what the ports exist to make legible, and the reviewer's.
 #
 # Usage:
 #   .chug/tasks/check-boundaries.sh
@@ -65,10 +70,13 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 set +e
-# `ui` is named only when the tree has one: depcruise fails on a root that
-# does not exist, and that would be a could-not-run rather than a verdict.
+# The other roots are named only when the tree has them: depcruise fails on a
+# root that does not exist, and that would be a could-not-run rather than a
+# verdict.
 roots="src test"
-[ -d ui ] && roots="$roots ui"
+for optional in ui images scripts; do
+	[ -d "$optional" ] && roots="$roots $optional"
+done
 # shellcheck disable=SC2086 # the root list is space-separated by construction
 "$DEPCRUISE" --config .dependency-cruiser.cjs --output-type err $roots >"$work/out" 2>"$work/err"
 rc=$?

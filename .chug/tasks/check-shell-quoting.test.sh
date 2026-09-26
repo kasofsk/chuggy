@@ -37,7 +37,7 @@ CLEAN="no quote-in-default"
 # test whose passing arm the mis-parse swallows, so the two lines after it bind
 # inside the `if` and run only when the guard's own check FAILS.
 {
-	echo 'if [ "${CHUG_CI_SUITE_TIMEOUT_SECS:-}" != "60" ]; then'
+	echo 'if [ "${CHUG_CI_SUITE_TIMEOUT_SECS:-}" != "300" ]; then'
 	echo "  CAP=\"the cap is '\${CHUG_CI_SUITE_TIMEOUT_SECS:-<unset: the sequencer${APOSTROPHE}s own default>}'\""
 	echo 'fi'
 	echo 'PROBE="quint --version"'
@@ -61,7 +61,7 @@ check "an apostrophe in a \${1:-word} default is a finding" 1 "$RC" "positional.
 # both shells expand it and only bash reads the apostrophe.
 {
 	echo 'cat <<EOF'
-	echo "  budget: \${CHUG_CI_SUITES_BUDGET_SECS-<unset: the sequencer${APOSTROPHE}s own default>}"
+	echo "  cap: \${CHUG_CI_SUITE_TIMEOUT_SECS-<unset: the sequencer${APOSTROPHE}s own default>}"
 	echo 'EOF'
 } > "$WORK/heredoc.sh"
 run_sut "$WORK/heredoc.sh"
@@ -93,7 +93,7 @@ check "an unquoted expansion is not a finding" 0 "$RC" "$CLEAN"
 # A heredoc with a quoted delimiter performs no expansion at all.
 {
 	echo "cat <<${APOSTROPHE}EOF${APOSTROPHE}"
-	echo "  budget: \${CHUG_CI_SUITES_BUDGET_SECS-<unset: the sequencer${APOSTROPHE}s own default>}"
+	echo "  cap: \${CHUG_CI_SUITE_TIMEOUT_SECS-<unset: the sequencer${APOSTROPHE}s own default>}"
 	echo 'EOF'
 } > "$WORK/heredoc-quoted.sh"
 run_sut "$WORK/heredoc-quoted.sh"

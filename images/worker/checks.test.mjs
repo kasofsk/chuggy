@@ -4,36 +4,28 @@
  * THE CASES BELOW SPAWN `/bin/sh`, because what the stage claims is about exit
  * status, ordering and captured output, and a stubbed child process would be a
  * restatement of the code rather than a check on it.
- *
- * THE BOUNDS THE PLANE OWNS ARE IMPORTED FROM IT. A running worker cannot read
- * the TypeScript the plane is written in, so this module restates the upload
- * bound it is written against; the cases below import the plane's own and
- * refuse the restatement once it stops being the same figure.
  */
 
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import test from "node:test";
 
-import {
-  resultReportCharsMax,
-  workerPlaneUploadBytesMax,
-} from "../../src/contract/http.ts";
-import {
-  briefingLineCharsMax,
-  commandLinesMax,
-} from "../../src/contract/workerTask.ts";
+import { resultReportCharsMax } from "@chuggy/worker-contract/workerDocuments";
 import {
   sessionTaskVariable,
   workerTaskVariable,
-} from "../../src/contract/workerEnvironment.ts";
+} from "@chuggy/worker-contract/workerEnvironment";
+import { workerPlaneUploadBytesMax } from "@chuggy/worker-contract/workerPlane";
+import {
+  briefingLineCharsMax,
+  commandLinesMax,
+} from "@chuggy/worker-contract/workerTask";
+
 import { credentialScrub } from "./runEvidence.mjs";
 import {
   runChecks,
-  workerCheckArtifactBytesMax,
   workerCheckCommands,
   workerCheckOutputCharsMax,
-  workerCheckReportCharsMax,
   workerCheckStageOutputCharsMax,
 } from "./checks.mjs";
 
@@ -167,10 +159,10 @@ test("the excerpt is one printable line: escapes and control characters become s
 });
 
 test("the excerpt fills the report's room and keeps the end of the output", async () => {
-  const command = `yes chatter | head -c ${String(workerCheckReportCharsMax * 2)}; printf END; exit 1`;
+  const command = `yes chatter | head -c ${String(resultReportCharsMax * 2)}; printf END; exit 1`;
   const { result } = await ran([command]);
 
-  assert.equal(result.summary.length, workerCheckReportCharsMax);
+  assert.equal(result.summary.length, resultReportCharsMax);
   assert.ok(result.summary.endsWith("chatter END"), result.summary.slice(-40));
   assert.ok(result.summary.startsWith(`${command} exited 1; last output of `));
 });
@@ -184,42 +176,42 @@ test("an excerpt of a truncated capture says so", async () => {
     result.summary.includes(`last output of ${command} (capture truncated): `),
     result.summary.slice(0, 200),
   );
-  assert.equal(result.summary.length, workerCheckReportCharsMax);
+  assert.equal(result.summary.length, resultReportCharsMax);
 });
 
 test("the report is scrubbed before it is measured, so the entrypoint's scrub cannot lengthen it", async () => {
   const secret = "hunter2-hunter2-hunter2-hunter2";
   const scrub = credentialScrub([secret]);
-  const command = `yes ${secret} | head -c ${String(workerCheckReportCharsMax * 2)}; exit 1`;
+  const command = `yes ${secret} | head -c ${String(resultReportCharsMax * 2)}; exit 1`;
   const { result } = await ran([command], { scrub });
 
   assert.equal(result.summary.includes(secret), false);
   assert.ok(result.summary.includes("[redacted credential]"));
-  assert.equal(result.summary.length, workerCheckReportCharsMax);
+  assert.equal(result.summary.length, resultReportCharsMax);
   assert.equal(scrub(result.summary), result.summary);
   assert.ok(result.summary.length <= resultReportCharsMax);
 });
 
 test("a cut through astral output lands on a code point, so the report is well formed", async () => {
   const wide = "\u{1F600}";
-  const excerpt = `printf '%s' "$(yes ${wide} | head -c ${String(workerCheckReportCharsMax * 8)})"; exit 1`;
-  const status = `: ${wide.repeat(workerCheckReportCharsMax)}; exit 1`;
+  const excerpt = `printf '%s' "$(yes ${wide} | head -c ${String(resultReportCharsMax * 8)})"; exit 1`;
+  const status = `: ${wide.repeat(resultReportCharsMax)}; exit 1`;
   for (const command of [excerpt, status]) {
     const { result } = await ran([command]);
 
     assert.ok(result.summary.isWellFormed(), command.slice(0, 40));
-    assert.ok(result.summary.length <= workerCheckReportCharsMax);
-    assert.ok(result.summary.length >= workerCheckReportCharsMax - 1);
+    assert.ok(result.summary.length <= resultReportCharsMax);
+    assert.ok(result.summary.length >= resultReportCharsMax - 1);
     assert.equal(/\p{Cc}/u.test(result.summary), false);
   }
 });
 
 test("a stage whose status lines fill the report carries no excerpt", async () => {
-  const command = `printf out; : ${"x".repeat(workerCheckReportCharsMax)}; exit 1`;
+  const command = `printf out; : ${"x".repeat(resultReportCharsMax)}; exit 1`;
   const { result, output } = await ran([command]);
 
   assert.equal(output.checks[0].output, "out");
-  assert.equal(result.summary.length, workerCheckReportCharsMax);
+  assert.equal(result.summary.length, resultReportCharsMax);
   assert.equal(result.summary.includes("last output of"), false);
 });
 
@@ -246,11 +238,6 @@ test("what a stage captures across its commands is bounded as one total", async 
   );
   assert.equal(kept, workerCheckStageOutputCharsMax);
   assert.equal(output.checks[1].truncated, true);
-});
-
-test("the worker is written against the bounds the plane enforces", () => {
-  assert.equal(workerCheckArtifactBytesMax, workerPlaneUploadBytesMax);
-  assert.equal(workerCheckReportCharsMax, resultReportCharsMax);
 });
 
 test("the worst artifact a stage can produce is one the plane accepts", () => {

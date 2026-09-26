@@ -58,6 +58,19 @@ export const workerInputReferencesMax = 1_024;
 /** The longest minted password, restating the interpreter's repository credential bound. */
 export const repositoryCredentialCharsMax = 4_096;
 
+/** The bounds a pod's uploads and run records are written against, and the ways a run may be said to have ended. */
+export {
+  nativeHttpPageItemsMax,
+  runConfigurationBytesMax,
+  runModelCharsMax,
+  runOutcomeLabelCharsMax,
+  runTranscriptBatchBytesMax,
+  runTranscriptBatchesMax,
+  runTurnSeriesMax,
+  workerPlaneUploadBytesMax,
+} from "./http.ts";
+export { runEndedEvidences } from "./rosters.ts";
+
 /** One turn as a worker offers it; the server is what dates the stored row. */
 export const workerRunTurnsSchema = z.strictObject({
   turns: z

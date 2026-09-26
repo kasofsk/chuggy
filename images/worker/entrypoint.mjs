@@ -28,6 +28,19 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createInterface } from "node:readline";
 
+import {
+  sessionTaskVariable,
+  workerCredentialFilesVariable,
+  workerRepositoriesVariable,
+  workerTaskVariable,
+  workerWorkspaceVariable,
+} from "@chuggy/worker-contract/workerEnvironment";
+import {
+  workerPlaneBytesMediaType,
+  workerPlaneRoutes,
+} from "@chuggy/worker-contract/workerPlane";
+import { filesystemAccesses } from "@chuggy/worker-contract/workerTask";
+
 import { workerAgent } from "./agent.mjs";
 import {
   runChecks,
@@ -47,12 +60,14 @@ import { runConfigurationSnapshot } from "./snapshot.mjs";
 import { commitAndPushSource, resultDocument } from "./source.mjs";
 import { workerRequest } from "./transport.mjs";
 import { agentResultSchema } from "./result.mjs";
+import { rosterLabel, routePath } from "./wire.mjs";
 
 const executeFile = promisify(execFile);
 const agentResultSchemaFile = "/tmp/chuggy-agent-result-schema.json";
 const agentDiagnosticPath = ".chuggy/agent-result.json";
 const checkDiagnosticPath = ".chuggy/check-output.json";
 const workerCredentialFilesMax = 64;
+const workspaceWrite = rosterLabel(filesystemAccesses, "WriteWorkspace");
 let activeTask;
 let activeBearer;
 let activeScrub;
@@ -216,9 +231,9 @@ function artifact(path, content) {
 }
 
 async function upload(task, bearer, path, content, request = workerRequest) {
-  await request(task, bearer, `/v1/artifacts/${path}`, {
+  await request(task, bearer, routePath(workerPlaneRoutes.artifact, path), {
     method: "PUT",
-    headers: { "content-type": "application/octet-stream" },
+    headers: { "content-type": workerPlaneBytesMediaType },
     body: content,
   });
   return artifact(path, content);
@@ -302,7 +317,9 @@ export async function workerWorkspace(
   seams = {},
 ) {
   const { request = workerRequest, clone = cloneRepository, write } = seams;
-  const input = await (await request(task, bearer, "/v1/input")).json();
+  const input = await (
+    await request(task, bearer, workerPlaneRoutes.input.path)
+  ).json();
   const repositoryId = oneReference(input, "Repository");
   const { repository, environment, refresh } = await workerCredential({
     task,
@@ -318,7 +335,7 @@ export async function workerWorkspace(
   const directory = await clone(
     repository,
     base,
-    required("CHUG_WORKER_WORKSPACE"),
+    required(workerWorkspaceVariable),
     environment,
   );
   return {
@@ -339,11 +356,16 @@ async function diagnostic(context, path, result) {
 }
 
 async function report(context, manifest) {
-  await context.request(context.task, context.bearer, "/v1/report", {
-    method: "POST",
-    headers: { "content-type": "text/plain; charset=utf-8" },
-    body: JSON.stringify(resultDocument(manifest)),
-  });
+  await context.request(
+    context.task,
+    context.bearer,
+    workerPlaneRoutes.report.path,
+    {
+      method: "POST",
+      headers: { "content-type": "text/plain; charset=utf-8" },
+      body: JSON.stringify(resultDocument(manifest)),
+    },
+  );
 }
 
 function reportSummary(summary) {
@@ -408,7 +430,7 @@ async function admitWorkerTask(task, agent) {
       flag: "wx",
     });
   }
-  if (!task.authority.network || task.authority.filesystem !== "WriteWorkspace")
+  if (!task.authority.network || task.authority.filesystem !== workspaceWrite)
     throw new Error(
       "development worker requires network and workspace write authority",
     );
@@ -424,14 +446,14 @@ export async function runWorkerTask(context, commands) {
 }
 
 async function main() {
-  const task = parsed("CHUG_WORKER_TASK");
+  const task = parsed(workerTaskVariable);
   activeTask = task;
   const commands = workerCheckCommands(task);
   const agent = commands === undefined ? workerAgent(task) : undefined;
   await admitWorkerTask(task, agent);
-  const repositories = optionalRepositories("CHUG_WORKER_REPOSITORIES");
+  const repositories = optionalRepositories(workerRepositoriesVariable);
   const credentialFiles = workerRepositories(
-    required("CHUG_WORKER_CREDENTIAL_FILES"),
+    required(workerCredentialFilesVariable),
   );
   const bearer = (
     await readFile(task.workerPlane.capabilityFile, "utf8")
@@ -540,15 +562,17 @@ export function workerMode(environment) {
     const value = environment[name];
     return typeof value === "string" && value.length > 0;
   };
-  const work = named("CHUG_WORKER_TASK");
-  const session = named("CHUG_SESSION_TASK");
+  const work = named(workerTaskVariable);
+  const session = named(sessionTaskVariable);
   if (work && session)
     throw new Error(
-      "a pod is launched with CHUG_WORKER_TASK or CHUG_SESSION_TASK, never both",
+      `a pod is launched with ${workerTaskVariable} or ${sessionTaskVariable}, never both`,
     );
   if (work) return "Work";
   if (session) return "Session";
-  throw new Error("a pod needs one of CHUG_WORKER_TASK and CHUG_SESSION_TASK");
+  throw new Error(
+    `a pod needs one of ${workerTaskVariable} and ${sessionTaskVariable}`,
+  );
 }
 
 async function run() {

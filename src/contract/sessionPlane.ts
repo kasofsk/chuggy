@@ -48,6 +48,19 @@ import {
   type WorkerPlaneRoute,
 } from "./workerPlane.ts";
 
+/** The bounds a session pod's turns and store are written against, the failures a turn may name, and the capabilities a session may hold. */
+export {
+  sessionStoreBatchBytesMax,
+  sessionStoreBatchesMax,
+  sessionStorePageBatchesMax,
+  sessionStoreStreamCharsMax,
+  sessionTurnModelCharsMax,
+  sessionTurnResultCharsMax,
+  sessionTurnToolNameCharsMax,
+  sessionTurnToolsMax,
+} from "./http.ts";
+export { agentReportedTurnFailures, sessionCapabilities } from "./rosters.ts";
+
 /** The routes a session pod calls, which a plane composed without sessions does not serve. */
 export const sessionPlaneRoutes = {
   facts: { method: "GET", path: "/v1/session" },

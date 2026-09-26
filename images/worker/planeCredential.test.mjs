@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { mintedCredentialDirectory } from "@chuggy/worker-contract/workerEnvironment";
+
 import {
   planeCredential,
   sessionCredentialPath,
   workerCredentialPath,
 } from "./planeCredential.mjs";
-import { mintedCredentialDirectory } from "./repository.mjs";
 import { sessionRequest } from "./sessionTransport.mjs";
 
 const task = { workerPlane: { url: "http://worker-plane.test:3001" } };

@@ -21,11 +21,6 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import {
-  mintedCredentialDirectory as imageMintedCredentialDirectory,
-  workerRepositories,
-  workerRepository,
-} from "../../images/worker/repository.mjs";
-import {
   kubernetesNamespacePrecondition,
   kubernetesWorkerLaunch,
 } from "../../src/adapters/kubernetes/workerLaunch.ts";
@@ -47,8 +42,10 @@ import {
 import {
   mintedCredentialDirectory,
   sessionTaskVariable,
+  workerCredentialFilesSchema,
   workerCredentialFilesVariable,
   workerDatabaseUrlVariable,
+  workerRepositoriesSchema,
   workerRepositoriesVariable,
   workerTaskVariable,
 } from "../../src/contract/workerEnvironment.ts";
@@ -491,23 +488,27 @@ function suppliedValue(pod: KubernetesPod, name: string): string {
   return variable.value;
 }
 
-test("the launched repository configuration is accepted by the worker", () => {
+/**
+ * The pair a pod resolves its repository from, each as the contract states it:
+ * the site's map, carried as the site wrote it, and every credential the pod's
+ * own grant names at the path it is mounted. `images/worker/repository.test.mjs`
+ * resolves a repository against the same two schemas.
+ */
+test("the pod carries the site's repository map and the path each credential it names is mounted at", () => {
   const requested = kubernetesWorkerPodRequest(config, placement);
   assert.equal(requested.requested, "Pod");
   if (requested.requested !== "Pod") return;
-  const selected = workerRepository(
-    workerRepositories(
-      suppliedValue(requested.pod, workerRepositoriesVariable),
-    ),
-    workerRepositories(
-      suppliedValue(requested.pod, workerCredentialFilesVariable),
-    ),
-    "repository",
+  const { authority } = workTaskDocumentSchema.parse(
+    JSON.parse(suppliedValue(requested.pod, workerTaskVariable)),
   );
-  assert.equal(selected.repository, "https://git.invalid/repository.git");
-  assert.equal(
-    selected.environment.CHUG_WORKER_GIT_CREDENTIAL_FILE,
-    workspaceCredentialMount.mountPath,
+  const repositories = suppliedValue(requested.pod, workerRepositoriesVariable);
+  assert.equal(repositories, workerRepositoriesValue);
+  workerRepositoriesSchema.parse(JSON.parse(repositories));
+  assert.deepEqual(
+    workerCredentialFilesSchema(authority.credentials).parse(
+      JSON.parse(suppliedValue(requested.pod, workerCredentialFilesVariable)),
+    ),
+    { workspace: workspaceCredentialMount.mountPath },
   );
 });
 
@@ -519,9 +520,8 @@ test("the pod mounts memory where the image writes a minted credential", () => {
   const requested = kubernetesWorkerPodRequest(config, placement);
   assert.equal(requested.requested, "Pod");
   if (requested.requested !== "Pod") return;
-  assert.equal(mintedCredentialDirectory, imageMintedCredentialDirectory);
   const mount = requested.pod.spec.containers[0]?.volumeMounts.find(
-    ({ mountPath }) => mountPath === imageMintedCredentialDirectory,
+    ({ mountPath }) => mountPath === mintedCredentialDirectory,
   );
   assert.equal(mount?.readOnly, false);
   assert.deepEqual(

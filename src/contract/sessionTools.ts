@@ -2,11 +2,9 @@
  * The one chuggy MCP server a session is given: its tools, the capability that
  * admits each, the bounds one call runs under, and the public API routes the
  * tools reach. The image registers the tools and the control plane names them
- * in allowlists, so the names belong to neither side: the control plane reads
- * them here, and `test/contract/imageTools.test.mjs` holds the image's own copy
- * to them. The tool input schemas are not here: they are the zod raw shapes the
- * agent runtime's own `tool()` takes, and they live in the image beside the
- * handlers.
+ * in allowlists, so the names belong to neither side and both read them here.
+ * The tool input schemas are not here: they are the zod raw shapes the agent
+ * runtime's own `tool()` takes, and they live in the image beside the handlers.
  *
  * TWO CHANNELS, TOLD APART BY WHAT THEY WRITE. A project tool is a command a
  * console user has: it goes over HTTP to the API presenting the pod's session
@@ -160,6 +158,19 @@ export function chuggyToolNames(
     .filter((tool) => admitted.has(tool))
     .map((tool) => `${chuggyToolPrefix}${tool}`);
 }
+
+/** The agent runtime's own tools each capability admits, which the image grants and an allowlist names. */
+export const builtInToolCapabilities: Readonly<
+  Record<SessionCapability, readonly string[]>
+> = {
+  RepositoryRead: ["Glob", "Grep", "Read"],
+  RepositoryWrite: ["Edit", "NotebookEdit", "Write"],
+  RunCommands: ["Bash"],
+  ProjectRead: [],
+  DraftAuthor: [],
+  DraftOriginate: [],
+  LeadDecision: [],
+};
 
 /**
  * The relation a filed dependent may carry, and the one it may not. A follow-up

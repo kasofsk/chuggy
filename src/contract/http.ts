@@ -162,9 +162,6 @@ export const sessionTurnToolsMax = 64;
 /** The longest tool name one turn's measurement reports. */
 export const sessionTurnToolNameCharsMax = 128;
 
-/** How many already-confirmed entry uuids one stream's adapter remembers. */
-export const sessionStoreUuidsRemembered = 4_096;
-
 /** The largest body one worker-plane upload carries, which an artifact is written against. */
 export const workerPlaneUploadBytesMax = 4_194_304;
 

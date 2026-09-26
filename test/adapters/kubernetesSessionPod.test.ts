@@ -19,17 +19,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { mintedCredentialDirectory as imageMintedCredentialDirectory } from "../../images/worker/repository.mjs";
 import { kubernetesNameCharsMax } from "../../src/adapters/kubernetes/kubernetesSite.ts";
 import {
   mintedCredentialDirectory,
   sessionConfigDirectoryVariable,
   sessionModelVariable,
   sessionTaskVariable,
+  workerCredentialFilesSchema,
   workerCredentialFilesVariable,
   workerTaskVariable,
   workerWorkspaceVariable,
 } from "../../src/contract/workerEnvironment.ts";
+import { sessionTaskDocumentSchema } from "../../src/contract/workerTask.ts";
 import {
   checkedKubernetesSessionLaunchConfig,
   kubernetesSessionContainerName,
@@ -282,6 +283,25 @@ test("the container's whole environment is the contract, in the order it is writ
   ]);
 });
 
+/** The credential files as the contract states them for the grant the session's own task names. */
+test("the session is handed every credential its grant names at the path it is mounted", () => {
+  const { env } = renderedContainer();
+  const valueOf = (name: string): unknown => {
+    const variable = env.find((entry) => entry.name === name);
+    assert.ok(variable !== undefined && "value" in variable);
+    return JSON.parse(variable.value);
+  };
+  const { authority } = sessionTaskDocumentSchema.parse(
+    valueOf(sessionTaskVariable),
+  );
+  assert.deepEqual(
+    workerCredentialFilesSchema(authority.credentials).parse(
+      valueOf(workerCredentialFilesVariable),
+    ),
+    { "claude-code": agentCredential.mountPath },
+  );
+});
+
 test("the session container runs the placement's image under the site's budget", () => {
   const container = renderedContainer();
   assert.equal(container.name, kubernetesSessionContainerName);
@@ -350,9 +370,8 @@ test("only the credentials the grant names are mounted, and the workspace is eph
  * its document and at the path its image writes.
  */
 test("a session pod mounts memory where the image writes a minted credential", () => {
-  assert.equal(mintedCredentialDirectory, imageMintedCredentialDirectory);
   const mount = renderedContainer().volumeMounts.find(
-    ({ mountPath }) => mountPath === imageMintedCredentialDirectory,
+    ({ mountPath }) => mountPath === mintedCredentialDirectory,
   );
   assert.equal(mount?.readOnly, false);
   assert.deepEqual(

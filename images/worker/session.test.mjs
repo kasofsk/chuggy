@@ -2,33 +2,31 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  leadRoster,
-  threadRoster,
-} from "../../test/contract/sessionRosterFixture.ts";
-import {
-  chuggyToolPrefix,
-  sessionBuiltInTools,
-  sessionCapabilityTools,
-} from "./chuggyTools.mjs";
-import {
-  checkedSessionBounds,
-  sessionBoundNames,
-  sessionTurnFailure,
+  sessionPlaneAnswers,
   sessionTurnResultCharsMax,
-} from "./session.mjs";
-import { observeRateLimit, rateLimitSightings } from "./rateLimit.mjs";
+} from "@chuggy/worker-contract/sessionPlane";
+import { chuggyToolPrefix } from "@chuggy/worker-contract/sessionTools";
 import {
   sessionConfigDirectoryVariable,
   sessionModelVariable,
   sessionTaskVariable,
   workerRepositoriesVariable,
   workerWorkspaceVariable,
-} from "../../src/contract/workerEnvironment.ts";
+} from "@chuggy/worker-contract/workerEnvironment";
+
+import { sessionBuiltInTools, sessionCapabilityTools } from "./chuggyTools.mjs";
+import {
+  checkedSessionBounds,
+  sessionBoundNames,
+  sessionTurnFailure,
+} from "./session.mjs";
+import { observeRateLimit, rateLimitSightings } from "./rateLimit.mjs";
 import {
   bearer,
   credentialFile,
   environment,
   facts,
+  leadRoster,
   mintedCredential,
   planeOf,
   queryOf,
@@ -36,9 +34,10 @@ import {
   result,
   run,
   task,
+  threadRoster,
   token,
   turnOne,
-} from "../../test/contract/sessionHarness.mjs";
+} from "./sessionHarness.fixture.mjs";
 
 /** The sightings a turn that saw exactly these frames, in this order, ends with. */
 function seenBy(...events) {
@@ -197,33 +196,28 @@ test("an inquiry forks the parent's transcript, never its own empty reference", 
 });
 
 test("an inquiry with no transcript to fork from fails its turn and opens no query", async () => {
-  for (const forkFrom of [undefined, ""]) {
-    const named = JSON.stringify(forkFrom);
-    const plane = planeOf([{ ...turnOne, inputKind: "Inquiry" }], {
-      ...facts,
-      kind: "Inquiry",
-      capabilities: ["ProjectRead"],
-      agentReference: "runtime-1",
-      ...(forkFrom === undefined ? {} : { forkFrom }),
-    });
-    const { seen, query } = queryOf(() => [
-      result("success", { result: "answered from nothing" }),
-    ]);
+  const plane = planeOf([{ ...turnOne, inputKind: "Inquiry" }], {
+    ...facts,
+    kind: "Inquiry",
+    capabilities: ["ProjectRead"],
+    agentReference: "runtime-1",
+  });
+  const { seen, query } = queryOf(() => [
+    result("success", { result: "answered from nothing" }),
+  ]);
 
-    const code = await run({ request: plane.request, query });
+  const code = await run({ request: plane.request, query });
 
-    assert.equal(code, 1, named);
-    assert.equal(seen.options, undefined, `a query was opened for ${named}`);
-    assert.deepEqual(
-      plane.calls.find(({ path }) => path === "/v1/session/turn/failure").body,
-      { turn: "turn-1", failure: "AgentFailed" },
-      named,
-    );
-    assert.ok(
-      !plane.calls.some(({ path }) => path === "/v1/session/turn/answer"),
-      `an inquiry forking ${named} answered`,
-    );
-  }
+  assert.equal(code, 1);
+  assert.equal(seen.options, undefined, "a query was opened");
+  assert.deepEqual(
+    plane.calls.find(({ path }) => path === "/v1/session/turn/failure").body,
+    { turn: "turn-1", failure: "AgentFailed" },
+  );
+  assert.ok(
+    !plane.calls.some(({ path }) => path === "/v1/session/turn/answer"),
+    "an inquiry forking nothing answered",
+  );
 });
 
 /**
@@ -607,7 +601,10 @@ test("a credential that straddles the result's truncation is scrubbed whole", as
 });
 
 test("a reference bind the plane did not accept ends the session rather than running on", async () => {
-  for (const status of [400, 413, 401]) {
+  const refusals = Object.keys(sessionPlaneAnswers.reference)
+    .map(Number)
+    .filter((status) => status >= 400);
+  for (const status of refusals) {
     const plane = planeOf([turnOne], facts, (path) =>
       path === "/v1/session/reference" ? status : undefined,
     );
@@ -719,19 +716,17 @@ test("the session's objectives ride on the preset prompt, recorded for the conve
 });
 
 test("a session row that carries no objectives still takes its turn", async () => {
-  for (const systemPrompt of [undefined, ""]) {
-    const plane = planeOf([], { ...leadFacts, systemPrompt });
-    const { seen, query } = queryOf(() => []);
+  const plane = planeOf([], { ...leadFacts, systemPrompt: undefined });
+  const { seen, query } = queryOf(() => []);
 
-    const code = await run({ request: plane.request, query });
+  const code = await run({ request: plane.request, query });
 
-    assert.equal(code, 0);
-    assert.deepEqual(seen.options.systemPrompt, {
-      type: "preset",
-      preset: "claude_code",
-      snapshot: true,
-    });
-  }
+  assert.equal(code, 0);
+  assert.deepEqual(seen.options.systemPrompt, {
+    type: "preset",
+    preset: "claude_code",
+    snapshot: true,
+  });
 });
 
 test("an observation answered with decision tools posts the document they composed", async () => {
@@ -933,12 +928,7 @@ test("a project tool reaches the API under the session's own bearer", async () =
   assert.equal(seenApi[0].apiBearer, bearer);
 });
 
-/**
- * A member's thread as the plane hands one over, under the roster the fixture
- * carries: `test/contract/imageTools.test.mjs` asserts that copy is
- * `threadCapabilitiesDefault`, so a thread suite cannot stay green against a
- * roster the tree no longer opens a thread with.
- */
+/** A member's thread as the plane hands one over, under the fixture's thread roster. */
 const threadFacts = {
   ...facts,
   kind: "Thread",

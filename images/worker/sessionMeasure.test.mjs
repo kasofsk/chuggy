@@ -5,18 +5,19 @@
  * IT IS ITS OWN SUITE BECAUSE THE SUBJECT IS ITS OWN. The measurement is read
  * off the runtime's messages at seams the pod's other records share, so a case
  * that fails here names the measurement rather than the pod; the doubles both
- * suites drive are `./sessionHarness.mjs`'s.
+ * suites drive are `./sessionHarness.fixture.mjs`'s.
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  sessionMeasure,
   sessionTurnModelCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
-} from "./session.mjs";
+} from "@chuggy/worker-contract/sessionPlane";
+
+import { sessionMeasure } from "./session.mjs";
 import {
   facts,
   planeOf,
@@ -25,7 +26,7 @@ import {
   result,
   run,
   turnOne,
-} from "../../test/contract/sessionHarness.mjs";
+} from "./sessionHarness.fixture.mjs";
 
 /**
  * What the runtime reported its query pipeline had spent, taken from the spike's

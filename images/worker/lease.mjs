@@ -1,3 +1,5 @@
+import { workerPlaneRoutes } from "@chuggy/worker-contract/workerPlane";
+
 import { workerRequest } from "./transport.mjs";
 
 export const heartbeatIntervalMilliseconds = 60_000;
@@ -12,7 +14,7 @@ export function keepWorkerLease(task, bearer, services = {}) {
     request = workerRequest,
     setInterval: schedule = globalThis.setInterval,
     clearInterval: unschedule = globalThis.clearInterval,
-    path = "/v1/heartbeat",
+    path = workerPlaneRoutes.heartbeat.path,
   } = services;
   let pending;
   let failure;

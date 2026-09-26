@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import test from "node:test";
 
+import { nativeHttpMediaType } from "@chuggy/worker-contract/sessionTools";
+
 import {
   chuggyBoundedBody,
-  chuggyMediaType,
   chuggyRequest,
   chuggyRequestAttemptsMax,
   chuggyRequestIsRead,
@@ -60,7 +61,7 @@ test("every call carries the session bearer, the media type and no redirect", as
 
   assert.equal(calls[0].url, "https://api.test:8443/api/v1/projects");
   assert.equal(calls[0].init.headers.authorization, `Bearer ${bearer}`);
-  assert.equal(calls[0].init.headers.accept, chuggyMediaType);
+  assert.equal(calls[0].init.headers.accept, nativeHttpMediaType);
   assert.equal(calls[0].init.redirect, "manual");
 });
 
@@ -136,7 +137,7 @@ test("no init may take the bearer off a call or make it follow a redirect", asyn
 
   assert.equal(calls[0].init.redirect, "manual");
   assert.equal(calls[0].init.headers.authorization, `Bearer ${bearer}`);
-  assert.equal(calls[0].init.headers.accept, chuggyMediaType);
+  assert.equal(calls[0].init.headers.accept, nativeHttpMediaType);
 });
 
 test("a write whose transport threw is not retried into a second command", async () => {

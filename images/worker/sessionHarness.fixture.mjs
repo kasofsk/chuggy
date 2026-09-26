@@ -1,25 +1,44 @@
 /**
- * The doubles two session suites drive the pod through: a worker plane that
- * records what it was asked, a runtime whose messages a case scripts, and the
- * one `sessionMain` call that wires them together.
+ * The doubles the session suites drive the pod through: a worker plane built
+ * from the contract's answer maps and reached through the pod's own transport,
+ * a runtime whose messages a case scripts, and the one `sessionMain` call that
+ * wires them together.
  *
  * IT IS A MODULE RATHER THAN A COPY BECAUSE THE TAIL KEPT COLLIDING. The pod's
  * suites are appended to, and two of them appended at the same offset twice
  * over; a suite per subject is what stops that, and a suite per subject needs
- * one harness rather than one each. It sits here rather than beside the pod
- * because everything the image directory holds but a suite is a module the
- * image must carry, and a double is not one — the same reason the roster
- * fixture those suites read is here.
+ * one harness rather than one each.
  */
 
-import { z } from "zod";
-
-import { sessionMain } from "../../images/worker/session.mjs";
 import {
   sessionTaskVariable,
   workerCredentialFilesVariable,
   workerWorkspaceVariable,
-} from "../../src/contract/workerEnvironment.ts";
+} from "@chuggy/worker-contract/workerEnvironment";
+import { z } from "zod";
+
+import { overPlane, planeFetch, planes } from "./plane.fixture.mjs";
+import { sessionMain } from "./session.mjs";
+import { sessionRequest } from "./sessionTransport.mjs";
+
+/**
+ * The rosters the session suites open a lead and a thread with. They are cases
+ * rather than copies: which roster a session is opened with is the provisioning
+ * root's, and `contract.test.mjs` holds the pod over every roster there is.
+ */
+export const leadRoster = [
+  "RepositoryRead",
+  "ProjectRead",
+  "DraftAuthor",
+  "LeadDecision",
+];
+export const threadRoster = [
+  "RepositoryRead",
+  "RunCommands",
+  "ProjectRead",
+  "DraftAuthor",
+  "DraftOriginate",
+];
 
 /** The rejection frame kasofsk/chuggy#386 reports, as the runtime declares it. */
 export const rejection = {
@@ -66,49 +85,48 @@ export const environment = {
 export const mintedCredential = {
   username: "x-access-token",
   password: "ghs_0123456789abcdefghijklmnopqrstuvwxyz",
+  expiresAtMs: 1_900_000_000_000,
 };
 
 /**
- * The plane a case drives. `minted` is what `/v1/session/credential` answers;
- * without one the plane mints nothing, which is the deployment every case that
- * is about something else runs under.
+ * The plane a case drives. `minted` is what the session credential route
+ * answers; without one the plane mints nothing, which is the deployment every
+ * case that is about something else runs under. `refuse(path)` names a status
+ * to answer a path with instead, which must be one its route answers.
  */
 export function planeOf(turns, facts, refuse = () => undefined, minted) {
   const calls = [];
   let claims = 0;
-  return {
-    calls,
-    request: async (_task, _bearer, path, init) => {
-      const refused = refuse(path);
-      if (refused !== undefined) {
-        calls.push({ path, method: init?.method });
-        return { status: refused, json: async () => ({}) };
-      }
-      const type = init?.headers?.["content-type"];
-      calls.push({
-        path,
-        method: init?.method,
-        body: type === "application/json" ? JSON.parse(init.body) : init?.body,
-      });
-      if (path === "/v1/session")
-        return { status: 200, ok: true, json: async () => facts };
-      if (path === "/v1/session/credential")
+  const plane = planeFetch(planes.session, (route, { path, method, body }) => {
+    const refused = refuse(path.split("?")[0]);
+    if (refused !== undefined) {
+      calls.push({ path, method });
+      return { status: refused };
+    }
+    calls.push({ path, method, body });
+    switch (route) {
+      case "facts":
+        return { status: 200, body: facts };
+      case "credential":
         return minted === undefined
-          ? {
-              status: 404,
-              json: async () => ({ reason: "ForgeNotConfigured" }),
-            }
-          : { status: 200, ok: true, json: async () => minted };
-      if (path === "/v1/session/turn") {
+          ? { status: 404, body: { reason: "ForgeNotConfigured" } }
+          : { status: 200, body: minted };
+      case "turn": {
         const turn = turns[claims];
         claims += 1;
         return turn === undefined
           ? { status: 204 }
-          : { status: 200, json: async () => turn };
+          : { status: 200, body: turn };
       }
-      return { status: 204 };
-    },
-  };
+      case "storeStreams":
+        return { status: 200, body: { streams: [] } };
+      case "storePage":
+        return { status: 200, body: { batches: [] } };
+      default:
+        return { status: 204 };
+    }
+  });
+  return { calls, request: overPlane(sessionRequest, plane.fetch) };
 }
 
 export function queryOf(script) {

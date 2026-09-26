@@ -25,10 +25,9 @@ import { createHash } from "node:crypto";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { truncationMarker } from "./runEvidence.mjs";
+import { runConfigurationBytesMax } from "@chuggy/worker-contract/workerPlane";
 
-/** The largest snapshot, which is what one console read answers whole. */
-export const runConfigurationBytesMax = 1_048_576;
+import { truncationMarker } from "./runEvidence.mjs";
 
 /** The most of one file the snapshot carries; a larger file is not an
  * instruction file. */

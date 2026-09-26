@@ -113,10 +113,17 @@
 
 import { Buffer } from "node:buffer";
 
-import { sessionRequest } from "./sessionTransport.mjs";
+import {
+  isSessionStoreStream,
+  sessionPlaneRoutes,
+  sessionStoreBatchBytesMax,
+  sessionStoreBatchesMax,
+  sessionStorePageBatchesMax,
+} from "@chuggy/worker-contract/sessionPlane";
+import { workerPlaneBytesMediaType } from "@chuggy/worker-contract/workerPlane";
 
-/** One store batch is one wire body's worth, mirroring the plane's own bound. */
-export const sessionStoreBatchBytesMax = 65_536;
+import { sessionRequest } from "./sessionTransport.mjs";
+import { routePath } from "./wire.mjs";
 
 /**
  * What a clip has to spend on one line, its newline counted. It is under the
@@ -132,17 +139,8 @@ export const sessionStoreClipBudgetBytes = Math.floor(
   sessionStoreBatchBytesMax / 2,
 );
 
-/** The most batches one stream of a session's store holds. */
-export const sessionStoreBatchesMax = 65_536;
-
-/** How many batches one store read answers with. */
-export const sessionStorePageBatchesMax = 8;
-
 /** How many already-confirmed entry uuids one stream's adapter remembers. */
-export const sessionStoreUuidsRemembered = 4_096;
-
-/** The longest stream name, which is a runtime session id and an optional subpath. */
-export const sessionStoreStreamCharsMax = 256;
+const sessionStoreUuidsRemembered = 4_096;
 
 const loadPagesMax = Math.ceil(
   sessionStoreBatchesMax / sessionStorePageBatchesMax,
@@ -159,8 +157,10 @@ export function sessionStoreStream(key) {
     typeof key.subpath === "string" && key.subpath.length > 0
       ? `${sessionId}/${key.subpath}`
       : sessionId;
-  if (stream.length > sessionStoreStreamCharsMax)
-    throw new Error(`the session store stream ${stream} is too long`);
+  if (!isSessionStoreStream(stream))
+    throw new Error(
+      `the session store stream ${stream} is not one the plane holds`,
+    );
   return stream;
 }
 
@@ -555,7 +555,10 @@ function frozenBatch(state, held) {
 }
 
 function batchPath(stream, batch) {
-  return `/v1/session/store/${encodeURIComponent(stream)}/${String(batch)}`;
+  return routePath(
+    sessionPlaneRoutes.storeBatch,
+    `${encodeURIComponent(stream)}/${String(batch)}`,
+  );
 }
 
 function recordTurnBatch(held, stream, batch) {
@@ -574,7 +577,7 @@ function confirm(held, state, stream, frozen) {
 async function sendBatch(held, stream, frozen) {
   const response = await held.call(batchPath(stream, frozen.batch), {
     method: "PUT",
-    headers: { "content-type": "application/octet-stream" },
+    headers: { "content-type": workerPlaneBytesMediaType },
     body: Buffer.from(frozen.body),
   });
   if (response.status !== storedStatus)
@@ -605,7 +608,10 @@ async function appendOnce(held, stream, entries) {
 async function readPage(held, stream, after) {
   const query = `after=${String(after)}&limit=${String(sessionStorePageBatchesMax)}`;
   const response = await held.call(
-    `/v1/session/store/${encodeURIComponent(stream)}?${query}`,
+    routePath(
+      sessionPlaneRoutes.storePage,
+      `${encodeURIComponent(stream)}?${query}`,
+    ),
     { method: "GET" },
   );
   if (response.status !== readStatus)
@@ -662,7 +668,7 @@ async function loadStream(held, stream) {
 
 async function listStreamSubkeys(held, sessionId) {
   const response = await held.call(
-    `/v1/session/store?stream=${encodeURIComponent(sessionId)}`,
+    `${sessionPlaneRoutes.storeStreams.path}?stream=${encodeURIComponent(sessionId)}`,
     { method: "GET" },
   );
   if (response.status !== readStatus)

@@ -51,9 +51,26 @@ import { join } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 
 import {
+  agentReportedTurnFailures,
+  sessionPlaneRoutes,
+  sessionTurnModelCharsMax,
+  sessionTurnResultCharsMax,
+  sessionTurnToolNameCharsMax,
+  sessionTurnToolsMax,
+} from "@chuggy/worker-contract/sessionPlane";
+import { chuggyToolServerName } from "@chuggy/worker-contract/sessionTools";
+import {
+  sessionConfigDirectoryVariable,
+  sessionModelVariable,
+  sessionTaskVariable,
+  workerCredentialFilesVariable,
+  workerRepositoriesVariable,
+  workerWorkspaceVariable,
+} from "@chuggy/worker-contract/workerEnvironment";
+
+import {
   chuggyToolContext,
   chuggyToolServer,
-  chuggyToolServerName,
   sessionAllowedTools,
 } from "./chuggyTools.mjs";
 import { leadDecisionStaging } from "./leadDecision.mjs";
@@ -70,21 +87,22 @@ import { sessionCheckout } from "./sessionCheckout.mjs";
 import { sessionMailbox } from "./sessionMailbox.mjs";
 import { sessionStoreAdapter } from "./sessionStore.mjs";
 import { sessionRequest, sessionStopped } from "./sessionTransport.mjs";
+import { rosterLabel } from "./wire.mjs";
 
-/** The longest result text the plane stores for one turn. */
-export const sessionTurnResultCharsMax = 65_536;
-
-/** The most tool names one turn's measurement reports, distinct and in no order. */
-export const sessionTurnToolsMax = 64;
-
-/** The longest tool name one turn's measurement reports. */
-export const sessionTurnToolNameCharsMax = 128;
-
-/**
- * The longest model identity one turn's measurement reports, which is the bound
- * on the session's own opaque identities rather than a run usage row's.
- */
-export const sessionTurnModelCharsMax = 256;
+/** The failures this pod names for a turn, each one the plane's roster carries. */
+const [
+  agentFailed,
+  agentRateLimited,
+  agentTurnsExhausted,
+  agentBudgetExhausted,
+  storeRefused,
+] = [
+  "AgentFailed",
+  "AgentRateLimited",
+  "AgentTurnsExhausted",
+  "AgentBudgetExhausted",
+  "StoreRefused",
+].map((label) => rosterLabel(agentReportedTurnFailures, label));
 
 /** What a micro is of a dollar, which is the unit the measured cost is carried in. */
 const microsPerDollar = 1_000_000;
@@ -146,7 +164,7 @@ export function checkedSessionBounds(bounds) {
     const value = bounds?.[name];
     if (!valid(value) || value <= 0)
       throw new Error(
-        `CHUG_SESSION_TASK needs a positive ${name} and carries ${JSON.stringify(value)}`,
+        `${sessionTaskVariable} needs a positive ${name} and carries ${JSON.stringify(value)}`,
       );
   }
   return bounds;
@@ -170,11 +188,11 @@ function required(environment, name) {
  */
 export function sessionTurnFailure(result, sightings) {
   const subtype = typeof result?.subtype === "string" ? result.subtype : "";
-  if (rateLimited(sightings)) return "AgentRateLimited";
+  if (rateLimited(sightings)) return agentRateLimited;
   if (subtype === "success") return undefined;
-  if (subtype === "error_max_budget_usd") return "AgentBudgetExhausted";
-  if (subtype === "error_max_turns") return "AgentTurnsExhausted";
-  return "AgentFailed";
+  if (subtype === "error_max_budget_usd") return agentBudgetExhausted;
+  if (subtype === "error_max_turns") return agentTurnsExhausted;
+  return agentFailed;
 }
 
 /**
@@ -488,11 +506,11 @@ export function sessionQueryOptions(
   token,
   { servers = {}, checkout } = {},
 ) {
-  const workspace = environment.CHUG_WORKER_WORKSPACE ?? defaultWorkspace;
+  const workspace = environment[workerWorkspaceVariable] ?? defaultWorkspace;
   const { allowedTools, disallowedTools } = sessionAllowedTools(
     facts.capabilities,
   );
-  const model = environment.CHUG_SESSION_MODEL;
+  const model = environment[sessionModelVariable];
   const fork = sessionForkFrom(facts);
   return {
     sessionStore: store,
@@ -501,7 +519,10 @@ export function sessionQueryOptions(
     env: {
       ...environment,
       CLAUDE_CODE_OAUTH_TOKEN: token,
-      CLAUDE_CONFIG_DIR: sessionConfigDirectory(environment, workspace),
+      [sessionConfigDirectoryVariable]: sessionConfigDirectory(
+        environment,
+        workspace,
+      ),
     },
     mcpServers: servers,
     systemPrompt: sessionSystemPrompt(facts),
@@ -522,7 +543,9 @@ export function sessionQueryOptions(
 }
 
 function sessionConfigDirectory(environment, workspace) {
-  return environment.CLAUDE_CONFIG_DIR ?? join(workspace, ".claude");
+  return (
+    environment[sessionConfigDirectoryVariable] ?? join(workspace, ".claude")
+  );
 }
 
 async function post(context, path, body) {
@@ -544,7 +567,7 @@ async function bindReference(context, message) {
   const response = await context.request(
     context.task,
     context.bearer,
-    "/v1/session/reference",
+    sessionPlaneRoutes.reference.path,
     {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -619,26 +642,26 @@ export async function runSessionTurn(context) {
  */
 async function settleTurn(context, turn, result) {
   if (context.mirrored) {
-    await post(context, "/v1/session/turn/failure", {
+    await post(context, sessionPlaneRoutes.turnFailure.path, {
       turn: turn.turn,
-      failure: "StoreRefused",
+      failure: storeRefused,
     });
     return "Stop";
   }
   const failure = sessionTurnFailure(result, context.sightings);
-  if (failure === "AgentRateLimited") {
-    await post(context, "/v1/session/held", {});
+  if (failure === agentRateLimited) {
+    await post(context, sessionPlaneRoutes.held.path, {});
     return "Held";
   }
   if (failure !== undefined) {
-    await post(context, "/v1/session/turn/failure", {
+    await post(context, sessionPlaneRoutes.turnFailure.path, {
       turn: turn.turn,
       failure,
     });
-    return failure === "AgentBudgetExhausted" ? "Spent" : "Continue";
+    return failure === agentBudgetExhausted ? "Spent" : "Continue";
   }
   const measured = context.measure.of(result);
-  await post(context, "/v1/session/turn/answer", {
+  await post(context, sessionPlaneRoutes.turnAnswer.path, {
     turn: turn.turn,
     result: sessionAnswerText(context, turn, result),
     ...context.store.turnBatches(),
@@ -706,9 +729,9 @@ async function refuseSession(context, warn, reason) {
   warn(`${reason}\n`);
   const turns = context.mailbox.turns();
   if ((await turns.next()).done === false)
-    await post(context, "/v1/session/turn/failure", {
+    await post(context, sessionPlaneRoutes.turnFailure.path, {
       turn: context.mailbox.claimed().turn,
-      failure: "AgentFailed",
+      failure: agentFailed,
     });
   context.mailbox.stop();
   return 1;
@@ -718,7 +741,7 @@ async function sessionFacts(context) {
   const response = await context.request(
     context.task,
     context.bearer,
-    "/v1/session",
+    sessionPlaneRoutes.facts.path,
     { method: "GET" },
   );
   if (response.status !== readStatus)
@@ -735,7 +758,7 @@ async function sessionFacts(context) {
  */
 async function sessionCredentials(environment, read, slot) {
   const files = JSON.parse(
-    required(environment, "CHUG_WORKER_CREDENTIAL_FILES"),
+    required(environment, workerCredentialFilesVariable),
   );
   const path = files[slot];
   if (typeof path !== "string")
@@ -759,8 +782,8 @@ async function sessionCredentials(environment, read, slot) {
  * leaves out exactly as before.
  */
 async function sessionTree(take, task, environment, credentialFiles, logging) {
-  const workspace = environment.CHUG_WORKER_WORKSPACE ?? defaultWorkspace;
-  const named = environment.CHUG_WORKER_REPOSITORIES;
+  const workspace = environment[workerWorkspaceVariable] ?? defaultWorkspace;
+  const named = environment[workerRepositoriesVariable];
   const repositories =
     named === undefined || named.length === 0 ? {} : workerRepositories(named);
   return take(task, repositories, credentialFiles, workspace, logging);
@@ -818,9 +841,9 @@ async function sessionHeld(context, environment, read, write, facts) {
  * path: a stop answer is a refusal like any other, remembered until the lease
  * is stopped.
  */
-function sessionLease(task, bearer, request) {
+export function sessionLease(task, bearer, request) {
   return keepWorkerLease(task, bearer, {
-    path: "/v1/session/heartbeat",
+    path: sessionPlaneRoutes.heartbeat.path,
     request: async (leaseTask, leaseBearer, path, init) => {
       const response = await request(leaseTask, leaseBearer, path, init);
       if (response.status !== acceptedStatus)
@@ -945,7 +968,7 @@ export async function sessionMain(services = {}) {
   let scrub = (text) => text;
   let stopLease = async () => undefined;
   try {
-    const task = JSON.parse(required(environment, "CHUG_SESSION_TASK"));
+    const task = JSON.parse(required(environment, sessionTaskVariable));
     checkedSessionBounds(task.bounds);
     const bearer = (await read(task.workerPlane.capabilityFile)).trim();
     const context = {
@@ -963,7 +986,7 @@ export async function sessionMain(services = {}) {
     const { credentialFiles, token, minted } = held;
     scrub = held.scrub;
     context.scrub = scrub;
-    const workspace = environment.CHUG_WORKER_WORKSPACE ?? defaultWorkspace;
+    const workspace = environment[workerWorkspaceVariable] ?? defaultWorkspace;
     await ensureDirectory(sessionConfigDirectory(environment, workspace));
     stopLease = startLease(task, bearer, request);
     const checkout = await sessionTree(
