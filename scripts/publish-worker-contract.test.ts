@@ -3,7 +3,7 @@ import test from "node:test";
 
 import {
   publishWorkerContract,
-  publishWorkerContractRegistered,
+  publishWorkerContractReleased,
   type WorkerContractPublishPorts,
 } from "./publish-worker-contract.ts";
 
@@ -11,7 +11,7 @@ const wire = "a".repeat(64);
 const name = "@chuggy/worker-contract";
 const release = "1.2.0";
 
-/** A git and a registry that hold nothing yet, recording every change asked of them; `over` makes one of them refuse. */
+/** A git and a GitHub that hold nothing yet, recording every change asked of them; `over` makes one of them refuse. */
 function faked(over: Partial<WorkerContractPublishPorts> = {}): {
   readonly made: string[];
   readonly ports: WorkerContractPublishPorts;
@@ -23,7 +23,7 @@ function faked(over: Partial<WorkerContractPublishPorts> = {}): {
       clean: () => true,
       commit: () => "packed-commit",
       tagged: () => false,
-      published: () => false,
+      released: () => false,
       history: () => [
         { release: "1.0.0", wire: "b".repeat(64) },
         { release, wire },
@@ -33,8 +33,8 @@ function faked(over: Partial<WorkerContractPublishPorts> = {}): {
         made.push(`pack ${outDirectory}`);
         return { tarball: `${outDirectory}/contract.tgz`, sha256: "c" };
       },
-      stage: (tarball) => {
-        made.push(`stage ${tarball}`);
+      release: (tag, commit, tarball, title, notes) => {
+        made.push(`release ${tag} ${commit} ${tarball} ${title} ${notes}`);
       },
       tag: (tag, commit) => {
         made.push(`tag ${tag} ${commit}`);
@@ -44,7 +44,7 @@ function faked(over: Partial<WorkerContractPublishPorts> = {}): {
   };
 }
 
-test("a release the history names is packed, staged, and its commit tagged", async () => {
+test("a release the history names is packed, released at its commit, and tagged", async () => {
   const { made, ports } = faked();
   const published = await publishWorkerContract(
     ports,
@@ -53,15 +53,15 @@ test("a release the history names is packed, staged, and its commit tagged", asy
     "/out",
     false,
   );
-  assert.equal(published.published, "Staged");
+  assert.equal(published.published, "Released");
   assert.deepEqual(made, [
     "pack /out",
-    "stage /out/contract.tgz",
+    "release worker-contract-v1.2.0 packed-commit /out/contract.tgz @chuggy/worker-contract 1.2.0 Packed at packed-commit (sha256 c).",
     "tag worker-contract-v1.2.0 packed-commit",
   ]);
 });
 
-test("a dry run packs and neither stages nor tags", async () => {
+test("a dry run packs and neither releases nor tags", async () => {
   const { made, ports } = faked();
   const published = await publishWorkerContract(
     ports,
@@ -74,15 +74,15 @@ test("a dry run packs and neither stages nor tags", async () => {
   assert.deepEqual(made, ["pack /out"]);
 });
 
-test("a stage npm refuses tags nothing", async () => {
+test("a release GitHub refuses tags nothing", async () => {
   const { made, ports } = faked({
-    stage: () => {
-      throw new Error("npm stage publish exited 1");
+    release: () => {
+      throw new Error("gh release create exited 1");
     },
   });
   await assert.rejects(
     publishWorkerContract(ports, name, release, "/out", false),
-    /npm stage publish/u,
+    /gh release create/u,
   );
   assert.deepEqual(made, ["pack /out"]);
 });
@@ -109,12 +109,9 @@ for (const [why, over, refusal] of [
     /worker-contract-v1\.2\.0 is already a tag/u,
   ],
   [
-    "a release already on the registry",
-    {
-      published: (named: string, version: string) =>
-        named === name && version === release,
-    },
-    /@chuggy\/worker-contract@1\.2\.0 is already on the registry/u,
+    "a release already made",
+    { released: (tag: string) => tag === "worker-contract-v1.2.0" },
+    /worker-contract-v1\.2\.0 is already released/u,
   ],
 ] as const)
   for (const dryRun of [false, true])
@@ -135,10 +132,10 @@ for (const [why, over, refusal] of [
       assert.deepEqual(made, []);
     });
 
-test("a registry that cannot say whether the release exists stops the stage", async () => {
+test("a GitHub that cannot say whether the release exists stops the release", async () => {
   const { made, ports } = faked({
-    published: () => {
-      throw new Error("npm could not say");
+    released: () => {
+      throw new Error("gh could not say");
     },
   });
   await assert.rejects(
@@ -148,15 +145,11 @@ test("a registry that cannot say whether the release exists stops the stage", as
   assert.deepEqual(made, []);
 });
 
-test("the registry's answer is read as held, as never seen, or as no answer", () => {
-  const viewed = (status: number, stdout: string, stderr = "") =>
-    publishWorkerContractRegistered({ status, stdout, stderr });
-  assert.equal(viewed(0, '"1.2.0"\n'), true);
-  assert.equal(viewed(0, ""), false);
-  assert.equal(
-    viewed(1, '{"error":{"code":"E404","summary":"Not Found"}}'),
-    false,
-  );
-  assert.equal(viewed(1, "", "npm error code E404\n"), false);
-  assert.throws(() => viewed(1, "", "npm error code ETIMEDOUT\n"));
+test("GitHub's answer is read as released, as never seen, or as no answer", () => {
+  const viewed = (status: number, stderr = "") =>
+    publishWorkerContractReleased({ status, stdout: "", stderr });
+  assert.equal(viewed(0), true);
+  assert.equal(viewed(1, "release not found\n"), false);
+  assert.throws(() => viewed(1, "HTTP 401: Bad credentials\n"));
+  assert.throws(() => viewed(1, "error connecting to api.github.com\n"));
 });

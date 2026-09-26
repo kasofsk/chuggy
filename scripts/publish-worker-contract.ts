@@ -1,17 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * Publishes the worker contract up to a maintainer's approval: packs it,
- * stages the tarball on npm for them to approve under their own second factor,
- * and tags the commit it was packed from as `worker-contract-v<release>`. npm
- * stages only a package it already holds, so a first version is published by
- * hand.
+ * Publishes the worker contract: packs it and releases the tarball on GitHub
+ * under the tag `worker-contract-v<release>`, made at the commit it was packed
+ * from. A consumer installs the release's asset by its URL, and its lockfile
+ * pins the tarball's integrity.
  *
  * IT REFUSES BEFORE IT PACKS. A working tree with changes is not the commit the
  * tag would name; a history that does not name this release as the wire this
- * tree holds is a release that was never moved; and a release already on the
- * registry or already tagged is one npm or git would refuse halfway through.
- * `--dry-run` does everything but the stage and the tag.
+ * tree holds is a release that was never moved; and a release already made or
+ * already tagged is one GitHub or git would refuse halfway through.
+ * `--dry-run` does everything but the release and the tag.
  */
 
 import { spawnSync } from "node:child_process";
@@ -34,23 +33,29 @@ import {
   type WorkerContractHistory,
 } from "./worker-contract-wire.ts";
 
-/** Everything a publish reads or changes outside this module, so a test can stand in for git and the registry. */
+/** Everything a publish reads or changes outside this module, so a test can stand in for git and GitHub. */
 export interface WorkerContractPublishPorts {
   readonly clean: () => boolean;
   readonly commit: () => string;
   readonly tagged: (tag: string) => boolean;
-  readonly published: (name: string, version: string) => boolean;
+  readonly released: (tag: string) => boolean;
   readonly history: () => WorkerContractHistory;
   readonly wire: () => Promise<string>;
   readonly pack: (outDirectory: string) => PackedWorkerContract;
-  readonly stage: (tarball: string) => void;
+  readonly release: (
+    tag: string,
+    commit: string,
+    tarball: string,
+    title: string,
+    notes: string,
+  ) => void;
   readonly tag: (tag: string, commit: string) => void;
 }
 
 export type WorkerContractPublished =
   | { readonly published: "Refused"; readonly why: string }
   | {
-      readonly published: "Packed" | "Staged";
+      readonly published: "Packed" | "Released";
       readonly packed: PackedWorkerContract;
       readonly commit: string;
       readonly tag: string;
@@ -61,7 +66,7 @@ export function workerContractTag(release: string): string {
   return `worker-contract-v${release}`;
 }
 
-/** Packs `release` into `outDirectory` unless a refusal holds, then stages and tags it unless `dryRun`. */
+/** Packs `release` into `outDirectory` unless a refusal holds, then releases and tags it unless `dryRun`. */
 export async function publishWorkerContract(
   ports: WorkerContractPublishPorts,
   name: string,
@@ -83,17 +88,20 @@ export async function publishWorkerContract(
   if (unheld !== undefined) return { published: "Refused", why: unheld };
   if (ports.tagged(tag))
     return { published: "Refused", why: `${tag} is already a tag` };
-  if (ports.published(name, release))
-    return {
-      published: "Refused",
-      why: `${name}@${release} is already on the registry`,
-    };
+  if (ports.released(tag))
+    return { published: "Refused", why: `${tag} is already released` };
   const commit = ports.commit();
   const packed = ports.pack(outDirectory);
   if (dryRun) return { published: "Packed", packed, commit, tag };
-  ports.stage(packed.tarball);
+  ports.release(
+    tag,
+    commit,
+    packed.tarball,
+    `${name} ${release}`,
+    `Packed at ${commit} (sha256 ${packed.sha256}).`,
+  );
   ports.tag(tag, commit);
-  return { published: "Staged", packed, commit, tag };
+  return { published: "Released", packed, commit, tag };
 }
 
 /** One command's output, raised where it exits other than `allowed` says. */
@@ -117,35 +125,39 @@ function publishWorkerContractCommand(
 }
 
 /**
- * Whether `npm view <name>@<version> version --json` said the registry holds
- * the version. A package or version it has never seen is an answer, and every
- * other failure is not.
+ * Whether `gh release view <tag>` said the release exists. A release GitHub
+ * has not found is an answer, and every other failure is not.
  */
-export function publishWorkerContractRegistered(viewed: {
+export function publishWorkerContractReleased(viewed: {
   readonly status: number;
   readonly stdout: string;
   readonly stderr: string;
 }): boolean {
-  if (viewed.status === 0) return viewed.stdout.trim() !== "";
-  if (/\bE404\b/u.test(`${viewed.stdout}${viewed.stderr}`)) return false;
-  throw new Error("npm could not say whether the release is on the registry");
+  if (viewed.status === 0) return true;
+  if (/^release not found$/mu.test(viewed.stderr)) return false;
+  throw new Error("gh could not say whether the release exists");
 }
 
-/** An npm that has `npm stage`, which the toolchain's npm may not. */
-const publishWorkerContractStagingNpm = "npm@11.20.0";
-
-/** Stages the tarball on this terminal, so its operator sees the stage npm names. */
-function publishWorkerContractTarball(tarball: string): void {
-  const run = spawnSync(
-    "npx",
-    ["--yes", publishWorkerContractStagingNpm, "stage", "publish", tarball],
-    { stdio: "inherit" },
-  );
-  if (run.error !== undefined) throw run.error;
-  if (run.status !== 0)
-    throw new Error(
-      `npm stage publish ${tarball} exited ${String(run.status)}`,
-    );
+/** Releases the tarball, which makes the tag at `commit` on the remote. */
+function publishWorkerContractRelease(
+  tag: string,
+  commit: string,
+  tarball: string,
+  title: string,
+  notes: string,
+): void {
+  publishWorkerContractCommand("gh", [
+    "release",
+    "create",
+    tag,
+    tarball,
+    "--target",
+    commit,
+    "--title",
+    title,
+    "--notes",
+    notes,
+  ]);
 }
 
 const publishWorkerContractGit: Pick<
@@ -175,18 +187,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const published = await publishWorkerContract(
     {
       ...publishWorkerContractGit,
-      published: (name, version) =>
-        publishWorkerContractRegistered(
-          publishWorkerContractCommand(
-            "npm",
-            ["view", `${name}@${version}`, "version", "--json"],
-            [0, 1],
-          ),
+      released: (tag) =>
+        publishWorkerContractReleased(
+          publishWorkerContractCommand("gh", ["release", "view", tag], [0, 1]),
         ),
       history: workerContractHistory,
       wire: workerContractWire,
       pack: packWorkerContract,
-      stage: publishWorkerContractTarball,
+      release: publishWorkerContractRelease,
     },
     workspaceManifest().name,
     workerContractRelease,
@@ -201,9 +209,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   } else
     process.stdout.write(
       `${published.published} ${published.packed.sha256}  ${published.packed.tarball}\n` +
-        `${published.published === "Staged" ? "tagged" : "would tag"} ${published.tag} at ${published.commit}\n` +
-        (published.published === "Staged"
-          ? `approve it: npx ${publishWorkerContractStagingNpm} stage approve <id>\n`
-          : ""),
+        `${published.published === "Released" ? "released and tagged" : "would release and tag"} ${published.tag} at ${published.commit}\n`,
     );
 }
