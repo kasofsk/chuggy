@@ -23,7 +23,7 @@
  * outlived its token asks again.
  *
  * THE TOKEN NEVER RESTS ON A NODE'S DISK. It is written under
- * `mintedCredentialDirectory`, which both pod documents mount a memory-backed
+ * `mintedCredentialDirectory`, which every pod document mounts a memory-backed
  * volume at, rather than under `TMPDIR`: a container's own writable layer is
  * node-local disk, while every credential the launcher mounts is already tmpfs.
  */
