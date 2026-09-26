@@ -44,6 +44,10 @@ import {
   type SessionPlaneRouteName,
 } from "../../src/contract/sessionPlane.ts";
 import {
+  workerContractHeader,
+  workerContractRelease,
+} from "../../src/contract/workerContract.ts";
+import {
   workerPlaneAnswers,
   workerPlaneBytesMediaType,
   workerPlaneRoutes,
@@ -174,14 +178,21 @@ interface WorkerPlaneCall {
   readonly payload?: string | Buffer | object;
 }
 
-/** One way of driving a route: the ports it meets, and how its call and its bearer differ from the plane's own. */
+/** One way of driving a route: the ports it meets, and how its call, its bearer and the release it names differ from the plane's own. */
 interface WorkerPlaneCase {
   readonly name: string;
   readonly service?: Partial<WorkerPlaneServerService>;
   readonly call?: WorkerPlaneCall;
   readonly anonymous?: true;
   readonly bearer?: string;
+  readonly release?: string;
 }
+
+/** A caller every route refuses before it reads a bearer. */
+const workerContractStranger: WorkerPlaneCase = {
+  name: "a release the plane does not serve",
+  release: "1.1.0",
+};
 
 const octets = { "content-type": workerPlaneBytesMediaType };
 const json = { "content-type": "application/json" };
@@ -234,6 +245,7 @@ function workerPlaneTask(
 
 /** The callers every route refuses before its own ports are reached. */
 const workerPlaneStrangers: readonly WorkerPlaneCase[] = [
+  workerContractStranger,
   { name: "no bearer", anonymous: true },
   { name: "an unknown bearer", service: workerPlaneAuthority(undefined) },
   {
@@ -500,6 +512,7 @@ const workerPlaneCases: Readonly<
 > = {
   input: [...workerPlaneStrangers, { name: "a live attempt" }],
   task: [
+    workerContractStranger,
     { name: "no bearer", anonymous: true },
     { name: "an unknown bearer", service: workerPlaneTask(undefined) },
     {
@@ -643,6 +656,7 @@ const sessionPlaneCalls: Readonly<
 
 /** The callers every session route refuses before its own ports are reached. */
 const sessionPlaneStrangers: readonly WorkerPlaneCase[] = [
+  workerContractStranger,
   { name: "no bearer", anonymous: true },
   { name: "an unknown session bearer", service: sessionAuthority(undefined) },
   {
@@ -899,7 +913,12 @@ async function workerPlaneDriven<Name extends string>(
   plane: WorkerPlaneDriven<Name>,
   name: Name,
   driven: WorkerPlaneCase,
-): Promise<{ status: number; body: string; retryAfter: unknown }> {
+): Promise<{
+  status: number;
+  body: string;
+  retryAfter: unknown;
+  release: unknown;
+}> {
   const app = createWorkerPlaneApp({ ...plane.service, ...driven.service });
   const route = plane.routes[name];
   const call = { ...plane.calls[name], ...driven.call };
@@ -911,6 +930,9 @@ async function workerPlaneDriven<Name extends string>(
       ...(driven.anonymous === true
         ? {}
         : { authorization: `Bearer ${driven.bearer ?? plane.bearer}` }),
+      ...(driven.release === undefined
+        ? {}
+        : { [workerContractHeader]: driven.release }),
       ...call.headers,
     },
     ...(call.payload === undefined ? {} : { payload: call.payload }),
@@ -920,6 +942,7 @@ async function workerPlaneDriven<Name extends string>(
     status: response.statusCode,
     body: response.body,
     retryAfter: response.headers["retry-after"],
+    release: response.headers[workerContractHeader],
   };
 }
 
@@ -970,6 +993,14 @@ function workerPlaneOptionalsSeen(
   }
 }
 
+/** Which of the bodies a status may carry `body` is, read as the pod's parse reads it: the first that accepts it. */
+function workerPlaneMemberRead(answer: z.ZodUnion, body: string): number {
+  const offered: unknown = JSON.parse(body);
+  return answer.options.findIndex(
+    (member) => (member as z.ZodType).safeParse(offered).success,
+  );
+}
+
 /** Whether a body is what the map says its status answers with, and names nothing more. */
 function workerPlaneAnswerRead(
   answer: WorkerPlaneAnswer,
@@ -994,6 +1025,7 @@ function workerPlaneAnswersHeld<Name extends string>(
     test(`${route.method} ${route.path} answers every outcome with a status and a body the contract names`, async () => {
       const answers = plane.answers[name];
       const statuses = new Set<number>();
+      const bodies = new Set<string>();
       const seen = new Map<string, Set<boolean>>();
       for (const driven of plane.cases[name]) {
         const answered = await workerPlaneDriven(plane, name, driven);
@@ -1005,8 +1037,17 @@ function workerPlaneAnswersHeld<Name extends string>(
         assert.doesNotThrow(() => {
           workerPlaneAnswerRead(answer, answered.body, answered.status, seen);
         }, `${driven.name} answered ${answered.body}`);
+        if (answer instanceof z.ZodUnion)
+          bodies.add(
+            `${String(answered.status)}|${String(workerPlaneMemberRead(answer, answered.body))}`,
+          );
         if (answered.status === 503)
           assert.match(String(answered.retryAfter), /^[1-9][0-9]*$/u);
+        assert.equal(
+          answered.release,
+          workerContractRelease,
+          `${driven.name} answered naming no release of its own`,
+        );
         statuses.add(answered.status);
       }
       assert.deepEqual(
@@ -1016,6 +1057,13 @@ function workerPlaneAnswersHeld<Name extends string>(
           .sort((left, right) => left - right),
         "every status the map lists is one some outcome answers",
       );
+      for (const [status, answer] of Object.entries(answers))
+        if (answer instanceof z.ZodUnion)
+          for (const index of answer.options.keys())
+            assert.ok(
+              bodies.has(`${status}|${String(index)}`),
+              `no outcome answers ${status} with its body ${String(index)}`,
+            );
       for (const [field, held] of seen)
         assert.equal(
           held.size,

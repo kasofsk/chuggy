@@ -1,9 +1,9 @@
 /**
  * A worker plane the suites drive the pod through, built from the contract's
  * own tables rather than written beside them. It resolves each request to the
- * route the contract names, reads its body under that route's schema, and
- * answers only a status that route's map names, with a body the map's schema
- * reads.
+ * route the contract names, holds it to naming the contract's release, reads
+ * its body under that route's schema, and answers only a status that route's
+ * map names, with a body the map's schema reads.
  *
  * A VIOLATION FAILS THE CASE THAT MADE IT, NOT ONLY THE REQUEST. The fetch
  * raises, but the transports retry a raising fetch and the callers catch what
@@ -23,6 +23,13 @@ import {
   sessionTurnAnswerSchema,
   sessionTurnFailureSchema,
 } from "@chuggy/worker-contract/sessionPlane";
+import {
+  contractVersionRefusalSchema,
+  workerContractHeader,
+  workerContractRelease,
+  workerContractVersionOf,
+  workerContractVersionText,
+} from "@chuggy/worker-contract/workerContract";
 import { resultManifestDocumentSchema } from "@chuggy/worker-contract/workerDocuments";
 import {
   workerPlaneAnswers,
@@ -32,6 +39,7 @@ import {
   workerRunTotalsSchema,
   workerRunTurnsSchema,
 } from "@chuggy/worker-contract/workerPlane";
+import { z } from "zod";
 
 /**
  * Each wire: its routes, what each answers, the schema a route's JSON body is
@@ -109,14 +117,38 @@ function offeredBody(plane, route, init) {
   return body;
 }
 
-/** A body `schema` reads for a refusal: its action, and the first reason it names where it names any. */
-export function refusalBody(schema) {
+const served = workerContractVersionText(
+  workerContractVersionOf(workerContractRelease),
+);
+
+/** The version refusal of a plane serving only the version this pod speaks. */
+export const versionRefusal = contractVersionRefusalSchema.parse({
+  action: "stop",
+  reason: "UnsupportedContractVersion",
+  accepted: { min: served, max: served },
+});
+
+/**
+ * Every body `schema` reads for a refusal, one per body a status may carry: its
+ * action, and the first reason it names where it names any.
+ */
+export function refusalBodies(schema) {
+  if (schema instanceof z.ZodUnion)
+    return schema.options.flatMap((option) => refusalBodies(option));
+  if (schema === contractVersionRefusalSchema) return [versionRefusal];
   const { action, reason } = schema.shape;
   const reasons = (reason?.unwrap?.() ?? reason)?.options;
-  return schema.parse({
-    ...(action === undefined ? {} : { action: action.value }),
-    ...(reasons === undefined ? {} : { reason: reasons[0] }),
-  });
+  return [
+    schema.parse({
+      ...(action === undefined ? {} : { action: action.value }),
+      ...(reasons === undefined ? {} : { reason: reasons[0] }),
+    }),
+  ];
+}
+
+/** The refusal a status answers where a case names none: the route's own, where it has one beside the version refusal. */
+function refusalBody(schema) {
+  return refusalBodies(schema).at(-1);
 }
 
 /** The response one status of one route is, refused where the route's map does not name it. */
@@ -150,6 +182,9 @@ export function planeFetch(plane, answer) {
       const method = init.method ?? "GET";
       const { pathname, search } = new URL(url);
       const route = routeOf(plane, method, pathname);
+      const release = init.headers?.[workerContractHeader];
+      if (release !== workerContractRelease)
+        throw violated(`${route} was asked under release ${String(release)}`);
       const body = offeredBody(plane, route, init);
       const request = { route, path: `${pathname}${search}`, method, body };
       asked.push(request);

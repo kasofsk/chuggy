@@ -35,6 +35,7 @@ import {
   resultManifestDocumentSchema,
   resultReportCharsMax,
 } from "@chuggy/worker-contract/workerDocuments";
+import { contractVersionRefusalStatus } from "@chuggy/worker-contract/workerContract";
 import { workerWorkspaceVariable } from "@chuggy/worker-contract/workerEnvironment";
 import { z } from "zod";
 
@@ -54,7 +55,13 @@ import {
   sessionCredentialPath,
   workerCredentialPath,
 } from "./planeCredential.mjs";
-import { overPlane, planeFetch, planes } from "./plane.fixture.mjs";
+import {
+  overPlane,
+  planeFetch,
+  planes,
+  refusalBodies,
+  versionRefusal,
+} from "./plane.fixture.mjs";
 import { runEvidenceRecorder } from "./runEvidence.mjs";
 import { sessionLease } from "./session.mjs";
 import {
@@ -276,19 +283,19 @@ const sessionCallers = {
 };
 
 /**
- * What one caller did when `route` answered `status` once, every other ask
+ * What one caller did when `route` gave `answer` once, every other ask
  * answering as it does on success: `reads` where it carried on after one ask,
  * `stops` where it gave up after one, and `retries` where it asked again.
  */
-async function reaction(wire, success, transport, caller, route, status) {
+async function reaction(wire, success, transport, caller, route, answer) {
   const counts = new Map();
   const plane = planeFetch(wire, (asked) => {
     const nth = (counts.get(asked) ?? 0) + 1;
     counts.set(asked, nth);
     const succeeded = success(asked, nth);
-    return asked !== route || nth > 1 || status === succeeded.status
+    return asked !== route || nth > 1 || answer.status === succeeded.status
       ? succeeded
-      : { status };
+      : answer;
   });
   const carried = await caller(overPlane(transport, plane.fetch)).then(
     () => true,
@@ -302,52 +309,58 @@ async function reaction(wire, success, transport, caller, route, status) {
 
 /** Every status of every job route the pod calls. */
 const jobReactions = {
-  input: { 200: "reads", 401: "retries" },
-  heartbeat: { 204: "reads", 401: "retries", 409: "retries" },
+  input: { 200: "reads", 401: "stops", 409: "stops" },
+  heartbeat: { 204: "reads", 401: "stops", 409: "stops" },
   artifact: {
     204: "reads",
-    400: "retries",
-    401: "retries",
-    409: "retries",
-    413: "retries",
-    415: "retries",
+    400: "stops",
+    401: "stops",
+    409: "stops",
+    413: "stops",
+    415: "stops",
     503: "retries",
   },
   report: {
     202: "reads",
-    400: "retries",
-    401: "retries",
-    409: "retries",
+    400: "stops",
+    401: "stops",
+    409: "stops",
     503: "retries",
   },
   runConfiguration: {
     204: "reads",
-    400: "retries",
-    401: "retries",
-    409: "retries",
-    413: "retries",
-    415: "retries",
+    400: "reads",
+    401: "reads",
+    409: "reads",
+    413: "reads",
+    415: "reads",
     503: "retries",
   },
   runTranscript: {
     204: "reads",
-    400: "retries",
-    401: "retries",
-    409: "retries",
-    413: "retries",
-    415: "retries",
+    400: "reads",
+    401: "reads",
+    409: "reads",
+    413: "reads",
+    415: "reads",
     503: "retries",
   },
-  runTurns: { 200: "reads", 400: "retries", 401: "retries", 409: "retries" },
+  runTurns: { 200: "reads", 400: "reads", 401: "reads", 409: "reads" },
   runTotals: {
     204: "reads",
-    400: "retries",
-    401: "retries",
-    409: "retries",
-    413: "retries",
+    400: "reads",
+    401: "reads",
+    409: "reads",
+    413: "reads",
   },
-  runEnded: { 204: "reads", 400: "retries", 401: "retries", 409: "retries" },
-  credential: { 200: "reads", 401: "retries", 404: "reads", 503: "retries" },
+  runEnded: { 204: "reads", 400: "stops", 401: "stops", 409: "stops" },
+  credential: {
+    200: "reads",
+    401: "stops",
+    404: "reads",
+    409: "stops",
+    503: "retries",
+  },
 };
 
 /** The job routes a pod does not call. */
@@ -355,14 +368,20 @@ const jobRoutesUncalled = ["task"];
 
 /** Every status of every session route the pod calls. */
 const sessionReactions = {
-  facts: { 200: "reads", 401: "stops" },
+  facts: { 200: "reads", 401: "stops", 409: "stops" },
   heartbeat: { 204: "reads", 401: "stops", 409: "stops" },
   reference: { 204: "reads", 400: "stops", 401: "stops", 409: "stops" },
-  turn: { 200: "reads", 204: "retries", 401: "stops" },
+  turn: { 200: "reads", 204: "retries", 401: "stops", 409: "stops" },
   turnAnswer: { 204: "reads", 400: "stops", 401: "stops", 409: "stops" },
   turnFailure: { 204: "reads", 400: "stops", 401: "stops", 409: "stops" },
   held: { 204: "reads", 401: "stops", 409: "stops" },
-  storeStreams: { 200: "reads", 400: "stops", 401: "stops", 413: "stops" },
+  storeStreams: {
+    200: "reads",
+    400: "stops",
+    401: "stops",
+    409: "stops",
+    413: "stops",
+  },
   storeBatch: {
     204: "reads",
     400: "stops",
@@ -372,15 +391,30 @@ const sessionReactions = {
     415: "stops",
     503: "retries",
   },
-  storePage: { 200: "reads", 400: "stops", 401: "stops", 503: "retries" },
+  storePage: {
+    200: "reads",
+    400: "stops",
+    401: "stops",
+    409: "stops",
+    503: "retries",
+  },
   credential: {
     200: "reads",
     400: "stops",
     401: "stops",
     404: "reads",
+    409: "stops",
     503: "retries",
   },
 };
+
+/** Each way `route` may answer `status`: its success where that is what it is, and otherwise once for every body the status carries. */
+function answersOf(wire, success, route, status) {
+  const schema = wire.answers[route][status];
+  if (schema === "empty" || success(route, 1).status === status)
+    return [{ status }];
+  return refusalBodies(schema).map((body) => ({ status, body }));
+}
 
 /** Each table's statuses against the map's, and each driven through its caller. */
 async function heldToMap(
@@ -403,18 +437,19 @@ async function heldToMap(
       `${route} answers statuses this suite does not name`,
     );
     for (const [status, expected] of Object.entries(statuses))
-      assert.equal(
-        await reaction(
-          wire,
-          success,
-          transport,
-          callers[route],
-          route,
-          Number(status),
-        ),
-        expected,
-        `${route} answering ${status}`,
-      );
+      for (const answer of answersOf(wire, success, route, Number(status)))
+        assert.equal(
+          await reaction(
+            wire,
+            success,
+            transport,
+            callers[route],
+            route,
+            answer,
+          ),
+          expected,
+          `${route} answering ${status} ${JSON.stringify(answer.body)}`,
+        );
   }
 }
 
@@ -438,6 +473,31 @@ test("every status a session route the pod calls may answer is one the pod has a
     sessionSuccess,
     sessionRequest,
   );
+});
+
+/**
+ * A plane that serves no version this pod speaks, refusing every call: no
+ * route is asked twice, and the first call each kind of pod makes ends it.
+ */
+test("a plane refusing the pod's release is asked once per route, and the pod stops", async () => {
+  for (const [wire, callers, transport, first] of [
+    [planes.job, jobCallers, workerRequest, "input"],
+    [planes.session, sessionCallers, sessionRequest, "facts"],
+  ])
+    for (const [route, caller] of Object.entries(callers)) {
+      const asked = [];
+      const plane = planeFetch(wire, (named) => {
+        asked.push(named);
+        return { status: contractVersionRefusalStatus, body: versionRefusal };
+      });
+      const carried = await caller(overPlane(transport, plane.fetch)).then(
+        () => true,
+        () => false,
+      );
+      assert.ok(asked.length > 0, `${route} reached no route`);
+      assert.deepEqual(asked, [...new Set(asked)], `${route} asked again`);
+      if (route === first) assert.equal(carried, false, `${route} carried on`);
+    }
 });
 
 /** The manifest one finished attempt reported, as the plane was offered it. */

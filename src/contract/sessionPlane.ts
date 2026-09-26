@@ -41,10 +41,11 @@ import {
 import {
   workerCredentialAbsentSchema,
   workerCredentialAnswerSchema,
+  workerPlaneAnswersRefusingVersions,
   workerPlaneRefusalSchema,
   workerPlaneRetrySchema,
   workerPlaneStopSchema,
-  type WorkerPlaneAnswer,
+  type WorkerPlaneAnswers,
   type WorkerPlaneRoute,
 } from "./workerPlane.ts";
 
@@ -237,7 +238,7 @@ const sessionSettleRefusalSchema = workerPlaneRefusalSchema([
 ]);
 
 /** Every status each session route's handler answers with, and what it answers. */
-export const sessionPlaneAnswers = {
+export const sessionPlaneAnswers = workerPlaneAnswersRefusingVersions({
   facts: { 200: sessionFactsAnswerSchema, 401: workerPlaneStopSchema },
   heartbeat: {
     204: "empty",
@@ -308,6 +309,4 @@ export const sessionPlaneAnswers = {
     404: workerCredentialAbsentSchema,
     503: workerPlaneRetrySchema,
   },
-} as const satisfies Readonly<
-  Record<SessionPlaneRouteName, Readonly<Record<number, WorkerPlaneAnswer>>>
->;
+} as const satisfies WorkerPlaneAnswers<SessionPlaneRouteName>);

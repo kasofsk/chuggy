@@ -13,10 +13,12 @@ export function routePath(route, rest) {
   return `${route.path.slice(0, -1)}${rest}`;
 }
 
-/** Every status one route's answers map answers with `schema`. */
+/** Every status one route's answers map answers with `schema`, alone or as one of the bodies that status may carry. */
 export function answeredWith(answers, schema) {
   const statuses = Object.entries(answers)
-    .filter(([, answer]) => answer === schema)
+    .filter(
+      ([, answer]) => answer === schema || answer.options?.includes(schema),
+    )
     .map(([status]) => Number(status));
   if (statuses.length === 0)
     throw new Error("the route answers no status with that body");

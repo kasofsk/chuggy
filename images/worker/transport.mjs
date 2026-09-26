@@ -1,17 +1,32 @@
 import { setTimeout as wait } from "node:timers/promises";
 import { URL } from "node:url";
 
+import {
+  workerContractHeader,
+  workerContractRelease,
+} from "@chuggy/worker-contract/workerContract";
+
 const attemptsMax = 15;
 const retryMilliseconds = 2_000;
+const serverErrorStatusMin = 500;
+
+/** The headers every worker-plane request carries: the caller's own, its bearer, and the contract release this image was built with. */
+export function workerPlaneHeaders(bearer, headers = {}) {
+  return {
+    authorization: `Bearer ${bearer}`,
+    ...headers,
+    [workerContractHeader]: workerContractRelease,
+  };
+}
 
 /**
  * One request to the worker plane, retried while it fails.
  *
- * A STATUS THE CALLER NAMES AS SETTLED IS AN ANSWER RATHER THAN A FAILURE.
- * Asking again for something the plane has already decided gets the same answer
- * fifteen times before the caller is told anything, so a route whose refusal the
- * pod acts on — a credential this deployment does not mint — names that status
- * here and reads it. Everything else is a condition, and is retried.
+ * A RETRY IS FOR A CONDITION, NEVER FOR A DECISION. A thrown fetch and a server
+ * error are retried; any other failing status is the plane's answer, and asking
+ * again only delays the caller hearing it. So it raises at once, unless the
+ * caller names it as settled — a credential this deployment does not mint — and
+ * reads it instead.
  */
 export async function workerRequest(
   task,
@@ -25,21 +40,26 @@ export async function workerRequest(
     wait: pause = wait,
     settled = [],
   } = transport;
+  let failure;
   for (let attempt = 1; attempt <= attemptsMax; attempt += 1) {
+    let response;
     try {
-      const response = await send(new URL(path, task.workerPlane.url), {
+      response = await send(new URL(path, task.workerPlane.url), {
         ...init,
-        headers: { authorization: `Bearer ${bearer}`, ...init.headers },
+        headers: workerPlaneHeaders(bearer, init.headers),
       });
-      if (!response.ok && !settled.includes(response.status))
-        throw new Error(
-          `worker plane ${path} answered ${String(response.status)}`,
-        );
-      return response;
-    } catch (failure) {
-      if (attempt === attemptsMax) throw failure;
-      await pause(retryMilliseconds);
+    } catch (thrown) {
+      failure = thrown;
     }
+    if (response !== undefined) {
+      if (response.ok || settled.includes(response.status)) return response;
+      failure = new Error(
+        `worker plane ${path} answered ${String(response.status)}`,
+      );
+      if (response.status < serverErrorStatusMin) throw failure;
+    }
+    if (attempt === attemptsMax) throw failure;
+    await pause(retryMilliseconds);
   }
   throw new Error("worker plane retry bound was exhausted");
 }

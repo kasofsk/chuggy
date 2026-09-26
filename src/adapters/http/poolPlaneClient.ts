@@ -6,12 +6,14 @@
  * already separates a token it rejected, a caller it does not serve and an
  * authority it could not ask, and its status is the whole of each answer;
  * nothing here re-decides that, and nothing here retries — a pass is what
- * comes back.
+ * comes back. The one status two answers share is a settlement's 409, where
+ * the plane refusing this client's release is told from a lost assignment by
+ * its body.
  *
  * A MALFORMED ANSWER IS AN OUTAGE AND NOT A DENIAL. An assignment this side
  * cannot parse is a plane this client cannot work with, which is a condition an
  * operator resolves; reading it as a refusal would have the pool delete itself
- * over a version skew.
+ * over a skew the plane did not refuse.
  *
  * THE POLL'S DEADLINE IS THE OPERATOR'S TO SIZE. It is a long poll, so a
  * timeout shorter than the plane's own wait turns every idle window into an
@@ -19,6 +21,12 @@
  * plane's configuration and this process cannot read it.
  */
 
+import {
+  contractVersionRefusalSchema,
+  contractVersionRefusalStatus,
+  workerContractHeader,
+  workerContractRelease,
+} from "../../contract/workerContract.ts";
 import {
   workerPoolPollQuery,
   workerPoolPollRoute,
@@ -122,6 +130,11 @@ function poolPlaneRefusal(
       polled: "Denied",
       evidence: "the plane refused this pool's own request",
     };
+  if (status === contractVersionRefusalStatus)
+    return {
+      polled: "Denied",
+      evidence: `the plane does not serve worker contract ${workerContractRelease}`,
+    };
   return {
     polled: "Unavailable",
     evidence: `the plane answered ${String(status)}`,
@@ -168,7 +181,11 @@ async function poolPlanePolled(
     answered = await fetcher(poolPlaneAssignmentsUrl(settings, held, wanted), {
       method: "GET",
       signal: AbortSignal.timeout(settings.pollTimeoutMs),
-      headers: { accept: "application/json", authorization: `Bearer ${token}` },
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${token}`,
+        [workerContractHeader]: workerContractRelease,
+      },
     });
   } catch {
     return {
@@ -190,6 +207,18 @@ function poolPlaneOutcomeBody(outcome: AssignmentOutcome): string {
       return JSON.stringify({ evidence: outcome.evidence });
     case "Unavailable":
       return JSON.stringify({ retryAfterSecs: outcome.retryAfterSecs });
+  }
+}
+
+/** Whether a refusal is the plane naming this client's release as one it does not serve. */
+async function poolPlaneReleaseRefused(answered: Response): Promise<boolean> {
+  if (answered.status !== contractVersionRefusalStatus) return false;
+  const text = await poolPlaneAnswerText(answered);
+  if (text === undefined) return false;
+  try {
+    return contractVersionRefusalSchema.safeParse(JSON.parse(text)).success;
+  } catch {
+    return false;
   }
 }
 
@@ -220,10 +249,13 @@ async function poolPlaneSettled(
         accept: "application/json",
         authorization: `Bearer ${token}`,
         "content-type": "application/json",
+        [workerContractHeader]: workerContractRelease,
       },
       body: poolPlaneOutcomeBody(outcome),
     });
-    return poolPlaneSettlement(answered.status);
+    return (await poolPlaneReleaseRefused(answered))
+      ? "Denied"
+      : poolPlaneSettlement(answered.status);
   } catch {
     return "Unavailable";
   }
