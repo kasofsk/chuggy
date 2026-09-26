@@ -1,6 +1,7 @@
 import type {
   AttemptCapabilitySecret,
   FencedAttempt,
+  WorkTaskInvocation,
 } from "./executionScheduler.ts";
 import type {
   AttemptSubmission,
@@ -8,6 +9,7 @@ import type {
 } from "./executionSchedulerReport.ts";
 import type { ExecutionTaskKind } from "./executionRequirement.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
+import type { WorkTaskIdentity } from "./workerTask.ts";
 
 /** The bounded metadata of one immutable reference pinned by an attempt's input bundle. */
 export interface WorkerInputReference {
@@ -26,6 +28,17 @@ export interface WorkerAttemptAuthority extends FencedAttempt {
   readonly inputBundle: string;
   readonly inputBundleDigest: string;
   readonly inputs: readonly WorkerInputReference[];
+}
+
+/** What an attempt's bearer finds of its task, the invocation absent until the scheduler records one. */
+export interface WorkerTaskRead {
+  readonly live: boolean;
+  readonly identity: WorkTaskIdentity;
+  readonly invocation?: WorkTaskInvocation;
+}
+
+export interface WorkerTaskPort {
+  task(secret: AttemptCapabilitySecret): Promise<WorkerTaskRead | undefined>;
 }
 
 export interface WorkerPlaneAuthority {

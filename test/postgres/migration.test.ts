@@ -26,6 +26,7 @@ import { migration014 } from "../../src/adapters/postgres/schema/migrations/014-
 import { migration015 } from "../../src/adapters/postgres/schema/migrations/015-ticket-commands.ts";
 import { migration016 } from "../../src/adapters/postgres/schema/migrations/016-ticket-update.ts";
 import { migration017 } from "../../src/adapters/postgres/schema/migrations/017-ticket-repin.ts";
+import { migration018 } from "../../src/adapters/postgres/schema/migrations/018-attempt-invocation.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -44,6 +45,7 @@ import {
   finalizerRole,
   migrations,
   migrationLedger,
+  poolPlaneRole,
   projectChangeAppendFunction,
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
@@ -55,6 +57,8 @@ import {
   schedulerRole,
   selectorServiceRole,
   ticketServiceRole,
+  workerPlaneRole,
+  workerTaskReadFunction,
 } from "../../src/adapters/postgres/schema.ts";
 import {
   postgresMigrate,
@@ -8663,5 +8667,64 @@ test("017 migrates a database already holding its grant", async () => {
     );
     assert.ok((await postgresMigrate(subject)).includes(migration017.version));
     await repinPrivileges(subject, true);
+  });
+});
+
+/** The columns 018 gives an attempt, by name. */
+async function invocationColumns(subject: pg.Pool): Promise<readonly string[]> {
+  const found = await subject.query<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='execution_attempt'
+        AND column_name IN ('invocation','invoked')
+      ORDER BY column_name`,
+  );
+  return found.rows.map((row) => row.column_name);
+}
+
+test("018 gives an attempt its invocation and the worker plane its one read of it", async () => {
+  await migrationDatabase("attempt_invocation", async (subject) => {
+    const read = `public.${workerTaskReadFunction}(text)`;
+    await installationBefore(subject, migration018.version);
+    assert.deepEqual(await invocationColumns(subject), []);
+    assert.equal(await migrationHasFunction(subject, read), false);
+    assert.ok((await postgresMigrate(subject)).includes(migration018.version));
+    assert.deepEqual(await invocationColumns(subject), [
+      "invocation",
+      "invoked",
+    ]);
+    for (const [column, role, privilege, granted] of [
+      ["invocation", schedulerRole, "UPDATE", true],
+      ["invoked", poolPlaneRole, "SELECT", true],
+      ["invocation", poolPlaneRole, "SELECT", false],
+      ["invocation", workerPlaneRole, "SELECT", false],
+      ["invocation", apiRole, "SELECT", false],
+    ] as const)
+      assert.equal(
+        (
+          await subject.query<{ held: boolean }>(
+            "SELECT has_column_privilege($1,'public.execution_attempt',$2,$3) AS held",
+            [role, column, privilege],
+          )
+        ).rows[0]?.held,
+        granted,
+        `${role} ${privilege} on execution_attempt.${column}`,
+      );
+    assert.deepEqual(
+      (
+        await subject.query<{
+          owner: string;
+          definer: boolean;
+          plane: boolean;
+          pool: boolean;
+        }>(
+          `SELECT pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS definer,
+                  has_function_privilege($2,p.oid,'EXECUTE') AS plane,
+                  has_function_privilege($3,p.oid,'EXECUTE') AS pool
+             FROM pg_proc p WHERE p.oid=to_regprocedure($1)`,
+          [read, workerPlaneRole, poolPlaneRole],
+        )
+      ).rows,
+      [{ owner: boundaryOwnerRole, definer: true, plane: true, pool: false }],
+    );
   });
 });

@@ -934,13 +934,13 @@ const schedulerWritePrivileges = [
     table_name: "execution_attempt",
     privilege_type: "INSERT",
     columns:
-      "assignment,attempt,attempt_number,capability,capability_secret_digest,cleanup_completed_at,ended_at,evidence,execution,generation,lease_expires_at,lease_owner,manifest,opened_at,pool,pool_refusal,project,recovery_epoch,state,tenant,workload",
+      "assignment,attempt,attempt_number,capability,capability_secret_digest,cleanup_completed_at,ended_at,evidence,execution,generation,invocation,invoked,lease_expires_at,lease_owner,manifest,opened_at,pool,pool_refusal,project,recovery_epoch,state,tenant,workload",
   },
   {
     table_name: "execution_attempt",
     privilege_type: "UPDATE",
     columns:
-      "cleanup_completed_at,ended_at,evidence,generation,lease_expires_at,lease_owner,state,workload",
+      "cleanup_completed_at,ended_at,evidence,generation,invocation,lease_expires_at,lease_owner,state,workload",
   },
   {
     table_name: "execution_request",

@@ -15,10 +15,12 @@ import {
   runTranscriptBatchesMax,
   runTurnSeriesMax,
 } from "../../src/contract/http.ts";
+import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import {
   asAttemptCapabilitySecret,
   asAttemptId,
   asExecutionId,
+  type WorkTaskInvocation,
 } from "../../src/interpreter/executionScheduler.ts";
 import { asForgeInstallationToken } from "../../src/interpreter/forgeInstallation.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
@@ -26,8 +28,17 @@ import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
 import type { ReportIngested } from "../../src/interpreter/executionSchedulerReport.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
+import type { WorkerTaskRead } from "../../src/interpreter/workerPlane.ts";
+import {
+  workTask,
+  type WorkTaskIdentity,
+} from "../../src/interpreter/workerTask.ts";
 import { fixtureForgeShapedToken } from "./forgeFixtures.ts";
-import { inertRunEvidence, runTotalsBody } from "./workerPlaneFixtures.ts";
+import {
+  inertRunEvidence,
+  inertTasks,
+  runTotalsBody,
+} from "./workerPlaneFixtures.ts";
 
 const authority = {
   live: true,
@@ -49,6 +60,9 @@ const heartbeatService = {
   heartbeatLeaseSecs: 300,
 } as const;
 
+/** The task port a case about something else never reaches. */
+const taskService = { tasks: inertTasks } as const;
+
 /** The evidence ports a case about something else never reaches. */
 const runEvidenceService = { runEvidence: inertRunEvidence } as const;
 
@@ -68,6 +82,7 @@ test("one live bearer scopes input, upload and report to its attempt", async () 
   const reported: unknown[] = [];
   const app = createWorkerPlaneApp({
     ...heartbeatService,
+    ...taskService,
     ...runEvidenceService,
     authority: {
       authenticate: (secret) =>
@@ -125,6 +140,7 @@ test("an unknown or oversized bearer reaches no attempt act", async () => {
   let acts = 0;
   const app = createWorkerPlaneApp({
     ...heartbeatService,
+    ...taskService,
     ...runEvidenceService,
     authority: { authenticate: () => Promise.resolve(undefined) },
     reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
@@ -166,6 +182,12 @@ test("a bearer written in the session language is never offered to the attempt a
         return Promise.resolve(authority);
       },
     },
+    tasks: {
+      task: (secret) => {
+        offered.push(secret);
+        return Promise.resolve(undefined);
+      },
+    },
     reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
     artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },
     reports: { report: () => Promise.resolve({ ingested: "Fenced" }) },
@@ -175,6 +197,7 @@ test("a bearer written in the session language is never offered to the attempt a
   const session = { authorization: `Bearer chgs_${"a".repeat(32)}` };
   for (const [method, url, body, kind] of [
     ["GET", "/v1/input", undefined, {}],
+    ["GET", "/v1/task", undefined, {}],
     ["POST", "/v1/heartbeat", undefined, {}],
     ["PUT", "/v1/artifacts/out.txt", Buffer.from("x"), octets],
     ["POST", "/v1/report", "{}", { "content-type": "text/plain" }],
@@ -194,10 +217,81 @@ test("a bearer written in the session language is never offered to the attempt a
   await app.close();
 });
 
+test("a task is answered only to a live attempt, and only once the scheduler recorded it", async () => {
+  const identity: WorkTaskIdentity = {
+    partition: authority.partition,
+    execution: authority.execution,
+    attempt: authority.attempt,
+    generation: authority.generation,
+    ticket: asTicketId(1),
+    task: asTaskId(1),
+    taskKind: "Work",
+    sourceRequest: "1:0:ExecuteTask",
+    inputBundle: authority.inputBundle,
+    inputBundleDigest: authority.inputBundleDigest,
+    configurationRevision: "revision",
+    configurationDigest: "configuration-digest",
+    requirementIdentity: "requirement",
+    requirementDigest: "requirement-digest",
+  };
+  const invocation: WorkTaskInvocation = {
+    profile: { profile: "standard", runtimeVersion: "1" },
+    briefing: { templateVersion: 1, purpose: "Work", text: "Do the work." },
+    authority: {
+      tools: [],
+      credentials: [],
+      network: false,
+      filesystem: "WriteWorkspace",
+      mayCompleteTask: false,
+    },
+  };
+  const found: Readonly<Record<string, WorkerTaskRead>> = {
+    ended: { live: false, identity, invocation },
+    unrecorded: { live: true, identity },
+    held: { live: true, identity, invocation },
+  };
+  const app = createWorkerPlaneApp({
+    ...heartbeatService,
+    ...runEvidenceService,
+    authority: { authenticate: () => Promise.resolve(authority) },
+    tasks: { task: (secret) => Promise.resolve(found[secret]) },
+    reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
+    artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },
+    reports: { report: () => Promise.resolve({ ingested: "Fenced" }) },
+    ready: () => Promise.resolve(true),
+    uploadBytesMax: 64,
+  });
+  const answered = async (bearer: string) => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/task",
+      headers: { authorization: `Bearer ${bearer}` },
+    });
+    return {
+      status: response.statusCode,
+      body: JSON.parse(response.body) as unknown,
+    };
+  };
+  assert.deepEqual(await answered("ended"), {
+    status: 401,
+    body: { action: "stop" },
+  });
+  assert.deepEqual(await answered("unrecorded"), {
+    status: 409,
+    body: { action: "stop", reason: "TaskNotRecorded" },
+  });
+  assert.deepEqual(await answered("held"), {
+    status: 200,
+    body: { kind: "Work", ...workTask(identity, invocation) },
+  });
+  await app.close();
+});
+
 test("a live bearer renews only its fenced attempt generation", async () => {
   const calls: unknown[] = [];
   const app = createWorkerPlaneApp({
     ...heartbeatService,
+    ...taskService,
     ...runEvidenceService,
     authority: { authenticate: () => Promise.resolve(authority) },
     heartbeats: {
@@ -231,6 +325,7 @@ test("a live bearer renews only its fenced attempt generation", async () => {
 test("an invalid worker-controlled artifact path is a predictable client refusal", async () => {
   const app = createWorkerPlaneApp({
     ...heartbeatService,
+    ...taskService,
     ...runEvidenceService,
     authority: { authenticate: () => Promise.resolve(authority) },
     reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
@@ -262,6 +357,7 @@ test("an invalid worker-controlled artifact path is a predictable client refusal
 test("an exhausted attempt artifact quota is a terminal payload refusal", async () => {
   const app = createWorkerPlaneApp({
     ...heartbeatService,
+    ...taskService,
     ...runEvidenceService,
     authority: { authenticate: () => Promise.resolve(authority) },
     reservations: {
@@ -297,6 +393,7 @@ async function refusedReport(
 ): Promise<{ readonly statusCode: number; readonly body: unknown }> {
   const app = createWorkerPlaneApp({
     ...heartbeatService,
+    ...taskService,
     ...runEvidenceService,
     authority: { authenticate: () => Promise.resolve(authority) },
     reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
@@ -363,6 +460,7 @@ test("identical terminal report redelivery reaches its absorbed operation", asyn
   let reports = 0;
   const app = createWorkerPlaneApp({
     ...heartbeatService,
+    ...taskService,
     ...runEvidenceService,
     authority: {
       authenticate: () =>
@@ -412,6 +510,7 @@ function runEvidencePlane(
 ) {
   return createWorkerPlaneApp({
     ...heartbeatService,
+    ...taskService,
     ...runEvidenceService,
     runEvidence: { ...runEvidenceService.runEvidence, ...evidence },
     authority: {
@@ -491,6 +590,7 @@ test("a reported attempt writes no evidence, its bearer still resolving", async 
   };
   const app = createWorkerPlaneApp({
     ...heartbeatService,
+    ...taskService,
     ...runEvidenceService,
     runEvidence: {
       ...runEvidenceService.runEvidence,
@@ -636,6 +736,7 @@ test("a store that could not keep the bytes records no row", async () => {
     };
     const app = createWorkerPlaneApp({
       ...heartbeatService,
+      ...taskService,
       ...runEvidenceService,
       runEvidence: {
         ...runEvidenceService.runEvidence,
@@ -893,6 +994,7 @@ function credentialPlane(
 ) {
   return createWorkerPlaneApp({
     ...heartbeatService,
+    ...taskService,
     ...runEvidenceService,
     authority: {
       authenticate: (secret) =>

@@ -60,6 +60,7 @@ import type {
 import type { AttemptId } from "../../interpreter/schedulerIdentity.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { taskAuthorityGrant } from "../../interpreter/taskAuthority.ts";
+import { workTask, workTaskInvocation } from "../../interpreter/workerTask.ts";
 import {
   checkedKubernetesPodSite,
   kubernetesAnnotationPrefix,
@@ -254,34 +255,8 @@ export function kubernetesWorkerTask(
   config: KubernetesWorkerLaunchConfig,
   placement: AttemptPlacement,
 ): WorkTaskDocument {
-  const briefing = placement.invocation.briefing;
   return {
-    tenant: placement.partition.tenant,
-    project: placement.partition.project,
-    execution: placement.execution,
-    attempt: placement.attempt,
-    generation: placement.generation,
-    ticket: placement.ticket,
-    task: placement.task,
-    taskKind: placement.taskKind,
-    ...(placement.stage === undefined ? {} : { stage: placement.stage }),
-    sourceRequest: placement.sourceRequest,
-    inputBundle: placement.inputBundle,
-    inputBundleDigest: placement.inputBundleDigest,
-    configurationRevision: placement.configurationRevision,
-    configurationDigest: placement.configurationDigest,
-    profile: placement.profile,
-    requirementIdentity: placement.requirementIdentity,
-    requirementDigest: placement.requirementDigest,
-    briefing: {
-      templateVersion: briefing.templateVersion,
-      purpose: briefing.purpose,
-      text: briefing.text,
-    },
-    authority: taskAuthorityGrant(placement.invocation.authority),
-    ...(placement.invocation.worker === undefined
-      ? {}
-      : { worker: placement.invocation.worker }),
+    ...workTask(placement, workTaskInvocation(placement)),
     workerPlane: {
       url: config.workerPlaneUrl,
       capabilityFile: config.capabilityFile,

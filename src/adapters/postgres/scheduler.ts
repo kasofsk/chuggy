@@ -100,6 +100,7 @@ import {
   type SchedulerOwnerId,
   type SpawnRegistered,
   type PlacementId,
+  type WorkTaskInvocation,
 } from "../../interpreter/executionScheduler.ts";
 import type {
   Partition,
@@ -882,6 +883,23 @@ async function schedulerLockAttemptExecution(
   );
 }
 
+/** Records an attempt's invocation, which a `Placing` attempt of this generation is given once. */
+async function schedulerAttemptInvoked(
+  client: pg.PoolClient,
+  attempt: FencedAttempt,
+  invocation: WorkTaskInvocation,
+): Promise<boolean> {
+  await schedulerLockAttemptExecution(client, attempt);
+  const invoked = await client.query(
+    sql`UPDATE execution_attempt SET invocation = ${JSON.stringify(invocation)}::jsonb
+      WHERE tenant = ${attempt.partition.tenant} AND project = ${attempt.partition.project}
+        AND execution = ${attempt.execution} AND attempt = ${attempt.attempt}
+        AND generation = ${attempt.generation} AND state = 'Placing'
+        AND invocation IS NULL`,
+  );
+  return invoked.rowCount === 1;
+}
+
 /** Records that the worker port placed the attempt, moving the execution to `Running`. */
 async function schedulerAttemptPlaced(
   client: pg.PoolClient,
@@ -1174,6 +1192,10 @@ export function postgresExecutionScheduler(
     openAttempt: (opening) =>
       postgresTransaction(pool, (client) =>
         schedulerOpenAttempt(client, opening),
+      ),
+    attemptInvoked: (attempt, invocation) =>
+      postgresTransaction(pool, (client) =>
+        schedulerAttemptInvoked(client, attempt, invocation),
       ),
     attemptPlaced: (attempt, workload) =>
       postgresTransaction(pool, (client) =>

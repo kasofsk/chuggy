@@ -90,6 +90,7 @@
  * the scheduler decide a ticket-wide fact it is not the authority for.
  */
 
+import type { WorkTaskDocument } from "../contract/workerTask.ts";
 import type { Config as DomainConfig } from "../domain/config.ts";
 import type { TaskId, TicketId } from "../domain/ids.ts";
 import type { TaskPurpose } from "./briefingTemplate.ts";
@@ -670,6 +671,12 @@ export interface ExecutionSchedulerStore {
    */
   openAttempt(opening: AttemptOpening): Promise<AttemptOpened>;
 
+  /** Records what a `Placing` attempt is invoked with, once and only for its current generation. */
+  attemptInvoked(
+    attempt: FencedAttempt,
+    invocation: WorkTaskInvocation,
+  ): Promise<boolean>;
+
   /** Records that the placement port accepted the attempt, moving it to `Running`. */
   attemptPlaced(
     attempt: FencedAttempt,
@@ -752,6 +759,12 @@ export interface ExecutionProfile {
   readonly profile: string;
   readonly runtimeVersion: string;
 }
+
+/** What one attempt is invoked with, as its worker is handed it. */
+export type WorkTaskInvocation = Pick<
+  WorkTaskDocument,
+  "profile" | "briefing" | "authority" | "worker"
+>;
 
 /**
  * One placement asked of a backend, carrying only what an executor may be

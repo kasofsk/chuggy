@@ -93,6 +93,7 @@ function recordingStore(
     registerCancellation: unreached,
     admit: unreached,
     openAttempt: unreached,
+    attemptInvoked: unreached,
     attemptPlaced: unreached,
     attemptEnded: (attempt, loss, evidence) => {
       calls.push(`ended:${String(attempt.generation)}:${loss}:${evidence}`);

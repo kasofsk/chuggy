@@ -35,6 +35,7 @@ import {
   type AttemptPlacementPort,
   type AttemptPlacementOutcome,
   type AttemptPlacement,
+  type WorkTaskInvocation,
 } from "../../src/interpreter/executionScheduler.ts";
 import {
   executionSchedulerAdmit,
@@ -139,6 +140,7 @@ function recordingStore(calls: string[]): ExecutionSchedulerStore {
       Promise.resolve({ cancelled: "Registered", fenced: 0, placements: [] }),
     admit: () => Promise.resolve({ admitted: "ClusterFull" }),
     openAttempt: () => Promise.resolve({ opened: "Opened", attempt }),
+    attemptInvoked: () => Promise.resolve(true),
     attemptPlaced: (_attempt, workload) => {
       calls.push(`placed:${workload}`);
       return Promise.resolve(true);
@@ -759,6 +761,60 @@ test("a placement the durable row would not take is cancelled at its backend", a
   };
   assert.equal(await executionSchedulerLaunch({ ...service, store }, epoch), 0);
   assert.deepEqual(calls, ["placed:placement-one", "cancelled:attempt-one:1"]);
+});
+
+test("an attempt's invocation is recorded before it is placed, as its placement carries it", async () => {
+  const calls: string[] = [];
+  const recorded: WorkTaskInvocation[] = [];
+  const placements: AttemptPlacement[] = [];
+  const service = placingService(calls, placements);
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    attemptInvoked: (invoked, invocation) => {
+      calls.push(`invoked:${invoked.attempt}:${String(invoked.generation)}`);
+      recorded.push(invocation);
+      return Promise.resolve(true);
+    },
+  };
+  const placement: AttemptPlacementPort = {
+    ...service.placement,
+    place: (placing) => {
+      calls.push("place");
+      return service.placement.place(placing);
+    },
+  };
+  assert.equal(
+    await executionSchedulerLaunch({ ...service, store, placement }, epoch),
+    1,
+  );
+  assert.deepEqual(calls, [
+    "invoked:attempt-one:1",
+    "place",
+    "placed:placement-one",
+  ]);
+  const placed = placements[0];
+  assert.ok(placed !== undefined);
+  const { templateVersion, purpose, text } = placed.invocation.briefing;
+  assert.deepEqual(recorded, [
+    {
+      profile: runnable.profile,
+      briefing: { templateVersion, purpose, text },
+      authority: taskAuthorityGrant(placed.invocation.authority),
+    },
+  ]);
+});
+
+test("an attempt whose invocation the durable row would not take is never placed", async () => {
+  const calls: string[] = [];
+  const placements: AttemptPlacement[] = [];
+  const service = placingService(calls, placements);
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    attemptInvoked: () => Promise.resolve(false),
+  };
+  assert.equal(await executionSchedulerLaunch({ ...service, store }, epoch), 0);
+  assert.deepEqual(placements, []);
+  assert.deepEqual(calls, []);
 });
 
 test("registration claims only spawn kinds and counts what it created", async () => {

@@ -60,7 +60,7 @@ function goldenInvocation(): AttemptPlacement["invocation"] {
   return composed.invocation;
 }
 
-const goldenConfig: KubernetesWorkerLaunchConfig = {
+export const goldenConfig: KubernetesWorkerLaunchConfig = {
   apiBaseUrl: "https://golden-cluster.invalid:6443",
   namespace: "golden-work",
   tokenFile: "/var/run/secrets/golden/token",

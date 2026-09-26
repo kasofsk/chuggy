@@ -36,6 +36,7 @@ import {
   schedulerClaimFor,
   schedulerOwner,
   schedulerProject,
+  schedulerInvocation,
   schedulerRigOpen,
   type SchedulerProject,
 } from "./schedulerHarness.ts";
@@ -141,13 +142,14 @@ async function poolProject(
 }
 
 /**
- * One execution of this project opened as an attempt and marked for a pool,
- * which is the row a claim takes. The scheduler's own launch read is guarded
- * by the same column, so nothing here is work it would also place.
+ * One execution of this project opened as an attempt, invoked and marked for a
+ * pool, which is the row a claim takes. The scheduler's own launch read is
+ * guarded by the same column, so nothing here is work it would also place.
  */
 async function poolAttempt(
   project: SchedulerProject,
   label: string,
+  invoked = true,
 ): Promise<{ execution: string; attempt: string }> {
   const admitted = await rig.store.admit(project.cluster);
   if (admitted.admitted !== "Admitted")
@@ -166,6 +168,11 @@ async function poolAttempt(
   });
   if (opened.opened !== "Opened")
     throw new Error(`worker pool suite: ${label} opened no attempt`);
+  if (
+    invoked &&
+    !(await rig.store.attemptInvoked(opened.attempt, schedulerInvocation))
+  )
+    throw new Error(`worker pool suite: ${label} recorded no invocation`);
   return { execution: admitted.execution, attempt: opened.attempt.attempt };
 }
 
@@ -259,7 +266,23 @@ test("an execution the scheduler still places is offered to no pool", async () =
     placementBackoffSecs: 1,
   });
   assert.equal(opened.opened, "Opened");
+  if (opened.opened !== "Opened") return;
+  assert.equal(
+    await rig.store.attemptInvoked(opened.attempt, schedulerInvocation),
+    true,
+  );
   const drawn = handles("in-cluster");
+  assert.equal(
+    await assignments.claim(pool, leaseSecs, drawn.assignment, drawn.bearer),
+    undefined,
+  );
+});
+
+test("an attempt with no invocation recorded is offered to no pool", async () => {
+  const project = await poolProject("pool-uninvoked");
+  const pool = await registered(project.partition, "uninvoked", []);
+  await poolAttempt(project, "uninvoked", false);
+  const drawn = handles("uninvoked");
   assert.equal(
     await assignments.claim(pool, leaseSecs, drawn.assignment, drawn.bearer),
     undefined,

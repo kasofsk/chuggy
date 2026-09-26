@@ -32,6 +32,7 @@ import {
   postgresWorkerRunTotal,
   postgresWorkerRunTranscript,
   postgresWorkerRunTurns,
+  postgresWorkerTasks,
 } from "../adapters/postgres/workerPlane.ts";
 import { workerPlaneUploadBytesMax } from "../contract/http.ts";
 import { silentSchedulerTelemetry } from "../interpreter/executionScheduler.ts";
@@ -168,6 +169,7 @@ async function main(): Promise<void> {
   const credentials = await planeCredentials(pool);
   const app = createWorkerPlaneApp({
     authority: postgresWorkerPlaneAuthority(pool),
+    tasks: postgresWorkerTasks(pool),
     heartbeats: postgresWorkerAttemptHeartbeats(pool),
     heartbeatLeaseSecs: positive("CHUG_WORKER_PLANE_HEARTBEAT_LEASE_SECS", 300),
     reservations: postgresWorkerArtifactReservations(pool),

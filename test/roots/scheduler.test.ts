@@ -779,6 +779,7 @@ function processExecutionFakes(): string {
       attemptCleanupCompleted: async () => true,
       unlaunched: async () => [execution],
       openAttempt: async () => ({ opened: 'Opened', attempt }),
+      attemptInvoked: async () => true,
       attemptPlaced: async (_attempt, placement) => { placed.push(placement); return true; },
       attemptEnded: async () => true,
     };

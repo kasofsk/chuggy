@@ -92,6 +92,11 @@ export const workTaskDocumentSchema = z.object({
   }),
 });
 
+/** What a worker fetches of its task: the document it is launched with, less the plane it fetched it from. */
+export const workTaskAnswerSchema = workTaskDocumentSchema
+  .omit({ workerPlane: true })
+  .extend({ kind: z.literal("Work") });
+
 /** Every bound a session pod runs under, each one the deployment named. */
 const sessionBoundsSchema = z.object({
   mailboxPollMs: z.number(),
@@ -139,6 +144,9 @@ type LaunchedDocument<Value> = Value extends object
 
 export type WorkTaskDocument = LaunchedDocument<
   z.infer<typeof workTaskDocumentSchema>
+>;
+export type WorkTaskAnswer = LaunchedDocument<
+  z.infer<typeof workTaskAnswerSchema>
 >;
 export type SessionBounds = LaunchedDocument<
   z.infer<typeof sessionBoundsSchema>

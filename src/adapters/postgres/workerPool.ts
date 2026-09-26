@@ -226,11 +226,11 @@ export function postgresWorkerPoolRegistry(pool: pg.Pool): WorkerPoolRegistry {
 }
 
 /**
- * One opened-but-unplaced attempt taken for this pool, bound to the assignment
- * it will be cancelled by and to the bearer its harness answers under. The
- * epoch is not moved: this process fences nothing, and an attempt whose epoch
- * has since moved is one the scheduler's own fence will end under this pool's
- * feet, which the renewal answers as a stop.
+ * One opened-but-unplaced attempt whose invocation is recorded, taken for this
+ * pool, bound to the assignment it will be cancelled by and to the bearer its
+ * harness answers under. The epoch is not moved: this process fences nothing,
+ * and an attempt whose epoch has since moved is one the scheduler's own fence
+ * will end under this pool's feet, which the renewal answers as a stop.
  */
 async function workerPoolClaimed(
   pool: pg.Pool,
@@ -251,7 +251,7 @@ async function workerPoolClaimed(
         JOIN execution e
           ON e.tenant=q.tenant AND e.project=q.project AND e.execution=q.execution
         WHERE q.tenant=${identity.partition.tenant} AND q.project=${identity.partition.project}
-          AND q.state='Placing' AND q.pool IS NULL
+          AND q.state='Placing' AND q.pool IS NULL AND q.invoked
           AND e.placement='Pool' AND e.status IN ('Admitted','Launching')
           AND (e.placement_backoff_from IS NULL OR e.placement_backoff_from<=now())
           AND q.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)

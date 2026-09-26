@@ -26,6 +26,7 @@ import {
   artifactFailures,
   resultManifestRejections,
 } from "./workerDocuments.ts";
+import { workTaskAnswerSchema } from "./workerTask.ts";
 
 /** One route as the plane registers it, a trailing `*` standing for the rest of the path. */
 export interface WorkerPlaneRoute {
@@ -35,6 +36,7 @@ export interface WorkerPlaneRoute {
 
 export const workerPlaneRoutes = {
   input: { method: "GET", path: "/v1/input" },
+  task: { method: "GET", path: "/v1/task" },
   heartbeat: { method: "POST", path: "/v1/heartbeat" },
   artifact: { method: "PUT", path: "/v1/artifacts/*" },
   report: { method: "POST", path: "/v1/report" },
@@ -160,6 +162,11 @@ const workerRunObjectAnswers = {
 /** Every status each job route's handler answers with, and what it answers. */
 export const workerPlaneAnswers = {
   input: { 200: workerInputAnswerSchema, 401: workerPlaneStopSchema },
+  task: {
+    200: workTaskAnswerSchema,
+    401: workerPlaneStopSchema,
+    409: workerPlaneRefusalSchema(["TaskNotRecorded"]),
+  },
   heartbeat: {
     204: "empty",
     401: workerPlaneStopSchema,
