@@ -60,6 +60,19 @@ const document: LeadObservationDocument = {
   refusals: leadObservedRefusals(standing, observation.candidates),
 };
 
+/** The view with the candidate standing refused at its previous version. */
+const superseded: SelectorObservation = {
+  ...observation,
+  refusals: [
+    ...standing,
+    {
+      ...standingRefusal,
+      ticket: candidate.ticket,
+      ticketVersion: candidate.ticketVersion - 1,
+    },
+  ],
+};
+
 test("an observation document round-trips through its own text", () => {
   assert.deepEqual(
     parseLeadObservation(leadObservationText(document)),
@@ -166,11 +179,50 @@ test("a decision names what it chose, refused and lifted", () => {
   assert.equal(parsed.attention, "Attention");
 });
 
+test("a candidate standing refused at an earlier version may be lifted, and dispatched beside the lift", () => {
+  const lifts = [{ ticket: candidate.ticket }];
+  assert.deepEqual(
+    parseLeadDecision(decision({ lifts }), superseded).lifts,
+    lifts,
+  );
+  const both = parseLeadDecision(
+    decision({ dispatches: [{ ticket: 41, expectedTicketVersion: 3 }], lifts }),
+    superseded,
+  );
+  assert.deepEqual(both.dispatches, [
+    { ticket: candidate.ticket, expectedTicketVersion: 3 },
+  ]);
+  assert.deepEqual(both.lifts, lifts);
+});
+
+test("a candidate standing refused at an earlier version may be refused again at its own", () => {
+  const refusals = [
+    {
+      ticket: candidate.ticket,
+      ticketVersion: candidate.ticketVersion,
+      reason: "still not ready",
+    },
+  ];
+  assert.deepEqual(
+    parseLeadDecision(decision({ refusals }), superseded).refusals,
+    refusals,
+  );
+});
+
 test("a decision that chose nothing is the free one and parses", () => {
   const parsed = parseLeadDecision(decision({}), observation);
   assert.deepEqual(parsed.dispatches, []);
   assert.deepEqual(parsed.refusals, []);
   assert.deepEqual(parsed.lifts, []);
+});
+
+test("a decision that spells every choice list out empty is the free one too", () => {
+  const empty = { dispatches: [], refusals: [], lifts: [] };
+  for (const attention of ["Monitoring", "Attention", "Stopped"])
+    assert.deepEqual(
+      parseLeadDecision(decision({ ...empty, attention }), observation),
+      parseLeadDecision(decision({ attention }), observation),
+    );
 });
 
 test("a decision the pod truncated is refused rather than half-accepted", () => {

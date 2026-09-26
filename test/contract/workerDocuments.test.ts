@@ -10,12 +10,20 @@
  * schema at and one past every bound it states. A manifest body written at a
  * retained version is lifted to the version the harness writes, which is the
  * only one the schema describes.
+ *
+ * AN OLDER RELEASE A PLANE STILL SERVES WRITES DOCUMENTS THIS TREE READS. Each
+ * example written at that release's version that its schema accepts is offered
+ * again with every value of each roster the schema names. Lifted to the version
+ * the harness writes, every one is accepted by this tree's schema. The reader
+ * reads every example built from what the harness writes and each value in some
+ * example, and refuses none whose example it reads but for the refusals this
+ * suite names as allowed.
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ZodType } from "zod";
+import { z, type ZodType } from "zod";
 
 import {
   agenticRefusalReasonCharsMax,
@@ -54,6 +62,15 @@ import {
   sourceReport,
   workerReport,
 } from "../interpreter/resultManifestFixture.ts";
+import {
+  workerContractEnumsSeen,
+  workerContractEnumsWalked,
+  workerContractOptionalsSeen,
+  workerContractReleaseExport,
+  workerContractReleaseSchema,
+  workerContractReplayed,
+  type WorkerContractPlane,
+} from "./workerContractReleases.ts";
 
 /** One body and what each side answered it. */
 interface Judged {
@@ -485,17 +502,28 @@ const leadRefusedFirst = leadDispatchesMax + 1;
 /** The first ticket the built lifts name, which stands refused and is no candidate. */
 const leadStandingFirst = leadTicketsOffered + 1;
 
-/** A view holding a candidate for every dispatch and refusal, and a standing refusal for every lift. */
+/**
+ * A view holding a candidate for every dispatch and refusal, and a standing
+ * refusal for every lift. The first candidate also stands refused at an earlier
+ * version, as a ticket authored again after its refusal does.
+ */
 const leadWideObservation: SelectorObservation = {
   ...observation,
   candidates: Array.from({ length: leadTicketsOffered }, (_, at) => ({
     ...candidate,
     ticket: asTicketId(at + 1),
   })),
-  refusals: Array.from({ length: leadRefusalsPerDecisionMax + 1 }, (_, at) => ({
-    ...standingRefusal,
-    ticket: asTicketId(leadStandingFirst + at),
-  })),
+  refusals: [
+    ...Array.from({ length: leadRefusalsPerDecisionMax + 1 }, (_, at) => ({
+      ...standingRefusal,
+      ticket: asTicketId(leadStandingFirst + at),
+    })),
+    {
+      ...standingRefusal,
+      ticket: asTicketId(1),
+      ticketVersion: candidate.ticketVersion - 1,
+    },
+  ],
 };
 
 function leadDispatchOf(ticket: number): Readonly<Record<string, unknown>> {
@@ -616,6 +644,21 @@ const leadBuiltChoices: readonly Built[] = [
     true,
   ],
   [
+    "a lift of a superseded refusal",
+    leadWith({ lifts: [{ ticket: 1 }] }),
+    true,
+  ],
+  [
+    "a dispatch beside the lift of its superseded refusal",
+    leadWith({ dispatches: [leadDispatchOf(1)], lifts: [{ ticket: 1 }] }),
+    true,
+  ],
+  [
+    "a refusal of a candidate whose earlier refusal stands",
+    leadWith({ refusals: [leadRefusalOf(1)] }),
+    true,
+  ],
+  [
     "a negative version",
     leadWith({ dispatches: [{ ticket: 1, expectedTicketVersion: -1 }] }),
     false,
@@ -644,13 +687,16 @@ const leadBuilt: readonly Built[] = [
   ...leadBuiltChoices,
 ];
 
-/** Whether the reader accepts the decision against the view, which it answers by returning rather than raising. */
-function leadParserAccepts(text: string, view: SelectorObservation): boolean {
+/** Why the reader refuses the decision against the view, which it answers by raising, or nothing where it reads it. */
+function leadParserRefusal(
+  text: string,
+  view: SelectorObservation,
+): string | undefined {
   try {
     parseLeadDecision(text, view);
-    return true;
-  } catch {
-    return false;
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : typeof error;
   }
 }
 
@@ -671,8 +717,173 @@ test("the reader accepts no decision the schema refuses", () => {
   assertParserAcceptsNothingSchemaRefuses(
     bodies.map(([text, view]) => ({
       text,
-      parser: leadParserAccepts(text, view),
+      parser: leadParserRefusal(text, view) === undefined,
       schema: schemaAccepts(contract.leadDecisionDocumentSchema, text),
     })),
   );
 });
+
+/** The code the reader refuses the manifest with, or nothing where it reads it. */
+function manifestParserRefusal(text: string): string | undefined {
+  const answer = accept(text);
+  return answer.accepted === "Accepted" ? undefined : answer.code;
+}
+
+/**
+ * The refusals a manifest whose example the reader reads may meet once a roster
+ * value in it is walked: a failed verdict carrying handoffs or a source. Adding
+ * one decides that a manifest an older release's schema admits may be refused.
+ */
+const manifestWalkedRefusalsAllowed: readonly reader.ManifestRejection[] = [
+  "HandoffsOnFailedVerdict",
+  "SourceOnFailedVerdict",
+];
+
+/**
+ * An example's text, the reader's refusal of a text under the view the example
+ * is read against, and whether the example was built from what the harness
+ * writes. Only a built one must be read, since the reader suite that owns each
+ * of the others judges it.
+ */
+type Example = readonly [string, (text: string) => string | undefined, boolean];
+
+/** A document a harness writes: the plane it is written on, the names a release exports it under, how this tree reads it, and the refusals a walk may meet. */
+interface Replayed {
+  readonly plane: WorkerContractPlane;
+  readonly version: string;
+  readonly accepted: readonly number[];
+  readonly name: string;
+  readonly schema: ZodType;
+  readonly lifted: (text: string) => string;
+  readonly examples: readonly Example[];
+  readonly refusalsAllowed: readonly string[];
+}
+
+const replayed: readonly Replayed[] = [
+  {
+    plane: "job",
+    version: "resultManifestSchemaVersion",
+    accepted: contract.resultManifestSchemaVersionsAccepted,
+    name: "resultManifestDocumentSchema",
+    schema: contract.resultManifestDocumentSchema,
+    lifted: manifestLifted,
+    examples: [
+      ...manifestBodiesFromReaderSuite().map((text): Example => [
+        text,
+        manifestParserRefusal,
+        false,
+      ]),
+      ...manifestBuilt.map(([, value]): Example => [
+        JSON.stringify(value),
+        manifestParserRefusal,
+        true,
+      ]),
+    ],
+    refusalsAllowed: manifestWalkedRefusalsAllowed,
+  },
+  {
+    plane: "session",
+    version: "leadTurnDocumentVersion",
+    accepted: [contract.leadTurnDocumentVersion],
+    name: "leadDecisionDocumentSchema",
+    schema: contract.leadDecisionDocumentSchema,
+    lifted: (text) => text,
+    examples: [
+      ...leadBodiesFromReaderSuite.map(([text, view]): Example => [
+        text,
+        (body) => leadParserRefusal(body, view),
+        false,
+      ]),
+      ...leadBuilt.map(([, value]): Example => [
+        JSON.stringify(value),
+        (body) => leadParserRefusal(body, leadWideObservation),
+        true,
+      ]),
+    ],
+    refusalsAllowed: [],
+  },
+];
+
+/** Each example that is a JSON object, written at `version`, where `older` accepts it there. */
+function replayExamples(
+  older: ZodType,
+  version: number,
+  examples: readonly Example[],
+): readonly (readonly [unknown, Example[1], Example[2]])[] {
+  return examples.flatMap(([text, refusal, built]) => {
+    const value: unknown = textIsJson(text) ? JSON.parse(text) : undefined;
+    if (typeof value !== "object" || value === null || Array.isArray(value))
+      return [];
+    const example = { ...value, version };
+    return older.safeParse(example).success
+      ? [[example, refusal, built] as const]
+      : [];
+  });
+}
+
+/** Each roster value offered under a path that no example the reader accepts holds there. */
+function replayUnread(
+  offered: ReadonlyMap<string, ReadonlySet<unknown>>,
+  read: ReadonlyMap<string, ReadonlySet<unknown>>,
+): string[] {
+  return [...offered].flatMap(([path, values]) =>
+    [...values]
+      .filter((value) => read.get(path)?.has(value) !== true)
+      .map((value) => `${path}=${String(value)}`),
+  );
+}
+
+for (const document of replayed)
+  for (const release of workerContractReplayed(document.plane))
+    test(`a ${release} harness writes its ${document.name} at a version this tree reads, and this tree takes it with every roster value that release names`, async () => {
+      const written = await workerContractReleaseExport(
+        release,
+        "workerDocuments",
+        document.version,
+        z.number(),
+      );
+      assert.ok(document.accepted.some((known) => known === written));
+      const older = await workerContractReleaseExport(
+        release,
+        "workerDocuments",
+        document.name,
+        workerContractReleaseSchema,
+      );
+      const examples = replayExamples(older, written, document.examples);
+      assert.ok(examples.length > 0, `${release} writes no example offered`);
+      const optionals = new Map<string, Set<boolean>>();
+      const offered = new Map<string, Set<unknown>>();
+      const read = new Map<string, Set<unknown>>();
+      for (const [example, refusal, built] of examples) {
+        workerContractOptionalsSeen(older, example, document.name, optionals);
+        const exampleRefused = refusal(JSON.stringify(example));
+        assert.ok(
+          !built || exampleRefused === undefined,
+          `the reader refuses what the harness writes, ${JSON.stringify(example).slice(0, 200)}: ${String(exampleRefused)}`,
+        );
+        const exampleRead = exampleRefused === undefined;
+        for (const walked of workerContractEnumsWalked(older, example)) {
+          const text = JSON.stringify(walked);
+          assert.ok(older.safeParse(walked).success, text.slice(0, 200));
+          assert.ok(
+            schemaAccepts(document.schema, document.lifted(text)),
+            `this tree's ${document.name} refuses ${text.slice(0, 200)}`,
+          );
+          workerContractEnumsSeen(older, walked, document.name, offered);
+          const refused = refusal(text);
+          if (refused === undefined)
+            workerContractEnumsSeen(older, walked, document.name, read);
+          else
+            assert.ok(
+              !exampleRead || document.refusalsAllowed.includes(refused),
+              `the reader refuses ${text.slice(0, 200)}: ${refused}`,
+            );
+        }
+      }
+      assert.deepEqual(
+        [...optionals].filter(([, held]) => held.size !== 2),
+        [],
+        "every optional field is both present and left out among the examples",
+      );
+      assert.deepEqual(replayUnread(offered, read), []);
+    });

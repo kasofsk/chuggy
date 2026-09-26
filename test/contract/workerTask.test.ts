@@ -1,11 +1,13 @@
 /**
  * The documents a pod is launched with, held against what the launchers build
  * and against the interpreter's grant, worker configuration and execution
- * profile they restate.
+ * profile they restate, and read by each older release a plane still serves.
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
+
+import { z } from "zod";
 
 import {
   sessionTaskVariable,
@@ -28,6 +30,11 @@ import type {
 } from "../../src/interpreter/taskConfiguration.ts";
 import { sessionPodDocuments } from "../adapters/sessionPodDocumentFixture.ts";
 import { workerPodDocuments } from "../adapters/workerPodDocumentFixture.ts";
+import {
+  workerContractReleaseExport,
+  workerContractReleaseSchema,
+  workerContractReplayed,
+} from "./workerContractReleases.ts";
 
 /** Every key any member of a union names, the optional ones included. */
 type KeysOf<Value> = Value extends unknown ? keyof Value : never;
@@ -59,23 +66,33 @@ function carried(pod: RenderedPod, variable: string): object {
   return JSON.parse(values[0]?.value ?? "") as object;
 }
 
-test("each golden work pod carries a document the contract names in full", () => {
+/** Every golden work pod, of which there is at least one. */
+function workPods(): readonly RenderedPod[] {
   const pods = Object.values(
     workerPodDocuments() as Record<string, { readonly pod: RenderedPod }>,
+  ).map(({ pod }) => pod);
+  assert.ok(pods.length > 0);
+  return pods;
+}
+
+/** Every golden session pod, of which there is at least one. */
+function sessionPods(): readonly RenderedPod[] {
+  const pods = Object.values(
+    sessionPodDocuments() as Record<string, RenderedPod>,
   );
   assert.ok(pods.length > 0);
-  for (const { pod } of pods) {
+  return pods;
+}
+
+test("each golden work pod carries a document the contract names in full", () => {
+  for (const pod of workPods()) {
     const document = carried(pod, workerTaskVariable);
     assert.deepEqual(workTaskDocumentSchema.strict().parse(document), document);
   }
 });
 
 test("each golden session pod carries a document the contract names in full", () => {
-  const pods = Object.values(
-    sessionPodDocuments() as Record<string, RenderedPod>,
-  );
-  assert.ok(pods.length > 0);
-  for (const pod of pods) {
+  for (const pod of sessionPods()) {
     const document = carried(pod, sessionTaskVariable);
     assert.deepEqual(
       sessionTaskDocumentSchema.strict().parse(document),
@@ -83,6 +100,33 @@ test("each golden session pod carries a document the contract names in full", ()
     );
   }
 });
+
+for (const [plane, kind, pods, variable, schema] of [
+  ["job", "work", workPods, "workerTaskVariable", "workTaskDocumentSchema"],
+  [
+    "session",
+    "session",
+    sessionPods,
+    "sessionTaskVariable",
+    "sessionTaskDocumentSchema",
+  ],
+] as const)
+  for (const release of workerContractReplayed(plane))
+    test(`each golden ${kind} pod carries a document a ${release} image reads, under the variable it reads it from`, async () => {
+      const read = await workerContractReleaseExport(
+        release,
+        "workerEnvironment",
+        variable,
+        z.string(),
+      );
+      const document = await workerContractReleaseExport(
+        release,
+        "workerTask",
+        schema,
+        workerContractReleaseSchema,
+      );
+      for (const pod of pods()) document.parse(carried(pod, read));
+    });
 
 test("the grant the wire names is the interpreter's", () => {
   assert.deepEqual([...filesystemAccesses], [...filesystemAccessOrder]);

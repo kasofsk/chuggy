@@ -109,7 +109,7 @@ export function workerReport(verdict: string, source?: unknown): string {
     report: "the review the evaluator wrote",
     handoffs: [],
     ...(source === undefined ? {} : { source }),
-    diagnostics: [row("log/session.json")],
+    diagnostics: [row(".chuggy/agent-result.json")],
   });
 }
 
