@@ -507,7 +507,6 @@ test("the worker plane reads an invocation only through its function, and the po
     );
 });
 
-/** Last, because a restore moves the epoch every later attempt in this database is opened under. */
 test("an attempt issued under an epoch since restored away is answered as stopped", async () => {
   const { project } = await admittedProject("task-epoch");
   const placement = await launched(project);
