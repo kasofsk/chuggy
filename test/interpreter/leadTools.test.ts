@@ -28,6 +28,8 @@ import {
   chuggyToolServerName,
   chuggyToolTimeoutMs,
   dependentRelationsAdmitted,
+} from "../../src/contract/sessionTools.ts";
+import {
   dependentRelationsRefused,
   leadObjectivesFixedChars,
   leadSystemPrompt,
