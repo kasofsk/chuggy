@@ -2,7 +2,8 @@
  * The scheduler's half of work routed to pools, against a real PostgreSQL and
  * under the scheduler's own role: what a pass asks the registry before an
  * attempt waits for a pool, what the reaper does with one whose lease ran out,
- * and what a pass does with one a pool refused.
+ * what a pass does with one a pool refused, and that one a pool held and lost
+ * concludes its execution.
  *
  * Everything but the authority is the role a deployment runs: the store and
  * the registry read are the scheduler's, a registration is the API's and a
@@ -339,6 +340,18 @@ const refusedStanding = {
   ],
 };
 
+/** Where an execution stands once a pass has found the attempt a pool claimed lost: settled as the process that died, on its one attempt. */
+const lostStanding = {
+  execution: {
+    status: "Terminal",
+    outcome: "ProcessFailed",
+    blocked_reason: null,
+    retries_spent: 1,
+    backed_off: true,
+  },
+  attempts: [{ state: "Lost", evidence: "LeaseExpired", pool: "claiming" }],
+};
+
 test("an attempt a pool refused is withdrawn without spending, its execution blocked, and the longest refusal kept whole", async () => {
   const routed = await poolRoutedExecution(rig, "pools-refused");
   const refusal = "r".repeat(workerPoolEvidenceCharsMax);
@@ -391,15 +404,26 @@ test("attempts refused past what one pass takes do not hold the reaper off an at
     },
     attempts: [{ state: "Placing", evidence: null, pool: "refusing" }],
   });
-  assert.deepEqual(await poolRoutedStanding(rig, held), {
-    execution: {
-      status: "Launching",
-      ...poolRoutedUnsettled,
-      retries_spent: 1,
-      backed_off: true,
-    },
-    attempts: [{ state: "Lost", evidence: "LeaseExpired", pool: "claiming" }],
-  });
+  assert.deepEqual(await poolRoutedStanding(rig, held), lostStanding);
   await executionSchedulerLaunch(one, held.project.epoch);
   assert.deepEqual(await poolRoutedStanding(rig, second), refusedStanding);
+});
+
+test("an execution whose claimed attempt is lost concludes on that pass, and no pool can claim it again", async () => {
+  const routed = await poolRoutedExecution(rig, "pools-lost");
+  const { pool } = await poolClaimed(routed, "claiming");
+  await leaseLapsed(routed);
+  await executionSchedulerLaunch(service, routed.project.epoch);
+  assert.deepEqual(await poolRoutedStanding(rig, routed), lostStanding);
+  await executionSchedulerLaunch(service, routed.project.epoch);
+  assert.deepEqual(await poolRoutedStanding(rig, routed), lostStanding);
+  assert.equal(
+    await assignments.claim(
+      pool,
+      { leaseSecs: service.config.attemptLeaseSecs, heldMax: 1 },
+      `assignment-${randomUUID()}`,
+      `bearer-${randomUUID()}`,
+    ),
+    undefined,
+  );
 });

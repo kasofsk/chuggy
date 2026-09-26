@@ -111,6 +111,7 @@ import {
   type BlockedReason,
   type ExecutionPolicy,
   type ExecutionProfile,
+  type ExecutionRoute,
   type ExecutionSchedulerConfig,
   type ExecutionSchedulerStore,
   type FencedAttempt,
@@ -730,6 +731,19 @@ async function schedulerLaunchOpened(
   }
 }
 
+/** How many lost attempts spend an execution's budget: the configured count in the cluster, and on the pool route the first, since `runner.qnt` places nothing again once an assignment is lost. */
+function schedulerRetriesMax(
+  route: ExecutionRoute,
+  config: ExecutionSchedulerConfig,
+): number {
+  switch (route) {
+    case "InCluster":
+      return config.attemptRetriesMax;
+    case "Pool":
+      return 1;
+  }
+}
+
 /** Opens and places the next attempt for one execution that owns a slot. */
 async function schedulerLaunchOne(
   service: ExecutionSchedulerService,
@@ -746,7 +760,7 @@ async function schedulerLaunchOne(
     execution: execution.execution,
     epoch,
     leaseSecs: config.attemptLeaseSecs,
-    retriesMax: config.attemptRetriesMax,
+    retriesMax: schedulerRetriesMax(execution.route, config),
     placementBackoffSecs: config.placementBackoffSecs,
   };
   const opened = await service.store.openAttempt(opening);
