@@ -2,9 +2,9 @@
  * The two things `CHUG_WORKER_TASK` may carry, as the suites hold them against
  * each other: the document a pushed pod is launched with, the answer the task
  * route gives for the same attempt, and a pool's envelope naming the same
- * plane. The document and the answer are read under the contract's schemas,
- * refusing any field either does not name; that a launcher writes such a
- * document, and the route answers it, is the server's suites' to hold.
+ * plane. The document and the answer are read under the contract's schemas;
+ * that a launcher writes such a document, and the route answers it, is the
+ * server's suites' to hold.
  */
 
 import {
